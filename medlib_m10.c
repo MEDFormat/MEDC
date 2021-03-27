@@ -9723,7 +9723,7 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 }
 
 
-void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info)
+void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time)
 {
         si4                     n_potential_timezones, potential_timezone_entries[TIMEZONE_TABLE_ENTRIES_m10];
         si4                     i, j, entry_num, response_num, items;
@@ -9884,7 +9884,7 @@ TIME_ZONE_MATCH_m10:
                 globals_m10->observe_DST = FALSE_m10;
         }
 	globals_m10->RTO_known = TRUE_m10;
-	generate_recording_time_offset_m10(CURRENT_TIME_m10);
+	generate_recording_time_offset_m10(session_start_time);
 	
         return;
 }

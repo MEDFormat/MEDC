@@ -1474,7 +1474,7 @@ void            reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 si8             sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_uutc, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);
 TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
 TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
-void            set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info);
+void            set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time);
 TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *section_2_encryption_level, si1 *section_3_encryption_level);
 void            show_daylight_time_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 *code, si1 *prefix);
 void            show_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps);
