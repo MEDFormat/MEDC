@@ -617,7 +617,7 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define UUTC_LATEST_TIME_m10                            ((si8) 0x7FFFFFFFFFFFFFFF)  // 04:00:54.775808 Sunday, 10 Jan 29424, UTC
 #define BEGINNING_OF_TIME_m10                           UUTC_EARLIEST_TIME_m10
 #define END_OF_TIME_m10                                 UUTC_LATEST_TIME_m10
-#define CURRENT_TIME_m10				((si8) 0xFFFFFFFFFFFFFFFF)  // used with time_string_m10()
+#define CURRENT_TIME_m10				((si8) 0xFFFFFFFFFFFFFFFF)  // used with time_string_m10() & generate_recording_time_offset_m10()
 #define TWENTY_FOURS_HOURS				((si8) 86400000000)
 #define Y2K_m10                                         ((si8) 0x00035D013B37E000)  // 00:00:00.000000 Saturday, 1 Jan 2000, UTC  (946684800000000 decimal)
 

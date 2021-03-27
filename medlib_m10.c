@@ -6615,7 +6615,7 @@ si8	generate_recording_time_offset_m10(si8 recording_start_time_uutc)
 	struct tm	local_time_info, offset_time_info;
 	
 	
-	// receives unoffset recording start time; returns offset recording start time
+	// receives UNOFFSET recording start time (or CURRENT_TIME_m10); returns OFFSET recording start time
 	
 	if (recording_start_time_uutc == CURRENT_TIME_m10) // use current system time
 		recording_start_time_uutc = current_uutc_m10();
@@ -6643,6 +6643,8 @@ si8	generate_recording_time_offset_m10(si8 recording_start_time_uutc)
 
         if (globals_m10->verbose == TRUE_m10)
 		message_m10("Recording Time Offset = %ld", globals_m10->recording_time_offset);
+	
+	globals_m10->RTO_known = TRUE_m10;
 		
 	return(recording_start_time_uutc - globals_m10->recording_time_offset);
 }
@@ -9883,8 +9885,9 @@ TIME_ZONE_MATCH_m10:
         } else {
                 globals_m10->observe_DST = FALSE_m10;
         }
-	globals_m10->RTO_known = TRUE_m10;
-	generate_recording_time_offset_m10(session_start_time);
+	
+	if (session_start_time)  // pass CURRENT_TIME_m10 for session starting now; pass zero if just need to get timezone_info for a locale
+		generate_recording_time_offset_m10(session_start_time);
 	
         return;
 }
@@ -10898,7 +10901,7 @@ void	show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER
 		printf("File End Time: no entry\n");
 	else {
 		time_string_m10(uh->file_end_time, time_str, TRUE_m10, FALSE_m10);
-		printf("File End Time: %ld (µUTC), %s\n", uh->file_end_time, time_str);
+		printf("File End Time: %ld (oUTC), %s\n", uh->file_end_time, time_str);
 	}
 	if (uh->number_of_entries == UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_NO_ENTRY_m10)
 		printf("Number of Entries: no entry\n");
@@ -11007,13 +11010,13 @@ void	show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER
 		printf("Session Start Time: no entry\n");
 	else {
 		time_string_m10(uh->session_start_time, time_str, TRUE_m10, FALSE_m10);
-		printf("Session Start Time: %ld (µUTC), %s\n", uh->session_start_time, time_str);
+		printf("Session Start Time: %ld (oUTC), %s\n", uh->session_start_time, time_str);
 	}
 	if (uh->file_start_time == UUTC_NO_ENTRY_m10)
 		printf("File Start Time: no entry\n");
 	else {
 		time_string_m10(uh->file_start_time, time_str, TRUE_m10, FALSE_m10);
-		printf("File Start Time: %ld (µUTC), %s\n", uh->file_start_time, time_str);
+		printf("File Start Time: %ld (oUTC), %s\n", uh->file_start_time, time_str);
 	}
         if (*uh->session_name)
                 UTF8_printf_m10("Session Name: %s\n", uh->session_name);
