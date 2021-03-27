@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
         
         // USAGE: %s MED_directory [output_directory] [start_time] [end_time] [password] [start_index] [end_index] [idx_ref_chan]
         // negative times: relative to session start
-        // positive times: offset or absolute
+        // positive times: offset or absolute can be used
 
         // initialize MED library
         // initialize_globals_m10();
@@ -140,10 +140,12 @@ int main(int argc, char *argv[])
         if (show_records == TRUE_m10) {
                 if (sess->record_data_fps != NULL)
                         show_records_m10(sess->record_data_fps, ALL_TYPES_CODE_m10);
-                for (i = 0; i < sess->number_of_segments; ++i)
-                        if (sess->segmented_record_data_fps[i] != NULL)
-				show_records_m10(sess->segmented_record_data_fps[i], ALL_TYPES_CODE_m10);
-                                // show_records_m10(sess->segmented_record_data_fps[i], REC_Note_TYPE_CODE_m10);
+		if (sess->segmented_record_data_fps != NULL) {
+                	for (i = 0; i < sess->number_of_segments; ++i)
+                        	if (sess->segmented_record_data_fps[i] != NULL)
+					show_records_m10(sess->segmented_record_data_fps[i], ALL_TYPES_CODE_m10);
+                                	// show_records_m10(sess->segmented_record_data_fps[i], REC_Note_TYPE_CODE_m10);
+		}
         }
 	show_records = TRUE_m10;
                         
