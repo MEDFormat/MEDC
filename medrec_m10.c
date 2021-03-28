@@ -108,7 +108,7 @@ void	show_record_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_
 		printf("Record Start Time: no entry\n");
 	else {
 		time_string_m10(record_header->start_time, time_str, TRUE_m10, FALSE_m10);
-		printf("Record Start Time: %ld (µUTC), %s\n", ABS_m10(record_header->start_time), time_str);
+		printf("Record Start Time: %ld (oUTC), %ld (µUTC), %s\n", record_header->start_time, record_header->start_time + globals_m10->recording_time_offset, time_str);
 	}
 	printf("----------------- Record Header - END -----------------\n");
 
@@ -233,6 +233,7 @@ TERN_m10	check_record_structure_alignments_m10(ui1 *bytes)
 
 void    show_rec_Sgmt_type_m10(RECORD_HEADER_m10 *record_header)
 {
+	extern GLOBALS_m10	*globals_m10;
         REC_Sgmt_v10_m10        *Sgmt;
         si1                     time_str[TIME_STRING_BYTES_m10], hex_str[HEX_STRING_BYTES_m10(8)], *segment_description;
         
@@ -242,7 +243,7 @@ void    show_rec_Sgmt_type_m10(RECORD_HEADER_m10 *record_header)
                 Sgmt = (REC_Sgmt_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
                 
                 time_string_m10(Sgmt->end_time, time_str, TRUE_m10, FALSE_m10);
-                printf("End Time: %ld (µUTC), %s\n", ABS_m10(Sgmt->end_time), time_str);
+		printf("End Time: %ld (oUTC), %ld (µUTC), %s\n", Sgmt->end_time, Sgmt->end_time + globals_m10->recording_time_offset, time_str);
                 if (Sgmt->absolute_start_sample_number == REC_Sgmt_v10_ABSOLUTE_START_SAMPLE_NUMBER_NO_ENTRY_m10)
                         printf("Absolute Start Sample Number: no entry\n");
                 else
@@ -564,6 +565,7 @@ TERN_m10	check_rec_EDFA_type_alignment_m10(ui1 *bytes)
 
 void	show_rec_Seiz_type_m10(RECORD_HEADER_m10 *record_header)
 {
+	extern GLOBALS_m10		*globals_m10;
         si4			        i;
         TERN_m10                        mn1 = FALSE_m10, mn2 = FALSE_m10;
         REC_Seiz_v10_m10		*Seiz;
@@ -575,7 +577,7 @@ void	show_rec_Seiz_type_m10(RECORD_HEADER_m10 *record_header)
         if (record_header->version_major == 1 && record_header->version_minor == 0) {
                 Seiz = (REC_Seiz_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
                 time_string_m10(Seiz->latest_offset_time, time_str, TRUE_m10, FALSE_m10);
-		printf("Latest Offset Time: %ld (µUTC), %s\n", ABS_m10(Seiz->latest_offset_time), time_str);
+		printf("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + globals_m10->recording_time_offset, time_str);
 		printf("Number of Channels: %d\n", Seiz->number_of_channels);
 		printf("Onset Code: %d ", Seiz->onset_code);
                 switch (Seiz->onset_code) {
@@ -624,9 +626,9 @@ void	show_rec_Seiz_type_m10(RECORD_HEADER_m10 *record_header)
                         else
                                 printf("Channel Name: no entry\n");
                         time_string_m10(chans[i].onset_time, time_str, TRUE_m10, FALSE_m10);
-                        printf("\tOnset Time: %ld (µUTC), %s\n", ABS_m10(chans[i].onset_time), time_str);
+			printf("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + globals_m10->recording_time_offset, time_str);
                         time_string_m10(chans[i].offset_time, time_str, TRUE_m10, FALSE_m10);
-                        printf("\tOffset Time: %ld (µUTC), %s\n", ABS_m10(chans[i].offset_time), time_str);
+			printf("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + globals_m10->recording_time_offset, time_str);
                         if (chans[i].segment_number == REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m10)
                                 printf("Segment Number: no entry\n");
                         else

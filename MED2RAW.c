@@ -51,8 +51,8 @@ int main(int argc, char *argv[])
         initialize_time_slice_m10(&slice);
 
         // testing
-	show_records = TRUE_m10; // FALSE_m10;
-	show_file_processing_structs = TRUE_m10; // FALSE_m10;
+	show_records = FALSE_m10;  // TRUE_m10;
+	show_file_processing_structs = FALSE_m10;  // = TRUE_m10;
         
         // input file list
         type_code = MED_type_code_from_string_m10(argv[1]);
@@ -149,7 +149,6 @@ int main(int argc, char *argv[])
 			}
 		}
        	}
-	show_records = TRUE_m10;
                         
         // write out raw data / show records
         for (i = 0; i < sess->number_of_time_series_channels; ++i) {

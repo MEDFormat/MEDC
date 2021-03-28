@@ -4514,7 +4514,7 @@ void	condition_time_slice_m10(TIME_SLICE_m10 *slice)
 	}
 
 	if (globals_m10->RTO_known == FALSE_m10) {
-		warning_message_m10("%s(): recording time offset is not known => assuming no offset");
+		warning_message_m10("%s(): recording time offset is not known => assuming no offset", __FUNCTION__);
 		globals_m10->recording_time_offset = 0;  // this is the default value
 	}
 	
@@ -4528,7 +4528,7 @@ void	condition_time_slice_m10(TIME_SLICE_m10 *slice)
 	} else {  // ? unoffset time
 		test_time = slice->start_time - globals_m10->recording_time_offset;
 		if (test_time > 0)  // start time is not offset
-			slice->start_time -= globals_m10->recording_time_offset;
+			slice->start_time = test_time;
 	}
 	
 	if (slice->end_time <= 0) {
@@ -4541,7 +4541,7 @@ void	condition_time_slice_m10(TIME_SLICE_m10 *slice)
 	} else {  // ? unoffset time
 		test_time = slice->end_time - globals_m10->recording_time_offset;
 		if (test_time > 0)  // end time is not offset
-			slice->end_time -= globals_m10->recording_time_offset;
+			slice->end_time = test_time;
 	}
 	
 	slice->conditioned = TRUE_m10;
@@ -8817,7 +8817,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	// process slice (for unoffset & relative times)
 	if (slice->conditioned == FALSE_m10)
 		condition_time_slice_m10(slice);
- 
+	
         // get segment range
         if (n_ts_chans) {
                 n_segs = get_segment_range_m10(ts_chan_list, n_ts_chans, slice);
@@ -10370,14 +10370,9 @@ void	show_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, METADATA_m10 *md)
         }
 	
 	// decrypt if needed
-        if (md1->section_2_encryption_level > NO_ENCRYPTION_m10 || md1->section_3_encryption_level > NO_ENCRYPTION_m10) {
-		if (fps != NULL) {
+        if (md1->section_2_encryption_level > NO_ENCRYPTION_m10 || md1->section_3_encryption_level > NO_ENCRYPTION_m10)
+		if (fps != NULL)
                         decrypt_metadata_m10(fps);
-		} else {
-                        error_message_m10("%s(): cannot decrypt metadata because File Processing Struct was not passed", __FUNCTION__);
-			return;
-		}
-        }
 
 	// show
 	printf("------------------- Metadata - START -------------------\n");
@@ -11275,11 +11270,13 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, si4 colo
 		if (test_time < 0)  // time is offset
 			uutc += globals_m10->recording_time_offset;
 		offset = FALSE_m10;
+		DST_offset = DST_offset_m10(uutc);
+	} else {
+		DST_offset = 0;
 	}
 	
 	standard_timezone_acronym = globals_m10->standard_timezone_acronym;
 	standard_timezone_string = globals_m10->standard_timezone_string;
-	DST_offset = DST_offset_m10(uutc);
 	local_time = (si4) (uutc / (si8) 1000000) + DST_offset + globals_m10->standard_UTC_offset;
         microseconds = (si4) (uutc % (si8) 1000000);
         gmtime_r(&local_time, &ti);
