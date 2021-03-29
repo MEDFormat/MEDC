@@ -618,7 +618,7 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define BEGINNING_OF_TIME_m10                           UUTC_EARLIEST_TIME_m10
 #define END_OF_TIME_m10                                 UUTC_LATEST_TIME_m10
 #define CURRENT_TIME_m10				((si8) 0xFFFFFFFFFFFFFFFF)  // used with time_string_m10() & generate_recording_time_offset_m10()
-#define TWENTY_FOURS_HOURS				((si8) 86400000000)
+#define TWENTY_FOURS_HOURS_m10				((si8) 86400000000)
 #define Y2K_m10                                         ((si8) 0x00035D013B37E000)  // 00:00:00.000000 Saturday, 1 Jan 2000, UTC  (946684800000000 decimal)
 
 // Time Change Code Constants
@@ -1485,7 +1485,7 @@ void            show_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code)
 void    	show_time_slice_m10(TIME_SLICE_m10 *slice);
 void            show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry);
 void            show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER_m10 *uh);
-si1		*time_string_m10(si8 uutc_time, si1 *time_str, TERN_m10 fixed_width, si4 colored_text, ...);
+si1		*time_string_m10(si8 uutc_time, si1 *time_str, TERN_m10 fixed_width, TERN_m10 relative_days, si4 colored_text, ...);
 si8             ts_sort_m10(si4 *x, si8 len, NODE_m10 *nodes, NODE_m10 *head, NODE_m10 *tail, si4 return_sorted_ts, ...);
 void            unescape_spaces_m10(si1 *string);
 si8             uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_sample_number, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);

@@ -4352,7 +4352,7 @@ void    CMP_show_block_header_m10(CMP_BLOCK_FIXED_HEADER_m10 *bh)
         if (bh->start_time == UUTC_NO_ENTRY_m10)
                 printf("Start Time: no entry\n");
         else {
-                time_string_m10(bh->start_time, time_str, TRUE_m10, FALSE_m10);
+                time_string_m10(bh->start_time, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
                 printf("Start Time: %ld (µUTC), %s\n", bh->start_time, time_str);
         }
         printf("Acquisition Channel Number: %u\n", bh->acquisition_channel_number);
@@ -10895,7 +10895,7 @@ void	show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER
 	if (uh->file_end_time == UUTC_NO_ENTRY_m10)
 		printf("File End Time: no entry\n");
 	else {
-		time_string_m10(uh->file_end_time, time_str, TRUE_m10, FALSE_m10);
+		time_string_m10(uh->file_end_time, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
 		printf("File End Time: %ld (oUTC), %s\n", uh->file_end_time, time_str);
 	}
 	if (uh->number_of_entries == UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_NO_ENTRY_m10)
@@ -11004,13 +11004,13 @@ void	show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER
 	if (uh->session_start_time == UUTC_NO_ENTRY_m10)
 		printf("Session Start Time: no entry\n");
 	else {
-		time_string_m10(uh->session_start_time, time_str, TRUE_m10, FALSE_m10);
+		time_string_m10(uh->session_start_time, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
 		printf("Session Start Time: %ld (oUTC), %s\n", uh->session_start_time, time_str);
 	}
 	if (uh->file_start_time == UUTC_NO_ENTRY_m10)
 		printf("File Start Time: no entry\n");
 	else {
-		time_string_m10(uh->file_start_time, time_str, TRUE_m10, FALSE_m10);
+		time_string_m10(uh->file_start_time, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
 		printf("File Start Time: %ld (oUTC), %s\n", uh->file_start_time, time_str);
 	}
         if (*uh->session_name)
@@ -11227,7 +11227,7 @@ void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_byt
 }
 
 
-si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m10
+si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m10
 {
         si1             *standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
         static si1      private_time_str[TIME_STRING_BYTES_m10];
@@ -11238,7 +11238,7 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, si4 colo
                         "th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st"};
         static si1      weekdays[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 	TERN_m10	offset;
-        si4             microseconds, DST_offset;
+        si4             microseconds, DST_offset, day_num;
         si8             local_time, test_time;
         sf8             UTC_offset_hours;
         va_list         arg_p;
@@ -11291,10 +11291,17 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, si4 colo
         } else {
                 date_color = time_color = color_reset = "";
         }
+	if (relative_days == TRUE_m10) {
+		uutc -= globals_m10->recording_time_offset;
+		day_num = (si4) (uutc / TWENTY_FOURS_HOURS_m10) + 1;
+	}
 
         if (fixed_width == TRUE_m10) {
                 UTC_offset_hours = (sf8) (DST_offset + globals_m10->standard_UTC_offset) / (sf8) 3600.0;
-                sprintf(time_str, "%s%s %02d %s %d  %s%02d:%02d:%02d.%06d", date_color, wdays[ti.tm_wday], ti.tm_mday, mos[ti.tm_mon], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
+		if (relative_days == TRUE_m10)
+			sprintf(time_str, "%sDay %04d  %s%02d:%02d:%02d.%06d", date_color, day_num, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
+		else
+                	sprintf(time_str, "%s%s %02d %s %d  %s%02d:%02d:%02d.%06d", date_color, wdays[ti.tm_wday], ti.tm_mday, mos[ti.tm_mon], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
                 if (DST_offset) {
                         if (UTC_offset_hours >= 0.0)
                                 sprintf(time_str, "%s %s (UTC +%0.2lf)%s", time_str, globals_m10->daylight_timezone_acronym, UTC_offset_hours, color_reset);
@@ -11319,7 +11326,10 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, si4 colo
                         if (ti.tm_hour > 12)
                                 ti.tm_hour -= 12;
                 }
-                sprintf(time_str, "%s%s, %s %d%s, %d  %s%d:%02d:%02d %s,", date_color, weekdays[ti.tm_wday], months[ti.tm_mon], ti.tm_mday, mday_num_sufs[ti.tm_mday], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, meridian);
+		if (relative_days == TRUE_m10)
+			sprintf(time_str, "%sDay %04d  %s%d:%02d:%02d %s,", date_color, day_num, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, meridian);
+		else
+                	sprintf(time_str, "%s%s, %s %d%s, %d  %s%d:%02d:%02d %s,", date_color, weekdays[ti.tm_wday], months[ti.tm_mon], ti.tm_mday, mday_num_sufs[ti.tm_mday], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, meridian);
                 if (DST_offset)
                         sprintf(time_str, "%s %s%s", time_str, globals_m10->daylight_timezone_string, color_reset);
                 else
