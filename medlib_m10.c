@@ -8196,15 +8196,16 @@ TERN_m10	process_password_data_m10(si1 *unspecified_password, si1 *L1_password, 
 			AES_key_expansion_m10(pwd->level_2_encryption_key, L2_password_bytes);
 			if (globals_m10->verbose == TRUE_m10)
 				message_m10("Level 2 encryption key generated");
+		} else {
+			// check_password_m10() == FALSE_m10
+			return(FALSE_m10);
 		}
-		// check_password_m10() == FALSE_m10
-		return(FALSE_m10);
 	}
         
         // user also passed level 3 password for recovery: generate validation field
 	if (L3_password != NULL) {
 		if (check_password_m10(L3_password) == TRUE_m10) {
-			
+
 			// get terminal bytes
 			extract_terminal_password_bytes_m10(L3_password, L3_password_bytes);
 			
@@ -8220,9 +8221,10 @@ TERN_m10	process_password_data_m10(si1 *unspecified_password, si1 *L1_password, 
 			}
 			if (globals_m10->verbose == TRUE_m10)
 				message_m10("Level 3 password validation field generated");
+		} else {
+			// check_password_m10() == FALSE_m10
+			return(FALSE_m10);
 		}
-		// check_password_m10() == FALSE_m10
-		return(FALSE_m10);
 	}
         
 	return(TRUE_m10);
@@ -12281,8 +12283,8 @@ si8     write_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui8 number_of_items, voi
                 if (fps->directives.leave_decrypted == TRUE_m10) {
 			switch (uh->type_code) {
 				case TIME_SERIES_INDICES_FILE_TYPE_CODE_m10:	// This mechanism assumes copying and copying back is faster than
-				case VIDEO_INDICES_FILE_TYPE_CODE_m10:		// decrypting & unoffsetting, but it might not be.  Need to check
-				case RECORD_INDICES_FILE_TYPE_CODE_m10:		// this some time.
+				case VIDEO_INDICES_FILE_TYPE_CODE_m10:		// decrypting, but it might not be.  Need to check this some time.
+				case RECORD_INDICES_FILE_TYPE_CODE_m10:
 				case RECORD_DATA_FILE_TYPE_CODE_m10:
 					decrypted_data = (ui1 *) e_malloc_m10(out_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 					memcpy(decrypted_data, data_ptr, out_bytes);
