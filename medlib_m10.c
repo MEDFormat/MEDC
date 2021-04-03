@@ -2634,7 +2634,7 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
         block_header->start_time = start_time;
         block_header->acquisition_channel_number = acquisition_channel_number;
         block_header->number_of_samples = number_of_samples;
-	
+
 	// reset block flags
 	block_header->block_flags = 0;
 
@@ -3392,8 +3392,6 @@ void    CMP_PRED_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
         
         // CMP decompress from block_header to decompressed_ptr
         block_header = cps->block_header;
-        if (block_header->number_of_samples == 0)  // if no samples, just return
-                return;
 	model = (ui1 *) block_header + block_header->total_header_bytes - block_header->model_region_bytes;
         init_val = *((si4 *) (model + CMP_PRED_MODEL_INITIAL_SAMPLE_VALUE_OFFSET_m10));
         n_diffs = *((ui4 *) (model + CMP_PRED_MODEL_DIFFERENCE_BYTES_OFFSET_m10));
@@ -3401,7 +3399,7 @@ void    CMP_PRED_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
         stats_entries = (ui2 *) (model + CMP_PRED_MODEL_NUMBERS_OF_STATISTICS_BINS_OFFSET_m10);
         for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m10; ++i)
                 total_stats_entries += stats_entries[i];
-        if (total_stats_entries <= 1) {  // only one value, possibly only one sample
+        if (total_stats_entries == 0) {  // zero samples, or only one value
                 for (si4_p = cps->decompressed_ptr, i = block_header->number_of_samples; i--;)
                         *si4_p++ = init_val;
                 return;
@@ -3524,8 +3522,10 @@ void    CMP_PRED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
                 block_header->total_block_bytes = pad_m10((ui1 *) block_header, block_header->total_header_bytes, 8);
                 block_header->model_region_bytes = (ui2) CMP_PRED_MODEL_FIXED_BYTES_m10;
                 memset(model, 0, CMP_PRED_MODEL_FIXED_BYTES_m10);
-                if (block_header->number_of_samples <= 0)
-                        error_message_m10("%s(): No samples in block => returning without encoding", __FUNCTION__);
+		if (block_header->number_of_samples == 1)
+			*((si4 *) (model + CMP_PRED_MODEL_INITIAL_SAMPLE_VALUE_OFFSET_m10)) = input_buffer[0];
+		else
+			warning_message_m10("%s(): No samples in block => returning without encoding", __FUNCTION__);
                 return;
         }
 	
@@ -3574,14 +3574,14 @@ void    CMP_PRED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
                 total_stats_entries += stats_entries[i];
         }
         
-        // only one value
-        if (total_stats_entries == 1) {
-                block_header->total_header_bytes = (ui4) (CMP_BLOCK_FIXED_HEADER_BYTES_m10 + variable_region_bytes + CMP_PRED_MODEL_FIXED_BYTES_m10);
-                block_header->total_block_bytes = pad_m10((ui1 *) block_header, block_header->total_header_bytes, 8);
-                block_header->model_region_bytes = (ui2) CMP_PRED_MODEL_FIXED_BYTES_m10;
-                memset(model, 0, CMP_PRED_MODEL_FIXED_BYTES_m10);
-                *((ui2 *) (model + CMP_PRED_MODEL_NUMBER_OF_NIL_STATISTICS_BINS_OFFSET_m10)) = 1;
-                return;
+	// only one unique value (typically all zeros)
+        if (total_stats_entries == 1 && stats_entries[CMP_PRED_NIL_m10] == 1) {
+		block_header->total_header_bytes = (ui4) (CMP_BLOCK_FIXED_HEADER_BYTES_m10 + variable_region_bytes + CMP_PRED_MODEL_FIXED_BYTES_m10);
+		block_header->total_block_bytes = pad_m10((ui1 *) block_header, block_header->total_header_bytes, 8);
+		block_header->model_region_bytes = (ui2) CMP_PRED_MODEL_FIXED_BYTES_m10;
+		memset(model, 0, CMP_PRED_MODEL_FIXED_BYTES_m10);
+		*((si4 *) (model + CMP_PRED_MODEL_INITIAL_SAMPLE_VALUE_OFFSET_m10)) = input_buffer[0];
+		return;
         }
 
         // build sorted_count: bubble sort
@@ -3721,7 +3721,7 @@ void    CMP_PRED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
                         return;
                 }
         }
-	
+
         return;
 }
 
@@ -4540,10 +4540,11 @@ void	condition_time_slice_m10(TIME_SLICE_m10 *slice)
 		}
 	} else {  // ? unoffset time
 		test_time = slice->end_time - globals_m10->recording_time_offset;
-		if (test_time > 0)  // end time is not offset
+		if (test_time > 0 && slice->end_time != END_OF_TIME_m10)  // end time is not offset
 			slice->end_time = test_time;
 	}
 	
+	slice->session_start_time = globals_m10->session_start_time;
 	slice->conditioned = TRUE_m10;
 
 	return;
@@ -6945,12 +6946,12 @@ si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10
         }
 	slice->index_reference_channel_index = ref_chan_idx;
 	slice->index_reference_channel_name = channel_list[ref_chan_idx];
-
+	
         // search Sgmt records
         search_succeeded = search_Sgmt_records_m10(channel_list[ref_chan_idx], slice);
 
         // search segment metadata
-        if (search_succeeded == FALSE_m10)
+	if (search_succeeded == FALSE_m10)
                 search_succeeded = search_segment_metadata_m10(channel_list[ref_chan_idx], slice);
 	
         if (search_succeeded == FALSE_m10)
@@ -9276,7 +9277,7 @@ void    reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 si8     sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_uutc, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode)
 {
         si8                     samp_num, n_inds, i, absolute_numbering_offset, tmp_si8;
-        sf8                     tmp_sf8, local_sf;
+        sf8                     tmp_sf8;
         TIME_SERIES_INDEX_m10   *tsi;
 
         // sample_number_for_uutc_m10(ref_sample_number, ref_uutc, target_uutc, sampling_frequency, NULL, 0, mode)
@@ -9294,8 +9295,6 @@ si8     sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 targ
         // mode FIND_NEXT_m10: sample number following the sample period within which the target_uutc falls (== FIND_CURRENT_m10 + 1)
 
         absolute_numbering_offset = 0;
-        local_sf = sampling_frequency;
-        
         if (time_series_indices_fps != NULL) {
                 tsi = time_series_indices_fps->time_series_indices;
                 n_inds = time_series_indices_fps->universal_header->number_of_entries;
@@ -9318,13 +9317,14 @@ si8     sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 targ
                 ref_uutc = tsi[i - 1].start_time;
                 ref_sample_number = tsi[i - 1].start_sample_number;
                 
-                if (tsi[i].start_sample_number >= 0) {
-                        local_sf = (sf8) (tsi[i].start_sample_number - ref_sample_number);
-                        local_sf /= ((sf8) (tsi[i].start_time - ref_uutc) / (sf8) 1e6);
-                }
+		// acquisition sampling frequency can vary a little => this is slightly more accurate
+		if (tsi[i].file_offset > 0) {  // don't do if discontinuity
+			sampling_frequency = (sf8) (tsi[i].start_sample_number - ref_sample_number);
+			sampling_frequency /= ((sf8) (tsi[i].start_time - ref_uutc) / (sf8) 1e6);
+		}
         }
 
-        tmp_sf8 = ((sf8) (target_uutc - ref_uutc) / (sf8) 1e6) * local_sf;
+        tmp_sf8 = ((sf8) (target_uutc - ref_uutc) / (sf8) 1e6) * sampling_frequency;
         switch (mode) {
                 case FIND_CLOSEST_m10:
                         tmp_si8 = (si8) (tmp_sf8 + (sf8) 0.5);
@@ -9518,7 +9518,6 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
         si4                             n_chans;
         ui4                             type_code;
         si8                             i, n_recs, items_read, start_seg_start_idx, end_seg_start_idx;
-        si8                             abs_start_time, abs_end_time;
         sf8                             sampling_frequency;
         FILE_PROCESSING_STRUCT_m10      *ri_fps, *rd_fps, *md_fps, *tsi_fps;
         UNIVERSAL_HEADER_m10            *uh;
@@ -9540,7 +9539,7 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
                 error_message_m10("%s(): no valid limit pair", __FUNCTION__);
                 return(FALSE_m10);
         }
-
+	
         ri_fps = rd_fps = NULL;
         passed_channel = NULL;
 
@@ -9584,7 +9583,7 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
         // fill in slice session start & end times
 	slice->session_start_time = uh->session_start_time;
         slice->session_end_time = uh->file_end_time;
-        	
+
 	// open record data file
         sprintf(tmp_str, "%s/%s.%s", path, name, RECORD_DATA_FILE_TYPE_STRING_m10);
         if (file_exists_m10(tmp_str) == FILE_EXISTS_m10)
@@ -9608,13 +9607,12 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
         // find start segment
         slice->start_segment_number = 0;
         if (search_mode == TIME_SEARCH_m10) {
-                abs_start_time = slice->start_time;
                 for (; i < n_recs; ++i) {
                         if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
                                 Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-                                if (abs_start_time <= Sgmt->end_time) {
+                                if (slice->start_time <= Sgmt->end_time) {
                                         slice->start_segment_number = Sgmt->segment_number;
-                                        if (abs_start_time < ri[i].start_time)
+                                        if (slice->start_time < ri[i].start_time)
                                                 slice->start_time = ri[i].start_time;
                                         break;
                                 }
@@ -9644,11 +9642,10 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
         // find end segment
         slice->end_segment_number = 0;
         if (search_mode == TIME_SEARCH_m10) {
-                abs_end_time = slice->end_time;
                 for (; i < n_recs; ++i) {
                         if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
                                 Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-                                if (Sgmt->end_time >= abs_end_time) {
+                                if (Sgmt->end_time >= slice->end_time) {
                                         slice->end_segment_number = Sgmt->segment_number;
                                         break;
                                 }
@@ -9703,9 +9700,9 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
         // get start segment limits
         sprintf(tmp_str, "%s/%s_s%s.%s/%s_s%s.%s", path, name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m10, name, num_str, TIME_SERIES_INDICES_FILE_TYPE_STRING_m10);
         tsi_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
-        if (search_mode == TIME_SEARCH_m10)
+	if (search_mode == TIME_SEARCH_m10)
                 slice->start_index = sample_number_for_uutc_m10(start_seg_start_idx, UUTC_NO_ENTRY_m10, slice->start_time, sampling_frequency, tsi_fps, FIND_CURRENT_m10);
-        else  // search_mode == INDEX_SEARCH_m10
+	else  // search_mode == INDEX_SEARCH_m10
                 slice->start_time = uutc_for_sample_number_m10(start_seg_start_idx, UUTC_NO_ENTRY_m10, slice->start_index, sampling_frequency, tsi_fps, FIND_START_m10);
 
         // get end segment limits
@@ -12042,7 +12039,7 @@ si8     uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 targ
 {
         TERN_m10                absolute_numbering_flag = TRUE_m10;
         si8                     uutc, i, tmp_si8, n_inds;
-        sf8                     tmp_sf8, local_sf;
+        sf8                     tmp_sf8;
         TIME_SERIES_INDEX_m10   *tsi;
         
         // uutc_for_sample_number_m10(ref_sample_number, ref_uutc, target_sample_number, sampling_frequency, NULL, mode)
@@ -12068,7 +12065,6 @@ si8     uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 targ
                         ref_sample_number = 0;
         }
 
-        local_sf = sampling_frequency;
         if (time_series_indices_fps != NULL) {  // use time series indices to get ref_sample_number & ref_uutc instead if just extrapolating (accounts for discontinuities)
                 tsi = time_series_indices_fps->time_series_indices;
                 n_inds = time_series_indices_fps->universal_header->number_of_entries;
@@ -12084,26 +12080,28 @@ si8     uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 targ
                 
                 ref_sample_number = tsi[i - 1].start_sample_number;
                 ref_uutc = tsi[i - 1].start_time;
-                if (tsi[i].start_sample_number >= 0) {
-                        local_sf = (sf8) (tsi[i].start_sample_number - ref_sample_number);
-                        local_sf /= ((sf8) (tsi[i].start_time - ref_uutc) / (sf8) 1e6);
-                }
+
+		// acquisition sampling frequency can vary a little => this is slightly more accurate
+		if (tsi[i].file_offset > 0) {  // don't do if discontinuity
+			sampling_frequency = (sf8) (tsi[i].start_sample_number - ref_sample_number);
+			sampling_frequency /= ((sf8) (tsi[i].start_time - ref_uutc) / (sf8) 1e6);
+		}
         }
 
         tmp_sf8 = (sf8) (target_sample_number - ref_sample_number) * (sf8) 1e6;
         switch (mode) {
                 case FIND_END_m10:
-                        tmp_sf8 = (tmp_sf8 + (sf8) 1e6) / local_sf;
+                        tmp_sf8 = (tmp_sf8 + (sf8) 1e6) / sampling_frequency;
                         tmp_si8 = (si8) tmp_sf8;
                         if (tmp_sf8 == (sf8) tmp_si8)
                                 --tmp_si8;
                         break;
                 case FIND_CENTER_m10:
-                        tmp_si8 = (si8) (((tmp_sf8 + (sf8) 5e5) / local_sf) + (sf8) 0.5);
+                        tmp_si8 = (si8) (((tmp_sf8 + (sf8) 5e5) / sampling_frequency) + (sf8) 0.5);
                         break;
                 case FIND_START_m10:
                 default:
-                        tmp_sf8 = tmp_sf8 / local_sf;
+                        tmp_sf8 = tmp_sf8 / sampling_frequency;
                         tmp_si8 = (si8) tmp_sf8;
                         if (tmp_sf8 != (sf8) tmp_si8)
                                 ++tmp_si8;
