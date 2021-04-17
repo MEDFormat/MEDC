@@ -1016,7 +1016,7 @@ void    calculate_time_series_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, CMP
         for (i = 0; i < number_of_items; ++i) {
                 // block CRC
                 block_header->block_CRC = CRC_calculate_m10((ui1 *) block_header + CMP_BLOCK_CRC_START_OFFSET_m10, block_header->total_block_bytes - CMP_BLOCK_CRC_START_OFFSET_m10);
-                
+
                 // update universal_header->file_CRC
                 temp_CRC = CRC_calculate_m10((ui1 *) block_header, CMP_BLOCK_CRC_START_OFFSET_m10);
                 full_block_CRC = CRC_combine_m10(temp_CRC, block_header->block_CRC, block_header->total_block_bytes - CMP_BLOCK_CRC_START_OFFSET_m10);
@@ -5726,6 +5726,7 @@ void    escape_spaces_m10(si1 *string, si8 buffer_len)
 void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *extension)
 {
 	si1	*c, *cc, cwd[FULL_FILE_NAME_BYTES_m10], temp_full_file_name[FULL_FILE_NAME_BYTES_m10];
+	si4	len;
 	
         
 	// check that path starts from root
@@ -5766,10 +5767,13 @@ void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 	
 	// copy extension if allocated
 	if (extension != NULL) {
-                if (*c == '.')
-			strncpy_m10(extension, c + 1, TYPE_BYTES_m10);
-                else
+		if (*c == '.') {
+			len = strcpy_m10(extension, c + 1);
+			if (len != TYPE_BYTES_m10)
+				warning_message_m10("%s(): \"%s\" is not a MED extension", __FUNCTION__, extension);
+		} else {
 			*extension = 0;
+		}
 	}
 	if (*c == '.')
 		*c-- = 0;
@@ -6126,7 +6130,7 @@ si4	fps_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, con
                 // unlock
                 if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m10)
                         fps_unlock_m10(fps, function, line, behavior_on_fail);
-        }
+	}
         	
 	return(0);
 }
@@ -11159,7 +11163,7 @@ si4     strcpy_m10(si1 *target_string, si1 *source_string)
 
         source_start = source_string;
         while ((*target_string++ = *source_string++));
-        
+
         return((si4) (source_string - source_start));
 }
 
@@ -12300,7 +12304,7 @@ si8     write_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui8 number_of_items, voi
                                 encrypt_metadata_m10(fps);
                                 break;
                 }
-	
+		
                 // Calculate CRCs
                 if (globals_m10->CRC_mode & (CRC_CALCULATE_m10 | CRC_CALCULATE_ON_OUTPUT_m10)) {
                         switch (uh->type_code) {

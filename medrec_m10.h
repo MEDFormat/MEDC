@@ -46,7 +46,7 @@
 // Constants
 // LARGEST_RECORD_BYTES_m10 needs to be kept up to date, and can fail with arbitrary size records
 // If it exceeds METADATA_FILE_BYTES_m10 then check_all_alignments() should be updated.
-#define LARGEST_RECORD_BYTES_m10	(RECORD_HEADER_BYTES_m10 + REC_Seiz_v10_BYTES_m10 + REC_Seiz_v10_CHANNEL_BYTES_m10)  // Seiz Record type
+#define LARGEST_RECORD_BYTES_m10	METADATA_FILE_BYTES_m10  // 16 kB
 #define RECORD_BODY_ALIGNMENT_m10       16
 #define NO_RECORD_NUMBER_m10            -1
 
@@ -335,9 +335,10 @@ TERN_m10	check_rec_SyLg_type_alignment_m10(ui1 *bytes);
 // #define REC_NlxP_TYPE_CODE_m10            (ui4) 0x4E6C7850        // ui4 (big endian)
 
 // Trigger Modes
-#define REC_NlxP_v10_NO_TRIGGER_m10          ((ui1) 0)
-#define REC_NlxP_v10_ANY_BIT_CHANGE_m10      ((ui1) 1)
-#define REC_NlxP_v10_HIGH_BIT_SET_m10        ((ui1) 2)
+#define REC_NlxP_v10_NO_TRIGGER_m10		((ui1) 0)
+#define REC_NlxP_v10_ANY_BIT_CHANGE_m10		((ui1) 1)
+#define REC_NlxP_v10_HIGH_BIT_SET_m10		((ui1) 2)
+#define REC_NlxP_v10_UNKNOWN_TRIGGER_MODE_m10	((ui1) 0xFF)
 
 // Version 1.0
 #define REC_NlxP_v10_BYTES_m10                          16
