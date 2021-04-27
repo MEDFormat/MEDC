@@ -140,11 +140,9 @@ void	AES_add_round_key_m10(si4 round, ui1 state[][4], ui1 *round_key)
 	si4	i, j;
 	
 	
-	for (i = 0; i < 4; i++) {
-		for (j = 0;j < 4; j++) {
-			state[j][i] ^= round_key[round * AES_NB_m10 * 4 + i * AES_NB_m10 + j];
-		}
-	}
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < 4; j++)
+			state[j][i] ^= round_key[(round * AES_NB_m10 * 4) + (i * AES_NB_m10) + j];
 
 	return;
 }
@@ -174,8 +172,7 @@ void	AES_decrypt_m10(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 		// The next function call decrypts the CipherText with the Key using AES algorithm.
 		AES_inv_cipher_m10(in, out, state, round_key);
 	} else {
-		fprintf(stderr, "Error: No password or expanded key => exiting [function \"%s\", line %d]\n", __FUNCTION__, __LINE__);
-		exit(-1);
+		error_message_m10("%s(): No password or expanded key", __FUNCTION__);
 	}
 	
 	return;
@@ -206,8 +203,7 @@ void	AES_encrypt_m10(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 		// The next function call encrypts the PlainText with the Key using AES algorithm.
 		AES_cipher_m10(in, out, state, round_key);
 	} else {
-		fprintf(stderr, "Error: No password or expanded key => exiting [function \"%s\", line %d]\n", __FUNCTION__, __LINE__);
-		exit(-1);
+		error_message_m10("%s(): No password or expanded key", __FUNCTION__);
 	}
 	
 	return;
@@ -229,11 +225,11 @@ void	AES_key_expansion_m10(ui1 *expanded_key, si1 *key)
 		AES_initialize_rcon_table_m10();
 	
 	// The first round key is the key itself.
-	for (i = 0; i < AES_NK_m10; i++) {
-		expanded_key[i * 4] = key[i * 4];
-		expanded_key[i * 4 + 1] = key[i * 4 + 1];
-		expanded_key[i * 4 + 2] = key[i * 4 + 2];
-		expanded_key[i * 4 + 3] = key[i * 4 + 3];
+	for (i = j = 0; i < AES_NK_m10; i++, j += 4) {
+		expanded_key[j] = key[j];
+		expanded_key[j + 1] = key[j + 1];
+		expanded_key[j + 2] = key[j + 2];
+		expanded_key[j + 3] = key[j + 3];
 	}
 	
 	// All other round keys are found from the previous round keys.
@@ -4909,7 +4905,7 @@ TERN_m10     decrypt_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_
                 record_header = (RECORD_HEADER_m10 *) ((ui1 *) record_header + record_header->total_record_bytes);
         }
 	
-	if (failed_decryption_count == number_of_items)  // failure == all records unreadable
+	if (failed_decryption_count == number_of_items && number_of_items != 0)  // failure == all records unreadable
 		return(FALSE_m10);
 	
         return(TRUE_m10);
@@ -8552,11 +8548,11 @@ FILE_PROCESSING_STRUCT_m10      *read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, 
 			readable = decrypt_metadata_m10(fps);
                         break;
 		default:
-			readable = TRUE_m10;  // file types without encryption
+			readable = TRUE_m10;  // file types without (possible) encryption
 			break;
         }
 	if (readable == FALSE_m10) {
-		error_message_m10("%s(): Cannot read file \"%s\"", __FUNCTION__, fps->full_file_name);
+		warning_message_m10("%s(): Cannot read file \"%s\"", __FUNCTION__, fps->full_file_name);
 		if (allocated_flag == TRUE_m10)
 			free_file_processing_struct_m10(fps, FALSE_m10);
 		return(NULL);
@@ -8817,13 +8813,16 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	
 	// password
 	generate_MED_path_components_m10(sess_path, sess->path, sess->name);
+	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 	if (globals_m10->password_data.processed == 0)
 		if (set_time_and_password_data_m10(password, sess->path, NULL, NULL) == FALSE_m10)
 			return(NULL);
 
 	// process slice (for unoffset & relative times)
+	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 	if (slice->conditioned == FALSE_m10)
 		condition_time_slice_m10(slice);
+	printf("line %d\n", __LINE__);
 	
         // get segment range
         if (n_ts_chans) {
@@ -9951,9 +9950,12 @@ TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_dire
 	// read in metadata file (will process password, decrypt metadata and set global time constants)
 	globals_m10->password_data.processed = 0;  // not ternary FALSE_m10 (so when structure is zeroed and it is marked as not processed)
 	metadata_fps = read_file_m10(NULL, metadata_file, 1, NULL, &items_read, unspecified_password, RETURN_ON_FAIL_m10);
+	show_file_processing_struct_m10(metadata_fps);
+	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 	if (metadata_fps == NULL)
 		return(FALSE_m10);
 	globals_m10->session_start_time = metadata_fps->universal_header->session_start_time;
+	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 
 	// return metadata encryption level info
 	md1 = metadata_fps->metadata.section_1;

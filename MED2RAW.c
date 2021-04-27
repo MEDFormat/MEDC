@@ -6,7 +6,7 @@
 
 #include "medlib_m10.h"
 
-#define NLX_MAX_CHANNELS        512
+#define MAX_CHANNELS	512
 
 
 int main(int argc, char *argv[])
@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
         extern si4                              errno;
         TERN_m10                                read_time_series_data, read_record_data, show_records, show_file_processing_structs;
         si1                                     **channel_list, *sess_dir;
-        si1                                     out_dir[FULL_FILE_NAME_BYTES_m10], out_file[FULL_FILE_NAME_BYTES_m10], *password;
+        si1                                     *in_dir, out_dir[FULL_FILE_NAME_BYTES_m10], out_file[FULL_FILE_NAME_BYTES_m10], *password;
         ui4                                     type_code;
         si4                                     n_channels;
         si8                                     i, j, n_samps;
@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 
         // change resource limits (note: must change before calling any functions that use system resources)
         getrlimit(RLIMIT_NOFILE, &resource_limit);
-        resource_limit.rlim_cur = (rlim_t) MAX_OPEN_FILES_m10(NLX_MAX_CHANNELS, 1);
+        resource_limit.rlim_cur = (rlim_t) MAX_OPEN_FILES_m10(MAX_CHANNELS, 1);
         if (setrlimit(RLIMIT_NOFILE, &resource_limit))
                 error_message_m10("could not adjust process open file limit");
 
@@ -51,18 +51,21 @@ int main(int argc, char *argv[])
         initialize_time_slice_m10(&slice);
 
         // testing
-	show_records = FALSE_m10;  // TRUE_m10;
-	show_file_processing_structs = FALSE_m10;  // = TRUE_m10;
+	show_records = TRUE_m10;  // FALSE_m10;
+	show_file_processing_structs = FALSE_m10;  // TRUE_m10;
         
         // input file list
-        type_code = MED_type_code_from_string_m10(argv[1]);
+	in_dir = (si1 *) e_calloc_m10((size_t) FULL_FILE_NAME_BYTES_m10, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	strcpy(in_dir, argv[1]);
+	escape_spaces_m10(in_dir, FULL_FILE_NAME_BYTES_m10);
+        type_code = MED_type_code_from_string_m10(in_dir);
         if (type_code == SESSION_DIRECTORY_TYPE_CODE_m10) {
-                sess_dir = argv[1];
+                sess_dir = in_dir;
                 channel_list = NULL;
                 n_channels = 0;
         } else {
                 sess_dir = NULL;
-                channel_list = &argv[1];
+                channel_list = &in_dir;
                 n_channels = 1;
         }
         
@@ -131,7 +134,8 @@ int main(int argc, char *argv[])
 		slice.index_reference_channel_name = argv[8];
                 
         // read session
-        read_time_series_data = read_record_data = TRUE_m10;
+        read_time_series_data = TRUE_m10;
+	read_record_data = TRUE_m10;
 	sess = read_session_m10(sess_dir, channel_list, n_channels, &slice, password, read_time_series_data, read_record_data);
 	if (sess == NULL)
 		exit(-1);
@@ -184,6 +188,7 @@ int main(int argc, char *argv[])
 
         // clean up
         free_session_m10(sess);
+	e_free_m10((void *) in_dir, __FUNCTION__, __LINE__);
         
         return(0);
 }
