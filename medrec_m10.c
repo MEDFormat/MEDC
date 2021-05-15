@@ -108,7 +108,7 @@ void	show_record_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_
 		printf("Record Start Time: no entry\n");
 	else {
 		time_string_m10(record_header->start_time, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
-		printf("Record Start Time: %ld (oUTC), %ld (µUTC), %s\n", record_header->start_time, record_header->start_time + globals_m10->recording_time_offset, time_str);
+		printf("Record Start Time: %ld (oUTC), %s\n", record_header->start_time, time_str);
 	}
 	printf("----------------- Record Header - END -----------------\n");
 
@@ -243,7 +243,7 @@ void    show_rec_Sgmt_type_m10(RECORD_HEADER_m10 *record_header)
                 Sgmt = (REC_Sgmt_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
                 
                 time_string_m10(Sgmt->end_time, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
-		printf("End Time: %ld (oUTC), %ld (µUTC), %s\n", Sgmt->end_time, Sgmt->end_time + globals_m10->recording_time_offset, time_str);
+		printf("End Time: %ld (oUTC), %s\n", Sgmt->end_time, time_str);
                 if (Sgmt->absolute_start_sample_number == REC_Sgmt_v10_ABSOLUTE_START_SAMPLE_NUMBER_NO_ENTRY_m10)
                         printf("Absolute Start Sample Number: no entry\n");
                 else

@@ -1515,6 +1515,8 @@ TERN_m10	check_record_header_alignment_m10(ui1 *bytes)
 		goto RECORD_HEADER_NOT_ALIGNED_m10;
         if (&rh->type_code != (ui4 *) (bytes + RECORD_HEADER_TYPE_CODE_OFFSET_m10))
                 goto RECORD_HEADER_NOT_ALIGNED_m10;
+	if (&rh->type_string_terminal_zero != (si1 *) (bytes + RECORD_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m10))
+		goto RECORD_HEADER_NOT_ALIGNED_m10;
 	if (&rh->version_major != (ui1 *) (bytes + RECORD_HEADER_VERSION_MAJOR_OFFSET_m10))
 		goto RECORD_HEADER_NOT_ALIGNED_m10;
 	if (&rh->version_minor != (ui1 *) (bytes + RECORD_HEADER_VERSION_MINOR_OFFSET_m10))
@@ -1576,6 +1578,8 @@ TERN_m10	check_record_indices_alignment_m10(ui1 *bytes)
 		goto RECORD_INDICES_NOT_ALIGNED_m10;
         if (&ri->type_code != (ui4 *) (bytes + RECORD_INDEX_TYPE_CODE_OFFSET_m10))
                 goto RECORD_INDICES_NOT_ALIGNED_m10;
+	if (&ri->type_string_terminal_zero != (si1 *) (bytes + RECORD_INDEX_TYPE_STRING_TERMINAL_ZERO_OFFSET_m10))
+		goto RECORD_INDICES_NOT_ALIGNED_m10;
 	if (&ri->version_major != (ui1 *) (bytes + RECORD_INDEX_VERSION_MAJOR_OFFSET_m10))
 		goto RECORD_INDICES_NOT_ALIGNED_m10;
 	if (&ri->version_minor != (ui1 *) (bytes + RECORD_INDEX_VERSION_MINOR_OFFSET_m10))
@@ -1803,6 +1807,8 @@ TERN_m10	check_universal_header_alignment_m10(ui1 *bytes)
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m10;
         if (&uh->type_code != (ui4 *) (bytes + UNIVERSAL_HEADER_TYPE_CODE_OFFSET_m10))
                 goto UNIVERSAL_HEADER_NOT_ALIGNED_m10;
+	if (&uh->type_string_terminal_zero != (si1 *) (bytes + UNIVERSAL_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m10))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m10;
 	if (&uh->MED_version_major != (ui1 *) (bytes + UNIVERSAL_HEADER_MED_VERSION_MAJOR_OFFSET_m10))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m10;
 	if (&uh->MED_version_minor != (ui1 *) (bytes + UNIVERSAL_HEADER_MED_VERSION_MINOR_OFFSET_m10))

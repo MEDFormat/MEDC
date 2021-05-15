@@ -83,6 +83,8 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <stdatomic.h>
+
 
 
 //**********************************************************************************//
@@ -455,7 +457,7 @@ typedef struct {
 } CMP_STATISTICS_BIN_m10;
 
 typedef struct {
-        TERN_m10			mutex;
+        TERN_m10 _Atomic		mutex;
         ui4                             **count;  // used by RED/PRED encode & decode
         CMP_STATISTICS_BIN_m10          **sorted_count;  // used by RED/PRED encode & decode
         ui8                             **cumulative_count;  // used by RED/PRED encode & decode
@@ -563,8 +565,6 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define FILE_EXISTS_m10                         1
 #define DIR_EXISTS_m10                          2
 #define SIZE_STRING_BYTES_m10                   32
-#define MAC_ADDRESS_BYTES_m10                   6
-#define IPV4_ADDRESS_BYTES_m10                  4
 #define UNKNOWN_SEARCH_m10                      ((ui1) 0)
 #define TIME_SEARCH_m10                         ((ui1) 1)
 #define INDEX_SEARCH_m10                        ((ui1) 2)
@@ -774,6 +774,7 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define UNIVERSAL_HEADER_CHANNEL_LEVEL_CODE_m10				-2
 #define UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m10				-3
 #define UNIVERSAL_HEADER_TYPE_STRING_OFFSET_m10				32       // ascii[4]
+#define UNIVERSAL_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m10		(UNIVERSAL_HEADER_TYPE_STRING_OFFSET_m10 + 4)  // si1
 #define UNIVERSAL_HEADER_TYPE_CODE_OFFSET_m10				UNIVERSAL_HEADER_TYPE_STRING_OFFSET_m10  // ui4
 #define UNIVERSAL_HEADER_TYPE_NO_ENTRY_m10				0       // zero as ui4 or zero-length string as ascii[4]
 #define UNIVERSAL_HEADER_MED_VERSION_MAJOR_OFFSET_m10			37     // ui1
@@ -949,7 +950,8 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define RECORD_HEADER_START_TIME_OFFSET_m10                             8                       // si8
 #define RECORD_HEADER_START_TIME_NO_ENTRY_m10                           UUTC_NO_ENTRY_m10       // si8
 #define RECORD_HEADER_TYPE_STRING_OFFSET_m10                            16	                // ascii[4]
-#define RECORD_HEADER_TYPE_CODE_OFFSET_m10                              RECORD_HEADER_TYPE_STRING_OFFSET_m10    // ui4
+#define RECORD_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m10              (RECORD_HEADER_TYPE_STRING_OFFSET_m10 + 4)	// si1
+#define RECORD_HEADER_TYPE_CODE_OFFSET_m10                              RECORD_HEADER_TYPE_STRING_OFFSET_m10		// ui4
 #define RECORD_HEADER_TYPE_CODE_NO_ENTRY_m10		                0	                // ui4
 #define RECORD_HEADER_VERSION_MAJOR_OFFSET_m10	                        21	                // ui1
 #define RECORD_HEADER_VERSION_MAJOR_NO_ENTRY_m10	                0xFF
@@ -965,7 +967,8 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define RECORD_INDEX_START_TIME_OFFSET_m10                              8                       // si8
 #define RECORD_INDEX_START_TIME_NO_ENTRY_m10                            UUTC_NO_ENTRY_m10
 #define RECORD_INDEX_TYPE_STRING_OFFSET_m10                             16                      // ascii[4]
-#define RECORD_INDEX_TYPE_CODE_OFFSET_m10                               RECORD_INDEX_TYPE_STRING_OFFSET_m10     // as ui4
+#define RECORD_INDEX_TYPE_STRING_TERMINAL_ZERO_OFFSET_m10               (RECORD_INDEX_TYPE_STRING_OFFSET_m10 + 4)	// si1
+#define RECORD_INDEX_TYPE_CODE_OFFSET_m10                               RECORD_INDEX_TYPE_STRING_OFFSET_m10		// as ui4
 #define RECORD_INDEX_TYPE_CODE_NO_ENTRY_m10                             0                       // as ui4
 #define RECORD_INDEX_VERSION_MAJOR_OFFSET_m10	                        21                      // ui1
 #define RECORD_INDEX_VERSION_MAJOR_NO_ENTRY_m10	                        0xFF
@@ -1136,7 +1139,10 @@ typedef struct {
                         ui1     MED_version_minor;
                         ui1     byte_order_code;
                 };
-                ui4     type_code;
+		struct {
+			ui4     type_code;
+			si1	type_string_terminal_zero;
+		};
         };
 	si8	session_start_time;
 	si8	file_start_time;
@@ -1260,7 +1266,10 @@ typedef struct {
                         ui1     version_minor;
                         si1     encryption_level;
                 };
-                ui4     type_code;
+		struct {
+			ui4     type_code;
+			si1	type_string_terminal_zero;
+		};
         };
 } RECORD_HEADER_m10;
 
@@ -1274,7 +1283,10 @@ typedef struct {
                         ui1     version_minor;
                         si1     encryption_level;
                 };
-                ui4     type_code;
+		struct {
+			ui4     type_code;
+			si1	type_string_terminal_zero;
+		};
         };
 } RECORD_INDEX_m10;
 
@@ -1306,7 +1318,7 @@ typedef struct {
 } FILE_PROCESSING_DIRECTIVES_m10;
 
 typedef struct {
-        TERN_m10                        	mutex;
+        TERN_m10 _Atomic                        mutex;
 	PASSWORD_DATA_m10			*password_data;
 	si1                                     full_file_name[FULL_FILE_NAME_BYTES_m10];  // full path including extension
 	FILE                                    *fp;    // file pointer
