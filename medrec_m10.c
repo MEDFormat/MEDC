@@ -70,7 +70,7 @@ void	show_record_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_
         }
 	if (type_code) {
                 generate_hex_string_m10((ui1 *) record_header->type_string, CRC_BYTES_m10, hex_str);
-		printf("Record Type String: %s\n", record_header->type_string);
+		printf("Record Type String: %s (%s)\n", record_header->type_string, hex_str);
 	} else {
 		printf("Record Type String: no entry\n");
 	}
