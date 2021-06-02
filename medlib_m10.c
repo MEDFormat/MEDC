@@ -5136,7 +5136,7 @@ void	*e_calloc_m10(size_t n_members, size_t el_size, const si1 *function, si4 li
 			(void) fprintf(stderr, "%c\n\t%s() failed to allocate the requested array (%ld members of size %ld)\n", 7, __FUNCTION__, n_members, el_size);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5191,7 +5191,7 @@ FILE	*e_fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behav
 			(void) UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5221,7 +5221,7 @@ size_t	e_fread_m10(void *ptr, size_t size, size_t n_members, FILE *stream, si1 *
 			(void) UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, __FUNCTION__, path);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning number of items read\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5295,7 +5295,7 @@ si4	e_fseek_m10(FILE *stream, size_t offset, si4 whence, si1 *path, const si1 *f
 			(void) UTF8_fprintf_m10(stderr, "%\tin file \"%s\"\n", path);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5325,7 +5325,7 @@ long	e_ftell_m10(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fa
 			(void) fprintf(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5355,7 +5355,7 @@ size_t	e_fwrite_m10(void *ptr, size_t size, size_t n_members, FILE *stream, si1 
 			(void) UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to write file \"%s\"\n", 7, __FUNCTION__, path);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning number of items written\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5385,7 +5385,7 @@ void	*e_malloc_m10(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_o
 			(void) fprintf(stderr, "%c\n\t%s() failed to allocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5415,7 +5415,7 @@ void	*e_realloc_m10(void *orig_ptr, size_t n_bytes, const si1 *function, si4 lin
 			(void) fprintf(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning unreallocated pointer\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
@@ -5502,7 +5502,7 @@ si4     e_system_m10(si1 *command, TERN_m10 null_std_streams, const si1 *functio
 			(void) fprintf(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			(void) fprintf(stderr, "\tshell return value %d\n", ret_val);
 			if (function != NULL)
-				(void) fprintf(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+				(void) fprintf(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
 				(void) fprintf(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
