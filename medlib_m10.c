@@ -8819,16 +8819,14 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	
 	// password
 	generate_MED_path_components_m10(sess_path, sess->path, sess->name);
-	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 	if (globals_m10->password_data.processed == 0)
 		if (set_time_and_password_data_m10(password, sess->path, NULL, NULL) == FALSE_m10)
 			return(NULL);
 
 	// process slice (for unoffset & relative times)
-	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 	if (slice->conditioned == FALSE_m10)
 		condition_time_slice_m10(slice);
-	printf("line %d\n", __LINE__);
+
 	
         // get segment range
         if (n_ts_chans) {
