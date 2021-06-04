@@ -11238,6 +11238,18 @@ void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_byt
 }
 
 
+void	strtoupper_m10(si1 *s)
+{
+	--s;
+	while (*++s) {
+		if (*s > 96 && *s < 123)
+			*s -= 32;
+	}
+	
+	return;
+}
+
+
 si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m10
 {
         si1             *standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;

@@ -1549,6 +1549,7 @@ si4     strcat_m10(si1 *target_string, si1 *source_string);
 si4     strcpy_m10(si1 *target_string, si1 *source_string);
 void    strncat_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
 void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
+void	strtoupper_m10(si1 *s);
 
 
 //**********************************************************************************//
