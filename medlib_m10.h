@@ -1034,7 +1034,7 @@ typedef struct {
         si1        country_acronym_2_letter[3]; // two-letter acronym; (ISO 3166 ALPHA-2)
         si1        country_acronym_3_letter[4]; // three-letter acronym (ISO-3166 ALPHA-3)
         si1        territory[METADATA_RECORDING_LOCATION_BYTES_m10];
-        si1        territory_acronym[TIMEZONE_STRING_BYTES_m10];
+        si1        territory_acronym[TIMEZONE_ACRONYM_BYTES_m10];
         si1        standard_timezone[TIMEZONE_STRING_BYTES_m10];
         si1        standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
         si4        standard_UTC_offset; // seconds
@@ -1046,6 +1046,11 @@ typedef struct {
         si1        daylight_time_end_description[METADATA_RECORDING_LOCATION_BYTES_m10];
         si8        daylight_time_end_code;  // DAYLIGHT_TIME_CHANGE_CODE_m10 - cast to use other fields
 } TIMEZONE_INFO_m10;
+
+typedef struct {
+	si1	table_name[METADATA_RECORDING_LOCATION_BYTES_m10];
+	si1	alias[METADATA_RECORDING_LOCATION_BYTES_m10];
+} TIMEZONE_ALIAS_m10;
 
 typedef struct {
 	TERN_m10	conditioned;
@@ -1415,6 +1420,7 @@ void            calculate_time_series_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *
 void            calculate_time_series_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, TIME_SERIES_INDEX_m10 *time_series_index, si8 number_of_items);
 ui4             channel_type_from_path_m10(si1 *path);
 TERN_m10        check_password_m10(si1 *password);
+TERN_m10	check_timezone_aliases_m10(TIMEZONE_INFO_m10 *tz_info);
 void		condition_time_slice_m10(TIME_SLICE_m10 *slice);
 si8		current_uutc_m10(void);
 si4		days_in_month_m10(si4 month, si4 year);
@@ -2307,6 +2313,25 @@ void    SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 len);
         { "Zimbabwe", "ZW", "ZWE", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 } \
 }
 
+#define TZ_COUNTRY_ALIASES_ENTRIES_m10      11
+#define TZ_COUNTRY_ALIASES_TABLE_m10 { \
+	{ "China", "People's Republic of China"}, \
+	{ "Russia", "Russian Federation"}, \
+	{ "United Kingdom", "United Kingdom of Great Britain & Northern Ireland"}, \
+	{ "United Kingdom", "United Kingdom of Great Britain and Northern Ireland"}, \
+	{ "United Kingdom", "Britain"}, \
+	{ "United Kingdom", "England"}, \
+	{ "United Kingdom", "Great Britain"}, \
+	{ "United Kingdom", "Northern Ireland"}, \
+	{ "United Kingdom", "Scotland"}, \
+	{ "United Kingdom", "Wales"}, \
+	{ "United States", "United States of America"} \
+}
+
+#define TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10      1
+#define TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10 { \
+	{ "GB", "UK"} \
+}
 
 //**********************************************************************************//
 //****************  Library Includes (that depend on medlib_m10.h)   ***************//

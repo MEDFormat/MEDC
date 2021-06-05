@@ -1769,6 +1769,54 @@ TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m10:
 }
 
 
+TERN_m10	check_timezone_aliases_m10(TIMEZONE_INFO_m10 *tz_info)
+{
+	ui1	found_match;
+	si4	i;
+	
+	
+	found_match = FALSE_m10;
+	
+	// check country aliases
+	{
+		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ALIASES_TABLE_m10;
+		
+		if (*tz_info->country) {
+			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+				if ((strcmp(tz_info->country, tz_alias_table[i].alias)) == 0) {
+					strcpy(tz_info->country, tz_alias_table[i].table_name);
+					found_match = TRUE_m10;
+				}
+			}
+		}
+	}
+	
+	// check country acronyms
+	{
+		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10;
+		
+		if (*tz_info->country_acronym_2_letter) {
+			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+				if ((strcmp(tz_info->country_acronym_2_letter, tz_alias_table[i].alias)) == 0) {
+					strcpy(tz_info->country_acronym_2_letter, tz_alias_table[i].table_name);
+					found_match = TRUE_m10;
+				}
+			}
+		}
+		if (*tz_info->country_acronym_3_letter) {
+			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+				if ((strcmp(tz_info->country_acronym_3_letter, tz_alias_table[i].alias)) == 0) {
+					strcpy(tz_info->country_acronym_3_letter, tz_alias_table[i].table_name);
+					found_match = TRUE_m10;
+				}
+			}
+		}
+	}
+
+	return(found_match);
+}
+
+
 TERN_m10	check_universal_header_alignment_m10(ui1 *bytes)
 {
 	UNIVERSAL_HEADER_m10	*uh;
@@ -9733,26 +9781,46 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 
 void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time)
 {
+	si1			temp_str[METADATA_RECORDING_LOCATION_BYTES_m10];
         si4                     n_potential_timezones, potential_timezone_entries[TIMEZONE_TABLE_ENTRIES_m10];
         si4                     i, j, entry_num, response_num, items;
-        TIMEZONE_INFO_m10       *tz_table;
+        TIMEZONE_INFO_m10       *tz_table, temp_tz_info;
         
         
+	temp_tz_info = *timezone_info;
+	
+	// change all strings to caps
+	strtoupper_m10(temp_tz_info.country);
+	strtoupper_m10(temp_tz_info.country_acronym_2_letter);
+	strtoupper_m10(temp_tz_info.country_acronym_3_letter);
+	strtoupper_m10(temp_tz_info.territory);
+	strtoupper_m10(temp_tz_info.territory_acronym);
+	strtoupper_m10(temp_tz_info.standard_timezone);
+	strtoupper_m10(temp_tz_info.standard_timezone_acronym);
+	strtoupper_m10(temp_tz_info.daylight_timezone);
+	strtoupper_m10(temp_tz_info.daylight_timezone_acronym);
+
+	// start search
         n_potential_timezones = TIMEZONE_TABLE_ENTRIES_m10;
         tz_table = globals_m10->timezone_table;
         for (i = 0; i < n_potential_timezones; ++i)
                 potential_timezone_entries[i] = i;
-
+	
+SET_GTC_RETRY_m10:
+	
         // match country
         j = 0;
         if (*timezone_info->country) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->country, tz_table[potential_timezone_entries[i]].country)) == 0)
+		for (i = 0; i < n_potential_timezones; ++i) {
+			strcpy(temp_str, tz_table[potential_timezone_entries[i]].country);
+			strtoupper_m10(temp_str);
+                        if (strcmp(temp_tz_info.country, temp_str) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
+		}
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
@@ -9760,12 +9828,12 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         j = 0;
         if (*timezone_info->country_acronym_2_letter) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter)) == 0)
+                        if (strcmp(temp_tz_info.country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
@@ -9773,25 +9841,28 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         j = 0;
         if (*timezone_info->country_acronym_3_letter) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->country_acronym_3_letter, tz_table[potential_timezone_entries[i]].country_acronym_3_letter)) == 0)
+                        if (strcmp(temp_tz_info.country_acronym_3_letter, tz_table[potential_timezone_entries[i]].country_acronym_3_letter) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
         // match territory
         j = 0;
         if (*timezone_info->territory) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->territory, tz_table[potential_timezone_entries[i]].territory)) == 0)
-                                potential_timezone_entries[j++] = potential_timezone_entries[i];
+		for (i = 0; i < n_potential_timezones; ++i) {
+			strcpy(temp_str, tz_table[potential_timezone_entries[i]].territory);
+			strtoupper_m10(temp_str);
+			if (strcmp(temp_tz_info.territory, temp_str) == 0)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+		}
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
@@ -9799,12 +9870,12 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         j = 0;
         if (*timezone_info->territory_acronym) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->territory_acronym, tz_table[potential_timezone_entries[i]].territory_acronym)) == 0)
+                        if (strcmp(temp_tz_info.territory_acronym, tz_table[potential_timezone_entries[i]].territory_acronym) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
@@ -9812,25 +9883,25 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         j = 0;
         if (*timezone_info->standard_timezone) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->standard_timezone, tz_table[potential_timezone_entries[i]].standard_timezone)) == 0)
+                        if (strcmp(temp_tz_info.standard_timezone, tz_table[potential_timezone_entries[i]].standard_timezone) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
-        j = 0;
         // match standard_timezone_acronym
+	j = 0;
         if (*timezone_info->standard_timezone_acronym) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->standard_timezone_acronym, tz_table[potential_timezone_entries[i]].standard_timezone_acronym)) == 0)
+                        if (strcmp(temp_tz_info.standard_timezone_acronym, tz_table[potential_timezone_entries[i]].standard_timezone_acronym) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
@@ -9843,7 +9914,7 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
 
@@ -9851,15 +9922,33 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         j = 0;
         if (*timezone_info->daylight_timezone) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if ((strcmp(timezone_info->daylight_timezone, tz_table[potential_timezone_entries[i]].daylight_timezone)) == 0)
+                        if (strcmp(temp_tz_info.daylight_timezone, tz_table[potential_timezone_entries[i]].daylight_timezone) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
                 if (j == 1)
-                        goto TIME_ZONE_MATCH_m10;
+                        goto SET_GTC_TIMEZONE_MATCH_m10;
                 n_potential_timezones = j;
         }
+	
+	// match daylight_timezone_acronym
+	j = 0;
+	if (*timezone_info->daylight_timezone_acronym) {
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(temp_tz_info.daylight_timezone_acronym, tz_table[potential_timezone_entries[i]].daylight_timezone_acronym) == 0)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+	}
+	if (j) {
+		if (j == 1)
+			goto SET_GTC_TIMEZONE_MATCH_m10;
+		n_potential_timezones = j;
+	}
+	
+	// check aliases
+	if (check_timezone_aliases_m10(timezone_info) == TRUE_m10)
+		goto SET_GTC_RETRY_m10;
 
+	// still multiple: ask user
         fprintf(stderr, "Multiple potential timezone entries:\n\n");
         for (i = 0; i < n_potential_timezones; ++i) {
                 fprintf(stderr, "%d)\n", i + 1);
@@ -9875,7 +9964,7 @@ void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 sess
         --response_num;
         potential_timezone_entries[0] = potential_timezone_entries[response_num];
 
-TIME_ZONE_MATCH_m10:
+SET_GTC_TIMEZONE_MATCH_m10:
         
         entry_num = potential_timezone_entries[0];
         memcpy((void *) timezone_info, (void *) (tz_table + entry_num), sizeof(TIMEZONE_INFO_m10));
