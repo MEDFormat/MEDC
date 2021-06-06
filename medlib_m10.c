@@ -1769,54 +1769,6 @@ TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m10:
 }
 
 
-TERN_m10	check_timezone_aliases_m10(TIMEZONE_INFO_m10 *tz_info)
-{
-	ui1	found_match;
-	si4	i;
-	
-	
-	found_match = FALSE_m10;
-	
-	// check country aliases
-	{
-		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ALIASES_TABLE_m10;
-		
-		if (*tz_info->country) {
-			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
-				if ((strcmp(tz_info->country, tz_alias_table[i].alias)) == 0) {
-					strcpy(tz_info->country, tz_alias_table[i].table_name);
-					found_match = TRUE_m10;
-				}
-			}
-		}
-	}
-	
-	// check country acronyms
-	{
-		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10;
-		
-		if (*tz_info->country_acronym_2_letter) {
-			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
-				if ((strcmp(tz_info->country_acronym_2_letter, tz_alias_table[i].alias)) == 0) {
-					strcpy(tz_info->country_acronym_2_letter, tz_alias_table[i].table_name);
-					found_match = TRUE_m10;
-				}
-			}
-		}
-		if (*tz_info->country_acronym_3_letter) {
-			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
-				if ((strcmp(tz_info->country_acronym_3_letter, tz_alias_table[i].alias)) == 0) {
-					strcpy(tz_info->country_acronym_3_letter, tz_alias_table[i].table_name);
-					found_match = TRUE_m10;
-				}
-			}
-		}
-	}
-
-	return(found_match);
-}
-
-
 TERN_m10	check_universal_header_alignment_m10(ui1 *bytes)
 {
 	UNIVERSAL_HEADER_m10	*uh;
@@ -4551,6 +4503,61 @@ inline CMP_BLOCK_FIXED_HEADER_m10     *CMP_update_CPS_pointers_m10(CMP_PROCESSIN
 //***********************************************************************//
 //**************************  END CMP FUNCTIONS  ************************//
 //***********************************************************************//
+
+
+TERN_m10	condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info)
+{
+	ui1	found_alias;
+	si4	i;
+	
+	
+	// change potential matching strings to caps
+	strtoupper_m10(tz_info->country);
+	strtoupper_m10(tz_info->country_acronym_2_letter);
+	strtoupper_m10(tz_info->country_acronym_3_letter);
+	strtoupper_m10(tz_info->territory);
+	strtoupper_m10(tz_info->territory_acronym);
+
+	found_alias = FALSE_m10;
+	
+	// check country aliases
+	{
+		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ALIASES_TABLE_m10;
+		
+		if (*tz_info->country) {
+			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+				if ((strcmp(tz_info->country, tz_alias_table[i].alias)) == 0) {
+					strcpy(tz_info->country, tz_alias_table[i].table_name);
+					found_alias = TRUE_m10;
+				}
+			}
+		}
+	}
+	
+	// check country acronyms
+	{
+		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10;
+		
+		if (*tz_info->country_acronym_2_letter) {
+			for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10; ++i) {
+				if ((strcmp(tz_info->country_acronym_2_letter, tz_alias_table[i].alias)) == 0) {
+					strcpy(tz_info->country_acronym_2_letter, tz_alias_table[i].table_name);
+					found_alias = TRUE_m10;
+				}
+			}
+		}
+		if (*tz_info->country_acronym_3_letter) {
+			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+				if ((strcmp(tz_info->country_acronym_3_letter, tz_alias_table[i].alias)) == 0) {
+					strcpy(tz_info->country_acronym_3_letter, tz_alias_table[i].table_name);
+					found_alias = TRUE_m10;
+				}
+			}
+		}
+	}
+
+	return(found_alias);
+}
 
 
 void	condition_time_slice_m10(TIME_SLICE_m10 *slice)
@@ -7316,6 +7323,40 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 }
 
 
+TIMEZONE_INFO_m10	*get_timezone_info_m10(si1 *country, si1 *territory, TERN_m10 prompt, TERN_m10 *modified)
+{
+	si1			temp_str[METADATA_RECORDING_LOCATION_BYTES_m10];
+	si8			len;
+	TIMEZONE_INFO_m10	*timezone_info;
+	
+	
+	timezone_info = (TIMEZONE_INFO_m10 *) e_calloc_m10((size_t) 1, sizeof(TIMEZONE_INFO_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	
+	// Country
+	len = strcpy_m10(temp_str, country);
+	if (len == 3) // strcpy_m10 returns length including terminal zero
+		strcpy(timezone_info->country_acronym_2_letter, temp_str);
+	else if (len == 4)
+		strcpy(timezone_info->country_acronym_3_letter, temp_str);
+	else
+		strcpy(timezone_info->country, temp_str);
+	
+	// Territory
+	len = strcpy_m10(temp_str, territory);
+	if (len == 3)  // at this time there are only 2-letter territory acronyms
+		strcpy(timezone_info->territory_acronym, temp_str);
+	else
+		strcpy(timezone_info->territory, temp_str);
+	
+	// set timezone globals to customer locale
+	if (*timezone_info->country || *timezone_info->country_acronym_2_letter || *timezone_info->country_acronym_3_letter || *timezone_info->territory || *timezone_info->territory_acronym)
+		set_global_time_constants_m10(timezone_info, 0, prompt, modified);
+	
+	return(timezone_info);
+}
+
+
+
 FILE_PROCESSING_DIRECTIVES_m10  *initialize_file_processing_directives_m10(FILE_PROCESSING_DIRECTIVES_m10 *directives)
 {
         if (directives == NULL)
@@ -9779,42 +9820,31 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 }
 
 
-void    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time)
+TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt, TERN_m10 *modified)
 {
+	TERN_m10		temp_tern;
 	si1			temp_str[METADATA_RECORDING_LOCATION_BYTES_m10];
         si4                     n_potential_timezones, potential_timezone_entries[TIMEZONE_TABLE_ENTRIES_m10];
         si4                     i, j, entry_num, response_num, items;
-        TIMEZONE_INFO_m10       *tz_table, temp_tz_info;
+        TIMEZONE_INFO_m10       *tz_table;
         
         
-	temp_tz_info = *timezone_info;
-	
-	// change all strings to caps
-	strtoupper_m10(temp_tz_info.country);
-	strtoupper_m10(temp_tz_info.country_acronym_2_letter);
-	strtoupper_m10(temp_tz_info.country_acronym_3_letter);
-	strtoupper_m10(temp_tz_info.territory);
-	strtoupper_m10(temp_tz_info.territory_acronym);
-	strtoupper_m10(temp_tz_info.standard_timezone);
-	strtoupper_m10(temp_tz_info.standard_timezone_acronym);
-	strtoupper_m10(temp_tz_info.daylight_timezone);
-	strtoupper_m10(temp_tz_info.daylight_timezone_acronym);
+	// capitalize & check aliases
+	temp_tern = condition_timezone_info_m10(timezone_info);  // modified if alias found
+	if (modified != NULL)
+		*modified = temp_tern;
 
 	// start search
         n_potential_timezones = TIMEZONE_TABLE_ENTRIES_m10;
         tz_table = globals_m10->timezone_table;
         for (i = 0; i < n_potential_timezones; ++i)
                 potential_timezone_entries[i] = i;
-	
-SET_GTC_RETRY_m10:
-	
+		
         // match country
         j = 0;
         if (*timezone_info->country) {
 		for (i = 0; i < n_potential_timezones; ++i) {
-			strcpy(temp_str, tz_table[potential_timezone_entries[i]].country);
-			strtoupper_m10(temp_str);
-                        if (strcmp(temp_tz_info.country, temp_str) == 0)
+                        if (strcmp(timezone_info->country, tz_table[potential_timezone_entries[i]].country) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
 		}
         }
@@ -9828,7 +9858,7 @@ SET_GTC_RETRY_m10:
         j = 0;
         if (*timezone_info->country_acronym_2_letter) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(temp_tz_info.country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
+                        if (strcmp(timezone_info->country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
@@ -9841,7 +9871,7 @@ SET_GTC_RETRY_m10:
         j = 0;
         if (*timezone_info->country_acronym_3_letter) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(temp_tz_info.country_acronym_3_letter, tz_table[potential_timezone_entries[i]].country_acronym_3_letter) == 0)
+                        if (strcmp(timezone_info->country_acronym_3_letter, tz_table[potential_timezone_entries[i]].country_acronym_3_letter) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
@@ -9854,9 +9884,7 @@ SET_GTC_RETRY_m10:
         j = 0;
         if (*timezone_info->territory) {
 		for (i = 0; i < n_potential_timezones; ++i) {
-			strcpy(temp_str, tz_table[potential_timezone_entries[i]].territory);
-			strtoupper_m10(temp_str);
-			if (strcmp(temp_tz_info.territory, temp_str) == 0)
+			if (strcmp(timezone_info->territory, temp_str) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 		}
         }
@@ -9870,59 +9898,7 @@ SET_GTC_RETRY_m10:
         j = 0;
         if (*timezone_info->territory_acronym) {
                 for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(temp_tz_info.territory_acronym, tz_table[potential_timezone_entries[i]].territory_acronym) == 0)
-                                potential_timezone_entries[j++] = potential_timezone_entries[i];
-        }
-        if (j) {
-                if (j == 1)
-                        goto SET_GTC_TIMEZONE_MATCH_m10;
-                n_potential_timezones = j;
-        }
-
-        // match standard_timezone
-        j = 0;
-        if (*timezone_info->standard_timezone) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(temp_tz_info.standard_timezone, tz_table[potential_timezone_entries[i]].standard_timezone) == 0)
-                                potential_timezone_entries[j++] = potential_timezone_entries[i];
-        }
-        if (j) {
-                if (j == 1)
-                        goto SET_GTC_TIMEZONE_MATCH_m10;
-                n_potential_timezones = j;
-        }
-
-        // match standard_timezone_acronym
-	j = 0;
-        if (*timezone_info->standard_timezone_acronym) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(temp_tz_info.standard_timezone_acronym, tz_table[potential_timezone_entries[i]].standard_timezone_acronym) == 0)
-                                potential_timezone_entries[j++] = potential_timezone_entries[i];
-        }
-        if (j) {
-                if (j == 1)
-                        goto SET_GTC_TIMEZONE_MATCH_m10;
-                n_potential_timezones = j;
-        }
-
-        // match standard_UTC_offset
-        j = 0;
-        if (timezone_info->standard_UTC_offset != STANDARD_UTC_OFFSET_NO_ENTRY_m10) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if (timezone_info->standard_UTC_offset == tz_table[potential_timezone_entries[i]].standard_UTC_offset)
-                                potential_timezone_entries[j++] = potential_timezone_entries[i];
-        }
-        if (j) {
-                if (j == 1)
-                        goto SET_GTC_TIMEZONE_MATCH_m10;
-                n_potential_timezones = j;
-        }
-
-        // match daylight_timezone
-        j = 0;
-        if (*timezone_info->daylight_timezone) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(temp_tz_info.daylight_timezone, tz_table[potential_timezone_entries[i]].daylight_timezone) == 0)
+                        if (strcmp(timezone_info->territory_acronym, tz_table[potential_timezone_entries[i]].territory_acronym) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
@@ -9931,43 +9907,31 @@ SET_GTC_RETRY_m10:
                 n_potential_timezones = j;
         }
 	
-	// match daylight_timezone_acronym
-	j = 0;
-	if (*timezone_info->daylight_timezone_acronym) {
-		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(temp_tz_info.daylight_timezone_acronym, tz_table[potential_timezone_entries[i]].daylight_timezone_acronym) == 0)
-				potential_timezone_entries[j++] = potential_timezone_entries[i];
-	}
-	if (j) {
-		if (j == 1)
-			goto SET_GTC_TIMEZONE_MATCH_m10;
-		n_potential_timezones = j;
-	}
-	
-	// check aliases
-	if (check_timezone_aliases_m10(timezone_info) == TRUE_m10)
-		goto SET_GTC_RETRY_m10;
-
 	// still multiple: ask user
-        fprintf(stderr, "Multiple potential timezone entries:\n\n");
-        for (i = 0; i < n_potential_timezones; ++i) {
-                fprintf(stderr, "%d)\n", i + 1);
-                show_timezone_info_m10(&tz_table[potential_timezone_entries[i]]);
-                fprintf(stderr, "\n");
-        }
-        fprintf(stderr, "Select one (by number): ");
-        items = scanf("%d", &response_num);
-        if (items != 1 || response_num < 1 || response_num > n_potential_timezones) {
-                fprintf(stderr, "Invalid Choice => exiting\n");
-                exit(1);
-        }
-        --response_num;
-        potential_timezone_entries[0] = potential_timezone_entries[response_num];
+	if (prompt == TRUE_m10) {
+		fprintf(stderr, "Multiple potential timezone entries:\n\n");
+		for (i = 0; i < n_potential_timezones; ++i) {
+			fprintf(stderr, "%d)\n", i + 1);
+			show_timezone_info_m10(&tz_table[potential_timezone_entries[i]]);
+			fprintf(stderr, "\n");
+		}
+		fprintf(stderr, "Select one (by number): ");
+		items = scanf("%d", &response_num);
+		if (items != 1 || response_num < 1 || response_num > n_potential_timezones) {
+			fprintf(stderr, "Invalid Choice => exiting\n");
+			exit(1);
+		}
+        	potential_timezone_entries[0] = potential_timezone_entries[--response_num];
+	} else {
+		return(FALSE_m10);
+	}
 
 SET_GTC_TIMEZONE_MATCH_m10:
         
         entry_num = potential_timezone_entries[0];
         memcpy((void *) timezone_info, (void *) (tz_table + entry_num), sizeof(TIMEZONE_INFO_m10));
+	strtotitle_m10(timezone_info->country);  // beautify
+	strtotitle_m10(timezone_info->territory);  // beautify
         globals_m10->standard_UTC_offset = tz_table[entry_num].standard_UTC_offset;
         strncpy_m10(globals_m10->standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m10);
         strncpy_m10(globals_m10->standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m10);
@@ -9984,7 +9948,7 @@ SET_GTC_TIMEZONE_MATCH_m10:
 	if (session_start_time)  // pass CURRENT_TIME_m10 for session starting now; pass zero if just need to get timezone_info for a locale
 		generate_recording_time_offset_m10(session_start_time);
 	
-        return;
+        return(TRUE_m10);
 }
 
 
@@ -10044,11 +10008,9 @@ TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_dire
 	globals_m10->password_data.processed = 0;  // not ternary FALSE_m10 (so when structure is zeroed and it is marked as not processed)
 	metadata_fps = read_file_m10(NULL, metadata_file, 1, NULL, &items_read, unspecified_password, RETURN_ON_FAIL_m10);
 	show_file_processing_struct_m10(metadata_fps);
-	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 	if (metadata_fps == NULL)
 		return(FALSE_m10);
 	globals_m10->session_start_time = metadata_fps->universal_header->session_start_time;
-	printf("line %d: %ld\n", __LINE__, globals_m10->session_start_time);
 
 	// return metadata encryption level info
 	md1 = metadata_fps->metadata.section_1;
@@ -11322,6 +11284,101 @@ void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_byt
         *target_string = '\0';
         
         return;
+}
+
+
+void	strtolower_m10(si1 *s)
+{
+	--s;
+	while (*++s) {
+		if (*s > 40 && *s < 91)
+			*s += 32;
+	}
+	
+	return;
+}
+
+
+void	strtotitle_m10(si1 *s)
+{
+	TERN_m10	cap_mode;
+	
+
+	// make all lower case
+	strtolower_m10(s);
+	
+	// capitalize first letter regardless of word
+	if (*s > 96 && *s < 123)
+		*s -= 32;
+
+	cap_mode = FALSE_m10;
+	while (*++s) {
+		if (cap_mode == TRUE_m10) {
+			// not exhaustive, but covers most cases
+			if (strncmp(s, "a", 1) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "an", 2) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "and", 3) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "but", 3) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "by", 2) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "for", 3) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "from", 4) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "of", 2) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "the", 3) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "to", 2) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+			if (strncmp(s, "with", 4) == 0) {
+				cap_mode = FALSE_m10;
+				goto STRTOTITLE_LOWER_m10;
+			}
+				
+			if (*s > 96 && *s < 123)
+				*s -= 32;
+			cap_mode = FALSE_m10;
+			continue;
+		}
+
+		// space
+		if (*s == 32) {
+			cap_mode = TRUE_m10;
+			continue;
+		}
+
+STRTOTITLE_LOWER_m10:
+		
+		if (*s > 40 && *s < 91)
+			*s += 32;
+	}
+	
+	return;
 }
 
 

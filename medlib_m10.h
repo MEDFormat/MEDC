@@ -1034,7 +1034,7 @@ typedef struct {
         si1        country_acronym_2_letter[3]; // two-letter acronym; (ISO 3166 ALPHA-2)
         si1        country_acronym_3_letter[4]; // three-letter acronym (ISO-3166 ALPHA-3)
         si1        territory[METADATA_RECORDING_LOCATION_BYTES_m10];
-        si1        territory_acronym[TIMEZONE_ACRONYM_BYTES_m10];
+        si1        territory_acronym[TIMEZONE_STRING_BYTES_m10];
         si1        standard_timezone[TIMEZONE_STRING_BYTES_m10];
         si1        standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
         si4        standard_UTC_offset; // seconds
@@ -1420,7 +1420,7 @@ void            calculate_time_series_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *
 void            calculate_time_series_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, TIME_SERIES_INDEX_m10 *time_series_index, si8 number_of_items);
 ui4             channel_type_from_path_m10(si1 *path);
 TERN_m10        check_password_m10(si1 *password);
-TERN_m10	check_timezone_aliases_m10(TIMEZONE_INFO_m10 *tz_info);
+TERN_m10	condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info);
 void		condition_time_slice_m10(TIME_SLICE_m10 *slice);
 si8		current_uutc_m10(void);
 si4		days_in_month_m10(si4 month, si4 year);
@@ -1465,6 +1465,7 @@ ui1		get_cpu_endianness_m10(void);
 si4             get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10 *slice);
 void		get_segment_target_values_m10(SEGMENT_m10 *segment, si8 *target_uutc, si8 *target_sample_number, ui1 mode);
 TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, si8 *target_sample_number, si4 *target_segment_number, ui1 mode, si1 *idx_ref_chan);
+TIMEZONE_INFO_m10	*get_timezone_info_m10(si1 *country, si1 *territory, TERN_m10 prompt, TERN_m10 *modified);
 FILE_PROCESSING_DIRECTIVES_m10	*initialize_file_processing_directives_m10(FILE_PROCESSING_DIRECTIVES_m10 *directives);
 void            initialize_globals_m10(void);
 TERN_m10	initialize_medlib_m10(void);
@@ -1492,7 +1493,7 @@ void            reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 si8             sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_uutc, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);
 TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
 TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
-void            set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time);
+TERN_m10	set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt, TERN_m10 *modified);
 TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *section_2_encryption_level, si1 *section_3_encryption_level);
 void            show_daylight_time_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 *code, si1 *prefix);
 void            show_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps);
@@ -1555,6 +1556,8 @@ si4     strcat_m10(si1 *target_string, si1 *source_string);
 si4     strcpy_m10(si1 *target_string, si1 *source_string);
 void    strncat_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
 void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
+void	strtolower_m10(si1 *s);
+void	strtotitle_m10(si1 *s);
 void	strtoupper_m10(si1 *s);
 
 
@@ -1911,426 +1914,428 @@ void    SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 len);
 
 #define TIMEZONE_TABLE_ENTRIES_m10      400
 #define TIMEZONE_TABLE_m10 { \
-        { "Afghanistan", "AF", "AFG", "", "", "Afghanistan Time", "AFT", +16200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Akrotiri", "", "", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Aland Islands", "AX", "ALA", "", "", "Eastern European Time", "EET", +7200,1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001,"Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Albania", "AL", "ALB", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Algeria", "DZ", "DZA", "", "", "Central European Time", "CET", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "American Samoa", "US", "ASM", "", "", "Samoa Standard Time", "SST", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Andorra", "AD", "AND", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Angola", "AO", "AGO", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Anguilla", "AI", "AIA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Antigua", "AG", "ATG", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Argentina", "AR", "ARG", "", "", "Argentina Time", "ART", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Armenia", "AM", "ARM", "", "", "Armenia Time", "AMT", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Aruba", "AW", "ABW", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Ascension", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Australia", "AU", "AUS", "Western Australia", "WA", "Australian Western Standard Time", "AWST", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Australia", "AU", "AUS", "Western Australia", "WA", "Australian Central Western Standard Time", "ACWST", +31500, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Australia", "AU", "AUS", "South Australia", "SA", "Australian Central Standard Time", "ACST", +34200, 1, "Australian Central Daylight Time", "ACDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "Australia", "AU", "AUS", "Northern Territory", "NT", "Australian Central Standard Time", "ACST", +34200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Australia", "AU", "AUS", "Australian Capital Territory", "ACT", "Australian Eastern Standard Time", "AEST", +36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "Australia", "AU", "AUS", "Tasmania", "Tas", "Australian Eastern Standard Time", "AEST", +36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "Australia", "AU", "AUS", "Victoria", "Vic", "Australian Eastern Standard Time", "AEST", +36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "Australia", "AU", "AUS", "New South Wales", "NSW", "Australian Eastern Standard Time", "AEST", +36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "Australia", "AU", "AUS", "Queensland", "Qld", "Australian Eastern Standard Time", "AEST", +36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Australia", "AU", "AUS", "Lord Howe Island", "", "Lord Howe Standard Time", "LHST", +37800, 1, "Lord Howe Daylight Time (+30 min)", "LHDT", "First Sunday of October at 02:00 Local", 0x1e00020900010001, "First Sunday of April at 02:00 Local", 0xe2000203000100ff }, \
-        { "Austria", "AT", "AUT", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Azerbaijan", "AZ", "AZE", "", "", "Azerbaijan Time", "AZT", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bahamas", "BS", "BHS", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Bahrain", "BH", "BHR", "", "", "Arabian Standard Time", "AST", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bangladesh", "BD", "BGD", "", "", "Bangladesh Standard Time", "BST", +21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Barbados", "BB", "BRB", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Barbuda", "AG", "ATG", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Belarus", "BY", "BLR", "", "", "Moscow Standard Time", "MSK", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Belgium", "BE", "BEL", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Belize", "BZ", "BLZ", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Benin", "BJ", "BEN", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bermuda", "BM", "BMU", "", "", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Bhutan", "BT", "BTN", "", "", "Bhutan Time", "BTT", +21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bolivia", "BO", "BOL", "", "", "Bolivia Time", "BOT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bonaire", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bosnia", "BA", "BIH", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Botswana", "BW", "BWA", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bouvet Island", "BV", "BVT", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Brazil", "BR", "BRA", "", "", "Acre Time", "ACT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Brazil", "BR", "BRA", "", "", "Amazon Time", "AMT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Brazil", "BR", "BRA", "", "", "Brasilia Time", "BRT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Brazil", "BR", "BRA", "", "", "Fernando de Noronha Time", "FNT", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "British Virgin Islands", "VG", "VGB", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Brunei", "BN", "BRN", "", "", "Brunei Time", "BNT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Bulgaria", "BG", "BGR", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Burkina Faso", "BF", "BFA", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Burundi", "BI", "BDI", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Caicos", "TC", "TCA", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Cambodia", "KH", "KHM", "", "", "Indochina Time", "ICT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Cameroon", "CM", "CMR", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Canada", "CA", "CAN", "Newfoundland", "NL", "Newfoundland Standard Time", "NST", -12600, 1, "Newfoundland Daylight Time", "NDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Labrador", "NL", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "New Brunswick", "NB", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Nova Scotia", "NS", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Prince Edward Island", "PE", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Ontario", "ON", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Quebec", "QC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Manitoba", "MB", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Saskatchewan", "SK", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Nunavut", "NU", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Alberta", "AB", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Northwest Territories ", "NT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "British Columbia", "BC", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Canada", "CA", "CAN", "Yukon", "YT", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Cape Verde", "CV", "CPV", "", "", "Cape Verde Time", "CVT", -3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Cayman Islands", "KY", "CYM", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Central African Republic", "CF", "CAF", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Chad", "TD", "TCD", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Chile", "CL", "CHL", "", "", "Chile Standard Time", "CLT", -14400, 1, "Chile Summer Time", "CLST", "First Sunday of September at 00:00 Local", 0x3c00000800010001, "First Sunday of April at 00:00 Local", 0xc4000003000100ff }, \
-        { "Chile", "CL", "CHL", "Easter Island", "", "Easter Island Standard Time", "EAST", -21600, 1, "Easter Island Summer Time", "EASST", "First Sunday of September at 00:00 Local", 0x3c00000800010001, "First Sunday of April at 00:00 Local", 0xc4000003000100ff }, \
-        { "China", "CN", "CHN", "", "", "China Standard Time", "CST", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Christmas Island (AU)", "CX", "CXR", "", "", "Christmas Island Time", "CXT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Cocos Islands (AU)", "CC", "CCK", "", "", "Cocos Island Time", "CCT", +23400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Colombia", "CO", "COL", "", "", "Colombia Time", "COT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Comoros", "KM", "COM", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Cook Islands", "CK", "COK", "", "", "Cook Island time", "CKT", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Costa Rica", "CR", "CRI", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Croatia", "HR", "HRV", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Cuba", "CU", "CUB", "", "", "Cuba Standard Time", "CST", -18000, 1, "Cuba Daylight Time", "CDT", "Second Sunday of March at 00:00 Local", 0x3c00000200020001, "First Sunday of November at 01:00 Local", 0xc400010a000100ff }, \
-        { "Curacao", "CW", "CUW", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Cyprus", "CY", "CYP", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Czech Republic", "CZ", "CZE", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Democratic Republic of the Congo", "CD", "COD", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Democratic Republic of the Congo", "CD", "COD", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Denmark", "DK", "DNK", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Dhekelia", "", "", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Djibouti", "DJ", "DJI", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Dominica", "DM", "DMA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Dominican Republic", "DO", "DOM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "East Timor", "TL", "TLS", "", "", "East Timor Time", "TLT", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Ecuador", "EC", "ECU", "", "", "Ecuador Time", "ECT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Egypt", "EG", "EGY", "", "", "Eastern European Time", "EET", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "El Salvador", "SV", "SLV", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Equatorial Guinea", "GQ", "GNQ", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Eritrea", "ER", "ERI", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Estonia", "EE", "EST", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Eswatini", "SZ", "SWZ", "", "", "South Africa Standard Time", "SAST", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Ethiopia", "ET", "ETH", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Falkland Islands", "FK", "FLK", "", "", "Falkland Islands Summer Time", "FKST", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Faroe Islands", "FO", "FRO", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Fiji", "FJ", "FJI", "", "", "Fiji Time", "FJT", +43200, 1, "Fiji Daylight Time", "FJDT", "First Sunday of November at 02:00 Local", 0x3c00020a00010001, "Third Sunday of January at 03:00 Local", 0xc4000300000300ff }, \
-        { "Finland", "FI", "FIN", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "France", "FR", "FRA", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "French Guiana", "GF", "GUF", "", "", "French Guiana Time", "GFT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "French Polynesia", "PF", "PYF", "Tahiti", "", "Tahiti Time", "TAHT", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "French Polynesia", "PF", "PYF", "Marquesas", "", "Marquesas Time", "MART", -34200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "French Polynesia", "PF", "PYF", "Gambier", "", "Gambier Time", "GAMT", -32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "French Southern Territories", "TF", "ATF", "", "", "French Southern and Antarctic Time", "TFT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Futuna", "WF", "WLF", "", "", "Wallis and Futuna Time", "WFT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Gabon", "GA", "GAB", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Gambia", "GM", "GMB", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Georgia", "GE", "GEO", "", "", "Georgia Standard Time", "GET", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Georgia", "GE", "GEO", "", "", "Moscow Standard Time", "MSK", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Germany", "DE", "DEU", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Ghana", "GH", "GHA", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Gibraltar", "GI", "GIB", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Greece", "GR", "GRC", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Greenland", "GL", "GRL", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Greenland", "GL", "GRL", "", "", "Eastern Greenland Time", "EGT", -3600, 1, "Eastern Greenland Summer Time", "EGST", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
-        { "Greenland", "GL", "GRL", "", "", "Western Greenland Time", "WGT", -10800, 1, "Western Greenland Summer Time", "WGST", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
-        { "Greenland", "GL", "GRL", "", "", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
-        { "Grenada", "GD", "GRD", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Grenadines", "VC", "VCT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Guadeloupe", "GP", "GLP", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Guam", "GU", "GUM", "", "", "Chamorro Standard Time", "ChST", +36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Guatemala", "GT", "GTM", "", "", "French Guiana Time", "GFT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Guernsey", "GG", "GGY", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Guinea", "GN", "GIN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Guinea-Bissau", "GW", "GNB", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Guyana", "GY", "GUY", "", "", "Guyana Time", "GYT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Haiti", "HT", "HTI", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Heard Islands", "HM", "HMD", "", "", "French Southern and Antarctic Time", "TFT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Herzegovina", "BA", "BIH", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Holy See", "VA", "VAT", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Honduras", "HN", "HND", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Hong Kong", "HK", "HKG", "", "", "Hong Kong Time", "HKT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Hungary", "HU", "HUN", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Iceland", "IS", "ISL", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "India", "IN", "IND", "", "", "India Time Zone", "IST", +19800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Indonesia", "ID", "IDN", "", "", "Western Indonesian Time", "WIB", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Indonesia", "ID", "IDN", "", "", "Central Indonesian Time", "WITA", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Indonesia", "ID", "IDN", "", "", "Eastern Indonesian Time", "WIT", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Iran", "IR", "IRN", "", "", "Iran Standard Time", "IRST", +12600, 1, "Iran Daylight Time", "IRDT", "March 22 at 00:00 Local", 0x3c0000021600ff01, "September 22 at 00:00 Local", 0xc40000081600ffff }, \
-        { "Iraq", "IQ", "IRQ", "", "", "Arabia Standard Time", "AST", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Ireland", "IE", "IRL", "", "", "Greenwich Mean Time", "GMT", 0, 1, "Irish Standard Time", "IST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Isle of Man", "IM", "IMN", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Israel", "IL", "ISR", "", "", "Israel Standard Time", "IST", +7200, 1, "Israel Daylight Time", "IDT", "Friday before last Sunday of March at 02:00 Local", 0x3c00d20200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Italy", "IT", "ITA", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Ivory Coast", "CI", "CIV", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Jamaica", "JM", "JAM", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Jan Mayen", "SJ", "SJM", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Japan", "JP", "JPN", "", "", "Japan Standard Time", "JST", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Jersey", "JE", "JEY", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Jordan", "JO", "JOR", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Friday of March at 00:00 Local", 0x3c00000200060501, "Last Friday of October at 01:00 Local", 0xc4000109000605ff }, \
-        { "Kazakhstan", "KZ", "KAZ", "", "", "Oral Time", "ORAT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kazakhstan", "KZ", "KAZ", "", "", "Alma-Ata Time", "ALMT", +21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Keeling Islands", "CC", "CCK", "", "", "Cocos Islands Time", "CCT", +23400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kenya", "KE", "KEN", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kiribati", "KI", "KIR", "", "", "Gilbert Island Time", "GILT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kiribati", "KI", "KIR", "", "", "Phoenix Island Time", "PHOT", +46800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kiribati", "KI", "KIR", "", "", "Line Islands Time", "LINT", +50400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kosovo", "XK", "XKX", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Kuwait", "KW", "KWT", "", "", "Arabia Standard Time", "AST", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Kyrgyzstan", "KG", "KGZ", "", "", "Kyrgyzstan Time", "KGT", +21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Laos", "LA", "LAO", "", "", "Indochina Time", "ICT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Latvia", "LV", "LVA", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Lebanon", "LB", "LBN", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 00:00 Local", 0x3c00000200060001, "Last Sunday of October at 00:00 Local", 0xc4000009000600ff }, \
-        { "Lesotho", "LS", "LSO", "", "", "South Africa Standard Time", "SAST", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Liberia", "LR", "LBR", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Libya", "LY", "LBY", "", "", "Eastern European Time", "EET", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Liechtenstein", "LI", "LIE", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Lithuania", "LT", "LTU", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Luxembourg", "LU", "LUX", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Macau", "MO", "MAC", "", "", "China Standard Time", "CST", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Madagascar", "MG", "MDG", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Malawi", "MW", "MWI", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Malaysia", "MY", "MYS", "", "", "Malaysia Time", "MYT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Maldives", "MV", "MDV", "", "", "Maldives Time", "MVT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mali", "ML", "MLI", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Malta", "MT", "MLT", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Marshall Islands", "MH", "MHL", "", "", "Marshall Islands Time", "MHT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Martinique", "MQ", "MTQ", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mauritania", "MR", "MRT", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mauritius", "MU", "MUS", "", "", "Mauritius Time", "MUT", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mayotte", "YT", "MYT", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "McDonald Islands", "US", "USA", "", "", "Alaska Standard Time", "AKST", +32400, 1, "Alaska Daylight Time", "AKDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "McDonald Islands", "HM", "HMD", "", "", "French Southern and Antarctic Time", "TFT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mexico", "MX", "MEX", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mexico", "MX", "MEX", "", "", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Mexico", "MX", "MEX", "", "", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Mexico", "MX", "MEX", "", "", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Micronesia", "FM", "FSM", "", "", "Chuuk Time", "CHUT", +36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Micronesia", "FM", "FSM", "", "", "Pohnpei Standard Time", "PONT", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Micronesia", "FM", "FSM", "", "", "Kosrae Time", "KOST", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Midway", "UM", "UMI", "", "", "Samoa Standard Time", "SST", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Miquelon", "PM", "SPM", "", "", "Pierre & Miquelon Standard Time", "PMST", -10800, 1, "Pierre & Miquelon Daylight Time", "PMDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Moldova", "MD", "MDA", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Monaco", "MC", "MCO", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Mongolia", "MN", "MNG", "", "", "Hovd Time", "HOVT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mongolia", "MN", "MNG", "", "", "Ulaanbaatar Time", "ULAT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mongolia", "MN", "MNG", "", "", "Choibalsan Time", "CHOT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Montenegro", "ME", "MNE", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Montserrat", "MS", "MSR", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Morocco", "MA", "MAR", "", "", "Western European Time", "WET", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Mozambique", "MZ", "MOZ", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Myanmar", "MM", "MMR", "", "", "Myanmar Time", "MMT", +23400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Namibia", "NA", "NAM", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Nauru", "NR", "NRU", "", "", "Nauru Time", "NRT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Nepal", "NP", "NPL", "", "", "Nepal Time", "NPT", +20700, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Netherlands", "NL", "NLD", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Netherlands Antilles", "AN", "ANT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Nevis", "KN", "KNA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "New Caledonia", "NC", "NCL", "", "", "New Caledonia Time", "NCT", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "New Zealand", "NZ", "NZL", "", "", "New Zealand Standard Time", "NZST", +43200, 1, "New Zealand Daylight Time", "NZDT", "Last Sunday of September at 02:00 Local", 0x3c00020800060001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "New Zealand", "NZ", "NZL", "Chatham Island", "", "Chatham Island Standard Time", "CHAST", +45900, 1, "Chatham Island Daylight Time", "CHADT", "Last Sunday of September at 02:00 Local", 0x3c00020800060001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "Nicaragua", "NI", "NIC", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Niger", "NE", "NER", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Nigeria", "NG", "NGA", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Niue", "NU", "NIU", "", "", "Niue Time", "NUT", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Norfolk Island", "NF", "NFK", "", "", "Norfolk Time", "NFT", +39600, 1, "Norfolk Daylight Time", "NFDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-        { "North Korea", "KP", "PRK", "", "", "Korea Standard Time", "KST", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "North Macedonia", "MK", "MKD", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Northern Mariana Islands", "MP", "MNP", "", "", "Chamorro Standard Time", "ChST", +36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Norway", "NO", "NOR", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Oman", "OM", "OMN", "", "", "Gulf Standard Time", "GST", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Pakistan", "PK", "PAK", "", "", "Pakistan Standard Time", "PKT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Palau", "PW", "PLW", "", "", "Palau Time", "PWT", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Palestine", "PS", "PSE", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Friday before last Sunday of March at 02:00 Local", 0x3c00d20200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Panama", "PA", "PAN", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Papua New Guinea", "PG", "PNG", "", "", "Papua New Guinea Time", "PGT", +36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Papua New Guinea", "PG", "PNG", "Bougainville", "", "Bougainville Standard Time", "BST", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Paraguay", "PY", "PRY", "", "", "Paraguay Time", "PYT", -14400, 1, "Paraguay Summer Time", "PYST", "First Sunday of October at 00:00 Local", 0x3c00000900010001, "Fourth Sunday of March at 00:00 Local", 0xc4000002000400ff }, \
-        { "Peru", "PE", "PER", "", "", "Peru Time", "PET", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Philippines", "PH", "PHL", "", "", "Philippine Time", "PHT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Pitcairn Islands", "PN", "PCN", "", "", "Pitcairn Standard Time", "PST", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Poland", "PL", "POL", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Portugal", "PT", "PRT", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "Portugal", "PT", "PRT", "", "", "Azores Time", "AZOT", +3600, 1, "Azores Summer Time", "AZOST", "Last Sunday of March at 00:00 Local", 0x3c00000200060001, "Last Sunday of October at 01:00 Local", 0xc4000109000600ff }, \
-        { "Principe", "ST", "STP", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Puerto Rico", "PR", "PRI", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Qatar", "QA", "QAT", "", "", "Arabia Standard Time", "AST", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Republic of the Congo", "CG", "COG", "", "", "West Africa Time", "WAT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Reunion", "RE", "REU", "", "", "Reunion Time", "RET", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Romania", "RO", "ROU", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Russia", "RU", "RUS", "Kaliningrad", "", "Eastern European Time", "EET", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Moscow", "", "Moscow Standard Time", "MSK", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Samara", "", "Samara Time", "SAMT", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Yekaterinburg", "", "Yekaterinburg Time", "YEKT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Omsk", "", "Omsk Standard Time", "OMST", +21600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Krasnoyarsk", "", "Krasnoyarsk Time", "KRAT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Novosibirsk", "", "Novosibirsk Time", "NOVT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Irkutsk", "", "Irkutsk Time", "IRKT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Yakutsk", "", "Yakutsk Time", "YAKT", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Vladivostok", "", "Vladivostok Time", "VLAT", +36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Magadan", "", "Magadan Time", "MAGT", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Sakhalin", "", "Sakhalin Time", "SAKT", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Srednekolymsk", "", "Srednekolymsk Time", "SRED", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Anadyr", "", "Anadyr Time", "ANAT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Russia", "RU", "RUS", "Kamchatka", "", "Kamchatka Time", "PETT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Rwanda", "RW", "RWA", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saba", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saint Barthelemy", "BL", "BLM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saint Helena", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saint Kitts", "KN", "KNA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saint Lucia", "LC", "LCA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saint Martin", "MF", "MAF", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saint Pierre", "PM", "SPM", "", "", "Pierre & Miquelon Standard Time", "PMST", -10800, 1, "Pierre & Miquelon Daylight Time", "PMDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Saint Vincent", "VC", "VCT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Samoa", "WS", "WSM", "", "", "West Samoa Time", "WST", +46800, 1, "West Samoa Time", "WST", "Last Sunday of September at 03:00 Local", 0x3c00030800060001, "First Sunday of April at 04:00 Local", 0xc4000403000100ff }, \
-        { "San Marino", "SM", "SMR", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Sao Tome", "ST", "STP", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Saudi Arabia", "SA", "SAU", "", "", "Arabia Standard Time", "AST", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Senegal", "SN", "SEN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Serbia", "RS", "SRB", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Seychelles", "SC", "SYC", "", "", "Seychelles Time", "SCT", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Sierra Leone", "SL", "SLE", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Singapore", "SG", "SGP", "", "", "Singapore Time", "SGT", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Sint Eustatius", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Sint Maarten", "SX", "SXM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Slovakia", "SK", "SVK", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Slovenia", "SI", "SVN", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Solomon Islands", "SB", "SLB", "", "", "Solomon Islands Time", "SBT", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Somalia", "SO", "SOM", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "South Africa", "ZA", "ZAF", "", "", "South Africa Standard Time", "SAST", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "South Africa", "ZA", "ZAF", "Marion Island", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "South Georgia Island", "GS", "SGS", "", "", "South Georgia Time", "GST", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "South Korea", "KR", "KOR", "", "", "Korea Standard Time", "KST", +32400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "South Sandwich Islands", "GS", "SGS", "", "", "South Georgia Time", "GST", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "South Sudan", "SS", "SSD", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Spain", "ES", "ESP", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Spain", "ES", "ESP", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Sri Lanka", "LK", "LKA", "", "", "India Standard Time", "IST", +19800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Sudan", "SD", "SDN", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Suriname", "SR", "SUR", "", "", "Suriname Time", "SRT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Svalbard", "SJ", "SJM", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Swaziland", "SZ", "SWZ", "", "", "South Africa Standard Time", "SAST", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Sweden", "SE", "SWE", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Switzerland", "CH", "CHE", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Syria", "SY", "SYR", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Friday of March at 00:00 Local", 0x3c00000200060501, "Last Friday of October at 00:00 Local", 0xc4000009000605ff }, \
-        { "Taiwan", "TW", "TWN", "", "", "China Standard Time", "CST", +28800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tajikistan", "TJ", "TJK", "", "", "Tajikistan Time", "TJT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tanzania", "TZ", "TZA", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Thailand", "TH", "THA", "", "", "Indochina Time", "ICT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tobago", "TT", "TTO", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Togo", "TG", "TGO", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tokelau", "TK", "TKL", "", "", "Tokelau Time", "TKT", +46800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tonga", "TO", "TON", "", "", "Tonga Time", "TOT", +46800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Trinidad", "TT", "TTO", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tristan da Cunha", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Tunisia", "TN", "TUN", "", "", "Central European Time", "CET", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Turkey", "TR", "TUR", "", "", "Turkey Time", "TRT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Turkmenistan", "TM", "TKM", "", "", "Turkmenistan Time", "TMT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Turks", "TC", "TCA", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "Tuvalu", "TV", "TUV", "", "", "Tuvalu Time", "TVT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Uganda", "UG", "UGA", "", "", "Eastern Africa Time", "EAT", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Ukraine", "UA", "UKR", "", "", "Eastern European Time", "EET", +7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-        { "Ukraine", "UA", "UKR", "", "", "Moscow Standard Time", "MSK", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "United Arab Emirates", "AE", "ARE", "", "", "Gulf Standard Time", "GST", +14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "United Kingdom", "GB", "GBR", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-        { "United States", "US", "USA", "Alabama", "AL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Alaska", "AK", "Alaska Standard Time", "AKST", -32400, 1, "Alaska Daylight Time", "AKDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Alaska", "AK", "Hawaii-Aleutian Standard Time", "HST", -36000, 1, "Hawaii-Aleutian Daylight Time", "HDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Arizona", "AZ", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Arkansas", "AR", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "California", "CA", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Colorado", "CO", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Connecticut", "CT", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Delaware", "DE", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "District of Columbia", "DC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Florida", "FL", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Florida", "FL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Georgia", "GA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Hawaii", "HI", "Hawaii-Aleutian Standard Time", "HST", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "United States", "US", "USA", "Idaho", "ID", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Idaho", "ID", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Illinois", "IL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Indiana", "IN", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Indiana", "IN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Iowa", "IA", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Kansas", "KS", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Kansas", "KS", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Kentucky", "KY", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Kentucky", "KY", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Louisiana", "LA", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Maine", "ME", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Maryland", "MD", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Massachusetts", "MA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Michigan", "MI", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Michigan", "MI", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Minnesota", "MN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Mississippi", "MS", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Missouri", "MO", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Montana", "MT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Nebraska", "NE", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Nebraska", "NE", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Nevada", "NV", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Nevada", "NV", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "New Hampshire", "NH", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "New Jersey", "NJ", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "New Mexico", "NM", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "New York", "NY", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "North Carolina", "NC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "North Dakota", "ND", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "North Dakota", "ND", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Ohio", "OH", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Oklahoma", "OK", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Oregon", "OR", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Oregon", "OR", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Pennsylvania", "PA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Rhode Island", "RI", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "South Carolina", "SC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "South Dakota", "SD", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "South Dakota", "SD", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Tennessee", "TN", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Tennessee", "TN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Texas", "TX", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Texas", "TX", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Utah", "UT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Vermont", "VT", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Virginia", "VA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Washington", "WA", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "West Virginia", "WV", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Wisconsin", "WI", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States", "US", "USA", "Wyoming", "WY", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-        { "United States Virgin Islands", "VI", "VIR", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Uruguay", "UY", "URY", "", "", "Uruguay Time", "UYT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Uzbekistan", "UZ", "UZB", "", "", "Uzbekistan Time", "UZT", +18000, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Vanuatu", "VU", "VUT", "", "", "Vanuatu Time", "VUT", +39600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Vatican City", "VA", "VAT", "", "", "Central European Time", "CET", +3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-        { "Venezuela", "VE", "VEN", "", "", "Venezuelan Standard Time", "VET", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Vietnam", "VN", "VNM", "", "", "Indochina Time", "ICT", +25200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Wallis", "WF", "WLF", "", "", "Wallis and Futuna Time", "WFT", +43200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Western Sahara", "EH", "ESH", "", "", "Western European Daylight Time", "WEDT", +3600, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Yemen", "YE", "YEM", "", "", "Arabia Standard Time", "AST", +10800, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Zambia", "ZM", "ZMB", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 }, \
-        { "Zimbabwe", "ZW", "ZWE", "", "", "Central Africa Time", "CAT", +7200, 0, "", "", "", 0x0, "", 0x0 } \
+	{ "AFGHANISTAN", "AF", "AFG", "", "", "Afghanistan Time", "AFT", 16200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AKROTIRI", "", "", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "ALAND ISLANDS", "AX", "ALA", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "ALBANIA", "AL", "ALB", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "ALGERIA", "DZ", "DZA", "", "", "Central European Time", "CET", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AMERICAN SAMOA", "US", "ASM", "", "", "Samoa Standard Time", "SST", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ANDORRA", "AD", "AND", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "ANGOLA", "AO", "AGO", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ANGUILLA", "AI", "AIA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ANTIGUA", "AG", "ATG", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ARGENTINA", "AR", "ARG", "", "", "Argentina Time", "ART", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ARMENIA", "AM", "ARM", "", "", "Armenia Time", "AMT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ARUBA", "AW", "ABW", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ASCENSION", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "WESTERN AUSTRALIA", "WA", "Australian Western Standard Time", "AWST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "WESTERN AUSTRALIA", "WA", "Australian Central Western Standard Time", "ACWST", 31500, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "SOUTH AUSTRALIA", "SA", "Australian Central Standard Time", "ACST", 34200, 1, "Australian Central Daylight Time", "ACDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "AUSTRALIA", "AU", "AUS", "NORTHERN TERRITORY", "NT", "Australian Central Standard Time", "ACST", 34200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "AUSTRALIAN CAPITAL TERRITORY", "ACT", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "AUSTRALIA", "AU", "AUS", "TASMANIA", "Tas", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "AUSTRALIA", "AU", "AUS", "VICTORIA", "Vic", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "AUSTRALIA", "AU", "AUS", "NEW SOUTH WALES", "NSW", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "AUSTRALIA", "AU", "AUS", "QUEENSLAND", "Qld", "Australian Eastern Standard Time", "AEST", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "LORD HOWE ISLAND", "", "Lord Howe Standard Time", "LHST", 37800, 1, "Lord Howe Daylight Time (+30 min)", "LHDT", "First Sunday of October at 02:00 Local", 0x1e00020900010001, "First Sunday of April at 02:00 Local", 0xe2000203000100ff }, \
+	{ "AUSTRIA", "AT", "AUT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "AZERBAIJAN", "AZ", "AZE", "", "", "Azerbaijan Time", "AZT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BAHAMAS", "BS", "BHS", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "BAHRAIN", "BH", "BHR", "", "", "Arabian Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BANGLADESH", "BD", "BGD", "", "", "Bangladesh Standard Time", "BST", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BARBADOS", "BB", "BRB", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BARBUDA", "AG", "ATG", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BELARUS", "BY", "BLR", "", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BELGIUM", "BE", "BEL", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "BELIZE", "BZ", "BLZ", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BENIN", "BJ", "BEN", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BERMUDA", "BM", "BMU", "", "", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "BHUTAN", "BT", "BTN", "", "", "Bhutan Time", "BTT", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BOLIVIA", "BO", "BOL", "", "", "Bolivia Time", "BOT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BONAIRE", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BOSNIA", "BA", "BIH", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "BOTSWANA", "BW", "BWA", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BOUVET ISLAND", "BV", "BVT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "Acre Time", "ACT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "Amazon Time", "AMT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "Brasilia Time", "BRT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "Fernando de Noronha Time", "FNT", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BRITISH VIRGIN ISLANDS", "VG", "VGB", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BRUNEI", "BN", "BRN", "", "", "Brunei Time", "BNT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BULGARIA", "BG", "BGR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "BURKINA FASO", "BF", "BFA", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "BURUNDI", "BI", "BDI", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CAMBODIA", "KH", "KHM", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CAMEROON", "CM", "CMR", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CANADA", "CA", "CAN", "NEWFOUNDLAND", "NL", "Newfoundland Standard Time", "NST", -12600, 1, "Newfoundland Daylight Time", "NDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "LABRADOR", "NL", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "NEW BRUNSWICK", "NB", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "NOVA SCOTIA", "NS", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "PRINCE EDWARD ISLAND", "PE", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "ONTARIO", "ON", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "QUEBEC", "QC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "MANITOBA", "MB", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "SASKATCHEWAN", "SK", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "NUNAVUT", "NU", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "ALBERTA", "AB", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "NORTHWEST TERRITORIES ", "NT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "BRITISH COLUMBIA", "BC", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CANADA", "CA", "CAN", "YUKON", "YT", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "CAPE VERDE", "CV", "CPV", "", "", "Cape Verde Time", "CVT", -3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CAYMAN ISLANDS", "KY", "CYM", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CENTRAL AFRICAN REPUBLIC", "CF", "CAF", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CHAD", "TD", "TCD", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CHILE", "CL", "CHL", "", "", "Chile Standard Time", "CLT", -14400, 1, "Chile Summer Time", "CLST", "First Sunday of September at 00:00 Local", 0x3c00000800010001, "First Sunday of April at 00:00 Local", 0xc4000003000100ff }, \
+	{ "CHILE", "CL", "CHL", "EASTER ISLAND", "", "Easter Island Standard Time", "EAST", -21600, 1, "Easter Island Summer Time", "EASST", "First Sunday of September at 00:00 Local", 0x3c00000800010001, "First Sunday of April at 00:00 Local", 0xc4000003000100ff }, \
+	{ "CHINA", "CN", "CHN", "", "", "China Standard Time", "CST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CHRISTMAS ISLAND (AU)", "CX", "CXR", "", "", "Christmas Island Time", "CXT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "COCOS ISLANDS (AU)", "CC", "CCK", "", "", "Cocos Island Time", "CCT", 23400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "COLOMBIA", "CO", "COL", "", "", "Colombia Time", "COT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "COMOROS", "KM", "COM", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "COOK ISLANDS", "CK", "COK", "", "", "Cook Island time", "CKT", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "COSTA RICA", "CR", "CRI", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CROATIA", "HR", "HRV", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "CUBA", "CU", "CUB", "", "", "Cuba Standard Time", "CST", -18000, 1, "Cuba Daylight Time", "CDT", "Second Sunday of March at 00:00 Local", 0x3c00000200020001, "First Sunday of November at 01:00 Local", 0xc400010a000100ff }, \
+	{ "CURACAO", "CW", "CUW", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "CYPRUS", "CY", "CYP", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "CZECH REPUBLIC", "CZ", "CZE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "DEMOCRATIC REPUBLIC OF THE CONGO", "CD", "COD", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "DEMOCRATIC REPUBLIC OF THE CONGO", "CD", "COD", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "DENMARK", "DK", "DNK", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "DHEKELIA", "", "", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "DJIBOUTI", "DJ", "DJI", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "DOMINICA", "DM", "DMA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "DOMINICAN REPUBLIC", "DO", "DOM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "EAST TIMOR", "TL", "TLS", "", "", "East Timor Time", "TLT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ECUADOR", "EC", "ECU", "", "", "Ecuador Time", "ECT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "EGYPT", "EG", "EGY", "", "", "Eastern European Time", "EET", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "EL SALVADOR", "SV", "SLV", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "EQUATORIAL GUINEA", "GQ", "GNQ", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ERITREA", "ER", "ERI", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ESTONIA", "EE", "EST", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "ESWATINI", "SZ", "SWZ", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ETHIOPIA", "ET", "ETH", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FALKLAND ISLANDS", "FK", "FLK", "", "", "Falkland Islands Summer Time", "FKST", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FAROE ISLANDS", "FO", "FRO", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "FIJI", "FJ", "FJI", "", "", "Fiji Time", "FJT", 43200, 1, "Fiji Daylight Time", "FJDT", "First Sunday of November at 02:00 Local", 0x3c00020a00010001, "Third Sunday of January at 03:00 Local", 0xc4000300000300ff }, \
+	{ "FINLAND", "FI", "FIN", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "FRANCE", "FR", "FRA", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "FRENCH GUIANA", "GF", "GUF", "", "", "French Guiana Time", "GFT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FRENCH POLYNESIA", "PF", "PYF", "TAHITI", "", "Tahiti Time", "TAHT", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FRENCH POLYNESIA", "PF", "PYF", "MARQUESAS", "", "Marquesas Time", "MART", -34200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FRENCH POLYNESIA", "PF", "PYF", "GAMBIER", "", "Gambier Time", "GAMT", -32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FRENCH SOUTHERN TERRITORIES", "TF", "ATF", "", "", "French Southern and Antarctic Time", "TFT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "FUTUNA", "WF", "WLF", "", "", "Wallis and Futuna Time", "WFT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GABON", "GA", "GAB", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GAMBIA", "GM", "GMB", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GEORGIA", "GE", "GEO", "", "", "Georgia Standard Time", "GET", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GEORGIA", "GE", "GEO", "", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GERMANY", "DE", "DEU", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "GHANA", "GH", "GHA", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GIBRALTAR", "GI", "GIB", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "GREECE", "GR", "GRC", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "Eastern Greenland Time", "EGT", -3600, 1, "Eastern Greenland Summer Time", "EGST", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "Western Greenland Time", "WGT", -10800, 1, "Western Greenland Summer Time", "WGST", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
+	{ "GRENADA", "GD", "GRD", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GRENADINES", "VC", "VCT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GUADELOUPE", "GP", "GLP", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GUAM", "GU", "GUM", "", "", "Chamorro Standard Time", "ChST", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GUATEMALA", "GT", "GTM", "", "", "French Guiana Time", "GFT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GUERNSEY", "GG", "GGY", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "GUINEA", "GN", "GIN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GUINEA-BISSAU", "GW", "GNB", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "GUYANA", "GY", "GUY", "", "", "Guyana Time", "GYT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "HAITI", "HT", "HTI", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "HEARD ISLANDS", "HM", "HMD", "", "", "French Southern and Antarctic Time", "TFT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "HERZEGOVINA", "BA", "BIH", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "HOLY SEE", "VA", "VAT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "HONDURAS", "HN", "HND", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "HONG KONG", "HK", "HKG", "", "", "Hong Kong Time", "HKT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "HUNGARY", "HU", "HUN", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "ICELAND", "IS", "ISL", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "INDIA", "IN", "IND", "", "", "India Time Zone", "IST", 19800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "INDONESIA", "ID", "IDN", "", "", "Western Indonesian Time", "WIB", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "INDONESIA", "ID", "IDN", "", "", "Central Indonesian Time", "WITA", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "INDONESIA", "ID", "IDN", "", "", "Eastern Indonesian Time", "WIT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "IRAN", "IR", "IRN", "", "", "Iran Standard Time", "IRST", 12600, 1, "Iran Daylight Time", "IRDT", "March 22 at 00:00 Local", 0x3c0000021600ff01, "September 22 at 00:00 Local", 0xc40000081600ffff }, \
+	{ "IRAQ", "IQ", "IRQ", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "IRELAND", "IE", "IRL", "", "", "Greenwich Mean Time", "GMT", 0, 1, "Irish Standard Time", "IST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "ISLE OF MAN", "IM", "IMN", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "ISRAEL", "IL", "ISR", "", "", "Israel Standard Time", "IST", 7200, 1, "Israel Daylight Time", "IDT", "Friday before last Sunday of March at 02:00 Local", 0x3c00d20200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "ITALY", "IT", "ITA", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "IVORY COAST", "CI", "CIV", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "JAMAICA", "JM", "JAM", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "JAN MAYEN", "SJ", "SJM", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "JAPAN", "JP", "JPN", "", "", "Japan Standard Time", "JST", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "JERSEY", "JE", "JEY", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "JORDAN", "JO", "JOR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Friday of March at 00:00 Local", 0x3c00000200060501, "Last Friday of October at 01:00 Local", 0xc4000109000605ff }, \
+	{ "KAZAKHSTAN", "KZ", "KAZ", "", "", "Oral Time", "ORAT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KAZAKHSTAN", "KZ", "KAZ", "", "", "Alma-Ata Time", "ALMT", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KEELING ISLANDS", "CC", "CCK", "", "", "Cocos Islands Time", "CCT", 23400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KENYA", "KE", "KEN", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KIRIBATI", "KI", "KIR", "", "", "Gilbert Island Time", "GILT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KIRIBATI", "KI", "KIR", "", "", "Phoenix Island Time", "PHOT", 46800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KIRIBATI", "KI", "KIR", "", "", "Line Islands Time", "LINT", 50400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KOSOVO", "XK", "XKX", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "KUWAIT", "KW", "KWT", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "KYRGYZSTAN", "KG", "KGZ", "", "", "Kyrgyzstan Time", "KGT", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "LAOS", "LA", "LAO", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "LATVIA", "LV", "LVA", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "LEBANON", "LB", "LBN", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 00:00 Local", 0x3c00000200060001, "Last Sunday of October at 00:00 Local", 0xc4000009000600ff }, \
+	{ "LESOTHO", "LS", "LSO", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "LIBERIA", "LR", "LBR", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "LIBYA", "LY", "LBY", "", "", "Eastern European Time", "EET", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "LIECHTENSTEIN", "LI", "LIE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "LITHUANIA", "LT", "LTU", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "LUXEMBOURG", "LU", "LUX", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "MACAU", "MO", "MAC", "", "", "China Standard Time", "CST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MADAGASCAR", "MG", "MDG", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MALAWI", "MW", "MWI", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MALAYSIA", "MY", "MYS", "", "", "Malaysia Time", "MYT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MALDIVES", "MV", "MDV", "", "", "Maldives Time", "MVT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MALI", "ML", "MLI", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MALTA", "MT", "MLT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "MARSHALL ISLANDS", "MH", "MHL", "", "", "Marshall Islands Time", "MHT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MARTINIQUE", "MQ", "MTQ", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MAURITANIA", "MR", "MRT", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MAURITIUS", "MU", "MUS", "", "", "Mauritius Time", "MUT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MAYOTTE", "YT", "MYT", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MCDONALD ISLANDS", "US", "USA", "", "", "Alaska Standard Time", "AKST", 32400, 1, "Alaska Daylight Time", "AKDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "MCDONALD ISLANDS", "HM", "HMD", "", "", "French Southern and Antarctic Time", "TFT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MEXICO", "MX", "MEX", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MEXICO", "MX", "MEX", "", "", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "MEXICO", "MX", "MEX", "", "", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "MEXICO", "MX", "MEX", "", "", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "MICRONESIA", "FM", "FSM", "", "", "Chuuk Time", "CHUT", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MICRONESIA", "FM", "FSM", "", "", "Pohnpei Standard Time", "PONT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MICRONESIA", "FM", "FSM", "", "", "Kosrae Time", "KOST", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MIDWAY", "UM", "UMI", "", "", "Samoa Standard Time", "SST", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MIQUELON", "PM", "SPM", "", "", "Pierre & Miquelon Standard Time", "PMST", -10800, 1, "Pierre & Miquelon Daylight Time", "PMDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "MOLDOVA", "MD", "MDA", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "MONACO", "MC", "MCO", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "MONGOLIA", "MN", "MNG", "", "", "Hovd Time", "HOVT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MONGOLIA", "MN", "MNG", "", "", "Ulaanbaatar Time", "ULAT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MONGOLIA", "MN", "MNG", "", "", "Choibalsan Time", "CHOT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MONTENEGRO", "ME", "MNE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "MONTSERRAT", "MS", "MSR", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MOROCCO", "MA", "MAR", "", "", "Western European Time", "WET", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MOZAMBIQUE", "MZ", "MOZ", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "MYANMAR", "MM", "MMR", "", "", "Myanmar Time", "MMT", 23400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NAMIBIA", "NA", "NAM", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NAURU", "NR", "NRU", "", "", "Nauru Time", "NRT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NEPAL", "NP", "NPL", "", "", "Nepal Time", "NPT", 20700, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NETHERLANDS", "NL", "NLD", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "NETHERLANDS ANTILLES", "AN", "ANT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NEVIS", "KN", "KNA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NEW CALEDONIA", "NC", "NCL", "", "", "New Caledonia Time", "NCT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NEW ZEALAND", "NZ", "NZL", "", "", "New Zealand Standard Time", "NZST", 43200, 1, "New Zealand Daylight Time", "NZDT", "Last Sunday of September at 02:00 Local", 0x3c00020800060001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "NEW ZEALAND", "NZ", "NZL", "CHATHAM ISLAND", "", "Chatham Island Standard Time", "CHAST", 45900, 1, "Chatham Island Daylight Time", "CHADT", "Last Sunday of September at 02:00 Local", 0x3c00020800060001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "NICARAGUA", "NI", "NIC", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NIGER", "NE", "NER", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NIGERIA", "NG", "NGA", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NIUE", "NU", "NIU", "", "", "Niue Time", "NUT", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NORFOLK ISLAND", "NF", "NFK", "", "", "Norfolk Time", "NFT", 39600, 1, "Norfolk Daylight Time", "NFDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
+	{ "NORTH KOREA", "KP", "PRK", "", "", "Korea Standard Time", "KST", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NORTH MACEDONIA", "MK", "MKD", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "NORTHERN MARIANA ISLANDS", "MP", "MNP", "", "", "Chamorro Standard Time", "ChST", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "NORWAY", "NO", "NOR", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "OMAN", "OM", "OMN", "", "", "Gulf Standard Time", "GST", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PAKISTAN", "PK", "PAK", "", "", "Pakistan Standard Time", "PKT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PALAU", "PW", "PLW", "", "", "Palau Time", "PWT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PALESTINE", "PS", "PSE", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Friday before last Sunday of March at 02:00 Local", 0x3c00d20200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "PANAMA", "PA", "PAN", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PAPUA NEW GUINEA", "PG", "PNG", "", "", "Papua New Guinea Time", "PGT", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PAPUA NEW GUINEA", "PG", "PNG", "BOUGAINVILLE", "", "Bougainville Standard Time", "BST", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PARAGUAY", "PY", "PRY", "", "", "Paraguay Time", "PYT", -14400, 1, "Paraguay Summer Time", "PYST", "First Sunday of October at 00:00 Local", 0x3c00000900010001, "Fourth Sunday of March at 00:00 Local", 0xc4000002000400ff }, \
+	{ "PERU", "PE", "PER", "", "", "Peru Time", "PET", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PHILIPPINES", "PH", "PHL", "", "", "Philippine Time", "PHT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PITCAIRN ISLANDS", "PN", "PCN", "", "", "Pitcairn Standard Time", "PST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "POLAND", "PL", "POL", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "PORTUGAL", "PT", "PRT", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "PORTUGAL", "PT", "PRT", "", "", "Azores Time", "AZOT", 3600, 1, "Azores Summer Time", "AZOST", "Last Sunday of March at 00:00 Local", 0x3c00000200060001, "Last Sunday of October at 01:00 Local", 0xc4000109000600ff }, \
+	{ "PRINCIPE", "ST", "STP", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "PUERTO RICO", "PR", "PRI", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "QATAR", "QA", "QAT", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "REPUBLIC OF THE CONGO", "CG", "COG", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "REUNION", "RE", "REU", "", "", "Reunion Time", "RET", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ROMANIA", "RO", "ROU", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "RUSSIA", "RU", "RUS", "KALININGRAD", "", "Eastern European Time", "EET", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "MOSCOW", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "SAMARA", "", "Samara Time", "SAMT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "YEKATERINBURG", "", "Yekaterinburg Time", "YEKT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "OMSK", "", "Omsk Standard Time", "OMST", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "KRASNOYARSK", "", "Krasnoyarsk Time", "KRAT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "NOVOSIBIRSK", "", "Novosibirsk Time", "NOVT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "IRKUTSK", "", "Irkutsk Time", "IRKT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "YAKUTSK", "", "Yakutsk Time", "YAKT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "VLADIVOSTOK", "", "Vladivostok Time", "VLAT", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "MAGADAN", "", "Magadan Time", "MAGT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "SAKHALIN", "", "Sakhalin Time", "SAKT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "SREDNEKOLYMSK", "", "Srednekolymsk Time", "SRED", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "ANADYR", "", "Anadyr Time", "ANAT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "KAMCHATKA", "", "Kamchatka Time", "PETT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "RWANDA", "RW", "RWA", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SABA", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAINT BARTHELEMY", "BL", "BLM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAINT HELENA", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAINT KITTS", "KN", "KNA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAINT LUCIA", "LC", "LCA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAINT MARTIN", "MF", "MAF", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAINT PIERRE", "PM", "SPM", "", "", "Pierre & Miquelon Standard Time", "PMST", -10800, 1, "Pierre & Miquelon Daylight Time", "PMDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "SAINT VINCENT", "VC", "VCT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAMOA", "WS", "WSM", "", "", "West Samoa Time", "WST", 46800, 1, "West Samoa Time", "WST", "Last Sunday of September at 03:00 Local", 0x3c00030800060001, "First Sunday of April at 04:00 Local", 0xc4000403000100ff }, \
+	{ "SAN MARINO", "SM", "SMR", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SAO TOME", "ST", "STP", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SAUDI ARABIA", "SA", "SAU", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SENEGAL", "SN", "SEN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SERBIA", "RS", "SRB", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SEYCHELLES", "SC", "SYC", "", "", "Seychelles Time", "SCT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SIERRA LEONE", "SL", "SLE", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SINGAPORE", "SG", "SGP", "", "", "Singapore Time", "SGT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SINT EUSTATIUS", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SINT MAARTEN", "SX", "SXM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SLOVAKIA", "SK", "SVK", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SLOVENIA", "SI", "SVN", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SOLOMON ISLANDS", "SB", "SLB", "", "", "Solomon Islands Time", "SBT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOMALIA", "SO", "SOM", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOUTH AFRICA", "ZA", "ZAF", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOUTH AFRICA", "ZA", "ZAF", "MARION ISLAND", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOUTH GEORGIA ISLAND", "GS", "SGS", "", "", "South Georgia Time", "GST", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOUTH KOREA", "KR", "KOR", "", "", "Korea Standard Time", "KST", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOUTH SANDWICH ISLANDS", "GS", "SGS", "", "", "South Georgia Time", "GST", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SOUTH SUDAN", "SS", "SSD", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SPAIN", "ES", "ESP", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SPAIN", "ES", "ESP", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SRI LANKA", "LK", "LKA", "", "", "India Standard Time", "IST", 19800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SUDAN", "SD", "SDN", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SURINAME", "SR", "SUR", "", "", "Suriname Time", "SRT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SVALBARD", "SJ", "SJM", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SWAZILAND", "SZ", "SWZ", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "SWEDEN", "SE", "SWE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SWITZERLAND", "CH", "CHE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "SYRIA", "SY", "SYR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Friday of March at 00:00 Local", 0x3c00000200060501, "Last Friday of October at 00:00 Local", 0xc4000009000605ff }, \
+	{ "TAIWAN", "TW", "TWN", "", "", "China Standard Time", "CST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TAJIKISTAN", "TJ", "TJK", "", "", "Tajikistan Time", "TJT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TANZANIA", "TZ", "TZA", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "THAILAND", "TH", "THA", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TOBAGO", "TT", "TTO", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TOGO", "TG", "TGO", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TOKELAU", "TK", "TKL", "", "", "Tokelau Time", "TKT", 46800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TONGA", "TO", "TON", "", "", "Tonga Time", "TOT", 46800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TRINIDAD", "TT", "TTO", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TRISTAN DA CUNHA", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TUNISIA", "TN", "TUN", "", "", "Central European Time", "CET", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TURKEY", "TR", "TUR", "", "", "Turkey Time", "TRT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TURKMENISTAN", "TM", "TKM", "", "", "Turkmenistan Time", "TMT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "TURKS AND CAICOS", "TC", "TCA", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "TUVALU", "TV", "TUV", "", "", "Tuvalu Time", "TVT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "UGANDA", "UG", "UGA", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "UKRAINE", "UA", "UKR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
+	{ "UKRAINE", "UA", "UKR", "", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "UNITED ARAB EMIRATES", "AE", "ARE", "", "", "Gulf Standard Time", "GST", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "UNITED KINGDOM", "GB", "GBR", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
+	{ "UNITED STATES", "US", "USA", "ALABAMA", "AL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "ALASKA", "AK", "Alaska Standard Time", "AKST", -32400, 1, "Alaska Daylight Time", "AKDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "ALASKA", "AK", "Hawaii-Aleutian Standard Time", "HST", -36000, 1, "Hawaii-Aleutian Daylight Time", "HDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "ARIZONA", "AZ", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "ARKANSAS", "AR", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "CALIFORNIA", "CA", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "COLORADO", "CO", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "CONNECTICUT", "CT", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "DELAWARE", "DE", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "DISTRICT OF COLUMBIA", "DC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "FLORIDA", "FL", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "FLORIDA", "FL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "GEORGIA", "GA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "HAWAII", "HI", "Hawaii-Aleutian Standard Time", "HST", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "UNITED STATES", "US", "USA", "IDAHO", "ID", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "IDAHO", "ID", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "ILLINOIS", "IL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "INDIANA", "IN", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "INDIANA", "IN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "IOWA", "IA", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "KANSAS", "KS", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "KANSAS", "KS", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "KENTUCKY", "KY", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "KENTUCKY", "KY", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "LOUISIANA", "LA", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MAINE", "ME", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MARYLAND", "MD", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MASSACHUSETTS", "MA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MICHIGAN", "MI", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MICHIGAN", "MI", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MINNESOTA", "MN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MISSISSIPPI", "MS", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MISSOURI", "MO", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "MONTANA", "MT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEBRASKA", "NE", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEBRASKA", "NE", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEVADA", "NV", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEVADA", "NV", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEW HAMPSHIRE", "NH", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEW JERSEY", "NJ", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEW MEXICO", "NM", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NEW YORK", "NY", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NORTH CAROLINA", "NC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NORTH DAKOTA", "ND", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "NORTH DAKOTA", "ND", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "OHIO", "OH", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "OKLAHOMA", "OK", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "OREGON", "OR", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "OREGON", "OR", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "PENNSYLVANIA", "PA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "RHODE ISLAND", "RI", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "SOUTH CAROLINA", "SC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "SOUTH DAKOTA", "SD", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "SOUTH DAKOTA", "SD", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "TENNESSEE", "TN", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "TENNESSEE", "TN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "TEXAS", "TX", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "TEXAS", "TX", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "UTAH", "UT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "VERMONT", "VT", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "VIRGINIA", "VA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "WASHINGTON", "WA", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "WEST VIRGINIA", "WV", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "WISCONSIN", "WI", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES", "US", "USA", "WYOMING", "WY", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
+	{ "UNITED STATES VIRGIN ISLANDS", "VI", "VIR", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "URUGUAY", "UY", "URY", "", "", "Uruguay Time", "UYT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "UZBEKISTAN", "UZ", "UZB", "", "", "Uzbekistan Time", "UZT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "VANUATU", "VU", "VUT", "", "", "Vanuatu Time", "VUT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "VATICAN CITY", "VA", "VAT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
+	{ "VENEZUELA", "VE", "VEN", "", "", "Venezuelan Standard Time", "VET", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "VIETNAM", "VN", "VNM", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "WALLIS", "WF", "WLF", "", "", "Wallis and Futuna Time", "WFT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "WESTERN SAHARA", "EH", "ESH", "", "", "Western European Daylight Time", "WEDT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "YEMEN", "YE", "YEM", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ZAMBIA", "ZM", "ZMB", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
+	{ "ZIMBABWE", "ZW", "ZWE", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 } \
 }
 
-#define TZ_COUNTRY_ALIASES_ENTRIES_m10      11
+#define TZ_COUNTRY_ALIASES_ENTRIES_m10      14
 #define TZ_COUNTRY_ALIASES_TABLE_m10 { \
-	{ "China", "People's Republic of China"}, \
-	{ "Russia", "Russian Federation"}, \
-	{ "United Kingdom", "United Kingdom of Great Britain & Northern Ireland"}, \
-	{ "United Kingdom", "United Kingdom of Great Britain and Northern Ireland"}, \
-	{ "United Kingdom", "Britain"}, \
-	{ "United Kingdom", "England"}, \
-	{ "United Kingdom", "Great Britain"}, \
-	{ "United Kingdom", "Northern Ireland"}, \
-	{ "United Kingdom", "Scotland"}, \
-	{ "United Kingdom", "Wales"}, \
-	{ "United States", "United States of America"} \
+	{ "CHINA", "PEOPLE'S REPUBIC OF CHINA" }, \
+	{ "RUSSIA", "RUSSIAN FEDERATION" }, \
+	{ "TURKS AND CAICOS", "TURKS & CAICOS" }, \
+	{ "TURKS AND CAICOS", "TURKS" }, \
+	{ "TURKS AND CAICOS", "CAICOS" }, \
+	{ "UNITED KINGDOM", "UNITED KINGDOM OF GREAT BRITAIN & NORTHERN IRELAND" }, \
+	{ "UNITED KINGDOM", "UNITED KINGDOM OF GREAT BRITAIN AND NORTHERN IRELAND" }, \
+	{ "UNITED KINGDOM", "BRITAIN" }, \
+	{ "UNITED KINGDOM", "ENGLAND" }, \
+	{ "UNITED KINGDOM", "GREAT BRITAIN" }, \
+	{ "UNITED KINGDOM", "NORTHERN IRELAND" }, \
+	{ "UNITED KINGDOM", "SCOTLAND" }, \
+	{ "UNITED KINGDOM", "WALES" }, \
+	{ "UNITED STATES", "UNITED STATES OF AMERICA" } \
 }
 
 #define TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10      1
 #define TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10 { \
-	{ "GB", "UK"} \
+	{ "GB", "UK" } \
 }
 
 //**********************************************************************************//
