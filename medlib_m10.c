@@ -11313,69 +11313,87 @@ void	strtotitle_m10(si1 *s)
 
 	cap_mode = FALSE_m10;
 	while (*++s) {
+		if (*s < 97 || *s > 122) {  // not a lower case letter
+			if (*s == 32)  // space
+				cap_mode = TRUE_m10;
+			continue;
+		}
 		if (cap_mode == TRUE_m10) {
-			// not exhaustive, but covers most cases
-			if (strncmp(s, "a", 1) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
+			switch (*s) {  // not exhaustive, but covers most cases
+				case 'a':
+					if (strncmp(s, "a ", 2) == 0) {
+						++s;
+						continue;
+					}
+					if (strncmp(s, "an ", 3) == 0) {
+						s += 2;
+						continue;
+					}
+					if (strncmp(s, "and ", 4) == 0) {
+						s += 3;
+						continue;
+					}
+					break;
+				case 'b':
+					if (strncmp(s, "but ", 4) == 0) {
+						s += 3;
+						continue;
+					}
+					if (strncmp(s, "by ", 3) == 0) {
+						s += 2;
+						continue;
+					}
+					break;
+				case 'f':
+					if (strncmp(s, "for ", 4) == 0) {
+						s += 3;
+						continue;
+					}
+					if (strncmp(s, "from ", 5) == 0) {
+						s += 4;
+						continue;
+					}
+					break;
+				case 'i':
+					if (strncmp(s, "if ", 3) == 0) {
+						s += 2;
+						continue;
+					}
+					break;
+				case 'o':
+					if (strncmp(s, "of ", 3) == 0) {
+						s += 2;
+						continue;
+					}
+					break;
+				case 't':
+					if (strncmp(s, "the ", 4) == 0) {
+						s += 3;
+						continue;
+					}
+					if (strncmp(s, "to ", 3) == 0) {
+						s += 2;
+						continue;
+					}
+					break;
+				case 'w':
+					if (strncmp(s, "with ", 5) == 0) {
+						s += 4;
+						continue;
+					}
+					if (strncmp(s, "within ", 7) == 0) {
+						s += 6;
+						continue;
+					}
+					if (strncmp(s, "without ", 8) == 0) {
+						s += 7;
+						continue;
+					}
+					break;
 			}
-			if (strncmp(s, "an", 2) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "and", 3) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "but", 3) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "by", 2) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "for", 3) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "from", 4) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "of", 2) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "the", 3) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "to", 2) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-			if (strncmp(s, "with", 4) == 0) {
-				cap_mode = FALSE_m10;
-				goto STRTOTITLE_LOWER_m10;
-			}
-				
-			if (*s > 96 && *s < 123)
-				*s -= 32;
+			*s -= 32;
 			cap_mode = FALSE_m10;
-			continue;
 		}
-
-		// space
-		if (*s == 32) {
-			cap_mode = TRUE_m10;
-			continue;
-		}
-
-STRTOTITLE_LOWER_m10:
-		
-		if (*s > 40 && *s < 91)
-			*s += 32;
 	}
 	
 	return;
