@@ -222,7 +222,7 @@ void	AES_key_expansion_m10(ui1 *expanded_key, si1 *key)
         
 	
 	if (globals_m10->AES_rcon_table == NULL)
-		AES_initialize_rcon_table_m10();
+		AES_initialize_tables_m10();
 	
 	// The first round key is the key itself.
 	for (i = j = 0; i < AES_NK_m10; i++, j += 4) {
@@ -324,7 +324,7 @@ void	AES_cipher_m10(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 inline si4	AES_get_sbox_invert_m10(si4 num)
 {
 	if (globals_m10->AES_rsbox_table == NULL)
-		AES_initialize_rsbox_table_m10();
+		AES_initialize_tables_m10();
 	
 	return(globals_m10->AES_rsbox_table[num]);
 }
@@ -333,61 +333,42 @@ inline si4	AES_get_sbox_invert_m10(si4 num)
 inline si4	AES_get_sbox_value_m10(si4 num)
 {
 	if (globals_m10->AES_sbox_table == NULL)
-		AES_initialize_sbox_table_m10();
-	
+		AES_initialize_tables_m10();
+
 	return(globals_m10->AES_sbox_table[num]);
 }
 
 
-void	AES_initialize_rcon_table_m10(void)
+void	AES_initialize_tables_m10(void)
 {
-	si4	*rcon_table;
-	
-	
-	rcon_table = (si4 *) e_calloc_m10((size_t) AES_RCON_ENTRIES_m10, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// rcon table
+	if (globals_m10->AES_rcon_table != NULL)
+		e_free_m10((void *) globals_m10->AES_rcon_table, __FUNCTION__, __LINE__);
+	globals_m10->AES_rcon_table = (si4 *) e_calloc_m10((size_t) AES_RCON_ENTRIES_m10, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		si4 temp[AES_RCON_ENTRIES_m10] = AES_RCON_m10;
-		memcpy(rcon_table, temp, AES_RCON_ENTRIES_m10 * sizeof(si4));
+		memcpy(globals_m10->AES_rcon_table, temp, AES_RCON_ENTRIES_m10 * sizeof(si4));
 	}
 	
-	globals_m10->AES_rcon_table = rcon_table;
-	
-	return;
-}
 
-
-void	AES_initialize_rsbox_table_m10(void)
-{
-	si4	*rsbox_table;
-	
-	
-	rsbox_table = (si4 *) e_calloc_m10((size_t) AES_RSBOX_ENTRIES_m10, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// rsbox table
+	if (globals_m10->AES_rsbox_table != NULL)
+		e_free_m10((void *) globals_m10->AES_rsbox_table, __FUNCTION__, __LINE__);
+	globals_m10->AES_rsbox_table = (si4 *) e_calloc_m10((size_t) AES_RSBOX_ENTRIES_m10, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		si4 temp[AES_RSBOX_ENTRIES_m10] = AES_RSBOX_m10;
-		memcpy(rsbox_table, temp, AES_RSBOX_ENTRIES_m10 * sizeof(si4));
+		memcpy(globals_m10->AES_rsbox_table, temp, AES_RSBOX_ENTRIES_m10 * sizeof(si4));
 	}
 	
-	globals_m10->AES_rsbox_table = rsbox_table;
-	
-	return;
-}
 
-
-void	AES_initialize_sbox_table_m10(void)
-{
-	si4	*sbox_table;
-	
-	
-	sbox_table = (si4 *) e_calloc_m10((size_t) AES_SBOX_ENTRIES_m10, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// sbox table
+	if (globals_m10->AES_sbox_table != NULL)
+		e_free_m10((void *) globals_m10->AES_sbox_table, __FUNCTION__, __LINE__);
+	globals_m10->AES_sbox_table = (si4 *) e_calloc_m10((size_t) AES_SBOX_ENTRIES_m10, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		si4 temp[AES_SBOX_ENTRIES_m10] = AES_SBOX_m10;
-		memcpy(sbox_table, temp, AES_SBOX_ENTRIES_m10 * sizeof(si4));
+		memcpy(globals_m10->AES_sbox_table, temp, AES_SBOX_ENTRIES_m10 * sizeof(si4));
 	}
-	
-	globals_m10->AES_sbox_table = sbox_table;
         
 	return;
 }
@@ -1414,7 +1395,7 @@ TERN_m10	check_metadata_section_3_alignment_m10(ui1 *bytes)
 		goto METADATA_SECTION_3_NOT_ALIGNED_m10;
         if (md3->recording_territory != (si1 *) (bytes + METADATA_RECORDING_TERRITORY_OFFSET_m10))
                 goto METADATA_SECTION_3_NOT_ALIGNED_m10;
-        if (md3->recording_city != (si1 *) (bytes + METADATA_RECORDING_CITY_OFFSET_m10))
+        if (md3->recording_locality != (si1 *) (bytes + METADATA_RECORDING_LOCALITY_OFFSET_m10))
                 goto METADATA_SECTION_3_NOT_ALIGNED_m10;
         if (md3->recording_institution != (si1 *) (bytes + METADATA_RECORDING_INSTITUTION_OFFSET_m10))
                 goto METADATA_SECTION_3_NOT_ALIGNED_m10;
@@ -4505,58 +4486,79 @@ inline CMP_BLOCK_FIXED_HEADER_m10     *CMP_update_CPS_pointers_m10(CMP_PROCESSIN
 //***********************************************************************//
 
 
-TERN_m10	condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info)
+void	condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info)
 {
-	ui1	found_alias;
-	si4	i;
+	si4			i;
+	si8			len;
+	TIMEZONE_ALIAS_m10	*tz_aliases_table;
+
 	
+	// Country: at this time there are no 2 or 3 letter country names => user probably entered acronym
+	if (*tz_info->country) {
+		len = strlen(tz_info->country);
+		if (len == 2) {
+			strcpy(tz_info->country_acronym_2_letter, tz_info->country);
+			*tz_info->country = 0;
+		} else if (len == 3) {
+			strcpy(tz_info->country_acronym_3_letter, tz_info->country);
+			*tz_info->country = 0;
+		}
+	}
 	
+	// Territory: at this time there are no 2 letter territory names => user probably entered acronym
+	if (*tz_info->territory) {
+		len = strlen(tz_info->territory);
+		if (len == 2) {
+			strcpy(tz_info->territory_acronym, tz_info->territory);
+			*tz_info->territory = 0;
+		}
+	}
+
 	// change potential matching strings to caps
 	strtoupper_m10(tz_info->country);
 	strtoupper_m10(tz_info->country_acronym_2_letter);
 	strtoupper_m10(tz_info->country_acronym_3_letter);
 	strtoupper_m10(tz_info->territory);
 	strtoupper_m10(tz_info->territory_acronym);
+	strtoupper_m10(tz_info->standard_timezone);
+	strtoupper_m10(tz_info->standard_timezone_acronym);
+	strtoupper_m10(tz_info->daylight_timezone);
+	strtoupper_m10(tz_info->daylight_timezone_acronym);
 
-	found_alias = FALSE_m10;
-	
 	// check country aliases
-	{
-		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ALIASES_TABLE_m10;
-		
-		if (*tz_info->country) {
-			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
-				if ((strcmp(tz_info->country, tz_alias_table[i].alias)) == 0) {
-					strcpy(tz_info->country, tz_alias_table[i].table_name);
-					found_alias = TRUE_m10;
-				}
+	tz_aliases_table = globals_m10->country_aliases_table;
+	
+	if (*tz_info->country) {
+		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+			if ((strcmp(tz_info->country, tz_aliases_table[i].alias)) == 0) {
+				strcpy(tz_info->country, tz_aliases_table[i].table_name);
+				break;
 			}
 		}
 	}
 	
 	// check country acronyms
-	{
-		TIMEZONE_ALIAS_m10	tz_alias_table[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10;
-		
-		if (*tz_info->country_acronym_2_letter) {
-			for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10; ++i) {
-				if ((strcmp(tz_info->country_acronym_2_letter, tz_alias_table[i].alias)) == 0) {
-					strcpy(tz_info->country_acronym_2_letter, tz_alias_table[i].table_name);
-					found_alias = TRUE_m10;
-				}
-			}
-		}
-		if (*tz_info->country_acronym_3_letter) {
-			for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
-				if ((strcmp(tz_info->country_acronym_3_letter, tz_alias_table[i].alias)) == 0) {
-					strcpy(tz_info->country_acronym_3_letter, tz_alias_table[i].table_name);
-					found_alias = TRUE_m10;
-				}
+	tz_aliases_table = globals_m10->country_acronym_aliases_table;
+
+	if (*tz_info->country_acronym_2_letter) {
+		for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10; ++i) {
+			if ((strcmp(tz_info->country_acronym_2_letter, tz_aliases_table[i].alias)) == 0) {
+				strcpy(tz_info->country_acronym_2_letter, tz_aliases_table[i].table_name);
+				break;
 			}
 		}
 	}
-
-	return(found_alias);
+	
+	if (*tz_info->country_acronym_3_letter) {
+		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m10; ++i) {
+			if ((strcmp(tz_info->country_acronym_3_letter, tz_aliases_table[i].alias)) == 0) {
+				strcpy(tz_info->country_acronym_3_letter, tz_aliases_table[i].table_name);
+				break;
+			}
+		}
+	}
+	
+	return;
 }
 
 
@@ -4691,9 +4693,13 @@ void	CRC_initialize_table_m10(void)
 	ui4	**crc_table, c, n, k;
 
         
-        crc_table = (ui4 **) e_calloc_2D_m10((size_t) CRC_TABLES_m10, (size_t) CRC_TABLE_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	if (globals_m10->CRC_table != NULL)
+		e_free_2D_m10((void **) globals_m10->CRC_table, (size_t) CRC_TABLE_ENTRIES_m10, __FUNCTION__, __LINE__);
 
+	globals_m10->CRC_table = (ui4 **) e_calloc_2D_m10((size_t) CRC_TABLES_m10, (size_t) CRC_TABLE_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	
         // generate a crc for every 8-bit value
+	crc_table = globals_m10->CRC_table;
         for (n = 0; n < CRC_TABLE_ENTRIES_m10; n++) {
                 for (c = n, k = 0; k < 8; k++)
                         c = c & 1 ? CRC_POLYNOMIAL_m10 ^ (c >> 1) : c >> 1;
@@ -4710,8 +4716,6 @@ void	CRC_initialize_table_m10(void)
                         crc_table[k + 4][n] = CRC_SWAP32_m10(c);
                 }
         }
-        
-	globals_m10->CRC_table = crc_table;
         
 	return;
 }
@@ -5068,15 +5072,17 @@ si4     DST_offset_m10(si8 uutc)
         si4                             first_weekday_of_month, target_day_of_month, last_day_of_month;
         struct tm                       time_info, change_time_info = {0};
         DAYLIGHT_TIME_CHANGE_CODE_m10   *first_DTCC, *last_DTCC, *change_DTCC;
-        
+
         
         // returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
-        
+
 	if (globals_m10->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m10) {
 		warning_message_m10("%s(): daylight change data not available", __FUNCTION__);
 		return(0);
 	}
 		
+	if (globals_m10->time_constants_set == FALSE_m10)
+		return(0);
         if (globals_m10->observe_DST == FALSE_m10)
                 return(0);
         
@@ -6972,6 +6978,115 @@ inline ui1	get_cpu_endianness_m10(void)
 }
 
 
+LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 set_timezone_globals, TERN_m10 prompt)
+{
+	TERN_m10	free_loc_info = FALSE_m10;
+	si1		temp_str[128], *buffer, *pattern, *c;
+	si4		fd, ret_val;
+	si8		sz, len;
+	FILE		*fp;
+	struct stat	sb;
+	time_t 		curr_time;
+	struct tm 	loc_time;
+
+	
+	if (loc_info == NULL) {
+		loc_info = (LOCATION_INFO_m10 *) e_calloc_m10((size_t) 1, sizeof(LOCATION_INFO_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		free_loc_info = TRUE_m10;
+	}
+	
+	sprintf(temp_str, "curl -s ipinfo.io > /tmp/junk 2> /dev/null");
+	if (file_exists_m10("/tmp/junk") == FILE_EXISTS_m10)
+		e_system_m10("rm -f /tmp/junk", FALSE_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	ret_val = e_system_m10(temp_str, FALSE_m10, __FUNCTION__, __LINE__,  USE_GLOBAL_BEHAVIOR_m10);
+	if (ret_val)
+		return(NULL);
+	fp = e_fopen_m10("/tmp/junk", "r", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+       
+	// get file length
+	fd = fileno(fp);
+	fstat(fd, &sb);
+	sz = (si8) sb.st_size;
+
+	// read output
+	buffer = (si1 *) e_calloc_m10((size_t) sz, sizeof(si1), __FUNCTION__, __LINE__, EXIT_ON_FAIL_m10);
+	e_fread_m10(buffer, sizeof(si1), (size_t) sz, fp, "/tmp/junk", __FUNCTION__, __LINE__, EXIT_ON_FAIL_m10);
+	fclose(fp);
+	e_system_m10("rm -f /tmp/junk", TRUE_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+
+	// condition output
+	strip_character_m10(buffer, '"');
+	strip_character_m10(buffer, '"');
+
+	// parse output
+	pattern = "ip: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%[^,]", loc_info->WAN_IPV4_address);
+	
+	pattern = "city: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%[^,]", loc_info->locality);
+	
+	pattern = "region: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%[^,]", loc_info->timezone_info.territory);
+	
+	pattern = "country: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%[^,]", loc_info->timezone_info.country_acronym_2_letter);
+	
+	pattern = "loc: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%lf,%lf", &loc_info->latitude, &loc_info->longitude);
+	
+	pattern = "postal: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%[^,]", loc_info->postal_code);
+
+	pattern = "timezone: ";
+	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
+		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
+	else
+		sscanf(c, "%[^, ]", loc_info->timezone_description);
+	
+	e_free_m10((void *) buffer, __FUNCTION__, __LINE__);
+	
+	// get timezone acronym from system
+	curr_time = time(NULL);
+	localtime_r(&curr_time, &loc_time);
+	len = strlen(loc_time.tm_zone);
+	if (len >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
+		if (loc_time.tm_isdst)
+			strcpy(loc_info->timezone_info.daylight_timezone_acronym, loc_time.tm_zone);
+		else
+			strcpy(loc_info->timezone_info.standard_timezone_acronym, loc_time.tm_zone);
+	}
+	
+	if (set_timezone_globals == TRUE_m10) {
+		if (set_global_time_constants_m10(&loc_info->timezone_info, 0, prompt) == FALSE_m10) {
+			if (free_loc_info == TRUE_m10)
+				e_free_m10((void *) loc_info, __FUNCTION__, __LINE__);
+			warning_message_m10("%s(): Could not set timezone globals => returning NULL", __FUNCTION__);
+			return(NULL);
+		}
+	}
+	
+	return(loc_info);
+}
+
+
 si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10 *slice)
 {
         TERN_m10                        search_succeeded;
@@ -7323,40 +7438,6 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 }
 
 
-TIMEZONE_INFO_m10	*get_timezone_info_m10(si1 *country, si1 *territory, TERN_m10 prompt, TERN_m10 *modified)
-{
-	si1			temp_str[METADATA_RECORDING_LOCATION_BYTES_m10];
-	si8			len;
-	TIMEZONE_INFO_m10	*timezone_info;
-	
-	
-	timezone_info = (TIMEZONE_INFO_m10 *) e_calloc_m10((size_t) 1, sizeof(TIMEZONE_INFO_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
-	// Country
-	len = strcpy_m10(temp_str, country);
-	if (len == 3) // strcpy_m10 returns length including terminal zero
-		strcpy(timezone_info->country_acronym_2_letter, temp_str);
-	else if (len == 4)
-		strcpy(timezone_info->country_acronym_3_letter, temp_str);
-	else
-		strcpy(timezone_info->country, temp_str);
-	
-	// Territory
-	len = strcpy_m10(temp_str, territory);
-	if (len == 3)  // at this time there are only 2-letter territory acronyms
-		strcpy(timezone_info->territory_acronym, temp_str);
-	else
-		strcpy(timezone_info->territory, temp_str);
-	
-	// set timezone globals to customer locale
-	if (*timezone_info->country || *timezone_info->country_acronym_2_letter || *timezone_info->country_acronym_3_letter || *timezone_info->territory || *timezone_info->territory_acronym)
-		set_global_time_constants_m10(timezone_info, 0, prompt, modified);
-	
-	return(timezone_info);
-}
-
-
-
 FILE_PROCESSING_DIRECTIVES_m10  *initialize_file_processing_directives_m10(FILE_PROCESSING_DIRECTIVES_m10 *directives)
 {
         if (directives == NULL)
@@ -7393,6 +7474,8 @@ void	initialize_globals_m10(void)
         // password structure
 	memset((void *) &globals_m10->password_data, 0, sizeof(PASSWORD_DATA_m10));
 	// time constants
+	globals_m10->time_constants_set = FALSE_m10;
+	globals_m10->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m10;
 	globals_m10->session_start_time = GLOBALS_SESSION_START_TIME_OFFSET_DEFAULT_m10;
 	globals_m10->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m10;
 	globals_m10->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m10;
@@ -7403,7 +7486,6 @@ void	initialize_globals_m10(void)
         strcpy(globals_m10->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m10);
         strcpy(globals_m10->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m10);
         globals_m10->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m10;
-	globals_m10->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m10;
 	if (globals_m10->timezone_table != NULL)
 		e_free_m10((void *) globals_m10->timezone_table, __FUNCTION__, __LINE__);
         globals_m10->timezone_table = NULL;
@@ -7497,20 +7579,16 @@ TERN_m10	initialize_medlib_m10(void)
 	CRC_initialize_table_m10();
 	
 	// make UTF8 tables global
-	UTF8_initialize_offsets_table_m10();
-	UTF8_initialize_trailing_bytes_table_m10();
+	UTF8_initialize_tables_m10();
 	
 	// make AES tables global
-	AES_initialize_sbox_table_m10();
-	AES_initialize_rsbox_table_m10();
-	AES_initialize_rcon_table_m10();
+	AES_initialize_tables_m10();
 	
 	// make SHA tables global
-	SHA_initialize_h0_table_m10();
-	SHA_initialize_k_table_m10();
+	SHA_initialize_tables_m10();
 
-        // make timezone table global
-        initialize_timezone_table_m10();
+        // make timezone tables global
+        initialize_timezone_tables_m10();
 
 	return(return_value);
 }
@@ -7614,7 +7692,7 @@ void	initialize_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 initializ
         memset(md3->subject_ID, 0, METADATA_SUBJECT_ID_BYTES_m10);
         memset(md3->recording_country, 0, METADATA_RECORDING_LOCATION_BYTES_m10);
         memset(md3->recording_territory, 0, METADATA_RECORDING_LOCATION_BYTES_m10);
-        memset(md3->recording_city, 0, METADATA_RECORDING_LOCATION_BYTES_m10);
+        memset(md3->recording_locality, 0, METADATA_RECORDING_LOCATION_BYTES_m10);
         memset(md3->recording_institution, 0, METADATA_RECORDING_LOCATION_BYTES_m10);
         memset(md3->geotag_format, 0, METADATA_GEOTAG_FORMAT_BYTES_m10);
         memset(md3->geotag_data, 0, METADATA_GEOTAG_DATA_BYTES_m10);
@@ -7642,21 +7720,38 @@ TIME_SLICE_m10  *initialize_time_slice_m10(TIME_SLICE_m10 *slice)
 }
 
 
-void	initialize_timezone_table_m10(void)
+void	initialize_timezone_tables_m10(void)
 {
-        TIMEZONE_INFO_m10   *timezone_table;
-        
-        
-        timezone_table = (TIMEZONE_INFO_m10 *) e_calloc_m10((size_t) TIMEZONE_TABLE_ENTRIES_m10, sizeof(TIMEZONE_INFO_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-        
-        {
-                TIMEZONE_INFO_m10 temp[TIMEZONE_TABLE_ENTRIES_m10] = TIMEZONE_TABLE_m10;
-                memcpy(timezone_table, temp, TIMEZONE_TABLE_ENTRIES_m10 * sizeof(TIMEZONE_INFO_m10));
-        }
-        
-	globals_m10->timezone_table = timezone_table;
-
-        return;
+	// timezone table
+	if (globals_m10->timezone_table != NULL)
+		e_free_m10((void *) globals_m10->timezone_table, __FUNCTION__, __LINE__);
+	globals_m10->timezone_table = (TIMEZONE_INFO_m10 *) e_calloc_m10((size_t) TIMEZONE_TABLE_ENTRIES_m10, sizeof(TIMEZONE_INFO_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	{
+		TIMEZONE_INFO_m10 temp[TIMEZONE_TABLE_ENTRIES_m10] = TIMEZONE_TABLE_m10;
+		memcpy(globals_m10->timezone_table, temp, TIMEZONE_TABLE_ENTRIES_m10 * sizeof(TIMEZONE_INFO_m10));
+	}
+	
+	
+	// country aliases
+	if (globals_m10->country_aliases_table != NULL)
+		e_free_m10((void *) globals_m10->country_aliases_table, __FUNCTION__, __LINE__);
+	globals_m10->country_aliases_table = (TIMEZONE_ALIAS_m10 *) e_calloc_m10((size_t) TZ_COUNTRY_ALIASES_ENTRIES_m10, sizeof(TIMEZONE_ALIAS_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	{
+		TIMEZONE_ALIAS_m10 temp[TZ_COUNTRY_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ALIASES_TABLE_m10;
+		memcpy(globals_m10->country_aliases_table, temp, TZ_COUNTRY_ALIASES_ENTRIES_m10 * sizeof(TIMEZONE_ALIAS_m10));
+	}
+	
+	
+	// country acronym aliases
+	if (globals_m10->country_acronym_aliases_table != NULL)
+		e_free_m10((void *) globals_m10->country_acronym_aliases_table, __FUNCTION__, __LINE__);
+	globals_m10->country_acronym_aliases_table = (TIMEZONE_ALIAS_m10 *) e_calloc_m10((size_t) TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10, sizeof(TIMEZONE_ALIAS_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	{
+		TIMEZONE_ALIAS_m10 temp[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m10;
+		memcpy(globals_m10->country_acronym_aliases_table, temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m10 * sizeof(TIMEZONE_ALIAS_m10));
+	}
+	
+	return;
 }
 
 
@@ -7947,8 +8042,8 @@ TERN_m10        merge_metadata_m10(FILE_PROCESSING_STRUCT_m10 *md_fps_1, FILE_PR
                 memset(md3_m->recording_country, 0, METADATA_SUBJECT_ID_BYTES_m10); equal = FALSE_m10; }
         if (memcmp(md3_1->recording_territory, md3_2->recording_territory, METADATA_RECORDING_LOCATION_BYTES_m10)) {
                 memset(md3_m->recording_territory, 0, METADATA_SUBJECT_ID_BYTES_m10); equal = FALSE_m10; }
-        if (memcmp(md3_1->recording_city, md3_2->recording_city, METADATA_RECORDING_LOCATION_BYTES_m10)) {
-                memset(md3_m->recording_city, 0, METADATA_RECORDING_LOCATION_BYTES_m10); equal = FALSE_m10; }
+        if (memcmp(md3_1->recording_locality, md3_2->recording_locality, METADATA_RECORDING_LOCATION_BYTES_m10)) {
+                memset(md3_m->recording_locality, 0, METADATA_RECORDING_LOCATION_BYTES_m10); equal = FALSE_m10; }
         if (memcmp(md3_1->recording_institution, md3_2->recording_institution, METADATA_RECORDING_LOCATION_BYTES_m10)) {
                 memset(md3_m->recording_institution, 0, METADATA_RECORDING_LOCATION_BYTES_m10); equal = FALSE_m10; }
         if (memcmp(md3_1->geotag_format, md3_2->geotag_format, METADATA_GEOTAG_FORMAT_BYTES_m10)) {
@@ -9820,19 +9915,18 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 }
 
 
-TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt, TERN_m10 *modified)
+TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt)
 {
-	TERN_m10		temp_tern;
-	si1			temp_str[METADATA_RECORDING_LOCATION_BYTES_m10];
         si4                     n_potential_timezones, potential_timezone_entries[TIMEZONE_TABLE_ENTRIES_m10];
         si4                     i, j, entry_num, response_num, items;
         TIMEZONE_INFO_m10       *tz_table;
         
         
+	// reset
+	globals_m10->time_constants_set = FALSE_m10;
+
 	// capitalize & check aliases
-	temp_tern = condition_timezone_info_m10(timezone_info);  // modified if alias found
-	if (modified != NULL)
-		*modified = temp_tern;
+	condition_timezone_info_m10(timezone_info);  // modified if alias found
 
 	// start search
         n_potential_timezones = TIMEZONE_TABLE_ENTRIES_m10;
@@ -9843,10 +9937,9 @@ TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 
         // match country
         j = 0;
         if (*timezone_info->country) {
-		for (i = 0; i < n_potential_timezones; ++i) {
+		for (i = 0; i < n_potential_timezones; ++i)
                         if (strcmp(timezone_info->country, tz_table[potential_timezone_entries[i]].country) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
-		}
         }
         if (j) {
                 if (j == 1)
@@ -9857,8 +9950,8 @@ TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 
         // match country_acronym_2_letter
         j = 0;
         if (*timezone_info->country_acronym_2_letter) {
-                for (i = 0; i < n_potential_timezones; ++i)
-                        if (strcmp(timezone_info->country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(timezone_info->country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
                                 potential_timezone_entries[j++] = potential_timezone_entries[i];
         }
         if (j) {
@@ -9883,10 +9976,9 @@ TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 
         // match territory
         j = 0;
         if (*timezone_info->territory) {
-		for (i = 0; i < n_potential_timezones; ++i) {
-			if (strcmp(timezone_info->territory, temp_str) == 0)
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(timezone_info->territory, tz_table[potential_timezone_entries[i]].territory) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
-		}
         }
         if (j) {
                 if (j == 1)
@@ -9907,6 +9999,70 @@ TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 
                 n_potential_timezones = j;
         }
 	
+	// match standard_timezone
+	j = 0;
+	if (*timezone_info->standard_timezone) {
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(timezone_info->standard_timezone, tz_table[potential_timezone_entries[i]].standard_timezone) == 0)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+	}
+	if (j) {
+		if (j == 1)
+			goto SET_GTC_TIMEZONE_MATCH_m10;
+		n_potential_timezones = j;
+	}
+	
+	// match standard_timezone_acronym
+	j = 0;
+	if (*timezone_info->standard_timezone_acronym) {
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(timezone_info->standard_timezone_acronym, tz_table[potential_timezone_entries[i]].standard_timezone_acronym) == 0)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+	}
+	if (j) {
+		if (j == 1)
+			goto SET_GTC_TIMEZONE_MATCH_m10;
+		n_potential_timezones = j;
+	}
+	
+	// match standard_UTC_offset
+	j = 0;
+	if (timezone_info->standard_UTC_offset) {  // zero is a valid offset, but also could be zero from calloc() - can't use it to exclude
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (timezone_info->standard_UTC_offset == tz_table[potential_timezone_entries[i]].standard_UTC_offset)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+	}
+	if (j) {
+		if (j == 1)
+			goto SET_GTC_TIMEZONE_MATCH_m10;
+		n_potential_timezones = j;
+	}
+		
+	// match daylight_timezone
+	j = 0;
+	if (*timezone_info->daylight_timezone) {
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(timezone_info->daylight_timezone, tz_table[potential_timezone_entries[i]].daylight_timezone) == 0)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+	}
+	if (j) {
+		if (j == 1)
+			goto SET_GTC_TIMEZONE_MATCH_m10;
+		n_potential_timezones = j;
+	}
+	
+	// match daylight_timezone_acronym
+	j = 0;
+	if (*timezone_info->daylight_timezone_acronym) {
+		for (i = 0; i < n_potential_timezones; ++i)
+			if (strcmp(timezone_info->daylight_timezone_acronym, tz_table[potential_timezone_entries[i]].daylight_timezone_acronym) == 0)
+				potential_timezone_entries[j++] = potential_timezone_entries[i];
+	}
+	if (j) {
+		if (j == 1)
+			goto SET_GTC_TIMEZONE_MATCH_m10;
+		n_potential_timezones = j;
+	}
 	// still multiple: ask user
 	if (prompt == TRUE_m10) {
 		fprintf(stderr, "Multiple potential timezone entries:\n\n");
@@ -9932,7 +10088,7 @@ SET_GTC_TIMEZONE_MATCH_m10:
         memcpy((void *) timezone_info, (void *) (tz_table + entry_num), sizeof(TIMEZONE_INFO_m10));
 	strtotitle_m10(timezone_info->country);  // beautify
 	strtotitle_m10(timezone_info->territory);  // beautify
-        globals_m10->standard_UTC_offset = tz_table[entry_num].standard_UTC_offset;
+        globals_m10->standard_UTC_offset = timezone_info->standard_UTC_offset;
         strncpy_m10(globals_m10->standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m10);
         strncpy_m10(globals_m10->standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m10);
         if (timezone_info->observe_DST) {
@@ -9944,6 +10100,7 @@ SET_GTC_TIMEZONE_MATCH_m10:
         } else {
                 globals_m10->observe_DST = FALSE_m10;
         }
+	globals_m10->time_constants_set = TRUE_m10;
 	
 	if (session_start_time)  // pass CURRENT_TIME_m10 for session starting now; pass zero if just need to get timezone_info for a locale
 		generate_recording_time_offset_m10(session_start_time);
@@ -10115,7 +10272,7 @@ void    SHA_final_m10(SHA_CTX_m10 *ctx, ui1 *digest)
 void    SHA_init_m10(SHA_CTX_m10 *ctx)
 {
 	if (globals_m10->SHA_h0_table == NULL)
-		(void) SHA_initialize_h0_table_m10();
+		(void) SHA_initialize_tables_m10();
 	
 	ctx->h[0] = globals_m10->SHA_h0_table[0]; ctx->h[1] = globals_m10->SHA_h0_table[1];
 	ctx->h[2] = globals_m10->SHA_h0_table[2]; ctx->h[3] = globals_m10->SHA_h0_table[3];
@@ -10129,37 +10286,26 @@ void    SHA_init_m10(SHA_CTX_m10 *ctx)
 }
 
 
-void	SHA_initialize_h0_table_m10(void)
+void	SHA_initialize_tables_m10(void)
 {
-	ui4	*sha_h0_table;
-	
-	
-	sha_h0_table = (ui4 *) e_calloc_m10((size_t) SHA_H0_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// h0 table
+	if (globals_m10->SHA_h0_table != NULL)
+		e_free_m10((void *) globals_m10->SHA_h0_table, __FUNCTION__, __LINE__);
+	globals_m10->SHA_h0_table = (ui4 *) e_calloc_m10((size_t) SHA_H0_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		ui4 temp[SHA_H0_ENTRIES_m10] = SHA_H0_m10;
-		memcpy(sha_h0_table, temp, SHA_H0_ENTRIES_m10 * sizeof(ui4));
+		memcpy(globals_m10->SHA_h0_table, temp, SHA_H0_ENTRIES_m10 * sizeof(ui4));
 	}
 	
-	globals_m10->SHA_h0_table = sha_h0_table;
-	
-	return;
-}
 
-
-void	SHA_initialize_k_table_m10(void)
-{
-	ui4	*sha_k_table;
-	
-	
-	sha_k_table = (ui4 *) e_calloc_m10((size_t) SHA_K_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// k table
+	if (globals_m10->SHA_k_table != NULL)
+		e_free_m10((void *) globals_m10->SHA_k_table, __FUNCTION__, __LINE__);
+	globals_m10->SHA_k_table = (ui4 *) e_calloc_m10((size_t) SHA_K_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		ui4 temp[SHA_K_ENTRIES_m10] = SHA_K_m10;
-		memcpy(sha_k_table, temp, SHA_K_ENTRIES_m10 * sizeof(ui4));
+		memcpy(globals_m10->SHA_k_table, temp, SHA_K_ENTRIES_m10 * sizeof(ui4));
 	}
-	
-	globals_m10->SHA_k_table = sha_k_table;
 	
 	return;
 }
@@ -10175,7 +10321,7 @@ void    SHA_transf_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 block_nb)
         
 	
 	if (globals_m10->SHA_k_table == NULL)
-		SHA_initialize_k_table_m10();
+		SHA_initialize_tables_m10();
 	
 	for (i = 0; i < (si4) block_nb; i++) {
 		sub_block = message + (i << 6);
@@ -10368,6 +10514,9 @@ void    show_globals_m10(void)
         printf("-----------\n\n");
         printf("Time Constants\n");
         printf("--------------\n");
+	// time_constants_set, RTO_known
+	printf("time_constants_set: %hhd\n", globals_m10->time_constants_set);
+	printf("RTO_known: %hhd\n", globals_m10->RTO_known);
         printf("recording_time_offset: %ld\n", globals_m10->recording_time_offset);
         printf("standard_UTC_offset: %d\n", globals_m10->standard_UTC_offset);
         printf("standard_timezone_acronym: %s\n", globals_m10->standard_timezone_acronym);
@@ -10401,6 +10550,20 @@ void    show_globals_m10(void)
         printf("behavior_on_fail: %u\n", globals_m10->behavior_on_fail);
 
         return;
+}
+
+
+void    show_location_info_m10(LOCATION_INFO_m10 *li)
+{
+	show_timezone_info_m10(&li->timezone_info);
+	printf("Locality: %s\n", li->locality);
+	printf("Postal Code: %s\n", li->postal_code);
+	printf("Timezone Description: %s\n", li->timezone_description);
+	printf("Latitude: %lf\n", li->latitude);
+	printf("Longitude: %lf\n", li->longitude);
+	printf("WAN_IPV4 Address: %s\n", li->WAN_IPV4_address);
+
+	return;
 }
 
 
@@ -10685,10 +10848,10 @@ void	show_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, METADATA_m10 *md)
                         UTF8_printf_m10("Recording Territory: %s\n", md3->recording_territory);
                 else
                         printf("Recording Territory: no entry\n");
-                if (*md3->recording_city)
-                        UTF8_printf_m10("Recording City: %s\n", md3->recording_city);
+                if (*md3->recording_locality)
+                        UTF8_printf_m10("Recording Locality: %s\n", md3->recording_locality);
                 else
-                        printf("Recording City: no entry\n");
+                        printf("Recording Locality: no entry\n");
                 if (*md3->recording_institution)
                         UTF8_printf_m10("Recording Institution: %s\n", md3->recording_institution);
                 else
@@ -10905,14 +11068,12 @@ void    show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry)
         printf("Standard Timezone Acronym: %s\n", timezone_entry->standard_timezone_acronym);
         printf("Standard UTC Offset (secs): %d\n", timezone_entry->standard_UTC_offset);
         printf("Observe DST (0/1 == no/yes): %d\n", timezone_entry->observe_DST);
-        if (timezone_entry->observe_DST) {
-                printf("Daylight Timezone: %s\n", timezone_entry->daylight_timezone);
-                printf("Daylight Timezone Acronym: %s\n", timezone_entry->daylight_timezone_acronym);
-                printf("Daylight Time Start Description: %s\n", timezone_entry->daylight_time_start_description);
-                printf("Daylight Time Start Code: 0x%lx\n", timezone_entry->daylight_time_start_code);
-                printf("Daylight Time End Description: %s\n", timezone_entry->daylight_time_end_description);
-                printf("Daylight Time End Code: 0x%lx\n", timezone_entry->daylight_time_end_code);
-        }
+	printf("Daylight Timezone: %s\n", timezone_entry->daylight_timezone);
+	printf("Daylight Timezone Acronym: %s\n", timezone_entry->daylight_timezone_acronym);
+	printf("Daylight Time Start Description: %s\n", timezone_entry->daylight_time_start_description);
+	printf("Daylight Time Start Code: 0x%lx\n", timezone_entry->daylight_time_start_code);
+	printf("Daylight Time End Description: %s\n", timezone_entry->daylight_time_end_description);
+	printf("Daylight Time End Code: 0x%lx\n", timezone_entry->daylight_time_end_code);
 
         return;
 }
@@ -11191,6 +11352,144 @@ si4     sprintf_m10(si1 *target, si1 *format, ...)
 }
 
 
+si1     *str_match_end_m10(si1 *pattern, si1 *buffer)
+{
+	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	si4        i, j, pat_len, buf_len, str_len;
+	si1        *s1, *s2;
+	
+	
+	pat_len = strlen(pattern);
+	buf_len = strlen(buffer);
+	
+	if (pat_len > buf_len)
+		return(NULL);
+
+	s1 = s2 = buffer;
+	while(1) {
+		while(*s2 != '\n' && *s2 != '\r' && *s2 != 10 && *s2 != 0)
+			++s2;
+		str_len = s2 - s1;
+		
+		j = str_len - pat_len;
+		for (i = 0; i <= j; ++i)
+			if ((strncmp(s1 + i, pattern, pat_len)) == 0)
+				return(s1 + i + pat_len);
+		
+		while (*s2 == '\n' || *s2 == '\r' || *s2 == 10)
+			++s2;
+		if (*s2 == 0)
+			return(NULL);
+		
+		s1 = s2;
+	}
+}
+
+
+si1     *str_match_line_end_m10(si1 *pattern, si1 *buffer)
+{
+	// returns pointer to beginning of the line following the line with first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	si4        i, j, pat_len, buf_len, str_len;
+	si1        *s1, *s2, match;
+	
+	pat_len = strlen(pattern);
+	buf_len = strlen(buffer);
+	
+	if (pat_len > buf_len)
+		return(NULL);
+	
+	match = FALSE_m10;
+	s1 = s2 = buffer;
+	while (1) {
+		while(*s2 != '\n' && *s2 != '\r' && *s2 != 10 && *s2 != 0)
+			++s2;
+		str_len = s2 - s1;
+		
+		j = str_len - pat_len;
+		for (i = 0; i <= j; ++i)
+			if ((strncmp(s1 + i, pattern, pat_len)) == 0)
+				match = TRUE_m10;
+		
+		while (*s2 == '\n' || *s2 == '\r' || *s2 == 10)
+			++s2;
+		if (*s2 == 0)
+			return(NULL);
+		if (match == TRUE_m10)
+			return(s2);
+		
+		s1 = s2;
+	}
+}
+
+
+si1     *str_match_line_start_m10(si1 *pattern, si1 *buffer)
+{
+	// returns pointer to beginning of the line with first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	si4        i, j, pat_len, buf_len, str_len;
+	si1        *s1, *s2;
+	
+	
+	pat_len = strlen(pattern);
+	buf_len = strlen(buffer);
+	
+	if (pat_len > buf_len)
+		return(NULL);
+
+	s1 = s2 = buffer;
+	while (1) {
+		while(*s2 != '\n' && *s2 != '\r' && *s2 != 10 && *s2 != 0)
+			++s2;
+		str_len = s2 - s1;
+		
+		j = str_len - pat_len;
+		for (i = 0; i <= j; ++i)
+			if ((strncmp(s1 + i, pattern, pat_len)) == 0)
+				return(s1);
+		
+		while (*s2 == '\n' || *s2 == '\r' || *s2 == 10)
+			++s2;
+		if (*s2 == 0)
+			return(NULL);
+		
+		s1 = s2;
+	}
+}
+
+
+si1     *str_match_start_m10(si1 *pattern, si1 *buffer)
+{
+	// returns pointer to beginning of the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	si4        i, j, pat_len, buf_len, str_len;
+	si1        *s1, *s2;
+	
+	
+	pat_len = strlen(pattern);
+	buf_len = strlen(buffer);
+	
+	if (pat_len > buf_len)
+		return(NULL);
+
+	s1 = s2 = buffer;
+	while (1) {
+		while(*s2 != '\n' && *s2 != '\r' && *s2 != 10 && *s2 != 0)
+			++s2;
+		str_len = s2 - s1;
+		
+		j = str_len - pat_len;
+		for (i = 0; i <= j; ++i)
+			if ((strncmp(s1 + i, pattern, pat_len)) == 0)
+				return(s1 + i);
+		
+		while (*s2 == '\n' || *s2 == '\r' || *s2 == 10)
+			++s2;
+		if (*s2 == 0)
+			return(NULL);
+		
+		s1 = s2;
+	}
+}
+
+
 si4     strcat_m10(si1 *target_string, si1 *source_string)
 {
         si1         *target_start;
@@ -11222,6 +11521,25 @@ si4     strcpy_m10(si1 *target_string, si1 *source_string)
         while ((*target_string++ = *source_string++));
 
         return((si4) (source_string - source_start));
+}
+
+
+void    strip_character_m10(si1 *s, si1 character)
+{
+	si1     *c1, *c2;
+	
+	
+	c1 = c2 = s;
+	while (*c2) {
+		if (*c2 == character) {
+			++c2;
+			continue;
+		}
+		*c1++ = *c2++;
+	}
+	*c1 = 0;
+	
+	return;
 }
 
 
@@ -11414,21 +11732,22 @@ void	strtoupper_m10(si1 *s)
 
 si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m10
 {
-        si1             *standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
-        static si1      private_time_str[TIME_STRING_BYTES_m10];
-        static si1      mos[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-        static si1      months[12][12] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
-        static si1      wdays[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-        static si1      mday_num_sufs[32][3] = {"", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
-                        "th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st"};
-        static si1      weekdays[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-	TERN_m10	offset;
-        si4             microseconds, DST_offset, day_num;
-        si8             local_time, test_time;
-        sf8             UTC_offset_hours;
-        va_list         arg_p;
-        struct tm       ti;
-        
+        si1             	*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
+        static si1      	private_time_str[TIME_STRING_BYTES_m10];
+        static si1      	mos[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        static si1      	months[12][12] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+        static si1      	wdays[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+        static si1      	mday_num_sufs[32][3] = {"", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
+                        	"th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st"};
+        static si1      	weekdays[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+	TERN_m10		offset;
+        si4             	microseconds, DST_offset, day_num;
+        si8             	local_time, test_time;
+        sf8             	UTC_offset_hours;
+        va_list         	arg_p;
+        struct tm       	ti;
+	LOCATION_INFO_m10	loc_info = {0};
+
         
         // Note if NULL is passed for time_str, this function is not thread-safe
         if (time_str == NULL)
@@ -11449,15 +11768,19 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10
 			break;
 	}
 	
+	// set global time constants to location of machine
+	if (globals_m10->time_constants_set == FALSE_m10)
+		if (get_location_info_m10(&loc_info, TRUE_m10, FALSE_m10) == NULL)
+			warning_message_m10("%s(): daylight change data not available", __FUNCTION__);
+
+	DST_offset = DST_offset_m10(uutc);
+
 	offset = TRUE_m10;
 	if (globals_m10->RTO_known == TRUE_m10) {
 		test_time = uutc - globals_m10->recording_time_offset;
 		if (test_time < 0)  // time is offset
 			uutc += globals_m10->recording_time_offset;
 		offset = FALSE_m10;
-		DST_offset = DST_offset_m10(uutc);
-	} else {
-		DST_offset = 0;
 	}
 	
 	standard_timezone_acronym = globals_m10->standard_timezone_acronym;
@@ -11749,37 +12072,26 @@ inline void UTF8_inc_m10(si1 *s, si4 *i)
 }
 
 
-void	UTF8_initialize_offsets_table_m10(void)
+void	UTF8_initialize_tables_m10(void)
 {
-	ui4	*utf8_offsets_table;
-	
-	
-	utf8_offsets_table = (ui4 *) e_calloc_m10((size_t) UTF8_OFFSETS_TABLE_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// offsets table
+	if (globals_m10->UTF8_offsets_table != NULL)
+		e_free_m10((void *) globals_m10->UTF8_offsets_table, __FUNCTION__, __LINE__);
+	globals_m10->UTF8_offsets_table = (ui4 *) e_calloc_m10((size_t) UTF8_OFFSETS_TABLE_ENTRIES_m10, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		ui4 temp[UTF8_OFFSETS_TABLE_ENTRIES_m10] = UTF8_OFFSETS_TABLE_m10;
-		memcpy((void *) utf8_offsets_table, (void *) temp, (size_t) UTF8_OFFSETS_TABLE_ENTRIES_m10 * sizeof(ui4));
+		memcpy((void *) globals_m10->UTF8_offsets_table, (void *) temp, (size_t) UTF8_OFFSETS_TABLE_ENTRIES_m10 * sizeof(ui4));
 	}
 	
-	globals_m10->UTF8_offsets_table = utf8_offsets_table;
 	
-	return;
-}
-
-
-void	UTF8_initialize_trailing_bytes_table_m10(void)
-{
-	si1	*UTF8_trailing_bytes_table;
-	
-	
-	UTF8_trailing_bytes_table = (si1 *) e_calloc_m10((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m10, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	
+	// trailing bytes table
+	if (globals_m10->UTF8_trailing_bytes_table != NULL)
+		e_free_m10((void *) globals_m10->UTF8_trailing_bytes_table, __FUNCTION__, __LINE__);
+	globals_m10->UTF8_trailing_bytes_table = (si1 *) e_calloc_m10((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m10, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	{
 		si1 temp[UTF8_TRAILING_BYTES_TABLE_ENTRIES_m10] = UTF8_TRAILING_BYTES_TABLE_m10;
-		memcpy((void *) UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m10);
+		memcpy((void *) globals_m10->UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m10);
 	}
-	
-	globals_m10->UTF8_trailing_bytes_table = UTF8_trailing_bytes_table;
 	
 	return;
 }
@@ -11814,7 +12126,7 @@ si1     *UTF8_memchr_m10(si1 *s, ui4 ch, size_t sz, si4 *charn)
 	
         
 	if (globals_m10->UTF8_offsets_table == NULL)
-		UTF8_initialize_offsets_table_m10();
+		UTF8_initialize_tables_m10();
 	
 	*charn = 0;
 	while (i < sz) {
@@ -11845,7 +12157,7 @@ ui4     UTF8_nextchar_m10(si1 *s, si4 *i)
 	
         
 	if (globals_m10->UTF8_offsets_table == NULL)
-		UTF8_initialize_offsets_table_m10();
+		UTF8_initialize_tables_m10();
 	
 	do {
 		ch <<= 6;
@@ -11956,7 +12268,7 @@ si4     UTF8_read_escape_sequence_m10(si1 *str, ui4 *dest)
 inline si4      UTF8_seqlen_m10(si1 *s)
 {
 	if (globals_m10->UTF8_trailing_bytes_table == NULL)
-		UTF8_initialize_trailing_bytes_table_m10();
+		UTF8_initialize_tables_m10();
 	
 	return(globals_m10->UTF8_trailing_bytes_table[(si4) (ui1) s[0]] + 1);
 }
@@ -12014,10 +12326,7 @@ si4     UTF8_toucs_m10(ui4 *dest, si4 sz, si1 *src, si4 srcsz)
 	
         
 	if (globals_m10->UTF8_offsets_table == NULL)
-		UTF8_initialize_offsets_table_m10();
-	
-	if (globals_m10->UTF8_trailing_bytes_table == NULL)
-		UTF8_initialize_trailing_bytes_table_m10();
+		UTF8_initialize_tables_m10();
 	
 	while (i < sz - 1) {
 		nb = globals_m10->UTF8_trailing_bytes_table[(ui1) *src];

@@ -568,6 +568,9 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define UNKNOWN_SEARCH_m10                      ((ui1) 0)
 #define TIME_SEARCH_m10                         ((ui1) 1)
 #define INDEX_SEARCH_m10                        ((ui1) 2)
+#define IPV4_ADDRESS_BYTES_m10			4
+#define POSTAL_CODE_BYTES_m10			16
+#define LOCALITY_BYTES_m10			64  // city/town
 
 // Target Value Constants
 #define DEFAULT_MODE_m10        0
@@ -926,7 +929,7 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define METADATA_SUBJECT_ID_BYTES_m10                           128
 #define METADATA_RECORDING_COUNTRY_OFFSET_m10                   12968           // utf8[63]
 #define METADATA_RECORDING_TERRITORY_OFFSET_m10                 13224           // utf8[63]
-#define METADATA_RECORDING_CITY_OFFSET_m10                      13480           // utf8[63]
+#define METADATA_RECORDING_LOCALITY_OFFSET_m10                  13480           // utf8[63]
 #define METADATA_RECORDING_INSTITUTION_OFFSET_m10               13736           // utf8[63]
 #define METADATA_RECORDING_LOCATION_BYTES_m10                   256
 #define METADATA_GEOTAG_FORMAT_OFFSET_m10                       13992           // ascii[31]
@@ -1069,22 +1072,35 @@ typedef struct {
 	si4		index_reference_channel_index;  // index of the index reference channel in the session channel array
 } TIME_SLICE_m10;
 
+typedef struct {  // fields from ipinfo.io
+	TIMEZONE_INFO_m10	timezone_info;
+	si1			WAN_IPV4_address[IPV4_ADDRESS_BYTES_m10 * 4];
+	si1			locality[LOCALITY_BYTES_m10];
+	si1			postal_code[POSTAL_CODE_BYTES_m10];
+	si1			timezone_description[METADATA_RECORDING_LOCATION_BYTES_m10];
+	sf8			latitude;
+	sf8			longitude;
+} LOCATION_INFO_m10;
+
 typedef struct {
         // Password
 	PASSWORD_DATA_m10               password_data;
         // Time Constants
+	TERN_m10			time_constants_set;
+	TERN_m10			RTO_known;
 	si8				session_start_time;
 	si8                             recording_time_offset;
         si4                             standard_UTC_offset;
         si1                             standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
         si1                             standard_timezone_string[TIMEZONE_STRING_BYTES_m10];
         TERN_m10                        observe_DST;
-	TERN_m10			RTO_known;
         si1                             daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
         si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m10];
         DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_start_code;  // si1[8] / si8
         DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_end_code;  // si1[8] / si8
         TIMEZONE_INFO_m10               *timezone_table;
+	TIMEZONE_ALIAS_m10   		*country_aliases_table;
+	TIMEZONE_ALIAS_m10   		*country_acronym_aliases_table;
         ui4                             recording_time_offset_mode;
         // Alignment Fields
         TERN_m10                        universal_header_aligned;
@@ -1242,7 +1258,7 @@ typedef struct {
         si1     subject_ID[METADATA_SUBJECT_ID_BYTES_m10];                              // utf8[31]
         si1     recording_country[METADATA_RECORDING_LOCATION_BYTES_m10];               // utf8[63]
         si1     recording_territory[METADATA_RECORDING_LOCATION_BYTES_m10];             // utf8[63]
-        si1     recording_city[METADATA_RECORDING_LOCATION_BYTES_m10];                  // utf8[63]
+        si1     recording_locality[METADATA_RECORDING_LOCATION_BYTES_m10];              // utf8[63]
         si1     recording_institution[METADATA_RECORDING_LOCATION_BYTES_m10];           // utf8[63]
         si1     geotag_format[METADATA_GEOTAG_FORMAT_BYTES_m10];                        // ascii[31]
         si1     geotag_data[METADATA_GEOTAG_DATA_BYTES_m10];                            // ascii[1023]
@@ -1420,7 +1436,7 @@ void            calculate_time_series_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *
 void            calculate_time_series_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, TIME_SERIES_INDEX_m10 *time_series_index, si8 number_of_items);
 ui4             channel_type_from_path_m10(si1 *path);
 TERN_m10        check_password_m10(si1 *password);
-TERN_m10	condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info);
+void		condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info);
 void		condition_time_slice_m10(TIME_SLICE_m10 *slice);
 si8		current_uutc_m10(void);
 si4		days_in_month_m10(si4 month, si4 year);
@@ -1462,16 +1478,16 @@ si1		*generate_segment_name_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *segment_na
 ui8             generate_UID_m10(ui8 *uid);
 TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, si8 *target_sample_number, si4 *target_segment_number, ui1 mode);
 ui1		get_cpu_endianness_m10(void);
+LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 set_timezone_globals, TERN_m10 prompt);
 si4             get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10 *slice);
 void		get_segment_target_values_m10(SEGMENT_m10 *segment, si8 *target_uutc, si8 *target_sample_number, ui1 mode);
 TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, si8 *target_sample_number, si4 *target_segment_number, ui1 mode, si1 *idx_ref_chan);
-TIMEZONE_INFO_m10	*get_timezone_info_m10(si1 *country, si1 *territory, TERN_m10 prompt, TERN_m10 *modified);
 FILE_PROCESSING_DIRECTIVES_m10	*initialize_file_processing_directives_m10(FILE_PROCESSING_DIRECTIVES_m10 *directives);
 void            initialize_globals_m10(void);
 TERN_m10	initialize_medlib_m10(void);
 void            initialize_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 initialize_for_update);
 TIME_SLICE_m10	*initialize_time_slice_m10(TIME_SLICE_m10 *slice);
-void		initialize_timezone_table_m10(void);
+void		initialize_timezone_tables_m10(void);
 void		initialize_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code, TERN_m10 generate_file_UID, TERN_m10 originating_file);
 si1		*MED_type_string_from_code_m10(ui4 code);
 ui4             MED_type_code_from_string_m10(si1 *string);
@@ -1493,11 +1509,12 @@ void            reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 si8             sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_uutc, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);
 TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
 TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
-TERN_m10	set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt, TERN_m10 *modified);
+TERN_m10	set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt);
 TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *section_2_encryption_level, si1 *section_3_encryption_level);
 void            show_daylight_time_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 *code, si1 *prefix);
 void            show_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 void            show_globals_m10(void);
+void    	show_location_info_m10(LOCATION_INFO_m10 *li);
 void            show_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, METADATA_m10 *md);
 void            show_password_data_m10(PASSWORD_DATA_m10 *pwd);
 void            show_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code);
@@ -1549,16 +1566,22 @@ si4             e_system_m10(si1 *command, TERN_m10 null_std_streams, const si1 
 //*****************************  MED String Functions  *****************************//
 //**********************************************************************************//
 
-// Standard Function Prototypes
+// Prototypes
 si4     sprintf_m10(si1 *target, si1 *format, ...);
 void    snprintf_m10(si1 *target, si4 target_field_bytes, si1 *format, ...);
+si1	*str_match_end_m10(si1 *pattern, si1 *buffer);
+si1	*str_match_line_end_m10(si1 *pattern, si1 *buffer);
+si1	*str_match_line_start_m10(si1 *pattern, si1 *buffer);
+si1	*str_match_start_m10(si1 *pattern, si1 *buffer);
 si4     strcat_m10(si1 *target_string, si1 *source_string);
 si4     strcpy_m10(si1 *target_string, si1 *source_string);
+void    strip_character_m10(si1 *s, si1 character);
 void    strncat_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
 void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
 void	strtolower_m10(si1 *s);
 void	strtotitle_m10(si1 *s);
 void	strtoupper_m10(si1 *s);
+
 
 
 //**********************************************************************************//
@@ -1601,7 +1624,7 @@ void	strtoupper_m10(si1 *s);
 #define CRC_SWAP32_m10(q)       ((((q) >> 24) & 0xff) + (((q) >> 8) & 0xff00) + (((q) & 0xff00) << 8) + (((q) & 0xff) << 24))
 
 // Function Prototypes
-ui4	CRC_calculate_m10(const ui1 *block_ptr, si8 block_bytes);
+ui4		CRC_calculate_m10(const ui1 *block_ptr, si8 block_bytes);
 ui4		CRC_combine_m10(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes);
 void		CRC_initialize_table_m10(void);
 void		CRC_matrix_square_m10(ui4 *square, const ui4 *mat);
@@ -1661,8 +1684,7 @@ si4	UTF8_escape_wchar_m10(si1 *buf, si4 sz, ui4 ch);  // given a wide character,
 si4	UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...);  // fprintf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary printf() if the current locale is UTF-8.
 si4	UTF8_hex_digit_m10(si1 c);  // utility predicates used by the above
 void	UTF8_inc_m10(si1 *s, si4 *i);  // move to next character
-void	UTF8_initialize_offsets_table_m10(void);
-void	UTF8_initialize_trailing_bytes_table_m10(void);
+void	UTF8_initialize_tables_m10(void);
 si4	UTF8_is_locale_utf8_m10(si1 *locale);  // boolean function returns if locale is UTF-8, 0 otherwise
 si1	*UTF8_memchr_m10(si1 *s, ui4 ch, size_t sz, si4 *charn);  // same as the above, but searches a buffer of a given size instead of a NUL-terminated string.
 ui4	UTF8_nextchar_m10(si1 *s, si4 *i);  // return next character, updating an index variable
@@ -1775,9 +1797,7 @@ void		AES_key_expansion_m10(ui1 *round_key, si1 *key);
 void		AES_cipher_m10(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 si4		AES_get_sbox_invert_m10(si4 num);
 si4		AES_get_sbox_value_m10(si4 num);
-void		AES_initialize_rcon_table_m10(void);
-void		AES_initialize_rsbox_table_m10(void);
-void		AES_initialize_sbox_table_m10(void);
+void		AES_initialize_tables_m10(void);
 void		AES_inv_cipher_m10(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void		AES_inv_mix_columns_m10(ui1 state[][4]);
 void		AES_inv_shift_rows_m10(ui1 state[][4]);
@@ -1888,8 +1908,7 @@ typedef struct {
 void    SHA_sha_m10(const ui1 *message, ui4 len, ui1 *digest);
 void    SHA_final_m10(SHA_CTX_m10 *ctx, ui1 *digest);
 void    SHA_init_m10(SHA_CTX_m10 *ctx);
-void	SHA_initialize_h0_table_m10(void);
-void	SHA_initialize_k_table_m10(void);
+void	SHA_initialize_tables_m10(void);
 void    SHA_transf_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 block_nb);
 void    SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 len);
 
