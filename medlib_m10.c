@@ -5070,7 +5070,7 @@ si4     DST_offset_m10(si8 uutc)
         si8                             utc, local_utc, change_utc;
         si4                             i, month, DST_start_month, DST_end_month;
         si4                             first_weekday_of_month, target_day_of_month, last_day_of_month;
-        struct tm                       time_info, change_time_info = {0};
+	struct tm                       time_info = {0}, change_time_info = {0};
         DAYLIGHT_TIME_CHANGE_CODE_m10   *first_DTCC, *last_DTCC, *change_DTCC;
 
         
@@ -5106,7 +5106,6 @@ si4     DST_offset_m10(si8 uutc)
                 first_DTCC = &globals_m10->daylight_time_end_code;
                 last_DTCC = &globals_m10->daylight_time_start_code;
         }
-        
 
         // take care of dates not in change months
         if (month != DST_start_month && month != DST_end_month) {
@@ -11773,8 +11772,6 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10
 		if (get_location_info_m10(&loc_info, TRUE_m10, FALSE_m10) == NULL)
 			warning_message_m10("%s(): daylight change data not available", __FUNCTION__);
 
-	DST_offset = DST_offset_m10(uutc);
-
 	offset = TRUE_m10;
 	if (globals_m10->RTO_known == TRUE_m10) {
 		test_time = uutc - globals_m10->recording_time_offset;
@@ -11782,7 +11779,8 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10
 			uutc += globals_m10->recording_time_offset;
 		offset = FALSE_m10;
 	}
-	
+	DST_offset = DST_offset_m10(uutc);
+
 	standard_timezone_acronym = globals_m10->standard_timezone_acronym;
 	standard_timezone_string = globals_m10->standard_timezone_string;
 	local_time = (si4) (uutc / (si8) 1000000) + DST_offset + globals_m10->standard_UTC_offset;
