@@ -141,6 +141,7 @@ typedef si1                                     TERN_m10;
 #define ENCRYPTION_KEY_BYTES_m10                176     // AES-128   = ((AES_NR + 1) * AES_NK * AES_NB)
 #define PASSWORD_BYTES_m10			ENCRYPTION_BLOCK_BYTES_m10
 #define MAX_PASSWORD_CHARACTERS_m10		PASSWORD_BYTES_m10
+#define MAX_ASCII_PASSWORD_STRING_BYTES_m10	(MAX_PASSWORD_CHARACTERS_m10 + 1)  // 1 byte per character in ascii plus terminal zero
 #define MAX_UTF8_PASSWORD_BYTES_m10		(MAX_PASSWORD_CHARACTERS_m10 * 4)  // up to 4 bytes per character in UTF-8
 #define MAX_PASSWORD_STRING_BYTES_m10		(MAX_UTF8_PASSWORD_BYTES_m10 + 1)  // 1 byte for null-termination
 #define PASSWORD_VALIDATION_FIELD_BYTES_m10     PASSWORD_BYTES_m10
