@@ -575,7 +575,7 @@ void	AES_sub_bytes_m10(ui1 state[][4])
 //***********************************************************************//
 
 
-si1	all_zeros_m10(ui1 *bytes, si4 field_length)
+TERN_m10	all_zeros_m10(ui1 *bytes, si4 field_length)
 {
 	while (field_length--)
 		if (*bytes++)
@@ -5728,17 +5728,19 @@ void    error_message_m10(si1 *fmt, ...)
 	va_list args;
 
 
+	// RED suppressible text to stderr with beep, and option to exit program
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
+		fprintf(stderr, "%c%s", 7, TC_RED_m10);
 		va_start(args, fmt);
 		UTF8_vfprintf_m10(stderr, fmt, args);
 		va_end(args);
 		if (globals_m10->behavior_on_fail & EXIT_ON_FAIL_m10)
-			fprintf(stderr, " => exiting program\n\n");
+			fprintf(stderr, " ... Exiting\n\n%s", TC_RESET_m10);
 		else
-			fprintf(stderr, " => returning\n\n");
+			fprintf(stderr, "%s", TC_RESET_m10);
 		fflush(stderr);
 	}
-
+	
 	if (globals_m10->behavior_on_fail & EXIT_ON_FAIL_m10)
 		exit(1);
 	
@@ -6280,6 +6282,14 @@ void    free_globals_m10(void)
 	if (globals_m10->timezone_table != NULL) {
                 e_free_m10(globals_m10->timezone_table, __FUNCTION__, __LINE__);
 		globals_m10->timezone_table = NULL;
+	}
+	if (globals_m10->country_aliases_table != NULL) {
+		e_free_m10(globals_m10->country_aliases_table, __FUNCTION__, __LINE__);
+		globals_m10->country_aliases_table = NULL;
+	}
+	if (globals_m10->country_acronym_aliases_table != NULL) {
+		e_free_m10(globals_m10->country_acronym_aliases_table, __FUNCTION__, __LINE__);
+		globals_m10->country_acronym_aliases_table = NULL;
 	}
 	if (globals_m10->CMP_normal_CDF_table != NULL) {
                 e_free_m10(globals_m10->CMP_normal_CDF_table, __FUNCTION__, __LINE__);
@@ -7022,7 +7032,7 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
 		error_message_m10("%s(): Could not match pattern \"%s\" in output of \"curl -s ipinfo.io\"", __FUNCTION__, pattern);
 	else
-		sscanf(c, "%[^,]", loc_info->WAN_IPV4_address);
+		sscanf(c, "%[^,]", loc_info->WAN_IPv4_address);
 	
 	pattern = "city: ";
 	if ((c = str_match_end_m10(pattern, buffer)) == NULL)
@@ -8182,12 +8192,11 @@ void    message_m10(si1 *fmt, ...)
 {
 	va_list args;
 
-	
+	// BLACK suppressible text to stdout
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m10)) {
 		va_start(args, fmt);
 		UTF8_vprintf_m10(fmt, args);
 		va_end(args);
-		printf("\n");
 		fflush(stdout);
 	}
 	
@@ -10560,7 +10569,7 @@ void    show_location_info_m10(LOCATION_INFO_m10 *li)
 	printf("Timezone Description: %s\n", li->timezone_description);
 	printf("Latitude: %lf\n", li->latitude);
 	printf("Longitude: %lf\n", li->longitude);
-	printf("WAN_IPV4 Address: %s\n", li->WAN_IPV4_address);
+	printf("WAN_IPv4 Address: %s\n", li->WAN_IPv4_address);
 
 	return;
 }
@@ -12652,11 +12661,13 @@ void    warning_message_m10(si1 *fmt, ...)
         va_list args;
 
         
+	// GREEN suppressible text to stderr
         if (!(globals_m10->behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m10)) {
+		fprintf(stderr, "%s", TC_GREEN_m10);
                 va_start(args, fmt);
                 UTF8_vfprintf_m10(stderr, fmt, args);
                 va_end(args);
-                fprintf(stderr, "\n");
+		fprintf(stderr, "%s", TC_RESET_m10);
                 fflush(stderr);
         }
         

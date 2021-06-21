@@ -1075,7 +1075,7 @@ typedef struct {
 
 typedef struct {  // fields from ipinfo.io
 	TIMEZONE_INFO_m10	timezone_info;
-	si1			WAN_IPV4_address[IPV4_ADDRESS_BYTES_m10 * 4];
+	si1			WAN_IPv4_address[IPV4_ADDRESS_BYTES_m10 * 4];
 	si1			locality[LOCALITY_BYTES_m10];
 	si1			postal_code[POSTAL_CODE_BYTES_m10];
 	si1			timezone_description[METADATA_RECORDING_LOCATION_BYTES_m10];
@@ -1423,7 +1423,7 @@ TERN_m10	check_video_metadata_section_2_alignment_m10(ui1 *bytes);
 
 // MED Function Prototypes
 si8             absolute_index_to_time_m10(si1 *seg_dir, si8 index, si8 absolute_start_sample_number, sf8 sampling_frequency, ui1 mode);
-si1             all_zeros_m10(ui1 *bytes, si4 field_length);
+TERN_m10	all_zeros_m10(ui1 *bytes, si4 field_length);
 CHANNEL_m10	*allocate_channel_m10(CHANNEL_m10 *chan, FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m10 chan_recs, TERN_m10 seg_recs);
 FILE_PROCESSING_STRUCT_m10	*allocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m10 *proto_fps, si8 bytes_to_copy);
 METADATA_m10	*allocate_metadata_m10(METADATA_m10 *metadata, ui1 *data_ptr);
