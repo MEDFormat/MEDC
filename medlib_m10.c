@@ -1441,23 +1441,23 @@ TERN_m10	check_password_m10(si1 *password)
         
         // check pointer: return -1 for NULL
         if (password == NULL) {
-		warning_message_m10("%s(): password is NULL", __FUNCTION__);
+		warning_message_m10("%s(): password is NULL\n", __FUNCTION__);
                 return(FALSE_m10);
         }
         
         // check password length:  return +1 for length error
         pw_len = UTF8_strlen_m10(password);
         if (pw_len == 0) {
-		warning_message_m10("%s(): password has no characters", __FUNCTION__);
+		warning_message_m10("%s(): password has no characters\n", __FUNCTION__);
                 return(FALSE_m10);
         }
         if (pw_len > MAX_PASSWORD_CHARACTERS_m10) {
-		warning_message_m10("%s(): password too long (1 to  %d characters)", __FUNCTION__, MAX_PASSWORD_CHARACTERS_m10);
+		warning_message_m10("%s(): password too long (1 to  %d characters)\n", __FUNCTION__, MAX_PASSWORD_CHARACTERS_m10);
                 return(FALSE_m10);
         }
         
 	if (globals_m10->verbose == TRUE_m10)
-		message_m10("Password is of valid form", __FUNCTION__);
+		message_m10("Password is of valid form\n", __FUNCTION__);
         
         // return TRUE_m10 for valid password
         return(TRUE_m10);
@@ -2338,7 +2338,7 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		ret_val = FALSE_m10;
         }
         if (need_original_data == FALSE_m10 && cps->original_data != NULL) {
-                warning_message_m10("%s(): \"original_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing", __FUNCTION__);
+                warning_message_m10("%s(): \"original_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
                 e_free_m10(cps->original_data, __FUNCTION__, __LINE__);
                 cps->original_ptr = cps->original_data = NULL;
 		ret_val = FALSE_m10;
@@ -2350,7 +2350,7 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		ret_val = FALSE_m10;
         }
         if (need_decompressed_data == FALSE_m10 && cps->decompressed_data != NULL) {
-                warning_message_m10("%s(): \"decompressed_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing", __FUNCTION__);
+                warning_message_m10("%s(): \"decompressed_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
                 e_free_m10(cps->decompressed_data, __FUNCTION__, __LINE__);
                 cps->decompressed_ptr = cps->decompressed_data = NULL;
 		ret_val = FALSE_m10;
@@ -2362,7 +2362,7 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		ret_val = FALSE_m10;
         }
         if (need_detrended_buffer == FALSE_m10 && cps->detrended_buffer != NULL) {
-                warning_message_m10("%s(): \"detrended_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing", __FUNCTION__);
+                warning_message_m10("%s(): \"detrended_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
                 e_free_m10(cps->detrended_buffer, __FUNCTION__, __LINE__);
                 cps->detrended_buffer = NULL;
 		ret_val = FALSE_m10;
@@ -2374,7 +2374,7 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		ret_val = FALSE_m10;
         }
         if (need_derivative_buffer == FALSE_m10 && cps->derivative_buffer != NULL) {
-                warning_message_m10("%s(): \"derivative_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing", __FUNCTION__);
+                warning_message_m10("%s(): \"derivative_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
                 e_free_m10(cps->derivative_buffer, __FUNCTION__, __LINE__);
                 cps->derivative_buffer = NULL;
 		ret_val = FALSE_m10;
@@ -2386,7 +2386,7 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		ret_val = FALSE_m10;
         }
         if (need_scaled_amplitude_buffer == FALSE_m10 && cps->scaled_amplitude_buffer != NULL) {
-                warning_message_m10("%s(): \"scaled_amplitude_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing", __FUNCTION__);
+                warning_message_m10("%s(): \"scaled_amplitude_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
                 e_free_m10(cps->scaled_amplitude_buffer, __FUNCTION__, __LINE__);
                 cps->scaled_amplitude_buffer = NULL;
 		ret_val = FALSE_m10;
@@ -2398,7 +2398,7 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		ret_val = FALSE_m10;
         }
         if (need_scaled_frequency_buffer == FALSE_m10 && cps->scaled_frequency_buffer != NULL) {
-                warning_message_m10("%s(): \"scaled_frequency_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing", __FUNCTION__);
+                warning_message_m10("%s(): \"scaled_frequency_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
                 e_free_m10(cps->scaled_frequency_buffer, __FUNCTION__, __LINE__);
                 cps->scaled_frequency_buffer = NULL;
 		ret_val = FALSE_m10;
@@ -2735,7 +2735,7 @@ TERN_m10     CMP_encrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		case 0: // not encrypted
 			break;
 		case CMP_BF_ENCRYPTION_MASK_m10:
-			warning_message_m10("%s(): Level 1 & 2 bits set in block => cannot encrypt", __FUNCTION__);
+			warning_message_m10("%s(): Level 1 & 2 bits set in block => cannot encrypt\n", __FUNCTION__);
 			return(FALSE_m10);
 		case CMP_BF_LEVEL_1_ENCRYPTION_MASK_m10:
 			if (encryption_level == LEVEL_1_ENCRYPTION_m10)
@@ -2926,7 +2926,7 @@ TERN_m10	CMP_find_frequency_scale_m10(CMP_PROCESSING_STRUCT_m10 *cps, void (*com
 void    CMP_free_processing_struct_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 {
         if (cps == NULL) {
-                warning_message_m10("%s(): trying to free a NULL CMP_PROCESSING_STRUCT_m10 => returning with no action", __FUNCTION__);
+                warning_message_m10("%s(): trying to free a NULL CMP_PROCESSING_STRUCT_m10 => returning with no action\n", __FUNCTION__);
                 return;
         }
         if (cps->original_data != NULL)
@@ -3508,7 +3508,7 @@ void    CMP_PRED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		if (block_header->number_of_samples == 1)
 			*((si4 *) (model + CMP_PRED_MODEL_INITIAL_SAMPLE_VALUE_OFFSET_m10)) = input_buffer[0];
 		else
-			warning_message_m10("%s(): No samples in block => returning without encoding", __FUNCTION__);
+			warning_message_m10("%s(): No samples in block => returning without encoding\n", __FUNCTION__);
                 return;
         }
 	
@@ -3558,7 +3558,7 @@ void    CMP_PRED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
         }
         
 	// only one unique value (typically all zeros)
-        if (total_stats_entries == 1 && stats_entries[CMP_PRED_NIL_m10] == 1) {
+        if (total_stats_entries == 1 && sorted_count[CMP_PRED_NIL_m10][0].value == 0) {
 		block_header->total_header_bytes = (ui4) (CMP_BLOCK_FIXED_HEADER_BYTES_m10 + variable_region_bytes + CMP_PRED_MODEL_FIXED_BYTES_m10);
 		block_header->total_block_bytes = pad_m10((ui1 *) block_header, block_header->total_header_bytes, 8);
 		block_header->model_region_bytes = (ui2) CMP_PRED_MODEL_FIXED_BYTES_m10;
@@ -4568,12 +4568,12 @@ void	condition_time_slice_m10(TIME_SLICE_m10 *slice)
 	
 	
 	if (slice == NULL) {
-		warning_message_m10("%s(): passed time slice is NULL");
+		warning_message_m10("%s(): passed time slice is NULL\n");
 		return;
 	}
 
 	if (globals_m10->RTO_known == FALSE_m10) {
-		warning_message_m10("%s(): recording time offset is not known => assuming no offset", __FUNCTION__);
+		warning_message_m10("%s(): recording time offset is not known => assuming no offset\n", __FUNCTION__);
 		globals_m10->recording_time_offset = 0;  // this is the default value
 	}
 	
@@ -4909,7 +4909,7 @@ TERN_m10	decrypt_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps)
                         fps->metadata.section_1->section_3_encryption_level = -fps->metadata.section_1->section_3_encryption_level;  // mark as currently decrypted
 		} else {
 			if (globals_m10->verbose == TRUE_m10) {
-				warning_message_m10("%s(): Metadata section 3 encrypted at level %hhd => cannot decrypt", __FUNCTION__, fps->metadata.section_1->section_3_encryption_level);
+				warning_message_m10("%s(): Metadata section 3 encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata.section_1->section_3_encryption_level);
 				show_password_data_m10(pwd);
 			}
 			return(TRUE_m10);  // can function without section 3, so return TRUE_m10
@@ -4964,7 +4964,7 @@ TERN_m10     decrypt_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_
                         } else {
 				++failed_decryption_count;
 				if (globals_m10->verbose == TRUE_m10)
-                                	warning_message_m10("%s(): Cannot decrypt record => skipping", __FUNCTION__);
+                                	warning_message_m10("%s(): Cannot decrypt record => skipping\n", __FUNCTION__);
                         }
                 }
                 record_header = (RECORD_HEADER_m10 *) ((ui1 *) record_header + record_header->total_record_bytes);
@@ -5077,7 +5077,7 @@ si4     DST_offset_m10(si8 uutc)
         // returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
 
 	if (globals_m10->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m10) {
-		warning_message_m10("%s(): daylight change data not available", __FUNCTION__);
+		warning_message_m10("%s(): daylight change data not available\n", __FUNCTION__);
 		return(0);
 	}
 		
@@ -5301,7 +5301,7 @@ size_t	e_fread_m10(void *ptr, size_t size, size_t n_members, FILE *stream, si1 *
 void    e_free_m10(void *ptr, const si1 *function, si4 line)
 {
 	if (ptr == NULL) {
-		warning_message_m10("%s(): Attempting to free unallocated object [called from function %s(), line %d]", __FUNCTION__, function, line);
+		warning_message_m10("%s(): Attempting to free unallocated object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
 		return;
 	}
 	
@@ -5321,7 +5321,7 @@ void    e_free_2D_m10(void **ptr, si8 dim1, const si1 *function, si4 line)
 	
 	// assume allocated en bloc
 	if (dim1 == 0) {
-		warning_message_m10("%s(): assuming allocated en bloc", __FUNCTION__);
+		warning_message_m10("%s(): assuming allocated en bloc\n", __FUNCTION__);
 		e_free_m10(ptr, function, line);
 		return;
 	}
@@ -5797,7 +5797,7 @@ void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
         if (*full_file_name == '/') {
 		strncpy_m10(temp_full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m10);  // do non-destructively
 	} else {
-                warning_message_m10("%s(): path \"%s\" does not start from root => prepending current working directory", __FUNCTION__, full_file_name);
+                warning_message_m10("%s(): path \"%s\" does not start from root => prepending current working directory\n", __FUNCTION__, full_file_name);
                 getcwd(cwd, FULL_FILE_NAME_BYTES_m10);
 		c = full_file_name;
                 if (*c == '.') {
@@ -5834,7 +5834,7 @@ void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 		if (*c == '.') {
 			len = strcpy_m10(extension, c + 1);
 			if (len != TYPE_BYTES_m10)
-				warning_message_m10("%s(): \"%s\" is not a MED extension", __FUNCTION__, extension);
+				warning_message_m10("%s(): \"%s\" is not a MED extension\n", __FUNCTION__, extension);
 		} else {
 			*extension = 0;
 		}
@@ -6212,7 +6212,7 @@ void	free_channel_m10(CHANNEL_m10 *channel, TERN_m10 channel_allocated_en_bloc)
  
         
         if (channel == NULL) {
-                warning_message_m10("%s(): trying to free a NULL CHANNEL_m10 structure => returning with no action", __FUNCTION__);
+                warning_message_m10("%s(): trying to free a NULL CHANNEL_m10 structure => returning with no action\n", __FUNCTION__);
                 return;
         }
         
@@ -6247,7 +6247,7 @@ void	free_channel_m10(CHANNEL_m10 *channel, TERN_m10 channel_allocated_en_bloc)
 void	free_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 allocated_en_bloc)
 {
         if (fps == NULL) {
-                warning_message_m10("%s(): trying to free a NULL FILE_PROCESSING_STRUCT_m10 => returning with no action", __FUNCTION__);
+                warning_message_m10("%s(): trying to free a NULL FILE_PROCESSING_STRUCT_m10 => returning with no action\n", __FUNCTION__);
                 return;
         }
         
@@ -6276,7 +6276,7 @@ void	free_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 a
 void    free_globals_m10(void)
 {
         if (globals_m10 == NULL) {
-                warning_message_m10("%s(): trying to free a NULL GLOBALS_m10 structure => returning with no action", __FUNCTION__);
+                warning_message_m10("%s(): trying to free a NULL GLOBALS_m10 structure => returning with no action\n", __FUNCTION__);
                 return;
         }
 	if (globals_m10->timezone_table != NULL) {
@@ -6347,7 +6347,7 @@ void    free_metadata_m10(METADATA_m10 *metadata)
 void	free_segment_m10(SEGMENT_m10 *segment, TERN_m10 segment_allocated_en_bloc)
 {
         if (segment == NULL) {
-                warning_message_m10("$s(): trying to free a NULL SEGMENT_m10 structure => returning with no action", __FUNCTION__);
+                warning_message_m10("$s(): trying to free a NULL SEGMENT_m10 structure => returning with no action\n", __FUNCTION__);
                 return;
         }
         if (segment->metadata_fps != NULL)
@@ -6377,7 +6377,7 @@ void	free_session_m10(SESSION_m10 *session)
         
         
         if (session == NULL) {
-                warning_message_m10("%s(): trying to free a NULL SESSION_m10 structure => returning with no action", __FUNCTION__);
+                warning_message_m10("%s(): trying to free a NULL SESSION_m10 structure => returning with no action\n", __FUNCTION__);
                 return;
         }
         if (session->time_series_metadata_fps != NULL)
@@ -7087,7 +7087,7 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 		if (set_global_time_constants_m10(&loc_info->timezone_info, 0, prompt) == FALSE_m10) {
 			if (free_loc_info == TRUE_m10)
 				e_free_m10((void *) loc_info, __FUNCTION__, __LINE__);
-			warning_message_m10("%s(): Could not set timezone globals => returning NULL", __FUNCTION__);
+			warning_message_m10("%s(): Could not set timezone globals => returning NULL\n", __FUNCTION__);
 			return(NULL);
 		}
 	}
@@ -7126,7 +7126,7 @@ si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10
 			if (i != n_channels)
 				ref_chan_idx = i;
 			else
-                                warning_message_m10("%s(): Cannot find reference channel in file list => using first channel", __FUNCTION__);
+                                warning_message_m10("%s(): Cannot find reference channel in file list => using first channel\n", __FUNCTION__);
                 }
         }
 	slice->index_reference_channel_index = ref_chan_idx;
@@ -7253,7 +7253,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
         // must use channel
         if (same_frequency == FALSE_m10 && *target_sample_number != SAMPLE_NUMBER_NO_ENTRY_m10) {
                 if (ref_chan_idx == -1) {
-                        warning_message_m10("%s(): No reference channel passed => using first channel", __FUNCTION__);
+                        warning_message_m10("%s(): No reference channel passed => using first channel\n", __FUNCTION__);
                         ref_chan_idx = 0;
                 }
                 if (tmd2 != NULL)
@@ -7311,7 +7311,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
                         free_file_processing_struct_m10(rd_fps, FALSE_m10);
                 
                 if (ref_chan_idx == -1) {
-                        warning_message_m10("%s(): No reference channel passed => using first channel", __FUNCTION__);
+                        warning_message_m10("%s(): No reference channel passed => using first channel\n", __FUNCTION__);
                         ref_chan_idx = 0;
                 }
                 if (tmd2 != NULL)
@@ -7837,7 +7837,7 @@ ui4     MED_type_code_from_string_m10(si1 *string)
         
         
         if (string == NULL) {
-                warning_message_m10("%s(): string is NULL", __FUNCTION__);
+                warning_message_m10("%s(): string is NULL\n", __FUNCTION__);
                 return(NO_FILE_TYPE_CODE_m10);
         }
         
@@ -7864,7 +7864,7 @@ ui4     MED_type_code_from_string_m10(si1 *string)
                         return code;
         }
         
-	warning_message_m10("%s(): \"%s\" is not a recognized MED file type", __FUNCTION__, string);
+	warning_message_m10("%s(): \"%s\" is not a recognized MED file type\n", __FUNCTION__, string);
 	
         return(NO_FILE_TYPE_CODE_m10);
 }
@@ -8264,7 +8264,7 @@ TERN_m10	process_password_data_m10(si1 *unspecified_password, si1 *L1_password, 
         
 	// can't process passwords without a universal header
 	if (fps == NULL) {
-		warning_message_m10("%s(): FILE_PROCESSING_STRUCT_m10 is NULL", __FUNCTION__);
+		warning_message_m10("%s(): FILE_PROCESSING_STRUCT_m10 is NULL\n", __FUNCTION__);
 		return(FALSE_m10);
 	}
 	
@@ -8337,12 +8337,12 @@ TERN_m10	process_password_data_m10(si1 *unspecified_password, si1 *L1_password, 
 				AES_key_expansion_m10(pwd->level_1_encryption_key, putative_L1_password_bytes);  // generate key
 				AES_key_expansion_m10(pwd->level_2_encryption_key, unspecified_password_bytes);  // generate key
 				if (globals_m10->verbose == TRUE_m10)
-					message_m10("Unspecified password is valid for Level 1 and Level 2 access");
+					message_m10("Unspecified password is valid for Level 1 and Level 2 access\n");
 				return(TRUE_m10);
 			}
 			
 			// invalid as level 2 password
-			warning_message_m10("%s(): password is not valid for Level 1 or Level 2 access", __FUNCTION__);
+			warning_message_m10("%s(): password is not valid for Level 1 or Level 2 access\n", __FUNCTION__);
 		}
 		// check_password_m10() == FALSE_m10 or invalid
 		show_password_data_m10(pwd);
@@ -8597,7 +8597,7 @@ FILE_PROCESSING_STRUCT_m10      *read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, 
 	allocated_flag = FALSE_m10;
 	if (fps == NULL) {
 		if (full_file_name == NULL) {
-			warning_message_m10("%s(): FILE_PROCESSING_STRUCT_m10 and full_file_name are both NULL", __FUNCTION__);
+			warning_message_m10("%s(): FILE_PROCESSING_STRUCT_m10 and full_file_name are both NULL\n", __FUNCTION__);
 			return(NULL);
 		}
                 fps = allocate_file_processing_struct_m10(NULL, full_file_name, NO_FILE_TYPE_CODE_m10, 0, NULL, 0);
@@ -8750,7 +8750,7 @@ FILE_PROCESSING_STRUCT_m10      *read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, 
 			break;
         }
 	if (readable == FALSE_m10) {
-		warning_message_m10("%s(): Cannot read file \"%s\"", __FUNCTION__, fps->full_file_name);
+		warning_message_m10("%s(): Cannot read file \"%s\"\n", __FUNCTION__, fps->full_file_name);
 		if (allocated_flag == TRUE_m10)
 			free_file_processing_struct_m10(fps, FALSE_m10);
 		return(NULL);
@@ -8920,7 +8920,7 @@ SEGMENT_m10     *read_segment_m10(SEGMENT_m10 *seg, si1 *seg_dir, TIME_SLICE_m10
                                 read_file_m10(seg->record_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
                         }
                 } else {
-                        warning_message_m10("%s(): Segment record data file does not exist (\"%s\"), but indices file does", __FUNCTION__, full_file_name);
+                        warning_message_m10("%s(): Segment record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
                 }
         }
 
@@ -9100,11 +9100,11 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 
         // if session has no channels, it can still have records, but it's probably a bad session
         if (n_ts_chans == 0 && n_vid_chans == 0)
-                warning_message_m10("%s(): session contains no channels", __FUNCTION__);
+                warning_message_m10("%s(): session contains no channels\n", __FUNCTION__);
 
         // if session has no segments, it can still have records, but it's probably a bad session
         if (n_segs == 0)
-                warning_message_m10("%s(): session contains no segments", __FUNCTION__);
+                warning_message_m10("%s(): session contains no segments\n", __FUNCTION__);
 
         // read session record indices (if present)
         sprintf(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
@@ -9127,7 +9127,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
                         if (n_vid_chans)
                                 merge_universal_headers_m10(sess->video_metadata_fps, sess->record_data_fps, NULL);
                 } else {
-                        warning_message_m10("%s(): Session record data file does not exist (\"%s\"), but indices file does", __FUNCTION__, full_file_name);
+                        warning_message_m10("%s(): Session record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
                 }
         }
 
@@ -9168,7 +9168,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
                                         if (sess->number_of_video_channels)
                                                 merge_universal_headers_m10(sess->video_metadata_fps, gen_fps, NULL);
                                 } else {
-                                        warning_message_m10("%s(): Session segmented record data file does not exist (\"%s\"), but indices file does", __FUNCTION__, full_file_name);
+                                        warning_message_m10("%s(): Session segmented record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
                                 }
                         }
                 }
@@ -9421,7 +9421,7 @@ TERN_m10    recover_passwords_m10(si1 *L3_password, UNIVERSAL_HEADER_m10 *univer
                 generate_hex_string_m10((ui1 *) putative_L2_password_bytes, PASSWORD_BYTES_m10, hex_str);
 		message_m10("Level 2 password (bytes): '%s' (%s)", putative_L2_password_bytes, hex_str);
         } else {
-                warning_message_m10("%s(): the passed password is not valid for Level 3 access", __FUNCTION__, __LINE__);
+                warning_message_m10("%s(): the passed password is not valid for Level 3 access\n", __FUNCTION__, __LINE__);
 		return(FALSE_m10);
         }
         
@@ -9878,7 +9878,7 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
                 if (passed_channel == NULL) {
                         chan_list = generate_file_list_m10(NULL, 0, &n_chans, path, "*", "ticd", PP_FULL_PATH_m10, FALSE_m10);
                         if (n_chans == 0) {
-                                warning_message_m10("%s(): Cannot fill in all limits");
+                                warning_message_m10("%s(): Cannot fill in all limits\n");
                                 return(TRUE_m10);
                         }
                         passed_channel = chan_list[0];
@@ -10893,26 +10893,26 @@ void	show_password_data_m10(PASSWORD_DATA_m10 *pwd)
 		
 	// use message_m10() because show_password_data_m10() is used in normal (no programming) functions => so allow output to be suppressed easily
 	if (pwd == NULL) {
-		message_m10("\n-------------- Global Password Data - START --------------");
+		message_m10("\n-------------- Global Password Data - START --------------\n");
 		pwd = &globals_m10->password_data;
 	} else {
-		message_m10("\n------------------ Password Data - START -----------------");
+		message_m10("\n------------------ Password Data - START -----------------\n");
 	}
 	if (pwd->access_level >= LEVEL_1_ACCESS_m10) {
                 generate_hex_string_m10(pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m10, hex_str);
-		message_m10("Level 1 Encryption Key: %s", hex_str);
+		message_m10("Level 1 Encryption Key: %s\n", hex_str);
 	}
 	if (pwd->access_level == LEVEL_2_ACCESS_m10) {
                 generate_hex_string_m10(pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m10, hex_str);
-		message_m10("Level 2 Encryption Key: %s", hex_str);
+		message_m10("Level 2 Encryption Key: %s\n", hex_str);
 	}
 	if (*pwd->level_1_password_hint)
-		message_m10("Level 1 Password Hint: %s", pwd->level_1_password_hint);
+		message_m10("Level 1 Password Hint: %s\n", pwd->level_1_password_hint);
 	if (*pwd->level_2_password_hint)
-		message_m10("Level 2 Password Hint: %s", pwd->level_2_password_hint);
+		message_m10("Level 2 Password Hint: %s\n", pwd->level_2_password_hint);
 	message_m10("Access Level: %hhu", pwd->access_level);
 	message_m10("Processed: %hhu", pwd->access_level);
-	message_m10("------------------- Password Data - END ------------------\n");
+	message_m10("------------------- Password Data - END ------------------\n\n");
 	
 	return;
 }
@@ -11779,7 +11779,7 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10
 	// set global time constants to location of machine
 	if (globals_m10->time_constants_set == FALSE_m10)
 		if (get_location_info_m10(&loc_info, TRUE_m10, FALSE_m10) == NULL)
-			warning_message_m10("%s(): daylight change data not available", __FUNCTION__);
+			warning_message_m10("%s(): daylight change data not available\n", __FUNCTION__);
 
 	offset = TRUE_m10;
 	if (globals_m10->RTO_known == TRUE_m10) {
@@ -11916,7 +11916,7 @@ si8     ts_sort_m10(si4 *x, si8 len, NODE_m10 *nodes, NODE_m10 *head, NODE_m10 *
                 sorted_x = va_arg(arg_p, si4 *);
                 va_end(arg_p);
                 if (sorted_x == NULL)  {
-                        warning_message_m10("%s(): passed sorted array pointer is NULL", __FUNCTION__);
+                        warning_message_m10("%s(): passed sorted array pointer is NULL\n", __FUNCTION__);
                 } else {
                         for (i = n_nodes, np = head->next; i--; np = np->next)
                                 for (j = np->count; j--;)

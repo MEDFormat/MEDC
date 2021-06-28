@@ -500,6 +500,7 @@ void    	CMP_calculate_statistics_m10(void *stats_ptr, si4 *data, si8 len, NODE_
 TERN_m10	CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void		CMP_cps_mutex_off_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void		CMP_cps_mutex_on_m10(CMP_PROCESSING_STRUCT_m10 *cps);
+void    	CMP_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 TERN_m10     	CMP_decrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void    	CMP_detrend_m10(si4 *input_buffer, si4 *output_buffer, si8 len, CMP_PROCESSING_STRUCT_m10 *cps);
 void    	CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples);
