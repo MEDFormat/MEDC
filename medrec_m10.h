@@ -365,5 +365,67 @@ void            show_rec_NlxP_type_m10(RECORD_HEADER_m10 *record_header);
 TERN_m10        check_rec_NlxP_type_alignment_m10(ui1 *bytes);
 
 
+//*************************************************************************************//
+//***********************   Curs: Cadwell EMG Cursor Annotation   *********************//
+//*************************************************************************************//
+
+// Constants
+#define REC_Curs_TYPE_STRING_m10             "Curs"                  // ascii[4]
+#define REC_Curs_TYPE_CODE_m10               (ui4) 0x73727543        // ui4 (little endian)
+// #define REC_Curs_TYPE_CODE_m10            (ui4) 0x43757273        // ui4 (big endian)
+
+// Version 1.0
+#define REC_Curs_v10_NAME_BYTES_m10         		128
+#define REC_Curs_v10_BYTES_m10                          152
+#define REC_Curs_v10_ID_NUMBER_OFFSET_m10          	0	// si8
+#define REC_Curs_v10_LATENCY_OFFSET_m10			8	// si8
+#define REC_Curs_v10_VALUE_OFFSET_m10			16	// sf8
+#define REC_Curs_v10_NAME_OFFSET_m10			24	// si1[128]
+
+// Structures
+typedef struct {
+    si8 id_number;
+    si8 latency;
+    sf8 value;
+    si1 name[REC_Curs_v10_NAME_BYTES_m10];
+} REC_Curs_v10_m10;
+
+// Prototypes
+void            show_rec_Curs_type_m10(RECORD_HEADER_m10 *record_header);
+TERN_m10        check_rec_Curs_type_alignment_m10(ui1 *bytes);
+
+
+
+//*************************************************************************************//
+//****************************   Epoc: Sleep Stage Record   ***************************//
+//*************************************************************************************//
+
+// Constants
+#define REC_Epoc_TYPE_STRING_m10             "Epoc"                  // ascii[4]
+#define REC_Epoc_TYPE_CODE_m10               (ui4) 0x636F7045        // ui4 (little endian)
+// #define REC_Epoc_TYPE_CODE_m10            (ui4) 0x45706F63        // ui4 (big endian)
+
+// Version 1.0
+#define REC_Epoc_v10_TYPE_BYTES_m10          		32
+#define REC_Epoc_v10_TEXT_BYTES_m10          		128
+#define REC_Epoc_v10_BYTES_m10                          176
+#define REC_Epoc_v10_ID_NUMBER_OFFSET_m10          	0	// si8
+#define REC_Epoc_v10_END_TIME_OFFSET_m10		8	// si8
+#define REC_Epoc_v10_EPOCH_TYPE_OFFSET_m10		16	// si1[32]
+#define REC_Epoc_v10_TEXT_OFFSET_m10			48	// si1[128]
+
+// Structures
+typedef struct {
+    si8 id_number;
+    si8 end_time;
+    si1 epoch_type[REC_Epoc_v10_TYPE_BYTES_m10];
+    si1 text[REC_Epoc_v10_TEXT_BYTES_m10];
+} REC_Epoc_v10_m10;
+
+// Prototypes
+void            show_rec_Epoc_type_m10(RECORD_HEADER_m10 *record_header);
+TERN_m10        check_rec_Epoc_type_alignment_m10(ui1 *bytes);
+
+
 #endif // MEDREC_IN_m10
 

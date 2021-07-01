@@ -165,6 +165,12 @@ void	show_record_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_
                 case REC_NlxP_TYPE_CODE_m10:
                         show_rec_NlxP_type_m10(record_header);
                         break;
+		case REC_Curs_TYPE_CODE_m10:
+			show_rec_Curs_type_m10(record_header);
+			break;
+		case REC_Epoc_TYPE_CODE_m10:
+			show_rec_Epoc_type_m10(record_header);
+			break;
 		default:
 			warning_message_m10("%s(): 0x%x is an unrecognized record type code", __FUNCTION__, type_code);
 			break;
@@ -210,6 +216,10 @@ TERN_m10	check_record_structure_alignments_m10(ui1 *bytes)
 		return_value = FALSE_m10;
         if ((check_rec_NlxP_type_alignment_m10(bytes)) == FALSE_m10)
                 return_value = FALSE_m10;
+	if ((check_rec_Curs_type_alignment_m10(bytes)) == FALSE_m10)
+		return_value = FALSE_m10;
+	if ((check_rec_Epoc_type_alignment_m10(bytes)) == FALSE_m10)
+		return_value = FALSE_m10;
 
         if (free_flag == TRUE_m10)
 		e_free_m10(bytes, __FUNCTION__, __LINE__);
@@ -839,6 +849,155 @@ TERN_m10     check_rec_NlxP_type_alignment_m10(ui1 *bytes)
 
 }
 
+
+
+//*************************************************************************************//
+//***********************   Curs: Cadwell EMG Cursor Annotation   *********************//
+//*************************************************************************************//
+
+void    show_rec_Curs_type_m10(RECORD_HEADER_m10 *record_header)
+{
+	REC_Curs_v10_m10        *curs;
+	
+	
+	// Version 1.0
+	if (record_header->version_major == 1 && record_header->version_minor == 0) {
+		curs = (REC_Curs_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
+		printf("ID Number: %ld\n", curs->id_number);
+		printf("Latency: %ld\n", curs->latency);
+		printf("Value: %lf\n", curs->value);
+		UTF8_printf_m10("Name: %s\n", curs->name);
+	}
+	// Unrecognized record version
+	else {
+		error_message_m10("%s(): Unrecognized Curs Record version (%hhd.%hhd)", __FUNCTION__, record_header->version_major, record_header->version_minor);
+	}
+	
+	return;
+}
+
+TERN_m10     check_rec_Curs_type_alignment_m10(ui1 *bytes)
+{
+	REC_Curs_v10_m10        *curs;
+	TERN_m10                free_flag = FALSE_m10;
+	extern GLOBALS_m10      *globals_m10;
+
+
+	// check overall size
+	if (sizeof(REC_Curs_v10_m10) != REC_Curs_v10_BYTES_m10)
+		goto REC_Curs_v10_NOT_ALIGNED_m10;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) e_malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		free_flag = TRUE_m10;
+	}
+	
+	curs = (REC_Curs_v10_m10 *) bytes;
+	if (&curs->id_number != (si8 *) (bytes + REC_Curs_v10_ID_NUMBER_OFFSET_m10))
+		goto REC_Curs_v10_NOT_ALIGNED_m10;
+	if (&curs->latency != (si8 *) (bytes + REC_Curs_v10_LATENCY_OFFSET_m10))
+		goto REC_Curs_v10_NOT_ALIGNED_m10;
+	if (&curs->value != (sf8 *) (bytes + REC_Curs_v10_VALUE_OFFSET_m10))
+		goto REC_Curs_v10_NOT_ALIGNED_m10;
+	if (curs->name != (si1 *) (bytes + REC_Curs_v10_NAME_OFFSET_m10))
+		goto REC_Curs_v10_NOT_ALIGNED_m10;
+
+	// aligned
+	if (free_flag == TRUE_m10)
+		e_free_m10(bytes, __FUNCTION__, __LINE__);
+	
+	if (globals_m10->verbose == TRUE_m10)
+		printf("%s(): REC_Curs_v10_m10 structure is aligned\n", __FUNCTION__);
+	
+	return(TRUE_m10);
+	
+	// not aligned
+	REC_Curs_v10_NOT_ALIGNED_m10:
+	
+	if (free_flag == TRUE_m10)
+		e_free_m10(bytes, __FUNCTION__, __LINE__);
+	
+	error_message_m10("%s(): REC_Curs_v10_m10 structure is NOT aligned", __FUNCTION__);
+	
+	return(FALSE_m10);
+
+}
+
+
+
+//*************************************************************************************//
+//****************************   Epoc: Sleep Stage Record   ***************************//
+//*************************************************************************************//
+
+void    show_rec_Epoc_type_m10(RECORD_HEADER_m10 *record_header)
+{
+	REC_Epoc_v10_m10        *epoc;
+	
+
+	// Version 1.0
+	if (record_header->version_major == 1 && record_header->version_minor == 0) {
+		epoc = (REC_Epoc_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
+		printf("ID Number: %ld\n", epoc->id_number);
+		printf("End Time: %ld\n", epoc->end_time);
+		UTF8_printf_m10("Epoch Type: %s\n", epoc->epoch_type);
+		UTF8_printf_m10("Text: %s\n", epoc->text);
+	}
+	// Unrecognized record version
+	else {
+		error_message_m10("%s(): Unrecognized Curs Record version (%hhd.%hhd)", __FUNCTION__, record_header->version_major, record_header->version_minor);
+	}
+	
+	return;
+}
+
+TERN_m10     check_rec_Epoc_type_alignment_m10(ui1 *bytes)
+{
+	REC_Epoc_v10_m10        *epoc;
+	TERN_m10                free_flag = FALSE_m10;
+	extern GLOBALS_m10      *globals_m10;
+
+
+	// check overall size
+	if (sizeof(REC_Epoc_v10_m10) != REC_Epoc_v10_BYTES_m10)
+		goto REC_Epoc_v10_NOT_ALIGNED_m10;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) e_malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		free_flag = TRUE_m10;
+	}
+	
+	epoc = (REC_Epoc_v10_m10 *) bytes;
+	if (&epoc->id_number != (si8 *) (bytes + REC_Epoc_v10_ID_NUMBER_OFFSET_m10))
+		goto REC_Epoc_v10_NOT_ALIGNED_m10;
+	if (&epoc->end_time != (si8 *) (bytes + REC_Epoc_v10_END_TIME_OFFSET_m10))
+		goto REC_Epoc_v10_NOT_ALIGNED_m10;
+	if (epoc->epoch_type != (si1 *) (bytes + REC_Epoc_v10_EPOCH_TYPE_OFFSET_m10))
+		goto REC_Epoc_v10_NOT_ALIGNED_m10;
+	if (epoc->text != (si1 *) (bytes + REC_Epoc_v10_TEXT_OFFSET_m10))
+		goto REC_Epoc_v10_NOT_ALIGNED_m10;
+
+	// aligned
+	if (free_flag == TRUE_m10)
+		e_free_m10(bytes, __FUNCTION__, __LINE__);
+	
+	if (globals_m10->verbose == TRUE_m10)
+		printf("%s(): REC_Epoc_v10_m10 structure is aligned\n", __FUNCTION__);
+	
+	return(TRUE_m10);
+	
+	// not aligned
+	REC_Epoc_v10_NOT_ALIGNED_m10:
+	
+	if (free_flag == TRUE_m10)
+		e_free_m10(bytes, __FUNCTION__, __LINE__);
+	
+	error_message_m10("%s(): REC_Epoc_v10_m10 structure is NOT aligned", __FUNCTION__);
+	
+	return(FALSE_m10);
+
+}
 
 
 //*************************************************************************************//
