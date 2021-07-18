@@ -7091,7 +7091,12 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 			return(NULL);
 		}
 	}
-	
+
+	if (free_loc_info == TRUE_m10) {
+		e_free_m10((void *) loc_info, __FUNCTION__, __LINE__);
+		loc_info = NULL;
+	}
+
 	return(loc_info);
 }
 
@@ -8948,7 +8953,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	sess = (SESSION_m10 *) e_calloc_m10((size_t) 1, sizeof(SESSION_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 
         // read whole session
-        if (slice == NULL)
+	if (slice == NULL)
                 slice = initialize_time_slice_m10(&sess->time_slice);
 	else
 		sess->time_slice = *slice;  // passed slice is not modified
@@ -9018,7 +9023,6 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	// process slice (for unoffset & relative times)
 	if (slice->conditioned == FALSE_m10)
 		condition_time_slice_m10(slice);
-
 	
         // get segment range
         if (n_ts_chans) {
@@ -10172,7 +10176,6 @@ TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_dire
 	// read in metadata file (will process password, decrypt metadata and set global time constants)
 	globals_m10->password_data.processed = 0;  // not ternary FALSE_m10 (so when structure is zeroed and it is marked as not processed)
 	metadata_fps = read_file_m10(NULL, metadata_file, 1, NULL, &items_read, unspecified_password, RETURN_ON_FAIL_m10);
-	show_file_processing_struct_m10(metadata_fps);
 	if (metadata_fps == NULL)
 		return(FALSE_m10);
 	globals_m10->session_start_time = metadata_fps->universal_header->session_start_time;
@@ -11773,20 +11776,19 @@ si1     *time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10
 			return(time_str);
 		case CURRENT_TIME_m10:
 			uutc = current_uutc_m10();
+			if (globals_m10->time_constants_set == FALSE_m10)  // set global time constants to location of machine
+				if (get_location_info_m10(&loc_info, TRUE_m10, FALSE_m10) == NULL)
+					warning_message_m10("%s(): daylight change data not available\n", __FUNCTION__);
 			break;
 	}
 	
-	// set global time constants to location of machine
-	if (globals_m10->time_constants_set == FALSE_m10)
-		if (get_location_info_m10(&loc_info, TRUE_m10, FALSE_m10) == NULL)
-			warning_message_m10("%s(): daylight change data not available\n", __FUNCTION__);
-
-	offset = TRUE_m10;
 	if (globals_m10->RTO_known == TRUE_m10) {
 		test_time = uutc - globals_m10->recording_time_offset;
 		if (test_time < 0)  // time is offset
 			uutc += globals_m10->recording_time_offset;
 		offset = FALSE_m10;
+	} else {
+		offset = TRUE_m10;
 	}
 	DST_offset = DST_offset_m10(uutc);
 
