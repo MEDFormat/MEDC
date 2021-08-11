@@ -36,6 +36,7 @@
 #ifndef MEDREC_IN_m10
 #define MEDREC_IN_m10
 
+#include "targets_m10.h"
 #include "medlib_m10.h"
 
 

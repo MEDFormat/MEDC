@@ -2010,60 +2010,22 @@ CMP_PROCESSING_STRUCT_m10    *CMP_allocate_processing_struct_m10(CMP_PROCESSING_
 	if (cps->password_data == NULL)
 		cps->password_data = &globals_m10->password_data;
 
-        // set up directives
-        if (directives != NULL) {
+	if (mode == CMP_COMPRESSION_MODE_NO_ENTRY_m10) {
+		error_message_m10("%s(): No compression mode specified", __FUNCTION__);
+		exit(1);
+	}
+
+	// set up directives
+        if (directives != NULL)
                 cps->directives = *directives;
-        } else {
-                // set defaults
-		if (mode == CMP_COMPRESSION_MODE_NO_ENTRY_m10) {
-			error_message_m10("%s(): No compression mode specified", __FUNCTION__);
-			exit(1);
-		}
-                cps->directives.mode = mode;
-		cps->directives.free_password_data = CMP_DIRECTIVES_FREE_PASSWORD_DATA_DEFAULT_m10;
-                cps->directives.algorithm = CMP_DIRECTIVES_ALGORITHM_DEFAULT_m10;
-		cps->directives.encryption_level = CMP_DIRECTIVES_ENCRYPTION_LEVEL_DEFAULT_m10;
-                cps->directives.fall_through_to_MBE = CMP_DIRECTIVES_FALL_THROUGH_TO_MBE_DEFAULT_m10;
-                cps->directives.reset_discontinuity = CMP_DIRECTIVES_RESET_DISCONTINUITY_DEFAULT_m10;
-		cps->directives.include_noise_scores = CMP_DIRECTIVES_INCLUDE_NOISE_SCORES_DEFAULT_m10;
-		cps->directives.no_zero_counts = CMP_DIRECTIVES_NO_ZERO_COUNTS_DEFAULT_m10;
-		cps->directives.set_derivative_level = CMP_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m10;
-		cps->directives.find_derivative_level = CMP_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m10;
-		cps->directives.detrend_data = CMP_DIRECTIVES_DETREND_DATA_DEFAULT_m10;
-		cps->directives.require_normality = CMP_DIRECTIVES_REQUIRE_NORMALITY_DEFAULT_m10;
-		cps->directives.use_compression_ratio = CMP_DIRECTIVES_USE_COMPRESSION_RATIO_DEFAULT_m10;
-		cps->directives.use_mean_residual_ratio = CMP_DIRECTIVES_USE_MEAN_RESIDUAL_RATIO_DEFAULT_m10;
-		cps->directives.use_relative_ratio = CMP_DIRECTIVES_USE_RELATIVE_RATIO_DEFAULT_m10;
-                cps->directives.set_amplitude_scale = CMP_DIRECTIVES_SET_AMPLITUDE_SCALE_DEFAULT_m10;
-		cps->directives.find_amplitude_scale = CMP_DIRECTIVES_FIND_AMPLITUDE_SCALE_DEFAULT_m10;
-		cps->directives.set_frequency_scale = CMP_DIRECTIVES_SET_FREQUENCY_SCALE_DEFAULT_m10;
-		cps->directives.find_frequency_scale = CMP_DIRECTIVES_FIND_FREQUENCY_SCALE_DEFAULT_m10;
-        }
+        else // set defaults
+		CMP_initialize_directives_m10(&cps->directives, mode);
 
         // set up parameters
-        if (parameters != NULL) {
+        if (parameters != NULL)
                 cps->parameters = *parameters;
-        } else {
-                // set defaults
-		cps->parameters.number_of_block_parameters = 0;
-		cps->parameters.block_parameters = NULL;
-                cps->parameters.minimum_sample_value = CMP_PARAMETERS_MINIMUM_SAMPLE_VALUE_DEFAULT_m10;
-                cps->parameters.maximum_sample_value = CMP_PARAMETERS_MAXIMUM_SAMPLE_VALUE_DEFAULT_m10;
-		cps->parameters.discontinuity = CMP_PARAMETERS_DISCONTINUITY_DEFAULT_m10;
-		cps->parameters.no_zero_counts_flag = CMP_PARAMETERS_NO_ZERO_COUNTS_FLAG_DEFAULT_m10;
-		cps->parameters.derivative_level = CMP_PARAMETERS_DERIVATIVE_LEVEL_DEFAULT_m10;
-		cps->parameters.goal_ratio = CMP_PARAMETERS_GOAL_RATIO_DEFAULT_m10;
-		cps->parameters.goal_tolerance = CMP_PARAMETERS_GOAL_TOLERANCE_DEFAULT_m10;
-		cps->parameters.maximum_goal_attempts = CMP_PARAMETERS_MAXIMUM_GOAL_ATTEMPTS_DEFAULT_m10;
-		cps->parameters.minimum_normality = CMP_PARAMETERS_MINIMUM_NORMALITY_DEFAULT_m10;
-		cps->parameters.amplitude_scale = CMP_PARAMETERS_AMPLITUDE_SCALE_DEFAULT_m10;
-		cps->parameters.frequency_scale = CMP_PARAMETERS_FREQUENCY_SCALE_DEFAULT_m10;
-		cps->parameters.user_number_of_records = CMP_USER_NUMBER_OF_RECORDS_DEFAULT_m10;
-		cps->parameters.user_record_region_bytes = CMP_USER_RECORD_REGION_BYTES_DEFAULT_m10;
-		cps->parameters.user_parameter_flags = CMP_USER_PARAMETER_FLAGS_DEFAULT_m10;
-		cps->parameters.protected_region_bytes = CMP_PROTECTED_REGION_BYTES_DEFAULT_m10;
-		cps->parameters.user_discretionary_region_bytes = CMP_USER_DISCRETIONARY_REGION_BYTES_DEFAULT_m10;
-        }
+        else  // set defaults
+		CMP_initialize_parameters_m10(&cps->parameters);
 	        
         // initialize buffers
         cps->input_buffer = cps->original_data = cps->original_ptr = NULL;
@@ -3058,6 +3020,32 @@ void	CMP_generate_parameter_map_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 }
 
 
+void	CMP_initialize_directives_m10(CMP_DIRECTIVES_m10 *directives, ui1 mode)
+{
+	directives->mode = mode;
+	directives->free_password_data = CMP_DIRECTIVES_FREE_PASSWORD_DATA_DEFAULT_m10;
+	directives->algorithm = CMP_DIRECTIVES_ALGORITHM_DEFAULT_m10;
+	directives->encryption_level = CMP_DIRECTIVES_ENCRYPTION_LEVEL_DEFAULT_m10;
+	directives->fall_through_to_MBE = CMP_DIRECTIVES_FALL_THROUGH_TO_MBE_DEFAULT_m10;
+	directives->reset_discontinuity = CMP_DIRECTIVES_RESET_DISCONTINUITY_DEFAULT_m10;
+	directives->include_noise_scores = CMP_DIRECTIVES_INCLUDE_NOISE_SCORES_DEFAULT_m10;
+	directives->no_zero_counts = CMP_DIRECTIVES_NO_ZERO_COUNTS_DEFAULT_m10;
+	directives->set_derivative_level = CMP_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m10;
+	directives->find_derivative_level = CMP_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m10;
+	directives->detrend_data = CMP_DIRECTIVES_DETREND_DATA_DEFAULT_m10;
+	directives->require_normality = CMP_DIRECTIVES_REQUIRE_NORMALITY_DEFAULT_m10;
+	directives->use_compression_ratio = CMP_DIRECTIVES_USE_COMPRESSION_RATIO_DEFAULT_m10;
+	directives->use_mean_residual_ratio = CMP_DIRECTIVES_USE_MEAN_RESIDUAL_RATIO_DEFAULT_m10;
+	directives->use_relative_ratio = CMP_DIRECTIVES_USE_RELATIVE_RATIO_DEFAULT_m10;
+	directives->set_amplitude_scale = CMP_DIRECTIVES_SET_AMPLITUDE_SCALE_DEFAULT_m10;
+	directives->find_amplitude_scale = CMP_DIRECTIVES_FIND_AMPLITUDE_SCALE_DEFAULT_m10;
+	directives->set_frequency_scale = CMP_DIRECTIVES_SET_FREQUENCY_SCALE_DEFAULT_m10;
+	directives->find_frequency_scale = CMP_DIRECTIVES_FIND_FREQUENCY_SCALE_DEFAULT_m10;
+
+	return;
+}
+
+
 void	CMP_initialize_normal_CDF_table_m10(void)
 {
         sf8        *cdf_table;
@@ -3073,6 +3061,31 @@ void	CMP_initialize_normal_CDF_table_m10(void)
 	globals_m10->CMP_normal_CDF_table = cdf_table;
         
         return;
+}
+
+
+void	CMP_initialize_parameters_m10(CMP_PARAMETERS_m10 *parameters)
+{
+	parameters->number_of_block_parameters = 0;
+	parameters->block_parameters = NULL;
+	parameters->minimum_sample_value = CMP_PARAMETERS_MINIMUM_SAMPLE_VALUE_DEFAULT_m10;
+	parameters->maximum_sample_value = CMP_PARAMETERS_MAXIMUM_SAMPLE_VALUE_DEFAULT_m10;
+	parameters->discontinuity = CMP_PARAMETERS_DISCONTINUITY_DEFAULT_m10;
+	parameters->no_zero_counts_flag = CMP_PARAMETERS_NO_ZERO_COUNTS_FLAG_DEFAULT_m10;
+	parameters->derivative_level = CMP_PARAMETERS_DERIVATIVE_LEVEL_DEFAULT_m10;
+	parameters->goal_ratio = CMP_PARAMETERS_GOAL_RATIO_DEFAULT_m10;
+	parameters->goal_tolerance = CMP_PARAMETERS_GOAL_TOLERANCE_DEFAULT_m10;
+	parameters->maximum_goal_attempts = CMP_PARAMETERS_MAXIMUM_GOAL_ATTEMPTS_DEFAULT_m10;
+	parameters->minimum_normality = CMP_PARAMETERS_MINIMUM_NORMALITY_DEFAULT_m10;
+	parameters->amplitude_scale = CMP_PARAMETERS_AMPLITUDE_SCALE_DEFAULT_m10;
+	parameters->frequency_scale = CMP_PARAMETERS_FREQUENCY_SCALE_DEFAULT_m10;
+	parameters->user_number_of_records = CMP_USER_NUMBER_OF_RECORDS_DEFAULT_m10;
+	parameters->user_record_region_bytes = CMP_USER_RECORD_REGION_BYTES_DEFAULT_m10;
+	parameters->user_parameter_flags = CMP_USER_PARAMETER_FLAGS_DEFAULT_m10;
+	parameters->protected_region_bytes = CMP_PROTECTED_REGION_BYTES_DEFAULT_m10;
+	parameters->user_discretionary_region_bytes = CMP_USER_DISCRETIONARY_REGION_BYTES_DEFAULT_m10;
+	
+	return;
 }
 
 
@@ -4179,11 +4192,11 @@ inline si4      CMP_round_m10(sf8 val)
         if (isnan(val))
                 return(NAN_m10);
         
-        if (val >= 0.0) {
-                if ((val += 0.5) >= (sf8) POSITIVE_INFINITY_m10)
+        if (val >= (sf8) 0.0) {
+                if ((val += (sf8) 0.5) > (sf8) POSITIVE_INFINITY_m10)
                         return(POSITIVE_INFINITY_m10);
         } else {
-                if ((val -= 0.5) <= (sf8) NEGATIVE_INFINITY_m10)
+                if ((val -= (sf8) 0.5) < (sf8) NEGATIVE_INFINITY_m10)
                         return(NEGATIVE_INFINITY_m10);
         }
         
@@ -5971,8 +5984,10 @@ void	force_behavior_m10(ui4 behavior)
 
 void	fps_close_m10(FILE_PROCESSING_STRUCT_m10 *fps) {
 	
-	fclose(fps->fp);
-	fps->fp = NULL;
+	if (fps->fp != NULL) {
+		fclose(fps->fp);
+		fps->fp = NULL;
+	}
 	fps->fd = -1;
 	
 	return;
@@ -6268,7 +6283,7 @@ void	free_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 a
         
         if (allocated_en_bloc == FALSE_m10)
                 e_free_m10(fps, __FUNCTION__, __LINE__);
-        
+
         return;
 }
 
@@ -6641,9 +6656,8 @@ ui4    generate_MED_path_components_m10(si1 *path, si1 *MED_dir, si1 *MED_name)
         
         if (MED_name == NULL)
                 MED_name = local_MED_name;
-        
         extract_path_parts_m10(temp_path, MED_dir, MED_name, extension);
-        
+
         code = MED_type_code_from_string_m10(extension);
         switch (code) {
                 case SESSION_DIRECTORY_TYPE_CODE_m10:
@@ -7104,8 +7118,7 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10 *slice)
 {
         TERN_m10                        search_succeeded;
-        si1                             chan_name[BASE_FILE_NAME_BYTES_m10], tmp_str[FULL_FILE_NAME_BYTES_m10];
-        si4                             ref_chan_idx;
+        si1                             *idx_chan_name, tmp_str[BASE_FILE_NAME_BYTES_m10];
         si8                             i;
         
         
@@ -7116,33 +7129,29 @@ si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10
 	}
         
     	// find index channel
-	ref_chan_idx = 0;
-        *chan_name = 0;
-        if (slice->index_reference_channel_name != NULL) {
-                if (*slice->index_reference_channel_name != 0) {
-                        force_behavior_m10(globals_m10->behavior_on_fail | SUPPRESS_WARNING_OUTPUT_m10);
-                        extract_path_parts_m10(slice->index_reference_channel_name, NULL, chan_name, NULL);
-                        force_behavior_m10(RESTORE_BEHAVIOR_m10);
-                        for (i = 0; i < n_channels; ++i) {
-                                extract_path_parts_m10(channel_list[i], NULL, tmp_str, NULL);
-                                if (strcmp(tmp_str, chan_name) == 0)
-                                        break;
-                        }
-			if (i != n_channels)
-				ref_chan_idx = i;
-			else
-                                warning_message_m10("%s(): Cannot find reference channel in file list => using first channel\n", __FUNCTION__);
-                }
-        }
-	slice->index_reference_channel_index = ref_chan_idx;
-	slice->index_reference_channel_name = channel_list[ref_chan_idx];
-	
+	idx_chan_name = slice->index_reference_channel_name;
+	slice->index_reference_channel_index = 0;
+        if (*idx_chan_name) {
+		for (i = 0; i < n_channels; ++i) {
+			extract_path_parts_m10(channel_list[i], NULL, tmp_str, NULL);
+			if (strcmp(tmp_str, idx_chan_name) == 0)
+				break;
+		}
+		if (i == n_channels)
+			warning_message_m10("%s(): Cannot find reference channel in file list => using first channel\n", __FUNCTION__);
+		else
+			slice->index_reference_channel_index = i;
+	} else {
+		extract_path_parts_m10(channel_list[0], NULL, tmp_str, NULL);
+		strcpy(idx_chan_name, tmp_str);
+	}
+
         // search Sgmt records
-        search_succeeded = search_Sgmt_records_m10(channel_list[ref_chan_idx], slice);
+        search_succeeded = search_Sgmt_records_m10(channel_list[slice->index_reference_channel_index], slice);
 
         // search segment metadata
 	if (search_succeeded == FALSE_m10)
-                search_succeeded = search_segment_metadata_m10(channel_list[ref_chan_idx], slice);
+                search_succeeded = search_segment_metadata_m10(channel_list[slice->index_reference_channel_index], slice);
 	
         if (search_succeeded == FALSE_m10)
                 return((si4) FALSE_m10);
@@ -7727,7 +7736,7 @@ TIME_SLICE_m10  *initialize_time_slice_m10(TIME_SLICE_m10 *slice)
 	slice->number_of_samples = NUMBER_OF_SAMPLES_NO_ENTRY_m10;
         slice->start_segment_number = slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m10;
         slice->session_start_time = slice->session_end_time = UUTC_NO_ENTRY_m10;
-	slice->index_reference_channel_name = NULL;
+	*slice->index_reference_channel_name = 0;
 	slice->index_reference_channel_index = 0;  // defaults to first channel
         
         return(slice);
@@ -8958,7 +8967,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	else
 		sess->time_slice = *slice;  // passed slice is not modified
 	slice = &sess->time_slice;
-	
+
         // expand channel list
         chan_list = generate_file_list_m10(chan_list, n_chans, &n_chans, sess_dir, NULL, "[tv]icd", PP_FULL_PATH_m10, FALSE_m10);
         if (n_chans == 0) {
@@ -8995,7 +9004,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
                                 return(NULL);
                 }
         }
-
+	
         // divide channel lists
         if (n_ts_chans)
                 ts_chan_list = (si1 **) e_calloc_2D_m10(n_ts_chans, FULL_FILE_NAME_BYTES_m10, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
@@ -9023,7 +9032,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
 	// process slice (for unoffset & relative times)
 	if (slice->conditioned == FALSE_m10)
 		condition_time_slice_m10(slice);
-	
+
         // get segment range
         if (n_ts_chans) {
                 n_segs = get_segment_range_m10(ts_chan_list, n_ts_chans, slice);
@@ -9042,6 +9051,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
         
         // read time series channels
         if (n_ts_chans) {
+
                 sess->time_series_channels = (CHANNEL_m10 **) e_calloc_2D_m10(n_ts_chans, 1, sizeof(CHANNEL_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
                 for (i = 0; i < n_ts_chans; ++i) {
                         chan = sess->time_series_channels[i];
@@ -9068,6 +9078,7 @@ SESSION_m10     *read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, T
                 sess->time_series_metadata_fps->fd = FPS_FD_EPHEMERAL_m10;
                 sess->time_series_metadata_fps->universal_header->number_of_entries = 0;
                 sess->time_series_metadata_fps->universal_header->maximum_entry_size = 0;
+
                 for (i = 1; i < n_ts_chans; ++i) {
                         chan = sess->time_series_channels[i];
                         merge_universal_headers_m10(sess->time_series_metadata_fps, chan->metadata_fps, NULL);
@@ -10126,7 +10137,7 @@ TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_dire
 	si1                             command[2048], MED_dir_copy[FULL_FILE_NAME_BYTES_m10], metadata_file[FULL_FILE_NAME_BYTES_m10];
 	ui4                             code;
 	si4                             ret_val;
-	si8                             items_read;
+	si8                             items_read, len;
 	FILE                            *fp;
 	FILE_PROCESSING_STRUCT_m10      *metadata_fps;
 	METADATA_SECTION_1_m10		*md1;
@@ -10139,8 +10150,13 @@ TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_dire
 	} else {
 		strcpy(MED_dir_copy, MED_directory);
 	}
+	// strip terminal '/' if present
+	len = strlen(MED_dir_copy);
+	if (*(MED_dir_copy + len - 1) == '/' && len > 1)
+		*(MED_dir_copy + len - 1) = 0;
+	// escape spaces
 	escape_spaces_m10(MED_dir_copy, FULL_FILE_NAME_BYTES_m10);
-	
+
 	// find a MED metadata file (using *met)
 	code = MED_type_code_from_string_m10(MED_directory);
 	switch (code) {
@@ -11011,7 +11027,7 @@ void    show_time_slice_m10(TIME_SLICE_m10 *slice)
 	else if (slice->local_start_index == END_OF_INDICES_m10)
 		printf("end of segment\n");
 	else
-		printf("%ld\n", slice->start_index);
+		printf("%ld\n", slice->local_start_index);
 
 	printf("Local End Index: ");
 	if (slice->local_end_index == SAMPLE_NUMBER_NO_ENTRY_m10)
@@ -11019,7 +11035,7 @@ void    show_time_slice_m10(TIME_SLICE_m10 *slice)
 	else if (slice->local_end_index == END_OF_INDICES_m10)
 		printf("end of segment\n");
 	else
-		printf("%ld\n", slice->end_index);
+		printf("%ld\n", slice->local_end_index);
 
 	if (slice->number_of_samples == NUMBER_OF_SAMPLES_NO_ENTRY_m10)
 		printf("Number of Samples: no entry\n");
@@ -11051,12 +11067,10 @@ void    show_time_slice_m10(TIME_SLICE_m10 *slice)
 		printf("%ld\n", slice->session_end_time);
 
 	printf("Index Reference Channel Name: ");
-	if (slice->index_reference_channel_name == NULL)
-		printf("no entry\n");
-	else if (*slice->index_reference_channel_name == 0)
-		printf("no entry\n");
-	else
+	if (*slice->index_reference_channel_name)
 		printf("%s\n", slice->index_reference_channel_name);
+	else
+		printf("no entry\n");
 
 	printf("Index Reference Channel Index: %d\n", slice->index_reference_channel_index);
 
@@ -11317,9 +11331,9 @@ void	show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER
 
 void    snprintf_m10(si1 *target_string, si4 target_field_bytes, si1 *format, ...)
 {
-        va_list        args;
-        si1        *c;
-        si4        bytes_to_zero;
+        va_list		args;
+        si1		*c;
+        si4		bytes_to_zero;
     
 	
         if (target_field_bytes < 1) {
@@ -11327,13 +11341,23 @@ void    snprintf_m10(si1 *target_string, si4 target_field_bytes, si1 *format, ..
                 return;
         }
 
+#ifdef LINUX_m10  // Linux implementation appears to zero target string before printing to it - not ok if format string contains target string
+	si1	*temp_str;
+	temp_str = (si1 *) e_calloc_m10((size_t) target_field_bytes, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	va_start(args, format);
+	vsnprintf(temp_str, target_field_bytes, format, args);
+	va_end(args);
+	strcpy(target_string, temp_str);
+	e_free_m10(temp_str, __FUNCTION__, __LINE__);
+#else  // MACOS_m10, WINDOWS_m10
         va_start(args, format);
         vsnprintf(target_string, target_field_bytes, format, args);
         va_end(args);
-        
+#endif  // LINUX_m10
+
         c = target_string;
         while (*c++);
-        
+
         bytes_to_zero = target_field_bytes - (c - target_string);
         if (bytes_to_zero > 0) {
                 while (bytes_to_zero--)

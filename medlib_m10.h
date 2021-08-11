@@ -69,6 +69,8 @@
 //*****************************  Unix Library Includes  ****************************//
 //**********************************************************************************//
 
+#include "targets_m10.h"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -80,6 +82,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -512,7 +515,9 @@ void    	CMP_free_processing_struct_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void    	CMP_generate_lossy_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si4 *input_buffer, si4 *output_buffer, ui1 mode);
 void		CMP_generate_parameter_map_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void    	CMP_get_variable_region_m10(CMP_PROCESSING_STRUCT_m10 *cps);
+void		CMP_initialize_directives_m10(CMP_DIRECTIVES_m10 *directives, ui1 mode);
 void		CMP_initialize_normal_CDF_table_m10(void);
+void		CMP_initialize_parameters_m10(CMP_PARAMETERS_m10 *parameters);
 void    	CMP_lad_reg_m10(si4 *data, si8 len, sf8 *m, sf8 *b);
 void    	CMP_lin_reg_m10(si4 *data, si8 len, sf8 *m, sf8 *b);
 void    	CMP_MBE_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps);
@@ -1070,7 +1075,7 @@ typedef struct {
         si4     	end_segment_number;
         si8     	session_start_time;
         si8     	session_end_time;
-	si1		*index_reference_channel_name;  // string containing channel base name (or NULL, if unnecessary)
+	si1		index_reference_channel_name[BASE_FILE_NAME_BYTES_m10];  // string containing channel base name (or NULL, if unnecessary)
 	si4		index_reference_channel_index;  // index of the index reference channel in the session channel array
 } TIME_SLICE_m10;
 
