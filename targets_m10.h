@@ -9,12 +9,14 @@
 
 // Target OS Options: LINUX_m10, MACOS_m10, or WINDOWS_m10
 // Define one of these here
-#define MACOS_m10
-// #define LINUX_m10
+// #define MACOS_m10
+#define LINUX_m10
 // #define WINDOWS_m10
 
 #ifdef LINUX_m10
-#define _GNU_SOURCE
+	#ifndef _GNU_SOURCE
+		#define _GNU_SOURCE
+	#endif
 #endif
 
 //**********************************************************************************//
