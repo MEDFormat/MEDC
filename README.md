@@ -12,3 +12,6 @@ mklibs.sh is a shell script to create MED libraries in MacOS & Linux
 mklibs.bat is a shell script to create MED libraries in Windows
 compile.sh is a shell script to compile MED2RAW using MED libraries in MacOS & Linux
 compile.bat is a shell script to compile MED2RAW using MED libraries in Windows
+
+Sometimes the API documentation lags behind the code.  This does not affect the documentation of existing functions, 
+but new ones may have been added.  This file is updated, but not as regularly as the code.
