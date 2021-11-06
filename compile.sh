@@ -23,17 +23,17 @@ TGT_FILE="library"
 
 
 if [ $OS = "Linux" ]; then
-	DHNDEV="/mnt/dhndev"
+	MEDDEV="/mnt/dhndev"
 	LIBSFX="_lin"
 elif [  $OS = "MacOS" ]; then
-	DHNDEV="/Volumes/dhndev";
+	MEDDEV="/Volumes/dhndev";
 	LIBSFX="_mac"
 fi
 
-PRGINC=${DHNDEV}/$PRG
+PRGINC=${MEDDEV}/$PRG
 PRGSRC=$PRGINC
 PRGOBJ=${PRGSRC}/$OS
-LIBINC=${DHNDEV}/lib
+LIBINC=${MEDDEV}/lib
 LIBOBJ=${LIBINC}/$OS
 
 CC_OPT="-O3 -Wall"
