@@ -1,3 +1,4 @@
+
 //**********************************************************************************//
 //********************************  MED 1.0 C Library  *****************************//
 //**********************************************************************************//
@@ -52,11 +53,17 @@
 // Error detection is implemented with 32-bit cyclic redundancy checksums (CRCs).
 // Basic CRC-32 manipulation routines are included in the library, with attribution, for convenience.
 
+
+// USAGE:
+
+// The library is optimized for 64-bit operating systems on 64-bit processors with 64-bit words and addressing.
+// However, it can be used with in 32-bit contexts without modification at a performance cost.
+
 // The library is written with tab width = indent width = 8 spaces and a monospaced font.
+// Tabs are tabs characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
 // All functions, constants, macros, and data types defined in the library are tagged
 // with the suffix "_m10" (for "MED 1.0"). This is to facilitate using multiple versions
 // of the library in concert in the future; for example to write a MED 1.0 to MED 2.0 converter.
-
 
