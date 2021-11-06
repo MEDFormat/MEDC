@@ -57,7 +57,7 @@ CMD="rm *.a"
 echo $CMD; echo " "
 $CMD
 
-# build libaries
+# build libary
 CMD="$CC $CC_OPT -I$LIBINC -I$TGTINC ${LIBSRC}/medlib_m10.c"
 echo $CMD; echo " "
 $CMD
@@ -67,26 +67,6 @@ echo $CMD; echo " "
 $CMD
 
 CMD="ar rcs libmed_m10${LIBSFX}.a medlib_m10.o medrec_m10.o"
-echo $CMD; echo " "
-$CMD
-
-CMD="$CC $CC_OPT -I$LIBINC -I$TGTINC ${LIBSRC}/dhnlib_d10.c"
-echo $CMD; echo " "
-$CMD
-
-CMD="ar rcs libdhn_d10${LIBSFX}.a dhnlib_d10.o"
-echo $CMD; echo " "
-$CMD
-
-CMD="$CC $CC_OPT -I$LIBINC -I$TGTINC -I$PGINC ${LIBSRC}/dhndblib_d10.c"
-echo $CMD; echo " "
-$CMD
-
-CMD="ar rcs libdhndb_d10${LIBSFX}.a dhndblib_d10.o"
-echo $CMD; echo " "
-$CMD
-
-CMD="rm *.o"
 echo $CMD; echo " "
 $CMD
 
