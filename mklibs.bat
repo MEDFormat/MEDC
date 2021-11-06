@@ -1,7 +1,7 @@
 
-set DHNDRV=Z
+set MEDDRV=C
 
-set LIBSRC=%DHNDRV%:\lib
+set LIBSRC=%MEDDRV%:\lib
 set LIBINC=%LIBSRC%
 set LIBOBJ=%LIBSRC%\Windows
 set TGTINC=%LIBOBJ%
