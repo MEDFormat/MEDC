@@ -20,16 +20,14 @@ TGT_FILE="library"
 
 
 if [ $OS = "Linux" ]; then
-	DHNDEV="/mnt/dhndev"
+	MEDDEV="/mnt/dhndev"
 	LIBSFX="_lin"
-	PGINC="/usr/include/postgresql"
 elif [  $OS = "MacOS" ]; then
-	DHNDEV="/Volumes/dhndev"
-	PGINC="/Applications/Postgres.app/Contents/Versions/latest/include"
+	MEDDEV="/Volumes/dhndev"
 	LIBSFX="_mac"
 fi
 
-LIBSRC=${DHNDEV}/lib
+LIBSRC=${MEDDEV}/lib
 LIBINC=$LIBSRC
 LIBOBJ=${LIBINC}/$OS
 
