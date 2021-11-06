@@ -1,12 +1,12 @@
 
-set DHNDRV=Z
+set MEDDRV=C
 set PRG=MED2RAW
 set OS=Windows
 
-set PRGINC=%DHNDRV%:\%PRG%
+set PRGINC=%MEDDRV%:\%PRG%
 set PRGSRC=%PRGINC%
 set PRGOBJ=%PRGSRC%\%OS%
-set LIBINC=%DHNDRV%:\lib
+set LIBINC=%MEDDRV%:\lib
 set LIBOBJ=%LIBINC%\%OS%
 set LIBSFX=_win
 
