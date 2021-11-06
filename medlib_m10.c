@@ -421,36 +421,36 @@ SESSION_m10	*allocate_session_m10(FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *en
 		}
 		if (free_names == TRUE_m10)
 			free((void *) vid_chan_names);
+	}
 		
-		if (segmented_sess_recs == TRUE_m10) {
-			sess->segmented_record_data_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-			sess->segmented_record_indices_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-			for (i = 0; i < n_segs; ++i) {
-				if (n_ts_chans)
-					gen_fps = sess->time_series_channels[0]->segments[i]->metadata_fps;
-				else if (n_vid_chans)
-					gen_fps = sess->video_channels[0]->segments[i]->metadata_fps;
-				numerical_fixed_width_string_m10(number_str, FILE_NUMBERING_DIGITS_m10, (si4)i + 1); // segments numbered from 1
-				allocate_file_processing_struct_m10(sess->segmented_record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, gen_fps, 0);
-				snprintf_m10(sess->segmented_record_data_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m10);
-				allocate_file_processing_struct_m10(sess->segmented_record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m10, RECORD_INDEX_BYTES_m10, gen_fps, 0);
-				snprintf_m10(sess->segmented_record_indices_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m10);
-				for (j = 0; j < n_ts_chans; ++j) {
-					seg = sess->time_series_channels[j]->segments[i];
-					seg->segmented_session_record_data_fps = sess->segmented_record_data_fps[i];
-					seg->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[i];
-				}
-				for (j = 0; j < n_vid_chans; ++j) {
-					seg = sess->video_channels[j]->segments[i];
-					seg->segmented_session_record_data_fps = sess->segmented_record_data_fps[i];
-					seg->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[i];
-				}
+	if (segmented_sess_recs == TRUE_m10) {
+		sess->segmented_record_data_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		sess->segmented_record_indices_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		for (i = 0; i < n_segs; ++i) {
+			if (n_ts_chans)
+				gen_fps = sess->time_series_channels[0]->segments[i]->metadata_fps;
+			else if (n_vid_chans)
+				gen_fps = sess->video_channels[0]->segments[i]->metadata_fps;
+			numerical_fixed_width_string_m10(number_str, FILE_NUMBERING_DIGITS_m10, (si4)i + 1); // segments numbered from 1
+			allocate_file_processing_struct_m10(sess->segmented_record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, gen_fps, 0);
+			snprintf_m10(sess->segmented_record_data_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m10);
+			allocate_file_processing_struct_m10(sess->segmented_record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m10, RECORD_INDEX_BYTES_m10, gen_fps, 0);
+			snprintf_m10(sess->segmented_record_indices_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m10);
+			for (j = 0; j < n_ts_chans; ++j) {
+				seg = sess->time_series_channels[j]->segments[i];
+				seg->segmented_session_record_data_fps = sess->segmented_record_data_fps[i];
+				seg->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[i];
+			}
+			for (j = 0; j < n_vid_chans; ++j) {
+				seg = sess->video_channels[j]->segments[i];
+				seg->segmented_session_record_data_fps = sess->segmented_record_data_fps[i];
+				seg->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[i];
 			}
 		}
-		else {
-			sess->segmented_record_data_fps = NULL;
-			sess->segmented_record_indices_fps = NULL;
-		}
+	}
+	else {
+		sess->segmented_record_data_fps = NULL;
+		sess->segmented_record_indices_fps = NULL;
 	}
 	
 	return(sess);
