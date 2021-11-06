@@ -8,12 +8,11 @@ Edit targets.h to set the target operating system (and if appropriate, target ap
 MED2RAW.c is example code for converting MED files to a series of 4-byte integer files, one per channel.
 
 Shell Scripts: (edit these for your target locations & compiler, specified at the top)
-mklibs.sh is a shell script to create MED libraries in MacOS & Linux
-mklibs.bat is a shell script to create MED libraries in Windows
-compile.sh is a shell script to compile MED2RAW using MED libraries in MacOS & Linux
-compile.bat is a shell script to compile MED2RAW using MED libraries in Windows
+mklibs.sh is a shell script to a create MED library in MacOS & Linux
+mklibs.bat is a shell script to a create MED library in Windows
+compile.sh is a shell script to compile MED2RAW using the MED library in MacOS & Linux
+compile.bat is a shell script to compile MED2RAW using the MED library in Windows
 
 Sometimes the API documentation lags behind the code.  This does not affect the documentation of existing functions, 
-but new ones may have been added.  This file is updated, but not as regularly as the code.
-
-There are new some record types in the medrec_m10 source that have not been added to the MED Records documetation yet.
+but new functions may have been added.  This file is updated, but not as regularly as the source. There also may be some 
+new record types in the medrec_m10 source that have not yet been added to the MED Records documetation.
