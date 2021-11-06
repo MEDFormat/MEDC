@@ -1,13 +1,40 @@
 
 //**********************************************************************************//
-//****************************  MED 1.0 C Library Records **************************//
+//****************************  MED 1.0 C Library Records  *************************//
 //**********************************************************************************//
 
-// Multiscale Electrophysiology Data (MED) Format version 1.0
-// Written by Matt Stead
-// Copyright Dark Horse Neuro Inc, 2020
 
-// MED derives from the Multiscale Electrophysiology Format (MEF), versions 1-3 which are in the public domain.
+// Multiscale Electrophysiology Data (MED) Format Software Library, Version 1.0
+// Written by Matt Stead
+
+// LICENSE & COPYRIGHT:
+
+// MED library source code (medlib) is copyrighted by Dark Horse Neuro Inc, 2021 (Matt Stead & Casey Stengel)
+
+// Medlib is free software:
+// You can redistribute it and/or modify it under the terms of the Gnu General Public License (Gnu GPL),
+// version 2, or any later version (as published by the Free Software Foundation).
+// The Gnu GPL requires that any object code built and distributed using this software
+// is accompanied by the FULL SOURCE CODE used to generate the object code.
+
+// This software is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the Gnu GPL for more details.
+
+// If you did not receive a copy of the Gnu GPL along with this code, you can find it on the GNU website ( http://www.gnu.org ).
+// You may also obtain a copy by writing to the Free Software Foundation, Inc at:
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+// We kindly ask you to acknowledge medlib in any program or publication in which you use it, but you are not required to do so.
+
+// Commercial versions of medlib may be licensed from Dark Horse Neuro Inc, Bozeman, MT, USA.
+// Commercially licensed copies do not require object code using medlib to be accompanied by the corresponding full source code.
+// Users interested in a commercial license may contact us through the medformat website ( http://www.medformat.org ).
+
+
+// ACKNOWLEDGEMENTS:
+
+// MED derives from the Multiscale Electrophysiology Format (MEF), versions 1-3.
 // Many people contributed to the MEF effort, but special mention is owed to
 // Greg Worrell, Casey Stengel, Andy Gardner, Mark Bower, Vince Vasoli, Ben Brinkmann,
 // Dan Crepeau, Jan Cimbálnik, Jon Lange, and Jon Halford for their contributions
@@ -26,12 +53,21 @@
 // Error detection is implemented with 32-bit cyclic redundancy checksums (CRCs).
 // Basic CRC-32 manipulation routines are included in the library, with attribution, for convenience.
 
+
+// USAGE:
+
+// The library is optimized for 64-bit operating systems on 64-bit processors with 64-bit words and addressing.
+// However, it can be used with in 32-bit contexts without modification at a performance cost.
+
 // The library is written with tab width = indent width = 8 spaces and a monospaced font.
+// Tabs are tabs characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
 // All functions, constants, macros, and data types defined in the library are tagged
 // with the suffix "_m10" (for "MED 1.0"). This is to facilitate using multiple versions
 // of the library in concert in the future; for example to write a MED 1.0 to MED 2.0 converter.
+
+
 
 #ifndef MEDREC_IN_m10
 #define MEDREC_IN_m10

@@ -57,7 +57,14 @@
 // Error detection is implemented with 32-bit cyclic redundancy checksums (CRCs).
 // Basic CRC-32 manipulation routines are included in the library, with attribution, for convenience.
 
+
+// USAGE:
+
+// The library is optimized for 64-bit operating systems on 64-bit processors with 64-bit words and addressing.
+// However, it can be used with in 32-bit contexts without modification at a performance cost.
+
 // The library is written with tab width = indent width = 8 spaces and a monospaced font.
+// Tabs are tabs characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
 // All functions, constants, macros, and data types defined in the library are tagged
@@ -66,27 +73,50 @@
 
 
 //**********************************************************************************//
-//*****************************  Unix Library Includes  ****************************//
+//*********************************  Library Includes  *****************************//
 //**********************************************************************************//
 
 #include "targets_m10.h"
 
+#ifdef WINDOWS_m10
+// the following is necessary to include <winsock2.h> (or can define WIN32_LEAN_AND_MEAN, but excludes a lot of stuff)
+// winsock2.h has to be included before windows.h, but requires WIN32 to be defined, which is usually defined by windows.h
+// WIN_NEED_SOCKETS_m10 is defined in "targets.h"
+	#ifdef WIN_NEED_SOCKETS_m10
+		#ifndef WIN32
+			#define WIN32
+		#endif
+		#include <winsock2.h>
+		#pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib
+	#endif
+	#include <windows.h>
+	#include <direct.h>
+	#include <fileapi.h>
+	#include <share.h>
+	#define _USE_MATH_DEFINES  // Needed for standard math constants. Must be defined before math.h included.
+#endif
+#if defined MACOS_m10 || defined LINUX_m10
+	#include <unistd.h>
+	#include <wchar.h>
+	#include <dirent.h>
+	#include <sys/time.h>
+	#include <sys/resource.h>
+	#include <stdatomic.h>
+#endif
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include <float.h>
 #include <time.h>
-#include <sys/mman.h>
-#include <sys/time.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/resource.h>
-#include <fcntl.h>
 #include <stdarg.h>
 #include <errno.h>
-#include <stdatomic.h>
+#ifdef MATLAB_m10
+	#include "mex.h"
+#endif
 
 
 
@@ -97,25 +127,28 @@
 #ifndef SIZE_TYPES_IN_m10
 #define SIZE_TYPES_IN_m10
 
-typedef unsigned char           ui1;
-typedef char                    si1;
-typedef unsigned short          ui2;
-typedef short                   si2;
-typedef unsigned int            ui4;
-typedef int                     si4;
-typedef unsigned long           ui8;
-typedef long		        si8;
-typedef float			sf4;
-typedef double			sf8;
-typedef long double		sf16;   // NOTE: it often requires an explicit compiler instruction to implement true long floating point math
-					// in icc: "-Qoption,cpp,--extended_float_types"
+#include <stdint.h>
+
+typedef uint8_t		ui1;
+typedef char		si1;  // Note: the "char" type is not guaranteed to be a signed one-byte integer.  If it is not, library will exit during initialization
+typedef uint16_t	ui2;
+typedef int16_t		si2;
+typedef uint32_t	ui4;
+typedef int32_t		si4;
+typedef uint64_t	ui8;
+typedef int64_t		si8;
+typedef float		sf4;
+typedef double		sf8;
+typedef long double	sf16;   // NOTE: it often requires an explicit compiler instruction to implement true long floating point math
+				// in icc: "-Qoption,cpp,--extended_float_types"
+
 #endif  // SIZE_TYPES_IN_m10
 
 // MED Library Ternary Boolean Schema
-typedef si1                                     TERN_m10;
-#define TRUE_m10                                1
-#define UNKNOWN_m10                             0
-#define FALSE_m10                               -1
+typedef si1				TERN_m10;
+#define TRUE_m10			1
+#define UNKNOWN_m10			0
+#define FALSE_m10			-1
 
 // Reserved si4 Sample Values
 #define NAN_m10                         ((si4) 0x80000000)
@@ -123,6 +156,7 @@ typedef si1                                     TERN_m10;
 #define POSITIVE_INFINITY_m10           ((si4) 0x7FFFFFFF)
 #define MAXIMUM_SAMPLE_VALUE_m10        ((si4) 0x7FFFFFFE)
 #define MINIMUM_SAMPLE_VALUE_m10        ((si4) 0x80000002)
+
 
 
 //**********************************************************************************//
@@ -152,11 +186,11 @@ typedef si1                                     TERN_m10;
 
 // Password Data Structure
 typedef struct {
-        ui1	level_1_encryption_key[ENCRYPTION_KEY_BYTES_m10];
-        ui1	level_2_encryption_key[ENCRYPTION_KEY_BYTES_m10];
+	ui1	level_1_encryption_key[ENCRYPTION_KEY_BYTES_m10];
+	ui1	level_2_encryption_key[ENCRYPTION_KEY_BYTES_m10];
 	si1     level_1_password_hint[PASSWORD_HINT_BYTES_m10];
 	si1     level_2_password_hint[PASSWORD_HINT_BYTES_m10];
-        ui1	access_level;
+	ui1	access_level;
 	ui1	processed;  // 0 or 1 (not ternary)
 } PASSWORD_DATA_m10;
 
@@ -329,7 +363,7 @@ typedef struct {
 // Macros
 #define CMP_MAX_DIFFERENCE_BYTES_m10(block_samps)		(block_samps * 5) // full si4 plus 1 keysample flag byte per sample
 #define CMP_MAX_COMPRESSED_BYTES_m10(block_samps, n_blocks)	(((block_samps * 4) + CMP_BLOCK_FIXED_HEADER_BYTES_m10 + 7) * n_blocks)	// (no compression + header + maximum pad bytes) for n_blocks blocks
-                                                                                                                                        // NOTE: does not take variable region bytes into account and assumes
+																																		// NOTE: does not take variable region bytes into account and assumes
 																	// fallthrough to MBE
 #define CMP_PRED_CAT_m10(x)					((x) ? (((x) & 0x80) ? CMP_PRED_NEG_m10 : CMP_PRED_POS_m10) : CMP_PRED_NIL_m10) // do not increment/decrement within call to CMP_PRED_CAT_m10
 																		// as "x" is used twice
@@ -357,22 +391,22 @@ typedef struct {
 
 // Normal cumulative distribution fucntion values from -3 to +3 standard deviations in 0.1 sigma steps
 #define CMP_NORMAL_CDF_TABLE_ENTRIES_m10        61
-#define CMP_NORMAL_CDF_TABLE_m10              { 0.00134989803163010, 0.00186581330038404, 0.00255513033042794, 0.00346697380304067, \
-                                                0.00466118802371875, 0.00620966532577614, 0.00819753592459614, 0.01072411002167580, \
-                                                0.01390344751349860, 0.01786442056281660, 0.02275013194817920, 0.02871655981600180, \
-                                                0.03593031911292580, 0.04456546275854310, 0.05479929169955800, 0.06680720126885810, \
-                                                0.08075665923377110, 0.09680048458561040, 0.11506967022170800, 0.13566606094638300, \
-                                                0.15865525393145700, 0.18406012534676000, 0.21185539858339700, 0.24196365222307300, \
-                                                0.27425311775007400, 0.30853753872598700, 0.34457825838967600, 0.38208857781104700, \
-                                                0.42074029056089700, 0.46017216272297100, 0.50000000000000000, 0.53982783727702900, \
-                                                0.57925970943910300, 0.61791142218895300, 0.65542174161032400, 0.69146246127401300, \
-                                                0.72574688224992600, 0.75803634777692700, 0.78814460141660300, 0.81593987465324100, \
-                                                0.84134474606854300, 0.86433393905361700, 0.88493032977829200, 0.90319951541439000, \
-                                                0.91924334076622900, 0.93319279873114200, 0.94520070830044200, 0.95543453724145700, \
-                                                0.96406968088707400, 0.97128344018399800, 0.97724986805182100, 0.98213557943718300, \
-                                                0.98609655248650100, 0.98927588997832400, 0.99180246407540400, 0.99379033467422400, \
-                                                0.99533881197628100, 0.99653302619695900, 0.99744486966957200, 0.99813418669961600, \
-                                                0.99865010196837000 }
+#define CMP_NORMAL_CDF_TABLE_m10	      { 0.00134989803163010, 0.00186581330038404, 0.00255513033042794, 0.00346697380304067, \
+						0.00466118802371875, 0.00620966532577614, 0.00819753592459614, 0.01072411002167580, \
+						0.01390344751349860, 0.01786442056281660, 0.02275013194817920, 0.02871655981600180, \
+						0.03593031911292580, 0.04456546275854310, 0.05479929169955800, 0.06680720126885810, \
+						0.08075665923377110, 0.09680048458561040, 0.11506967022170800, 0.13566606094638300, \
+						0.15865525393145700, 0.18406012534676000, 0.21185539858339700, 0.24196365222307300, \
+						0.27425311775007400, 0.30853753872598700, 0.34457825838967600, 0.38208857781104700, \
+						0.42074029056089700, 0.46017216272297100, 0.50000000000000000, 0.53982783727702900, \
+						0.57925970943910300, 0.61791142218895300, 0.65542174161032400, 0.69146246127401300, \
+						0.72574688224992600, 0.75803634777692700, 0.78814460141660300, 0.81593987465324100, \
+						0.84134474606854300, 0.86433393905361700, 0.88493032977829200, 0.90319951541439000, \
+						0.91924334076622900, 0.93319279873114200, 0.94520070830044200, 0.95543453724145700, \
+						0.96406968088707400, 0.97128344018399800, 0.97724986805182100, 0.98213557943718300, \
+						0.98609655248650100, 0.98927588997832400, 0.99180246407540400, 0.99379033467422400, \
+						0.99533881197628100, 0.99653302619695900, 0.99744486966957200, 0.99813418669961600, \
+						0.99865010196837000 }
 
 #define CMP_SUM_NORMAL_CDF_m10                  30.5
 #define CMP_SUM_SQ_NORMAL_CDF_m10               24.864467406647070
@@ -380,46 +414,46 @@ typedef struct {
 
 // Typedefs & Structures
 typedef struct {
-        ui4                     type_code;  // note this is not null terminated and so cannot be treated as a string as in RECORD_HEADER_m10 structure
-        ui1                     version_major;
-	ui1                     version_minor;
-        ui2                     total_bytes;  // note maximum record size is 65535 - smaller than in RECORD_HEADER_m10 structure
+	ui4	type_code;  // note this is not null terminated and so cannot be treated as a string as in RECORD_HEADER_m10 structure
+	ui1	version_major;
+	ui1	version_minor;
+	ui2	total_bytes;  // note maximum record size is 65535 - smaller than in RECORD_HEADER_m10 structure
 } CMP_RECORD_HEADER_m10;
 
 typedef struct {
-        // CMP block header fixed region start
-        ui8     block_start_UID;
-        ui4     block_CRC;
-        ui4     block_flags;
-        si8     start_time;
-        si4     acquisition_channel_number;
-        ui4     total_block_bytes;
-        // CMP block encryption start
+	// CMP block header fixed region start
+	ui8     block_start_UID;
+	ui4     block_CRC;
+	ui4     block_flags;
+	si8     start_time;
+	si4     acquisition_channel_number;
+	ui4     total_block_bytes;
+	// CMP block encryption start
 	ui4     number_of_samples;
 	ui2     number_of_records;
 	ui2     record_region_bytes;
 	ui4     parameter_flags;
 	ui2     parameter_region_bytes;
-        ui2     protected_region_bytes;
-        ui2     discretionary_region_bytes;
-        ui2     model_region_bytes;
+	ui2     protected_region_bytes;
+	ui2     discretionary_region_bytes;
+	ui2     model_region_bytes;
 	ui4     total_header_bytes;
-        // CMP block header variable region start
+	// CMP block header variable region start
 } CMP_BLOCK_FIXED_HEADER_m10;
 
 typedef struct {
-        ui4             mode;  // CMP_COMPRESSION_MODE_m10, CMP_DECOMPRESSION_MODE_m10
-        ui4             algorithm;  // RED, PRED, or MBE
-        si1             encryption_level;  // encryption level for data blocks: passed in compression
-        TERN_m10        fall_through_to_MBE;  // if MBE would be smaller than RED/PRED, use MBE for that block
-        TERN_m10        reset_discontinuity;  // if discontinuity directive == TRUE_m10, reset to FALSE_m10 after compressing the block
+	ui4             mode;  // CMP_COMPRESSION_MODE_m10, CMP_DECOMPRESSION_MODE_m10
+	ui4             algorithm;  // RED, PRED, or MBE
+	si1             encryption_level;  // encryption level for data blocks: passed in compression
+	TERN_m10        fall_through_to_MBE;  // if MBE would be smaller than RED/PRED, use MBE for that block
+	TERN_m10        reset_discontinuity;  // if discontinuity directive == TRUE_m10, reset to FALSE_m10 after compressing the block
 	TERN_m10        include_noise_scores;
 	TERN_m10        no_zero_counts;  // in RED & PRED codecs (when blocks must be encoded with non-block statistics. This is a special case.)
 	TERN_m10        free_password_data;  // when freeing CPS
 	TERN_m10        set_derivative_level;  // value passed in "derivative_level" parameter
 	TERN_m10        find_derivative_level;  // mutually exclusive with "set_derivative_level"
 	// lossy compression directives
-        TERN_m10        detrend_data;  // Lossless operation, but most useful for lossy compression.
+	TERN_m10        detrend_data;  // Lossless operation, but most useful for lossy compression.
 	TERN_m10        require_normality;  // For lossy compression - use lossless if data amplitudes are too oddly distributed.  Pairs with "minimum_normality" parameter.
 	TERN_m10        use_compression_ratio;  // Used in "find" directives. Mutually exclusive with "use_mean_residual_ratio".
 	TERN_m10        use_mean_residual_ratio;  // Used in "find" directives. Mutually exclusive with "use_compression_ratio".
@@ -456,29 +490,33 @@ typedef struct {
 } CMP_PARAMETERS_m10;
 
 typedef struct {
-        ui4     count;
-        si1     value;
+	ui4     count;
+	si1     value;
 } CMP_STATISTICS_BIN_m10;
 
 typedef struct {
-        TERN_m10 _Atomic		mutex;
-        ui4                             **count;  // used by RED/PRED encode & decode
-        CMP_STATISTICS_BIN_m10          **sorted_count;  // used by RED/PRED encode & decode
-        ui8                             **cumulative_count;  // used by RED/PRED encode & decode
-        ui8                             **minimum_range;  // used by RED/PRED encode & decode
-        ui1                             **symbol_map;  // used by RED/PRED encode & decode
-        si4                             *input_buffer;
-        ui1                             *compressed_data;  // passed in decompression, returned in compression, should not be updated
-        CMP_BLOCK_FIXED_HEADER_m10      *block_header; // points to beginning of current block within compressed_data array, updatable
-        si4                             *decompressed_data;  // returned in decompression or if lossy data requested, used in some compression modes, should not be updated
-        si4                             *decompressed_ptr;  // points to beginning of current block within decompressed_data array, updatable
-        si4                             *original_data;  // passed in compression, should not be updated
-        si4                             *original_ptr;  // points to beginning of current block within original_data array, updatable
-        si1                             *difference_buffer;  // passed in both compression & decompression
-	si1                             *derivative_buffer;  // used if needed in compression & decompression, size of maximum block differences
-        si4                             *detrended_buffer;  // used if needed in compression, size of decompressed block
-        si4                             *scaled_amplitude_buffer;  // used if needed in compression, size of decompressed block
-        si4                             *scaled_frequency_buffer;  // used if needed in compression, size of decompressed block
+#if defined MACOS_m10 || defined LINUX_m10
+	TERN_m10 _Atomic		mutex;
+#else
+	TERN_m10			mutex;
+#endif
+	ui4				**count;  // used by RED/PRED encode & decode
+	CMP_STATISTICS_BIN_m10		**sorted_count;  // used by RED/PRED encode & decode
+	ui8				**cumulative_count;  // used by RED/PRED encode & decode
+	ui8				**minimum_range;  // used by RED/PRED encode & decode
+	ui1				**symbol_map;  // used by RED/PRED encode & decode
+	si4				*input_buffer;
+	ui1				*compressed_data;  // passed in decompression, returned in compression, should not be updated
+	CMP_BLOCK_FIXED_HEADER_m10	*block_header; // points to beginning of current block within compressed_data array, updatable
+	si4				*decompressed_data;  // returned in decompression or if lossy data requested, used in some compression modes, should not be updated
+	si4				*decompressed_ptr;  // points to beginning of current block within decompressed_data array, updatable
+	si4				*original_data;  // passed in compression, should not be updated
+	si4				*original_ptr;  // points to beginning of current block within original_data array, updatable
+	si1				*difference_buffer;  // passed in both compression & decompression
+	si1				*derivative_buffer;  // used if needed in compression & decompression, size of maximum block differences
+	si4				*detrended_buffer;  // used if needed in compression, size of decompressed block
+	si4				*scaled_amplitude_buffer;  // used if needed in compression, size of decompressed block
+	si4				*scaled_frequency_buffer;  // used if needed in compression, size of decompressed block
 	PASSWORD_DATA_m10		*password_data;
 	CMP_DIRECTIVES_m10   		directives;
 	ui1				*records;
@@ -492,14 +530,14 @@ typedef struct {
 typedef struct NODE_STRUCT_m10 {
 	si4                     val;
 	ui4                     count;
-	struct NODE_STRUCT_m10  *prev, *next;
+	struct NODE_STRUCT_m10	*prev, *next;
 } NODE_m10;
 
 
 // Function Prototypes
 CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STRUCT_m10 *cps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 difference_bytes, ui4 block_samples, CMP_DIRECTIVES_m10 *directives, CMP_PARAMETERS_m10 *parameters);
 sf8		CMP_calculate_mean_residual_ratio_m10(si4 *data, si4 *lossy_data, ui4 n_samps);
-void    	CMP_calculate_statistics_m10(void *stats_ptr, si4 *data, si8 len, NODE_m10 *nodes);  // "stats_ptr" is a pointer to a "REC_Stat_v10_m10" structure ffrom medrec_m10.h
+void    	CMP_calculate_statistics_m10(void *stats_ptr, si4 *data, si8 len, NODE_m10 *nodes);  // "stats_ptr" is a pointer to a "REC_Stat_v10_m10" structure from medrec_m10.h
 TERN_m10	CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void		CMP_cps_mutex_off_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void		CMP_cps_mutex_on_m10(CMP_PROCESSING_STRUCT_m10 *cps);
@@ -512,11 +550,11 @@ TERN_m10	CMP_find_amplitude_scale_m10(CMP_PROCESSING_STRUCT_m10 *cps, void (*com
 void    	CMP_find_extrema_m10(si4 *input_buffer, si8 len, si4 *min, si4 *max, CMP_PROCESSING_STRUCT_m10 *cps);
 TERN_m10	CMP_find_frequency_scale_m10(CMP_PROCESSING_STRUCT_m10 *cps, void (*compression_f)(CMP_PROCESSING_STRUCT_m10 *cps));
 void    	CMP_free_processing_struct_m10(CMP_PROCESSING_STRUCT_m10 *cps);
-void    	CMP_generate_lossy_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si4 *input_buffer, si4 *output_buffer, ui1 mode);
+void    	CMP_generate_lossy_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 void		CMP_generate_parameter_map_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void    	CMP_get_variable_region_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void		CMP_initialize_directives_m10(CMP_DIRECTIVES_m10 *directives, ui1 mode);
-void		CMP_initialize_normal_CDF_table_m10(void);
+TERN_m10	CMP_initialize_tables_m10(void);
 void		CMP_initialize_parameters_m10(CMP_PARAMETERS_m10 *parameters);
 void    	CMP_lad_reg_m10(si4 *data, si8 len, sf8 *m, sf8 *b);
 void    	CMP_lin_reg_m10(si4 *data, si8 len, sf8 *m, sf8 *b);
@@ -537,8 +575,8 @@ void    	CMP_set_variable_region_m10(CMP_PROCESSING_STRUCT_m10 *cps);
 void    	CMP_show_block_header_m10(CMP_BLOCK_FIXED_HEADER_m10 *block_header);
 void    	CMP_show_block_model_m10(CMP_BLOCK_FIXED_HEADER_m10 *block_header);
 void    	CMP_unscale_amplitude_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
-void    	CMP_unscale_frequency_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf4 scale_factor);
-CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m10 *cps, ui1 flags);
+void    	CMP_unscale_frequency_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
+CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m10* cps, ui1 flags);
 
 
 //**********************************************************************************//
@@ -577,7 +615,25 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define INDEX_SEARCH_m10                        ((ui1) 2)
 #define IPV4_ADDRESS_BYTES_m10			4
 #define POSTAL_CODE_BYTES_m10			16
-#define LOCALITY_BYTES_m10			64  // city/town
+#define LOCALITY_BYTES_m10			64  	//  ascii[63]
+#if defined MACOS_m10 || defined LINUX_m10
+	#define NULL_DEVICE			"/dev/null"
+#endif
+#ifdef WINDOWS_m10
+	#define PRINTF_BUF_LEN_m10		1024
+	#define NULL_DEVICE			"NUL"
+#endif
+
+// Error Handling Constants
+#define USE_GLOBAL_BEHAVIOR_m10         0
+#define RESTORE_BEHAVIOR_m10            1
+#define EXIT_ON_FAIL_m10                2
+#define RETURN_ON_FAIL_m10              4
+#define SUPPRESS_ERROR_OUTPUT_m10       8
+#define SUPPRESS_WARNING_OUTPUT_m10     16
+#define SUPPRESS_MESSAGE_OUTPUT_m10     32
+#define SUPPRESS_ALL_OUTPUT_m10         (SUPPRESS_ERROR_OUTPUT_m10 | SUPPRESS_WARNING_OUTPUT_m10 | SUPPRESS_MESSAGE_OUTPUT_m10)
+#define RETRY_ONCE_m10                  64
 
 // Target Value Constants
 #define DEFAULT_MODE_m10        0
@@ -589,25 +645,69 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define FIND_CLOSEST_m10        6
 
 // Text Color Constant Strings
-#define TC_BLACK_m10            "\033[30m"
-#define TC_RED_m10              "\033[31m"
-#define TC_GREEN_m10            "\033[32m"
-#define TC_YELLOW_m10           "\033[33m"
-#define TC_BLUE_m10             "\033[34m"
-#define TC_MAGENTA_m10          "\033[35m"
-#define TC_CYAN_m10             "\033[36m"
-#define TC_WHITE_m10            "\033[37m"
-#define TC_BRIGHT_BLACK_m10     "\033[30;1m"
-#define TC_BRIGHT_RED_m10       "\033[31;1m"
-#define TC_BRIGHT_GREEN_m10     "\033[32;1m"
-#define TC_BRIGHT_YELLOW_m10    "\033[33;1m"
-#define TC_BRIGHT_BLUE_m10      "\033[34;1m"
-#define TC_BRIGHT_MAGENTA_m10   "\033[35;1m"
-#define TC_BRIGHT_CYAN_m10      "\033[36;1m"
-#define TC_BRIGHT_WHITE_m10     "\033[37;1m"
-#define TC_RESET_m10            "\033[0m"
+#ifdef MATLAB_m10  // Matlab doesn't do text coloring this way (can be done with CPRINTF())
+	#define TC_BLACK_m10            ""
+	#define TC_RED_m10              ""
+	#define TC_GREEN_m10            ""
+	#define TC_YELLOW_m10           ""
+	#define TC_BLUE_m10             ""
+	#define TC_MAGENTA_m10          ""
+	#define TC_CYAN_m10             ""
+	#define TC_LIGHT_GRAY_m10	""
+	#define TC_DARK_GRAY_m10	""
+	#define TC_LIGHT_RED_m10	""
+	#define TC_LIGHT_GREEN_m10	""
+	#define TC_LIGHT_YELLOW_m10	""
+	#define TC_LIGHT_BLUE_m10	""
+	#define TC_LIGHT_MAGENTA_m10	""
+	#define TC_LIGHT_CYAN_m10	""
+	#define TC_WHITE_m10		""
+	#define TC_BRIGHT_BLACK_m10	""
+	#define TC_BRIGHT_RED_m10	""
+	#define TC_BRIGHT_GREEN_m10	""
+	#define TC_BRIGHT_YELLOW_m10	""
+	#define TC_BRIGHT_BLUE_m10	""
+	#define TC_BRIGHT_MAGENTA_m10	""
+	#define TC_BRIGHT_CYAN_m10	""
+	#define TC_BRIGHT_WHITE_m10	""
+	// non-color constants
+	#define TC_BOLD_m10		""
+	#define TC_UNDERLINE_m10	""
+	#define TC_NO_UNDERLINE_m10	""
+	#define TC_RESET_m10            ""
+#else
+	#define TC_BLACK_m10		"\033[30m"
+	#define TC_RED_m10		"\033[31m"
+	#define TC_GREEN_m10		"\033[32m"
+	#define TC_YELLOW_m10		"\033[33m"
+	#define TC_BLUE_m10		"\033[34m"
+	#define TC_MAGENTA_m10		"\033[35m"
+	#define TC_CYAN_m10		"\033[36m"
+	#define TC_LIGHT_GRAY_m10	"\033[37m"
+	#define TC_DARK_GRAY_m10	"\033[90m"
+	#define TC_LIGHT_RED_m10	"\033[91m"
+	#define TC_LIGHT_GREEN_m10	"\033[92m"
+	#define TC_LIGHT_YELLOW_m10	"\033[93m"
+	#define TC_LIGHT_BLUE_m10	"\033[94m"
+	#define TC_LIGHT_MAGENTA_m10	"\033[95m"
+	#define TC_LIGHT_CYAN_m10	"\033[96m"
+	#define TC_WHITE_m10		"\033[97m"
+	#define TC_BRIGHT_BLACK_m10	"\033[30;1m"
+	#define TC_BRIGHT_RED_m10	"\033[31;1m"
+	#define TC_BRIGHT_GREEN_m10	"\033[32;1m"
+	#define TC_BRIGHT_YELLOW_m10	"\033[33;1m"
+	#define TC_BRIGHT_BLUE_m10	"\033[34;1m"
+	#define TC_BRIGHT_MAGENTA_m10	"\033[35;1m"
+	#define TC_BRIGHT_CYAN_m10	"\033[36;1m"
+	#define TC_BRIGHT_WHITE_m10	"\033[37;1m"
+	// non-color constants
+	#define TC_BOLD_m10		"\033[1m"
+	#define TC_UNDERLINE_m10	"\033[4m"
+	#define TC_NO_UNDERLINE_m10	"\033[24m"
+	#define TC_RESET_m10		"\033[0m"
+#endif
 
-// Other Time Related Constants
+// Time Related Constants
 #define TIMEZONE_ACRONYM_BYTES_m10                      8       // ascii[7]
 #define TIMEZONE_STRING_BYTES_m10                       64      // ascii[63]
 #define MAXIMUM_STANDARD_UTC_OFFSET_m10                 ((si4) 86400)
@@ -620,10 +720,10 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define NUMBER_OF_SAMPLES_NO_ENTRY_m10			-1
 #define SAMPLE_NUMBER_NO_ENTRY_m10                      ((si8) 0x8000000000000000)
 #define FRAME_NUMBER_NO_ENTRY_m10                       SAMPLE_NUMBER_NO_ENTRY_m10
-#define BEGINNING_OF_INDICES_m10                        ((si8) 0x0000000000000000)
-#define END_OF_INDICES_m10                              ((si8) 0x7FFFFFFFFFFFFFFF)
+#define BEGINNING_OF_SAMPLE_NUMBERS_m10                 ((si8) 0x000000000)
+#define END_OF_SAMPLE_NUMBERS_m10                       ((si8) 0x7FFFFFFFFFFFFFFF)
 #define UUTC_NO_ENTRY_m10                               ((si8) 0x8000000000000000)
-#define UUTC_EARLIEST_TIME_m10                          ((si8) 0x0000000000000000)  // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
+#define UUTC_EARLIEST_TIME_m10                          ((si8) 0x000000000)  // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
 #define UUTC_LATEST_TIME_m10                            ((si8) 0x7FFFFFFFFFFFFFFF)  // 04:00:54.775808 Sunday, 10 Jan 29424, UTC
 #define BEGINNING_OF_TIME_m10                           UUTC_EARLIEST_TIME_m10
 #define END_OF_TIME_m10                                 UUTC_LATEST_TIME_m10
@@ -669,7 +769,7 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m10            ""
 
 // File Type Constants
-#define NO_TYPE_CODE_m10                                        (ui4) 0x00000000
+#define NO_TYPE_CODE_m10                                        (ui4) 0x0
 #define ALL_TYPES_CODE_m10                                      (ui4) 0xFFFFFFFF
 #define UNKNOWN_TYPE_CODE_m10                                   NO_TYPE_CODE_m10
 #define NO_FILE_TYPE_STRING_m10				        ""			// ascii[4]
@@ -1026,35 +1126,32 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 
 // Daylight Change code
 typedef union {
-        struct {
-                si1     code_type;                      // (DST end / DST Not Observed / DST start) ==  (-1 / 0 / +1)
-                si1     day_of_week;                    // (No Entry / [Sunday : Saturday]) ==  (-1 / [0 : 6])
-                si1     relative_weekday_of_month;      // (No Entry / [First : Fifth] / Last) ==  (0 / [1 : 5] / 6)
-                si1     day_of_month;                   // (No Entry / [1 : 31]) ==  (0 / [1 : 31])
-                si1     month;                          // (No Entry / [January : December]) ==  (-1 / [0 : 11])
-                si1     hours_of_day;                   // [-128 : +127] hours relative to 0:00 (midnight)
-                si1     reference_time;                 // (Local / UTC) ==  (0 / +1)
-                si1     shift_minutes;                  // [-120 : +120] minutes
-        };
-        si8     value;                                  // 0 indicates DST is not observed, -1 indicates no entry
+	struct {
+		si1     code_type;                      // (DST end / DST Not Observed / DST start) ==  (-1 / 0 / +1)
+		si1     day_of_week;                    // (No Entry / [Sunday : Saturday]) ==  (-1 / [0 : 6])
+		si1     relative_weekday_of_month;      // (No Entry / [First : Fifth] / Last) ==  (0 / [1 : 5] / 6)
+		si1     day_of_month;                   // (No Entry / [1 : 31]) ==  (0 / [1 : 31])
+		si1     month;                          // (No Entry / [January : December]) ==  (-1 / [0 : 11])
+		si1     hours_of_day;                   // [-128 : +127] hours relative to 0:00 (midnight)
+		si1     reference_time;                 // (Local / UTC) ==  (0 / +1)
+		si1     shift_minutes;                  // [-120 : +120] minutes
+	};
+	si8     value;                                  // 0 indicates DST is not observed, -1 indicates no entry
 } DAYLIGHT_TIME_CHANGE_CODE_m10;
 
 typedef struct {
-        si1        country[METADATA_RECORDING_LOCATION_BYTES_m10];
-        si1        country_acronym_2_letter[3]; // two-letter acronym; (ISO 3166 ALPHA-2)
-        si1        country_acronym_3_letter[4]; // three-letter acronym (ISO-3166 ALPHA-3)
-        si1        territory[METADATA_RECORDING_LOCATION_BYTES_m10];
-        si1        territory_acronym[TIMEZONE_STRING_BYTES_m10];
-        si1        standard_timezone[TIMEZONE_STRING_BYTES_m10];
-        si1        standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
-        si4        standard_UTC_offset; // seconds
-        si4        observe_DST;
-        si1        daylight_timezone[TIMEZONE_STRING_BYTES_m10];
-        si1        daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
-        si1        daylight_time_start_description[METADATA_RECORDING_LOCATION_BYTES_m10];
-        si8        daylight_time_start_code;  // DAYLIGHT_TIME_CHANGE_CODE_m10 - cast to use other fields
-        si1        daylight_time_end_description[METADATA_RECORDING_LOCATION_BYTES_m10];
-        si8        daylight_time_end_code;  // DAYLIGHT_TIME_CHANGE_CODE_m10 - cast to use other fields
+	si1        country[METADATA_RECORDING_LOCATION_BYTES_m10];
+	si1        country_acronym_2_letter[3]; // two-letter acronym; (ISO 3166 ALPHA-2)
+	si1        country_acronym_3_letter[4]; // three-letter acronym (ISO-3166 ALPHA-3)
+	si1        territory[METADATA_RECORDING_LOCATION_BYTES_m10];
+	si1        territory_acronym[TIMEZONE_STRING_BYTES_m10];
+	si1        standard_timezone[TIMEZONE_STRING_BYTES_m10];
+	si1        standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
+	si4        standard_UTC_offset; // seconds
+	si1        daylight_timezone[TIMEZONE_STRING_BYTES_m10];
+	si1        daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
+	si8        daylight_time_start_code;  // DAYLIGHT_TIME_CHANGE_CODE_m10 - cast to use other fields
+	si8        daylight_time_end_code;  // DAYLIGHT_TIME_CHANGE_CODE_m10 - cast to use other fields
 } TIMEZONE_INFO_m10;
 
 typedef struct {
@@ -1064,19 +1161,19 @@ typedef struct {
 
 typedef struct {
 	TERN_m10	conditioned;
-        si8     	start_time;
-        si8     	end_time;
-        si8     	start_index;  // session-relative (global indexing)
-        si8     	end_index;  // session-relative (global indexing)
-	si8		local_start_index;  // segment-relative (local indexing)
-	si8		local_end_index;  // segment-relative (local indexing)
+	si8     	start_time;
+	si8     	end_time;
+	si8     	start_sample_number;  // session-relative (global indexing)
+	si8     	end_sample_number;  // session-relative (global indexing)
+	si8		local_start_sample_number;  // segment-relative (local indexing)
+	si8		local_end_sample_number;  // segment-relative (local indexing)
 	si8		number_of_samples;
-        si4     	start_segment_number;
-        si4     	end_segment_number;
-        si8     	session_start_time;
-        si8     	session_end_time;
-	si1		index_reference_channel_name[BASE_FILE_NAME_BYTES_m10];  // string containing channel base name (or NULL, if unnecessary)
-	si4		index_reference_channel_index;  // index of the index reference channel in the session channel array
+	si4     	start_segment_number;
+	si4     	end_segment_number;
+	si8     	session_start_time;
+	si8     	session_end_time;
+	si1		sample_number_reference_channel_name[BASE_FILE_NAME_BYTES_m10];  // string containing channel base name (or NULL, if unnecessary)
+	si4		sample_number_reference_channel_index;  // index of the "sample_number reference channel" in the session channel array
 } TIME_SLICE_m10;
 
 typedef struct {  // fields from ipinfo.io
@@ -1090,58 +1187,60 @@ typedef struct {  // fields from ipinfo.io
 } LOCATION_INFO_m10;
 
 typedef struct {
-        // Password
+	// Password
 	PASSWORD_DATA_m10               password_data;
-        // Time Constants
+	// Time Constants
 	TERN_m10			time_constants_set;
 	TERN_m10			RTO_known;
 	si8				session_start_time;
 	si8                             recording_time_offset;
-        si4                             standard_UTC_offset;
-        si1                             standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
-        si1                             standard_timezone_string[TIMEZONE_STRING_BYTES_m10];
-        TERN_m10                        observe_DST;
-        si1                             daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
-        si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m10];
-        DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_start_code;  // si1[8] / si8
-        DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_end_code;  // si1[8] / si8
-        TIMEZONE_INFO_m10               *timezone_table;
-	TIMEZONE_ALIAS_m10   		*country_aliases_table;
-	TIMEZONE_ALIAS_m10   		*country_acronym_aliases_table;
-        ui4                             recording_time_offset_mode;
-        // Alignment Fields
-        TERN_m10                        universal_header_aligned;
-        TERN_m10                        metadata_section_1_aligned;
-        TERN_m10                        time_series_metadata_section_2_aligned;
-        TERN_m10                        video_metadata_section_2_aligned;
-        TERN_m10                        metadata_section_3_aligned;
-        TERN_m10                        all_metadata_structures_aligned;
-        TERN_m10                        time_series_indices_aligned;
-        TERN_m10                        video_indices_aligned;
-        TERN_m10                        CMP_block_header_aligned;
+	si4                             standard_UTC_offset;
+	si1                             standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
+	si1                             standard_timezone_string[TIMEZONE_STRING_BYTES_m10];
+	TERN_m10                        observe_DST;
+	si1                             daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];
+	si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m10];
+	DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_start_code;  // si1[8] / si8
+	DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_end_code;  // si1[8] / si8
+	TIMEZONE_INFO_m10		*timezone_table;
+	TIMEZONE_ALIAS_m10		*country_aliases_table;
+	TIMEZONE_ALIAS_m10		*country_acronym_aliases_table;
+	ui4                             recording_time_offset_mode;
+	// Alignment Fields
+	TERN_m10                        universal_header_aligned;
+	TERN_m10                        metadata_section_1_aligned;
+	TERN_m10                        time_series_metadata_section_2_aligned;
+	TERN_m10                        video_metadata_section_2_aligned;
+	TERN_m10                        metadata_section_3_aligned;
+	TERN_m10                        all_metadata_structures_aligned;
+	TERN_m10                        time_series_indices_aligned;
+	TERN_m10                        video_indices_aligned;
+	TERN_m10                        CMP_block_header_aligned;
 	TERN_m10			CMP_record_header_aligned;
-        TERN_m10                        record_header_aligned;
-        TERN_m10                        record_indices_aligned;
-        TERN_m10                        all_record_structures_aligned;
-        TERN_m10                        all_structures_aligned;
-        // CMP
-        sf8                             *CMP_normal_CDF_table;
-        // CRC
-        ui4                             **CRC_table;
-        ui4                             CRC_mode;
-        // AES tables
-        si4                             *AES_sbox_table;
-        si4                             *AES_rcon_table;
-        si4                             *AES_rsbox_table;
-        // SHA256 tables
-        ui4                             *SHA_h0_table;
-        ui4                             *SHA_k_table;
-        // UTF8 tables
-        ui4                             *UTF8_offsets_table;
-        si1                             *UTF8_trailing_bytes_table;
+	TERN_m10                        record_header_aligned;
+	TERN_m10                        record_indices_aligned;
+	TERN_m10                        all_record_structures_aligned;
+	TERN_m10                        all_structures_aligned;
+	// CMP
+	sf8				*CMP_normal_CDF_table;
+	// CRC
+	ui4				**CRC_table;
+	ui4                             CRC_mode;
+	// AES tables
+	si4				*AES_sbox_table;
+	si4				*AES_rcon_table;
+	si4				*AES_rsbox_table;
+	// SHA256 tables
+	ui4				*SHA_h0_table;
+	ui4				*SHA_k_table;
+	// UTF8 tables
+	ui4				*UTF8_offsets_table;
+	si1				*UTF8_trailing_bytes_table;
 	// Miscellaneous
-        TERN_m10                        verbose;
-        ui4                             behavior_on_fail;
+	TERN_m10                        verbose;
+	ui4                             behavior_on_fail;
+	si1				temp_dir[FULL_FILE_NAME_BYTES_m10];  // system temp directory (periodically auto-cleared)
+	si1				temp_file[FULL_FILE_NAME_BYTES_m10];  // full path to temp file (i.e. incudes temp_dir)
 } GLOBALS_m10;
 
 
@@ -1154,38 +1253,38 @@ typedef struct {
 typedef struct {
 	// start robust mode region
 	ui4	header_CRC;     // CRC of the universal header after this field
-        ui4     body_CRC;       // CRC of the entire file after the universal header
+	ui4     body_CRC;       // CRC of the entire file after the universal header
 	si8	file_end_time;
 	si8	number_of_entries;
 	ui4	maximum_entry_size;
 	// end robust mode region
 	si4     segment_number;
-        union {  // anonymous union
-                struct {
-                        si1     type_string[TYPE_BYTES_m10];
-                        ui1     MED_version_major;
-                        ui1     MED_version_minor;
-                        ui1     byte_order_code;
-                };
+	union {
+		struct {
+			si1     type_string[TYPE_BYTES_m10];
+			ui1     MED_version_major;
+			ui1     MED_version_minor;
+			ui1     byte_order_code;
+		};
 		struct {
 			ui4     type_code;
-			si1	type_string_terminal_zero;
+			si1	type_string_terminal_zero;  // not used - there for clarity
 		};
-        };
+	};
 	si8	session_start_time;
 	si8	file_start_time;
-        si1	session_name[BASE_FILE_NAME_BYTES_m10]; // utf8[63], base name only, no extension
-        si1     channel_name[BASE_FILE_NAME_BYTES_m10]; // utf8[63], base name only, no extension
+	si1	session_name[BASE_FILE_NAME_BYTES_m10]; // utf8[63], base name only, no extension
+	si1     channel_name[BASE_FILE_NAME_BYTES_m10]; // utf8[63], base name only, no extension
 	si1	anonymized_subject_ID[UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_BYTES_m10]; // utf8[63]
-        ui8	session_UID;
-        ui8     channel_UID;
-        ui8     segment_UID;
+	ui8	session_UID;
+	ui8     channel_UID;
+	ui8     segment_UID;
 	ui8	file_UID;
-        ui8	provenance_UID;
+	ui8	provenance_UID;
 	ui1	level_1_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m10];
-        ui1     level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m10];
+	ui1     level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m10];
 	ui1	level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m10];
-        ui1	protected_region[UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m10];
+	ui1	protected_region[UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m10];
 	ui1	discretionary_region[UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m10];
 } UNIVERSAL_HEADER_m10;
 
@@ -1193,230 +1292,274 @@ typedef struct {
 typedef struct {
 	si1     level_1_password_hint[PASSWORD_HINT_BYTES_m10];
 	si1     level_2_password_hint[PASSWORD_HINT_BYTES_m10];
-        si1     section_2_encryption_level;
-        si1     section_3_encryption_level;
-        ui1     protected_region[METADATA_SECTION_1_PROTECTED_REGION_BYTES_m10];
-        ui1     discretionary_region[METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m10];
+	si1     section_2_encryption_level;
+	si1     section_3_encryption_level;
+	ui1     protected_region[METADATA_SECTION_1_PROTECTED_REGION_BYTES_m10];
+	ui1     discretionary_region[METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m10];
 } METADATA_SECTION_1_m10;
 
 typedef struct {
-        // channel type independent fields
-        si1     session_description[METADATA_SESSION_DESCRIPTION_BYTES_m10];            // utf8[511]
-        si1     channel_description[METADATA_CHANNEL_DESCRIPTION_BYTES_m10];            // utf8[255]
-        si1     segment_description[METADATA_SEGMENT_DESCRIPTION_BYTES_m10];            // utf8[255]
-        si1     equipment_description[METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10];        // utf8[510]
-        si4     acquisition_channel_number;
-        // channel type specific fields
+	// channel type independent fields
+	si1     session_description[METADATA_SESSION_DESCRIPTION_BYTES_m10];            // utf8[511]
+	si1     channel_description[METADATA_CHANNEL_DESCRIPTION_BYTES_m10];            // utf8[255]
+	si1     segment_description[METADATA_SEGMENT_DESCRIPTION_BYTES_m10];            // utf8[255]
+	si1     equipment_description[METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10];        // utf8[510]
+	si4     acquisition_channel_number;
+	// channel type specific fields
 	si1     reference_description[TIME_SERIES_METADATA_REFERENCE_DESCRIPTION_BYTES_m10];        // utf8[255]
-        sf8     sampling_frequency;
-        sf8     low_frequency_filter_setting;
-        sf8     high_frequency_filter_setting;
+	sf8     sampling_frequency;
+	sf8     low_frequency_filter_setting;
+	sf8     high_frequency_filter_setting;
 	sf8     notch_filter_frequency_setting;
 	sf8     AC_line_frequency;
-        sf8     amplitude_units_conversion_factor;
-        si1     amplitude_units_description[TIME_SERIES_METADATA_AMPLITUDE_UNITS_DESCRIPTION_BYTES_m10];  // utf8[31]
-        sf8     time_base_units_conversion_factor;
-        si1     time_base_units_description[TIME_SERIES_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10];  // utf8[31]
-        si8     absolute_start_sample_number;
+	sf8     amplitude_units_conversion_factor;
+	si1     amplitude_units_description[TIME_SERIES_METADATA_AMPLITUDE_UNITS_DESCRIPTION_BYTES_m10];  // utf8[31]
+	sf8     time_base_units_conversion_factor;
+	si1     time_base_units_description[TIME_SERIES_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10];  // utf8[31]
+	si8     absolute_start_sample_number;
 	si8     number_of_samples;
 	si8	number_of_blocks;
 	si8     maximum_block_bytes;
 	ui4     maximum_block_samples;
-        ui4     maximum_block_difference_bytes;
+	ui4     maximum_block_difference_bytes;
 	sf8     maximum_block_duration;
 	si8     number_of_discontinuities;
 	si8     maximum_contiguous_blocks;
 	si8     maximum_contiguous_block_bytes;
-        si8     maximum_contiguous_samples;
-        ui1     protected_region[TIME_SERIES_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10];
-        ui1     discretionary_region[TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10];
+	si8     maximum_contiguous_samples;
+	ui1     protected_region[TIME_SERIES_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10];
+	ui1     discretionary_region[TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10];
 } TIME_SERIES_METADATA_SECTION_2_m10;
 
 typedef struct {
-        // type-independent fields
-        si1     session_description[METADATA_SESSION_DESCRIPTION_BYTES_m10];            // utf8[511]
-        si1     channel_description[METADATA_CHANNEL_DESCRIPTION_BYTES_m10];            // utf8[511]
-        si1     segment_description[METADATA_SEGMENT_DESCRIPTION_BYTES_m10];            // utf8[511]
-        si1     equipment_description[METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10];        // utf8[510]
-        si4     acquisition_channel_number;
-        // type-specific fields
-        si8     horizontal_resolution;
-        si8     vertical_resolution;
-        sf8     frame_rate;
+	// type-independent fields
+	si1     session_description[METADATA_SESSION_DESCRIPTION_BYTES_m10];            // utf8[511]
+	si1     channel_description[METADATA_CHANNEL_DESCRIPTION_BYTES_m10];            // utf8[511]
+	si1     segment_description[METADATA_SEGMENT_DESCRIPTION_BYTES_m10];            // utf8[511]
+	si1     equipment_description[METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10];        // utf8[510]
+	si4     acquisition_channel_number;
+	// type-specific fields
+	si8     horizontal_resolution;
+	si8     vertical_resolution;
+	sf8     frame_rate;
 	si8     number_of_clips;
 	si8     maximum_clip_bytes;
-        si1     video_format[VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10];                // utf8[31]
+	si1     video_format[VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10];                // utf8[31]
 	si4     number_of_video_files;
-        ui1     protected_region[VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10];
-        ui1     discretionary_region[VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10];
+	ui1     protected_region[VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10];
+	ui1     discretionary_region[VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10];
 } VIDEO_METADATA_SECTION_2_m10;
+
+// All metadata section 2 structures are the same size, so this structure may be convenient, but it is not currently used in the library.
+typedef struct {
+	union {
+		TIME_SERIES_METADATA_SECTION_2_m10	time_series_section_2;
+		VIDEO_METADATA_SECTION_2_m10		video_section_2;
+	};
+} METADATA_SECTION_2_m10;
 
 typedef struct {
 	si8     recording_time_offset;
-        DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_start_code;                       // si1[8] / si8
-        DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_end_code;                         // si1[8] / si8
-        si1     standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];                  // ascii[8]
-        si1     standard_timezone_string[TIMEZONE_STRING_BYTES_m10];                    // ascii[31]
-        si1     daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];                  // ascii[8]
-        si1     daylight_timezone_string[TIMEZONE_STRING_BYTES_m10];                    // ascii[31]
-        si1     subject_name_1[METADATA_SUBJECT_NAME_BYTES_m10];                        // utf8[31]
-        si1     subject_name_2[METADATA_SUBJECT_NAME_BYTES_m10];                        // utf8[31]
-        si1     subject_name_3[METADATA_SUBJECT_NAME_BYTES_m10];                        // utf8[31]
-        si1     subject_ID[METADATA_SUBJECT_ID_BYTES_m10];                              // utf8[31]
-        si1     recording_country[METADATA_RECORDING_LOCATION_BYTES_m10];               // utf8[63]
-        si1     recording_territory[METADATA_RECORDING_LOCATION_BYTES_m10];             // utf8[63]
-        si1     recording_locality[METADATA_RECORDING_LOCATION_BYTES_m10];              // utf8[63]
-        si1     recording_institution[METADATA_RECORDING_LOCATION_BYTES_m10];           // utf8[63]
-        si1     geotag_format[METADATA_GEOTAG_FORMAT_BYTES_m10];                        // ascii[31]
-        si1     geotag_data[METADATA_GEOTAG_DATA_BYTES_m10];                            // ascii[1023]
-        si4     standard_UTC_offset;
-        ui1     protected_region[METADATA_SECTION_3_PROTECTED_REGION_BYTES_m10];
-        ui1     discretionary_region[METADATA_SECTION_3_DISCRETIONARY_REGION_BYTES_m10];
+	DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_start_code;                       // si1[8] / si8
+	DAYLIGHT_TIME_CHANGE_CODE_m10   daylight_time_end_code;                         // si1[8] / si8
+	si1     standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];                  // ascii[8]
+	si1     standard_timezone_string[TIMEZONE_STRING_BYTES_m10];                    // ascii[31]
+	si1     daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m10];                  // ascii[8]
+	si1     daylight_timezone_string[TIMEZONE_STRING_BYTES_m10];                    // ascii[31]
+	si1     subject_name_1[METADATA_SUBJECT_NAME_BYTES_m10];                        // utf8[31]
+	si1     subject_name_2[METADATA_SUBJECT_NAME_BYTES_m10];                        // utf8[31]
+	si1     subject_name_3[METADATA_SUBJECT_NAME_BYTES_m10];                        // utf8[31]
+	si1     subject_ID[METADATA_SUBJECT_ID_BYTES_m10];                              // utf8[31]
+	si1     recording_country[METADATA_RECORDING_LOCATION_BYTES_m10];               // utf8[63]
+	si1     recording_territory[METADATA_RECORDING_LOCATION_BYTES_m10];             // utf8[63]
+	si1     recording_locality[METADATA_RECORDING_LOCATION_BYTES_m10];              // utf8[63]
+	si1     recording_institution[METADATA_RECORDING_LOCATION_BYTES_m10];           // utf8[63]
+	si1     geotag_format[METADATA_GEOTAG_FORMAT_BYTES_m10];                        // ascii[31]
+	si1     geotag_data[METADATA_GEOTAG_DATA_BYTES_m10];                            // ascii[1023]
+	si4     standard_UTC_offset;
+	ui1     protected_region[METADATA_SECTION_3_PROTECTED_REGION_BYTES_m10];
+	ui1     discretionary_region[METADATA_SECTION_3_DISCRETIONARY_REGION_BYTES_m10];
 } METADATA_SECTION_3_m10;
 
 typedef struct {
-        ui1                                     *metadata;      // same as section_1 pointer (exists for clarity in functions that operate on whole metadata)
-        METADATA_SECTION_1_m10		        *section_1;
-        TIME_SERIES_METADATA_SECTION_2_m10	*time_series_section_2;
-	VIDEO_METADATA_SECTION_2_m10	        *video_section_2;
-        METADATA_SECTION_3_m10		        *section_3;
+	METADATA_SECTION_1_m10				section_1;
+	union {  // == 	METADATA_SECTION_2_m10
+		TIME_SERIES_METADATA_SECTION_2_m10	time_series_section_2;
+		VIDEO_METADATA_SECTION_2_m10		video_section_2;
+	};
+	METADATA_SECTION_3_m10				section_3;
 } METADATA_m10;
 
 // Record Structures
 typedef struct {
 	ui4	record_CRC;
-        ui4     total_record_bytes;  // header + body bytes
-        si8     start_time;
-        union {  // anonymous union
-                struct {
-                        si1     type_string[TYPE_BYTES_m10];
-                        ui1     version_major;
-                        ui1     version_minor;
-                        si1     encryption_level;
-                };
+	ui4     total_record_bytes;  // header + body bytes
+	si8     start_time;
+	union {  // anonymous union
+		struct {
+			si1     type_string[TYPE_BYTES_m10];
+			ui1     version_major;
+			ui1     version_minor;
+			si1     encryption_level;
+		};
 		struct {
 			ui4     type_code;
-			si1	type_string_terminal_zero;
+			si1	type_string_terminal_zero;  // not used - there for clarity
 		};
-        };
+	};
 } RECORD_HEADER_m10;
 
 typedef struct {
-        si8	file_offset;
-        si8	start_time;
-        union {  // anonymous union
-                struct {
-                        si1     type_string[TYPE_BYTES_m10];
-                        ui1     version_major;
-                        ui1     version_minor;
-                        si1     encryption_level;
-                };
+	si8	file_offset;
+	si8	start_time;
+	union {  // anonymous union
+		struct {
+			si1     type_string[TYPE_BYTES_m10];
+			ui1     version_major;
+			ui1     version_minor;
+			si1     encryption_level;
+		};
 		struct {
 			ui4     type_code;
-			si1	type_string_terminal_zero;
+			si1	type_string_terminal_zero;  // not used - there for clarity
 		};
-        };
+	};
 } RECORD_INDEX_m10;
 
 // Time Series Indices Structures
 typedef struct {
 	si8	file_offset;
 	si8	start_time;
-        si8     start_sample_number;  // relative to segment sample numbering, negative values indicate disconrtinuity
+	si8     start_sample_number;  // relative to segment sample numbering, negative values indicate disconrtinuity
 } TIME_SERIES_INDEX_m10;
 
 // Video Indices Structures
 typedef struct {
-        si8     file_offset;
+	si8     file_offset;
 	si8	start_time;
-        si4     start_frame_number;  // relative to video file, negative values indicate disconrtinuity
-        si4     video_file_number;
+	si4     start_frame_number;  // relative to video file, negative values indicate disconrtinuity
+	si4     video_file_number;
 } VIDEO_INDEX_m10;
+
+// All index structures are the same size, so this structure may be convenient, but it is not currently used in the library.
+typedef struct {
+	union {
+		RECORD_INDEX_m10	record_index;
+		TIME_SERIES_INDEX_m10	time_series_index;
+		VIDEO_INDEX_m10		video_index;
+	};
+} INDEX_m10;
 
 // File Processing Structures
 typedef struct {
 	TERN_m10        close_file;
-        TERN_m10        flush_after_write;
-        TERN_m10        update_universal_header;	// when writing
-        TERN_m10        leave_decrypted;		// if encrypted during write, return from write function decryptedF
+	TERN_m10        flush_after_write;
+	TERN_m10        update_universal_header;	// when writing
+	TERN_m10        leave_decrypted;		// if encrypted during write, return from write function decrypted
 	TERN_m10        free_password_data;		// when freeing FPS
-        TERN_m10        free_CMP_processing_struct;	// when freeing FPS
-        ui4             lock_mode;
+	TERN_m10        free_CMP_processing_struct;	// when freeing FPS
+	ui4             lock_mode;
 	ui4             open_mode;
 } FILE_PROCESSING_DIRECTIVES_m10;
 
 typedef struct {
-        TERN_m10 _Atomic                        mutex;
+#if defined MACOS_m10 || defined LINUX_m10
+	TERN_m10 _Atomic                        mutex;
+#else
+	TERN_m10                        	mutex;
+#endif
 	PASSWORD_DATA_m10			*password_data;
 	si1                                     full_file_name[FULL_FILE_NAME_BYTES_m10];  // full path including extension
-	FILE                                    *fp;    // file pointer
-        si4                                     fd;     // file descriptor
+	FILE					*fp;  // file pointer
+	si4                                     fd;  // file descriptor
 	si8                                     file_length;
-	UNIVERSAL_HEADER_m10		        *universal_header;
-        FILE_PROCESSING_DIRECTIVES_m10	        directives;
-	METADATA_m10			        metadata;       // structure containing pointers to each of the three metadata sections
-        TIME_SERIES_INDEX_m10                   *time_series_indices;
-	VIDEO_INDEX_m10			        *video_indices;
-	ui1                                     *records;
-        RECORD_INDEX_m10                        *record_indices;
+	UNIVERSAL_HEADER_m10			*universal_header;
+	FILE_PROCESSING_DIRECTIVES_m10	        directives;
+	union {					// the MED file types
+		METADATA_m10			*metadata;
+		ui1				*records;
+		RECORD_INDEX_m10		*record_indices;
+		TIME_SERIES_INDEX_m10		*time_series_indices;
+		VIDEO_INDEX_m10			*video_indices;
+	};
 	si8                                     raw_data_bytes;
-	ui1                                     *raw_data;
-        CMP_PROCESSING_STRUCT_m10               *cps;  // associated with time series data FPS, NULL in others
+	ui1					*raw_data;
+	CMP_PROCESSING_STRUCT_m10		*cps;  // associated with time series data FPS, NULL in others
 } FILE_PROCESSING_STRUCT_m10;
 
 // Session, Channel, Segment Processing Structures
 typedef struct {
-	FILE_PROCESSING_STRUCT_m10      *metadata_fps;  // also used as prototype
-	FILE_PROCESSING_STRUCT_m10      *time_series_data_fps;
-	FILE_PROCESSING_STRUCT_m10      *time_series_indices_fps;
-        FILE_PROCESSING_STRUCT_m10      *video_indices_fps;
-	FILE_PROCESSING_STRUCT_m10      *record_data_fps;
-	FILE_PROCESSING_STRUCT_m10      *record_indices_fps;
-        FILE_PROCESSING_STRUCT_m10      *segmented_session_record_data_fps;
-        FILE_PROCESSING_STRUCT_m10      *segmented_session_record_indices_fps;
+	FILE_PROCESSING_STRUCT_m10	*metadata_fps;  // also used as prototype
+	FILE_PROCESSING_STRUCT_m10	*time_series_data_fps;
+	FILE_PROCESSING_STRUCT_m10	*time_series_indices_fps;
+	FILE_PROCESSING_STRUCT_m10	*video_indices_fps;
+	FILE_PROCESSING_STRUCT_m10	*record_data_fps;
+	FILE_PROCESSING_STRUCT_m10	*record_indices_fps;
+	FILE_PROCESSING_STRUCT_m10	*segmented_session_record_data_fps;
+	FILE_PROCESSING_STRUCT_m10	*segmented_session_record_indices_fps;
 	si1                             path[FULL_FILE_NAME_BYTES_m10]; // full path to segment directory (including segment directory itself)
-        si1                             name[SEGMENT_BASE_FILE_NAME_BYTES_m10];  // stored here, no segment_name field in universal header (for programming convenience)
+	si1                             name[SEGMENT_BASE_FILE_NAME_BYTES_m10];  // stored here, no segment_name field in universal header (for programming convenience)
 	TIME_SLICE_m10			time_slice;
 } SEGMENT_m10;
 
 typedef struct {
-        FILE_PROCESSING_STRUCT_m10      *metadata_fps;
-        FILE_PROCESSING_STRUCT_m10	*record_data_fps;
+	FILE_PROCESSING_STRUCT_m10	*metadata_fps;
+	FILE_PROCESSING_STRUCT_m10	*record_data_fps;
 	FILE_PROCESSING_STRUCT_m10	*record_indices_fps;
-        si4			        number_of_segments;
+	si4			        number_of_segments;
 	SEGMENT_m10			**segments;
 	si1			        path[FULL_FILE_NAME_BYTES_m10]; // full path to channel directory (including channel directory itself)
-        si1                             name[BASE_FILE_NAME_BYTES_m10];
+	si1                             name[BASE_FILE_NAME_BYTES_m10];
 	TIME_SLICE_m10			time_slice;
 } CHANNEL_m10;
 
 typedef struct {
-        FILE_PROCESSING_STRUCT_m10      *time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-        FILE_PROCESSING_STRUCT_m10      *video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-        si4                             number_of_segments;
-        si4			        number_of_time_series_channels;
+	FILE_PROCESSING_STRUCT_m10	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FILE_PROCESSING_STRUCT_m10	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	si4                             number_of_segments;
+	si4			        number_of_time_series_channels;
 	CHANNEL_m10			**time_series_channels;
-        si4			        number_of_video_channels;
-        CHANNEL_m10			**video_channels;
-        FILE_PROCESSING_STRUCT_m10	*record_data_fps;
-        FILE_PROCESSING_STRUCT_m10	*record_indices_fps;
-        FILE_PROCESSING_STRUCT_m10      **segmented_record_data_fps;
-        FILE_PROCESSING_STRUCT_m10      **segmented_record_indices_fps;
+	si4			        number_of_video_channels;
+	CHANNEL_m10			**video_channels;
+	FILE_PROCESSING_STRUCT_m10	*record_data_fps;
+	FILE_PROCESSING_STRUCT_m10	*record_indices_fps;
+	FILE_PROCESSING_STRUCT_m10	**segmented_record_data_fps;
+	FILE_PROCESSING_STRUCT_m10	**segmented_record_indices_fps;
 	si1			        path[FULL_FILE_NAME_BYTES_m10];     // full path to session directory (including session directory itself)
-        si1                             name[BASE_FILE_NAME_BYTES_m10];
+	si1                             name[BASE_FILE_NAME_BYTES_m10];
 	TIME_SLICE_m10			time_slice;
 } SESSION_m10;
 
 
+
 //**********************************************************************************//
-//********************************  MED Prototypes  ********************************//
+//****************************  GENERAL MED Functions  *****************************//
 //**********************************************************************************//
 
-// Alignment Function Prototypes
+
+// Prototypes
+TERN_m10	adjust_open_file_limit_m10(si4 new_limit);
+TERN_m10	all_zeros_m10(ui1 *bytes, si4 field_length);
+CHANNEL_m10	*allocate_channel_m10(CHANNEL_m10 *chan, FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m10 chan_recs, TERN_m10 seg_recs);
+FILE_PROCESSING_STRUCT_m10	*allocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10* fps, si1* full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m10* proto_fps, si8 bytes_to_copy);
+SEGMENT_m10	*allocate_segment_m10(SEGMENT_m10 *seg, FILE_PROCESSING_STRUCT_m10 *proto_fps, si1* enclosing_path, si1 *chan_name, ui4 type_code, si4 seg_num, TERN_m10 seg_recs);
+SESSION_m10	*allocate_session_m10(FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, TERN_m10 sess_recs, TERN_m10 segmented_sess_recs, TERN_m10 chan_recs, TERN_m10 seg_recs);
+void     	apply_recording_time_offset_m10(si8 *time);
+void            calculate_metadata_CRC_m10(FILE_PROCESSING_STRUCT_m10 *fps);
+void            calculate_record_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_header, si8 number_of_items);
+void            calculate_record_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_INDEX_m10 *record_index, si8 number_of_items);
+void            calculate_time_series_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, CMP_BLOCK_FIXED_HEADER_m10 *block_header, si8 number_of_items);
+void            calculate_time_series_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, TIME_SERIES_INDEX_m10 *time_series_index, si8 number_of_items);
+void		**calloc_2D_m10(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
+ui4             channel_type_from_path_m10(si1 *path);
+wchar_t		*char2wchar_m10(wchar_t *target, si1 *source);
 TERN_m10	check_all_alignments_m10(const si1 *function, si4 line);
+TERN_m10	check_char_type_m10(void);
+TERN_m10	check_file_list_m10(si1 **file_list, si4 n_files);
 TERN_m10	check_metadata_alignment_m10(ui1 *bytes);
 TERN_m10	check_metadata_section_1_alignment_m10(ui1 *bytes);
 TERN_m10	check_metadata_section_3_alignment_m10(ui1 *bytes);
+TERN_m10        check_password_m10(si1 *password);
 TERN_m10	check_record_header_alignment_m10(ui1 *bytes);
 TERN_m10	check_record_indices_alignment_m10(ui1 *bytes);
 TERN_m10	check_CMP_block_header_alignment_m10(ui1 *bytes);
@@ -1426,29 +1569,13 @@ TERN_m10	check_time_series_metadata_section_2_alignment_m10(ui1 *bytes);
 TERN_m10	check_universal_header_alignment_m10(ui1 *bytes);
 TERN_m10	check_video_indices_alignment_m10(ui1 *bytes);
 TERN_m10	check_video_metadata_section_2_alignment_m10(ui1 *bytes);
-
-// MED Function Prototypes
-si8             absolute_index_to_time_m10(si1 *seg_dir, si8 index, si8 absolute_start_sample_number, sf8 sampling_frequency, ui1 mode);
-TERN_m10	all_zeros_m10(ui1 *bytes, si4 field_length);
-CHANNEL_m10	*allocate_channel_m10(CHANNEL_m10 *chan, FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m10 chan_recs, TERN_m10 seg_recs);
-FILE_PROCESSING_STRUCT_m10	*allocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m10 *proto_fps, si8 bytes_to_copy);
-METADATA_m10	*allocate_metadata_m10(METADATA_m10 *metadata, ui1 *data_ptr);
-SEGMENT_m10	*allocate_segment_m10(SEGMENT_m10 *seg, FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 seg_num, TERN_m10 seg_recs);
-SESSION_m10	*allocate_session_m10(FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, TERN_m10 sess_recs, TERN_m10 segmented_sess_recs, TERN_m10 chan_recs, TERN_m10 seg_recs);
-void     	apply_recording_time_offset_m10(si8 *time);
-void            calculate_metadata_CRC_m10(FILE_PROCESSING_STRUCT_m10 *fps);
-void            calculate_record_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_header, si8 number_of_items);
-void            calculate_record_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_INDEX_m10 *record_index, si8 number_of_items);
-void            calculate_time_series_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, CMP_BLOCK_FIXED_HEADER_m10 *block_header, si8 number_of_items);
-void            calculate_time_series_indices_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, TIME_SERIES_INDEX_m10 *time_series_index, si8 number_of_items);
-ui4             channel_type_from_path_m10(si1 *path);
-TERN_m10        check_password_m10(si1 *password);
+si4		compare_fps_start_times_m10(const void *a, const void *b);
 void		condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info);
 void		condition_time_slice_m10(TIME_SLICE_m10 *slice);
 si8		current_uutc_m10(void);
 si4		days_in_month_m10(si4 month, si4 year);
 TERN_m10        decrypt_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps);
-TERN_m10        decrypt_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_header, si8 number_of_items);
+TERN_m10        decrypt_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10* record_header, si8 number_of_items);
 TERN_m10        decrypt_time_series_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 number_of_items);
 si4             DST_offset_m10(si8 uutc);
 TERN_m10        encrypt_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps);
@@ -1458,27 +1585,21 @@ void            error_message_m10(si1 *fmt, ...);
 void            escape_spaces_m10(si1 *string, si8 buffer_len);
 void            extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void            extract_terminal_password_bytes_m10(si1 *password, si1 *password_bytes);
-si8 *           find_discontinuities_m10(TIME_SERIES_INDEX_m10 *tsi, si8 *num_disconts, si8 number_of_indices, TERN_m10 remove_offsets, TERN_m10 return_sample_numbers);
+si8		*find_discontinuities_m10(TIME_SERIES_INDEX_m10 *tsi, si8 *num_disconts, si8 number_of_indices, TERN_m10 remove_offsets, TERN_m10 return_sample_numbers);
 ui4             file_exists_m10(si1 *path);
-void            force_behavior_m10(ui4 behavior);
-void            fps_close_m10(FILE_PROCESSING_STRUCT_m10 *fps);
-si4             fps_lock_m10(FILE_PROCESSING_STRUCT_m10 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		fps_mutex_off_m10(FILE_PROCESSING_STRUCT_m10 *fps);
-void		fps_mutex_on_m10(FILE_PROCESSING_STRUCT_m10 *fps);
-si4             fps_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
-si4             fps_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
-si4             fps_unlock_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
-si4             fps_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
+si8		file_length_m10(FILE *fp);
 si1		*find_timezone_acronym_m10(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
-void            free_channel_m10(CHANNEL_m10 *channel, TERN_m10 allocated_en_bloc);
+si1		*find_metadata_file_m10(si1 *path, si1 *md_path);
+void            force_behavior_m10(ui4 behavior);
+void            free_2D_m10(void **ptr, size_t dim1, const si1 *function, si4 line);
+void            free_channel_m10(CHANNEL_m10* channel, TERN_m10 allocated_en_bloc);
 void            free_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 allocated_en_bloc);
 void            free_globals_m10(void);
-void    	free_metadata_m10(METADATA_m10 *metadata);
 void            free_segment_m10(SEGMENT_m10 *segment, TERN_m10 allocated_en_bloc);
 void            free_session_m10(SESSION_m10 *session);
-si1		**generate_file_list_m10(si1 **file_list, si4 n_in_files, si4 *n_out_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui1 path_parts, TERN_m10 free_input_file_list);
+si1		**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui1 path_parts, TERN_m10 free_input_file_list);
 si1		*generate_hex_string_m10(ui1 *bytes, si4 num_bytes, si1 *string);
-ui4             generate_MED_path_components_m10(si1 *path, si1 *MED_dir, si1 *MED_name);
+ui4             generate_MED_path_components_m10(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		**generate_numbered_names_m10(si1 **names, si1 *prefix, si4 number_of_names);
 si8             generate_recording_time_offset_m10(si8 recording_start_time_uutc);
 si1		*generate_segment_name_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *segment_name);
@@ -1490,11 +1611,11 @@ si4             get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_S
 void		get_segment_target_values_m10(SEGMENT_m10 *segment, si8 *target_uutc, si8 *target_sample_number, ui1 mode);
 TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, si8 *target_sample_number, si4 *target_segment_number, ui1 mode, si1 *idx_ref_chan);
 FILE_PROCESSING_DIRECTIVES_m10	*initialize_file_processing_directives_m10(FILE_PROCESSING_DIRECTIVES_m10 *directives);
-void            initialize_globals_m10(void);
-TERN_m10	initialize_medlib_m10(void);
+TERN_m10	initialize_globals_m10(void);
+TERN_m10	initialize_medlib_m10(TERN_m10 check_structure_alignments, TERN_m10 initialize_all_tables);
 void            initialize_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 initialize_for_update);
 TIME_SLICE_m10	*initialize_time_slice_m10(TIME_SLICE_m10 *slice);
-void		initialize_timezone_tables_m10(void);
+TERN_m10	initialize_timezone_tables_m10(void);
 void		initialize_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code, TERN_m10 generate_file_UID, TERN_m10 originating_file);
 si1		*MED_type_string_from_code_m10(ui4 code);
 ui4             MED_type_code_from_string_m10(si1 *string);
@@ -1503,91 +1624,121 @@ TERN_m10        merge_universal_headers_m10(FILE_PROCESSING_STRUCT_m10 *fps_1, F
 void    	message_m10(si1 *fmt, ...);
 si1		*numerical_fixed_width_string_m10(si1 *string, si4 string_bytes, si4 number);
 si8             pad_m10(ui1 *buffer, si8 content_len, ui4 alignment);
+TERN_m10	path_from_root_m10(si1 *path, si1 *root_path);
 TERN_m10	process_password_data_m10(si1 *unspecified_password, si1 *L1_password, si1 *L2_password, si1 *L3_password, si1 *L1_hint, si1 *L2_hint, FILE_PROCESSING_STRUCT_m10 *fps);
 CHANNEL_m10	*read_channel_m10(CHANNEL_m10 *chan, si1 *chan_dir, TIME_SLICE_m10 *slice, si1 *password, TERN_m10 read_time_series_data, TERN_m10 read_record_data);
 FILE_PROCESSING_STRUCT_m10	*read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *full_file_name, si8 number_of_items, ui1 **data_ptr_ptr, si8 *items_read, si1 *password, ui4 behavior_on_fail);
 SEGMENT_m10	*read_segment_m10(SEGMENT_m10 *seg, si1 *seg_dir, TIME_SLICE_m10 *slice, si1 *password, TERN_m10 read_time_series_data, TERN_m10 read_record_data);
 SESSION_m10	*read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, TIME_SLICE_m10 *slice, si1 *password, TERN_m10 read_time_series_data, TERN_m10 read_record_data);
 si8             read_time_series_data_m10(SEGMENT_m10 *seg, si8 local_start_idx, si8 local_end_idx, TERN_m10 alloc_cps);
+void		**realloc_2D_m10(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
 si4             reallocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 raw_data_bytes);
-TERN_m10	recover_passwords_m10(si1 *L3_password, UNIVERSAL_HEADER_m10 *universal_header);
+TERN_m10	recover_passwords_m10(si1 *L3_password, UNIVERSAL_HEADER_m10* universal_header);
 void     	remove_recording_time_offset_m10(si8 *time);
 void            reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 si8             sample_number_for_uutc_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_uutc, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);
 TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
-TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice);
+TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10* slice);
+si8     	segment_sample_number_to_time_m10(si1 *seg_dir, si8 local_sample_number, si8 absolute_start_sample_number, sf8 sampling_frequency, ui1 mode);
 TERN_m10	set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt);
 TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *section_2_encryption_level, si1 *section_3_encryption_level);
-void            show_daylight_time_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 *code, si1 *prefix);
+void            show_daylight_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 *code, si1 *prefix);
 void            show_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 void            show_globals_m10(void);
 void    	show_location_info_m10(LOCATION_INFO_m10 *li);
 void            show_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, METADATA_m10 *md);
 void            show_password_data_m10(PASSWORD_DATA_m10 *pwd);
+void		show_password_hints_m10(PASSWORD_DATA_m10 *pwd);
 void            show_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code);
 void    	show_time_slice_m10(TIME_SLICE_m10 *slice);
 void            show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry);
 void            show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER_m10 *uh);
+void		sort_fps_array_m10(FILE_PROCESSING_STRUCT_m10 **fps_array, si4 n_fps);
+TERN_m10	str_contains_regex_m10(si1 *string);
+si1		*str_match_end_m10(si1 *pattern, si1 *buffer);
+si1		*str_match_line_end_m10(si1 *pattern, si1 *buffer);
+si1		*str_match_line_start_m10(si1 *pattern, si1 *buffer);
+si1		*str_match_start_m10(si1 *pattern, si1 *buffer);
+void    	str_replace_char_m10(si1 c, si1 new_c, si1 *buffer);
+si1		*str_replace_pattern_m10(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m10 free_input_buffer);
+void		strip_character_m10(si1 *s, si1 character);
+void		strtolower_m10(si1 *s);
+void		strtotitle_m10(si1 *s);
+void		strtoupper_m10(si1 *s);
 si1		*time_string_m10(si8 uutc_time, si1 *time_str, TERN_m10 fixed_width, TERN_m10 relative_days, si4 colored_text, ...);
 si8             ts_sort_m10(si4 *x, si8 len, NODE_m10 *nodes, NODE_m10 *head, NODE_m10 *tail, si4 return_sorted_ts, ...);
 void            unescape_spaces_m10(si1 *string);
 si8             uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_sample_number, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);
-TERN_m10        validate_record_data_CRCs_m10(RECORD_HEADER_m10 *record_header, si8 number_of_items);
-TERN_m10        validate_time_series_data_CRCs_m10(CMP_BLOCK_FIXED_HEADER_m10 *block_header, si8 number_of_items);
+TERN_m10        validate_record_data_CRCs_m10(RECORD_HEADER_m10* record_header, si8 number_of_items);
+TERN_m10        validate_time_series_data_CRCs_m10(CMP_BLOCK_FIXED_HEADER_m10* block_header, si8 number_of_items);
 void            warning_message_m10(si1 *fmt, ...);
+si1*		wchar2char_m10(si1 *target, wchar_t *source);
+void		win_cleanup_m10(void);
+si4		win_ls_1d_to_tmp_m10(si1 **dir_strs, si4 n_dirs, TERN_m10 full_path);
+TERN_m10	win_initialize_terminal_m10(void);
+TERN_m10	win_reset_terminal_m10(void);
+TERN_m10	win_socket_startup_m10(void);
+inline si4	win_system_m10(si1 *command);
+void		windify_file_paths_m10(si1 *target, si1 *source);
+si1		*windify_format_string_m10(si1 *fmt);
 si8             write_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui8 number_of_items, void *data_ptr, ui4 behavior_on_fail);
 
 
-//**********************************************************************************//
-//**********************  Error Checking Standard Functions  ***********************//
-//**********************************************************************************//
-
-// Error Handling Constants
-#define USE_GLOBAL_BEHAVIOR_m10         0
-#define RESTORE_BEHAVIOR_m10            1
-#define EXIT_ON_FAIL_m10                2
-#define RETURN_ON_FAIL_m10              4
-#define SUPPRESS_ERROR_OUTPUT_m10       8
-#define SUPPRESS_WARNING_OUTPUT_m10     16
-#define SUPPRESS_MESSAGE_OUTPUT_m10     32
-#define SUPPRESS_ALL_OUTPUT_m10         (SUPPRESS_ERROR_OUTPUT_m10 | SUPPRESS_WARNING_OUTPUT_m10 | SUPPRESS_MESSAGE_OUTPUT_m10)
-#define RETRY_ONCE_m10                  64
-
-// Function Prototypes
-void		*e_calloc_m10(ui8 n_members, ui8 el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		**e_calloc_2D_m10(ui8 dim1, ui8 dim2, ui8 el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
-FILE		*e_fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavior_on_fail);
-size_t          e_fread_m10(void *ptr, ui8 size, ui8 n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
-void            e_free_m10(void *ptr, const si1 *function, si4 line);
-void            e_free_2D_m10(void **ptr, si8 dim1, const si1 *function, si4 line);
-si4             e_fseek_m10(FILE *stream, ui8 offset, si4 whence, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
-si8             e_ftell_m10(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail);
-ui8             e_fwrite_m10(void *ptr, ui8 size, ui8 n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		*e_malloc_m10(ui8 n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		*e_realloc_m10(void *ptr, ui8 n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		**e_realloc_2D_m10(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
-si4             e_system_m10(si1 *command, TERN_m10 null_std_streams, const si1 *function, si4 line, ui4 behavior_on_fail);
-
 
 //**********************************************************************************//
-//*****************************  MED String Functions  *****************************//
+//*******************************  MED FPS Functions  ******************************//
 //**********************************************************************************//
 
 // Prototypes
-si4     sprintf_m10(si1 *target, si1 *format, ...);
-void    snprintf_m10(si1 *target, si4 target_field_bytes, si1 *format, ...);
-si1	*str_match_end_m10(si1 *pattern, si1 *buffer);
-si1	*str_match_line_end_m10(si1 *pattern, si1 *buffer);
-si1	*str_match_line_start_m10(si1 *pattern, si1 *buffer);
-si1	*str_match_start_m10(si1 *pattern, si1 *buffer);
-si4     strcat_m10(si1 *target_string, si1 *source_string);
-si4     strcpy_m10(si1 *target_string, si1 *source_string);
-void    strip_character_m10(si1 *s, si1 character);
-void    strncat_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
-void    strncpy_m10(si1 *target_string, si1 *source_string, si4 target_field_bytes);
-void	strtolower_m10(si1 *s);
-void	strtotitle_m10(si1 *s);
-void	strtoupper_m10(si1 *s);
+void            FPS_close_m10(FILE_PROCESSING_STRUCT_m10 *fps);
+si4             FPS_lock_m10(FILE_PROCESSING_STRUCT_m10 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail);
+void		FPS_mutex_off_m10(FILE_PROCESSING_STRUCT_m10 *fps);
+void		FPS_mutex_on_m10(FILE_PROCESSING_STRUCT_m10 *fps);
+si4             FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4             FPS_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4             FPS_unlock_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4             FPS_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
+
+
+
+//***********************************************************************//
+//*****************  MED VERSIONS OF STANDARD FUNCTIONS  ****************//
+//***********************************************************************//
+
+
+si4		asprintf_m10(si1 **target, si1 *fmt, ...);
+void		*calloc_m10(size_t n_members, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
+void		exit_m10(si4 status);
+FILE		*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4     	fprintf_m10(FILE *stream, si1 *fmt, ...);
+si4		fputc_m10(si4 c, FILE *stream);
+size_t          fread_m10(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
+void            free_m10(void *ptr, const si1 *function, si4 line);
+si4     	fscanf_m10(FILE *stream, si1 *fmt, ...);
+si4             fseek_m10(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
+si8            	ftell_m10(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail);
+size_t		fwrite_m10(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
+char		*getcwd_m10(char *buf, size_t size);
+void		*malloc_m10(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4     	printf_m10(si1 *fmt, ...);
+si4		putc_m10(si4 c, FILE *stream);
+si4		putch_m10(si4 c);  // Windows "_putch()"
+si4		putchar_m10(si4 c);
+void		*realloc_m10(void *ptr, size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4     	scanf_m10(si1 *fmt, ...);
+si4     	sprintf_m10(si1 *target, si1 *fmt, ...);
+si4		snprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
+si4     	sscanf_m10(si1 *target, si1 *fmt, ...);
+si8		strcat_m10(si1 *target, si1 *source);
+si8		strcpy_m10(si1 *target, si1 *source);
+si8		strncat_m10(si1 *target, si1 *source, si4 target_field_bytes);
+si8		strncpy_m10(si1 *target, si1 *source, si4 target_field_bytes);
+si4             system_m10(si1 *command, TERN_m10 null_std_streams, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4		vasprintf_m10(si1 **target, si1 *fmt, va_list args);
+si4		vfprintf_m10(FILE *stream, si1 *fmt, va_list args);
+si4		vprintf_m10(si1 *fmt, va_list args);
+si4		vsnprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args);
+si4    		vsprintf_m10(si1 *target, si1 *fmt, va_list args);
 
 
 
@@ -1615,7 +1766,7 @@ void	strtoupper_m10(si1 *s);
 #define CRC_TABLES_m10          8
 #define CRC_TABLE_ENTRIES_m10   256
 #define CRC_POLYNOMIAL_m10      ((ui4) 0xEDB88320)    // note library CRC routines are customized to this polynomial, it cannot be changed arbitrarily
-#define CRC_START_VALUE_m10     ((ui4) 0x00000000)
+#define CRC_START_VALUE_m10     ((ui4) 0x0)
 
 // CRC Modes
 #define CRC_NO_ENTRY_m10                CRC_START_VALUE_m10
@@ -1633,11 +1784,12 @@ void	strtoupper_m10(si1 *s);
 // Function Prototypes
 ui4		CRC_calculate_m10(const ui1 *block_ptr, si8 block_bytes);
 ui4		CRC_combine_m10(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes);
-void		CRC_initialize_table_m10(void);
+TERN_m10	CRC_initialize_tables_m10(void);
 void		CRC_matrix_square_m10(ui4 *square, const ui4 *mat);
 ui4		CRC_matrix_times_m10(const ui4 *mat, ui4 vec);
 ui4		CRC_update_m10(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc);
 TERN_m10	CRC_validate_m10(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_validate);
+
 
 
 //**********************************************************************************//
@@ -1666,48 +1818,46 @@ TERN_m10	CRC_validate_m10(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_vali
 #define UTF8_BUFFER_SIZE	2048
 
 // Macros
-#define UTF8_isutf_m10(c)       (((c) & 0xC0) != 0x80) // true if c is the start of a UTF-8 sequence
+#define UTF8_ISUTF_m10(c)       (((c) & 0xC0) != 0x80) // true if c is the start of a UTF-8 sequence
 
 #define UTF8_OFFSETS_TABLE_ENTRIES_m10	6
-#define UTF8_OFFSETS_TABLE_m10        { 0x00000000UL, 0x00003080UL, 0x000E2080UL, 0x03C82080UL, 0xFA082080UL, 0x82082080UL }
+#define UTF8_OFFSETS_TABLE_m10        { 0x0UL, 0x00003080UL, 0x000E2080UL, 0x03C82080UL, 0xFA082080UL, 0x82082080UL }
 
 #define UTF8_TRAILING_BYTES_TABLE_ENTRIES_m10	256
 #define UTF8_TRAILING_BYTES_TABLE_m10	      {	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, \
-					        2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5 }
-
-
+							0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+							0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+							0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+							0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+							0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
+							1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, \
+							2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5 }
 
 // Function Prototypes
-si4	UTF8_charnum_m10(si1 *s, si4 offset);  // byte offset to character number
+si4	UTF8_char_num_m10(si1 *s, si4 offset);  // byte offset to character number
 void	UTF8_dec_m10(si1 *s, si4 *i);  // move to previous character
 si4	UTF8_escape_m10(si1 *buf, si4 sz, si1 *src, si4 escape_quotes);  // convert UTF-8 "src" to ASCII with escape sequences.
 si4	UTF8_escape_wchar_m10(si1 *buf, si4 sz, ui4 ch);  // given a wide character, convert it to an ASCII escape sequence stored in buf, where buf is "sz" bytes. returns the number of characters output
-si4	UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...);  // fprintf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary printf() if the current locale is UTF-8.
+si4	UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...);  // fprintf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary fprintf() if the current locale is UTF-8.
 si4	UTF8_hex_digit_m10(si1 c);  // utility predicates used by the above
 void	UTF8_inc_m10(si1 *s, si4 *i);  // move to next character
-void	UTF8_initialize_tables_m10(void);
+TERN_m10	UTF8_initialize_tables_m10(void);
 si4	UTF8_is_locale_utf8_m10(si1 *locale);  // boolean function returns if locale is UTF-8, 0 otherwise
-si1	*UTF8_memchr_m10(si1 *s, ui4 ch, size_t sz, si4 *charn);  // same as the above, but searches a buffer of a given size instead of a NUL-terminated string.
-ui4	UTF8_nextchar_m10(si1 *s, si4 *i);  // return next character, updating an index variable
+si1	*UTF8_memchr_m10(si1 *s, ui4 ch, size_t sz, si4 *char_num);  // same as the above, but searches a buffer of a given size instead of a NUL-terminated string.
+ui4	UTF8_next_char_m10(si1 *s, si4* i);  // return next character, updating an index variable
 si4	UTF8_octal_digit_m10(si1 c);  // utility predicates used by the above
-si4	UTF8_offset_m10(si1 *str, si4 charnum);  // character number to byte offset
-si4	UTF8_printf_m10(si1 *fmt, ...);  // printf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary printf() if the current locale is UTF-8.
+si4	UTF8_offset_m10(si1 *str, si4 char_num);  // character number to byte offset
+si4     UTF8_printf_m10(si1 *fmt, ...);  // printf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary printf() if the current locale is UTF-8.
 si4	UTF8_read_escape_sequence_m10(si1 *str, ui4 *dest);  // assuming str points to the character after a backslash, read an escape sequence, storing the result in dest and returning the number of input characters processed
 si4	UTF8_seqlen_m10(si1 *s);  // returns length of next UTF-8 sequence
-si1	*UTF8_strchr_m10(si1 *s, ui4 ch, si4 *charn);  // return a pointer to the first occurrence of ch in s, or NULL if not found. character index of found character returned in *charn.
+si1	*UTF8_strchr_m10(si1 *s, ui4 ch, si4 *char_num);  // return a pointer to the first occurrence of ch in s, or NULL if not found. character index of found character returned in *char_num.
 si4	UTF8_strlen_m10(si1 *s);  // count the number of characters in a UTF-8 string
-si4	UTF8_toucs_m10(ui4 *dest, si4 sz, si1 *src, si4 srcsz);  // convert UTF-8 data to wide character
-si4	UTF8_toutf8_m10(si1 *dest, si4 sz, ui4 *src, si4 srcsz);  // convert wide character to UTF-8 data
+si4	UTF8_to_ucs_m10(ui4 *dest, si4 sz, si1 *src, si4 srcsz);  // convert UTF-8 data to wide character
+si4	UTF8_to_utf8_m10(si1 *dest, si4 sz, ui4 *src, si4 srcsz);  // convert wide character to UTF-8 data
 si4	UTF8_unescape_m10(si1 *buf, si4 sz, si1 *src);  // convert a string "src" containing escape sequences to UTF-8 if escape_quotes is nonzero, quote characters will be preceded by  backslashes as well.
 si4	UTF8_vfprintf_m10(FILE *stream, si1 *fmt, va_list ap);    // called by UTF8_fprintf()
 si4	UTF8_vprintf_m10(si1 *fmt, va_list ap);  // called by UTF8_printf()
-si4	UTF8_wc_toutf8_m10(si1 *dest, ui4 ch);  // single character to UTF-8
+si4	UTF8_wc_to_utf8_m10(si1 *dest, ui4 ch);  // single character to UTF-8
 
 
 
@@ -1721,7 +1871,7 @@ si4	UTF8_wc_toutf8_m10(si1 *dest, ui4 ch);  // single character to UTF-8
 // Advanced Encryption Standard implementation in C.
 // By Niyaz PK
 // E-mail: niyazlife@gmail.com
-// Downloaded from Website: www.hoozi.com
+// Downloaded from Website: http://www.hoozi.com
 //
 // "This is the source code for encryption using the latest AES algorithm.
 // The AES algorithm is also called Rijndael algorithm. The AES algorithm is
@@ -1739,61 +1889,61 @@ si4	UTF8_wc_toutf8_m10(si1 *dest, ui4 ch);  // single character to UTF-8
 #define AES_NK_m10	        4	// The number of 32 bit words in the key
 #define AES_NB_m10	        4	// The number of columns comprising a state in AES. This is a constant in AES.
 #define AES_XTIME_m10(x)        ((x<<1) ^ (((x>>7) & 1) * 0x1b)) // AES_XTIME is a macro that finds the product of {02} and the argument to AES_XTIME modulo {1b}
-#define AES_MULTIPLY_m10(x,y)   (((y & 1) * x) ^ ((y>>1 & 1) * AES_XTIME_m10(x)) ^ ((y>>2 & 1) * AES_XTIME_m10(AES_XTIME_m10(x))) ^ ((y>>3 & 1) * AES_XTIME_m10(AES_XTIME_m10(AES_XTIME_m10(x)))) ^ ((y>>4 & 1) * AES_XTIME_m10(AES_XTIME_m10(AES_XTIME_m10(AES_XTIME_m10(x)))))) // Multiplty is a macro used to multiply numbers in the field GF(2^8)
+#define AES_MULTIPLY_m10(x, y)  (((y & 1) * x) ^ ((y>>1 & 1) * AES_XTIME_m10(x)) ^ ((y>>2 & 1) * AES_XTIME_m10(AES_XTIME_m10(x))) ^ ((y>>3 & 1) * AES_XTIME_m10(AES_XTIME_m10(AES_XTIME_m10(x)))) ^ ((y>>4 & 1) * AES_XTIME_m10(AES_XTIME_m10(AES_XTIME_m10(AES_XTIME_m10(x)))))) // Multiplty is a macro used to multiply numbers in the field GF(2^8)
 
 #define AES_SBOX_ENTRIES_m10	256
 #define AES_SBOX_m10          {	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, \
-			        0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0, \
-			        0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15, \
-			        0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75, \
-			        0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84, \
-			        0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf, \
-			        0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8, \
-			        0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2, \
-			        0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73, \
-			        0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb, \
-			        0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79, \
-			        0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08, \
-			        0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a, \
-			        0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e, \
-			        0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf, \
-			        0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 }
+				0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0, \
+				0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15, \
+				0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75, \
+				0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84, \
+				0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf, \
+				0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8, \
+				0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2, \
+				0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73, \
+				0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb, \
+				0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79, \
+				0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08, \
+				0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a, \
+				0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e, \
+				0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf, \
+				0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 }
 
 #define AES_RSBOX_ENTRIES_m10	256
 #define AES_RSBOX_m10         {	0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb, \
-			        0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb, \
-			        0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e, \
-			        0x08, 0x2e, 0xa1, 0x66, 0x28, 0xd9, 0x24, 0xb2, 0x76, 0x5b, 0xa2, 0x49, 0x6d, 0x8b, 0xd1, 0x25, \
-			        0x72, 0xf8, 0xf6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xd4, 0xa4, 0x5c, 0xcc, 0x5d, 0x65, 0xb6, 0x92, \
-			        0x6c, 0x70, 0x48, 0x50, 0xfd, 0xed, 0xb9, 0xda, 0x5e, 0x15, 0x46, 0x57, 0xa7, 0x8d, 0x9d, 0x84, \
-			        0x90, 0xd8, 0xab, 0x00, 0x8c, 0xbc, 0xd3, 0x0a, 0xf7, 0xe4, 0x58, 0x05, 0xb8, 0xb3, 0x45, 0x06, \
-			        0xd0, 0x2c, 0x1e, 0x8f, 0xca, 0x3f, 0x0f, 0x02, 0xc1, 0xaf, 0xbd, 0x03, 0x01, 0x13, 0x8a, 0x6b, \
-			        0x3a, 0x91, 0x11, 0x41, 0x4f, 0x67, 0xdc, 0xea, 0x97, 0xf2, 0xcf, 0xce, 0xf0, 0xb4, 0xe6, 0x73, \
-			        0x96, 0xac, 0x74, 0x22, 0xe7, 0xad, 0x35, 0x85, 0xe2, 0xf9, 0x37, 0xe8, 0x1c, 0x75, 0xdf, 0x6e, \
-			        0x47, 0xf1, 0x1a, 0x71, 0x1d, 0x29, 0xc5, 0x89, 0x6f, 0xb7, 0x62, 0x0e, 0xaa, 0x18, 0xbe, 0x1b, \
-			        0xfc, 0x56, 0x3e, 0x4b, 0xc6, 0xd2, 0x79, 0x20, 0x9a, 0xdb, 0xc0, 0xfe, 0x78, 0xcd, 0x5a, 0xf4, \
-			        0x1f, 0xdd, 0xa8, 0x33, 0x88, 0x07, 0xc7, 0x31, 0xb1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xec, 0x5f, \
-			        0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef, \
-			        0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61, \
-			        0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d };
+				0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb, \
+				0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e, \
+				0x08, 0x2e, 0xa1, 0x66, 0x28, 0xd9, 0x24, 0xb2, 0x76, 0x5b, 0xa2, 0x49, 0x6d, 0x8b, 0xd1, 0x25, \
+				0x72, 0xf8, 0xf6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xd4, 0xa4, 0x5c, 0xcc, 0x5d, 0x65, 0xb6, 0x92, \
+				0x6c, 0x70, 0x48, 0x50, 0xfd, 0xed, 0xb9, 0xda, 0x5e, 0x15, 0x46, 0x57, 0xa7, 0x8d, 0x9d, 0x84, \
+				0x90, 0xd8, 0xab, 0x00, 0x8c, 0xbc, 0xd3, 0x0a, 0xf7, 0xe4, 0x58, 0x05, 0xb8, 0xb3, 0x45, 0x06, \
+				0xd0, 0x2c, 0x1e, 0x8f, 0xca, 0x3f, 0x0f, 0x02, 0xc1, 0xaf, 0xbd, 0x03, 0x01, 0x13, 0x8a, 0x6b, \
+				0x3a, 0x91, 0x11, 0x41, 0x4f, 0x67, 0xdc, 0xea, 0x97, 0xf2, 0xcf, 0xce, 0xf0, 0xb4, 0xe6, 0x73, \
+				0x96, 0xac, 0x74, 0x22, 0xe7, 0xad, 0x35, 0x85, 0xe2, 0xf9, 0x37, 0xe8, 0x1c, 0x75, 0xdf, 0x6e, \
+				0x47, 0xf1, 0x1a, 0x71, 0x1d, 0x29, 0xc5, 0x89, 0x6f, 0xb7, 0x62, 0x0e, 0xaa, 0x18, 0xbe, 0x1b, \
+				0xfc, 0x56, 0x3e, 0x4b, 0xc6, 0xd2, 0x79, 0x20, 0x9a, 0xdb, 0xc0, 0xfe, 0x78, 0xcd, 0x5a, 0xf4, \
+				0x1f, 0xdd, 0xa8, 0x33, 0x88, 0x07, 0xc7, 0x31, 0xb1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xec, 0x5f, \
+				0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef, \
+				0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61, \
+				0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d };
 
 #define AES_RCON_ENTRIES_m10	255
 #define AES_RCON_m10          {	0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, \
-			        0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, \
-			        0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, \
-			        0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, \
-			        0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, \
-			        0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, \
-			        0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, \
-			        0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, \
-			        0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, \
-			        0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, \
-			        0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, \
-			        0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, \
-			        0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, \
-			        0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, \
-			        0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, \
-			        0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb };
+				0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, \
+				0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, \
+				0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, \
+				0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, \
+				0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, \
+				0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, \
+				0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, \
+				0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, \
+				0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, \
+				0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, \
+				0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, \
+				0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, \
+				0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, \
+				0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, \
+				0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb };
 
 
 // Function Prototypes
@@ -1804,7 +1954,7 @@ void		AES_key_expansion_m10(ui1 *round_key, si1 *key);
 void		AES_cipher_m10(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 si4		AES_get_sbox_invert_m10(si4 num);
 si4		AES_get_sbox_value_m10(si4 num);
-void		AES_initialize_tables_m10(void);
+TERN_m10	AES_initialize_tables_m10(void);
 void		AES_inv_cipher_m10(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void		AES_inv_mix_columns_m10(ui1 state[][4]);
 void		AES_inv_shift_rows_m10(ui1 state[][4]);
@@ -1814,110 +1964,68 @@ void		AES_shift_rows_m10(ui1 state[][4]);
 void		AES_sub_bytes_m10(ui1 state[][4]);
 
 
-//**********************************************************************************//
-//***********************************  SHA-256  ************************************//
-//**********************************************************************************//
 
-// ATTRIBUTION
+//***********************************************************************//
+//**************************  SHA-256 FUNCTIONS  ************************//
+//***********************************************************************//
+
+// ATTRIBUTION:
 //
-// FIPS 180-2 SHA-224/256/384/512 implementation
-// Last update: 02/02/2007
-// Issue date:  04/30/2005
+// Author:	Brad Conte (brad@bradconte.com)
+// Disclaimer:	This code is presented "as is" without any guarantees.
+// Details:	Implementation of the SHA-256 hashing algorithm.
+//		Algorithm specification can be found here:
+//	      	http://csrc.nist.gov/publications/fips/fips180-2/fips180-2withchangenotice.pdf
+//		This implementation uses little endian byte order.
 //
-// Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
-// All rights reserved.
+// Code:	https://github.com/B-Con/crypto-algorithms/blob/master/sha256.c
 //
-// "Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-// 1. Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-// 2. Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-// 3. Neither the name of the project nor the names of its contributors
-//    may be used to endorse or promote products derived from this software
-//    without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
-// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-// OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
-// SUCH DAMAGE."
-//
-// ONLY SHA-256 FUNCTIONS ARE INCLUDED IN THE MED LIBRARY
-//
-// Minor modifications for compatibility with the MED Library.
+// Only SHA-256 functions are included in the MED library
+// The version below contains minor modifications for compatibility with the MED Library.
 
 
 // Constants
-#define  SHA_OUTPUT_SIZE_m10	256
-#define  SHA_DIGEST_SIZE_m10	(256 / 8)
-#define  SHA_BLOCK_SIZE_m10	(512 / 8)
+#define SHA_HASH_BYTES_m10	32  // 256 bit
+#define SHA_LOW_BYTE_MASK_m10	(ui4) 0x000000FF
 
-#define  SHA_H0_ENTRIES_m10	8
-#define  SHA_H0_m10         {	0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, \
-                                0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
+#define	SHA_H0_ENTRIES_m10	8
+#define	SHA_H0_m10            {	0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
 
-#define  SHA_K_ENTRIES_m10	64
-#define  SHA_K_m10          {	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, \
-                                0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, \
-                                0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, \
-                                0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, \
-                                0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, \
-                                0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, \
-                                0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, \
-                                0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, \
-                                0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, \
-                                0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, \
-                                0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, \
-                                0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, \
-                                0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, \
-                                0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, \
-                                0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, \
-                                0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 }
+#define	SHA_K_ENTRIES_m10	64
+#define	SHA_K_m10	      {	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, \
+       				0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, \
+       				0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, \
+       				0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, \
+       				0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, \
+       				0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, \
+       				0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, \
+				0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 }
 
 // Macros
-#define  SHA_SHFR_m10(x, n)	(x >> n)
-#define  SHA_ROTR_m10(x, n)	((x >> n) | (x << ((sizeof(x) << 3) - n)))
-#define  SHA_ROTL_m10(x, n)	((x << n) | (x >> ((sizeof(x) << 3) - n)))
-#define  SHA_CH_m10(x, y, z)	((x & y) ^ (~x & z))
-#define  SHA_MAJ_m10(x, y, z)	((x & y) ^ (x & z) ^ (y & z))
-
-#define  SHA_F1_m10(x)	( SHA_ROTR_m10(x,  2) ^  SHA_ROTR_m10(x, 13) ^  SHA_ROTR_m10(x, 22))
-#define  SHA_F2_m10(x)	( SHA_ROTR_m10(x,  6) ^  SHA_ROTR_m10(x, 11) ^  SHA_ROTR_m10(x, 25))
-#define  SHA_F3_m10(x)	( SHA_ROTR_m10(x,  7) ^  SHA_ROTR_m10(x, 18) ^  SHA_SHFR_m10(x,  3))
-#define  SHA_F4_m10(x)	( SHA_ROTR_m10(x, 17) ^  SHA_ROTR_m10(x, 19) ^  SHA_SHFR_m10(x, 10))
-
-#define  SHA_UNPACK32_m10(x, str)       { *((str) + 3) = (ui1) (x); *((str) + 2) = (ui1) ((x) >>  8); *((str) + 1) = (ui1) ((x) >> 16); *((str) + 0) = (ui1) ((x) >> 24); }
-
-#define  SHA_PACK32_m10(str, x)         { *(x) = ((ui4) *((str) + 3)) | ((ui4) *((str) + 2) <<  8) | ((ui4) *((str) + 1) << 16) | ((ui4) *((str) + 0) << 24); }
-
-#define  SHA_SCR_m10(i)                 {  w[i] =   SHA_F4_m10(w[i -  2]) + w[i -  7] +  SHA_F3_m10(w[i - 15]) + w[i - 16]; }
-
-#define  SHA_EXP_m10(a, b, c, d, e, f, g, h, j)         { t1 = wv[h] +  SHA_F2_m10(wv[e]) + SHA_CH_m10(wv[e], wv[f], wv[g]) + globals_m10->SHA_k_table[j] + w[j]; t2 =  SHA_F1_m10(wv[a]) + SHA_MAJ_m10(wv[a], wv[b], wv[c]); wv[d] += t1; wv[h] = t1 + t2; }
+#define SHA_ROTLEFT_m10(a,b) (((a) << (b)) | ((a) >> (32-(b))))
+#define SHA_ROTRIGHT_m10(a,b) (((a) >> (b)) | ((a) << (32-(b))))
+#define SHA_CH_m10(x,y,z) (((x) & (y)) ^ (~(x) & (z)))
+#define SHA_MAJ_m10(x,y,z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
+#define SHA_EP0_m10(x) (SHA_ROTRIGHT_m10(x,2) ^ SHA_ROTRIGHT_m10(x,13) ^ SHA_ROTRIGHT_m10(x,22))
+#define SHA_EP1_m10(x) (SHA_ROTRIGHT_m10(x,6) ^ SHA_ROTRIGHT_m10(x,11) ^ SHA_ROTRIGHT_m10(x,25))
+#define SHA_SIG0_m10(x) (SHA_ROTRIGHT_m10(x,7) ^ SHA_ROTRIGHT_m10(x,18) ^ ((x) >> 3))
+#define SHA_SIG1_m10(x) (SHA_ROTRIGHT_m10(x,17) ^ SHA_ROTRIGHT_m10(x,19) ^ ((x) >> 10))
 
 // Typedefs & Structures
 typedef struct {
-	ui4	tot_len;
-	ui4	len;
-	ui1	block[2 *  SHA_BLOCK_SIZE_m10];
-	ui4	h[8];
-}  SHA_CTX_m10;
+	ui1	data[64];
+	ui4	state[8];
+	ui8	bitlen;
+	ui4	datalen;
+} SHA_CTX_m10;
 
 // Function Prototypes
-void    SHA_sha_m10(const ui1 *message, ui4 len, ui1 *digest);
-void    SHA_final_m10(SHA_CTX_m10 *ctx, ui1 *digest);
-void    SHA_init_m10(SHA_CTX_m10 *ctx);
-void	SHA_initialize_tables_m10(void);
-void    SHA_transf_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 block_nb);
-void    SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 len);
+void		SHA_finalize_m10(SHA_CTX_m10 *ctx, ui1 *hash);
+ui1    		*SHA_hash_m10(const ui1 *data, si8 len, ui1 *hash);
+void		SHA_initialize_m10(SHA_CTX_m10 *ctx);
+TERN_m10	SHA_initialize_tables_m10(void);
+void		SHA_transform_m10(SHA_CTX_m10 *ctx, const ui1 *data);
+void		SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *data, si8 len);
 
 
 //**********************************************************************************//
@@ -1937,408 +2045,407 @@ void    SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 len);
 // But it is represented here as:
 // { "Western Sahara", "EH", "ESH", "", "", "Western European Daylight Time", "WEDT", +3600, 0, "", "", "", 0x0, "", 0x0 }
 
-
-#define TIMEZONE_TABLE_ENTRIES_m10      400
-#define TIMEZONE_TABLE_m10 { \
-	{ "AFGHANISTAN", "AF", "AFG", "", "", "Afghanistan Time", "AFT", 16200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AKROTIRI", "", "", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "ALAND ISLANDS", "AX", "ALA", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "ALBANIA", "AL", "ALB", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "ALGERIA", "DZ", "DZA", "", "", "Central European Time", "CET", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AMERICAN SAMOA", "US", "ASM", "", "", "Samoa Standard Time", "SST", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ANDORRA", "AD", "AND", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "ANGOLA", "AO", "AGO", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ANGUILLA", "AI", "AIA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ANTIGUA", "AG", "ATG", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ARGENTINA", "AR", "ARG", "", "", "Argentina Time", "ART", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ARMENIA", "AM", "ARM", "", "", "Armenia Time", "AMT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ARUBA", "AW", "ABW", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ASCENSION", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AUSTRALIA", "AU", "AUS", "WESTERN AUSTRALIA", "WA", "Australian Western Standard Time", "AWST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AUSTRALIA", "AU", "AUS", "WESTERN AUSTRALIA", "WA", "Australian Central Western Standard Time", "ACWST", 31500, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AUSTRALIA", "AU", "AUS", "SOUTH AUSTRALIA", "SA", "Australian Central Standard Time", "ACST", 34200, 1, "Australian Central Daylight Time", "ACDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "AUSTRALIA", "AU", "AUS", "NORTHERN TERRITORY", "NT", "Australian Central Standard Time", "ACST", 34200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AUSTRALIA", "AU", "AUS", "AUSTRALIAN CAPITAL TERRITORY", "ACT", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "AUSTRALIA", "AU", "AUS", "TASMANIA", "Tas", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "AUSTRALIA", "AU", "AUS", "VICTORIA", "Vic", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "AUSTRALIA", "AU", "AUS", "NEW SOUTH WALES", "NSW", "Australian Eastern Standard Time", "AEST", 36000, 1, "Australian Eastern Daylight Time", "AEDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "AUSTRALIA", "AU", "AUS", "QUEENSLAND", "Qld", "Australian Eastern Standard Time", "AEST", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "AUSTRALIA", "AU", "AUS", "LORD HOWE ISLAND", "", "Lord Howe Standard Time", "LHST", 37800, 1, "Lord Howe Daylight Time (+30 min)", "LHDT", "First Sunday of October at 02:00 Local", 0x1e00020900010001, "First Sunday of April at 02:00 Local", 0xe2000203000100ff }, \
-	{ "AUSTRIA", "AT", "AUT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "AZERBAIJAN", "AZ", "AZE", "", "", "Azerbaijan Time", "AZT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BAHAMAS", "BS", "BHS", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "BAHRAIN", "BH", "BHR", "", "", "Arabian Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BANGLADESH", "BD", "BGD", "", "", "Bangladesh Standard Time", "BST", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BARBADOS", "BB", "BRB", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BARBUDA", "AG", "ATG", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BELARUS", "BY", "BLR", "", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BELGIUM", "BE", "BEL", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "BELIZE", "BZ", "BLZ", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BENIN", "BJ", "BEN", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BERMUDA", "BM", "BMU", "", "", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "BHUTAN", "BT", "BTN", "", "", "Bhutan Time", "BTT", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BOLIVIA", "BO", "BOL", "", "", "Bolivia Time", "BOT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BONAIRE", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BOSNIA", "BA", "BIH", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "BOTSWANA", "BW", "BWA", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BOUVET ISLAND", "BV", "BVT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "BRAZIL", "BR", "BRA", "", "", "Acre Time", "ACT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BRAZIL", "BR", "BRA", "", "", "Amazon Time", "AMT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BRAZIL", "BR", "BRA", "", "", "Brasilia Time", "BRT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BRAZIL", "BR", "BRA", "", "", "Fernando de Noronha Time", "FNT", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BRITISH VIRGIN ISLANDS", "VG", "VGB", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BRUNEI", "BN", "BRN", "", "", "Brunei Time", "BNT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BULGARIA", "BG", "BGR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "BURKINA FASO", "BF", "BFA", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "BURUNDI", "BI", "BDI", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CAMBODIA", "KH", "KHM", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CAMEROON", "CM", "CMR", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CANADA", "CA", "CAN", "NEWFOUNDLAND", "NL", "Newfoundland Standard Time", "NST", -12600, 1, "Newfoundland Daylight Time", "NDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "LABRADOR", "NL", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "NEW BRUNSWICK", "NB", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "NOVA SCOTIA", "NS", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "PRINCE EDWARD ISLAND", "PE", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "ONTARIO", "ON", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "QUEBEC", "QC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "MANITOBA", "MB", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "SASKATCHEWAN", "SK", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "NUNAVUT", "NU", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "ALBERTA", "AB", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "NORTHWEST TERRITORIES ", "NT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "BRITISH COLUMBIA", "BC", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CANADA", "CA", "CAN", "YUKON", "YT", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "CAPE VERDE", "CV", "CPV", "", "", "Cape Verde Time", "CVT", -3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CAYMAN ISLANDS", "KY", "CYM", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CENTRAL AFRICAN REPUBLIC", "CF", "CAF", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CHAD", "TD", "TCD", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CHILE", "CL", "CHL", "", "", "Chile Standard Time", "CLT", -14400, 1, "Chile Summer Time", "CLST", "First Sunday of September at 00:00 Local", 0x3c00000800010001, "First Sunday of April at 00:00 Local", 0xc4000003000100ff }, \
-	{ "CHILE", "CL", "CHL", "EASTER ISLAND", "", "Easter Island Standard Time", "EAST", -21600, 1, "Easter Island Summer Time", "EASST", "First Sunday of September at 00:00 Local", 0x3c00000800010001, "First Sunday of April at 00:00 Local", 0xc4000003000100ff }, \
-	{ "CHINA", "CN", "CHN", "", "", "China Standard Time", "CST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CHRISTMAS ISLAND (AU)", "CX", "CXR", "", "", "Christmas Island Time", "CXT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "COCOS ISLANDS (AU)", "CC", "CCK", "", "", "Cocos Island Time", "CCT", 23400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "COLOMBIA", "CO", "COL", "", "", "Colombia Time", "COT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "COMOROS", "KM", "COM", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "COOK ISLANDS", "CK", "COK", "", "", "Cook Island time", "CKT", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "COSTA RICA", "CR", "CRI", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CROATIA", "HR", "HRV", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "CUBA", "CU", "CUB", "", "", "Cuba Standard Time", "CST", -18000, 1, "Cuba Daylight Time", "CDT", "Second Sunday of March at 00:00 Local", 0x3c00000200020001, "First Sunday of November at 01:00 Local", 0xc400010a000100ff }, \
-	{ "CURACAO", "CW", "CUW", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "CYPRUS", "CY", "CYP", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "CZECH REPUBLIC", "CZ", "CZE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "DEMOCRATIC REPUBLIC OF THE CONGO", "CD", "COD", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "DEMOCRATIC REPUBLIC OF THE CONGO", "CD", "COD", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "DENMARK", "DK", "DNK", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "DHEKELIA", "", "", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "DJIBOUTI", "DJ", "DJI", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "DOMINICA", "DM", "DMA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "DOMINICAN REPUBLIC", "DO", "DOM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "EAST TIMOR", "TL", "TLS", "", "", "East Timor Time", "TLT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ECUADOR", "EC", "ECU", "", "", "Ecuador Time", "ECT", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "EGYPT", "EG", "EGY", "", "", "Eastern European Time", "EET", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "EL SALVADOR", "SV", "SLV", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "EQUATORIAL GUINEA", "GQ", "GNQ", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ERITREA", "ER", "ERI", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ESTONIA", "EE", "EST", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "ESWATINI", "SZ", "SWZ", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ETHIOPIA", "ET", "ETH", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FALKLAND ISLANDS", "FK", "FLK", "", "", "Falkland Islands Summer Time", "FKST", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FAROE ISLANDS", "FO", "FRO", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "FIJI", "FJ", "FJI", "", "", "Fiji Time", "FJT", 43200, 1, "Fiji Daylight Time", "FJDT", "First Sunday of November at 02:00 Local", 0x3c00020a00010001, "Third Sunday of January at 03:00 Local", 0xc4000300000300ff }, \
-	{ "FINLAND", "FI", "FIN", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "FRANCE", "FR", "FRA", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "FRENCH GUIANA", "GF", "GUF", "", "", "French Guiana Time", "GFT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FRENCH POLYNESIA", "PF", "PYF", "TAHITI", "", "Tahiti Time", "TAHT", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FRENCH POLYNESIA", "PF", "PYF", "MARQUESAS", "", "Marquesas Time", "MART", -34200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FRENCH POLYNESIA", "PF", "PYF", "GAMBIER", "", "Gambier Time", "GAMT", -32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FRENCH SOUTHERN TERRITORIES", "TF", "ATF", "", "", "French Southern and Antarctic Time", "TFT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "FUTUNA", "WF", "WLF", "", "", "Wallis and Futuna Time", "WFT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GABON", "GA", "GAB", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GAMBIA", "GM", "GMB", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GEORGIA", "GE", "GEO", "", "", "Georgia Standard Time", "GET", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GEORGIA", "GE", "GEO", "", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GERMANY", "DE", "DEU", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "GHANA", "GH", "GHA", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GIBRALTAR", "GI", "GIB", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "GREECE", "GR", "GRC", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "GREENLAND", "GL", "GRL", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GREENLAND", "GL", "GRL", "", "", "Eastern Greenland Time", "EGT", -3600, 1, "Eastern Greenland Summer Time", "EGST", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
-	{ "GREENLAND", "GL", "GRL", "", "", "Western Greenland Time", "WGT", -10800, 1, "Western Greenland Summer Time", "WGST", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
-	{ "GREENLAND", "GL", "GRL", "", "", "Atlantic Standard Time", "AST", -14400, 1, "Atlantic Daylight Time", "ADT", "Saturday before last Sunday of March at 22:00 Local", 0x3c00fe0200060001, "Saturday before last Sunday of October at 23:00 Local", 0xc400ff09000600ff }, \
-	{ "GRENADA", "GD", "GRD", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GRENADINES", "VC", "VCT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GUADELOUPE", "GP", "GLP", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GUAM", "GU", "GUM", "", "", "Chamorro Standard Time", "ChST", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GUATEMALA", "GT", "GTM", "", "", "French Guiana Time", "GFT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GUERNSEY", "GG", "GGY", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "GUINEA", "GN", "GIN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GUINEA-BISSAU", "GW", "GNB", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "GUYANA", "GY", "GUY", "", "", "Guyana Time", "GYT", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "HAITI", "HT", "HTI", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "HEARD ISLANDS", "HM", "HMD", "", "", "French Southern and Antarctic Time", "TFT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "HERZEGOVINA", "BA", "BIH", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "HOLY SEE", "VA", "VAT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "HONDURAS", "HN", "HND", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "HONG KONG", "HK", "HKG", "", "", "Hong Kong Time", "HKT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "HUNGARY", "HU", "HUN", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "ICELAND", "IS", "ISL", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "INDIA", "IN", "IND", "", "", "India Time Zone", "IST", 19800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "INDONESIA", "ID", "IDN", "", "", "Western Indonesian Time", "WIB", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "INDONESIA", "ID", "IDN", "", "", "Central Indonesian Time", "WITA", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "INDONESIA", "ID", "IDN", "", "", "Eastern Indonesian Time", "WIT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "IRAN", "IR", "IRN", "", "", "Iran Standard Time", "IRST", 12600, 1, "Iran Daylight Time", "IRDT", "March 22 at 00:00 Local", 0x3c0000021600ff01, "September 22 at 00:00 Local", 0xc40000081600ffff }, \
-	{ "IRAQ", "IQ", "IRQ", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "IRELAND", "IE", "IRL", "", "", "Greenwich Mean Time", "GMT", 0, 1, "Irish Standard Time", "IST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "ISLE OF MAN", "IM", "IMN", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "ISRAEL", "IL", "ISR", "", "", "Israel Standard Time", "IST", 7200, 1, "Israel Daylight Time", "IDT", "Friday before last Sunday of March at 02:00 Local", 0x3c00d20200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "ITALY", "IT", "ITA", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "IVORY COAST", "CI", "CIV", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "JAMAICA", "JM", "JAM", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "JAN MAYEN", "SJ", "SJM", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "JAPAN", "JP", "JPN", "", "", "Japan Standard Time", "JST", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "JERSEY", "JE", "JEY", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "JORDAN", "JO", "JOR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Friday of March at 00:00 Local", 0x3c00000200060501, "Last Friday of October at 01:00 Local", 0xc4000109000605ff }, \
-	{ "KAZAKHSTAN", "KZ", "KAZ", "", "", "Oral Time", "ORAT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KAZAKHSTAN", "KZ", "KAZ", "", "", "Alma-Ata Time", "ALMT", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KEELING ISLANDS", "CC", "CCK", "", "", "Cocos Islands Time", "CCT", 23400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KENYA", "KE", "KEN", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KIRIBATI", "KI", "KIR", "", "", "Gilbert Island Time", "GILT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KIRIBATI", "KI", "KIR", "", "", "Phoenix Island Time", "PHOT", 46800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KIRIBATI", "KI", "KIR", "", "", "Line Islands Time", "LINT", 50400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KOSOVO", "XK", "XKX", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "KUWAIT", "KW", "KWT", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "KYRGYZSTAN", "KG", "KGZ", "", "", "Kyrgyzstan Time", "KGT", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "LAOS", "LA", "LAO", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "LATVIA", "LV", "LVA", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "LEBANON", "LB", "LBN", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 00:00 Local", 0x3c00000200060001, "Last Sunday of October at 00:00 Local", 0xc4000009000600ff }, \
-	{ "LESOTHO", "LS", "LSO", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "LIBERIA", "LR", "LBR", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "LIBYA", "LY", "LBY", "", "", "Eastern European Time", "EET", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "LIECHTENSTEIN", "LI", "LIE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "LITHUANIA", "LT", "LTU", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "LUXEMBOURG", "LU", "LUX", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "MACAU", "MO", "MAC", "", "", "China Standard Time", "CST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MADAGASCAR", "MG", "MDG", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MALAWI", "MW", "MWI", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MALAYSIA", "MY", "MYS", "", "", "Malaysia Time", "MYT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MALDIVES", "MV", "MDV", "", "", "Maldives Time", "MVT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MALI", "ML", "MLI", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MALTA", "MT", "MLT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "MARSHALL ISLANDS", "MH", "MHL", "", "", "Marshall Islands Time", "MHT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MARTINIQUE", "MQ", "MTQ", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MAURITANIA", "MR", "MRT", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MAURITIUS", "MU", "MUS", "", "", "Mauritius Time", "MUT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MAYOTTE", "YT", "MYT", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MCDONALD ISLANDS", "US", "USA", "", "", "Alaska Standard Time", "AKST", 32400, 1, "Alaska Daylight Time", "AKDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "MCDONALD ISLANDS", "HM", "HMD", "", "", "French Southern and Antarctic Time", "TFT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MEXICO", "MX", "MEX", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MEXICO", "MX", "MEX", "", "", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "MEXICO", "MX", "MEX", "", "", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "MEXICO", "MX", "MEX", "", "", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "First Sunday of April at 02:00 Local", 0x3c00020300010001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "MICRONESIA", "FM", "FSM", "", "", "Chuuk Time", "CHUT", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MICRONESIA", "FM", "FSM", "", "", "Pohnpei Standard Time", "PONT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MICRONESIA", "FM", "FSM", "", "", "Kosrae Time", "KOST", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MIDWAY", "UM", "UMI", "", "", "Samoa Standard Time", "SST", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MIQUELON", "PM", "SPM", "", "", "Pierre & Miquelon Standard Time", "PMST", -10800, 1, "Pierre & Miquelon Daylight Time", "PMDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "MOLDOVA", "MD", "MDA", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "MONACO", "MC", "MCO", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "MONGOLIA", "MN", "MNG", "", "", "Hovd Time", "HOVT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MONGOLIA", "MN", "MNG", "", "", "Ulaanbaatar Time", "ULAT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MONGOLIA", "MN", "MNG", "", "", "Choibalsan Time", "CHOT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MONTENEGRO", "ME", "MNE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "MONTSERRAT", "MS", "MSR", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MOROCCO", "MA", "MAR", "", "", "Western European Time", "WET", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MOZAMBIQUE", "MZ", "MOZ", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "MYANMAR", "MM", "MMR", "", "", "Myanmar Time", "MMT", 23400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NAMIBIA", "NA", "NAM", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NAURU", "NR", "NRU", "", "", "Nauru Time", "NRT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NEPAL", "NP", "NPL", "", "", "Nepal Time", "NPT", 20700, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NETHERLANDS", "NL", "NLD", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "NETHERLANDS ANTILLES", "AN", "ANT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NEVIS", "KN", "KNA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NEW CALEDONIA", "NC", "NCL", "", "", "New Caledonia Time", "NCT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NEW ZEALAND", "NZ", "NZL", "", "", "New Zealand Standard Time", "NZST", 43200, 1, "New Zealand Daylight Time", "NZDT", "Last Sunday of September at 02:00 Local", 0x3c00020800060001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "NEW ZEALAND", "NZ", "NZL", "CHATHAM ISLAND", "", "Chatham Island Standard Time", "CHAST", 45900, 1, "Chatham Island Daylight Time", "CHADT", "Last Sunday of September at 02:00 Local", 0x3c00020800060001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "NICARAGUA", "NI", "NIC", "", "", "Central Standard Time", "CST", -21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NIGER", "NE", "NER", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NIGERIA", "NG", "NGA", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NIUE", "NU", "NIU", "", "", "Niue Time", "NUT", -39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NORFOLK ISLAND", "NF", "NFK", "", "", "Norfolk Time", "NFT", 39600, 1, "Norfolk Daylight Time", "NFDT", "First Sunday of October at 02:00 Local", 0x3c00020900010001, "First Sunday of April at 03:00 Local", 0xc4000303000100ff }, \
-	{ "NORTH KOREA", "KP", "PRK", "", "", "Korea Standard Time", "KST", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NORTH MACEDONIA", "MK", "MKD", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "NORTHERN MARIANA ISLANDS", "MP", "MNP", "", "", "Chamorro Standard Time", "ChST", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "NORWAY", "NO", "NOR", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "OMAN", "OM", "OMN", "", "", "Gulf Standard Time", "GST", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PAKISTAN", "PK", "PAK", "", "", "Pakistan Standard Time", "PKT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PALAU", "PW", "PLW", "", "", "Palau Time", "PWT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PALESTINE", "PS", "PSE", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Friday before last Sunday of March at 02:00 Local", 0x3c00d20200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "PANAMA", "PA", "PAN", "", "", "Eastern Standard Time", "EST", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PAPUA NEW GUINEA", "PG", "PNG", "", "", "Papua New Guinea Time", "PGT", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PAPUA NEW GUINEA", "PG", "PNG", "BOUGAINVILLE", "", "Bougainville Standard Time", "BST", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PARAGUAY", "PY", "PRY", "", "", "Paraguay Time", "PYT", -14400, 1, "Paraguay Summer Time", "PYST", "First Sunday of October at 00:00 Local", 0x3c00000900010001, "Fourth Sunday of March at 00:00 Local", 0xc4000002000400ff }, \
-	{ "PERU", "PE", "PER", "", "", "Peru Time", "PET", -18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PHILIPPINES", "PH", "PHL", "", "", "Philippine Time", "PHT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PITCAIRN ISLANDS", "PN", "PCN", "", "", "Pitcairn Standard Time", "PST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "POLAND", "PL", "POL", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "PORTUGAL", "PT", "PRT", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "PORTUGAL", "PT", "PRT", "", "", "Azores Time", "AZOT", 3600, 1, "Azores Summer Time", "AZOST", "Last Sunday of March at 00:00 Local", 0x3c00000200060001, "Last Sunday of October at 01:00 Local", 0xc4000109000600ff }, \
-	{ "PRINCIPE", "ST", "STP", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "PUERTO RICO", "PR", "PRI", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "QATAR", "QA", "QAT", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "REPUBLIC OF THE CONGO", "CG", "COG", "", "", "West Africa Time", "WAT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "REUNION", "RE", "REU", "", "", "Reunion Time", "RET", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ROMANIA", "RO", "ROU", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "RUSSIA", "RU", "RUS", "KALININGRAD", "", "Eastern European Time", "EET", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "MOSCOW", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "SAMARA", "", "Samara Time", "SAMT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "YEKATERINBURG", "", "Yekaterinburg Time", "YEKT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "OMSK", "", "Omsk Standard Time", "OMST", 21600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "KRASNOYARSK", "", "Krasnoyarsk Time", "KRAT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "NOVOSIBIRSK", "", "Novosibirsk Time", "NOVT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "IRKUTSK", "", "Irkutsk Time", "IRKT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "YAKUTSK", "", "Yakutsk Time", "YAKT", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "VLADIVOSTOK", "", "Vladivostok Time", "VLAT", 36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "MAGADAN", "", "Magadan Time", "MAGT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "SAKHALIN", "", "Sakhalin Time", "SAKT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "SREDNEKOLYMSK", "", "Srednekolymsk Time", "SRED", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "ANADYR", "", "Anadyr Time", "ANAT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RUSSIA", "RU", "RUS", "KAMCHATKA", "", "Kamchatka Time", "PETT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "RWANDA", "RW", "RWA", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SABA", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAINT BARTHELEMY", "BL", "BLM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAINT HELENA", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAINT KITTS", "KN", "KNA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAINT LUCIA", "LC", "LCA", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAINT MARTIN", "MF", "MAF", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAINT PIERRE", "PM", "SPM", "", "", "Pierre & Miquelon Standard Time", "PMST", -10800, 1, "Pierre & Miquelon Daylight Time", "PMDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "SAINT VINCENT", "VC", "VCT", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAMOA", "WS", "WSM", "", "", "West Samoa Time", "WST", 46800, 1, "West Samoa Time", "WST", "Last Sunday of September at 03:00 Local", 0x3c00030800060001, "First Sunday of April at 04:00 Local", 0xc4000403000100ff }, \
-	{ "SAN MARINO", "SM", "SMR", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SAO TOME", "ST", "STP", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SAUDI ARABIA", "SA", "SAU", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SENEGAL", "SN", "SEN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SERBIA", "RS", "SRB", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SEYCHELLES", "SC", "SYC", "", "", "Seychelles Time", "SCT", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SIERRA LEONE", "SL", "SLE", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SINGAPORE", "SG", "SGP", "", "", "Singapore Time", "SGT", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SINT EUSTATIUS", "BQ", "BES", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SINT MAARTEN", "SX", "SXM", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SLOVAKIA", "SK", "SVK", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SLOVENIA", "SI", "SVN", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SOLOMON ISLANDS", "SB", "SLB", "", "", "Solomon Islands Time", "SBT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOMALIA", "SO", "SOM", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOUTH AFRICA", "ZA", "ZAF", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOUTH AFRICA", "ZA", "ZAF", "MARION ISLAND", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOUTH GEORGIA ISLAND", "GS", "SGS", "", "", "South Georgia Time", "GST", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOUTH KOREA", "KR", "KOR", "", "", "Korea Standard Time", "KST", 32400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOUTH SANDWICH ISLANDS", "GS", "SGS", "", "", "South Georgia Time", "GST", -7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SOUTH SUDAN", "SS", "SSD", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SPAIN", "ES", "ESP", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SPAIN", "ES", "ESP", "", "", "Western European Time", "WET", 0, 1, "Western European Daylight Time", "WEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SRI LANKA", "LK", "LKA", "", "", "India Standard Time", "IST", 19800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SUDAN", "SD", "SDN", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SURINAME", "SR", "SUR", "", "", "Suriname Time", "SRT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SVALBARD", "SJ", "SJM", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SWAZILAND", "SZ", "SWZ", "", "", "South Africa Standard Time", "SAST", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "SWEDEN", "SE", "SWE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SWITZERLAND", "CH", "CHE", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "SYRIA", "SY", "SYR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Friday of March at 00:00 Local", 0x3c00000200060501, "Last Friday of October at 00:00 Local", 0xc4000009000605ff }, \
-	{ "TAIWAN", "TW", "TWN", "", "", "China Standard Time", "CST", 28800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TAJIKISTAN", "TJ", "TJK", "", "", "Tajikistan Time", "TJT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TANZANIA", "TZ", "TZA", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "THAILAND", "TH", "THA", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TOBAGO", "TT", "TTO", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TOGO", "TG", "TGO", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TOKELAU", "TK", "TKL", "", "", "Tokelau Time", "TKT", 46800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TONGA", "TO", "TON", "", "", "Tonga Time", "TOT", 46800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TRINIDAD", "TT", "TTO", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TRISTAN DA CUNHA", "SH", "SHN", "", "", "Greenwich Mean Time", "GMT", 0, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TUNISIA", "TN", "TUN", "", "", "Central European Time", "CET", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TURKEY", "TR", "TUR", "", "", "Turkey Time", "TRT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TURKMENISTAN", "TM", "TKM", "", "", "Turkmenistan Time", "TMT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "TURKS AND CAICOS", "TC", "TCA", "", "", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "TUVALU", "TV", "TUV", "", "", "Tuvalu Time", "TVT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "UGANDA", "UG", "UGA", "", "", "Eastern Africa Time", "EAT", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "UKRAINE", "UA", "UKR", "", "", "Eastern European Time", "EET", 7200, 1, "Eastern European Daylight Time", "EEDT", "Last Sunday of March at 03:00 Local", 0x3c00030200060001, "Last Sunday of October at 04:00 Local", 0xc4000409000600ff }, \
-	{ "UKRAINE", "UA", "UKR", "", "", "Moscow Standard Time", "MSK", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "UNITED ARAB EMIRATES", "AE", "ARE", "", "", "Gulf Standard Time", "GST", 14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "UNITED KINGDOM", "GB", "GBR", "", "", "Greenwich Mean Time", "GMT", 0, 1, "British Summer Time", "BST", "Last Sunday of March at 01:00 Local", 0x3c00010200060001, "Last Sunday of October at 02:00 Local", 0xc4000209000600ff }, \
-	{ "UNITED STATES", "US", "USA", "ALABAMA", "AL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "ALASKA", "AK", "Alaska Standard Time", "AKST", -32400, 1, "Alaska Daylight Time", "AKDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "ALASKA", "AK", "Hawaii-Aleutian Standard Time", "HST", -36000, 1, "Hawaii-Aleutian Daylight Time", "HDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "ARIZONA", "AZ", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "ARKANSAS", "AR", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "CALIFORNIA", "CA", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "COLORADO", "CO", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "CONNECTICUT", "CT", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "DELAWARE", "DE", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "DISTRICT OF COLUMBIA", "DC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "FLORIDA", "FL", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "FLORIDA", "FL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "GEORGIA", "GA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "HAWAII", "HI", "Hawaii-Aleutian Standard Time", "HST", -36000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "UNITED STATES", "US", "USA", "IDAHO", "ID", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "IDAHO", "ID", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "ILLINOIS", "IL", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "INDIANA", "IN", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "INDIANA", "IN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "IOWA", "IA", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "KANSAS", "KS", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "KANSAS", "KS", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "KENTUCKY", "KY", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "KENTUCKY", "KY", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "LOUISIANA", "LA", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MAINE", "ME", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MARYLAND", "MD", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MASSACHUSETTS", "MA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MICHIGAN", "MI", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MICHIGAN", "MI", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MINNESOTA", "MN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MISSISSIPPI", "MS", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MISSOURI", "MO", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "MONTANA", "MT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEBRASKA", "NE", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEBRASKA", "NE", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEVADA", "NV", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEVADA", "NV", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEW HAMPSHIRE", "NH", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEW JERSEY", "NJ", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEW MEXICO", "NM", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NEW YORK", "NY", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NORTH CAROLINA", "NC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NORTH DAKOTA", "ND", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "NORTH DAKOTA", "ND", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "OHIO", "OH", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "OKLAHOMA", "OK", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "OREGON", "OR", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "OREGON", "OR", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "PENNSYLVANIA", "PA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "RHODE ISLAND", "RI", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "SOUTH CAROLINA", "SC", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "SOUTH DAKOTA", "SD", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "SOUTH DAKOTA", "SD", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "TENNESSEE", "TN", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "TENNESSEE", "TN", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "TEXAS", "TX", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "TEXAS", "TX", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "UTAH", "UT", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "VERMONT", "VT", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "VIRGINIA", "VA", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "WASHINGTON", "WA", "Pacific Standard Time", "PST", -28800, 1, "Pacific Daylight Time", "PDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "WEST VIRGINIA", "WV", "Eastern Standard Time", "EST", -18000, 1, "Eastern Daylight Time", "EDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "WISCONSIN", "WI", "Central Standard Time", "CST", -21600, 1, "Central Daylight Time", "CDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES", "US", "USA", "WYOMING", "WY", "Mountain Standard Time", "MST", -25200, 1, "Mountain Daylight Time", "MDT", "Second Sunday of March at 02:00 Local", 0x3c00020200020001, "First Sunday of November at 02:00 Local", 0xc400020a000100ff }, \
-	{ "UNITED STATES VIRGIN ISLANDS", "VI", "VIR", "", "", "Atlantic Standard Time", "AST", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "URUGUAY", "UY", "URY", "", "", "Uruguay Time", "UYT", -10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "UZBEKISTAN", "UZ", "UZB", "", "", "Uzbekistan Time", "UZT", 18000, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "VANUATU", "VU", "VUT", "", "", "Vanuatu Time", "VUT", 39600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "VATICAN CITY", "VA", "VAT", "", "", "Central European Time", "CET", 3600, 1, "Central European Daylight Time", "CEDT", "Last Sunday of March at 02:00 Local", 0x3c00020200060001, "Last Sunday of October at 03:00 Local", 0xc4000309000600ff }, \
-	{ "VENEZUELA", "VE", "VEN", "", "", "Venezuelan Standard Time", "VET", -14400, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "VIETNAM", "VN", "VNM", "", "", "Indochina Time", "ICT", 25200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "WALLIS", "WF", "WLF", "", "", "Wallis and Futuna Time", "WFT", 43200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "WESTERN SAHARA", "EH", "ESH", "", "", "Western European Daylight Time", "WEDT", 3600, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "YEMEN", "YE", "YEM", "", "", "Arabia Standard Time", "AST", 10800, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ZAMBIA", "ZM", "ZMB", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 }, \
-	{ "ZIMBABWE", "ZW", "ZWE", "", "", "Central Africa Time", "CAT", 7200, 0, "", "", "", 0x0, "", 0x0 } \
+#define TZ_TABLE_ENTRIES_m10      399
+#define TZ_TABLE_m10 { \
+	{ "AFGHANISTAN", "AF", "AFG", "", "", "AFGHANISTAN TIME", "AFT", 16200, "", "", 0x0, 0x0 }, \
+	{ "AKROTIRI", "", "", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "ALAND ISLANDS", "AX", "ALA", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "ALBANIA", "AL", "ALB", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "ALGERIA", "DZ", "DZA", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "", "", 0x0, 0x0 }, \
+	{ "AMERICAN SAMOA", "US", "ASM", "", "", "SAMOA STANDARD TIME", "SST", -39600, "", "", 0x0, 0x0 }, \
+	{ "ANDORRA", "AD", "AND", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "ANGOLA", "AO", "AGO", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "ANGUILLA", "AI", "AIA", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "ANTIGUA", "AG", "ATG", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "ARGENTINA", "AR", "ARG", "", "", "ARGENTINA TIME", "ART", -10800, "", "", 0x0, 0x0 }, \
+	{ "ARMENIA", "AM", "ARM", "", "", "ARMENIA TIME", "AMT", 14400, "", "", 0x0, 0x0 }, \
+	{ "ARUBA", "AW", "ABW", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "ASCENSION", "SH", "SHN", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "WESTERN AUSTRALIA", "WA", "AUSTRALIAN WESTERN STANDARD TIME", "AWST", 28800, "", "", 0x0, 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "WESTERN AUSTRALIA", "WA", "AUSTRALIAN CENTRAL WESTERN STANDARD TIME", "ACWST", 31500, "", "", 0x0, 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "SOUTH AUSTRALIA", "SA", "AUSTRALIAN CENTRAL STANDARD TIME", "ACST", 34200, "AUSTRALIAN CENTRAL DAYLIGHT TIME", "ACDT", 0x3C00020900010001, 0xC4000303000100FF }, \
+	{ "AUSTRALIA", "AU", "AUS", "NORTHERN TERRITORY", "NT", "AUSTRALIAN CENTRAL STANDARD TIME", "ACST", 34200, "", "", 0x0, 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "AUSTRALIAN CAPITAL TERRITORY", "ACT", "AUSTRALIAN EASTERN STANDARD TIME", "AEST", 36000, "AUSTRALIAN EASTERN DAYLIGHT TIME", "AEDT", 0x3C00020900010001, 0xC4000303000100FF }, \
+	{ "AUSTRALIA", "AU", "AUS", "TASMANIA", "TAS", "AUSTRALIAN EASTERN STANDARD TIME", "AEST", 36000, "AUSTRALIAN EASTERN DAYLIGHT TIME", "AEDT", 0x3C00020900010001, 0xC4000303000100FF }, \
+	{ "AUSTRALIA", "AU", "AUS", "VICTORIA", "VIC", "AUSTRALIAN EASTERN STANDARD TIME", "AEST", 36000, "AUSTRALIAN EASTERN DAYLIGHT TIME", "AEDT", 0x3C00020900010001, 0xC4000303000100FF }, \
+	{ "AUSTRALIA", "AU", "AUS", "NEW SOUTH WALES", "NSW", "AUSTRALIAN EASTERN STANDARD TIME", "AEST", 36000, "AUSTRALIAN EASTERN DAYLIGHT TIME", "AEDT", 0x3C00020900010001, 0xC4000303000100FF }, \
+	{ "AUSTRALIA", "AU", "AUS", "QUEENSLAND", "QLD", "AUSTRALIAN EASTERN STANDARD TIME", "AEST", 36000, "", "", 0x0, 0x0 }, \
+	{ "AUSTRALIA", "AU", "AUS", "LORD HOWE ISLAND", "", "LORD HOWE STANDARD TIME", "LHST", 37800, "LORD HOWE DAYLIGHT TIME (+30 MIN)", "LHDT", 0x1E00020900010001, 0xE2000203000100FF }, \
+	{ "AUSTRIA", "AT", "AUT", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "AZERBAIJAN", "AZ", "AZE", "", "", "AZERBAIJAN TIME", "AZT", 14400, "", "", 0x0, 0x0 }, \
+	{ "BAHAMAS", "BS", "BHS", "", "", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "BAHRAIN", "BH", "BHR", "", "", "ARABIAN STANDARD TIME", "AST", 10800, "", "", 0x0, 0x0 }, \
+	{ "BANGLADESH", "BD", "BGD", "", "", "BANGLADESH STANDARD TIME", "BST", 21600, "", "", 0x0, 0x0 }, \
+	{ "BARBADOS", "BB", "BRB", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "BARBUDA", "AG", "ATG", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "BELARUS", "BY", "BLR", "", "", "MOSCOW STANDARD TIME", "MSK", 10800, "", "", 0x0, 0x0 }, \
+	{ "BELGIUM", "BE", "BEL", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "BELIZE", "BZ", "BLZ", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "", "", 0x0, 0x0 }, \
+	{ "BENIN", "BJ", "BEN", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "BERMUDA", "BM", "BMU", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "BHUTAN", "BT", "BTN", "", "", "BHUTAN TIME", "BTT", 21600, "", "", 0x0, 0x0 }, \
+	{ "BOLIVIA", "BO", "BOL", "", "", "BOLIVIA TIME", "BOT", -14400, "", "", 0x0, 0x0 }, \
+	{ "BONAIRE", "BQ", "BES", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "BOSNIA", "BA", "BIH", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "BOTSWANA", "BW", "BWA", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "BOUVET ISLAND", "BV", "BVT", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "ACRE TIME", "ACT", -18000, "", "", 0x0, 0x0 }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "AMAZON TIME", "AMT", -14400, "", "", 0x0, 0x0 }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "BRASILIA TIME", "BRT", -10800, "", "", 0x0, 0x0 }, \
+	{ "BRAZIL", "BR", "BRA", "", "", "FERNANDO DE NORONHA TIME", "FNT", -7200, "", "", 0x0, 0x0 }, \
+	{ "BRITISH VIRGIN ISLANDS", "VG", "VGB", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "BRUNEI", "BN", "BRN", "", "", "BRUNEI TIME", "BNT", 28800, "", "", 0x0, 0x0 }, \
+	{ "BULGARIA", "BG", "BGR", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "BURKINA FASO", "BF", "BFA", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "BURUNDI", "BI", "BDI", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "CAMBODIA", "KH", "KHM", "", "", "INDOCHINA TIME", "ICT", 25200, "", "", 0x0, 0x0 }, \
+	{ "CAMEROON", "CM", "CMR", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "CANADA", "CA", "CAN", "NEWFOUNDLAND", "NL", "NEWFOUNDLAND STANDARD TIME", "NST", -12600, "NEWFOUNDLAND DAYLIGHT TIME", "NDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "LABRADOR", "NL", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "NEW BRUNSWICK", "NB", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "NOVA SCOTIA", "NS", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "PRINCE EDWARD ISLAND", "PE", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "ONTARIO", "ON", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "QUEBEC", "QC", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "MANITOBA", "MB", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "SASKATCHEWAN", "SK", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "NUNAVUT", "NU", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "ALBERTA", "AB", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "NORTHWEST TERRITORIES ", "NT", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "BRITISH COLUMBIA", "BC", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CANADA", "CA", "CAN", "YUKON", "YT", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "CAPE VERDE", "CV", "CPV", "", "", "CAPE VERDE TIME", "CVT", -3600, "", "", 0x0, 0x0 }, \
+	{ "CAYMAN ISLANDS", "KY", "CYM", "", "", "EASTERN STANDARD TIME", "EST", -18000, "", "", 0x0, 0x0 }, \
+	{ "CENTRAL AFRICAN REPUBLIC", "CF", "CAF", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "CHAD", "TD", "TCD", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "CHILE", "CL", "CHL", "", "", "CHILE STANDARD TIME", "CLT", -14400, "CHILE SUMMER TIME", "CLST", 0x3C00000800010001, 0xC4000003000100FF }, \
+	{ "CHILE", "CL", "CHL", "EASTER ISLAND", "", "EASTER ISLAND STANDARD TIME", "EAST", -21600, "EASTER ISLAND SUMMER TIME", "EASST", 0x3C00000800010001, 0xC4000003000100FF }, \
+	{ "CHINA", "CN", "CHN", "", "", "CHINA STANDARD TIME", "CST", 28800, "", "", 0x0, 0x0 }, \
+	{ "CHRISTMAS ISLAND (AU)", "CX", "CXR", "", "", "CHRISTMAS ISLAND TIME", "CXT", 25200, "", "", 0x0, 0x0 }, \
+	{ "COCOS ISLANDS (AU)", "CC", "CCK", "", "", "COCOS ISLAND TIME", "CCT", 23400, "", "", 0x0, 0x0 }, \
+	{ "COLOMBIA", "CO", "COL", "", "", "COLOMBIA TIME", "COT", -18000, "", "", 0x0, 0x0 }, \
+	{ "COMOROS", "KM", "COM", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "COOK ISLANDS", "CK", "COK", "", "", "COOK ISLAND TIME", "CKT", -36000, "", "", 0x0, 0x0 }, \
+	{ "COSTA RICA", "CR", "CRI", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "", "", 0x0, 0x0 }, \
+	{ "CROATIA", "HR", "HRV", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "CUBA", "CU", "CUB", "", "", "CUBA STANDARD TIME", "CST", -18000, "CUBA DAYLIGHT TIME", "CDT", 0x3C00000200020001, 0xC400010A000100FF }, \
+	{ "CURACAO", "CW", "CUW", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "CYPRUS", "CY", "CYP", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "CZECH REPUBLIC", "CZ", "CZE", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "DEMOCRATIC REPUBLIC OF THE CONGO", "CD", "COD", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "DEMOCRATIC REPUBLIC OF THE CONGO", "CD", "COD", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "DENMARK", "DK", "DNK", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "DHEKELIA", "", "", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "DJIBOUTI", "DJ", "DJI", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "DOMINICA", "DM", "DMA", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "DOMINICAN REPUBLIC", "DO", "DOM", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "EAST TIMOR", "TL", "TLS", "", "", "EAST TIMOR TIME", "TLT", 32400, "", "", 0x0, 0x0 }, \
+	{ "ECUADOR", "EC", "ECU", "", "", "ECUADOR TIME", "ECT", -18000, "", "", 0x0, 0x0 }, \
+	{ "EGYPT", "EG", "EGY", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "", "", 0x0, 0x0 }, \
+	{ "EL SALVADOR", "SV", "SLV", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "", "", 0x0, 0x0 }, \
+	{ "EQUATORIAL GUINEA", "GQ", "GNQ", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "ERITREA", "ER", "ERI", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "ESTONIA", "EE", "EST", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "ESWATINI", "SZ", "SWZ", "", "", "SOUTH AFRICA STANDARD TIME", "SAST", 7200, "", "", 0x0, 0x0 }, \
+	{ "ETHIOPIA", "ET", "ETH", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "FALKLAND ISLANDS", "FK", "FLK", "", "", "FALKLAND ISLANDS SUMMER TIME", "FKST", -10800, "", "", 0x0, 0x0 }, \
+	{ "FAROE ISLANDS", "FO", "FRO", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "FIJI", "FJ", "FJI", "", "", "FIJI TIME", "FJT", 43200, "FIJI DAYLIGHT TIME", "FJDT", 0x3C00020A00010001, 0xC4000300000300FF }, \
+	{ "FINLAND", "FI", "FIN", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "FRANCE", "FR", "FRA", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "FRENCH GUIANA", "GF", "GUF", "", "", "FRENCH GUIANA TIME", "GFT", -10800, "", "", 0x0, 0x0 }, \
+	{ "FRENCH POLYNESIA", "PF", "PYF", "TAHITI", "", "TAHITI TIME", "TAHT", -36000, "", "", 0x0, 0x0 }, \
+	{ "FRENCH POLYNESIA", "PF", "PYF", "MARQUESAS", "", "MARQUESAS TIME", "MART", -34200, "", "", 0x0, 0x0 }, \
+	{ "FRENCH POLYNESIA", "PF", "PYF", "GAMBIER", "", "GAMBIER TIME", "GAMT", -32400, "", "", 0x0, 0x0 }, \
+	{ "FRENCH SOUTHERN TERRITORIES", "TF", "ATF", "", "", "FRENCH SOUTHERN AND ANTARCTIC TIME", "TFT", 18000, "", "", 0x0, 0x0 }, \
+	{ "FUTUNA", "WF", "WLF", "", "", "WALLIS AND FUTUNA TIME", "WFT", 43200, "", "", 0x0, 0x0 }, \
+	{ "GABON", "GA", "GAB", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "GAMBIA", "GM", "GMB", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "GEORGIA", "GE", "GEO", "", "", "GEORGIA STANDARD TIME", "GET", 14400, "", "", 0x0, 0x0 }, \
+	{ "GEORGIA", "GE", "GEO", "", "", "MOSCOW STANDARD TIME", "MSK", 10800, "", "", 0x0, 0x0 }, \
+	{ "GERMANY", "DE", "DEU", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "GHANA", "GH", "GHA", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "GIBRALTAR", "GI", "GIB", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "GREECE", "GR", "GRC", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "EASTERN GREENLAND TIME", "EGT", -3600, "EASTERN GREENLAND SUMMER TIME", "EGST", 0x3C00FE0200060001, 0xC400FF09000600FF }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "WESTERN GREENLAND TIME", "WGT", -10800, "WESTERN GREENLAND SUMMER TIME", "WGST", 0x3C00FE0200060001, 0xC400FF09000600FF }, \
+	{ "GREENLAND", "GL", "GRL", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00FE0200060001, 0xC400FF09000600FF }, \
+	{ "GRENADA", "GD", "GRD", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "GRENADINES", "VC", "VCT", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "GUADELOUPE", "GP", "GLP", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "GUAM", "GU", "GUM", "", "", "CHAMORRO STANDARD TIME", "CHST", 36000, "", "", 0x0, 0x0 }, \
+	{ "GUATEMALA", "GT", "GTM", "", "", "FRENCH GUIANA TIME", "GFT", -10800, "", "", 0x0, 0x0 }, \
+	{ "GUERNSEY", "GG", "GGY", "", "", "GREENWICH MEAN TIME", "GMT", 0, "BRITISH SUMMER TIME", "BST", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "GUINEA", "GN", "GIN", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "GUINEA-BISSAU", "GW", "GNB", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "GUYANA", "GY", "GUY", "", "", "GUYANA TIME", "GYT", -14400, "", "", 0x0, 0x0 }, \
+	{ "HAITI", "HT", "HTI", "", "", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "HEARD ISLANDS", "HM", "HMD", "", "", "FRENCH SOUTHERN AND ANTARCTIC TIME", "TFT", 18000, "", "", 0x0, 0x0 }, \
+	{ "HERZEGOVINA", "BA", "BIH", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "HOLY SEE", "VA", "VAT", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "HONDURAS", "HN", "HND", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "", "", 0x0, 0x0 }, \
+	{ "HONG KONG", "HK", "HKG", "", "", "HONG KONG TIME", "HKT", 28800, "", "", 0x0, 0x0 }, \
+	{ "HUNGARY", "HU", "HUN", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "ICELAND", "IS", "ISL", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "INDIA", "IN", "IND", "", "", "INDIA TIME ZONE", "IST", 19800, "", "", 0x0, 0x0 }, \
+	{ "INDONESIA", "ID", "IDN", "", "", "WESTERN INDONESIAN TIME", "WIB", 25200, "", "", 0x0, 0x0 }, \
+	{ "INDONESIA", "ID", "IDN", "", "", "CENTRAL INDONESIAN TIME", "WITA", 28800, "", "", 0x0, 0x0 }, \
+	{ "INDONESIA", "ID", "IDN", "", "", "EASTERN INDONESIAN TIME", "WIT", 32400, "", "", 0x0, 0x0 }, \
+	{ "IRAN", "IR", "IRN", "", "", "IRAN STANDARD TIME", "IRST", 12600, "IRAN DAYLIGHT TIME", "IRDT", 0x3C0000021600FF01, 0xC40000081600FFFF }, \
+	{ "IRAQ", "IQ", "IRQ", "", "", "ARABIA STANDARD TIME", "AST", 10800, "", "", 0x0, 0x0 }, \
+	{ "IRELAND", "IE", "IRL", "", "", "GREENWICH MEAN TIME", "GMT", 0, "IRISH STANDARD TIME", "IST", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "ISLE OF MAN", "IM", "IMN", "", "", "GREENWICH MEAN TIME", "GMT", 0, "BRITISH SUMMER TIME", "BST", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "ISRAEL", "IL", "ISR", "", "", "ISRAEL STANDARD TIME", "IST", 7200, "ISRAEL DAYLIGHT TIME", "IDT", 0x3C00D20200060001, 0xC4000209000600FF }, \
+	{ "ITALY", "IT", "ITA", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "IVORY COAST", "CI", "CIV", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "JAMAICA", "JM", "JAM", "", "", "EASTERN STANDARD TIME", "EST", -18000, "", "", 0x0, 0x0 }, \
+	{ "JAN MAYEN", "SJ", "SJM", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "JAPAN", "JP", "JPN", "", "", "JAPAN STANDARD TIME", "JST", 32400, "", "", 0x0, 0x0 }, \
+	{ "JERSEY", "JE", "JEY", "", "", "GREENWICH MEAN TIME", "GMT", 0, "BRITISH SUMMER TIME", "BST", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "JORDAN", "JO", "JOR", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00000200060501, 0xC4000109000605FF }, \
+	{ "KAZAKHSTAN", "KZ", "KAZ", "", "", "ORAL TIME", "ORAT", 18000, "", "", 0x0, 0x0 }, \
+	{ "KAZAKHSTAN", "KZ", "KAZ", "", "", "ALMA-ATA TIME", "ALMT", 21600, "", "", 0x0, 0x0 }, \
+	{ "KEELING ISLANDS", "CC", "CCK", "", "", "COCOS ISLANDS TIME", "CCT", 23400, "", "", 0x0, 0x0 }, \
+	{ "KENYA", "KE", "KEN", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "KIRIBATI", "KI", "KIR", "", "", "GILBERT ISLAND TIME", "GILT", 43200, "", "", 0x0, 0x0 }, \
+	{ "KIRIBATI", "KI", "KIR", "", "", "PHOENIX ISLAND TIME", "PHOT", 46800, "", "", 0x0, 0x0 }, \
+	{ "KIRIBATI", "KI", "KIR", "", "", "LINE ISLANDS TIME", "LINT", 50400, "", "", 0x0, 0x0 }, \
+	{ "KOSOVO", "XK", "XKX", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "KUWAIT", "KW", "KWT", "", "", "ARABIA STANDARD TIME", "AST", 10800, "", "", 0x0, 0x0 }, \
+	{ "KYRGYZSTAN", "KG", "KGZ", "", "", "KYRGYZSTAN TIME", "KGT", 21600, "", "", 0x0, 0x0 }, \
+	{ "LAOS", "LA", "LAO", "", "", "INDOCHINA TIME", "ICT", 25200, "", "", 0x0, 0x0 }, \
+	{ "LATVIA", "LV", "LVA", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "LEBANON", "LB", "LBN", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00000200060001, 0xC4000009000600FF }, \
+	{ "LESOTHO", "LS", "LSO", "", "", "SOUTH AFRICA STANDARD TIME", "SAST", 7200, "", "", 0x0, 0x0 }, \
+	{ "LIBERIA", "LR", "LBR", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "LIBYA", "LY", "LBY", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "", "", 0x0, 0x0 }, \
+	{ "LIECHTENSTEIN", "LI", "LIE", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "LITHUANIA", "LT", "LTU", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "LUXEMBOURG", "LU", "LUX", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "MACAU", "MO", "MAC", "", "", "CHINA STANDARD TIME", "CST", 28800, "", "", 0x0, 0x0 }, \
+	{ "MADAGASCAR", "MG", "MDG", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "MALAWI", "MW", "MWI", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "MALAYSIA", "MY", "MYS", "", "", "MALAYSIA TIME", "MYT", 28800, "", "", 0x0, 0x0 }, \
+	{ "MALDIVES", "MV", "MDV", "", "", "MALDIVES TIME", "MVT", 18000, "", "", 0x0, 0x0 }, \
+	{ "MALI", "ML", "MLI", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "MALTA", "MT", "MLT", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "MARSHALL ISLANDS", "MH", "MHL", "", "", "MARSHALL ISLANDS TIME", "MHT", 43200, "", "", 0x0, 0x0 }, \
+	{ "MARTINIQUE", "MQ", "MTQ", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "MAURITANIA", "MR", "MRT", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "MAURITIUS", "MU", "MUS", "", "", "MAURITIUS TIME", "MUT", 14400, "", "", 0x0, 0x0 }, \
+	{ "MAYOTTE", "YT", "MYT", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "MCDONALD ISLANDS", "US", "USA", "", "", "ALASKA STANDARD TIME", "AKST", 32400, "ALASKA DAYLIGHT TIME", "AKDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "MCDONALD ISLANDS", "HM", "HMD", "", "", "FRENCH SOUTHERN AND ANTARCTIC TIME", "TFT", 18000, "", "", 0x0, 0x0 }, \
+	{ "MEXICO", "MX", "MEX", "", "", "EASTERN STANDARD TIME", "EST", -18000, "", "", 0x0, 0x0 }, \
+	{ "MEXICO", "MX", "MEX", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020300010001, 0xC4000209000600FF }, \
+	{ "MEXICO", "MX", "MEX", "", "", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020300010001, 0xC4000209000600FF }, \
+	{ "MEXICO", "MX", "MEX", "", "", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020300010001, 0xC4000209000600FF }, \
+	{ "MICRONESIA", "FM", "FSM", "", "", "CHUUK TIME", "CHUT", 36000, "", "", 0x0, 0x0 }, \
+	{ "MICRONESIA", "FM", "FSM", "", "", "POHNPEI STANDARD TIME", "PONT", 39600, "", "", 0x0, 0x0 }, \
+	{ "MICRONESIA", "FM", "FSM", "", "", "KOSRAE TIME", "KOST", 39600, "", "", 0x0, 0x0 }, \
+	{ "MIDWAY", "UM", "UMI", "", "", "SAMOA STANDARD TIME", "SST", -39600, "", "", 0x0, 0x0 }, \
+	{ "MIQUELON", "PM", "SPM", "", "", "PIERRE & MIQUELON STANDARD TIME", "PMST", -10800, "PIERRE & MIQUELON DAYLIGHT TIME", "PMDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "MOLDOVA", "MD", "MDA", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "MONACO", "MC", "MCO", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "MONGOLIA", "MN", "MNG", "", "", "HOVD TIME", "HOVT", 25200, "", "", 0x0, 0x0 }, \
+	{ "MONGOLIA", "MN", "MNG", "", "", "ULAANBAATAR TIME", "ULAT", 28800, "", "", 0x0, 0x0 }, \
+	{ "MONGOLIA", "MN", "MNG", "", "", "CHOIBALSAN TIME", "CHOT", 28800, "", "", 0x0, 0x0 }, \
+	{ "MONTENEGRO", "ME", "MNE", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "MONTSERRAT", "MS", "MSR", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "MOROCCO", "MA", "MAR", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "", "", 0x0, 0x0 }, \
+	{ "MOZAMBIQUE", "MZ", "MOZ", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "MYANMAR", "MM", "MMR", "", "", "MYANMAR TIME", "MMT", 23400, "", "", 0x0, 0x0 }, \
+	{ "NAMIBIA", "NA", "NAM", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "NAURU", "NR", "NRU", "", "", "NAURU TIME", "NRT", 43200, "", "", 0x0, 0x0 }, \
+	{ "NEPAL", "NP", "NPL", "", "", "NEPAL TIME", "NPT", 20700, "", "", 0x0, 0x0 }, \
+	{ "NETHERLANDS", "NL", "NLD", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "NETHERLANDS ANTILLES", "AN", "ANT", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "NEVIS", "KN", "KNA", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "NEW CALEDONIA", "NC", "NCL", "", "", "NEW CALEDONIA TIME", "NCT", 39600, "", "", 0x0, 0x0 }, \
+	{ "NEW ZEALAND", "NZ", "NZL", "", "", "NEW ZEALAND STANDARD TIME", "NZST", 43200, "NEW ZEALAND DAYLIGHT TIME", "NZDT", 0x3C00020800060001, 0xC4000303000100FF }, \
+	{ "NEW ZEALAND", "NZ", "NZL", "CHATHAM ISLAND", "", "CHATHAM ISLAND STANDARD TIME", "CHAST", 45900, "CHATHAM ISLAND DAYLIGHT TIME", "CHADT", 0x3C00020800060001, 0xC4000303000100FF }, \
+	{ "NICARAGUA", "NI", "NIC", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "", "", 0x0, 0x0 }, \
+	{ "NIGER", "NE", "NER", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "NIGERIA", "NG", "NGA", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "NIUE", "NU", "NIU", "", "", "NIUE TIME", "NUT", -39600, "", "", 0x0, 0x0 }, \
+	{ "NORFOLK ISLAND", "NF", "NFK", "", "", "NORFOLK TIME", "NFT", 39600, "NORFOLK DAYLIGHT TIME", "NFDT", 0x3C00020900010001, 0xC4000303000100FF }, \
+	{ "NORTH KOREA", "KP", "PRK", "", "", "KOREA STANDARD TIME", "KST", 32400, "", "", 0x0, 0x0 }, \
+	{ "NORTH MACEDONIA", "MK", "MKD", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "NORTHERN MARIANA ISLANDS", "MP", "MNP", "", "", "CHAMORRO STANDARD TIME", "CHST", 36000, "", "", 0x0, 0x0 }, \
+	{ "NORWAY", "NO", "NOR", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "OMAN", "OM", "OMN", "", "", "GULF STANDARD TIME", "GST", 14400, "", "", 0x0, 0x0 }, \
+	{ "PAKISTAN", "PK", "PAK", "", "", "PAKISTAN STANDARD TIME", "PKT", 18000, "", "", 0x0, 0x0 }, \
+	{ "PALAU", "PW", "PLW", "", "", "PALAU TIME", "PWT", 32400, "", "", 0x0, 0x0 }, \
+	{ "PALESTINE", "PS", "PSE", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00D20200060001, 0xC4000209000600FF }, \
+	{ "PANAMA", "PA", "PAN", "", "", "EASTERN STANDARD TIME", "EST", -18000, "", "", 0x0, 0x0 }, \
+	{ "PAPUA NEW GUINEA", "PG", "PNG", "", "", "PAPUA NEW GUINEA TIME", "PGT", 36000, "", "", 0x0, 0x0 }, \
+	{ "PAPUA NEW GUINEA", "PG", "PNG", "BOUGAINVILLE", "", "BOUGAINVILLE STANDARD TIME", "BST", 39600, "", "", 0x0, 0x0 }, \
+	{ "PARAGUAY", "PY", "PRY", "", "", "PARAGUAY TIME", "PYT", -14400, "PARAGUAY SUMMER TIME", "PYST", 0x3C00000900010001, 0xC4000002000400FF }, \
+	{ "PERU", "PE", "PER", "", "", "PERU TIME", "PET", -18000, "", "", 0x0, 0x0 }, \
+	{ "PHILIPPINES", "PH", "PHL", "", "", "PHILIPPINE TIME", "PHT", 28800, "", "", 0x0, 0x0 }, \
+	{ "PITCAIRN ISLANDS", "PN", "PCN", "", "", "PITCAIRN STANDARD TIME", "PST", 28800, "", "", 0x0, 0x0 }, \
+	{ "POLAND", "PL", "POL", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "PORTUGAL", "PT", "PRT", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "PORTUGAL", "PT", "PRT", "", "", "AZORES TIME", "AZOT", 3600, "AZORES SUMMER TIME", "AZOST", 0x3C00000200060001, 0xC4000109000600FF }, \
+	{ "PRINCIPE", "ST", "STP", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "PUERTO RICO", "PR", "PRI", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "QATAR", "QA", "QAT", "", "", "ARABIA STANDARD TIME", "AST", 10800, "", "", 0x0, 0x0 }, \
+	{ "REPUBLIC OF THE CONGO", "CG", "COG", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "REUNION", "RE", "REU", "", "", "REUNION TIME", "RET", 14400, "", "", 0x0, 0x0 }, \
+	{ "ROMANIA", "RO", "ROU", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "RUSSIA", "RU", "RUS", "KALININGRAD", "", "EASTERN EUROPEAN TIME", "EET", 7200, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "MOSCOW", "", "MOSCOW STANDARD TIME", "MSK", 10800, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "SAMARA", "", "SAMARA TIME", "SAMT", 14400, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "YEKATERINBURG", "", "YEKATERINBURG TIME", "YEKT", 18000, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "OMSK", "", "OMSK STANDARD TIME", "OMST", 21600, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "KRASNOYARSK", "", "KRASNOYARSK TIME", "KRAT", 25200, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "NOVOSIBIRSK", "", "NOVOSIBIRSK TIME", "NOVT", 25200, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "IRKUTSK", "", "IRKUTSK TIME", "IRKT", 28800, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "YAKUTSK", "", "YAKUTSK TIME", "YAKT", 32400, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "VLADIVOSTOK", "", "VLADIVOSTOK TIME", "VLAT", 36000, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "MAGADAN", "", "MAGADAN TIME", "MAGT", 39600, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "SAKHALIN", "", "SAKHALIN TIME", "SAKT", 39600, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "SREDNEKOLYMSK", "", "SREDNEKOLYMSK TIME", "SRED", 39600, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "ANADYR", "", "ANADYR TIME", "ANAT", 43200, "", "", 0x0, 0x0 }, \
+	{ "RUSSIA", "RU", "RUS", "KAMCHATKA", "", "KAMCHATKA TIME", "PETT", 43200, "", "", 0x0, 0x0 }, \
+	{ "RWANDA", "RW", "RWA", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "SABA", "BQ", "BES", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SAINT BARTHELEMY", "BL", "BLM", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SAINT HELENA", "SH", "SHN", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "SAINT KITTS", "KN", "KNA", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SAINT LUCIA", "LC", "LCA", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SAINT MARTIN", "MF", "MAF", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SAINT PIERRE", "PM", "SPM", "", "", "PIERRE & MIQUELON STANDARD TIME", "PMST", -10800, "PIERRE & MIQUELON DAYLIGHT TIME", "PMDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "SAINT VINCENT", "VC", "VCT", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SAMOA", "WS", "WSM", "", "", "WEST SAMOA TIME", "WST", 46800, "WEST SAMOA TIME", "WST", 0x3C00030800060001, 0xC4000403000100FF }, \
+	{ "SAN MARINO", "SM", "SMR", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SAO TOME", "ST", "STP", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "SAUDI ARABIA", "SA", "SAU", "", "", "ARABIA STANDARD TIME", "AST", 10800, "", "", 0x0, 0x0 }, \
+	{ "SENEGAL", "SN", "SEN", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "SERBIA", "RS", "SRB", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SEYCHELLES", "SC", "SYC", "", "", "SEYCHELLES TIME", "SCT", 14400, "", "", 0x0, 0x0 }, \
+	{ "SIERRA LEONE", "SL", "SLE", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "SINGAPORE", "SG", "SGP", "", "", "SINGAPORE TIME", "SGT", 28800, "", "", 0x0, 0x0 }, \
+	{ "SINT EUSTATIUS", "BQ", "BES", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SINT MAARTEN", "SX", "SXM", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "SLOVAKIA", "SK", "SVK", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SLOVENIA", "SI", "SVN", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SOLOMON ISLANDS", "SB", "SLB", "", "", "SOLOMON ISLANDS TIME", "SBT", 39600, "", "", 0x0, 0x0 }, \
+	{ "SOMALIA", "SO", "SOM", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "SOUTH AFRICA", "ZA", "ZAF", "", "", "SOUTH AFRICA STANDARD TIME", "SAST", 7200, "", "", 0x0, 0x0 }, \
+	{ "SOUTH AFRICA", "ZA", "ZAF", "MARION ISLAND", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "SOUTH GEORGIA ISLAND", "GS", "SGS", "", "", "SOUTH GEORGIA TIME", "GST", -7200, "", "", 0x0, 0x0 }, \
+	{ "SOUTH KOREA", "KR", "KOR", "", "", "KOREA STANDARD TIME", "KST", 32400, "", "", 0x0, 0x0 }, \
+	{ "SOUTH SANDWICH ISLANDS", "GS", "SGS", "", "", "SOUTH GEORGIA TIME", "GST", -7200, "", "", 0x0, 0x0 }, \
+	{ "SOUTH SUDAN", "SS", "SSD", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "SPAIN", "ES", "ESP", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SPAIN", "ES", "ESP", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SRI LANKA", "LK", "LKA", "", "", "INDIA STANDARD TIME", "IST", 19800, "", "", 0x0, 0x0 }, \
+	{ "SUDAN", "SD", "SDN", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "SURINAME", "SR", "SUR", "", "", "SURINAME TIME", "SRT", -10800, "", "", 0x0, 0x0 }, \
+	{ "SVALBARD", "SJ", "SJM", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SWAZILAND", "SZ", "SWZ", "", "", "SOUTH AFRICA STANDARD TIME", "SAST", 7200, "", "", 0x0, 0x0 }, \
+	{ "SWEDEN", "SE", "SWE", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SWITZERLAND", "CH", "CHE", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "SYRIA", "SY", "SYR", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00000200060501, 0xC4000009000605FF }, \
+	{ "TAIWAN", "TW", "TWN", "", "", "CHINA STANDARD TIME", "CST", 28800, "", "", 0x0, 0x0 }, \
+	{ "TAJIKISTAN", "TJ", "TJK", "", "", "TAJIKISTAN TIME", "TJT", 18000, "", "", 0x0, 0x0 }, \
+	{ "TANZANIA", "TZ", "TZA", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "THAILAND", "TH", "THA", "", "", "INDOCHINA TIME", "ICT", 25200, "", "", 0x0, 0x0 }, \
+	{ "TOBAGO", "TT", "TTO", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "TOGO", "TG", "TGO", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "TOKELAU", "TK", "TKL", "", "", "TOKELAU TIME", "TKT", 46800, "", "", 0x0, 0x0 }, \
+	{ "TONGA", "TO", "TON", "", "", "TONGA TIME", "TOT", 46800, "", "", 0x0, 0x0 }, \
+	{ "TRINIDAD", "TT", "TTO", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "TRISTAN DA CUNHA", "SH", "SHN", "", "", "GREENWICH MEAN TIME", "GMT", 0, "", "", 0x0, 0x0 }, \
+	{ "TUNISIA", "TN", "TUN", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "", "", 0x0, 0x0 }, \
+	{ "TURKEY", "TR", "TUR", "", "", "TURKEY TIME", "TRT", 10800, "", "", 0x0, 0x0 }, \
+	{ "TURKMENISTAN", "TM", "TKM", "", "", "TURKMENISTAN TIME", "TMT", 18000, "", "", 0x0, 0x0 }, \
+	{ "TURKS AND CAICOS", "TC", "TCA", "", "", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "TUVALU", "TV", "TUV", "", "", "TUVALU TIME", "TVT", 43200, "", "", 0x0, 0x0 }, \
+	{ "UGANDA", "UG", "UGA", "", "", "EASTERN AFRICA TIME", "EAT", 10800, "", "", 0x0, 0x0 }, \
+	{ "UKRAINE", "UA", "UKR", "", "", "EASTERN EUROPEAN TIME", "EET", 7200, "EASTERN EUROPEAN DAYLIGHT TIME", "EEDT", 0x3C00030200060001, 0xC4000409000600FF }, \
+	{ "UKRAINE", "UA", "UKR", "", "", "MOSCOW STANDARD TIME", "MSK", 10800, "", "", 0x0, 0x0 }, \
+	{ "UNITED ARAB EMIRATES", "AE", "ARE", "", "", "GULF STANDARD TIME", "GST", 14400, "", "", 0x0, 0x0 }, \
+	{ "UNITED KINGDOM", "GB", "GBR", "", "", "GREENWICH MEAN TIME", "GMT", 0, "BRITISH SUMMER TIME", "BST", 0x3C00010200060001, 0xC4000209000600FF }, \
+	{ "UNITED STATES", "US", "USA", "ALABAMA", "AL", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "ALASKA", "AK", "ALASKA STANDARD TIME", "AKST", -32400, "ALASKA DAYLIGHT TIME", "AKDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "ALASKA", "AK", "HAWAII-ALEUTIAN STANDARD TIME", "HST", -36000, "HAWAII-ALEUTIAN DAYLIGHT TIME", "HDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "ARIZONA", "AZ", "MOUNTAIN STANDARD TIME", "MST", -25200, "", "", 0x0, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "ARKANSAS", "AR", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "CALIFORNIA", "CA", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "COLORADO", "CO", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "CONNECTICUT", "CT", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "DELAWARE", "DE", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "DISTRICT OF COLUMBIA", "DC", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "FLORIDA", "FL", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "FLORIDA", "FL", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "GEORGIA", "GA", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "HAWAII", "HI", "HAWAII-ALEUTIAN STANDARD TIME", "HST", -36000, "", "", 0x0, 0x0 }, \
+	{ "UNITED STATES", "US", "USA", "IDAHO", "ID", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "IDAHO", "ID", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "ILLINOIS", "IL", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "INDIANA", "IN", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "INDIANA", "IN", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "IOWA", "IA", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "KANSAS", "KS", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "KANSAS", "KS", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "KENTUCKY", "KY", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "KENTUCKY", "KY", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "LOUISIANA", "LA", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MAINE", "ME", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MARYLAND", "MD", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MASSACHUSETTS", "MA", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MICHIGAN", "MI", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MICHIGAN", "MI", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MINNESOTA", "MN", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MISSISSIPPI", "MS", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MISSOURI", "MO", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "MONTANA", "MT", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEBRASKA", "NE", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEBRASKA", "NE", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEVADA", "NV", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEVADA", "NV", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEW HAMPSHIRE", "NH", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEW JERSEY", "NJ", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEW MEXICO", "NM", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NEW YORK", "NY", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NORTH CAROLINA", "NC", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NORTH DAKOTA", "ND", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "NORTH DAKOTA", "ND", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "OHIO", "OH", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "OKLAHOMA", "OK", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "OREGON", "OR", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "OREGON", "OR", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "PENNSYLVANIA", "PA", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "RHODE ISLAND", "RI", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "SOUTH CAROLINA", "SC", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "SOUTH DAKOTA", "SD", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "SOUTH DAKOTA", "SD", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "TENNESSEE", "TN", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "TENNESSEE", "TN", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "TEXAS", "TX", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "TEXAS", "TX", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "UTAH", "UT", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "VERMONT", "VT", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "VIRGINIA", "VA", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "WASHINGTON", "WA", "PACIFIC STANDARD TIME", "PST", -28800, "PACIFIC DAYLIGHT TIME", "PDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "WEST VIRGINIA", "WV", "EASTERN STANDARD TIME", "EST", -18000, "EASTERN DAYLIGHT TIME", "EDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "WISCONSIN", "WI", "CENTRAL STANDARD TIME", "CST", -21600, "CENTRAL DAYLIGHT TIME", "CDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES", "US", "USA", "WYOMING", "WY", "MOUNTAIN STANDARD TIME", "MST", -25200, "MOUNTAIN DAYLIGHT TIME", "MDT", 0x3C00020200020001, 0xC400020A000100FF }, \
+	{ "UNITED STATES VIRGIN ISLANDS", "VI", "VIR", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "", "", 0x0, 0x0 }, \
+	{ "URUGUAY", "UY", "URY", "", "", "URUGUAY TIME", "UYT", -10800, "", "", 0x0, 0x0 }, \
+	{ "UZBEKISTAN", "UZ", "UZB", "", "", "UZBEKISTAN TIME", "UZT", 18000, "", "", 0x0, 0x0 }, \
+	{ "VANUATU", "VU", "VUT", "", "", "VANUATU TIME", "VUT", 39600, "", "", 0x0, 0x0 }, \
+	{ "VATICAN CITY", "VA", "VAT", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF }, \
+	{ "VENEZUELA", "VE", "VEN", "", "", "VENEZUELAN STANDARD TIME", "VET", -14400, "", "", 0x0, 0x0 }, \
+	{ "VIETNAM", "VN", "VNM", "", "", "INDOCHINA TIME", "ICT", 25200, "", "", 0x0, 0x0 }, \
+	{ "WALLIS", "WF", "WLF", "", "", "WALLIS AND FUTUNA TIME", "WFT", 43200, "", "", 0x0, 0x0 }, \
+	{ "WESTERN SAHARA", "EH", "ESH", "", "", "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 3600, "", "", 0x0, 0x0 }, \
+	{ "YEMEN", "YE", "YEM", "", "", "ARABIA STANDARD TIME", "AST", 10800, "", "", 0x0, 0x0 }, \
+	{ "ZAMBIA", "ZM", "ZMB", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 }, \
+	{ "ZIMBABWE", "ZW", "ZWE", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0 } \
 }
 
 #define TZ_COUNTRY_ALIASES_ENTRIES_m10      14
@@ -2364,8 +2471,10 @@ void    SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *message, ui4 len);
 	{ "GB", "UK" } \
 }
 
+
+
 //**********************************************************************************//
-//****************  Library Includes (that depend on medlib_m10.h)   ***************//
+//***********************  Headers that Require medlib_m10.h  **********************//
 //**********************************************************************************//
 
 #include "medrec_m10.h"
