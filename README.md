@@ -15,3 +15,5 @@ compile.bat is a shell script to compile MED2RAW using MED libraries in Windows
 
 Sometimes the API documentation lags behind the code.  This does not affect the documentation of existing functions, 
 but new ones may have been added.  This file is updated, but not as regularly as the code.
+
+There are new some record types in the medrec_m10 source that have not been added to the MED Records documetation yet.
