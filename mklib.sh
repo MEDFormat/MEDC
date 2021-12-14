@@ -20,10 +20,10 @@ TGT_FILE="library"
 
 
 if [ $OS = "Linux" ]; then
-	MEDDEV="/mnt/dhndev"
+	MEDDEV="/mnt/meddev"
 	LIBSFX="_lin"
 elif [  $OS = "MacOS" ]; then
-	MEDDEV="/Volumes/dhndev"
+	MEDDEV="/Volumes/meddev"
 	LIBSFX="_mac"
 fi
 
