@@ -82,32 +82,41 @@ GLOBALS_m10	*globals_m10 = NULL;
 //***********************************************************************//
 
 
-TERN_m10	adjust_open_file_limit_m10(si4 new_limit)
+TERN_m10	adjust_open_file_limit_m10(si4 new_limit, TERN_m10 verbose_flag)
 {
+	TERN_m10	ret_val = TRUE_m10;
 #if defined MACOS_m10 || defined LINUX_m10
 	struct rlimit	resource_limit;
 #endif
 
-
-#if defined MACOS_m10 || defined LINUX_m10
+	
+	// verbose_flag passed because this function is usually called before the MED libraries are initialized
+	
+	#if defined MACOS_m10 || defined LINUX_m10
 	// change resource limits (note: must change before calling any functions that use system resources)
 	getrlimit(RLIMIT_NOFILE, &resource_limit);  // get existing limit set
 	resource_limit.rlim_cur = (rlim_t) new_limit;  // change open file limit
-	if (setrlimit(RLIMIT_NOFILE, &resource_limit) == -1) {  // set limit set
-		warning_message_m10("%s(): could not adjust process open file limit\n", __FUNCTION__);
-		return(FALSE_m10);
-	}
-#endif
+	if (setrlimit(RLIMIT_NOFILE, &resource_limit) == -1)  // set limit set
+		ret_val = FALSE_m10;
+	#endif
 	
-#ifdef WINDOWS_m10
-	if (_setmaxstdio((int) new_limit) == -1) {  // change open file limit
-		warning_message_m10("%s(): could not adjust process open file limit\n", __FUNCTION__);
-		return(FALSE_m10);
-	}
-#endif
-	return(TRUE_m10);
-}
+	#ifdef WINDOWS_m10
+	if (_setmaxstdio((int) new_limit) == -1)  // change open file limit
+		ret_val = FALSE_m10;
+	#endif
 
+	if (ret_val == FALSE_m10) {
+		if (verbose_flag == TRUE_m10) {
+			#ifdef MATLAB_m10
+			mexPrintf("%s(): could not adjust process open file limit\n", __FUNCTION__);
+			#else
+			fprintf(stderr, "%s(): could not adjust process open file limit\n", __FUNCTION__);
+			#endif
+		}
+	}
+
+	return(ret_val);
+}
 
 
 TERN_m10	all_zeros_m10(ui1* bytes, si4 field_length)
@@ -211,7 +220,7 @@ FILE_PROCESSING_STRUCT_m10	*allocate_file_processing_struct_m10(FILE_PROCESSING_
 	// allocate raw_data
 	fps->raw_data_bytes = (raw_data_bytes += UNIVERSAL_HEADER_BYTES_m10);  // all files start with universal header
 	fps->raw_data = (ui1 *) calloc_m10((size_t)raw_data_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	uh = fps->universal_header = (UNIVERSAL_HEADER_m10 *)fps->raw_data;
+	uh = fps->universal_header = (UNIVERSAL_HEADER_m10 *) fps->raw_data;
 	fps->fd = FPS_FD_NO_ENTRY_m10;
 	fps->file_length = 0; // nothing read or written yet
 	
@@ -458,7 +467,10 @@ SESSION_m10	*allocate_session_m10(FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *en
 
 
 
-inline void	apply_recording_time_offset_m10(si8 *time)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	apply_recording_time_offset_m10(si8 *time)
 {
 	if (*time != UUTC_NO_ENTRY_m10)
 		*time -= globals_m10->recording_time_offset;
@@ -672,7 +684,10 @@ TERN_m10        check_all_alignments_m10(const si1 *function, si4 line)
 }
 
 
-inline wchar_t	*char2wchar_m10(wchar_t *target, si1 *source)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+wchar_t	*char2wchar_m10(wchar_t *target, si1 *source)
 {
 	si1	*c, *c2, *tmp_source = NULL;
 	si8	len, wsz;
@@ -1518,9 +1533,9 @@ TERN_m10	check_video_indices_alignment_m10(ui1 *bytes)
 		goto VIDEO_INDICES_NOT_ALIGNED_m10;
 	if (&vi->start_time != (si8 *) (bytes + VIDEO_INDEX_START_TIME_OFFSET_m10))
 		goto VIDEO_INDICES_NOT_ALIGNED_m10;
-	if (&vi->start_frame_number != (si4 *) (bytes + VIDEO_INDEX_START_FRAME_OFFSET_m10))
+	if (&vi->start_frame_number != (ui4 *) (bytes + VIDEO_INDEX_START_FRAME_OFFSET_m10))
 		goto VIDEO_INDICES_NOT_ALIGNED_m10;
-	if (&vi->video_file_number != (si4 *) (bytes + VIDEO_INDEX_VIDEO_FILE_NUMBER_OFFSET_m10))
+	if (&vi->video_file_number != (ui4 *) (bytes + VIDEO_INDEX_VIDEO_FILE_NUMBER_OFFSET_m10))
 		goto VIDEO_INDICES_NOT_ALIGNED_m10;
 	
 	// aligned
@@ -1619,27 +1634,6 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10:
 		error_message_m10("%s(): VIDEO_METADATA_SECTION_2_m10 structure is NOT aligned\n", __FUNCTION__);
 	
 	return(FALSE_m10);
-}
-
-
-si4	compare_fps_start_times_m10(const void *a, const void *b)
-{
-	si8				a_start_time, b_start_time;
-	FILE_PROCESSING_STRUCT_m10	*fps;
-	
-	
-	fps = (FILE_PROCESSING_STRUCT_m10 *) *((FILE_PROCESSING_STRUCT_m10 **) a);
-	a_start_time = fps->universal_header->file_start_time;
-
-	fps = (FILE_PROCESSING_STRUCT_m10 *)  *((FILE_PROCESSING_STRUCT_m10 **) a);
-	b_start_time = fps->universal_header->file_start_time;
-
-	// qsort() requires an si4 return value, so can't just subtract
-	if (a_start_time > b_start_time)
-		return((si4) 1);
-	if (a_start_time < b_start_time)
-		return((si4) -1);
-	return((si4) 0);
 }
 
 
@@ -1792,7 +1786,7 @@ inline si8      current_uutc_m10(void)
 
 
 #ifdef WINDOWS_m10
-inline si8      current_uutc_m10(void)
+si8      current_uutc_m10(void)
 {
 	static const ui8    EPOCH = (ui8) 116444736000000000;
 	struct timeval      tv;
@@ -1816,7 +1810,10 @@ inline si8      current_uutc_m10(void)
 #endif
 
 
-inline si4      days_in_month_m10(si4 month, si4 year)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4      days_in_month_m10(si4 month, si4 year)
 // Note month is [0 - 11], January == 0, as in struct tm.tm_mon
 // Note struct tm.tm_year is (year - 1900), this function expects the full value
 {
@@ -1854,6 +1851,8 @@ TERN_m10	decrypt_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 		error_message_m10("%s(): FILE_PROCESSING_STRUCT is NULL\n", __FUNCTION__);
 		return(FALSE_m10);
 	}
+	
+	// set global session directory & session_name
 	
 	pwd = fps->password_data;
 	// section 2 decryption
@@ -2171,9 +2170,7 @@ si4     DST_offset_m10(si8 uutc)
 	change_utc = timegm(&change_time_info);
 #endif
 #ifdef WINDOWS_m10
-	// no timegm() in Windows - use mktime() & correct to UTC using local system timezone
-	change_utc = _mktime32(&change_time_info);
-	change_utc -= _timezone;  // current local offset to UTC in seconds
+	change_utc = _mkgmtime(&change_time_info);
 #endif
 	if (globals_m10->daylight_time_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME)
 		change_utc -= globals_m10->standard_UTC_offset;
@@ -2341,7 +2338,12 @@ void    error_message_m10(si1 *fmt, ...)
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
 		fprintf_m10(stderr, TC_RED_m10);
 		va_start(args, fmt);
+#if defined MACOS_m10 || defined LINUX_m10
 		UTF8_vfprintf_m10(stderr, fmt, args);
+#endif
+#ifdef WINDOWS_m10
+		vfprintf_m10(stderr, fmt, args);
+#endif
 		va_end(args);
 		if (globals_m10->behavior_on_fail & EXIT_ON_FAIL_m10)
 			fprintf_m10(stderr, "Exiting.\n\n" TC_RESET_m10);
@@ -2476,10 +2478,14 @@ void	extract_terminal_password_bytes_m10(si1 *password, si1 *password_bytes)
 		
 ui4     file_exists_m10(si1 *path)  // can be used for directories also
 {
-	si1		tmp_path[FULL_FILE_NAME_BYTES_m10];
-	si4             err;
-	struct stat     s;
-	
+	si1			tmp_path[FULL_FILE_NAME_BYTES_m10];
+	si4             	err;
+#if defined MACOS_m10 || defined LINUX_m10
+	struct stat     	sb;
+#endif
+#ifdef WINDOWS_m10
+	struct _stat64i32	sb;
+#endif
 	
 	if (path == NULL)
 		return(DOES_NOT_EXIST_m10);
@@ -2491,21 +2497,22 @@ ui4     file_exists_m10(si1 *path)  // can be used for directories also
 		path = tmp_path;
 	
 	errno = 0;
-	err = stat(path, &s);
 #if defined MACOS_m10 || defined LINUX_m10
+	err = stat(path, &sb);
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m10);
 	}
-	else if (S_ISDIR(s.st_mode))
+	else if (S_ISDIR(sb.st_mode))
 		return(DIR_EXISTS_m10);
 #endif
 #ifdef WINDOWS_m10
+	err = _stat(path, &sb);
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m10);
 	}
-	else if ((s.st_mode & S_IFMT) == S_IFDIR)
+	else if ((sb.st_mode & S_IFMT) == S_IFDIR)
 		return(DIR_EXISTS_m10);
 #endif
 	
@@ -2513,24 +2520,177 @@ ui4     file_exists_m10(si1 *path)  // can be used for directories also
 }
 
 
-inline si8	file_length_m10(FILE *fp)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si8	file_length_m10(FILE *fp, si1 *path)
 {
 	si4		fd;
-	struct stat	sb;
-	
-	
 #if defined MACOS_m10 || defined LINUX_m10
-	fd = fileno(fp);
+	struct stat     	sb;
 #endif
 #ifdef WINDOWS_m10
-	fd = _fileno(fp);
+	struct _stat64i32	sb;
 #endif
-	fstat(fd, &sb);
+
 	
-	return((si8)sb.st_size);
+	// pass either FILE pointer, or path to file
+	
+	if (fp == NULL && path == NULL)
+		return(-1);
+
+	if (fp == NULL) {
+	#if defined MACOS_m10 || defined LINUX_m10
+		stat(path, &sb);
+	#endif
+	#ifdef WINDOWS_m10
+		_stat(path, &sb);
+	#endif
+	} else {
+	#if defined MACOS_m10 || defined LINUX_m10
+		fd = fileno(fp);
+		fstat(fd, &sb);
+	#endif
+	#ifdef WINDOWS_m10
+		fd = _fileno(fp);
+		_fstat(fd, &sb);
+	#endif
+	}
+	
+	return((si8) sb.st_size);
 }
 		
 		
+FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10 set_time)
+{
+	// pass either FILE pointer, or path to file
+	if (fp == NULL && path == NULL)
+		return(NULL);
+
+	// caller must free
+	if (ft == NULL)
+		ft = (FILE_TIMES_m10 *) malloc_m10(sizeof(FILE_TIMES_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+
+#if defined MACOS_m10 || defined LINUX_m10
+	si4		fd;
+	struct stat	sb;
+	struct timeval 	set_times[2] = {0};
+	
+	// set times: access and modification only
+	if (set_time == TRUE_m10) {
+		// set to access and modification times to current time
+		if (ft == NULL) {
+			gettimeofday(set_times, NULL);
+			set_times[1] = set_times[0];
+		} else {  // use passed times (if non-zero)
+			if (ft->access) {
+				set_times[0].tv_sec = ft->access / (si8) 1000000;
+				set_times[0].tv_usec = ft->access % (si8) 1000000;
+			}
+			if (ft->modification) {
+				set_times[1].tv_sec = ft->modification / (si8) 1000000;
+				set_times[1].tv_usec = ft->modification % (si8) 1000000;
+			}
+		}
+	}
+	
+	if (fp == NULL) {
+		stat(path, &sb);
+	} else {
+		fd = fileno(fp);
+		fstat(fd, &sb);
+	}
+
+	#ifdef MACOS_m10
+		#ifdef _DARWIN_FEATURE_64_BIT_INODE
+			ft->creation = ((si8) sb.st_birthtimespec.tv_sec * (si8) 1000000) + ((si8) sb.st_birthtimespec.tv_nsec / (si8) 1000);
+		#else
+			ft->creation = ((si8) sb.st_ctimespec.tv_sec * (si8) 1000000) + ((si8) sb.st_ctim.tv_nsec / (si8) 1000);  // time of last status change - may be creation time - not guaranteed
+		#endif
+		ft->access = ((si8) sb.st_atimespec.tv_sec * (si8) 1000000) + ((si8) sb.st_atimespec.tv_nsec / (si8) 1000);
+		ft->modification = ((si8) sb.st_mtimespec.tv_sec * (si8) 1000000) + ((si8) sb.st_mtimespec.tv_nsec / (si8) 1000);
+	#endif
+	#ifdef LINUUX_m10
+		ft->creation = ((si8) sb.st_ctim.tv_sec * (si8) 1000000) + ((si8) sb.st_ctim.tv_nsec / (si8) 1000);  // time of last status change - may be creation time - not guaranteed
+		ft->access = ((si8) sb.st_atim.tv_sec * (si8) 1000000) + ((si8) sb.st_atimespec.tv_nsec / (si8) 1000);
+		ft->modification = ((si8) sb.st_mtim.tv_sec * (si8) 1000000) + ((si8) sb.st_mtimespec.tv_nsec / (si8) 1000);
+	#endif
+
+	// set times: access and modification only
+	if (set_time == TRUE_m10) {
+		if (set_times[0].tv_sec == 0) {
+			set_times[0].tv_sec = ft->access / (si8) 1000000;
+			set_times[0].tv_usec = ft->access % (si8) 1000000;
+		}
+		if (set_times[1].tv_sec == 0) {
+			set_times[1].tv_sec = ft->modification / (si8) 1000000;
+			set_times[1].tv_usec = ft->modification % (si8) 1000000;
+		}
+		utimes(path, set_times);
+	}
+	
+	return(ft);
+#endif  // MACOS_m10 || LINUX_m10
+
+#ifdef WINDOWS_m10
+	si4		fd;
+	HANDLE		file_h;
+	FILETIME	win_create_time, win_access_time, win_modify_time;
+	FILETIME	set_access_time, set_modify_time;
+	SYSTEMTIME 	sys_time;
+	
+	
+	if (set_time == TRUE_m10) {
+		if (ft == NULL) {
+			GetSystemTime(&sys_time);
+			SystemTimeToFileTime(&sys_time, &set_access_time);
+			set_modify_time = set_access_time;
+		}
+		set_access_time = uutc_to_win_time_m10(ft->access);
+		set_modify_time = uutc_to_win_time_m10(ft->modification);
+	}
+
+	
+	if (fp == NULL) {
+		if ((file_h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
+		    warning_message_m10("%s(): CreateFile failed with error %d\n", __FUNCTION__, GetLastError());
+		    return(NULL);
+		}
+	} else {
+		fd = _fileno(fp);
+		if ((file_h = (HANDLE) _get_osfhandle(fd)) == INVALID_HANDLE_VALUE) {
+		    warning_message_m10("%s(): get_osfhandle failed with error %d\n", __FUNCTION__, GetLastError());
+		    return(NULL);
+		}
+	}
+
+	if (!GetFileTime(file_h, &win_create_time, &win_access_time, &win_modify_time)) {
+		warning_message_m10("%s(): GetFileTime failed with error %d\n", __FUNCTION__, GetLastError());
+		return(NULL);
+	}
+	
+	if (ft == NULL)
+		ft = (FILE_TIMES_m10 *) malloc(sizeof(FILE_TIMES_m10));
+
+	ft->creation = win_time_to_uutc_m10(win_create_time);
+	ft->access = win_time_to_uutc_m10(win_access_time);
+	ft->modification = win_time_to_uutc_m10(win_modify_time);
+	
+	if (set_time == TRUE_m10) {
+		if (!SetFileTime(file_h, NULL, &set_access_time, &set_modify_time))
+			warning_message_m10("%s(): SetFileTime failed with error %d\n", __FUNCTION__, GetLastError());
+	}
+
+	if (fp != NULL)
+		_close(fd);
+	else
+		CloseHandle(file_h);
+	
+	return(ft);
+#endif
+}
+
+
 si8	*find_discontinuities_m10(TIME_SERIES_INDEX_m10 *tsi, si8 *num_disconts, si8 number_of_indices, TERN_m10 remove_offsets, TERN_m10 return_sample_numbers)
 {
 	si8	i, j, * disconts;
@@ -2576,7 +2736,7 @@ si1	*find_metadata_file_m10(si1 *path, si1 *md_path)
 		md_path = (si1 *) malloc_m10((size_t) FULL_FILE_NAME_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// find entry level
-	strcpy(md_path, path);
+	path_from_root_m10(path, md_path);
 	code = MED_type_code_from_string_m10(md_path);
 	switch(code) {
 		case SESSION_DIRECTORY_TYPE_CODE_m10:
@@ -2729,7 +2889,7 @@ si1	*find_metadata_file_m10(si1 *path, si1 *md_path)
 		md_path = (si1 *) malloc_m10((size_t) FULL_FILE_NAME_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// find entry level
-	strcpy(md_path, path);
+	path_from_root_m10(path, md_path);
 	code = MED_type_code_from_string_m10(path);
 	switch(code) {
 		case SESSION_DIRECTORY_TYPE_CODE_m10:
@@ -3050,6 +3210,13 @@ void	free_session_m10(SESSION_m10 *session)
 	
 	free((void *) session);
 	
+	// reset current session globals
+	globals_m10->session_UID = UID_NO_ENTRY_m10;
+	globals_m10->session_directory[0] = 0;
+	globals_m10->session_name = NULL;
+	globals_m10->uh_session_name[0] = 0;
+	globals_m10->fs_session_name[0] = 0;
+
 	return;
 }
 
@@ -3107,7 +3274,7 @@ si1	**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	// file list passed:
 	// File_list components are assumed to contain the file name at a minimum (can be regex)
 	// If list components do not have an enclosing directory, and one is passed, it is used.
-	// If list components do not have an enclosing directory, and none is passed, path_from_root() is used.
+	// If list components do not have an enclosing directory, and none is passed, path_from_root_m10() is used.
 	// If list components do not have an extension, and one is passed, it is used.
 	// If list components do not have an extension, and none is passed, none is used.
 	regex = FALSE_m10;
@@ -3140,7 +3307,7 @@ si1	**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	}
 
 	// no file_list passed (+/- enclosing_directory, +/- name, +/- extension, are passed instead)
-	// If no enclosing_directory passed, path_from_root() is used.
+	// If no enclosing_directory passed, path_from_root_m110() is used.
 	// If no name is passed, "*" is used.
 	// If no extension is passed, none is used.
 	else {  // file_list == NULL
@@ -3239,6 +3406,9 @@ si1	**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		}
 	}
 	
+	// sort file list (so results are consistent across operating systems)
+	str_sort_m10(file_list, *n_out_files);
+
 	return(file_list);
 }
 
@@ -3288,11 +3458,9 @@ ui4    generate_MED_path_components_m10(si1 *path, si1 *MED_dir, si1 *MED_name)
 			error_message_m10("%s(): passed file \"%s\" is not a MED file => returning\n", __FUNCTION__, path);
 			return(NO_TYPE_CODE_m10);
 		}
-	}
-	else if (fe == DIR_EXISTS_m10) {
+	} else if (fe == DIR_EXISTS_m10) {
 		strcpy(temp_path, unescaped_path);
-	}
-	else {
+	} else {
 		error_message_m10("%s(): passed path \"%s\" does not exist => returning\n", __FUNCTION__, path);
 		return(NO_TYPE_CODE_m10);
 	}
@@ -3377,9 +3545,7 @@ si8	generate_recording_time_offset_m10(si8 recording_start_time_uutc)
 	offset_utc_time = timegm(&offset_time_info);
 #endif
 #ifdef WINDOWS_m10
-	// no timegm() in Windows - use mktime() & correct to UTC using local system timezone
-	offset_utc_time = _mktime32(&offset_time_info);
-	offset_utc_time -= _timezone;  // current local offset to UTC in seconds
+	offset_utc_time = _mkgmtime(&offset_time_info);
 #endif
 	dst_offset = DST_offset_m10(recording_start_time_uutc);
 	if (dst_offset)  // adjust to standard time if DST in effect
@@ -3403,7 +3569,7 @@ si1	*generate_segment_name_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *segment_nam
 	
 	
 	if (segment_name == NULL)  // if NULL is passed, this will be allocated, but the calling function has the responsibility to free it.
-		segment_name = (si1 *) malloc_m10((size_t)SEGMENT_BASE_FILE_NAME_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		segment_name = (si1 *) malloc_m10((size_t) SEGMENT_BASE_FILE_NAME_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	numerical_fixed_width_string_m10(segment_number_str, FILE_NUMBERING_DIGITS_m10, fps->universal_header->segment_number);
 	
@@ -3662,7 +3828,10 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 }
 
 
-inline ui1	get_cpu_endianness_m10(void)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+ui1	get_cpu_endianness_m10(void)
 {
 	ui2	x = 1;
 	
@@ -3694,7 +3863,7 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 	fp = fopen_m10(globals_m10->temp_file, "r", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// get file length
-	sz = file_length_m10(fp);
+	sz = file_length_m10(fp, NULL);
 	
 	// read output
 	buffer = (si1 *) calloc_m10((size_t)sz, sizeof(si1), __FUNCTION__, __LINE__, EXIT_ON_FAIL_m10);
@@ -3798,7 +3967,7 @@ si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10
 	// copy inputs to local variables (substitute NO_ENTRY for NULL)
 	if (slice == NULL) {
 		error_message_m10("%s(): NULL slice pointer\n", __FUNCTION__);
-		return((si4)FALSE_m10);
+		return((si4) FALSE_m10);
 	}
 	
 	// find index channel
@@ -3879,6 +4048,89 @@ void    get_segment_target_values_m10(SEGMENT_m10 *segment, si8 *target_uutc, si
 	*target_sample_number = target_samp;
 	
 	return;
+}
+
+
+si1	*get_session_directory_m10(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m10 *MED_fps)
+{
+	TERN_m10	set_global_session_name;
+	ui4		code;
+	
+	
+	// if NULL passed for session directory, sets global session directory and session name from file path (not global original file name which comes from universal heder)
+	
+	if (MED_file_name == NULL) {
+		if (MED_fps == NULL)
+			return(NULL);
+		if (*MED_fps->full_file_name)
+			MED_file_name = MED_fps->full_file_name;
+		else
+			return(NULL);
+	}
+	
+	if (session_directory == NULL || session_directory == globals_m10->session_directory) {
+		set_global_session_name = TRUE_m10;
+		session_directory = globals_m10->session_directory;
+	} else {
+		set_global_session_name = FALSE_m10;
+	}
+	
+	memset(session_directory, 0, FULL_FILE_NAME_BYTES_m10);
+	path_from_root_m10(MED_file_name, session_directory);
+	code = MED_type_code_from_string_m10(session_directory);
+
+	switch (code) {
+		case NO_FILE_TYPE_CODE_m10:
+			return(NULL);
+			
+		// up zero levels
+		case SESSION_DIRECTORY_TYPE_CODE_m10:
+			break;
+			
+		// up one level
+		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m10:
+		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m10:
+		case RECORD_DIRECTORY_TYPE_CODE_m10:  // segmented session records is only MED component that uses a diectory - session level
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			break;
+			
+		// up two levels
+		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m10:
+		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m10:
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			break;
+			
+		// up 3 levels
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m10:
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m10:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m10:
+		case VIDEO_METADATA_FILE_TYPE_CODE_m10:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m10:
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			break;
+		
+		// up variable number of levels (recursion - need local storage)
+		case RECORD_DATA_FILE_TYPE_CODE_m10:
+		case RECORD_INDICES_FILE_TYPE_CODE_m10:
+			extract_path_parts_m10(session_directory, session_directory, NULL, NULL);
+			return(get_session_directory_m10(NULL, session_directory, MED_fps));
+	}
+	
+	if (set_global_session_name == TRUE_m10) {
+		extract_path_parts_m10(session_directory, NULL, globals_m10->fs_session_name, NULL);
+		if (MED_fps != NULL) {
+			globals_m10->session_UID = MED_fps->universal_header->session_UID;
+			strcpy(globals_m10->uh_session_name, MED_fps->universal_header->session_name);
+			globals_m10->session_name = globals_m10->uh_session_name;
+		} else {
+			globals_m10->session_name = globals_m10->fs_session_name;
+		}
+	}
+
+	return(session_directory);
 }
 
 
@@ -4184,6 +4436,13 @@ TERN_m10	initialize_globals_m10(void)
 	// password structure
 	memset((void *) &globals_m10->password_data, 0, sizeof(PASSWORD_DATA_m10));
 	
+	// current session constants
+	globals_m10->session_UID = UID_NO_ENTRY_m10;
+	globals_m10->session_directory[0] = 0;
+	globals_m10->session_name = NULL;
+	globals_m10->uh_session_name[0] = 0;
+	globals_m10->fs_session_name[0] = 0;
+
 	// time constants
 	globals_m10->time_constants_set = FALSE_m10;
 	globals_m10->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m10;
@@ -4319,13 +4578,20 @@ TERN_m10	initialize_medlib_m10(TERN_m10 check_structure_alignments, TERN_m10 ini
 	srand((ui4) time(NULL));
 #endif
 	
+	printf_m10("line %d\n", __LINE__);
+#ifdef NEED_WIN_SOCKETS_m10
+	printf_m10("line %d\n", __LINE__);
+#endif
 #if defined WINDOWS_m10 && defined NEED_WIN_SOCKETS_m10
 	// initialize Windows sockets DLL
-	if (win_socket_startup_m10() == FALSE_m10)
+	printf_m10("line %d\n", __LINE__);
+	if (win_socket_startup_m10() == FALSE_m10) {
+		printf_m10("line %d\n", __LINE__);
 		return_value = FALSE_m10;
+	}
 #endif
 	
-#ifdef WINDOWS_m10
+#if defined WINDOWS_m10 && !defined MATLAB_m10
 	// initialize Windows terminal
 	if (win_initialize_terminal_m10() == FALSE_m10)
 		return_value = FALSE_m10;
@@ -5058,7 +5324,12 @@ void    message_m10(si1 *fmt, ...)
 	// uncolored suppressible text to stdout
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m10)) {
 		va_start(args, fmt);
+#if defined MACOS_m10 || defined LINUX_m10
 		UTF8_vprintf_m10(fmt, args);
+#endif
+#ifdef WINDOWS_m10
+		vprintf_m10(fmt, args);
+#endif
 		va_end(args);
 		fflush(stdout);
 	}
@@ -5603,24 +5874,26 @@ CHANNEL_m10	*read_channel_m10(CHANNEL_m10 *chan, si1 *chan_dir, TIME_SLICE_m10 *
 	}
 	
 	// read channel record indices (if present)
-	sprintf_m10(full_file_name, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
-	if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
-		chan->record_indices_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-		// read record data files (if present)
-		sprintf_m10(full_file_name, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m10);
+	if (read_record_data != FALSE_m10) {
+		sprintf_m10(full_file_name, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
 		if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
-			if (read_record_data == TRUE_m10) {
-				chan->record_data_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			chan->record_indices_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			// read record data files (if present)
+			sprintf_m10(full_file_name, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m10);
+			if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
+				if (read_record_data == TRUE_m10) {
+					chan->record_data_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				}
+				else {  // read_record_data == OPEN_ONLY_m10
+					chan->record_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
+					chan->record_data_fps->directives.close_file = FALSE_m10;
+					read_file_m10(chan->record_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				}
+				merge_universal_headers_m10(chan->metadata_fps, chan->record_data_fps, NULL);
 			}
 			else {
-				chan->record_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
-				chan->record_data_fps->directives.close_file = FALSE_m10;
-				read_file_m10(chan->record_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				UTF8_fprintf_m10(stderr, "%s(): Channel record data file (\"%s\") does not exist, but record indices file does", __FUNCTION__, full_file_name);
 			}
-			merge_universal_headers_m10(chan->metadata_fps, chan->record_data_fps, NULL);
-		}
-		else {
-			UTF8_fprintf_m10(stderr, "%s(): Channel record data file (\"%s\") does not exist, but record indices file does", __FUNCTION__, full_file_name);
 		}
 	}
 	
@@ -5668,18 +5941,21 @@ FILE_PROCESSING_STRUCT_m10	*read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *
 		fps = allocate_file_processing_struct_m10(NULL, full_file_name, NO_FILE_TYPE_CODE_m10, 0, NULL, 0);
 		allocated_flag = TRUE_m10;
 	}
-	else if (full_file_name != NULL) {  // passed file name supersedes fps filename, if present
-		if (*full_file_name)
-			strncpy_m10(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m10);
+	else {
+		if (fps->raw_data_bytes < UNIVERSAL_HEADER_BYTES_m10)  // probably b/c unintialized fps passed
+			reallocate_file_processing_struct_m10(fps, UNIVERSAL_HEADER_BYTES_m10);
+		if (full_file_name != NULL)  // passed file name supersedes fps filename, if present
+			if (*full_file_name)
+				strncpy_m10(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m10);
 	}
 	
+	// read universal header
 	uh = fps->universal_header;
 	if (fps->fp == NULL) {
-		// read universal header
 		if (!(fps->directives.open_mode & FPS_GENERIC_READ_OPEN_MODE_m10))
 			fps->directives.open_mode = FPS_R_OPEN_MODE_m10;
 		FPS_open_m10(fps, __FUNCTION__, __LINE__, behavior_on_fail);
-		FPS_read_m10(fps, UNIVERSAL_HEADER_BYTES_m10, (void *)  uh, __FUNCTION__, __LINE__, behavior_on_fail);
+		FPS_read_m10(fps, UNIVERSAL_HEADER_BYTES_m10, (void *) uh, __FUNCTION__, __LINE__, behavior_on_fail);
 		// process password
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m10) {
 			if (fps->password_data->processed == 0) // done below if not returning here
@@ -5688,6 +5964,10 @@ FILE_PROCESSING_STRUCT_m10	*read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *
 		}
 	}
 	
+	// set current session globals
+	if (uh->session_UID != globals_m10->session_UID)
+		get_session_directory_m10(NULL, NULL, fps);  // if NULL passed for session directory & fps is passed, sets current session directory globals
+
 	// get read size
 	full_file_flag = FALSE_m10;
 	if (number_of_items == FPS_FULL_FILE_m10) {
@@ -5716,7 +5996,7 @@ FILE_PROCESSING_STRUCT_m10	*read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *
 	
 	// reallocate raw_data memory space if necessary
 	if (external_array == FALSE_m10) {
-		used_bytes = (si8)data_ptr - (si8)fps->raw_data;
+		used_bytes = (si8) data_ptr - (si8) fps->raw_data;
 		required_bytes = used_bytes + in_bytes;
 		if (fps->raw_data_bytes < required_bytes) {
 			reallocate_file_processing_struct_m10(fps, required_bytes);
@@ -5776,7 +6056,7 @@ FILE_PROCESSING_STRUCT_m10	*read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *
 	// process password
 	if (fps->password_data->processed == 0)						 // if metadata file, hints from section 1 will be added to password
 		process_password_data_m10(password, NULL, NULL, NULL, NULL, NULL, fps);  // data structure, and displayed if the password is invalid
-	
+
 	// Validate CRCs
 	if (globals_m10->CRC_mode & (CRC_VALIDATE_m10 | CRC_VALIDATE_ON_INPUT_m10)) {
 		CRC_validate_m10(fps->raw_data + UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m10, UNIVERSAL_HEADER_BYTES_m10 - UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m10, uh->header_CRC);
@@ -5962,13 +6242,15 @@ SEGMENT_m10	*read_segment_m10(SEGMENT_m10 *seg, si1 *seg_dir, TIME_SLICE_m10 *sl
 	// read segment data
 	switch (code) {
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m10:
-			sprintf_m10(full_file_name, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m10);
-			seg->time_series_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, TIME_SERIES_DATA_FILE_TYPE_CODE_m10, 0, NULL, 0);
-			seg->time_series_data_fps->directives.close_file = FALSE_m10;
-			read_file_m10(seg->time_series_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-			if (read_time_series_data == TRUE_m10) {
-				(void)read_time_series_data_m10(seg, local_start_idx, local_end_idx, TRUE_m10);
-				FPS_close_m10(seg->time_series_data_fps);
+			if (read_time_series_data != FALSE_m10) {  // read_time_series_data == TRUE_m10 || OPEN_ONLY_m10
+				sprintf_m10(full_file_name, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m10);
+				seg->time_series_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, TIME_SERIES_DATA_FILE_TYPE_CODE_m10, 0, NULL, 0);
+				seg->time_series_data_fps->directives.close_file = FALSE_m10;
+				read_file_m10(seg->time_series_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				if (read_time_series_data == TRUE_m10) {
+					(void) read_time_series_data_m10(seg, local_start_idx, local_end_idx, TRUE_m10);
+					FPS_close_m10(seg->time_series_data_fps);
+				}
 			}
 			break;
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m10:
@@ -5978,25 +6260,27 @@ SEGMENT_m10	*read_segment_m10(SEGMENT_m10 *seg, si1 *seg_dir, TIME_SLICE_m10 *sl
 			error_message_m10("%s(): unrecognized type code in file \"%s\"\n", __FUNCTION__, seg->path);
 			return(NULL);
 	}
-	
+
 	// read segment record indices
-	snprintf_m10(full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
-	if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
-		seg->record_indices_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-		// read segment record data
-		snprintf_m10(full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m10);
+	if (read_record_data != FALSE_m10) {
+		snprintf_m10(full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
 		if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
-			if (read_record_data == TRUE_m10) {
-				seg->record_data_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			seg->record_indices_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			// read segment record data
+			snprintf_m10(full_file_name, FULL_FILE_NAME_BYTES_m10, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m10);
+			if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
+				if (read_record_data == TRUE_m10) {
+					seg->record_data_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				}
+				else {  // read_record_data == OPEN_ONLY_m10
+					seg->record_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
+					seg->record_data_fps->directives.close_file = FALSE_m10;
+					read_file_m10(seg->record_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				}
 			}
 			else {
-				seg->record_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
-				seg->record_data_fps->directives.close_file = FALSE_m10;
-				read_file_m10(seg->record_data_fps, full_file_name, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				warning_message_m10("%s(): Segment record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
 			}
-		}
-		else {
-			warning_message_m10("%s(): Segment record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
 		}
 	}
 	
@@ -6141,10 +6425,8 @@ SESSION_m10	*read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, TIME_
 		chan = sess->time_series_channels[0];
 		sess->time_series_metadata_fps = allocate_file_processing_struct_m10(NULL, full_file_name, TIME_SERIES_METADATA_FILE_TYPE_CODE_m10, METADATA_BYTES_m10, chan->metadata_fps, METADATA_BYTES_m10);
 		sess->time_series_metadata_fps->fd = FPS_FD_EPHEMERAL_m10;
-		sess->time_series_metadata_fps->universal_header->number_of_entries = 0;
-		sess->time_series_metadata_fps->universal_header->maximum_entry_size = 0;
-		
-		for (i = 1; i < n_ts_chans; ++i) {
+		strcpy(sess->name, sess->time_series_metadata_fps->universal_header->session_name);  // if path to session is not session name (e.g. a subset), get it here
+		for (i = 0; i < n_ts_chans; ++i) {
 			chan = sess->time_series_channels[i];
 			merge_universal_headers_m10(sess->time_series_metadata_fps, chan->metadata_fps, NULL);
 			merge_metadata_m10(sess->time_series_metadata_fps, chan->metadata_fps, NULL);
@@ -6168,9 +6450,8 @@ SESSION_m10	*read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, TIME_
 		chan = sess->video_channels[0];
 		sess->video_metadata_fps = allocate_file_processing_struct_m10(NULL, full_file_name, VIDEO_METADATA_FILE_TYPE_CODE_m10, METADATA_BYTES_m10, chan->metadata_fps, METADATA_BYTES_m10);
 		sess->video_metadata_fps->fd = FPS_FD_EPHEMERAL_m10;
-		sess->video_metadata_fps->universal_header->number_of_entries = 0;
-		sess->video_metadata_fps->universal_header->maximum_entry_size = 0;
-		for (i = 1; i < n_vid_chans; ++i) {
+		strcpy(sess->name, sess->video_metadata_fps->universal_header->session_name);  // if path to session is not session name (e.g. a subset), get it here
+		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->video_channels[i];
 			merge_universal_headers_m10(sess->video_metadata_fps, chan->metadata_fps, NULL);
 			merge_metadata_m10(sess->video_metadata_fps, chan->metadata_fps, NULL);
@@ -6187,90 +6468,91 @@ SESSION_m10	*read_session_m10(si1 *sess_dir, si1 **chan_list, si4 n_chans, TIME_
 		warning_message_m10("%s(): session contains no segments\n", __FUNCTION__);
 	
 	// read session record indices (if present)
-	sprintf_m10(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
-	if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
-		sess->record_indices_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-		
-		// read record data files (if present)
-		sprintf_m10(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m10);
+	if (read_record_data != FALSE_m10) {
+		sprintf_m10(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
 		if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
-			if (read_record_data == TRUE_m10) {
-				sess->record_data_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			sess->record_indices_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			
+			// read record data files (if present)
+			sprintf_m10(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m10);
+			if (file_exists_m10(full_file_name) == FILE_EXISTS_m10) {
+				if (read_record_data == TRUE_m10) {
+					sess->record_data_fps = read_file_m10(NULL, full_file_name, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				}
+				else {  // read_record_data == OPEN_ONLY_m10
+					sess->record_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
+					sess->record_data_fps->directives.close_file = FALSE_m10;
+					read_file_m10(sess->record_data_fps, NULL, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				}
+				if (n_ts_chans) {
+					merge_universal_headers_m10(sess->time_series_metadata_fps, sess->record_data_fps, NULL);
+				}
+				if (n_vid_chans)
+					merge_universal_headers_m10(sess->video_metadata_fps, sess->record_data_fps, NULL);
 			}
 			else {
-				sess->record_data_fps = allocate_file_processing_struct_m10(NULL, full_file_name, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
-				sess->record_data_fps->directives.close_file = FALSE_m10;
-				read_file_m10(sess->record_data_fps, NULL, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+				warning_message_m10("%s(): Session record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
 			}
-			if (n_ts_chans) {
-				merge_universal_headers_m10(sess->time_series_metadata_fps, sess->record_data_fps, NULL);
-			}
-			if (n_vid_chans)
-				merge_universal_headers_m10(sess->video_metadata_fps, sess->record_data_fps, NULL);
-		}
-		else {
-			warning_message_m10("%s(): Session record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
 		}
 	}
 	
 	// check if segmented session records present
-	sprintf_m10(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10);
-	num_seg_rec_files = 0;
-	seg_rec_file_names = generate_file_list_m10(NULL, &num_seg_rec_files, full_file_name, NULL, RECORD_INDICES_FILE_TYPE_STRING_m10, PP_FULL_PATH_m10, FALSE_m10);
-	if (seg_rec_file_names != NULL)
-		free((void *) *seg_rec_file_names);  // Not using the names, because not every segment must have records,
-	// just seeing if there are ANY segmented session records.
-	// Use indices of segments instead of looping over names.
-	// read segmented session records
-	if (num_seg_rec_files) {
-		sess->segmented_record_indices_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) sess->number_of_segments, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-		sess->segmented_record_data_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) sess->number_of_segments, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-		for (i = 0; i < sess->number_of_segments; ++i) {
-			
-			// read segmented record indices file (if present)
-			gen_fps = sess->segmented_record_indices_fps[i];
-			numerical_fixed_width_string_m10(num_str, FILE_NUMBERING_DIGITS_m10, i + slice->start_segment_number);
-			sprintf_m10(gen_fps->full_file_name, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m10);
-			if (file_exists_m10(gen_fps->full_file_name) == FILE_EXISTS_m10) {
-				allocate_file_processing_struct_m10(gen_fps, NULL, RECORD_INDICES_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
-				read_file_m10(gen_fps, NULL, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-				// read segmented record data file (if present)
-				gen_fps = sess->segmented_record_data_fps[i];
-				sprintf_m10(gen_fps->full_file_name, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m10);
+	if (read_record_data != FALSE_m10) {
+		sprintf_m10(full_file_name, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10);
+		num_seg_rec_files = 0;
+		seg_rec_file_names = generate_file_list_m10(NULL, &num_seg_rec_files, full_file_name, NULL, RECORD_INDICES_FILE_TYPE_STRING_m10, PP_FULL_PATH_m10, FALSE_m10);
+		if (num_seg_rec_files)
+			free((void *) seg_rec_file_names);  // Not using the names, because not every segment must have records,
+		// just seeing if there are ANY segmented session records.
+		// Use indices of segments instead of looping over names.
+		// read segmented session records
+		if (num_seg_rec_files) {
+			sess->segmented_record_indices_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) sess->number_of_segments, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+			sess->segmented_record_data_fps = (FILE_PROCESSING_STRUCT_m10 **) calloc_2D_m10((size_t) sess->number_of_segments, 1, sizeof(FILE_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+			for (i = 0; i < sess->number_of_segments; ++i) {
+				
+				// read segmented record indices file (if present)
+				gen_fps = sess->segmented_record_indices_fps[i];
+				numerical_fixed_width_string_m10(num_str, FILE_NUMBERING_DIGITS_m10, i + slice->start_segment_number);
+				sprintf_m10(gen_fps->full_file_name, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m10);
 				if (file_exists_m10(gen_fps->full_file_name) == FILE_EXISTS_m10) {
-					allocate_file_processing_struct_m10(gen_fps, NULL, RECORD_DATA_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
-					if (read_record_data == TRUE_m10) {
-						read_file_m10(gen_fps, NULL, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+					allocate_file_processing_struct_m10(gen_fps, NULL, RECORD_INDICES_FILE_TYPE_CODE_m10, LARGEST_RECORD_BYTES_m10, NULL, 0);
+					read_file_m10(gen_fps, NULL, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+					// read segmented record data file (if present)
+					gen_fps = sess->segmented_record_data_fps[i];
+					sprintf_m10(gen_fps->full_file_name, "%s/%s.%s/%s_s%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m10, sess->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m10);
+					if (file_exists_m10(gen_fps->full_file_name) == FILE_EXISTS_m10) {
+						if (read_record_data == TRUE_m10) {
+							read_file_m10(gen_fps, NULL, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+						} else {  // read_record_data == OPEN_ONLY_m10
+							gen_fps->directives.close_file = FALSE_m10;
+							read_file_m10(gen_fps, NULL, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+						}
+						if (sess->number_of_time_series_channels)
+							merge_universal_headers_m10(sess->time_series_metadata_fps, gen_fps, NULL);
+						if (sess->number_of_video_channels)
+							merge_universal_headers_m10(sess->video_metadata_fps, gen_fps, NULL);
 					}
 					else {
-						gen_fps->directives.close_file = FALSE_m10;
-						read_file_m10(gen_fps, NULL, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
+						warning_message_m10("%s(): Session segmented record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
 					}
-					if (sess->number_of_time_series_channels) {
-						merge_universal_headers_m10(sess->time_series_metadata_fps, gen_fps, NULL);
-					}
-					if (sess->number_of_video_channels)
-						merge_universal_headers_m10(sess->video_metadata_fps, gen_fps, NULL);
-				}
-				else {
-					warning_message_m10("%s(): Session segmented record data file does not exist (\"%s\"), but indices file does\n", __FUNCTION__, full_file_name);
 				}
 			}
-		}
-		
-		// make links to segment FPS's
-		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
-			chan = sess->time_series_channels[i];
-			for (j = 0; j < sess->number_of_segments; ++j) {
-				chan->segments[j]->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[j];
-				chan->segments[j]->segmented_session_record_data_fps = sess->segmented_record_data_fps[j];
+			
+			// make links to segment FPS's
+			for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+				chan = sess->time_series_channels[i];
+				for (j = 0; j < sess->number_of_segments; ++j) {
+					chan->segments[j]->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[j];
+					chan->segments[j]->segmented_session_record_data_fps = sess->segmented_record_data_fps[j];
+				}
 			}
-		}
-		for (i = 0; i < sess->number_of_video_channels; ++i) {
-			chan = sess->video_channels[i];
-			for (j = 0; j < sess->number_of_segments; ++j) {
-				chan->segments[j]->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[j];
-				chan->segments[j]->segmented_session_record_data_fps = sess->segmented_record_data_fps[j];
+			for (i = 0; i < sess->number_of_video_channels; ++i) {
+				chan = sess->video_channels[i];
+				for (j = 0; j < sess->number_of_segments; ++j) {
+					chan->segments[j]->segmented_session_record_indices_fps = sess->segmented_record_indices_fps[j];
+					chan->segments[j]->segmented_session_record_data_fps = sess->segmented_record_data_fps[j];
+				}
 			}
 		}
 	}
@@ -6462,11 +6744,9 @@ si4	reallocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 n
 	if (new_raw_data_bytes > fps->raw_data_bytes)
 		memset(fps->raw_data + fps->raw_data_bytes, 0, new_raw_data_bytes - fps->raw_data_bytes);
 	fps->raw_data_bytes = new_raw_data_bytes;
-	
-	// reset universal header pointer
-	fps->universal_header = (UNIVERSAL_HEADER_m10 *)fps->raw_data; // all files start with universal header
-	
-	// set appropriate pointers
+		
+	// reset fps pointers
+	fps->universal_header = (UNIVERSAL_HEADER_m10 *) fps->raw_data; // all files start with universal header
 	data_ptr = (void *) (fps->raw_data + UNIVERSAL_HEADER_BYTES_m10);
 	switch (fps->universal_header->type_code) {
 		case NO_TYPE_CODE_m10:
@@ -6482,7 +6762,7 @@ si4	reallocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 n
 			fps->metadata = (METADATA_m10 *) data_ptr;
 			break;
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m10:
-			// CMP_PROCESSING_STRUCT allocation done seperately with CMP_allocate_processing_struct()
+			// CMP_PROCESSING_STRUCT allocation done separately with CMP_allocate_processing_struct()
 			break;
 		case RECORD_DATA_FILE_TYPE_CODE_m10:
 			fps->records = (ui1 *) data_ptr;
@@ -6494,6 +6774,8 @@ si4	reallocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 n
 			error_message_m10("%s(): unrecognized file type code (code == 0x%08x)\n", __FUNCTION__, fps->universal_header->type_code);
 			return(-1);
 	}
+	if (fps->password_data == NULL)
+		fps->password_data = &globals_m10->password_data;
 	
 	return(0);
 }
@@ -6557,7 +6839,10 @@ TERN_m10    recover_passwords_m10(si1 *L3_password, UNIVERSAL_HEADER_m10 *univer
 }
 
 
-inline void	remove_recording_time_offset_m10(si8 *time)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	remove_recording_time_offset_m10(si8 *time)
 {
 	if (*time != UUTC_NO_ENTRY_m10)
 		*time += globals_m10->recording_time_offset;
@@ -6675,6 +6960,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 {
 	ui1                                     search_mode;
 	si1					**seg_list, seg_name[BASE_FILE_NAME_BYTES_m10], tmp_str[FULL_FILE_NAME_BYTES_m10];
+	si1					chan_dir[FULL_FILE_NAME_BYTES_m10], seg_dir[FULL_FILE_NAME_BYTES_m10];
 	si4                                     n_segs, start_seg_idx, end_seg_idx;
 	si8                                     i, items_read, start_seg_start_idx, end_seg_start_idx, absolute_end_sample_number;
 	sf8                                     sampling_frequency;
@@ -6685,9 +6971,11 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 	
 	if (slice == NULL)
 		error_message_m10("%s(): NULL slice pointer\n", __FUNCTION__);
-	else
-		slice->start_segment_number = slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m10;
-	
+
+	slice->start_segment_number = slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m10;
+	if (slice->conditioned == FALSE_m10)
+		condition_time_slice_m10(slice);
+
 	// check for valid limit pair (time takes priority)
 	if (slice->start_time != UUTC_NO_ENTRY_m10 && slice->end_time != UUTC_NO_ENTRY_m10) {
 		search_mode = TIME_SEARCH_m10;
@@ -6702,7 +6990,10 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 	
 	// get segment list
 	n_segs = 0;
-	seg_list = generate_file_list_m10(NULL, &n_segs, MED_dir, "*", "tisd", PP_FULL_PATH_m10, FALSE_m10);
+	find_metadata_file_m10(MED_dir, tmp_str);
+	extract_path_parts_m10(tmp_str, seg_dir, NULL, NULL);
+	extract_path_parts_m10(seg_dir, chan_dir, NULL, NULL);
+	seg_list = generate_file_list_m10(NULL, &n_segs, chan_dir, "*", "tisd", PP_FULL_PATH_m10, FALSE_m10);
 	if (n_segs == 0) {
 		error_message_m10("%s(): Cannot find segment metadata\n", __FUNCTION__);
 		return(FALSE_m10);
@@ -6846,24 +7137,32 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 
 TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 {
-	ui1                             search_mode;
-	si1                             path[FULL_FILE_NAME_BYTES_m10], name[BASE_FILE_NAME_BYTES_m10], tmp_str[FULL_FILE_NAME_BYTES_m10];
-	si1				*passed_channel, **chan_list, num_str[FILE_NUMBERING_DIGITS_m10 + 1];
-	si4                             n_chans;
+	TERN_m10			channel_search, session_search;
+	ui1                             search_mode, *rd;
+	si1                             md_path[FULL_FILE_NAME_BYTES_m10], chan_path[FULL_FILE_NAME_BYTES_m10], sess_path[FULL_FILE_NAME_BYTES_m10], seg_path[FULL_FILE_NAME_BYTES_m10];
+	si1				chan_name[BASE_FILE_NAME_BYTES_m10], sess_name[BASE_FILE_NAME_BYTES_m10], tmp_str[FULL_FILE_NAME_BYTES_m10];
+	si1				*rd_path, *ri_path, num_str[FILE_NUMBERING_DIGITS_m10 + 1];
 	ui4                             type_code;
 	si8                             i, n_recs, items_read, start_seg_start_idx, end_seg_start_idx;
 	sf8                             sampling_frequency;
 	FILE_PROCESSING_STRUCT_m10	*ri_fps, *rd_fps, *md_fps, *tsi_fps;
 	UNIVERSAL_HEADER_m10		*uh;
 	RECORD_INDEX_m10		*ri;
-	REC_Sgmt_v10_m10		*Sgmt;
+	RECORD_HEADER_m10		*rh;
+	REC_Sgmt_v10_m10		*Sgmt, local_Sgmt;
 	
 	
+	// ******************************************************************************************************************** //
+	// This function is a behemoth - apologies.  Designed to be as efficient and flexible as possible, but it's not pretty. //
+	// ******************************************************************************************************************** //
+
 	if (slice == NULL)
 		error_message_m10("%s(): NULL slice pointer\n", __FUNCTION__);
-	else
-		slice->start_segment_number = slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m10;
 	
+	slice->start_segment_number = slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m10;
+	if (slice->conditioned == FALSE_m10)
+		condition_time_slice_m10(slice);
+
 	// check for valid limit pair (time takes priority)
 	if (slice->start_time != UUTC_NO_ENTRY_m10 && slice->end_time != UUTC_NO_ENTRY_m10) {
 		search_mode = TIME_SEARCH_m10;
@@ -6876,169 +7175,295 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 		return(FALSE_m10);
 	}
 	
-	ri_fps = rd_fps = NULL;
-	passed_channel = NULL;
-	
-SEARCH_SEG_TRY_SESSION_m10:
+	ri_fps = rd_fps = md_fps = NULL;
+	channel_search = session_search = FALSE_m10;
+	sampling_frequency = FREQUENCY_NO_ENTRY_m10;
 
-	// open record indices file
-	type_code = generate_MED_path_components_m10(MED_dir, path, name);
-	if (type_code != TIME_SERIES_CHANNEL_TYPE_m10 && type_code != SESSION_DIRECTORY_TYPE_CODE_m10)
-		return(FALSE_m10);
-	sprintf_m10(tmp_str, "%s/%s.%s", path, name, RECORD_INDICES_FILE_TYPE_STRING_m10);
-	if (file_exists_m10(tmp_str) == FILE_EXISTS_m10)
-		ri_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-	if (ri_fps == NULL) {
-		if (type_code == TIME_SERIES_CHANNEL_TYPE_m10) {  // see if there are session Sgmt records
-			extract_path_parts_m10(MED_dir, path, NULL, NULL);
-			passed_channel = MED_dir;
-			MED_dir = path;
-			goto SEARCH_SEG_TRY_SESSION_m10;
+	// find a channel
+	// Channel Sgmt records are generally the most efficient source (session level much more likely to contain additional records types).
+	// And in channel Sgmt records, both time & index should always be filled.
+	// Most efficicient use: pass a channel with channel-level records that contains Sgmt records.
+	type_code = MED_type_code_from_string_m10(MED_dir);
+	if (type_code == TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m10) {
+		strcpy(chan_path, MED_dir);
+		extract_path_parts_m10(chan_path, NULL, chan_name, NULL);  // channel directory
+	}
+	else {  // find a channel
+		find_metadata_file_m10(MED_dir, md_path);  // there is no guarantee which metadata file will be found first by the file system
+		extract_path_parts_m10(md_path, tmp_str, NULL, NULL);  // segment directory
+		extract_path_parts_m10(tmp_str, chan_path, chan_name, NULL);  // channel directory
+	}
+
+	// see if there's a channel level records data file
+	rd_path = tmp_str;
+	sprintf_m10(rd_path, "%s/%s.%s", chan_path, chan_name, RECORD_DATA_FILE_TYPE_STRING_m10);
+	if (file_exists_m10(rd_path) == FILE_EXISTS_m10) {
+		// read record data file to see if it contains Sgmt records
+		rd_fps = read_file_m10(NULL, rd_path, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
+		n_recs = rd_fps->universal_header->number_of_entries;
+		rd = rd_fps->raw_data + UNIVERSAL_HEADER_BYTES_m10;
+		for (i = n_recs; i--; rd += rh->total_record_bytes) {
+			rh = (RECORD_HEADER_m10 *) rd;
+			if (rh->type_code == REC_Sgmt_TYPE_CODE_m10)
+				break;
 		}
-		return(FALSE_m10);
-	}
-	
-	// check for Sgmt records
-	uh = ri_fps->universal_header;
-	n_recs = uh->number_of_entries;
-	ri = ri_fps->record_indices;
-	for (i = 0; i < n_recs; ++i) {
-		if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10)
-			break;
-	}
-	if (i == n_recs) {
-		free_file_processing_struct_m10(ri_fps, FALSE_m10);
-		if (type_code == TIME_SERIES_CHANNEL_TYPE_m10) {  // see if there are session Sgmt records
-			extract_path_parts_m10(MED_dir, path, NULL, NULL);
-			passed_channel = MED_dir;
-			MED_dir = path;
-			goto SEARCH_SEG_TRY_SESSION_m10;
-		}
-		return(FALSE_m10);
-	}
-	
-	// fill in slice session start & end times
-	slice->session_start_time = uh->session_start_time;
-	slice->session_end_time = uh->file_end_time;
-	
-	// open record data file
-	sprintf_m10(tmp_str, "%s/%s.%s", path, name, RECORD_DATA_FILE_TYPE_STRING_m10);
-	if (file_exists_m10(tmp_str) == FILE_EXISTS_m10)
-		rd_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
-	if (rd_fps == NULL) {
-		free_file_processing_struct_m10(ri_fps, FALSE_m10);
-		return(FALSE_m10);
-	}
-	
-	// check records contain index information if needed
-	Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-	if (search_mode == INDEX_SEARCH_m10) {
-		if (Sgmt->absolute_start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m10 || Sgmt->absolute_end_sample_number == SAMPLE_NUMBER_NO_ENTRY_m10) {
-			free_file_processing_struct_m10(ri_fps, FALSE_m10);
+		if (i < 0)
 			free_file_processing_struct_m10(rd_fps, FALSE_m10);
+		else
+			channel_search = TRUE_m10;
+	}
+	
+	// see if there's a session level record indices file
+	if (channel_search == FALSE_m10) {
+		if (globals_m10->session_UID != UID_NO_ENTRY_m10) {
+			strcpy(sess_path, globals_m10->session_directory);
+			strcpy(sess_name, globals_m10->session_name);
+		} else if (type_code == SESSION_DIRECTORY_TYPE_CODE_m10) {
+			strcpy(sess_path, MED_dir);
+			extract_path_parts_m10(sess_path, NULL, sess_name, NULL);
+		} else {
+			extract_path_parts_m10(chan_path, sess_path, NULL, NULL);
+			extract_path_parts_m10(sess_path, NULL, sess_name, NULL);
+		}
+		ri_path = tmp_str;
+		sprintf_m10(ri_path, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m10);
+		if (file_exists_m10(ri_path) == DOES_NOT_EXIST_m10 && globals_m10->session_UID == UID_NO_ENTRY_m10) {  // might be that file system session name differs from records name (e.g. a channel subset)
+			if (*md_path == 0)
+				find_metadata_file_m10(chan_path, md_path);
+			md_fps = read_file_m10(NULL, md_path, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			sampling_frequency = md_fps->metadata->time_series_section_2.sampling_frequency;
+			free_file_processing_struct_m10(md_fps, FALSE_m10);
+			strcpy(sess_name, globals_m10->session_name);
+			sprintf_m10(ri_path, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m10);
+		}
+		if (file_exists_m10(ri_path) == FILE_EXISTS_m10) {
+			// read session-level record indices file to see if it contains Sgmt records
+			ri_fps = read_file_m10(NULL, ri_path, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
+			n_recs = ri_fps->universal_header->number_of_entries;
+			ri = ri_fps->record_indices;
+			for (i = n_recs; i--; ++ri)
+				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10)
+					break;
+			if (i < 0)
+				free_file_processing_struct_m10(ri_fps, FALSE_m10);
+			else
+				session_search = TRUE_m10;
+		}
+	}
+
+	if (channel_search == FALSE_m10 && session_search == FALSE_m10)
+		return(FALSE_m10);
+	
+	// generally small files, often with Sgmt records as their only contents, so just read in records data, & don't use record indices
+	if (channel_search == TRUE_m10) {
+		// fill in slice session start & end times
+		uh = rd_fps->universal_header;
+		slice->session_start_time = uh->session_start_time;
+		slice->session_end_time = uh->file_end_time;
+
+		// find start segment
+		slice->start_segment_number = 0;
+		
+		// NOTE: n_recs, rd, & i were left at first Sgmt record, just need to re-increment i;
+		++i;
+		
+		if (search_mode == TIME_SEARCH_m10) {
+			for (; i--; rd += rh->total_record_bytes) {
+				rh = (RECORD_HEADER_m10 *) rd;
+				if (rh->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					Sgmt = (REC_Sgmt_v10_m10 *) (rd + RECORD_HEADER_BYTES_m10);
+					if (slice->start_time <= Sgmt->end_time) {
+						slice->start_segment_number = Sgmt->segment_number;
+						if (slice->start_time < rh->start_time)
+							slice->start_time = rh->start_time;
+						++i;  // re-increment i, rd stays on this record;
+						break;
+					}
+				}
+			}
+		}
+		else { // search_mode == INDEX_SEARCH_m10
+			for (; i--; rd += rh->total_record_bytes) {
+				rh = (RECORD_HEADER_m10 *) rd;
+				if (rh->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					Sgmt = (REC_Sgmt_v10_m10 *) (rd + RECORD_HEADER_BYTES_m10);
+					if (slice->start_sample_number <= Sgmt->absolute_end_sample_number) {
+						slice->start_segment_number = Sgmt->segment_number;
+						if (slice->start_sample_number < Sgmt->absolute_start_sample_number)
+							slice->start_sample_number = Sgmt->absolute_start_sample_number;
+						++i;  // re-increment i, rd stays on this record;
+						break;
+					}
+				}
+			}
+		}
+		if (i < 0) {
+			free_file_processing_struct_m10(rd_fps, FALSE_m10);
+			error_message_m10("%s(): Start time/index exceeds session limits\n", __FUNCTION__);
 			return(FALSE_m10);
 		}
-	}
-	sampling_frequency = Sgmt->sampling_frequency;
+		start_seg_start_idx = Sgmt->absolute_start_sample_number;
 		
-	// find start segment
-	slice->start_segment_number = 0;
-	if (search_mode == TIME_SEARCH_m10) {
-		for (; i < n_recs; ++i) {
-			if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
-				Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-				if (slice->start_time <= Sgmt->end_time) {
-					slice->start_segment_number = Sgmt->segment_number;
-					if (slice->start_time < ri[i].start_time)
-						slice->start_time = ri[i].start_time;
-					break;
+		// find end segment
+		slice->end_segment_number = 0;
+		if (search_mode == TIME_SEARCH_m10) {
+			for (; i--; rd += rh->total_record_bytes) {
+				rh = (RECORD_HEADER_m10 *) rd;
+				if (rh->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					Sgmt = (REC_Sgmt_v10_m10 *) (rd + RECORD_HEADER_BYTES_m10);
+					if (Sgmt->end_time >= slice->end_time) {
+						slice->end_segment_number = Sgmt->segment_number;
+						break;
+					}
 				}
 			}
 		}
-	}
-	else { // search by index
-		for (; i < n_recs; ++i) {
-			if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
-				Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-				if (slice->start_sample_number <= Sgmt->absolute_end_sample_number) {
-					slice->start_segment_number = Sgmt->segment_number;
-					if (slice->start_sample_number < Sgmt->absolute_start_sample_number)
-						slice->start_sample_number = Sgmt->absolute_start_sample_number;
-					break;
+		else {  // search_mode == INDEX_SEARCH_m10
+			for (; i--; rd += rh->total_record_bytes) {
+				rh = (RECORD_HEADER_m10 *) rd;
+				if (rh->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					Sgmt = (REC_Sgmt_v10_m10 *) (rd + RECORD_HEADER_BYTES_m10);
+					if (Sgmt->absolute_end_sample_number >= slice->end_sample_number) {
+						slice->end_segment_number = Sgmt->segment_number;
+						break;
+					}
 				}
 			}
 		}
+		if (i < 0) {
+			slice->end_segment_number = Sgmt->segment_number;
+			slice->end_time = Sgmt->end_time;
+			slice->end_sample_number = Sgmt->absolute_end_sample_number;
+		}
+		end_seg_start_idx = Sgmt->absolute_start_sample_number;
 	}
-	if (i == n_recs) {
-		free_file_processing_struct_m10(ri_fps, FALSE_m10);
-		free_file_processing_struct_m10(rd_fps, FALSE_m10);
-		error_message_m10("%s(): Start time/index exceeds session limits\n", __FUNCTION__);
-		return(FALSE_m10);
-	}
-	start_seg_start_idx = Sgmt->absolute_start_sample_number;
-	
-	// find end segment
-	slice->end_segment_number = 0;
-	if (search_mode == TIME_SEARCH_m10) {
-		for (; i < n_recs; ++i) {
-			if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
-				Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-				if (Sgmt->end_time >= slice->end_time) {
-					slice->end_segment_number = Sgmt->segment_number;
-					break;
+		
+	// potentially very large files with lots of records - use record indices to fseek to Sgmt records in record data file
+	if (session_search == TRUE_m10) {
+		// fill in slice session start & end times
+		uh = ri_fps->universal_header;
+		slice->session_start_time = uh->session_start_time;
+		slice->session_end_time = uh->file_end_time;
+
+		// open records data file (record indices file already open)
+		rd_path = tmp_str;
+		sprintf_m10(rd_path, "%s/%s.%s", sess_path, sess_name, RECORD_DATA_FILE_TYPE_STRING_m10);
+		rd_fps = read_file_m10(NULL, tmp_str, FPS_UNIVERSAL_HEADER_ONLY_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);  // this file can be laarge, use fseek to read just Sgmt records
+		if (rd_fps == NULL) {
+			free_file_processing_struct_m10(ri_fps, FALSE_m10);
+			return(FALSE_m10);
+		}
+
+		// NOTE: n_recs, ri, & i were left at first Sgmt record, just need to re-increment i;
+		++i;
+
+		// check records contain index information if needed
+		Sgmt = &local_Sgmt;
+		if (search_mode == INDEX_SEARCH_m10) {
+			fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+			fread_m10((void *) Sgmt, sizeof(REC_Sgmt_v10_m10), (size_t) 1, rd_fps->fp, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+			if (Sgmt->absolute_start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m10 || Sgmt->absolute_end_sample_number == SAMPLE_NUMBER_NO_ENTRY_m10) {
+				free_file_processing_struct_m10(ri_fps, FALSE_m10);
+				free_file_processing_struct_m10(rd_fps, FALSE_m10);
+				return(FALSE_m10);
+			}
+		}
+		
+		// find start segment
+		if (search_mode == TIME_SEARCH_m10) {
+			for (; i--; ++ri) {
+				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					fread_m10((void *) Sgmt, sizeof(REC_Sgmt_v10_m10), (size_t) 1, rd_fps->fp, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					if (slice->start_time <= Sgmt->end_time) {
+						slice->start_segment_number = Sgmt->segment_number;
+						if (slice->start_time < rh->start_time)
+							slice->start_time = rh->start_time;
+						++i;  // re-increment i, ri stays on this record;
+						break;
+					}
 				}
 			}
 		}
-	}
-	else {  // search by index
-		for (; i < n_recs; ++i) {
-			if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
-				Sgmt = (REC_Sgmt_v10_m10 *) (rd_fps->raw_data + ri[i].file_offset + RECORD_HEADER_BYTES_m10);
-				if (Sgmt->absolute_end_sample_number >= slice->end_sample_number) {
-					slice->end_segment_number = Sgmt->segment_number;
-					break;
+		else { // search_mode == INDEX_SEARCH_m10
+			for (; i--; ++ri) {
+				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					fread_m10((void *) Sgmt, sizeof(REC_Sgmt_v10_m10), (size_t) 1, rd_fps->fp, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					if (slice->start_sample_number <= Sgmt->absolute_end_sample_number) {
+						slice->start_segment_number = Sgmt->segment_number;
+						if (slice->start_sample_number < Sgmt->absolute_start_sample_number)
+							slice->start_sample_number = Sgmt->absolute_start_sample_number;
+						++i;  // re-increment i, ri stays on this record;
+						break;
+					}
 				}
 			}
 		}
+		if (i < 0) {
+			free_file_processing_struct_m10(ri_fps, FALSE_m10);
+			free_file_processing_struct_m10(rd_fps, FALSE_m10);
+			error_message_m10("%s(): Start time/index exceeds session limits\n", __FUNCTION__);
+			return(FALSE_m10);
+		}
+		start_seg_start_idx = Sgmt->absolute_start_sample_number;
+		
+		// find end segment
+		slice->end_segment_number = 0;
+		if (search_mode == TIME_SEARCH_m10) {
+			for (; i--; ++ri) {
+				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					fread_m10((void *) Sgmt, sizeof(REC_Sgmt_v10_m10), (size_t) 1, rd_fps->fp, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					Sgmt = (REC_Sgmt_v10_m10 *) (rd + RECORD_HEADER_BYTES_m10);
+					if (Sgmt->end_time >= slice->end_time) {
+						slice->end_segment_number = Sgmt->segment_number;
+						break;
+					}
+				}
+			}
+		}
+		else {  // search_mode == INDEX_SEARCH_m10
+			for (; i--; ++ri) {
+				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10) {
+					fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					fread_m10((void *) Sgmt, sizeof(REC_Sgmt_v10_m10), (size_t) 1, rd_fps->fp, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+					if (Sgmt->absolute_end_sample_number >= slice->end_sample_number) {
+						slice->end_segment_number = Sgmt->segment_number;
+						break;
+					}
+				}
+			}
+		}
+		if (i < 0) {
+			slice->end_segment_number = Sgmt->segment_number;
+			slice->end_time = Sgmt->end_time;
+			slice->end_sample_number = Sgmt->absolute_end_sample_number;
+		}
+		end_seg_start_idx = Sgmt->absolute_start_sample_number;
 	}
-	if (i == n_recs) {
-		slice->end_segment_number = Sgmt->segment_number;
-		slice->end_time = Sgmt->end_time;
-		slice->end_sample_number = Sgmt->absolute_end_sample_number;
-	}
-	end_seg_start_idx = Sgmt->absolute_start_sample_number;
-	
-	
+	if (sampling_frequency == FREQUENCY_NO_ENTRY_m10)
+		sampling_frequency = Sgmt->sampling_frequency;
+
 	// ********************************************** //
 	// ***********  fill in other limits  *********** //
 	// ********************************************** //
 	
-	if (type_code == SESSION_DIRECTORY_TYPE_CODE_m10) {
-		chan_list = NULL;
-		if (passed_channel == NULL) {
-			n_chans = 0;
-			chan_list = generate_file_list_m10(NULL, &n_chans, path, "*", "ticd", PP_FULL_PATH_m10, FALSE_m10);
-			if (n_chans == 0) {
-				warning_message_m10("%s(): Cannot fill in all limits\n");
-				return(TRUE_m10);
-			}
-			passed_channel = chan_list[0];
-		}
-		generate_MED_path_components_m10(passed_channel, path, name);
-		if (chan_list != NULL)
-			free((void *) *chan_list);
-	}
+	if (*slice->sample_number_reference_channel_name == 0)
+		strcpy(slice->sample_number_reference_channel_name, chan_name);
 	
 	numerical_fixed_width_string_m10(num_str, FILE_NUMBERING_DIGITS_m10, slice->start_segment_number);
+	sprintf_m10(seg_path, "%s/%s_s%s.%s/%s_s%s", chan_path, chan_name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m10, chan_name, num_str);
+	
 	if (sampling_frequency == FREQUENCY_VARIABLE_m10 || sampling_frequency == FREQUENCY_NO_ENTRY_m10) {
-		sprintf_m10(tmp_str, "%s/%s_s%s.%s/%s_s%s.%s", path, name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m10, name, num_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m10);
+		sprintf_m10(tmp_str, "%s.%s", seg_path, TIME_SERIES_METADATA_FILE_TYPE_STRING_m10);
 		md_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
 		sampling_frequency = md_fps->metadata->time_series_section_2.sampling_frequency;
 		free_file_processing_struct_m10(md_fps, FALSE_m10);
 	}
 	
 	// get start segment limits
-	sprintf_m10(tmp_str, "%s/%s_s%s.%s/%s_s%s.%s", path, name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m10, name, num_str, TIME_SERIES_INDICES_FILE_TYPE_STRING_m10);
+	sprintf_m10(tmp_str, "%s.%s", seg_path, TIME_SERIES_INDICES_FILE_TYPE_STRING_m10);
 	tsi_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
 	if (search_mode == TIME_SEARCH_m10)
 		slice->start_sample_number = sample_number_for_uutc_m10(start_seg_start_idx, UUTC_NO_ENTRY_m10, slice->start_time, sampling_frequency, tsi_fps, FIND_CURRENT_m10);
@@ -7049,7 +7474,7 @@ SEARCH_SEG_TRY_SESSION_m10:
 	if (slice->end_segment_number != slice->start_segment_number) {
 		free_file_processing_struct_m10(tsi_fps, FALSE_m10);
 		numerical_fixed_width_string_m10(num_str, FILE_NUMBERING_DIGITS_m10, slice->end_segment_number);
-		sprintf_m10(tmp_str, "%s/%s_s%s.%s/%s_s%s.%s", path, name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m10, name, num_str, TIME_SERIES_INDICES_FILE_TYPE_STRING_m10);
+		sprintf_m10(tmp_str, "%s.%s", seg_path, TIME_SERIES_INDICES_FILE_TYPE_STRING_m10);
 		tsi_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, NULL, NULL, USE_GLOBAL_BEHAVIOR_m10);
 	}
 	if (search_mode == TIME_SEARCH_m10)
@@ -7059,7 +7484,7 @@ SEARCH_SEG_TRY_SESSION_m10:
 	free_file_processing_struct_m10(tsi_fps, FALSE_m10);
 	
 	slice->number_of_samples = (slice->end_sample_number - slice->start_sample_number) + 1;
-	
+
 	return(TRUE_m10);
 }
 
@@ -7314,24 +7739,22 @@ SET_GTC_TIMEZONE_MATCH_m10:
 }
 
 
-TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *section_2_encryption_level, si1 *section_3_encryption_level)
+TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level)
 {
-	si1                             MED_dir_copy[FULL_FILE_NAME_BYTES_m10], metadata_file[FULL_FILE_NAME_BYTES_m10];
+	si1                             metadata_file[FULL_FILE_NAME_BYTES_m10];
 	si8                             items_read;
 	FILE_PROCESSING_STRUCT_m10	*metadata_fps;
 	METADATA_SECTION_1_m10		*md1;
 	
-	
-	// copy directory name to modify if not fromm root
-	path_from_root_m10(MED_directory, MED_dir_copy);
-		
+			
 	// find a MED metadata file
-	if (find_metadata_file_m10(MED_dir_copy, metadata_file) == NULL) {
+	if (find_metadata_file_m10(MED_directory, metadata_file) == NULL) {
 		error_message_m10("%s(): \"%s\" does not contain any metadata files\n", __FUNCTION__, MED_directory);
 		return(FALSE_m10);
 	}
 	
-	// read in metadata file (will process password, decrypt metadata and set global time constants)
+	// read_file_m10() will process password and set current session directory globals
+	// decrypt_metadata_m10() will set global time constants, from section 3
 	globals_m10->password_data.processed = 0;  // not ternary FALSE_m10 (so when structure is zeroed it is marked as not processed)
 	metadata_fps = read_file_m10(NULL, metadata_file, 1, NULL, &items_read, unspecified_password, RETURN_ON_FAIL_m10);
 	if (metadata_fps == NULL)
@@ -7340,10 +7763,10 @@ TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_dire
 	
 	// return metadata encryption level info
 	md1 = &metadata_fps->metadata->section_1;
-	if (section_2_encryption_level != NULL)
-		*section_2_encryption_level = md1->section_2_encryption_level;
-	if (section_3_encryption_level != NULL)
-		*section_3_encryption_level = md1->section_3_encryption_level;
+	if (metadata_section_2_encryption_level != NULL)
+		*metadata_section_2_encryption_level = md1->section_2_encryption_level;
+	if (metadata_section_3_encryption_level != NULL)
+		*metadata_section_3_encryption_level = md1->section_3_encryption_level;
 	
 	// clean up
 	free_file_processing_struct_m10(metadata_fps, FALSE_m10);
@@ -7357,10 +7780,8 @@ void    show_daylight_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 * code, si1 
 	static si1	*relative_days[7] = { "", "First", "Second", "Third", "Fourth", "Fifth", "Last"};
 	static si1	*weekdays[8] = { "", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 	static si1	*months[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
-	static si1	*mday_num_sufs[32] = { "", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
-		"th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st" };
-
-	
+	static si1	*mday_num_sufs[32] = { 	"", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
+						"th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st" };
 	if (prefix == NULL)
 		prefix = "";
 	printf_m10("%sStructure Content:\n", prefix);
@@ -7472,6 +7893,39 @@ void	show_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 }
 
 
+void	show_file_times_m10(FILE_TIMES_m10 *ft)
+{
+	si1	time_str[TIME_STRING_BYTES_m10];
+	
+	
+	printf_m10("Creation Time: ");
+	if (ft->creation == UUTC_NO_ENTRY_m10) {
+		printf_m10("no entry\n");
+	} else {
+		time_string_m10(ft->creation, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
+		printf_m10("%ld (oUTC), %s\n", ft->creation, time_str);
+	}
+	
+	printf_m10("Access Time: ");
+	if (ft->access == UUTC_NO_ENTRY_m10) {
+		printf_m10("no entry\n");
+	} else {
+		time_string_m10(ft->access, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
+		printf_m10("%ld (oUTC), %s\n", ft->access, time_str);
+	}
+
+	printf_m10("Modification Time: ");
+	if (ft->creation == UUTC_NO_ENTRY_m10) {
+		printf_m10("no entry\n");
+	} else {
+		time_string_m10(ft->modification, time_str, TRUE_m10, FALSE_m10, FALSE_m10);
+		printf_m10("%ld (oUTC), %s\n", ft->modification, time_str);
+	}
+
+	return;
+}
+
+
 void    show_globals_m10(void)
 {
 	si1     hex_str[HEX_STRING_BYTES_m10(8)];
@@ -7479,6 +7933,18 @@ void    show_globals_m10(void)
 	
 	printf_m10("MED Globals\n");
 	printf_m10("-----------\n\n");
+	
+	printf_m10("Current Session\n");
+	printf_m10("---------------\n");
+	printf_m10("session_UID: %ld\n", globals_m10->session_UID);
+	printf_m10("session_directory: %s\n", globals_m10->session_directory);  // path including file system session directory name
+	if (globals_m10->session_name == NULL)
+		printf_m10("session_name: NULL\n");
+	else
+		printf_m10("session_name: %s\n", globals_m10->session_name);
+	printf_m10("uh_session_name: %s\n", globals_m10->uh_session_name);  // from universal headers
+	printf_m10("fs_session_name: %s\n\n", globals_m10->fs_session_name);  // from file system
+
 	printf_m10("Time Constants\n");
 	printf_m10("--------------\n");
 	// time_constants_set, RTO_known
@@ -7494,7 +7960,8 @@ void    show_globals_m10(void)
 	generate_hex_string_m10((ui1 *)&globals_m10->daylight_time_start_code.value, 8, hex_str);
 	printf_m10("daylight_time_start_code: %s\n", hex_str);
 	generate_hex_string_m10((ui1 *)&globals_m10->daylight_time_end_code.value, 8, hex_str);
-	printf_m10("daylight_time_end_code: %s\n", hex_str);
+	printf_m10("daylight_time_end_code: %s\n\n", hex_str);
+	
 	printf_m10("Alignment Fields\n");
 	printf_m10("----------------\n");
 	printf_m10("universal_header_aligned: %hhd\n", globals_m10->universal_header_aligned);
@@ -7510,11 +7977,12 @@ void    show_globals_m10(void)
 	printf_m10("record_indices_aligned: %hhd\n", globals_m10->record_indices_aligned);
 	printf_m10("all_record_structures_aligned: %hhd\n", globals_m10->all_record_structures_aligned);
 	printf_m10("all_structures_aligned: %hhd\n\n", globals_m10->all_structures_aligned);
+	
 	printf_m10("Miscellaneous\n");
 	printf_m10("-------------\n");
 	printf_m10("CRC_mode: %u\n", globals_m10->CRC_mode);
 	printf_m10("verbose: %hhd\n", globals_m10->verbose);
-	printf_m10("behavior_on_fail: %u\n", globals_m10->behavior_on_fail);
+	printf_m10("behavior_on_fail: %u\n\n", globals_m10->behavior_on_fail);
 	
 	return;
 }
@@ -8291,15 +8759,67 @@ void	show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER
 }
 
 
-void	sort_fps_array_m10(FILE_PROCESSING_STRUCT_m10 **fps_array, si4 n_fps)
+si4	str_compare_m10(const void *a, const void *b)
 {
-	qsort((void *) fps_array, (size_t) n_fps, sizeof(FILE_PROCESSING_STRUCT_m10 *), compare_fps_start_times_m10);
+	si1		*ap, *bp, ac, bc;
+	
+	
+	// Sorting Rules:
+	// ascii only
+	// case insensitive, but in case of equivalence lower case precedes upper case (e.g. "abc.txt" before "Abc.txt"
+	//  "." before <space> (e.g. "RawData.nrd" before "RawData 0001.nrd"
+	
+	ac = *(ap = *((si1 **) a));
+	bc = *(bp = *((si1 **) b));
 
-	return;
+	while (ac && bc) {
+		
+		// letters
+		if (ac >= 'A' && ac <= 'Z') {
+			ac += ('a' - 'A');  // "promote" to lower case, so "_" precedes letters
+		}
+		if (bc >= 'A' && bc <= 'Z')
+			bc += ('a' - 'A');  // "promote" to lower case, so "_" precedes letters
+		
+		// equal - go to next character
+		if (ac == bc) {
+			ac = *++ap;
+			bc = *++bp;
+			continue;
+		}
+		
+		// change ascii <space> before "." to "." before <space>
+		if (ac == 0x20 || bc == 0x20) {  // a or b is a space, not both (0x20 == <space>)
+			if (bc == '.')
+				return(1);
+			if (ac == '.')
+				return(-1);
+		}
+		
+		return((si4) ac - (si4) bc);
+	}
+	
+	if (ac)  // b longer than a
+		return(1);
+	if (bc)  // a longer than b
+		return(-1);
+	
+	// case-insensitive equal strings - sort by case
+	--ap; --bp;
+	while (*++ap && *++bp) {
+		if (*ap != *bp)  // first case difference
+			return((si4) *bp - (si4) *ap);  // lower before upper case
+	}
+	
+	// identical strings
+	return(0);
 }
 
 
-inline TERN_m10	str_contains_regex_m10(si1 *string)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m10	str_contains_regex_m10(si1 *string)
 {
 	si1	c;
 	
@@ -8425,7 +8945,10 @@ si1	*str_match_start_m10(si1 *pattern, si1 *buffer)
 }
 
 
-inline void    str_replace_char_m10(si1 c, si1 new_c, si1 *buffer)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void    str_replace_char_m10(si1 c, si1 new_c, si1 *buffer)
 {
 	// Note: does not handle UTF8 chars
 	// Done in place
@@ -8498,6 +9021,20 @@ si1	*str_replace_pattern_m10(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 }
 
 
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	str_sort_m10(si1 **string_array, si8 n_strings)
+{
+	// input must be 2D string array, such as allocated by calloc_2D_m10()
+	// sorts the pointers, does not move the strings
+	
+	qsort((void *) string_array, (size_t) n_strings, sizeof(si1 *), str_compare_m10);
+	
+	return;
+}
+
+
 void    strip_character_m10(si1 *s, si1 character)
 {
 	si1	*c1, *c2;
@@ -8521,7 +9058,7 @@ void	strtolower_m10(si1 *s)
 {
 	--s;
 	while (*++s) {
-		if (*s > 40 && *s < 91)
+		if (*s > 64 && *s < 91)
 			*s += 32;
 	}
 	
@@ -8690,7 +9227,7 @@ si1	*time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10 rel
 		offset = FALSE_m10;
 	}
 	else {
-		offset = TRUE_m10;
+		relative_days = offset = TRUE_m10;  // force relative days if using oUTC - nobody needs to know the 1970 date
 	}
 	DST_offset = DST_offset_m10(uutc);
 	
@@ -8949,6 +9486,23 @@ si8     uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 targ
 }
 
 
+#ifdef WINDOWS_m10
+FILETIME	uutc_to_win_time_m10(si8 uutc)
+{
+	FILETIME ft;
+	
+	
+	uutc += WIN_USECS_TO_EPOCH_m10;
+	uutc *= WIN_TICKS_PER_USEC_m10;
+	
+	ft.dwLowDateTime = (ui4) ((ui8) uutc & 0x00000000ffffffff);
+	ft.dwHighDateTime = (ui4) ((ui8) uutc >> 32);
+	
+	return(ft);
+}
+#endif
+
+
 TERN_m10        validate_record_data_CRCs_m10(RECORD_HEADER_m10 *record_header, si8 number_of_items)
 {
 	TERN_m10        valid;
@@ -8998,7 +9552,12 @@ void    warning_message_m10(si1 *fmt, ...)
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m10)) {
 		fprintf_m10(stderr, TC_GREEN_m10);
 		va_start(args, fmt);
+#if defined MACOS_m10 || defined LINUX_m10
 		UTF8_vfprintf_m10(stderr, fmt, args);
+#endif
+#ifdef WINDOWS_m10
+		vfprintf_m10(stderr, fmt, args);
+#endif
 		va_end(args);
 		fprintf_m10(stderr, TC_RESET_m10);
 		fflush(stderr);
@@ -9009,7 +9568,10 @@ void    warning_message_m10(si1 *fmt, ...)
 
 
 
-inline si1	*wchar2char_m10(si1 *target, wchar_t *source)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si1	*wchar2char_m10(si1 *target, wchar_t *source)
 {
 	si1	*c, *c2;
 	si8	len, wsz;
@@ -9037,7 +9599,9 @@ void    win_cleanup_m10(void)
 		WSACleanup();
 	#endif
 	
-	win_reset_terminal_m10();
+	#ifndef MATLAB_m10
+		win_reset_terminal_m10();
+	#endif
 #endif
 	return;
 }
@@ -9139,7 +9703,7 @@ si4    win_ls_1d_to_tmp_m10(si1 **dir_strs, si4 n_dirs, TERN_m10 full_path)  // 
 	}
 	
 	fclose(fp);
-	
+		
 	if (find_h == INVALID_HANDLE_VALUE && n_files == 0)
 		return(-1);
 	
@@ -9197,7 +9761,10 @@ TERN_m10	win_socket_startup_m10(void)
 }
 
 
-inline si4	win_system_m10(si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	win_system_m10(si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
 {
 #ifdef WINDOWS_m10
 	si1			*tmp_command;
@@ -9237,7 +9804,25 @@ inline si4	win_system_m10(si1 *command)  // Windows has a system() function whic
 }
 
 
-inline void windify_file_paths_m10(si1 *target, si1 *source)
+#ifdef WINDOWS_m10
+si8	win_time_to_uutc_m10(FILETIME win_time)
+{
+	si8	uutc, leftovers;
+	
+	
+	// A Windows time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
+	uutc = ((si8) win_time.dwHighDateTime << 32) + (si8) win_time.dwLowDateTime;
+	leftovers = uutc % (si8) WIN_TICKS_PER_USEC_m10;
+	leftovers = ((2 * leftovers) + WIN_TICKS_PER_USEC_m10) / (2 * WIN_TICKS_PER_USEC_m10);
+	uutc /= (si8) WIN_TICKS_PER_USEC_m10;
+	uutc -= (WIN_USECS_TO_EPOCH_m10 - leftovers);
+	
+	return(uutc);
+}
+#endif
+
+
+void	windify_file_paths_m10(si1 *target, si1 *source)
 {
 	TERN_m10	match_made = FALSE_m10;
 	si1		*c1, *c2;
@@ -9285,7 +9870,7 @@ inline void windify_file_paths_m10(si1 *target, si1 *source)
 }
 
 
-inline si1	*windify_format_string_m10(si1 *fmt)
+si1	*windify_format_string_m10(si1 *fmt)
 {
 #ifdef WINDOWS_m10
 	// changes ld, li, lo, lu, lx, lX to "ll" versions of the same
@@ -9382,8 +9967,12 @@ si8     write_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui8 number_of_items, voi
 	if (data_ptr == NULL)
 		data_ptr = (void *) (fps->raw_data + UNIVERSAL_HEADER_BYTES_m10);
 	
-	out_bytes = 0;
+	// set current session globals
 	uh = fps->universal_header;
+	if (uh->session_UID != globals_m10->session_UID)
+		get_session_directory_m10(NULL, NULL, fps);  // if NULL passed for session directory & fps is passed, sets current session directory globals
+	
+	out_bytes = 0;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m10) {
 		fseek_m10(fps->fp, 0, SEEK_SET, fps->full_file_name, __FUNCTION__, __LINE__, EXIT_ON_FAIL_m10);
 		out_bytes = UNIVERSAL_HEADER_BYTES_m10;
@@ -9778,7 +10367,10 @@ void	AES_cipher_m10(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 }
 
 
-inline si4	AES_get_sbox_invert_m10(si4 num)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	AES_get_sbox_invert_m10(si4 num)
 {
 	if (globals_m10->AES_rsbox_table == NULL)
 		if (AES_initialize_tables_m10() == FALSE_m10) {
@@ -9790,7 +10382,10 @@ inline si4	AES_get_sbox_invert_m10(si4 num)
 }
 
 
-inline si4	AES_get_sbox_value_m10(si4 num)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	AES_get_sbox_value_m10(si4 num)
 {
 	if (globals_m10->AES_sbox_table == NULL)
 		if (AES_initialize_tables_m10() == FALSE_m10) {
@@ -10168,7 +10763,10 @@ CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STR
 }
 
 
-inline sf8      CMP_calculate_mean_residual_ratio_m10(si4 *original_data, si4 *lossy_data, ui4 n_samps)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+sf8      CMP_calculate_mean_residual_ratio_m10(si4 *original_data, si4 *lossy_data, ui4 n_samps)
 {
 	sf8        sum, mrr, diff, r;
 	si8        i;
@@ -10419,7 +11017,10 @@ TERN_m10     CMP_check_CPS_allocation_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 }
 
 
-inline void	CMP_cps_mutex_off_m10(CMP_PROCESSING_STRUCT_m10 *cps)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+ void	CMP_cps_mutex_off_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 {
 	cps->mutex = FALSE_m10;
 	
@@ -10427,7 +11028,10 @@ inline void	CMP_cps_mutex_off_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 }
 
 
-inline void	CMP_cps_mutex_on_m10(CMP_PROCESSING_STRUCT_m10 *cps)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	CMP_cps_mutex_on_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 {
 	while (cps->mutex == TRUE_m10);
 	cps->mutex = TRUE_m10;
@@ -11441,7 +12045,7 @@ void    CMP_PRED_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	ui1	*goal_bound_high_byte_p, prev_cat;
 	ui1	*symbol_map[CMP_PRED_CATS_m10], *symbols, *model;
 	si1	*si1_p1, *si1_p2, *diff_p;
-	ui2	*bin_counts, n_derivs, *stats_entries, *count[CMP_PRED_CATS_m10];
+	ui2	*bin_counts, *stats_entries, *count[CMP_PRED_CATS_m10];
 	ui4	n_diffs, total_stats_entries;
 	si4	*si4_p, current_val, init_val;
 	ui8	**minimum_range, **cumulative_count;
@@ -11455,7 +12059,7 @@ void    CMP_PRED_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	model = (ui1 *)block_header + block_header->total_header_bytes - block_header->model_region_bytes;
 	init_val = *((si4 *) (model + CMP_PRED_MODEL_INITIAL_SAMPLE_VALUE_OFFSET_m10));
 	n_diffs = *((ui4 *) (model + CMP_PRED_MODEL_DIFFERENCE_BYTES_OFFSET_m10));
-	n_derivs = *((ui2 *) (model + CMP_PRED_MODEL_DERIVATIVE_LEVEL_OFFSET_m10));
+	// n_derivs = *((ui2 *) (model + CMP_PRED_MODEL_DERIVATIVE_LEVEL_OFFSET_m10));
 	stats_entries = (ui2 *) (model + CMP_PRED_MODEL_NUMBERS_OF_STATISTICS_BINS_OFFSET_m10);
 	for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m10; ++i)
 		total_stats_entries += stats_entries[i];
@@ -11901,7 +12505,7 @@ void    CMP_RED_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	ui1	*goal_bound_high_byte_p, prev_cat;
 	ui1	*symbol_map[CMP_PRED_CATS_m10], *symbols, *model;
 	si1	*si1_p1, *si1_p2, *diff_p;
-	ui2	*bin_counts, n_derivs, *stats_entries, *count[CMP_PRED_CATS_m10];
+	ui2	*bin_counts, *stats_entries, *count[CMP_PRED_CATS_m10];
 	ui4	n_diffs, total_stats_entries;
 	si4	*si4_p, current_val, init_val;
 	ui8	*minimum_range[CMP_PRED_CATS_m10], *cumulative_count[CMP_PRED_CATS_m10], *ccs, *mrs;
@@ -11915,7 +12519,7 @@ void    CMP_RED_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	model = (ui1 *) block_header + block_header->total_header_bytes - block_header->model_region_bytes;
 	init_val = *((si4 *) (model + CMP_RED_MODEL_INITIAL_SAMPLE_VALUE_OFFSET_m10));
 	n_diffs = *((ui4 *) (model + CMP_RED_MODEL_DIFFERENCE_BYTES_OFFSET_m10));
-	n_derivs = *((ui2 *) (model + CMP_RED_MODEL_DERIVATIVE_LEVEL_OFFSET_m10));
+	// n_derivs = *((ui2 *) (model + CMP_RED_MODEL_DERIVATIVE_LEVEL_OFFSET_m10));
 	if (block_header->number_of_samples == 0)  // if no samples, just return
 		return;
 	stats_entries = (ui2 *) (model + CMP_RED_MODEL_NUMBER_OF_STATISTICS_BINS_OFFSET_m10);
@@ -12267,7 +12871,10 @@ void    CMP_retrend_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 m, s
 }
 
 
-inline si4      CMP_round_m10(sf8 val)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4      CMP_round_m10(sf8 val)
 {
 	if (isnan(val))
 		return(NAN_m10);
@@ -12559,7 +13166,10 @@ void    CMP_unscale_frequency_m10(si4 *input_buffer, si4 *output_buffer, si8 len
 }
 
 
-inline CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m10 *cps, ui1 flags)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m10 *cps, ui1 flags)
 {
 	CMP_BLOCK_FIXED_HEADER_m10	*block_header;
 	
@@ -12595,7 +13205,10 @@ inline CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_ST
 // Minor modifications for compatibility with the MED Library.
 
 
-inline ui4	CRC_calculate_m10(const ui1 *block_ptr, si8 block_bytes)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+ui4	CRC_calculate_m10(const ui1 *block_ptr, si8 block_bytes)
 {
 	ui4	crc;
 	
@@ -12687,7 +13300,10 @@ TERN_m10	CRC_initialize_tables_m10(void)
 }
 
 
-inline void    CRC_matrix_square_m10(ui4 *square, const ui4 *mat)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void    CRC_matrix_square_m10(ui4 *square, const ui4 *mat)
 {
 	ui4     n;
 	
@@ -12698,7 +13314,10 @@ inline void    CRC_matrix_square_m10(ui4 *square, const ui4 *mat)
 }
 
 
-inline ui4      CRC_matrix_times_m10(const ui4 *mat, ui4 vec)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+ui4      CRC_matrix_times_m10(const ui4 *mat, ui4 vec)
 {
 	ui4     sum;
 	
@@ -12714,7 +13333,10 @@ inline ui4      CRC_matrix_times_m10(const ui4 *mat, ui4 vec)
 }
 
 
-inline ui4	CRC_update_m10(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+ui4	CRC_update_m10(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
 {
 	ui4			**crc_table;
 	register ui4            c;
@@ -12773,7 +13395,10 @@ inline ui4	CRC_update_m10(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc
 }
 
 
-inline TERN_m10	CRC_validate_m10(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_validate)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m10	CRC_validate_m10(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_validate)
 {
 	ui4	crc;
 	
@@ -12792,7 +13417,10 @@ inline TERN_m10	CRC_validate_m10(const ui1 *block_ptr, si8 block_bytes, ui4 crc_
 //***********************************************************************//
 
 		
-inline void	FPS_close_m10(FILE_PROCESSING_STRUCT_m10 *fps) {
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	FPS_close_m10(FILE_PROCESSING_STRUCT_m10 *fps) {
 	
 	if (fps->fp != NULL) {
 		fclose(fps->fp);
@@ -12804,7 +13432,31 @@ inline void	FPS_close_m10(FILE_PROCESSING_STRUCT_m10 *fps) {
 }
 
 
-inline si4	FPS_lock_m10(FILE_PROCESSING_STRUCT_m10 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail)
+si4	FPS_compare_start_times_m10(const void *a, const void *b)
+{
+	si8				a_start_time, b_start_time;
+	FILE_PROCESSING_STRUCT_m10	*fps;
+	
+	
+	fps = (FILE_PROCESSING_STRUCT_m10 *) *((FILE_PROCESSING_STRUCT_m10 **) a);
+	a_start_time = fps->universal_header->file_start_time;
+
+	fps = (FILE_PROCESSING_STRUCT_m10 *)  *((FILE_PROCESSING_STRUCT_m10 **) a);
+	b_start_time = fps->universal_header->file_start_time;
+
+	// qsort() requires an si4 return value, so can't just subtract
+	if (a_start_time > b_start_time)
+		return((si4) 1);
+	if (a_start_time < b_start_time)
+		return((si4) -1);
+	return((si4) 0);
+}
+
+
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	FPS_lock_m10(FILE_PROCESSING_STRUCT_m10 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
 #if defined MACOS_m10 || defined LINUX_m10
 	struct flock	fl;
@@ -12828,7 +13480,10 @@ inline si4	FPS_lock_m10(FILE_PROCESSING_STRUCT_m10 *fps, si4 lock_type, const si
 }
 
 
-inline void FPS_mutex_off_m10(FILE_PROCESSING_STRUCT_m10 *fps)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void FPS_mutex_off_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 {
 	fps->mutex = FALSE_m10;
 	
@@ -12836,7 +13491,10 @@ inline void FPS_mutex_off_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 }
 
 
-inline void FPS_mutex_on_m10(FILE_PROCESSING_STRUCT_m10 *fps)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void FPS_mutex_on_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 {
 	while (fps->mutex == TRUE_m10);
 	fps->mutex = TRUE_m10;
@@ -12845,11 +13503,15 @@ inline void FPS_mutex_on_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 }
 
 
-inline si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
-	TERN_m10	create_file;
+	TERN_m10	create_file = FALSE_m10;
 	si1		*mode, path[FULL_FILE_NAME_BYTES_m10], command[FULL_FILE_NAME_BYTES_m10 + 16];
 	si1		name[BASE_FILE_NAME_BYTES_m10], extension[TYPE_BYTES_m10];
+	static ui4	create_modes = (ui4) (FPS_R_PLUS_OPEN_MODE_m10 | FPS_W_OPEN_MODE_m10 | FPS_W_PLUS_OPEN_MODE_m10 | FPS_A_OPEN_MODE_m10 | FPS_A_PLUS_OPEN_MODE_m10);
 	si4		lock_type;
 	struct stat	sb;
 	
@@ -12857,9 +13519,11 @@ inline si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m10)
 		behavior_on_fail = globals_m10->behavior_on_fail;
 	
+	if (fps->directives.open_mode & create_modes)
+		create_file = TRUE_m10;
+	
 	// open
 	mode = NULL;
-	create_file = FALSE_m10;
 	switch (fps->directives.open_mode) {
 		case FPS_R_OPEN_MODE_m10:
 			mode = "r";
@@ -12869,19 +13533,15 @@ inline si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si
 			break;
 		case FPS_W_OPEN_MODE_m10:
 			mode = "w";
-			create_file = TRUE_m10;
 			break;
 		case FPS_W_PLUS_OPEN_MODE_m10:
 			mode = "w+";
-			create_file = TRUE_m10;
 			break;
 		case FPS_A_OPEN_MODE_m10:
 			mode = "a";
-			create_file = TRUE_m10;
 			break;
 		case FPS_A_PLUS_OPEN_MODE_m10:
 			mode = "a+";
-			create_file = TRUE_m10;
 			break;
 		case FPS_NO_OPEN_MODE_m10:
 		default:
@@ -12944,7 +13604,10 @@ inline si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si
 }
 
 
-inline si4     FPS_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     FPS_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m10)
 		behavior_on_fail = globals_m10->behavior_on_fail;
@@ -12956,8 +13619,8 @@ inline si4     FPS_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void 
 #endif
 	
 	// read
-	fread_m10(ptr, sizeof(ui1), (size_t)in_bytes, fps->fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
-	
+	fread_m10(ptr, sizeof(ui1), (size_t) in_bytes, fps->fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
+
 #if defined MACOS_m10 || defined LINUX_m10
 	// unlock
 	if (fps->directives.lock_mode & FPS_READ_LOCK_ON_READ_m10)
@@ -12968,7 +13631,24 @@ inline si4     FPS_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void 
 }
 
 
-inline si4	FPS_unlock_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	FPS_sort_m10(FILE_PROCESSING_STRUCT_m10 **fps_array, si4 n_fps)
+{
+	// input must be 2D FPS array, such as allocated by calloc_2D_m10()
+	// sorts the pointers by FPS file start time, does not move the FPSs
+	
+	qsort((void *) fps_array, (size_t) n_fps, sizeof(FILE_PROCESSING_STRUCT_m10 *), FPS_compare_start_times_m10);
+
+	return;
+}
+
+
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	FPS_unlock_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
 #if defined MACOS_m10 || defined LINUX_m10
 	struct flock	fl;
@@ -12992,7 +13672,10 @@ inline si4	FPS_unlock_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, 
 }
 
 
-inline si4	FPS_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	FPS_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
 	UNIVERSAL_HEADER_m10	*uh;
 	struct stat             sb;
@@ -13281,7 +13964,10 @@ void	SHA_update_m10(SHA_CTX_m10 *ctx, const ui1 *data, si8 len)
 
 
 // byte offset => char_num
-inline si4	UTF8_char_num_m10(si1 *s, si4 offset)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	UTF8_char_num_m10(si1 *s, si4 offset)
 {
 	si4	char_num = 0, offs = 0;
 	
@@ -13295,7 +13981,10 @@ inline si4	UTF8_char_num_m10(si1 *s, si4 offset)
 }
 
 
-inline void	UTF8_dec_m10(si1 *s, si4 *i)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	UTF8_dec_m10(si1 *s, si4 *i)
 {
 	(void) (UTF8_ISUTF_m10(s[--(*i)]) || UTF8_ISUTF_m10(s[--(*i)]) || UTF8_ISUTF_m10(s[--(*i)]) || --(*i));
 	
@@ -13355,7 +14044,10 @@ si4	UTF8_escape_wchar_m10(si1 *buf, si4 sz, ui4 ch)
 }
 
 
-inline si4     UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...)
 {
 	si4		sz;
 	si1		*src;
@@ -13383,13 +14075,19 @@ inline si4     UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...)
 }
 
 
-inline si4	UTF8_hex_digit_m10(si1 c)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	UTF8_hex_digit_m10(si1 c)
 {
 	return((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'));
 }
 
 
-inline void	UTF8_inc_m10(si1 *s, si4 *i)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	UTF8_inc_m10(si1 *s, si4 *i)
 {
 	(void) (UTF8_ISUTF_m10(s[++(*i)]) || UTF8_ISUTF_m10(s[++(*i)]) || UTF8_ISUTF_m10(s[++(*i)]) || ++(*i));
 }
@@ -13473,7 +14171,10 @@ si1	*UTF8_memchr_m10(si1 *s, ui4 ch, size_t sz, si4 *char_num)
 
 
 // reads the next utf-8 sequence out of a string, updating an index
-inline ui4     UTF8_next_char_m10(si1 *s, si4 *i)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+ui4     UTF8_next_char_m10(si1 *s, si4 *i)
 {
 	ui4	ch = 0;
 	si4	sz = 0;
@@ -13497,14 +14198,20 @@ inline ui4     UTF8_next_char_m10(si1 *s, si4 *i)
 }
 
 
-inline si4	UTF8_octal_digit_m10(si1 c)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	UTF8_octal_digit_m10(si1 c)
 {
 	return(c >= '0' && c <= '7');
 }
 
 
 // char_num => byte offset
-inline si4     UTF8_offset_m10(si1 *str, si4 char_num)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     UTF8_offset_m10(si1 *str, si4 char_num)
 {
 	si4	offs = 0;
 	
@@ -13518,7 +14225,10 @@ inline si4     UTF8_offset_m10(si1 *str, si4 char_num)
 }
 
 
-inline si4     UTF8_printf_m10(si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     UTF8_printf_m10(si1 *fmt, ...)
 {
 	si4		sz;
 	si1		*src;
@@ -13607,7 +14317,10 @@ si4     UTF8_read_escape_sequence_m10(si1 *str, ui4 *dest)
 
 
 // returns length of next utf-8 sequence
-inline si4      UTF8_seqlen_m10(si1 *s)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4      UTF8_seqlen_m10(si1 *s)
 {
 	if (globals_m10->UTF8_trailing_bytes_table == NULL)
 		UTF8_initialize_tables_m10();
@@ -13871,7 +14584,10 @@ si4     UTF8_wc_to_utf8_m10(si1 *dest, ui4 ch)
 //***********************************************************************//
 
 
-inline si4    asprintf_m10(si1 **target, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4    asprintf_m10(si1 **target, si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		args;
@@ -14001,7 +14717,10 @@ FILE	*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 }
 
 
-inline si4     fprintf_m10(FILE *stream, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     fprintf_m10(FILE *stream, si1 *fmt, ...)
 {
 	si1		*temp_str;
 	si4		ret_val;
@@ -14026,7 +14745,10 @@ inline si4     fprintf_m10(FILE *stream, si1 *fmt, ...)
 }
 
 
-inline si4	fputc_m10(si4 c, FILE *stream)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	fputc_m10(si4 c, FILE *stream)
 {
 	si4	ret_val;
 
@@ -14051,14 +14773,14 @@ size_t	fread_m10(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 	
 	if ((nr = fread(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
-			(void)UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, __FUNCTION__, path);
-			(void)fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, __FUNCTION__, path);
+			fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
-				(void)fprintf_m10(stderr, "\t=> returning number of items read\n\n");
+				fprintf_m10(stderr, "\t=> returning number of items read\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
-				(void)fprintf_m10(stderr, "\t=> exiting program\n\n");
+				fprintf_m10(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m10)
@@ -14066,7 +14788,7 @@ size_t	fread_m10(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 		else if (behavior_on_fail & EXIT_ON_FAIL_m10)
 			exit_m10(1);
 	}
-	
+
 	return(nr);
 }
 
@@ -14084,7 +14806,10 @@ void    free_m10(void *ptr, const si1 *function, si4 line)
 }
 
 
-inline si4     fscanf_m10(FILE *stream, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     fscanf_m10(FILE *stream, si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		args;
@@ -14225,7 +14950,10 @@ size_t	fwrite_m10(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 }
 
 
-inline char	*getcwd_m10(char *buf, size_t size)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+char	*getcwd_m10(char *buf, size_t size)
 {
 #if defined MACOS_m10 || defined LINUX_m10
 	return(getcwd(buf, size));
@@ -14269,7 +14997,10 @@ void	*malloc_m10(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_
 }
 		
 
-inline si4     printf_m10(si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     printf_m10(si1 *fmt, ...)
 {
 	si1		*temp_str;
 	si4		ret_val;
@@ -14293,13 +15024,19 @@ inline si4     printf_m10(si1 *fmt, ...)
 }
 
 
-inline si4	putc_m10(si4 c, FILE *stream)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	putc_m10(si4 c, FILE *stream)
 {
 	return(fputc_m10(c, stream));
 }
 
 
-inline si4	putch_m10(si4 c)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	putch_m10(si4 c)
 {
 	si4	ret_val;
 
@@ -14317,7 +15054,10 @@ inline si4	putch_m10(si4 c)
 }
 
 
-inline si4	putchar_m10(si4 c)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4	putchar_m10(si4 c)
 {
 	return(fputc_m10(c, stdout));
 }
@@ -14359,7 +15099,10 @@ void	*realloc_m10(void *orig_ptr, size_t n_bytes, const si1 *function, si4 line,
 }
 
 
-inline si4     scanf_m10(si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     scanf_m10(si1 *fmt, ...)
 {
 	si4         ret_val;
 	va_list     args;
@@ -14389,7 +15132,10 @@ inline si4     scanf_m10(si1 *fmt, ...)
 }
 
 
-inline si4    snprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4    snprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		args;
@@ -14405,7 +15151,10 @@ inline si4    snprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, ...)
 }
 
 
-inline si4    sprintf_m10(si1 *target, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4    sprintf_m10(si1 *target, si1 *fmt, ...)
 {
 	si1		*tmp_str;
 	si4		ret_val;
@@ -14425,7 +15174,10 @@ inline si4    sprintf_m10(si1 *target, si1 *fmt, ...)
 }
 
 
-inline si4     sscanf_m10(si1 *target, si1 *fmt, ...)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     sscanf_m10(si1 *target, si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		args;
@@ -14651,7 +15403,10 @@ si4     system_m10(si1 *command, TERN_m10 null_std_streams, const si1 *function,
 }
 
 
-inline si4    vasprintf_m10(si1 **target, si1 *fmt, va_list args)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4    vasprintf_m10(si1 **target, si1 *fmt, va_list args)
 {
 	si4	ret_val;
 	
@@ -14676,7 +15431,10 @@ inline si4    vasprintf_m10(si1 **target, si1 *fmt, va_list args)
 }
 
 
-inline si4     vfprintf_m10(FILE *stream, si1 *fmt, va_list args)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     vfprintf_m10(FILE *stream, si1 *fmt, va_list args)
 {
 	si1	*temp_str;
 	si4	ret_val;
@@ -14698,7 +15456,10 @@ inline si4     vfprintf_m10(FILE *stream, si1 *fmt, va_list args)
 }
 
 
-inline si4     vprintf_m10(si1 *fmt, va_list args)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4     vprintf_m10(si1 *fmt, va_list args)
 {
 	si1	*temp_str;
 	si4	ret_val;
@@ -14719,7 +15480,10 @@ inline si4     vprintf_m10(si1 *fmt, va_list args)
 }
 
 
-inline si4    vsnprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4    vsnprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args)
 {
 	si4	ret_val;
 	si1	*temp_str;
@@ -14774,7 +15538,10 @@ inline si4    vsnprintf_m10(si1 *target, si4 target_field_bytes, si1 *fmt, va_li
 }
 
 
-inline si4    vsprintf_m10(si1 *target, si1 *fmt, va_list args)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+si4    vsprintf_m10(si1 *target, si1 *fmt, va_list args)
 {
 	si1		*tmp_str;
 	si4		ret_val;

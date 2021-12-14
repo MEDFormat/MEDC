@@ -90,6 +90,7 @@
 		#pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib
 	#endif
 	#include <windows.h>
+	#include <io.h>
 	#include <direct.h>
 	#include <fileapi.h>
 	#include <share.h>
@@ -624,6 +625,12 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 	#define NULL_DEVICE			"NUL"
 #endif
 
+// for clarity use of read_session_m10, read_channel_m10(), & read_segment_m10()
+// in the "read_time_series_data" & "read_record_data arguments"
+					// TRUE_m10 	// read in the data
+#define OPEN_ONLY_m10			UNKNOWN_m10	// create the fps's, open the files, read the universal headers, but leave file pointers at the start of the data
+					// FALSE_m10	// ignore the data
+
 // Error Handling Constants
 #define USE_GLOBAL_BEHAVIOR_m10         0
 #define RESTORE_BEHAVIOR_m10            1
@@ -670,11 +677,12 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 	#define TC_BRIGHT_MAGENTA_m10	""
 	#define TC_BRIGHT_CYAN_m10	""
 	#define TC_BRIGHT_WHITE_m10	""
+	#define TC_RESET_m10		""
 	// non-color constants
 	#define TC_BOLD_m10		""
+	#define TC_BOLD_RESET_m10	""
 	#define TC_UNDERLINE_m10	""
-	#define TC_NO_UNDERLINE_m10	""
-	#define TC_RESET_m10            ""
+	#define TC_UNDERLINE_RESET_m10	""
 #else
 	#define TC_BLACK_m10		"\033[30m"
 	#define TC_RED_m10		"\033[31m"
@@ -700,11 +708,12 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 	#define TC_BRIGHT_MAGENTA_m10	"\033[35;1m"
 	#define TC_BRIGHT_CYAN_m10	"\033[36;1m"
 	#define TC_BRIGHT_WHITE_m10	"\033[37;1m"
+	#define TC_RESET_m10		"\033[0m"
 	// non-color constants
 	#define TC_BOLD_m10		"\033[1m"
+	#define TC_BOLD_RESET_m10	"\033[21m"
 	#define TC_UNDERLINE_m10	"\033[4m"
-	#define TC_NO_UNDERLINE_m10	"\033[24m"
-	#define TC_RESET_m10		"\033[0m"
+	#define TC_UNDERLINE_RESET_m10	"\033[24m"
 #endif
 
 // Time Related Constants
@@ -730,6 +739,8 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define CURRENT_TIME_m10				((si8) 0xFFFFFFFFFFFFFFFF)  // used with time_string_m10() & generate_recording_time_offset_m10()
 #define TWENTY_FOURS_HOURS_m10				((si8) 86400000000)
 #define Y2K_m10                                         ((si8) 0x00035D013B37E000)  // 00:00:00.000000 Saturday, 1 Jan 2000, UTC  (946684800000000 decimal)
+#define WIN_TICKS_PER_USEC_m10				((si8) 10)
+#define WIN_USECS_TO_EPOCH_m10				((si8) 11644473600000000)
 
 // Time Change Code Constants
 #define DTCC_VALUE_NOT_OBSERVED_m10                     0
@@ -1102,10 +1113,11 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define VIDEO_INDEX_FILE_OFFSET_NO_ENTRY_m10                    -1
 #define VIDEO_INDEX_START_TIME_OFFSET_m10                       8                       // si8
 #define VIDEO_INDEX_START_TIME_NO_ENTRY_m10                     UUTC_NO_ENTRY_m10
-#define VIDEO_INDEX_START_FRAME_OFFSET_m10                      16                      // si4
-#define VIDEO_INDEX_START_FRAME_NO_ENTRY_m10                    0x80000000
-#define VIDEO_INDEX_VIDEO_FILE_NUMBER_OFFSET_m10                20                      // si4
-#define VIDEO_INDEX_VIDEO_FILE_NUMBER_NO_ENTRY_m10              -1
+#define VIDEO_INDEX_START_FRAME_OFFSET_m10                      16                      // ui4
+#define VIDEO_INDEX_START_FRAME_NO_ENTRY_m10                    0xFFFFFFFF
+#define VIDEO_INDEX_VIDEO_FILE_NUMBER_OFFSET_m10                20                      // ui4
+#define VIDEO_INDEX_VIDEO_FILE_NUMBER_NO_ENTRY_m10              0
+#define VIDEO_INDEX_TERMINAL_VIDEO_FILE_NUMBER_m10              0xFFFFFFFF
 
 
 //**********************************************************************************//
@@ -1117,7 +1129,7 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define REMOVE_DISCONTINUITY_m10(x)     ( ((x) >= 0) ? (x) : -(x) )  // do not increment/decrement in call to REMOVE_DISCONTINUITY (as x occurs thrice)
 #define APPLY_DISCONTINUITY_m10(x)      ( ((x) < 0) ? (x) : -(x) )  // do not increment/decrement in call to APPLY_DISCONTINUITY (as x occurs thrice)
 #define MAX_OPEN_FILES_m10(number_of_channels, number_of_segments)      ((5 * number_of_channels * number_of_segments) + (2 * number_of_segments) + (2 * number_of_channels) + 5)
-// Note: final +5 == 2 for session level records plus 3 for stdin, stdout & stderr
+// Note: final +5 == 2 for session level records plus 3 for standard streams (stdin, stdout, & stderr)
 
 
 //**********************************************************************************//
@@ -1176,6 +1188,12 @@ typedef struct {
 	si4		sample_number_reference_channel_index;  // index of the "sample_number reference channel" in the session channel array
 } TIME_SLICE_m10;
 
+typedef struct {  // times in uutc
+	si8	creation;
+	si8	access;
+	si8	modification;
+} FILE_TIMES_m10;
+
 typedef struct {  // fields from ipinfo.io
 	TIMEZONE_INFO_m10	timezone_info;
 	si1			WAN_IPv4_address[IPV4_ADDRESS_BYTES_m10 * 4];
@@ -1189,6 +1207,12 @@ typedef struct {  // fields from ipinfo.io
 typedef struct {
 	// Password
 	PASSWORD_DATA_m10               password_data;
+	// Current Session
+	si8				session_UID;
+	si1				session_directory[FULL_FILE_NAME_BYTES_m10];  // path including file system session directory name
+	si1				*session_name;  // points to: uh_session_name if known, else fs_session_name if known, else NULL
+	si1				uh_session_name[BASE_FILE_NAME_BYTES_m10];    // from MED universal header - original name
+	si1				fs_session_name[BASE_FILE_NAME_BYTES_m10];  // from file system - may be renamed
 	// Time Constants
 	TERN_m10			time_constants_set;
 	TERN_m10			RTO_known;
@@ -1428,17 +1452,17 @@ typedef struct {
 
 // Time Series Indices Structures
 typedef struct {
-	si8	file_offset;
+	si8	file_offset;  // negative values indicate discontinuity
 	si8	start_time;
-	si8     start_sample_number;  // relative to segment sample numbering, negative values indicate disconrtinuity
+	si8     start_sample_number;
 } TIME_SERIES_INDEX_m10;
 
 // Video Indices Structures
 typedef struct {
-	si8     file_offset;
+	si8     file_offset;  // negative values indicate discontinuity
 	si8	start_time;
-	si4     start_frame_number;  // relative to video file, negative values indicate disconrtinuity
-	si4     video_file_number;
+	ui4     start_frame_number;
+	ui4     video_file_number;
 } VIDEO_INDEX_m10;
 
 // All index structures are the same size, so this structure may be convenient, but it is not currently used in the library.
@@ -1538,7 +1562,7 @@ typedef struct {
 
 
 // Prototypes
-TERN_m10	adjust_open_file_limit_m10(si4 new_limit);
+TERN_m10	adjust_open_file_limit_m10(si4 new_limit, TERN_m10 verbose_flag);
 TERN_m10	all_zeros_m10(ui1 *bytes, si4 field_length);
 CHANNEL_m10	*allocate_channel_m10(CHANNEL_m10 *chan, FILE_PROCESSING_STRUCT_m10 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m10 chan_recs, TERN_m10 seg_recs);
 FILE_PROCESSING_STRUCT_m10	*allocate_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10* fps, si1* full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m10* proto_fps, si8 bytes_to_copy);
@@ -1569,7 +1593,6 @@ TERN_m10	check_time_series_metadata_section_2_alignment_m10(ui1 *bytes);
 TERN_m10	check_universal_header_alignment_m10(ui1 *bytes);
 TERN_m10	check_video_indices_alignment_m10(ui1 *bytes);
 TERN_m10	check_video_metadata_section_2_alignment_m10(ui1 *bytes);
-si4		compare_fps_start_times_m10(const void *a, const void *b);
 void		condition_timezone_info_m10(TIMEZONE_INFO_m10 *tz_info);
 void		condition_time_slice_m10(TIME_SLICE_m10 *slice);
 si8		current_uutc_m10(void);
@@ -1587,7 +1610,8 @@ void            extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name
 void            extract_terminal_password_bytes_m10(si1 *password, si1 *password_bytes);
 si8		*find_discontinuities_m10(TIME_SERIES_INDEX_m10 *tsi, si8 *num_disconts, si8 number_of_indices, TERN_m10 remove_offsets, TERN_m10 return_sample_numbers);
 ui4             file_exists_m10(si1 *path);
-si8		file_length_m10(FILE *fp);
+si8		file_length_m10(FILE *fp, si1 *path);
+FILE_TIMES_m10	*file_times_d10(si1 *path, FILE_TIMES_m10 *ft, TERN_m10 set_time);
 si1		*find_timezone_acronym_m10(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
 si1		*find_metadata_file_m10(si1 *path, si1 *md_path);
 void            force_behavior_m10(ui4 behavior);
@@ -1609,6 +1633,7 @@ ui1		get_cpu_endianness_m10(void);
 LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 set_timezone_globals, TERN_m10 prompt);
 si4             get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10 *slice);
 void		get_segment_target_values_m10(SEGMENT_m10 *segment, si8 *target_uutc, si8 *target_sample_number, ui1 mode);
+si1		*get_session_directory_m10(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m10 *MED_fps);
 TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, si8 *target_sample_number, si4 *target_segment_number, ui1 mode, si1 *idx_ref_chan);
 FILE_PROCESSING_DIRECTIVES_m10	*initialize_file_processing_directives_m10(FILE_PROCESSING_DIRECTIVES_m10 *directives);
 TERN_m10	initialize_globals_m10(void);
@@ -1641,9 +1666,10 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10* slice);
 si8     	segment_sample_number_to_time_m10(si1 *seg_dir, si8 local_sample_number, si8 absolute_start_sample_number, sf8 sampling_frequency, ui1 mode);
 TERN_m10	set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 session_start_time, TERN_m10 prompt);
-TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *section_2_encryption_level, si1 *section_3_encryption_level);
+TERN_m10	set_time_and_password_data_m10(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
 void            show_daylight_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 *code, si1 *prefix);
 void            show_file_processing_struct_m10(FILE_PROCESSING_STRUCT_m10 *fps);
+void		show_file_times_m10(FILE_TIMES_m10 *ft);
 void            show_globals_m10(void);
 void    	show_location_info_m10(LOCATION_INFO_m10 *li);
 void            show_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, METADATA_m10 *md);
@@ -1653,7 +1679,7 @@ void            show_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code)
 void    	show_time_slice_m10(TIME_SLICE_m10 *slice);
 void            show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry);
 void            show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER_m10 *uh);
-void		sort_fps_array_m10(FILE_PROCESSING_STRUCT_m10 **fps_array, si4 n_fps);
+si4		str_compare_m10(const void *a, const void *b);
 TERN_m10	str_contains_regex_m10(si1 *string);
 si1		*str_match_end_m10(si1 *pattern, si1 *buffer);
 si1		*str_match_line_end_m10(si1 *pattern, si1 *buffer);
@@ -1661,6 +1687,7 @@ si1		*str_match_line_start_m10(si1 *pattern, si1 *buffer);
 si1		*str_match_start_m10(si1 *pattern, si1 *buffer);
 void    	str_replace_char_m10(si1 c, si1 new_c, si1 *buffer);
 si1		*str_replace_pattern_m10(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m10 free_input_buffer);
+void		str_sort_m10(si1 **string_array, si8 n_strings);
 void		strip_character_m10(si1 *s, si1 character);
 void		strtolower_m10(si1 *s);
 void		strtotitle_m10(si1 *s);
@@ -1668,6 +1695,9 @@ void		strtoupper_m10(si1 *s);
 si1		*time_string_m10(si8 uutc_time, si1 *time_str, TERN_m10 fixed_width, TERN_m10 relative_days, si4 colored_text, ...);
 si8             ts_sort_m10(si4 *x, si8 len, NODE_m10 *nodes, NODE_m10 *head, NODE_m10 *tail, si4 return_sorted_ts, ...);
 void            unescape_spaces_m10(si1 *string);
+#ifdef WINDOWS_m10
+FILETIME	uutc_to_win_time_m10(si8 uutc);
+#endif
 si8             uutc_for_sample_number_m10(si8 ref_sample_number, si8 ref_uutc, si8 target_sample_number, sf8 sampling_frequency, FILE_PROCESSING_STRUCT_m10 *time_series_indices_fps, ui1 mode);
 TERN_m10        validate_record_data_CRCs_m10(RECORD_HEADER_m10* record_header, si8 number_of_items);
 TERN_m10        validate_time_series_data_CRCs_m10(CMP_BLOCK_FIXED_HEADER_m10* block_header, si8 number_of_items);
@@ -1679,6 +1709,9 @@ TERN_m10	win_initialize_terminal_m10(void);
 TERN_m10	win_reset_terminal_m10(void);
 TERN_m10	win_socket_startup_m10(void);
 inline si4	win_system_m10(si1 *command);
+#ifdef WINDOWS_m10
+si8		win_time_to_uutc_m10(FILETIME win_time);
+#endif
 void		windify_file_paths_m10(si1 *target, si1 *source);
 si1		*windify_format_string_m10(si1 *fmt);
 si8             write_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui8 number_of_items, void *data_ptr, ui4 behavior_on_fail);
@@ -1691,11 +1724,13 @@ si8             write_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui8 number_of_it
 
 // Prototypes
 void            FPS_close_m10(FILE_PROCESSING_STRUCT_m10 *fps);
+si4		FPS_compare_start_times_m10(const void *a, const void *b);
 si4             FPS_lock_m10(FILE_PROCESSING_STRUCT_m10 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail);
 void		FPS_mutex_off_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 void		FPS_mutex_on_m10(FILE_PROCESSING_STRUCT_m10 *fps);
 si4             FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
 si4             FPS_read_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 in_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
+void		FPS_sort_m10(FILE_PROCESSING_STRUCT_m10 **fps_array, si4 n_fps);
 si4             FPS_unlock_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
 si4             FPS_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
 
