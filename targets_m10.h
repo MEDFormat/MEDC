@@ -14,14 +14,14 @@
 // #define WINDOWS_m10
 
 #ifdef WINDOWS_m10
-#define _CRT_SECURE_NO_WARNINGS
-#define WIN_NEED_SOCKETS_m10  // define this if winsock2.h needed in application, otherwise comment it out
+  #define _CRT_SECURE_NO_WARNINGS
+  #define WIN_NEED_SOCKETS_m10  // define this if winsock2.h needed in application, otherwise comment it out
 #endif
 
 #ifdef LINUX_m10
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
+  #ifndef _GNU_SOURCE
+    #define _GNU_SOURCE
+  #endif
 #endif
 
 //**********************************************************************************//
