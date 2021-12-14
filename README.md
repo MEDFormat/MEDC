@@ -4,7 +4,7 @@ MED Format C library and documentation
 For more information about MED, see medformat.org
 
 Edit targets.h to set the target operating system, and if appropriate, target application.
-Only Matlab is supported as a target application currently.
+Currently, Matlab is the only supported target application.
 
 MED2RAW.c is example code for converting MED files to a series of 4-byte integer files, one per channel.
 These can be read into Matlab as follows:
@@ -13,8 +13,8 @@ fp = fopen('<channel_name>.raw', 'r');
 fclose(fp);
 
 Shell Scripts: (edit these for your target locations & compiler, specified at the top)
-mklibs.sh is a shell script to a create MED library in MacOS & Linux
-mklibs.bat is a shell script to a create MED library in Windows
+mklib.sh is a shell script to a create MED library in MacOS & Linux
+mklib.bat is a shell script to a create MED library in Windows
 compile.sh is a shell script to compile MED2RAW using the MED library in MacOS & Linux
 compile.bat is a shell script to compile MED2RAW using the MED library in Windows
 
