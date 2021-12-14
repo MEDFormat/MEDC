@@ -81,8 +81,8 @@
 #ifdef WINDOWS_m10
 // the following is necessary to include <winsock2.h> (or can define WIN32_LEAN_AND_MEAN, but excludes a lot of stuff)
 // winsock2.h has to be included before windows.h, but requires WIN32 to be defined, which is usually defined by windows.h
-// WIN_NEED_SOCKETS_m10 is defined in "targets.h"
-	#ifdef WIN_NEED_SOCKETS_m10
+// NEED_WIN_SOCKETS_m10 is defined in "targets.h"
+	#ifdef NEED_WIN_SOCKETS_m10
 		#ifndef WIN32
 			#define WIN32
 		#endif

@@ -4578,17 +4578,10 @@ TERN_m10	initialize_medlib_m10(TERN_m10 check_structure_alignments, TERN_m10 ini
 	srand((ui4) time(NULL));
 #endif
 	
-	printf_m10("line %d\n", __LINE__);
-#ifdef NEED_WIN_SOCKETS_m10
-	printf_m10("line %d\n", __LINE__);
-#endif
 #if defined WINDOWS_m10 && defined NEED_WIN_SOCKETS_m10
 	// initialize Windows sockets DLL
-	printf_m10("line %d\n", __LINE__);
-	if (win_socket_startup_m10() == FALSE_m10) {
-		printf_m10("line %d\n", __LINE__);
+	if (win_socket_startup_m10() == FALSE_m10)
 		return_value = FALSE_m10;
-	}
 #endif
 	
 #if defined WINDOWS_m10 && !defined MATLAB_m10
