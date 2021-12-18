@@ -305,7 +305,7 @@ TERN_m10	check_rec_Note_type_alignment_m10(ui1 *bytes);
 #define REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m10                     264	// si8
 #define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m10                  272	// si4
 #define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m10                SEGMENT_NUMBER_NO_ENTRY_m10
-#define REC_Seiz_v10_CHANNEL_PAD_BYTES_OFFSET_m10                       276	// ui1[4]
+#define REC_Seiz_v10_CHANNEL_PAD_OFFSET_m10                       	276	// ui1[4]
 #define REC_Seiz_v10_CHANNEL_PAD_BYTES_m10                              4
 // Onset Codes
 #define REC_Seiz_v10_ONSET_NO_ENTRY_m10		-1
@@ -331,7 +331,7 @@ typedef struct {
        	si8	onset_time;                     // uutc
         si8	offset_time;                    // uutc
         si4     segment_number;
-        ui1     pad_bytes[REC_Seiz_v10_CHANNEL_PAD_BYTES_m10];                   // for 8 byte alignment (couldn't think of a use for them)
+        ui1     pad[REC_Seiz_v10_CHANNEL_PAD_BYTES_m10];	// for 8 byte alignment (couldn't think of a use for them)
 } REC_Seiz_v10_CHANNEL_m10;
 
 // Prototypes
@@ -384,7 +384,7 @@ TERN_m10	check_rec_SyLg_type_alignment_m10(ui1 *bytes);
 #define REC_NlxP_v10_SUBPORT_OFFSET_m10                 8	// ui1
 #define REC_NlxP_v10_NUMBER_OF_SUBPORTS_OFFSET_m10      9	// ui1
 #define REC_NlxP_v10_TRIGGER_MODE_OFFSET_m10            10	// ui1
-#define REC_NlxP_v10_PAD_BYTES_OFFSET_m10               11	// ui1
+#define REC_NlxP_v10_PAD_OFFSET_m10               	11	// ui1
 #define REC_NlxP_v10_PAD_BYTES_m10                      5
 
 // Structures
@@ -394,7 +394,7 @@ typedef struct {
         ui1     subport;                // [1 to <number_of_subports>]  (subport that triggered this record)
         ui1     number_of_subports;     // [1, 2, or 4]  (one 32-bit, two 16-bit, or four 8-bit)
         ui1     trigger_mode;           // REC_NlxP_v10_NO_TRIGGER_m10, REC_NlxP_v10_ANY_BIT_CHANGE_m10, or REC_NlxP_v10_HIGH_BIT_SET_m10
-        ui1     pad_bytes[REC_NlxP_v10_PAD_BYTES_m10];
+        ui1     pad[REC_NlxP_v10_PAD_BYTES_m10];
 } REC_NlxP_v10_m10;
 
 // Prototypes
@@ -412,12 +412,12 @@ TERN_m10        check_rec_NlxP_type_alignment_m10(ui1 *bytes);
 // #define REC_Curs_TYPE_CODE_m10            (ui4) 0x43757273        // ui4 (big endian)
 
 // Version 1.0
-#define REC_Curs_v10_NAME_BYTES_m10         		128
 #define REC_Curs_v10_BYTES_m10                          152
 #define REC_Curs_v10_ID_NUMBER_OFFSET_m10          	0	// si8
 #define REC_Curs_v10_LATENCY_OFFSET_m10			8	// si8
 #define REC_Curs_v10_VALUE_OFFSET_m10			16	// sf8
 #define REC_Curs_v10_NAME_OFFSET_m10			24	// si1[128]
+#define REC_Curs_v10_NAME_BYTES_m10         		128
 
 // Structures
 typedef struct {
@@ -443,25 +443,115 @@ TERN_m10        check_rec_Curs_type_alignment_m10(ui1 *bytes);
 // #define REC_Epoc_TYPE_CODE_m10            (ui4) 0x45706F63        // ui4 (big endian)
 
 // Version 1.0
-#define REC_Epoc_v10_TYPE_BYTES_m10          		32
-#define REC_Epoc_v10_TEXT_BYTES_m10          		128
 #define REC_Epoc_v10_BYTES_m10                          176
 #define REC_Epoc_v10_ID_NUMBER_OFFSET_m10          	0	// si8
 #define REC_Epoc_v10_END_TIME_OFFSET_m10		8	// si8
 #define REC_Epoc_v10_EPOCH_TYPE_OFFSET_m10		16	// si1[32]
+#define REC_Epoc_v10_EPOCH_TYPE_BYTES_m10          	32
 #define REC_Epoc_v10_TEXT_OFFSET_m10			48	// si1[128]
+#define REC_Epoc_v10_TEXT_BYTES_m10          		128
 
 // Structures
 typedef struct {
     si8 id_number;
     si8 end_time;
-    si1 epoch_type[REC_Epoc_v10_TYPE_BYTES_m10];
+    si1 epoch_type[REC_Epoc_v10_EPOCH_TYPE_BYTES_m10];
     si1 text[REC_Epoc_v10_TEXT_BYTES_m10];
 } REC_Epoc_v10_m10;
 
 // Prototypes
 void            show_rec_Epoc_type_m10(RECORD_HEADER_m10 *record_header);
 TERN_m10        check_rec_Epoc_type_alignment_m10(ui1 *bytes);
+
+
+
+//*************************************************************************************//
+//**************************   Esti: Electrical Stimulation   *************************//
+//*************************************************************************************//
+
+// Constants
+#define REC_ESti_TYPE_STRING_m10             "ESti"                  // ascii[4]
+#define REC_ESti_TYPE_CODE_m10               (ui4) 0x69745345        // ui4 (little endian)
+// #define REC_ESti_TYPE_CODE_m10            (ui4) 0x45537469        // ui4 (big endian)
+
+// Version 1.0
+#define REC_ESti_v10_BYTES_m10          		416
+#define REC_ESti_v10_AMPLITUDE_OFFSET_m10          	0	// sf8
+#define REC_ESti_v10_FREQUENCY_OFFSET_m10  		8	// sf8
+#define REC_ESti_v10_PULSE_WIDTH_OFFSET_m10  		16	// si8
+#define REC_ESti_v10_AMP_UNIT_CODE_OFFSET_m10		24	// si4
+#define REC_ESti_v10_MODE_CODE_OFFSET_m10		28	// si4
+#define REC_ESti_v10_WAVEFORM_OFFSET_m10		32	// utf8[31]
+#define REC_ESti_v10_WAVEFORM_BYTES_m10			128
+#define REC_ESti_v10_ANODE_OFFSET_m10			160	// utf8[31]
+#define REC_ESti_v10_ANODE_BYTES_m10			128
+#define REC_ESti_v10_CATHODE_OFFSET_m10			288	// utf8[31]
+#define REC_ESti_v10_CATHODE_BYTES_m10			128
+
+// Unit codes
+#define REC_ESti_v10_AMP_UNIT_NO_ENTRY_m10	-1
+#define REC_ESti_v10_AMP_UNIT_UNKNOWN_m10	0
+#define REC_ESti_v10_AMP_UNIT_MA_m10		1
+#define REC_ESti_v10_AMP_UNIT_V_m10		2
+
+// Mode codes
+#define REC_ESti_v10_MODE_NO_ENTRY_m10		-1
+#define REC_ESti_v10_MODE_UNKNOWN_m10		0
+#define REC_ESti_v10_MODE_CURRENT_m10		1
+#define REC_ESti_v10_MODE_VOLTAGE_m10		2
+
+// Structures
+typedef struct {
+	sf8	amplitude;
+	sf8	frequency;
+	si8	pulse_width;
+	si4	amp_unit_code;
+	si4	mode_code;  // Jan, does mode determine amplitude units?
+	si1	waveform[REC_ESti_v10_WAVEFORM_BYTES_m10];
+	si1	anode[REC_ESti_v10_ANODE_BYTES_m10];
+	si1	cathode[REC_ESti_v10_CATHODE_BYTES_m10];
+} REC_ESti_v10_m10;
+
+// Prototypes
+void            show_rec_ESti_type_m10(RECORD_HEADER_m10 *record_header);
+TERN_m10        check_rec_ESti_type_alignment_m10(ui1 *bytes);
+
+
+
+//*************************************************************************************//
+//***************************   CSti: Cognitive Stimulation   *************************//
+//*************************************************************************************//
+
+// Constants
+#define REC_CSti_TYPE_STRING_m10             "CSti"                  // ascii[4]
+#define REC_CSti_TYPE_CODE_m10               (ui4) 0x69745343        // ui4 (little endian)
+// #define REC_CSti_TYPE_CODE_m10            (ui4) 0x43537469        // ui4 (big endian)
+
+// Version 1.0
+#define REC_CSti_v10_BYTES_m10          		208
+#define REC_CSti_v10_STIMULUS_DURATION_OFFSET_m10	0	// si8
+#define REC_CSti_v10_TASK_TYPE_OFFSET_m10  		8	// utf8[15]
+#define REC_CSti_v10_TASK_TYPE_BYTES_m10		64
+#define REC_CSti_v10_STIMULUS_TYPE_OFFSET_m10		72	// utf8[15]
+#define REC_CSti_v10_STIMULUS_TYPE_BYTES_m10		64
+#define REC_CSti_v10_PATIENT_RESPONSE_OFFSET_m10	136	// utf8[15]
+#define REC_CSti_v10_PATIENT_RESPONSE_BYTES_m10		64
+#define REC_CSti_v10_PAD_OFFSET_m10			200	// ui1[8]
+#define REC_CSti_v10_PAD_BYTES_m10			8
+
+// Structures
+typedef struct {
+	si8	stimulus_duration;
+	si1	task_type[REC_CSti_v10_TASK_TYPE_BYTES_m10];
+	si1	stimulus_type[REC_CSti_v10_STIMULUS_TYPE_BYTES_m10];
+	si1	patient_response[REC_CSti_v10_PATIENT_RESPONSE_BYTES_m10];
+	ui1	pad[REC_CSti_v10_PAD_BYTES_m10];  // Jan, would you prefer to just put these bytes in one of the text arrays above?
+} REC_CSti_v10_m10;
+
+// Prototypes
+void            show_rec_CSti_type_m10(RECORD_HEADER_m10 *record_header);
+TERN_m10        check_rec_CSti_type_alignment_m10(ui1 *bytes);
+
 
 
 #endif // MEDREC_IN_m10

@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
 	
 	
 	// NOTE: in MacOS & Linux change resource limits before calling any functions that use system resources (e.g. printf())
-	adjust_open_file_limit_m10(MAX_OPEN_FILES_m10(MAX_CHANNELS, 1));
+	adjust_open_file_limit_m10(MAX_OPEN_FILES_m10(MAX_CHANNELS, 1), TRUE_m10);
 
 	// usage
 	if (argc < 2 || argc > 9) {

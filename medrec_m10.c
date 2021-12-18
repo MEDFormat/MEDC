@@ -209,6 +209,12 @@ void	show_record_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_HEADER_m10 *record_
 	case REC_Epoc_TYPE_CODE_m10:
 		show_rec_Epoc_type_m10(record_header);
 		break;
+	case REC_ESti_TYPE_CODE_m10:
+		show_rec_ESti_type_m10(record_header);
+		break;
+	case REC_CSti_TYPE_CODE_m10:
+		show_rec_CSti_type_m10(record_header);
+		break;
 	default:
 		warning_message_m10("%s(): 0x%x is an unrecognized record type code\n", __FUNCTION__, type_code);
 		break;
@@ -257,6 +263,10 @@ TERN_m10	check_record_structure_alignments_m10(ui1 *bytes)
 	if ((check_rec_Curs_type_alignment_m10(bytes)) == FALSE_m10)
 		return_value = FALSE_m10;
 	if ((check_rec_Epoc_type_alignment_m10(bytes)) == FALSE_m10)
+		return_value = FALSE_m10;
+	if ((check_rec_ESti_type_alignment_m10(bytes)) == FALSE_m10)
+		return_value = FALSE_m10;
+	if ((check_rec_CSti_type_alignment_m10(bytes)) == FALSE_m10)
 		return_value = FALSE_m10;
 
 	if (free_flag == TRUE_m10)
@@ -350,7 +360,7 @@ TERN_m10     check_rec_Sgmt_type_alignment_m10(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1 *) malloc_m10(REC_Sgmt_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 	Sgmt = (REC_Sgmt_v10_m10 *) bytes;
@@ -463,7 +473,7 @@ TERN_m10     check_rec_Stat_type_alignment_m10(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1 *) malloc_m10(REC_Stat_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 	Stat = (REC_Stat_v10_m10 *) bytes;
@@ -580,7 +590,7 @@ TERN_m10	check_rec_EDFA_type_alignment_m10(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1*)malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1*)malloc_m10(REC_EDFA_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 	edfa = (REC_EDFA_v10_m10 *) bytes;
@@ -711,7 +721,7 @@ TERN_m10	check_rec_Seiz_type_alignment_m10(ui1 *bytes)
 
 	// check fields - base structure
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1 *) malloc_m10((REC_Seiz_v10_BYTES_m10 + REC_Seiz_v10_CHANNEL_BYTES_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 	Seiz = (REC_Seiz_v10_m10 *) bytes;
@@ -738,7 +748,7 @@ TERN_m10	check_rec_Seiz_type_alignment_m10(ui1 *bytes)
 		goto REC_Seiz_v10_NOT_ALIGNED_m10;
 	if (&chan->segment_number != (si4 *) (chan_bytes + REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m10))
 		goto REC_Seiz_v10_NOT_ALIGNED_m10;
-	if (chan->pad_bytes != (ui1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_PAD_BYTES_OFFSET_m10))
+	if (chan->pad != (ui1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_PAD_OFFSET_m10))
 		goto REC_Seiz_v10_NOT_ALIGNED_m10;
 
 	// aligned
@@ -852,7 +862,7 @@ TERN_m10     check_rec_NlxP_type_alignment_m10(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1 *) malloc_m10(REC_NlxP_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 
@@ -867,7 +877,7 @@ TERN_m10     check_rec_NlxP_type_alignment_m10(ui1 *bytes)
 		goto REC_NlxP_v10_NOT_ALIGNED_m10;
 	if (&nlxp->trigger_mode != (ui1 *) (bytes + REC_NlxP_v10_TRIGGER_MODE_OFFSET_m10))
 		goto REC_NlxP_v10_NOT_ALIGNED_m10;
-	if (nlxp->pad_bytes != (ui1 *) (bytes + REC_NlxP_v10_PAD_BYTES_OFFSET_m10))
+	if (nlxp->pad != (ui1 *) (bytes + REC_NlxP_v10_PAD_OFFSET_m10))
 		goto REC_NlxP_v10_NOT_ALIGNED_m10;
 
 	// aligned
@@ -930,7 +940,7 @@ TERN_m10     check_rec_Curs_type_alignment_m10(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1*)malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1*) malloc_m10(REC_Curs_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 
@@ -1005,7 +1015,7 @@ TERN_m10     check_rec_Epoc_type_alignment_m10(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m10(LARGEST_RECORD_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		bytes = (ui1 *) malloc_m10(REC_Epoc_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 		free_flag = TRUE_m10;
 	}
 
@@ -1035,6 +1045,201 @@ REC_Epoc_v10_NOT_ALIGNED_m10:
 		free((void *) bytes);
 
 	error_message_m10("%s(): REC_Epoc_v10_m10 structure is NOT aligned\n", __FUNCTION__);
+
+	return(FALSE_m10);
+
+}
+
+
+//*************************************************************************************//
+//**************************   ESti: Electrical Stimulation   *************************//
+//*************************************************************************************//
+
+void    show_rec_ESti_type_m10(RECORD_HEADER_m10 *record_header)
+{
+	REC_ESti_v10_m10	*esti;
+
+
+	// Version 1.0
+	if (record_header->version_major == 1 && record_header->version_minor == 0) {
+		esti = (REC_ESti_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
+		printf_m10("Amplitude: %lf ", esti->amplitude);
+		switch (esti->amp_unit_code) {
+			case REC_ESti_v10_AMP_UNIT_MA_m10:
+				printf_m10("mA\n");
+				break;
+			case REC_ESti_v10_AMP_UNIT_V_m10:
+				printf_m10("V\n");
+				break;
+			case REC_ESti_v10_AMP_UNIT_NO_ENTRY_m10:
+				printf_m10("(units no entry)\n");
+				break;
+			case REC_ESti_v10_AMP_UNIT_UNKNOWN_m10:
+				printf_m10("(units unknown)\n");
+				break;
+			default:
+				printf_m10("(unrecognized units code: %d)\n", esti->amp_unit_code);
+				break;
+		}
+		printf_m10("Frequency: %lf (Hz)\n", esti->frequency);
+		printf_m10("Pulse Width: %ld (µS)\n", esti->pulse_width);
+		printf_m10("Mode: ");
+		switch (esti->mode_code) {
+			case REC_ESti_v10_MODE_CURRENT_m10:
+				printf_m10("constant current\n");
+				break;
+			case REC_ESti_v10_MODE_VOLTAGE_m10:
+				printf_m10("constant voltage\n");
+				break;
+			case REC_ESti_v10_MODE_NO_ENTRY_m10:
+				printf_m10("no entry\n");
+				break;
+			case REC_ESti_v10_MODE_UNKNOWN_m10:
+				printf_m10("unknown\n");
+				break;
+			default:
+				printf_m10("unrecognized mode code (%d)\n", esti->mode_code);
+				break;
+		}
+
+		UTF8_printf_m10("Waveform: %s\n", esti->waveform);
+		UTF8_printf_m10("Anode: %s\n", esti->anode);
+		UTF8_printf_m10("Cathode: %s\n", esti->cathode);
+	}
+	// Unrecognized record version
+	else {
+		error_message_m10("%s(): Unrecognized ESti Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+	}
+
+	return;
+}
+
+
+TERN_m10     check_rec_ESti_type_alignment_m10(ui1 *bytes)
+{
+	REC_ESti_v10_m10	*esti;
+	TERN_m10                free_flag = FALSE_m10;
+	extern GLOBALS_m10	*globals_m10;
+
+
+	// check overall size
+	if (sizeof(REC_ESti_v10_m10) != REC_ESti_v10_BYTES_m10)
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc_m10(REC_ESti_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		free_flag = TRUE_m10;
+	}
+
+	esti = (REC_ESti_v10_m10 *) bytes;
+	if (&esti->amplitude != (sf8 *) (bytes + REC_ESti_v10_AMPLITUDE_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (&esti->frequency != (sf8 *) (bytes + REC_ESti_v10_FREQUENCY_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (&esti->pulse_width != (si8 *) (bytes + REC_ESti_v10_PULSE_WIDTH_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (&esti->amp_unit_code != (si4 *) (bytes + REC_ESti_v10_AMP_UNIT_CODE_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (&esti->mode_code != (si4 *) (bytes + REC_ESti_v10_MODE_CODE_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (esti->waveform != (si1 *) (bytes + REC_ESti_v10_WAVEFORM_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (esti->anode != (si1 *) (bytes + REC_ESti_v10_ANODE_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+	if (esti->cathode != (si1 *) (bytes + REC_ESti_v10_CATHODE_OFFSET_m10))
+		goto REC_ESti_v10_NOT_ALIGNED_m10;
+
+	// aligned
+	if (free_flag == TRUE_m10)
+		free((void *) bytes);
+
+	if (globals_m10->verbose == TRUE_m10)
+		printf_m10("%s(): REC_ESti_v10_m10 structure is aligned\n", __FUNCTION__);
+
+	return(TRUE_m10);
+
+	// not aligned
+REC_ESti_v10_NOT_ALIGNED_m10:
+
+	if (free_flag == TRUE_m10)
+		free((void *) bytes);
+
+	error_message_m10("%s(): REC_ESti_v10_m10 structure is NOT aligned\n", __FUNCTION__);
+
+	return(FALSE_m10);
+
+}
+
+
+//*************************************************************************************//
+//**************************   CSti: Cognitive Stimulation   **************************//
+//*************************************************************************************//
+
+void    show_rec_CSti_type_m10(RECORD_HEADER_m10 *record_header)
+{
+	REC_CSti_v10_m10	*csti;
+
+	
+	// Version 1.0
+	if (record_header->version_major == 1 && record_header->version_minor == 0) {
+		csti = (REC_CSti_v10_m10 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m10);
+		UTF8_printf_m10("Task Type: %s\n", csti->task_type);
+		UTF8_printf_m10("Stimulus Type: %s\n", csti->stimulus_type);
+		UTF8_printf_m10("Patient Response: %s\n", csti->patient_response);
+	}
+	// Unrecognized record version
+	else {
+		error_message_m10("%s(): Unrecognized CSti Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+	}
+
+	return;
+}
+
+
+TERN_m10     check_rec_CSti_type_alignment_m10(ui1 *bytes)
+{
+	REC_CSti_v10_m10	*csti;
+	TERN_m10                free_flag = FALSE_m10;
+	extern GLOBALS_m10	*globals_m10;
+
+
+	// check overall size
+	if (sizeof(REC_CSti_v10_m10) != REC_CSti_v10_BYTES_m10)
+		goto REC_CSti_v10_NOT_ALIGNED_m10;
+
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc_m10(REC_CSti_v10_BYTES_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		free_flag = TRUE_m10;
+	}
+
+	csti = (REC_CSti_v10_m10 *) bytes;
+	if (&csti->stimulus_duration != (si8 *) (bytes + REC_CSti_v10_STIMULUS_DURATION_OFFSET_m10))
+		goto REC_CSti_v10_NOT_ALIGNED_m10;
+	if (csti->task_type != (si1 *) (bytes + REC_CSti_v10_TASK_TYPE_OFFSET_m10))
+		goto REC_CSti_v10_NOT_ALIGNED_m10;
+	if (csti->stimulus_type != (si1 *) (bytes + REC_CSti_v10_STIMULUS_TYPE_OFFSET_m10))
+		goto REC_CSti_v10_NOT_ALIGNED_m10;
+	if (csti->patient_response != (si1 *) (bytes + REC_CSti_v10_PATIENT_RESPONSE_OFFSET_m10))
+		goto REC_CSti_v10_NOT_ALIGNED_m10;
+
+	// aligned
+	if (free_flag == TRUE_m10)
+		free((void *) bytes);
+
+	if (globals_m10->verbose == TRUE_m10)
+		printf_m10("%s(): REC_CSti_v10_m10 structure is aligned\n", __FUNCTION__);
+
+	return(TRUE_m10);
+
+	// not aligned
+REC_CSti_v10_NOT_ALIGNED_m10:
+
+	if (free_flag == TRUE_m10)
+		free((void *) bytes);
+
+	error_message_m10("%s(): REC_CSti_v10_m10 structure is NOT aligned\n", __FUNCTION__);
 
 	return(FALSE_m10);
 
