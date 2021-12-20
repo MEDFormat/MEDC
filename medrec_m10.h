@@ -506,7 +506,7 @@ typedef struct {
 	sf8	frequency;
 	si8	pulse_width;
 	si4	amp_unit_code;
-	si4	mode_code;  // Jan, does mode determine amplitude units?
+	si4	mode_code;
 	si1	waveform[REC_ESti_v10_WAVEFORM_BYTES_m10];
 	si1	anode[REC_ESti_v10_ANODE_BYTES_m10];
 	si1	cathode[REC_ESti_v10_CATHODE_BYTES_m10];
@@ -545,7 +545,7 @@ typedef struct {
 	si1	task_type[REC_CSti_v10_TASK_TYPE_BYTES_m10];
 	si1	stimulus_type[REC_CSti_v10_STIMULUS_TYPE_BYTES_m10];
 	si1	patient_response[REC_CSti_v10_PATIENT_RESPONSE_BYTES_m10];
-	ui1	pad[REC_CSti_v10_PAD_BYTES_m10];  // Jan, would you prefer to just put these bytes in one of the text arrays above?
+	ui1	pad[REC_CSti_v10_PAD_BYTES_m10];
 } REC_CSti_v10_m10;
 
 // Prototypes
