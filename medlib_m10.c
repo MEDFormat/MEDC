@@ -4426,7 +4426,7 @@ FILE_PROCESSING_DIRECTIVES_m10	*initialize_file_processing_directives_m10(FILE_P
 TERN_m10	initialize_globals_m10(void)
 {
 	if (globals_m10 == NULL) {
-		globals_m10 = (GLOBALS_m10 *) calloc((size_t)1, sizeof(GLOBALS_m10));
+		globals_m10 = (GLOBALS_m10 *) calloc((size_t) 1, sizeof(GLOBALS_m10));
 		if (globals_m10 == NULL) {
 			error_message_m10("%s(): calloc error\n", __FUNCTION__);
 			return(FALSE_m10);
@@ -9213,14 +9213,13 @@ si1	*time_string_m10(si8 uutc, si1 *time_str, TERN_m10 fixed_width, TERN_m10 rel
 			break;
 	}
 	
-	if (globals_m10->RTO_known == TRUE_m10) {
+	if (globals_m10->RTO_known == FALSE_m10) {  // FALSE_m10 used to mean unknown and relevant.
+		relative_days = offset = TRUE_m10;  // force relative days if using oUTC - nobody needs to know the 1970 date
+	} else {  // use UNKNOWN_m10 (0) for cases in which recording time offset is irrelevant (e.g. times not associated with MED files)
 		test_time = uutc - globals_m10->recording_time_offset;
 		if (test_time < 0)  // time is offset
 			uutc += globals_m10->recording_time_offset;
 		offset = FALSE_m10;
-	}
-	else {
-		relative_days = offset = TRUE_m10;  // force relative days if using oUTC - nobody needs to know the 1970 date
 	}
 	DST_offset = DST_offset_m10(uutc);
 	
