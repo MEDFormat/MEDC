@@ -3855,7 +3855,12 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 		free_loc_info = TRUE_m10;
 	}
 	
+#if defined MACOS_m10 || defined LINUX_m10
 	command = "curl -s ipinfo.io";
+#endif
+#ifdef WINDOWS_m10
+	command = "curl.exe -s ipinfo.io";
+#endif
 	sprintf_m10(temp_str, "%s > %s 2> %s", command, globals_m10->temp_file, NULL_DEVICE);
 	ret_val = system_m10(temp_str, FALSE_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	if (ret_val)
