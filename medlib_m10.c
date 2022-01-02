@@ -2336,19 +2336,13 @@ void    error_message_m10(si1 *fmt, ...)
 	
 	// RED suppressible text to stderr with beep, and option to exit program
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
-		fprintf_m10(stderr, TC_RED_m10);
+		fprintf(stderr, TC_RED_m10);
 		va_start(args, fmt);
-#if defined MACOS_m10 || defined LINUX_m10
 		UTF8_vfprintf_m10(stderr, fmt, args);
-#endif
-#ifdef WINDOWS_m10
-		vfprintf_m10(stderr, fmt, args);
-#endif
 		va_end(args);
 		if (globals_m10->behavior_on_fail & EXIT_ON_FAIL_m10)
-			fprintf_m10(stderr, "Exiting.\n\n" TC_RESET_m10);
-		else
-			fprintf_m10(stderr, TC_RESET_m10);
+			fprintf(stderr, "Exiting.\n\n");
+		fprintf(stderr, TC_RESET_m10);
 		fflush(stderr);
 	}
 	
@@ -2401,7 +2395,6 @@ void    escape_spaces_m10(si1 *string, si8 buffer_len)
 void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *extension)
 {
 	si1	*c, *cc, temp_full_file_name[FULL_FILE_NAME_BYTES_m10], dir_break;
-	si4	len;
 	
 	
 	// get path from root
@@ -2426,18 +2419,15 @@ void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 	}
 	
 	// copy extension if allocated
-	if (extension != NULL) {
-		if (*c == '.') {
-			len = strcpy_m10(extension, c + 1);
-			if (len != (TYPE_BYTES_m10 - 1))
-				warning_message_m10("%s(): \"%s\" is not a MED extension\n", __FUNCTION__, extension);
+	if (*c == '.') {
+		if (extension != NULL) {
+			if (*c == '.')
+				strcpy(extension, c + 1);
+			else
+				*extension = 0;
 		}
-		else {
-			*extension = 0;
-		}
-	}
-	if (*c == '.')
 		*c-- = 0;
+	}
 	
 	// step back to next directory break
 	while (*--c != dir_break);
@@ -2942,21 +2932,37 @@ WIN_FIND_MDF_SEG_LEVEL_m10:
 #endif  // WINDOWS_m10
 
 
-void	force_behavior_m10(ui4 behavior)
+#ifndef WINDOWS_m10  // inline causes linking problem in Windows
+inline
+#endif
+void	force_behavior_m10(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
 {
-	//*** THIS ROUTINE IS NOT THREAD SAFE - USE WITH CAUTION IN THREADED APPLICATIONS ***//
+	static ui4	stack_idx, stack_size;
 	
-	static ui4	saved_behavior = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m10;
-	
-	
+
+	if (globals_m10->behavior_stack == NULL) {
+		stack_size = GLOBALS_INITIAL_BEHAVIOR_STACK_ENTRIES_m10;
+		globals_m10->behavior_stack = (ui4 *) malloc((size_t) stack_size * sizeof(ui4));
+		stack_idx = 0;
+	}
+
 	if (behavior == RESTORE_BEHAVIOR_m10) {
-		globals_m10->behavior_on_fail = saved_behavior;
+		if (!stack_idx) {  // this shouldn't happen, but is possible
+			globals_m10->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m10;
+			return;
+		}
+		globals_m10->behavior_on_fail = globals_m10->behavior_stack[--stack_idx];
 		return;
 	}
 	
-	saved_behavior = globals_m10->behavior_on_fail;
-	globals_m10->behavior_on_fail = behavior;
+	if (stack_idx == stack_size) {
+		stack_size += GLOBALS_INITIAL_BEHAVIOR_STACK_ENTRIES_m10;
+		globals_m10->behavior_stack = (ui4 *) realloc((void *) globals_m10->behavior_stack, (size_t) stack_size * sizeof(ui4));
+	}
 	
+	globals_m10->behavior_stack[stack_idx++] = globals_m10->behavior_on_fail;
+	globals_m10->behavior_on_fail = behavior;
+
 	return;
 }
 
@@ -3103,6 +3109,9 @@ void    free_globals_m10(void)
 	
 	if (globals_m10->UTF8_trailing_bytes_table != NULL)
 		free((void *) globals_m10->UTF8_trailing_bytes_table);
+	
+	if (globals_m10->behavior_stack != NULL)
+		free((void *) globals_m10->behavior_stack);
 	
 	free((void *) globals_m10);
 	globals_m10 = NULL;
@@ -4532,6 +4541,10 @@ TERN_m10	initialize_globals_m10(void)
 	// miscellaneous
 	globals_m10->verbose = GLOBALS_VERBOSE_DEFAULT_m10;
 	globals_m10->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m10;
+	if (globals_m10->behavior_stack != NULL) {
+		free((void *) globals_m10->behavior_stack);
+		globals_m10->behavior_stack = NULL;
+	}
 #if defined MACOS_m10 || defined LINUX_m10
 	strcpy(globals_m10->temp_dir, "/tmp");
 	strcpy(globals_m10->temp_file, "/tmp/junk");
@@ -4540,7 +4553,7 @@ TERN_m10	initialize_globals_m10(void)
 	GetTempPathA(FULL_FILE_NAME_BYTES_m10, globals_m10->temp_dir);
 	sprintf_m10(globals_m10->temp_file, "%sjunk", globals_m10->temp_dir);
 #endif
-	
+
 	return(TRUE_m10);
 }
 
@@ -4558,7 +4571,7 @@ TERN_m10	initialize_medlib_m10(TERN_m10 check_structure_alignments, TERN_m10 ini
 	// set up globals
 	if (globals_m10 == NULL)
 		initialize_globals_m10();
-	
+
 	// check cpu endianness
 	if (get_cpu_endianness_m10() != LITTLE_ENDIAN_m10) {
 		error_message_m10("%s(): Library only coded for little-endian machines currently\n", __FUNCTION__);
@@ -5322,12 +5335,7 @@ void    message_m10(si1 *fmt, ...)
 	// uncolored suppressible text to stdout
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m10)) {
 		va_start(args, fmt);
-#if defined MACOS_m10 || defined LINUX_m10
 		UTF8_vprintf_m10(fmt, args);
-#endif
-#ifdef WINDOWS_m10
-		vprintf_m10(fmt, args);
-#endif
 		va_end(args);
 		fflush(stdout);
 	}
@@ -6648,7 +6656,7 @@ si8     read_time_series_data_m10(SEGMENT_m10 *seg, si8 local_start_idx, si8 loc
 	n_samps -= samp_num;
 	compressed_data_bytes = REMOVE_DISCONTINUITY_m10(tsi[end_block].file_offset) - REMOVE_DISCONTINUITY_m10(tsi[start_block].file_offset);
 	if (alloc_cps == TRUE_m10) {
-		force_behavior_m10(globals_m10->behavior_on_fail | SUPPRESS_WARNING_OUTPUT_m10);
+		force_behavior_m10(RETURN_ON_FAIL_m10 | SUPPRESS_WARNING_OUTPUT_m10);
 		CMP_free_processing_struct_m10(tsd_fps->cps);
 		force_behavior_m10(RESTORE_BEHAVIOR_m10);
 		tsd_fps->cps = CMP_allocate_processing_struct_m10(NULL, CMP_DECOMPRESSION_MODE_m10, n_samps, compressed_data_bytes, CMP_MAX_DIFFERENCE_BYTES_m10(tmd2->maximum_block_samples), tmd2->maximum_block_samples, NULL, NULL);
@@ -6847,6 +6855,7 @@ void	remove_recording_time_offset_m10(si8 *time)
 	
 	return;
 }
+
 
 void    reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 {
@@ -7691,7 +7700,7 @@ TERN_m10    set_global_time_constants_m10(TIMEZONE_INFO_m10 *timezone_info, si8 
 		fprintf_m10(stderr, "\nMultiple potential timezone entries:\n\n");
 		for (i = 0; i < n_potential_timezones; ++i) {
 			fprintf_m10(stderr, "%d)\n", i + 1);
-			show_timezone_info_m10(&tz_table[potential_timezone_entries[i]]);
+			show_timezone_info_m10(&tz_table[potential_timezone_entries[i]], FALSE_m10);
 			fputc_m10('\n', stderr);
 		}
 		fprintf_m10(stderr, "Select one (by number): ");
@@ -7794,28 +7803,31 @@ void    show_daylight_change_code_m10(DAYLIGHT_TIME_CHANGE_CODE_m10 * code, si1 
 	printf_m10("%sValue: 0x%lx\n\n", prefix, code->value);
 
 	// human readable
-	printf_m10("%sTranslated Content:\n", prefix);
+	printf_m10("Translated Content:\n");
+	if (prefix != NULL)
+		if (*prefix)
+			printf_m10("%s: ");
 	switch (code->value) {
 		case DTCC_VALUE_NO_ENTRY_m10:
-			printf_m10("%s: daylight saving change information not entered\n\n", prefix);
+			printf_m10("daylight saving change information not entered\n\n");
 			return;
 	case DTCC_VALUE_NOT_OBSERVED_m10:
-			printf_m10("%s: daylight saving not observed\n\n", prefix);
+			printf_m10("daylight saving not observed\n\n");
 			return;
 	}
 	switch (code->code_type) {
 		case -1:
-			printf_m10("%s: daylight saving END\n", prefix);
+			printf_m10("daylight saving END\n");
 			break;
 		case 1:
-			printf_m10("%s: daylight saving START\n", prefix);
+			printf_m10("daylight saving START\n");
 			break;
 	}
 
 	printf_m10("%s: ", prefix);
 	if (code->relative_weekday_of_month) {
 		printf_m10("%s ", relative_days[(si4) code->relative_weekday_of_month]);
-		printf_m10("%s ", weekdays[(si4) code->day_of_week]);
+		printf_m10("%s ", weekdays[(si4) (code->day_of_week + 1)]);
 		printf_m10("in %s ", months[(si4) code->month]);
 	}
 	else if (code->day_of_month) {
@@ -7988,7 +8000,7 @@ void    show_globals_m10(void)
 
 void    show_location_info_m10(LOCATION_INFO_m10 *li)
 {
-	show_timezone_info_m10(&li->timezone_info);
+	show_timezone_info_m10(&li->timezone_info, TRUE_m10);
 	printf_m10("Locality: %s\n", li->locality);
 	printf_m10("Postal Code: %s\n", li->postal_code);
 	printf_m10("Timezone Description: %s\n", li->timezone_description);
@@ -8497,7 +8509,7 @@ void    show_time_slice_m10(TIME_SLICE_m10 *slice)
 }
 
 
-void    show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry)
+void    show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry, TERN_m10 show_DST_detail)
 {
 	printf_m10("Country: %s\n", timezone_entry->country);
 	printf_m10("Country Acronym (2 letter): %s\n", timezone_entry->country_acronym_2_letter);
@@ -8512,7 +8524,7 @@ void    show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry)
 	printf_m10("Daylight Timezone: %s\n", timezone_entry->daylight_timezone);
 	printf_m10("Daylight Timezone Acronym: %s\n", timezone_entry->daylight_timezone_acronym);
 	
-	if (timezone_entry->daylight_time_start_code) {
+	if (timezone_entry->daylight_time_start_code && show_DST_detail == TRUE_m10) {
 		if (timezone_entry->daylight_time_start_code == DTCC_VALUE_NO_ENTRY_m10) {
 			printf_m10("Daylight Time info not available\n");
 		}
@@ -9544,25 +9556,19 @@ void    warning_message_m10(si1 *fmt, ...)
 {
 	va_list		args;
 	
-	
+
 	// GREEN suppressible text to stderr
 	if (!(globals_m10->behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m10)) {
-		fprintf_m10(stderr, TC_GREEN_m10);
+		fprintf(stderr, TC_GREEN_m10);
 		va_start(args, fmt);
-#if defined MACOS_m10 || defined LINUX_m10
 		UTF8_vfprintf_m10(stderr, fmt, args);
-#endif
-#ifdef WINDOWS_m10
-		vfprintf_m10(stderr, fmt, args);
-#endif
 		va_end(args);
-		fprintf_m10(stderr, TC_RESET_m10);
+		fprintf(stderr, TC_RESET_m10);
 		fflush(stderr);
 	}
 	
 	return;
 }
-
 
 
 #ifndef WINDOWS_m10  // inline causes linking problem in Windows
@@ -14056,13 +14062,23 @@ si4     UTF8_fprintf_m10(FILE *stream, si1 *fmt, ...)
 	sz = vasprintf_m10(&src, fmt, args);
 	va_end(args);
 	
-	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
 #ifdef MATLAB_m10
 	if (stream == stderr || stream == stdout)
 		mexPrintf("%s", src);
 	else
+		fprintf(stream, "%s", src);
+	free((void *) src);
+	return(sz);
 #endif
+	
+#ifdef WINDOWS_m10
+	fprintf(stream, "%s", src);
+	free((void *) src);
+	return(sz);
+#endif
+
+	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
 	fprintf(stream, "%ls", (wchar_t *) w_cs);
 	
 	free((void *) src);
@@ -14237,13 +14253,21 @@ si4     UTF8_printf_m10(si1 *fmt, ...)
 	sz = vasprintf_m10(&src, fmt, args);
 	va_end(args);
 	
-	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
 #ifdef MATLAB_m10
 	mexPrintf("%s", src);
-#else
-	printf("%ls", (wchar_t *) w_cs);
+	free((void *) src);
+	return(sz);
 #endif
+	
+#ifdef WINDOWS_m10
+	printf("%s", src);
+	free((void *) src);
+	return(sz);
+#endif
+
+	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
+	printf("%ls", (wchar_t *) w_cs);
 	
 	free((void *) src);
 	free((void *) w_cs);
@@ -14505,14 +14529,24 @@ si4     UTF8_vfprintf_m10(FILE *stream, si1 *fmt, va_list args)
 	
 	
 	sz = vasprintf_m10(&src, fmt, args);
-	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
 	
 #ifdef MATLAB_m10
 	if (stream == stderr || stream == stdout)
 		mexPrintf("%s", src);
 	else
+		fprintf(stream, "%s", src);
+	free((void *) src);
+	return(sz);
 #endif
+	
+#ifdef WINDOWS_m10
+	fprintf(stream, "%s", src);
+	free((void *) src);
+	return(sz);
+#endif
+	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
+	
 	fprintf(stream, "%ls", (wchar_t *) w_cs);
 	
 	free((void *) src);
@@ -14530,14 +14564,22 @@ si4     UTF8_vprintf_m10(si1 *fmt, va_list args)
 	
 	
 	sz = vasprintf_m10(&src, fmt, args);
-	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
 	
 #ifdef MATLAB_m10
 	mexPrintf("%s", src);
-#else
-	printf("%ls", (wchar_t *) w_cs);
+	free((void *) src);
+	return(sz);
 #endif
+	
+#ifdef WINDOWS_m10
+	printf("%s", src);
+	free((void *) src);
+	return(sz);
+#endif
+	
+	w_cs = (ui4 *) calloc_m10(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	UTF8_to_ucs_m10(w_cs, sz + 1, src, sz);
+	printf("%ls", (wchar_t *) w_cs);
 	
 	free((void *) src);
 	free((void *) w_cs);
@@ -15408,16 +15450,18 @@ si4    vasprintf_m10(si1 **target, si1 *fmt, va_list args)
 	si4	ret_val;
 	
 	
-#ifdef WINDOWS_m10
-	// no vasprintf() in Windows
-	*target = (si1 *) calloc_m10((size_t) PRINTF_BUF_LEN_m10, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
-	force_behavior_m10(SUPPRESS_WARNING_OUTPUT_m10);
+#ifdef WINDOWS_m10  // no vasprintf() in Windows
+	va_list		args_copy;
+	
+	*target = (si1 *) calloc((size_t) PRINTF_BUF_LEN_m10, sizeof(si1));
+	va_copy(args_copy, args);  // save a copy before use in case need to realloc
+	force_behavior_m10(RETURN_ON_FAIL_m10 | SUPPRESS_WARNING_OUTPUT_m10);
 	ret_val = vsnprintf_m10(*target, PRINTF_BUF_LEN_m10, fmt, args);
 	force_behavior_m10(RESTORE_BEHAVIOR_m10);
 	// trim or expand memory to required size
-	*target = (si1 *) realloc_m10((void *) *target, (size_t) (ret_val + 1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	*target = (si1 *) realloc((void *) *target, (size_t) (ret_val + 1));
 	if (ret_val >= PRINTF_BUF_LEN_m10)
-		ret_val = vsnprintf_m10(*target, ret_val + 1, fmt, args);
+		ret_val = vsnprintf_m10(*target, ret_val + 1, fmt, args_copy);
 #endif
 	
 #if defined MACOS_m10 || defined LINUX_m10

@@ -634,8 +634,9 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 // Error Handling Constants
 #define USE_GLOBAL_BEHAVIOR_m10         0
 #define RESTORE_BEHAVIOR_m10            1
-#define EXIT_ON_FAIL_m10                2
-#define RETURN_ON_FAIL_m10              4
+#define EXIT_ON_FAIL_m10                2  // exit program
+#define RETURN_ON_FAIL_m10              4  // return from function: if function is main(), behavior is up to programmer
+// if neither EXIT_ON_FAIL_m10 nor RETURN_ON_FAIL_m10 are set, function will continue (i.e. could be CONTINUE_ON_FAIL_m10, if this were defined)
 #define SUPPRESS_ERROR_OUTPUT_m10       8
 #define SUPPRESS_WARNING_OUTPUT_m10     16
 #define SUPPRESS_MESSAGE_OUTPUT_m10     32
@@ -765,6 +766,7 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define GLOBALS_VERBOSE_DEFAULT_m10                             FALSE_m10
 #define GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m10		        EXIT_ON_FAIL_m10
 #define GLOBALS_CRC_MODE_DEFAULT_m10			        CRC_CALCULATE_ON_OUTPUT_m10
+#define GLOBALS_INITIAL_BEHAVIOR_STACK_ENTRIES_m10		8
 
 // Global Time Defaults
 #define GLOBALS_SESSION_START_TIME_OFFSET_DEFAULT_m10		0
@@ -1265,6 +1267,7 @@ typedef struct {
 	ui4                             behavior_on_fail;
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m10];  // system temp directory (periodically auto-cleared)
 	si1				temp_file[FULL_FILE_NAME_BYTES_m10];  // full path to temp file (i.e. incudes temp_dir)
+	ui4				*behavior_stack;
 } GLOBALS_m10;
 
 
@@ -1677,7 +1680,7 @@ void            show_password_data_m10(PASSWORD_DATA_m10 *pwd);
 void		show_password_hints_m10(PASSWORD_DATA_m10 *pwd);
 void            show_records_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code);
 void    	show_time_slice_m10(TIME_SLICE_m10 *slice);
-void            show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry);
+void            show_timezone_info_m10(TIMEZONE_INFO_m10 *timezone_entry, TERN_m10 show_DST_detail);
 void            show_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, UNIVERSAL_HEADER_m10 *uh);
 si4		str_compare_m10(const void *a, const void *b);
 TERN_m10	str_contains_regex_m10(si1 *string);
