@@ -772,8 +772,8 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define GLOBALS_SESSION_START_TIME_OFFSET_DEFAULT_m10		0
 #define GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m10               0
 #define GLOBALS_RECORDING_TIME_OFFSET_NO_ENTRY_m10              0
-#define GLOBALS_RECORDING_TIME_OFFSET_MODE_DEFAULT_m10	        (RTO_APPLY_ON_OUTPUT_m10 | RTO_REMOVE_ON_INPUT_m10)
 #define GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m10                 0
+#define GLOBALS_STANDARD_UTC_OFFSET_NO_ENTRY_m10		((si4) 0x7FFFFFFF)
 #define GLOBALS_OBSERVE_DST_DEFAULT_m10				FALSE_m10
 #define GLOBALS_RTO_KNOWN_DEFAULT_m10				FALSE_m10
 #define GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m10	        "oUTC"
@@ -1231,7 +1231,6 @@ typedef struct {
 	TIMEZONE_INFO_m10		*timezone_table;
 	TIMEZONE_ALIAS_m10		*country_aliases_table;
 	TIMEZONE_ALIAS_m10		*country_acronym_aliases_table;
-	ui4                             recording_time_offset_mode;
 	// Alignment Fields
 	TERN_m10                        universal_header_aligned;
 	TERN_m10                        metadata_section_1_aligned;
