@@ -3,13 +3,14 @@
 
 #
 # This script relies on the following directory hierarchy existing:
-# lib (dir)
-#	MacOS (or Linux) (dir)
-#		targets_m10.h (file) (edited to define "MACOS_m10" or "LINUX_m10")
-#	medlib_m10.c (file)
-#	medlib_m10.h (file)
-#	medrec_m10.c (file)
-#	medrec_m10.h (file)
+# /Volumes/devdrv (or /mnt/devdrv) (mount point)
+# 	lib (dir)
+#		MacOS (or Linux) (dir)
+#			targets_m10.h (file) (edited to define "MACOS_m10" or "LINUX_m10")
+#		medlib_m10.c (file)
+#		medlib_m10.h (file)
+#		medrec_m10.c (file)
+#		medrec_m10.h (file)
 #
 # The library object code will be "/Volumes/devdrv/lib/MacOS/libmed_m10_mac.a" (or "/mnt/devdrv/lib/Linux/libmed_m10_lin.a").
 # Link the library with "-L$LIBOBJ -lmed_m10$LIBSFX" in executables (see "compile.sh" for an example).
