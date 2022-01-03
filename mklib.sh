@@ -30,20 +30,20 @@ OS="MacOS"
 # targets_m10.h file location: "local" or "library"
 TGT_FILE="library"
 
-########################
-#### Stop Edit Here ####
-########################
-
+#### Set DEVDRV here ####
 
 if [ $OS = "Linux" ]; then
 	DEVDRV="/mnt/devdrv"
 	LIBSFX="_lin"
-	PGINC="/usr/include/postgresql"
 elif [  $OS = "MacOS" ]; then
 	DEVDRV="/Volumes/devdrv"
-	PGINC="/Applications/Postgres.app/Contents/Versions/latest/include"
 	LIBSFX="_mac"
 fi
+
+########################
+#### Stop Edit Here ####
+########################
+
 
 LIBSRC=${DEVDRV}/lib
 LIBINC=$LIBSRC

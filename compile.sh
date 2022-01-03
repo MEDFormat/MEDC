@@ -32,18 +32,20 @@ OS="MacOS"
 # targets_m10.h file location: "local" or "library"
 TGT_FILE="library"
 
-########################
-#### Stop Edit Here ####
-########################
-
+#### Set DEVDRV here ####
 
 if [ $OS = "Linux" ]; then
 	DEVDRV="/mnt/devdrv"
 	LIBSFX="_lin"
 elif [  $OS = "MacOS" ]; then
-	DEVDRV="/Volumes/devdrv";
+	DEVDRV="/Volumes/devdrv"
 	LIBSFX="_mac"
 fi
+
+########################
+#### Stop Edit Here ####
+########################
+
 
 PRGINC=${DEVDRV}/$PRG
 PRGSRC=$PRGINC
