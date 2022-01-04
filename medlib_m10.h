@@ -722,7 +722,7 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define TIMEZONE_STRING_BYTES_m10                       64      // ascii[63]
 #define MAXIMUM_STANDARD_UTC_OFFSET_m10                 ((si4) 86400)
 #define MINIMUM_STANDARD_UTC_OFFSET_m10                 ((si4) -86400)
-#define STANDARD_UTC_OFFSET_NO_ENTRY_m10                ((si4) -86401)
+#define STANDARD_UTC_OFFSET_NO_ENTRY_m10                ((si4) 0x7FFFFFFF)
 #define MAXIMUM_DST_OFFSET_m10                          7200
 #define MINIMUM_DST_OFFSET_m10                          0
 #define DST_OFFSET_NO_ENTRY_m10                         -1
@@ -773,7 +773,7 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m10               0
 #define GLOBALS_RECORDING_TIME_OFFSET_NO_ENTRY_m10              0
 #define GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m10                 0
-#define GLOBALS_STANDARD_UTC_OFFSET_NO_ENTRY_m10		((si4) 0x7FFFFFFF)
+#define GLOBALS_STANDARD_UTC_OFFSET_NO_ENTRY_m10		STANDARD_UTC_OFFSET_NO_ENTRY_m10
 #define GLOBALS_OBSERVE_DST_DEFAULT_m10				FALSE_m10
 #define GLOBALS_RTO_KNOWN_DEFAULT_m10				FALSE_m10
 #define GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m10	        "oUTC"
@@ -1057,7 +1057,7 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define METADATA_GEOTAG_DATA_OFFSET_m10                         14024           // ascii[1023]
 #define METADATA_GEOTAG_DATA_BYTES_m10                          1024
 #define METADATA_STANDARD_UTC_OFFSET_OFFSET_m10                 15048           // si4
-#define METADATA_STANDARD_UTC_OFFSET_NO_ENTRY_m10               GLOBALS_STANDARD_UTC_OFFSET_NO_ENTRY_m10
+#define METADATA_STANDARD_UTC_OFFSET_NO_ENTRY_m10               STANDARD_UTC_OFFSET_NO_ENTRY_m10
 #define METADATA_SECTION_3_PROTECTED_REGION_OFFSET_m10          15052
 #define METADATA_SECTION_3_PROTECTED_REGION_BYTES_m10           668
 #define METADATA_SECTION_3_DISCRETIONARY_REGION_OFFSET_m10      15720
@@ -1409,7 +1409,7 @@ typedef struct {
 
 typedef struct {
 	METADATA_SECTION_1_m10				section_1;
-	union {  // == 	METADATA_SECTION_2_m10
+	union {   // == METADATA_SECTION_2_m10
 		TIME_SERIES_METADATA_SECTION_2_m10	time_series_section_2;
 		VIDEO_METADATA_SECTION_2_m10		video_section_2;
 	};
@@ -1644,6 +1644,7 @@ void            initialize_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m1
 TIME_SLICE_m10	*initialize_time_slice_m10(TIME_SLICE_m10 *slice);
 TERN_m10	initialize_timezone_tables_m10(void);
 void		initialize_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_code, TERN_m10 generate_file_UID, TERN_m10 originating_file);
+void		**malloc_2D_m10(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
 si1		*MED_type_string_from_code_m10(ui4 code);
 ui4             MED_type_code_from_string_m10(si1 *string);
 TERN_m10        merge_metadata_m10(FILE_PROCESSING_STRUCT_m10 *md_fps_1, FILE_PROCESSING_STRUCT_m10 *md_fps_2, FILE_PROCESSING_STRUCT_m10 *merged_md_fps);
