@@ -7031,12 +7031,15 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 	
 	// get segment list
 	n_segs = 0;
-	find_metadata_file_m10(MED_dir, tmp_str);
+	if (find_metadata_file_m10(MED_dir, tmp_str) == NULL) {
+		error_message_m10("%s(): Cannot find segment metadata\n", __FUNCTION__);
+		return(FALSE_m10);
+	}
 	extract_path_parts_m10(tmp_str, seg_dir, NULL, NULL);
 	extract_path_parts_m10(seg_dir, chan_dir, NULL, NULL);
-	seg_list = generate_file_list_m10(NULL, &n_segs, chan_dir, "*", "tisd", PP_FULL_PATH_m10, FALSE_m10);
+	seg_list = generate_file_list_m10(NULL, &n_segs, chan_dir, NULL, "tisd", PP_FULL_PATH_m10, FALSE_m10);
 	if (n_segs == 0) {
-		error_message_m10("%s(): Cannot find segment metadata\n", __FUNCTION__);
+		error_message_m10("%s(): Cannot find any segment directories\n", __FUNCTION__);
 		return(FALSE_m10);
 	}
 	
@@ -7049,7 +7052,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 		if (file_exists_m10(tmp_str) == FILE_EXISTS_m10)
 			md_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
 		if (md_fps == NULL) {
-			free((void *) *seg_list);
+			free((void *) seg_list);
 			error_message_m10("%s(): Cannot find segment metadata\n", __FUNCTION__);
 			return(FALSE_m10);
 		}
@@ -7076,7 +7079,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 		free_file_processing_struct_m10(md_fps, FALSE_m10);
 	}
 	if (i == n_segs) {
-		free((void *) *seg_list);
+		free((void *) seg_list);
 		error_message_m10("%s(): Start index exceeds session indices\n", __FUNCTION__);
 		return(FALSE_m10);
 	}
@@ -7093,7 +7096,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 		if (file_exists_m10(tmp_str) == FILE_EXISTS_m10)
 			md_fps = read_file_m10(NULL, tmp_str, FPS_FULL_FILE_m10, NULL, &items_read, NULL, USE_GLOBAL_BEHAVIOR_m10);
 		if (md_fps == NULL) {
-			free((void *) *seg_list);
+			free((void *) seg_list);
 			error_message_m10("%s(): Cannot find segment metadata\n", __FUNCTION__);
 			return(FALSE_m10);
 		}
@@ -7168,7 +7171,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 	else  // search_mode == INDEX_SEARCH_m10
 		slice->end_time = uutc_for_sample_number_m10(end_seg_start_idx, UUTC_NO_ENTRY_m10, slice->end_sample_number, sampling_frequency, tsi_fps, FIND_END_m10);
 	free_file_processing_struct_m10(tsi_fps, FALSE_m10);
-	free((void *) *seg_list);
+	free((void *) seg_list);
 	
 	slice->number_of_samples = (slice->end_sample_number - slice->start_sample_number) + 1;
 	
@@ -15265,6 +15268,7 @@ si4    sprintf_m10(si1 *target, si1 *fmt, ...)
 	
 	memcpy(target, tmp_str, ret_val + 1);
 	free((void *) tmp_str);
+
 	
 	return(ret_val);
 }
