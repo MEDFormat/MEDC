@@ -576,7 +576,7 @@ void	**calloc_2D_m10(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 	total_bytes = dim1_bytes + content_bytes;
 	ptr = (ui1 **) malloc_m10(total_bytes, function, line, behavior_on_fail);
 	ptr[0] = (ui1 *) (ptr + dim1);
-	memset((void *) ptr[0], 0, content_bytes);  // remove this line to make e_malloc_2D_m10()
+	memset((void *) ptr[0], 0, content_bytes);  // this line removed in malloc_2D_m10()
 	
 	for (i = 1; i < dim1; ++i)
 		ptr[i] = ptr[i - 1] + dim2_bytes;
@@ -2417,18 +2417,19 @@ void	extract_path_parts_m10(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 			break;
 		}
 	}
-	
+
 	// copy extension if allocated
-	if (*c == '.') {
-		if (extension != NULL) {
-			if (*c == '.')
-				strcpy(extension, c + 1);
-			else
-				*extension = 0;
+	if (extension != NULL) {
+		if (*c == '.') {
+			strcpy(extension, c + 1);
+			*c-- = 0;
+		} else {
+			*extension = 0;
 		}
+	} else if (*c == '.') {
 		*c-- = 0;
 	}
-	
+
 	// step back to next directory break
 	while (*--c != dir_break);
 	
@@ -2474,7 +2475,7 @@ ui4     file_exists_m10(si1 *path)  // can be used for directories also
 	struct stat     	sb;
 #endif
 #ifdef WINDOWS_m10
-	struct _stat64i32	sb;
+	struct _stat64		sb;
 #endif
 	
 	if (path == NULL)
@@ -2497,7 +2498,7 @@ ui4     file_exists_m10(si1 *path)  // can be used for directories also
 		return(DIR_EXISTS_m10);
 #endif
 #ifdef WINDOWS_m10
-	err = _stat(path, &sb);
+	err = _stat64(path, &sb);
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m10);
@@ -2517,10 +2518,10 @@ si8	file_length_m10(FILE *fp, si1 *path)
 {
 	si4		fd;
 #if defined MACOS_m10 || defined LINUX_m10
-	struct stat     	sb;
+	struct stat	sb;
 #endif
 #ifdef WINDOWS_m10
-	struct _stat64i32	sb;
+	struct _stat64	sb;
 #endif
 
 	
@@ -2534,7 +2535,7 @@ si8	file_length_m10(FILE *fp, si1 *path)
 		stat(path, &sb);
 	#endif
 	#ifdef WINDOWS_m10
-		_stat(path, &sb);
+		_stat64(path, &sb);
 	#endif
 	} else {
 	#if defined MACOS_m10 || defined LINUX_m10
@@ -2543,7 +2544,7 @@ si8	file_length_m10(FILE *fp, si1 *path)
 	#endif
 	#ifdef WINDOWS_m10
 		fd = _fileno(fp);
-		_fstat(fd, &sb);
+		_fstat64(fd, &sb);
 	#endif
 	}
 	
@@ -2985,19 +2986,23 @@ void    free_2D_m10(void **ptr, size_t dim1, const si1 *function, si4 line)
 	}
 	
 	// allocated en bloc
-	if ((ui8)ptr[0] == ((ui8)ptr + ((ui8)dim1 * (ui8)sizeof(void *) ))) {
+	// NOTE: this test will fail if the pointers were sorted as in str_sort_m10() or FPS_sort_m10()
+	// Under these circumstances just pass zero for dim1 as it is known that the arrays were allocated en bloc, or just "free((void *) ptr);".
+	if ((ui8) ptr[0] == (ui8) (ptr + dim1)) {
 		free((void *) ptr);
 		return;
 	}
 	
 	// separately allocated
 	for (i = 0; i < dim1; ++i) {
-		if (ptr[i] == NULL)
+		if (ptr[i] == NULL) {
+			warning_message_m10("%s(): Attempting to free unallocated object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
 			continue;
+		}
 		free((void *) ptr[i]);
 	}
 	free((void *) ptr);
-	
+
 	return;
 }
 
@@ -3661,7 +3666,7 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 	ri_fps = channel->record_indices_fps;
 	free_record_indices = FALSE_m10;
 	if (ri_fps != NULL)
-		if (ftell(ri_fps->fp) != EOF)
+		if (ftell_m10(ri_fps->fp, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10) != EOF)
 			ri_fps = NULL;
 	if (ri_fps == NULL) {
 		sprintf_m10(tmp_str, "%s/%s.%s", channel->path, channel->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
@@ -3672,7 +3677,7 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 	rd_fps = channel->record_data_fps;
 	free_record_data = FALSE_m10;
 	if (rd_fps != NULL)
-		if (ftell(rd_fps->fp) != EOF)
+		if (ftell_m10(rd_fps->fp, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10) != EOF)
 			rd_fps = NULL;
 	if (rd_fps == NULL) {
 		sprintf_m10(tmp_str, "%s/%s.%s", channel->path, channel->name, RECORD_DATA_FILE_TYPE_STRING_m10);
@@ -4229,7 +4234,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 	ri_fps = session->record_indices_fps;
 	free_record_indices = FALSE_m10;
 	if (ri_fps != NULL)
-		if (ftell(ri_fps->fp) != EOF)
+		if (ftell_m10(ri_fps->fp, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10) != EOF)
 			ri_fps = NULL;
 	if (ri_fps == NULL) {
 		sprintf_m10(tmp_str, "%s/%s.%s", session->path, session->name, RECORD_INDICES_FILE_TYPE_STRING_m10);
@@ -4240,7 +4245,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 	rd_fps = session->record_data_fps;
 	free_record_data = FALSE_m10;
 	if (rd_fps != NULL)
-		if (ftell(rd_fps->fp) != EOF)
+		if (ftell_m10(rd_fps->fp, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10) != EOF)
 			rd_fps = NULL;
 	if (rd_fps == NULL) {
 		sprintf_m10(tmp_str, "%s/%s.%s", session->path, session->name, RECORD_DATA_FILE_TYPE_STRING_m10);
@@ -4823,6 +4828,34 @@ void	initialize_universal_header_m10(FILE_PROCESSING_STRUCT_m10 *fps, ui4 type_c
 		uh->provenance_UID = uh->file_UID;
 	
 	return;
+}
+
+
+void	**malloc_2D_m10(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail)
+{
+	si8     i;
+	ui1	**ptr;
+	size_t  dim1_bytes, dim2_bytes, content_bytes, total_bytes;
+	
+	
+	// Returns pointer to 2 dimensional zeroed array of dim1 by dim2 elements of size el_size
+	// ptr[0] points to a one dimensional array of size (dim1 * dim2)
+	// The whole block can be freed with free(ptr)
+	
+	if (dim1 == 0 || dim2 == 0 || el_size == 0)
+		return((void **) NULL);
+	
+	dim1_bytes = dim1 * sizeof(void *) ;
+	dim2_bytes = dim2 * el_size;
+	content_bytes = dim1 * dim2_bytes;
+	total_bytes = dim1_bytes + content_bytes;
+	ptr = (ui1 **) malloc_m10(total_bytes, function, line, behavior_on_fail);
+	ptr[0] = (ui1 *) (ptr + dim1);
+	
+	for (i = 1; i < dim1; ++i)
+		ptr[i] = ptr[i - 1] + dim2_bytes;
+	
+	return((void **) ptr);
 }
 
 
@@ -5984,7 +6017,7 @@ FILE_PROCESSING_STRUCT_m10	*read_file_m10(FILE_PROCESSING_STRUCT_m10 *fps, si1 *
 	else {
 		in_bytes = number_of_items * uh->maximum_entry_size;
 	}
-	bytes_left_in_file = fps->file_length - ftell(fps->fp);
+	bytes_left_in_file = fps->file_length - ftell_m10(fps->fp, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	if (in_bytes > bytes_left_in_file)
 		in_bytes = bytes_left_in_file;
 	
@@ -6705,13 +6738,14 @@ void	**realloc_2D_m10(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t
 	// Returns pointer to a reallocated 2 dimensional array of new_dim1 by new_dim2 elements of size el_size (new unused elements are zeroed)
 	// ptr[0] points to a one dimensional array of size (dim1 * dim2)
 	// The whole block can be freed with free(ptr)
+	// Assumes memory was allocated with malloc_2D_m10() or calloc_2D_m10()
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m10)
 		behavior_on_fail = globals_m10->behavior_on_fail;
 	
 	if (new_dim1 == 0 || new_dim2 == 0 || el_size == 0) {
 		if (curr_ptr != NULL)
-			free_2D_m10((void **) curr_ptr, curr_dim1, function, line);
+			free((void *) curr_ptr);
 		return((void **) NULL);
 	}
 	
@@ -6730,10 +6764,10 @@ void	**realloc_2D_m10(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t
 	least_dim1 = (curr_dim1 <= new_dim1) ? curr_dim1 : new_dim1;
 	least_dim2 = (curr_dim2 <= new_dim2) ? curr_dim2 : new_dim2;
 	for (i = 0; i < least_dim1; ++i)
-		memcpy((void *) new_ptr[i], curr_ptr[i], (size_t)(least_dim2 * el_size));
+		memcpy((void *) new_ptr[i], curr_ptr[i], (size_t) (least_dim2 * el_size));
 	
-	free_2D_m10((void **) curr_ptr, curr_dim1, function, line);
-	
+	free((void *) curr_ptr);
+
 	return((void **) new_ptr);
 }
 		
@@ -7967,9 +8001,9 @@ void    show_globals_m10(void)
 	printf_m10("observe_DST: %hhd\n", globals_m10->observe_DST);
 	printf_m10("daylight_timezone_acronym: %s\n", globals_m10->daylight_timezone_acronym);
 	printf_m10("daylight_timezone_string: %s\n", globals_m10->daylight_timezone_string);
-	generate_hex_string_m10((ui1 *)&globals_m10->daylight_time_start_code.value, 8, hex_str);
+	generate_hex_string_m10((ui1 *) &globals_m10->daylight_time_start_code.value, 8, hex_str);
 	printf_m10("daylight_time_start_code: %s\n", hex_str);
-	generate_hex_string_m10((ui1 *)&globals_m10->daylight_time_end_code.value, 8, hex_str);
+	generate_hex_string_m10((ui1 *) &globals_m10->daylight_time_end_code.value, 8, hex_str);
 	printf_m10("daylight_time_end_code: %s\n\n", hex_str);
 	
 	printf_m10("Alignment Fields\n");
@@ -10649,7 +10683,7 @@ CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STR
 	
 	
 	if (cps == NULL)
-		cps = (CMP_PROCESSING_STRUCT_m10 *) calloc_m10((size_t)1, sizeof(CMP_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps = (CMP_PROCESSING_STRUCT_m10 *) calloc_m10((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m10), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	cps->mutex = FALSE_m10;
 	if (cps->password_data == NULL)
 		cps->password_data = &globals_m10->password_data;
@@ -10663,7 +10697,7 @@ CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STR
 	if (directives != NULL)
 		cps->directives = *directives;
 	else // set defaults
-		CMP_initialize_directives_m10(&cps->directives, (ui1)mode);
+		CMP_initialize_directives_m10(&cps->directives, (ui1) mode);
 	
 	// set up parameters
 	if (parameters != NULL)
@@ -10728,39 +10762,43 @@ CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STR
 	
 	// original_data - caller specified array size
 	if (need_original_data == TRUE_m10 && cps->original_data == NULL)
-		cps->input_buffer = cps->original_ptr = cps->original_data = (si4*) calloc_m10((size_t)data_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps->input_buffer = cps->original_ptr = cps->original_data = (si4*) calloc_m10((size_t) data_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// compressed_data - caller specified array size
 	if (need_compressed_data == TRUE_m10 && cps->compressed_data == NULL)
-		cps->block_header = (CMP_BLOCK_FIXED_HEADER_m10 *) (cps->compressed_data = (ui1 *) calloc_m10((size_t)compressed_data_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10));
+		cps->block_header = (CMP_BLOCK_FIXED_HEADER_m10 *) (cps->compressed_data = (ui1 *) calloc_m10((size_t) compressed_data_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10));
 	
 	// difference_buffer - caller specified or maximum bytes required for specified block size
 	if (difference_bytes == 0)
 		difference_bytes = CMP_MAX_DIFFERENCE_BYTES_m10(block_samples);
 	if (need_difference_buffer == TRUE_m10 && cps->difference_buffer == NULL)
-		cps->difference_buffer = (si1 *) calloc_m10((size_t)difference_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps->difference_buffer = (si1 *) calloc_m10((size_t) difference_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// decompressed_data - caller specified array size
-	if (need_decompressed_data == TRUE_m10 && cps->decompressed_data == NULL)
-		cps->decompressed_data = cps->decompressed_ptr = (si4*) calloc_m10((size_t)data_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	if (need_decompressed_data == TRUE_m10 && cps->decompressed_data == NULL) {
+		if (cps->directives.mode == CMP_DECOMPRESSION_MODE_m10)
+			cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m10((size_t) data_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		else  // cps->directives.mode == CMP_COMPRESSION_MODE_m10  (decompressed_ptr used to calculate mean residual ratio for each block)
+			cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m10((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+	}
 	
 	// detrended_buffer - maximum bytes required for caller specified block size
 	if (need_detrended_buffer == TRUE_m10 && cps->detrended_buffer == NULL)
-		cps->detrended_buffer = (si4*) calloc_m10((size_t)block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps->detrended_buffer = (si4 *) calloc_m10((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// derivative_buffer - maximum bytes required for caller specified block size
 	if (need_derivative_buffer == TRUE_m10 && cps->derivative_buffer == NULL) {
 		derivative_bytes = (si8)CMP_MAX_DIFFERENCE_BYTES_m10(block_samples);
-		cps->derivative_buffer = (si1 *) calloc_m10((size_t)derivative_bytes, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps->derivative_buffer = (si1 *) calloc_m10((size_t) derivative_bytes, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	}
 	
 	// scaled_amplitude_buffer - maximum bytes required for caller specified block size
 	if (need_scaled_amplitude_buffer == TRUE_m10 && cps->scaled_amplitude_buffer == NULL)
-		cps->scaled_amplitude_buffer = (si4*) calloc_m10((size_t)block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps->scaled_amplitude_buffer = (si4 *) calloc_m10((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	// scaled_frequency_buffer - maximum bytes required for caller specified block size
 	if (need_scaled_frequency_buffer == TRUE_m10 && cps->scaled_frequency_buffer == NULL)
-		cps->scaled_frequency_buffer = (si4*) calloc_m10((size_t)block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
+		cps->scaled_frequency_buffer = (si4 *) calloc_m10((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	
 	return(cps);
 }
@@ -10775,24 +10813,23 @@ sf8      CMP_calculate_mean_residual_ratio_m10(si4 *original_data, si4 *lossy_da
 	si8        i;
 	
 	
-	sum = (sf8)0.0;
+	sum = (sf8) 0.0;
 	for (i = n_samps; i--;) {
 		if (*original_data) {
-			diff = (sf8)(*original_data - *lossy_data++);
-			r = diff / (sf8)*original_data++;
+			diff = (sf8) (*original_data - *lossy_data++);
+			r = diff / (sf8) *original_data++;
 			sum += ABS_m10(r);
-		}
-		else {
+		} else {
 			--n_samps;
 			++original_data;
 			++lossy_data;
 		}
 	}
 	
-	if (sum == (sf8)0.0)
-		mrr = (sf8)0.0;
+	if (sum == (sf8) 0.0)
+		mrr = (sf8) 0.0;
 	else
-		mrr = sum / (sf8)n_samps;
+		mrr = sum / (sf8) n_samps;
 	
 	return(mrr);
 }
@@ -11047,8 +11084,8 @@ void    CMP_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 {
 	ui4				offset;
 	si4				*si4_p;
-	sf4				*sf4_p, amplitude_scale, frequency_scale;
-	sf8				intercept, gradient;
+	sf4				*sf4_p;
+	sf8				intercept, gradient, amplitude_scale, frequency_scale;
 	CMP_BLOCK_FIXED_HEADER_m10	*block_header;
 
 	
@@ -11088,28 +11125,28 @@ void    CMP_decode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	
 	// unscale frequency-scaled decompressed_data if scaled (in place)
 	if (block_header->parameter_flags & CMP_PF_FREQUENCY_SCALE_MASK_m10) {
-		sf4_p = (sf4*)cps->parameters.block_parameters;
-		offset = cps->parameters.block_parameters[cps->parameters.block_parameter_map[CMP_PF_FREQUENCY_SCALE_IDX_m10]];
-		frequency_scale = *(sf4_p + offset);
+		sf4_p = (sf4 *) cps->parameters.block_parameters;
+		offset = cps->parameters.block_parameter_map[CMP_PF_FREQUENCY_SCALE_IDX_m10];
+		frequency_scale = (sf8) *(sf4_p + offset);
 		CMP_unscale_frequency_m10(cps->decompressed_ptr, cps->decompressed_ptr, (si8)block_header->number_of_samples, frequency_scale);
 	}
 	
 	// unscale amplitude-scaled decompressed_data if scaled (in place)
 	if (block_header->parameter_flags & CMP_PF_AMPLITUDE_SCALE_MASK_m10) {
-		sf4_p = (sf4*)cps->parameters.block_parameters;
-		offset = cps->parameters.block_parameters[cps->parameters.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m10]];
-		amplitude_scale = *(sf4_p + offset);
-		CMP_unscale_amplitude_m10(cps->decompressed_ptr, cps->decompressed_ptr, (si8)block_header->number_of_samples, amplitude_scale);
+		sf4_p = (sf4 *) cps->parameters.block_parameters;
+		offset = cps->parameters.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m10];
+		amplitude_scale = (sf8) *(sf4_p + offset);
+		CMP_unscale_amplitude_m10(cps->decompressed_ptr, cps->decompressed_ptr, (si8) block_header->number_of_samples, amplitude_scale);
 	}
 	
 	// add trend to decompressed_data if detrended (in place)
 	if (CMP_IS_DETRENDED_m10(block_header)) {
-		sf4_p = (sf4*)cps->parameters.block_parameters;
-		offset = cps->parameters.block_parameters[cps->parameters.block_parameter_map[CMP_PF_GRADIENT_IDX_m10]];
-		gradient = (sf8) * (sf4_p + offset);
-		si4_p = (si4*)cps->parameters.block_parameters;
-		offset = cps->parameters.block_parameters[cps->parameters.block_parameter_map[CMP_PF_INTERCEPT_IDX_m10]];
-		intercept = (sf8) * (si4_p + offset);
+		sf4_p = (sf4 *) cps->parameters.block_parameters;
+		offset = cps->parameters.block_parameter_map[CMP_PF_GRADIENT_IDX_m10];
+		gradient = (sf8) *(sf4_p + offset);
+		si4_p = (si4 *) cps->parameters.block_parameters;
+		offset = cps->parameters.block_parameter_map[CMP_PF_INTERCEPT_IDX_m10];
+		intercept = (sf8) *(si4_p + offset);
 		CMP_retrend_m10(cps->decompressed_ptr, cps->decompressed_ptr, block_header->number_of_samples, gradient, intercept);
 	}
 	
@@ -11201,23 +11238,23 @@ void    CMP_detrend_m10(si4 *input_buffer, si4 *output_buffer, si8 len, CMP_PROC
 	// NOTE: block parameter region must be setup first
 	if (cps != NULL) {
 		// demote precision
-		sf4_m = (sf4)m;
-		si4_b = CMP_round_m10(b);
-		// store
+		sf4_m = (sf4) m;
+		si4_b = CMP_round_m10(b);  // this is an integer because sf4 can only precisely encode offsets up to 24 bits, but MED guarantees 32-bit lossless detrending
+		// store the values
 		*((sf4 *) cps->parameters.block_parameters + cps->parameters.block_parameter_map[CMP_PF_GRADIENT_IDX_m10]) = sf4_m;
 		*((si4 *) cps->parameters.block_parameters + cps->parameters.block_parameter_map[CMP_PF_INTERCEPT_IDX_m10]) = si4_b;
-		// promote back to sf8 precision
+		// promote back to sf8, maintaining demoted precision
 		m = (sf8) sf4_m;
 		b = (sf8) si4_b;
 	}
-	
+
 	// subtract trend from input_buffer to output_buffer
 	mx_plus_b = b;
 	si4_p1 = input_buffer;
 	si4_p2 = output_buffer;
 	while (len--)
 		*si4_p2++ = CMP_round_m10((sf8) *si4_p1++ - (mx_plus_b += m));
-	
+
 	return;
 }
 
@@ -11232,6 +11269,7 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
 	
 	CMP_cps_mutex_on_m10(cps);
 	
+	cps->input_buffer = cps->original_ptr;  // encoding always starts from original_ptr, input_buffer may get updated depending on options
 	block_header = cps->block_header;
 	
 	// fill in passed header fields
@@ -11268,16 +11306,16 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
 	switch (cps->directives.algorithm) {
 		case CMP_RED_COMPRESSION_m10:
 			block_header->block_flags |= CMP_BF_RED_ENCODING_MASK_m10;
-			compression_f = &CMP_RED_encode_m10;
+			compression_f = CMP_RED_encode_m10;
 			break;
 		case CMP_PRED_COMPRESSION_m10:
 			block_header->block_flags |= CMP_BF_PRED_ENCODING_MASK_m10;
-			compression_f = &CMP_PRED_encode_m10;
+			compression_f = CMP_PRED_encode_m10;
 			break;
 		case CMP_MBE_COMPRESSION_m10:
 			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m10;
 			CMP_find_extrema_m10(NULL, 0, NULL, NULL, cps);
-			compression_f = &CMP_MBE_encode_m10;
+			compression_f = CMP_MBE_encode_m10;
 			break;
 		default:
 			error_message_m10("%s(): unrecognized compression algorithm (%u)\n", __FUNCTION__, cps->directives.algorithm);
@@ -11287,7 +11325,7 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
 	
 	// detrend
 	if (cps->directives.detrend_data == TRUE_m10) {
-		CMP_detrend_m10(cps->original_ptr, cps->detrended_buffer, block_header->number_of_samples, cps);
+		CMP_detrend_m10(cps->input_buffer, cps->detrended_buffer, block_header->number_of_samples, cps);
 		cps->input_buffer = cps->detrended_buffer;
 	}
 	
@@ -11303,17 +11341,17 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
 	}
 	if (allow_lossy_compression == TRUE_m10) {
 		if (cps->directives.set_amplitude_scale == TRUE_m10 || cps->directives.find_amplitude_scale == TRUE_m10) {
-			if (cps->directives.set_amplitude_scale == TRUE_m10)
-				CMP_scale_amplitude_m10(cps->input_buffer, cps->scaled_amplitude_buffer, block_header->number_of_samples, (sf8)cps->parameters.amplitude_scale, cps);
 			if (cps->directives.find_amplitude_scale == TRUE_m10)
 				data_is_compressed = CMP_find_amplitude_scale_m10(cps, compression_f);
+			else if (cps->directives.set_amplitude_scale == TRUE_m10)
+				CMP_scale_amplitude_m10(cps->input_buffer, cps->scaled_amplitude_buffer, block_header->number_of_samples, (sf8) cps->parameters.amplitude_scale, cps);
 			cps->input_buffer = cps->scaled_amplitude_buffer;
 		}
 		if (cps->directives.set_frequency_scale == TRUE_m10 || cps->directives.find_frequency_scale == TRUE_m10) {
-			if (cps->directives.set_frequency_scale == TRUE_m10)
-				CMP_scale_frequency_m10(cps->input_buffer, cps->scaled_frequency_buffer, block_header->number_of_samples, (sf8)cps->parameters.frequency_scale, cps);
 			if (cps->directives.find_frequency_scale == TRUE_m10)
 				data_is_compressed = CMP_find_frequency_scale_m10(cps, compression_f);
+			else if (cps->directives.set_frequency_scale == TRUE_m10)
+				CMP_scale_frequency_m10(cps->input_buffer, cps->scaled_frequency_buffer, block_header->number_of_samples, (sf8)cps->parameters.frequency_scale, cps);
 			cps->input_buffer = cps->scaled_frequency_buffer;
 		}
 	}
@@ -11427,76 +11465,71 @@ TERN_m10    CMP_find_amplitude_scale_m10(CMP_PROCESSING_STRUCT_m10 *cps, void (*
 	input_buffer = cps->input_buffer;
 	block_header = cps->block_header;
 	data_is_compressed = FALSE_m10;
-	
+
 	if (cps->directives.use_compression_ratio == TRUE_m10) {
 		goal_compression_ratio = cps->parameters.goal_ratio;
 		goal_low_bound = goal_compression_ratio - cps->parameters.goal_tolerance;
 		goal_high_bound = goal_compression_ratio + cps->parameters.goal_tolerance;
-		cps->parameters.amplitude_scale = (sf4)1.0;
+		cps->parameters.amplitude_scale = (sf4) 1.0;
 		(*compression_f)(cps);
-		original_size = (sf8)block_header->number_of_samples * (sf8)sizeof(si4);
-		cps->parameters.actual_ratio = (sf8)block_header->total_block_bytes / original_size;
+		data_is_compressed = TRUE_m10;
+		original_size = (sf8) block_header->number_of_samples * (sf8) sizeof(si4);
+		cps->parameters.actual_ratio = (sf8) block_header->total_block_bytes / original_size;
 		if (cps->parameters.actual_ratio > goal_high_bound) {
 			// loop until acceptable scale factor found
 			for (i = cps->parameters.maximum_goal_attempts; i--;) {
-				new_scale_factor = cps->parameters.amplitude_scale * (sf4)(cps->parameters.actual_ratio / goal_compression_ratio);
-				if ((ABS_m10(new_scale_factor - cps->parameters.amplitude_scale) <= (sf4)0.000001) || (new_scale_factor <= (sf4)1.0))
+				new_scale_factor = cps->parameters.amplitude_scale * (sf4) (cps->parameters.actual_ratio / goal_compression_ratio);
+				if ((ABS_m10(new_scale_factor - cps->parameters.amplitude_scale) <= (sf4) 0.000001) || (new_scale_factor <= (sf4) 1.0))
 					break;
 				cps->parameters.amplitude_scale = new_scale_factor;
 				(*compression_f)(cps);  // compress
-				cps->parameters.actual_ratio = (sf8)block_header->total_block_bytes / original_size;
+				cps->parameters.actual_ratio = (sf8) block_header->total_block_bytes / original_size;
 				if ((cps->parameters.actual_ratio <= goal_high_bound) && (cps->parameters.actual_ratio >= goal_low_bound))
 					break;
 			}
 		}
-		CMP_generate_lossy_data_m10(cps, input_buffer, cps->decompressed_ptr, CMP_AMPLITUDE_SCALE_MODE_m10);
-		cps->input_buffer = cps->decompressed_ptr;
 	}
 	else if (cps->directives.use_mean_residual_ratio == TRUE_m10) {
 		// get residual ratio at sf 2 & 5 (roughly linear relationship: reasonable sample points)
-		cps->parameters.amplitude_scale = (sf4)2.0;
+		cps->parameters.amplitude_scale = (sf4) 2.0;
 		CMP_generate_lossy_data_m10(cps, input_buffer, cps->decompressed_ptr, CMP_AMPLITUDE_SCALE_MODE_m10);
-		mrr2 = CMP_calculate_mean_residual_ratio_m10(cps->original_ptr, cps->decompressed_ptr, block_header->number_of_samples);
-		if (mrr2 == (sf8)0.0) {  // all zeros in block
-			cps->parameters.amplitude_scale = (sf4)1.0;
-			cps->parameters.actual_ratio = (sf8)0.0;
+		mrr2 = CMP_calculate_mean_residual_ratio_m10(input_buffer, cps->decompressed_ptr, block_header->number_of_samples);
+		if (mrr2 == (sf8) 0.0) {  // all zeros in block
+			cps->parameters.amplitude_scale = (sf4) 1.0;
+			cps->parameters.actual_ratio = (sf8) 0.0;
 			(*compression_f)(cps);
 			goto CMP_MRR_DONE;
 		}
-		cps->parameters.amplitude_scale = (sf4)5.0;
+		cps->parameters.amplitude_scale = (sf4) 5.0;
 		CMP_generate_lossy_data_m10(cps, input_buffer, cps->decompressed_ptr, CMP_AMPLITUDE_SCALE_MODE_m10);
-		mrr5 = CMP_calculate_mean_residual_ratio_m10(cps->original_ptr, cps->decompressed_ptr, block_header->number_of_samples);
-		sf_per_mrr = (sf8)3.0 / (mrr5 - mrr2);
+		mrr5 = CMP_calculate_mean_residual_ratio_m10(input_buffer, cps->decompressed_ptr, block_header->number_of_samples);
+		sf_per_mrr = (sf8) 3.0 / (mrr5 - mrr2);
 		// estimate starting points
 		goal_mrr = cps->parameters.goal_ratio;
 		goal_tol = cps->parameters.goal_tolerance;
 		goal_low_bound = goal_mrr - goal_tol;
 		goal_high_bound = goal_mrr + goal_tol;
 		cps->parameters.amplitude_scale = (sf4)(((goal_mrr - mrr2) * sf_per_mrr) + (sf8)2.0);
-		high_sf = ((goal_high_bound - mrr2) * sf_per_mrr) + (sf8)2.0;
-		high_sf *= (sf8)2.0;  // empirically reasonable
-		low_sf = (sf8)1.0;
+		high_sf = ((goal_high_bound - mrr2) * sf_per_mrr) + (sf8) 2.0;
+		high_sf *= (sf8) 2.0;  // empirically reasonable
+		low_sf = (sf8) 1.0;
 		for (i = cps->parameters.maximum_goal_attempts; i--;) {
 			CMP_generate_lossy_data_m10(cps, input_buffer, cps->decompressed_ptr, CMP_AMPLITUDE_SCALE_MODE_m10);
-			mrr = CMP_calculate_mean_residual_ratio_m10(cps->original_ptr, cps->decompressed_ptr, block_header->number_of_samples);
+			mrr = CMP_calculate_mean_residual_ratio_m10(input_buffer, cps->decompressed_ptr, block_header->number_of_samples);
 			if (mrr < goal_low_bound)
-				low_sf = (sf8)cps->parameters.amplitude_scale;
+				low_sf = (sf8) cps->parameters.amplitude_scale;
 			else if (mrr > goal_high_bound)
-				high_sf = (sf8)cps->parameters.amplitude_scale;
+				high_sf = (sf8) cps->parameters.amplitude_scale;
 			else
 				break;
-			new_scale_factor = (sf4)((low_sf + high_sf) / (sf8)2.0);
-			if (new_scale_factor <= (sf4)1.0)
+			new_scale_factor = (sf4) ((low_sf + high_sf) / (sf8) 2.0);
+			if (new_scale_factor <= (sf4) 1.0)
 				break;
-			if ((high_sf - low_sf) < (sf8)0.005) {
-				cps->parameters.amplitude_scale = new_scale_factor;
-				break;
-			}
 			cps->parameters.amplitude_scale = new_scale_factor;
+			if ((high_sf - low_sf) < (sf8) 0.005)
+				break;
 		}
 		cps->parameters.actual_ratio = mrr;
-		cps->input_buffer = cps->decompressed_ptr;
-		(*compression_f)(cps);  // compress
 	}
 	else {
 		error_message_m10("%s(): either use_compression_ratio or use_mean_residual_ratio directive must be set (mode == %d)\n", __FUNCTION__, cps->directives.mode);
@@ -11610,16 +11643,16 @@ void    CMP_generate_lossy_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si4 *input_b
 	block_header = cps->block_header;
 	
 	if (mode == CMP_AMPLITUDE_SCALE_MODE_m10) {
-		// amplitude scale from input_buffer to output_buffer (lossy)
-		CMP_scale_amplitude_m10(input_buffer, output_buffer, block_header->number_of_samples, (sf8)cps->parameters.amplitude_scale, cps);
-		// unscale in place
-		CMP_unscale_amplitude_m10(output_buffer, output_buffer, block_header->number_of_samples, (sf8)cps->parameters.amplitude_scale);
+		// amplitude scale from input_buffer to scaled_amplitude_buffer (lossy)
+		CMP_scale_amplitude_m10(input_buffer, cps->scaled_amplitude_buffer, block_header->number_of_samples, (sf8) cps->parameters.amplitude_scale, cps);
+		// unscale from scaled_amplitude_buffer to output_buffer
+		CMP_unscale_amplitude_m10(cps->scaled_amplitude_buffer, output_buffer, block_header->number_of_samples, (sf8) cps->parameters.amplitude_scale);
 	}
 	else if (mode == CMP_FREQUENCY_SCALE_MODE_m10) {
-		// frequency scale from input_buffer to output_buffer (lossy)
-		CMP_scale_frequency_m10(input_buffer, output_buffer, block_header->number_of_samples, (sf8)cps->parameters.frequency_scale, cps);
-		// unscale in place
-		CMP_unscale_frequency_m10(output_buffer, output_buffer, block_header->number_of_samples, (sf8)cps->parameters.frequency_scale);
+		// frequency scale from input_buffer to scaled_frequency_buffer (lossy)
+		CMP_scale_frequency_m10(input_buffer, cps->scaled_frequency_buffer, block_header->number_of_samples, (sf8) cps->parameters.frequency_scale, cps);
+		// unscale from scaled_frequency_buffer to output_buffer
+		CMP_unscale_frequency_m10(cps->scaled_frequency_buffer, output_buffer, block_header->number_of_samples, (sf8) cps->parameters.frequency_scale);
 	}
 	else {
 		error_message_m10("%s(): unrecognized lossy compression mode => no data generated\n", __FUNCTION__);
@@ -11636,14 +11669,14 @@ void    CMP_get_variable_region_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	
 	
 	block_header = cps->block_header;
-	var_reg_ptr = (ui1 *)block_header + CMP_BLOCK_FIXED_HEADER_BYTES_m10;  // pointer to beginning of variable region
+	var_reg_ptr = (ui1 *) block_header + CMP_BLOCK_FIXED_HEADER_BYTES_m10;  // pointer to beginning of variable region
 	
 	// records region
 	cps->records = var_reg_ptr;
 	var_reg_ptr += block_header->record_region_bytes;
 	
 	// parameter region
-	cps->parameters.block_parameters = (ui4*)var_reg_ptr;
+	cps->parameters.block_parameters = (ui4 *) var_reg_ptr;
 	CMP_generate_parameter_map_m10(cps);
 	var_reg_ptr += block_header->parameter_region_bytes;
 	
@@ -11679,8 +11712,8 @@ void	CMP_generate_parameter_map_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		if (flags & bit)
 			p_map[i] = n_params++;
 	
-	cps->parameters.number_of_block_parameters = (si4)n_params;
-	bh->parameter_region_bytes = (ui2)(n_params * 4);
+	cps->parameters.number_of_block_parameters = (si4) n_params;
+	bh->parameter_region_bytes = (ui2) (n_params * 4);
 	
 	return;
 }
@@ -12859,7 +12892,6 @@ void    CMP_RED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 
 void    CMP_retrend_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 m, sf8 b)
 {
-	si8     i;
 	sf8     mx_plus_b;
 	
 	
@@ -12867,7 +12899,7 @@ void    CMP_retrend_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 m, s
 	// if input_buffer == output_buffer retrending data will be done in place
 	
 	mx_plus_b = b;
-	for (i = len; i--;)
+	while (len--)
 		*output_buffer++ = CMP_round_m10((sf8) *input_buffer++ + (mx_plus_b += m));
 	
 	return;
@@ -12899,7 +12931,7 @@ void    CMP_scale_amplitude_m10(si4 *input_buffer, si4 *output_buffer, si8 len, 
 {
 	si4	*si4_p1, *si4_p2;
 	sf4	sf4_scale;
-	si8	i;
+	sf8	inv_scale_factor;
 	
 	
 	// scale from input_buffer to output_buffer
@@ -12912,15 +12944,16 @@ void    CMP_scale_amplitude_m10(si4 *input_buffer, si4 *output_buffer, si8 len, 
 		sf4_scale = (sf4) scale_factor;
 		// store
 		*((sf4 *) cps->parameters.block_parameters + cps->parameters.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m10]) = scale_factor;
-		// promote back to sf8 precision
-		scale_factor = (sf8)sf4_scale;
+		// promote back to sf8 precision (but having only sf4 precision)
+		scale_factor = (sf8) sf4_scale;
 	}
 	
 	si4_p1 = input_buffer;
 	si4_p2 = output_buffer;
-	for (i = len; i--;)
-		*si4_p2++ = CMP_round_m10((sf8) *si4_p1++ / scale_factor);
-	
+	inv_scale_factor = (sf8) 1.0 / scale_factor;  // multiplication much faster than division on some systems
+	while (len--)
+		*si4_p2++ = CMP_round_m10((sf8) *si4_p1++ * inv_scale_factor);
+
 	return;
 }
 
@@ -12966,12 +12999,12 @@ void    CMP_set_variable_region_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	block_header->discretionary_region_bytes = cps->parameters.user_discretionary_region_bytes;
 	
 	// records region
-	var_reg_ptr = (ui1 *)block_header + CMP_BLOCK_FIXED_HEADER_BYTES_m10; // pointer to start of variable region
+	var_reg_ptr = (ui1 *) block_header + CMP_BLOCK_FIXED_HEADER_BYTES_m10;  // pointer to start of variable region
 	cps->records = var_reg_ptr;
 	var_reg_ptr += block_header->record_region_bytes;
 	
 	// parameter region
-	cps->parameters.block_parameters = (ui4*)var_reg_ptr;
+	cps->parameters.block_parameters = (ui4 *) var_reg_ptr;
 	
 	// set library parameter flags
 	if (cps->directives.detrend_data == TRUE_m10)
@@ -13147,7 +13180,6 @@ void    CMP_show_block_model_m10(CMP_BLOCK_FIXED_HEADER_m10 *block_header)
 void    CMP_unscale_amplitude_m10(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor)
 {
 	si4	*si4_p1, *si4_p2;
-	si8     i;
 	
 	
 	// unscale from input_buffer to output_buffer
@@ -13155,9 +13187,9 @@ void    CMP_unscale_amplitude_m10(si4 *input_buffer, si4 *output_buffer, si8 len
 	
 	si4_p1 = input_buffer;
 	si4_p2 = output_buffer;
-	for (i = len; i--;)
-		*si4_p2++ = CMP_round_m10((sf8)*si4_p1++ * scale_factor);
-	
+	while (len--)
+		*si4_p2++ = CMP_round_m10((sf8) *si4_p1++ * scale_factor);
+
 	return;
 }
 
@@ -13179,7 +13211,7 @@ CMP_BLOCK_FIXED_HEADER_m10	*CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 	
 	block_header = cps->block_header;
 	if (flags & CMP_UPDATE_ORIGINAL_PTR_m10)
-		cps->input_buffer = (cps->original_ptr += block_header->number_of_samples);
+		cps->original_ptr += block_header->number_of_samples;
 	if (flags & CMP_UPDATE_BLOCK_HEADER_PTR_m10)
 		cps->block_header = (CMP_BLOCK_FIXED_HEADER_m10 *) ((ui1 *) cps->block_header + block_header->total_block_bytes);
 	if (flags & CMP_UPDATE_DECOMPRESSED_PTR_m10)
@@ -13516,8 +13548,13 @@ si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line,
 	si1		name[BASE_FILE_NAME_BYTES_m10], extension[TYPE_BYTES_m10];
 	static ui4	create_modes = (ui4) (FPS_R_PLUS_OPEN_MODE_m10 | FPS_W_OPEN_MODE_m10 | FPS_W_PLUS_OPEN_MODE_m10 | FPS_A_OPEN_MODE_m10 | FPS_A_PLUS_OPEN_MODE_m10);
 	si4		lock_type;
+#if defined MACOS_m10 || defined LINUX_m10
 	struct stat	sb;
-	
+#endif
+#ifdef WINDOWS_m10
+	struct _stat64	sb;
+#endif
+
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m10)
 		behavior_on_fail = globals_m10->behavior_on_fail;
@@ -13570,14 +13607,17 @@ si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line,
 		return(-1);
 	}
 	
-	// get file descriptor
+	// get file descriptor & file length
 #if defined MACOS_m10 || defined LINUX_m10
 	fps->fd = fileno(fps->fp);
+	fstat(fps->fd, &sb);
 #endif
 #ifdef WINDOWS_m10
 	fps->fd = _fileno(fps->fp);
+	_fstat64(fps->fd, &sb);
 #endif
-	
+	fps->file_length = sb.st_size;
+
 	// lock
 #if defined MACOS_m10 || defined LINUX_m10
 	if (fps->directives.lock_mode != FPS_NO_LOCK_MODE_m10) {
@@ -13598,10 +13638,6 @@ si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line,
 		FPS_lock_m10(fps, lock_type, function, line, behavior_on_fail);
 	}
 #endif
-	
-	// get file length
-	fstat(fps->fd, &sb);
-	fps->file_length = sb.st_size;
 	
 	return(0);
 }
@@ -14937,6 +14973,7 @@ si8	ftell_m10(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m10)
 		behavior_on_fail = globals_m10->behavior_on_fail;
 	
+#if defined MACOS_m10 || defined LINUX_m10
 	if ((pos = ftell(stream)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
 			(void)fprintf_m10(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
@@ -14954,7 +14991,27 @@ si8	ftell_m10(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
 		else if (behavior_on_fail & EXIT_ON_FAIL_m10)
 			exit_m10(1);
 	}
-	
+#endif
+#ifdef WINDOWS_m10
+	if ((pos = ftelli64(stream)) == -1) {
+		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
+			(void)fprintf_m10(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
+			(void)fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			if (function != NULL)
+				(void)fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
+			if (behavior_on_fail & RETURN_ON_FAIL_m10)
+				(void)fprintf_m10(stderr, "\t=> returning -1\n\n");
+			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
+				(void)fprintf_m10(stderr, "\t=> exiting program\n\n");
+			fflush(stderr);
+		}
+		if (behavior_on_fail & RETURN_ON_FAIL_m10)
+			return(-1);
+		else if (behavior_on_fail & EXIT_ON_FAIL_m10)
+			exit_m10(1);
+	}
+#endif
+
 	return(pos);
 }
 		

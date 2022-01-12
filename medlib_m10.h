@@ -332,7 +332,7 @@ typedef struct {
 #define CMP_DIRECTIVES_RETURN_LOSSY_DATA_DEFAULT_m10		FALSE_m10
 #define CMP_DIRECTIVES_USE_COMPRESSION_RATIO_DEFAULT_m10	FALSE_m10
 #define CMP_DIRECTIVES_USE_MEAN_RESIDUAL_RATIO_DEFAULT_m10	TRUE_m10
-#define CMP_DIRECTIVES_USE_RELATIVE_RATIO_DEFAULT_m10		TRUE_m10
+#define CMP_DIRECTIVES_USE_RELATIVE_RATIO_DEFAULT_m10		FALSE_m10
 #define CMP_DIRECTIVES_SET_AMPLITUDE_SCALE_DEFAULT_m10		FALSE_m10
 #define CMP_DIRECTIVES_FIND_AMPLITUDE_SCALE_DEFAULT_m10		FALSE_m10
 #define CMP_DIRECTIVES_SET_FREQUENCY_SCALE_DEFAULT_m10		FALSE_m10
@@ -1613,7 +1613,7 @@ void            extract_terminal_password_bytes_m10(si1 *password, si1 *password
 si8		*find_discontinuities_m10(TIME_SERIES_INDEX_m10 *tsi, si8 *num_disconts, si8 number_of_indices, TERN_m10 remove_offsets, TERN_m10 return_sample_numbers);
 ui4             file_exists_m10(si1 *path);
 si8		file_length_m10(FILE *fp, si1 *path);
-FILE_TIMES_m10	*file_times_d10(si1 *path, FILE_TIMES_m10 *ft, TERN_m10 set_time);
+FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10 set_time);
 si1		*find_timezone_acronym_m10(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
 si1		*find_metadata_file_m10(si1 *path, si1 *md_path);
 void            force_behavior_m10(ui4 behavior);
