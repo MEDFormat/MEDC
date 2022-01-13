@@ -7116,7 +7116,8 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 				break;
 			}
 		}
-		free_file_processing_struct_m10(md_fps, FALSE_m10);
+		if (i < (n_segs - 1))
+			free_file_processing_struct_m10(md_fps, FALSE_m10);
 	}
 	if (i == n_segs) {
 		slice->end_segment_number = uh->segment_number;
@@ -7124,11 +7125,11 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 		slice->end_time = uh->file_end_time;
 		end_seg_idx = i - 1;
 		md_fps = NULL;
-	}
-	else {
+	} else {
 		end_seg_idx = i;
-		free_file_processing_struct_m10(md_fps, FALSE_m10);
 	}
+	free_file_processing_struct_m10(md_fps, FALSE_m10);
+
 	
 	// ********************************************** //
 	// ***********  fill in other limits  *********** //
