@@ -1737,12 +1737,10 @@ void	condition_time_slice_m10(TIME_SLICE_m10* slice)
 		if (slice->start_time == UUTC_NO_ENTRY_m10) {
 			if (slice->start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m10)
 				slice->start_time = BEGINNING_OF_TIME_m10;
-		}
-		else {  // relative time
+		} else {  // relative time
 			slice->start_time = globals_m10->session_start_time - slice->start_time;
 		}
-	}
-	else {  // ? unoffset time
+	} else {  // ? unoffset time
 		test_time = slice->start_time - globals_m10->recording_time_offset;
 		if (test_time > 0)  // start time is not offset
 			slice->start_time = test_time;
@@ -1752,12 +1750,10 @@ void	condition_time_slice_m10(TIME_SLICE_m10* slice)
 		if (slice->end_time == UUTC_NO_ENTRY_m10) {
 			if (slice->end_sample_number == SAMPLE_NUMBER_NO_ENTRY_m10)
 				slice->end_time = END_OF_TIME_m10;
-		}
-		else {  // relative time
+		} else {  // relative time
 			slice->end_time = globals_m10->session_start_time - slice->end_time;
 		}
-	}
-	else {  // ? unoffset time
+	} else {  // ? unoffset time
 		test_time = slice->end_time - globals_m10->recording_time_offset;
 		if (test_time > 0 && slice->end_time != END_OF_TIME_m10)  // end time is not offset
 			slice->end_time = test_time;
@@ -1778,7 +1774,7 @@ inline si8      current_uutc_m10(void)
 	
 	
 	gettimeofday(&tv, NULL);
-	uutc = (si8)tv.tv_sec * (si8)1000000 + (si8)tv.tv_usec;
+	uutc = (si8) tv.tv_sec * (si8) 1000000 + (si8) tv.tv_usec;
 	
 	return(uutc);
 }
@@ -2031,8 +2027,7 @@ TERN_m10     decrypt_time_series_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 nu
 		encryptable_blocks = (bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10) / ENCRYPTION_BLOCK_BYTES_m10;
 		if (bh->block_flags | CMP_BF_MBE_ENCODING_MASK_m10) {
 			encryption_blocks = encryptable_blocks;
-		}
-		else {
+		} else {
 			encryption_bytes = bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10 + ENCRYPTION_BLOCK_BYTES_m10;
 			encryption_blocks = ((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m10) + 1;
 			if (encryptable_blocks < encryption_blocks)
@@ -2069,7 +2064,7 @@ si4     DST_offset_m10(si8 uutc)
 	// returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
 	
 	if (globals_m10->time_constants_set == FALSE_m10) {
-		warning_message_m10("%s(): libary time constants not set\n", __FUNCTION__);
+		warning_message_m10("%s(): library time constants not set\n", __FUNCTION__);
 		return(0);
 	}
 	if (globals_m10->observe_DST < TRUE_m10)
@@ -2120,14 +2115,12 @@ si4     DST_offset_m10(si8 uutc)
 				return((si4)first_DTCC->shift_minutes * (si4)60);
 			else
 				return(0);
-		}
-		else if (month < first_DTCC->month) {
+		} else if (month < first_DTCC->month) {
 			if (first_DTCC->month == DST_start_month)
 				return(0);
 			else
 				return((si4)first_DTCC->shift_minutes * (si4)60);
-		}
-		else {  // month > last_DTCC->month
+		} else {  // month > last_DTCC->month
 			if (last_DTCC->month == DST_end_month)
 				return(0);
 			else
@@ -2155,14 +2148,12 @@ si4     DST_offset_m10(si8 uutc)
 			while (target_day_of_month <= last_day_of_month)
 				target_day_of_month += 7;
 			target_day_of_month -= 7;
-		}
-		else {
+		} else {
 			for (i = 1; i < change_DTCC->relative_weekday_of_month; ++i)
 				target_day_of_month += 7;
 		}
 		change_time_info.tm_mday = target_day_of_month;
-	}
-	else {
+	} else {
 		change_time_info.tm_mday = change_DTCC->day_of_month;
 	}
 	
@@ -2180,8 +2171,7 @@ si4     DST_offset_m10(si8 uutc)
 			return((si4)change_DTCC->shift_minutes * (si4)60);
 		else
 			return(0);
-	}
-	else {  // change_DTCC->month == DST_end_month
+	} else {  // change_DTCC->month == DST_end_month
 		if (utc < change_utc)
 			return((si4)change_DTCC->shift_minutes * (si4)-60);
 		else
@@ -2289,19 +2279,16 @@ TERN_m10     encrypt_time_series_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 nu
 			if (cps->directives.encryption_level == LEVEL_1_ENCRYPTION_m10) {
 				key = pwd->level_1_encryption_key;
 				encryption_mask = CMP_BF_LEVEL_1_ENCRYPTION_MASK_m10;
-			}
-			else {
+			} else {
 				key = pwd->level_2_encryption_key;
 				encryption_mask = CMP_BF_LEVEL_2_ENCRYPTION_MASK_m10;
 			}
-		}
-		else {
+		} else {
 			error_message_m10("%s(): Cannot encrypt data => returning without encrypting\n", __FUNCTION__);
 			cps->directives.encryption_level = NO_ENCRYPTION_m10;
 			return(FALSE_m10);
 		}
-	}
-	else {
+	} else {
 		return(TRUE_m10);
 	}
 	
@@ -2309,8 +2296,7 @@ TERN_m10     encrypt_time_series_data_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 nu
 		encryptable_blocks = (block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10) / ENCRYPTION_BLOCK_BYTES_m10;
 		if (block_header->block_flags | CMP_BF_MBE_ENCODING_MASK_m10) {
 			encryption_blocks = encryptable_blocks;
-		}
-		else {
+		} else {
 			encryption_bytes = block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10 + ENCRYPTION_BLOCK_BYTES_m10;
 			encryption_blocks = ((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m10) + 1;
 			if (encryptable_blocks < encryption_blocks)
@@ -2566,6 +2552,7 @@ FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10
 	si4		fd;
 	struct stat	sb;
 	struct timeval 	set_times[2] = {0};
+	
 	
 	// set times: access and modification only
 	if (set_time == TRUE_m10) {
@@ -3086,7 +3073,7 @@ void    free_globals_m10(void)
 		free((void *) globals_m10->country_aliases_table);
 	
 	if (globals_m10->country_acronym_aliases_table != NULL)
-		free((void* ) globals_m10->country_acronym_aliases_table);
+		free((void *) globals_m10->country_acronym_aliases_table);
 	
 	if (globals_m10->CMP_normal_CDF_table != NULL)
 		free((void *) globals_m10->CMP_normal_CDF_table);
@@ -3297,10 +3284,8 @@ si1	**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		// copy file_list
 		for (i = 0; i < n_in_files; ++i) {
 			// check for regex
-			if (regex == FALSE_m10) {
-				if (str_contains_regex_m10(file_list[i]) == TRUE_m10)
-					regex = TRUE_m10;
-			}
+			if (regex == FALSE_m10)
+				regex = str_contains_regex_m10(file_list[i]);
 			// fill in list entry path components
 			extract_path_parts_m10(file_list[i], tmp_path, NULL, tmp_ext);
 			if (*tmp_path == 0) {
@@ -3441,7 +3426,7 @@ si1	*generate_hex_string_m10(ui1 *bytes, si4 num_bytes, si1 *string)
 	*s++ = 'x';
 	
 	for (i = 0; i < num_bytes; ++i) {
-		sprintf_m10(s, " %2x", bytes[i]);
+		sprintf_m10(s, " %02x", bytes[i]);
 		if (bytes[i] < 0x10)
 			*(s + 1) = '0';
 		s += 3;
@@ -3652,12 +3637,10 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 				target_samp = 0;
 			else  // mode == FIND_END_m10
 				target_samp = END_OF_TIME_m10;
-		}
-		else {
+		} else {
 			target_samp = *target_sample_number;
 		}
-	}
-	else {  // *target_uutc != UUTC_NO_ENTRY_m10
+	} else {  // *target_uutc != UUTC_NO_ENTRY_m10
 		search_mode = TIME_SEARCH_m10;
 		target_time = *target_uutc;
 	}
@@ -3712,8 +3695,7 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 						break;
 				}
 			}
-		}
-		else {  // search_mode == TIME_SEARCH_m10
+		} else {  // search_mode == TIME_SEARCH_m10
 			ridx_idx = prev_ridx_idx = 0;
 			for (; i < n_recs; ++i) {
 				if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
@@ -3749,8 +3731,7 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 					return(FALSE_m10);
 				}
 				target_samp = Sgmt->absolute_end_sample_number;
-			}
-			else { // search_mode == TIME_SEARCH_m10
+			} else { // search_mode == TIME_SEARCH_m10
 				if (mode == FIND_START_m10) {
 					error_message_m10("%s(): target uutc exceeds channel times\n", __FUNCTION__);
 					if (free_record_indices == TRUE_m10)
@@ -3779,8 +3760,7 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 				tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
 				if (target_samp < (tmd2->absolute_start_sample_number + tmd2->number_of_samples))
 					break;
-			}
-			else {  // search_mode == TIME_SEARCH_m10
+			} else {  // search_mode == TIME_SEARCH_m10
 				uh = seg->metadata_fps->universal_header;
 				if (target_time <= uh->file_end_time) {
 					// time fell between segments
@@ -3809,8 +3789,7 @@ TERN_m10	get_channel_target_values_m10(CHANNEL_m10 *channel, si8 *target_uutc, s
 					return(FALSE_m10);
 				}
 				target_samp = tmd2->absolute_start_sample_number + tmd2->number_of_samples - 1;
-			}
-			else { // search_mode == TIME_SEARCH_m10
+			} else { // search_mode == TIME_SEARCH_m10
 				if (mode == FIND_START_m10) {
 					error_message_m10("%s(): target uutc exceeds channel times\n", __FUNCTION__);
 					if (free_record_indices == TRUE_m10)
@@ -4002,8 +3981,7 @@ si4     get_segment_range_m10(si1 **channel_list, si4 n_channels, TIME_SLICE_m10
 			warning_message_m10("%s(): Cannot find reference channel in file list => using first channel\n", __FUNCTION__);
 		else
 			slice->sample_number_reference_channel_index = i;
-	}
-	else {
+	} else {
 		extract_path_parts_m10(channel_list[0], NULL, tmp_str, NULL);
 		strcpy(idx_chan_name, tmp_str);
 	}
@@ -4039,18 +4017,15 @@ void    get_segment_target_values_m10(SEGMENT_m10 *segment, si8 *target_uutc, si
 				*target_sample_number = tmd2->absolute_start_sample_number;
 				*target_uutc = uh->file_start_time;
 				return;
-			}
-			else {  // mode == FIND_END_m10
+			} else {  // mode == FIND_END_m10
 				*target_sample_number = tmd2->absolute_start_sample_number + tmd2->number_of_samples - 1;
 				*target_uutc = uh->file_end_time;
 				return;
 			}
-		}
-		else {
+		} else {
 			target_samp = *target_sample_number;
 		}
-	}
-	else {  // *target_uutc != UUTC_NO_ENTRY_m10
+	} else {  // *target_uutc != UUTC_NO_ENTRY_m10
 		search_mode = TIME_SEARCH_m10;
 		target_time = *target_uutc;
 	}
@@ -4179,13 +4154,10 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 		if (tmd2 == NULL) {
 			error_message_m10("%s(): no section 2 metadata in session\n", __FUNCTION__);
 			return(FALSE_m10);
-		}
-		else if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10)
+		} else if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10)
 			same_frequency = FALSE_m10;
-	}
-	else {
-		if (tmd2->sampling_frequency == FREQUENCY_NO_ENTRY_m10)
-			same_frequency = FALSE_m10;
+	} else if (tmd2->sampling_frequency == FREQUENCY_NO_ENTRY_m10) {
+		same_frequency = FALSE_m10;
 	}
 	
 	// find reference index channel, if passed
@@ -4200,8 +4172,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 					if (strcmp(chan->name, chan_name) == 0)
 						break;
 				}
-			}
-			else {  // vmd2 != NULL
+			} else {  // vmd2 != NULL
 				n_channels = session->number_of_video_channels;
 				for (i = 0; i < n_channels; ++i) {
 					chan = session->video_channels[i];
@@ -4297,17 +4268,14 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 					target_samp = 0;
 				else  // mode == FIND_END_m10
 					target_samp = END_OF_TIME_m10;
-			}
-			else {
+			} else {
 				target_samp = *target_sample_number;
 			}
-		}
-		else {  // *target_uutc != UUTC_NO_ENTRY_m10
+		} else {  // *target_uutc != UUTC_NO_ENTRY_m10
 			search_mode = TIME_SEARCH_m10;
 			target_time = *target_uutc;
 		}
-	}
-	else {  // same_frequency == FALSE_m10
+	} else {  // same_frequency == FALSE_m10
 		if (ref_chan_idx != -1) {  // try to use channel
 			if (tmd2 != NULL)
 				chan = session->time_series_channels[ref_chan_idx];
@@ -4330,8 +4298,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 				target_time = 0;
 			else  // mode == FIND_END_m10
 				target_time = END_OF_TIME_m10;
-		}
-		else {
+		} else {
 			target_time = *target_uutc;
 		}
 	}
@@ -4345,8 +4312,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 					break;
 			}
 		}
-	}
-	else {  // search_mode == TIME_SEARCH_m10
+	} else {  // search_mode == TIME_SEARCH_m10
 		ridx_idx = prev_ridx_idx = 0;
 		for (i = 0; i < n_recs; ++i) {
 			if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m10) {
@@ -4382,8 +4348,7 @@ TERN_m10	get_session_target_values_m10(SESSION_m10 *session, si8 *target_uutc, s
 				return(FALSE_m10);
 			}
 			target_samp = Sgmt->absolute_end_sample_number;
-		}
-		else { // search_mode == TIME_SEARCH_m10
+		} else { // search_mode == TIME_SEARCH_m10
 			if (mode == FIND_START_m10) {
 				error_message_m10("%s(): target uutc exceeds channel times\n", __FUNCTION__);
 				if (free_record_indices == TRUE_m10)
@@ -4873,6 +4838,8 @@ si1	*MED_type_string_from_code_m10(ui4 code)
 			return TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m10;
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m10:
 			return VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m10;
+		case RECORD_DIRECTORY_TYPE_CODE_m10:
+			return RECORD_DIRECTORY_TYPE_STRING_m10;
 		case RECORD_DATA_FILE_TYPE_CODE_m10:
 			return RECORD_DATA_FILE_TYPE_STRING_m10;
 		case RECORD_INDICES_FILE_TYPE_CODE_m10:
@@ -4928,6 +4895,7 @@ ui4     MED_type_code_from_string_m10(si1 *string)
 		case SESSION_DIRECTORY_TYPE_CODE_m10:
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m10:
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m10:
+		case RECORD_DIRECTORY_TYPE_CODE_m10:
 		case RECORD_DATA_FILE_TYPE_CODE_m10:
 		case RECORD_INDICES_FILE_TYPE_CODE_m10:
 		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m10:
@@ -5270,45 +5238,30 @@ TERN_m10        merge_universal_headers_m10(FILE_PROCESSING_STRUCT_m10 *fps_1, F
 			merged_uh->session_start_time = UUTC_NO_ENTRY_m10;
 		else
 			merged_uh->session_start_time = uh_2->session_start_time;
-	}
-	else if (uh_2->session_start_time == UUTC_NO_ENTRY_m10) {
+	} else if (uh_2->session_start_time == UUTC_NO_ENTRY_m10) {
 		merged_uh->session_start_time = uh_1->session_start_time;
-	}
-	else {
-		if (uh_1->session_start_time > uh_2->session_start_time) {
-			merged_uh->session_start_time = uh_2->session_start_time;
-			equal = FALSE_m10;
-		}
+	} else if (uh_1->session_start_time > uh_2->session_start_time) {
+		merged_uh->session_start_time = uh_2->session_start_time; equal = FALSE_m10;
 	}
 	if (uh_1->file_start_time == UUTC_NO_ENTRY_m10) {
 		if (uh_2->file_start_time == UUTC_NO_ENTRY_m10)
 			merged_uh->file_start_time = UUTC_NO_ENTRY_m10;
 		else
 			merged_uh->file_start_time = uh_2->file_start_time;
-	}
-	else if (uh_2->file_start_time == UUTC_NO_ENTRY_m10) {
+	} else if (uh_2->file_start_time == UUTC_NO_ENTRY_m10) {
 		merged_uh->file_start_time = uh_1->file_start_time;
-	}
-	else {
-		if (uh_1->file_start_time > uh_2->file_start_time) {
-			merged_uh->file_start_time = uh_2->file_start_time;
-			equal = FALSE_m10;
-		}
+	} else if (uh_1->file_start_time > uh_2->file_start_time) {
+		merged_uh->file_start_time = uh_2->file_start_time; equal = FALSE_m10;
 	}
 	if (uh_1->file_end_time == UUTC_NO_ENTRY_m10) {
 		if (uh_2->file_end_time == UUTC_NO_ENTRY_m10)
 			merged_uh->file_end_time = UUTC_NO_ENTRY_m10;
 		else
 			merged_uh->file_end_time = uh_2->file_end_time;
-	}
-	else if (uh_2->file_end_time == UUTC_NO_ENTRY_m10) {
+	} else if (uh_2->file_end_time == UUTC_NO_ENTRY_m10) {
 		merged_uh->file_end_time = uh_1->file_start_time;
-	}
-	else {
-		if (uh_1->file_end_time < uh_2->file_end_time) {
-			merged_uh->file_end_time = uh_2->file_end_time;
-			equal = FALSE_m10;
-		}
+	} else if (uh_1->file_end_time < uh_2->file_end_time) {
+		merged_uh->file_end_time = uh_2->file_end_time; equal = FALSE_m10;
 	}
 	if (uh_1->number_of_entries < uh_2->number_of_entries) {
 		merged_uh->number_of_entries = uh_2->number_of_entries; equal = FALSE_m10;
@@ -5319,12 +5272,15 @@ TERN_m10        merge_universal_headers_m10(FILE_PROCESSING_STRUCT_m10 *fps_1, F
 	if (uh_1->segment_number != uh_2->segment_number) {
 		merged_uh->segment_number = UNIVERSAL_HEADER_SEGMENT_NUMBER_NO_ENTRY_m10; equal = FALSE_m10;
 	}
-	if (memcmp(uh_1->session_name, uh_2->session_name, BASE_FILE_NAME_BYTES_m10))
-		memset(merged_uh->session_name, 0, BASE_FILE_NAME_BYTES_m10);
-	if (memcmp(uh_1->channel_name, uh_2->channel_name, BASE_FILE_NAME_BYTES_m10))
-		memset(merged_uh->channel_name, 0, BASE_FILE_NAME_BYTES_m10);
-	if (memcmp(uh_1->anonymized_subject_ID, uh_2->anonymized_subject_ID, BASE_FILE_NAME_BYTES_m10))
-		memset(merged_uh->anonymized_subject_ID, 0, UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_BYTES_m10);
+	if (memcmp(uh_1->session_name, uh_2->session_name, BASE_FILE_NAME_BYTES_m10)) {
+		memset(merged_uh->session_name, 0, BASE_FILE_NAME_BYTES_m10); equal = FALSE_m10;
+	}
+	if (memcmp(uh_1->channel_name, uh_2->channel_name, BASE_FILE_NAME_BYTES_m10)) {
+		memset(merged_uh->channel_name, 0, BASE_FILE_NAME_BYTES_m10); equal = FALSE_m10;
+	}
+	if (memcmp(uh_1->anonymized_subject_ID, uh_2->anonymized_subject_ID, BASE_FILE_NAME_BYTES_m10)) {
+		memset(merged_uh->anonymized_subject_ID, 0, UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_BYTES_m10); equal = FALSE_m10;
+	}
 	if (uh_1->session_UID != uh_2->session_UID) {
 		merged_uh->session_UID = UID_NO_ENTRY_m10; equal = FALSE_m10;
 	}
