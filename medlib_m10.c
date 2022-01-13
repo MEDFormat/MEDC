@@ -2659,9 +2659,7 @@ FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10
 			warning_message_m10("%s(): SetFileTime failed with error %d\n", __FUNCTION__, GetLastError());
 	}
 
-	if (fp != NULL)
-		_close(fd);
-	else
+	if (fp == NULL)
 		CloseHandle(file_h);
 	
 	return(ft);
@@ -14713,6 +14711,7 @@ FILE	*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 	
 #ifdef WINDOWS_m10
 	TERN_m10	binary_set = FALSE_m10;
+	TERN_m10	write_mode = FALSE_m10;
 	si1		tmp_mode[8], *c, *tc;
 	
 	
@@ -14724,6 +14723,8 @@ FILE	*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 			*tc++ = 'b';
 			binary_set = TRUE_m10;
 		} else {
+			if (*c == 'w' || *c == 'a' || *c == '+')
+				write_mode = TRUE_m10;
 			*tc++ = *c++;
 		}
 	}
@@ -14731,7 +14732,12 @@ FILE	*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 		*tc++ = 'b';
 	*tc = 0;
 	
-	if ((fp = _fsopen(path, tmp_mode, _SH_DENYNO)) == NULL) {
+	if (write_mode == TRUE_m10)
+		fp = _fsopen(path, tmp_mode, _SH_DENYNO);
+	else
+		fp = fopen(path, tmp_mode);
+		
+	if (fp == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
 			UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
 			fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
