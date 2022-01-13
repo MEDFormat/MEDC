@@ -7066,8 +7066,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 					slice->start_time = uh->file_start_time;
 				break;
 			}
-		}
-		else {  // search_mode == INDEX_SEARCH_m10
+		} else {  // search_mode == INDEX_SEARCH_m10
 			absolute_end_sample_number = tmd2->absolute_start_sample_number + tmd2->number_of_samples - 1;
 			if (slice->start_sample_number <= absolute_end_sample_number) {
 				slice->start_segment_number = uh->segment_number;
@@ -7110,8 +7109,7 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 				slice->end_segment_number = uh->segment_number;
 				break;
 			}
-		}
-		else {  // search_mode == INDEX_SEARCH_m10
+		} else {  // search_mode == INDEX_SEARCH_m10
 			absolute_end_sample_number = tmd2->absolute_start_sample_number + tmd2->number_of_samples - 1;
 			if (slice->end_sample_number <= absolute_end_sample_number) {
 				slice->end_segment_number = uh->segment_number;
@@ -7428,8 +7426,7 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 					}
 				}
 			}
-		}
-		else { // search_mode == INDEX_SEARCH_m10
+		} else { // search_mode == INDEX_SEARCH_m10
 			for (; i--; ++ri) {
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10) {
 					fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
@@ -7466,8 +7463,7 @@ TERN_m10        search_Sgmt_records_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 					}
 				}
 			}
-		}
-		else {  // search_mode == INDEX_SEARCH_m10
+		} else {  // search_mode == INDEX_SEARCH_m10
 			for (; i--; ++ri) {
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m10) {
 					fseek_m10(rd_fps->fp, SEEK_SET, ri->file_offset, rd_path, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
@@ -14741,14 +14737,14 @@ FILE	*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 #if defined MACOS_m10 || defined LINUX_m10
 	if ((fp = fopen(path, mode)) == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
-			(void)UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
-			(void)fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
+			fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
-				(void)fprintf_m10(stderr, "\t=> returning NULL\n\n");
+				fprintf_m10(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
-				(void)fprintf_m10(stderr, "\t=> exiting program\n\n");
+				fprintf_m10(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m10)
@@ -14758,30 +14754,36 @@ FILE	*fopen_m10(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 }
 #endif
 	
-#ifdef WINDOWS_m10  // always binary mode in MED
-	si1	tmp_mode[8] = {0};
+#ifdef WINDOWS_m10
+	TERN_m10	binary_set = FALSE_m10;
+	si1		tmp_mode[8], *c, *tc;
 	
-	tmp_mode[0] = mode[0];
-	if (mode[1]) {
-		tmp_mode[1] = mode[1];
-		if (mode[1] != 'b')
-			tmp_mode[2] = 'b';
-	}
-	else {
-		tmp_mode[1] = 'b';
-	}
-	mode = tmp_mode;
 	
-	if ((fp = _fsopen(path, mode, _SH_DENYNO)) == NULL) {
+	// MED requires binary mode
+	c = mode;
+	tc = tmp_mode;
+	while (*c) {
+		if (*c == 't') {
+			*tc++ = 'b';
+			binary_set = TRUE_m10;
+		} else {
+			*tc++ = *c++;
+		}
+	}
+	if (binary_set == FALSE_m10)
+		*tc++ = 'b';
+	*tc = 0;
+	
+	if ((fp = _fsopen(path, tmp_mode, _SH_DENYNO)) == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
-			(void)UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
-			(void)fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			UTF8_fprintf_m10(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
+			fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m10(stderr, "\tcalled from function %s(), line %d\n", function, line);
 			if (behavior_on_fail & RETURN_ON_FAIL_m10)
-				(void)fprintf_m10(stderr, "\t=> returning NULL\n\n");
+				fprintf_m10(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m10)
-				(void)fprintf_m10(stderr, "\t=> exiting program\n\n");
+				fprintf_m10(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m10)
@@ -14996,7 +14998,7 @@ si8	ftell_m10(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
 	}
 #endif
 #ifdef WINDOWS_m10
-	if ((pos = ftelli64(stream)) == -1) {
+	if ((pos = _ftelli64(stream)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m10)) {
 			(void)fprintf_m10(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
 			(void)fprintf_m10(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
