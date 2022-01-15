@@ -499,7 +499,7 @@ void    calculate_record_data_CRCs_m10(FILE_PROCESSING_STRUCT_m10 *fps, RECORD_H
 		record_header->record_CRC = CRC_calculate_m10((ui1 *)record_header + RECORD_HEADER_RECORD_CRC_START_OFFSET_m10, record_header->total_record_bytes - RECORD_HEADER_RECORD_CRC_START_OFFSET_m10);
 		
 		// update universal_header->body_CRC
-		temp_CRC = CRC_calculate_m10((ui1 *)record_header, RECORD_HEADER_RECORD_CRC_START_OFFSET_m10);
+		temp_CRC = CRC_calculate_m10((ui1 *) record_header, RECORD_HEADER_RECORD_CRC_START_OFFSET_m10);
 		full_record_CRC = CRC_combine_m10(temp_CRC, record_header->record_CRC, record_header->total_record_bytes - RECORD_HEADER_RECORD_CRC_START_OFFSET_m10);
 		fps->universal_header->body_CRC = CRC_combine_m10(fps->universal_header->body_CRC, full_record_CRC, record_header->total_record_bytes);
 		
@@ -2556,7 +2556,7 @@ FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10
 	
 	// set times: access and modification only
 	if (set_time == TRUE_m10) {
-		// set to access and modification times to current time
+		// set access & modification times to current time
 		if (ft == NULL) {
 			gettimeofday(set_times, NULL);
 			set_times[1] = set_times[0];
@@ -2588,10 +2588,10 @@ FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10
 		ft->access = ((si8) sb.st_atimespec.tv_sec * (si8) 1000000) + ((si8) sb.st_atimespec.tv_nsec / (si8) 1000);
 		ft->modification = ((si8) sb.st_mtimespec.tv_sec * (si8) 1000000) + ((si8) sb.st_mtimespec.tv_nsec / (si8) 1000);
 	#endif
-	#ifdef LINUUX_m10
+	#ifdef LINUX_m10
 		ft->creation = ((si8) sb.st_ctim.tv_sec * (si8) 1000000) + ((si8) sb.st_ctim.tv_nsec / (si8) 1000);  // time of last status change - may be creation time - not guaranteed
-		ft->access = ((si8) sb.st_atim.tv_sec * (si8) 1000000) + ((si8) sb.st_atimespec.tv_nsec / (si8) 1000);
-		ft->modification = ((si8) sb.st_mtim.tv_sec * (si8) 1000000) + ((si8) sb.st_mtimespec.tv_nsec / (si8) 1000);
+		ft->access = ((si8) sb.st_atim.tv_sec * (si8) 1000000) + ((si8) sb.st_atim.tv_nsec / (si8) 1000);
+		ft->modification = ((si8) sb.st_mtim.tv_sec * (si8) 1000000) + ((si8) sb.st_mtim.tv_nsec / (si8) 1000);
 	#endif
 
 	// set times: access and modification only
@@ -2628,7 +2628,6 @@ FILE_TIMES_m10	*file_times_m10(FILE *fp, si1 *path, FILE_TIMES_m10 *ft, TERN_m10
 		set_modify_time = uutc_to_win_time_m10(ft->modification);
 	}
 
-	
 	if (fp == NULL) {
 		if ((file_h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
 		    warning_message_m10("%s(): CreateFile failed with error %d\n", __FUNCTION__, GetLastError());
@@ -6612,7 +6611,7 @@ si8     read_time_series_data_m10(SEGMENT_m10 *seg, si8 local_start_idx, si8 loc
 		error_message_m10("%s(): time series indices FILE_PROCESSING_STRUCT_m10 is NULL\n", __FUNCTION__);
 		return(-1);
 	}
-	if (tsd_fps->cps == NULL && alloc_cps == FALSE_m10) {
+	if (tsd_fps->cps == NULL && alloc_cps != TRUE_m10) {
 		error_message_m10("%s(): CMP_PROCESSING_STRUCT_m10 is NULL\n", __FUNCTION__);
 		return(-1);
 	}
@@ -6632,8 +6631,7 @@ si8     read_time_series_data_m10(SEGMENT_m10 *seg, si8 local_start_idx, si8 loc
 	if (i == n_ts_inds) {
 		end_block = i - 1;
 		local_end_idx = tsi[end_block].start_sample_number - 1;
-	}
-	else {
+	} else {
 		end_block = i;
 	}
 	
@@ -6647,10 +6645,6 @@ si8     read_time_series_data_m10(SEGMENT_m10 *seg, si8 local_start_idx, si8 loc
 		CMP_free_processing_struct_m10(tsd_fps->cps);
 		force_behavior_m10(RESTORE_BEHAVIOR_m10);
 		tsd_fps->cps = CMP_allocate_processing_struct_m10(NULL, CMP_DECOMPRESSION_MODE_m10, n_samps, compressed_data_bytes, CMP_MAX_DIFFERENCE_BYTES_m10(tmd2->maximum_block_samples), tmd2->maximum_block_samples, NULL, NULL);
-	}
-	else if (tsd_fps->cps == NULL) {
-		error_message_m10("%s(): no CMP_PROCESSING_STRUCT allocated\n", __FUNCTION__);
-		return(-1);
 	}
 	cps = tsd_fps->cps;
 	
@@ -11117,11 +11111,15 @@ TERN_m10	CMP_decrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	PASSWORD_DATA_m10		*pwd;
 	
 	
-	// check if block is encrypted
 	block_header = cps->block_header;
-	if ((block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m10) == 0)
-		return(0);
-	
+
+	// check if block is encrypted (already checked in CMP_decode() - just check here in case function being used independently)
+	if (!(block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m10))
+		return(TRUE_m10);
+	printf_m10("line %d:\n", __LINE__);
+	// CMP_show_block_header_m10(block_header);
+	return(TRUE_m10);
+
 	// get decryption key
 	pwd = cps->password_data;
 	if (block_header->block_flags & CMP_BF_LEVEL_1_ENCRYPTION_MASK_m10) {
@@ -11131,19 +11129,17 @@ TERN_m10	CMP_decrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		}
 		if (pwd->access_level >= LEVEL_1_ENCRYPTION_m10) {
 			key = pwd->level_1_encryption_key;
-		}
-		else {
-			(void)error_message_m10("%s(): Cannot decrypt data: insufficient access\n", __FUNCTION__);
+		} else {
+			error_message_m10("%s(): Cannot decrypt data: insufficient access\n", __FUNCTION__);
 			return(FALSE_m10);
 		}
 	}
 	else {  // level 2 bit is set
 		if (pwd->access_level == LEVEL_2_ENCRYPTION_m10) {
 			key = pwd->level_2_encryption_key;
-		}
-		else {
-			(void)error_message_m10("%s(): Cannot decrypt data: insufficient access\n", __FUNCTION__);
-			return(-1);
+		} else {
+			error_message_m10("%s(): Cannot decrypt data: insufficient access\n", __FUNCTION__);
+			return(FALSE_m10);
 		}
 	}
 	
@@ -11151,8 +11147,7 @@ TERN_m10	CMP_decrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	encryptable_blocks = (block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10) / ENCRYPTION_BLOCK_BYTES_m10;
 	if (block_header->block_flags | CMP_BF_MBE_ENCODING_MASK_m10) {
 		encryption_blocks = encryptable_blocks;
-	}
-	else {
+	} else {
 		encryption_bytes = block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10 + ENCRYPTION_BLOCK_BYTES_m10;
 		encryption_blocks = (si4)(((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m10) + 1);
 		if (encryptable_blocks < encryption_blocks)
@@ -11169,7 +11164,7 @@ TERN_m10	CMP_decrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	// set block flags to decrypted
 	block_header->block_flags &= ~CMP_BF_ENCRYPTION_MASK_m10;
 	
-	return(0);
+	return(TRUE_m10);
 }
 
 
@@ -11345,7 +11340,7 @@ TERN_m10     CMP_encrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	encryption_level = cps->directives.encryption_level;
 	encryption_bits = block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m10;
 	
-	// block encrypted
+	// check if block is already encrypted
 	switch (encryption_bits) {
 		case 0: // not encrypted
 			break;
@@ -11371,13 +11366,11 @@ TERN_m10     CMP_encrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 		if (encryption_level == LEVEL_1_ENCRYPTION_m10) {
 			key = pwd->level_1_encryption_key;
 			encryption_mask = CMP_BF_LEVEL_1_ENCRYPTION_MASK_m10;
-		}
-		else {
+		} else {
 			key = pwd->level_2_encryption_key;
 			encryption_mask = CMP_BF_LEVEL_2_ENCRYPTION_MASK_m10;
 		}
-	}
-	else {
+	} else {
 		error_message_m10("%s(): Cannot encrypt data => insufficient access\n", __FUNCTION__);
 		return(FALSE_m10);
 	}
@@ -11386,8 +11379,7 @@ TERN_m10     CMP_encrypt_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 	encryptable_blocks = (block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10) / ENCRYPTION_BLOCK_BYTES_m10;
 	if (block_header->block_flags & CMP_BF_MBE_ENCODING_MASK_m10) {
 		encryption_blocks = encryptable_blocks;
-	}
-	else {
+	} else {
 		encryption_bytes = block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m10 + ENCRYPTION_BLOCK_BYTES_m10;
 		encryption_blocks = (si4)(((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m10) + 1);
 		if (encryptable_blocks < encryption_blocks)
@@ -13581,11 +13573,9 @@ si4	FPS_open_m10(FILE_PROCESSING_STRUCT_m10 *fps, const si1 *function, si4 line,
 				lock_type = F_RDLCK;
 			else if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_READ_OPEN_m10)
 				lock_type = F_WRLCK;
-		}
-		else if (fps->directives.lock_mode & (FPS_WRITE_LOCK_ON_WRITE_OPEN_m10 | FPS_WRITE_LOCK_ON_READ_WRITE_OPEN_m10)) {
+		} else if (fps->directives.lock_mode & (FPS_WRITE_LOCK_ON_WRITE_OPEN_m10 | FPS_WRITE_LOCK_ON_READ_WRITE_OPEN_m10)) {
 			lock_type = F_WRLCK;
-		}
-		else {
+		} else {
 			error_message_m10("%s(): incompatible lock (%u) and open (%u) modes\n\tcalled from function %s(), line %d\n", __FUNCTION__, fps->directives.lock_mode, fps->directives.open_mode, function, line);
 			return(-1);
 		}
@@ -13671,14 +13661,18 @@ inline
 si4	FPS_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
 	UNIVERSAL_HEADER_m10	*uh;
-	struct stat             sb;
-	
-	
+#if defined MACOS_m10 || defined LINUX_m10
+	struct stat		sb;
+#endif
+#ifdef WINDOWS_m10
+	struct _stat64		sb;
+#endif
+
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m10)
 		behavior_on_fail = globals_m10->behavior_on_fail;
 	
-#if defined MACOS_m10 || defined LINUX_m10
 	// lock
+#if defined MACOS_m10 || defined LINUX_m10
 	if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m10)
 		FPS_lock_m10(fps, F_WRLCK, function, line, behavior_on_fail);
 #endif
@@ -13687,45 +13681,44 @@ si4	FPS_write_m10(FILE_PROCESSING_STRUCT_m10 *fps, si8 out_bytes, void *ptr, con
 	if (out_bytes == FPS_FULL_FILE_m10)
 		out_bytes = fps->raw_data_bytes;
 	fwrite_m10(ptr, sizeof(ui1), (size_t)out_bytes, fps->fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
-	if (fps->directives.flush_after_write == TRUE_m10)
+	
+	// flush
+	if (fps->directives.flush_after_write == TRUE_m10 || fps->directives.update_universal_header == TRUE_m10)
 		fflush(fps->fp);  // fflush updates stat structure
-	fstat(fps->fd, &sb);
-	fps->file_length = (si8) sb.st_size;
 	
+	// update file length
 #if defined MACOS_m10 || defined LINUX_m10
-	// unlock
-	if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m10)
-		FPS_unlock_m10(fps, function, line, behavior_on_fail);
+	fstat(fps->fd, &sb);
 #endif
-	
+#ifdef WINDOWS_m10
+	_fstat64(fps->fd, &sb);
+#endif
+	fps->file_length = (si8) sb.st_size;
+
 	// update universal header, if requested
 	if (fps->directives.update_universal_header == TRUE_m10) {
-		uh = fps->universal_header;
 		
 		// update universal_header->file_CRC
-		if (uh->body_CRC == CRC_NO_ENTRY_m10)
+		uh = fps->universal_header;
+		if (uh->body_CRC == CRC_NO_ENTRY_m10)  // otherwise this is done with CRC_combine() in other functions
 			uh->body_CRC = CRC_calculate_m10((ui1 *) uh + UNIVERSAL_HEADER_BODY_CRC_START_OFFSET_m10, fps->file_length - UNIVERSAL_HEADER_BODY_CRC_START_OFFSET_m10);
 		uh->header_CRC = CRC_calculate_m10((ui1 *) uh + UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m10, UNIVERSAL_HEADER_BYTES_m10 - UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m10);
-		
-#if defined MACOS_m10 || defined LINUX_m10
-		// lock
-		if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m10)
-			FPS_lock_m10(fps, F_WRLCK, function, line, behavior_on_fail);
-#endif
 		
 		// write
 		fseek_m10(fps->fp, 0, SEEK_SET, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
 		fwrite_m10(fps->raw_data, sizeof(ui1), (size_t)UNIVERSAL_HEADER_BYTES_m10, fps->fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
-		if (fps->directives.flush_after_write == TRUE_m10)
-			fflush(fps->fp);    // fflush updates stat structure
 		fseek_m10(fps->fp, 0, SEEK_END, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
 		
-#if defined MACOS_m10 || defined LINUX_m10
-		// unlock
-		if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m10)
-			FPS_unlock_m10(fps, function, line, behavior_on_fail);
-#endif
+		// flush header
+		if (fps->directives.flush_after_write == TRUE_m10)
+			fflush(fps->fp);
 	}
+		
+	// unlock
+#if defined MACOS_m10 || defined LINUX_m10
+	if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m10)
+		FPS_unlock_m10(fps, function, line, behavior_on_fail);
+#endif
 	
 	return(0);
 }
