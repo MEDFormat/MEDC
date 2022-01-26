@@ -6634,16 +6634,15 @@ si8     read_time_series_data_m10(SEGMENT_m10 *seg, si8 local_start_idx, si8 loc
 	} else {
 		end_block = i;
 	}
-	
+		
 	// allocate cps
 	samp_num = tsi[start_block].start_sample_number;
 	n_samps = tsi[end_block].start_sample_number;
 	n_samps -= samp_num;
 	compressed_data_bytes = REMOVE_DISCONTINUITY_m10(tsi[end_block].file_offset) - REMOVE_DISCONTINUITY_m10(tsi[start_block].file_offset);
 	if (alloc_cps == TRUE_m10) {
-		force_behavior_m10(RETURN_ON_FAIL_m10 | SUPPRESS_WARNING_OUTPUT_m10);
-		CMP_free_processing_struct_m10(tsd_fps->cps);
-		force_behavior_m10(RESTORE_BEHAVIOR_m10);
+		if (tsd_fps->cps != NULL)
+			CMP_free_processing_struct_m10(tsd_fps->cps);
 		tsd_fps->cps = CMP_allocate_processing_struct_m10(NULL, CMP_DECOMPRESSION_MODE_m10, n_samps, compressed_data_bytes, CMP_MAX_DIFFERENCE_BYTES_m10(tmd2->maximum_block_samples), tmd2->maximum_block_samples, NULL, NULL);
 	}
 	cps = tsd_fps->cps;
@@ -10636,11 +10635,6 @@ CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STR
 	if (cps->password_data == NULL)
 		cps->password_data = &globals_m10->password_data;
 	
-	if (mode == CMP_COMPRESSION_MODE_NO_ENTRY_m10) {
-		error_message_m10("%s(): No compression mode specified\n", __FUNCTION__);
-		exit_m10(1);
-	}
-	
 	// set up directives
 	if (directives != NULL)
 		cps->directives = *directives;
@@ -10667,6 +10661,11 @@ CMP_PROCESSING_STRUCT_m10	*CMP_allocate_processing_struct_m10(CMP_PROCESSING_STR
 	cps->sorted_count = NULL;
 	cps->minimum_range = NULL;
 	cps->symbol_map = NULL;
+	
+	if (mode == CMP_COMPRESSION_MODE_NO_ENTRY_m10) {
+		warning_message_m10("%s(): No compression mode specified\n", __FUNCTION__);
+		return(cps);
+	}
 	
 	// allocate RED/PRED buffers
 	if (cps->directives.algorithm == CMP_RED_COMPRESSION_m10 || cps->directives.algorithm == CMP_PRED_COMPRESSION_m10) {
@@ -11218,7 +11217,13 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
 	
 	CMP_cps_mutex_on_m10(cps);
 	
-	cps->input_buffer = cps->original_ptr;  // encoding always starts from original_ptr, input_buffer may get updated depending on options
+	// calling function must set cps->input_buffer to use anything other than cps->original_ptr
+	if (cps->input_buffer == NULL) {
+		if (cps->original_ptr == NULL)
+			error_message_m10("%s(): input buffer is NULL\n", __FUNCTION__);
+		else
+			cps->input_buffer = cps->original_ptr;
+	}
 	block_header = cps->block_header;
 	
 	// fill in passed header fields
@@ -11317,6 +11322,9 @@ void    CMP_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps, si8 start_time, si4 acqui
 	// encrypt
 	if (cps->directives.encryption_level > NO_ENCRYPTION_m10)
 		CMP_encrypt_m10(cps);
+	
+	// reset input_buffer
+	cps->input_buffer = NULL;
 	
 	CMP_cps_mutex_off_m10(cps);
 	
@@ -12204,7 +12212,7 @@ void    CMP_PRED_encode_m10(CMP_PROCESSING_STRUCT_m10 *cps)
 			prev_cat = CMP_PRED_CAT_m10(*diff_p); ++diff_p;  // do not increment within call to CAT
 		}
 	}
-	total_diffs = (ui4)(diff_p - (ui1 *) cps->difference_buffer);
+	total_diffs = (ui4) (diff_p - (ui1 *) cps->difference_buffer);
 	cps->parameters.minimum_sample_value = min;
 	cps->parameters.maximum_sample_value = max;
 	
