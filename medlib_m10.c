@@ -1594,9 +1594,13 @@ TERN_m10	check_video_metadata_section_2_alignment_m10(ui1 *bytes)
 	if (&vmd2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
 	// channel type specific fields
-	if (&vmd2->horizontal_resolution != (si8 *) (bytes + VIDEO_METADATA_HORIZONTAL_RESOLUTION_OFFSET_m10))
+	if (&vmd2->time_base_units_conversion_factor != (sf8 *) (bytes + VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
-	if (&vmd2->vertical_resolution != (si8 *) (bytes + VIDEO_METADATA_VERTICAL_RESOLUTION_OFFSET_m10))
+	if (vmd2->time_base_units_description != (si1 *) (bytes + VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->absolute_start_frame_number != (si8 *) (bytes + VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->number_of_frames != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_FRAMES_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
 	if (&vmd2->frame_rate != (sf8 *) (bytes + VIDEO_METADATA_FRAME_RATE_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
@@ -1604,9 +1608,25 @@ TERN_m10	check_video_metadata_section_2_alignment_m10(ui1 *bytes)
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
 	if (&vmd2->maximum_clip_bytes != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
-	if (vmd2->video_format != (si1 *) (bytes + VIDEO_METADATA_VIDEO_FORMAT_OFFSET_m10))
+	if (&vmd2->maximum_clip_frames != (ui4 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
 	if (&vmd2->number_of_video_files != (si4 *) (bytes + VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->maximum_clip_duration != (sf8 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_DURATION_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->number_of_discontinuities != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->maximum_contiguous_clips != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->maximum_contiguous_clip_bytes != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->maximum_contiguous_frames != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->horizontal_pixels != (ui4 *) (bytes + VIDEO_METADATA_HORIZONTAL_PIXELS_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (&vmd2->vertical_pixels != (ui4 *) (bytes + VIDEO_METADATA_VERTICAL_PIXELS_OFFSET_m10))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
+	if (vmd2->video_format != (si1 *) (bytes + VIDEO_METADATA_VIDEO_FORMAT_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
 	if (vmd2->protected_region != (ui1 *) (bytes + VIDEO_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m10))
 		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m10;
@@ -3303,7 +3323,7 @@ si1	**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	}
 
 	// no file_list passed (+/- enclosing_directory, +/- name, +/- extension, are passed instead)
-	// If no enclosing_directory passed, path_from_root_m110() is used.
+	// If no enclosing_directory passed, path_from_root_m10() is used.
 	// If no name is passed, "*" is used.
 	// If no extension is passed, none is used.
 	else {  // file_list == NULL
@@ -3332,7 +3352,7 @@ si1	**generate_file_list_m10(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 			escape_spaces_m10(file_list[i], FULL_FILE_NAME_BYTES_m10);
 			sprintf_m10(command, "%s %s", command, file_list[i]);
 		}
-		sprintf_m10(command, "%s > %s 2> %s", command, globals_m10->temp_file, NULL_DEVICE);
+		sprintf_m10(command, "%s > %s 2> %s", command, globals_m10->temp_file, NULL_DEVICE_m10);
 		free((void *) file_list);
 		
 		// count expanded file list
@@ -3851,7 +3871,7 @@ LOCATION_INFO_m10	*get_location_info_m10(LOCATION_INFO_m10 *loc_info, TERN_m10 s
 #ifdef WINDOWS_m10
 	command = "curl.exe -s ipinfo.io";
 #endif
-	sprintf_m10(temp_str, "%s > %s 2> %s", command, globals_m10->temp_file, NULL_DEVICE);
+	sprintf_m10(temp_str, "%s > %s 2> %s", command, globals_m10->temp_file, NULL_DEVICE_m10);
 	ret_val = system_m10(temp_str, FALSE_m10, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m10);
 	if (ret_val)
 		return(NULL);
@@ -4671,18 +4691,33 @@ void	initialize_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, TERN_m10 initializ
 			}
 			break;
 		case VIDEO_METADATA_FILE_TYPE_CODE_m10:
-			vmd2->horizontal_resolution = VIDEO_METADATA_HORIZONTAL_RESOLUTION_NO_ENTRY_m10;
-			vmd2->vertical_resolution = VIDEO_METADATA_VERTICAL_RESOLUTION_NO_ENTRY_m10;
+			vmd2->time_base_units_conversion_factor = VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m10;
+			vmd2->absolute_start_frame_number = VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_NO_ENTRY_m10;
 			vmd2->frame_rate = VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10;
+			vmd2->horizontal_pixels = VIDEO_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m10;
+			vmd2->vertical_pixels = VIDEO_METADATA_VERTICAL_PIXELS_NO_ENTRY_m10;
 			if (initialize_for_update == TRUE_m10) {
+				vmd2->number_of_frames = 0;
 				vmd2->number_of_clips = 0;
 				vmd2->maximum_clip_bytes = 0;
+				vmd2->maximum_clip_frames = 0;
 				vmd2->number_of_video_files = 0;
-			}
-			else {
+				vmd2->maximum_clip_duration = 0.0;
+				vmd2->number_of_discontinuities = 0;
+				vmd2->maximum_contiguous_clips = 0;
+				vmd2->maximum_contiguous_clip_bytes = 0;
+				vmd2->maximum_contiguous_frames = 0;
+			} else {
+				vmd2->number_of_frames = VIDEO_METADATA_NUMBER_OF_FRAMES_NO_ENTRY_m10;
 				vmd2->number_of_clips = VIDEO_METADATA_NUMBER_OF_CLIPS_NO_ENTRY_m10;
 				vmd2->maximum_clip_bytes = VIDEO_METADATA_MAXIMUM_CLIP_BYTES_NO_ENTRY_m10;
+				vmd2->maximum_clip_frames = VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_NO_ENTRY_m10;
 				vmd2->number_of_video_files = VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_NO_ENTRY_m10;
+				vmd2->maximum_clip_duration = VIDEO_METADATA_MAXIMUM_CLIP_DURATION_NO_ENTRY_m10;
+				vmd2->number_of_discontinuities = VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m10;
+				vmd2->maximum_contiguous_clips = VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_NO_ENTRY_m10;
+				vmd2->maximum_contiguous_clip_bytes = VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_NO_ENTRY_m10;
+				vmd2->maximum_contiguous_frames = VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_NO_ENTRY_m10;
 			}
 			break;
 		default:
@@ -5026,7 +5061,7 @@ TERN_m10        merge_metadata_m10(FILE_PROCESSING_STRUCT_m10 *md_fps_1, FILE_PR
 		if (tmd2_1->time_base_units_conversion_factor != tmd2_2->time_base_units_conversion_factor) {
 			tmd2_m->time_base_units_conversion_factor = TIME_SERIES_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m10; equal = FALSE_m10;
 		}
-		if (memcmp(tmd2_1->time_base_units_description, tmd2_2->time_base_units_description, TIME_SERIES_METADATA_AMPLITUDE_UNITS_DESCRIPTION_BYTES_m10)) {
+		if (memcmp(tmd2_1->time_base_units_description, tmd2_2->time_base_units_description, TIME_SERIES_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10)) {
 			memset(tmd2_m->time_base_units_description, 0, TIME_SERIES_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10); equal = FALSE_m10;
 		}
 		if (tmd2_1->absolute_start_sample_number > tmd2_2->absolute_start_sample_number) {
@@ -5080,17 +5115,26 @@ TERN_m10        merge_metadata_m10(FILE_PROCESSING_STRUCT_m10 *md_fps_1, FILE_PR
 		if (memcmp(vmd2_1->channel_description, vmd2_2->channel_description, METADATA_CHANNEL_DESCRIPTION_BYTES_m10)) {
 			memset(vmd2_m->channel_description, 0, METADATA_CHANNEL_DESCRIPTION_BYTES_m10); equal = FALSE_m10;
 		}
+		if (memcmp(vmd2_1->segment_description, vmd2_2->segment_description, METADATA_SEGMENT_DESCRIPTION_BYTES_m10)) {
+			memset(vmd2_m->segment_description, 0, METADATA_SEGMENT_DESCRIPTION_BYTES_m10); equal = FALSE_m10;
+		}
 		if (memcmp(vmd2_1->equipment_description, vmd2_2->equipment_description, METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10)) {
 			memset(vmd2_m->equipment_description, 0, METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10); equal = FALSE_m10;
 		}
 		if (vmd2_1->acquisition_channel_number != vmd2_2->acquisition_channel_number) {
 			vmd2_m->acquisition_channel_number = METADATA_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m10; equal = FALSE_m10;
 		}
-		if (vmd2_1->horizontal_resolution != vmd2_2->horizontal_resolution) {
-			vmd2_m->horizontal_resolution = VIDEO_METADATA_HORIZONTAL_RESOLUTION_NO_ENTRY_m10; equal = FALSE_m10;
+		if (vmd2_1->time_base_units_conversion_factor != vmd2_2->time_base_units_conversion_factor) {
+			vmd2_m->time_base_units_conversion_factor = VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m10; equal = FALSE_m10;
 		}
-		if (vmd2_1->vertical_resolution != vmd2_2->vertical_resolution) {
-			vmd2_m->vertical_resolution = VIDEO_METADATA_VERTICAL_RESOLUTION_NO_ENTRY_m10; equal = FALSE_m10;
+		if (memcmp(vmd2_1->time_base_units_description, vmd2_2->time_base_units_description, VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10)) {
+			memset(vmd2_m->time_base_units_description, 0, VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10); equal = FALSE_m10;
+		}
+		if (vmd2_1->absolute_start_frame_number > vmd2_2->absolute_start_frame_number) {
+			vmd2_m->absolute_start_frame_number = vmd2_2->absolute_start_frame_number; equal = FALSE_m10;
+		}
+		if (vmd2_1->number_of_frames < vmd2_2->number_of_frames) {
+			vmd2_m->number_of_frames = vmd2_2->number_of_frames; equal = FALSE_m10;
 		}
 		if (vmd2_1->frame_rate != vmd2_2->frame_rate) {
 			vmd2_m->frame_rate = VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10; equal = FALSE_m10;
@@ -5101,11 +5145,35 @@ TERN_m10        merge_metadata_m10(FILE_PROCESSING_STRUCT_m10 *md_fps_1, FILE_PR
 		if (vmd2_1->maximum_clip_bytes < vmd2_2->maximum_clip_bytes) {
 			vmd2_m->maximum_clip_bytes = vmd2_2->maximum_clip_bytes; equal = FALSE_m10;
 		}
-		if (memcmp(vmd2_1->video_format, vmd2_2->video_format, VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10)) {
-			memset(vmd2_1->video_format, 0, VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10); equal = FALSE_m10;
+		if (vmd2_1->maximum_clip_frames < vmd2_2->maximum_clip_frames) {
+			vmd2_m->maximum_clip_frames = vmd2_2->maximum_clip_frames; equal = FALSE_m10;
 		}
 		if (vmd2_1->number_of_video_files < vmd2_2->number_of_video_files) {
 			vmd2_m->number_of_video_files = vmd2_2->number_of_video_files; equal = FALSE_m10;
+		}
+		if (vmd2_1->maximum_clip_duration < vmd2_2->maximum_clip_duration) {
+			vmd2_m->maximum_clip_duration = vmd2_2->maximum_clip_duration; equal = FALSE_m10;
+		}
+		if (vmd2_1->number_of_discontinuities < vmd2_2->number_of_discontinuities) {
+			vmd2_m->number_of_discontinuities = vmd2_2->number_of_discontinuities; equal = FALSE_m10;
+		}
+		if (vmd2_1->maximum_contiguous_clips < vmd2_2->maximum_contiguous_clips) {
+			vmd2_m->maximum_contiguous_clips = vmd2_2->maximum_contiguous_clips; equal = FALSE_m10;
+		}
+		if (vmd2_1->maximum_contiguous_clip_bytes < vmd2_2->maximum_contiguous_clip_bytes) {
+			vmd2_m->maximum_contiguous_clip_bytes = vmd2_2->maximum_contiguous_clip_bytes; equal = FALSE_m10;
+		}
+		if (vmd2_1->maximum_contiguous_frames < vmd2_2->maximum_contiguous_frames) {
+			vmd2_m->maximum_contiguous_frames = vmd2_2->maximum_contiguous_frames; equal = FALSE_m10;
+		}
+		if (vmd2_1->horizontal_pixels != vmd2_2->horizontal_pixels) {
+			vmd2_m->horizontal_pixels = VIDEO_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m10; equal = FALSE_m10;
+		}
+		if (vmd2_1->vertical_pixels != vmd2_2->vertical_pixels) {
+			vmd2_m->vertical_pixels = VIDEO_METADATA_VERTICAL_PIXELS_NO_ENTRY_m10; equal = FALSE_m10;
+		}
+		if (memcmp(vmd2_1->video_format, vmd2_2->video_format, VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10)) {
+			memset(vmd2_1->video_format, 0, VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10); equal = FALSE_m10;
 		}
 		if (memcmp(vmd2_1->protected_region, vmd2_2->protected_region, VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10)) {
 			memset(vmd2_m->protected_region, 0, VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10); equal = FALSE_m10;
@@ -6861,9 +6929,16 @@ void    reset_metadata_for_update_m10(FILE_PROCESSING_STRUCT_m10 *fps)
 			break;
 		case VIDEO_METADATA_FILE_TYPE_CODE_m10:
 			vmd2 = &fps->metadata->video_section_2;
+			vmd2->number_of_frames = 0;
 			vmd2->number_of_clips = 0;
 			vmd2->maximum_clip_bytes = 0;
+			vmd2->maximum_clip_frames = 0;
 			vmd2->number_of_video_files = 0;
+			vmd2->maximum_clip_duration = 0.0;
+			vmd2->number_of_discontinuities = 0;
+			vmd2->maximum_contiguous_clips = 0;
+			vmd2->maximum_contiguous_clip_bytes = 0;
+			vmd2->maximum_contiguous_frames = 0;
 			break;
 		default:
 			error_message_m10("%s(): Unrecognized metadata type in file \"%s\"\n", __FUNCTION__, fps->full_file_name);
@@ -7071,7 +7146,6 @@ TERN_m10        search_segment_metadata_m10(si1 *MED_dir, TIME_SLICE_m10 *slice)
 		slice->end_sample_number = absolute_end_sample_number;
 		slice->end_time = uh->file_end_time;
 		end_seg_idx = i - 1;
-		md_fps = NULL;
 	} else {
 		end_seg_idx = i;
 	}
@@ -8172,34 +8246,76 @@ void	show_metadata_m10(FILE_PROCESSING_STRUCT_m10 *fps, METADATA_m10 *md)
 				printf_m10("Maximum Contiguous Samples: %ld\n", tmd2->maximum_contiguous_samples);
 		}
 		else if (vmd2 != NULL) {
-			if (vmd2->horizontal_resolution == VIDEO_METADATA_HORIZONTAL_RESOLUTION_NO_ENTRY_m10)
-				printf_m10("Horizontal Resolution: no entry\n");
+			if (vmd2->time_base_units_conversion_factor == VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m10)
+				printf_m10("Time Base Units Conversion Factor: no entry\n");
 			else
-				printf_m10("Horizontal Resolution: %ld\n", vmd2->horizontal_resolution);
-			if (vmd2->vertical_resolution == VIDEO_METADATA_VERTICAL_RESOLUTION_NO_ENTRY_m10)
-				printf_m10("Vertical Resolution: no entry\n");
+				printf_m10("Time Base Units Conversion Factor: %lf\n", vmd2->time_base_units_conversion_factor);
+			if (*vmd2->time_base_units_description)
+				UTF8_printf_m10("Time Base Units Description: %s\n", vmd2->time_base_units_description);
 			else
-				printf_m10("Vertical Resolution: %ld\n", vmd2->vertical_resolution);
+				printf_m10("Time Base Units Description: no entry\n");
+			if (vmd2->absolute_start_frame_number == VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_NO_ENTRY_m10)
+				printf_m10("Absolute Start Frame Number: no entry\n");
+			else
+				printf_m10("Absolute Start Frame Number: %ld\n", vmd2->absolute_start_frame_number);
+			if (vmd2->number_of_frames == VIDEO_METADATA_NUMBER_OF_FRAMES_NO_ENTRY_m10)
+				printf_m10("Number of Frames: no entry\n");
+			else
+				printf_m10("Number of Frames: %ld\n", vmd2->number_of_frames);
 			if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10)
 				printf_m10("Frame Rate: no entry\n");
+			else if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_VARIABLE_m10)
+				printf_m10("Frame Rate: variable\n");
 			else
 				printf_m10("Frame Rate: %lf (frames per second)\n", vmd2->frame_rate);
 			if (vmd2->number_of_clips == VIDEO_METADATA_NUMBER_OF_CLIPS_NO_ENTRY_m10)
 				printf_m10("Number of Clips: no entry\n");
 			else
-				printf_m10("Number of Clips: %ld (= number of video indices)\n", vmd2->number_of_clips);
+				printf_m10("Number of Clips: %ld (~= number of video indices)\n", vmd2->number_of_clips);
 			if (vmd2->maximum_clip_bytes == VIDEO_METADATA_MAXIMUM_CLIP_BYTES_NO_ENTRY_m10)
 				printf_m10("Maximum Clip Bytes: no entry\n");
 			else
 				printf_m10("Maximum Clip Bytes: %ld\n", vmd2->maximum_clip_bytes);
-			if (*vmd2->video_format)
-				UTF8_printf_m10("Video Format: %s\n", vmd2->video_format);
+			if (vmd2->maximum_clip_frames == VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_NO_ENTRY_m10)
+				printf_m10("Maximum Clip Frames: no entry\n");
 			else
-				printf_m10("Video Format: no entry\n");
+				printf_m10("Maximum Clip Frames: %ld\n", vmd2->maximum_clip_frames);
 			if (vmd2->number_of_video_files == VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_NO_ENTRY_m10)
 				printf_m10("Number of Video Files: no entry\n");
 			else
 				printf_m10("Number of Video Files: %d\n", vmd2->number_of_video_files);
+			if (vmd2->maximum_clip_duration == VIDEO_METADATA_MAXIMUM_CLIP_DURATION_NO_ENTRY_m10)
+				printf_m10("Maximum Clip Duration: no entry\n");
+			else
+				UTF8_printf_m10("Maximum Clip Duration: %lf %s\n", vmd2->maximum_clip_duration, vmd2->time_base_units_description);
+			if (vmd2->number_of_discontinuities == VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m10)
+				printf_m10("Number of Discontinuities: no entry\n");
+			else
+				printf_m10("Number of Discontinuities: %ld\n", vmd2->number_of_discontinuities);
+			if (vmd2->maximum_contiguous_clips == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_NO_ENTRY_m10)
+				printf_m10("Maximum Contiguous Clips: no entry\n");
+			else
+				printf_m10("Maximum Contiguous Clips: %ld\n", vmd2->maximum_contiguous_clips);
+			if (vmd2->maximum_contiguous_clip_bytes == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_NO_ENTRY_m10)
+				printf_m10("Maximum Contiguous Clip Bytes: no entry\n");
+			else
+				printf_m10("Maximum Contiguous Clip Bytes: %ld\n", vmd2->maximum_contiguous_clip_bytes);
+			if (vmd2->maximum_contiguous_frames == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_NO_ENTRY_m10)
+				printf_m10("Maximum Contiguous Frames: no entry\n");
+			else
+				printf_m10("Maximum Contiguous Frames: %ld\n", vmd2->maximum_contiguous_frames);
+			if (vmd2->horizontal_pixels == VIDEO_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m10)
+				printf_m10("Horizontal Pixels: no entry\n");
+			else
+				printf_m10("Horizontal Pixels: %u\n", vmd2->horizontal_pixels);
+			if (vmd2->vertical_pixels == VIDEO_METADATA_VERTICAL_PIXELS_NO_ENTRY_m10)
+				printf_m10("Vertical Pixels: no entry\n");
+			else
+				printf_m10("Vertical Pixels: %u\n", vmd2->vertical_pixels);
+			if (*vmd2->video_format)
+				UTF8_printf_m10("Video Format: %s\n", vmd2->video_format);
+			else
+				printf_m10("Video Format: no entry\n");
 		}
 		else {
 			printf_m10("(unrecognized metadata section 2 type)\n");
@@ -15409,7 +15525,7 @@ si4     system_m10(si1 *command, TERN_m10 null_std_streams, const si1 *function,
 	if (null_std_streams == TRUE_m10) {
 		len = strlen(command);
 		temp_command = malloc_m10(len + 18, function, line, behavior_on_fail);
-		sprintf_m10(temp_command, "%s > %s 2>&1", command, NULL_DEVICE);
+		sprintf_m10(temp_command, "%s > %s 2>&1", command, NULL_DEVICE_m10);
 		command = temp_command;
 	}
 	

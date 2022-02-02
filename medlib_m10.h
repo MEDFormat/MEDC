@@ -499,7 +499,7 @@ typedef struct {
 #if defined MACOS_m10 || defined LINUX_m10
 	TERN_m10 _Atomic		mutex;
 #else
-	TERN_m10			mutex;
+	volatile TERN_m10		mutex;
 #endif
 	ui4				**count;  // used by RED/PRED encode & decode
 	CMP_STATISTICS_BIN_m10		**sorted_count;  // used by RED/PRED encode & decode
@@ -601,8 +601,9 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define PAD_BYTE_VALUE_m10                      0x7e        // ascii tilde ("~") as si1
 #define FILE_NUMBERING_DIGITS_m10               4
 #define FREQUENCY_NO_ENTRY_m10                  -1.0
+#define FRAME_RATE_NO_ENTRY_m10                 FREQUENCY_NO_ENTRY_m10
 #define FREQUENCY_VARIABLE_m10			-2.0
-#define FRAME_RATE_NO_ENTRY_m10                 -1.0
+#define FRAME_RATE_VARIABLE_m10			FREQUENCY_VARIABLE_m10
 #define UNKNOWN_NUMBER_OF_ENTRIES_m10           -1
 #define SEGMENT_NUMBER_NO_ENTRY_m10             -1
 #define CHANNEL_NUMBER_NO_ENTRY_m10             -1
@@ -618,11 +619,11 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define POSTAL_CODE_BYTES_m10			16
 #define LOCALITY_BYTES_m10			64  	//  ascii[63]
 #if defined MACOS_m10 || defined LINUX_m10
-	#define NULL_DEVICE			"/dev/null"
+	#define NULL_DEVICE_m10			"/dev/null"
 #endif
 #ifdef WINDOWS_m10
 	#define PRINTF_BUF_LEN_m10		1024
-	#define NULL_DEVICE			"NUL"
+	#define NULL_DEVICE_m10			"NUL"
 #endif
 
 // for clarity use of read_session_m10, read_channel_m10(), & read_segment_m10()
@@ -728,10 +729,13 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define DST_OFFSET_NO_ENTRY_m10                         -1
 #define TIME_STRING_BYTES_m10                           128
 #define NUMBER_OF_SAMPLES_NO_ENTRY_m10			-1
+#define NUMBER_OF_FRAMES_NO_ENTRY_m10			NUMBER_OF_SAMPLES_NO_ENTRY_m10
 #define SAMPLE_NUMBER_NO_ENTRY_m10                      ((si8) 0x8000000000000000)
 #define FRAME_NUMBER_NO_ENTRY_m10                       SAMPLE_NUMBER_NO_ENTRY_m10
 #define BEGINNING_OF_SAMPLE_NUMBERS_m10                 ((si8) 0x000000000)
+#define BEGINNING_OF_FRAME_NUMBERS_m10                 	BEGINNING_OF_SAMPLE_NUMBERS_m10
 #define END_OF_SAMPLE_NUMBERS_m10                       ((si8) 0x7FFFFFFFFFFFFFFF)
+#define END_OF_FRAME_NUMBERS_m10                       	END_OF_SAMPLE_NUMBERS_m10
 #define UUTC_NO_ENTRY_m10                               ((si8) 0x8000000000000000)
 #define UUTC_EARLIEST_TIME_m10                          ((si8) 0x000000000)  // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
 #define UUTC_LATEST_TIME_m10                            ((si8) 0x7FFFFFFFFFFFFFFF)  // 04:00:54.775808 Sunday, 10 Jan 29424, UTC
@@ -1007,24 +1011,45 @@ CMP_BLOCK_FIXED_HEADER_m10 *CMP_update_CPS_pointers_m10(CMP_PROCESSING_STRUCT_m1
 #define TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10           1336
 
 // Metadata: File Format Constants - Video Section 2 Fields
-#define VIDEO_METADATA_HORIZONTAL_RESOLUTION_OFFSET_m10                 8192    // si8
-#define VIDEO_METADATA_HORIZONTAL_RESOLUTION_NO_ENTRY_m10               -1
-#define VIDEO_METADATA_VERTICAL_RESOLUTION_OFFSET_m10                   8200    // si8
-#define VIDEO_METADATA_VERTICAL_RESOLUTION_NO_ENTRY_m10                 -1
-#define VIDEO_METADATA_FRAME_RATE_OFFSET_m10                            8208    // sf8
-#define VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10                          FRAME_RATE_NO_ENTRY_m10
-#define VIDEO_METADATA_NUMBER_OF_CLIPS_OFFSET_m10                       8216
-#define VIDEO_METADATA_NUMBER_OF_CLIPS_NO_ENTRY_m10                     -1
-#define VIDEO_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m10                    8224
-#define VIDEO_METADATA_MAXIMUM_CLIP_BYTES_NO_ENTRY_m10                  -1
-#define VIDEO_METADATA_VIDEO_FORMAT_OFFSET_m10                          8232    // utf8[63]
-#define VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10                           256
-#define VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m10                 8488    // si4
-#define VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_NO_ENTRY_m10               -1
-#define VIDEO_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m10            8492
-#define VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10             1900
-#define VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m10        10392
-#define VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10         1896
+#define VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m10		8192		// sf8
+#define VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m10		0.0
+#define VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m10			8200		// utf8[31]
+#define VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10			128
+#define VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_OFFSET_m10			8328
+#define VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_NO_ENTRY_m10			FRAME_NUMBER_NO_ENTRY_m10
+#define VIDEO_METADATA_NUMBER_OF_FRAMES_OFFSET_m10				8336		// si8
+#define VIDEO_METADATA_NUMBER_OF_FRAMES_NO_ENTRY_m10				NUMBER_OF_FRAMES_NO_ENTRY_m10
+#define VIDEO_METADATA_FRAME_RATE_OFFSET_m10					8344		// sf8
+#define VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m10					FRAME_RATE_NO_ENTRY_m10
+#define VIDEO_METADATA_FRAME_RATE_VARIABLE_m10					FRAME_RATE_VARIABLE_m10
+#define VIDEO_METADATA_NUMBER_OF_CLIPS_OFFSET_m10                        	8352            // si8
+#define VIDEO_METADATA_NUMBER_OF_CLIPS_NO_ENTRY_m10                      	-1
+#define VIDEO_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m10				8360            // si8
+#define VIDEO_METADATA_MAXIMUM_CLIP_BYTES_NO_ENTRY_m10				-1
+#define VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_OFFSET_m10				8368            // ui4
+#define VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_NO_ENTRY_m10				0xFFFFFFFF
+#define VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m10                 	8372    	// si4
+#define VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_NO_ENTRY_m10               	-1
+#define VIDEO_METADATA_MAXIMUM_CLIP_DURATION_OFFSET_m10                  	8376            // sf8
+#define VIDEO_METADATA_MAXIMUM_CLIP_DURATION_NO_ENTRY_m10                	-1.0
+#define VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m10               	8384            // si8
+#define VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m10             	-1
+#define VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_OFFSET_m10			8392            // si8
+#define VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_NO_ENTRY_m10			-1
+#define VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_OFFSET_m10          	8400            // si8
+#define VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_NO_ENTRY_m10		-1
+#define VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_OFFSET_m10			8408            // si8
+#define VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_NO_ENTRY_m10			-1
+#define VIDEO_METADATA_HORIZONTAL_PIXELS_OFFSET_m10				8416		// ui4
+#define VIDEO_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m10				0
+#define VIDEO_METADATA_VERTICAL_PIXELS_OFFSET_m10				8420		// ui4
+#define VIDEO_METADATA_VERTICAL_PIXELS_NO_ENTRY_m10				0
+#define VIDEO_METADATA_VIDEO_FORMAT_OFFSET_m10                          	8424		// utf8[63]
+#define VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10                           	256
+#define VIDEO_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m10			8680
+#define VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10			1808
+#define VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m10		10488
+#define VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10			1800
 
 // Metadata: File Format Constants - Section 3 Fields
 #define METADATA_RECORDING_TIME_OFFSET_OFFSET_m10               12288           // si8
@@ -1359,19 +1384,29 @@ typedef struct {
 
 typedef struct {
 	// type-independent fields
-	si1     session_description[METADATA_SESSION_DESCRIPTION_BYTES_m10];            // utf8[511]
-	si1     channel_description[METADATA_CHANNEL_DESCRIPTION_BYTES_m10];            // utf8[511]
-	si1     segment_description[METADATA_SEGMENT_DESCRIPTION_BYTES_m10];            // utf8[511]
-	si1     equipment_description[METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10];        // utf8[510]
+	si1     session_description[METADATA_SESSION_DESCRIPTION_BYTES_m10];			// utf8[511]
+	si1     channel_description[METADATA_CHANNEL_DESCRIPTION_BYTES_m10];			// utf8[511]
+	si1     segment_description[METADATA_SEGMENT_DESCRIPTION_BYTES_m10];			// utf8[511]
+	si1     equipment_description[METADATA_EQUIPMENT_DESCRIPTION_BYTES_m10];        	// utf8[510]
 	si4     acquisition_channel_number;
 	// type-specific fields
-	si8     horizontal_resolution;
-	si8     vertical_resolution;
-	sf8     frame_rate;
-	si8     number_of_clips;
+	sf8     time_base_units_conversion_factor;
+	si1     time_base_units_description[VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m10];	// utf8[31]
+	si8     absolute_start_frame_number;
+	si8     number_of_frames;
+	sf8     frame_rate;  // frames per second
+	si8     number_of_clips;  // a clip is the video data between video indices
 	si8     maximum_clip_bytes;
-	si1     video_format[VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10];                // utf8[31]
-	si4     number_of_video_files;
+	ui4     maximum_clip_frames;
+	si4	number_of_video_files;
+	sf8     maximum_clip_duration;
+	si8     number_of_discontinuities;
+	si8	maximum_contiguous_clips;
+	si8	maximum_contiguous_clip_bytes;
+	si8	maximum_contiguous_frames;
+	ui4     horizontal_pixels;
+	ui4     vertical_pixels;
+	si1     video_format[VIDEO_METADATA_VIDEO_FORMAT_BYTES_m10];                		// utf8[31]
 	ui1     protected_region[VIDEO_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m10];
 	ui1     discretionary_region[VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m10];
 } VIDEO_METADATA_SECTION_2_m10;
@@ -1492,7 +1527,7 @@ typedef struct {
 #if defined MACOS_m10 || defined LINUX_m10
 	TERN_m10 _Atomic                        mutex;
 #else
-	TERN_m10                        	mutex;
+	volatile TERN_m10			mutex;
 #endif
 	PASSWORD_DATA_m10			*password_data;
 	si1                                     full_file_name[FULL_FILE_NAME_BYTES_m10];  // full path including extension
