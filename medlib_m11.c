@@ -6480,17 +6480,19 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	if (slice->conditioned == FALSE_m11)
 		condition_time_slice_m11(slice);
 		
-	// segment data
-	if (seg->flags & LH_READ_SEGMENT_DATA_m11) {
-
-		// metadata
+	// metadata
+	if (seg->flags & (LH_READ_SEGMENT_DATA_m11 | LH_READ_SEGMENT_METADATA_m11 | LH_GENERATE_EPHEMERAL_DATA_m11)) {
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11)
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 		else // seg->type_code == LH_VIDEO_SEGMENT_m11
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
-		
+	}
+	
+	// segment data
+	if (seg->flags & LH_READ_SEGMENT_DATA_m11) {
+
 		// indices
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11)
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m11);
@@ -6508,7 +6510,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	}
 
 	// segment records
-	if (seg->flags & (LH_READ_SEGMENT_RECORDS_m11 | LH_READ_FULL_SEGMENT_RECORDS_m11)) {
+	if (seg->flags & LH_READ_SEGMENT_RECORDS_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			seg->record_indices_fps = read_file_m11(seg->record_indices_fps, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
@@ -11514,7 +11516,7 @@ CMP_BUFFERS_m11    *CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buf
 	if (total_allocated_bytes > buffers->total_allocated_bytes) {
 		if (buffers->buffer != NULL) {
 			if (buffers->locked == TRUE_m11)
-				buffers->locked = munlock_m11((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes);
+				buffers->locked = munlock_m11((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 			free((void *) buffers->buffer);
 		}
 		if (zero_data == TRUE_m11)
@@ -11539,7 +11541,7 @@ CMP_BUFFERS_m11    *CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buf
 	// lock
 	buffers->locked = FALSE_m11;
 	if (lock_memory == TRUE_m11)
-		buffers->locked = mlock_m11((void *) buffers->buffer, total_allocated_bytes);
+		buffers->locked = mlock_m11((void *) buffers->buffer, total_allocated_bytes, FALSE_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 
 	return(buffers);
 }
@@ -12245,6 +12247,8 @@ ui1	CMP_differentiate_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 		si8_diff = (si8) *si4_p1-- - (si8) *si4_p2--;
 		if (si8_diff > pos_inf_si4 || si8_diff < neg_inf_si4) {
 			// debug: need better solution to this
+			++si4_p1; ++si4_p2;
+			printf_m11("%d %d %ld %d\n", *si4_p1, *si4_p2, si8_diff, (n_diffs - i) + 1);
 			error_message_m11("%s(): difference exceeds 4-byte integer range\n", __FUNCTION__);
 			return(0xFF);
 		}
@@ -12915,6 +12919,21 @@ sf8	*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len
 	out_data[out_len] = in_data[in_len];
 	
 	return(out_data);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+void	CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers)
+{
+	// lock
+	if (buffers->locked != TRUE_m11) {
+		buffers->locked = mlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		buffers->locked = TRUE_m11;
+	}
+
+	return;
 }
 
 
@@ -14442,7 +14461,7 @@ void    CMP_set_variable_region_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	cps->parameters.variable_region_bytes = CMP_VARIABLE_REGION_BYTES_v1_m11(block_header);
 	
 	// model region
-	// NOTE: model region is not considered part of the variable region, but convenient to set it here
+	// NOTE: model region is NOT considered part of the variable region, but compression algorithms rely on this pointer being set
 	// NOTE: model region bytes is set by compression function
 	cps->parameters.model_region = var_reg_ptr;
 	
@@ -14984,6 +15003,21 @@ si8     CMP_ts_sort_m11(si4 *x, si8 len, CMP_NODE_m11 *nodes, CMP_NODE_m11 *head
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
+void	CMP_unlock_buffers_m11(CMP_BUFFERS_m11 *buffers)
+{
+	// unlock
+	if (buffers->locked != FALSE_m11) {
+		buffers->locked = munlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		buffers->locked = FALSE_m11;
+	}
+
+	return;
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
 void    CMP_unscale_amplitude_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor)
 {
 	// unscale from input_buffer to output_buffer
@@ -15095,11 +15129,11 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	
 	// set up VDS buffers
 	cps->parameters.VDS_input_buffers = CMP_allocate_buffers_m11(cps->parameters.VDS_input_buffers, CMP_VDS_INPUT_BUFFERS_m11, (si8) (VDS_header->number_of_VDS_samples + CMP_MAK_INTERP_PAD_SAMPLES_m11), sizeof(sf8), FALSE_m11, FALSE_m11);
-	// debug: which arrays really need to be zeroed for repeated calls?
-	CMP_zero_buffers_m11(cps->parameters.VDS_input_buffers);
+	// debug: which arrays really need to be zeroed for repeated calls? - this may be fixed
+	// CMP_zero_buffers_m11(cps->parameters.VDS_input_buffers);
 	cps->parameters.VDS_output_buffers = CMP_allocate_buffers_m11(cps->parameters.VDS_output_buffers, CMP_VDS_OUTPUT_BUFFERS_m11, (si8) number_of_samples, sizeof(sf8), FALSE_m11, FALSE_m11);
-	// debug: which arrays really need to be zeroed for repeated calls?
-	CMP_zero_buffers_m11(cps->parameters.VDS_output_buffers);
+	// debug: which arrays really need to be zeroed for repeated calls? - this may be fixed
+	// CMP_zero_buffers_m11(cps->parameters.VDS_output_buffers);
 	VDS_in_bufs = cps->parameters.VDS_input_buffers;
 	in_y = (sf8 *) VDS_in_bufs->buffer[0];  // location specified by mak_interp()
 	in_x = (si8 *) VDS_in_bufs->buffer[1];  // location specified by mak_interp()
@@ -16156,26 +16190,34 @@ si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to
 	if (fps->directives.update_universal_header == TRUE_m11) {
 		uh = fps->universal_header;
 		
-		// update universal_header->file_CRC
-		if (uh->body_CRC == CRC_NO_ENTRY_m11)  // otherwise this is done with CRC_combine() in other functions
-			uh->body_CRC = CRC_calculate_m11((ui1 *) fps->data_pointers, bytes_to_write);
+		// update universal_header->body_CRC
+		if (uh->body_CRC == CRC_NO_ENTRY_m11) {  // otherwise this is done with CRC_combine() in other functions
+			if (file_offset == 0) {
+				if (bytes_to_write > UNIVERSAL_HEADER_BYTES_m11)  // don't calculate if this is UNIVERSAL_HEADER_ONLY write
+					uh->body_CRC = CRC_calculate_m11((ui1 *) fps->data_pointers, bytes_to_write - UNIVERSAL_HEADER_BYTES_m11);
+			} else {
+				uh->body_CRC = CRC_calculate_m11((ui1 *) fps->data_pointers, bytes_to_write);
+			}
+		}
+		// update universal_header->header_CRC
 		uh->header_CRC = CRC_calculate_m11((ui1 *) uh + UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m11, UNIVERSAL_HEADER_BYTES_m11 - UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m11);
 		
 		// write universal header
 		FPS_seek_m11(fps, 0);
 		fwrite_m11((void *) uh, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m11, fps->parameters.fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
-		
+
 		// return if all that was requested was universal header update
 		if (file_offset == 0 && bytes_to_write == UNIVERSAL_HEADER_BYTES_m11) {
 			if (fps->directives.flush_after_write == TRUE_m11)
 				fflush(fps->parameters.fp);
 			fps->parameters.fpos = UNIVERSAL_HEADER_BYTES_m11;
 			fps->parameters.last_access_time = current_uutc_m11();
-			FPS_mutex_off_m11(fps);
 			if (fps->parameters.flen < UNIVERSAL_HEADER_BYTES_m11) {
 				fps->parameters.flen = UNIVERSAL_HEADER_BYTES_m11;
+				FPS_mutex_off_m11(fps);
 				return(UNIVERSAL_HEADER_BYTES_m11);
 			}
+			FPS_mutex_off_m11(fps);
 			return(0);  // return new bytes added to file, zero if overwrite
 		}
 	}
@@ -18121,12 +18163,14 @@ void	memset_m11(void *ptr, const void *pattern, si4 pat_len, size_t buf_len)
 	return;
 }
 
+
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
-TERN_m11	mlock_m11(void *addr, size_t len)
+TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
-	si4	ret_val;
+	extern GLOBALS_m11	*globals_m11;
+	si4			ret_val;
 	
 	
 	#if defined MACOS_m11 || defined LINUX_m11
@@ -18138,8 +18182,28 @@ TERN_m11	mlock_m11(void *addr, size_t len)
 		ret_val = 0;
 	#endif
 	
-	if (ret_val == 0)
+	if (ret_val == 0) {
+		if (zero_data == TRUE_m11)
+			memset(addr, 0, len);  // forces OS to give real memory before return (otherwise there may be a lag)
 		return(TRUE_m11);
+	}
+	
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+	
+	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
+		fprintf_m11(stderr, "%c\n\t%s() failed to lock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
+		fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+		if (function != NULL)
+			fprintf_m11(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+		if (behavior_on_fail & RETURN_ON_FAIL_m11)
+			fprintf_m11(stderr, "\t=> returning FALSE\n\n");
+		else if (behavior_on_fail & EXIT_ON_FAIL_m11)
+			fprintf_m11(stderr, "\t=> exiting program\n\n");
+		fflush(stderr);
+	}
+	if (behavior_on_fail & EXIT_ON_FAIL_m11)
+		exit_m11(1);
 	
 	return(FALSE_m11);
 }
@@ -18148,9 +18212,10 @@ TERN_m11	mlock_m11(void *addr, size_t len)
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
-TERN_m11	munlock_m11(void *addr, size_t len)
+TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
-	si4	ret_val;
+	extern GLOBALS_m11	*globals_m11;
+	si4			ret_val;
 	
 	
 	#if defined MACOS_m11 || defined LINUX_m11
@@ -18164,6 +18229,23 @@ TERN_m11	munlock_m11(void *addr, size_t len)
 	
 	if (ret_val == 0)
 		return(TRUE_m11);
+	
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+
+	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
+		fprintf_m11(stderr, "%c\n\t%s() failed to unlock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
+		fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+		if (function != NULL)
+			fprintf_m11(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+		if (behavior_on_fail & RETURN_ON_FAIL_m11)
+			fprintf_m11(stderr, "\t=> returning FALSE\n\n");
+		else if (behavior_on_fail & EXIT_ON_FAIL_m11)
+			fprintf_m11(stderr, "\t=> exiting program\n\n");
+		fflush(stderr);
+	}
+	if (behavior_on_fail & EXIT_ON_FAIL_m11)
+		exit_m11(1);
 	
 	return(FALSE_m11);
 }
@@ -18603,8 +18685,8 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 	
 	if (null_std_streams == TRUE_m11) {
 		len = strlen(command);
-		temp_command = malloc_m11(len + 18, function, line, behavior_on_fail);
-		sprintf_m11(temp_command, "%s 2> %s 2>&1", command, NULL_DEVICE_m11);
+		temp_command = malloc_m11(len + (FULL_FILE_NAME_BYTES_m11 * 2) + 9, function, line, behavior_on_fail);
+		sprintf_m11(temp_command, "%s 1> %s 2> %s", command, NULL_DEVICE_m11, NULL_DEVICE_m11);
 		command = temp_command;
 	}
 	

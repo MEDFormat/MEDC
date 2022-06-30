@@ -958,6 +958,7 @@ typedef struct {
 #define LH_READ_SLICE_SEGMENT_RECORDS_m11		((ui8) 1 << 51)	// read full indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_SEGMENT_RECORDS_m11		((ui8) 1 << 52)	// read full indices file & data files, close all files
 #define LH_MEM_MAP_SEGMENT_RECORDS_m11			((ui8) 1 << 53)	// allocate, but don't read full file
+#define LH_READ_SEGMENT_METADATA_m11			((ui8) 1 << 54)	// read segment metadata
 #define LH_RESET_CPS_POINTERS_m11			((ui8) 1 << 60)	// set original_ptr = original_data, block_header = compressed_data, decompressed_ptr = decompressed_data
 
 
@@ -1993,8 +1994,8 @@ char		*getcwd_m11(char *buf, size_t size);
 void		*malloc_m11(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
 void		**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
 void		memset_m11(void *ptr, const void *pattern, si4 pat_len, size_t buf_len);
-TERN_m11	mlock_m11(void *addr, size_t len);
-TERN_m11	munlock_m11(void *addr, size_t len);
+TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, si4 line, ui4 behavior_on_fail);
+TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, si4 line, ui4 behavior_on_fail);
 si4     	printf_m11(si1 *fmt, ...);
 si4		putc_m11(si4 c, FILE *stream);
 si4		putch_m11(si4 c);  // Windows "_putch()"
@@ -2461,6 +2462,7 @@ void		CMP_initialize_directives_m11(CMP_DIRECTIVES_m11 *directives, ui1 mode);
 void		CMP_initialize_parameters_m11(CMP_PARAMETERS_m11 *parameters);
 sf8		*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len);
 si4		*CMP_lin_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len);
+void		CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers);
 void    	CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 void    	CMP_MBE_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 sf8     	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m11 *out_bufs, si8 out_len);
@@ -2484,6 +2486,7 @@ void      	CMP_si4_to_sf8_m11(si4 *si4_arr, sf8 *sf8_arr, si8 len);
 sf8		*CMP_spline_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, CMP_BUFFERS_m11 *spline_bufs);
 si4		*CMP_spline_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len, CMP_BUFFERS_m11 *spline_bufs);
 si8             CMP_ts_sort_m11(si4 *x, si8 len, CMP_NODE_m11 *nodes, CMP_NODE_m11 *head, CMP_NODE_m11 *tail, si4 return_sorted_ts, ...);
+void		CMP_unlock_buffers_m11(CMP_BUFFERS_m11 *buffers);
 void    	CMP_unscale_amplitude_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
 void    	CMP_unscale_amplitude_sf8_m11(sf8 *input_buffer, sf8 *output_buffer, si8 len, sf8 scale_factor);
 void    	CMP_unscale_frequency_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
