@@ -1984,7 +1984,7 @@ FILE		*fopen_m11(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavi
 si4     	fprintf_m11(FILE *stream, si1 *fmt, ...);
 si4		fputc_m11(si4 c, FILE *stream);
 size_t          fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
-void            free_m11(void *ptr, const si1 *function, si4 line);
+void            free_m11(void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
 void            free_2D_m11(void **ptr, size_t dim1, const si1 *function, si4 line);
 si4     	fscanf_m11(FILE *stream, si1 *fmt, ...);
 si4             fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);

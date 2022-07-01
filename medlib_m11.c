@@ -3793,7 +3793,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 			if (seg != NULL)
 				free_segment_m11(seg, TRUE_m11);
 		}
-		free_m11((void *) channel->segments, __FUNCTION__, __LINE__);
+		free_m11((void *) channel->segments, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	if (channel->metadata_fps != NULL)
 		FPS_free_processing_struct_m11(channel->metadata_fps, TRUE_m11);
@@ -3803,9 +3803,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 		FPS_free_processing_struct_m11(channel->record_indices_fps, TRUE_m11);
 	
 	if (free_channel_structure == TRUE_m11) {
-		force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);  // often allocated as part of 2D array
-		free_m11((void *) channel, __FUNCTION__, __LINE__);
-		force_behavior_m11(RESTORE_BEHAVIOR_m11);
+		free_m11((void *) channel, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
 	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
 		channel->flags &= ~(LH_OPEN_m11 | LH_CHANNEL_ACTIVE_m11);
 		channel->last_access_time = UUTC_NO_ENTRY_m11;
@@ -3826,11 +3824,11 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		return;
 	}
 	
-	if (globals_m11->record_filters != NULL) {
-		force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);  			// often statically allocated, so can't use regular free()
-		free_m11((void *) globals_m11->record_filters, __FUNCTION__, __LINE__);	// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m11, REC_Note_TYPE_CODE_m11, NO_TYPE_CODE_m11 };
-		force_behavior_m11(RESTORE_BEHAVIOR_m11);				// globals_m11->record_filters = rec_filts;
-	}
+	if (globals_m11->record_filters != NULL)
+		free_m11((void *) globals_m11->record_filters, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+		// often statically allocated, so can't use regular free()
+		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m11, REC_Note_TYPE_CODE_m11, NO_TYPE_CODE_m11 };
+		// globals_m11->record_filters = rec_filts;
 		
 	if (globals_m11->timezone_table != NULL)
 		free((void *) globals_m11->timezone_table);
@@ -3935,8 +3933,8 @@ void	free_segmented_ses_recs_m11(SEGMENTED_SESS_RECS_m11 *ssr, TERN_m11 free_seg
 		if (gen_fps != NULL)
 			FPS_free_processing_struct_m11(gen_fps, TRUE_m11);
 	}
-	free_m11((void *) ssr->record_indices_fps, __FUNCTION__, __LINE__);
-	free_m11((void *) ssr->record_data_fps, __FUNCTION__, __LINE__);
+	free_m11((void *) ssr->record_indices_fps, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	free_m11((void *) ssr->record_data_fps, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 
 	if (free_segmented_ses_rec_structure == TRUE_m11)
 		free((void *) ssr);
@@ -3969,7 +3967,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->time_series_channels, __FUNCTION__, __LINE__);
+		free_m11((void *) session->time_series_channels, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	if (session->video_channels != NULL) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -3977,7 +3975,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->video_channels, __FUNCTION__, __LINE__);
+		free_m11((void *) session->video_channels, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	if (session->segmented_sess_recs != NULL)
 		free_segmented_ses_recs_m11(session->segmented_sess_recs, TRUE_m11);
@@ -6983,8 +6981,7 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 		++c;
 		if (*c == '/')
 			++c;
-	}
-	else {
+	} else {
 		getcwd_m11(base_dir, FULL_FILE_NAME_BYTES_m11);
 	}
 	
@@ -13787,14 +13784,14 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 		FPS_reallocate_processing_struct_m11(fps, new_compressed_bytes + UNIVERSAL_HEADER_BYTES_m11);
 	
 	if (cps->parameters.keysample_buffer != NULL && new_keysample_bytes) {
-		free_m11((void * ) cps->parameters.keysample_buffer, __FUNCTION__, __LINE__);
+		free_m11((void * ) cps->parameters.keysample_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 		if ((cps->parameters.keysample_buffer = (si1 *) calloc_m11((size_t) new_keysample_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_keysample_bytes = new_keysample_bytes;
 	}
 	
 	if (cps->decompressed_data != NULL && new_decompressed_samples) {
-		free_m11((void * ) cps->decompressed_data, __FUNCTION__, __LINE__);
+		free_m11((void * ) cps->decompressed_data, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 		if ((cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_decompressed_samples = new_decompressed_samples;
@@ -13803,22 +13800,22 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 	// reallocate the following if they were previously allocated
 	if (cps->parameters.allocated_block_samples < block_samples) {
 		if (cps->parameters.detrended_buffer != NULL) {
-			free_m11((void * ) cps->parameters.detrended_buffer, __FUNCTION__, __LINE__);
+			free_m11((void * ) cps->parameters.detrended_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 			if ((cps->parameters.detrended_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.derivative_buffer != NULL) {
-			free_m11((void * ) cps->parameters.derivative_buffer, __FUNCTION__, __LINE__);
+			free_m11((void * ) cps->parameters.derivative_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 			if ((cps->parameters.derivative_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.scaled_amplitude_buffer != NULL) {
-			free_m11((void * ) cps->parameters.scaled_amplitude_buffer, __FUNCTION__, __LINE__);
+			free_m11((void * ) cps->parameters.scaled_amplitude_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 			if ((cps->parameters.scaled_amplitude_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.scaled_frequency_buffer != NULL) {
-			free_m11((void * ) cps->parameters.scaled_frequency_buffer, __FUNCTION__, __LINE__);
+			free_m11((void * ) cps->parameters.scaled_frequency_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
 			if ((cps->parameters.scaled_frequency_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
@@ -17813,18 +17810,23 @@ size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 }
 
 
-void    free_m11(void *ptr, const si1 *function, si4 line)
+void    free_m11(void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+
 	if (freeable_m11(ptr) == FALSE_m11) {
-		if (ptr == NULL)
-			warning_message_m11("%s(): Attempting to free NULL object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
-		else
-			warning_message_m11("%s(): Attempting to free unallocated, statically allocated, or previously freed object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
+		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
+			if (ptr == NULL)
+				fprintf_m11(stderr, "%s(): Attempting to free NULL object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
+			else
+				fprintf_m11(stderr, "%s(): Attempting to free unallocated, statically allocated, or previously freed object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
+		}
 		return;
 	}
 	
 	free(ptr);
-	
+
 	return;
 }
 
@@ -17837,24 +17839,20 @@ void    free_2D_m11(void **ptr, size_t dim1, const si1 *function, si4 line)
 	
 	// dim1 == 0 indicates allocated en block per caller
 	if (dim1 == 0) {
-		free_m11((void *) ptr, function, line);
+		free_m11((void *) ptr, function, line, USE_GLOBAL_BEHAVIOR_m11);
 		return;
 	}
 		
 	// allocated en block
-	if ((ui8) ptr[0] == (ui8) ptr + (dim1 * sizeof(void *))) {
-		force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);
-		free_m11((void *) ptr, function, line);
-		force_behavior_m11(RESTORE_BEHAVIOR_m11);
+		if ((ui8) ptr[0] == (ui8) ptr + (dim1 * sizeof(void *))) {
+		free_m11((void *) ptr, function, line, SUPPRESS_WARNING_OUTPUT_m11);
 		return;
 	}
 
 	// allocated separately
-	force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);
 	for (i = 0; i < dim1; ++i)
-		free_m11((void *) ptr[i], function, line);
-	free_m11((void *) ptr, function, line);
-	force_behavior_m11(RESTORE_BEHAVIOR_m11);
+		free_m11((void *) ptr[i], function, line, SUPPRESS_WARNING_OUTPUT_m11);
+	free_m11((void *) ptr, function, line, SUPPRESS_WARNING_OUTPUT_m11);
 
 	return;
 }
@@ -18512,9 +18510,7 @@ si4    sprintf_m11(si1 *target, si1 *fmt, ...)
 	va_end(args);
 	
 	memcpy(target, tmp_str, ret_val + 1);
-	force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);
-	free_m11((void *) tmp_str, __FUNCTION__, __LINE__);
-	force_behavior_m11(RESTORE_BEHAVIOR_m11);
+	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
 
 	return(ret_val);
 }
@@ -18793,9 +18789,7 @@ si4     vfprintf_m11(FILE *stream, si1 *fmt, va_list args)
 		else
 #endif
 		ret_val = fprintf(stream, "%s", temp_str);
-		force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);
-		free_m11((void *) temp_str, __FUNCTION__, __LINE__);
-		force_behavior_m11(RESTORE_BEHAVIOR_m11);
+		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
 	}
 
 	return(ret_val);
@@ -18819,9 +18813,7 @@ si4     vprintf_m11(si1 *fmt, va_list args)
 #else
 		ret_val = printf("%s", temp_str);
 #endif
-		force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);
-		free_m11((void *) temp_str, __FUNCTION__, __LINE__);
-		force_behavior_m11(RESTORE_BEHAVIOR_m11);
+		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
 	}
 	
 	return(ret_val);
@@ -18900,9 +18892,7 @@ si4    vsprintf_m11(si1 *target, si1 *fmt, va_list args)
 	ret_val = vasprintf_m11(&tmp_str, fmt, args);
 	
 	memcpy(target, tmp_str, ret_val + 1);
-	force_behavior_m11(SUPPRESS_WARNING_OUTPUT_m11);
-	free_m11((void *) tmp_str, __FUNCTION__, __LINE__);
-	force_behavior_m11(RESTORE_BEHAVIOR_m11);
+	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
 
 	return(ret_val);
 }
