@@ -3793,7 +3793,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 			if (seg != NULL)
 				free_segment_m11(seg, TRUE_m11);
 		}
-		free_m11((void *) channel->segments, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		free_m11((void *) channel->segments, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 	}
 	if (channel->metadata_fps != NULL)
 		FPS_free_processing_struct_m11(channel->metadata_fps, TRUE_m11);
@@ -3803,7 +3803,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 		FPS_free_processing_struct_m11(channel->record_indices_fps, TRUE_m11);
 	
 	if (free_channel_structure == TRUE_m11) {
-		free_m11((void *) channel, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+		free_m11((void *) channel, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
 		channel->flags &= ~(LH_OPEN_m11 | LH_CHANNEL_ACTIVE_m11);
 		channel->last_access_time = UUTC_NO_ENTRY_m11;
@@ -3819,13 +3819,11 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 
 void    free_globals_m11(TERN_m11 cleanup_for_exit)
 {
-	if (globals_m11 == NULL) {
-		warning_message_m11("%s(): trying to free a NULL GLOBALS_m11 structure => returning with no action\n", __FUNCTION__);
+	if (globals_m11 == NULL)
 		return;
-	}
-	
+
 	if (globals_m11->record_filters != NULL)
-		free_m11((void *) globals_m11->record_filters, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+		free_m11((void *) globals_m11->record_filters, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 		// often statically allocated, so can't use regular free()
 		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m11, REC_Note_TYPE_CODE_m11, NO_TYPE_CODE_m11 };
 		// globals_m11->record_filters = rec_filts;
@@ -3933,8 +3931,8 @@ void	free_segmented_ses_recs_m11(SEGMENTED_SESS_RECS_m11 *ssr, TERN_m11 free_seg
 		if (gen_fps != NULL)
 			FPS_free_processing_struct_m11(gen_fps, TRUE_m11);
 	}
-	free_m11((void *) ssr->record_indices_fps, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-	free_m11((void *) ssr->record_data_fps, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	free_m11((void *) ssr->record_indices_fps, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) ssr->record_data_fps, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 
 	if (free_segmented_ses_rec_structure == TRUE_m11)
 		free((void *) ssr);
@@ -3967,7 +3965,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->time_series_channels, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		free_m11((void *) session->time_series_channels, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 	}
 	if (session->video_channels != NULL) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -3975,7 +3973,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->video_channels, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		free_m11((void *) session->video_channels, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 	}
 	if (session->segmented_sess_recs != NULL)
 		free_segmented_ses_recs_m11(session->segmented_sess_recs, TRUE_m11);
@@ -4019,30 +4017,6 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 	}
 	
 	return;
-}
-
-
-#ifndef WINDOWS_m11  // inline causes linking problem in Windows
-inline
-#endif
-TERN_m11 freeable_m11(void *ptr)
-{
-	#ifdef MACOS_m11
-	if (malloc_size(ptr))
-		return(TRUE_m11);
-	#endif
-	#ifdef LINUX_m11
-	if (malloc_usable_size(ptr))
-		return(TRUE_m11);
-	#endif
-	#ifdef WINDOWS_m11
-		// NOTE: The Visual Studio debugger substitutes _msize_dbg() for _msize() which throws an exception if the
-		// pointer does not point to an allocated block, rather than returns zero, which is the desired behavior.
-	if (_msize(ptr))
-		return(TRUE_m11);
-	#endif
-
-	return(FALSE_m11);
 }
 
 
@@ -12383,7 +12357,6 @@ void    CMP_encode_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 start_time, si4 acqu
 			break;
 		case CMP_MBE_COMPRESSION_m11:
 			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m11;
-			CMP_find_extrema_m11(NULL, 0, NULL, NULL, cps);
 			compression_f = CMP_MBE_encode_m11;
 			break;
 		default:
@@ -16540,7 +16513,6 @@ TERN_m11	STR_contains_regex_m11(si1 *string)
 			case '^':
 			case '$':
 			case '[':
-			case '(':
 			case '{':
 				return(TRUE_m11);
 		}
@@ -17812,20 +17784,26 @@ size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 
 void    free_m11(void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
 {
-	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
-		behavior_on_fail = globals_m11->behavior_on_fail;
-
 	if (freeable_m11(ptr) == FALSE_m11) {
-		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
+		
+		if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+			behavior_on_fail = globals_m11->behavior_on_fail;
+
+		if (!(behavior_on_fail & SUPPRESS_OUTPUT_m11)) {
 			if (ptr == NULL)
-				fprintf_m11(stderr, "%s(): Attempting to free NULL object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
+				warning_message_m11("%s(): Attempting to free NULL object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
 			else
-				fprintf_m11(stderr, "%s(): Attempting to free unallocated, statically allocated, or previously freed object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
+				warning_message_m11("%s(): Attempting to free unallocated, statically allocated, or previously freed object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
 		}
 		return;
 	}
 	
+#if defined MACOS_m11 || defined LINUX_m11
 	free(ptr);
+#endif
+#ifdef WINDOWS_m11
+	_freea(ptr);
+#endif
 
 	return;
 }
@@ -17839,22 +17817,50 @@ void    free_2D_m11(void **ptr, size_t dim1, const si1 *function, si4 line)
 	
 	// dim1 == 0 indicates allocated en block per caller
 	if (dim1 == 0) {
-		free_m11((void *) ptr, function, line, USE_GLOBAL_BEHAVIOR_m11);
+		free_m11((void *) ptr, function, line, SUPPRESS_OUTPUT_m11);
 		return;
 	}
 		
 	// allocated en block
 		if ((ui8) ptr[0] == (ui8) ptr + (dim1 * sizeof(void *))) {
-		free_m11((void *) ptr, function, line, SUPPRESS_WARNING_OUTPUT_m11);
+		free_m11((void *) ptr, function, line, SUPPRESS_OUTPUT_m11);
 		return;
 	}
 
 	// allocated separately
 	for (i = 0; i < dim1; ++i)
-		free_m11((void *) ptr[i], function, line, SUPPRESS_WARNING_OUTPUT_m11);
-	free_m11((void *) ptr, function, line, SUPPRESS_WARNING_OUTPUT_m11);
+		free_m11((void *) ptr[i], function, line, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) ptr, function, line, SUPPRESS_OUTPUT_m11);
 
 	return;
+}
+
+
+// not a standard function => used by free_m11(), but also useful on it's own
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m11 freeable_m11(void *ptr)
+{
+	if (ptr == NULL)
+		return(FALSE_m11);
+		
+	#ifdef MACOS_m11
+	if (malloc_size(ptr))
+		return(TRUE_m11);
+	#endif
+	#ifdef LINUX_m11
+	if (malloc_usable_size(ptr))
+		return(TRUE_m11);
+	#endif
+	#ifdef WINDOWS_m11
+		// Note: _msize, the Windows equivalent, is unstable with unallocated addresses as arguments
+		// _freea() ignores requests to free stack based memory (implemented in free_m11())
+		// there is still a potential problem with unallocated pointers, but this can be avoided by using free_2D_m11() on 2D arrays
+		return(TRUE_m11);
+	#endif
+
+	return(FALSE_m11);
 }
 
 
@@ -18510,7 +18516,7 @@ si4    sprintf_m11(si1 *target, si1 *fmt, ...)
 	va_end(args);
 	
 	memcpy(target, tmp_str, ret_val + 1);
-	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 
 	return(ret_val);
 }
@@ -18789,7 +18795,7 @@ si4     vfprintf_m11(FILE *stream, si1 *fmt, va_list args)
 		else
 #endif
 		ret_val = fprintf(stream, "%s", temp_str);
-		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 	}
 
 	return(ret_val);
@@ -18813,7 +18819,7 @@ si4     vprintf_m11(si1 *fmt, va_list args)
 #else
 		ret_val = printf("%s", temp_str);
 #endif
-		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 	}
 	
 	return(ret_val);
@@ -18892,7 +18898,7 @@ si4    vsprintf_m11(si1 *target, si1 *fmt, va_list args)
 	ret_val = vasprintf_m11(&tmp_str, fmt, args);
 	
 	memcpy(target, tmp_str, ret_val + 1);
-	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_WARNING_OUTPUT_m11);
+	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
 
 	return(ret_val);
 }
