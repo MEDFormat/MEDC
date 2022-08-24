@@ -235,7 +235,7 @@ TERN_m11	check_record_structure_alignments_m11(ui1 *bytes)
 
 	return_value = TRUE_m11;
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(LARGEST_RECORD_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(LARGEST_RECORD_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 
@@ -358,7 +358,7 @@ TERN_m11     check_rec_Sgmt_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(REC_Sgmt_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_Sgmt_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	Sgmt = (REC_Sgmt_v10_m11 *) bytes;
@@ -471,7 +471,7 @@ TERN_m11     check_rec_Stat_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(REC_Stat_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_Stat_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	Stat = (REC_Stat_v10_m11 *) bytes;
@@ -588,7 +588,7 @@ TERN_m11	check_rec_EDFA_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1*)malloc_m11(REC_EDFA_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_EDFA_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	edfa = (REC_EDFA_v10_m11 *) bytes;
@@ -719,7 +719,7 @@ TERN_m11	check_rec_Seiz_type_alignment_m11(ui1 *bytes)
 
 	// check fields - base structure
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11((REC_Seiz_v10_BYTES_m11 + REC_Seiz_v10_CHANNEL_BYTES_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_Seiz_v10_BYTES_m11 + REC_Seiz_v10_CHANNEL_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	Seiz = (REC_Seiz_v10_m11 *) bytes;
@@ -764,7 +764,7 @@ REC_Seiz_v10_NOT_ALIGNED_m11:
 	if (free_flag == TRUE_m11)
 		free((void *) bytes);
 
-	(void)error_message_m11("%s(): REC_Seiz_v10_m11 structure is NOT aligned\n", __FUNCTION__);
+	error_message_m11("%s(): REC_Seiz_v10_m11 structure is NOT aligned\n", __FUNCTION__);
 
 	return(FALSE_m11);
 }
@@ -860,7 +860,7 @@ TERN_m11     check_rec_NlxP_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(REC_NlxP_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_NlxP_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 
@@ -938,7 +938,7 @@ TERN_m11     check_rec_Curs_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1*) malloc_m11(REC_Curs_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1*) malloc(REC_Curs_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 
@@ -1013,7 +1013,7 @@ TERN_m11     check_rec_Epoc_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(REC_Epoc_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_Epoc_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 
@@ -1126,7 +1126,7 @@ TERN_m11     check_rec_ESti_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(REC_ESti_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_ESti_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 
@@ -1208,7 +1208,7 @@ TERN_m11     check_rec_CSti_type_alignment_m11(ui1 *bytes)
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(REC_CSti_v10_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(REC_CSti_v10_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 

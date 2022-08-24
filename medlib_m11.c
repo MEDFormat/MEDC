@@ -107,6 +107,62 @@ GLOBALS_m11	*globals_m11 = NULL;
 //***********************************************************************//
 
 
+void add_AT_entry_m11(void *address, const si1 *function)
+{
+	ui8		bytes;
+	si8		i;
+	AT_NODE		*atn;
+#if defined MACOS_m11 || defined LINUX_m11
+	static TERN_m11 _Atomic		mutex = FALSE_m11;
+#else
+	static volatile TERN_m11	mutex = FALSE_m11;
+#endif
+	
+		
+	while (mutex == TRUE_m11);
+	mutex = TRUE_m11;
+	
+	// expand list if needed
+	if (globals_m11->AT_used_node_count == globals_m11->AT_node_count) {
+		globals_m11->AT_node_count += GLOBALS_AT_LIST_SIZE_INCREMENT_m11;
+		globals_m11->AT_nodes = (AT_NODE *) realloc((void *) globals_m11->AT_nodes, globals_m11->AT_node_count * sizeof(AT_NODE));
+		if (globals_m11->AT_nodes == NULL) {
+			error_message_m11("%s(): error expanding AT list => exiting\n");
+			exit_m11(-1);
+		}
+		// zero new memory
+		memset((void *) (globals_m11->AT_nodes + globals_m11->AT_used_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11 * sizeof(AT_NODE));
+		atn = globals_m11->AT_nodes + globals_m11->AT_used_node_count;
+	} else {
+		// find a free node
+		atn = globals_m11->AT_nodes;
+		for (i = globals_m11->AT_node_count; i--; ++atn)
+			if (atn->address == NULL)
+				break;
+	}
+	
+	// get true allocated bytes
+#ifdef MACOS_m11
+	bytes = (ui8) malloc_size(address);
+#endif
+#ifdef LINUX_m11
+	bytes = (ui8) malloc_usable_size(address);
+#endif
+#ifdef WINDOWS_m11
+	bytes = (ui8) _msize(address);
+#endif
+			
+	// fill in
+	++globals_m11->AT_used_node_count;
+	atn->address = address;
+	atn->bytes = bytes;
+	atn->function = function;
+	
+	mutex = FALSE_m11;
+	return;
+}
+
+
 TERN_m11	adjust_open_file_limit_m11(si4 new_limit, TERN_m11 verbose_flag)
 {
 	TERN_m11	ret_val = TRUE_m11;
@@ -178,7 +234,7 @@ CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 
 	type_str = MED_type_string_from_code_m11(type_code);
 	
 	if (chan == NULL)
-		chan = (CHANNEL_m11 *) calloc_m11((size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		chan = (CHANNEL_m11 *) calloc_m11((size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	if (type_code == TIME_SERIES_CHANNEL_TYPE_m11)
 		gen_fps = FPS_allocate_processing_struct_m11(NULL, NULL, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
 	else // type_code == TIME_SERIES_CHANNEL_TYPE_m11
@@ -206,11 +262,11 @@ CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 
 	}
 	
 	if (n_segs) {
-		chan->segments = (SEGMENT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(SEGMENT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		chan->segments = (SEGMENT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(SEGMENT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_segs; ++i)
 			allocate_segment_m11(chan->segments[i], gen_fps, chan->path, chan->name, type_code, (si4) i + 1, seg_recs);
 	}
-	
+
 	return(chan);
 }
 
@@ -229,7 +285,7 @@ SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *
 	// if records are requested, enough memory for 1 record index is allocated (reFPS_allocate_processing_struct_m11() to change this)
 	
 	if (seg == NULL)
-		seg = (SEGMENT_m11 *) calloc_m11((size_t)1, sizeof(SEGMENT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		seg = (SEGMENT_m11 *) calloc_m11((size_t)1, sizeof(SEGMENT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_num);
 	snprintf_m11(seg->name, SEGMENT_BASE_FILE_NAME_BYTES_m11, "%s_s%s", chan_name, num_str);
 	switch (type_code) {
@@ -275,7 +331,7 @@ SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *
 	} else {
 		seg->record_data_fps = seg->record_indices_fps = NULL;
 	}
-	
+
 	return(seg);
 }
 
@@ -295,7 +351,7 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	// if records are requested, enough memory for 1 record of data size LARGEST_RECORD_BYTES_m11 is allocated (reFPS_allocate_processing_struct_m11() to change this)
 	// if records are requested, enough memory for 1 record index is allocated (reFPS_allocate_processing_struct_m11() to change this)
 	
-	sess = (SESSION_m11 *) calloc_m11((size_t)1, sizeof(SESSION_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	sess = (SESSION_m11 *) calloc_m11((size_t)1, sizeof(SESSION_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	gen_fps = FPS_allocate_processing_struct_m11(NULL, NULL, FPS_PROTOTYPE_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
 	gen_fps->parameters.fd = FPS_FD_EPHEMERAL_m11;
 	uh = gen_fps->universal_header;
@@ -339,13 +395,13 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 			ts_chan_names = generate_numbered_names_m11(NULL, "tch_", n_ts_chans);
 			free_names = TRUE_m11;
 		}
-		sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_ts_chans, 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_ts_chans, 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_ts_chans; ++i) {
 			sess->time_series_metadata_fps->metadata->time_series_section_2.acquisition_channel_number = (si4) i + 1;
 			allocate_channel_m11(sess->time_series_channels[i], sess->time_series_metadata_fps, sess->path, ts_chan_names[i], TIME_SERIES_CHANNEL_TYPE_m11, n_segs, chan_recs, seg_recs);
 		}
 		if (free_names == TRUE_m11)
-			free((void *) ts_chan_names);
+			free_m11((void *) ts_chan_names, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	
 	if (n_vid_chans) {
@@ -354,7 +410,7 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 			vid_chan_names = generate_numbered_names_m11(NULL, "vch_", n_vid_chans);
 			free_names = TRUE_m11;
 		}
-		sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_vid_chans, 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_vid_chans, 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_vid_chans; ++i) {
 			sess->video_metadata_fps->metadata->video_section_2.acquisition_channel_number = (si4) i + 1;
 			allocate_channel_m11(sess->video_channels[i], sess->video_metadata_fps, sess->path, vid_chan_names[i], VIDEO_CHANNEL_TYPE_m11, n_segs, chan_recs, seg_recs);
@@ -364,9 +420,9 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	}
 		
 	if (segmented_sess_recs == TRUE_m11) {
-		ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		sprintf_m11(ssr->path, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m11);
 		strcpy_m11(ssr->name, sess->name);
 		ssr->type_code = LH_SEGMENTED_SESS_RECS_m11;
@@ -385,7 +441,7 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	} else {
 		sess->segmented_sess_recs = NULL;
 	}
-	
+
 	return(sess);
 }
 
@@ -470,7 +526,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 	if ((search_mode = get_search_mode_m11(slice)) == FALSE_m11)
 		return(FALSE_m11);
 	if (*contigua != NULL) {
-		free((void *) *contigua);
+		free_m11((void *) *contigua, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		*contigua = NULL;
 	}
 	*n_contigua = 0;
@@ -509,7 +565,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 					curr_bytes = (size_t) *n_contigua * sizeof(CONTIGUON_m11);
 					new_bytes = curr_bytes + sizeof(CONTIGUON_m11);
 					++(*n_contigua);
-					*contigua = (CONTIGUON_m11 *) recalloc_m11((void *) *contigua, curr_bytes, new_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+					*contigua = (CONTIGUON_m11 *) recalloc_m11((void *) *contigua, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 					contiguon = *contigua + *n_contigua;
 					contiguon->start_sample_number = tsi[k].start_sample_number;
 					contiguon->start_time = tsi[k].start_time;
@@ -558,7 +614,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 					curr_bytes = (size_t) *n_contigua * sizeof(CONTIGUON_m11);
 					new_bytes = curr_bytes + sizeof(CONTIGUON_m11);
 					++(*n_contigua);
-					*contigua = (CONTIGUON_m11 *) recalloc_m11((void *) *contigua, curr_bytes, new_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+					*contigua = (CONTIGUON_m11 *) recalloc_m11((void *) *contigua, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 					contiguon = *contigua + *n_contigua;
 					contiguon->start_frame_number = vi[k].start_frame_number;
 					contiguon->start_time = vi[k].start_time;
@@ -577,7 +633,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 	}
 	
 	if (*n_contigua == 0) {
-		free((void *) *contigua);
+		free_m11((void *) *contigua, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		*contigua = NULL;
 		return(FALSE_m11);
 	}
@@ -623,7 +679,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		}
 				
 		// allocate Sgmt_records array
-		Sgmt_records = (Sgmt_RECORD_m11 *) calloc_m11((size_t) n_segs, sizeof(Sgmt_RECORD_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		Sgmt_records = (Sgmt_RECORD_m11 *) calloc_m11((size_t) n_segs, sizeof(Sgmt_RECORD_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		
 		// decide if more efficient to read full file, or seek to specific records
 		seek_mode = FALSE_m11;
@@ -661,7 +717,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		globals_m11->number_of_session_segments = n_segs;
 		
 		// allocate Sgmt_records array
-		Sgmt_records = (Sgmt_RECORD_m11 *) calloc_m11((size_t) n_segs, sizeof(Sgmt_RECORD_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		Sgmt_records = (Sgmt_RECORD_m11 *) calloc_m11((size_t) n_segs, sizeof(Sgmt_RECORD_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 		switch (chan->type_code) {
 			case LH_TIME_SERIES_CHANNEL_m11:
@@ -776,7 +832,7 @@ si8	bytes_for_items_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_items, s
 	// reading (this is why it's better to pass this value)
 	max_bytes = (si8) uh->maximum_entry_size * *number_of_items;
 	FPS_reallocate_processing_struct_m11(fps, max_bytes);
-	max_bytes = FPS_read_m11(fps, read_file_offset, max_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	max_bytes = FPS_read_m11(fps, read_file_offset, max_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	switch (uh->type_code) {
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m11:
 			bh = fps->parameters.cps->block_header;
@@ -924,7 +980,7 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 	}
 	
 	if (sess->Sgmt_records != NULL)
-		free((void *) sess->Sgmt_records);
+		free_m11((void *) sess->Sgmt_records, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	channel = globals_m11->reference_channel;
 	ri_fps = channel->record_indices_fps;
 	rd_fps = channel->record_data_fps;
@@ -1001,8 +1057,8 @@ wchar_t	*char2wchar_m11(wchar_t *target, si1 *source)
 	wsz = sizeof(wchar_t);  // 2 or 4 => varies by OS & compiler
 	c = (si1 *) target - wsz;
 	len = strlen(source);
-	if ((void *)  source == (void *) target) {
-		tmp_source = (si1 *) malloc_m11((size_t)len + 1, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	if ((void *) source == (void *) target) {
+		tmp_source = (si1 *) malloc((size_t) len + 1);
 		memcpy((void *) tmp_source, (void *)  source, (size_t)len + 1);
 		c2 = tmp_source;
 	}
@@ -1021,7 +1077,7 @@ wchar_t	*char2wchar_m11(wchar_t *target, si1 *source)
 }
 
 
-TERN_m11        check_all_alignments_m11(const si1 *function, si4 line)
+TERN_m11        check_all_alignments_m11(void)
 {
 	TERN_m11        return_value;
 	ui1		*bytes;
@@ -1032,7 +1088,7 @@ TERN_m11        check_all_alignments_m11(const si1 *function, si4 line)
 		return(globals_m11->all_structures_aligned);
 	
 	return_value = TRUE_m11;
-	bytes = (ui1 *) malloc_m11(METADATA_FILE_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);  // METADATA is largest file structure
+	bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m11);  // METADATA is largest file structure
 	
 	// check all structures
 	if ((check_universal_header_alignment_m11(bytes)) == FALSE_m11)
@@ -1062,7 +1118,7 @@ TERN_m11        check_all_alignments_m11(const si1 *function, si4 line)
 			message_m11("All MED Library structures are aligned\n");
 	}
 	else {
-		error_message_m11("%s(): unaligned MED structures\n\tcalled from function %s(), line %d\n", __FUNCTION__, function, line);
+		error_message_m11("%s(): unaligned MED structures\n", __FUNCTION__);
 	}
 	
 	return(return_value);
@@ -1105,7 +1161,7 @@ TERN_m11        check_CMP_block_header_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(CMP_BLOCK_FIXED_HEADER_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(CMP_BLOCK_FIXED_HEADER_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	cbh = (CMP_BLOCK_FIXED_HEADER_m11 *)bytes;
@@ -1182,7 +1238,7 @@ TERN_m11        check_CMP_record_header_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(CMP_RECORD_HEADER_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(CMP_RECORD_HEADER_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	crh = (CMP_RECORD_HEADER_m11 *)bytes;
@@ -1254,7 +1310,7 @@ TERN_m11        check_metadata_alignment_m11(ui1 *bytes)
 	
 	return_value = TRUE_m11;
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(METADATA_FILE_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	
@@ -1311,7 +1367,7 @@ TERN_m11	check_metadata_section_1_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(METADATA_FILE_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	md1 = (METADATA_SECTION_1_m11 *) (bytes + UNIVERSAL_HEADER_BYTES_m11);
@@ -1372,7 +1428,7 @@ TERN_m11	check_metadata_section_3_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(METADATA_FILE_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	md3 = (METADATA_SECTION_3_m11 *) (bytes + METADATA_SECTION_3_OFFSET_m11);
@@ -1489,7 +1545,7 @@ TERN_m11	check_record_header_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(RECORD_HEADER_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(RECORD_HEADER_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	rh = (RECORD_HEADER_m11 *) bytes;
@@ -1554,7 +1610,7 @@ TERN_m11	check_record_indices_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(RECORD_INDEX_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(RECORD_INDEX_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	ri = (RECORD_INDEX_m11 *) bytes;
@@ -1617,7 +1673,7 @@ TERN_m11	check_time_series_indices_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(TIME_SERIES_INDEX_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(TIME_SERIES_INDEX_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	tsi = (TIME_SERIES_INDEX_m11 *) bytes;
@@ -1670,7 +1726,7 @@ TERN_m11	check_time_series_metadata_section_2_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(METADATA_FILE_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	md2 = (TIME_SERIES_METADATA_SECTION_2_m11 *) (bytes + METADATA_SECTION_2_OFFSET_m11);
@@ -1775,7 +1831,7 @@ TERN_m11	check_universal_header_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(UNIVERSAL_HEADER_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	uh = (UNIVERSAL_HEADER_m11 *) bytes;
@@ -1876,7 +1932,7 @@ TERN_m11	check_video_indices_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(VIDEO_INDEX_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(VIDEO_INDEX_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	vi = (VIDEO_INDEX_m11 *) bytes;
@@ -1931,7 +1987,7 @@ TERN_m11	check_video_metadata_section_2_alignment_m11(ui1 *bytes)
 	
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m11(METADATA_FILE_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m11);
 		free_flag = TRUE_m11;
 	}
 	vmd2 = (VIDEO_METADATA_SECTION_2_m11 *) (bytes + METADATA_SECTION_2_OFFSET_m11);
@@ -2760,7 +2816,7 @@ void    escape_spaces_m11(si1 *string, si8 buffer_len)
 		}
 	}
 	
-	tmp_str = (si1 *) malloc_m11(len, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	tmp_str = (si1 *) malloc(len);
 	
 	c1 = string;
 	c2 = tmp_str;
@@ -2778,8 +2834,8 @@ void    escape_spaces_m11(si1 *string, si8 buffer_len)
 	
 	return;
 }
-		
-		
+
+
 void	extract_path_parts_m11(si1 *full_file_name, si1 *path, si1 *name, si1 *extension)
 {
 	si1	*c, *cc, temp_full_file_name[FULL_FILE_NAME_BYTES_m11], dir_break;
@@ -2942,7 +2998,7 @@ FILE_TIMES_m11	*file_times_m11(FILE *fp, si1 *path, FILE_TIMES_m11 *ft, TERN_m11
 
 	// caller must free
 	if (ft == NULL)
-		ft = (FILE_TIMES_m11 *) malloc_m11(sizeof(FILE_TIMES_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		ft = (FILE_TIMES_m11 *) malloc_m11(sizeof(FILE_TIMES_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 #if defined MACOS_m11 || defined LINUX_m11
 	si4		fd;
@@ -3043,7 +3099,7 @@ FILE_TIMES_m11	*file_times_m11(FILE *fp, si1 *path, FILE_TIMES_m11 *ft, TERN_m11
 	}
 	
 	if (ft == NULL)
-		ft = (FILE_TIMES_m11 *) malloc(sizeof(FILE_TIMES_m11));
+		ft = (FILE_TIMES_m11 *) malloc_m11(sizeof(FILE_TIMES_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 	ft->creation = win_time_to_uutc_m11(win_create_time);
 	ft->access = win_time_to_uutc_m11(win_access_time);
@@ -3138,7 +3194,7 @@ CONTIGUON_m11	*find_discontinuities_m11(LEVEL_HEADER_m11 *level_header, si8 *num
 			if (tsi[j].file_offset < 0)
 				++n_contigua;
 	}
-	contigua = (CONTIGUON_m11 *) calloc_m11((size_t) n_contigua, sizeof(CONTIGUON_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	contigua = (CONTIGUON_m11 *) calloc_m11((size_t) n_contigua, sizeof(CONTIGUON_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// start first contiguon
 	tsi = tsi_fps[0]->time_series_indices;
@@ -3317,7 +3373,7 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 
 	// caller responsible for freeing, if allocated
 	if (md_path == NULL)
-		md_path = (si1 *) malloc_m11((size_t) FULL_FILE_NAME_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		md_path = (si1 *) malloc_m11((size_t) FULL_FILE_NAME_BYTES_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// find entry level
 	path_from_root_m11(path, md_path);
@@ -3470,7 +3526,7 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 
 	// caller responsible for freeing, if allocated
 	if (md_path == NULL)
-		md_path = (si1 *) malloc_m11((size_t) FULL_FILE_NAME_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		md_path = (si1 *) malloc_m11((size_t) FULL_FILE_NAME_BYTES_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// find entry level
 	path_from_root_m11(path, md_path);
@@ -3640,8 +3696,8 @@ void	force_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - U
 	
 
 	if (globals_m11->behavior_stack == NULL) {
-		stack_size = GLOBALS_INITIAL_BEHAVIOR_STACK_ENTRIES_m11;
-		globals_m11->behavior_stack = (ui4 *) malloc((size_t) stack_size * sizeof(ui4));
+		stack_size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
+		globals_m11->behavior_stack = (ui4 *) malloc_m11((size_t) stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		stack_idx = 0;
 	}
 
@@ -3655,8 +3711,8 @@ void	force_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - U
 	}
 	
 	if (stack_idx == stack_size) {
-		stack_size += GLOBALS_INITIAL_BEHAVIOR_STACK_ENTRIES_m11;
-		globals_m11->behavior_stack = (ui4 *) realloc((void *) globals_m11->behavior_stack, (size_t) stack_size * sizeof(ui4));
+		stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
+		globals_m11->behavior_stack = (ui4 *) realloc_m11((void *) globals_m11->behavior_stack, (size_t) stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	
 	globals_m11->behavior_stack[stack_idx++] = globals_m11->behavior_on_fail;
@@ -3793,7 +3849,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 			if (seg != NULL)
 				free_segment_m11(seg, TRUE_m11);
 		}
-		free_m11((void *) channel->segments, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) channel->segments, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 	if (channel->metadata_fps != NULL)
 		FPS_free_processing_struct_m11(channel->metadata_fps, TRUE_m11);
@@ -3803,7 +3859,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 		FPS_free_processing_struct_m11(channel->record_indices_fps, TRUE_m11);
 	
 	if (free_channel_structure == TRUE_m11) {
-		free_m11((void *) channel, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) channel, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
 		channel->flags &= ~(LH_OPEN_m11 | LH_CHANNEL_ACTIVE_m11);
 		channel->last_access_time = UUTC_NO_ENTRY_m11;
@@ -3823,46 +3879,49 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		return;
 
 	if (globals_m11->record_filters != NULL)
-		free_m11((void *) globals_m11->record_filters, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) globals_m11->record_filters, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 		// often statically allocated, so can't use regular free()
 		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m11, REC_Note_TYPE_CODE_m11, NO_TYPE_CODE_m11 };
 		// globals_m11->record_filters = rec_filts;
 		
 	if (globals_m11->timezone_table != NULL)
-		free((void *) globals_m11->timezone_table);
+		free_m11((void *) globals_m11->timezone_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->country_aliases_table != NULL)
-		free((void *) globals_m11->country_aliases_table);
+		free_m11((void *) globals_m11->country_aliases_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->country_acronym_aliases_table != NULL)
-		free((void *) globals_m11->country_acronym_aliases_table);
+		free_m11((void *) globals_m11->country_acronym_aliases_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->CRC_table != NULL)
-		free((void *) globals_m11->CRC_table);
+		free_m11((void *) globals_m11->CRC_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->AES_sbox_table != NULL)
-		free((void *) globals_m11->AES_sbox_table);
+		free_m11((void *) globals_m11->AES_sbox_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->AES_rsbox_table != NULL)
-		free((void *) globals_m11->AES_rsbox_table);
+		free_m11((void *) globals_m11->AES_rsbox_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->AES_rcon_table != NULL)
-		free((void *) globals_m11->AES_rcon_table);
+		free_m11((void *) globals_m11->AES_rcon_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->SHA_h0_table != NULL)
-		free((void *) globals_m11->SHA_h0_table);
+		free_m11((void *) globals_m11->SHA_h0_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->SHA_k_table != NULL)
-		free((void *) globals_m11->SHA_k_table);
+		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->UTF8_offsets_table != NULL)
-		free((void *) globals_m11->UTF8_offsets_table);
+		free_m11((void *) globals_m11->UTF8_offsets_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->UTF8_trailing_bytes_table != NULL)
-		free((void *) globals_m11->UTF8_trailing_bytes_table);
+		free_m11((void *) globals_m11->UTF8_trailing_bytes_table, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	if (globals_m11->behavior_stack != NULL)
-		free((void *) globals_m11->behavior_stack);
+		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__, SUPPRESS_OUTPUT_m11);
+
+	if (globals_m11->AT_nodes != NULL)
+		free((void *) globals_m11->AT_nodes);
 
 	if (cleanup_for_exit == TRUE_m11) {
 		#ifdef WINDOWS_m11
@@ -3895,7 +3954,7 @@ void	free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure)
 		FPS_free_processing_struct_m11(segment->record_indices_fps, TRUE_m11);
 
 	if (free_segment_structure == TRUE_m11) {
-		free((void *) segment);
+		free_m11((void *) segment, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	} else {  // leave name, path, & slice intact (i.e. clear everything with allocated memory)
 
 		segment->flags &= ~(LH_OPEN_m11 | LH_CHANNEL_ACTIVE_m11);
@@ -3931,11 +3990,11 @@ void	free_segmented_ses_recs_m11(SEGMENTED_SESS_RECS_m11 *ssr, TERN_m11 free_seg
 		if (gen_fps != NULL)
 			FPS_free_processing_struct_m11(gen_fps, TRUE_m11);
 	}
-	free_m11((void *) ssr->record_indices_fps, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
-	free_m11((void *) ssr->record_data_fps, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) ssr->record_indices_fps, __FUNCTION__, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) ssr->record_data_fps, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 
 	if (free_segmented_ses_rec_structure == TRUE_m11)
-		free((void *) ssr);
+		free_m11((void *) ssr, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	return;
 }
@@ -3965,7 +4024,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->time_series_channels, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) session->time_series_channels, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 	if (session->video_channels != NULL) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -3973,13 +4032,13 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->video_channels, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) session->video_channels, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 	if (session->segmented_sess_recs != NULL)
 		free_segmented_ses_recs_m11(session->segmented_sess_recs, TRUE_m11);
 	
 	if (free_session_structure == TRUE_m11) {
-		free((void *) session);
+		free_m11((void *) session, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 		// reset current session globals
 		globals_m11->session_UID = UID_NO_ENTRY_m11;
 		*globals_m11->session_directory = 0;
@@ -4042,7 +4101,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		if (check_file_list_m11(file_list, n_in_files) == TRUE_m11) {
 			// caller expects a copy to be returned
 			if (free_input_file_list == FALSE_m11) {
-				tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+				tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 				for (i = 0; i < n_in_files; ++i)
 					strcpy(tmp_ptr_ptr[i], file_list[i]);
 				file_list = tmp_ptr_ptr;
@@ -4078,7 +4137,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	// If list components do not have an extension, and none is passed, none is used.
 	regex = FALSE_m11;
 	if (file_list != NULL) {
-		tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		// copy file_list
 		for (i = 0; i < n_in_files; ++i) {
 			// check for regex
@@ -4108,7 +4167,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	// If no name is passed, "*" is used.
 	// If no extension is passed, none is used.
 	else {  // file_list == NULL
-		file_list = (si1 **) calloc_2D_m11((size_t) 1, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		file_list = (si1 **) calloc_2D_m11((size_t) 1, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		path_from_root_m11(enclosing_directory, enclosing_directory);
 		if (*name)
 			sprintf_m11(file_list[0], "%s/%s", enclosing_directory, name);
@@ -4127,23 +4186,23 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	#if defined MACOS_m11 || defined LINUX_m11
 		si1	*command, *tmp_str;
 		
-		command = (si1 *) calloc_m11((n_in_files * FULL_FILE_NAME_BYTES_m11) + 32, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		command = (si1 *) calloc((n_in_files * FULL_FILE_NAME_BYTES_m11) + 32, sizeof(si1));
 		strcpy(command, "ls -1d");
 		for (i = 0; i < n_in_files; ++i) {
 			escape_spaces_m11(file_list[i], FULL_FILE_NAME_BYTES_m11);
 			sprintf_m11(command, "%s %s", command, file_list[i]);
 		}
 		sprintf_m11(command, "%s > %s 2> %s", command, globals_m11->temp_file, NULL_DEVICE_m11);
-		free((void *) file_list);
+		free_m11((void *) file_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		
 		// count expanded file list
 		*n_out_files = 0;
-		ret_val = system_m11(command, FALSE_m11, __FUNCTION__, __LINE__, RETURN_ON_FAIL_m11 | SUPPRESS_ERROR_OUTPUT_m11);
+		ret_val = system_m11(command, FALSE_m11, __FUNCTION__, RETURN_ON_FAIL_m11 | SUPPRESS_ERROR_OUTPUT_m11);
 		if (ret_val) {
 			free((void *) command);
 			return(NULL);
 		}
-		fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		
 		tmp_str = command;
 		while (fscanf(fp, "%[^\n]", tmp_str) != EOF) {
@@ -4161,16 +4220,16 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		
 	#ifdef WINDOWS_m11
 		*n_out_files = win_ls_1d_to_tmp_m11(file_list, n_in_files, TRUE_m11);
-		free((void *) file_list);
+		free_m11((void *) file_list, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 		if (*n_out_files == -1) {  // error
 			*n_out_files = 0;
 			return(NULL);
 		}
-		fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	#endif  // WINDOWS_m11
 
 		// re-allocate
-		file_list = (si1 **) calloc_2D_m11((size_t) *n_out_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		file_list = (si1 **) calloc_2D_m11((size_t) *n_out_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		
 		// build file list
 		for (i = 0; i < *n_out_files; ++i) {
@@ -4217,7 +4276,7 @@ si1	*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string)
 	
 	
 	if (string == NULL)  // allocate if NULL is passed
-		string = (si1 *) calloc_m11((size_t)((num_bytes + 1) * 3), sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		string = (si1 *) calloc_m11((size_t)((num_bytes + 1) * 3), sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	s = string;
 	*s++ = '0';
@@ -4296,7 +4355,7 @@ si1	**generate_numbered_names_m11(si1 **names, si1 *prefix, si4 number_of_names)
 	
 	
 	if (names == NULL)
-		names = (si1 **) calloc_2D_m11((size_t) number_of_names, SEGMENT_BASE_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		names = (si1 **) calloc_2D_m11((size_t) number_of_names, SEGMENT_BASE_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	for (i = 0; i < number_of_names; ++i) {
 		numerical_fixed_width_string_m11(number_str, FILE_NUMBERING_DIGITS_m11, i + 1);
@@ -4497,7 +4556,7 @@ si1	*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_nam
 	
 	
 	if (segment_name == NULL)  // if NULL is passed, this will be allocated, but the calling function has the responsibility to free it.
-		segment_name = (si1 *) malloc_m11((size_t) SEGMENT_BASE_FILE_NAME_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		segment_name = (si1 *) malloc_m11((size_t) SEGMENT_BASE_FILE_NAME_BYTES_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	numerical_fixed_width_string_m11(segment_number_str, FILE_NUMBERING_DIGITS_m11, fps->universal_header->segment_number);
 	
@@ -4600,7 +4659,7 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	
 	
 	if (loc_info == NULL) {
-		loc_info = (LOCATION_INFO_m11 *) calloc_m11((size_t)1, sizeof(LOCATION_INFO_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		loc_info = (LOCATION_INFO_m11 *) calloc_m11((size_t)1, sizeof(LOCATION_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_loc_info = TRUE_m11;
 	}
 	
@@ -4611,17 +4670,17 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	command = "curl.exe -s ipinfo.io";
 #endif
 	sprintf_m11(temp_str, "%s > %s 2> %s", command, globals_m11->temp_file, NULL_DEVICE_m11);
-	ret_val = system_m11(temp_str, FALSE_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	ret_val = system_m11(temp_str, FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// get file length
 	sz = file_length_m11(fp, NULL);
 	
 	// read output
-	buffer = (si1 *) calloc_m11((size_t)sz, sizeof(si1), __FUNCTION__, __LINE__, EXIT_ON_FAIL_m11);
-	fread_m11(buffer, sizeof(si1), (size_t)sz, fp, globals_m11->temp_file, __FUNCTION__, __LINE__, EXIT_ON_FAIL_m11);
+	buffer = (si1 *) calloc((size_t)sz, sizeof(si1));
+	fread_m11(buffer, sizeof(si1), (size_t)sz, fp, globals_m11->temp_file, __FUNCTION__, EXIT_ON_FAIL_m11);
 	fclose(fp);
 	
 	// condition output
@@ -4671,7 +4730,7 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	else
 		sscanf(c, "%[^, ]", loc_info->timezone_description);
 	
-	free((void  *)buffer);
+	free((void *) buffer);
 	
 	// get timezone acronym from system
 	curr_time = time(NULL);
@@ -4696,14 +4755,14 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	if (set_timezone_globals == TRUE_m11) {
 		if (set_global_time_constants_m11(&loc_info->timezone_info, 0, prompt) == FALSE_m11) {
 			if (free_loc_info == TRUE_m11)
-				free((void *) loc_info);
+				free_m11((void *) loc_info, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			warning_message_m11("%s(): Could not set timezone globals => returning NULL\n", __FUNCTION__);
 			return(NULL);
 		}
 	}
 	
 	if (free_loc_info == TRUE_m11) {
-		free((void *) loc_info);
+		free_m11((void *) loc_info, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		loc_info = NULL;
 	}
 	
@@ -4924,7 +4983,7 @@ ui4	*get_segment_video_start_frames_m11(FILE_PROCESSING_STRUCT_m11 *video_indice
 	vidx = video_indices_fps->video_indices;
 	n_inds = video_indices_fps->universal_header->number_of_entries - 1;
 	*number_of_video_files = vidx[n_inds].video_file_number - 1;  // terminal index video file number is number of imaginary next file
-	start_frames = (ui4 *) calloc_m11((size_t) (*number_of_video_files + 1), sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);  // indexing from 1
+	start_frames = (ui4 *) calloc_m11((size_t) (*number_of_video_files + 1), sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);  // indexing from 1
 	
 	for (i = n_inds, j = 1; i--; ++vidx)
 		if (vidx->video_file_number == j)
@@ -5135,7 +5194,7 @@ TERN_m11	initialize_globals_m11(void)
 	strcpy(globals_m11->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m11);
 	strcpy(globals_m11->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m11);
 	if (globals_m11->timezone_table != NULL) {
-		free((void *) globals_m11->timezone_table);
+		free_m11((void *) globals_m11->timezone_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->timezone_table = NULL;
 	}
 	
@@ -5157,50 +5216,57 @@ TERN_m11	initialize_globals_m11(void)
 	
 	// CRC
 	if (globals_m11->CRC_table != NULL) {
-		free((void *) globals_m11->CRC_table);
+		free_m11((void *) globals_m11->CRC_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->CRC_table = NULL;
 	}
 	globals_m11->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m11;
 	
 	// AES
 	if (globals_m11->AES_sbox_table != NULL) {
-		free((void *) globals_m11->AES_sbox_table);
+		free_m11((void *) globals_m11->AES_sbox_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->AES_sbox_table = NULL;
 	}
 	if (globals_m11->AES_rsbox_table != NULL) {
-		free((void *)globals_m11->AES_rsbox_table);
+		free_m11((void *)globals_m11->AES_rsbox_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->AES_rsbox_table = NULL;
 	}
 	if (globals_m11->AES_rcon_table != NULL) {
-		free((void *) globals_m11->AES_rcon_table);
+		free_m11((void *) globals_m11->AES_rcon_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->AES_rcon_table = NULL;
 	}
 	
 	// SHA
 	if (globals_m11->SHA_h0_table != NULL) {
-		free((void *) globals_m11->SHA_h0_table);
+		free_m11((void *) globals_m11->SHA_h0_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->SHA_h0_table = NULL;
 	}
 	if (globals_m11->SHA_k_table != NULL) {
-		free((void *) globals_m11->SHA_k_table);
+		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->SHA_k_table = NULL;
 	}
 	
 	// UTF-8
 	if (globals_m11->UTF8_offsets_table != NULL) {
-		free((void *) globals_m11->UTF8_offsets_table);
+		free_m11((void *) globals_m11->UTF8_offsets_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->UTF8_offsets_table = NULL;
 	}
 	if (globals_m11->UTF8_trailing_bytes_table != NULL) {
-		free((void *) globals_m11->UTF8_trailing_bytes_table);
+		free_m11((void *) globals_m11->UTF8_trailing_bytes_table, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->UTF8_trailing_bytes_table = NULL;
 	}
 	
+	// AT
+	if (globals_m11->AT_nodes != NULL) {
+		free((void *) globals_m11->AT_nodes);
+		globals_m11->AT_nodes = NULL;
+	}
+	globals_m11->AT_node_count = globals_m11->AT_used_node_count = 0;
+
 	// miscellaneous
 	globals_m11->verbose = GLOBALS_VERBOSE_DEFAULT_m11;
 	globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
 	if (globals_m11->behavior_stack != NULL) {
-		free((void *) globals_m11->behavior_stack);
+		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		globals_m11->behavior_stack = NULL;
 	}
 #if defined MACOS_m11 || defined LINUX_m11
@@ -5240,7 +5306,7 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 	// set up globals
 	if (globals_m11 == NULL)
 		initialize_globals_m11();
-
+	
 	// check cpu endianness
 	if (get_cpu_endianness_m11() != LITTLE_ENDIAN_m11) {
 		error_message_m11("%s(): Library only coded for little-endian machines currently\n", __FUNCTION__);
@@ -5255,7 +5321,7 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 
 	// check structure alignments
 	if (check_structure_alignments == TRUE_m11)
-		return_value = check_all_alignments_m11(__FUNCTION__, __LINE__);
+		return_value = check_all_alignments_m11();
 	
 	// seed random number generator
 #if defined MACOS_m11 || defined LINUX_m11
@@ -5434,7 +5500,7 @@ TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice)
 	// NOTE: also initializes for frame numbers (via unions)
 	
 	if (slice == NULL)  // caller responsible for freeing
-		slice = (TIME_SLICE_m11 *) malloc_m11(sizeof(TIME_SLICE_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		slice = (TIME_SLICE_m11 *) malloc_m11(sizeof(TIME_SLICE_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	slice->conditioned = FALSE_m11;
 	slice->number_of_segments = UNKNOWN_m11;  // number_of_segments == 0
 	slice->start_time = slice->end_time = UUTC_NO_ENTRY_m11;
@@ -5449,7 +5515,7 @@ TERN_m11	initialize_timezone_tables_m11(void)
 {
 	// timezone table
 	if (globals_m11->timezone_table == NULL) {
-		globals_m11->timezone_table = (TIMEZONE_INFO_m11 *) calloc_m11((size_t) TZ_TABLE_ENTRIES_m11, sizeof(TIMEZONE_INFO_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->timezone_table = (TIMEZONE_INFO_m11 *) calloc_m11((size_t) TZ_TABLE_ENTRIES_m11, sizeof(TIMEZONE_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			TIMEZONE_INFO_m11 temp[TZ_TABLE_ENTRIES_m11] = TZ_TABLE_m11;
 			memcpy(globals_m11->timezone_table, temp, TZ_TABLE_ENTRIES_m11 * sizeof(TIMEZONE_INFO_m11));
@@ -5458,7 +5524,7 @@ TERN_m11	initialize_timezone_tables_m11(void)
 
 	// country aliases
 	if (globals_m11->country_aliases_table == NULL) {
-		globals_m11->country_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc_m11((size_t)TZ_COUNTRY_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->country_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc_m11((size_t)TZ_COUNTRY_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			TIMEZONE_ALIAS_m11 temp[TZ_COUNTRY_ALIASES_ENTRIES_m11] = TZ_COUNTRY_ALIASES_TABLE_m11;
 			memcpy(globals_m11->country_aliases_table, temp, TZ_COUNTRY_ALIASES_ENTRIES_m11 * sizeof(TIMEZONE_ALIAS_m11));
@@ -5467,7 +5533,7 @@ TERN_m11	initialize_timezone_tables_m11(void)
 	
 	// country acronym aliases
 	if (globals_m11->country_acronym_aliases_table == NULL) {
-		globals_m11->country_acronym_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc_m11((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->country_acronym_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc_m11((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			TIMEZONE_ALIAS_m11 temp[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m11;
 			memcpy(globals_m11->country_acronym_aliases_table, temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11 * sizeof(TIMEZONE_ALIAS_m11));
@@ -6226,7 +6292,7 @@ si1	*numerical_fixed_width_string_m11(si1 *string, si4 string_bytes, si4 number)
 	// string bytes does not include terminal zero
 	
 	if (string == NULL)
-		string = (si1 *) calloc_m11((size_t)(string_bytes + 1), sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		string = (si1 *) calloc_m11((size_t)(string_bytes + 1), sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	native_numerical_length = 0;
 	temp = number;
@@ -6262,7 +6328,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	// allocate channel
 	free_channel = FALSE_m11;
 	if (chan == NULL) {
-		chan = (CHANNEL_m11 *) calloc_m11((size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		chan = (CHANNEL_m11 *) calloc_m11((size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_channel = TRUE_m11;
 	} else if (chan->flags & LH_OPEN_m11) {
 		return(chan);
@@ -6325,7 +6391,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	n_segs = slice->number_of_segments;
 	mapped_segs = globals_m11->number_of_mapped_segments;
 
-	chan->segments = (SEGMENT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(SEGMENT_m11 *), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);  // map segments
+	chan->segments = (SEGMENT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(SEGMENT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);  // map segments
 	for (i = slice->start_segment_number, j = seg_offset; i <= slice->end_segment_number; ++i, ++j) {
 		if (chan->segments[j] == NULL) {
 			numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, i);
@@ -6401,7 +6467,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	// allocate segment
 	free_segment = FALSE_m11;
 	if (seg == NULL) {
-		seg = (SEGMENT_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		seg = (SEGMENT_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_segment = TRUE_m11;
 	} else if (seg->flags & LH_OPEN_m11) {
 		return(seg);
@@ -6518,7 +6584,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	// allocate session
 	free_session = FALSE_m11;
 	if (sess == NULL) {
-		sess = (SESSION_m11 *) calloc_m11((size_t) 1, sizeof(SESSION_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		sess = (SESSION_m11 *) calloc_m11((size_t) 1, sizeof(SESSION_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_session = TRUE_m11;
 	} else if (sess->flags & LH_OPEN_m11) {
 		return(sess);
@@ -6622,9 +6688,9 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	if (!(sess->flags & LH_INCLUDE_VIDEO_CHANNELS_m11))
 		n_vid_chans = 0;
 	if (n_ts_chans)
-		ts_chan_list = (si1 **) calloc_2D_m11((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		ts_chan_list = (si1 **) calloc_2D_m11((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	if (n_vid_chans)
-		vid_chan_list = (si1 **) calloc_2D_m11((size_t) n_vid_chans, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		vid_chan_list = (si1 **) calloc_2D_m11((size_t) n_vid_chans, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	for (i = j = k = 0; i < n_chans; ++i) {
 		type_code = MED_type_code_from_string_m11(chan_list[i]);
 		switch (type_code) {
@@ -6638,7 +6704,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				break;
 		}
 	}
-	free((void *) chan_list);
+	free_m11((void *) chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 	// set up time series channels
 	curr_time = current_uutc_m11();
@@ -6646,7 +6712,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		// get lists of all channels, regardless of what was passed in the list
 		full_ts_chan_list = generate_file_list_m11(NULL, &all_ts_chans, sess_dir, NULL, "ticd", PP_FULL_PATH_m11, FALSE_m11);
 		if (n_ts_chans) {
-			sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_ts_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_ts_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			for (i = 0; i < all_ts_chans; ++i) {
 				chan = sess->time_series_channels[i];
 				chan->type_code = LH_TIME_SERIES_CHANNEL_m11;
@@ -6667,12 +6733,12 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 					chan->flags |= LH_CHANNEL_ACTIVE_m11;
 				}
 			}
-			free((void *) full_ts_chan_list);
-			free((void *) ts_chan_list);
+			free_m11((void *) full_ts_chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			free_m11((void *) ts_chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			sess->number_of_time_series_channels = all_ts_chans;
 		}
 	} else if (n_ts_chans) {
-		sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_ts_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_ts_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_ts_chans; ++i) {
 			chan = sess->time_series_channels[i];
 			chan->type_code = LH_TIME_SERIES_CHANNEL_m11;
@@ -6680,7 +6746,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			chan->last_access_time = curr_time;
 			generate_MED_path_components_m11(ts_chan_list[i], chan->path, chan->name);
 		}
-		free((void *) ts_chan_list);
+		free_m11((void *) ts_chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		sess->number_of_time_series_channels = n_ts_chans;
 	}
 
@@ -6689,7 +6755,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		// get lists of all channels, regardless of what was passed in the list
 		full_vid_chan_list = generate_file_list_m11(NULL, &all_vid_chans, sess_dir, NULL, "vicd", PP_FULL_PATH_m11, FALSE_m11);
 		if (n_vid_chans) {
-			sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_vid_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_vid_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			for (i = 0; i < all_vid_chans; ++i) {
 				chan = sess->video_channels[i];
 				chan->type_code = LH_VIDEO_CHANNEL_m11;
@@ -6710,12 +6776,12 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 					chan->flags |= LH_CHANNEL_ACTIVE_m11;
 				}
 			}
-			free((void *) full_vid_chan_list);
-			free((void *) vid_chan_list);
+			free_m11((void *) full_vid_chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			free_m11((void *) vid_chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			sess->number_of_video_channels = all_vid_chans;
 		}
 	} else if (n_vid_chans) {
-		sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_vid_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_vid_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->video_channels[i];
 			chan->type_code = LH_VIDEO_CHANNEL_m11;
@@ -6723,7 +6789,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			chan->last_access_time = curr_time;
 			generate_MED_path_components_m11(vid_chan_list[i], chan->path, chan->name);
 		}
-		free((void *) vid_chan_list);
+		free_m11((void *) vid_chan_list, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		sess->number_of_video_channels = n_vid_chans;
 	}
 
@@ -6822,14 +6888,14 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == DIR_EXISTS_m11) {
-			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			strcpy_m11(ssr->path, tmp_str);
 			strcpy_m11(ssr->name, sess->name);
 			ssr->type_code = LH_SEGMENTED_SESS_RECS_m11;
 			ssr->flags = sess->flags;
 			mapped_segs = globals_m11->number_of_mapped_segments;
-			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		}
 	}
 	
@@ -6884,9 +6950,9 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		}
 	}
 
-	sess->last_access_time = current_uutc_m11();
+	sess->last_access_time = curr_time;
 	if (sess->segmented_sess_recs != NULL)
-		sess->segmented_sess_recs->last_access_time = sess->last_access_time;
+		sess->segmented_sess_recs->last_access_time = curr_time;
 	
 	return(sess);
 }
@@ -7471,14 +7537,14 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	if (fps->parameters.fp == NULL) {
 		if (!(fps->directives.open_mode & FPS_GENERIC_READ_OPEN_MODE_m11))
 			fps->directives.open_mode = FPS_R_OPEN_MODE_m11;
-		FPS_open_m11(fps, __FUNCTION__, __LINE__, behavior_on_fail);
+		FPS_open_m11(fps, __FUNCTION__, behavior_on_fail);
 		opened_flag = TRUE_m11;
 	}
 
 	// universal header
 	uh = fps->universal_header;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m11 || number_of_items == FPS_FULL_FILE_m11 || opened_flag == TRUE_m11) {
-		FPS_read_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, __LINE__, behavior_on_fail);
+		FPS_read_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, behavior_on_fail);
 		if (uh->session_UID != globals_m11->session_UID)  // set current session directory globals
 			get_session_directory_m11(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m11) {
@@ -7520,7 +7586,7 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 		
 	// read
 	if (data_read_flag == FALSE_m11)
-		bytes_read = FPS_read_m11(fps, file_offset, bytes_to_read, __FUNCTION__, __LINE__, behavior_on_fail);
+		bytes_read = FPS_read_m11(fps, file_offset, bytes_to_read, __FUNCTION__, behavior_on_fail);
 	if (fps->directives.close_file == TRUE_m11)
 		FPS_close_m11(fps);
 	if (bytes_read != bytes_to_read) {
@@ -8107,6 +8173,41 @@ TERN_m11    recover_passwords_m11(si1 *L3_password, UNIVERSAL_HEADER_m11 *univer
 		return(FALSE_m11);
 	}
 	
+	return(TRUE_m11);
+}
+
+
+TERN_m11 remove_AT_entry_m11(void *address)
+{
+	si8		i;
+	AT_NODE		*atn;
+#if defined MACOS_m11 || defined LINUX_m11
+	static TERN_m11 _Atomic		mutex = FALSE_m11;
+#else
+	static volatile TERN_m11	mutex = FALSE_m11;
+#endif
+	
+		
+	while (mutex == TRUE_m11);
+	mutex = TRUE_m11;
+	
+	// look for match entry
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn)
+		if (atn->address == address)
+			break;
+
+	// no entry
+	if (i < 0) {
+		mutex = FALSE_m11;
+		return(FALSE_m11);
+	}
+
+	// remove
+	--globals_m11->AT_used_node_count;
+	atn->address = NULL;
+
+	mutex = FALSE_m11;
 	return(TRUE_m11);
 }
 
@@ -8819,6 +8920,47 @@ TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_dire
 	FPS_free_processing_struct_m11(metadata_fps, TRUE_m11);
 
 	return(TRUE_m11);
+}
+
+
+void	show_AT_entries_m11(void)
+{
+	si8		i;
+	AT_NODE		*atn;
+	
+	
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn) {
+		if (atn->address == NULL)
+			continue;
+		printf_m11("\naddress: %lu\n", (ui8) atn->address);
+		printf_m11("bytes: %lu\n", atn->bytes);
+		printf_m11("function: %s\n", atn->function);
+	}
+	printf_m11("\ncurrent AT entries: %lu\n", globals_m11->AT_used_node_count);
+
+	return;
+}
+
+
+void	show_AT_entry_m11(void *address)
+{
+	si8		i;
+	AT_NODE		*atn;
+	
+	
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn) {
+		if (atn->address == address) {
+			printf_m11("\naddress: %lu\n", (ui8) atn->address);
+			printf_m11("bytes: %lu\n", atn->bytes);
+			printf_m11("function: %s\n", atn->function);
+			return;
+		}
+	}
+	printf_m11("%s(): address not found\n", __FUNCTION__);
+	
+	return;
 }
 
 
@@ -10529,7 +10671,7 @@ si4    win_ls_1d_to_tmp_m11(si1 **dir_strs, si4 n_dirs, TERN_m11 full_path)  // 
 		return(-1);
 	
 	// open temp file
-	fp = fopen_m11(globals_m11->temp_file, "w", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	fp = fopen_m11(globals_m11->temp_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	find_h = INVALID_HANDLE_VALUE;
 	n_files = 0;
@@ -10792,7 +10934,7 @@ si1	*windify_format_string_m11(si1 *fmt)
 		return(fmt);
 	
 	len = (si8) (c - fmt) + matches + 1;  // extra byte for terminal zero
-	new_fmt = (si1 *) calloc_m11((size_t) len, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	new_fmt = (si1 *) calloc_m11((size_t) len, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	c = fmt;
 	new_c = new_fmt;
@@ -10819,6 +10961,7 @@ si1	*windify_format_string_m11(si1 *fmt)
 		*new_c++ = *c++;
 	}
 	
+	free_m11((void *) fmt, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	return(new_fmt);
 #endif
 	return(fmt);
@@ -10837,19 +10980,19 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 
 	// if number_of_items == FPS_FULL_FILE_m11, full file is written, universal header CRC is updated, and file is closed
 	// if number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m11, the universal header is written, and file is left open (header CRC is not updated unless directive is set)
-	// if number_of_items = FPS_CLOSE_m11: update universal header & close file => nothing new written
+	// if number_of_items == FPS_CLOSE_m11: update universal header & close file => nothing new written
 	// if file_offset == FPS_APPEND_m11, the file will be appended
 	
 	// clobber file if exists and is closed, create if non-existent
 	if (fps->parameters.fp == NULL) {
 		if (!(fps->directives.open_mode & FPS_GENERIC_WRITE_OPEN_MODE_m11))
 			fps->directives.open_mode = FPS_W_OPEN_MODE_m11;
-		FPS_open_m11(fps, __FUNCTION__, __LINE__, behavior_on_fail);
+		FPS_open_m11(fps, __FUNCTION__, behavior_on_fail);
 	}
 	
 	if (number_of_items == FPS_CLOSE_m11) {
 		fps->directives.update_universal_header = TRUE_m11;
-		FPS_write_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		FPS_write_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		FPS_close_m11(fps);
 		return(0);  // nothing new written
 	}
@@ -10861,7 +11004,7 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 		
 	uh = fps->universal_header;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m11) {
-		bytes_written = FPS_write_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		bytes_written = FPS_write_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		fps->number_of_items = 0;
 		return(bytes_written);
 	} else if (number_of_items == FPS_FULL_FILE_m11) {
@@ -10892,7 +11035,7 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 			case TIME_SERIES_METADATA_FILE_TYPE_CODE_m11:
 			case VIDEO_METADATA_FILE_TYPE_CODE_m11:
 			case RECORD_DATA_FILE_TYPE_CODE_m11:  // this mechanism assumes copying is faster than decrypting, but it might not be.
-				encrypted_data = malloc_m11(bytes_to_write, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+				encrypted_data = malloc_m11(bytes_to_write, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 				memcpy(encrypted_data, fps->data_pointers, bytes_to_write);  // encrypted below
 				unencrypted_data = fps->data_pointers;
 				fps->data_pointers = encrypted_data;
@@ -10941,7 +11084,7 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 		fps->directives.update_universal_header = TRUE_m11;
 	
 	// write
-	bytes_written = FPS_write_m11(fps, file_offset, bytes_to_write, __FUNCTION__, __LINE__, behavior_on_fail);
+	bytes_written = FPS_write_m11(fps, file_offset, bytes_to_write, __FUNCTION__, behavior_on_fail);
 	
 	// close
 	if (fps->directives.close_file == TRUE_m11)
@@ -10949,7 +11092,7 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 	
 	// leave decrypted directive
 	if (encrypted_data != NULL) {
-		free(encrypted_data);
+		free_m11(encrypted_data, __FUNCTION__, behavior_on_fail);
 		fps->data_pointers = unencrypted_data;
 	}
 
@@ -11222,7 +11365,7 @@ TERN_m11	AES_initialize_tables_m11(void)
 {
 	// rcon table
 	if (globals_m11->AES_rcon_table == NULL) {
-		globals_m11->AES_rcon_table = (si4*) calloc_m11((size_t)AES_RCON_ENTRIES_m11, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->AES_rcon_table = (si4*) calloc_m11((size_t)AES_RCON_ENTRIES_m11, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			si4 temp[AES_RCON_ENTRIES_m11] = AES_RCON_m11;
 			memcpy(globals_m11->AES_rcon_table, temp, AES_RCON_ENTRIES_m11 * sizeof(si4));
@@ -11231,7 +11374,7 @@ TERN_m11	AES_initialize_tables_m11(void)
 	
 	// rsbox table
 	if (globals_m11->AES_rsbox_table == NULL) {
-		globals_m11->AES_rsbox_table = (si4*) calloc_m11((size_t)AES_RSBOX_ENTRIES_m11, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->AES_rsbox_table = (si4*) calloc_m11((size_t)AES_RSBOX_ENTRIES_m11, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			si4 temp[AES_RSBOX_ENTRIES_m11] = AES_RSBOX_m11;
 			memcpy(globals_m11->AES_rsbox_table, temp, AES_RSBOX_ENTRIES_m11 * sizeof(si4));
@@ -11240,7 +11383,7 @@ TERN_m11	AES_initialize_tables_m11(void)
 	
 	// sbox table
 	if (globals_m11->AES_sbox_table == NULL) {
-		globals_m11->AES_sbox_table = (si4*) calloc_m11((size_t)AES_SBOX_ENTRIES_m11, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->AES_sbox_table = (si4*) calloc_m11((size_t)AES_SBOX_ENTRIES_m11, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			si4 temp[AES_SBOX_ENTRIES_m11] = AES_SBOX_m11;
 			memcpy(globals_m11->AES_sbox_table, temp, AES_SBOX_ENTRIES_m11 * sizeof(si4));
@@ -11468,7 +11611,7 @@ CMP_BUFFERS_m11    *CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buf
 	// e.g.  sf8_array = (sf8 *) buffer[0]; si4_array = (si4 *) buffer[1];
 	
 	if (buffers == NULL)
-		buffers = calloc((size_t) 1, sizeof(CMP_BUFFERS_m11));
+		buffers = (CMP_BUFFERS_m11 *) calloc_m11((size_t) 1, sizeof(CMP_BUFFERS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	else if (buffers->n_buffers >= n_buffers && buffers->n_elements >= n_elements && buffers->element_size >= element_size)
 		return(buffers);
 	
@@ -11487,13 +11630,13 @@ CMP_BUFFERS_m11    *CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buf
 	if (total_allocated_bytes > buffers->total_allocated_bytes) {
 		if (buffers->buffer != NULL) {
 			if (buffers->locked == TRUE_m11)
-				buffers->locked = munlock_m11((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			free((void *) buffers->buffer);
+				buffers->locked = munlock_m11((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			free_m11((void *) buffers->buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		}
 		if (zero_data == TRUE_m11)
-			buffers->buffer = (void **) calloc((size_t) total_allocated_bytes, sizeof(ui1));
+			buffers->buffer = (void **) calloc_m11((size_t) total_allocated_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		else
-			buffers->buffer = (void **) malloc((size_t) total_allocated_bytes);
+			buffers->buffer = (void **) malloc_m11((size_t) total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		buffers->total_allocated_bytes = total_allocated_bytes;
 	} else if (zero_data == TRUE_m11) {
 		memset((void *) buffers->buffer, 0, (size_t) total_allocated_bytes);
@@ -11512,8 +11655,8 @@ CMP_BUFFERS_m11    *CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buf
 	// lock
 	buffers->locked = FALSE_m11;
 	if (lock_memory == TRUE_m11)
-		buffers->locked = mlock_m11((void *) buffers->buffer, total_allocated_bytes, FALSE_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-
+		buffers->locked = mlock_m11((void *) buffers->buffer, total_allocated_bytes, FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	
 	return(buffers);
 }
 
@@ -11540,7 +11683,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	}
 	
 	if (fps->parameters.cps == NULL)
-		fps->parameters.cps = (CMP_PROCESSING_STRUCT_m11 *) calloc_m11((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		fps->parameters.cps = (CMP_PROCESSING_STRUCT_m11 *) calloc_m11((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	cps = fps->parameters.cps;
 	cps->parameters.mutex = FALSE_m11;
 	
@@ -11564,30 +11707,30 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	// allocate RED/PRED buffers
 	if (cps->directives.algorithm == CMP_RED_COMPRESSION_m11 || cps->directives.algorithm == CMP_VDS_COMPRESSION_m11) {  // VDS uses RED, not PRED
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m11) {
-			cps->parameters.count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			cps->parameters.sorted_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			cps->parameters.symbol_map = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.sorted_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.symbol_map = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			need_derivative_buffer = TRUE_m11;
 		} else {
 			cps->parameters.count = NULL;
 			cps->parameters.sorted_count = NULL;
 			cps->parameters.symbol_map = NULL;
 		}
-		cps->parameters.cumulative_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11 + 1, sizeof(ui8), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		cps->parameters.minimum_range = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui8), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.cumulative_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11 + 1, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.minimum_range = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	} else if (cps->directives.algorithm == CMP_PRED_COMPRESSION_m11) {
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m11) {
-			cps->parameters.count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			cps->parameters.sorted_count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			cps->parameters.symbol_map = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.sorted_count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.symbol_map = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			need_derivative_buffer = TRUE_m11;
 		} else {
 			cps->parameters.count = NULL;
 			cps->parameters.sorted_count = NULL;
 			cps->parameters.symbol_map = NULL;
 		}
-		cps->parameters.cumulative_count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11 + 1, sizeof(ui8), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		cps->parameters.minimum_range = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui8), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.cumulative_count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11 + 1, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.minimum_range = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	} else {
 		cps->parameters.count = NULL;
 		cps->parameters.sorted_count = NULL;
@@ -11627,7 +11770,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	
 	// original_data - caller specified array size
 	if (need_original_data == TRUE_m11 && data_samples)
-		cps->input_buffer = cps->original_ptr = cps->original_data = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->input_buffer = cps->original_ptr = cps->original_data = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	else
 		cps->input_buffer = cps->original_ptr = cps->original_data = NULL;
 	
@@ -11650,7 +11793,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	if (keysample_bytes == 0)
 		keysample_bytes = CMP_MAX_KEYSAMPLE_BYTES_m11(block_samples);
 	if (need_keysample_buffer == TRUE_m11) {
-		cps->parameters.keysample_buffer = (si1 *) calloc_m11((size_t) keysample_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.keysample_buffer = (si1 *) calloc_m11((size_t) keysample_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.allocated_keysample_bytes = keysample_bytes;
 	} else {
 		cps->parameters.keysample_buffer = NULL;
@@ -11661,14 +11804,14 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	if (need_decompressed_data == TRUE_m11) {
 		if (cps->directives.mode == CMP_DECOMPRESSION_MODE_m11) {
 			if (data_samples) {
-				cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+				cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 				cps->parameters.allocated_decompressed_samples = data_samples;
 			} else {
 				cps->decompressed_data = cps->decompressed_ptr = NULL;
 				cps->parameters.allocated_decompressed_samples = 0;
 			}
 		} else { // cps->directives.mode == CMP_COMPRESSION_MODE_m11  (decompressed_ptr used to calculate mean residual ratio for each block)
-			cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.allocated_decompressed_samples = block_samples;
 		}
 	} else {
@@ -11678,13 +11821,13 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	
 	// detrended_buffer - maximum bytes required for caller specified block size
 	if (need_detrended_buffer == TRUE_m11)
-		cps->parameters.detrended_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.detrended_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	else
 		cps->parameters.detrended_buffer = NULL;
 	
 	// derivative_buffer - maximum bytes required for caller specified block size
 	if (need_derivative_buffer == TRUE_m11) {
-		cps->parameters.derivative_buffer = (si4 *) malloc_m11((size_t) (block_samples << 2), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.derivative_buffer = (si4 *) malloc_m11((size_t) (block_samples << 2), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	} else {
 		cps->parameters.derivative_buffer = NULL;
 	}
@@ -11698,13 +11841,13 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 
 	// scaled_amplitude_buffer - maximum bytes required for caller specified block size
 	if (need_scaled_amplitude_buffer == TRUE_m11)
-		cps->parameters.scaled_amplitude_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.scaled_amplitude_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	else
 		cps->parameters.scaled_amplitude_buffer = NULL;
 	
 	// scaled_frequency_buffer - maximum bytes required for caller specified block size
 	if (need_scaled_frequency_buffer == TRUE_m11)
-		cps->parameters.scaled_frequency_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		cps->parameters.scaled_frequency_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	else
 		cps->parameters.scaled_frequency_buffer = NULL;
 	
@@ -11737,7 +11880,7 @@ void    CMP_calculate_statistics_m11(REC_Stat_v10_m11 *stats, si4 *input_buffer,
 		
 	// allocate
 	if (nodes == NULL) {
-		nodes = (CMP_NODE_m11 *) calloc_m11((size_t)len, sizeof(CMP_NODE_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		nodes = (CMP_NODE_m11 *) calloc_m11((size_t)len, sizeof(CMP_NODE_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_nodes = TRUE_m11;
 	}
 	else {
@@ -11810,7 +11953,7 @@ void    CMP_calculate_statistics_m11(REC_Stat_v10_m11 *stats, si4 *input_buffer,
 	
 	// clean up
 	if (free_nodes == TRUE_m11)
-		free((void *) nodes);
+		free_m11((void *) nodes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	return;
 }
@@ -11889,7 +12032,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	if (need_original_data == FALSE_m11 && cps->original_data != NULL) {
 		warning_message_m11("%s(): \"original_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
-		free((void *) cps->original_data);
+		free_m11((void *) cps->original_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->original_ptr = cps->original_data = NULL;
 		ret_val = FALSE_m11;
 	}
@@ -11901,7 +12044,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	if (need_decompressed_data == FALSE_m11 && cps->decompressed_data != NULL) {
 		warning_message_m11("%s(): \"decompressed_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
-		free((void *) cps->decompressed_data);
+		free_m11((void *) cps->decompressed_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->decompressed_ptr = cps->decompressed_data = NULL;
 		ret_val = FALSE_m11;
 	}
@@ -11913,7 +12056,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	if (need_detrended_buffer == FALSE_m11 && cps->parameters.detrended_buffer != NULL) {
 		warning_message_m11("%s(): \"detrended_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
-		free((void *) cps->parameters.detrended_buffer);
+		free_m11((void *) cps->parameters.detrended_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.detrended_buffer = NULL;
 		ret_val = FALSE_m11;
 	}
@@ -11925,7 +12068,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	if (need_derivative_buffer == FALSE_m11 && cps->parameters.derivative_buffer != NULL) {
 		warning_message_m11("%s(): \"derivative_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
-		free((void *) cps->parameters.derivative_buffer);
+		free_m11((void *) cps->parameters.derivative_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.derivative_buffer = NULL;
 		ret_val = FALSE_m11;
 	}
@@ -11937,7 +12080,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	if (need_scaled_amplitude_buffer == FALSE_m11 && cps->parameters.scaled_amplitude_buffer != NULL) {
 		warning_message_m11("%s(): \"scaled_amplitude_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
-		free((void *) cps->parameters.scaled_amplitude_buffer);
+		free_m11((void *) cps->parameters.scaled_amplitude_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.scaled_amplitude_buffer = NULL;
 		ret_val = FALSE_m11;
 	}
@@ -11949,7 +12092,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	if (need_scaled_frequency_buffer == FALSE_m11 && cps->parameters.scaled_frequency_buffer != NULL) {
 		warning_message_m11("%s(): \"scaled_frequency_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
-		free((void *) cps->parameters.scaled_frequency_buffer);
+		free_m11((void *) cps->parameters.scaled_frequency_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.scaled_frequency_buffer = NULL;
 		ret_val = FALSE_m11;
 	}
@@ -12526,10 +12669,10 @@ void    CMP_free_buffers_m11(CMP_BUFFERS_m11 *buffers, TERN_m11 free_structure)
 		VirtualUnlock((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes);
 #endif
 	}
-	free((void *) buffers->buffer);
+	free_m11((void *) buffers->buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (free_structure == TRUE_m11) {
-		free((void *) buffers);
+		free_m11((void *) buffers, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	} else {
 		buffers->n_buffers = buffers->n_elements = buffers->element_size = 0;
 		buffers->locked = FALSE_m11;
@@ -12551,40 +12694,40 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 		return;
 	}
 	if (cps->original_data != NULL)
-		free((void *) cps->original_data);
+		free_m11((void *) cps->original_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->decompressed_data != NULL)
-		free((void *) cps->decompressed_data);
+		free_m11((void *) cps->decompressed_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.keysample_buffer != NULL)
-		free((void *) cps->parameters.keysample_buffer);
+		free_m11((void *) cps->parameters.keysample_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.detrended_buffer != NULL)
-		free((void *) cps->parameters.detrended_buffer);
+		free_m11((void *) cps->parameters.detrended_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.scaled_amplitude_buffer != NULL)
-		free((void *) cps->parameters.scaled_amplitude_buffer);
+		free_m11((void *) cps->parameters.scaled_amplitude_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.scaled_frequency_buffer != NULL)
-		free((void *) cps->parameters.scaled_frequency_buffer);
+		free_m11((void *) cps->parameters.scaled_frequency_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.scrap_buffers != NULL)
 		CMP_free_buffers_m11(cps->parameters.scrap_buffers, TRUE_m11);
 	
 	if (cps->parameters.count != NULL)
-		free((void *) cps->parameters.count);
+		free_m11((void *) cps->parameters.count, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.cumulative_count != NULL)
-		free((void *) cps->parameters.cumulative_count);
+		free_m11((void *) cps->parameters.cumulative_count, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.sorted_count != NULL)
-		free((void *) cps->parameters.sorted_count);
+		free_m11((void *) cps->parameters.sorted_count, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.minimum_range != NULL)
-		free((void *) cps->parameters.minimum_range);
+		free_m11((void *) cps->parameters.minimum_range, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.symbol_map != NULL)
-		free((void *) cps->parameters.symbol_map);
+		free_m11((void *) cps->parameters.symbol_map, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.VDS_input_buffers != NULL)
 		CMP_free_buffers_m11(cps->parameters.VDS_input_buffers, TRUE_m11);
@@ -12592,7 +12735,7 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 		CMP_free_buffers_m11(cps->parameters.VDS_output_buffers, TRUE_m11);
 	
 	if (free_cps_structure == TRUE_m11) {
-		free((void *) cps);
+		free_m11((void *) cps, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	} else {
 		saved_directives = cps->directives;
 		saved_parameters = cps->parameters;
@@ -12850,7 +12993,7 @@ sf8	*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len
 	
 	
 	if (out_data == NULL)
-		out_data = (sf8 *) malloc((size_t) (out_len << 3));
+		out_data = (sf8 *) malloc_m11((size_t) (out_len << 3), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (in_len <= 1) {
 		if (in_len == 0)
@@ -12899,7 +13042,7 @@ void	CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers)
 {
 	// lock
 	if (buffers->locked != TRUE_m11) {
-		buffers->locked = mlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		buffers->locked = mlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		buffers->locked = TRUE_m11;
 	}
 
@@ -12914,7 +13057,7 @@ si4	*CMP_lin_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len
 	
 	
 	if (out_data == NULL)
-		out_data = (si4 *) malloc((size_t) (out_len << 2));
+		out_data = (si4 *) malloc_m11((size_t) (out_len << 2), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (in_len <= 1) {
 		if (in_len == 0)
@@ -13757,15 +13900,15 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 		FPS_reallocate_processing_struct_m11(fps, new_compressed_bytes + UNIVERSAL_HEADER_BYTES_m11);
 	
 	if (cps->parameters.keysample_buffer != NULL && new_keysample_bytes) {
-		free_m11((void * ) cps->parameters.keysample_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		if ((cps->parameters.keysample_buffer = (si1 *) calloc_m11((size_t) new_keysample_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+		free_m11((void * ) cps->parameters.keysample_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		if ((cps->parameters.keysample_buffer = (si1 *) calloc_m11((size_t) new_keysample_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_keysample_bytes = new_keysample_bytes;
 	}
 	
 	if (cps->decompressed_data != NULL && new_decompressed_samples) {
-		free_m11((void * ) cps->decompressed_data, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		if ((cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+		free_m11((void * ) cps->decompressed_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		if ((cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_decompressed_samples = new_decompressed_samples;
 	}
@@ -13773,23 +13916,23 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 	// reallocate the following if they were previously allocated
 	if (cps->parameters.allocated_block_samples < block_samples) {
 		if (cps->parameters.detrended_buffer != NULL) {
-			free_m11((void * ) cps->parameters.detrended_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			if ((cps->parameters.detrended_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+			free_m11((void * ) cps->parameters.detrended_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			if ((cps->parameters.detrended_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.derivative_buffer != NULL) {
-			free_m11((void * ) cps->parameters.derivative_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			if ((cps->parameters.derivative_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+			free_m11((void * ) cps->parameters.derivative_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			if ((cps->parameters.derivative_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.scaled_amplitude_buffer != NULL) {
-			free_m11((void * ) cps->parameters.scaled_amplitude_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			if ((cps->parameters.scaled_amplitude_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+			free_m11((void * ) cps->parameters.scaled_amplitude_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			if ((cps->parameters.scaled_amplitude_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.scaled_frequency_buffer != NULL) {
-			free_m11((void * ) cps->parameters.scaled_frequency_buffer, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-			if ((cps->parameters.scaled_frequency_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+			free_m11((void * ) cps->parameters.scaled_frequency_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			if ((cps->parameters.scaled_frequency_buffer = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m11;
 		}
 		if (cps->parameters.VDS_input_buffers != NULL) {
@@ -14726,7 +14869,7 @@ sf8    *CMP_spline_interp_sf8_m11(sf8 *in_arr, si8 in_arr_len, sf8 *out_arr, si8
 	// if passing, allocate 3 buffers with (in_arr_len + CMP_SPLINE_TAIL_LEN_m11) elements of type sf8
 	
 	if (out_arr == NULL)
-		out_arr = (sf8 *) malloc((size_t) (out_arr_len << 3));
+		out_arr = (sf8 *) malloc_m11((size_t) (out_arr_len << 3), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 	if (in_arr_len <= 1) {
 		if (in_arr_len == 0)
@@ -14814,7 +14957,7 @@ si4    *CMP_spline_interp_si4_m11(si4 *in_arr, si8 in_arr_len, si4 *out_arr, si8
 	// if out_arr is NULL, it is allocated and returned
 	
 	if (out_arr == NULL)
-		out_arr = (si4 *) malloc((size_t) (out_arr_len << 2));
+		out_arr = (si4 *) malloc_m11((size_t) (out_arr_len << 2), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 	if (in_arr_len <= 1) {
 		if (in_arr_len == 0)
@@ -14903,7 +15046,7 @@ si8     CMP_ts_sort_m11(si4 *x, si8 len, CMP_NODE_m11 *nodes, CMP_NODE_m11 *head
 	
 	// setup
 	if (nodes == NULL) {
-		nodes = (CMP_NODE_m11 *) calloc_m11((size_t)len, sizeof(CMP_NODE_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		nodes = (CMP_NODE_m11 *) calloc_m11((size_t)len, sizeof(CMP_NODE_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_nodes = TRUE_m11;
 	}
 	else {
@@ -14964,7 +15107,7 @@ si8     CMP_ts_sort_m11(si4 *x, si8 len, CMP_NODE_m11 *nodes, CMP_NODE_m11 *head
 	}
 	
 	if (free_nodes == TRUE_m11)
-		free((void *) nodes);
+		free_m11((void *) nodes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	return(n_nodes);
 }
@@ -14977,7 +15120,7 @@ void	CMP_unlock_buffers_m11(CMP_BUFFERS_m11 *buffers)
 {
 	// unlock
 	if (buffers->locked != FALSE_m11) {
-		buffers->locked = munlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		buffers->locked = munlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		buffers->locked = FALSE_m11;
 	}
 
@@ -15271,7 +15414,7 @@ TERN_m11	CRC_initialize_tables_m11(void)
 	
 	
 	if (globals_m11->CRC_table == NULL) {
-		globals_m11->CRC_table = (ui4 **) calloc_2D_m11((size_t) CRC_TABLES_m11, (size_t) CRC_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->CRC_table = (ui4 **) calloc_2D_m11((size_t) CRC_TABLES_m11, (size_t) CRC_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 		// generate a crc for every 8-bit value
 		crc_table = globals_m11->CRC_table;
@@ -15424,18 +15567,17 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 	// allocate FPS
 	free_fps = FALSE_m11;
 	if (fps == NULL) {
-		fps = (FILE_PROCESSING_STRUCT_m11 *) calloc_m11((size_t) 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		fps = (FILE_PROCESSING_STRUCT_m11 *) calloc_m11((size_t) 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		free_fps = TRUE_m11;
 	} else if (fps->parameters.raw_data != NULL) {
-		free((void *) fps->parameters.raw_data);
+		free_m11((void *) fps->parameters.raw_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		fps->parameters.raw_data = NULL;
 	}
-	
 	if (full_file_name != NULL)
-		strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);
-	if (*fps->full_file_name)
-		if (type_code == UNKNOWN_TYPE_CODE_m11)
-			type_code = MED_type_code_from_string_m11(fps->full_file_name);
+		if (*full_file_name)
+			strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);
+	if (*fps->full_file_name && type_code == UNKNOWN_TYPE_CODE_m11)
+		type_code = MED_type_code_from_string_m11(fps->full_file_name);
 
 	// allocate raw_data
 	(void) FPS_initialize_parameters_m11(&fps->parameters);
@@ -15447,7 +15589,7 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 		else
 			fps->parameters.raw_data_bytes = (raw_data_bytes += UNIVERSAL_HEADER_BYTES_m11);
 	}
-	fps->parameters.raw_data = (ui1 *) calloc_m11((size_t) raw_data_bytes, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	fps->parameters.raw_data = (ui1 *) calloc_m11((size_t) raw_data_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	uh = fps->universal_header = (UNIVERSAL_HEADER_m11 *) fps->parameters.raw_data;
 	fps->number_of_items = 0;
 
@@ -15505,7 +15647,7 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 			error_message_m11("%s(): unrecognized type code (code = 0x%08x)\n", type_code, __FUNCTION__);
 			return(NULL);
 	}
-	
+
 	return(fps);
 }
 
@@ -15562,20 +15704,20 @@ void	FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 fr
 				CMP_free_processing_struct_m11(fps->parameters.cps, TRUE_m11);
 	
 	if (fps->parameters.raw_data != NULL)
-		free((void *) fps->parameters.raw_data);
+		free_m11((void *) fps->parameters.raw_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (fps->directives.free_password_data == TRUE_m11)
 		if (fps->parameters.password_data != &globals_m11->password_data && fps->parameters.password_data != NULL)
-			free((void *) fps->parameters.password_data);
+			free_m11((void *) fps->parameters.password_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (fps->parameters.mmap_block_bitmap != NULL)
-		free((void *) fps->parameters.mmap_block_bitmap);
+		free_m11((void *) fps->parameters.mmap_block_bitmap, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// Note: always close when freeing; close_file directives used to reading / writing functions
 	FPS_close_m11(fps);  // if already closed, this fails silently
 	
 	if (free_fps_structure == TRUE_m11) {
-		free((void *) fps);
+		free_m11((void *) fps, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	} else {
 		// leave full_file_name intact
 		fps->parameters.last_access_time = UUTC_NO_ENTRY_m11;
@@ -15598,7 +15740,7 @@ void	FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 fr
 FPS_DIRECTIVES_m11	*FPS_initialize_directives_m11(FPS_DIRECTIVES_m11 *directives)
 {
 	if (directives == NULL)
-		directives = (FPS_DIRECTIVES_m11 *) calloc_m11((size_t) 1, sizeof(FPS_DIRECTIVES_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		directives = (FPS_DIRECTIVES_m11 *) calloc_m11((size_t) 1, sizeof(FPS_DIRECTIVES_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// set directives to defaults
 	directives->close_file = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m11;
@@ -15619,7 +15761,7 @@ FPS_DIRECTIVES_m11	*FPS_initialize_directives_m11(FPS_DIRECTIVES_m11 *directives
 FPS_PARAMETERS_m11	*FPS_initialize_parameters_m11(FPS_PARAMETERS_m11 *parameters)
 {
 	if (parameters == NULL)
-		parameters = (FPS_PARAMETERS_m11 *) calloc_m11((size_t) 1, sizeof(FPS_PARAMETERS_m11), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		parameters = (FPS_PARAMETERS_m11 *) calloc_m11((size_t) 1, sizeof(FPS_PARAMETERS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// set parameters to defaults
 	parameters->last_access_time = UUTC_NO_ENTRY_m11;
@@ -15644,7 +15786,7 @@ FPS_PARAMETERS_m11	*FPS_initialize_parameters_m11(FPS_PARAMETERS_m11 *parameters
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
-TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail)
+TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 *function, ui4 behavior_on_fail)
 {
 #if defined MACOS_m11 || defined LINUX_m11
 	struct flock	fl;
@@ -15659,7 +15801,7 @@ TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 
 	fl.l_len = 0;
 	fl.l_pid = getpid();
 	if (fcntl(fps->parameters.fd, F_SETLKW, &fl) == -1) {
-		error_message_m11("%s(): fcntl() failed to lock file\n\tsystem error: %s (# %d)\n\tcalled from function %s(), line %d\n", __FUNCTION__, strerror(errno), errno, function, line);
+		error_message_m11("%s(): fcntl() failed to lock file\n\tsystem error: %s (# %d)\n\tcalled from function %s()\n", __FUNCTION__, strerror(errno), errno, function);
 		return(-1);
 	}
 #endif
@@ -15668,7 +15810,7 @@ TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 
 }
 
 
-si8	FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, si4 line, ui4 behavior_on_fail)
+si8	FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, ui4 behavior_on_fail)
 {
 	ui1		mode;
 	const ui1	SKIP_MODE = 0, READ_MODE = 1;
@@ -15711,7 +15853,7 @@ si8	FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si
 			if (mode) {  // switch READ_MODE to SKIP_MODE: read unread blocks up to here
 				read_bytes = file_offset - read_start;
 				FPS_seek_m11(fps, read_start);
-				fread_m11((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->full_file_name, function, line, behavior_on_fail);
+				fread_m11((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->full_file_name, function, behavior_on_fail);
 				mode = SKIP_MODE;
 			}
 		} else {  // block not yet read
@@ -15745,7 +15887,7 @@ si8	FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si
 	}
 	if (read_bytes) {
 		FPS_seek_m11(fps, read_start);
-		fread_m11((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->full_file_name, function, line, behavior_on_fail);
+		fread_m11((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->full_file_name, function, behavior_on_fail);
 	}
 	fps->parameters.fpos = read_start + read_bytes;
 
@@ -15776,7 +15918,7 @@ void FPS_mutex_on_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 }
 
 
-TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 line, ui4 behavior_on_fail)
+TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 behavior_on_fail)
 {
 	TERN_m11	create_file = FALSE_m11;
 	si1		*mode, path[FULL_FILE_NAME_BYTES_m11], command[FULL_FILE_NAME_BYTES_m11 + 16];
@@ -15823,11 +15965,11 @@ TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 
 			break;
 		case FPS_NO_OPEN_MODE_m11:
 		default:
-			error_message_m11("%s(): invalid open mode (%u)\n\tcalled from function %s(), line %d\n", __FUNCTION__, fps->directives.open_mode, function, line);
+			error_message_m11("%s(): invalid open mode (%u)\n\tcalled from function %s()\n", __FUNCTION__, fps->directives.open_mode, function);
 			return(FALSE_m11);
 	}
 	
-	fps->parameters.fp = fopen_m11(fps->full_file_name, mode, function, line, RETURN_ON_FAIL_m11 | SUPPRESS_ERROR_OUTPUT_m11);
+	fps->parameters.fp = fopen_m11(fps->full_file_name, mode, function, RETURN_ON_FAIL_m11 | SUPPRESS_ERROR_OUTPUT_m11);
 	if (fps->parameters.fp == NULL && errno == ENOENT && create_file == TRUE_m11) {
 		// A component of the required directory tree does not exist - build it & try again
 		extract_path_parts_m11(fps->full_file_name, path, name, extension);
@@ -15837,11 +15979,11 @@ TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 
 #ifdef WINDOWS_m11
 		sprintf_m11(command, "mkdir \"%s\"", path);
 #endif
-		system_m11(command, TRUE_m11, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
-		fps->parameters.fp = fopen_m11(fps->full_file_name, mode, function, line, behavior_on_fail);
+		system_m11(command, TRUE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		fps->parameters.fp = fopen_m11(fps->full_file_name, mode, function, behavior_on_fail);
 	}
 	if (fps->parameters.fp == NULL) {
-		error_message_m11("%s(): failed to open file \"%s\"\n\tcalled from function %s(), line %d\n", __FUNCTION__, fps->full_file_name, function, line);
+		error_message_m11("%s(): failed to open file \"%s\"\n\tcalled from function %s()\n", __FUNCTION__, fps->full_file_name, function);
 		return(-1);
 	}
 	
@@ -15874,7 +16016,7 @@ TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 
 				fps->parameters.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m11;
 			globals_m11->mmap_block_bytes = fps->parameters.mmap_block_bytes;
 			fps->parameters.mmap_number_of_blocks = (ui4) ((fps->parameters.flen + (si8) (fps->parameters.mmap_block_bytes - 1)) / (si8) fps->parameters.mmap_block_bytes);
-			fps->parameters.mmap_block_bitmap = (ui8 *) calloc_m11((size_t) ((fps->parameters.mmap_number_of_blocks + 63) / 64), sizeof(ui8), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			fps->parameters.mmap_block_bitmap = (ui8 *) calloc_m11((size_t) ((fps->parameters.mmap_number_of_blocks + 63) / 64), sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		} else {
 			fps->parameters.mmap_block_bytes = globals_m11->mmap_block_bytes;
 		}
@@ -15892,10 +16034,10 @@ TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 
 		} else if (fps->directives.lock_mode & (FPS_WRITE_LOCK_ON_WRITE_OPEN_m11 | FPS_WRITE_LOCK_ON_READ_WRITE_OPEN_m11)) {
 			lock_type = F_WRLCK;
 		} else {
-			error_message_m11("%s(): incompatible lock (%u) and open (%u) modes\n\tcalled from function %s(), line %d\n", __FUNCTION__, fps->directives.lock_mode, fps->directives.open_mode, function, line);
+			error_message_m11("%s(): incompatible lock (%u) and open (%u) modes\n\tcalled from function %s()\n", __FUNCTION__, fps->directives.lock_mode, fps->directives.open_mode, function);
 			return(-1);
 		}
-		FPS_lock_m11(fps, lock_type, function, line, behavior_on_fail);
+		FPS_lock_m11(fps, lock_type, function, behavior_on_fail);
 	}
 #endif
 
@@ -15905,7 +16047,7 @@ TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 
 }
 
 
-si8	FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, si4 line, ui4 behavior_on_fail)
+si8	FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*data_ptr;
 	si8	bytes_read, bytes_remaining;
@@ -15921,7 +16063,7 @@ si8	FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_
 #if defined MACOS_m11 || defined LINUX_m11
 	// lock
 	if (fps->directives.lock_mode & FPS_READ_LOCK_ON_READ_m11)
-		FPS_lock_m11(fps, F_RDLCK, function, line, behavior_on_fail);
+		FPS_lock_m11(fps, F_RDLCK, function, behavior_on_fail);
 #endif
 	// read
 	if (file_offset == 0)
@@ -15934,16 +16076,16 @@ si8	FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_
 		bytes_to_read = bytes_remaining;
 	
 	if (fps->directives.memory_map == TRUE_m11) {
-		bytes_read = FPS_memory_map_read_m11(fps, file_offset, bytes_to_read, function, line, behavior_on_fail);
+		bytes_read = FPS_memory_map_read_m11(fps, file_offset, bytes_to_read, function, behavior_on_fail);
 	} else {
 		FPS_seek_m11(fps, file_offset);
-		bytes_read = fread_m11(data_ptr, sizeof(ui1), (size_t) bytes_to_read, fps->parameters.fp, fps->full_file_name, function, line, behavior_on_fail);
+		bytes_read = fread_m11(data_ptr, sizeof(ui1), (size_t) bytes_to_read, fps->parameters.fp, fps->full_file_name, function, behavior_on_fail);
 	}
 
 #if defined MACOS_m11 || defined LINUX_m11
 	// unlock
 	if (fps->directives.lock_mode & FPS_READ_LOCK_ON_READ_m11)
-		FPS_unlock_m11(fps, function, line, behavior_on_fail);
+		FPS_unlock_m11(fps, function, behavior_on_fail);
 #endif
 	
 	// update parameters
@@ -15963,7 +16105,7 @@ TERN_m11	FPS_reallocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, s
 		return(TRUE_m11);
 		
 	// reallocate
-	fps->parameters.raw_data = (ui1 *) realloc_m11((void *) fps->parameters.raw_data, (size_t) new_raw_data_bytes, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	fps->parameters.raw_data = (ui1 *) realloc_m11((void *) fps->parameters.raw_data, (size_t) new_raw_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	// zero additional memory (realloc() copies existing memory if necessary, but does not zero additional memory allocated)
 	if (new_raw_data_bytes > fps->parameters.raw_data_bytes)
@@ -15991,7 +16133,7 @@ void	FPS_seek_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset)
 	if (fps->parameters.fpos == file_offset)
 		return;
 	
-	fseek_m11(fps->parameters.fp, file_offset, SEEK_SET, fps->full_file_name, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	fseek_m11(fps->parameters.fp, file_offset, SEEK_SET, fps->full_file_name, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	fps->parameters.fpos = file_offset;
 	
 	return;
@@ -16096,7 +16238,7 @@ void	FPS_sort_m11(FILE_PROCESSING_STRUCT_m11 **fps_array, si4 n_fps)
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
-si4	FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 line, ui4 behavior_on_fail)
+si4	FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 behavior_on_fail)
 {
 #if defined MACOS_m11 || defined LINUX_m11
 	struct flock	fl;
@@ -16111,7 +16253,7 @@ si4	FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 lin
 	fl.l_len = 0;
 	fl.l_pid = getpid();
 	if (fcntl(fps->parameters.fd, F_SETLKW, &fl) == -1) {
-		error_message_m11("%s(): fcntl() failed to unlock file\n\tsystem error: %s (# %d)\n\tcalled from function %s(), line %d\n", __FUNCTION__, strerror(errno), errno, function, line);
+		error_message_m11("%s(): fcntl() failed to unlock file\n\tsystem error: %s (# %d)\n\tcalled from function %s()\n", __FUNCTION__, strerror(errno), errno, function);
 		return(-1);
 	}
 #endif
@@ -16120,7 +16262,7 @@ si4	FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 lin
 }
 
 
-si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, const si1 *function, si4 line, ui4 behavior_on_fail)
+si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, const si1 *function, ui4 behavior_on_fail)
 {
 	void			*data_ptr;
 	si8			bytes_written, in_flen;
@@ -16143,7 +16285,7 @@ si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to
 	// lock
 #if defined MACOS_m11 || defined LINUX_m11
 	if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m11)
-		FPS_lock_m11(fps, F_WRLCK, function, line, behavior_on_fail);
+		FPS_lock_m11(fps, F_WRLCK, function, behavior_on_fail);
 #endif
 	
 	// write
@@ -16174,7 +16316,7 @@ si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to
 		
 		// write universal header
 		FPS_seek_m11(fps, 0);
-		fwrite_m11((void *) uh, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m11, fps->parameters.fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
+		fwrite_m11((void *) uh, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m11, fps->parameters.fp, fps->full_file_name, __FUNCTION__, behavior_on_fail);
 
 		// return if all that was requested was universal header update
 		if (file_offset == 0 && bytes_to_write == UNIVERSAL_HEADER_BYTES_m11) {
@@ -16193,7 +16335,7 @@ si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to
 	}
 
 	FPS_seek_m11(fps, file_offset);
-	bytes_written = fwrite_m11((void *) data_ptr, sizeof(ui1), (size_t) bytes_to_write, fps->parameters.fp, fps->full_file_name, __FUNCTION__, __LINE__, behavior_on_fail);
+	bytes_written = fwrite_m11((void *) data_ptr, sizeof(ui1), (size_t) bytes_to_write, fps->parameters.fp, fps->full_file_name, __FUNCTION__, behavior_on_fail);
 	if (bytes_written != bytes_to_write)
 		warning_message_m11("%s(): write error\n");
 	
@@ -16213,7 +16355,7 @@ si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to
 	// unlock
 #if defined MACOS_m11 || defined LINUX_m11
 	if (fps->directives.lock_mode & FPS_WRITE_LOCK_ON_WRITE_m11)
-		FPS_unlock_m11(fps, function, line, behavior_on_fail);
+		FPS_unlock_m11(fps, function, behavior_on_fail);
 #endif
 	
 	// update parameters
@@ -16308,7 +16450,7 @@ ui1    *SHA_hash_m11(const ui1 *data, si8 len, ui1 *hash)
 
 	// if hash not passed, up to caller to free it
 	if (hash == NULL)
-		hash = (ui1 *) calloc_m11((size_t) SHA_HASH_BYTES_m11, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		hash = (ui1 *) calloc_m11((size_t) SHA_HASH_BYTES_m11, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	SHA_initialize_m11(&ctx);
 	SHA_update_m11(&ctx, data, len);
@@ -16344,7 +16486,7 @@ TERN_m11	SHA_initialize_tables_m11(void)
 {
 	// h0 table
 	if (globals_m11->SHA_h0_table == NULL) {
-		globals_m11->SHA_h0_table = (ui4 *) calloc_m11((size_t) SHA_H0_ENTRIES_m11, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->SHA_h0_table = (ui4 *) calloc_m11((size_t) SHA_H0_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			ui4 temp[SHA_H0_ENTRIES_m11] = SHA_H0_m11;
 			memcpy(globals_m11->SHA_h0_table, temp, SHA_H0_ENTRIES_m11 * sizeof(ui4));
@@ -16353,7 +16495,7 @@ TERN_m11	SHA_initialize_tables_m11(void)
 	
 	// k table
 	if (globals_m11->SHA_k_table == NULL) {
-		globals_m11->SHA_k_table = (ui4 *) calloc_m11((size_t) SHA_K_ENTRIES_m11, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->SHA_k_table = (ui4 *) calloc_m11((size_t) SHA_K_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			ui4 temp[SHA_K_ENTRIES_m11] = SHA_K_m11;
 			memcpy(globals_m11->SHA_k_table, temp, SHA_K_ENTRIES_m11 * sizeof(ui4));
@@ -16668,7 +16810,7 @@ si1	*STR_replace_pattern_m11(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 	
 	extra_chars = matches * char_diff;
 	len = strlen(buffer) + extra_chars + 1;  // extra byte for terminal zero
-	new_buffer = (si1 *) calloc_m11((size_t)len, sizeof(ui1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	new_buffer = (si1 *) calloc_m11((size_t)len, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	strcpy(new_buffer, buffer);
 	
 	last_c = c = buffer;
@@ -16689,7 +16831,7 @@ si1	*STR_replace_pattern_m11(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 		*new_c++ = *last_c++;
 	
 	if (free_input_buffer == TRUE_m11)
-		free((void *) buffer);
+		free_m11((void *) buffer, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 	return(new_buffer);
 }
@@ -16978,21 +17120,21 @@ si4     UTF8_fprintf_m11(FILE *stream, si1 *fmt, ...)
 		mexPrintf("%s", src);
 	else
 		fprintf(stream, "%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 	
 #ifdef WINDOWS_m11
 	fprintf(stream, "%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 
-	w_cs = (ui4 *) calloc_m11(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	w_cs = (ui4 *) calloc(sz + 1, sizeof(ui4));
 	UTF8_to_ucs_m11(w_cs, sz + 1, src, sz);
 	fprintf(stream, "%ls", (wchar_t *) w_cs);
 	
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);  // in Mac & Linux: allocated by system; in windows: allocated by library
 	free((void *) w_cs);
 	
 	return(sz);
@@ -17021,7 +17163,7 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 {
 	// offsets table
 	if (globals_m11->UTF8_offsets_table == NULL) {
-		globals_m11->UTF8_offsets_table = (ui4 *) calloc_m11((size_t) UTF8_OFFSETS_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->UTF8_offsets_table = (ui4 *) calloc_m11((size_t) UTF8_OFFSETS_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			ui4 temp[UTF8_OFFSETS_TABLE_ENTRIES_m11] = UTF8_OFFSETS_TABLE_m11;
 			memcpy((void *) globals_m11->UTF8_offsets_table, (void *) temp, (size_t)UTF8_OFFSETS_TABLE_ENTRIES_m11 * sizeof(ui4));
@@ -17030,7 +17172,7 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 	
 	// trailing bytes table
 	if (globals_m11->UTF8_trailing_bytes_table == NULL) {
-		globals_m11->UTF8_trailing_bytes_table = (si1 *) calloc_m11((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->UTF8_trailing_bytes_table = (si1 *) calloc_m11((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		{
 			si1 temp[UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11] = UTF8_TRAILING_BYTES_TABLE_m11;
 			memcpy((void *) globals_m11->UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
@@ -17164,21 +17306,21 @@ si4     UTF8_printf_m11(si1 *fmt, ...)
 	
 #ifdef MATLAB_m11
 	mexPrintf("%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 	
 #ifdef WINDOWS_m11
 	printf("%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 
-	w_cs = (ui4 *) calloc_m11(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	w_cs = (ui4 *) calloc(sz + 1, sizeof(ui4));
 	UTF8_to_ucs_m11(w_cs, sz + 1, src, sz);
 	printf("%ls", (wchar_t *) w_cs);
 	
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	free((void *) w_cs);
 	
 	return(sz);
@@ -17441,21 +17583,21 @@ si4     UTF8_vfprintf_m11(FILE *stream, si1 *fmt, va_list args)
 		mexPrintf("%s", src);
 	else
 		fprintf(stream, "%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 	
 #ifdef WINDOWS_m11
 	fprintf(stream, "%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
-	w_cs = (ui4 *) calloc_m11(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	w_cs = (ui4 *) calloc(sz + 1, sizeof(ui4));
 	UTF8_to_ucs_m11(w_cs, sz + 1, src, sz);
 
 	fprintf(stream, "%ls", (wchar_t *) w_cs);
 	
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	free((void *) w_cs);
 	
 	return(sz);
@@ -17473,21 +17615,21 @@ si4     UTF8_vprintf_m11(si1 *fmt, va_list args)
 	
 #ifdef MATLAB_m11
 	mexPrintf("%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 	
 #ifdef WINDOWS_m11
 	printf("%s", src);
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	return(sz);
 #endif
 	
-	w_cs = (ui4 *) calloc_m11(sz + 1, sizeof(ui4), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	w_cs = (ui4 *) calloc(sz + 1, sizeof(ui4));
 	UTF8_to_ucs_m11(w_cs, sz + 1, src, sz);
 	printf("%ls", (wchar_t *) w_cs);
 	
-	free((void *) src);
+	free_m11((void *) src, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	free((void *) w_cs);
 	
 	return(sz);
@@ -17546,24 +17688,23 @@ si4    asprintf_m11(si1 **target, si1 *fmt, ...)
 }
 
 
-void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
-	void* ptr;
+	void	*ptr;
 	
-	
-	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
-		behavior_on_fail = globals_m11->behavior_on_fail;
 	
 	if (n_members == 0 || el_size == 0)
 		return((void *) NULL);
 	
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
 	
 	if ((ptr = calloc(n_members, el_size)) == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-			(void)fprintf_m11(stderr, "%c\n\t%s() failed to allocate the requested array (%ld members of size %ld)\n", 7, __FUNCTION__, n_members, el_size);
-			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			(void) fprintf_m11(stderr, "%c\n\t%s() failed to allocate the requested array (%ld members of size %ld)\n", 7, __FUNCTION__, n_members, el_size);
+			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void)fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				(void)fprintf_m11(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -17576,12 +17717,15 @@ void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, si4 line
 			exit_m11(1);
 	}
 	
+	// alloc tracking
+	add_AT_entry_m11(ptr, function);
+
 	return(ptr);
 }
 
 
 // not a standard function, but closely related
-void	**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
 	si8     i;
 	ui1	**ptr;
@@ -17595,18 +17739,25 @@ void	**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 	if (dim1 == 0 || dim2 == 0 || el_size == 0)
 		return((void **) NULL);
 	
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+	
 	dim1_bytes = dim1 * sizeof(void *) ;
 	dim2_bytes = dim2 * el_size;
 	content_bytes = dim1 * dim2_bytes;
 	total_bytes = dim1_bytes + content_bytes;
-	ptr = (ui1 **) malloc_m11(total_bytes, function, line, behavior_on_fail);
+	ptr = (ui1 **) calloc_m11(total_bytes, sizeof(ui1), function, behavior_on_fail);
 	ptr[0] = (ui1 *) (ptr + dim1);
-	memset((void *) ptr[0], 0, content_bytes);  // this line removed in malloc_2D_m11()
-	
 	for (i = 1; i < dim1; ++i)
 		ptr[i] = ptr[i - 1] + dim2_bytes;
-	
+		
 	return((void **) ptr);
+}
+
+
+size_t	calloc_size_m11(void *address, size_t element_size)
+{
+	return (malloc_size_m11(address) / element_size);
 }
 
 
@@ -17627,7 +17778,7 @@ void	exit_m11(si4 status)
 }
 
 
-FILE	*fopen_m11(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavior_on_fail)
+FILE	*fopen_m11(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 {
 	FILE	*fp;
 
@@ -17641,7 +17792,7 @@ FILE	*fopen_m11(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 			UTF8_fprintf_m11(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				fprintf_m11(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -17688,7 +17839,7 @@ FILE	*fopen_m11(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavio
 			UTF8_fprintf_m11(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				fprintf_m11(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -17727,7 +17878,7 @@ si4     fprintf_m11(FILE *stream, si1 *fmt, ...)
 		else
 #endif
 		ret_val = fprintf(stream, "%s", temp_str);
-		free((void *) temp_str);
+		free_m11((void *) temp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 
 	return(ret_val);
@@ -17752,7 +17903,7 @@ si4	fputc_m11(si4 c, FILE *stream)
 }
 
 
-size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail)
+size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
 	size_t	nr;
 	
@@ -17765,7 +17916,7 @@ size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 			UTF8_fprintf_m11(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, __FUNCTION__, path);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				fprintf_m11(stderr, "\t=> returning number of items read\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -17782,85 +17933,59 @@ size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 }
 
 
-void    free_m11(void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail)
+void    free_m11(void *ptr, const si1 *function, ui4 behavior_on_fail)
 {
-	if (freeable_m11(ptr) == FALSE_m11) {
-		
-		if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
-			behavior_on_fail = globals_m11->behavior_on_fail;
+	TERN_m11	freeable;
 
-		if (!(behavior_on_fail & SUPPRESS_OUTPUT_m11)) {
-			if (ptr == NULL)
-				warning_message_m11("%s(): Attempting to free NULL object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
-			else
-				warning_message_m11("%s(): Attempting to free unallocated, statically allocated, or previously freed object [called from function %s(), line %d]\n", __FUNCTION__, function, line);
-		}
+	
+	// alloc tracking
+	freeable = remove_AT_entry_m11(ptr);
+	
+	if (freeable == TRUE_m11) {
+		free(ptr);
 		return;
 	}
 	
-#if defined MACOS_m11 || defined LINUX_m11
-	free(ptr);
-#endif
-#ifdef WINDOWS_m11
-	_freea(ptr);
-#endif
-
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+	if (!(behavior_on_fail & SUPPRESS_OUTPUT_m11)) {
+		if (ptr == NULL)
+			warning_message_m11("%s(): Attempting to free NULL object, called from function %s()\n", __FUNCTION__, function);
+		else
+			warning_message_m11("%s(): Attempting to free unallocated, statically allocated, or previously freed object, called from function %s()\n", __FUNCTION__, function);
+	}
+	
 	return;
 }
 
 
 // not a standard function, but closely related
-void    free_2D_m11(void **ptr, size_t dim1, const si1 *function, si4 line)
+void    free_2D_m11(void **ptr, size_t dim1, const si1 *function, ui4 behavior_on_fail)
 {
 	si8     i;
 	
 	
-	// dim1 == 0 indicates allocated en block per caller
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+	
+	// dim1 == 0 indicates allocated en block per caller (caller could just use free_m11() in this case, as here)
 	if (dim1 == 0) {
-		free_m11((void *) ptr, function, line, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) ptr, function, behavior_on_fail);
 		return;
 	}
 		
 	// allocated en block
-		if ((ui8) ptr[0] == (ui8) ptr + (dim1 * sizeof(void *))) {
-		free_m11((void *) ptr, function, line, SUPPRESS_OUTPUT_m11);
+	if ((ui8) ptr[0] == (ui8) ptr + (dim1 * sizeof(void *))) {
+		free_m11((void *) ptr, function, behavior_on_fail);
 		return;
 	}
 
 	// allocated separately
 	for (i = 0; i < dim1; ++i)
-		free_m11((void *) ptr[i], function, line, SUPPRESS_OUTPUT_m11);
-	free_m11((void *) ptr, function, line, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) ptr[i], function, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) ptr, function, behavior_on_fail);
 
 	return;
-}
-
-
-// not a standard function => used by free_m11(), but also useful on it's own
-#ifndef WINDOWS_m11  // inline causes linking problem in Windows
-inline
-#endif
-TERN_m11 freeable_m11(void *ptr)
-{
-	if (ptr == NULL)
-		return(FALSE_m11);
-		
-	#ifdef MACOS_m11
-	if (malloc_size(ptr))
-		return(TRUE_m11);
-	#endif
-	#ifdef LINUX_m11
-	if (malloc_usable_size(ptr))
-		return(TRUE_m11);
-	#endif
-	#ifdef WINDOWS_m11
-		// Note: _msize, the Windows equivalent, is unstable with unallocated addresses as arguments
-		// _freea() ignores requests to free stack based memory (implemented in free_m11())
-		// there is still a potential problem with unallocated pointers, but this can be avoided by using free_2D_m11() on 2D arrays
-		return(TRUE_m11);
-	#endif
-
-	return(FALSE_m11);
 }
 
 
@@ -17884,7 +18009,7 @@ si4     fscanf_m11(FILE *stream, si1 *fmt, ...)
 	va_end(args);
 	
 	if (new_fmt != fmt)
-		free((void *) new_fmt);
+		free_m11((void *) new_fmt, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 #endif
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -17897,7 +18022,7 @@ si4     fscanf_m11(FILE *stream, si1 *fmt, ...)
 }
 
 
-si4	fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail)
+si4	fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
 		behavior_on_fail = globals_m11->behavior_on_fail;
@@ -17905,15 +18030,15 @@ si4	fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 #if defined MACOS_m11 || defined LINUX_m11
 	if ((fseek(stream, offset, whence)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-			(void)fprintf_m11(stderr, "%c\n\t%s() failed to move the file pointer to requested location (offset %ld, whence %d)\n", 7, __FUNCTION__, offset, whence);
-			(void)UTF8_fprintf_m11(stderr, "%\tin file \"%s\"\n", path);
-			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			(void) fprintf_m11(stderr, "%c\n\t%s() failed to move the file pointer to requested location (offset %ld, whence %d)\n", 7, __FUNCTION__, offset, whence);
+			(void) UTF8_fprintf_m11(stderr, "%\tin file \"%s\"\n", path);
+			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void) fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> returning -1\n\n");
+				(void) fprintf_m11(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> exiting program\n\n");
+				(void) fprintf_m11(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m11)
@@ -17926,15 +18051,15 @@ si4	fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 #ifdef WINDOWS_m11
 	if ((_fseeki64(stream, offset, whence)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-			(void)fprintf_m11(stderr, "%c\n\t%s() failed to move the file pointer to requested location (offset %ld, whence %d)\n", 7, __FUNCTION__, offset, whence);
-			(void)UTF8_fprintf_m11(stderr, "%\tin file \"%s\"\n", path);
-			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			(void) fprintf_m11(stderr, "%c\n\t%s() failed to move the file pointer to requested location (offset %ld, whence %d)\n", 7, __FUNCTION__, offset, whence);
+			(void) UTF8_fprintf_m11(stderr, "%\tin file \"%s\"\n", path);
+			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void) fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> returning -1\n\n");
+				(void) fprintf_m11(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> exiting program\n\n");
+				(void) fprintf_m11(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m11)
@@ -17948,7 +18073,7 @@ si4	fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 }
 		
 		
-si8	ftell_m11(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
+si8	ftell_m11(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 {
 	si8	pos;
 	
@@ -17959,10 +18084,10 @@ si8	ftell_m11(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
 #if defined MACOS_m11 || defined LINUX_m11
 	if ((pos = ftell(stream)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-			(void)fprintf_m11(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
-			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			(void) fprintf_m11(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
+			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void)fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				(void)fprintf_m11(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -17978,14 +18103,14 @@ si8	ftell_m11(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
 #ifdef WINDOWS_m11
 	if ((pos = _ftelli64(stream)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-			(void)fprintf_m11(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
-			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			(void) fprintf_m11(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
+			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void) fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> returning -1\n\n");
+				(void) fprintf_m11(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> exiting program\n\n");
+				(void) fprintf_m11(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m11)
@@ -17999,7 +18124,7 @@ si8	ftell_m11(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail)
 }
 		
 		
-size_t	fwrite_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail)
+size_t	fwrite_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
 	size_t	nw;
 	
@@ -18009,14 +18134,14 @@ size_t	fwrite_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 	
 	if ((nw = fwrite(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-			(void)UTF8_fprintf_m11(stderr, "%c\n\t%s() failed to write file \"%s\"\n", 7, __FUNCTION__, path);
-			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			(void) UTF8_fprintf_m11(stderr, "%c\n\t%s() failed to write file \"%s\"\n", 7, __FUNCTION__, path);
+			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void) fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> returning number of items written\n\n");
+				(void) fprintf_m11(stderr, "\t=> returning number of items written\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> exiting program\n\n");
+				(void) fprintf_m11(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m11)
@@ -18043,7 +18168,7 @@ char	*getcwd_m11(char *buf, size_t size)
 }
 
 
-void	*malloc_m11(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
 	
@@ -18059,7 +18184,7 @@ void	*malloc_m11(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_
 			(void)fprintf_m11(stderr, "%c\n\t%s() failed to allocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				(void)fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				(void)fprintf_m11(stderr, "\t=> returning NULL\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -18072,12 +18197,15 @@ void	*malloc_m11(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_
 			exit_m11(1);
 	}
 	
+	// alloc tracking
+	add_AT_entry_m11(ptr, function);
+
 	return(ptr);
 }
 		
 
 // not a standard function, but closely related
-void	**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
 	si8     i;
 	ui1	**ptr;
@@ -18091,17 +18219,36 @@ void	**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 	if (dim1 == 0 || dim2 == 0 || el_size == 0)
 		return((void **) NULL);
 	
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
+		behavior_on_fail = globals_m11->behavior_on_fail;
+	
 	dim1_bytes = dim1 * sizeof(void *);
 	dim2_bytes = dim2 * el_size;
 	content_bytes = dim1 * dim2_bytes;
 	total_bytes = dim1_bytes + content_bytes;
-	ptr = (ui1 **) malloc_m11(total_bytes, function, line, behavior_on_fail);
+	ptr = (ui1 **) malloc_m11(total_bytes, function, behavior_on_fail);
 	ptr[0] = (ui1 *) (ptr + dim1);
 	
 	for (i = 1; i < dim1; ++i)
 		ptr[i] = ptr[i - 1] + dim2_bytes;
 	
 	return((void **) ptr);
+}
+
+
+size_t	malloc_size_m11(void *address)
+{
+	si8		i;
+	AT_NODE		*atn;
+	
+	
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn) {
+		if (atn->address == address)
+			return(atn->bytes);
+	}
+	
+	return(0);
 }
 
 
@@ -18171,7 +18318,7 @@ void	memset_m11(void *ptr, const void *pattern, si4 pat_len, size_t buf_len)
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
-TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, si4 line, ui4 behavior_on_fail)
+TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, ui4 behavior_on_fail)
 {
 	extern GLOBALS_m11	*globals_m11;
 	si4			ret_val;
@@ -18199,7 +18346,7 @@ TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *functi
 		fprintf_m11(stderr, "%c\n\t%s() failed to lock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
 		fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 		if (function != NULL)
-			fprintf_m11(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+			fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 		if (behavior_on_fail & RETURN_ON_FAIL_m11)
 			fprintf_m11(stderr, "\t=> returning FALSE\n\n");
 		else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -18216,7 +18363,7 @@ TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *functi
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
-TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, si4 line, ui4 behavior_on_fail)
+TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail)
 {
 	extern GLOBALS_m11	*globals_m11;
 	si4			ret_val;
@@ -18241,7 +18388,7 @@ TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, si4 line, ui4 
 		fprintf_m11(stderr, "%c\n\t%s() failed to unlock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
 		fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 		if (function != NULL)
-			fprintf_m11(stderr, "\tcalled from function \"%s\", line %d\n", function, line);
+			fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 		if (behavior_on_fail & RETURN_ON_FAIL_m11)
 			fprintf_m11(stderr, "\t=> returning FALSE\n\n");
 		else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -18275,7 +18422,7 @@ si4     printf_m11(si1 *fmt, ...)
 #else
 		ret_val = printf("%s", temp_str);
 #endif
-		free((void *) temp_str);
+		free_m11((void *) temp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 		
 	return(ret_val);
@@ -18321,7 +18468,7 @@ si4	putchar_m11(si4 c)
 }
 
 
-void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
 	
@@ -18331,7 +18478,7 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, si4 line,
 	
 	if (n_bytes == 0) {
 		if (orig_ptr != NULL)
-			free((void *) orig_ptr);
+			free_m11((void *) orig_ptr, function, behavior_on_fail);
 		return((void *) NULL);
 	}
 	
@@ -18340,7 +18487,7 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, si4 line,
 			fprintf_m11(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				fprintf_m11(stderr, "\t=> returning unreallocated pointer\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -18353,12 +18500,16 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, si4 line,
 			exit_m11(1);
 	}
 	
+	// alloc tracking
+	remove_AT_entry_m11(orig_ptr);
+	add_AT_entry_m11(ptr, function);
+	
 	return(ptr);
 }
 
 
 // not a standard function, but closely related
-void	**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
 	si8	i;
 	void	**new_ptr;
@@ -18375,34 +18526,34 @@ void	**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t
 	
 	if (new_dim1 == 0 || new_dim2 == 0 || el_size == 0) {
 		if (curr_ptr != NULL)
-			free((void *) curr_ptr);
+			free_m11((void *) curr_ptr, function, behavior_on_fail);
 		return((void **) NULL);
 	}
 	
 	if (curr_ptr == NULL) {
-		error_message_m11("%s(): attempting to re-allocate NULL pointer (called from function %s(), line %d)\n", __FUNCTION__, function, line);
+		error_message_m11("%s(): attempting to re-allocate NULL pointer, called from function %s()\n", __FUNCTION__, function);
 		return(NULL);
 	}
 	
 	if (new_dim1 < curr_dim1)
-		warning_message_m11("%s(): re-allocating first dimension to smaller size (called from function %s(), line %d)\n", __FUNCTION__, function, line);
+		warning_message_m11("%s(): re-allocating first dimension to smaller size, called from function %s()\n", __FUNCTION__, function);
 	if (new_dim2 < curr_dim2)
-		warning_message_m11("%s(): re-allocating second dimension to smaller size (called from function %s(), line %d)\n", __FUNCTION__, function, line);
+		warning_message_m11("%s(): re-allocating second dimension to smaller size, called from function %s()\n", __FUNCTION__, function);
 	
-	new_ptr = calloc_2D_m11(new_dim1, new_dim2, el_size, function, line, behavior_on_fail);
+	new_ptr = calloc_2D_m11(new_dim1, new_dim2, el_size, function, behavior_on_fail);
 	
 	least_dim1 = (curr_dim1 <= new_dim1) ? curr_dim1 : new_dim1;
 	least_dim2 = (curr_dim2 <= new_dim2) ? curr_dim2 : new_dim2;
 	for (i = 0; i < least_dim1; ++i)
 		memcpy((void *) new_ptr[i], curr_ptr[i], (size_t) (least_dim2 * el_size));
 	
-	free((void *) curr_ptr);
-
+	free_m11((void *) curr_ptr, function, behavior_on_fail);
+	
 	return((void **) new_ptr);
 }
 		
 		
-void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si1 *function, si4 line, ui4 behavior_on_fail)
+void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
 	ui1	*ui1_p;
@@ -18415,7 +18566,7 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 	
 	if (new_bytes == 0) {
 		if (orig_ptr != NULL)
-			free((void *) orig_ptr);
+			free_m11((void *) orig_ptr, function, behavior_on_fail);
 		return((void *) NULL);
 	}
 	
@@ -18424,7 +18575,7 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 			fprintf_m11(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, new_bytes);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			if (function != NULL)
-				fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
 				fprintf_m11(stderr, "\t=> returning unreallocated pointer\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -18442,6 +18593,10 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 		ui1_p = (ui1 *) ptr + curr_bytes;
 		memset(ui1_p, 0, new_bytes - curr_bytes);
 	}
+	
+	// alloc tracking
+	remove_AT_entry_m11(orig_ptr);
+	add_AT_entry_m11(ptr, function);
 	
 	return(ptr);
 }
@@ -18467,7 +18622,7 @@ si4     scanf_m11(si1 *fmt, ...)
 	va_end(args);
 	
 	if (new_fmt != fmt)
-		free((void *) new_fmt);
+		free_m11((void *) new_fmt, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 #endif
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -18516,7 +18671,7 @@ si4    sprintf_m11(si1 *target, si1 *fmt, ...)
 	va_end(args);
 	
 	memcpy(target, tmp_str, ret_val + 1);
-	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) tmp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 
 	return(ret_val);
 }
@@ -18542,7 +18697,7 @@ si4     sscanf_m11(si1 *target, si1 *fmt, ...)
 	va_end(args);
 	
 	if (new_fmt != fmt)
-		free((void *) new_fmt);
+		free_m11((void *) new_fmt, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 #endif
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -18676,7 +18831,7 @@ si8    strncpy_m11(si1 *target, si1 *source, si4 target_field_bytes)
 }
 
 
-si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function, si4 line, ui4 behavior_on_fail)
+si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function, ui4 behavior_on_fail)
 {
 	si1	*temp_command;
 	si4	ret_val, len;
@@ -18687,7 +18842,7 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 	
 	if (null_std_streams == TRUE_m11) {
 		len = strlen(command);
-		temp_command = malloc_m11(len + (FULL_FILE_NAME_BYTES_m11 * 2) + 9, function, line, behavior_on_fail);
+		temp_command = malloc(len + (FULL_FILE_NAME_BYTES_m11 * 2) + 9);
 		sprintf_m11(temp_command, "%s 1> %s 2> %s", command, NULL_DEVICE_m11, NULL_DEVICE_m11);
 		command = temp_command;
 	}
@@ -18724,11 +18879,11 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
 			fprintf_m11(stderr, "\tshell return value %d\n", ret_val);
 			if (function != NULL)
-				(void)fprintf_m11(stderr, "\tcalled from function %s(), line %d\n", function, line);
+				fprintf_m11(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> returning -1\n\n");
+				fprintf_m11(stderr, "\t=> returning -1\n\n");
 			else if (behavior_on_fail & EXIT_ON_FAIL_m11)
-				(void)fprintf_m11(stderr, "\t=> exiting program\n\n");
+				fprintf_m11(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m11) {
@@ -18758,13 +18913,13 @@ si4    vasprintf_m11(si1 **target, si1 *fmt, va_list args)
 #ifdef WINDOWS_m11  // no vasprintf() in Windows
 	va_list		args_copy;
 	
-	*target = (si1 *) calloc((size_t) PRINTF_BUF_LEN_m11, sizeof(si1));
+	*target = (si1 *) calloc_m11((size_t) PRINTF_BUF_LEN_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	va_copy(args_copy, args);  // save a copy before use in case need to realloc
 	force_behavior_m11(RETURN_ON_FAIL_m11 | SUPPRESS_WARNING_OUTPUT_m11);
 	ret_val = vsnprintf_m11(*target, PRINTF_BUF_LEN_m11, fmt, args);
 	force_behavior_m11(RESTORE_BEHAVIOR_m11);
 	// trim or expand memory to required size
-	*target = (si1 *) realloc((void *) *target, (size_t) (ret_val + 1));
+	*target = (si1 *) realloc_m11((void *) *target, (size_t) (ret_val + 1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	if (ret_val >= PRINTF_BUF_LEN_m11)
 		ret_val = vsnprintf_m11(*target, ret_val + 1, fmt, args_copy);
 #endif
@@ -18795,7 +18950,7 @@ si4     vfprintf_m11(FILE *stream, si1 *fmt, va_list args)
 		else
 #endif
 		ret_val = fprintf(stream, "%s", temp_str);
-		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) temp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 
 	return(ret_val);
@@ -18819,7 +18974,7 @@ si4     vprintf_m11(si1 *fmt, va_list args)
 #else
 		ret_val = printf("%s", temp_str);
 #endif
-		free_m11((void *) temp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) temp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	}
 	
 	return(ret_val);
@@ -18860,7 +19015,7 @@ si4    vsnprintf_m11(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 	}
 #endif
 	// Guarantee zeros in unused bytes per MED requirements
-	temp_str = (si1 *) calloc_m11((size_t) target_field_bytes, sizeof(si1), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	temp_str = (si1 *) calloc_m11((size_t) target_field_bytes, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	ret_val = vsnprintf(temp_str, target_field_bytes, fmt, args);
 	
 	// Guarantee terminal zero on overflow (not done in Linux & Windows)
@@ -18869,7 +19024,7 @@ si4    vsnprintf_m11(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 		warning_message_m11("%s(): target string truncated\n", __FUNCTION__);
 	}
 	memcpy(target, temp_str, target_field_bytes);
-	free((void *) temp_str);
+	free_m11((void *) temp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 	
 #ifdef WINDOWS_m11
 	// convert file system paths
@@ -18877,7 +19032,7 @@ si4    vsnprintf_m11(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 
 	// clean up
 	if (free_fmt == TRUE_m11)
-		free((void *) fmt);
+		free_m11((void *) fmt, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 #endif
 	
 	return(ret_val);
@@ -18898,7 +19053,7 @@ si4    vsprintf_m11(si1 *target, si1 *fmt, va_list args)
 	ret_val = vasprintf_m11(&tmp_str, fmt, args);
 	
 	memcpy(target, tmp_str, ret_val + 1);
-	free_m11((void *) tmp_str, __FUNCTION__, __LINE__, SUPPRESS_OUTPUT_m11);
+	free_m11((void *) tmp_str, __FUNCTION__, SUPPRESS_OUTPUT_m11);
 
 	return(ret_val);
 }

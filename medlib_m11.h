@@ -514,10 +514,11 @@ typedef struct {
 #define GLOBALS_VERBOSE_DEFAULT_m11                             FALSE_m11
 #define GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11		        EXIT_ON_FAIL_m11
 #define GLOBALS_CRC_MODE_DEFAULT_m11			        CRC_CALCULATE_ON_OUTPUT_m11
-#define GLOBALS_INITIAL_BEHAVIOR_STACK_ENTRIES_m11		256
+#define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11		256
 #define GLOBALS_REFERENCE_CHANNEL_INDEX_NO_ENTRY_m11		-1
 #define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m11			-1
 #define GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m11			4096  // 4 KiB
+#define GLOBALS_AT_LIST_SIZE_INCREMENT_m11			8096
 
 // Global Time Defaults
 #define GLOBALS_OBSERVE_DST_DEFAULT_m11				FALSE_m11
@@ -1111,6 +1112,12 @@ typedef struct {  // fields from ipinfo.io
 } LOCATION_INFO_m11;
 
 typedef struct {
+	void 		*address;
+	ui8		bytes;  // actual bytes allocated => may be more than were requested
+	const si1	*function;
+} AT_NODE;
+
+typedef struct {
 	// Password
 	PASSWORD_DATA_m11               password_data;
 	// Record Filters
@@ -1181,6 +1188,10 @@ typedef struct {
 	// UTF8 tables
 	ui4				*UTF8_offsets_table;
 	si1				*UTF8_trailing_bytes_table;
+	// allocation tracking (AT)
+	AT_NODE				*AT_nodes;
+	si8				AT_node_count;  // total allocated nodes
+	si8				AT_used_node_count;  // nodes in use
 	// Miscellaneous
 	TERN_m11			time_series_data_encryption_level;
 	TERN_m11                        verbose;
@@ -1762,6 +1773,7 @@ typedef struct {
 
 
 // Prototypes
+void 		add_AT_entry_m11(void *address, const si1 *function);
 TERN_m11	adjust_open_file_limit_m11(si4 new_limit, TERN_m11 verbose_flag);
 TERN_m11	all_zeros_m11(ui1 *bytes, si4 field_length);
 CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m11 chan_recs, TERN_m11 seg_recs);
@@ -1778,7 +1790,7 @@ void            calculate_time_series_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *
 void		change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *channel_name);
 ui4             channel_type_from_path_m11(si1 *path);
 wchar_t		*char2wchar_m11(wchar_t *target, si1 *source);
-TERN_m11	check_all_alignments_m11(const si1 *function, si4 line);
+TERN_m11	check_all_alignments_m11(void);
 TERN_m11	check_char_type_m11(void);
 TERN_m11	check_file_list_m11(si1 **file_list, si4 n_files);
 TERN_m11	check_metadata_alignment_m11(ui1 *bytes);
@@ -1823,7 +1835,6 @@ void            free_channel_m11(CHANNEL_m11* channel, TERN_m11 free_channel_str
 void            free_globals_m11(TERN_m11 cleanup_for_exit);
 void            free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure);
 void            free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure);
-TERN_m11	freeable_m11(void *ptr);
 si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui1 path_parts, TERN_m11 free_input_file_list);
 si1		*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string);
 ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* MED_name);
@@ -1871,6 +1882,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...);  /
 si8     	read_record_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice, ...);  // varargs: si4 seg_num
 si8     	read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice);
 TERN_m11	recover_passwords_m11(si1 *L3_password, UNIVERSAL_HEADER_m11* universal_header);
+TERN_m11 	remove_AT_entry_m11(void *address);
 void     	remove_recording_time_offset_m11(si8 *time);
 void            reset_metadata_for_update_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 si8		sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
@@ -1880,6 +1892,8 @@ si4		segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 si4		segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time);
 TERN_m11	set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 session_start_time, TERN_m11 prompt);
 TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
+void		show_AT_entries_m11(void);
+void		show_AT_entry_m11(void *address);
 void            show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 *code, si1 *prefix);
 void		show_file_times_m11(FILE_TIMES_m11 *ft);
 void            show_globals_m11(void);
@@ -1936,19 +1950,19 @@ si4		FPS_compare_start_times_m11(const void *a, const void *b);
 void            FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 free_fps_structure);
 FPS_DIRECTIVES_m11	*FPS_initialize_directives_m11(FPS_DIRECTIVES_m11 *directives);
 FPS_PARAMETERS_m11	*FPS_initialize_parameters_m11(FPS_PARAMETERS_m11 *parameters);
-TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 *function, si4 line, ui4 behavior_on_fail);
-si8		FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, si4 line, ui4 behavior_on_fail);
+TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 *function, ui4 behavior_on_fail);
+si8		FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, ui4 behavior_on_fail);
 void		FPS_mutex_off_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void		FPS_mutex_on_m11(FILE_PROCESSING_STRUCT_m11 *fps);
-TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
-si8		FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, si4 line, ui4 behavior_on_fail);
+TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 behavior_on_fail);
+si8		FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_read, const si1 *function, ui4 behavior_on_fail);
 TERN_m11	FPS_reallocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 raw_data_bytes);
 void		FPS_seek_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset);
 void		FPS_set_pointers_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset);
 void		FPS_show_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void		FPS_sort_m11(FILE_PROCESSING_STRUCT_m11 **fps_array, si4 n_fps);
-si4		FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, si4 line, ui4 behavior_on_fail);
-si8		FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4		FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 behavior_on_fail);
+si8		FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, const si1 *function, ui4 behavior_on_fail);
 
 
 
@@ -1978,32 +1992,34 @@ void		STR_to_upper_m11(si1 *s);
 
 
 si4		asprintf_m11(si1 **target, si1 *fmt, ...);
-void		*calloc_m11(size_t n_members, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
+void		*calloc_m11(size_t n_members, size_t el_size, const si1 *function, ui4 behavior_on_fail);
+void		**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
+size_t		calloc_size_m11(void *address, size_t element_size);
 void		exit_m11(si4 status);
-FILE		*fopen_m11(si1 *path, si1 *mode, const si1 *function, si4 line, ui4 behavior_on_fail);
+FILE		*fopen_m11(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail);
 si4     	fprintf_m11(FILE *stream, si1 *fmt, ...);
 si4		fputc_m11(si4 c, FILE *stream);
-size_t          fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
-void            free_m11(void *ptr, const si1 *function, si4 line, ui4 behavior_on_fail);
-void            free_2D_m11(void **ptr, size_t dim1, const si1 *function, si4 line);
+size_t          fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail);
+void            free_m11(void *ptr, const si1 *function, ui4 behavior_on_fail);
+void            free_2D_m11(void **ptr, size_t dim1, const si1 *function, ui4 behavior_on_fail);
 si4     	fscanf_m11(FILE *stream, si1 *fmt, ...);
-si4             fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
-si8            	ftell_m11(FILE *stream, const si1 *function, si4 line, ui4 behavior_on_fail);
-size_t		fwrite_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4             fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, ui4 behavior_on_fail);
+si8            	ftell_m11(FILE *stream, const si1 *function, ui4 behavior_on_fail);
+size_t		fwrite_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail);
 char		*getcwd_m11(char *buf, size_t size);
-void		*malloc_m11(size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
+void		*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail);
+void		**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
+size_t		malloc_size_m11(void *address);
 void		memset_m11(void *ptr, const void *pattern, si4 pat_len, size_t buf_len);
-TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, si4 line, ui4 behavior_on_fail);
-TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, si4 line, ui4 behavior_on_fail);
+TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, ui4 behavior_on_fail);
+TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail);
 si4     	printf_m11(si1 *fmt, ...);
 si4		putc_m11(si4 c, FILE *stream);
 si4		putch_m11(si4 c);  // Windows "_putch()"
 si4		putchar_m11(si4 c);
-void		*realloc_m11(void *ptr, size_t n_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, si4 line, ui4 behavior_on_fail);
-void		*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si1 *function, si4 line, ui4 behavior_on_fail);
+void		*realloc_m11(void *ptr, size_t n_bytes, const si1 *function, ui4 behavior_on_fail);
+void		**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
+void		*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si1 *function, ui4 behavior_on_fail);
 si4     	scanf_m11(si1 *fmt, ...);
 si4     	sprintf_m11(si1 *target, si1 *fmt, ...);
 si4		snprintf_m11(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
@@ -2012,7 +2028,7 @@ si8		strcat_m11(si1 *target, si1 *source);
 si8		strcpy_m11(si1 *target, si1 *source);
 si8		strncat_m11(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m11(si1 *target, si1 *source, si4 target_field_bytes);
-si4             system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function, si4 line, ui4 behavior_on_fail);
+si4             system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function, ui4 behavior_on_fail);
 si4		vasprintf_m11(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m11(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m11(si1 *fmt, va_list args);
