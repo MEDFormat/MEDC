@@ -3786,6 +3786,10 @@ si8     frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uut
 
 		frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
 		vi = seg->video_indices_fps->video_indices;
+		if (vi == NULL) {
+			warning_message_m11("%s(): video indices are NULL => returning FRAME_NUMBER_NO_ENTRY_m11\n", __FUNCTION__);
+			return(FRAME_NUMBER_NO_ENTRY_m11);
+		}
 		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		if (mode & FIND_RELATIVE_m11)
 			absolute_numbering_offset = 0;
@@ -8331,6 +8335,10 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 
 		sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 		tsi = seg->time_series_indices_fps->time_series_indices;
+		if (tsi == NULL) {
+			warning_message_m11("%s(): time series indices are NULL => returning SAMPLE_NUMBER_NO_ENTRY_m11\n", __FUNCTION__);
+			return(SAMPLE_NUMBER_NO_ENTRY_m11);
+		}
 		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		if (mode & FIND_RELATIVE_m11)
 			absolute_numbering_offset = 0;
@@ -10295,6 +10303,10 @@ si8     uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fra
 
 		frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
 		vi = seg->video_indices_fps->video_indices;
+		if (vi == NULL) {
+			warning_message_m11("%s(): video indices are NULL => returning UUTC_NO_ENTRY_m11\n", __FUNCTION__);
+			return(UUTC_NO_ENTRY_m11);
+		}
 		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		
 		// make target_frame_number relative
@@ -10409,6 +10421,10 @@ si8     uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 
 		sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 		tsi = seg->time_series_indices_fps->time_series_indices;
+		if (tsi == NULL) {
+			warning_message_m11("%s(): time series indices are NULL => returning UUTC_NO_ENTRY_m11\n", __FUNCTION__);
+			return(UUTC_NO_ENTRY_m11);
+		}
 		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		
 		// make target_sample_number relative
