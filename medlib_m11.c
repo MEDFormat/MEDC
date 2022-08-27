@@ -2780,14 +2780,18 @@ void    error_message_m11(si1 *fmt, ...)
 	
 	// RED suppressible text to stderr with beep, and option to exit program
 	if (!(globals_m11->behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-		fprintf(stderr, TC_RED_m11);
+#ifndef MATLAB_m11
+		fprintf(stderr, TC_GREEN_m11);
+#endif
 		va_start(args, fmt);
 		UTF8_vfprintf_m11(stderr, fmt, args);
 		va_end(args);
 		if (globals_m11->behavior_on_fail & EXIT_ON_FAIL_m11)
 			fprintf(stderr, "Exiting.\n\n");
+#ifndef MATLAB_m11
 		fprintf(stderr, TC_RESET_m11);
 		fflush(stderr);
+#endif
 	}
 	
 	if (globals_m11->behavior_on_fail & EXIT_ON_FAIL_m11)
@@ -3168,7 +3172,7 @@ CONTIGUON_m11	*find_discontinuities_m11(LEVEL_HEADER_m11 *level_header, si8 *num
 	tsi_fps = (FILE_PROCESSING_STRUCT_m11 **) malloc(n_segs * sizeof(FILE_PROCESSING_STRUCT_m11 *));
 	sample_offsets = (si8 *) malloc(n_segs * sizeof(si8));
 	
-	// get time series indices &  sample offsets
+	// get time series indices & sample offsets
 	for (i = start_seg_num, j = 0; i <= end_seg_num; ++i, ++j) {
 		if (chan != NULL) {
 			numerical_fixed_width_string_m11(seg_num_str, FILE_NUMBERING_DIGITS_m11, i);
@@ -3229,7 +3233,7 @@ CONTIGUON_m11	*find_discontinuities_m11(LEVEL_HEADER_m11 *level_header, si8 *num
 				contigua[n_contigua].start_time = tsi[k].start_time;
 				contigua[n_contigua].start_sample_number = tsi[k].start_sample_number;
 				contigua[n_contigua].start_segment_number = i;
-				//n_contigua = 0;
+				// n_contigua = 0;
 			}
 		    last_tsi = tsi + k;
 		    last_seg_num = i;
@@ -3861,6 +3865,8 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 		FPS_free_processing_struct_m11(channel->record_data_fps, TRUE_m11);
 	if (channel->record_indices_fps != NULL)
 		FPS_free_processing_struct_m11(channel->record_indices_fps, TRUE_m11);
+	if (channel->contigua != NULL)
+		free_m11(channel->contigua, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (free_channel_structure == TRUE_m11) {
 		free_m11((void *) channel, __FUNCTION__, SUPPRESS_OUTPUT_m11);
@@ -3871,6 +3877,8 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 		channel->record_data_fps = NULL;
 		channel->record_indices_fps = NULL;
 		channel->segments = NULL;
+		channel->contigua = NULL;
+		channel->number_of_contigua = 0;
 	}
 
 	return;
@@ -3956,6 +3964,8 @@ void	free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure)
 		FPS_free_processing_struct_m11(segment->record_data_fps, TRUE_m11);
 	if (segment->record_indices_fps != NULL)
 		FPS_free_processing_struct_m11(segment->record_indices_fps, TRUE_m11);
+	if (segment->contigua != NULL)
+		free_m11(segment->contigua, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 	if (free_segment_structure == TRUE_m11) {
 		free_m11((void *) segment, __FUNCTION__, SUPPRESS_OUTPUT_m11);
@@ -3968,6 +3978,8 @@ void	free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure)
 		segment->time_series_indices_fps = NULL;  // == video_indices_fps;
 		segment->record_data_fps = NULL;
 		segment->record_indices_fps = NULL;
+		segment->contigua = NULL;
+		segment->number_of_contigua = 0;
 	}
 
 	return;
@@ -4028,7 +4040,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->time_series_channels, __FUNCTION__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) session->time_series_channels, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	if (session->video_channels != NULL) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -4036,10 +4048,13 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 			if (chan != NULL)
 				free_channel_m11(chan, TRUE_m11);
 		}
-		free_m11((void *) session->video_channels, __FUNCTION__, SUPPRESS_OUTPUT_m11);
+		free_m11((void *) session->video_channels, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	if (session->segmented_sess_recs != NULL)
 		free_segmented_ses_recs_m11(session->segmented_sess_recs, TRUE_m11);
+	
+	if (session->contigua != NULL)
+		free_m11(session->contigua, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (free_session_structure == TRUE_m11) {
 		free_m11((void *) session, __FUNCTION__, SUPPRESS_OUTPUT_m11);
@@ -4077,6 +4092,8 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 		session->record_data_fps = NULL;
 		session->record_indices_fps = NULL;
 		session->segmented_sess_recs = NULL;
+		session->contigua = NULL;
+		session->number_of_contigua = 0;
 	}
 	
 	return;
@@ -5633,7 +5650,7 @@ void	lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_fla
 	ui4		level_code, type_code;
 	
 	
-	if ((lh_flags & (LH_ALL_READ_FLAGS_m11 | LH_ALL_MEM_MAP_FLAGS_m11)) == 0)
+	if ((lh_flags & (LH_ALL_READ_FLAGS_MASK_m11 | LH_ALL_MEM_MAP_FLAGS_m11)) == 0)
 		return;
 	
 	level_code = get_level_m11(full_file_name, &type_code);
@@ -5704,7 +5721,7 @@ void	lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_fla
 		switch (type_code) {
 			case TIME_SERIES_INDICES_FILE_TYPE_CODE_m11:
 			case VIDEO_INDICES_FILE_TYPE_CODE_m11:
-				if (lh_flags & LH_READ_SEGMENT_DATA_m11) {
+				if (lh_flags & LH_READ_SEGMENT_DATA_MASK_m11) {
 					*number_of_items = FPS_FULL_FILE_m11;
 					*close_flag = TRUE_m11;
 					*mmap_flag = FALSE_m11;
@@ -5726,7 +5743,7 @@ void	lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_fla
 				break;
 			case TIME_SERIES_METADATA_FILE_TYPE_CODE_m11:
 			case VIDEO_METADATA_FILE_TYPE_CODE_m11:
-				if (lh_flags & LH_READ_SEGMENT_DATA_m11) {
+				if (lh_flags & LH_READ_SEGMENT_DATA_MASK_m11) {
 					*number_of_items = FPS_FULL_FILE_m11;
 					*close_flag = TRUE_m11;
 					*mmap_flag = FALSE_m11;
@@ -6280,7 +6297,9 @@ void    message_m11(si1 *fmt, ...)
 		va_start(args, fmt);
 		UTF8_vprintf_m11(fmt, args);
 		va_end(args);
+#ifndef MATLAB_m11
 		fflush(stdout);
+#endif
 	}
 	
 	return;
@@ -6408,7 +6427,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	}
 
 	// channel records
-	if (chan->flags & LH_READ_CHANNEL_RECORDS_m11) {
+	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, 0, chan->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
@@ -6523,7 +6542,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 		condition_time_slice_m11(slice);
 		
 	// metadata
-	if (seg->flags & (LH_READ_SEGMENT_DATA_m11 | LH_READ_SEGMENT_METADATA_m11 | LH_GENERATE_EPHEMERAL_DATA_m11)) {
+	if (seg->flags & (LH_READ_SEGMENT_DATA_MASK_m11 | LH_READ_SEGMENT_METADATA_m11 | LH_GENERATE_EPHEMERAL_DATA_m11)) {
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11)
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 		else // seg->type_code == LH_VIDEO_SEGMENT_m11
@@ -6533,7 +6552,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	}
 	
 	// segment data
-	if (seg->flags & LH_READ_SEGMENT_DATA_m11) {
+	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m11) {
 
 		// indices
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11)
@@ -6552,7 +6571,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	}
 
 	// segment records
-	if (seg->flags & LH_READ_SEGMENT_RECORDS_m11) {
+	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			seg->record_indices_fps = read_file_m11(seg->record_indices_fps, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
@@ -6879,7 +6898,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	}
 
 	// session records
-	if (sess->flags & LH_READ_SESSION_RECORDS_m11) {
+	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			sess->record_indices_fps = read_file_m11(sess->record_indices_fps, tmp_str, 0, 0, 0, sess->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
@@ -6889,7 +6908,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	}
 
 	// create segmented session records level
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_m11) {
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == DIR_EXISTS_m11) {
 			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -7321,7 +7340,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 	slice->end_sample_number = seg->time_slice.end_sample_number;
 	
 	// records
-	if (chan->flags & LH_READ_CHANNEL_RECORDS_m11)
+	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m11)
 		if (chan->record_indices_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) chan, slice);
 	
@@ -7817,7 +7836,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	slice->start_segment_number = slice->end_segment_number = seg->metadata_fps->universal_header->segment_number;
 
 	// read segment data
-	if (seg->flags & LH_READ_SEGMENT_DATA_m11) {
+	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m11) {
 		switch (seg->type_code) {
 			case LH_TIME_SERIES_SEGMENT_m11:
 				read_time_series_data_m11(seg, slice);
@@ -7829,7 +7848,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	}
 	
 	// read segment records
-	if (seg->flags & LH_READ_SEGMENT_RECORDS_m11)
+	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m11)
 		if (seg->record_indices_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) seg, slice);
 	
@@ -7949,13 +7968,13 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	slice->end_time = chan->time_slice.end_time;
 	
 	// read session record data
-	if (sess->flags & LH_READ_SESSION_RECORDS_m11)
+	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11)
 		if (sess->record_indices_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) sess, slice);
 		
 	// read segmented session record data (ephemeral data updated on open here)
 	ssr = sess->segmented_sess_recs;
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_m11 && ssr != NULL) {
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m11 && ssr != NULL) {
 		for (i = slice->start_segment_number, j = seg_offset; i <= slice->end_segment_number; ++i, ++j) {
 			// allocate new segment records
 			if (ssr->record_indices_fps[j] == NULL) {
@@ -9869,22 +9888,20 @@ void    show_timezone_info_m11(TIMEZONE_INFO_m11 *timezone_entry, TERN_m11 show_
 	printf_m11("Standard Timezone: %s\n", timezone_entry->standard_timezone);
 	printf_m11("Standard Timezone Acronym: %s\n", timezone_entry->standard_timezone_acronym);
 	printf_m11("Standard UTC Offset (secs): %d\n", timezone_entry->standard_UTC_offset);
-	printf_m11("Daylight Timezone: %s\n", timezone_entry->daylight_timezone);
-	printf_m11("Daylight Timezone Acronym: %s\n", timezone_entry->daylight_timezone_acronym);
 	
-	if (timezone_entry->daylight_time_start_code && show_DST_detail == TRUE_m11) {
+	if (timezone_entry->daylight_time_start_code) {
+		printf_m11("Daylight Timezone: %s\n", timezone_entry->daylight_timezone);
+		printf_m11("Daylight Timezone Acronym: %s\n", timezone_entry->daylight_timezone_acronym);
 		if (timezone_entry->daylight_time_start_code == DTCC_VALUE_NO_ENTRY_m11) {
-			printf_m11("Daylight Time info not available\n");
-		}
-		else {
+			printf_m11("Daylight Time data is not available\n");
+		} else if (show_DST_detail == TRUE_m11) {
 			printf_m11("Daylight Time Start Code: 0x%lX\n", timezone_entry->daylight_time_start_code);
-			show_daylight_change_code_m11((DAYLIGHT_TIME_CHANGE_CODE_m11 *)&timezone_entry->daylight_time_start_code, "\t");
+			show_daylight_change_code_m11((DAYLIGHT_TIME_CHANGE_CODE_m11 *) &timezone_entry->daylight_time_start_code, "\t");
 			printf_m11("Daylight Time End Code: 0x%lX\n", timezone_entry->daylight_time_end_code);
-			show_daylight_change_code_m11((DAYLIGHT_TIME_CHANGE_CODE_m11 *)&timezone_entry->daylight_time_end_code, "\t");
+			show_daylight_change_code_m11((DAYLIGHT_TIME_CHANGE_CODE_m11 *) &timezone_entry->daylight_time_end_code, "\t");
 		}
-	}
-	else {
-		printf_m11("Daylight Time not observed\n");
+	} else {
+		printf_m11("Daylight Time is not observed\n");
 	}
 	return;
 }
@@ -10567,12 +10584,16 @@ void    warning_message_m11(si1 *fmt, ...)
 
 	// GREEN suppressible text to stderr
 	if (!(globals_m11->behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m11)) {
+#ifndef MATLAB_m11
 		fprintf(stderr, TC_GREEN_m11);
+#endif
 		va_start(args, fmt);
 		UTF8_vfprintf_m11(stderr, fmt, args);
 		va_end(args);
+#ifndef MATLAB_m11
 		fprintf(stderr, TC_RESET_m11);
 		fflush(stderr);
+#endif
 	}
 	
 	return;
@@ -11692,6 +11713,8 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	si8		pad_samples;
 	CMP_PROCESSING_STRUCT_m11	*cps;
 	
+	// pass CMP_SELF_MANAGED_MEMORY_m11 for data_samples to prevent automatic re-allocation
+
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
 		error_message_m11("%s(): FPS must be time series data\n", __FUNCTION__);
@@ -11785,7 +11808,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	}
 	
 	// original_data - caller specified array size
-	if (need_original_data == TRUE_m11 && data_samples)
+	if (need_original_data == TRUE_m11 && data_samples > 0)
 		cps->input_buffer = cps->original_ptr = cps->original_data = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	else
 		cps->input_buffer = cps->original_ptr = cps->original_data = NULL;
@@ -11819,13 +11842,12 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	// decompressed_data - caller specified array size
 	if (need_decompressed_data == TRUE_m11) {
 		if (cps->directives.mode == CMP_DECOMPRESSION_MODE_m11) {
-			if (data_samples) {
+			if (data_samples > 0) {
 				cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-				cps->parameters.allocated_decompressed_samples = data_samples;
 			} else {
 				cps->decompressed_data = cps->decompressed_ptr = NULL;
-				cps->parameters.allocated_decompressed_samples = 0;
 			}
+			cps->parameters.allocated_decompressed_samples = data_samples;
 		} else { // cps->directives.mode == CMP_COMPRESSION_MODE_m11  (decompressed_ptr used to calculate mean residual ratio for each block)
 			cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.allocated_decompressed_samples = block_samples;
@@ -12712,7 +12734,7 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 	if (cps->original_data != NULL)
 		free_m11((void *) cps->original_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
-	if (cps->decompressed_data != NULL)
+	if (cps->decompressed_data != NULL && cps->parameters.allocated_decompressed_samples != CMP_SELF_MANAGED_MEMORY_m11)
 		free_m11((void *) cps->decompressed_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	
 	if (cps->parameters.keysample_buffer != NULL)
@@ -12759,7 +12781,7 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 		cps->directives = saved_directives;
 		cps->parameters = saved_parameters;		
 	}
-
+	
 	return;
 }
 
@@ -13866,7 +13888,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 					realloc_flag = TRUE_m11;
 				}
 			}
-			if (cps->parameters.allocated_compressed_bytes) {  // none may be have been allocated by CMP_allocate_processing_struct_m11() - if so, can't check
+			if (cps->parameters.allocated_compressed_bytes) {
 				mem_units_used = (ui1 *) cps->block_header - fps->time_series_data;
 				mem_units_avail = cps->parameters.allocated_compressed_bytes - mem_units_used;
 				new_val = CMP_MAX_COMPRESSED_BYTES_m11(block_samples, 1);
@@ -13875,7 +13897,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 					realloc_flag = TRUE_m11;
 				}
 			}
-			if (cps->parameters.allocated_decompressed_samples) {  // none may be have been allocated by CMP_allocate_processing_struct_m11() - if so, can't check, but don't realloc
+			if (cps->parameters.allocated_decompressed_samples) {
 				mem_units_used = cps->decompressed_ptr - cps->decompressed_data;
 				mem_units_avail = cps->parameters.allocated_decompressed_samples - mem_units_used;
 				if (mem_units_avail < block_samples) {
@@ -13892,7 +13914,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 					realloc_flag = TRUE_m11;
 				}
 			}
-			if (cps->parameters.allocated_decompressed_samples) {  // none may be have been allocated by CMP_allocate_processing_struct_m11() - if so, can't check, but don't realloc
+			if (cps->parameters.allocated_decompressed_samples != CMP_SELF_MANAGED_MEMORY_m11) {
 				mem_units_used = cps->decompressed_ptr - cps->decompressed_data;
 				mem_units_avail = cps->parameters.allocated_decompressed_samples - mem_units_used;
 				if (mem_units_avail < data_samples) {
@@ -13912,18 +13934,19 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 	// reallocate (free & alloc for speed - don't copy data)
 	CMP_cps_mutex_on_m11(cps);
 		
-	if (fps->time_series_data != NULL && new_compressed_bytes) // FPS_reallocate_processing_struct_m11() resets cps->block_header for time series data fps
+	if (new_compressed_bytes) // FPS_reallocate_processing_struct_m11() resets cps->block_header for time series data fps
 		FPS_reallocate_processing_struct_m11(fps, new_compressed_bytes + UNIVERSAL_HEADER_BYTES_m11);
 	
-	if (cps->parameters.keysample_buffer != NULL && new_keysample_bytes) {
+	if (new_keysample_bytes) {
 		free_m11((void * ) cps->parameters.keysample_buffer, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		if ((cps->parameters.keysample_buffer = (si1 *) calloc_m11((size_t) new_keysample_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_keysample_bytes = new_keysample_bytes;
 	}
 	
-	if (cps->decompressed_data != NULL && new_decompressed_samples) {
-		free_m11((void * ) cps->decompressed_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (new_decompressed_samples) {
+		if (cps->decompressed_data != NULL)
+			free_m11((void * ) cps->decompressed_data, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		if ((cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_decompressed_samples = new_decompressed_samples;
@@ -18575,8 +18598,6 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 	ui1	*ui1_p;
 	
 	
-	// realloc with new bytes zeroed
-	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
 		behavior_on_fail = globals_m11->behavior_on_fail;
 	
@@ -18585,7 +18606,7 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 			free_m11((void *) orig_ptr, function, behavior_on_fail);
 		return((void *) NULL);
 	}
-	
+		
 	if ((ptr = realloc(orig_ptr, new_bytes)) == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 			fprintf_m11(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, new_bytes);
