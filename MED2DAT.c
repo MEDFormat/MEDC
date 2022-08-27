@@ -132,9 +132,9 @@ int main(int argc, char *argv[])
 
 	// set up for write out
 	sprintf_m11(out_file, "%s/%s.dat", out_dir, globals_m11->session_name);
-	out_fp = fopen_m11(out_file, "w", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	out_fp = fopen_m11(out_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	n_channels = sess->number_of_time_series_channels;
-	out_arr = (si2 *) malloc_m11((size_t) n_channels * sizeof(si2), __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	out_arr = (si2 *) malloc_m11((size_t) n_channels * sizeof(si2), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	chan_0 = sess->time_series_channels[0];
 	progress_loop_ctr = progress_loops = 100;
 		
@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
 				out_arr[m] = (si2) round(tmp_sf8);
 			}
 			++curr_samp;
-			fwrite_m11(out_arr, sizeof(si2), n_channels, out_fp, out_file, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			fwrite_m11(out_arr, sizeof(si2), n_channels, out_fp, out_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 			// progress
 			if (--progress_loop_ctr)
@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
 	
 	// clean up
 	free_session_m11(sess, TRUE_m11);
-	free_m11((void *) out_arr, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+	free_m11((void *) out_arr, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	free_globals_m11(TRUE_m11);
 	
 	return(0);
