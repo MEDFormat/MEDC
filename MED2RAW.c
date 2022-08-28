@@ -7,8 +7,11 @@
 #include "medlib_m11.h"
 
 #ifndef MAX_CHANNELS
-#define MAX_CHANNELS	512
+	#define MAX_CHANNELS	512
 #endif
+#define LS_MED2RAW_PROD_VER_MAJOR	((ui1) 1)
+#define LS_MED2RAW_PROD_VER_MINOR	((ui1) 0)
+
 
 
 int main(int argc, char *argv[])
@@ -32,22 +35,22 @@ int main(int argc, char *argv[])
 	// NOTE: in MacOS & Linux change resource limits before calling any functions that use system resources (e.g. printf())
 	adjust_open_file_limit_m11(MAX_OPEN_FILES_m11(MAX_CHANNELS, 1), TRUE_m11);
 
-	// usage
-	if (argc < 2 || argc > 9) {
-		fprintf(stderr, "\n\tUSAGE: %s MED_directory (multiple w/ regex) [output_directory] [start_time] [end_time] [start_samp_num] [end_samp_num] [password] [samp_num_ref_chan]\n\n", argv[0]);
-		return(-1);
-	}
-
-	// USAGE: %s MED_directory [output_directory] [start_time] [end_time] [start_samp_num] [end_samp_num] [password] [samp_num_ref_chan]
-	// negative times: relative to session start
-	// positive times: offset or absolute
-
-	// initialize medlib:
+	// initialize medlib
 	// prototype: TERN_m11 initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables)
 	// change check_structure_alignments to FALSE_m11 to reduce initialization time (all structures align on all systems tested so far)
 	// change initialize_all_tables to FALSE_m11 to reduce initialization time (any required table will be loaded if/when it is first accessed)
 	initialize_medlib_m11(TRUE_m11, TRUE_m11);
 	
+	// usage
+	if (argc < 2 || argc > 9) {
+		extract_path_parts_m11(argv[0], NULL, out_dir, NULL);
+		printf_m11("%c\n\t%s version %hhu.%hhu\n\n\tUSAGE: %s MED_directory (multiple w/ regex) [output_directory] [start_time] [end_time] [start_samp_num] [end_samp_num] [password] [samp_num_ref_chan]\n\n", 7, out_dir, LS_MED2RAW_PROD_VER_MAJOR, LS_MED2RAW_PROD_VER_MINOR, argv[0]);
+		exit_m11(0);
+	}
+	// USAGE:
+	// negative times: relative to session start
+	// positive times: offset or absolute
+
 	// initialize time slice
 	initialize_time_slice_m11(&slice);
 
@@ -180,7 +183,7 @@ int main(int argc, char *argv[])
 
 		// open output time series data files
 		sprintf_m11(out_file, "%s/%s.raw", out_dir, chan->name);
-		out_fp = fopen_m11(out_file, "w", __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+		out_fp = fopen_m11(out_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
 		for (j = 0, k = seg_offset; j < n_segs; ++j, ++k) {
 
@@ -202,7 +205,7 @@ int main(int argc, char *argv[])
 
 			cps = seg->time_series_data_fps->parameters.cps;
 			n_samps = TIME_SLICE_SAMPLE_COUNT_S_m11(seg->time_slice);
-			fwrite_m11(cps->decompressed_data, sizeof(si4), n_samps, out_fp, out_file, __FUNCTION__, __LINE__, USE_GLOBAL_BEHAVIOR_m11);
+			fwrite_m11(cps->decompressed_data, sizeof(si4), n_samps, out_fp, out_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		}
 		fclose(out_fp);
 	}
