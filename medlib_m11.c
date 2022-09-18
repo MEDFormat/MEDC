@@ -3936,44 +3936,6 @@ si8	find_record_index_m11(FILE_PROCESSING_STRUCT_m11 *record_indices_fps, si8 ta
 }
 
 
-#ifndef WINDOWS_m11  // inline causes linking problem in Windows
-inline
-#endif
-void	force_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
-{
-	static ui4	stack_idx, stack_size;
-	
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
-	if (behavior == RESTORE_BEHAVIOR_m11) {
-		if (!stack_idx) {  // this shouldn't happen, but is possible
-			globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
-			return;
-		}
-		globals_m11->behavior_on_fail = globals_m11->behavior_stack[--stack_idx];
-		return;
-	}
-	
-	if (globals_m11->behavior_stack == NULL) {
-		stack_size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
-		globals_m11->behavior_stack = (ui4 *) malloc_m11((size_t) stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-		stack_idx = 0;
-	}
-
-	if (stack_idx == stack_size) {
-		stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
-		globals_m11->behavior_stack = (ui4 *) realloc_m11((void *) globals_m11->behavior_stack, (size_t) stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	}
-	
-	globals_m11->behavior_stack[stack_idx++] = globals_m11->behavior_on_fail;
-	globals_m11->behavior_on_fail = behavior;
-
-	return;
-}
-
-
 si8     frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uutc, ui4 mode, ...)  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m11], num_str[FILE_NUMBERING_DIGITS_m11 + 1];
@@ -5605,6 +5567,7 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->SHA_mutex = FALSE_m11;
 	globals_m11->UTF8_mutex = FALSE_m11;
 	globals_m11->AT_mutex = FALSE_m11;
+	globals_m11->behavior_mutex = FALSE_m11;
 
 	// AT (do this as soon as possible)
 	if (globals_m11->AT_nodes != NULL) {
@@ -5726,6 +5689,7 @@ TERN_m11	initialize_globals_m11(void)
 		free((void *) globals_m11->behavior_stack);
 		globals_m11->behavior_stack = NULL;
 	}
+	globals_m11->behavior_stack_index = globals_m11->behavior_stack_size = 0;
 	#if defined MACOS_m11 || defined LINUX_m11
 	strcpy(globals_m11->temp_dir, "/tmp");
 	strcpy(globals_m11->temp_file, "/tmp/junk");
@@ -7798,6 +7762,41 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 }
 
 
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+void	pop_behavior_m11(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
+{
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// get mutex
+	while (globals_m11->behavior_mutex == TRUE_m11) {
+		#if defined MACOS_m11 || defined LINUX_m11
+		nap_m11("500 ns");
+		#endif
+		#ifdef WINDOWS_m11
+		nap_m11("1 ms");  // limited to millisecond resolution
+		#endif
+	}
+	globals_m11->behavior_mutex = TRUE_m11;
+	
+	if (globals_m11->behavior_stack_index == 0) {  // this shouldn't happen, but is possible
+		globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
+		globals_m11->behavior_mutex = FALSE_m11;
+		return;
+	}
+	
+	globals_m11->behavior_on_fail = globals_m11->behavior_stack[--globals_m11->behavior_stack_index];
+
+	// release mutex
+	globals_m11->behavior_mutex = FALSE_m11;
+
+	return;
+}
+
+
 TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspecified_pw)
 {
 	TERN_m11		pw_ok;
@@ -8000,6 +7999,46 @@ void	propogate_flags_m11(LEVEL_HEADER_m11 *level_header, ui8 new_flags)
 			vid_chans[i]->flags = new_flags | open_status | active_status;
 		}
 	}
+
+	return;
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
+{
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	if (behavior == RESTORE_BEHAVIOR_m11) {
+		pop_behavior_m11();
+		return;
+	}
+	
+	// get mutex
+	while (globals_m11->behavior_mutex == TRUE_m11) {
+		#if defined MACOS_m11 || defined LINUX_m11
+		nap_m11("500 ns");
+		#endif
+		#ifdef WINDOWS_m11
+		nap_m11("1 ms");  // limited to millisecond resolution
+		#endif
+	}
+	globals_m11->behavior_mutex = TRUE_m11;
+	
+	if (globals_m11->behavior_stack_index == globals_m11->behavior_stack_size) {
+		globals_m11->behavior_stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
+		globals_m11->behavior_stack = (ui4 *) realloc_m11((void *) globals_m11->behavior_stack, (size_t) globals_m11->behavior_stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	}
+	
+	globals_m11->behavior_stack[globals_m11->behavior_stack_size++] = globals_m11->behavior_on_fail;
+	globals_m11->behavior_on_fail = behavior;
+	
+	// release mutex
+	globals_m11->behavior_mutex = FALSE_m11;
 
 	return;
 }
@@ -20821,9 +20860,9 @@ si4    vasprintf_m11(si1 **target, si1 *fmt, va_list args)
 	
 	*target = (si1 *) calloc((size_t) PRINTF_BUF_LEN_m11, sizeof(si1));
 	va_copy(args_copy, args);  // save a copy before use in case need to realloc
-	force_behavior_m11(RETURN_ON_FAIL_m11 | SUPPRESS_WARNING_OUTPUT_m11);
+	push_behavior_m11(RETURN_ON_FAIL_m11 | SUPPRESS_OUTPUT_m11);
 	ret_val = vsnprintf_m11(*target, PRINTF_BUF_LEN_m11, fmt, args);
-	force_behavior_m11(RESTORE_BEHAVIOR_m11);
+	pop_behavior_m11();
 	// trim or expand memory to required size
 	*target = (si1 *) realloc((void *) *target, (size_t) (ret_val + 1));
 	if (ret_val >= PRINTF_BUF_LEN_m11)

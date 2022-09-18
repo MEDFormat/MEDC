@@ -1211,6 +1211,9 @@ typedef struct {
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m11];  // system temp directory (periodically auto-cleared)
 	si1				temp_file[FULL_FILE_NAME_BYTES_m11];  // full path to temp file (i.e. incudes temp_dir)
 	ui4				*behavior_stack;
+	volatile ui4			behavior_stack_index;
+	volatile ui4			behavior_stack_size;
+	volatile TERN_m11		behavior_mutex;
 	ui8				level_header_flags;
 	ui4				mmap_block_bytes;  // read size for memory mapped files
 } GLOBALS_m11;
@@ -1849,7 +1852,6 @@ si8		find_index_m11(SEGMENT_m11 *seg, si8 target, ui4 mode);
 si1		*find_timezone_acronym_m11(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
 si1		*find_metadata_file_m11(si1 *path, si1 *md_path);
 si8		find_record_index_m11(FILE_PROCESSING_STRUCT_m11 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
-void            force_behavior_m11(ui4 behavior);
 si8     	frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 void            free_channel_m11(CHANNEL_m11* channel, TERN_m11 free_channel_structure);
 void            free_globals_m11(TERN_m11 cleanup_for_exit);
@@ -1894,8 +1896,10 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *segm
 SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);
 si8             pad_m11(ui1 *buffer, si8 content_len, ui4 alignment);
 TERN_m11	path_from_root_m11(si1 *path, si1 *root_path);
+void            pop_behavior_m11(void);
 TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspecified_pw);
 void		propogate_flags_m11(LEVEL_HEADER_m11 *level_header, ui8 new_flags);
+void            push_behavior_m11(ui4 behavior);
 CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...);  // varargs: si1 *chan_path, ui8 flags, si1 *password
 LEVEL_HEADER_m11	*read_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
 FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, ui8 lh_flags, si1 *password, ui4 behavior_on_fail);
