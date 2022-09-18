@@ -106,7 +106,10 @@ void	show_record_m11(FILE_PROCESSING_STRUCT_m11 *fps, RECORD_HEADER_m11 *record_
 	ui4                     type_code;
 	si1	                time_str[TIME_STRING_BYTES_m11], hex_str[HEX_STRING_BYTES_m11(CRC_BYTES_m11)];
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// decrypt record body if necesary
 	if (record_header->encryption_level > NO_ENCRYPTION_m11)
 		decrypt_record_data_m11(fps, record_header, 1);
@@ -228,7 +231,10 @@ TERN_m11	check_record_structure_alignments_m11(ui1 *bytes)
 	extern GLOBALS_m11	*globals_m11;
 	TERN_m11		return_value, free_flag = FALSE_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// see if already checked
 	if (globals_m11->all_record_structures_aligned != UNKNOWN_m11)
 		return(globals_m11->all_record_structures_aligned);
@@ -290,7 +296,10 @@ void    show_rec_Sgmt_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_Sgmt_v10_m11	*Sgmt;
 	si1                     time_str[TIME_STRING_BYTES_m11], hex_str[HEX_STRING_BYTES_m11(8)], *segment_description;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		Sgmt = (REC_Sgmt_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -351,7 +360,10 @@ TERN_m11     check_rec_Sgmt_type_alignment_m11(ui1 *bytes)
 	REC_Sgmt_v10_m11	*Sgmt;
 	TERN_m11                free_flag = FALSE_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_Sgmt_v10_m11) != REC_Sgmt_v10_BYTES_m11)
 		goto REC_Sgmt_v10_NOT_ALIGNED_m11;
@@ -411,7 +423,10 @@ void    show_rec_Stat_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	REC_Stat_v10_m11	*Stat;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		Stat = (REC_Stat_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -464,7 +479,10 @@ TERN_m11     check_rec_Stat_type_alignment_m11(ui1 *bytes)
 	REC_Stat_v10_m11	*Stat;
 	TERN_m11                free_flag = FALSE_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_Stat_v10_m11) != REC_Stat_v10_BYTES_m11)
 		goto REC_Stat_v10_NOT_ALIGNED_m11;
@@ -521,14 +539,21 @@ void	show_rec_Note_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	si1	*note_text;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		note_text = (si1 *) record_header + RECORD_HEADER_BYTES_m11;
-		if (*note_text)
-			UTF8_printf_m11("Note Text: %s\n", note_text);
-		else
+		if (record_header->total_record_bytes > RECORD_HEADER_BYTES_m11) {
+			note_text = (si1 *) record_header + RECORD_HEADER_BYTES_m11;
+			if (*note_text)
+				UTF8_printf_m11("Note Text: %s\n", note_text);
+			else
+				printf_m11("Note Text: no entry\n");
+		} else {
 			printf_m11("Note Text: no entry\n");
+		}
 	}
 	// Unrecognized record version
 	else {
@@ -541,6 +566,10 @@ void	show_rec_Note_type_m11(RECORD_HEADER_m11 *record_header)
 
 TERN_m11        check_rec_Note_type_alignment_m11(ui1 *bytes)
 {
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// no structures to check
 	return(TRUE_m11);
 }
@@ -555,7 +584,10 @@ void	show_rec_EDFA_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_EDFA_v10_m11	*edfa;
 	si1			*annotation;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		edfa = (REC_EDFA_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -581,7 +613,10 @@ TERN_m11	check_rec_EDFA_type_alignment_m11(ui1 *bytes)
 	REC_EDFA_v10_m11	*edfa;
 	TERN_m11		free_flag = FALSE_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_EDFA_v10_m11) != REC_EDFA_v10_BYTES_m11)
 		goto REC_EDFA_v10_NOT_ALIGNED_m11;
@@ -630,7 +665,10 @@ void	show_rec_Seiz_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_Seiz_v10_CHANNEL_m11	*chans;
 	si1			        time_str[TIME_STRING_BYTES_m11];
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		Seiz = (REC_Seiz_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -710,7 +748,10 @@ TERN_m11	check_rec_Seiz_type_alignment_m11(ui1 *bytes)
 	TERN_m11			free_flag = FALSE_m11;
 	ui1				*chan_bytes;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall sizes
 	if (sizeof(REC_Seiz_v10_m11) != REC_Seiz_v10_BYTES_m11)
 		goto REC_Seiz_v10_NOT_ALIGNED_m11;
@@ -778,7 +819,10 @@ void	show_rec_SyLg_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	si1	*log_entry;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		log_entry = (si1 *) record_header + RECORD_HEADER_BYTES_m11;
@@ -798,7 +842,11 @@ void	show_rec_SyLg_type_m11(RECORD_HEADER_m11 *record_header)
 
 TERN_m11	check_rec_SyLg_type_alignment_m11(ui1 *bytes)
 {
-	// no structures to check	
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// no structures to check
 	return(TRUE_m11);
 }
 
@@ -813,7 +861,10 @@ void    show_rec_NlxP_type_m11(RECORD_HEADER_m11 *record_header)
 	si1                     hex_str[HEX_STRING_BYTES_m11(4)];
 	REC_NlxP_v10_m11	*nlxp;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		nlxp = (REC_NlxP_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -847,13 +898,17 @@ void    show_rec_NlxP_type_m11(RECORD_HEADER_m11 *record_header)
 	return;
 }
 
+
 TERN_m11     check_rec_NlxP_type_alignment_m11(ui1 *bytes)
 {
+	extern GLOBALS_m11	*globals_m11;
 	REC_NlxP_v10_m11	*nlxp;
 	TERN_m11                free_flag = FALSE_m11;
-	extern GLOBALS_m11	*globals_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_NlxP_v10_m11) != REC_NlxP_v10_BYTES_m11)
 		goto REC_NlxP_v10_NOT_ALIGNED_m11;
@@ -908,7 +963,10 @@ void    show_rec_Curs_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	REC_Curs_v10_m11	*curs;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		curs = (REC_Curs_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -925,13 +983,17 @@ void    show_rec_Curs_type_m11(RECORD_HEADER_m11 *record_header)
 	return;
 }
 
+
 TERN_m11     check_rec_Curs_type_alignment_m11(ui1 *bytes)
 {
+	extern GLOBALS_m11	*globals_m11;
 	REC_Curs_v10_m11	*curs;
 	TERN_m11                free_flag = FALSE_m11;
-	extern GLOBALS_m11	*globals_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_Curs_v10_m11) != REC_Curs_v10_BYTES_m11)
 		goto REC_Curs_v10_NOT_ALIGNED_m11;
@@ -982,7 +1044,10 @@ void    show_rec_Epoc_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	REC_Epoc_v10_m11	*epoc;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		epoc = (REC_Epoc_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -1002,11 +1067,14 @@ void    show_rec_Epoc_type_m11(RECORD_HEADER_m11 *record_header)
 
 TERN_m11     check_rec_Epoc_type_alignment_m11(ui1 *bytes)
 {
+	extern GLOBALS_m11	*globals_m11;
 	REC_Epoc_v10_m11	*epoc;
 	TERN_m11                free_flag = FALSE_m11;
-	extern GLOBALS_m11	*globals_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_Epoc_v10_m11) != REC_Epoc_v10_BYTES_m11)
 		goto REC_Epoc_v10_NOT_ALIGNED_m11;
@@ -1057,7 +1125,10 @@ void    show_rec_ESti_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	REC_ESti_v10_m11	*esti;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		esti = (REC_ESti_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
@@ -1115,11 +1186,14 @@ void    show_rec_ESti_type_m11(RECORD_HEADER_m11 *record_header)
 
 TERN_m11     check_rec_ESti_type_alignment_m11(ui1 *bytes)
 {
+	extern GLOBALS_m11	*globals_m11;
 	REC_ESti_v10_m11	*esti;
 	TERN_m11                free_flag = FALSE_m11;
-	extern GLOBALS_m11	*globals_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_ESti_v10_m11) != REC_ESti_v10_BYTES_m11)
 		goto REC_ESti_v10_NOT_ALIGNED_m11;
@@ -1178,6 +1252,9 @@ void    show_rec_CSti_type_m11(RECORD_HEADER_m11 *record_header)
 {
 	REC_CSti_v10_m11	*csti;
 
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
 	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
@@ -1197,11 +1274,14 @@ void    show_rec_CSti_type_m11(RECORD_HEADER_m11 *record_header)
 
 TERN_m11     check_rec_CSti_type_alignment_m11(ui1 *bytes)
 {
+	extern GLOBALS_m11	*globals_m11;
 	REC_CSti_v10_m11	*csti;
 	TERN_m11                free_flag = FALSE_m11;
-	extern GLOBALS_m11	*globals_m11;
 
-
+#ifdef FN_DEBUG_m11
+	printf_m11("%s()\n", __FUNCTION__);
+#endif
+	
 	// check overall size
 	if (sizeof(REC_CSti_v10_m11) != REC_CSti_v10_BYTES_m11)
 		goto REC_CSti_v10_NOT_ALIGNED_m11;

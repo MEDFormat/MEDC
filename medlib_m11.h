@@ -2,7 +2,6 @@
 #ifndef MEDLIB_IN_m11
 #define MEDLIB_IN_m11
 
-
 //**********************************************************************************//
 //*******************************  MED 1.0.1 C Library  ****************************//
 //**********************************************************************************//
@@ -173,8 +172,7 @@ typedef uint64_t	ui8;
 typedef int64_t		si8;
 typedef float		sf4;
 typedef double		sf8;
-typedef long double	sf16;   // NOTE: it may requires an explicit compiler option to implement true long floating point math
-				// in icc: "-Qoption,cpp,--extended_float_types"
+typedef long double	sf16;
 
 #endif  // SIZE_TYPES_IN_m11
 
@@ -347,6 +345,7 @@ typedef struct {
 #define FRAME_RATE_VARIABLE_m11			FREQUENCY_VARIABLE_m11
 #define UNKNOWN_NUMBER_OF_ENTRIES_m11           -1
 #define SEGMENT_NUMBER_NO_ENTRY_m11             -1
+#define FIRST_OPEN_SEGMENT_m11			-2
 #define CHANNEL_NUMBER_NO_ENTRY_m11             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m11         -2
 #define DOES_NOT_EXIST_m11                      0
@@ -943,7 +942,7 @@ typedef struct {
 // segmented session records level
 #define LH_READ_SLICE_SEGMENTED_SESS_RECS_m11		((ui8) 1 << 19)	// read full indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_SEGMENTED_SESS_RECS_m11		((ui8) 1 << 20)	// read full indices file & data files, close all files
-#define LH_MEM_MAP_SEGMENTED_SESS_RECS_m11		((ui8) 1 << 21)	// allocate, but don't read full file
+#define LH_MEM_MAP_SEGMENTED_SESS_RECS_m11		((ui8) 1 << 21)	// allocate, but don't read full data file
 
 // channel level
 #define LH_CHANNEL_ACTIVE_m11				((ui8) 1 << 32)
@@ -963,18 +962,19 @@ typedef struct {
 #define LH_READ_SEGMENT_METADATA_m11			((ui8) 1 << 54)	// read segment metadata
 #define LH_RESET_CPS_POINTERS_m11			((ui8) 1 << 60)	// set original_ptr = original_data, block_header = compressed_data, decompressed_ptr = decompressed_data
 
-
 // flag groups
 // mapping flags
 #define LH_MAP_ALL_CHANNELS_m11       	      (	LH_MAP_ALL_TIME_SERIES_CHANNELS_m11 | LH_MAP_ALL_VIDEO_CHANNELS_m11 )
 // LH_MAP_ALL_SEGMENTS_m11 			single bit defined above
 
 // reading masks (not to be used as flags: SLICE/FULL mutually exclusive)
-#define LH_READ_SESSION_RECORDS_m11           (	LH_READ_SLICE_SESSION_RECORDS_m11 | LH_READ_FULL_SESSION_RECORDS_m11 )
-#define LH_READ_SEGMENTED_SESS_RECS_m11       (	LH_READ_SLICE_SEGMENTED_SESS_RECS_m11 | LH_READ_FULL_SEGMENTED_SESS_RECS_m11 )
-#define LH_READ_CHANNEL_RECORDS_m11           (	LH_READ_SLICE_CHANNEL_RECORDS_m11 | LH_READ_FULL_CHANNEL_RECORDS_m11 )
-#define LH_READ_SEGMENT_RECORDS_m11           (	LH_READ_SLICE_SEGMENT_RECORDS_m11 | LH_READ_FULL_SEGMENT_RECORDS_m11 )
-#define LH_READ_SEGMENT_DATA_m11              (	LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_FULL_SEGMENT_DATA_m11 )
+#define LH_READ_SESSION_RECORDS_MASK_m11      (	LH_READ_SLICE_SESSION_RECORDS_m11 | LH_READ_FULL_SESSION_RECORDS_m11 )
+#define LH_READ_SEGMENTED_SESS_RECS_MASK_m11  (	LH_READ_SLICE_SEGMENTED_SESS_RECS_m11 | LH_READ_FULL_SEGMENTED_SESS_RECS_m11 )
+#define LH_READ_CHANNEL_RECORDS_MASK_m11      (	LH_READ_SLICE_CHANNEL_RECORDS_m11 | LH_READ_FULL_CHANNEL_RECORDS_m11 )
+#define LH_READ_SEGMENT_RECORDS_MASK_m11      (	LH_READ_SLICE_SEGMENT_RECORDS_m11 | LH_READ_FULL_SEGMENT_RECORDS_m11 )
+#define LH_READ_SEGMENT_DATA_MASK_m11         (	LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_FULL_SEGMENT_DATA_m11 )
+#define LH_ALL_READ_FLAGS_MASK_m11	      ( LH_READ_SESSION_RECORDS_MASK_m11 | LH_READ_SEGMENTED_SESS_RECS_MASK_m11 | \
+						LH_READ_CHANNEL_RECORDS_MASK_m11 | LH_READ_SEGMENT_DATA_MASK_m11 | LH_READ_SEGMENT_RECORDS_MASK_m11 )
 
 // memory map flags & masks
 #define LH_MEM_MAP_ALL_RECORDS_m11	      ( LH_MEM_MAP_SESSION_RECORDS_m11 | LH_MEM_MAP_SEGMENTED_SESS_RECS_m11 | LH_MEM_MAP_CHANNEL_RECORDS_m11 | LH_MEM_MAP_SEGMENT_RECORDS_m11 )
@@ -988,8 +988,6 @@ typedef struct {
 #define LH_MULTI_READ_BIG_DEFAULT_m11	      (	LH_SINGLE_READ_DEFAULT_m11 | LH_MAP_ALL_CHANNELS_m11 | LH_MAP_ALL_SEGMENTS_m11 | LH_MEM_MAP_ALL_RECORDS_m11 )
 #define LH_MULTI_READ_SMALL_DEFAULT_m11	      (	LH_MULTI_READ_BIG_DEFAULT_m11 | LH_MEM_MAP_SEGMENT_DATA_m11 )
 
-#define LH_ALL_READ_FLAGS_m11	      	      ( LH_READ_SESSION_RECORDS_m11 | LH_READ_SEGMENTED_SESS_RECS_m11 | \
-						LH_READ_CHANNEL_RECORDS_m11 | LH_READ_SEGMENT_DATA_m11 | LH_READ_SEGMENT_RECORDS_m11 )
 #define LH_ALL_MEM_MAP_FLAGS_m11	      (	LH_MEM_MAP_SESSION_RECORDS_m11 | LH_MEM_MAP_SEGMENTED_SESS_RECS_m11 | \
 						LH_MEM_MAP_CHANNEL_RECORDS_m11 | LH_MEM_MAP_SEGMENT_RECORDS_m11 | LH_MEM_MAP_SEGMENT_DATA_m11 )
 
@@ -1111,11 +1109,19 @@ typedef struct {  // fields from ipinfo.io
 	sf8			longitude;
 } LOCATION_INFO_m11;
 
+#ifdef AT_DEBUG_m11
 typedef struct {
 	void 		*address;
 	ui8		bytes;  // actual bytes allocated => may be more than were requested
-	const si1	*function;
+	const si1	*alloc_function;
+	const si1	*free_function;
 } AT_NODE;
+#else
+typedef struct {
+	void 		*address;
+	ui8		bytes;  // actual bytes allocated => may be more than were requested
+} AT_NODE;
+#endif
 
 typedef struct {
 	// Password
@@ -1143,9 +1149,9 @@ typedef struct {
 	};
 	si4				number_of_session_segments;	// number of segments in the session, regardless of whether they are mapped
 	si4				number_of_mapped_segments;	// may be less than number_of_session_segments
-	struct CHANNEL_m11		*reference_channel;		// note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
+	si4				first_mapped_segment_number;
 	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m11];	// contains user specified value if needed, open_session_m11() matches to session channel
-	ui4				mmap_block_bytes;					// read size for memory mapped files
+	struct CHANNEL_m11		*reference_channel;		// note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
 	// Time Constants
 	TERN_m11			time_constants_set;
 	TERN_m11			RTO_known;
@@ -1161,6 +1167,7 @@ typedef struct {
 	TIMEZONE_INFO_m11		*timezone_table;
 	TIMEZONE_ALIAS_m11		*country_aliases_table;
 	TIMEZONE_ALIAS_m11		*country_acronym_aliases_table;
+	volatile TERN_m11		TZ_mutex;
 	// Alignment Fields
 	TERN_m11                        universal_header_aligned;
 	TERN_m11                        metadata_section_1_aligned;
@@ -1178,20 +1185,25 @@ typedef struct {
 	TERN_m11                        all_structures_aligned;
 	ui4				**CRC_table;
 	ui4                             CRC_mode;
+	volatile TERN_m11		CRC_mutex;
 	// AES tables
 	si4				*AES_sbox_table;
 	si4				*AES_rcon_table;
 	si4				*AES_rsbox_table;
+	volatile TERN_m11		AES_mutex;
 	// SHA256 tables
 	ui4				*SHA_h0_table;
 	ui4				*SHA_k_table;
+	volatile TERN_m11		SHA_mutex;
 	// UTF8 tables
 	ui4				*UTF8_offsets_table;
 	si1				*UTF8_trailing_bytes_table;
+	volatile TERN_m11		UTF8_mutex;
 	// allocation tracking (AT)
 	AT_NODE				*AT_nodes;
 	si8				AT_node_count;  // total allocated nodes
 	si8				AT_used_node_count;  // nodes in use
+	volatile TERN_m11		AT_mutex;
 	// Miscellaneous
 	TERN_m11			time_series_data_encryption_level;
 	TERN_m11                        verbose;
@@ -1200,6 +1212,7 @@ typedef struct {
 	si1				temp_file[FULL_FILE_NAME_BYTES_m11];  // full path to temp file (i.e. incudes temp_dir)
 	ui4				*behavior_stack;
 	ui8				level_header_flags;
+	ui4				mmap_block_bytes;  // read size for memory mapped files
 } GLOBALS_m11;
 
 
@@ -1449,11 +1462,7 @@ typedef struct {
 
 // Parameters contain "mechanics" of FPS (mostly used internally by library functions)
 typedef struct {
-#if defined MACOS_m11 || defined LINUX_m11
-	TERN_m11 _Atomic                        mutex;
-#else
 	volatile TERN_m11			mutex;
-#endif
 	si8					last_access_time;	// uutc of last read into or write from this structure to the file system (update by read_file_m11 & write_file_m11)
 	TERN_m11				full_file_read;		// full file has been read in / decrypted
 	si8					raw_data_bytes;		// bytes in raw data array,
@@ -1502,6 +1511,7 @@ typedef struct {
 			si1	type_string_terminal_zero;  // not used - there for clarity
 		};
 	};
+	void	*super;  // parent structure, NULL for session or if created alone
 	ui8	flags;
 	si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 } LEVEL_HEADER_m11;
@@ -1579,6 +1589,7 @@ typedef struct {  // struct name for medrec_m11.h interdependency
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
+		void	*super;  // parent structure, NULL for session or if created alone
 		ui8	flags;
 		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
@@ -1637,6 +1648,7 @@ typedef struct CHANNEL_m11 {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
+		void	*super;  // parent structure, NULL for session or if created alone
 		ui8	flags;
 		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
@@ -1767,13 +1779,20 @@ typedef struct {
 //		sess = (SESSION_m11 *) level_header;
 
 
+// Miscellaneous structures that depend on above
+typedef struct {
+	si4		acq_num;
+	CHANNEL_m11	*chan;
+} ACQ_NUM_SORT_m11;
+
+
+
 //**********************************************************************************//
 //****************************  GENERAL MED Functions  *****************************//
 //**********************************************************************************//
 
 
 // Prototypes
-void 		add_AT_entry_m11(void *address, const si1 *function);
 TERN_m11	adjust_open_file_limit_m11(si4 new_limit, TERN_m11 verbose_flag);
 TERN_m11	all_zeros_m11(ui1 *bytes, si4 field_length);
 CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m11 chan_recs, TERN_m11 seg_recs);
@@ -1806,6 +1825,7 @@ TERN_m11	check_time_series_metadata_section_2_alignment_m11(ui1 *bytes);
 TERN_m11	check_universal_header_alignment_m11(ui1 *bytes);
 TERN_m11	check_video_indices_alignment_m11(ui1 *bytes);
 TERN_m11	check_video_metadata_section_2_alignment_m11(ui1 *bytes);
+si4		compare_acq_nums_m11(const void *a, const void *b);
 void		condition_timezone_info_m11(TIMEZONE_INFO_m11 *tz_info);
 void		condition_time_slice_m11(TIME_SLICE_m11 *slice);
 si8		current_uutc_m11(void);
@@ -1847,7 +1867,7 @@ ui1		get_cpu_endianness_m11(void);
 ui4		get_level_m11(si1 *full_file_name, ui4 *input_type_code);
 LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 set_timezone_globals, TERN_m11 prompt);
 si4		get_search_mode_m11(TIME_SLICE_m11 *slice);
-si4		get_segment_offset_m11(LEVEL_HEADER_m11 *level_header);
+si4		get_segment_index_m11(si4 segment_number);
 si4             get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice);
 ui4		*get_segment_video_start_frames_m11(FILE_PROCESSING_STRUCT_m11 *video_indices_fps, ui4 *number_of_video_files);
 si1		*get_session_directory_m11(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m11 *MED_fps);
@@ -1866,6 +1886,7 @@ TERN_m11	memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, s
 TERN_m11        merge_metadata_m11(FILE_PROCESSING_STRUCT_m11 *md_fps_1, FILE_PROCESSING_STRUCT_m11 *md_fps_2, FILE_PROCESSING_STRUCT_m11 *merged_md_fps);
 TERN_m11        merge_universal_headers_m11(FILE_PROCESSING_STRUCT_m11 *fps_1, FILE_PROCESSING_STRUCT_m11 *fps_2, FILE_PROCESSING_STRUCT_m11 *merged_fps);
 void    	message_m11(si1 *fmt, ...);
+void     	nap_m11(si1 *nap_str);
 si1		*numerical_fixed_width_string_m11(si1 *string, si4 string_bytes, si4 number);
 CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *channel_path, ui8 flags, si1 *password);
 LEVEL_HEADER_m11	*open_level_m11(LEVEL_HEADER_m11 *lh, TIME_SLICE_m11 *slice, ...);  // varargs (lh == NULL): void *file_list, si4 list_len, ui8 flags, si1 *password
@@ -1874,6 +1895,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 si8             pad_m11(ui1 *buffer, si8 content_len, ui4 alignment);
 TERN_m11	path_from_root_m11(si1 *path, si1 *root_path);
 TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspecified_pw);
+void		propogate_flags_m11(LEVEL_HEADER_m11 *level_header, ui8 new_flags);
 CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...);  // varargs: si1 *chan_path, ui8 flags, si1 *password
 LEVEL_HEADER_m11	*read_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
 FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, ui8 lh_flags, si1 *password, ui4 behavior_on_fail);
@@ -1882,7 +1904,6 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...);  /
 si8     	read_record_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice, ...);  // varargs: si4 seg_num
 si8     	read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice);
 TERN_m11	recover_passwords_m11(si1 *L3_password, UNIVERSAL_HEADER_m11* universal_header);
-TERN_m11 	remove_AT_entry_m11(void *address);
 void     	remove_recording_time_offset_m11(si8 *time);
 void            reset_metadata_for_update_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 si8		sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
@@ -1892,8 +1913,6 @@ si4		segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 si4		segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time);
 TERN_m11	set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 session_start_time, TERN_m11 prompt);
 TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
-void		show_AT_entries_m11(void);
-void		show_AT_entry_m11(void *address);
 void            show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 *code, si1 *prefix);
 void		show_file_times_m11(FILE_TIMES_m11 *ft);
 void            show_globals_m11(void);
@@ -1906,6 +1925,7 @@ void		show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_
 void    	show_time_slice_m11(TIME_SLICE_m11 *slice);
 void            show_timezone_info_m11(TIMEZONE_INFO_m11 *timezone_entry, TERN_m11 show_DST_detail);
 void            show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER_m11 *uh);
+TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess);
 si1		*time_string_m11(si8 uutc_time, si1 *time_str, TERN_m11 fixed_width, TERN_m11 relative_days, si4 colored_text, ...);
 void            unescape_spaces_m11(si1 *string);
 si8		uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
@@ -1936,6 +1956,21 @@ sf8		win_uutc_to_DATE_m11(si8 uutc);
 void		windify_file_paths_m11(si1 *target, si1 *source);
 si1		*windify_format_string_m11(si1 *fmt);
 #endif
+
+
+
+//**********************************************************************************//
+//*********************  MED AT Functions (allocation tracking)  *******************//
+//**********************************************************************************//
+
+void		AT_add_entry_m11(void *address, const si1 *function);
+TERN_m11	AT_freeable_m11(void *address);
+void		AT_mutex_off(void);
+void		AT_mutex_on(void);
+TERN_m11 	AT_remove_entry_m11(void *address, const si1 *function);
+void		AT_show_entries_m11(void);
+void		AT_show_entry_m11(void *address);
+TERN_m11 	AT_update_entry_m11(void *orig_address, void *new_address, const si1 *function);
 
 
 
@@ -2000,8 +2035,8 @@ FILE		*fopen_m11(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail
 si4     	fprintf_m11(FILE *stream, si1 *fmt, ...);
 si4		fputc_m11(si4 c, FILE *stream);
 size_t          fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail);
-void            free_m11(void *ptr, const si1 *function, ui4 behavior_on_fail);
-void            free_2D_m11(void **ptr, size_t dim1, const si1 *function, ui4 behavior_on_fail);
+void            free_m11(void *ptr, const si1 *function);
+void            free_2D_m11(void **ptr, size_t dim1, const si1 *function);
 si4     	fscanf_m11(FILE *stream, si1 *fmt, ...);
 si4             fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, ui4 behavior_on_fail);
 si8            	ftell_m11(FILE *stream, const si1 *function, ui4 behavior_on_fail);
@@ -2010,7 +2045,7 @@ char		*getcwd_m11(char *buf, size_t size);
 void		*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail);
 void		**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
 size_t		malloc_size_m11(void *address);
-void		memset_m11(void *ptr, const void *pattern, si4 pat_len, size_t buf_len);
+void		memset_m11(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
 TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *function, ui4 behavior_on_fail);
 TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail);
 si4     	printf_m11(si1 *fmt, ...);
@@ -2045,11 +2080,18 @@ si4    		vsprintf_m11(si1 *target, si1 *fmt, va_list args);
 #define CMP_SAMPLE_VALUE_NO_ENTRY_m11				NAN_SI4_m11
 #define CMP_SPLINE_TAIL_LEN_m11                			6
 #define CMP_SPLINE_UPSAMPLE_SF_RATIO_m11			((sf8) 3.0)
-#define CMP_MAK_INTERP_PAD_SAMPLES_m11				3
-#define CMP_VDS_INPUT_BUFFERS_m11				9
-#define CMP_VDS_OUTPUT_BUFFERS_m11				4
+#define CMP_MAK_PAD_SAMPLES_m11					3
+#define CMP_MAK_INPUT_BUFFERS_m11				8
+#define CMP_MAK_IN_Y_BUF					0
+#define CMP_MAK_IN_X_BUF					1
+#define CMP_MAK_OUTPUT_BUFFERS_m11				4
+#define CMP_MAK_OUT_Y_BUF					0
+#define CMP_MAK_OUT_X_BUF					1
+#define CMP_VDS_INPUT_BUFFERS_m11				(CMP_MAK_INPUT_BUFFERS_m11 + 1)
+#define CMP_VDS_OUTPUT_BUFFERS_m11				CMP_MAK_OUTPUT_BUFFERS_m11
 #define CMP_VDS_LOWPASS_ORDER_m11				6
 #define CMP_VDS_MINIMUM_SAMPLES_m11				10
+#define CMP_SELF_MANAGED_MEMORY_m11				-1  // pass CMP_SELF_MANAGED_MEMORY_m11 to CMP_allocate_processing_struct to prevent automatic re-allocation
 
 // CMP: Block Fixed Header Offset Constants
 #define CMP_BLOCK_FIXED_HEADER_BYTES_m11                        56                              // fixed region only
@@ -2377,11 +2419,7 @@ typedef struct {
 
 // Parameters contain "mechanics" of CPS
 typedef struct {
-#if defined MACOS_m11 || defined LINUX_m11
-	TERN_m11 _Atomic	mutex;
-#else
 	volatile TERN_m11	mutex;
-#endif
 	si8		allocated_block_samples;
 	si8		allocated_keysample_bytes;
 	si8		allocated_compressed_bytes;  // == time series data fps: (raw_data_bytes - UNIVERSAL_HEADER_BYTES_m11)
