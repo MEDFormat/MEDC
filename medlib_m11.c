@@ -432,6 +432,45 @@ void	apply_recording_time_offset_m11(si8 *time)
 }
 
 
+si1	*behavior_string_m11(ui4 behavior, si1 *behavior_string)
+{
+	si8	len;
+	
+	
+	if (behavior_string == NULL)  // caller responsible for freeing
+		behavior_string = malloc_m11(256, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	*behavior_string = 0;
+	
+	if (behavior == USE_GLOBAL_BEHAVIOR_m11) {
+		behavior = globals_m11->behavior_on_fail;
+		strcat(behavior_string, "USE GLOBAL BEHAVIOR == ");
+	}
+	
+	if (behavior & RESTORE_BEHAVIOR_m11)
+		strcat(behavior_string, "RESTORE BEHAVIOR | ");
+	if (behavior & EXIT_ON_FAIL_m11)
+		strcat(behavior_string, "EXIT ON FAIL | ");
+	if (behavior & RETURN_ON_FAIL_m11)
+		strcat(behavior_string, "RETURN ON FAIL | ");
+	if (behavior & RETURN_ON_FAIL_m11)
+		strcat(behavior_string, "RETURN ON FAIL | ");
+	if (behavior & SUPPRESS_ERROR_OUTPUT_m11)
+		strcat(behavior_string, "SUPPRESS ERROR OUTPUT | ");
+	if (behavior & SUPPRESS_WARNING_OUTPUT_m11)
+		strcat(behavior_string, "SUPPRESS WARNING OUTPUT | ");
+	if (behavior & SUPPRESS_MESSAGE_OUTPUT_m11)
+		strcat(behavior_string, "SUPPRESS MESSAGE OUTPUT | ");
+	if (behavior & RETRY_ONCE_m11)
+		strcat(behavior_string, "RETRY ONCE | ");
+
+	len = strlen(behavior_string);
+	if (len)
+		behavior_string[len - 3] = 0;
+		
+	return(behavior_string);
+}
+
+
 si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 {
 	TERN_m11				force_discont;
@@ -5689,7 +5728,7 @@ TERN_m11	initialize_globals_m11(void)
 		free((void *) globals_m11->behavior_stack);
 		globals_m11->behavior_stack = NULL;
 	}
-	globals_m11->behavior_stack_index = globals_m11->behavior_stack_size = 0;
+	globals_m11->behavior_stack_entries = globals_m11->behavior_stack_size = 0;
 	#if defined MACOS_m11 || defined LINUX_m11
 	strcpy(globals_m11->temp_dir, "/tmp");
 	strcpy(globals_m11->temp_file, "/tmp/junk");
@@ -7782,13 +7821,13 @@ void	pop_behavior_m11(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIO
 	}
 	globals_m11->behavior_mutex = TRUE_m11;
 	
-	if (globals_m11->behavior_stack_index == 0) {  // this shouldn't happen, but is possible
+	if (globals_m11->behavior_stack_entries == 0) {  // this shouldn't happen, but is possible
 		globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
 		globals_m11->behavior_mutex = FALSE_m11;
 		return;
 	}
 	
-	globals_m11->behavior_on_fail = globals_m11->behavior_stack[--globals_m11->behavior_stack_index];
+	globals_m11->behavior_on_fail = globals_m11->behavior_stack[--globals_m11->behavior_stack_entries];
 
 	// release mutex
 	globals_m11->behavior_mutex = FALSE_m11;
@@ -8029,12 +8068,12 @@ void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - US
 	}
 	globals_m11->behavior_mutex = TRUE_m11;
 	
-	if (globals_m11->behavior_stack_index == globals_m11->behavior_stack_size) {
+	if (globals_m11->behavior_stack_entries == globals_m11->behavior_stack_size) {
 		globals_m11->behavior_stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
 		globals_m11->behavior_stack = (ui4 *) realloc_m11((void *) globals_m11->behavior_stack, (size_t) globals_m11->behavior_stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	
-	globals_m11->behavior_stack[globals_m11->behavior_stack_size++] = globals_m11->behavior_on_fail;
+	globals_m11->behavior_stack[globals_m11->behavior_stack_entries++] = globals_m11->behavior_on_fail;
 	globals_m11->behavior_on_fail = behavior;
 	
 	// release mutex
@@ -9786,6 +9825,43 @@ TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_dire
 	FPS_free_processing_struct_m11(metadata_fps, TRUE_m11);
 
 	return(TRUE_m11);
+}
+
+
+void	show_behavior_m11(void)
+{
+	si1	behavior_string[256];
+	si4	i, j;
+	
+	
+	// get mutex
+	while (globals_m11->behavior_mutex == TRUE_m11) {
+		#if defined MACOS_m11 || defined LINUX_m11
+		nap_m11("500 ns");
+		#endif
+		#ifdef WINDOWS_m11
+		nap_m11("1 ms");  // limited to millisecond resolution
+		#endif
+	}
+	globals_m11->behavior_mutex = TRUE_m11;
+	
+	printf_m11("\nCurrent Global Behavior:\n------------------------\n");
+	behavior_string_m11(globals_m11->behavior_on_fail, behavior_string);
+	printf_m11("%s\n\n", behavior_string);
+	
+	if (globals_m11->behavior_stack_entries) {
+		printf_m11("Current Behavior Stack:\n-----------------------\n");
+		for (i = 0, j = (si4) globals_m11->behavior_stack_entries - 1; i < globals_m11->behavior_stack_entries; ++i, --j) {
+			behavior_string_m11(globals_m11->behavior_stack[j], behavior_string);
+			printf_m11("%d)\t%s\n", i, behavior_string);
+		}
+		printf_m11("\n");
+	}
+	
+	// release mutex
+	globals_m11->behavior_mutex = FALSE_m11;
+	
+	return;
 }
 
 

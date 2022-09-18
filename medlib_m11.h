@@ -368,17 +368,16 @@ typedef struct {
 #endif
 
 // Error Handling Constants
-#define USE_GLOBAL_BEHAVIOR_m11         0
-#define RESTORE_BEHAVIOR_m11            1
-#define EXIT_ON_FAIL_m11                2  // exit program
-#define RETURN_ON_FAIL_m11              4  // return from function: if function is main(), behavior is up to programmer
+#define USE_GLOBAL_BEHAVIOR_m11         ((ui4) 0)
+#define RESTORE_BEHAVIOR_m11            ((ui4) 1)
+#define EXIT_ON_FAIL_m11                ((ui4) 2)  // exit program
+#define RETURN_ON_FAIL_m11              ((ui4) 4)  // return from function: if function is main(), behavior is up to programmer
 // if neither EXIT_ON_FAIL_m11 nor RETURN_ON_FAIL_m11 are set, function will continue (i.e. could be CONTINUE_ON_FAIL_m11, if this were defined)
-#define SUPPRESS_ERROR_OUTPUT_m11       8
-#define SUPPRESS_WARNING_OUTPUT_m11     16
-#define SUPPRESS_MESSAGE_OUTPUT_m11     32
-#define SUPPRESS_ALL_OUTPUT_m11         (SUPPRESS_ERROR_OUTPUT_m11 | SUPPRESS_WARNING_OUTPUT_m11 | SUPPRESS_MESSAGE_OUTPUT_m11)
-#define SUPPRESS_OUTPUT_m11				SUPPRESS_ALL_OUTPUT_m11
-#define RETRY_ONCE_m11                  64
+#define SUPPRESS_ERROR_OUTPUT_m11       ((ui4) 8)
+#define SUPPRESS_WARNING_OUTPUT_m11     ((ui4) 16)
+#define SUPPRESS_MESSAGE_OUTPUT_m11     ((ui4) 32)
+#define SUPPRESS_OUTPUT_m11         	(SUPPRESS_ERROR_OUTPUT_m11 | SUPPRESS_WARNING_OUTPUT_m11 | SUPPRESS_MESSAGE_OUTPUT_m11)
+#define RETRY_ONCE_m11                  ((ui4) 64)
 
 // Target Value Constants (ui4)
 #define NO_INDEX_m11			-1  // assigned to signed values (si4 or si8)
@@ -1211,7 +1210,7 @@ typedef struct {
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m11];  // system temp directory (periodically auto-cleared)
 	si1				temp_file[FULL_FILE_NAME_BYTES_m11];  // full path to temp file (i.e. incudes temp_dir)
 	ui4				*behavior_stack;
-	volatile ui4			behavior_stack_index;
+	volatile ui4			behavior_stack_entries;
 	volatile ui4			behavior_stack_size;
 	volatile TERN_m11		behavior_mutex;
 	ui8				level_header_flags;
@@ -1802,6 +1801,7 @@ CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 
 SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *proto_fps, si1* enclosing_path, si1 *chan_name, ui4 type_code, si4 seg_num, TERN_m11 seg_recs);
 SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, TERN_m11 sess_recs, TERN_m11 segmented_sess_recs, TERN_m11 chan_recs, TERN_m11 seg_recs);
 void     	apply_recording_time_offset_m11(si8 *time);
+si1		*behavior_string_m11(ui4 behavior, si1 *behavior_string);
 si8		build_contigua_m11(LEVEL_HEADER_m11 *level_header);
 Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps, FILE_PROCESSING_STRUCT_m11 *rd_fps, CHANNEL_m11 *chan);
 si8		bytes_for_items_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_items, si8 read_file_offset);
@@ -1917,6 +1917,7 @@ si4		segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 si4		segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time);
 TERN_m11	set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 session_start_time, TERN_m11 prompt);
 TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
+void		show_behavior_m11(void);
 void            show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 *code, si1 *prefix);
 void		show_file_times_m11(FILE_TIMES_m11 *ft);
 void            show_globals_m11(void);
