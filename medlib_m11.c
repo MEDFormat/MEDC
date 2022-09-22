@@ -170,7 +170,7 @@ CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 
 	FILE_PROCESSING_STRUCT_m11	*gen_fps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	// enclosing_path is the path to the enclosing directory
@@ -232,7 +232,7 @@ SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *
 	UNIVERSAL_HEADER_m11	*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// enclosing_path is the path to the enclosing directory
@@ -304,7 +304,7 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	SEGMENTED_SESS_RECS_m11		*ssr;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// enclosing_path is the path to the enclosing directory
@@ -422,7 +422,7 @@ inline
 void	apply_recording_time_offset_m11(si8 *time)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (*time != UUTC_NO_ENTRY_m11)
@@ -492,7 +492,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 	VIDEO_INDEX_m11				*vi;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	// find contigua in current time slice, and set in level
@@ -754,7 +754,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 	Sgmt_RECORD_m11			*Sgmt_records, *Sgmt_rec;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	// use Sgmt records
@@ -875,7 +875,7 @@ si8	bytes_for_items_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_items, s
 	UNIVERSAL_HEADER_m11		*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// read_file_offset only needed for items with variable size data (TIME_SERIES_DATA_FILE_TYPE_CODE_m11 & RECORD_DATA_FILE_TYPE_CODE_m11)
@@ -965,7 +965,7 @@ si8	bytes_for_items_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_items, s
 void	calculate_metadata_CRC_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	fps->universal_header->body_CRC = CRC_calculate_m11((ui1 *) fps->data_pointers, METADATA_BYTES_m11);
@@ -982,7 +982,7 @@ void    calculate_record_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	UNIVERSAL_HEADER_m11	*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	uh = fps->universal_header;
@@ -1009,7 +1009,7 @@ void    calculate_time_series_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	CMP_BLOCK_FIXED_HEADER_m11	*bh;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	bh = (CMP_BLOCK_FIXED_HEADER_m11 *) fps->data_pointers;
@@ -1036,7 +1036,7 @@ void    calculate_indices_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	UNIVERSAL_HEADER_m11	*uh;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	idx = (INDEX_m11 *) fps->data_pointers;
@@ -1054,7 +1054,7 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 	FILE_PROCESSING_STRUCT_m11	*ri_fps, *rd_fps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// pass either channel, or channel name (if both paassed channel will be used)
@@ -1112,7 +1112,7 @@ ui4	channel_type_from_path_m11(si1 *path)
 	si1	*c, temp_path[FULL_FILE_NAME_BYTES_m11], name[SEGMENT_BASE_FILE_NAME_BYTES_m11], extension[TYPE_BYTES_m11];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// move pointer to end of string
@@ -1170,7 +1170,7 @@ wchar_t	*char2wchar_m11(wchar_t *target, si1 *source)
 	si8	len, wsz;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if source == target, done in place
@@ -1206,7 +1206,7 @@ TERN_m11        check_all_alignments_m11(void)
 	ui1		*bytes;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1255,7 +1255,7 @@ TERN_m11	check_char_type_m11(void)
 	char	c;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check size of "char"
@@ -1277,7 +1277,7 @@ TERN_m11        check_CMP_block_header_alignment_m11(ui1 *bytes)
 	TERN_m11			free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1357,7 +1357,7 @@ TERN_m11        check_CMP_record_header_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1414,7 +1414,7 @@ TERN_m11	check_file_list_m11(si1 **file_list, si4 n_files)
 	si4	i;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// generate_file_list_m11() does a lot of stuff, but often just need to ensure list contains full paths with no regex
@@ -1441,7 +1441,7 @@ TERN_m11        check_metadata_alignment_m11(ui1 *bytes)
 	METADATA_m11	*md;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1495,7 +1495,7 @@ TERN_m11	check_metadata_section_1_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1559,7 +1559,7 @@ TERN_m11	check_metadata_section_3_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1648,7 +1648,7 @@ TERN_m11	check_password_m11(si1 *password)
 	si4	pw_len;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check pointer: return FALSE_m11 for NULL
@@ -1682,7 +1682,7 @@ TERN_m11	check_record_header_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1750,7 +1750,7 @@ TERN_m11	check_record_indices_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1816,7 +1816,7 @@ TERN_m11	check_time_series_indices_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1872,7 +1872,7 @@ TERN_m11	check_time_series_metadata_section_2_alignment_m11(ui1 *bytes)
 	TERN_m11				free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -1980,7 +1980,7 @@ TERN_m11	check_universal_header_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -2084,7 +2084,7 @@ TERN_m11	check_video_indices_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -2142,7 +2142,7 @@ TERN_m11	check_video_metadata_section_2_alignment_m11(ui1 *bytes)
 	TERN_m11			free_flag = FALSE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -2256,7 +2256,7 @@ void	condition_timezone_info_m11(TIMEZONE_INFO_m11 *tz_info)
 	TIMEZONE_ALIAS_m11	*tz_aliases_table;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (globals_m11->timezone_table == NULL)
@@ -2337,7 +2337,7 @@ void	condition_time_slice_m11(TIME_SLICE_m11 *slice)
 	si8		test_time;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (slice == NULL) {
@@ -2392,7 +2392,7 @@ inline si8      current_uutc_m11(void)
 	si8             uutc;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	gettimeofday(&tv, NULL);
@@ -2439,7 +2439,7 @@ si4      days_in_month_m11(si4 month, si4 year)
 	si4                     days;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	days = standard_days[month];
@@ -2469,7 +2469,7 @@ TERN_m11	decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	METADATA_SECTION_3_m11	*section_3;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps == NULL) {
@@ -2562,7 +2562,7 @@ TERN_m11	decrypt_record_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, ...)  // varar
 	PASSWORD_DATA_m11	*pwd;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps == NULL) {
@@ -2621,7 +2621,7 @@ TERN_m11     decrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	PASSWORD_DATA_m11		*pwd;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->metadata->section_1.time_series_data_encryption_level == NO_ENCRYPTION_m11)
@@ -2716,7 +2716,7 @@ si4     DST_offset_m11(si8 uutc)
 	DAYLIGHT_TIME_CHANGE_CODE_m11	*first_DTCC, *last_DTCC, *change_DTCC;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
@@ -2848,7 +2848,7 @@ TERN_m11	encrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	METADATA_m11		*md;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	pwd = fps->parameters.password_data;
@@ -2902,7 +2902,7 @@ TERN_m11	encrypt_record_data_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	RECORD_HEADER_m11	*rh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	pwd = fps->parameters.password_data;
@@ -2942,7 +2942,7 @@ TERN_m11     encrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	CMP_BLOCK_FIXED_HEADER_m11	*bh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	encryption_level = fps->parameters.cps->directives.encryption_level;
@@ -2998,24 +2998,30 @@ void    error_message_m11(si1 *fmt, ...)
 	va_list		args;
 	
 	
-	// RED suppressible text to stderr with beep, and option to exit program
+	// RED suppressible text to stderr with option to exit program
 	if (!(globals_m11->behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
-#ifndef MATLAB_m11
+		#ifndef MATLAB_m11
 		fprintf(stderr, TC_GREEN_m11);
-#endif
+		#endif
+		
 		va_start(args, fmt);
 		UTF8_vfprintf_m11(stderr, fmt, args);
 		va_end(args);
-		if (globals_m11->behavior_on_fail & EXIT_ON_FAIL_m11)
-			fprintf(stderr, "Exiting.\n\n");
-#ifndef MATLAB_m11
+			
+		#ifndef MATLAB_m11
 		fprintf(stderr, TC_RESET_m11);
 		fflush(stderr);
-#endif
+		#endif
 	}
 	
-	if (globals_m11->behavior_on_fail & EXIT_ON_FAIL_m11)
+	if (globals_m11->behavior_on_fail & EXIT_ON_FAIL_m11) {
+		#ifdef MATLAB_m11
+		mexPrintf("Exiting.\n\n");
+		#else
+		fprintf(stderr, "Exiting.\n\n");
+		#endif
 		exit_m11(-1);
+	}
 	
 	return;
 }
@@ -3027,7 +3033,7 @@ void    escape_spaces_m11(si1 *string, si8 buffer_len)
 	si8     spaces, len;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// count
@@ -3068,7 +3074,7 @@ void	extract_path_parts_m11(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 	si1	*c, *cc, temp_full_file_name[FULL_FILE_NAME_BYTES_m11], dir_break;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// get path from root
@@ -3127,7 +3133,7 @@ void	extract_terminal_password_bytes_m11(si1 *password, si1 *password_bytes)
 	ui4     ch;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	s = password;
@@ -3153,7 +3159,7 @@ ui4     file_exists_m11(si1 *path)  // can be used for directories also
 #endif
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (path == NULL)
@@ -3195,7 +3201,7 @@ inline
 si8	file_length_m11(FILE *fp, si1 *path)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// pass either FILE pointer, or path to file
@@ -3234,7 +3240,7 @@ si8	file_length_m11(FILE *fp, si1 *path)
 FILE_TIMES_m11	*file_times_m11(FILE *fp, si1 *path, FILE_TIMES_m11 *ft, TERN_m11 set_time)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// pass either FILE pointer, or path to file
@@ -3377,7 +3383,7 @@ CONTIGUON_m11	*find_discontinuities_m11(LEVEL_HEADER_m11 *level_header, si8 *num
 	CONTIGUON_m11			*contigua;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// The difference between this function & build_contigua_m11(), is that this does not use time slice as delimiter for returned contigua.
@@ -3511,7 +3517,7 @@ si8	find_index_m11(SEGMENT_m11 *seg, si8 target, ui4 mode)  // returns index con
 	VIDEO_INDEX_m11		*vi;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns -1 if before first index
@@ -3650,7 +3656,7 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 	struct dirent	*entry;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// large directory trees can take a long time to search with "find" or "ls"
@@ -3806,7 +3812,7 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 	HANDLE 		        find_h;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// large directory trees can take a long time to search with "find" or "ls"
@@ -3876,7 +3882,7 @@ si8	find_record_index_m11(FILE_PROCESSING_STRUCT_m11 *record_indices_fps, si8 ta
 	RECORD_INDEX_m11	*ri;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Modes (note there can be multiple records with the same start time):
@@ -3990,7 +3996,7 @@ si8     frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uut
 	VIDEO_INDEX_m11		*vi;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// frame_number_for_uutc_m11(NULL, si8 target_uutc, ui4 mode, si8 ref_index, si8 ref_uutc, sf8 frame_rate);
@@ -4123,7 +4129,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 	SEGMENT_m11	*seg;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (channel == NULL) {
@@ -4140,6 +4146,8 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 	}
 	if (channel->metadata_fps != NULL)
 		FPS_free_processing_struct_m11(channel->metadata_fps, TRUE_m11);
+	if (channel->Sgmt_records != NULL)
+		free_m11((void *) channel->Sgmt_records, __FUNCTION__);
 	if (channel->record_data_fps != NULL)
 		FPS_free_processing_struct_m11(channel->record_data_fps, TRUE_m11);
 	if (channel->record_indices_fps != NULL)
@@ -4167,7 +4175,7 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 void    free_globals_m11(TERN_m11 cleanup_for_exit)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11 == NULL)
@@ -4175,14 +4183,8 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 
 	if (globals_m11_mutex == TRUE_m11) {
 		// another process is doing this concurrently - just wait
-		while (globals_m11_mutex == TRUE_m11) {
-			#if defined MACOS_m11 || defined LINUX_m11
-			nap_m11("500 ns");
-			#endif
-			#ifdef WINDOWS_m11
-			nap_m11("1 ms");  // limited to millisecond resolution
-			#endif
-		}
+		while (globals_m11_mutex == TRUE_m11)
+			nap_m11("1 ms");
 		return;
 	}
 	globals_m11_mutex = TRUE_m11;
@@ -4229,8 +4231,12 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 	if (globals_m11->behavior_stack != NULL)
 		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
 
-	if (globals_m11->AT_nodes != NULL)
+	if (globals_m11->AT_nodes != NULL) {
+		#ifdef AT_DEBUG_m11
+		AT_free_all_m11();  // display memory still allocated & free it
+		#endif
 		free((void *) globals_m11->AT_nodes);
+	}
 
 	if (cleanup_for_exit == TRUE_m11) {
 		#ifdef WINDOWS_m11
@@ -4250,7 +4256,7 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 void	free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (segment == NULL) {
@@ -4295,7 +4301,7 @@ void	free_segmented_ses_recs_m11(SEGMENTED_SESS_RECS_m11 *ssr, TERN_m11 free_seg
 	FILE_PROCESSING_STRUCT_m11	*gen_fps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (ssr == NULL) {
@@ -4328,7 +4334,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 	CHANNEL_m11	*chan;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (session == NULL) {
@@ -4339,6 +4345,8 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 		FPS_free_processing_struct_m11(session->time_series_metadata_fps, TRUE_m11);
 	if (session->video_metadata_fps != NULL)
 		FPS_free_processing_struct_m11(session->video_metadata_fps, TRUE_m11);
+	if (session->Sgmt_records != NULL)
+		free_m11((void *) session->Sgmt_records, __FUNCTION__);
 	if (session->record_data_fps != NULL)
 		FPS_free_processing_struct_m11(session->record_data_fps, TRUE_m11);
 	if (session->record_indices_fps != NULL)
@@ -4385,7 +4393,7 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 		// reset time globals
 		globals_m11->time_constants_set = FALSE_m11;
 		globals_m11->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m11;
-		// memset((void *) &globals_m11->password_data, 0, sizeof(PASSWORD_DATA_m11));  // do not zero password data so hints can be shown, if they exist
+		// do not zero password data so hints can be shown, if they exist
 		// reset miscellaneous globals
 		globals_m11->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m11;
 	} else {  // leave name, path, slice, & globals intact (i.e. clear everything with allocated memory)
@@ -4418,7 +4426,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	FILE		*fp;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// can be used to get a directory list also
@@ -4607,7 +4615,7 @@ si1	*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string)
 	si1	*s;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (string == NULL)  // allocate if NULL is passed
@@ -4637,7 +4645,7 @@ ui4    generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1 *MED_name)
 	ui4     code;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	strcpy(unescaped_path, path);
@@ -4692,7 +4700,7 @@ si1	**generate_numbered_names_m11(si1 **names, si1 *prefix, si4 number_of_names)
 	si1     number_str[FILE_NUMBERING_DIGITS_m11 + 1];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (names == NULL)
@@ -4717,7 +4725,7 @@ TERN_m11 generate_password_data_m11(FILE_PROCESSING_STRUCT_m11* fps, si1 *L1_pw,
 	UNIVERSAL_HEADER_m11* uh;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (L1_pw != NULL)
@@ -4849,7 +4857,7 @@ si8	generate_recording_time_offset_m11(si8 recording_start_time_uutc)
 	struct tm	local_time_info, offset_time_info;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// receives UNOFFSET recording start time (or CURRENT_TIME_m11); returns OFFSET recording start time
@@ -4903,7 +4911,7 @@ si1	*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_nam
 	si1	segment_number_str[FILE_NUMBERING_DIGITS_m11 + 1];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (segment_name == NULL)  // if NULL is passed, this will be allocated, but the calling function has the responsibility to free it.
@@ -4924,7 +4932,7 @@ ui8	generate_UID_m11(ui8 *uid)
 	static ui8      local_UID;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note if NULL is passed for uid, this function is not thread-safe
@@ -4958,7 +4966,7 @@ inline
 ui1	get_cpu_endianness_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	ui2	x = 1;
@@ -4973,7 +4981,7 @@ ui4	get_level_m11(si1 *full_file_name, ui4 *input_type_code)
 	ui4	code;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	code = MED_type_code_from_string_m11(full_file_name);
@@ -5019,7 +5027,7 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	struct tm 	loc_time;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (loc_info == NULL) {
@@ -5140,7 +5148,7 @@ inline
 si4	get_search_mode_m11(TIME_SLICE_m11 *slice)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// time takes priority
@@ -5166,7 +5174,7 @@ si4	get_segment_index_m11(si4 segment_number)
 	SEGMENT_m11	*seg;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns offset of segment_number into segments array
@@ -5239,7 +5247,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 	Sgmt_RECORD_m11			*Sgmt_records, *Sgmt_rec;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (slice->conditioned == FALSE_m11)
@@ -5397,7 +5405,7 @@ ui4	*get_segment_video_start_frames_m11(FILE_PROCESSING_STRUCT_m11 *video_indice
 	VIDEO_INDEX_m11		*vidx;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// NOTE: start frame numbers are inserted into array at their video file number offset, so array can be used as start_frames[vidx->video_file_number], rather than subtracting 1
@@ -5427,7 +5435,7 @@ si1	*get_session_directory_m11(si1 *session_directory, si1 *MED_file_name, FILE_
 	ui4		code;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// session_directory is return vehicle. MED_file_name is input vehicle.
@@ -5520,7 +5528,7 @@ TERN_m11     include_record_m11(ui4 type_code, si4 *record_filters)
 	const si1		INCLUDE_POSITIVE = 1, EXCLUDE_NEGATIVE = -1;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// record_filters is a signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
@@ -5576,7 +5584,7 @@ TERN_m11	initialize_globals_m11(void)
 {
 #ifdef FN_DEBUG_m11  // don't use MED print functions until AT is initialized
 	#ifdef MATLAB_m11
-	mexPrintf("%s()\n", __FUNCTION__);%s()\n", __FUNCTION__);
+	mexPrintf("%s()\n", __FUNCTION__);
 	#else
 	printf("%s()\n", __FUNCTION__);
 	#endif
@@ -5845,7 +5853,7 @@ void	initialize_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 initializ
 	UNIVERSAL_HEADER_m11			*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 
@@ -5967,7 +5975,7 @@ void	initialize_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 initializ
 TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// NOTE: also initializes for frame numbers (via unions)
@@ -5987,7 +5995,7 @@ TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice)
 TERN_m11	initialize_timezone_tables_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11->TZ_mutex == TRUE_m11) {
@@ -6036,7 +6044,7 @@ void	initialize_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 type_c
 	UNIVERSAL_HEADER_m11	*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	uh = fps->universal_header;
@@ -6071,7 +6079,7 @@ si8	items_for_bytes_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_bytes)
 	CMP_BLOCK_FIXED_HEADER_m11	*bh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	items = 0;
@@ -6122,7 +6130,7 @@ void	lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_fla
 	ui4		level_code, type_code;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if ((lh_flags & (LH_ALL_READ_FLAGS_MASK_m11 | LH_ALL_MEM_MAP_FLAGS_m11)) == 0)
@@ -6234,7 +6242,7 @@ void	lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_fla
 si1	*MED_type_string_from_code_m11(ui4 code)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// could have written this differently, since the string bytes are the code bytes, just NULL terminated
@@ -6283,7 +6291,7 @@ ui4     MED_type_code_from_string_m11(si1 *string)
 	si4     len;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (string == NULL) {
@@ -6338,7 +6346,7 @@ TERN_m11        merge_metadata_m11(FILE_PROCESSING_STRUCT_m11 *md_fps_1, FILE_PR
 	TERN_m11                                equal;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if merged_md_fps == NULL, comparison results will be placed in md_fps_1->metadata
@@ -6655,7 +6663,7 @@ TERN_m11        merge_universal_headers_m11(FILE_PROCESSING_STRUCT_m11 *fps_1, F
 	TERN_m11                equal = TRUE_m11;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if merged_fps == NULL, comparison results will be placed in fps_1->universal_header
@@ -6866,8 +6874,10 @@ void     nap_m11(si1 *nap_str)
 	ui8	ms;
 
 	ms = (ui8) nap.tv_sec * (ui8) 1000;
-	ms += (ui8) round((sf8)nap.tv_nsec / (sf8) 1e6);
-	if (ms > 0x7FFFFFFF) {
+	ms += (ui8) round((sf8) nap.tv_nsec / (sf8) 1e6);
+	if (ms == 0) {
+		ms = 1;  // Windows limited to 1 ms rseolution
+	} else if (ms > 0x7FFFFFFF) {
 		warning_message_m11("%s(): millisecond overflow\n", __FUNCTION__);
 		ms = 0x7FFFFFFF;
 	}
@@ -6884,7 +6894,7 @@ si1	*numerical_fixed_width_string_m11(si1 *string, si4 string_bytes, si4 number)
 	si1	*c;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// string bytes does not include terminal zero
@@ -6923,7 +6933,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	UNIVERSAL_HEADER_m11	*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// allocate channel
@@ -7075,7 +7085,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	si1		tmp_str[FULL_FILE_NAME_BYTES_m11];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// allocate segment
@@ -7192,7 +7202,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	SEGMENTED_SESS_RECS_m11		*ssr;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if file_list is a pointer to single string, make list_len zero to indicate a one dimention char array
@@ -7609,7 +7619,7 @@ si8     pad_m11(ui1 *buffer, si8 content_len, ui4 alignment)
 	si8        i, pad_bytes;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	pad_bytes = content_len % (si8) alignment;
@@ -7630,7 +7640,7 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	si8	len, len2;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// assumes root_path has adequate space for new path
@@ -7807,18 +7817,12 @@ inline
 void	pop_behavior_m11(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// get mutex
-	while (globals_m11->behavior_mutex == TRUE_m11) {
-		#if defined MACOS_m11 || defined LINUX_m11
+	while (globals_m11->behavior_mutex == TRUE_m11)
 		nap_m11("500 ns");
-		#endif
-		#ifdef WINDOWS_m11
-		nap_m11("1 ms");  // limited to millisecond resolution
-		#endif
-	}
 	globals_m11->behavior_mutex = TRUE_m11;
 	
 	if (globals_m11->behavior_stack_entries == 0) {  // this shouldn't happen, but is possible
@@ -7847,7 +7851,7 @@ TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspeci
 	UNIVERSAL_HEADER_m11	*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Returns FALSE_m11 to indicate no encryption/decryption access.
@@ -7941,7 +7945,7 @@ void	propogate_flags_m11(LEVEL_HEADER_m11 *level_header, ui8 new_flags)
 	SEGMENTED_SESS_RECS_m11	*ssr;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	switch (level_header->type_code) {
@@ -8049,7 +8053,7 @@ inline
 void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior == RESTORE_BEHAVIOR_m11) {
@@ -8058,14 +8062,8 @@ void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - US
 	}
 	
 	// get mutex
-	while (globals_m11->behavior_mutex == TRUE_m11) {
-		#if defined MACOS_m11 || defined LINUX_m11
+	while (globals_m11->behavior_mutex == TRUE_m11)
 		nap_m11("500 ns");
-		#endif
-		#ifdef WINDOWS_m11
-		nap_m11("1 ms");  // limited to millisecond resolution
-		#endif
-	}
 	globals_m11->behavior_mutex = TRUE_m11;
 	
 	if (globals_m11->behavior_stack_entries == globals_m11->behavior_stack_size) {
@@ -8094,7 +8092,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 	SEGMENT_m11			*seg;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// open channel
@@ -8224,7 +8222,7 @@ LEVEL_HEADER_m11	*read_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *
 	SEGMENT_m11			*seg;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (level_header == NULL) {
@@ -8320,7 +8318,7 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	FILE_TIMES_m11		ft;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if fps == NULL, it will be allocated using full file name, if not full_file name can be NULL
@@ -8537,7 +8535,7 @@ si8     read_record_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sli
 	va_list				args;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// seg_num only reqired for segmented session records levels
@@ -8612,7 +8610,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	VIDEO_METADATA_SECTION_2_m11		*vmd2;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// open segment
@@ -8726,7 +8724,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	SEGMENTED_SESS_RECS_m11		*ssr;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// open session
@@ -8926,7 +8924,7 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 	CMP_BLOCK_FIXED_HEADER_m11		*bh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (seg == NULL) {
@@ -9009,7 +9007,7 @@ TERN_m11    recover_passwords_m11(si1 *L3_password, UNIVERSAL_HEADER_m11 *univer
 	si4     i;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (check_password_m11(L3_password) == FALSE_m11)
@@ -9067,7 +9065,7 @@ inline
 void	remove_recording_time_offset_m11(si8 *time)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (*time != UUTC_NO_ENTRY_m11)
@@ -9083,7 +9081,7 @@ void    reset_metadata_for_update_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	VIDEO_METADATA_SECTION_2_m11		*vmd2;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// section 2 fields
@@ -9138,7 +9136,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 	SESSION_m11		*sess;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// sample_number_for_uutc_m11(NULL, si8 target_uutc, ui4 mode, si8 ref_index, si8 ref_uutc, sf8 sampling_frequency);
@@ -9272,7 +9270,7 @@ si4	search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice
 	si8	target;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
@@ -9403,7 +9401,7 @@ si4	segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fram
 	Sgmt_RECORD_m11		*Sgmt_records;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
@@ -9462,7 +9460,7 @@ si4	segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sam
 	Sgmt_RECORD_m11		*Sgmt_records;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
@@ -9521,7 +9519,7 @@ si4	segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time)
 	Sgmt_RECORD_m11		*Sgmt_records;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
@@ -9577,7 +9575,7 @@ TERN_m11    set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 
 	TIMEZONE_INFO_m11	*tz_table;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (globals_m11->timezone_table == NULL)
@@ -9797,7 +9795,7 @@ TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_dire
 	METADATA_SECTION_1_m11		*md1;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// find a MED metadata file
@@ -9835,14 +9833,8 @@ void	show_behavior_m11(void)
 	
 	
 	// get mutex
-	while (globals_m11->behavior_mutex == TRUE_m11) {
-		#if defined MACOS_m11 || defined LINUX_m11
+	while (globals_m11->behavior_mutex == TRUE_m11)
 		nap_m11("500 ns");
-		#endif
-		#ifdef WINDOWS_m11
-		nap_m11("1 ms");  // limited to millisecond resolution
-		#endif
-	}
 	globals_m11->behavior_mutex = TRUE_m11;
 	
 	printf_m11("\nCurrent Global Behavior:\n------------------------\n");
@@ -9874,7 +9866,7 @@ void    show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 * code, si1 
 						"th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st" };
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (prefix == NULL)
@@ -9946,7 +9938,7 @@ void	show_file_times_m11(FILE_TIMES_m11 *ft)
 	si1	time_str[TIME_STRING_BYTES_m11];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("Creation Time: ");
@@ -9983,7 +9975,7 @@ void    show_globals_m11(void)
 	si4	i;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("\nMED Globals\n-----------\n-----------\n");
@@ -10104,7 +10096,7 @@ void    show_globals_m11(void)
 void	show_level_header_flags_m11(ui8	flags)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("\nLevel Header Flags:\n------------------\n");
@@ -10226,7 +10218,7 @@ void	show_level_header_flags_m11(ui8	flags)
 void    show_location_info_m11(LOCATION_INFO_m11 *li)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	show_timezone_info_m11(&li->timezone_info, TRUE_m11);
@@ -10251,7 +10243,7 @@ void	show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 *md, ui4 ty
 	METADATA_SECTION_3_m11			*md3;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if passing metadata pointer, also pass type code
@@ -10622,7 +10614,7 @@ void	show_password_data_m11(PASSWORD_DATA_m11 *pwd)
 	si1	hex_str[HEX_STRING_BYTES_m11(ENCRYPTION_KEY_BYTES_m11)];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// use message_m11() because show_password_data_m11() is used in normal (no programming) functions => so allow output to be suppressed easily
@@ -10653,7 +10645,7 @@ void	show_password_data_m11(PASSWORD_DATA_m11 *pwd)
 void	show_password_hints_m11(PASSWORD_DATA_m11 *pwd)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// use message_m11() because show_password_data_m11() is used in normal (not programming) functions => so allow output to be suppressed easily
@@ -10676,7 +10668,7 @@ void	show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_f
 	RECORD_HEADER_m11	*rh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// record_filters is a signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
@@ -10720,7 +10712,7 @@ void	show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_f
 void    show_time_slice_m11(TIME_SLICE_m11 *slice)
 {	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("Conditioned: ");
@@ -10795,7 +10787,7 @@ void    show_time_slice_m11(TIME_SLICE_m11 *slice)
 void    show_timezone_info_m11(TIMEZONE_INFO_m11 *timezone_entry, TERN_m11 show_DST_detail)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("Country: %s\n", timezone_entry->country);
@@ -10833,7 +10825,7 @@ void	show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER
 	si1             hex_str[HEX_STRING_BYTES_m11(PASSWORD_VALIDATION_FIELD_BYTES_m11)], time_str[TIME_STRING_BYTES_m11];
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// assign
@@ -11067,7 +11059,7 @@ TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess)
 	ACQ_NUM_SORT_m11		*acq_idxs;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	// Currently function only sort time series channels
@@ -11162,7 +11154,7 @@ si1	*time_string_m11(si8 uutc, si1 *time_str, TERN_m11 fixed_width, TERN_m11 rel
 	LOCATION_INFO_m11	loc_info = {0};
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note if NULL is passed for time_str, this function is not thread-safe
@@ -11286,7 +11278,7 @@ si8     uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fra
 	VIDEO_INDEX_m11		*vi;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// uutc_for_frame_number_m11(NULL, si8 target_frame_number, ui4 mode, si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate)
@@ -11427,7 +11419,7 @@ si8     uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 	TIME_SERIES_INDEX_m11	*tsi;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// uutc_for_sample_number_m11(NULL, si8 target_sample_number, ui4 mode, si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency)
@@ -11558,7 +11550,7 @@ void    unescape_spaces_m11(si1 *string)
 	si1	*c1, *c2;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	c1 = c2 = string;
@@ -11583,7 +11575,7 @@ FILETIME	uutc_to_win_time_m11(si8 uutc)
 	FILETIME ft;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	uutc += WIN_USECS_TO_EPOCH_m11;
@@ -11604,7 +11596,7 @@ TERN_m11        validate_record_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	RECORD_HEADER_m11	*rh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	valid = TRUE_m11;
@@ -11629,7 +11621,7 @@ TERN_m11        validate_time_series_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *f
 	CMP_BLOCK_FIXED_HEADER_m11	*bh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	valid = TRUE_m11;
@@ -11679,7 +11671,7 @@ si1	*wchar2char_m11(si1 *target, wchar_t *source)
 	si8	len, wsz;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if source == target, done in place
@@ -11701,7 +11693,7 @@ si1	*wchar2char_m11(si1 *target, wchar_t *source)
 void    win_cleanup_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -11725,7 +11717,7 @@ si8	win_DATE_to_uutc_m11(sf8 date)
 	sf8	secs, uutc;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// DATE == days since 29 Dec 1899 00:00:00 UTC
@@ -11740,7 +11732,7 @@ si8	win_DATE_to_uutc_m11(sf8 date)
 TERN_m11	win_initialize_terminal_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef  WINDOWS_m11
@@ -11774,7 +11766,7 @@ TERN_m11	win_initialize_terminal_m11(void)
 si4    win_ls_1d_to_tmp_m11(si1 **dir_strs, si4 n_dirs, TERN_m11 full_path)  // replacement for unix "ls -1d > temp_file (on a directory list)"
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -11854,7 +11846,7 @@ si4    win_ls_1d_to_tmp_m11(si1 **dir_strs, si4 n_dirs, TERN_m11 full_path)  // 
 TERN_m11	win_reset_terminal_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef  WINDOWS_m11
@@ -11878,7 +11870,7 @@ TERN_m11	win_reset_terminal_m11(void)
 TERN_m11	win_socket_startup_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -11912,7 +11904,7 @@ inline
 si4	win_system_m11(si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -11959,7 +11951,7 @@ si8	win_time_to_uutc_m11(FILETIME win_time)
 	si8	uutc, leftovers;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// A Windows time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
@@ -11982,7 +11974,7 @@ sf8	win_uutc_to_DATE_m11(si8 uutc)
 	sf8	secs, days;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// DATE == days since 29 Dec 1899 00:00:00 UTC
@@ -11999,7 +11991,7 @@ void	windify_file_paths_m11(si1 *target, si1 *source)
 	si1		*c1, *c2;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// if target == source, or target == NULL, conversion done in place
@@ -12047,7 +12039,7 @@ void	windify_file_paths_m11(si1 *target, si1 *source)
 si1	*windify_format_string_m11(si1 *fmt)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -12125,7 +12117,7 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 	UNIVERSAL_HEADER_m11		*uh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -12309,7 +12301,7 @@ void	AES_decrypt_m11(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 	ui1	round_key[240]; // The array that stores the round keys
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (globals_m11->AES_sbox_table == NULL)  // all tables initialized together
@@ -12348,7 +12340,7 @@ void	AES_encrypt_m11(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 	ui1	round_key[240]; // The array that stores the round keys
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (globals_m11->AES_sbox_table == NULL)  // all tables initialized together
@@ -12383,7 +12375,7 @@ void	AES_key_expansion_m11(ui1 *expanded_key, si1 *key)
 	ui1	temp[4], k;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// The round constant word array, Rcon[i], contains the values given by
@@ -12528,7 +12520,7 @@ si4	AES_get_sbox_value_m11(si4 num)
 TERN_m11	AES_initialize_tables_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11->AES_mutex == TRUE_m11) {
@@ -12780,7 +12772,7 @@ void	AT_add_entry_m11(void *address, const si1 *function)
 	AT_NODE		*atn;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (address == NULL) {
@@ -12834,8 +12826,8 @@ void	AT_add_entry_m11(void *address, const si1 *function)
 			exit_m11(-1);
 		}
 		// zero new memory
-		memset((void *) (globals_m11->AT_nodes + globals_m11->AT_used_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11 * sizeof(AT_NODE));
-		atn = globals_m11->AT_nodes + globals_m11->AT_used_node_count;
+		memset((void *) (globals_m11->AT_nodes + globals_m11->AT_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11 * sizeof(AT_NODE));
+		atn = globals_m11->AT_nodes + globals_m11->AT_node_count;
 	} else {
 		// find a free node
 		#ifdef AT_DEBUG_m11
@@ -12874,13 +12866,103 @@ void	AT_add_entry_m11(void *address, const si1 *function)
 }
 
 
+AT_NODE	*AT_find_entry_m11(void *address)
+{
+	si8		i;
+	AT_NODE		*atn;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	if (address == NULL) {
+		#ifdef AT_DEBUG_m11
+		warning_message_m11("%s(): attempting find a NULL object\n", __FUNCTION__);
+		#endif
+		return(NULL);
+	}
+	
+	AT_mutex_on();
+
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn) {
+		if (atn->address == address) {
+			AT_mutex_off();
+			return(atn);
+		}
+	}
+	
+	#ifdef AT_DEBUG_m11
+	message_m11("%s(): no entry for address %lu\n", __FUNCTION__, (ui8) address);
+	#endif
+	AT_mutex_off();
+
+	return(NULL);
+}
+
+
+void	AT_free_all_m11(void)
+{
+	si8		i;
+	AT_NODE		*atn;
+#ifdef AT_DEBUG_m11
+	si8		alloced_entries = 0;
+#endif
+
+#ifdef FN_DEBUG_m11
+	#ifdef MATLAB_m11
+	mexPrintf("%s()\n", __FUNCTION__);
+	#else
+	printf("%s()\n", __FUNCTION__);
+	#endif
+#endif
+		
+	AT_mutex_on();
+
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn) {
+		if (atn->address == NULL)
+			continue;
+		#ifdef AT_DEBUG_m11
+		if (atn->free_function == NULL) {
+			++alloced_entries;
+			atn->free_function = __FUNCTION__;
+			AT_mutex_off();  // release mutex for AT_show_entry_m11()
+			AT_show_entry_m11(atn->address);
+			AT_mutex_on();  // reclaim mutex
+			free((void *) atn->address);
+		}
+		#else
+		free((void *) atn->address);
+		atn->address = NULL;
+		#endif
+	}
+
+#ifdef AT_DEBUG_m11
+	if (alloced_entries) {
+		#ifdef MATLAB_m11
+		mexPrintf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
+		#else
+		printf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
+		#endif
+	}
+#else
+	globals_m11->AT_used_node_count = 0;
+#endif
+
+	AT_mutex_off();
+
+	return;
+}
+
+
 TERN_m11	AT_freeable_m11(void *address)
 {
 	si8		i;
 	AT_NODE		*atn;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// silent function - just to tell whether an address is in the AT list
@@ -12913,6 +12995,7 @@ TERN_m11	AT_freeable_m11(void *address)
 
 	// return mutex
 	AT_mutex_off();
+	
 	return(TRUE_m11);
 }
 
@@ -12922,10 +13005,6 @@ inline
 #endif
 void	AT_mutex_off(void)
 {
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
 	globals_m11->AT_mutex = FALSE_m11;
 	
 	return;
@@ -12938,20 +13017,10 @@ inline
 #endif
 void	AT_mutex_on(void)
 {
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
-	while (globals_m11->AT_mutex == TRUE_m11) {
-		#if defined MACOS_m11 || defined LINUX_m11
+	while (globals_m11->AT_mutex == TRUE_m11)
 	      	nap_m11("500 ns");
-	      	#endif
-	      	#ifdef WINDOWS_m11
-	      	nap_m11("1 ms");  // limited to millisecond resolution
-	      	#endif
-	}
 	globals_m11->AT_mutex = TRUE_m11;
-	
+
 	return;
 }
 
@@ -12962,7 +13031,7 @@ TERN_m11	AT_remove_entry_m11(void *address, const si1 *function)
 	AT_NODE		*atn;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (address == NULL) {
@@ -13015,7 +13084,7 @@ TERN_m11	AT_remove_entry_m11(void *address, const si1 *function)
 }
 
 
-void	AT_show_entries_m11(void)
+void	AT_show_entries_m11(ui4	entry_type)
 {
 	si8		i;
 	AT_NODE		*atn;
@@ -13025,7 +13094,7 @@ void	AT_show_entries_m11(void)
 	#endif
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	AT_mutex_on();
@@ -13034,23 +13103,33 @@ void	AT_show_entries_m11(void)
 	for (i = globals_m11->AT_node_count; i--; ++atn) {
 		if (atn->address == NULL)
 			continue;
-		message_m11("\naddress: %lu\n", (ui8) atn->address);
-		message_m11("bytes: %lu\n", atn->bytes);
 		#ifdef AT_DEBUG_m11
-		message_m11("allocated by: %s()\n", atn->alloc_function);
 		if (atn->free_function == NULL) {
+			if (entry_type & AT_CURRENTLY_ALLOCATED_m11) {
+				message_m11("\naddress: %lu\n", (ui8) atn->address);
+				message_m11("bytes: %lu\n", atn->bytes);
+				message_m11("allocated by: %s()\n", atn->alloc_function);
+			}
 			++alloced_entries;
 		} else {
-			message_m11("freed by: %s()\n", atn->free_function);
+			if (entry_type & AT_PREVIOUSLY_FREED_m11) {
+				message_m11("\naddress: %lu\n", (ui8) atn->address);
+				message_m11("bytes: %lu\n", atn->bytes);
+				message_m11("allocated by: %s()\n", atn->alloc_function);
+				message_m11("freed by: %s()\n", atn->free_function);
+			}
 			++freed_entries;
 		}
+		#else
+		message_m11("\naddress: %lu\n", (ui8) atn->address);
+		message_m11("bytes: %lu\n", atn->bytes);
 		#endif
 	}
 #ifdef AT_DEBUG_m11
 	message_m11("\ncurrently allocated AT entries: %lu\n", alloced_entries);
 	message_m11("previously freed AT entries: %lu\n", freed_entries);
 #else
-	message_m11("\ncurrent AT entries: %lu\n", globals_m11->AT_used_node_count);
+	message_m11("\ncurrently allocated AT entries: %lu\n", globals_m11->AT_used_node_count);
 #endif
 
 	AT_mutex_off();
@@ -13065,7 +13144,7 @@ void	AT_show_entry_m11(void *address)
 	AT_NODE		*atn;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (address == NULL) {
@@ -13105,7 +13184,7 @@ TERN_m11	AT_update_entry_m11(void *orig_address, void *new_address, const si1 *f
 	AT_NODE		*atn;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (orig_address == NULL) {
@@ -13134,7 +13213,7 @@ TERN_m11	AT_update_entry_m11(void *orig_address, void *new_address, const si1 *f
 	if (i < 0) {
 		AT_mutex_off();
 		#ifdef AT_DEBUG_m11
-		warning_message_m11("%s(): address %lu is not in the list, called from function %s():", __FUNCTION__, (ui8) orig_address, function);
+		warning_message_m11("%s(): address %lu is not in the list, called from function %s()\n", __FUNCTION__, (ui8) orig_address, function);
 		#endif
 		return(FALSE_m11);
 	}
@@ -13143,7 +13222,8 @@ TERN_m11	AT_update_entry_m11(void *orig_address, void *new_address, const si1 *f
 	if (atn->free_function != NULL) {
 		warning_message_m11("%s(): original address was already freed, called from function %s():", __FUNCTION__, function);
 		AT_show_entry_m11(orig_address);
-		warning_message_m11("%s(): replacing with new address", __FUNCTION__, function);
+		warning_message_m11("=> replacing with new data\n");
+		atn->free_function = NULL;
 	}
 	#endif
 
@@ -13185,7 +13265,7 @@ CMP_BUFFERS_m11    *CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buf
 	ui8	i, pointer_bytes, array_bytes, total_requested_bytes, mod;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// all buffers are 8-byte aligned
@@ -13260,7 +13340,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	CMP_PROCESSING_STRUCT_m11	*cps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// pass CMP_SELF_MANAGED_MEMORY_m11 for data_samples to prevent automatic re-allocation
@@ -13465,7 +13545,7 @@ void    CMP_calculate_statistics_m11(REC_Stat_v10_m11 *stats, si4 *input_buffer,
 	ui1             	median_found;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// allocate
@@ -13564,7 +13644,7 @@ TERN_m11     CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	CMP_PROCESSING_STRUCT_m11	*cps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -13712,10 +13792,6 @@ inline
 #endif
 void	CMP_cps_mutex_off_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
 	cps->parameters.mutex = FALSE_m11;
 	
 	return;
@@ -13727,18 +13803,8 @@ inline
 #endif
 void	CMP_cps_mutex_on_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
-	while (cps->parameters.mutex == TRUE_m11) {
-		#if defined MACOS_m11 || defined LINUX_m11
+	while (cps->parameters.mutex == TRUE_m11)
 		nap_m11("500 ns");
-		#endif
-		#ifdef WINDOWS_m11
-		nap_m11("1 ms");  // limited to millisecond resolution
-		#endif
-	}
 	cps->parameters.mutex = TRUE_m11;
 	
 	return;
@@ -13755,7 +13821,7 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	CMP_PROCESSING_STRUCT_m11	*cps;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -13855,7 +13921,7 @@ TERN_m11	CMP_decrypt_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	CMP_PROCESSING_STRUCT_m11	*cps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -13926,7 +13992,7 @@ ui1	CMP_differentiate_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// NOTE: using range to find best derivative is efficient & usually works well, but may fail with a few extreme values: update to highest mode count in future
@@ -14059,7 +14125,7 @@ void    CMP_encode_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 start_time, si4 acqu
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -14155,7 +14221,7 @@ TERN_m11     CMP_encrypt_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -14233,7 +14299,7 @@ void    CMP_find_extrema_m11(si4 *input_buffer, si8 len, si4 *minimum, si4 *maxi
 	si8     i;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (cps != NULL) {
@@ -14284,7 +14350,7 @@ inline
 void    CMP_free_buffers_m11(CMP_BUFFERS_m11 *buffers, TERN_m11 free_structure)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (buffers == NULL)
@@ -14318,7 +14384,7 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 	CMP_PARAMETERS_m11	saved_parameters;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (cps == NULL) {
@@ -14387,7 +14453,7 @@ void	CMP_generate_parameter_map_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_BLOCK_FIXED_HEADER_m11	*bh;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// add up parameter bytes (4 bytes for each bit set)
@@ -14414,7 +14480,7 @@ ui1    CMP_get_overflow_bytes_m11(CMP_PROCESSING_STRUCT_m11 *cps, ui4 mode, ui4 
 	CMP_PRED_MODEL_FIXED_HEADER_m11		*PRED_header;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (mode == CMP_COMPRESSION_MODE_m11) {  // assumes extrema are known & derivative level is set
@@ -14492,7 +14558,7 @@ void    CMP_get_variable_region_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	block_header = cps->block_header;
@@ -14528,7 +14594,7 @@ void    CMP_get_variable_region_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 void	CMP_initialize_directives_m11(CMP_DIRECTIVES_m11 *directives, ui1 mode)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	directives->mode = mode;
@@ -14562,7 +14628,7 @@ void	CMP_initialize_directives_m11(CMP_DIRECTIVES_m11 *directives, ui1 mode)
 void	CMP_initialize_parameters_m11(CMP_PARAMETERS_m11 *parameters)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	parameters->mutex = FALSE_m11;
@@ -14617,7 +14683,7 @@ void	CMP_integrate_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// integrates in place from/to decompressed_ptr
@@ -14645,7 +14711,7 @@ sf8	*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len
 	si8     i, bot_x, top_x, last_bot_x;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (out_data == NULL)
@@ -14697,7 +14763,7 @@ inline
 void	CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// lock
@@ -14716,7 +14782,7 @@ si4	*CMP_lin_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len
 	si8     i, bot_x, top_x, last_bot_x;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (out_data == NULL)
@@ -14773,7 +14839,7 @@ void    CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_MBE_MODEL_FIXED_HEADER_m11	*MBE_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// read header
@@ -14844,7 +14910,7 @@ void    CMP_MBE_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_MBE_MODEL_FIXED_HEADER_m11	*MBE_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// compress from cps->input_buffer to cps->block header
@@ -14932,7 +14998,7 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 	sf8 		*in_y, *dx, *out_x, *tmp_out_x, *out_y, *coefs[4];
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note: This function strays from the usual medlib template in that it does not allocate its processing buffers if not passed.
@@ -15082,7 +15148,7 @@ void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_PRED_MODEL_FIXED_HEADER_m11		*PRED_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// CMP decompress from block_header to decompressed_ptr
@@ -15238,7 +15304,7 @@ void    CMP_PRED_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_MBE_MODEL_FIXED_HEADER_m11		*MBE_header;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// CMP compress from input_buffer to block_header
@@ -15508,7 +15574,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 	CMP_PROCESSING_STRUCT_m11 	*cps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -15658,7 +15724,7 @@ void    CMP_RED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_RED_MODEL_FIXED_HEADER_m11	*RED_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// CMP decompress from block_header to decompressed_ptr
@@ -15827,7 +15893,7 @@ void    CMP_RED_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_MBE_MODEL_FIXED_HEADER_m11	*MBE_header;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// compress from input_buffer to block_header
@@ -16088,7 +16154,7 @@ inline
 void    CMP_retrend_si4_m11(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// retrend data from input_buffer to output_buffer
@@ -16107,7 +16173,7 @@ inline
 void    CMP_retrend_2_sf8_m11(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// retrend data from in_y to out_y at specific x locations
@@ -16126,7 +16192,7 @@ inline
 si2      CMP_round_si2_m11(sf8 val)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (isnan(val))
@@ -16150,7 +16216,7 @@ inline
 si4      CMP_round_si4_m11(sf8 val)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (isnan(val))
@@ -16175,7 +16241,7 @@ void    CMP_scale_amplitude_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 l
 	sf8	inv_scale_factor;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// scale from input_buffer to output_buffer
@@ -16207,7 +16273,7 @@ void    CMP_scale_frequency_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 l
 	sf4	sf4_scale;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// scale from input_buffer to output_buffer
@@ -16236,7 +16302,7 @@ void    CMP_set_variable_region_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	block_header = cps->block_header;
@@ -16308,7 +16374,7 @@ void      CMP_sf8_to_si4_m11(sf8 *sf8_arr, si4 *si4_arr, si8 len)
 	sf8	val;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	while (len--) {
@@ -16341,7 +16407,7 @@ void    CMP_show_block_header_m11(CMP_BLOCK_FIXED_HEADER_m11 *block_header)
 	ui4     i, mask;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("--------------- CMP Fixed Block Header - START ---------------\n");
@@ -16401,7 +16467,7 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 	CMP_VDS_MODEL_FIXED_HEADER_m11		*VDS_header;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	block_header = cps->block_header;
@@ -16576,7 +16642,7 @@ inline
 void      CMP_si4_to_sf8_m11(si4 *si4_arr, sf8 *sf8_arr, si8 len)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	while (len--)
@@ -16595,7 +16661,7 @@ sf8    *CMP_spline_interp_sf8_m11(sf8 *in_arr, si8 in_arr_len, sf8 *out_arr, si8
 	sf8		*d2y, *td2y, *prev_d2y, *next_d2y, *tu, *u, *prev_u, p, *tout;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// this version assumes input array is uniformly sampled; output array is uniformly sampled at new frequency
@@ -16687,7 +16753,7 @@ si4    *CMP_spline_interp_si4_m11(si4 *in_arr, si8 in_arr_len, si4 *out_arr, si8
 	sf8	*d2y, *td2y, *prev_d2y, *next_d2y, *tu, *u, *prev_u, p;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// this version assumes input array is uniformly sampled; output array is uniformly sampled at new frequency
@@ -16781,7 +16847,7 @@ si8     CMP_ts_sort_m11(si4 *x, si8 len, CMP_NODE_m11 *nodes, CMP_NODE_m11 *head
 	va_list         args;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// setup
@@ -16859,7 +16925,7 @@ inline
 void	CMP_unlock_buffers_m11(CMP_BUFFERS_m11 *buffers)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// unlock
@@ -16878,7 +16944,7 @@ inline
 void    CMP_unscale_amplitude_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// unscale from input_buffer to output_buffer
@@ -16897,7 +16963,7 @@ inline
 void    CMP_unscale_amplitude_sf8_m11(sf8 *input_buffer, sf8 *output_buffer, si8 len, sf8 scale_factor)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// unscale from input_buffer to output_buffer
@@ -16913,7 +16979,7 @@ void    CMP_unscale_amplitude_sf8_m11(sf8 *input_buffer, sf8 *output_buffer, si8
 void    CMP_unscale_frequency_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// not written yet
@@ -16930,7 +16996,7 @@ CMP_BLOCK_FIXED_HEADER_m11	*CMP_update_CPS_pointers_m11(FILE_PROCESSING_STRUCT_m
 	CMP_PROCESSING_STRUCT_m11	*cps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m11) {
@@ -17108,7 +17174,7 @@ ui4	CRC_calculate_m11(const ui1 *block_ptr, si8 block_bytes)
 	ui4	crc;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	crc = CRC_update_m11(block_ptr, block_bytes, CRC_START_VALUE_m11);
@@ -17124,7 +17190,7 @@ ui4     CRC_combine_m11(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes)
 	ui4     odd[32];     // odd-power-of-two zeros operator
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// degenerate case (also disallow negative lengths)
@@ -17175,7 +17241,7 @@ TERN_m11	CRC_initialize_tables_m11(void)
 	ui4	**crc_table, c, n, k;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11->CRC_mutex == TRUE_m11) {
@@ -17320,7 +17386,7 @@ TERN_m11	CRC_validate_m11(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_vali
 	ui4	crc;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	crc = CRC_calculate_m11(block_ptr, block_bytes);
@@ -17345,7 +17411,7 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 	CMP_PROCESSING_STRUCT_m11	*cps;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// allocate FPS
@@ -17441,7 +17507,7 @@ inline
 #endif
 void	FPS_close_m11(FILE_PROCESSING_STRUCT_m11 *fps) {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->parameters.fp != NULL) {
@@ -17481,7 +17547,7 @@ si4	FPS_compare_start_times_m11(const void *a, const void *b)
 void	FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 free_fps_structure)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps == NULL) {
@@ -17531,7 +17597,7 @@ void	FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 fr
 FPS_DIRECTIVES_m11	*FPS_initialize_directives_m11(FPS_DIRECTIVES_m11 *directives)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (directives == NULL)
@@ -17556,7 +17622,7 @@ FPS_DIRECTIVES_m11	*FPS_initialize_directives_m11(FPS_DIRECTIVES_m11 *directives
 FPS_PARAMETERS_m11	*FPS_initialize_parameters_m11(FPS_PARAMETERS_m11 *parameters)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (parameters == NULL)
@@ -17588,7 +17654,7 @@ inline
 TERN_m11	FPS_lock_m11(FILE_PROCESSING_STRUCT_m11 *fps, si4 lock_type, const si1 *function, ui4 behavior_on_fail)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -17622,7 +17688,7 @@ si8	FPS_memory_map_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si
 	si8		i, remaining_bytes, block_bytes;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (bytes_to_read == 0)
@@ -17706,10 +17772,6 @@ inline
 #endif
 void FPS_mutex_off_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 {
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
 	fps->parameters.mutex = FALSE_m11;
 	
 	return;
@@ -17721,18 +17783,8 @@ inline
 #endif
 void FPS_mutex_on_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 {
-#ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
-#endif
-	
-	while (fps->parameters.mutex == TRUE_m11) {
-		#if defined MACOS_m11 || defined LINUX_m11
+	while (fps->parameters.mutex == TRUE_m11)
 	      	nap_m11("500 ns");
-		#endif
-	      	#ifdef WINDOWS_m11
-	      	nap_m11("1 ms");  // limited to millisecond resolution
-	      	#endif
-	}
 	fps->parameters.mutex = TRUE_m11;
 	
 	return;
@@ -17757,7 +17809,7 @@ TERN_m11	FPS_open_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 
 #endif
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -17877,7 +17929,7 @@ si8	FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_
 	si8	bytes_read, bytes_remaining;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// mutex on
@@ -17929,7 +17981,7 @@ si8	FPS_read_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_
 TERN_m11	FPS_reallocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 new_raw_data_bytes)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (new_raw_data_bytes <= fps->parameters.raw_data_bytes)
@@ -17961,7 +18013,7 @@ inline
 void	FPS_seek_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	file_offset = REMOVE_DISCONTINUITY_m11(file_offset);
@@ -17981,7 +18033,7 @@ inline
 void	FPS_set_pointers_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->parameters.full_file_read == TRUE_m11 || fps->directives.memory_map == TRUE_m11)
@@ -18002,7 +18054,7 @@ void	FPS_show_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	si4	i;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	printf_m11("----------- File Processing Structure - START ----------\n");
@@ -18069,7 +18121,7 @@ inline
 void	FPS_sort_m11(FILE_PROCESSING_STRUCT_m11 **fps_array, si4 n_fps)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// input must be 2D FPS array, such as allocated by calloc_2D_m11()
@@ -18087,7 +18139,7 @@ inline
 si4	FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 behavior_on_fail)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -18125,7 +18177,7 @@ si8	FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to
 #endif
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// mutex on
@@ -18299,7 +18351,7 @@ ui1    *SHA_hash_m11(const ui1 *data, si8 len, ui1 *hash)
 	SHA_CTX_m11         ctx;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (globals_m11->SHA_h0_table == NULL)  // all tables initialized together
@@ -18342,7 +18394,7 @@ void	SHA_initialize_m11(SHA_CTX_m11 *ctx)
 TERN_m11	SHA_initialize_tables_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11->SHA_mutex == TRUE_m11) {
@@ -18512,7 +18564,7 @@ TERN_m11	STR_contains_regex_m11(si1 *string)
 	si1	c;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// NOT an exhaustive list of potential regex characters, just enough to know if regex is present
@@ -18544,7 +18596,7 @@ si1	*STR_match_end_m11(si1 *pattern, si1 *buffer)
 	si1	*pat_p, *buf_p;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	pat_len = strlen(pattern);
@@ -18572,7 +18624,7 @@ si1	*STR_match_end_m11(si1 *pattern, si1 *buffer)
 si1	*STR_match_line_end_m11(si1 *pattern, si1 *buffer)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns pointer to beginning of the line following the line with first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
@@ -18601,7 +18653,7 @@ si1	*STR_match_line_start_m11(si1 *pattern, si1 *buffer)
 	si1	*buf_p;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns pointer to beginning of the line containing the first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
@@ -18626,7 +18678,7 @@ si1	*STR_match_start_m11(si1 *pattern, si1 *buffer)
 	si1	*pat_p, *buf_p;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns pointer to beginning of the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
@@ -18654,7 +18706,7 @@ inline
 void    STR_replace_char_m11(si1 c, si1 new_c, si1 *buffer)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Note: does not handle UTF8 chars
@@ -18679,7 +18731,7 @@ si1	*STR_replace_pattern_m11(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 	si8	len, pat_len, new_pat_len;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (pattern == NULL || new_pattern == NULL || buffer == NULL)
@@ -18737,7 +18789,7 @@ inline
 void	STR_sort_m11(si1 **string_array, si8 n_strings)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// input must be 2D string array, such as allocated by calloc_2D_m11()
@@ -18754,7 +18806,7 @@ void    STR_strip_character_m11(si1 *s, si1 character)
 	si1	*c1, *c2;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	c1 = c2 = s;
@@ -18774,7 +18826,7 @@ void    STR_strip_character_m11(si1 *s, si1 character)
 void	STR_to_lower_m11(si1 *s)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	--s;
@@ -18792,7 +18844,7 @@ void	STR_to_title_m11(si1 *s)
 	TERN_m11	cap_mode;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// make all lower case
@@ -18894,7 +18946,7 @@ void	STR_to_title_m11(si1 *s)
 void	STR_to_upper_m11(si1 *s)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	--s;
@@ -19074,7 +19126,7 @@ void	UTF8_inc_m11(si1 *s, si4 *i)
 TERN_m11	UTF8_initialize_tables_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11->UTF8_mutex == TRUE_m11) {
@@ -19353,7 +19405,7 @@ si4     UTF8_strlen_m11(si1 *s)
 	si4	i = 0;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	while (UTF8_next_char_m11(s, &i))
@@ -19609,7 +19661,7 @@ si4    asprintf_m11(si1 **target, si1 *fmt, ...)
 	va_list		args;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	va_start(args, fmt);
@@ -19628,7 +19680,7 @@ void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	void	*ptr;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (n_members == 0 || el_size == 0)
@@ -19670,7 +19722,7 @@ void	**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 	size_t  dim1_bytes, dim2_bytes, content_bytes, total_bytes;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Returns pointer to 2 dimensional zeroed array of dim1 by dim2 elements of size el_size
@@ -19699,7 +19751,7 @@ void	**calloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 size_t	calloc_size_m11(void *address, size_t element_size)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	return (malloc_size_m11(address) / element_size);
@@ -19709,7 +19761,7 @@ size_t	calloc_size_m11(void *address, size_t element_size)
 void	exit_m11(si4 status)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -19732,7 +19784,7 @@ FILE	*fopen_m11(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 	FILE	*fp;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -19830,7 +19882,7 @@ si4     fprintf_m11(FILE *stream, si1 *fmt, ...)
 		else
 #endif
 		ret_val = fprintf(stream, "%s", temp_str);
-		free_m11((void *) temp_str, __FUNCTION__);
+		free((void *) temp_str);
 	}
 
 	return(ret_val);
@@ -19861,7 +19913,7 @@ size_t	fread_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 	size_t	nr;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -19895,7 +19947,7 @@ inline
 void    free_m11(void *ptr, const si1 *function)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (AT_remove_entry_m11(ptr, function) == TRUE_m11)
@@ -19912,7 +19964,7 @@ void    free_2D_m11(void **ptr, size_t dim1, const si1 *function)
 	void	*base_address;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 		
 	// dim1 == 0 indicates allocated en block per caller (caller could just use free_m11() in this case, as here)
@@ -19948,7 +20000,7 @@ si4     fscanf_m11(FILE *stream, si1 *fmt, ...)
 	va_list		args;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -19978,7 +20030,7 @@ si4     fscanf_m11(FILE *stream, si1 *fmt, ...)
 si4	fseek_m11(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20035,7 +20087,7 @@ si8	ftell_m11(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 	si8	pos;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20089,7 +20141,7 @@ size_t	fwrite_m11(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 	size_t	nw;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20123,7 +20175,7 @@ inline
 char	*getcwd_m11(char *buf, size_t size)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -20140,7 +20192,7 @@ void	*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	void	*ptr;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20182,7 +20234,7 @@ void	**malloc_2D_m11(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 	size_t  dim1_bytes, dim2_bytes, content_bytes, total_bytes;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Returns pointer to 2 dimensional array (not zeroed) of dim1 by dim2 elements of size el_size
@@ -20215,7 +20267,7 @@ size_t	malloc_size_m11(void *address)
 	AT_NODE		*atn;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	atn = globals_m11->AT_nodes;
@@ -20238,7 +20290,7 @@ void	memset_m11(void *ptr, const void *pattern, size_t pat_len, size_t n_members
 	size_t	buf_len;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	buf_len = n_members * pat_len;
@@ -20306,7 +20358,7 @@ TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *functi
 	si4			ret_val;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	#if defined MACOS_m11 || defined LINUX_m11
@@ -20363,7 +20415,7 @@ inline
 TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	#if defined MACOS_m11 || defined LINUX_m11
@@ -20467,9 +20519,10 @@ si4	putchar_m11(si4 c)
 void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
+	AT_NODE	*atn;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20480,6 +20533,12 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 			free_m11((void *) orig_ptr, function);
 		return((void *) NULL);
 	}
+	
+	// see if already has enough memory
+	atn = AT_find_entry_m11(orig_ptr);
+	if (atn != NULL)
+		if (atn->bytes >= n_bytes)
+			return(orig_ptr);
 	
 	if ((ptr = realloc(orig_ptr, n_bytes)) == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
@@ -20514,7 +20573,7 @@ void	**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t
 	size_t	least_dim1, least_dim2;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Returns pointer to a reallocated 2 dimensional array of new_dim1 by new_dim2 elements of size el_size (new unused elements are zeroed)
@@ -20560,7 +20619,7 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 	ui1	*ui1_p;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20612,7 +20671,7 @@ si4     scanf_m11(si1 *fmt, ...)
 	va_list     args;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -20690,7 +20749,7 @@ si4     sscanf_m11(si1 *target, si1 *fmt, ...)
 	va_list		args;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
@@ -20722,7 +20781,7 @@ si8     strcat_m11(si1 *target, si1 *source)
 	si1	*c;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns final length (not including terminal zero)
@@ -20744,7 +20803,7 @@ si8     strcpy_m11(si1 *target, si1 *source)
 	si1	*c;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns length (not including terminal zero)
@@ -20765,7 +20824,7 @@ si8    strncat_m11(si1 *target, si1 *source, si4 target_field_bytes)
 	si8	len = 0;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns final length (not including terminal zeros)
@@ -20812,7 +20871,7 @@ si8    strncpy_m11(si1 *target, si1 *source, si4 target_field_bytes)
 	si8	len = 0;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// returns length (not including terminal zeros)
@@ -20855,7 +20914,7 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 	si4	ret_val, len;
 	
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -20881,7 +20940,7 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 			usleep((useconds_t) 1000);  // wait 1 ms
 			if ((ret_val = system(command)) == 0) {
 				if (null_std_streams == TRUE_m11)
-					free((void *) command);
+					free((void *) temp_command);
 				return(0);
 			}
 #endif
@@ -20889,7 +20948,7 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 			Sleep(1);  // wait 1 ms
 			if ((ret_val = win_system_m11(command)) == 0) {
 				if (null_std_streams == TRUE_m11)
-					free((void *) command);
+					free((void *) temp_command);
 				return(0);
 			}
 #endif
@@ -20909,7 +20968,7 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 		}
 		if (behavior_on_fail & RETURN_ON_FAIL_m11) {
 			if (null_std_streams == TRUE_m11)
-				free((void *) command);
+				free((void *) temp_command);
 			return(-1);
 		} else if (behavior_on_fail & EXIT_ON_FAIL_m11) {
 			exit_m11(-1);
@@ -20917,7 +20976,7 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 	}
 	
 	if (null_std_streams == TRUE_m11)
-		free((void *) command);
+		free((void *) temp_command);
 	
 	return(0);
 }

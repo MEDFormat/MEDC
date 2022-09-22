@@ -1968,12 +1968,18 @@ si1		*windify_format_string_m11(si1 *fmt);
 //*********************  MED AT Functions (allocation tracking)  *******************//
 //**********************************************************************************//
 
+#define AT_CURRENTLY_ALLOCATED_m11	((ui4) 1)
+#define AT_PREVIOUSLY_FREED_m11		((ui4) 2)
+#define AT_ALL_m11			(AT_CURRENTLY_ALLOCATED_m11 | AT_PREVIOUSLY_FREED_m11)
+
 void		AT_add_entry_m11(void *address, const si1 *function);
+AT_NODE		*AT_find_entry_m11(void *address);
+void		AT_free_all_m11(void);
 TERN_m11	AT_freeable_m11(void *address);
 void		AT_mutex_off(void);
 void		AT_mutex_on(void);
 TERN_m11 	AT_remove_entry_m11(void *address, const si1 *function);
-void		AT_show_entries_m11(void);
+void		AT_show_entries_m11(ui4 entry_type);
 void		AT_show_entry_m11(void *address);
 TERN_m11 	AT_update_entry_m11(void *orig_address, void *new_address, const si1 *function);
 
