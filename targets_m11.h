@@ -32,4 +32,12 @@
 // Define one of these here if appropriate
 // #define MATLAB_m11  // for screen output functions & exit()
 
+//**********************************************************************************//
+//***********************************  Debug Modes  ********************************//
+//**********************************************************************************//
+
+// #define FN_DEBUG_m11  // uncomment to show function entries (and recompile medlib_m11.c)
+// #define AT_DEBUG_m11  // uncomment for debug behavior in allocation tracking (and recompile medlib_m11.c)
+
+
 #endif  // TARGETS_IN_m11
