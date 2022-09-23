@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 	extern GLOBALS_m11		*globals_m11;
 	TERN_m11			show_records, show_file_processing_structs, show_time_slices;
 	si1				out_dir[FULL_FILE_NAME_BYTES_m11], out_file[FULL_FILE_NAME_BYTES_m11], *password;
-	si4				list_len, seg_offset, n_segs;
+	si4				list_len, seg_idx, n_segs;
 	ui8				flags;
 	si8				i, j, k, n_samps;
 	void				*file_list;
@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
 	}
 
 	// read session
-	flags = LH_SINGLE_READ_DEFAULT_m11;
+	flags = LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_SLICE_ALL_RECORDS_m11;
 	// show_level_header_flags_m11(flags);
 	sess = read_session_m11(NULL, &slice, (void *) file_list, list_len, flags, password);
 	if (sess == NULL) {
@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 		show_time_slice_m11(&slice);
 	}
 
-	seg_offset = get_segment_offset_m11((LEVEL_HEADER_m11 *) sess);  // seg_offset != 0 if all segments are mapped & slice does not start at first segment (multi-read usage)
+	seg_idx = get_segment_index_m11(slice.start_segment_number);  // seg_idx != 0 if all segments are mapped & slice does not start at first segment (multi-read usage)
 	n_segs = slice.number_of_segments;
 
 	// show session records
@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 			show_records_m11(sess->record_data_fps, my_rec_filters);  // pass NULL for filters to use global filters (if globals also NULL, it shows all record types)
 		ssr = sess->segmented_sess_recs;
 		if (ssr != NULL) {
-			for (i = slice.start_segment_number, j = seg_offset; i <= slice.end_segment_number; ++i, ++j) {
+			for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 				if (ssr->record_data_fps[j] != NULL)
 					show_records_m11(ssr->record_data_fps[j], my_rec_filters);
 			}
@@ -185,7 +185,7 @@ int main(int argc, char *argv[])
 		sprintf_m11(out_file, "%s/%s.raw", out_dir, chan->name);
 		out_fp = fopen_m11(out_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 
-		for (j = 0, k = seg_offset; j < n_segs; ++j, ++k) {
+		for (j = 0, k = seg_idx; j < n_segs; ++j, ++k) {
 
 			seg = chan->segments[k];
 
