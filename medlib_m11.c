@@ -12866,10 +12866,48 @@ void	AT_add_entry_m11(void *address, const si1 *function)
 }
 
 
+ui8	AT_alloc_size_m11(void *address)
+{
+	si8		i;
+	ui8		bytes;
+	AT_NODE		*atn;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	if (address == NULL) {
+		#ifdef AT_DEBUG_m11
+		warning_message_m11("%s(): attempting find a NULL object\n", __FUNCTION__);
+		#endif
+		return(0);
+	}
+	
+	AT_mutex_on();
+
+	atn = globals_m11->AT_nodes;
+	for (i = globals_m11->AT_node_count; i--; ++atn) {
+		if (atn->address == address) {
+			bytes = atn->bytes;
+			AT_mutex_off();
+			return(bytes);
+		}
+	}
+	
+	#ifdef AT_DEBUG_m11
+	message_m11("%s(): no entry for address %lu\n", __FUNCTION__, (ui8) address);
+	#endif
+	AT_mutex_off();
+
+	return(0);
+}
+
+
 void	AT_free_all_m11(void)
 {
 	si8		i;
 	AT_NODE		*atn;
+	
 #ifdef AT_DEBUG_m11
 	si8		alloced_entries = 0;
 #endif
@@ -12962,43 +13000,6 @@ TERN_m11	AT_freeable_m11(void *address)
 	AT_mutex_off();
 	
 	return(TRUE_m11);
-}
-
-
-ui8	AT_malloc_size_m11(void *address)
-{
-	si8		i;
-	ui8		bytes;
-	AT_NODE		*atn;
-	
-#ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
-#endif
-	
-	if (address == NULL) {
-		#ifdef AT_DEBUG_m11
-		warning_message_m11("%s(): attempting find a NULL object\n", __FUNCTION__);
-		#endif
-		return(0);
-	}
-	
-	AT_mutex_on();
-
-	atn = globals_m11->AT_nodes;
-	for (i = globals_m11->AT_node_count; i--; ++atn) {
-		if (atn->address == address) {
-			bytes = atn->bytes;
-			AT_mutex_off();
-			return(bytes);
-		}
-	}
-	
-	#ifdef AT_DEBUG_m11
-	message_m11("%s(): no entry for address %lu\n", __FUNCTION__, (ui8) address);
-	#endif
-	AT_mutex_off();
-
-	return(0);
 }
 
 
@@ -20537,7 +20538,7 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	}
 	
 	// see if already has enough memory
-	alloced_bytes = AT_malloc_size_m11(orig_ptr);
+	alloced_bytes = AT_alloc_size_m11(orig_ptr);
 	if (alloced_bytes >= n_bytes)
 		return(orig_ptr);
 	

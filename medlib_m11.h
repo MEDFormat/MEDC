@@ -1973,9 +1973,9 @@ si1		*windify_format_string_m11(si1 *fmt);
 #define AT_ALL_m11			(AT_CURRENTLY_ALLOCATED_m11 | AT_PREVIOUSLY_FREED_m11)
 
 void		AT_add_entry_m11(void *address, const si1 *function);
+ui8		AT_alloc_size_m11(void *address);
 void		AT_free_all_m11(void);
 TERN_m11	AT_freeable_m11(void *address);
-ui8		AT_malloc_size_m11(void *address);
 void		AT_mutex_off(void);
 void		AT_mutex_on(void);
 TERN_m11 	AT_remove_entry_m11(void *address, const si1 *function);
