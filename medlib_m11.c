@@ -3987,7 +3987,7 @@ si8     frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uut
 	si4			seg_num, seg_idx;
 	si8                     frame_number, n_inds, i, absolute_numbering_offset;
 	si8			ref_frame_number, ref_uutc;
-	sf8                     tmp_sf8, frame_rate;
+	sf8                     tmp_sf8, frame_rate, rounded_frame_num, frame_num_eps;
 	ui4			mask;
 	va_list			args;
 	SEGMENT_m11		*seg;
@@ -4092,7 +4092,14 @@ si8     frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uut
 		}
 	}
 	
+	// round up if very close to next frame
 	tmp_sf8 = ((sf8) (target_uutc - ref_uutc) / (sf8) 1e6) * frame_rate;
+	rounded_frame_num = (sf8) ((si8) (tmp_sf8 + (sf8) 0.5));
+	frame_num_eps = rounded_frame_num - tmp_sf8;
+	if (frame_num_eps > (sf8) 0.0)
+		if (frame_num_eps < FRAME_NUMBER_EPS_m11)
+			tmp_sf8 = rounded_frame_num;
+	
 	mask = (ui4) (FIND_CLOSEST_m11 | FIND_NEXT_m11 | FIND_CURRENT_m11 | FIND_PREVIOUS_m11);
 	switch (mode & mask) {
 		case FIND_CLOSEST_m11:
@@ -9127,7 +9134,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 	si4			seg_num, seg_idx;
 	si8                     sample_number, n_inds, i, absolute_numbering_offset;
 	si8			ref_sample_number, ref_uutc;
-	sf8                     tmp_sf8, sampling_frequency;
+	sf8                     tmp_sf8, sampling_frequency, rounded_samp_num, samp_num_eps;
 	ui4			mask;
 	va_list			args;
 	TIME_SERIES_INDEX_m11	*tsi;
@@ -9233,7 +9240,14 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 		}
 	}
 	
+	// round up if very close to next sample
 	tmp_sf8 = ((sf8) (target_uutc - ref_uutc) / (sf8) 1e6) * sampling_frequency;
+	rounded_samp_num = (sf8) ((si8) (tmp_sf8 + (sf8) 0.5));
+	samp_num_eps = rounded_samp_num - tmp_sf8;
+	if (samp_num_eps > (sf8) 0.0)
+		if (samp_num_eps < SAMPLE_NUMBER_EPS_m11)
+			tmp_sf8 = rounded_samp_num;
+	
 	mask = (ui4) (FIND_CLOSEST_m11 | FIND_NEXT_m11 | FIND_CURRENT_m11 | FIND_PREVIOUS_m11);
 	switch (mode & mask) {
 		case FIND_CLOSEST_m11:

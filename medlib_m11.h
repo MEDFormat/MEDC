@@ -366,6 +366,9 @@ typedef struct {
 	#define PRINTF_BUF_LEN_m11		1024
 	#define NULL_DEVICE_m11			"NUL"
 #endif
+#define SAMPLE_NUMBER_EPS_m11			((sf8) 0.001)
+#define FRAME_NUMBER_EPS_m11			((sf8) 0.01)
+
 
 // Error Handling Constants
 #define USE_GLOBAL_BEHAVIOR_m11         ((ui4) 0)
