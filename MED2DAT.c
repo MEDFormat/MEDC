@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 	extern GLOBALS_m11		*globals_m11;
 	si1				out_dir[FULL_FILE_NAME_BYTES_m11], out_file[FULL_FILE_NAME_BYTES_m11], *password;
 	si2				*out_arr;
-	si4				n_channels, seg_offset, list_len;
+	si4				n_channels, seg_idx, list_len;
 	ui8				flags;
 	si8				i, j, k, m, n_samps, n_segs, progress_loops, progress_loop_ctr, curr_samp;
 	sf8				progress, tmp_sf8, f_tot_samps;
@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
 		exit_m11(1);
 	}
 	slice = sess->time_slice;
-	seg_offset = get_segment_offset_m11((LEVEL_HEADER_m11 *) sess);  // seg_offset != 0 if all segments are mapped & slice does not start at first segment (multi-read usage)
+	seg_idx = get_segment_index_m11(slice.start_segment_number);
 	n_segs = slice.number_of_segments;
 
 	// set up for write out
@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
 	// interleave channel data
 	printf_m11("\n\nProgress: 0.00%%   ");  fflush(stdout);
 	curr_samp = 0;
-	for (i = 0, j = seg_offset; i < n_segs; ++i, ++j) {
+	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 		seg = chan_0->segments[j];
 		n_samps = TIME_SLICE_SAMPLE_COUNT_m11((&seg->time_slice));  // assuming same number of samples per segment here
 		for (k = 0; k < n_samps; ++k) {
@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
 	
 	// clean up
 	free_session_m11(sess, TRUE_m11);
-	free_m11((void *) out_arr, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	free_m11((void *) out_arr, __FUNCTION__);
 	free_globals_m11(TRUE_m11);
 	
 	return(0);
