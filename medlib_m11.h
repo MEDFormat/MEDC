@@ -348,9 +348,10 @@ typedef struct {
 #define FIRST_OPEN_SEGMENT_m11			-2
 #define CHANNEL_NUMBER_NO_ENTRY_m11             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m11         -2
-#define DOES_NOT_EXIST_m11                      0
-#define FILE_EXISTS_m11                         1
-#define DIR_EXISTS_m11                          2
+#define FILE_EXISTS_ERROR_m11                   1
+#define DOES_NOT_EXIST_m11                      2
+#define FILE_EXISTS_m11                         4
+#define DIR_EXISTS_m11                          8
 #define SIZE_STRING_BYTES_m11                   32
 #define UNKNOWN_SEARCH_m11                      0
 #define TIME_SEARCH_m11                         1
@@ -476,6 +477,7 @@ typedef struct {
 #define TIME_STRING_BYTES_m11                           128
 #define NUMBER_OF_SAMPLES_NO_ENTRY_m11			-1
 #define NUMBER_OF_FRAMES_NO_ENTRY_m11			NUMBER_OF_SAMPLES_NO_ENTRY_m11
+#define EMPTY_SLICE_m11					-1
 #define SAMPLE_NUMBER_NO_ENTRY_m11                      ((si8) 0x8000000000000000)
 #define FRAME_NUMBER_NO_ENTRY_m11                       SAMPLE_NUMBER_NO_ENTRY_m11
 #define BEGINNING_OF_SAMPLE_NUMBERS_m11                 ((si8) 0x000000000)
@@ -588,12 +590,18 @@ typedef struct {
 #define TIME_SERIES_CHANNEL_TYPE_m11	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m11
 #define VIDEO_CHANNEL_TYPE_m11		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m11
 
-// Path Parts
-#define PP_PATH_m11             1
-#define PP_NAME_m11             2
-#define PP_EXTENSION_m11        4
-#define PP_FULL_PATH_m11        (PP_PATH_m11 | PP_NAME_m11 | PP_EXTENSION_m11)
+// Generate File List flags
+	// Path Parts
+#define GFL_PATH_m11             		((ui4) 1)
+#define GFL_NAME_m11             		((ui4) 2)
+#define GFL_EXTENSION_m11        		((ui4) 4)
+#define GFL_FULL_PATH_m11        		(GFL_PATH_m11 | GFL_NAME_m11 | GFL_EXTENSION_m11)
+#define GFL_PATH_PARTS_MASK_m11        		GFL_FULL_PATH_m11
+	// Other Options
+#define GFL_FREE_INPUT_FILE_LIST_m11		((ui4) 16)
+#define GFL_INCLUDE_INVISIBLE_FILES_m11		((ui4) 32)
 
+// Spaces Constants
 #define NO_SPACES_m11                           0
 #define ESCAPED_SPACES_m11                      1
 #define UNESCAPED_SPACES_m11                    2
@@ -1443,12 +1451,19 @@ typedef struct {
 	ui4     video_file_number;
 } VIDEO_INDEX_m11;
 
+typedef struct {
+	si8     file_offset;  // negative values indicate discontinuity
+	si8	start_time;
+	ui1     pad[8];
+} GENERIC_INDEX_m11;
+
 // All index structures are the same size
 typedef struct {
 	union {
 		RECORD_INDEX_m11	record_index;
 		TIME_SERIES_INDEX_m11	time_series_index;
 		VIDEO_INDEX_m11		video_index;
+		GENERIC_INDEX_m11	generic_index;
 	};
 } INDEX_m11;
 
@@ -1860,7 +1875,7 @@ void            free_channel_m11(CHANNEL_m11* channel, TERN_m11 free_channel_str
 void            free_globals_m11(TERN_m11 cleanup_for_exit);
 void            free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure);
 void            free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure);
-si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui1 path_parts, TERN_m11 free_input_file_list);
+si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string);
 ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		**generate_numbered_names_m11(si1 **names, si1 *prefix, si4 number_of_names);
@@ -1930,11 +1945,13 @@ void            show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 
 void            show_password_data_m11(PASSWORD_DATA_m11 *pwd);
 void		show_password_hints_m11(PASSWORD_DATA_m11 *pwd);
 void		show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_filters);
+void		show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header);
 void    	show_time_slice_m11(TIME_SLICE_m11 *slice);
 void            show_timezone_info_m11(TIMEZONE_INFO_m11 *timezone_entry, TERN_m11 show_DST_detail);
 void            show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER_m11 *uh);
 TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess);
 si1		*time_string_m11(si8 uutc_time, si1 *time_str, TERN_m11 fixed_width, TERN_m11 relative_days, si4 colored_text, ...);
+void		update_maximum_entry_size_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 void            unescape_spaces_m11(si1 *string);
 si8		uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency

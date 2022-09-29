@@ -183,7 +183,7 @@ CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 
 		case VIDEO_CHANNEL_TYPE_m11:
 			break;
 		default:
-			error_message_m11("Error: unrecognized channel type code \"0x%x\" [function \"%s\", line %d]\n", type_code, __FUNCTION__, __LINE__);
+			error_message_m11("%s():: unrecognized channel type code \"0x%x\"\n", __FUNCTION__);
 			return(NULL);
 	}
 	type_str = MED_type_string_from_code_m11(type_code);
@@ -277,7 +277,7 @@ SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *
 			snprintf_m11(seg->video_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m11);
 			break;
 		default:
-			error_message_m11("Error: unrecognized type code \"0x%x\" [function \"%s\", line %d]\n", type_code, __FUNCTION__, __LINE__);
+			error_message_m11("%s(): unrecognized type code \"0x%x\"\n", __FUNCTION__, type_code);
 			return(NULL);
 	}
 	
@@ -806,7 +806,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 	
 	// use metadata files (much less efficient)
 	else if (chan != NULL) {  // ri_fps == NULL
-		seg_list = generate_file_list_m11(NULL, &n_segs, chan->path, NULL, "?isd", PP_FULL_PATH_m11, FALSE_m11);
+		seg_list = generate_file_list_m11(NULL, &n_segs, chan->path, NULL, "?isd", GFL_FULL_PATH_m11);
 		globals_m11->number_of_session_segments = n_segs;
 		
 		// allocate Sgmt_records array
@@ -869,7 +869,8 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 
 si8	bytes_for_items_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_items, si8 read_file_offset)
 {
-	si8				i, bytes, entry_size, max_bytes;
+	ui4				entry_size;
+	si8				i, bytes, max_bytes;
 	RECORD_HEADER_m11		*rh;
 	CMP_BLOCK_FIXED_HEADER_m11	*bh;
 	UNIVERSAL_HEADER_m11		*uh;
@@ -888,10 +889,12 @@ si8	bytes_for_items_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_items, s
 		case VIDEO_INDICES_FILE_TYPE_CODE_m11:
 		case RECORD_INDICES_FILE_TYPE_CODE_m11:
 			bytes = *number_of_items * INDEX_BYTES_m11;
+			uh->maximum_entry_size = INDEX_BYTES_m11;
 			break;
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m11:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m11:
 			bytes = METADATA_BYTES_m11;
+			uh->maximum_entry_size = METADATA_BYTES_m11;
 			*number_of_items = 1;
 			break;
 	}
@@ -2678,7 +2681,7 @@ TERN_m11     decrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 			continue;
 		}
 		
-		// calculated encyrption blocks
+		// calculated encryption blocks
 		encryptable_blocks = (bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m11) / ENCRYPTION_BLOCK_BYTES_m11;
 		if (bh->block_flags | CMP_BF_MBE_ENCODING_MASK_m11) {
 			encryption_blocks = encryptable_blocks;
@@ -3168,6 +3171,7 @@ ui4     file_exists_m11(si1 *path)  // can be used for directories also
 	if (*path == 0)
 		return(DOES_NOT_EXIST_m11);
 	
+	tmp_path[0] = 0;
 	if (path_from_root_m11(path, tmp_path) == FALSE_m11)
 		path = tmp_path;
 
@@ -3177,6 +3181,7 @@ ui4     file_exists_m11(si1 *path)  // can be used for directories also
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m11);
+		return(FILE_EXISTS_ERROR_m11);
 	} else if (S_ISDIR(sb.st_mode)) {
 		return(DIR_EXISTS_m11);
 	}
@@ -3186,6 +3191,7 @@ ui4     file_exists_m11(si1 *path)  // can be used for directories also
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m11);
+		return(FILE_EXISTS_ERROR_m11);
 	} else if ((sb.st_mode & S_IFMT) == S_IFDIR) {
 		return(DIR_EXISTS_m11);
 	}
@@ -3846,6 +3852,11 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 	if (find_h == INVALID_HANDLE_VALUE)
 		return(NULL);
 	name = ffd.cFileName;
+	while (*name == '.') {
+		if (FindNextFileA(find_h, &ffd) == 0)
+			return(NULL);
+		name = ffd.cFileName;
+	}
 	strcpy(md_path + len + 1, name);
 	FindClose(find_h);
 	
@@ -3857,6 +3868,11 @@ WIN_FIND_MDF_CHAN_LEVEL_m11:
 	if (find_h == INVALID_HANDLE_VALUE)
 		return(NULL);
 	name = ffd.cFileName;
+	while (*name == '.') {
+		if (FindNextFileA(find_h, &ffd) == 0)
+			return(NULL);
+		name = ffd.cFileName;
+	}
 	strcpy(md_path + len + 1, name);
 	FindClose(find_h);
 
@@ -3868,6 +3884,11 @@ WIN_FIND_MDF_SEG_LEVEL_m11:
 	if (find_h == INVALID_HANDLE_VALUE)
 		return(NULL);
 	name = ffd.cFileName;
+	while (*name == '.') {
+		if (FindNextFileA(find_h, &ffd) == 0)
+			return(NULL);
+		name = ffd.cFileName;
+	}
 	strcpy(md_path + len + 1, name);
 	FindClose(find_h);
 
@@ -4230,10 +4251,10 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__);
 	
 	if (globals_m11->UTF8_offsets_table != NULL)
-		free_m11((void *) globals_m11->UTF8_offsets_table, __FUNCTION__);
+		free((void *) globals_m11->UTF8_offsets_table);  // UTF8 tables are not allocted with AT functions
 	
 	if (globals_m11->UTF8_trailing_bytes_table != NULL)
-		free_m11((void *) globals_m11->UTF8_trailing_bytes_table, __FUNCTION__);
+		free((void *) globals_m11->UTF8_trailing_bytes_table);  // UTF8 tables are not allocted with AT functions
 	
 	if (globals_m11->behavior_stack != NULL)
 		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
@@ -4242,7 +4263,7 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
 		#endif
-		free((void *) globals_m11->AT_nodes);
+		free((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
 
 	if (cleanup_for_exit == TRUE_m11) {
@@ -4423,13 +4444,14 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 }
 
 
-si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui1 path_parts, TERN_m11 free_input_file_list)
+si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags)
 {
 	TERN_m11	regex;
 	si1		tmp_enclosing_directory[FULL_FILE_NAME_BYTES_m11], tmp_path[FULL_FILE_NAME_BYTES_m11];
 	si1		tmp_name[FULL_FILE_NAME_BYTES_m11], tmp_extension[16], tmp_ext[16];
 	si1		**tmp_ptr_ptr;
-	si4		i, ret_val, n_in_files, *n_out_files;
+	ui4		path_parts;
+	si4		i, j, ret_val, n_in_files, *n_out_files;
 	FILE		*fp;
 	
 #ifdef FN_DEBUG_m11
@@ -4442,19 +4464,18 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	
 	n_in_files = *n_files;
 	n_out_files = n_files;
-	
+	path_parts = flags & GFL_PATH_PARTS_MASK_m11;
+
 	// quick bailout for nothing to do
-	if (path_parts == PP_FULL_PATH_m11) {
-		if (check_file_list_m11(file_list, n_in_files) == TRUE_m11) {
-			// caller expects a copy to be returned
-			if (free_input_file_list == FALSE_m11) {
-				tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-				for (i = 0; i < n_in_files; ++i)
-					strcpy(tmp_ptr_ptr[i], file_list[i]);
-				file_list = tmp_ptr_ptr;
-			}
-			return(file_list);
+	if (check_file_list_m11(file_list, n_in_files) == TRUE_m11) {
+		// caller expects a copy to be returned
+		if ((flags & GFL_FREE_INPUT_FILE_LIST_m11) == 0) {
+			tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			for (i = 0; i < n_in_files; ++i)
+				strcpy(tmp_ptr_ptr[i], file_list[i]);
+			file_list = tmp_ptr_ptr;
 		}
+		goto GFL_CONDITION_RETURN_DATA_m11;
 	}
 		
 	// copy incoming arguments so as not to modify, and in case they are const type
@@ -4504,7 +4525,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 			if (*tmp_ext == 0 && *extension)
 				sprintf_m11(tmp_ptr_ptr[i], "%s.%s", tmp_ptr_ptr[i], extension);
 		}
-		if (free_input_file_list == TRUE_m11)
+		if (flags & GFL_FREE_INPUT_FILE_LIST_m11)
 			free_2D_m11((void **) file_list, n_in_files, __FUNCTION__);
 		file_list = tmp_ptr_ptr;
 	}
@@ -4538,6 +4559,12 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		for (i = 0; i < n_in_files; ++i) {
 			escape_spaces_m11(file_list[i], FULL_FILE_NAME_BYTES_m11);
 			sprintf_m11(command, "%s %s", command, file_list[i]);
+			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m11) {
+				extract_path_parts_m11(file_list[i], NULL, name, extension);
+				sprintf_m11(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
+				if (*extension)
+					sprintf_m11(command, "%s.%s", command, extension);
+			}
 		}
 		sprintf_m11(command, "%s > %s 2> %s", command, globals_m11->temp_file, NULL_DEVICE_m11);
 		free_m11((void *) file_list, __FUNCTION__);
@@ -4588,26 +4615,36 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		fclose(fp);
 	}
 	
+GFL_CONDITION_RETURN_DATA_m11:
+	
 	// return requested path parts
-	if (path_parts != PP_FULL_PATH_m11) {
-		for (i = 0; i < *n_out_files; ++i) {
-			extract_path_parts_m11(file_list[i], enclosing_directory, tmp_name, tmp_extension);
-			switch (path_parts) {
-				case (PP_PATH_m11 | PP_NAME_m11):
-					sprintf_m11(file_list[i], "%s/%s", enclosing_directory, tmp_name);
-					break;
-				case (PP_NAME_m11 | PP_EXTENSION_m11):
-					sprintf_m11(file_list[i], "%s.%s", tmp_name, tmp_extension);
-					break;
-				case PP_NAME_m11:
-					strcpy(file_list[i], tmp_name);
-					break;
-				default:
-					error_message_m11("%s(): unrecognized path component combination (path_parts == %hhu)\n", __FUNCTION__, path_parts);
-					break;
-			}
+	for (i = j = 0; i < *n_out_files; ++i) {
+		extract_path_parts_m11(file_list[i], enclosing_directory, tmp_name, tmp_extension);
+		// exclude invisible files
+		if ((flags & GFL_INCLUDE_INVISIBLE_FILES_m11) == 0)
+			if (*tmp_name == '.')
+				continue;
+		switch (path_parts) {
+			case (GFL_FULL_PATH_m11):
+				if (i != j)
+					strcpy(file_list[j], file_list[i]);
+				break;
+			case (GFL_PATH_m11 | GFL_NAME_m11):
+				sprintf_m11(file_list[j], "%s/%s", enclosing_directory, tmp_name);
+				break;
+			case (GFL_NAME_m11 | GFL_EXTENSION_m11):
+				sprintf_m11(file_list[j], "%s.%s", tmp_name, tmp_extension);
+				break;
+			case GFL_NAME_m11:
+				strcpy(file_list[j], tmp_name);
+				break;
+			default:
+				error_message_m11("%s(): unrecognized path component combination (path_parts == %hhu)\n", __FUNCTION__, path_parts);
+				break;
 		}
+		++j;
 	}
+	*n_out_files = j;
 	
 	// sort file list (so results are consistent across operating systems)
 	STR_sort_m11(file_list, *n_out_files);
@@ -4647,56 +4684,62 @@ si1	*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string)
 ui4    generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1 *MED_name)
 {
 	si1     extension[TYPE_BYTES_m11], local_MED_name[SEGMENT_BASE_FILE_NAME_BYTES_m11];
-	si1     unescaped_path[FULL_FILE_NAME_BYTES_m11], temp_path[FULL_FILE_NAME_BYTES_m11];;
-	si4     fe;
+	si1     local_MED_dir[FULL_FILE_NAME_BYTES_m11];;
+	si4     fe, name_bytes;
 	ui4     code;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	strcpy(unescaped_path, path);
-	unescape_spaces_m11(unescaped_path);
-	fe = file_exists_m11(unescaped_path);
-	
-	// check input path: if file passed, get enclosing directory
-	if (fe == FILE_EXISTS_m11) {
-		extract_path_parts_m11(unescaped_path, temp_path, NULL, extension);
-		code = MED_type_code_from_string_m11(extension);
-		if (code == NO_TYPE_CODE_m11) {
-			error_message_m11("%s(): passed file \"%s\" is not a MED file => returning\n", __FUNCTION__, path);
-			return(NO_TYPE_CODE_m11);
-		}
-	} else if (fe == DIR_EXISTS_m11) {
-		strcpy(temp_path, unescaped_path);
-	} else {
-		error_message_m11("%s(): passed path \"%s\" does not exist => returning\n", __FUNCTION__, path);
-		return(NO_TYPE_CODE_m11);
-	}
-	
+	if (MED_dir == NULL)
+		MED_dir = local_MED_dir;
 	if (MED_name == NULL)
 		MED_name = local_MED_name;
-	extract_path_parts_m11(temp_path, MED_dir, MED_name, extension);
-	
+
+	// copy & condition path
+	strcpy(local_MED_dir, path);
+	unescape_spaces_m11(local_MED_dir);  // this can happen if string with escaped spaces is also quoted (e.g. by a shell script) - pretty uncommon though
+	path_from_root_m11(local_MED_dir, local_MED_dir);
+		
+	// check path: if file passed, get enclosing directory
+	fe = file_exists_m11(local_MED_dir);
+	if (fe == FILE_EXISTS_m11) {
+		extract_path_parts_m11(local_MED_dir, local_MED_dir, NULL, NULL);
+	} else if (fe == DOES_NOT_EXIST_m11) {
+		error_message_m11("%s(): passed path \"%s\" does not exist => returning\n", __FUNCTION__, local_MED_dir);
+		return(NO_TYPE_CODE_m11);
+	} else if (fe == FILE_EXISTS_ERROR_m11) {
+		error_message_m11("%s(): file_exists_m11 error() => returning\n", __FUNCTION__);
+		return(NO_TYPE_CODE_m11);
+	}
+
+	// get name & extension
+	extract_path_parts_m11(local_MED_dir, NULL, local_MED_name, extension);
+
 	code = MED_type_code_from_string_m11(extension);
 	switch (code) {
 		case SESSION_DIRECTORY_TYPE_CODE_m11:
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m11:
 		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m11:
-			snprintf_m11(MED_name, BASE_FILE_NAME_BYTES_m11, "%s", MED_name);
+		case RECORD_DIRECTORY_TYPE_CODE_m11:
+			name_bytes = BASE_FILE_NAME_BYTES_m11;
 			break;
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m11:
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m11:
-			snprintf_m11(MED_name, SEGMENT_BASE_FILE_NAME_BYTES_m11, "%s", MED_name);
+			name_bytes = SEGMENT_BASE_FILE_NAME_BYTES_m11;
 			break;
 		default:
-			error_message_m11("%s(): passed path \"%s\" is not a MED directory\n", __FUNCTION__, temp_path);
+			error_message_m11("%s(): passed path \"%s\" is not a MED directory\n", __FUNCTION__, local_MED_dir);
 			return(NO_TYPE_CODE_m11);
 	}
-	
+
+	// copy to outputs, if provided
 	if (MED_dir != NULL)
-		snprintf_m11(MED_dir, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", MED_dir, MED_name, extension);
-	
+		snprintf_m11(MED_dir, FULL_FILE_NAME_BYTES_m11, "%s", local_MED_dir);
+	if (MED_name != NULL)
+		snprintf_m11(MED_name, name_bytes, "%s", local_MED_name);
+
 	return(code);
 }
 
@@ -4977,7 +5020,7 @@ ui1	get_cpu_endianness_m11(void)
 #endif
 	
 	ui2	x = 1;
-	
+
 	return(*((ui1 *) &x));
 }
 
@@ -5243,7 +5286,7 @@ si4	get_segment_index_m11(si4 segment_number)
 si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice)
 {
 	TERN_m11			Sgmts_adequate, free_fps;
-	si1				tmp_str[FULL_FILE_NAME_BYTES_m11], sess_path[FULL_FILE_NAME_BYTES_m11], sess_name[FULL_FILE_NAME_BYTES_m11];
+	si1				tmp_str[FULL_FILE_NAME_BYTES_m11], sess_path[FULL_FILE_NAME_BYTES_m11], *sess_name;
 	ui4				file_exists;
 	si4				search_mode, n_segs;
 	si8				i, n_recs;
@@ -5271,6 +5314,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		case LH_TIME_SERIES_CHANNEL_m11:
 		case LH_VIDEO_CHANNEL_m11:
 			chan = (CHANNEL_m11 *) level_header;
+			sess = chan->super;
 			Sgmt_records = chan->Sgmt_records;
 			break;
 		default:
@@ -5302,29 +5346,35 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		
 		// no channel level Sgmt records => check session level (may not contain sample number references, but may not need them)
 		if (Sgmt_records == NULL) {
-			if (level_header->type_code == LH_SESSION_m11) {
+			// get global session name(s)
+			if (globals_m11->session_UID == UID_NO_ENTRY_m11) {
+				find_metadata_file_m11(chan->path, tmp_str);
+				md_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				FPS_free_processing_struct_m11(md_fps, TRUE_m11);
+			}
+			sess_name = globals_m11->session_name;
+			if (sess != NULL) {
 				strcpy(sess_path, sess->path);
-				strcpy(sess_name, sess->name);
 				ri_fps = sess->record_indices_fps;
 				rd_fps = sess->record_data_fps;
 				free_fps = FALSE_m11;
 			} else {
 				extract_path_parts_m11(chan->path, sess_path, NULL, NULL);
-				extract_path_parts_m11(sess_path, NULL, sess_name, NULL);
 				ri_fps = NULL;
 				rd_fps = NULL;
 				free_fps = TRUE_m11;
 			}
-			sprintf_m11(tmp_str, "%s/%s.%s", sess_path, sess_path, RECORD_INDICES_FILE_TYPE_STRING_m11);
+			if (ri_fps == NULL)
+				sprintf_m11(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m11);
+			else if (*ri_fps->full_file_name)
+				strcpy(tmp_str, ri_fps->full_file_name);
+			else
+				sprintf_m11(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 			file_exists = file_exists_m11(tmp_str);
-			if (file_exists == DOES_NOT_EXIST_m11) {
-				if (globals_m11->session_UID == UID_NO_ENTRY_m11) {  // might be that file system session name differs from records name (e.g. a channel subset)
-					find_metadata_file_m11(chan->path, tmp_str);
-					md_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
-					FPS_free_processing_struct_m11(md_fps, TRUE_m11);
-				}
-				if (strcmp(globals_m11->session_name, sess_name)) {
-					strcpy(sess_name, globals_m11->session_name);
+			if (file_exists == DOES_NOT_EXIST_m11) {  // uh session name is default, try fs session name (e.g. a channel subset)
+				if (globals_m11->session_name == globals_m11->uh_session_name) {
+					extract_path_parts_m11(sess_path, tmp_str, NULL, NULL);
+					sprintf_m11(sess_path, "%s/%s", tmp_str, globals_m11->fs_session_name);
 					sprintf_m11(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 					file_exists = file_exists_m11(tmp_str);
 				}
@@ -5358,7 +5408,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 				}
 			}
 		}
-				    
+
 		// no adequate session level Sgmt records => build from reference channel metadata (least efficient option)
 		if (Sgmt_records == NULL)
 			Sgmt_records = build_Sgmt_records_array_m11(NULL, NULL, chan);
@@ -5589,12 +5639,8 @@ TERN_m11     include_record_m11(ui4 type_code, si4 *record_filters)
 
 TERN_m11	initialize_globals_m11(void)
 {
-#ifdef FN_DEBUG_m11  // don't use MED print functions until AT is initialized
-	#ifdef MATLAB_m11
-	mexPrintf("%s()\n", __FUNCTION__);
-	#else
-	printf("%s()\n", __FUNCTION__);
-	#endif
+#ifdef FN_DEBUG_m11  // don't use message() until UTF8 tables initialized
+	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11_mutex == TRUE_m11) {
@@ -5630,11 +5676,7 @@ TERN_m11	initialize_globals_m11(void)
 	}
 	globals_m11->AT_nodes = (AT_NODE *) calloc(GLOBALS_AT_LIST_SIZE_INCREMENT_m11, sizeof(AT_NODE));
 	if (globals_m11->AT_nodes == NULL) {
-		#ifdef MATLAB_m11
-		mexPrintf("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
-		#else
-		fprintf(stderr, "%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
-		#endif
+		printf_m11("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
 		exit(-1);
 	}
 	globals_m11->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m11;
@@ -5697,36 +5739,36 @@ TERN_m11	initialize_globals_m11(void)
 	
 	// CRC
 	if (globals_m11->CRC_table != NULL) {
-		free((void *) globals_m11->CRC_table);
+		free_m11((void *) globals_m11->CRC_table, __FUNCTION__);
 		globals_m11->CRC_table = NULL;
 	}
 	globals_m11->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m11;
 	
 	// AES
 	if (globals_m11->AES_sbox_table != NULL) {
-		free((void *) globals_m11->AES_sbox_table);
+		free_m11((void *) globals_m11->AES_sbox_table, __FUNCTION__);
 		globals_m11->AES_sbox_table = NULL;
 	}
 	if (globals_m11->AES_rsbox_table != NULL) {
-		free((void *) globals_m11->AES_rsbox_table);
+		free_m11((void *) globals_m11->AES_rsbox_table, __FUNCTION__);
 		globals_m11->AES_rsbox_table = NULL;
 	}
 	if (globals_m11->AES_rcon_table != NULL) {
-		free((void *) globals_m11->AES_rcon_table);
+		free_m11((void *) globals_m11->AES_rcon_table, __FUNCTION__);
 		globals_m11->AES_rcon_table = NULL;
 	}
 	
 	// SHA
 	if (globals_m11->SHA_h0_table != NULL) {
-		free((void *) globals_m11->SHA_h0_table);
+		free_m11((void *) globals_m11->SHA_h0_table, __FUNCTION__);
 		globals_m11->SHA_h0_table = NULL;
 	}
 	if (globals_m11->SHA_k_table != NULL) {
-		free((void *) globals_m11->SHA_k_table);
+		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__);
 		globals_m11->SHA_k_table = NULL;
 	}
 	
-	// UTF-8
+	// UTF-8 (UTF8 tables are not allocated with AT functions)
 	if (globals_m11->UTF8_offsets_table != NULL) {
 		free((void *) globals_m11->UTF8_offsets_table);
 		globals_m11->UTF8_offsets_table = NULL;
@@ -5740,7 +5782,7 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->verbose = GLOBALS_VERBOSE_DEFAULT_m11;
 	globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
 	if (globals_m11->behavior_stack != NULL) {
-		free((void *) globals_m11->behavior_stack);
+		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
 		globals_m11->behavior_stack = NULL;
 	}
 	globals_m11->behavior_stack_entries = globals_m11->behavior_stack_size = 0;
@@ -5756,11 +5798,11 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m11;
 
 #ifdef AT_DEBUG_m11  // do this at end, because message() will load UTF8 tables
-	message_m11("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m11, TC_RESET_m11);
+	printf_m11("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m11, TC_RESET_m11);
 #endif
 
 	globals_m11_mutex = FALSE_m11;
-	
+
 	return(TRUE_m11);
 }
 
@@ -5774,19 +5816,25 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 {
 	TERN_m11			return_value = TRUE_m11;
 
-#ifdef FN_DEBUG_m11  // don't use MED print functions until AT is initialzed
-	#ifdef MATLAB_m11
-	mexPrintf("%s()\n", __FUNCTION__);
-	#else
-	printf("%s()\n", __FUNCTION__);
-	#endif
+#ifdef FN_DEBUG_m11  // don't use MED print functions until UTF8 tablesinitialized
+	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
 	// set up globals
-	if (globals_m11 == NULL)
-		if (initialize_globals_m11() == FALSE_m11)
-			return_value = FALSE_m11;
+	if (globals_m11 == NULL) {
+		if (initialize_globals_m11() == FALSE_m11) {
+			printf_m11("%s(): error initializing globals\n", __FUNCTION__);
+			exit_m11(-1);
+		}
+	}
 
+#if defined FN_DEBUG_m11 || defined AT_DEBUG  // need UTF8 tables for message_m11()
+	if (globals_m11->UTF8_offsets_table == NULL) {
+		if (UTF8_initialize_tables_m11() == FALSE_m11)
+			return_value = FALSE_m11;
+	}
+#endif
+	
 	// check cpu endianness
 	if (get_cpu_endianness_m11() != LITTLE_ENDIAN_m11) {
 		error_message_m11("%s(): Library only coded for little-endian machines currently\n", __FUNCTION__);
@@ -6096,11 +6144,13 @@ si8	items_for_bytes_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_bytes)
 		case VIDEO_INDICES_FILE_TYPE_CODE_m11:
 		case RECORD_INDICES_FILE_TYPE_CODE_m11:
 			items = *number_of_bytes / INDEX_BYTES_m11;
+			uh->maximum_entry_size = INDEX_BYTES_m11;
 			return(items);
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m11:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m11:
 			items = 1;
 			*number_of_bytes = METADATA_BYTES_m11;
+			uh->maximum_entry_size = METADATA_BYTES_m11;
 			return(items);
 	}
 	
@@ -6935,7 +6985,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 {
 	TERN_m11		free_channel;
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m11], num_str[FILE_NUMBERING_DIGITS_m11 + 1];
-	si4			i, j, mapped_segs, seg_idx, n_segs;
+	si4			i, j, mapped_segs, seg_idx, n_segs, null_segment_cnt;
 	SEGMENT_m11		*seg;
 	UNIVERSAL_HEADER_m11	*uh;
 	
@@ -7016,6 +7066,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	mapped_segs = globals_m11->number_of_mapped_segments;
 
 	chan->segments = (SEGMENT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(SEGMENT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);  // map segments
+	null_segment_cnt = 0;
 	for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 		seg = chan->segments[j];
 		if (seg == NULL) {
@@ -7024,11 +7075,15 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11);
 			else if (chan->type_code == LH_VIDEO_CHANNEL_m11)
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m11);
-			seg = chan->segments[j] = open_segment_m11(NULL, slice, tmp_str, (flags & ~LH_OPEN_m11), password);
+			if (file_exists_m11(tmp_str) == DIR_EXISTS_m11)  // not every segment may be present
+				seg = chan->segments[j] = open_segment_m11(NULL, slice, tmp_str, (flags & ~LH_OPEN_m11), password);
 		} else {
-			open_segment_m11(seg, slice, NULL, chan->flags, NULL);
+			seg = open_segment_m11(seg, slice, NULL, LH_NO_FLAGS_m11, NULL);  // use existing segment flags
 		}
-		seg->super = chan;
+		if (seg == NULL)
+			++null_segment_cnt;
+		else
+			seg->super = (void *) chan;
 	}
 
 	// channel records
@@ -7041,12 +7096,38 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 			chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	
+	// empty slice
+	if (null_segment_cnt == n_segs) {
+		slice->number_of_segments = EMPTY_SLICE_m11;
+		if (free_channel == TRUE_m11)
+			free_channel_m11(chan, TRUE_m11);
+		return(NULL);
+	}
+
+	// update slice
+	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		seg = chan->segments[j];
+		if (seg != NULL)
+			break;
+	}
+	slice->start_time = seg->time_slice.start_time;
+	slice->start_sample_number = seg->time_slice.start_sample_number;
+	for (++i, ++j; i < n_segs; ++i, ++j) {
+		if (chan->segments[j] != NULL)
+			seg = chan->segments[j];
+	}
+	slice->end_time = seg->time_slice.end_time;
+	slice->end_sample_number = seg->time_slice.end_sample_number;
+
 	// ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m11) {
 		if (chan->metadata_fps != NULL)
 			FPS_free_processing_struct_m11(chan->metadata_fps, TRUE_m11);
-
-		seg = chan->segments[seg_idx];
+		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+			seg = chan->segments[j];
+			if (seg != NULL)
+				break;
+		}
 		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m11) {
 			sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 			chan->metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, seg->metadata_fps, METADATA_BYTES_m11);
@@ -7055,7 +7136,9 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 			chan->metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, seg->metadata_fps, METADATA_BYTES_m11);
 		}
 		// merge segments
-		for (i = 1, j = seg_idx + 1; i < n_segs; ++i, ++j) {
+		for (i++, j++; i < n_segs; ++i, ++j) {
+			if (chan->segments[j] == NULL)
+				continue;
 			seg = chan->segments[j];
 			merge_universal_headers_m11(chan->metadata_fps, seg->metadata_fps, NULL);
 			merge_metadata_m11(chan->metadata_fps, seg->metadata_fps, NULL);
@@ -7066,7 +7149,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 		// merge channel records
 		if (chan->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
 			merge_universal_headers_m11(chan->metadata_fps, chan->record_data_fps, NULL);
-		// fix channel ephemeral universl headers (from merge functions)
+		// fix channel ephemeral universal headers (from merge functions)
 		uh = chan->metadata_fps->universal_header;
 		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m11)
 			uh->type_code = TIME_SERIES_METADATA_FILE_TYPE_CODE_m11;
@@ -7272,7 +7355,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		chan_list = (si1 **) file_list;
 		n_chans = list_len;
 	}
-	chan_list = generate_file_list_m11(chan_list, &n_chans, sess_dir, NULL, "?icd", PP_FULL_PATH_m11, FALSE_m11);  // extension could be more specific ("[tv]icd") in MacOS & Linux, but not Windows
+	chan_list = generate_file_list_m11(chan_list, &n_chans, sess_dir, NULL, "?icd", GFL_FULL_PATH_m11);  // extension could be more specific ("[tv]icd") in MacOS & Linux, but not Windows
 
 	if (n_chans == 0) {
 		if (free_session == TRUE_m11)
@@ -7345,7 +7428,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	curr_time = current_uutc_m11();
 	if (sess->flags & LH_MAP_ALL_TIME_SERIES_CHANNELS_m11 && all_channels_selected == FALSE_m11) {
 		// get lists of all channels, regardless of what was passed in the list
-		full_ts_chan_list = generate_file_list_m11(NULL, &all_ts_chans, sess_dir, NULL, "ticd", PP_FULL_PATH_m11, FALSE_m11);
+		full_ts_chan_list = generate_file_list_m11(NULL, &all_ts_chans, sess_dir, NULL, "ticd", GFL_FULL_PATH_m11);
 		if (n_ts_chans) {
 			sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_ts_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			for (i = 0; i < all_ts_chans; ++i) {
@@ -7388,7 +7471,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	// set up video channels
 	if (sess->flags & LH_MAP_ALL_VIDEO_CHANNELS_m11 && all_channels_selected == FALSE_m11) {
 		// get lists of all channels, regardless of what was passed in the list
-		full_vid_chan_list = generate_file_list_m11(NULL, &all_vid_chans, sess_dir, NULL, "vicd", PP_FULL_PATH_m11, FALSE_m11);
+		full_vid_chan_list = generate_file_list_m11(NULL, &all_vid_chans, sess_dir, NULL, "vicd", GFL_FULL_PATH_m11);
 		if (n_vid_chans) {
 			sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_vid_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			for (i = 0; i < all_vid_chans; ++i) {
@@ -7491,8 +7574,12 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		chan = sess->time_series_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 			if (open_channel_m11(chan, slice, NULL, (flags & ~LH_OPEN_m11), password) == NULL) {
-				if (free_session == TRUE_m11)
+				if (free_session == TRUE_m11) {
 					free_session_m11(sess, TRUE_m11);
+				} else if (chan != NULL) {
+					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m11)
+						sess->time_slice.number_of_segments = EMPTY_SLICE_m11;
+				}
 				return(NULL);
 			}
 			chan->super = (void *) sess;
@@ -7504,8 +7591,12 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		chan = sess->video_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 			if (open_channel_m11(chan, slice, NULL, (flags & ~LH_OPEN_m11), password) == NULL) {
-				if (free_session == TRUE_m11)
+				if (free_session == TRUE_m11) {
 					free_session_m11(sess, TRUE_m11);
+				} else if (chan != NULL) {
+					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m11)
+						sess->time_slice.number_of_segments = EMPTY_SLICE_m11;
+				}
 				return(NULL);
 			}
 			chan->super = (void *) sess;
@@ -7665,23 +7756,22 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 		return(FALSE_m11);
 		
 #if defined MACOS_m11 || defined LINUX_m11
-	if (*path == '/') {
-		if (root_path != NULL && root_path != path)
-			strcpy(root_path, path);
-		return(TRUE_m11);
+	if (root_path != NULL && root_path != path)
+		strcpy(root_path, path);
+
+	// remove terminal '/' from passed path if present
+	if (root_path != NULL) {
+		len = strlen(path);
+		if (len)
+			if (root_path[len - 1] == '/')
+				root_path[--len] = 0;
 	}
+	
+	if (*path == '/')
+		return(TRUE_m11);
+	
 	if (root_path == NULL)
 		return(FALSE_m11);
-	
-	if (path != root_path)
-		strcpy(root_path, path);
-	
-	// remove terminal '\' from passed path if present
-	len = strlen(root_path);
-	if (len) {
-		if (root_path[len - 1] == '\\')
-			root_path[--len] = 0;
-	}
 	
 	// get base directory
 	c = root_path;
@@ -7728,14 +7818,24 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 #endif
 	
 #ifdef WINDOWS_m11
+	if (root_path != NULL && root_path != path)
+		strcpy(root_path, path);
+	
+	// remove terminal '/' from passed path if present
+	if (root_path != NULL) {
+		len = strlen(path);
+		if (len)
+			if (root_path[len - 1] == '/')
+				root_path[--len] = 0;
+	}
+	
 	if (*path == '\\') {
 		// In a Windows shell, "\" refers to the lowest level of the current drive: roughly equivalent to a mount point.
 		// If the caller passed a path that begins with "\", it is difficult to know if the intended drive was the
 		// system drive, or the current working directory drive. However, if this is code that works across platforms,
 		// it should represent the system drive, "C:". Also it is likely that if the intended drive were not the
-		// system drive, the caller would have specified it. It will be left as is, if "modify_path" is FALSE, however
-		// as the purpose of this function is to regularize and complete partial paths to the fullest extent possible,
-		// "C:\" is substituted for "\" here if "modify_path" is TRUE.
+		// system drive, the caller would have specified it. As the purpose of this function is to regularize and complete
+		// partial paths to the fullest extent possible, "C:\" is substituted for "\" here.
 		if (root_path != NULL) {  // add the "C:"
 			len = strlen(path);
 			memmove(root_path + 2, path, len + 1);
@@ -7747,11 +7847,13 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	
 	// awkward but coeorces AND order
 	// any "letter" drive can be considered path from root in Windows - no mount directory equivalent.
-	if (path[0] >= 'A' && path[0] <= 'Z') {
+	if ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) {
 		if (path[1] == ':') {
 			if (path[2] == '\\') {
-				if (root_path != NULL && root_path != path)
-					strcpy(root_path, path);
+				if (root_path != NULL) {
+					if (root_path[0] >= 'a' && root_path[0] <= 'z')  // capitalize
+						root_path[0] -= 32;
+				}
 				return(TRUE_m11);
 			}
 		}
@@ -7759,16 +7861,6 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	
 	if (root_path == NULL)
 		return(FALSE_m11);
-	
-	if (root_path != path)
-		strcpy(root_path, path);
-	
-	// remove terminal '\' from passed path if present
-	len = strlen(root_path);
-	if (len) {
-		if (root_path[len - 1] == '\\')
-			root_path[--len] = 0;
-	}
 	
 	// get base directory
 	c = root_path;
@@ -8093,7 +8185,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 	TERN_m11			open_channel, free_channel;
 	si1                             tmp_str[FULL_FILE_NAME_BYTES_m11], *chan_path, *password;
 	si1                             num_str[FILE_NUMBERING_DIGITS_m11 + 1];
-	si4                             i, j, seg_idx, n_segs;
+	si4                             i, j, seg_idx, n_segs, null_segment_cnt;
 	ui8                             flags;
 	va_list				args;
 	SEGMENT_m11			*seg;
@@ -8153,27 +8245,48 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 	}
 
 	// read segments
+	null_segment_cnt = 0;
 	for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
-		if (chan->segments[j] == NULL) {
+		seg = chan->segments[j];
+		if (seg == NULL) {
 			numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, i);
 			if (chan->type_code == LH_TIME_SERIES_CHANNEL_m11)
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11);
 			else  // LH_VIDEO_CHANNEL_m11
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m11);
-			chan->segments[j] = read_segment_m11(NULL, slice, tmp_str, (chan->flags & ~LH_OPEN_m11), NULL);
+			seg = chan->segments[j] = read_segment_m11(NULL, slice, tmp_str, (chan->flags & ~LH_OPEN_m11), NULL);
 		} else {
-			read_segment_m11(chan->segments[j], slice);
+			seg = read_segment_m11(seg, slice);
 		}
+		if (seg == NULL)
+			++null_segment_cnt;
+		else
+			seg->super = (void *) chan;
+	}
+	
+	// empty slice
+	if (null_segment_cnt == n_segs) {
+		slice->number_of_segments = EMPTY_SLICE_m11;
+		if (free_channel == TRUE_m11)
+			free_channel_m11(chan, TRUE_m11);
+		return(NULL);
 	}
 	
 	// update slice
-	seg = chan->segments[seg_idx];
+	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		seg = chan->segments[j];
+		if (seg != NULL)
+			break;
+	}
 	slice->start_time = seg->time_slice.start_time;
 	slice->start_sample_number = seg->time_slice.start_sample_number;
-	seg = chan->segments[(n_segs - 1) + seg_idx];
+	for (++i, ++j; i < n_segs; ++i, ++j) {
+		if (chan->segments[j] != NULL)
+			seg = chan->segments[j];
+	}
 	slice->end_time = seg->time_slice.end_time;
 	slice->end_sample_number = seg->time_slice.end_sample_number;
-	
+
 	// records
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m11)
 		if (chan->record_indices_fps != NULL)
@@ -8181,8 +8294,10 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 	
 	// update ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m11) {
-		for (i = 0; i < n_segs; ++i) {
-			seg = chan->segments[i + seg_idx];
+		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+			seg = chan->segments[j];
+			if (seg == NULL)
+				continue;
 			if (seg->flags & LH_UPDATE_EPHEMERAL_DATA_m11) {
 				merge_universal_headers_m11(chan->metadata_fps, seg->metadata_fps, NULL);
 				merge_metadata_m11(chan->metadata_fps, seg->metadata_fps, NULL);
@@ -8789,8 +8904,12 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 		chan = sess->time_series_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 			if (read_channel_m11(chan, slice) == NULL) {
-				if (free_session == TRUE_m11)
+				if (free_session == TRUE_m11) {
 					free_session_m11(sess, TRUE_m11);
+				} else if (chan != NULL) {
+					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m11)
+						sess->time_slice.number_of_segments = EMPTY_SLICE_m11;
+				}
 				return(NULL);
 			}
 		}
@@ -8799,12 +8918,17 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	// read video channels
 	for (i = 0; i < sess->number_of_video_channels; ++i) {
 		chan = sess->video_channels[i];
-		if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+		if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 			if (read_channel_m11(chan, slice) == NULL) {
-				if (free_session == TRUE_m11)
+				if (free_session == TRUE_m11) {
 					free_session_m11(sess, TRUE_m11);
+				} else if (chan != NULL) {
+					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m11)
+						sess->time_slice.number_of_segments = EMPTY_SLICE_m11;
+				}
 				return(NULL);
 			}
+		}
 	}
 	
 	// update session slice
@@ -9280,8 +9404,11 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 
 si4	search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice, ui4 search_mode)
 {
-	si4	idx, low_idx, high_idx;
-	si8	target;
+	si1				seg_name[SEGMENT_BASE_FILE_NAME_BYTES_m11], md_file[FULL_FILE_NAME_BYTES_m11], num_str[FILE_NUMBERING_DIGITS_m11 + 1];
+	si4				i, idx, low_idx, high_idx;
+	si8				target;
+	CHANNEL_m11			*chan;
+	FILE_PROCESSING_STRUCT_m11	*md_fps;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
@@ -9345,6 +9472,23 @@ si4	search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice
 		}
 	}
 	else {  // search_mode == SAMPLE_SEARCH_m11
+		
+		// sample search required, but no sample data in Sgmt_records => fill it in (e.g from session records in variable frequency session)
+		if (Sgmt_records[0].start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m11) {
+			chan = globals_m11->reference_channel;
+			for (i = 0; i < globals_m11->number_of_session_segments; ++i) {
+				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, Sgmt_records[i].segment_number);
+				sprintf_m11(seg_name, "%s_s%s", chan->name, num_str);
+				sprintf_m11(md_file, "%s/%s.%s/%s.%s", chan->path, seg_name, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11, seg_name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
+				md_fps = read_file_m11(NULL, md_file, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				if (md_fps == NULL)
+					continue;
+				Sgmt_records[i].end_sample_number = Sgmt_records[i].start_sample_number = md_fps->metadata->time_series_section_2.absolute_start_sample_number;
+				Sgmt_records[i].end_sample_number += (md_fps->metadata->time_series_section_2.number_of_samples - 1);
+				FPS_free_processing_struct_m11(md_fps, TRUE_m11);
+			}
+		}
+
 		// start segment
 		target = slice->start_sample_number;
 		low_idx = 0;
@@ -9378,7 +9522,7 @@ si4	search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice
 		high_idx = globals_m11->number_of_session_segments - 1;
 		if (target < Sgmt_records[low_idx].start_sample_number) {
 			slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m11;
-			warning_message_m11("%s(): requested end sample precedes requested start time\n", __FUNCTION__);
+			warning_message_m11("%s(): requested end sample precedes requested start sample\n", __FUNCTION__);
 		} else {
 			if (target >= Sgmt_records[high_idx].end_sample_number) {
 				idx = high_idx;
@@ -10723,6 +10867,86 @@ void	show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_f
 }
 
 
+void	show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header)
+{
+	si1	                time_str[TIME_STRING_BYTES_m11], hex_str[HEX_STRING_BYTES_m11(8)];
+	si4			n_segs;
+	si8			i;
+	CHANNEL_m11		*chan;
+	SESSION_m11		*sess;
+	Sgmt_RECORD_m11		*Sgmt;
+	
+	
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_CHANNEL_m11:
+		case LH_VIDEO_CHANNEL_m11:
+			chan = (CHANNEL_m11 *) level_header;
+			Sgmt = chan->Sgmt_records;
+			break;
+		case LH_SESSION_m11:
+			sess = (SESSION_m11 *) level_header;
+			Sgmt = sess->Sgmt_records;
+			break;
+		default:
+			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
+			return;
+	}
+	
+	if (Sgmt == NULL) {
+		warning_message_m11("%s(): NULL Sgmt records array\n", __FUNCTION__);
+		return;
+	}
+	
+	n_segs = globals_m11->number_of_session_segments;
+	if (n_segs == 0) {
+		warning_message_m11("%s(): empty Sgmt records array\n", __FUNCTION__);
+		return;
+	}
+	
+	for (i = 0; i < n_segs; ++i, ++Sgmt) {
+		printf_m11("Record number: %ld\n", i + 1);
+		if (Sgmt->start_time == RECORD_HEADER_START_TIME_NO_ENTRY_m11)
+			printf_m11("Record Start Time: no entry\n");
+		else {
+			time_string_m11(Sgmt->start_time, time_str, TRUE_m11, FALSE_m11, FALSE_m11);
+			printf_m11("Record Start Time: %ld (oUTC), %s\n", Sgmt->start_time, time_str);
+		}
+		time_string_m11(Sgmt->end_time, time_str, TRUE_m11, FALSE_m11, FALSE_m11);
+		printf_m11("End Time: %ld (oUTC), %s\n", Sgmt->end_time, time_str);
+		if (Sgmt->start_sample_number == REC_Sgmt_v10_START_SAMPLE_NUMBER_NO_ENTRY_m11)
+			printf_m11("Start Sample Number: no entry\n");
+		else
+			printf_m11("Start Sample Number: %ld\n", Sgmt->start_sample_number);
+		if (Sgmt->end_sample_number == REC_Sgmt_v10_END_SAMPLE_NUMBER_NO_ENTRY_m11)
+			printf_m11("End Sample Number: no entry\n");
+		else
+			printf_m11("End Sample Number: %ld\n", Sgmt->end_sample_number);
+		generate_hex_string_m11((ui1*)&Sgmt->segment_UID, 8, hex_str);
+		printf_m11("Segment UID: %s\n", hex_str);
+		if (Sgmt->segment_number == REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m11)
+			printf_m11("Segment Number: no entry\n");
+		else
+			printf_m11("Segment Number: %d\n", Sgmt->segment_number);
+
+		if (Sgmt->acquisition_channel_number == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m11)
+			printf_m11("Acquisition Channel Number: all channels\n");
+		else if (Sgmt->acquisition_channel_number == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m11)
+			printf_m11("Acquisition Channel Number: no entry\n");
+		else
+			printf_m11("Acquisition Channel Number: %d\n", Sgmt->acquisition_channel_number);
+
+		if (Sgmt->sampling_frequency == REC_Sgmt_v10_SAMPLING_FREQUENCY_NO_ENTRY_m11)
+			printf_m11("Sampling Frequency: no entry\n");
+		else if (Sgmt->sampling_frequency == REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m11)
+			printf_m11("Sampling Frequency: variable\n");
+		else
+			printf_m11("Sampling Frequency: %lf\n", Sgmt->sampling_frequency);
+	}
+
+	return;
+}
+
+
 void    show_time_slice_m11(TIME_SLICE_m11 *slice)
 {	
 #ifdef FN_DEBUG_m11
@@ -10741,6 +10965,8 @@ void    show_time_slice_m11(TIME_SLICE_m11 *slice)
 	
 	if (slice->number_of_segments == UNKNOWN_m11)
 		printf_m11("Number of Segments: unknown\n");
+	else if (slice->number_of_segments == EMPTY_SLICE_m11)
+		printf_m11("Number of Segments: empty slice (segments missing)\n");
 	else
 		printf_m11("Number of Segments: %d\n", slice->number_of_segments);
 
@@ -11274,6 +11500,63 @@ si1	*time_string_m11(si8 uutc, si1 *time_str, TERN_m11 fixed_width, TERN_m11 rel
 	}
 	
 	return(time_str);
+}
+
+
+void	update_maximum_entry_size_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset)
+{
+	ui4				entry_size;
+	si8				i;
+	RECORD_HEADER_m11		*rh;
+	CMP_BLOCK_FIXED_HEADER_m11	*bh;
+	UNIVERSAL_HEADER_m11		*uh;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+		
+	uh = fps->universal_header;
+	switch (uh->type_code) {
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m11:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m11:
+		case RECORD_INDICES_FILE_TYPE_CODE_m11:
+			uh->maximum_entry_size = INDEX_BYTES_m11;
+			return;
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m11:
+		case VIDEO_METADATA_FILE_TYPE_CODE_m11:
+			uh->maximum_entry_size = METADATA_BYTES_m11;
+			return;
+	}
+	
+	if (number_of_items == 1) {
+		if (uh->maximum_entry_size < bytes_to_write)
+			uh->maximum_entry_size = bytes_to_write;
+		return;
+	}
+	
+	FPS_set_pointers_m11(fps, file_offset);
+	switch (uh->type_code) {
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m11:
+			bh = fps->parameters.cps->block_header;
+			for (i = 0; i < number_of_items; ++i) {
+				entry_size = (si8) bh->total_block_bytes;
+				if (uh->maximum_entry_size < entry_size)
+					uh->maximum_entry_size = entry_size;
+				bh = (CMP_BLOCK_FIXED_HEADER_m11 *) ((ui1 *) bh + entry_size);
+			}
+			break;
+		case RECORD_DATA_FILE_TYPE_CODE_m11:
+			rh = (RECORD_HEADER_m11 *) fps->record_data;
+			for (i = 0; i < number_of_items; ++i) {
+				entry_size = (si8) rh->total_record_bytes;
+				if (uh->maximum_entry_size < entry_size)
+					uh->maximum_entry_size = entry_size;
+				rh = (RECORD_HEADER_m11 *) ((ui1 *) rh + entry_size);
+			}
+			break;
+	}
+		
+	return;
 }
 
 
@@ -12126,6 +12409,7 @@ si1	*windify_format_string_m11(si1 *fmt)
 
 si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, si8 number_of_items, void *external_data, ui4 behavior_on_fail)
 {
+	TERN_m11			update_maximum_entry_size;
 	si8                             bytes_written;
 	void				*saved_data_pointers, *encrypted_data, *unencrypted_data;
 	UNIVERSAL_HEADER_m11		*uh;
@@ -12162,30 +12446,40 @@ si8	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_t
 	}
 		
 	uh = fps->universal_header;
+	update_maximum_entry_size = TRUE_m11;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m11) {
 		bytes_written = FPS_write_m11(fps, 0, UNIVERSAL_HEADER_BYTES_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		fps->number_of_items = 0;
 		return(bytes_written);
-	} else if (number_of_items == FPS_FULL_FILE_m11) {
+	}
+	
+	if (number_of_items == FPS_FULL_FILE_m11) {
 		number_of_items = uh->number_of_entries;
 		file_offset = UNIVERSAL_HEADER_BYTES_m11;
-		// pass bytes_to_write if known, or set to zero to force calculation
 		fps->directives.close_file = TRUE_m11;  // update universal header autoamtically set with close_file directive
-	} else {
-		if (number_of_items == 0) {
-			if (bytes_to_write == 0) {
-				error_message_m11("%s(): must specify either bytes to write or number of items\n");
-				return((si8) FALSE_m11);
-			}
-			number_of_items = items_for_bytes_m11(fps, &bytes_to_write);
+	}
+	
+	if (number_of_items == 0) {
+		if (bytes_to_write == 0) {
+			error_message_m11("%s(): must specify either bytes to write or number of items\n");
+			return((si8) FALSE_m11);
 		}
-		uh->number_of_entries += number_of_items;
+		number_of_items = items_for_bytes_m11(fps, &bytes_to_write);
+		update_maximum_entry_size = FALSE_m11;
 	}
 	fps->number_of_items = number_of_items;
 	
-	if (bytes_to_write == 0)
+	if (bytes_to_write == 0) {
 		bytes_to_write = bytes_for_items_m11(fps, &number_of_items, 0);
-		
+		update_maximum_entry_size = FALSE_m11;
+	}
+	
+	if (update_maximum_entry_size == TRUE_m11)
+		update_maximum_entry_size_m11(fps, number_of_items, bytes_to_write, file_offset);
+	
+	if (file_offset == FPS_APPEND_m11 || file_offset == fps->parameters.flen)
+		uh->number_of_entries += number_of_items;
+	
 	// leave decrypted directive
 	encrypted_data = NULL;
 	if (fps->directives.leave_decrypted == TRUE_m11) {
@@ -19143,7 +19437,7 @@ void	UTF8_inc_m11(si1 *s, si4 *i)
 TERN_m11	UTF8_initialize_tables_m11(void)
 {
 #ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
+	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
 	if (globals_m11->UTF8_mutex == TRUE_m11) {
@@ -19156,16 +19450,16 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 
 	// offsets table
 	if (globals_m11->UTF8_offsets_table == NULL) {
-		globals_m11->UTF8_offsets_table = (ui4 *) calloc_m11((size_t) UTF8_OFFSETS_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->UTF8_offsets_table = (ui4 *) malloc((size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
 		{
 			ui4 temp[UTF8_OFFSETS_TABLE_ENTRIES_m11] = UTF8_OFFSETS_TABLE_m11;
-			memcpy((void *) globals_m11->UTF8_offsets_table, (void *) temp, (size_t)UTF8_OFFSETS_TABLE_ENTRIES_m11 * sizeof(ui4));
+			memcpy((void *) globals_m11->UTF8_offsets_table, (void *) temp, (size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
 		}
 	}
 	
 	// trailing bytes table
 	if (globals_m11->UTF8_trailing_bytes_table == NULL) {
-		globals_m11->UTF8_trailing_bytes_table = (si1 *) calloc_m11((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->UTF8_trailing_bytes_table = (si1 *) malloc((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
 		{
 			si1 temp[UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11] = UTF8_TRAILING_BYTES_TABLE_m11;
 			memcpy((void *) globals_m11->UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
@@ -19778,7 +20072,7 @@ size_t	calloc_size_m11(void *address, size_t element_size)
 void	exit_m11(si4 status)
 {
 #ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
+	printf_m11("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m11
