@@ -661,7 +661,7 @@ typedef struct {
 #define UNIVERSAL_HEADER_MAXIMUM_ENTRY_SIZE_NO_ENTRY_m11		0
 #define UNIVERSAL_HEADER_SEGMENT_NUMBER_OFFSET_m11                      28      // si4
 #define UNIVERSAL_HEADER_SEGMENT_NUMBER_NO_ENTRY_m11                    SEGMENT_NUMBER_NO_ENTRY_m11
-// #define UNIVERSAL_HEADER_SEGMENT_LEVEL_CODE_m11			-1      // unused at this time
+#define UNIVERSAL_HEADER_SEGMENT_LEVEL_CODE_m11				-1
 #define UNIVERSAL_HEADER_CHANNEL_LEVEL_CODE_m11				-2
 #define UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m11				-3
 #define UNIVERSAL_HEADER_TYPE_STRING_OFFSET_m11				32       // ascii[4]
@@ -1720,8 +1720,8 @@ typedef struct {
 	};
 	FILE_PROCESSING_STRUCT_m11	**record_data_fps;
 	FILE_PROCESSING_STRUCT_m11	**record_indices_fps;
-	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to session directory (including session directory itself)
-	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name & path duplcated in globals
+	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to segmented session records directory (including directory itself)
+	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name, duplcated in globals
 	TIME_SLICE_m11			time_slice;
 } SEGMENTED_SESS_RECS_m11;
 #else
@@ -1732,8 +1732,8 @@ typedef struct {
 	};
 	FILE_PROCESSING_STRUCT_m11	**record_data_fps;
 	FILE_PROCESSING_STRUCT_m11	**record_indices_fps;
-	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to session directory (including session directory itself)
-	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name & path duplcated in globals
+	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to segmented session records directory (including directory itself)
+	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name, duplicated in globals
 	TIME_SLICE_m11			time_slice;
 } SEGMENTED_SESS_RECS_m11;
 #endif
@@ -1764,7 +1764,7 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m11	*record_data_fps;
 	FILE_PROCESSING_STRUCT_m11	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m11		*segmented_sess_recs;
-	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to session directory (including session directory itself)
+	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to session directory (including directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name & path duplcated in globals
 	TIME_SLICE_m11			time_slice;
 	si8				number_of_contigua;
@@ -1859,7 +1859,7 @@ TERN_m11        encrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11	encrypt_record_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11        encrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            error_message_m11(si1 *fmt, ...);
-void            escape_spaces_m11(si1 *string, si8 buffer_len);
+void            escape_chars_m11(si1 *string, si1 target_char, si8 buffer_len);
 void            extract_path_parts_m11(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void            extract_terminal_password_bytes_m11(si1 *password, si1 *password_bytes);
 ui4             file_exists_m11(si1 *path);
@@ -1952,7 +1952,7 @@ void            show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVE
 TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess);
 si1		*time_string_m11(si8 uutc_time, si1 *time_str, TERN_m11 fixed_width, TERN_m11 relative_days, si4 colored_text, ...);
 void		update_maximum_entry_size_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
-void            unescape_spaces_m11(si1 *string);
+void            unescape_chars_m11(si1 *string, si1 target_char);
 si8		uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 TERN_m11        validate_record_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);

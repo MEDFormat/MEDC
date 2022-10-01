@@ -3030,21 +3030,23 @@ void    error_message_m11(si1 *fmt, ...)
 }
 		
 		
-void    escape_spaces_m11(si1 *string, si8 buffer_len)
+void    escape_chars_m11(si1 *string, si1 target_char, si8 buffer_len)
 {
-	si1	*c1, *c2, *tmp_str;
-	si8     spaces, len;
+	si1	*c1, *c2, *tmp_str, backslash;
+	si8     n_target_chars, len;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
+	backslash = (si1) 0x5c;
+	
 	// count
-	for (spaces = 0, c1 = string; *c1++;)
-		if (*c1 == 0x20)
-			if (*(c1 - 1) != 0x5c)
-				++spaces;
-	len = (c1 - string) + spaces;
+	for (n_target_chars = 0, c1 = string; *c1++;)
+		if (*c1 == target_char)
+			if (*(c1 - 1) != backslash)
+				++n_target_chars;
+	len = (c1 - string) + n_target_chars;
 	if (buffer_len != 0) {  // if zero, proceed at caller's peril
 		if (buffer_len < len) {
 			error_message_m11("%s(): string buffer too small\n", __FUNCTION__);
@@ -3057,9 +3059,9 @@ void    escape_spaces_m11(si1 *string, si8 buffer_len)
 	c1 = string;
 	c2 = tmp_str;
 	while (*c1) {
-		if (*c1 == 0x20) {  // space
-			if (*(c1 - 1) != 0x5c)  // backslash
-				*c2++ = 0x5c;
+		if (*c1 == target_char) {
+			if (*(c1 - 1) != backslash)
+				*c2++ = backslash;
 		}
 		*c2++ = *c1++;
 	}
@@ -4452,6 +4454,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	si1		**tmp_ptr_ptr;
 	ui4		path_parts;
 	si4		i, j, ret_val, n_in_files, *n_out_files;
+	size_t		command_len;
 	FILE		*fp;
 	
 #ifdef FN_DEBUG_m11
@@ -4466,10 +4469,9 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	n_out_files = n_files;
 	path_parts = flags & GFL_PATH_PARTS_MASK_m11;
 
-	// quick bailout for nothing to do
+	// quick bailout for nothing to do (file_list passed, paths are from root, & contain no regex)
 	if (check_file_list_m11(file_list, n_in_files) == TRUE_m11) {
-		// caller expects a copy to be returned
-		if ((flags & GFL_FREE_INPUT_FILE_LIST_m11) == 0) {
+		if ((flags & GFL_FREE_INPUT_FILE_LIST_m11) == 0) {  // caller expects a copy to be returned
 			tmp_ptr_ptr = (si1 **) calloc_2D_m11((size_t) n_in_files, FULL_FILE_NAME_BYTES_m11, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			for (i = 0; i < n_in_files; ++i)
 				strcpy(tmp_ptr_ptr[i], file_list[i]);
@@ -4498,7 +4500,8 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	extension = tmp_extension;
 	
 	// file list passed:
-	// File_list components are assumed to contain the file name at a minimum (can be regex)
+	// If list components do not have a file name, and one is passed, it is used.
+	// If list components do not have a file name, and none is passed, "*" is used.
 	// If list components do not have an enclosing directory, and one is passed, it is used.
 	// If list components do not have an enclosing directory, and none is passed, path_from_root_m11() is used.
 	// If list components do not have an extension, and one is passed, it is used.
@@ -4554,10 +4557,16 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	#if defined MACOS_m11 || defined LINUX_m11
 		si1	*command, *tmp_str;
 		
-		command = (si1 *) calloc((n_in_files * FULL_FILE_NAME_BYTES_m11) + 32, sizeof(si1));
+		
+		command_len = n_in_files * FULL_FILE_NAME_BYTES_m11;
+		if (flags & GFL_INCLUDE_INVISIBLE_FILES_m11)
+			command_len <<= 1;
+		command = (si1 *) calloc(command_len, sizeof(si1));
+
 		strcpy(command, "ls -1d");
 		for (i = 0; i < n_in_files; ++i) {
-			escape_spaces_m11(file_list[i], FULL_FILE_NAME_BYTES_m11);
+			escape_chars_m11(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m11);  // escape spaces
+			escape_chars_m11(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m11);  // escape apostrophes
 			sprintf_m11(command, "%s %s", command, file_list[i]);
 			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m11) {
 				extract_path_parts_m11(file_list[i], NULL, name, extension);
@@ -4620,9 +4629,8 @@ GFL_CONDITION_RETURN_DATA_m11:
 	// return requested path parts
 	for (i = j = 0; i < *n_out_files; ++i) {
 		extract_path_parts_m11(file_list[i], enclosing_directory, tmp_name, tmp_extension);
-		// exclude invisible files
 		if ((flags & GFL_INCLUDE_INVISIBLE_FILES_m11) == 0)
-			if (*tmp_name == '.')
+			if (*tmp_name == '.')  // exclude invisible files
 				continue;
 		switch (path_parts) {
 			case (GFL_FULL_PATH_m11):
@@ -4699,7 +4707,9 @@ ui4    generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1 *MED_name)
 
 	// copy & condition path
 	strcpy(local_MED_dir, path);
-	unescape_spaces_m11(local_MED_dir);  // this can happen if string with escaped spaces is also quoted (e.g. by a shell script) - pretty uncommon though
+	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
+	unescape_chars_m11(local_MED_dir, (si1) 0x20);  // spaces
+	unescape_chars_m11(local_MED_dir, (si1) 0x27);  // apostrophes
 	path_from_root_m11(local_MED_dir, local_MED_dir);
 		
 	// check path: if file passed, get enclosing directory
@@ -8486,6 +8496,8 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 			fps = FPS_allocate_processing_struct_m11(NULL, full_file_name, NO_FILE_TYPE_CODE_m11, FPS_FULL_FILE_m11, NULL, 0);
 		else
 			fps = FPS_allocate_processing_struct_m11(NULL, full_file_name, NO_FILE_TYPE_CODE_m11, bytes_to_read, NULL, 0);
+		if (fps == NULL)
+			return(NULL);
 		fps->directives.memory_map = mmap_flag;
 		fps->directives.close_file = close_flag;
 		allocated_flag = TRUE_m11;
@@ -11842,18 +11854,19 @@ si8     uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 }
 
 
-void    unescape_spaces_m11(si1 *string)
+void    unescape_chars_m11(si1 *string, si1 target_char)
 {
-	si1	*c1, *c2;
+	si1	*c1, *c2, backslash;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
+	backslash = (si1) 0x5c;
 	c1 = c2 = string;
 	while (*c1) {
-		if (*c1 == 0x5c) {  // backslash
-			if (*(c1 + 1) == 0x20) {
+		if (*c1 == backslash) {
+			if (*(c1 + 1) == target_char) {
 				++c1;
 				continue;
 			}
@@ -17734,9 +17747,18 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 		free_m11((void *) fps->parameters.raw_data, __FUNCTION__);
 		fps->parameters.raw_data = NULL;
 	}
-	if (full_file_name != NULL)
-		if (*full_file_name)
-			strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);
+	if (full_file_name != NULL) {
+		if (*full_file_name) {
+			if (file_exists_m11(full_file_name) == FILE_EXISTS_m11) {
+				strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);
+			} else {
+				warning_message_m11("%s(): the file \"%s\" does not exist\n", __FUNCTION__, full_file_name);
+				if (free_fps == TRUE_m11)
+					FPS_free_processing_struct_m11(fps, TRUE_m11);
+				return(NULL);
+			}
+		}
+	}
 	if (*fps->full_file_name && type_code == UNKNOWN_TYPE_CODE_m11)
 		type_code = MED_type_code_from_string_m11(fps->full_file_name);
 
@@ -17866,10 +17888,12 @@ void	FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 fr
 		return;
 	}
 	
-	if (fps->universal_header->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m11)  // CPS requires special freeing
-		if (fps->parameters.cps != NULL)
-			if (fps->directives.free_CMP_processing_struct == TRUE_m11)
-				CMP_free_processing_struct_m11(fps->parameters.cps, TRUE_m11);
+	if (fps->universal_header != NULL) {
+		if (fps->universal_header->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m11)  // CPS requires special freeing
+			if (fps->parameters.cps != NULL)
+				if (fps->directives.free_CMP_processing_struct == TRUE_m11)
+					CMP_free_processing_struct_m11(fps->parameters.cps, TRUE_m11);
+	}
 	
 	if (fps->parameters.raw_data != NULL)
 		free_m11((void *) fps->parameters.raw_data, __FUNCTION__);
@@ -17881,7 +17905,7 @@ void	FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 fr
 	if (fps->parameters.mmap_block_bitmap != NULL)
 		free_m11((void *) fps->parameters.mmap_block_bitmap, __FUNCTION__);
 	
-	// Note: always close when freeing; close_file directives used to reading / writing functions
+	// Note: always close when freeing; close_file directives used in reading / writing functions
 	FPS_close_m11(fps);  // if already closed, this fails silently
 	
 	if (free_fps_structure == TRUE_m11) {
@@ -19332,8 +19356,7 @@ si4	UTF8_escape_m11(si1 *buf, si4 sz, si1 *src, si4 escape_quotes)
 		if (escape_quotes && src[i] == '"') {
 			amt = snprintf_m11(buf, sz - c, "\\\"");
 			i++;
-		}
-		else {
+		} else {
 			amt = UTF8_escape_wchar_m11(buf, sz - c, UTF8_next_char_m11(src, &i));
 		}
 		c += amt;
@@ -19842,8 +19865,7 @@ si4     UTF8_unescape_m11(si1 *buf, si4 sz, si1 *src)
 		if (*src == '\\') {
 			src++;
 			amt = UTF8_read_escape_sequence_m11(src, &ch);
-		}
-		else {
+		} else {
 			ch = (si4)*src;
 			amt = 1;
 		}
