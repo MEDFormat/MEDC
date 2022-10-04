@@ -5436,7 +5436,6 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		
 		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
-		printf_m11("line %d: %s\n", __LINE__, tmp_str);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 			ri_fps = chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, FPS_FULL_FILE_m11, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			n_recs = ri_fps->universal_header->number_of_entries;
