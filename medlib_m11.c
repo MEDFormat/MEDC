@@ -17507,7 +17507,7 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	in_x = (si8 *) VDS_in_bufs->buffer[CMP_MAK_IN_X_BUF];  // location specified by mak_interp()
 	VDS_out_bufs = cps->parameters.VDS_output_buffers;
 	out_y = (sf8 *) VDS_out_bufs->buffer[CMP_MAK_OUT_Y_BUF];  // location specified by mak_interp()
-	out_x = (sf8 *) VDS_out_bufs->buffer[CMP_MAK_OUT_Y_BUF];  // location specified by mak_interp()
+	out_x = (sf8 *) VDS_out_bufs->buffer[CMP_MAK_OUT_X_BUF];  // location specified by mak_interp()
 
 	// copy amplitudes to sf8 buffer
 	CMP_si4_to_sf8_m11(cps->decompressed_ptr, in_y, (si8) VDS_header->number_of_VDS_samples);
