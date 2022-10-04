@@ -17,21 +17,21 @@
 
 int main(int argc, char *argv[])
 {
-	extern GLOBALS_m11		*globals_m11;
-	si1				out_dir[FULL_FILE_NAME_BYTES_m11], out_file[FULL_FILE_NAME_BYTES_m11], *password;
-	si2				*out_arr;
-	si4				n_channels, seg_idx, list_len;
-	ui8				flags;
-	si8				i, j, k, m, n_samps, n_segs, progress_loops, progress_loop_ctr, curr_samp;
-	sf8				progress, tmp_sf8, f_tot_samps;
-	void				*file_list;
-	FILE				*out_fp;
-	SESSION_m11			*sess;
-	CHANNEL_m11			*chan_0;
-	SEGMENT_m11			*seg;
-	CMP_PROCESSING_STRUCT_m11	*cps;
-	TIME_SLICE_m11			slice;
-	
+	extern GLOBALS_m11			*globals_m11;
+	si1					out_dir[FULL_FILE_NAME_BYTES_m11], out_file[FULL_FILE_NAME_BYTES_m11], *password;
+	si2					*out_arr;
+	si4					n_channels, seg_idx, list_len;
+	ui8					flags;
+	si8					i, j, k, m, n_samps, n_segs, progress_loops, progress_loop_ctr, curr_samp;
+	sf8					progress, tmp_sf8, f_tot_samps;
+	void					*file_list;
+	FILE					*out_fp;
+	SESSION_m11				*sess;
+	CHANNEL_m11				*chan;
+	SEGMENT_m11				*seg;
+	CMP_PROCESSING_STRUCT_m11		*cps;
+	TIME_SLICE_m11				slice;
+
 	
 	// NOTE: in MacOS & Linux change resource limits before calling any functions that use system resources (e.g. printf())
 	adjust_open_file_limit_m11(MAX_OPEN_FILES_m11(MAX_CHANNELS, 1), TRUE_m11);
@@ -122,20 +122,22 @@ int main(int argc, char *argv[])
 		error_message_m11("%s(): error reading session\n", __FUNCTION__);
 		exit_m11(1);
 	}
+	
+	// check for variable sampling frequency
 	if (sess->Sgmt_records[0].sampling_frequency == FREQUENCY_VARIABLE_m11) {
-		error_message_m11("%s(): MED2DAT does not currently handle variable sampling frequency sesssions\n", __FUNCTION__);
+		error_message_m11("%s(): MED2DAT does not currently handle variable sampling frequency sessions\n", __FUNCTION__);
 		exit_m11(1);
 	}
+
 	slice = sess->time_slice;
 	seg_idx = get_segment_index_m11(slice.start_segment_number);
 	n_segs = slice.number_of_segments;
+	n_channels = sess->number_of_time_series_channels;
 
 	// set up for write out
 	sprintf_m11(out_file, "%s/%s.dat", out_dir, globals_m11->session_name);
 	out_fp = fopen_m11(out_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	n_channels = sess->number_of_time_series_channels;
 	out_arr = (si2 *) malloc_m11((size_t) n_channels * sizeof(si2), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	chan_0 = sess->time_series_channels[0];
 	progress_loop_ctr = progress_loops = 100;
 		
 	// get total samps for progress
@@ -144,8 +146,9 @@ int main(int argc, char *argv[])
 	// interleave channel data
 	printf_m11("\n\nProgress: 0.00%%   ");  fflush(stdout);
 	curr_samp = 0;
+	chan = sess->time_series_channels[0];
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		seg = chan_0->segments[j];
+		seg = chan->segments[j];  // first channel
 		n_samps = TIME_SLICE_SAMPLE_COUNT_m11((&seg->time_slice));  // assuming same number of samples per segment here
 		for (k = 0; k < n_samps; ++k) {
 			for (m = 0; m < n_channels; ++m) {
