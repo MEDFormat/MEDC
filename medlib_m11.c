@@ -5436,6 +5436,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		
 		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
+		printf_m11("line %d: %s\n", __LINE__, tmp_str);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 			ri_fps = chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, FPS_FULL_FILE_m11, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			n_recs = ri_fps->universal_header->number_of_entries;
@@ -7189,7 +7190,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 		if (seg == NULL)
 			++null_segment_cnt;
 		else
-			seg->parent = (LEVEL_HEADER_m11 *) chan;
+			seg->parent = (void *) chan;
 	}
 
 	// channel records
@@ -7689,7 +7690,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				}
 				return(NULL);
 			}
-			chan->parent = (LEVEL_HEADER_m11 *) sess;
+			chan->parent = (void *) sess;
 		}
 	}
 
@@ -7706,7 +7707,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				}
 				return(NULL);
 			}
-			chan->parent = (LEVEL_HEADER_m11 *) sess;
+			chan->parent = (void *) sess;
 		}
 	}
 
@@ -7736,7 +7737,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			strcpy_m11(ssr->name, sess->name);
 			ssr->type_code = LH_SEGMENTED_SESS_RECS_m11;
 			ssr->flags = sess->flags;
-			ssr->parent = (LEVEL_HEADER_m11 *) sess;
+			ssr->parent = (void *) sess;
 			mapped_segs = globals_m11->number_of_mapped_segments;
 			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -8374,7 +8375,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 		if (seg == NULL)
 			++null_segment_cnt;
 		else
-			seg->parent = (LEVEL_HEADER_m11 *) chan;
+			seg->parent = (void *) chan;
 	}
 	
 	// empty slice

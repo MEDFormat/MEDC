@@ -1520,7 +1520,7 @@ typedef struct {  // struct name for CMP functions interdependency
 } FILE_PROCESSING_STRUCT_m11;
 
 // Session, Channel, Segment Structures
-typedef struct LEVEL_HEADER_m11 {
+typedef struct {
 	union {  // anonymous union
 		struct {
 			si1     type_string[TYPE_BYTES_m11];
@@ -1531,9 +1531,9 @@ typedef struct LEVEL_HEADER_m11 {
 			si1	type_string_terminal_zero;  // not used - there for clarity
 		};
 	};
-	struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
-	ui8			flags;
-	si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+	void	*parent;  // parent structure, NULL for session or if created alone
+	ui8	flags;
+	si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 } LEVEL_HEADER_m11;
 
 
@@ -1598,7 +1598,7 @@ typedef struct {
 
 #ifdef __cplusplus
 typedef struct {  // struct name for medrec_m11.h interdependency
-	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 for C++
+	struct {  // this struct replaces LEVEL_HEADER_m11 for C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1609,9 +1609,9 @@ typedef struct {  // struct name for medrec_m11.h interdependency
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
-		ui8			flags;
-		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		void	*parent;  // parent structure, NULL for session or if created alone
+		ui8	flags;
+		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	*metadata_fps;  // also used as prototype
 	union {
@@ -1657,7 +1657,7 @@ typedef struct {  // struct name for medrec_m11.h interdependency
 
 #ifdef __cplusplus
 typedef struct CHANNEL_m11 {
-	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 for C++
+	struct {  // this struct replaces LEVEL_HEADER_m11 for C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1668,9 +1668,9 @@ typedef struct CHANNEL_m11 {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
-		ui8			flags;
-		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		void	*parent;  // parent structure, NULL for session or if created alone
+		ui8	flags;
+		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	*metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	FILE_PROCESSING_STRUCT_m11	*record_data_fps;
@@ -1715,9 +1715,9 @@ typedef struct {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
-		ui8			flags;
-		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		void	*parent;  // parent structure, NULL for session or if created alone
+		ui8	flags;
+		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	**record_data_fps;
 	FILE_PROCESSING_STRUCT_m11	**record_indices_fps;
@@ -1741,7 +1741,7 @@ typedef struct {
 
 #ifdef __cplusplus
 typedef struct {
-	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 in C++
+	struct {  // this struct replaces LEVEL_HEADER_m11 in C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1752,9 +1752,9 @@ typedef struct {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
-		ui8			flags;
-		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		void	*parent;  // parent structure, NULL for session or if created alone
+		ui8	flags;
+		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	FILE_PROCESSING_STRUCT_m11	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
