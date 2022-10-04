@@ -858,7 +858,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		error_message_m11("%s(): no records or channel passed\n", __FUNCTION__);
 		return(NULL);
 	}
-	
+		
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number;  // frame numbers are unioned
@@ -3004,7 +3004,7 @@ void    error_message_m11(si1 *fmt, ...)
 	// RED suppressible text to stderr with option to exit program
 	if (!(globals_m11->behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 		#ifndef MATLAB_m11
-		fprintf(stderr, TC_GREEN_m11);
+		fprintf(stderr, TC_RED_m11);
 		#endif
 		
 		va_start(args, fmt);
@@ -4446,6 +4446,102 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 }
 
 
+TERN_m11	frequencies_vary_m11(SESSION_m11 *sess)
+{
+	TERN_m11				freqs_vary;
+	si4					i, n_chans, n_segs, start_seg, seg_idx;
+	sf8					rate;
+	CHANNEL_m11				*chan;
+	SEGMENT_m11				*seg;
+	TIME_SERIES_METADATA_SECTION_2_m11	*tmd2;
+	VIDEO_METADATA_SECTION_2_m11		*vmd2;
+	Sgmt_RECORD_m11				*Sgmt;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	freqs_vary = FALSE_m11;
+	
+	// check time series channels
+	start_seg = sess->time_slice.start_segment_number;
+	seg_idx = get_segment_index_m11(start_seg);
+	n_chans = sess->number_of_time_series_channels;
+	rate = (sf8) 0.0;
+	if (n_chans) {
+		for (i = 0; i < n_chans; ++i) {
+			chan = sess->time_series_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+				break;
+		}
+		if (i < n_chans) {
+			seg = chan->segments[seg_idx];
+			tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
+			rate = tmd2->sampling_frequency;
+			for (++i; i < n_chans; ++i) {
+				chan = sess->time_series_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
+					seg = chan->segments[seg_idx];
+					tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
+					if (rate != tmd2->sampling_frequency) {
+						freqs_vary = TRUE_m11;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	// check video channels
+	n_chans = sess->number_of_video_channels;
+	if (n_chans) {
+		for (i = 0; i < n_chans; ++i) {
+			chan = sess->video_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+				break;
+		}
+		if (rate != (sf8) 0.0) {  // active time series & video channels => not same frequency
+			freqs_vary = TRUE_m11;
+		} else if (i < n_chans) {
+			seg = chan->segments[seg_idx];
+			vmd2 = &seg->metadata_fps->metadata->video_section_2;
+			rate = vmd2->frame_rate;
+			for (++i; i < n_chans; ++i) {
+				chan = sess->video_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
+					seg = chan->segments[seg_idx];
+					vmd2 = &seg->metadata_fps->metadata->video_section_2;
+					if (rate != vmd2->frame_rate) {
+						freqs_vary = TRUE_m11;
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	// no active channels
+	if (rate == (sf8) 0.0)
+		freqs_vary = UNKNOWN_m11;
+	
+	// update session Sgmt records
+	Sgmt = sess->Sgmt_records;
+	n_segs = globals_m11->number_of_session_segments;
+	if (freqs_vary == TRUE_m11) {
+		for (i = 0; i < n_segs; ++i, ++Sgmt)
+			Sgmt->sampling_frequency = FREQUENCY_VARIABLE_m11;
+	} else if (freqs_vary == UNKNOWN_m11) {
+		for (i = 0; i < n_segs; ++i, ++Sgmt)
+			Sgmt->sampling_frequency = FREQUENCY_NO_ENTRY_m11;
+	} else {  // FALSE_m11
+		for (i = 0; i < n_segs; ++i, ++Sgmt)
+			Sgmt->sampling_frequency = rate;
+	}
+
+	return(freqs_vary);
+}
+
+
 si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags)
 {
 	TERN_m11	regex;
@@ -5324,7 +5420,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		case LH_TIME_SERIES_CHANNEL_m11:
 		case LH_VIDEO_CHANNEL_m11:
 			chan = (CHANNEL_m11 *) level_header;
-			sess = chan->super;
+			sess = (SESSION_m11 *) chan->parent;
 			Sgmt_records = chan->Sgmt_records;
 			break;
 		default:
@@ -7093,7 +7189,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 		if (seg == NULL)
 			++null_segment_cnt;
 		else
-			seg->super = (void *) chan;
+			seg->parent = (LEVEL_HEADER_m11 *) chan;
 	}
 
 	// channel records
@@ -7295,7 +7391,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m11], *tmp_str_ptr;
 	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m11 + 1];;
 	ui4				type_code;
-	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, seg_idx;
+	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, n_segs, seg_idx;
 	si8				curr_time;
 	CHANNEL_m11			*chan;
 	UNIVERSAL_HEADER_m11		*uh;
@@ -7571,7 +7667,8 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	}
 
 	// get segment range
-	if (slice->number_of_segments == UNKNOWN_m11) {
+	n_segs = slice->number_of_segments;
+	if (n_segs == UNKNOWN_m11) {
 		if (get_segment_range_m11((LEVEL_HEADER_m11 *) sess, slice) == 0) {
 			if (free_session == TRUE_m11)
 				free_session_m11(sess, TRUE_m11);
@@ -7592,7 +7689,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				}
 				return(NULL);
 			}
-			chan->super = (void *) sess;
+			chan->parent = (LEVEL_HEADER_m11 *) sess;
 		}
 	}
 
@@ -7609,10 +7706,16 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				}
 				return(NULL);
 			}
-			chan->super = (void *) sess;
+			chan->parent = (LEVEL_HEADER_m11 *) sess;
 		}
 	}
 
+	// update Sgmt record array for active channels
+	frequencies_vary_m11(sess);
+	
+	// sort channels
+	sort_channels_by_acq_num_m11(sess);
+	
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
@@ -7633,7 +7736,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			strcpy_m11(ssr->name, sess->name);
 			ssr->type_code = LH_SEGMENTED_SESS_RECS_m11;
 			ssr->flags = sess->flags;
-			ssr->super = (void *) sess;
+			ssr->parent = (LEVEL_HEADER_m11 *) sess;
 			mapped_segs = globals_m11->number_of_mapped_segments;
 			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_m11((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m11 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -7670,7 +7773,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			if (sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
 				merge_universal_headers_m11(sess->time_series_metadata_fps, sess->record_data_fps, NULL);
 			if (ssr != NULL) {
-				for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
+				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 					if (ssr->record_data_fps[j] != NULL)
 						merge_universal_headers_m11(sess->time_series_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
@@ -7700,7 +7803,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			if (sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
 				merge_universal_headers_m11(sess->video_metadata_fps, sess->record_data_fps, NULL);
 			if (ssr != NULL) {
-				for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
+				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 					if (ssr->record_data_fps[j] != NULL)
 						merge_universal_headers_m11(sess->video_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
@@ -8271,7 +8374,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 		if (seg == NULL)
 			++null_segment_cnt;
 		else
-			seg->super = (void *) chan;
+			seg->parent = (LEVEL_HEADER_m11 *) chan;
 	}
 	
 	// empty slice
@@ -8972,6 +9075,9 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
 	
+	// update Sgmt record array for active channels
+	frequencies_vary_m11(sess);
+	
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11)
 		if (sess->record_indices_fps != NULL)
@@ -9001,7 +9107,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 		// time series ephemeral data
 		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 			chan = sess->time_series_channels[i];
-			if (chan->flags & (LH_CHANNEL_ACTIVE_m11 | LH_UPDATE_EPHEMERAL_DATA_m11)) {
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 				merge_universal_headers_m11(sess->time_series_metadata_fps, chan->metadata_fps, NULL);
 				merge_metadata_m11(sess->time_series_metadata_fps, chan->metadata_fps, NULL);
 				chan->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m11;  // clear flag
@@ -9010,7 +9116,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 		// video ephemeral data
 		for (i = 0; i < sess->number_of_video_channels; ++i) {
 			chan = sess->video_channels[i];
-			if (chan->flags & (LH_CHANNEL_ACTIVE_m11 | LH_UPDATE_EPHEMERAL_DATA_m11)) {
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 				merge_universal_headers_m11(sess->video_metadata_fps, chan->metadata_fps, NULL);
 				merge_metadata_m11(sess->video_metadata_fps, chan->metadata_fps, NULL);
 				chan->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m11;  // clear flag
@@ -10879,29 +10985,33 @@ void	show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_f
 }
 
 
-void	show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header)
+void	show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header, Sgmt_RECORD_m11 *Sgmt)
 {
 	si1	                time_str[TIME_STRING_BYTES_m11], hex_str[HEX_STRING_BYTES_m11(8)];
 	si4			n_segs;
 	si8			i;
 	CHANNEL_m11		*chan;
 	SESSION_m11		*sess;
-	Sgmt_RECORD_m11		*Sgmt;
 	
 	
-	switch (level_header->type_code) {
-		case LH_TIME_SERIES_CHANNEL_m11:
-		case LH_VIDEO_CHANNEL_m11:
-			chan = (CHANNEL_m11 *) level_header;
-			Sgmt = chan->Sgmt_records;
-			break;
-		case LH_SESSION_m11:
-			sess = (SESSION_m11 *) level_header;
-			Sgmt = sess->Sgmt_records;
-			break;
-		default:
-			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
-			return;
+	if (level_header != NULL) {
+		switch (level_header->type_code) {
+			case LH_TIME_SERIES_CHANNEL_m11:
+			case LH_VIDEO_CHANNEL_m11:
+				chan = (CHANNEL_m11 *) level_header;
+				Sgmt = chan->Sgmt_records;
+				break;
+			case LH_SESSION_m11:
+				sess = (SESSION_m11 *) level_header;
+				Sgmt = sess->Sgmt_records;
+				break;
+			default:
+				warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
+				return;
+		}
+	} else if (Sgmt == NULL) {
+		warning_message_m11("%s(): both arguments are NULL\n", __FUNCTION__);
+		return;
 	}
 	
 	if (Sgmt == NULL) {
@@ -10916,7 +11026,7 @@ void	show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header)
 	}
 	
 	for (i = 0; i < n_segs; ++i, ++Sgmt) {
-		printf_m11("Record number: %ld\n", i + 1);
+		printf_m11("%sRecord number: %ld%s\n", TC_RED_m11, i + 1, TC_RESET_m11);
 		if (Sgmt->start_time == RECORD_HEADER_START_TIME_NO_ENTRY_m11)
 			printf_m11("Record Start Time: no entry\n");
 		else {
@@ -10952,7 +11062,7 @@ void	show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header)
 		else if (Sgmt->sampling_frequency == REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m11)
 			printf_m11("Sampling Frequency: variable\n");
 		else
-			printf_m11("Sampling Frequency: %lf\n", Sgmt->sampling_frequency);
+			printf_m11("Sampling Frequency: %lf\n\n", Sgmt->sampling_frequency);
 	}
 
 	return;
@@ -17747,18 +17857,9 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 		free_m11((void *) fps->parameters.raw_data, __FUNCTION__);
 		fps->parameters.raw_data = NULL;
 	}
-	if (full_file_name != NULL) {
-		if (*full_file_name) {
-			if (file_exists_m11(full_file_name) == FILE_EXISTS_m11) {
-				strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);
-			} else {
-				warning_message_m11("%s(): the file \"%s\" does not exist\n", __FUNCTION__, full_file_name);
-				if (free_fps == TRUE_m11)
-					FPS_free_processing_struct_m11(fps, TRUE_m11);
-				return(NULL);
-			}
-		}
-	}
+	if (full_file_name != NULL)
+		if (*full_file_name)
+			strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);
 	if (*fps->full_file_name && type_code == UNKNOWN_TYPE_CODE_m11)
 		type_code = MED_type_code_from_string_m11(fps->full_file_name);
 

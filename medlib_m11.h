@@ -1520,7 +1520,7 @@ typedef struct {  // struct name for CMP functions interdependency
 } FILE_PROCESSING_STRUCT_m11;
 
 // Session, Channel, Segment Structures
-typedef struct {
+typedef struct LEVEL_HEADER_m11 {
 	union {  // anonymous union
 		struct {
 			si1     type_string[TYPE_BYTES_m11];
@@ -1531,9 +1531,9 @@ typedef struct {
 			si1	type_string_terminal_zero;  // not used - there for clarity
 		};
 	};
-	void	*super;  // parent structure, NULL for session or if created alone
-	ui8	flags;
-	si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+	struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
+	ui8			flags;
+	si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 } LEVEL_HEADER_m11;
 
 
@@ -1598,7 +1598,7 @@ typedef struct {
 
 #ifdef __cplusplus
 typedef struct {  // struct name for medrec_m11.h interdependency
-	struct {  // this struct replaces LEVEL_HEADER_m11 for C++
+	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 for C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1609,9 +1609,9 @@ typedef struct {  // struct name for medrec_m11.h interdependency
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		void	*super;  // parent structure, NULL for session or if created alone
-		ui8	flags;
-		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
+		ui8			flags;
+		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	*metadata_fps;  // also used as prototype
 	union {
@@ -1657,7 +1657,7 @@ typedef struct {  // struct name for medrec_m11.h interdependency
 
 #ifdef __cplusplus
 typedef struct CHANNEL_m11 {
-	struct {  // this struct replaces LEVEL_HEADER_m11 for C++
+	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 for C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1668,9 +1668,9 @@ typedef struct CHANNEL_m11 {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		void	*super;  // parent structure, NULL for session or if created alone
-		ui8	flags;
-		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
+		ui8			flags;
+		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	*metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	FILE_PROCESSING_STRUCT_m11	*record_data_fps;
@@ -1704,7 +1704,7 @@ typedef struct CHANNEL_m11 {
 
 #ifdef __cplusplus
 typedef struct {
-	struct {  // this struct replaces LEVEL_HEADER_m11 in C++
+	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 in C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1715,8 +1715,9 @@ typedef struct {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		ui8	flags;
-		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
+		ui8			flags;
+		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	**record_data_fps;
 	FILE_PROCESSING_STRUCT_m11	**record_indices_fps;
@@ -1740,7 +1741,7 @@ typedef struct {
 
 #ifdef __cplusplus
 typedef struct {
-	struct {  // this struct replaces LEVEL_HEADER_m11 in C++
+	struct LEVEL_HEADER_m11 {  // this struct replaces LEVEL_HEADER_m11 in C++
 		union {  // anonymous union
 			struct {
 				si1     type_string[TYPE_BYTES_m11];
@@ -1751,8 +1752,9 @@ typedef struct {
 				si1	type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
-		ui8	flags;
-		si8	last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+		struct LEVEL_HEADER_m11	*parent;  // parent structure, NULL for session or if created alone
+		ui8			flags;
+		si8			last_access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 	};
 	FILE_PROCESSING_STRUCT_m11	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	FILE_PROCESSING_STRUCT_m11	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
@@ -1875,6 +1877,7 @@ void            free_channel_m11(CHANNEL_m11* channel, TERN_m11 free_channel_str
 void            free_globals_m11(TERN_m11 cleanup_for_exit);
 void            free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure);
 void            free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure);
+TERN_m11	frequencies_vary_m11(SESSION_m11 *sess);
 si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string);
 ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* MED_name);
@@ -1945,7 +1948,7 @@ void            show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 
 void            show_password_data_m11(PASSWORD_DATA_m11 *pwd);
 void		show_password_hints_m11(PASSWORD_DATA_m11 *pwd);
 void		show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_filters);
-void		show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header);
+void		show_Sgmt_records_array_m11(LEVEL_HEADER_m11 *level_header, Sgmt_RECORD_m11 *Sgmt);
 void    	show_time_slice_m11(TIME_SLICE_m11 *slice);
 void            show_timezone_info_m11(TIMEZONE_INFO_m11 *timezone_entry, TERN_m11 show_DST_detail);
 void            show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER_m11 *uh);
