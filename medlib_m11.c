@@ -8103,6 +8103,10 @@ TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspeci
 		// get terminal bytes
 		extract_terminal_password_bytes_m11(unspecified_pw, unspecified_pw_bytes);
 
+		// check if password protected (no need to check level 2, since for level 2 to exist, level 1 must exist)
+		if (all_zeros_m11(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m11) == TRUE_m11)
+			return(TRUE_m11);
+		
 		// check for level 1 access
 		SHA_hash_m11((ui1 *) unspecified_pw_bytes, PASSWORD_BYTES_m11, hash);  // generate SHA-256 hash of password bytes
 		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m11; ++i)  // compare with stored level 1 hash
@@ -8839,8 +8843,9 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 {
 	TERN_m11	open_segment, free_segment;
 	si1		*seg_path, *password;
-	si4		search_mode, seg_abs_start_samp_num, seg_abs_end_samp_num;
+	si4		search_mode;
 	ui8		flags;
+	si8		seg_abs_start_samp_num, seg_abs_end_samp_num;
 	va_list		args;
 	UNIVERSAL_HEADER_m11			*uh;
 	TIME_SERIES_METADATA_SECTION_2_m11	*tmd2;
@@ -8900,11 +8905,11 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11) {
 		tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
 		seg_abs_start_samp_num = tmd2->absolute_start_sample_number;
-		seg_abs_end_samp_num = (seg_abs_start_samp_num + tmd2->number_of_samples) - 1;
+		seg_abs_end_samp_num = (seg_abs_start_samp_num + (si8) (tmd2->number_of_samples) - 1);
 	} else {  // seg->type_code == LH_VIDEO_SEGMENT_m11
 		vmd2 = &seg->metadata_fps->metadata->video_section_2;
 		seg_abs_start_samp_num = vmd2->absolute_start_frame_number;
-		seg_abs_end_samp_num = (seg_abs_start_samp_num + vmd2->number_of_frames) - 1;
+		seg_abs_end_samp_num = (seg_abs_start_samp_num + (si8) (vmd2->number_of_frames) - 1);
 	}
 	
 	// get local indices (sample number == frame number == idx)
@@ -10966,10 +10971,8 @@ void	show_records_m11(FILE_PROCESSING_STRUCT_m11 *record_data_fps, si4 *record_f
 	
 	if (record_filters == NULL)
 		record_filters = globals_m11->record_filters;	// if these too are NULL, no filters applied
-								// Note: if read_record_data_m11() with these filters was used to get records, filtering is already done
-	else if (*record_filters == NO_TYPE_CODE_m11)		// show all types, even if global filters are not NULL
-		record_filters = NULL;
-	
+	else if (*record_filters == NO_TYPE_CODE_m11)		// Note: if read_record_data_m11() with these filters was used to get records, filtering is already done
+		record_filters = NULL;				// show all types, even if global filters are not NULL
 	
 	// show records
 	n_recs = record_data_fps->number_of_items;
@@ -17772,12 +17775,13 @@ ui4	CRC_update_m11(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
 	c = ~current_crc;
 	
 	// bring block_ptr to 4 byte alignment
-	while (block_bytes && ((ui8)block_ptr & (ui8)3)) {
-		c = crc_table[0][(c ^ *block_ptr++) & 0xFF] ^ (c >> 8);
+	while (block_bytes && ((ui8) block_ptr & (ui8) 3)) {
+		c = crc_table[0][(c ^ (ui4) *block_ptr++) & (ui4) 0xff] ^ (c >> 8);
 		block_bytes--;
 	}
 	
-	ui4_buf = (const ui4*)block_ptr;
+	// calculate CRC in 32 byte chunks
+	ui4_buf = (const ui4*) block_ptr;
 	while (block_bytes >= 32) {
 		c ^= *ui4_buf++;
 		c = crc_table[3][c & 0xff] ^ crc_table[2][(c >> 8) & 0xff] ^ crc_table[1][(c >> 16) & 0xff] ^ crc_table[0][c >> 24];
@@ -17797,6 +17801,8 @@ ui4	CRC_update_m11(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
 		c = crc_table[3][c & 0xff] ^ crc_table[2][(c >> 8) & 0xff] ^ crc_table[1][(c >> 16) & 0xff] ^ crc_table[0][c >> 24];
 		block_bytes -= 32;
 	}
+	
+	// process remaining bytes in 4 byte chunks
 	while (block_bytes >= 4) {
 		c ^= *ui4_buf++;
 		c = crc_table[3][c & 0xff] ^ crc_table[2][(c >> 8) & 0xff] ^ crc_table[1][(c >> 16) & 0xff] ^ crc_table[0][c >> 24];
@@ -17804,9 +17810,9 @@ ui4	CRC_update_m11(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
 	}
 	block_ptr = (const ui1 *) ui4_buf;
 	
-	if (block_bytes) do {
-		c = crc_table[0][(c ^ *block_ptr++) & 0xff] ^ (c >> 8);
-	} while (--block_bytes);
+	// process remaining bytes as single bytes
+	while (block_bytes--)
+		c = crc_table[0][(c ^ (ui4) *block_ptr++) & (ui4) 0xff] ^ (c >> 8);
 	
 	return(~c);
 }
@@ -18494,6 +18500,7 @@ void	FPS_show_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 #endif
 	
 	printf_m11("----------- File Processing Structure - START ----------\n");
+	UTF8_printf_m11("Full File Name: %s\n", fps->full_file_name);
 	printf_m11("Full File Read: ");
 	if (fps->parameters.full_file_read == TRUE_m11)
 		printf_m11("true\n");
@@ -18503,7 +18510,6 @@ void	FPS_show_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		printf_m11("unknown\n");
 	time_string_m11(fps->parameters.last_access_time, time_str, FALSE_m11, FALSE_m11, FALSE_m11);
 	printf_m11("Last Access Time: %ld (µUTC), %s\n", fps->parameters.last_access_time, time_str);
-	UTF8_printf_m11("Full File Name: %s\n", fps->full_file_name);
 	if (fps->parameters.fd >= 3)
 		printf_m11("File Descriptor: %d (open)\n", fps->parameters.fd);
 	else if (fps->parameters.fd == -1)
@@ -20720,7 +20726,6 @@ void	memset_m11(void *ptr, const void *pattern, size_t pat_len, size_t n_members
 	si2	*si2_p, si2_pat;
 	si4	*si4_p, si4_pat;
 	si8	*si8_p, si8_pat;
-	sf16	*sf16_p, sf16_pat;
 	size_t	buf_len;
 	
 #ifdef FN_DEBUG_m11
@@ -20755,31 +20760,24 @@ void	memset_m11(void *ptr, const void *pattern, size_t pat_len, size_t n_members
 			si2_pat = *((si2 *) pattern);
 			for (i = buf_len >> 1; i--;)
 				*si2_p++ = si2_pat;
-			break;
+			return;
 		case 4:
 			si4_p = (si4 *) ptr;
 			si4_pat = *((si4 *) pattern);
 			for (i = buf_len >> 2; i--;)
 				*si4_p++ = si4_pat;
-			break;
+			return;
 		case 8:
 			si8_p = (si8 *) ptr;
 			si8_pat = *((si8 *) pattern);
 			for (i = buf_len >> 3; i--;)
 				*si8_p++ = si8_pat;
-			break;
-		case 16:
-			sf16_p = (sf16 *) ptr;
-			sf16_pat = *((sf16 *) pattern);
-			for (i = buf_len >> 4; i--;)
-				*sf16_p++ = sf16_pat;
-			break;
+			return;
+		// case 16:  removed because some OSs silently implement sf16 as sf8, which would be quite bad with this usage
 		default:
 			warning_message_m11("%s(): unsupported pattern length\n", __FUNCTION__);
-			break;
+			return;
 	}
-
-	return;
 }
 
 
