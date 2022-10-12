@@ -107,7 +107,7 @@ void	show_record_m11(FILE_PROCESSING_STRUCT_m11 *fps, RECORD_HEADER_m11 *record_
 	si1	                time_str[TIME_STRING_BYTES_m11], hex_str[HEX_STRING_BYTES_m11(CRC_BYTES_m11)];
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// decrypt record body if necesary
@@ -169,7 +169,7 @@ void	show_record_m11(FILE_PROCESSING_STRUCT_m11 *fps, RECORD_HEADER_m11 *record_
 	}
 	printf_m11("----------------- Record Header - END -----------------\n");
 
-	// decrypt record body if necesary
+	// record body
 	printf_m11("----------------- Record Body - START -----------------\n");
 	if (record_header->encryption_level > NO_ENCRYPTION_m11) {
 		printf_m11("No access to this record\n");
@@ -232,7 +232,7 @@ TERN_m11	check_record_structure_alignments_m11(ui1 *bytes)
 	TERN_m11		return_value, free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// see if already checked
@@ -297,7 +297,7 @@ void    show_rec_Sgmt_type_m11(RECORD_HEADER_m11 *record_header)
 	si1                     time_str[TIME_STRING_BYTES_m11], hex_str[HEX_STRING_BYTES_m11(8)], *segment_description;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -361,7 +361,7 @@ TERN_m11     check_rec_Sgmt_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -424,7 +424,7 @@ void    show_rec_Stat_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_Stat_v10_m11	*Stat;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -480,7 +480,7 @@ TERN_m11     check_rec_Stat_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -540,7 +540,7 @@ void	show_rec_Note_type_m11(RECORD_HEADER_m11 *record_header)
 	si1	*note_text;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -567,7 +567,7 @@ void	show_rec_Note_type_m11(RECORD_HEADER_m11 *record_header)
 TERN_m11        check_rec_Note_type_alignment_m11(ui1 *bytes)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// no structures to check
@@ -585,7 +585,7 @@ void	show_rec_EDFA_type_m11(RECORD_HEADER_m11 *record_header)
 	si1			*annotation;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -614,7 +614,7 @@ TERN_m11	check_rec_EDFA_type_alignment_m11(ui1 *bytes)
 	TERN_m11		free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -666,7 +666,7 @@ void	show_rec_Seiz_type_m11(RECORD_HEADER_m11 *record_header)
 	si1			        time_str[TIME_STRING_BYTES_m11];
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -749,7 +749,7 @@ TERN_m11	check_rec_Seiz_type_alignment_m11(ui1 *bytes)
 	ui1				*chan_bytes;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall sizes
@@ -820,7 +820,7 @@ void	show_rec_SyLg_type_m11(RECORD_HEADER_m11 *record_header)
 	si1	*log_entry;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -843,7 +843,7 @@ void	show_rec_SyLg_type_m11(RECORD_HEADER_m11 *record_header)
 TERN_m11	check_rec_SyLg_type_alignment_m11(ui1 *bytes)
 {
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// no structures to check
@@ -862,7 +862,7 @@ void    show_rec_NlxP_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_NlxP_v10_m11	*nlxp;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -906,7 +906,7 @@ TERN_m11     check_rec_NlxP_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -964,7 +964,7 @@ void    show_rec_Curs_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_Curs_v10_m11	*curs;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -991,7 +991,7 @@ TERN_m11     check_rec_Curs_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -1045,7 +1045,7 @@ void    show_rec_Epoc_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_Epoc_v10_m11	*epoc;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -1072,7 +1072,7 @@ TERN_m11     check_rec_Epoc_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -1126,7 +1126,7 @@ void    show_rec_ESti_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_ESti_v10_m11	*esti;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -1191,7 +1191,7 @@ TERN_m11     check_rec_ESti_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size
@@ -1253,7 +1253,7 @@ void    show_rec_CSti_type_m11(RECORD_HEADER_m11 *record_header)
 	REC_CSti_v10_m11	*csti;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// Version 1.0
@@ -1279,7 +1279,7 @@ TERN_m11     check_rec_CSti_type_alignment_m11(ui1 *bytes)
 	TERN_m11                free_flag = FALSE_m11;
 
 #ifdef FN_DEBUG_m11
-	printf_m11("%s()\n", __FUNCTION__);
+	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// check overall size

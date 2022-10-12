@@ -4252,21 +4252,41 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 	if (globals_m11->SHA_k_table != NULL)
 		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__);
 	
+	if (globals_m11->behavior_stack != NULL)
+		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
+
+#ifdef MATLAB_m11
+	if (globals_m11->UTF8_offsets_table != NULL)
+		mxFree((void *) globals_m11->UTF8_offsets_table);  // UTF8 tables are not allocted with AT functions
+	
+	if (globals_m11->UTF8_trailing_bytes_table != NULL)
+		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);  // UTF8 tables are not allocted with AT functions
+	
+	if (globals_m11->AT_nodes != NULL) {
+		#ifdef AT_DEBUG_m11
+		AT_free_all_m11();  // display memory still allocated & free it
+		#endif
+		mxFree((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
+	}
+	
+	mxFree((void *) globals_m11);
+#else
 	if (globals_m11->UTF8_offsets_table != NULL)
 		free((void *) globals_m11->UTF8_offsets_table);  // UTF8 tables are not allocted with AT functions
 	
 	if (globals_m11->UTF8_trailing_bytes_table != NULL)
 		free((void *) globals_m11->UTF8_trailing_bytes_table);  // UTF8 tables are not allocted with AT functions
 	
-	if (globals_m11->behavior_stack != NULL)
-		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
-
 	if (globals_m11->AT_nodes != NULL) {
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
 		#endif
 		free((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
+	
+	free((void *) globals_m11);
+#endif
+	globals_m11 = NULL;
 
 	if (cleanup_for_exit == TRUE_m11) {
 		#ifdef WINDOWS_m11
@@ -4274,9 +4294,6 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		#endif
 	}
 
-	free((void *) globals_m11);
-	globals_m11 = NULL;
-	
 	globals_m11_mutex = FALSE_m11;
 	
 	return;
@@ -5759,13 +5776,17 @@ TERN_m11	initialize_globals_m11(void)
 
 	// globals themselves
 	if (globals_m11 == NULL) {
+		#ifdef MATLAB_m11
+		globals_m11 = (GLOBALS_m11 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBALS_m11));
+		#else
 		globals_m11 = (GLOBALS_m11 *) calloc((size_t) 1, sizeof(GLOBALS_m11));
+		#endif
 		if (globals_m11 == NULL) {
 			globals_m11_mutex = FALSE_m11;
 			return(FALSE_m11);
 		}
 	}
-	
+
 	// set global mutices
 	globals_m11->TZ_mutex = FALSE_m11;
 	globals_m11->CRC_mutex = FALSE_m11;
@@ -5776,11 +5797,19 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->behavior_mutex = FALSE_m11;
 
 	// AT (do this as soon as possible)
+#ifdef MATLAB_m11
 	if (globals_m11->AT_nodes != NULL) {
-	     free((void *) globals_m11->AT_nodes);
-	     globals_m11->AT_nodes = NULL;
+		mxFree((void *) globals_m11->AT_nodes);
+		globals_m11->AT_nodes = NULL;
 	}
-	globals_m11->AT_nodes = (AT_NODE *) calloc(GLOBALS_AT_LIST_SIZE_INCREMENT_m11, sizeof(AT_NODE));
+	globals_m11->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m11, (mwSize)sizeof(AT_NODE));
+#else
+	if (globals_m11->AT_nodes != NULL) {
+		free((void *) globals_m11->AT_nodes);
+		globals_m11->AT_nodes = NULL;
+	}
+	globals_m11->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11, sizeof(AT_NODE));
+#endif
 	if (globals_m11->AT_nodes == NULL) {
 		printf_m11("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
 		exit(-1);
@@ -5876,11 +5905,19 @@ TERN_m11	initialize_globals_m11(void)
 	
 	// UTF-8 (UTF8 tables are not allocated with AT functions)
 	if (globals_m11->UTF8_offsets_table != NULL) {
+		#ifdef MATLAB_m11
+		mxFree((void *) globals_m11->UTF8_offsets_table);
+		#else
 		free((void *) globals_m11->UTF8_offsets_table);
+		#endif
 		globals_m11->UTF8_offsets_table = NULL;
 	}
 	if (globals_m11->UTF8_trailing_bytes_table != NULL) {
+		#ifdef MATLAB_m11
+		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);
+		#else
 		free((void *) globals_m11->UTF8_trailing_bytes_table);
+		#endif
 		globals_m11->UTF8_trailing_bytes_table = NULL;
 	}
 	
@@ -13367,11 +13404,19 @@ void	AT_free_all_m11(void)
 			AT_mutex_off();  // release mutex for AT_show_entry_m11()
 			AT_show_entry_m11(atn->address);
 			AT_mutex_on();  // reclaim mutex
-			free((void *) atn->address);
+			#ifdef MATLAB_m11
+			mxFree(atn->address);
+			#else
+			free(atn->address);
+			#endif
 		}
 		#else
-		free((void *) atn->address);
-		atn->address = NULL;
+			#ifdef MATLAB_m11
+			mxFree(atn->address);
+			#else
+			free(atn->address);
+			#endif
+			atn->address = NULL;
 		#endif
 	}
 
@@ -20129,7 +20174,12 @@ void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
 		behavior_on_fail = globals_m11->behavior_on_fail;
 	
-	if ((ptr = calloc(n_members, el_size)) == NULL) {
+#ifdef MATLAB_m11
+	ptr = mxCalloc((mwSize) n_members, (mwSize) el_size);
+#else
+	ptr = calloc(n_members, el_size);
+#endif
+	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 			(void) fprintf_m11(stderr, "%c\n\t%s() failed to allocate the requested array (%ld members of size %ld)\n", 7, __FUNCTION__, n_members, el_size);
 			(void) fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
@@ -20149,6 +20199,10 @@ void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	
 	// alloc tracking
 	AT_add_entry_m11(ptr, function);
+
+#ifdef MATLAB_PERSISTENT_m11
+	mexMakeMemoryPersistent(ptr);
+#endif
 
 	return(ptr);
 }
@@ -20390,8 +20444,13 @@ void    free_m11(void *ptr, const si1 *function)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	if (AT_remove_entry_m11(ptr, function) == TRUE_m11)
+	if (AT_remove_entry_m11(ptr, function) == TRUE_m11) {
+		#ifdef MATLAB_m11
+		mxFree(ptr);
+		#else
 		free(ptr);
+		#endif
+	}
 	
 	return;
 }
@@ -20641,7 +20700,12 @@ void	*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	if (n_bytes == 0)
 		return((void *) NULL);
 	
-	if ((ptr = malloc(n_bytes)) == NULL) {
+#ifdef MATLAB_m11
+	ptr = mxMalloc((mwSize) n_bytes);
+#else
+	ptr = malloc(n_bytes);
+#endif
+	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 			(void)fprintf_m11(stderr, "%c\n\t%s() failed to allocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			(void)fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
@@ -20662,6 +20726,10 @@ void	*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	// alloc tracking
 	AT_add_entry_m11(ptr, function);
 
+#ifdef MATLAB_PERSISTENT_m11
+	mexMakeMemoryPersistent(ptr);
+#endif
+	
 	return(ptr);
 }
 		
@@ -20971,7 +21039,12 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	if (alloced_bytes >= n_bytes)
 		return(orig_ptr);
 	
-	if ((ptr = realloc(orig_ptr, n_bytes)) == NULL) {
+#ifdef MATLAB_m11
+	ptr = mxRealloc(orig_ptr, (mwSize) n_bytes);
+#else
+	ptr = realloc(orig_ptr, n_bytes);
+#endif
+	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 			fprintf_m11(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
@@ -20991,6 +21064,10 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	
 	// alloc tracking
 	AT_update_entry_m11(orig_ptr, ptr, function);
+
+#ifdef MATLAB_PERSISTENT_m11
+	mexMakeMemoryPersistent(ptr);
+#endif
 
 	return(ptr);
 }
@@ -21062,7 +21139,12 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 		return((void *) NULL);
 	}
 		
-	if ((ptr = realloc(orig_ptr, new_bytes)) == NULL) {
+#ifdef MATLAB_m11
+	ptr = mxRealloc(orig_ptr, (mwSize) new_bytes);
+#else
+	ptr = realloc(orig_ptr, new_bytes);
+#endif
+	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 			fprintf_m11(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, new_bytes);
 			fprintf_m11(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
@@ -21088,6 +21170,10 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 	
 	// alloc tracking
 	AT_update_entry_m11(orig_ptr, ptr, function);
+	
+#ifdef MATLAB_PERSISTENT_m11
+	mexMakeMemoryPersistent(ptr);
+#endif
 	
 	return(ptr);
 }

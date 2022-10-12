@@ -149,6 +149,7 @@
 #include <errno.h>
 #ifdef MATLAB_m11
 	#include "mex.h"
+	#include "matrix.h"
 #endif
 
 
@@ -1457,7 +1458,7 @@ typedef struct {
 	ui1     pad[8];
 } GENERIC_INDEX_m11;
 
-// All index structures are the same size
+// All index structures are the same size, and have the same first two fields (hence GENERIC_INDEX_m11)
 typedef struct {
 	union {
 		RECORD_INDEX_m11	record_index;
@@ -1597,7 +1598,7 @@ typedef struct {
 // & bodies into this structure (excluding the segment description).
 
 #ifdef __cplusplus
-typedef struct {  // struct name for medrec_m11.h interdependency
+typedef struct {
 	struct {  // this struct replaces LEVEL_HEADER_m11 for C++
 		union {  // anonymous union
 			struct {
@@ -1631,7 +1632,7 @@ typedef struct {  // struct name for medrec_m11.h interdependency
 	CONTIGUON_m11			*contigua;
 } SEGMENT_m11;
 #else
-typedef struct {  // struct name for medrec_m11.h interdependency
+typedef struct {
 	union {
 		LEVEL_HEADER_m11	header;  // in case just want the level header
 		LEVEL_HEADER_m11;	// anonoymous LEVEL_HEADER_m11
@@ -1796,8 +1797,8 @@ typedef struct {
 } SESSION_m11;
 #endif
 // NOTE: placement of LEVEL_HEADER_m11 in SESSION_m11, SEGMENTED_SESS_RECS_m11, CHANNEL_m11, & SEGMENT_m11 structures allows passing of LEVEL_HEADER_m11 pointer to functions,
-// and based in its content, functions can cast pointer to specific level structures.
-// e.g:	if (level_header->type_code == LEVEL_SESSION_m11)
+// and based on its content, functions can cast pointer to specific level structures.
+// e.g:	if (level_header->type_code == LH_SESSION_m11)
 //		sess = (SESSION_m11 *) level_header;
 
 
@@ -1961,7 +1962,7 @@ si8		uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sampl
 TERN_m11        validate_record_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11        validate_time_series_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            warning_message_m11(si1 *fmt, ...);
-si1*		wchar2char_m11(si1 *target, wchar_t *source);
+si1		*wchar2char_m11(si1 *target, wchar_t *source);
 si8     	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, si8 number_of_items, void *external_data, ui4 behavior_on_fail);
 
 
@@ -2881,11 +2882,11 @@ void		SHA_update_m11(SHA_CTX_m11 *ctx, const ui1 *data, si8 len);
 //
 // Western Sahara:
 // DST is on most of the year and off during Ramadan, whose dates change annually in a way that is not accomodated by this schema.
-// As Ramadan only lasts a month, and can occur at vitually any time of year, this table treats it as if it's Daylight Time
+// As Ramadan only lasts a month, and can occur at virtually any time of year, this table treats it as if it's Daylight Time
 // is it's Standard Time, and it does not observe DST.
 //
 // If it were to have a proper entry, it would look something like:
-// { "Western Sahara", "EH", "ESH", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 0x3c0002041f00ff01, 0xc40003031300ffff, -1 }
+// { "WESTERN SAHARA", "EH", "ESH", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 0x3c0002041f00ff01, 0xc40003031300ffff, -1 }
 //
 // But it is represented here as:
 // { "WESTERN SAHARA", "EH", "ESH", "", "", "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 3600, "", "", 0x0, 0x0, -1 }
