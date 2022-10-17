@@ -2534,7 +2534,7 @@ TERN_m11	decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	}
 	
 	// set global time data
-	if (globals_m11->RTO_known == FALSE_m11) {
+	if (globals_m11->RTO_known != TRUE_m11) {  // UNKNOWN || FALSE
 		section_3 = &fps->metadata->section_3;
 		globals_m11->recording_time_offset = section_3->recording_time_offset;
 		globals_m11->standard_UTC_offset = section_3->standard_UTC_offset;
@@ -4255,13 +4255,7 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 	if (globals_m11->behavior_stack != NULL)
 		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
 
-#ifdef MATLAB_m11
-	if (globals_m11->UTF8_offsets_table != NULL)
-		mxFree((void *) globals_m11->UTF8_offsets_table);  // UTF8 tables are not allocted with AT functions
-	
-	if (globals_m11->UTF8_trailing_bytes_table != NULL)
-		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);  // UTF8 tables are not allocted with AT functions
-	
+#ifdef MATLAB_PERSISTENT_m11
 	if (globals_m11->AT_nodes != NULL) {
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
@@ -4269,20 +4263,26 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		mxFree((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
 	
+	// UTF8 tables are not allocted with AT functions
+	if (globals_m11->UTF8_offsets_table != NULL)
+		mxFree((void *) globals_m11->UTF8_offsets_table);
+	if (globals_m11->UTF8_trailing_bytes_table != NULL)
+		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);
+	
 	mxFree((void *) globals_m11);
 #else
-	if (globals_m11->UTF8_offsets_table != NULL)
-		free((void *) globals_m11->UTF8_offsets_table);  // UTF8 tables are not allocted with AT functions
-	
-	if (globals_m11->UTF8_trailing_bytes_table != NULL)
-		free((void *) globals_m11->UTF8_trailing_bytes_table);  // UTF8 tables are not allocted with AT functions
-	
 	if (globals_m11->AT_nodes != NULL) {
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
 		#endif
 		free((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
+	
+	// UTF8 tables are not allocted with AT functions
+	if (globals_m11->UTF8_offsets_table != NULL)
+		free((void *) globals_m11->UTF8_offsets_table);
+	if (globals_m11->UTF8_trailing_bytes_table != NULL)
+		free((void *) globals_m11->UTF8_trailing_bytes_table);
 	
 	free((void *) globals_m11);
 #endif
@@ -5548,6 +5548,8 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		}
 	}
 
+	// show_Sgmt_records_array_m11(NULL, Sgmt_records);
+	
 	// search Sgmt_records array for segments
 	n_segs = search_Sgmt_records_m11(Sgmt_records, slice, search_mode);
 	if (n_segs) {
@@ -5776,7 +5778,7 @@ TERN_m11	initialize_globals_m11(void)
 
 	// globals themselves
 	if (globals_m11 == NULL) {
-		#ifdef MATLAB_m11
+		#ifdef MATLAB_PERSISTENT_m11
 		globals_m11 = (GLOBALS_m11 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBALS_m11));
 		#else
 		globals_m11 = (GLOBALS_m11 *) calloc((size_t) 1, sizeof(GLOBALS_m11));
@@ -5797,7 +5799,7 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->behavior_mutex = FALSE_m11;
 
 	// AT (do this as soon as possible)
-#ifdef MATLAB_m11
+#ifdef MATLAB_PERSISTENT_m11
 	if (globals_m11->AT_nodes != NULL) {
 		mxFree((void *) globals_m11->AT_nodes);
 		globals_m11->AT_nodes = NULL;
@@ -5905,7 +5907,7 @@ TERN_m11	initialize_globals_m11(void)
 	
 	// UTF-8 (UTF8 tables are not allocated with AT functions)
 	if (globals_m11->UTF8_offsets_table != NULL) {
-		#ifdef MATLAB_m11
+		#ifdef MATLAB_PERSISTENT_m11
 		mxFree((void *) globals_m11->UTF8_offsets_table);
 		#else
 		free((void *) globals_m11->UTF8_offsets_table);
@@ -5913,7 +5915,7 @@ TERN_m11	initialize_globals_m11(void)
 		globals_m11->UTF8_offsets_table = NULL;
 	}
 	if (globals_m11->UTF8_trailing_bytes_table != NULL) {
-		#ifdef MATLAB_m11
+		#ifdef MATLAB_PERSISTENT_m11
 		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);
 		#else
 		free((void *) globals_m11->UTF8_trailing_bytes_table);
@@ -11593,7 +11595,7 @@ si1	*time_string_m11(si8 uutc, si1 *time_str, TERN_m11 fixed_width, TERN_m11 rel
 	
 	standard_timezone_acronym = globals_m11->standard_timezone_acronym;
 	standard_timezone_string = globals_m11->standard_timezone_string;
-	local_time = (si4) (uutc / (si8) 1000000) + DST_offset + globals_m11->standard_UTC_offset;
+	local_time = (si8) (uutc / (si8) 1000000) + (si8) (globals_m11->standard_UTC_offset + DST_offset);
 	microseconds = (si4) (uutc % (si8) 1000000);
 #if defined MACOS_m11 || defined LINUX_m11
 	gmtime_r(&local_time, &ti);
@@ -13404,14 +13406,14 @@ void	AT_free_all_m11(void)
 			AT_mutex_off();  // release mutex for AT_show_entry_m11()
 			AT_show_entry_m11(atn->address);
 			AT_mutex_on();  // reclaim mutex
-			#ifdef MATLAB_m11
+			#ifdef MATLAB_PERSISTENT_m11
 			mxFree(atn->address);
 			#else
 			free(atn->address);
 			#endif
 		}
 		#else
-			#ifdef MATLAB_m11
+			#ifdef MATLAB_PERSISTENT_m11
 			mxFree(atn->address);
 			#else
 			free(atn->address);
@@ -20174,7 +20176,7 @@ void	*calloc_m11(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
 		behavior_on_fail = globals_m11->behavior_on_fail;
 	
-#ifdef MATLAB_m11
+#ifdef MATLAB_PERSISTENT_m11
 	ptr = mxCalloc((mwSize) n_members, (mwSize) el_size);
 #else
 	ptr = calloc(n_members, el_size);
@@ -20445,7 +20447,7 @@ void    free_m11(void *ptr, const si1 *function)
 #endif
 	
 	if (AT_remove_entry_m11(ptr, function) == TRUE_m11) {
-		#ifdef MATLAB_m11
+		#ifdef MATLAB_PERSISTENT_m11
 		mxFree(ptr);
 		#else
 		free(ptr);
@@ -20700,7 +20702,7 @@ void	*malloc_m11(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	if (n_bytes == 0)
 		return((void *) NULL);
 	
-#ifdef MATLAB_m11
+#ifdef MATLAB_PERSISTENT_m11
 	ptr = mxMalloc((mwSize) n_bytes);
 #else
 	ptr = malloc(n_bytes);
@@ -21039,7 +21041,7 @@ void	*realloc_m11(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	if (alloced_bytes >= n_bytes)
 		return(orig_ptr);
 	
-#ifdef MATLAB_m11
+#ifdef MATLAB_PERSISTENT_m11
 	ptr = mxRealloc(orig_ptr, (mwSize) n_bytes);
 #else
 	ptr = realloc(orig_ptr, n_bytes);
@@ -21139,7 +21141,7 @@ void	*recalloc_m11(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 		return((void *) NULL);
 	}
 		
-#ifdef MATLAB_m11
+#ifdef MATLAB_PERSISTENT_m11
 	ptr = mxRealloc(orig_ptr, (mwSize) new_bytes);
 #else
 	ptr = realloc(orig_ptr, new_bytes);
