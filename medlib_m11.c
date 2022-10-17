@@ -863,6 +863,8 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number;  // frame numbers are unioned
 
+	show_Sgmt_records_array_m11(NULL, Sgmt_records);
+	
 	return(Sgmt_records);
 }
 
@@ -8944,11 +8946,11 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11) {
 		tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
 		seg_abs_start_samp_num = tmd2->absolute_start_sample_number;
-		seg_abs_end_samp_num = (seg_abs_start_samp_num + (si8) (tmd2->number_of_samples) - 1);
+		seg_abs_end_samp_num = seg_abs_start_samp_num + tmd2->number_of_samples - (si8) 1;
 	} else {  // seg->type_code == LH_VIDEO_SEGMENT_m11
 		vmd2 = &seg->metadata_fps->metadata->video_section_2;
 		seg_abs_start_samp_num = vmd2->absolute_start_frame_number;
-		seg_abs_end_samp_num = (seg_abs_start_samp_num + (si8) (vmd2->number_of_frames) - 1);
+		seg_abs_end_samp_num = seg_abs_start_samp_num + (vmd2->number_of_frames - (si8) 1);
 	}
 	
 	// get local indices (sample number == frame number == idx)
@@ -8968,6 +8970,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 		slice->end_sample_number = sample_number_for_uutc_m11((LEVEL_HEADER_m11 *) seg, slice->end_time, FIND_CURRENT_m11);
 	}
 	slice->start_segment_number = slice->end_segment_number = seg->metadata_fps->universal_header->segment_number;
+	slice->number_of_segments = 1;
 
 	// read segment data
 	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m11) {
