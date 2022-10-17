@@ -862,8 +862,6 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number;  // frame numbers are unioned
-
-	show_Sgmt_records_array_m11(NULL, Sgmt_records);
 	
 	return(Sgmt_records);
 }
