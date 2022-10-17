@@ -7,7 +7,7 @@
 //************************************  Target OS  *********************************//
 //**********************************************************************************//
 
-// Target OS Options: LINUX_m11, MACOS_m11, or WINDOWS_m11
+// Target OS Options: LINUX_m10, MACOS_m10, or WINDOWS_m10
 // Define one of these here
 #define MACOS_m11
 // #define LINUX_m11
@@ -31,10 +31,10 @@
 
 // Target Application Options: MATLAB_m11
 // Define one of these here if appropriate
-#define MATLAB_m11  // for alloc, screen output, & exit functions
+// #define MATLAB_m11  // for screen output & exit functions
 // #define MATLAB_PERSISTENT_m11	// For persistent memory between mex calls.
-					// NOTE: it may be more convenient to define MATLAB_PERSISTENT_m11
-					// only within mex functions that use it, rather than here
+				// NOTE: it may be more convenient to define MATLAB_PERSISTENT_m11
+				// only within mex functions that use it, rather than here
 
 	// If using persistent memory, do something like the following:
 	//
