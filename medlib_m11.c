@@ -7259,12 +7259,15 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	}
 	slice->start_time = seg->time_slice.start_time;
 	slice->start_sample_number = seg->time_slice.start_sample_number;
+	slice->start_segment_number = seg->time_slice.start_segment_number;
 	for (++i, ++j; i < n_segs; ++i, ++j) {
 		if (chan->segments[j] != NULL)
 			seg = chan->segments[j];
 	}
 	slice->end_time = seg->time_slice.end_time;
 	slice->end_sample_number = seg->time_slice.end_sample_number;
+	slice->end_segment_number = seg->time_slice.end_segment_number;
+	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
 
 	// ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m11) {
@@ -7434,6 +7437,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	ui4				type_code;
 	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, n_segs, seg_idx;
 	si8				curr_time;
+	sf8				ref_chan_sf;
 	CHANNEL_m11			*chan;
 	UNIVERSAL_HEADER_m11		*uh;
 	SEGMENTED_SESS_RECS_m11		*ssr;
@@ -7750,6 +7754,38 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			chan->parent = (void *) sess;
 		}
 	}
+
+	// update session slice
+	chan = globals_m11->reference_channel;
+	if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
+		slice->start_sample_number = chan->time_slice.start_sample_number;
+		slice->end_sample_number = chan->time_slice.end_sample_number;
+	} else {  // reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
+		ref_chan_sf = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+			chan = sess->time_series_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+				break;
+		}
+		if (i == sess->number_of_time_series_channels) {
+			for (i = 0; i < sess->number_of_video_channels; ++i) {
+				chan = sess->video_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+					break;
+			}
+		}
+		if (chan->metadata_fps->metadata->time_series_section_2.sampling_frequency != ref_chan_sf) {
+			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
+		} else {
+			slice->start_sample_number = chan->time_slice.start_sample_number;
+			slice->end_sample_number = chan->time_slice.end_sample_number;
+		}
+	}
+	slice->start_time = chan->time_slice.start_time;
+	slice->end_time = chan->time_slice.end_time;
+	slice->start_segment_number = chan->time_slice.start_segment_number;
+	slice->end_segment_number = chan->time_slice.end_segment_number;
+	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
 
 	// update Sgmt record array for active channels
 	frequencies_vary_m11(sess);
@@ -8438,12 +8474,15 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 	}
 	slice->start_time = seg->time_slice.start_time;
 	slice->start_sample_number = seg->time_slice.start_sample_number;
+	slice->start_segment_number = seg->time_slice.start_segment_number;
 	for (++i, ++j; i < n_segs; ++i, ++j) {
 		if (chan->segments[j] != NULL)
 			seg = chan->segments[j];
 	}
 	slice->end_time = seg->time_slice.end_time;
 	slice->end_sample_number = seg->time_slice.end_sample_number;
+	slice->end_segment_number = seg->time_slice.end_segment_number;
+	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
 
 	// records
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m11)
@@ -9121,7 +9160,10 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	}
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
-	
+	slice->start_segment_number = chan->time_slice.start_segment_number;
+	slice->end_segment_number = chan->time_slice.end_segment_number;
+	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
+
 	// update Sgmt record array for active channels
 	frequencies_vary_m11(sess);
 	
