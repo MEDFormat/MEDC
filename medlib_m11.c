@@ -7514,7 +7514,8 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	}
 
 	extract_path_parts_m11(chan_list[0], sess->path, NULL, NULL);
-	type_code = generate_MED_path_components_m11(sess->path, NULL, sess->name);
+	type_code = generate_MED_path_components_m11(sess->path, NULL, sess->fs_name);
+	sess->name = sess->fs_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m11) {
 		if (free_session == TRUE_m11)
 			free_session_m11(sess, TRUE_m11);
@@ -7667,6 +7668,11 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				free_session_m11(sess, TRUE_m11);
 			return(NULL);
 		}
+	}
+	// user generated channel subsets (setting password also sets global session names)
+	if (*globals_m11->uh_session_name) {
+		strcpy(sess->uh_name, globals_m11->uh_session_name);
+		sess->name = sess->uh_name;  // change name to the more generally useful version
 	}
 
 	// process time slice (passed slice is not modified)

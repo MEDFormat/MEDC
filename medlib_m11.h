@@ -1768,7 +1768,9 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m11	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m11		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to session directory (including directory itself)
-	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name & path duplcated in globals
+	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
+	si1                             uh_name[BASE_FILE_NAME_BYTES_m11];
+	si1                             fs_name[BASE_FILE_NAME_BYTES_m11];
 	TIME_SLICE_m11			time_slice;
 	si8				number_of_contigua;
 	CONTIGUON_m11			*contigua;
@@ -1790,7 +1792,9 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m11	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m11		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m11];		// full path to session directory (including session directory itself)
-	si1                             name[BASE_FILE_NAME_BYTES_m11];		// session name & path duplcated in globals
+	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
+	si1                             uh_name[BASE_FILE_NAME_BYTES_m11];
+	si1                             fs_name[BASE_FILE_NAME_BYTES_m11];	
 	TIME_SLICE_m11			time_slice;
 	si8				number_of_contigua;
 	CONTIGUON_m11			*contigua;
