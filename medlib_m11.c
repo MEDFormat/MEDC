@@ -320,7 +320,8 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 		generate_UID_m11(&uh->session_UID);
 	uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m11;;
 	strncpy_m11(uh->session_name, sess_name, BASE_FILE_NAME_BYTES_m11);
-	strncpy_m11(sess->name, sess_name, BASE_FILE_NAME_BYTES_m11);
+	strncpy_m11(sess->uh_name, sess_name, BASE_FILE_NAME_BYTES_m11);
+	sess->name = sess->uh_name;
 	snprintf_m11(sess->path, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", enclosing_path, sess->name, SESSION_DIRECTORY_TYPE_STRING_m11);
 	
 	globals_m11->number_of_mapped_segments = n_segs;
@@ -9515,7 +9516,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 					return(SAMPLE_NUMBER_NO_ENTRY_m11);
 				if (level_header->type_code == LH_TIME_SERIES_CHANNEL_m11) {
 					chan = (CHANNEL_m11 *) level_header;
-				} else {
+				} else {  // SESSION_m11
 					chan = globals_m11->reference_channel;
 					if (chan->type_code != LH_TIME_SERIES_CHANNEL_m11) {
 						sess = (SESSION_m11 *) level_header;
@@ -9531,6 +9532,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 				warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
 				return(SAMPLE_NUMBER_NO_ENTRY_m11);
 		}
+		// return(SAMPLE_NUMBER_NO_ENTRY_m11);
 		if (seg == NULL) {  // channel or session
 			numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_num);
 			sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11);
@@ -9783,10 +9785,18 @@ si4	segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fram
 		case LH_VIDEO_CHANNEL_m11:
 			chan = (CHANNEL_m11 *) level_header;
 			Sgmt_records = chan->Sgmt_records;
+			if (Sgmt_records == NULL && chan->parent != NULL)
+				Sgmt_records = ((SESSION_m11 *) chan->parent)->Sgmt_records;
+			else
+				Sgmt_records = build_Sgmt_records_array_m11(chan->record_indices_fps, chan->record_data_fps, chan);
 			break;
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
 			Sgmt_records = sess->Sgmt_records;
+			if (Sgmt_records == NULL && globals_m11->reference_channel->Sgmt_records != NULL)
+				Sgmt_records = globals_m11->reference_channel->Sgmt_records;
+			else
+				Sgmt_records = build_Sgmt_records_array_m11(sess->record_indices_fps, sess->record_data_fps, NULL);
 			break;
 		default:
 			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
@@ -9795,14 +9805,10 @@ si4	segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fram
 
 	low_idx = 0;
 	high_idx = globals_m11->number_of_session_segments - 1;
-	if (target_frame < Sgmt_records[0].start_frame_number) {
-		warning_message_m11("%s(): requested frame number is before session start\n", __FUNCTION__);
-		return(-1);
-	}
-	if (target_frame > Sgmt_records[high_idx].end_frame_number) {
-		warning_message_m11("%s(): requested frame_number is after session end\n", __FUNCTION__);
-		return(high_idx + 1);
-	}
+	if (target_frame <= Sgmt_records[0].start_frame_number)
+		return(1);  // return first segment if requested frame number <= session start
+	if (target_frame >= Sgmt_records[high_idx].end_frame_number)
+		return(high_idx + 1);  // return last segment if requested frame number <= session start
 		
 	do {  // binary search
 		idx = (low_idx + high_idx) >> 1;
@@ -9842,10 +9848,18 @@ si4	segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sam
 		case LH_TIME_SERIES_CHANNEL_m11:
 			chan = (CHANNEL_m11 *) level_header;
 			Sgmt_records = chan->Sgmt_records;
+			if (Sgmt_records == NULL && chan->parent != NULL)
+				Sgmt_records = ((SESSION_m11 *) chan->parent)->Sgmt_records;
+			else
+				Sgmt_records = build_Sgmt_records_array_m11(chan->record_indices_fps, chan->record_data_fps, chan);
 			break;
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
 			Sgmt_records = sess->Sgmt_records;
+			if (Sgmt_records == NULL && globals_m11->reference_channel->Sgmt_records != NULL)
+				Sgmt_records = globals_m11->reference_channel->Sgmt_records;
+			else
+				Sgmt_records = build_Sgmt_records_array_m11(sess->record_indices_fps, sess->record_data_fps, NULL);
 			break;
 		default:
 			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
@@ -9854,14 +9868,10 @@ si4	segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sam
 	
 	low_idx = 0;
 	high_idx = globals_m11->number_of_session_segments - 1;
-	if (target_sample < Sgmt_records[0].start_sample_number) {
-		warning_message_m11("%s(): requested sample number is before session start\n", __FUNCTION__);
-		return(-1);
-	}
-	if (target_sample > Sgmt_records[high_idx].end_sample_number) {
-		warning_message_m11("%s(): requested sample_number is after session end\n", __FUNCTION__);
-		return(high_idx + 1);
-	}
+	if (target_sample <= Sgmt_records[0].start_sample_number)
+		return(1);  // return first segment if requested sample number <= session start
+	if (target_sample >= Sgmt_records[high_idx].end_sample_number)
+		return(high_idx + 1);  // return last segment if requested sample number >= session end
 		
 	do {  // binary search
 		idx = (low_idx + high_idx) >> 1;
@@ -9899,10 +9909,18 @@ si4	segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time)
 		case LH_TIME_SERIES_CHANNEL_m11:
 			chan = (CHANNEL_m11 *) level_header;
 			Sgmt_records = chan->Sgmt_records;
+			if (Sgmt_records == NULL && chan->parent != NULL)
+				Sgmt_records = ((SESSION_m11 *) chan->parent)->Sgmt_records;
+			else
+				Sgmt_records = build_Sgmt_records_array_m11(chan->record_indices_fps, chan->record_data_fps, chan);
 			break;
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
 			Sgmt_records = sess->Sgmt_records;
+			if (Sgmt_records == NULL && globals_m11->reference_channel->Sgmt_records != NULL)
+				Sgmt_records = globals_m11->reference_channel->Sgmt_records;
+			else
+				Sgmt_records = build_Sgmt_records_array_m11(sess->record_indices_fps, sess->record_data_fps, NULL);
 			break;
 		default:
 			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
@@ -9911,14 +9929,10 @@ si4	segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time)
 	
 	low_idx = 0;
 	high_idx = globals_m11->number_of_session_segments - 1;
-	if (target_time < Sgmt_records[0].start_time) {
-		warning_message_m11("%s(): requested time is before session start\n", __FUNCTION__);
-		return(-1);
-	}
-	if (target_time > Sgmt_records[high_idx].end_time) {
-		warning_message_m11("%s(): requested time is after session end\n", __FUNCTION__);
-		return(high_idx + 1);
-	}
+	if (target_time <= Sgmt_records[0].start_time)
+		return(1);  // return first segment if requested time <= session start
+	if (target_time >= Sgmt_records[high_idx].end_time)
+		return(high_idx + 1);   // return last segment if requested time >= session end
 		
 	do {  // binary search
 		idx = (low_idx + high_idx) >> 1;

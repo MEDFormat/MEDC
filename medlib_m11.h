@@ -1353,7 +1353,7 @@ typedef struct {
 	ui1     discretionary_region[VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m11];
 } VIDEO_METADATA_SECTION_2_m11;
 
-// All metadata section 2 structures are the same size
+// All metadata section substructures are the same sizes
 typedef union {
 		ui1					section_2[METADATA_SECTION_2_BYTES_m11];
 		TIME_SERIES_METADATA_SECTION_2_m11	time_series_section_2;
@@ -1453,7 +1453,7 @@ typedef struct {
 } VIDEO_INDEX_m11;
 
 typedef struct {
-	si8     file_offset;  // negative values indicate discontinuity
+	si8     file_offset;  // negative values indicate discontinuity (in time series & video indices)
 	si8	start_time;
 	ui1     pad[8];
 } GENERIC_INDEX_m11;
@@ -1682,7 +1682,7 @@ typedef struct CHANNEL_m11 {
 	si1                             name[BASE_FILE_NAME_BYTES_m11];
 	TIME_SLICE_m11			time_slice;
 	si8				number_of_contigua;
-	CONTIGUON_m11* contigua;
+	CONTIGUON_m11			*contigua;
 } CHANNEL_m11;
 #else
 typedef struct CHANNEL_m11 {
