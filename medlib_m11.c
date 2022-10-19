@@ -739,6 +739,14 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 	if ((*contigua)[*n_contigua - 1].end_sample_number > slice->end_sample_number)
 		(*contigua)[*n_contigua - 1].end_sample_number = slice->end_sample_number;
 	
+	// set sample/frame numbers to NO ENTRY for variable frequency sessions
+	if (level_header->type_code == LH_SESSION_m11) {
+		if (sess->Sgmt_records[0].sampling_frequency == FREQUENCY_VARIABLE_m11) {
+			for (i = 0; i < *n_contigua; ++i)
+				(*contigua)[i].start_sample_number = (*contigua)[i].end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;  // sample_number == frame_number
+		}
+	}
+	
 	return(*n_contigua);
 }
 
@@ -7436,7 +7444,6 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	ui4				type_code;
 	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, n_segs, seg_idx;
 	si8				curr_time;
-	sf8				ref_chan_sf;
 	CHANNEL_m11			*chan;
 	UNIVERSAL_HEADER_m11		*uh;
 	SEGMENTED_SESS_RECS_m11		*ssr;
@@ -7762,11 +7769,8 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 
 	// update session slice
 	chan = globals_m11->reference_channel;
-	if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
-		slice->start_sample_number = chan->time_slice.start_sample_number;
-		slice->end_sample_number = chan->time_slice.end_sample_number;
-	} else {  // reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
-		ref_chan_sf = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+	if ((chan->flags & LH_CHANNEL_ACTIVE_m11) == 0) {
+		// reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
 		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 			chan = sess->time_series_channels[i];
 			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
@@ -7779,12 +7783,6 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 					break;
 			}
 		}
-		if (chan->metadata_fps->metadata->time_series_section_2.sampling_frequency != ref_chan_sf) {
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
-		} else {
-			slice->start_sample_number = chan->time_slice.start_sample_number;
-			slice->end_sample_number = chan->time_slice.end_sample_number;
-		}
 	}
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
@@ -7792,9 +7790,6 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	slice->end_segment_number = chan->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
 
-	// update Sgmt record array for active channels
-	frequencies_vary_m11(sess);
-	
 	// sort channels
 	sort_channels_by_acq_num_m11(sess);
 	
@@ -9039,12 +9034,11 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 
 SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  // varargs: void *file_list, si4 list_len, ui8 flags, si1 *password
 {
-	TERN_m11			open_session, free_session;
+	TERN_m11			open_session, free_session, var_freq;
 	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m11 + 1];
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m11];
 	si4                             i, j, list_len, seg_idx;
 	ui8                             flags;
-	sf8				ref_chan_sf;
 	void				*file_list;
 	va_list				args;
 	CHANNEL_m11			*chan;
@@ -9077,18 +9071,17 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 			error_message_m11("%s(): error opening session\n", __FUNCTION__);
 			return(NULL);
 		}
-	}
-
-	// process time slice (passed slice is not modified)
-	if (slice == NULL) {
-		if (all_zeros_m11((ui1 *) &sess->time_slice, (si4) sizeof(TIME_SLICE_m11)) == TRUE_m11)
-			initialize_time_slice_m11(&sess->time_slice);  // read whole session
-	} else {  // passed slice supersedes structure slice
-		sess->time_slice = *slice;  // passed slice is not modified
+	} else {  // process time slice (passed slice is not modified)
+		if (slice == NULL) {
+			if (all_zeros_m11((ui1 *) &sess->time_slice, (si4) sizeof(TIME_SLICE_m11)) == TRUE_m11)
+				initialize_time_slice_m11(&sess->time_slice);  // read whole session
+		} else {  // passed slice supersedes structure slice
+			sess->time_slice = *slice;  // passed slice is not modified
+		}
+		if (sess->time_slice.conditioned == FALSE_m11)
+			condition_time_slice_m11(slice);
 	}
 	slice = &sess->time_slice;
-	if (slice->conditioned == FALSE_m11)
-		condition_time_slice_m11(slice);
 	
 	// get segment range
 	if (slice->number_of_segments == UNKNOWN_m11) {
@@ -9103,6 +9096,16 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 		if (free_session == TRUE_m11)
 			free_session_m11(sess, TRUE_m11);
 		return(NULL);
+	}
+
+	// update Sgmt record array for active channels
+	var_freq = frequencies_vary_m11(sess);
+	if (var_freq == TRUE_m11) {
+		if (get_search_mode_m11(slice) == SAMPLE_SEARCH_m11) {
+			slice->start_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_sample_number, FIND_START_m11);
+			slice->end_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_sample_number, FIND_END_m11);
+		}
+		slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
 	}
 
 	// read time series channels
@@ -9139,11 +9142,8 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	
 	// update session slice
 	chan = globals_m11->reference_channel;
-	if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
-		slice->start_sample_number = chan->time_slice.start_sample_number;
-		slice->end_sample_number = chan->time_slice.end_sample_number;
-	} else {  // reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
-		ref_chan_sf = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+	if ((chan->flags & LH_CHANNEL_ACTIVE_m11) == 0) {
+		// reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
 		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 			chan = sess->time_series_channels[i];
 			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
@@ -9156,22 +9156,17 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 					break;
 			}
 		}
-		if (chan->metadata_fps->metadata->time_series_section_2.sampling_frequency != ref_chan_sf) {
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
-		} else {
-			slice->start_sample_number = chan->time_slice.start_sample_number;
-			slice->end_sample_number = chan->time_slice.end_sample_number;
-		}
 	}
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
 	slice->start_segment_number = chan->time_slice.start_segment_number;
 	slice->end_segment_number = chan->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
+	if (var_freq == FALSE_m11) {
+		slice->start_sample_number = chan->time_slice.start_sample_number;
+		slice->end_sample_number = chan->time_slice.end_sample_number;
+	}
 
-	// update Sgmt record array for active channels
-	frequencies_vary_m11(sess);
-	
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11)
 		if (sess->record_indices_fps != NULL)
