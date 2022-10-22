@@ -164,10 +164,10 @@ TERN_m11	all_zeros_m11(ui1 *bytes, si4 field_length)
 
 CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m11 chan_recs, TERN_m11 seg_recs)
 {
-	si1	*type_str;
-	si8	i;
+	si1				*type_str;
+	si8				i;
 	UNIVERSAL_HEADER_m11		*uh;
-	FILE_PROCESSING_STRUCT_m11	*gen_fps;
+	SEGMENT_m11			*seg;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
@@ -186,42 +186,49 @@ CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 
 			error_message_m11("%s():: unrecognized channel type code \"0x%x\"\n", __FUNCTION__);
 			return(NULL);
 	}
-	type_str = MED_type_string_from_code_m11(type_code);
 	
+	// allocate channel
 	if (chan == NULL)
 		chan = (CHANNEL_m11 *) calloc_m11((size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	if (type_code == TIME_SERIES_CHANNEL_TYPE_m11)
-		gen_fps = FPS_allocate_processing_struct_m11(NULL, NULL, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
-	else // type_code == TIME_SERIES_CHANNEL_TYPE_m11
-		gen_fps = FPS_allocate_processing_struct_m11(NULL, NULL, VIDEO_METADATA_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
-	gen_fps->parameters.fd = FPS_FD_EPHEMERAL_m11;
-	
 	globals_m11->number_of_mapped_segments = n_segs;
-	
-	uh = gen_fps->universal_header;
+
+	// make new prototype fps (don't modify original)
+	if (type_code == TIME_SERIES_CHANNEL_TYPE_m11)
+		proto_fps = FPS_allocate_processing_struct_m11(NULL, NULL, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
+	else // type_code == VIDEO_CHANNEL_TYPE_m11
+		proto_fps = FPS_allocate_processing_struct_m11(NULL, NULL, VIDEO_METADATA_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
+	uh = proto_fps->universal_header;
 	if (uh->channel_UID == UID_NO_ENTRY_m11)
 		generate_UID_m11(&uh->channel_UID);
 	uh->segment_number = UNIVERSAL_HEADER_CHANNEL_LEVEL_CODE_m11;
 	strncpy_m11(uh->channel_name, chan_name, BASE_FILE_NAME_BYTES_m11);
 	strncpy_m11(chan->name, chan_name, BASE_FILE_NAME_BYTES_m11);
+	type_str = MED_type_string_from_code_m11(type_code);
 	snprintf_m11(chan->path, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", enclosing_path, chan->name, type_str);
-	chan->metadata_fps = gen_fps;
-	
+
+	// allocate channel records
 	if (chan_recs == TRUE_m11) {
-		chan->record_data_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, gen_fps, 0);
+		chan->record_data_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, proto_fps, 0);
 		snprintf_m11(chan->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m11);
-		chan->record_indices_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m11, RECORD_INDEX_BYTES_m11, gen_fps, 0);
+		chan->record_indices_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m11, RECORD_INDEX_BYTES_m11, proto_fps, 0);
 		snprintf_m11(chan->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 	} else {
 		chan->record_data_fps = chan->record_indices_fps = NULL;
 	}
-	
+
+	// allocate segments
 	if (n_segs) {
 		chan->segments = (SEGMENT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(SEGMENT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-		for (i = 0; i < n_segs; ++i)
-			allocate_segment_m11(chan->segments[i], gen_fps, chan->path, chan->name, type_code, (si4) i + 1, seg_recs);
+		for (i = 0; i < n_segs; ++i) {
+			seg = chan->segments[i];
+			seg->parent = (void *) chan;
+			allocate_segment_m11(seg, proto_fps, chan->path, chan->name, type_code, (si4) i + 1, seg_recs);
+		}
 	}
 
+	// clean up
+	FPS_free_processing_struct_m11(proto_fps, TRUE_m11);
+	
 	return(chan);
 }
 
@@ -239,13 +246,15 @@ SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *
 	// chan_name is the base name, with no extension
 	// if time series channels are requested, the CMP_PROCESSING_STRUCT_m11 structures must be allocated seperately.
 	// if time series data are requested, enough memory for one time series index is allocated.
-	// if records are requested, enough memory for 1 record of size LARGEST_RECORD_BYTES_m11 is allocated (use reFPS_allocate_processing_struct_m11() to change this)
-	// if records are requested, enough memory for 1 record index is allocated (reFPS_allocate_processing_struct_m11() to change this)
+	// if records are requested, enough memory for 1 record of size LARGEST_RECORD_BYTES_m11 is allocated (use FPS_reallocate_processing_struct_m11() to change this)
+	// if records are requested, enough memory for 1 record index is allocated (FPS_reallocate_processing_struct_m11() to change this)
 	
 	if (seg == NULL)
 		seg = (SEGMENT_m11 *) calloc_m11((size_t)1, sizeof(SEGMENT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_num);
 	snprintf_m11(seg->name, SEGMENT_BASE_FILE_NAME_BYTES_m11, "%s_s%s", chan_name, num_str);
+	
+	// allocate metadata, data, & indices
 	switch (type_code) {
 		case TIME_SERIES_CHANNEL_TYPE_m11:
 			// metadata: used as prototype
@@ -281,6 +290,7 @@ SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *
 			return(NULL);
 	}
 	
+	// allocate session records
 	if (seg_recs == TRUE_m11) {
 		seg->record_data_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, seg->metadata_fps, 0);
 		snprintf_m11(seg->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m11);
@@ -302,7 +312,8 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	UNIVERSAL_HEADER_m11		*uh;
 	FILE_PROCESSING_STRUCT_m11	*gen_fps;
 	SEGMENTED_SESS_RECS_m11		*ssr;
-	
+	CHANNEL_m11			*chan;
+
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
@@ -312,10 +323,16 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	// if records are requested, enough memory for 1 record of data size LARGEST_RECORD_BYTES_m11 is allocated (reFPS_allocate_processing_struct_m11() to change this)
 	// if records are requested, enough memory for 1 record index is allocated (FPS_reallocate_processing_struct_m11() to change this)
 	
+	// allocate session
 	sess = (SESSION_m11 *) calloc_m11((size_t)1, sizeof(SESSION_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	gen_fps = FPS_allocate_processing_struct_m11(NULL, NULL, FPS_PROTOTYPE_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
-	gen_fps->parameters.fd = FPS_FD_EPHEMERAL_m11;
-	uh = gen_fps->universal_header;
+	globals_m11->number_of_mapped_segments = n_segs;
+	sess->number_of_time_series_channels = n_ts_chans;
+	sess->number_of_video_channels = n_vid_chans;
+
+	
+	// create a prototype fps
+	proto_fps = FPS_allocate_processing_struct_m11(NULL, NULL, FPS_PROTOTYPE_FILE_TYPE_CODE_m11, FPS_PROTOTYPE_BYTES_m11, proto_fps, FPS_PROTOTYPE_BYTES_m11);
+	uh = proto_fps->universal_header;
 	if (uh->session_UID == UID_NO_ENTRY_m11)
 		generate_UID_m11(&uh->session_UID);
 	uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m11;;
@@ -323,34 +340,8 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 	strncpy_m11(sess->uh_name, sess_name, BASE_FILE_NAME_BYTES_m11);
 	sess->name = sess->uh_name;
 	snprintf_m11(sess->path, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", enclosing_path, sess->name, SESSION_DIRECTORY_TYPE_STRING_m11);
-	
-	globals_m11->number_of_mapped_segments = n_segs;
-	sess->number_of_time_series_channels = n_ts_chans;
-	sess->number_of_video_channels = n_vid_chans;
-	
-	if (n_ts_chans) {
-		sess->time_series_metadata_fps = gen_fps;
-		uh->type_code = TIME_SERIES_CHANNEL_TYPE_m11;
-		if (n_vid_chans) {
-			sess->video_metadata_fps = FPS_allocate_processing_struct_m11(NULL, NULL, VIDEO_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, gen_fps, METADATA_BYTES_m11);
-			sess->video_metadata_fps->parameters.fd = FPS_FD_EPHEMERAL_m11;
-		}
-	}
-	else if (n_vid_chans) {
-		sess->video_metadata_fps = gen_fps;
-		uh->type_code = VIDEO_METADATA_FILE_TYPE_CODE_m11;
-	}
-	
-	if (sess_recs == TRUE_m11) {
-		sess->record_data_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, gen_fps, 0);
-		snprintf_m11(sess->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m11);
-		sess->record_indices_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m11, RECORD_INDEX_BYTES_m11, gen_fps, 0);
-		snprintf_m11(sess->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
-	}
-	else {
-		sess->record_data_fps = sess->record_indices_fps = NULL;
-	}
-	
+		
+	// allocate channels
 	if (n_ts_chans) {
 		free_names = FALSE_m11;
 		if (ts_chan_names == NULL) {
@@ -359,8 +350,9 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 		}
 		sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_ts_chans, 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_ts_chans; ++i) {
-			sess->time_series_metadata_fps->metadata->time_series_section_2.acquisition_channel_number = (si4) i + 1;
-			allocate_channel_m11(sess->time_series_channels[i], sess->time_series_metadata_fps, sess->path, ts_chan_names[i], TIME_SERIES_CHANNEL_TYPE_m11, n_segs, chan_recs, seg_recs);
+			chan = sess->time_series_channels[i];
+			chan->parent = (void *) sess;
+			allocate_channel_m11(chan, proto_fps, sess->path, ts_chan_names[i], TIME_SERIES_CHANNEL_TYPE_m11, n_segs, chan_recs, seg_recs);
 		}
 		if (free_names == TRUE_m11)
 			free_m11((void *) ts_chan_names, __FUNCTION__);
@@ -374,13 +366,26 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 		}
 		sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) n_vid_chans, 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		for (i = 0; i < n_vid_chans; ++i) {
-			sess->video_metadata_fps->metadata->video_section_2.acquisition_channel_number = (si4) i + 1;
-			allocate_channel_m11(sess->video_channels[i], sess->video_metadata_fps, sess->path, vid_chan_names[i], VIDEO_CHANNEL_TYPE_m11, n_segs, chan_recs, seg_recs);
+			chan = sess->video_channels[i];
+			allocate_channel_m11(sess->video_channels[i], proto_fps, sess->path, vid_chan_names[i], VIDEO_CHANNEL_TYPE_m11, n_segs, chan_recs, seg_recs);
+			chan->parent = (void *) sess;
 		}
 		if (free_names == TRUE_m11)
 			free((void *) vid_chan_names);
 	}
-		
+
+	// allocate session records
+	if (sess_recs == TRUE_m11) {
+		sess->record_data_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, proto_fps, 0);
+		snprintf_m11(sess->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m11);
+		sess->record_indices_fps = FPS_allocate_processing_struct_m11(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m11, RECORD_INDEX_BYTES_m11, proto_fps, 0);
+		snprintf_m11(sess->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
+	} else {
+		sess->record_data_fps = sess->record_indices_fps = NULL;
+	}
+	FPS_free_processing_struct_m11(proto_fps, TRUE_m11);  // done with session prototype
+	
+	// allocate segmented session records
 	if (segmented_sess_recs == TRUE_m11) {
 		ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m11 *) calloc_m11((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m11 **) calloc_2D_m11((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -390,24 +395,24 @@ SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *en
 		ssr->type_code = LH_SEGMENTED_SESS_RECS_m11;
 		ssr->flags = sess->flags;
 		for (i = 0; i < n_segs; ++i) {
+			// get an segment prototype
 			if (n_ts_chans)
-				gen_fps = sess->time_series_channels[0]->segments[i]->metadata_fps;
+				proto_fps = sess->time_series_channels[0]->segments[i]->metadata_fps;
 			else if (n_vid_chans)
-				gen_fps = sess->video_channels[0]->segments[i]->metadata_fps;
-			
-			numerical_fixed_width_string_m11(number_str, FILE_NUMBERING_DIGITS_m11, (si4) i + 1); // segments numbered from 1
+				proto_fps = sess->video_channels[0]->segments[i]->metadata_fps;
 			// record indices fps
+			numerical_fixed_width_string_m11(number_str, FILE_NUMBERING_DIGITS_m11, (si4) i + 1); // segments numbered from 1
 			snprintf_m11(ssr->record_indices_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m11);
-			gen_fps = FPS_allocate_processing_struct_m11(ssr->record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m11, RECORD_INDEX_BYTES_m11, gen_fps, 0);
-			memset((void *) gen_fps->universal_header->channel_name, 0, BASE_FILE_NAME_BYTES_m11);
-			gen_fps->universal_header->channel_UID = UID_NO_ENTRY_m11;
-			memset(gen_fps->universal_header->channel_name, 0, BASE_FILE_NAME_BYTES_m11);
+			gen_fps = FPS_allocate_processing_struct_m11(ssr->record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m11, RECORD_INDEX_BYTES_m11, proto_fps, 0);
+			uh = gen_fps->universal_header;
+			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m11);
+			uh->channel_UID = UID_NO_ENTRY_m11;
 			// record data fps
 			snprintf_m11(ssr->record_data_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m11, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m11);
-			gen_fps = FPS_allocate_processing_struct_m11(ssr->record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, gen_fps, 0);
-			memset((void *) gen_fps->universal_header->channel_name, 0, BASE_FILE_NAME_BYTES_m11);
-			gen_fps->universal_header->channel_UID = UID_NO_ENTRY_m11;
-			memset(gen_fps->universal_header->channel_name, 0, BASE_FILE_NAME_BYTES_m11);
+			gen_fps = FPS_allocate_processing_struct_m11(ssr->record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m11, LARGEST_RECORD_BYTES_m11, proto_fps, 0);
+			uh = gen_fps->universal_header;
+			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m11);
+			uh->channel_UID = UID_NO_ENTRY_m11;
 		}
 	} else {
 		sess->segmented_sess_recs = NULL;
@@ -4227,7 +4232,20 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		return;
 	}
 	globals_m11_mutex = TRUE_m11;
+	
+	if (cleanup_for_exit == TRUE_m11) {
+		si1	command[FULL_FILE_NAME_BYTES_m11];
 
+		#if defined MACOS_m11 || defined LINUX_m11
+		sprintf_m11(command, "rm -f %s", globals_m11->temp_file);
+		#endif
+		#ifdef WINDOWS_m11
+		win_cleanup_m11();
+		sprintf_m11(command, "del %s", globals_m11->temp_file);
+		#endif
+		system_m11(command, TRUE_m11, __FUNCTION__, RETURN_ON_FAIL_m11 | SUPPRESS_OUTPUT_m11);
+	}
+	
 	if (globals_m11->record_filters != NULL)
 		free_m11((void *) globals_m11->record_filters, __FUNCTION__);
 		// often statically allocated, so can't use regular free()
@@ -4296,12 +4314,6 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 	free((void *) globals_m11);
 #endif
 	globals_m11 = NULL;
-
-	if (cleanup_for_exit == TRUE_m11) {
-		#ifdef WINDOWS_m11
-		win_cleanup_m11();
-		#endif
-	}
 
 	globals_m11_mutex = FALSE_m11;
 	
@@ -5969,6 +5981,7 @@ TERN_m11	initialize_globals_m11(void)
 TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables)
 {
 	TERN_m11			return_value = TRUE_m11;
+	si1				command[FULL_FILE_NAME_BYTES_m11];
 
 #ifdef FN_DEBUG_m11  // don't use MED print functions until UTF8 tablesinitialized
 	printf_m11("%s()\n", __FUNCTION__);
@@ -6048,6 +6061,15 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 			if (initialize_timezone_tables_m11() == FALSE_m11)
 				return_value = FALSE_m11;
 	}
+	
+	// clear any residual temp file
+#if defined MACOS_m11 || defined LINUX_m11
+	sprintf_m11(command, "rm -f %s", globals_m11->temp_file);
+#endif
+#ifdef WINDOWS_m11
+	sprintf_m11(command, "del %s", globals_m11->temp_file);
+#endif
+	system_m11(command, TRUE_m11, __FUNCTION__, RETURN_ON_FAIL_m11 | SUPPRESS_OUTPUT_m11);
 
 	return(return_value);
 }
@@ -11669,8 +11691,7 @@ si1	*time_string_m11(si8 uutc, si1 *time_str, TERN_m11 fixed_width, TERN_m11 rel
 		time_color = va_arg(arg_p, si1 *);
 		va_end(arg_p);
 		color_reset = TC_RESET_m11;
-	}
-	else {
+	} else {
 		date_color = time_color = color_reset = "";
 	}
 	if (relative_days == TRUE_m11) {
@@ -13299,7 +13320,7 @@ void	AES_sub_bytes_m11(ui1 state[][4])
 void	AT_add_entry_m11(void *address, const si1 *function)
 {
 	ui8		bytes;
-	si8		i;
+	si8		i, prev_node_count;
 	AT_NODE		*atn;
 
 #ifdef FN_DEBUG_m11
@@ -13349,6 +13370,7 @@ void	AT_add_entry_m11(void *address, const si1 *function)
 	
 	// expand list if needed
 	if (globals_m11->AT_used_node_count == globals_m11->AT_node_count) {
+		prev_node_count = globals_m11->AT_node_count;
 		globals_m11->AT_node_count += GLOBALS_AT_LIST_SIZE_INCREMENT_m11;
 		globals_m11->AT_nodes = (AT_NODE *) realloc((void *) globals_m11->AT_nodes, globals_m11->AT_node_count * sizeof(AT_NODE));
 		if (globals_m11->AT_nodes == NULL) {
@@ -13357,8 +13379,8 @@ void	AT_add_entry_m11(void *address, const si1 *function)
 			exit_m11(-1);
 		}
 		// zero new memory
-		memset((void *) (globals_m11->AT_nodes + globals_m11->AT_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11 * sizeof(AT_NODE));
-		atn = globals_m11->AT_nodes + globals_m11->AT_node_count;
+		memset((void *) (globals_m11->AT_nodes + prev_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11 * sizeof(AT_NODE));
+		atn = globals_m11->AT_nodes + prev_node_count;
 	} else {
 		// find a free node
 		#ifdef AT_DEBUG_m11
@@ -17948,7 +17970,7 @@ TERN_m11	CRC_validate_m11(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_vali
 //************  FILE PROCESSING STRUCT STANDARD FUNCTIONS  **************//
 //***********************************************************************//
 
-		
+
 FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m11 *proto_fps, si8 bytes_to_copy)
 {
 	TERN_m11			free_fps;
@@ -18613,8 +18635,12 @@ void	FPS_show_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		printf_m11("false\n");
 	else
 		printf_m11("unknown\n");
-	time_string_m11(fps->parameters.last_access_time, time_str, FALSE_m11, FALSE_m11, FALSE_m11);
-	printf_m11("Last Access Time: %ld (µUTC), %s\n", fps->parameters.last_access_time, time_str);
+	if (fps->parameters.last_access_time == UUTC_NO_ENTRY_m11) {
+		printf_m11("Last Access Time: no entry\n");
+	} else {
+		time_string_m11(fps->parameters.last_access_time, time_str, FALSE_m11, FALSE_m11, FALSE_m11);
+		printf_m11("Last Access Time: %ld (µUTC), %s\n", fps->parameters.last_access_time, time_str);
+	}
 	if (fps->parameters.fd >= 3)
 		printf_m11("File Descriptor: %d (open)\n", fps->parameters.fd);
 	else if (fps->parameters.fd == -1)
@@ -21513,22 +21539,18 @@ si4     system_m11(si1 *command, TERN_m11 null_std_streams, const si1 *function,
 
 	if (ret_val) {
 		if (behavior_on_fail & RETRY_ONCE_m11) {
+			nap_m11("1 ms");  // wait 1 ms
 #if defined MACOS_m11 || defined LINUX_m11
-			usleep((useconds_t) 1000);  // wait 1 ms
-			if ((ret_val = system(command)) == 0) {
-				if (null_std_streams == TRUE_m11)
-					free((void *) temp_command);
-				return(0);
-			}
+			ret_val = system(command);
 #endif
 #ifdef WINDOWS_m11
-			Sleep(1);  // wait 1 ms
-			if ((ret_val = win_system_m11(command)) == 0) {
+			ret_val = win_system_m11(command);
+#endif
+			if (ret_val == 0) {
 				if (null_std_streams == TRUE_m11)
 					free((void *) temp_command);
 				return(0);
 			}
-#endif
 		}
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m11)) {
 			fprintf_m11(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
