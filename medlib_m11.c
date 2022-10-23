@@ -3188,12 +3188,11 @@ ui4     file_exists_m11(si1 *path)  // can be used for directories also
 		return(DOES_NOT_EXIST_m11);
 	
 	tmp_path[0] = 0;
-	if (path_from_root_m11(path, tmp_path) == FALSE_m11)
-		path = tmp_path;
-
+	path_from_root_m11(path, tmp_path);
+	
 	errno = 0;
 #if defined MACOS_m11 || defined LINUX_m11
-	err = stat(path, &sb);
+	err = stat(tmp_path, &sb);
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m11);
@@ -3203,7 +3202,7 @@ ui4     file_exists_m11(si1 *path)  // can be used for directories also
 	}
 #endif
 #ifdef WINDOWS_m11
-	err = _stat64(path, &sb);
+	err = _stat64(tmp_path, &sb);
 	if (err == -1) {
 		if (errno == ENOENT)
 			return(DOES_NOT_EXIST_m11);
@@ -7962,7 +7961,6 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	// if path starts with "/", returns TRUE ("C:" prepended in Windows, if "modify_path" is TRUE)
 	// Windows: if path starts with "<capital letter>:\" returns TRUE
 	// if path starts with ".", "..", or "~", these are resolved as expected.
-	// if modify_path == TRUE, assumes adequate space for modified path in path
 	
 	if (path == NULL)
 		return(FALSE_m11);
@@ -9783,6 +9781,7 @@ si4	search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice
 		
 si4	segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_frame)
 {
+	TERN_m11		get_Sgmt_recs;
 	si4			idx, low_idx, high_idx;
 	CHANNEL_m11		*chan;
 	SESSION_m11		*sess;
@@ -9810,10 +9809,20 @@ si4	segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fram
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
 			Sgmt_records = sess->Sgmt_records;
-			if (Sgmt_records == NULL && globals_m11->reference_channel->Sgmt_records != NULL)
-				Sgmt_records = globals_m11->reference_channel->Sgmt_records;
-			else
-				Sgmt_records = build_Sgmt_records_array_m11(sess->record_indices_fps, sess->record_data_fps, NULL);
+			get_Sgmt_recs = FALSE_m11;
+			if (Sgmt_records == NULL)
+				get_Sgmt_recs = TRUE_m11;
+			else if (Sgmt_records[0].start_frame_number == FRAME_NUMBER_NO_ENTRY_m11)
+				get_Sgmt_recs = TRUE_m11;
+			if (get_Sgmt_recs == TRUE_m11) {
+				chan = globals_m11->reference_channel;
+				if (chan->type_code != LH_VIDEO_CHANNEL_m11)
+					chan = sess->video_channels[0];
+				if (chan->Sgmt_records != NULL)
+					Sgmt_records = chan->Sgmt_records;
+				else
+					Sgmt_records = chan->Sgmt_records = build_Sgmt_records_array_m11(chan->record_indices_fps, chan->record_data_fps, chan);
+			}
 			break;
 		default:
 			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
@@ -9846,6 +9855,7 @@ si4	segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fram
 
 si4	segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample)
 {
+	TERN_m11		get_Sgmt_recs;
 	si4			idx, low_idx, high_idx;
 	CHANNEL_m11		*chan;
 	SESSION_m11		*sess;
@@ -9873,10 +9883,20 @@ si4	segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sam
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
 			Sgmt_records = sess->Sgmt_records;
-			if (Sgmt_records == NULL && globals_m11->reference_channel->Sgmt_records != NULL)
-				Sgmt_records = globals_m11->reference_channel->Sgmt_records;
-			else
-				Sgmt_records = build_Sgmt_records_array_m11(sess->record_indices_fps, sess->record_data_fps, NULL);
+			get_Sgmt_recs = FALSE_m11;
+			if (Sgmt_records == NULL)
+				get_Sgmt_recs = TRUE_m11;
+			else if (Sgmt_records[0].start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m11)
+				get_Sgmt_recs = TRUE_m11;
+			if (get_Sgmt_recs == TRUE_m11) {
+				chan = globals_m11->reference_channel;
+				if (chan->type_code != LH_TIME_SERIES_CHANNEL_m11)
+					chan = sess->time_series_channels[0];
+				if (chan->Sgmt_records != NULL)
+					Sgmt_records = chan->Sgmt_records;
+				else
+					Sgmt_records = chan->Sgmt_records = build_Sgmt_records_array_m11(chan->record_indices_fps, chan->record_data_fps, chan);
+			}
 			break;
 		default:
 			warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
