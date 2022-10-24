@@ -5487,7 +5487,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 			}
 		}
 		
-		// no channel level Sgmt records => check session level (may not contain sample number references, but may not need them)
+		// no channel level Sgmt records => check session level (may not contain sample numbers, but may not need them)
 		if (Sgmt_records == NULL) {
 			// get global session name(s)
 			if (globals_m11->session_UID == UID_NO_ENTRY_m11) {
