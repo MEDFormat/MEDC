@@ -7320,12 +7320,12 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 			seg = chan->segments[j];
 			merge_universal_headers_m11(chan->metadata_fps, seg->metadata_fps, NULL);
 			merge_metadata_m11(chan->metadata_fps, seg->metadata_fps, NULL);
-			if (seg->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
+			if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
 				merge_universal_headers_m11(chan->metadata_fps, seg->record_data_fps, NULL);
 			seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m11;  // clear segment flag
 		}
 		// merge channel records
-		if (chan->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
+		if (chan->record_indices_fps != NULL && chan->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
 			merge_universal_headers_m11(chan->metadata_fps, chan->record_data_fps, NULL);
 		// fix channel ephemeral universal headers (from merge functions)
 		uh = chan->metadata_fps->universal_header;
@@ -7868,11 +7868,11 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				}
 			}
 			// merge session records
-			if (sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
+			if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
 				merge_universal_headers_m11(sess->time_series_metadata_fps, sess->record_data_fps, NULL);
 			if (ssr != NULL) {
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-					if (ssr->record_data_fps[j] != NULL)
+					if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
 						merge_universal_headers_m11(sess->time_series_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
 			}
@@ -7898,11 +7898,11 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				}
 			}
 			// merge session records
-			if (sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
+			if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
 				merge_universal_headers_m11(sess->video_metadata_fps, sess->record_data_fps, NULL);
 			if (ssr != NULL) {
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-					if (ssr->record_data_fps[j] != NULL)
+					if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
 						merge_universal_headers_m11(sess->video_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
 			}
@@ -8506,7 +8506,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 
 	// records
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m11)
-		if (chan->record_indices_fps != NULL)
+		if (chan->record_indices_fps != NULL && chan->record_data_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) chan, slice);
 	
 	// update ephemeral data
@@ -8518,7 +8518,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 			if (seg->flags & LH_UPDATE_EPHEMERAL_DATA_m11) {
 				merge_universal_headers_m11(chan->metadata_fps, seg->metadata_fps, NULL);
 				merge_metadata_m11(chan->metadata_fps, seg->metadata_fps, NULL);
-				if (seg->record_data_fps != NULL)
+				if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
 					merge_universal_headers_m11(chan->metadata_fps, seg->record_data_fps, NULL);
 				seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m11;  // clear segment flag
 				chan->flags |= LH_UPDATE_EPHEMERAL_DATA_m11;  // set channel flag (for session)
@@ -9045,7 +9045,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	
 	// read segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m11)
-		if (seg->record_indices_fps != NULL)
+		if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) seg, slice);
 	
 	return(seg);
@@ -9189,7 +9189,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11)
-		if (sess->record_indices_fps != NULL)
+		if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) sess, slice);
 		
 	// read segmented session record data
@@ -9197,7 +9197,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m11 && ssr != NULL) {
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 			// allocate new segment records
-			if (ssr->record_indices_fps[j] == NULL) {
+			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
 				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, i);
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
@@ -9206,7 +9206,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 					ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			}
-			if (ssr->record_indices_fps[j] != NULL)
+			if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
 				read_record_data_m11((LEVEL_HEADER_m11 *) ssr, slice, i);
 		}
 	}
