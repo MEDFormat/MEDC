@@ -11690,7 +11690,7 @@ TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess)
 		}
 		if (read_metadata == TRUE_m11) {
 			if (*num_str == 0)
-				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_idx);
+				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_idx + 1);
 			sprintf_m11(seg_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11);
 			sprintf_m11(md_file, "%s/%s_s%s.%s", seg_dir, chan->name, num_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 			if (file_exists_m11(md_file) == FILE_EXISTS_m11) {
