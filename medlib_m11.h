@@ -1011,6 +1011,28 @@ typedef struct {
 #define LH_ALL_CHANS_MULTI_READ_DEFAULT_m11	( LH_INCLUDE_ALL_CHAN_TYPES_m11 | LH_MULTI_READ_DEFAULT_m11 )
 
 
+//**********************************************************************************//
+//******************************  MED Error Numbers  *******************************//
+//**********************************************************************************//
+
+// error codes
+#define	E_NO_ERR_m11			0
+#define E_NO_FILE_m11			1
+#define E_READ_ERR_m11			2
+#define E_WRITE_ERR_m11			3
+#define E_NOT_MED_m11			4
+#define E_BAD_PASSWORD_m11		5
+#define E_NO_METADATA_m11		6
+
+// error strings
+#define	E_NO_ERR_STR_m11		"no errors"
+#define	E_NO_FILE_STR_m11		"file not found"
+#define	E_READ_ERR_STR_m11		"file read error"
+#define	E_WRITE_ERR_STR_m11		"file write error"
+#define E_NOT_MED_STR_m11		"not a MED file or directory"
+#define E_BAD_PASSWORD_STR_m11		"invalid password"
+#define E_NO_METADATA_STR_m11		"metadata file not found"
+
 
 //**********************************************************************************//
 //**********************************  MED Macros  **********************************//
@@ -1019,7 +1041,7 @@ typedef struct {
 #define ABS_m11(x)			( ((x) >= 0) ? (x) : -(x) )	// do not increment/decrement in call to ABS (as x occurs thrice)
 #define HEX_STRING_BYTES_m11(x)         ( ((x) + 1) * 3 )
 #define REMOVE_DISCONTINUITY_m11(x)     ( ((x) >= 0) ? (x) : -(x) )	// do not increment/decrement in call to REMOVE_DISCONTINUITY (as x occurs thrice)
-#define APPLY_DISCONTINUITY_m11(x)      ( ((x) < 0) ? (x) : -(x) )	// do not increment/decrement in call to APPLY_DISCONTINUITY (as x occurs thrice)
+#define APPLY_DISCONTINUITY_m11(x)      ( ((x) <= 0) ? (x) : -(x) )	// do not increment/decrement in call to APPLY_DISCONTINUITY (as x occurs thrice)
 #define MAX_OPEN_FILES_m11(number_of_channels, number_of_segments)      ((5 * number_of_channels * number_of_segments) + (2 * number_of_segments) + (2 * number_of_channels) + 5)
 									// Note: final +5 == 2 for session level records plus 3 for standard streams (stdin, stdout, & stderr)
 // "S" versions are for slice structures (not pointers)
@@ -1216,6 +1238,8 @@ typedef struct {
 	si8				AT_used_node_count;  // nodes in use
 	volatile TERN_m11		AT_mutex;
 	// Miscellaneous
+	si4				err_code;
+	const si1			*err_func;
 	TERN_m11			time_series_data_encryption_level;
 	TERN_m11                        verbose;
 	ui4                             behavior_on_fail;
@@ -1866,6 +1890,7 @@ TERN_m11        encrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11	encrypt_record_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11        encrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            error_message_m11(si1 *fmt, ...);
+void		error_string_m11(void);
 void            escape_chars_m11(si1 *string, si1 target_char, si8 buffer_len);
 void            extract_path_parts_m11(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void            extract_terminal_password_bytes_m11(si1 *password, si1 *password_bytes);

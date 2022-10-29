@@ -2518,6 +2518,8 @@ TERN_m11	decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		} else {
 			error_message_m11("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_2_encryption_level);
 			show_password_hints_m11(pwd);
+			globals_m11->err_code = E_BAD_PASSWORD_m11;
+			globals_m11->err_func = __FUNCTION__;
 			return(FALSE_m11);  // can't do anything without section 2, so fail
 		}
 	}
@@ -3040,6 +3042,63 @@ void    error_message_m11(si1 *fmt, ...)
 		exit_m11(-1);
 	}
 	
+	return;
+}
+
+
+void	error_string_m11(void)
+{
+	si1	*str;
+	
+#ifdef FN_DEBUG_m11
+	#ifdef MATLAB_m11
+	mexPrintf("%s()\n", __FUNCTION__);
+	#else
+	fprintf(stderr, "%s()\n", __FUNCTION__);
+	#endif
+#endif
+
+	switch (globals_m11->err_code) {
+		case E_NO_ERR_m11:
+			str = E_NO_ERR_STR_m11;
+			break;
+		case E_NO_FILE_m11:
+			str = E_NO_FILE_STR_m11;
+			break;
+		case E_READ_ERR_m11:
+			str = E_READ_ERR_STR_m11;
+			break;
+		case E_WRITE_ERR_m11:
+			str = E_WRITE_ERR_STR_m11;
+			break;
+		case E_NOT_MED_m11:
+			str = E_NOT_MED_STR_m11;
+			break;
+		case E_BAD_PASSWORD_m11:
+			str = E_BAD_PASSWORD_STR_m11;
+			break;
+		case E_NO_METADATA_m11:
+			str = E_NO_METADATA_STR_m11;
+			break;
+		default:
+			str = "unknown error";
+			break;
+	}
+	
+	if (globals_m11->err_func != NULL) {
+		#ifdef MATLAB_m11
+		mexPrintf("%s  (code %d, func %s)\n\n", str, globals_m11->err_code, globals_m11->err_func);
+		#else
+		fprintf(stderr, "%s%s%s  (code %d, func %s)\n\n", TC_RED_m11, str, TC_RESET_m11, globals_m11->err_code, globals_m11->err_func);
+		#endif
+	} else {
+		#ifdef MATLAB_m11
+		mexPrintf("%s  (code %d)\n\n", str, globals_m11->err_code);
+		#else
+		fprintf(stderr, "%s%s%s  (code %d)\n\n", TC_RED_m11, str, TC_RESET_m11, globals_m11->err_code);
+		#endif
+	}
+
 	return;
 }
 		
@@ -3701,6 +3760,8 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 			goto FIND_MDF_SEG_LEVEL_m11;
 		default:
 			warning_message_m11("%s(): input path must be a MED session, channel, or segment directory\n", __FUNCTION__);
+			globals_m11->err_code = E_NOT_MED_m11;
+			globals_m11->err_func = __FUNCTION__;
 			return(NULL);
 	}
 	
@@ -3734,8 +3795,11 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 		}
 	}
 	
-	if (match == FALSE_m11)
+	if (match == FALSE_m11) {
+		globals_m11->err_code = E_NO_METADATA_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL);
+	}
 	
 	len = strlen(md_path);
 	md_path[len++] = '/';
@@ -3772,8 +3836,11 @@ FIND_MDF_CHAN_LEVEL_m11:
 		}
 	}
 	
-	if (match == FALSE_m11)
+	if (match == FALSE_m11) {
+		globals_m11->err_code = E_NO_METADATA_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL);
+	}
 	
 	len = strlen(md_path);
 	md_path[len++] = '/';
@@ -3782,8 +3849,11 @@ FIND_MDF_CHAN_LEVEL_m11:
 
 FIND_MDF_SEG_LEVEL_m11:
 	dir = opendir(md_path); // open the path
-	if (dir == NULL)
+	if (dir == NULL) {
+		globals_m11->err_code = E_NO_METADATA_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL); // if was not able, return
+	}
 	match = FALSE_m11;
 	while ((entry = readdir(dir)) != NULL) {  // if we were able to read something from the directory
 		if (entry->d_type != DT_REG)
@@ -3810,8 +3880,11 @@ FIND_MDF_SEG_LEVEL_m11:
 		}
 	}
 	
-	if (match == FALSE_m11)
+	if (match == FALSE_m11) {
+		globals_m11->err_code = E_NO_METADATA_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL);
+	}
 	
 	len = strlen(md_path);
 	md_path[len++] = '/';
@@ -4612,7 +4685,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		}
 		goto GFL_CONDITION_RETURN_DATA_m11;
 	}
-		
+	
 	// copy incoming arguments so as not to modify, and in case they are const type
 	if (enclosing_directory == NULL)
 		*tmp_enclosing_directory = 0;
@@ -5944,6 +6017,8 @@ TERN_m11	initialize_globals_m11(void)
 	}
 	
 	// miscellaneous
+	globals_m11->err_code = E_NO_ERR_m11;
+	globals_m11->err_func = NULL;
 	globals_m11->verbose = GLOBALS_VERBOSE_DEFAULT_m11;
 	globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
 	if (globals_m11->behavior_stack != NULL) {
@@ -7607,6 +7682,13 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	curr_time = current_uutc_m11();
 	if (sess->flags & LH_MAP_ALL_TIME_SERIES_CHANNELS_m11 && all_channels_selected == FALSE_m11) {
 		// get lists of all channels, regardless of what was passed in the list
+		if (sess_dir == NULL) {
+			if (n_ts_chans)
+				extract_path_parts_m11(ts_chan_list[0], tmp_str, NULL, NULL);
+			else
+				extract_path_parts_m11(vid_chan_list[0], tmp_str, NULL, NULL);
+			sess_dir = tmp_str;
+		}
 		full_ts_chan_list = generate_file_list_m11(NULL, &all_ts_chans, sess_dir, NULL, "ticd", GFL_FULL_PATH_m11);
 		if (n_ts_chans) {
 			sess->time_series_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_ts_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -7650,6 +7732,13 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	// set up video channels
 	if (sess->flags & LH_MAP_ALL_VIDEO_CHANNELS_m11 && all_channels_selected == FALSE_m11) {
 		// get lists of all channels, regardless of what was passed in the list
+		if (sess_dir == NULL) {
+			if (n_vid_chans)
+				extract_path_parts_m11(vid_chan_list[0], tmp_str, NULL, NULL);
+			else
+				extract_path_parts_m11(ts_chan_list[0], tmp_str, NULL, NULL);
+			sess_dir = tmp_str;
+		}
 		full_vid_chan_list = generate_file_list_m11(NULL, &all_vid_chans, sess_dir, NULL, "vicd", GFL_FULL_PATH_m11);
 		if (n_vid_chans) {
 			sess->video_channels = (CHANNEL_m11 **) calloc_2D_m11((size_t) all_vid_chans, (size_t) 1, sizeof(CHANNEL_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -8239,7 +8328,7 @@ TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspeci
 		warning_message_m11("%s(): password is not valid for Level 1 or Level 2 access\n", __FUNCTION__);
 	}
 	// check_password_m11() == FALSE_m11 or unspecified password invalid
-	show_password_hints_m11(pwd);
+	show_password_hints_m11(pwd); // if hints exist
 
 	return(FALSE_m11);
 }
@@ -8677,6 +8766,8 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	
 	if (bytes_to_read == 0 && number_of_items == 0 && lh_flags == 0) {
 		error_message_m11("%s(): must specify either bytes_to_read, number_of_items, or lh_flags \n", __FUNCTION__);
+		globals_m11->err_code = E_READ_ERR_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL);
 	}
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -8688,6 +8779,8 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	if (fps == NULL) {
 		if (full_file_name == NULL) {
 			warning_message_m11("%s(): FILE_PROCESSING_STRUCT_m11 and full_file_name are both NULL\n", __FUNCTION__);
+			globals_m11->err_code = E_NO_FILE_m11;
+			globals_m11->err_func = __FUNCTION__;
 			return(NULL);
 		}
 		close_flag = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m11;
@@ -8791,6 +8884,8 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 		error_message_m11("%s(): file read error\n", __FUNCTION__);
 		if (allocated_flag == TRUE_m11)
 			FPS_free_processing_struct_m11(fps, TRUE_m11);
+		globals_m11->err_code = E_READ_ERR_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL);
 	}
 
@@ -8856,6 +8951,8 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 		warning_message_m11("%s(): cannot read file \"%s\"\n", __FUNCTION__, fps->full_file_name);
 		if (allocated_flag == TRUE_m11)
 			FPS_free_processing_struct_m11(fps, TRUE_m11);
+		globals_m11->err_code = E_READ_ERR_m11;
+		globals_m11->err_func = __FUNCTION__;
 		return(NULL);
 	}
 	
