@@ -1237,9 +1237,11 @@ typedef struct {
 	si8				AT_node_count;  // total allocated nodes
 	si8				AT_used_node_count;  // nodes in use
 	volatile TERN_m11		AT_mutex;
-	// Miscellaneous
+	// Errors
 	si4				err_code;
 	const si1			*err_func;
+	si4				err_line;
+	// Miscellaneous
 	TERN_m11			time_series_data_encryption_level;
 	TERN_m11                        verbose;
 	ui4                             behavior_on_fail;
@@ -1966,6 +1968,7 @@ si4		search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slic
 si4		segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample);
 si4		segment_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample);
 si4		segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time);
+void		set_error_m11(const si4 err_code, const si1 *function, const si4 line);
 TERN_m11	set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 session_start_time, TERN_m11 prompt);
 TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
 void		show_behavior_m11(void);

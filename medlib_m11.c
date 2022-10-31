@@ -2518,8 +2518,7 @@ TERN_m11	decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		} else {
 			error_message_m11("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_2_encryption_level);
 			show_password_hints_m11(pwd);
-			globals_m11->err_code = E_BAD_PASSWORD_m11;
-			globals_m11->err_func = __FUNCTION__;
+			set_error_m11(E_BAD_PASSWORD_m11, __FUNCTION__, __LINE__);
 			return(FALSE_m11);  // can't do anything without section 2, so fail
 		}
 	}
@@ -3087,15 +3086,15 @@ void	error_string_m11(void)
 	
 	if (globals_m11->err_func != NULL) {
 		#ifdef MATLAB_m11
-		mexPrintf("%s  (code %d, func %s)\n\n", str, globals_m11->err_code, globals_m11->err_func);
+		mexPrintf("%s  (code %d, func %s, line %d)\n\n", str, globals_m11->err_code, globals_m11->err_func, globals_m11->err_line);
 		#else
-		fprintf(stderr, "%s%s%s  (code %d, func %s)\n\n", TC_RED_m11, str, TC_RESET_m11, globals_m11->err_code, globals_m11->err_func);
+		fprintf(stderr, "%s%s%s  (code %d, func %s, line %d)\n\n", TC_RED_m11, str, TC_RESET_m11, globals_m11->err_code, globals_m11->err_func, globals_m11->err_line);
 		#endif
 	} else {
 		#ifdef MATLAB_m11
-		mexPrintf("%s  (code %d)\n\n", str, globals_m11->err_code);
+		mexPrintf("%s  (code %d, line %d)\n\n", str, globals_m11->err_code, globals_m11->err_line);
 		#else
-		fprintf(stderr, "%s%s%s  (code %d)\n\n", TC_RED_m11, str, TC_RESET_m11, globals_m11->err_code);
+		fprintf(stderr, "%s%s%s  (code %d, line %d)\n\n", TC_RED_m11, str, TC_RESET_m11, globals_m11->err_code, globals_m11->err_line);
 		#endif
 	}
 
@@ -3760,8 +3759,7 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 			goto FIND_MDF_SEG_LEVEL_m11;
 		default:
 			warning_message_m11("%s(): input path must be a MED session, channel, or segment directory\n", __FUNCTION__);
-			globals_m11->err_code = E_NOT_MED_m11;
-			globals_m11->err_func = __FUNCTION__;
+			set_error_m11(E_NOT_MED_m11, __FUNCTION__, __LINE__);
 			return(NULL);
 	}
 	
@@ -3796,8 +3794,7 @@ si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 	}
 	
 	if (match == FALSE_m11) {
-		globals_m11->err_code = E_NO_METADATA_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_NO_METADATA_m11, __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 	
@@ -3837,8 +3834,7 @@ FIND_MDF_CHAN_LEVEL_m11:
 	}
 	
 	if (match == FALSE_m11) {
-		globals_m11->err_code = E_NO_METADATA_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_NO_METADATA_m11, __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 	
@@ -3850,8 +3846,7 @@ FIND_MDF_CHAN_LEVEL_m11:
 FIND_MDF_SEG_LEVEL_m11:
 	dir = opendir(md_path); // open the path
 	if (dir == NULL) {
-		globals_m11->err_code = E_NO_METADATA_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_NO_METADATA_m11, __FUNCTION__, __LINE__);
 		return(NULL); // if was not able, return
 	}
 	match = FALSE_m11;
@@ -3881,8 +3876,7 @@ FIND_MDF_SEG_LEVEL_m11:
 	}
 	
 	if (match == FALSE_m11) {
-		globals_m11->err_code = E_NO_METADATA_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_NO_METADATA_m11, __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 	
@@ -6016,9 +6010,12 @@ TERN_m11	initialize_globals_m11(void)
 		globals_m11->UTF8_trailing_bytes_table = NULL;
 	}
 	
-	// miscellaneous
+	// error
 	globals_m11->err_code = E_NO_ERR_m11;
 	globals_m11->err_func = NULL;
+	globals_m11->err_line = 0;
+
+	// miscellaneous
 	globals_m11->verbose = GLOBALS_VERBOSE_DEFAULT_m11;
 	globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
 	if (globals_m11->behavior_stack != NULL) {
@@ -8766,8 +8763,7 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	
 	if (bytes_to_read == 0 && number_of_items == 0 && lh_flags == 0) {
 		error_message_m11("%s(): must specify either bytes_to_read, number_of_items, or lh_flags \n", __FUNCTION__);
-		globals_m11->err_code = E_READ_ERR_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_READ_ERR_m11, __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m11)
@@ -8779,8 +8775,7 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	if (fps == NULL) {
 		if (full_file_name == NULL) {
 			warning_message_m11("%s(): FILE_PROCESSING_STRUCT_m11 and full_file_name are both NULL\n", __FUNCTION__);
-			globals_m11->err_code = E_NO_FILE_m11;
-			globals_m11->err_func = __FUNCTION__;
+			set_error_m11(E_NO_FILE_m11, __FUNCTION__, __LINE__);
 			return(NULL);
 		}
 		close_flag = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m11;
@@ -8884,8 +8879,7 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 		error_message_m11("%s(): file read error\n", __FUNCTION__);
 		if (allocated_flag == TRUE_m11)
 			FPS_free_processing_struct_m11(fps, TRUE_m11);
-		globals_m11->err_code = E_READ_ERR_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_READ_ERR_m11, __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 
@@ -8951,8 +8945,7 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 		warning_message_m11("%s(): cannot read file \"%s\"\n", __FUNCTION__, fps->full_file_name);
 		if (allocated_flag == TRUE_m11)
 			FPS_free_processing_struct_m11(fps, TRUE_m11);
-		globals_m11->err_code = E_READ_ERR_m11;
-		globals_m11->err_func = __FUNCTION__;
+		set_error_m11(E_READ_ERR_m11, __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 	
@@ -10085,6 +10078,22 @@ si4	segment_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_time)
 }
 
 		
+void	set_error_m11(const si4 err_code, const si1 *function, const si4 line)
+{
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	if (globals_m11->err_code == E_NO_ERR_m11) {
+		globals_m11->err_code = err_code;
+		globals_m11->err_func = function;
+		globals_m11->err_line = line;
+	}
+	
+	return;
+}
+
+
 TERN_m11    set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 session_start_time, TERN_m11 prompt)
 {
 	si4                     n_potential_timezones, potential_timezone_entries[TZ_TABLE_ENTRIES_m11];
@@ -10592,6 +10601,11 @@ void    show_globals_m11(void)
 	printf_m11("all_record_structures_aligned: %hhd\n", globals_m11->all_record_structures_aligned);
 	printf_m11("all_structures_aligned: %hhd\n", globals_m11->all_structures_aligned);
 	
+	printf_m11("\Error\n-------------\n");
+	printf_m11("err_code: %d\n", globals_m11->err_code);
+	printf_m11("err_func: %s\n", globals_m11->err_func);
+	printf_m11("err_line: %s\n", globals_m11->err_line);
+
 	printf_m11("\nMiscellaneous\n-------------\n");
 	printf_m11("time_series_data_encryption_level: %hhd\n", globals_m11->time_series_data_encryption_level);
 	printf_m11("CRC_mode: %u\n", globals_m11->CRC_mode);
