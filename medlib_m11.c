@@ -8116,27 +8116,29 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 #ifdef WINDOWS_m11
 	if (root_path != NULL && root_path != path)
 		strcpy(root_path, path);
-	
-	// remove terminal '/' from passed path if present
+		
+	// remove terminal '\' from passed path if present
 	if (root_path != NULL) {
 		len = strlen(path);
 		if (len)
-			if (root_path[len - 1] == '/')
+			if (root_path[len - 1] == '\\' || root_path[len - 1] == '/')
 				root_path[--len] = 0;
 	}
 	
-	if (*path == '\\') {
-		// In a Windows shell, "\" refers to the lowest level of the current drive: roughly equivalent to a mount point.
-		// If the caller passed a path that begins with "\", it is difficult to know if the intended drive was the
-		// system drive, or the current working directory drive. However, if this is code that works across platforms,
-		// it should represent the system drive, "C:". Also it is likely that if the intended drive were not the
-		// system drive, the caller would have specified it. As the purpose of this function is to regularize and complete
-		// partial paths to the fullest extent possible, "C:\" is substituted for "\" here.
+	if (*path == '\\' || *path == '/') {
 		if (root_path != NULL) {  // add the "C:"
 			len = strlen(path);
 			memmove(root_path + 2, path, len + 1);
-			root_path[0] = 'C';
+			// get current drive letter
+			_getcwd(base_dir, FULL_FILE_NAME_BYTES_m11);
+			root_path[0] = base_dir[0];
+			// capitalize
+			if (root_path[0] >= 'a' && root_path[0] <= 'z')
+				root_path[0] -= 32;
 			root_path[1] = ':';
+			// change non standard delimiters
+			if (*path == '/')
+				STR_replace_char_m11('/', '\\', root_path);
 		}
 		return(TRUE_m11);
 	}
@@ -8145,10 +8147,14 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	// any "letter" drive can be considered path from root in Windows - no mount directory equivalent.
 	if ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) {
 		if (path[1] == ':') {
-			if (path[2] == '\\') {
+			if (path[2] == '\\' || path[2] == '/') {
 				if (root_path != NULL) {
-					if (root_path[0] >= 'a' && root_path[0] <= 'z')  // capitalize
+					// capitalize
+					if (root_path[0] >= 'a' && root_path[0] <= 'z')
 						root_path[0] -= 32;
+					// change non standard delimiters
+					if (root_path[2] == '/')
+						STR_replace_char_m11('/', '\\', path);
 				}
 				return(TRUE_m11);
 			}
@@ -8158,6 +8164,9 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	if (root_path == NULL)
 		return(FALSE_m11);
 	
+	// change non standard delimiters
+	STR_replace_char_m11('/', '\\', root_path);
+	
 	// get base directory
 	c = root_path;
 	if (*c == '~') {
@@ -8166,8 +8175,7 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 		++c;
 		if (*c == '\\')
 			++c;
-	}
-	else {
+	} else {
 		getcwd_m11(base_dir, FULL_FILE_NAME_BYTES_m11);
 	}
 	
@@ -8197,7 +8205,7 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 	}
 	
 	if (*c)
-		sprintf_m11(root_path, "%s/%s", base_dir, c);  // Note c may overlap root_path so use sprintf_m11()
+		sprintf_m11(root_path, "%s\\%s", base_dir, c);  // Note c may overlap root_path so use sprintf_m11()
 	else
 		strcpy(root_path, base_dir);
 	
@@ -10601,7 +10609,7 @@ void    show_globals_m11(void)
 	printf_m11("all_record_structures_aligned: %hhd\n", globals_m11->all_record_structures_aligned);
 	printf_m11("all_structures_aligned: %hhd\n", globals_m11->all_structures_aligned);
 	
-	printf_m11("\Error\n-------------\n");
+	printf_m11("\nError\n-------------\n");
 	printf_m11("err_code: %d\n", globals_m11->err_code);
 	printf_m11("err_func: %s\n", globals_m11->err_func);
 	printf_m11("err_line: %s\n", globals_m11->err_line);
