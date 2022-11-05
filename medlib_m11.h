@@ -1918,6 +1918,7 @@ TERN_m11	generate_password_data_m11(FILE_PROCESSING_STRUCT_m11* fps, si1* L1_pw,
 si8             generate_recording_time_offset_m11(si8 recording_start_time_uutc);
 si1		*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_name);
 ui8             generate_UID_m11(ui8 *uid);
+CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess);
 ui1		get_cpu_endianness_m11(void);
 ui4		get_level_m11(si1 *full_file_name, ui4 *input_type_code);
 LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 set_timezone_globals, TERN_m11 prompt);

@@ -1067,48 +1067,60 @@ void    calculate_indices_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 
 void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *channel_name)
 {
+	TERN_m11			use_default_channel;
 	si8				i, n_chans;
 	FILE_PROCESSING_STRUCT_m11	*ri_fps, *rd_fps;
+	CHANNEL_m11			*chan;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	// pass either channel, or channel name (if both paassed channel will be used)
+	// pass either channel, or channel name (if both passed channel will be used)
 	
 	// find channel from name
+	use_default_channel = FALSE_m11;
 	if (channel == NULL) {
-		if (channel_name == NULL) {
-			warning_message_m11("%s(): channel & channel_name are NULL\n");
-			return;
-		} else if (*channel_name == 0) {
-			warning_message_m11("%s(): channel is NULL & channel_name is empty\n");
+		if (channel_name == NULL)
+			use_default_channel = TRUE_m11;
+		else if (*channel_name == 0)
+			use_default_channel = TRUE_m11;
+		if (use_default_channel == TRUE_m11) {
+			channel = get_active_channel_m11(sess);
+			globals_m11->reference_channel = channel;
+			strcpy(globals_m11->reference_channel_name, channel->name);
 			return;
 		}
 		globals_m11->reference_channel = NULL;
 		strcpy(globals_m11->reference_channel_name, channel_name);
 		n_chans = sess->number_of_time_series_channels;  // check for match in time_series_channels
 		for (i = 0; i < n_chans; ++i) {
-			if (strcmp(sess->time_series_channels[i]->name, channel_name) == 0)
-				break;
+			chan = sess->time_series_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+				if (strcmp(chan->name, channel_name) == 0)
+					break;
 		}
 		if (i == n_chans) {  // no match in time series channels, check video channels
 			n_chans = sess->number_of_video_channels;
 			for (i = 0; i < n_chans; ++i) {
-				if (strcmp(sess->video_channels[i]->name, channel_name) == 0)
-					break;
+				chan = sess->video_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+					if (strcmp(chan->name, channel_name) == 0)
+						break;
 			}
 			if (i == n_chans) { // no match in video channels
-				warning_message_m11("%s(): no matching reference channel => setting to default\n", __FUNCTION__);
-				return;
+				warning_message_m11("%s(): no matching reference channel => setting to first active channel\n", __FUNCTION__);
+				globals_m11->reference_channel = get_active_channel_m11(sess);
 			} else {
-				globals_m11->reference_channel = sess->video_channels[i];
+				globals_m11->reference_channel = chan;
 			}
 		} else {
-			globals_m11->reference_channel = sess->time_series_channels[i];
+			globals_m11->reference_channel = chan;
 		}
-		strcpy(globals_m11->reference_channel_name, channel_name);
+		strcpy(globals_m11->reference_channel_name, chan->name);
 	} else {
+		if ((channel->flags & LH_CHANNEL_ACTIVE_m11) == 0)
+			channel = get_active_channel_m11(sess);
 		globals_m11->reference_channel = channel;
 		strcpy(globals_m11->reference_channel_name, channel->name);
 	}
@@ -5220,6 +5232,34 @@ RESERVED_UID_VALUE_m11:
 }
 
 
+CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess)
+{
+	si4		i, n_chans;
+	CHANNEL_m11	*chan;
+
+
+	// check time series channels
+	n_chans = sess->number_of_time_series_channels;
+	for (i = 0; i < n_chans; ++i) {
+		chan = sess->time_series_channels[i];
+		if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+			return(chan);
+	}
+
+	// check video channels
+	n_chans = sess->number_of_video_channels;
+	for (i = 0; i < n_chans; ++i) {
+		chan = sess->video_channels[i];
+		if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+			return(chan);
+	}
+	
+	warning_message_m11("%s((): no active channels\n", __FUNCTION__);
+	
+	return(NULL);
+}
+
+
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
@@ -7802,33 +7842,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		condition_time_slice_m11(slice);
 	
 	// set global sample/frame number reference channel
-	if (*globals_m11->reference_channel_name) {  // name provided
-		n_chans = sess->number_of_time_series_channels;  // check for match in time_series_channels
-		for (i = 0; i < n_chans; ++i) {
-			if (strcmp(sess->time_series_channels[i]->name, globals_m11->reference_channel_name) == 0)
-				break;
-		}
-		if (i == n_chans) {  // no match in time series channels, check video channels
-			n_chans = sess->number_of_video_channels;
-			for (i = 0; i < n_chans; ++i) {
-				if (strcmp(sess->video_channels[i]->name, globals_m11->reference_channel_name) == 0)
-					break;
-			}
-			if (i == n_chans) // no match in video channels
-				warning_message_m11("%s(): no matching reference channel => setting to default\n", __FUNCTION__);
-			else
-				globals_m11->reference_channel = sess->video_channels[i];
-		} else {
-			globals_m11->reference_channel = sess->time_series_channels[i];
-		}
-	}
-	if (globals_m11->reference_channel == NULL) {  // default to first time series channel if exists, else first video channel
-		if (sess->number_of_time_series_channels)
-			globals_m11->reference_channel = sess->time_series_channels[0];
-		else
-			globals_m11->reference_channel = sess->video_channels[0];
-		strcpy(globals_m11->reference_channel_name, globals_m11->reference_channel->name);
-	}
+	change_reference_channel_m11(sess, NULL, globals_m11->reference_channel_name);
 
 	// get segment range
 	n_segs = slice->number_of_segments;
@@ -9200,7 +9214,11 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 			condition_time_slice_m11(slice);
 	}
 	slice = &sess->time_slice;
-	
+
+	// set global sample/frame number reference channel
+	if ((globals_m11->reference_channel->flags & LH_CHANNEL_ACTIVE_m11) == 0)
+		change_reference_channel_m11(sess, NULL, NULL);
+
 	// get segment range
 	if (slice->number_of_segments == UNKNOWN_m11) {
 		if (get_segment_range_m11((LEVEL_HEADER_m11 *) sess, slice) == 0) {
