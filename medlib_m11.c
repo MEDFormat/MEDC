@@ -803,6 +803,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 			for (i = 0; i < n_segs; ++ri) {
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m11) {
 					read_file_m11(rd_fps, NULL, ri->file_offset, sizeof(Sgmt_RECORD_m11), 1, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					Sgmt_records[i] = *((Sgmt_RECORD_m11 *) rd_fps->record_data);
 					Sgmt_records[i++].total_record_bytes = sizeof(Sgmt_RECORD_m11);  // discard description, if any
 				}
 			}
@@ -872,7 +873,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		error_message_m11("%s(): no records or channel passed\n", __FUNCTION__);
 		return(NULL);
 	}
-		
+			
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number;  // frame numbers are unioned
@@ -5540,6 +5541,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 	ui4				file_exists;
 	si4				search_mode, n_segs;
 	si8				i, n_recs;
+	size_t				n_bytes;
 	SESSION_m11			*sess;
 	CHANNEL_m11			*chan;
 	FILE_PROCESSING_STRUCT_m11	*ri_fps, *rd_fps, *md_fps;
@@ -5558,8 +5560,8 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 	switch (level_header->type_code) {
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
-			Sgmt_records = sess->Sgmt_records;
 			chan = globals_m11->reference_channel;
+			Sgmt_records = sess->Sgmt_records;
 			break;
 		case LH_TIME_SERIES_CHANNEL_m11:
 		case LH_VIDEO_CHANNEL_m11:
@@ -5591,6 +5593,11 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 				sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m11);
 				rd_fps = chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				Sgmt_records = build_Sgmt_records_array_m11(ri_fps, rd_fps, NULL);
+				if (Sgmt_records != NULL && level_header->type_code == LH_SESSION_m11) {  // copy ref chan Sgmt records into ref chan, if used for session
+					n_bytes = (size_t) globals_m11->number_of_session_segments * sizeof(Sgmt_RECORD_m11);
+					chan->Sgmt_records = (Sgmt_RECORD_m11 *) malloc_m11(n_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+					memcpy((void *) chan->Sgmt_records, (void *) Sgmt_records, n_bytes);
+				}
 			}
 		}
 		
@@ -5675,8 +5682,6 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		}
 	}
 
-	// show_Sgmt_records_array_m11(NULL, Sgmt_records);
-	
 	// search Sgmt_records array for segments
 	n_segs = search_Sgmt_records_m11(Sgmt_records, slice, search_mode);
 	if (n_segs) {
