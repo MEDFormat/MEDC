@@ -923,7 +923,7 @@ typedef struct {
 // Level Header (LH) Flags Definitions:
 
 // level header flags
-// READ == on open: open file & read universal header
+// READ == on open: open file & read universal header (applies to data files, index files are always read in full)
 //         on read: set FPS pointer to section specified by time slice (decrpyting if possible)
 // READ_FULL == on open: read full file (no memory mapping required, & closing)
 // MMAP == allocate memory for full file, but only read on demand, (no re-reading occurs, but memory expensive)

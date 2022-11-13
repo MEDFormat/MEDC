@@ -7384,8 +7384,12 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, 0, chan->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m11);
-		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
+			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m11)
+				chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, 0, chan->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			else  // just read in data universal header & leave open
+				chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		}
 	}
 	
 	// empty slice
@@ -7551,8 +7555,12 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 		// data (time series only)
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11) {
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m11);
-			if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-				seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
+				if (seg->flags & LH_READ_FULL_SEGMENT_DATA_m11)
+					seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				else
+					seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			}
 		}
 	}
 
@@ -7562,8 +7570,12 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			seg->record_indices_fps = read_file_m11(seg->record_indices_fps, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m11);
-		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
+			if (seg->flags & LH_READ_FULL_SEGMENT_RECORDS_m11)
+				seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			else  // just read in data universal header & leave open
+				seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		}
 	}
 	
 	if (seg->flags & LH_GENERATE_EPHEMERAL_DATA_m11)
@@ -7925,8 +7937,12 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 			sess->record_indices_fps = read_file_m11(sess->record_indices_fps, tmp_str, 0, 0, 0, sess->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m11);
-		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
+			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m11)
+				sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, 0, sess->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			else  // just read in data universal header & leave open
+				sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		}
 	}
 
 	// segmented session records level
@@ -7950,8 +7966,12 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
 					ssr->record_indices_fps[j] = read_file_m11(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m11);
-				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-					ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
+					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m11)
+						ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					else  // just read in data universal header & leave open
+						ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				}
 			}
 		}
 	}
@@ -15460,7 +15480,7 @@ sf8	*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len
 	inc = (sf8) in_len / (sf8) out_len;
 	
 	out_data[0] = in_data[0];
-	if (out_len <= (in_len << 1)) {  // downsample, or upsample ratio <= 2:1
+	if (out_len <= (in_len << 1)) {  // downsample, or upsample ratio <= 2:1 (upsample this way faster than below)
 		for (x = inc, i = 1; i < out_len; ++i, x += inc) {
 			top_x = (bot_x = (si8) x) + 1;
 			out_data[i] = (x - (sf8) bot_x) * (in_data[top_x] - in_data[bot_x]) + in_data[bot_x];
@@ -15480,25 +15500,6 @@ sf8	*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len
 	out_data[out_len] = in_data[in_len];
 	
 	return(out_data);
-}
-
-
-#ifndef WINDOWS_m11  // inline causes linking problem in Windows
-inline
-#endif
-void	CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers)
-{
-#ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
-#endif
-	
-	// lock
-	if (buffers->locked != TRUE_m11) {
-		buffers->locked = mlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-		buffers->locked = TRUE_m11;
-	}
-
-	return;
 }
 
 
@@ -15551,6 +15552,25 @@ si4	*CMP_lin_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len
 	out_data[out_len] = in_data[in_len];
 	
 	return(out_data);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+void	CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers)
+{
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// lock
+	if (buffers->locked != TRUE_m11) {
+		buffers->locked = mlock_m11((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		buffers->locked = TRUE_m11;
+	}
+
+	return;
 }
 
 
