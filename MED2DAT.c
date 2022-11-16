@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
 
 	// read session
 	printf_m11("\nReading MED data ...  "); fflush(stdout);
-	flags = LH_SINGLE_READ_DEFAULT_m11;
+	flags = LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_SLICE_ALL_RECORDS_m11;
 	sess = read_session_m11(NULL, &slice, file_list, list_len, flags, password);
 	if (sess == NULL) {
 		error_message_m11("%s(): error reading session\n", __FUNCTION__);
