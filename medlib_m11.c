@@ -4540,6 +4540,62 @@ ui4    generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1 *MED_name)
 }
 
 
+si8	generate_recording_time_offset_m11(si8 recording_start_time_uutc)
+{
+	si4		dst_offset;
+	time_t		epoch_utc, recording_start_time_utc, offset_utc_time;
+	struct tm	local_time_info, offset_time_info;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// receives UNOFFSET recording start time (or CURRENT_TIME_m11); returns OFFSET recording start time
+	
+	if (recording_start_time_uutc == CURRENT_TIME_m11) // use current system time
+		recording_start_time_uutc = current_uutc_m11();
+	
+	recording_start_time_utc = recording_start_time_uutc / (si8)1000000;
+	
+	// get epoch & local time
+	epoch_utc = 0;
+#if defined MACOS_m11 || defined LINUX_m11
+	gmtime_r(&epoch_utc, &offset_time_info);
+	localtime_r(&recording_start_time_utc, &local_time_info);
+#endif
+#ifdef WINDOWS_m11
+	offset_time_info = *(gmtime(&epoch_utc));
+	local_time_info = *(localtime(&recording_start_time_utc));
+#endif
+	
+	// set offset time info
+	offset_time_info.tm_sec = local_time_info.tm_sec;
+	offset_time_info.tm_min = local_time_info.tm_min;
+	offset_time_info.tm_hour = local_time_info.tm_hour;
+	
+	// get offset UTC time
+#if defined MACOS_m11 || defined LINUX_m11
+	offset_utc_time = timegm(&offset_time_info);
+#endif
+#ifdef WINDOWS_m11
+	offset_utc_time = _mkgmtime(&offset_time_info);
+#endif
+	dst_offset = DST_offset_m11(recording_start_time_uutc);
+	if (dst_offset)  // adjust to standard time if DST in effect
+		offset_utc_time -= dst_offset;
+	
+	// set global offset
+	globals_m11->recording_time_offset = (recording_start_time_utc - offset_utc_time) * (si8)1000000;
+	
+	if (globals_m11->verbose == TRUE_m11)
+		message_m11("Recording Time Offset = %ld", globals_m11->recording_time_offset);
+	
+	globals_m11->RTO_known = TRUE_m11;
+	
+	return(recording_start_time_uutc - globals_m11->recording_time_offset);
+}
+
+
 si1	*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_name)
 {
 	si1	segment_number_str[FILE_NUMBERING_DIGITS_m11 + 1];
@@ -4556,6 +4612,41 @@ si1	*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_nam
 	snprintf_m11(segment_name, SEGMENT_BASE_FILE_NAME_BYTES_m11, "%s_s%s", fps->universal_header->channel_name, segment_number_str);
 	
 	return(segment_name);
+}
+
+
+ui8	generate_UID_m11(ui8 *uid)
+{
+	si4	        i;
+	ui1		*ui1_p;
+	static ui8      local_UID;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// Note if NULL is passed for uid, this function is not thread-safe
+	if (uid == NULL)
+		uid = (ui8 *)&local_UID;
+	ui1_p = (ui1 *) uid;
+	
+RESERVED_UID_VALUE_m11:
+#if defined MACOS_m11 || defined LINUX_m11
+	for (i = 0; i < UID_BYTES_m11; ++i)
+		ui1_p[i] = (ui1) (random() % (ui8) 0x100);
+#endif
+#ifdef WINDOWS_m11
+	for (i = 0; i < UID_BYTES_m11; ++i)
+		ui1_p[i] = (ui1) ((ui4) rand() % (ui4) 0x100);
+#endif
+	switch (*uid) {
+		case UID_NO_ENTRY_m11:
+			goto RESERVED_UID_VALUE_m11;
+		case CMP_BLOCK_START_UID_m11:
+			goto RESERVED_UID_VALUE_m11;
+	}
+	
+	return(*uid);
 }
 
 
@@ -4640,6 +4731,132 @@ ui4	get_level_m11(si1 *full_file_name, ui4 *input_type_code)
 	code = MED_type_code_from_string_m11(enclosing_directory);
 
 	return(code);
+}
+
+
+LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 set_timezone_globals, TERN_m11 prompt)
+{
+	TERN_m11	free_loc_info = FALSE_m11;
+	si1		*command, temp_str[128], *buffer, *pattern, *c;
+	si4		ret_val;
+	si8		sz, len;
+	FILE		*fp;
+	time_t 		curr_time;
+	struct tm 	loc_time;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	if (loc_info == NULL) {
+		loc_info = (LOCATION_INFO_m11 *) calloc_m11((size_t)1, sizeof(LOCATION_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		free_loc_info = TRUE_m11;
+	}
+	
+#if defined MACOS_m11 || defined LINUX_m11
+	command = "curl -s ipinfo.io";
+#endif
+#ifdef WINDOWS_m11
+	command = "curl.exe -s ipinfo.io";
+#endif
+	sprintf_m11(temp_str, "%s > %s 2> %s", command, globals_m11->temp_file, NULL_DEVICE_m11);
+	ret_val = system_m11(temp_str, FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (ret_val)
+		return(NULL);
+	fp = fopen_m11(globals_m11->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	
+	// get file length
+	sz = file_length_m11(fp, NULL);
+	
+	// read output
+	buffer = (si1 *) calloc((size_t)sz, sizeof(si1));
+	fread_m11(buffer, sizeof(si1), (size_t)sz, fp, globals_m11->temp_file, __FUNCTION__, EXIT_ON_FAIL_m11);
+	fclose(fp);
+	
+	// condition output
+	STR_strip_character_m11(buffer, '"');
+	STR_strip_character_m11(buffer, '"');
+	
+	// parse output
+	pattern = "ip: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%[^,]", loc_info->WAN_IPv4_address);
+	
+	pattern = "city: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%[^,]", loc_info->locality);
+	
+	pattern = "region: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%[^,]", loc_info->timezone_info.territory);
+	
+	pattern = "country: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%[^,]", loc_info->timezone_info.country_acronym_2_letter);
+	
+	pattern = "loc: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%lf,%lf", &loc_info->latitude, &loc_info->longitude);
+	
+	pattern = "postal: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%[^,]", loc_info->postal_code);
+	
+	pattern = "timezone: ";
+	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
+		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+	else
+		sscanf(c, "%[^, ]", loc_info->timezone_description);
+	
+	free((void *) buffer);
+	
+	// get timezone acronym from system
+	curr_time = time(NULL);
+#if defined MACOS_m11 || defined LINUX_m11
+	localtime_r(&curr_time, &loc_time);
+	len = strlen(loc_time.tm_zone);
+	if (len >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
+		if (loc_time.tm_isdst)
+			strcpy(loc_info->timezone_info.daylight_timezone_acronym, loc_time.tm_zone);
+		else
+			strcpy(loc_info->timezone_info.standard_timezone_acronym, loc_time.tm_zone);
+	}
+#endif
+#ifdef WINDOWS_m11
+	loc_time = *(localtime(&curr_time));
+	if (*_tzname[0])
+		strcpy(loc_info->timezone_info.standard_timezone, _tzname[0]);
+	if (*_tzname[1])
+		strcpy(loc_info->timezone_info.daylight_timezone, _tzname[1]);
+#endif
+
+	if (set_timezone_globals == TRUE_m11) {
+		if (set_global_time_constants_m11(&loc_info->timezone_info, 0, prompt) == FALSE_m11) {
+			if (free_loc_info == TRUE_m11)
+				free_m11((void *) loc_info, __FUNCTION__);
+			warning_message_m11("%s(): Could not set timezone globals => returning NULL\n", __FUNCTION__);
+			return(NULL);
+		}
+	}
+	
+	if (free_loc_info == TRUE_m11) {
+		free_m11((void *) loc_info, __FUNCTION__);
+		loc_info = NULL;
+	}
+	
+	return(loc_info);
 }
 
 
@@ -5458,6 +5675,37 @@ TERN_m11	initialize_timezone_tables_m11(void)
 }
 
 
+void	initialize_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 type_code, TERN_m11 generate_file_UID, TERN_m11 originating_file)
+{
+	UNIVERSAL_HEADER_m11	*uh;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	uh = fps->universal_header;
+	
+	uh->header_CRC = uh->body_CRC = CRC_START_VALUE_m11;
+	uh->segment_number = UNIVERSAL_HEADER_SEGMENT_NUMBER_NO_ENTRY_m11;
+	uh->type_code = type_code;
+	uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m11;
+	uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m11;
+	uh->byte_order_code = LITTLE_ENDIAN_m11;
+	uh->session_start_time = UUTC_NO_ENTRY_m11;
+	uh->segment_start_time = UUTC_NO_ENTRY_m11;
+	uh->segment_end_time = UUTC_NO_ENTRY_m11;
+	uh->number_of_entries = 0;
+	uh->maximum_entry_size = 0;
+	
+	if (generate_file_UID == TRUE_m11)
+		generate_UID_m11(&uh->file_UID);
+	if (originating_file == TRUE_m11)
+		uh->provenance_UID = uh->file_UID;
+	
+	return;
+}
+
+
 si8	items_for_bytes_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_bytes)
 {
 	si8				items, bytes;
@@ -5523,7 +5771,7 @@ void	lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_fla
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	if ((lh_flags & (LH_ALL_READ_FLAGS_MASK_m11 | LH_ALL_MEM_MAP_FLAGS_m11)) == 0)
+	if ((lh_flags & (LH_ALL_READ_FLAGS_MASK_m11 | LH_ALL_MEM_MAP_FLAGS_MASK_m11)) == 0)
 		return;
 	
 	level_code = get_level_m11(full_file_name, &type_code);
@@ -7086,6 +7334,26 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		sess->segmented_sess_recs->last_access_time = curr_time;
 	
 	return(sess);
+}
+
+
+si8     pad_m11(ui1 *buffer, si8 content_len, ui4 alignment)
+{
+	si8        i, pad_bytes;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	pad_bytes = content_len % (si8) alignment;
+	if (pad_bytes) {
+		i = pad_bytes = (alignment - pad_bytes);
+		buffer += content_len;
+		while (i--)
+			*buffer++ = PAD_BYTE_VALUE_m11;
+	}
+	
+	return(content_len + pad_bytes);
 }
 
 
@@ -9774,7 +10042,6 @@ void	show_level_header_flags_m11(ui8	flags)
 
 void	show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 *md, ui4 type_code)
 {
-	TERN_m11				reencrypt;
 	si1                                     hex_str[HEX_STRING_BYTES_m11(8)];
 	METADATA_SECTION_1_m11			*md1;
 	TIME_SERIES_METADATA_SECTION_2_m11	*tmd2, *gmd2;
@@ -9858,13 +10125,9 @@ void	show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 *md, ui4 ty
 	printf_m11("------------------ Section 2 - START -------------------\n");
 	
 	// decrypt if needed
-	reencrypt = FALSE_m11;
-	if (md1->section_2_encryption_level > NO_ENCRYPTION_m11 || md1->section_3_encryption_level > NO_ENCRYPTION_m11) {
-		if (fps != NULL) {
+	if (md1->section_2_encryption_level > NO_ENCRYPTION_m11 || md1->section_3_encryption_level > NO_ENCRYPTION_m11)
+		if (fps != NULL)
 			decrypt_metadata_m11(fps);
-			reencrypt = TRUE_m11;
-		}
-	}
 	
 	if (md1->section_2_encryption_level <= NO_ENCRYPTION_m11) {
 		
@@ -10141,9 +10404,6 @@ void	show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 *md, ui4 ty
 	printf_m11("------------------- Section 3 - END --------------------\n");
 	printf_m11("-------------------- Metadata - END --------------------\n\n");
 	
-	if (reencrypt == TRUE_m11)
-		encrypt_metadata_m11(fps);
-
 	return;
 }
 

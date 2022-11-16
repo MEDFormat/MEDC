@@ -924,15 +924,15 @@ typedef struct {
 
 // level header flags
 // READ == on open: open file & read universal header (applies to data files, index files are always read in full)
-//         on read: set FPS pointer to section specified by time slice (decrpyting if possible)
+//         on read: set FPS pointer to section specified by time slice (decrpyting if necessary)
 // READ_FULL == on open: read full file (no memory mapping required, & closing)
-// MMAP == allocate memory for full file, but only read on demand, (no re-reading occurs, but memory expensive)
-// ACTIVE ==  applies only to channels. Mark a CHANNEL as active to return data. Marking a channel as inactive does not free or close anything.
+// MMAP == allocate memory for full file, but only read on demand, (no re-reading occurs, but potentially memory expensive, good paired with VDS)
+// ACTIVE ==  applies only to channels. Mark a CHANNEL as active to return data. Marking a channel as inactive does not free or close it.
 // EPHEMERAL DATA == if GENERATE_EPHEMERAL_DATA_m11 is set, ephemeral data is created if it does not exist.
 //	If UPDATE_EPHEMERAL_DATA is set, the data is updated whenever the channel or segment open set changes (opening of new elements, not the active status)
 //	The UPDATE_EPHEMERAL_DATA bit is set by the lower levels and reset by the higher level once the data has been updated.
 //	i.e  read_channel_m11() checks the segment bits (e.g. read_segment_m11() opened a new segment) & if update required, it does the channel level update & clears the segment bit.
-//	It then sets it's bit to trigger update at the session level. After updating, the session will clear the chaannel level bit.
+//	It then sets it's bit to trigger update at the session level. After updating, the session will clear the channel level bit.
 
 // all levels
 #define LH_NO_FLAGS_m11					((ui8) 0)
@@ -974,9 +974,7 @@ typedef struct {
 #define LH_RESET_CPS_POINTERS_m11			((ui8) 1 << 60)	// set original_ptr = original_data, block_header = compressed_data, decompressed_ptr = decompressed_data
 
 // flag groups
-// mapping flags
 #define LH_MAP_ALL_CHANNELS_m11       	      (	LH_MAP_ALL_TIME_SERIES_CHANNELS_m11 | LH_MAP_ALL_VIDEO_CHANNELS_m11 )
-// LH_MAP_ALL_SEGMENTS_m11 			single bit defined above
 
 // reading masks (not to be used as flags: SLICE/FULL mutually exclusive)
 #define LH_READ_SESSION_RECORDS_MASK_m11      (	LH_READ_SLICE_SESSION_RECORDS_m11 | LH_READ_FULL_SESSION_RECORDS_m11 )
@@ -986,29 +984,18 @@ typedef struct {
 #define LH_READ_SEGMENT_DATA_MASK_m11         (	LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_FULL_SEGMENT_DATA_m11 )
 #define LH_ALL_READ_FLAGS_MASK_m11	      ( LH_READ_SESSION_RECORDS_MASK_m11 | LH_READ_SEGMENTED_SESS_RECS_MASK_m11 | \
 						LH_READ_CHANNEL_RECORDS_MASK_m11 | LH_READ_SEGMENT_DATA_MASK_m11 | LH_READ_SEGMENT_RECORDS_MASK_m11 )
-
 // memory map flags & masks
 #define LH_MEM_MAP_ALL_RECORDS_m11	      ( LH_MEM_MAP_SESSION_RECORDS_m11 | LH_MEM_MAP_SEGMENTED_SESS_RECS_m11 | LH_MEM_MAP_CHANNEL_RECORDS_m11 | LH_MEM_MAP_SEGMENT_RECORDS_m11 )
-#define LH_MEM_MAP_ALL_DATA_m11		      ( LH_MEM_MAP_SEGMENT_DATA_m11 )
+#define LH_MEM_MAP_ALL_m11	      	      (	LH_MEM_MAP_ALL_RECORDS_m11 | LH_MEM_MAP_SEGMENT_DATA_m11 )
+#define LH_ALL_MEM_MAP_FLAGS_MASK_m11		LH_MEM_MAP_ALL_m11
 
+// record reading groups
 #define LH_READ_SLICE_ALL_RECORDS_m11	      (	LH_READ_SLICE_SESSION_RECORDS_m11 | LH_READ_SLICE_SEGMENTED_SESS_RECS_m11 | LH_READ_SLICE_CHANNEL_RECORDS_m11 | LH_READ_SLICE_SEGMENT_RECORDS_m11 )
 #define LH_READ_FULL_ALL_RECORDS_m11	      (	LH_READ_FULL_SESSION_RECORDS_m11 | LH_READ_FULL_SEGMENTED_SESS_RECS_m11 | LH_READ_FULL_CHANNEL_RECORDS_m11 | LH_READ_FULL_SEGMENT_RECORDS_m11 )
+
+// channel type groups
 #define LH_INCLUDE_ALL_CHAN_TYPES_m11	      (	LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_INCLUDE_VIDEO_CHANNELS_m11 )
 
-#define LH_SINGLE_READ_DEFAULT_m11	      (	LH_INCLUDE_ALL_CHAN_TYPES_m11 | LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_SLICE_ALL_RECORDS_m11 )
-#define LH_MULTI_READ_BIG_DEFAULT_m11	      (	LH_SINGLE_READ_DEFAULT_m11 | LH_MAP_ALL_CHANNELS_m11 | LH_MAP_ALL_SEGMENTS_m11 | LH_MEM_MAP_ALL_RECORDS_m11 )
-#define LH_MULTI_READ_SMALL_DEFAULT_m11	      (	LH_MULTI_READ_BIG_DEFAULT_m11 | LH_MEM_MAP_SEGMENT_DATA_m11 )
-
-#define LH_ALL_MEM_MAP_FLAGS_m11	      (	LH_MEM_MAP_SESSION_RECORDS_m11 | LH_MEM_MAP_SEGMENTED_SESS_RECS_m11 | \
-						LH_MEM_MAP_CHANNEL_RECORDS_m11 | LH_MEM_MAP_SEGMENT_RECORDS_m11 | LH_MEM_MAP_SEGMENT_DATA_m11 )
-
-// defaults
-#define LH_TIME_SERIES_SINGLE_READ_DEFAULT_m11	( LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_SINGLE_READ_DEFAULT_m11 )
-#define LH_VIDEO_SINGLE_READ_DEFAULT_m11	( LH_INCLUDE_VIDEO_CHANNELS_m11 | LH_SINGLE_READ_DEFAULT_m11 )
-#define LH_TIME_SERIES_MULTI_READ_DEFAULT_m11	( LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_MULTI_READ_DEFAULT_m11 )
-#define LH_VIDEO_MULTI_READ_DEFAULT_m11		( LH_INCLUDE_VIDEO_CHANNELS_m11 | LH_MULTI_READ_DEFAULT_m11 )
-#define LH_ALL_CHANS_SINGLE_READ_DEFAULT_m11	( LH_INCLUDE_ALL_CHAN_TYPES_m11 | LH_SINGLE_READ_DEFAULT_m11 )
-#define LH_ALL_CHANS_MULTI_READ_DEFAULT_m11	( LH_INCLUDE_ALL_CHAN_TYPES_m11 | LH_MULTI_READ_DEFAULT_m11 )
 
 
 //**********************************************************************************//
@@ -1910,10 +1897,13 @@ TERN_m11	frequencies_vary_m11(SESSION_m11 *sess);
 si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string);
 ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* MED_name);
+si8             generate_recording_time_offset_m11(si8 recording_start_time_uutc);
 si1		*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_name);
+ui8             generate_UID_m11(ui8 *uid);
 CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess);
 ui1		get_cpu_endianness_m11(void);
 ui4		get_level_m11(si1 *full_file_name, ui4 *input_type_code);
+LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 set_timezone_globals, TERN_m11 prompt);
 si4		get_search_mode_m11(TIME_SLICE_m11 *slice);
 si4		get_segment_index_m11(si4 segment_number);
 si4             get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice);
@@ -1924,6 +1914,7 @@ TERN_m11	initialize_globals_m11(void);
 TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables);
 TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice);
 TERN_m11	initialize_timezone_tables_m11(void);
+void		initialize_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 type_code, TERN_m11 generate_file_UID, TERN_m11 originating_file);
 si8		items_for_bytes_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_bytes);
 void		lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_flag, TERN_m11 *close_flag, si8 *number_of_items);
 si1		*MED_type_string_from_code_m11(ui4 code);
@@ -1938,6 +1929,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 LEVEL_HEADER_m11	*open_level_m11(LEVEL_HEADER_m11 *lh, TIME_SLICE_m11 *slice, ...);  // varargs (lh == NULL): void *file_list, si4 list_len, ui8 flags, si1 *password
 SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *segment_path, ui8 flags, si1 *password);
 SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);
+si8             pad_m11(ui1 *buffer, si8 content_len, ui4 alignment);
 TERN_m11	path_from_root_m11(si1 *path, si1 *root_path);
 void            pop_behavior_m11(void);
 TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspecified_pw);
@@ -2102,7 +2094,7 @@ TERN_m11	mlock_m11(void *addr, size_t len, TERN_m11 zero_data, const si1 *functi
 TERN_m11	munlock_m11(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail);
 si4     	printf_m11(si1 *fmt, ...);
 si4		putc_m11(si4 c, FILE *stream);
-si4		putch_m11(si4 c);  // Windows "_putch()"
+si4		putch_m11(si4 c);
 si4		putchar_m11(si4 c);
 void		*realloc_m11(void *ptr, size_t n_bytes, const si1 *function, ui4 behavior_on_fail);
 void		**realloc_2D_m11(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
