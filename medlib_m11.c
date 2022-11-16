@@ -812,12 +812,17 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 			use_default_channel = TRUE_m11;
 		if (use_default_channel == TRUE_m11) {
 			channel = get_active_channel_m11(sess);
+			if (channel == NULL) {
+				warning_message_m11("%s(): no active channels => exiting\n", __FUNCTION__);
+				exit_m11(-1);
+			}
 			globals_m11->reference_channel = channel;
 			strcpy(globals_m11->reference_channel_name, channel->name);
 			return;
 		}
 		globals_m11->reference_channel = NULL;
-		strcpy(globals_m11->reference_channel_name, channel_name);
+		if (globals_m11->reference_channel_name != channel_name)
+			strcpy(globals_m11->reference_channel_name, channel_name);
 		n_chans = sess->number_of_time_series_channels;  // check for match in time_series_channels
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->time_series_channels[i];
@@ -836,6 +841,10 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 			if (i == n_chans) { // no match in video channels
 				warning_message_m11("%s(): no matching reference channel => setting to first active channel\n", __FUNCTION__);
 				globals_m11->reference_channel = get_active_channel_m11(sess);
+				if (globals_m11->reference_channel == NULL) {
+					warning_message_m11("%s(): no active channels => exiting\n", __FUNCTION__);
+					exit_m11(-1);
+				}
 			} else {
 				globals_m11->reference_channel = chan;
 			}
