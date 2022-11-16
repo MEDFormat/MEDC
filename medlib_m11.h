@@ -1023,6 +1023,8 @@ typedef struct {
 #define E_NOT_MED_m11			4
 #define E_BAD_PASSWORD_m11		5
 #define E_NO_METADATA_m11		6
+#define	E_NO_INET_m11			7
+
 
 // error strings
 #define	E_NO_ERR_STR_m11		"no errors"
@@ -1032,6 +1034,8 @@ typedef struct {
 #define E_NOT_MED_STR_m11		"not a MED file or directory"
 #define E_BAD_PASSWORD_STR_m11		"invalid password"
 #define E_NO_METADATA_STR_m11		"metadata file not found"
+#define	E_NO_INET_STR_m11		"no internet connection found"
+
 
 
 //**********************************************************************************//
@@ -1848,10 +1852,6 @@ typedef struct {
 // Prototypes
 TERN_m11	adjust_open_file_limit_m11(si4 new_limit, TERN_m11 verbose_flag);
 TERN_m11	all_zeros_m11(ui1 *bytes, si4 field_length);
-CHANNEL_m11	*allocate_channel_m11(CHANNEL_m11 *chan, FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m11 chan_recs, TERN_m11 seg_recs);
-SEGMENT_m11	*allocate_segment_m11(SEGMENT_m11 *seg, FILE_PROCESSING_STRUCT_m11 *proto_fps, si1* enclosing_path, si1 *chan_name, ui4 type_code, si4 seg_num, TERN_m11 seg_recs);
-SESSION_m11	*allocate_session_m11(FILE_PROCESSING_STRUCT_m11 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, TERN_m11 sess_recs, TERN_m11 segmented_sess_recs, TERN_m11 chan_recs, TERN_m11 seg_recs);
-void     	apply_recording_time_offset_m11(si8 *time);
 si1		*behavior_string_m11(ui4 behavior, si1 *behavior_string);
 si8		build_contigua_m11(LEVEL_HEADER_m11 *level_header);
 Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps, FILE_PROCESSING_STRUCT_m11 *rd_fps, CHANNEL_m11 *chan);
@@ -1888,9 +1888,6 @@ TERN_m11        decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11        decrypt_record_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, ...);  // varargs (fps == NULL): RECORD_HEADER_m11 *rh, si8 number_of_records  (used to decrypt Sgmt_records arrays)
 TERN_m11        decrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 si4             DST_offset_m11(si8 uutc);
-TERN_m11        encrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps);
-TERN_m11	encrypt_record_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
-TERN_m11        encrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            error_message_m11(si1 *fmt, ...);
 void		error_string_m11(void);
 void            escape_chars_m11(si1 *string, si1 target_char, si8 buffer_len);
@@ -1913,15 +1910,10 @@ TERN_m11	frequencies_vary_m11(SESSION_m11 *sess);
 si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string);
 ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* MED_name);
-si1		**generate_numbered_names_m11(si1 **names, si1 *prefix, si4 number_of_names);
-TERN_m11	generate_password_data_m11(FILE_PROCESSING_STRUCT_m11* fps, si1* L1_pw, si1* L2_pw, si1* L3_pw, si1* L1_pw_hint, si1* L2_pw_hint);
-si8             generate_recording_time_offset_m11(si8 recording_start_time_uutc);
 si1		*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_name);
-ui8             generate_UID_m11(ui8 *uid);
 CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess);
 ui1		get_cpu_endianness_m11(void);
 ui4		get_level_m11(si1 *full_file_name, ui4 *input_type_code);
-LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 set_timezone_globals, TERN_m11 prompt);
 si4		get_search_mode_m11(TIME_SLICE_m11 *slice);
 si4		get_segment_index_m11(si4 segment_number);
 si4             get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice);
@@ -1930,10 +1922,8 @@ si1		*get_session_directory_m11(si1 *session_directory, si1 *MED_file_name, FILE
 TERN_m11	include_record_m11(ui4 type_code, si4 *record_filters);
 TERN_m11	initialize_globals_m11(void);
 TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables);
-void            initialize_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 initialize_for_update);
 TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice);
 TERN_m11	initialize_timezone_tables_m11(void);
-void		initialize_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 type_code, TERN_m11 generate_file_UID, TERN_m11 originating_file);
 si8		items_for_bytes_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 *number_of_bytes);
 void		lh_set_directives_m11(si1 *full_file_name, ui8 lh_flags, TERN_m11 *mmap_flag, TERN_m11 *close_flag, si8 *number_of_items);
 si1		*MED_type_string_from_code_m11(ui4 code);
@@ -1948,7 +1938,6 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 LEVEL_HEADER_m11	*open_level_m11(LEVEL_HEADER_m11 *lh, TIME_SLICE_m11 *slice, ...);  // varargs (lh == NULL): void *file_list, si4 list_len, ui8 flags, si1 *password
 SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *segment_path, ui8 flags, si1 *password);
 SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);
-si8             pad_m11(ui1 *buffer, si8 content_len, ui4 alignment);
 TERN_m11	path_from_root_m11(si1 *path, si1 *root_path);
 void            pop_behavior_m11(void);
 TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspecified_pw);
@@ -1963,7 +1952,6 @@ si8     	read_record_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 si8     	read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice);
 TERN_m11	recover_passwords_m11(si1 *L3_password, UNIVERSAL_HEADER_m11* universal_header);
 void     	remove_recording_time_offset_m11(si8 *time);
-void            reset_metadata_for_update_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 si8		sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4		search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice, ui4 search_mode);
 si4		segment_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample);
@@ -1977,7 +1965,6 @@ void            show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 *cod
 void		show_file_times_m11(FILE_TIMES_m11 *ft);
 void            show_globals_m11(void);
 void		show_level_header_flags_m11(ui8	flags);
-void    	show_location_info_m11(LOCATION_INFO_m11 *li);
 void            show_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps, METADATA_m11 *md, ui4 type_code);
 void            show_password_data_m11(PASSWORD_DATA_m11 *pwd);
 void		show_password_hints_m11(PASSWORD_DATA_m11 *pwd);
@@ -1988,7 +1975,6 @@ void            show_timezone_info_m11(TIMEZONE_INFO_m11 *timezone_entry, TERN_m
 void            show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER_m11 *uh);
 TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess);
 si1		*time_string_m11(si8 uutc_time, si1 *time_str, TERN_m11 fixed_width, TERN_m11 relative_days, si4 colored_text, ...);
-void		update_maximum_entry_size_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 void            unescape_chars_m11(si1 *string, si1 target_char);
 si8		uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
@@ -1996,7 +1982,6 @@ TERN_m11        validate_record_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11        validate_time_series_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            warning_message_m11(si1 *fmt, ...);
 si1		*wchar2char_m11(si1 *target, wchar_t *source);
-si8     	write_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, si8 number_of_items, void *external_data, ui4 behavior_on_fail);
 
 
 
@@ -2065,7 +2050,6 @@ void		FPS_set_pointers_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset);
 void		FPS_show_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void		FPS_sort_m11(FILE_PROCESSING_STRUCT_m11 **fps_array, si4 n_fps);
 si4		FPS_unlock_m11(FILE_PROCESSING_STRUCT_m11 *fps, const si1 *function, ui4 behavior_on_fail);
-si8		FPS_write_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 file_offset, si8 bytes_to_write, const si1 *function, ui4 behavior_on_fail);
 
 
 
@@ -2566,16 +2550,11 @@ typedef struct CMP_PROCESSING_STRUCT_m11 {
 // Function Prototypes
 CMP_BUFFERS_m11	*CMP_allocate_buffers_m11(CMP_BUFFERS_m11 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, TERN_m11 zero_data, TERN_m11 lock_memory);
 CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CMP_DIRECTIVES_m11 *directives, CMP_PARAMETERS_m11 *parameters);
-void		CMP_calculate_statistics_m11(REC_Stat_v10_m11 *stats_ptr, si4 *data, si8 len, CMP_NODE_m11 *nodes);
 TERN_m11	CMP_check_CPS_allocation_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void		CMP_cps_mutex_off_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 void		CMP_cps_mutex_on_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 void    	CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 TERN_m11     	CMP_decrypt_m11(FILE_PROCESSING_STRUCT_m11 *fps);  // single block decrypt (see also decrypt_time_series_data_m11)
-ui1		CMP_differentiate_m11(CMP_PROCESSING_STRUCT_m11 *cps);
-void    	CMP_encode_m11(FILE_PROCESSING_STRUCT_m11 *fps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples);
-TERN_m11	CMP_encrypt_m11(FILE_PROCESSING_STRUCT_m11 *fps);  // single block encrypt (see also encrypt_time_series_data_m11)
-void    	CMP_find_extrema_m11(si4 *input_buffer, si8 len, si4 *min, si4 *max, CMP_PROCESSING_STRUCT_m11 *cps);
 void    	CMP_free_buffers_m11(CMP_BUFFERS_m11 *buffers, TERN_m11 free_structure);
 void    	CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 free_cps_structure);
 void		CMP_generate_parameter_map_m11(CMP_PROCESSING_STRUCT_m11 *cps);
@@ -2587,28 +2566,21 @@ sf8		*CMP_lin_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_le
 si4		*CMP_lin_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len);
 void		CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers);
 void    	CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
-void    	CMP_MBE_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 sf8     	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m11 *out_bufs, si8 out_len);
 void    	CMP_offset_time_m11(CMP_BLOCK_FIXED_HEADER_m11 *block_header, si4 action);
 void    	CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
-void    	CMP_PRED_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 mode, si8 data_samples, ui4 block_samples);
 void    	CMP_RED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
-void    	CMP_RED_encode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 void    	CMP_retrend_si4_m11(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b);
 void    	CMP_retrend_2_sf8_m11(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b);
 si2      	CMP_round_si2_m11(sf8 val);
 si4     	CMP_round_si4_m11(sf8 val);
-void    	CMP_scale_amplitude_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m11 *cps);
-void    	CMP_scale_frequency_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m11 *cps);
-void    	CMP_set_variable_region_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 void      	CMP_sf8_to_si4_m11(sf8 *sf8_arr, si4 *si4_arr, si8 len);
 void    	CMP_show_block_header_m11(CMP_BLOCK_FIXED_HEADER_m11 *block_header);
 void    	CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recursed_call);
 void      	CMP_si4_to_sf8_m11(si4 *si4_arr, sf8 *sf8_arr, si8 len);
 sf8		*CMP_spline_interp_sf8_m11(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, CMP_BUFFERS_m11 *spline_bufs);
 si4		*CMP_spline_interp_si4_m11(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len, CMP_BUFFERS_m11 *spline_bufs);
-si8             CMP_ts_sort_m11(si4 *x, si8 len, CMP_NODE_m11 *nodes, CMP_NODE_m11 *head, CMP_NODE_m11 *tail, si4 return_sorted_ts, ...);
 void		CMP_unlock_buffers_m11(CMP_BUFFERS_m11 *buffers);
 void    	CMP_unscale_amplitude_si4_m11(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
 void    	CMP_unscale_amplitude_sf8_m11(sf8 *input_buffer, sf8 *output_buffer, si8 len, sf8 scale_factor);
@@ -2828,9 +2800,7 @@ si4	UTF8_wc_to_utf8_m11(si1 *dest, ui4 ch);  // single character to UTF-8
 // Function Prototypes
 void		AES_add_round_key_m11(si4 round, ui1 state[][4], ui1 *round_key);
 void		AES_decrypt_m11(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key);
-void		AES_encrypt_m11(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key);
 void		AES_key_expansion_m11(ui1 *round_key, si1 *key);
-void		AES_cipher_m11(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 si4		AES_get_sbox_invert_m11(si4 num);
 si4		AES_get_sbox_value_m11(si4 num);
 TERN_m11	AES_initialize_tables_m11(void);
@@ -2838,9 +2808,6 @@ void		AES_inv_cipher_m11(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void		AES_inv_mix_columns_m11(ui1 state[][4]);
 void		AES_inv_shift_rows_m11(ui1 state[][4]);
 void		AES_inv_sub_bytes_m11(ui1 state[][4]);
-void		AES_mix_columns_m11(ui1 state[][4]);
-void		AES_shift_rows_m11(ui1 state[][4]);
-void		AES_sub_bytes_m11(ui1 state[][4]);
 
 
 
