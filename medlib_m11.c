@@ -14004,12 +14004,7 @@ void    CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	total_header_bytes = (ui4) ((cps->parameters.model_region - (ui1 *) block_header) + CMP_MBE_MODEL_FIXED_HEADER_BYTES_m11 + (n_derivs * 4));
 	in_word = (ui8 *) ((ui1 *) block_header + (total_header_bytes & ~((ui4) 7)));
 	in_bit = (total_header_bytes & (ui4) 7) << 3;
-#if defined MACOS_m11 || defined LINUX_m11
-	mask = (ui8) 0xFFFFFFFFFFFFFFFF >> (64 - bits_per_samp);
-#endif
-#ifdef WINDOWS_m11
 	mask = ((ui8) 1 << bits_per_samp) - 1;
-#endif
 	si4_p = cps->decompressed_ptr + n_derivs;
 	in_word_val = *in_word >> in_bit;
 	for (i = n_samps - n_derivs; i--;) {
