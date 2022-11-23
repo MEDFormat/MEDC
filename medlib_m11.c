@@ -2751,7 +2751,7 @@ void	extract_path_parts_m11(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 	
 	// get path from root
 	path_from_root_m11(full_file_name, temp_full_file_name);
-	
+
 	// move pointer to end of string
 	c = temp_full_file_name + strlen(temp_full_file_name) - 1;
 	
@@ -4496,17 +4496,17 @@ ui4    generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1 *MED_name)
 #endif
 	
 	if (MED_dir == NULL)
-		MED_dir = local_MED_dir;
+		*(MED_dir = local_MED_dir) = 0;
 	if (MED_name == NULL)
-		MED_name = local_MED_name;
-
+		*(MED_name = local_MED_name) = 0;
+	
 	// copy & condition path
 	strcpy(local_MED_dir, path);
 	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
 	unescape_chars_m11(local_MED_dir, (si1) 0x20);  // spaces
 	unescape_chars_m11(local_MED_dir, (si1) 0x27);  // apostrophes
 	path_from_root_m11(local_MED_dir, local_MED_dir);
-		
+
 	// check path: if file passed, get enclosing directory
 	fe = file_exists_m11(local_MED_dir);
 	if (fe == FILE_EXISTS_m11) {
@@ -9595,8 +9595,7 @@ SET_GTC_TIMEZONE_MATCH_m11:
 	if (timezone_info->daylight_time_start_code) {
 		if (timezone_info->daylight_time_start_code == DTCC_VALUE_NO_ENTRY_m11) {
 			globals_m11->observe_DST = UNKNOWN_m11;
-		}
-		else {
+		} else {
 			globals_m11->observe_DST = TRUE_m11;
 			strncpy_m11(globals_m11->daylight_timezone_acronym, timezone_info->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m11);
 			strncpy_m11(globals_m11->daylight_timezone_string, timezone_info->daylight_timezone, TIMEZONE_STRING_BYTES_m11);
@@ -11818,7 +11817,7 @@ si4	win_system_m11(si1 *command)  // Windows has a system() function which works
 	startup_info.cb = sizeof(STARTUPINFOA);
 	cmd_exe_path = getenv("COMSPEC");
 	_flushall();  // required for Windows system() calls, probably a good idea here too
-	
+
 	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, 0, CREATE_NO_WINDOW, NULL, NULL, &startup_info, &process_info)) {
 		WaitForSingleObject(process_info.hProcess, INFINITE);
 		GetExitCodeProcess(process_info.hProcess, &ret_val);
@@ -18371,6 +18370,11 @@ char	*getcwd_m11(char *buf, size_t size)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
+#ifdef MATLAB_m11
+	error_message_m11("%s(): the current working directory is not defined for Matlab mex files => pass full path\n", __FUNCTION__);
+	return(NULL);
+#endif
+
 #if defined MACOS_m11 || defined LINUX_m11
 	return(getcwd(buf, size));
 #endif

@@ -1537,7 +1537,7 @@ typedef struct {  // struct name for CMP functions interdependency
 	si8					number_of_items;  // items in current read/write, not necessarily the whole file
 } FILE_PROCESSING_STRUCT_m11;
 
-// Session, Channel, Segment Structures
+// Session, Segmented Session Records, Channel, & Segment Structures
 typedef struct {
 	union {  // anonymous union
 		struct {
@@ -3286,9 +3286,10 @@ void		SHA_update_m11(SHA_CTX_m11 *ctx, const ui1 *data, si8 len);
 	{ "ZIMBABWE", "ZW", "ZWE", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0, -1 } \
 }
 
-#define TZ_COUNTRY_ALIASES_ENTRIES_m11      14
+#define TZ_COUNTRY_ALIASES_ENTRIES_m11      15
 #define TZ_COUNTRY_ALIASES_TABLE_m11 { \
 	{ "CHINA", "PEOPLE'S REPUBIC OF CHINA" }, \
+	{ "CHINA", "PEOPLES REPUBIC OF CHINA" }, \
 	{ "RUSSIA", "RUSSIAN FEDERATION" }, \
 	{ "TURKS AND CAICOS", "TURKS & CAICOS" }, \
 	{ "TURKS AND CAICOS", "TURKS" }, \
