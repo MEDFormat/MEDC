@@ -9926,7 +9926,7 @@ void    show_globals_m11(void)
 }
 
 
-void	show_level_header_flags_m11(ui8	flags)
+void	show_level_header_flags_m11(ui8 flags)
 {
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
@@ -14061,10 +14061,11 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 	dx = (sf8 *) in_bufs->buffer[2];
 	tmp_delta = (sf8 *) in_bufs->buffer[3];
 	slopes = (sf8 *) in_bufs->buffer[4];
+	memset((void *) slopes, 0, (size_t) in_len << 3);  // slopes need to be zeroed because not all positions are filled
 	weights = (sf8 *) in_bufs->buffer[5];
 	coefs[0] = (sf8 *) in_bufs->buffer[6];
 	coefs[1] = (sf8 *) in_bufs->buffer[7];
-
+	
 	// output buffers
 	// allocate with out_bufs = CMP_allocate_buffers_m11(NULL, CMP_MAK_INTERP_OUTPUT_BUFFERS_m11, out_len, sizeof(sf8), FALSE_m11, FALSE_m11);
 	out_y = (sf8 *) out_bufs->buffer[CMP_MAK_OUT_Y_BUF];  // == 0
