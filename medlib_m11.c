@@ -174,7 +174,7 @@ si1	*behavior_string_m11(ui4 behavior, si1 *behavior_string)
 	if (behavior == USE_GLOBAL_BEHAVIOR_m11) {
 		behavior = globals_m11->behavior_on_fail;
 		strcat(behavior_string, "USE GLOBAL BEHAVIOR == ");
-	}
+	} 
 	
 	if (behavior & RESTORE_BEHAVIOR_m11)
 		strcat(behavior_string, "RESTORE BEHAVIOR | ");
@@ -812,10 +812,8 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 			use_default_channel = TRUE_m11;
 		if (use_default_channel == TRUE_m11) {
 			channel = get_active_channel_m11(sess);
-			if (channel == NULL) {
-				warning_message_m11("%s(): no active channels => exiting\n", __FUNCTION__);
-				exit_m11(-1);
-			}
+			if (channel == NULL)
+				warning_message_m11("%s(): no active channels\n", __FUNCTION__);
 			globals_m11->reference_channel = channel;
 			strcpy(globals_m11->reference_channel_name, channel->name);
 			return;
@@ -2533,19 +2531,19 @@ si4     DST_offset_m11(si8 uutc)
 	if (month != DST_start_month && month != DST_end_month) {
 		if (month > first_DTCC->month && month < last_DTCC->month) {
 			if (first_DTCC->month == DST_start_month)
-				return((si4)first_DTCC->shift_minutes * (si4)60);
+				return((si4)first_DTCC->shift_minutes * (si4) 60);
 			else
 				return(0);
 		} else if (month < first_DTCC->month) {
 			if (first_DTCC->month == DST_start_month)
 				return(0);
 			else
-				return((si4)first_DTCC->shift_minutes * (si4)60);
+				return((si4)first_DTCC->shift_minutes * (si4) 60);
 		} else {  // month > last_DTCC->month
 			if (last_DTCC->month == DST_end_month)
 				return(0);
 			else
-				return((si4)first_DTCC->shift_minutes * (si4)60);
+				return((si4)first_DTCC->shift_minutes * (si4) 60);
 		}
 	}
 	
@@ -3221,7 +3219,7 @@ si8	find_index_m11(SEGMENT_m11 *seg, si8 target, ui4 mode)  // returns index con
 				return(n_inds);
 			}
 			block_duration = (si8) (seg->metadata_fps->metadata->time_series_section_2.maximum_block_duration + (sf8) 0.5);
-			i = ((target - seg_start_time) / block_duration) + 1;  // more efficient to serch backward
+			i = ((target - seg_start_time) / block_duration) + 1;  // more efficient to search backward
 			if (i > n_inds)
 				i = n_inds;
 			if (tsi[i].start_time <= target) {  // forward linear search
@@ -4636,7 +4634,7 @@ ui8	generate_UID_m11(ui8 *uid)
 	
 	// Note if NULL is passed for uid, this function is not thread-safe
 	if (uid == NULL)
-		uid = (ui8 *)&local_UID;
+		uid = (ui8 *) &local_UID;
 	ui1_p = (ui1 *) uid;
 	
 RESERVED_UID_VALUE_m11:
@@ -7621,6 +7619,10 @@ TERN_m11	process_password_data_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *unspeci
 			strncpy_m11(pwd->level_1_password_hint, md1->level_1_password_hint, PASSWORD_HINT_BYTES_m11);
 		if (*md1->level_2_password_hint)
 			strncpy_m11(pwd->level_2_password_hint, md1->level_2_password_hint, PASSWORD_HINT_BYTES_m11);
+		if (*unspecified_pw == 0) {  // no password passed - see if is one needed (need a metadata file to check this)
+			if (md1->section_2_encryption_level == 0 && md1->time_series_data_encryption_level == 0)  // (don't need to read section 3)
+				return(TRUE_m11);
+		}
 	}
 
 	pw_ok = FALSE_m11;
@@ -8465,7 +8467,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	}
 	slice->start_segment_number = slice->end_segment_number = seg->metadata_fps->universal_header->segment_number;
 	slice->number_of_segments = 1;
-
+	
 	// read segment data
 	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m11) {
 		switch (seg->type_code) {
@@ -8482,7 +8484,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m11)
 		if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) seg, slice);
-	
+
 	return(seg);
 }
 
@@ -8940,6 +8942,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 				warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
 				return(SAMPLE_NUMBER_NO_ENTRY_m11);
 		}
+
 		// return(SAMPLE_NUMBER_NO_ENTRY_m11);
 		if (seg == NULL) {  // channel or session
 			numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_num);
@@ -10748,10 +10751,10 @@ void	show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER
 		printf_m11("Body CRC: %s\n", hex_str);
 	}
 	if (uh->segment_end_time == UUTC_NO_ENTRY_m11)
-		printf_m11("Segement End Time: no entry\n");
+		printf_m11("File/Segment End Time: no entry\n");
 	else {
 		time_string_m11(uh->segment_end_time, time_str, TRUE_m11, FALSE_m11, FALSE_m11);
-		printf_m11("Segment End Time: %ld (oUTC), %s\n", uh->segment_end_time, time_str);
+		printf_m11("File/Segment End Time: %ld (oUTC), %s\n", uh->segment_end_time, time_str);
 	}
 	if (uh->number_of_entries == UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_NO_ENTRY_m11)
 		printf_m11("Number of Entries: no entry\n");
@@ -10864,10 +10867,10 @@ void	show_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, UNIVERSAL_HEADER
 		printf_m11("Session Start Time: %ld (oUTC), %s\n", uh->session_start_time, time_str);
 	}
 	if (uh->segment_start_time == UUTC_NO_ENTRY_m11)
-		printf_m11("Segment Start Time: no entry\n");
+		printf_m11("File/Segment Start Time: no entry\n");
 	else {
 		time_string_m11(uh->segment_start_time, time_str, TRUE_m11, FALSE_m11, FALSE_m11);
-		printf_m11("Segment Start Time: %ld (oUTC), %s\n", uh->segment_start_time, time_str);
+		printf_m11("File/Segment Start Time: %ld (oUTC), %s\n", uh->segment_start_time, time_str);
 	}
 	if (*uh->session_name)
 		UTF8_printf_m11("Session Name: %s\n", uh->session_name);
@@ -13520,9 +13523,6 @@ void    CMP_free_buffers_m11(CMP_BUFFERS_m11 *buffers, TERN_m11 free_structure)
 
 void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 free_cps_structure)
 {
-	CMP_DIRECTIVES_m11	saved_directives;
-	CMP_PARAMETERS_m11	saved_parameters;
-
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
@@ -13576,11 +13576,23 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 	if (free_cps_structure == TRUE_m11) {
 		free_m11((void *) cps, __FUNCTION__);
 	} else {
-		saved_directives = cps->directives;
-		saved_parameters = cps->parameters;
 		memset((void *) cps, 0, sizeof(CMP_PROCESSING_STRUCT_m11));
-		cps->directives = saved_directives;
-		cps->parameters = saved_parameters;		
+		cps->parameters.allocated_block_samples = 0;
+		cps->parameters.allocated_keysample_bytes = 0;
+		cps->parameters.allocated_compressed_bytes = 0;
+		cps->parameters.allocated_decompressed_samples = 0;
+		cps->parameters.discontinuity = UNKNOWN_m11;
+		cps->parameters.keysample_buffer = NULL;
+		cps->parameters.detrended_buffer = NULL;
+		cps->parameters.scaled_amplitude_buffer = NULL;
+		cps->parameters.scaled_frequency_buffer = NULL;
+		cps->parameters.scrap_buffers = NULL;
+		cps->parameters.count = NULL;
+		cps->parameters.cumulative_count = NULL;
+		cps->parameters.minimum_range = NULL;
+		cps->parameters.symbol_map = NULL;
+		cps->parameters.VDS_input_buffers = NULL;
+		cps->parameters.VDS_output_buffers = NULL;
 	}
 
 	return;
@@ -14039,7 +14051,7 @@ void    CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m11 *out_bufs, si8 out_len)
 {
 	si8		*index, *si8_p1, *si8_p2, bin, next_bin;
-	si8     	i, j, in_nm1, in_nm2, tmp_delta_len;
+	si8     	i, j, filled_slopes, in_nm1, in_nm2, tmp_delta_len;
 	si8		*in_x;
 	sf8     	*delta, *tmp_delta, *weights, *slopes;
 	sf8		delta_0, delta_m1, delta_n, delta_n1;
@@ -14061,7 +14073,6 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 	dx = (sf8 *) in_bufs->buffer[2];
 	tmp_delta = (sf8 *) in_bufs->buffer[3];
 	slopes = (sf8 *) in_bufs->buffer[4];
-	memset((void *) slopes, 0, (size_t) in_len << 3);  // slopes need to be zeroed because not all positions are filled
 	weights = (sf8 *) in_bufs->buffer[5];
 	coefs[0] = (sf8 *) in_bufs->buffer[6];
 	coefs[1] = (sf8 *) in_bufs->buffer[7];
@@ -14129,9 +14140,15 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 			if (sf8_v1 != 0.0)
 				*sf8_p5++ = ((*sf8_p2++ * *sf8_p3++) + (*sf8_p1++ * *sf8_p4++)) / sf8_v1;
 		}
+		filled_slopes = (si8) (sf8_p5 - slopes);
 	} else {
 		slopes[0] = slopes[1] = delta[0];
+		filled_slopes = (si8) 2;
 	}
+	// unfilled slopes need to be zeroed
+	sf8_p1 = slopes + filled_slopes;
+	for (i = in_len - filled_slopes; i--;)
+		*sf8_p1++ = (sf8)  0.0;
 
 	coefs[2] = slopes;
 	coefs[3] = in_y;
@@ -14678,7 +14695,7 @@ void    CMP_retrend_2_sf8_m11(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, 
 	// if input_buffer == output_buffer retrending data will be done in place
 	
 	while (len--)
-		*out_y++ = CMP_round_si4_m11((sf8) *in_y++ + (m * (sf8) *in_x++) + b);
+		*out_y++ = (sf8) CMP_round_si4_m11((sf8) *in_y++ + (m * (sf8) *in_x++) + b);
 	
 	return;
 }
