@@ -5534,6 +5534,20 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 			exit_m11(-1);
 		}
 	}
+	
+#ifdef WINDOWS_m11
+	ui4	vers, vers_maj, vers_min;
+     
+	// Check Windows version
+	vers = GetVersion();
+	vers_maj = (ui4) LOBYTE(LOWORD(vers));
+	vers_min = (ui4) HIBYTE(LOWORD(vers));
+	
+	if (vers_maj < 10) {
+		error_message_m11("%s(): Sorry, Windows version %u.%u is not supported.  Please use Windows 10.0 or greater.\n", __FUNCTION__, vers_maj, vers_min);
+		exit_m11(-1);
+	}
+#endif
 
 #if defined FN_DEBUG_m11 || defined AT_DEBUG  // need UTF8 tables for message_m11()
 	if (globals_m11->UTF8_offsets_table == NULL) {

@@ -411,12 +411,12 @@ TERN_m11        check_rec_NlxP_type_alignment_m11(ui1 *bytes);
 // #define REC_Curs_TYPE_CODE_m11            (ui4) 0x43757273        // ui4 (big endian)
 
 // Version 1.0
-#define REC_Curs_v10_BYTES_m11                          152
+#define REC_Curs_v10_BYTES_m11                          160
 #define REC_Curs_v10_ID_NUMBER_OFFSET_m11          	0	// si8
 #define REC_Curs_v10_LATENCY_OFFSET_m11			8	// si8
 #define REC_Curs_v10_VALUE_OFFSET_m11			16	// sf8
-#define REC_Curs_v10_NAME_OFFSET_m11			24	// si1[128]
-#define REC_Curs_v10_NAME_BYTES_m11         		128
+#define REC_Curs_v10_NAME_OFFSET_m11			24	// si1[136]
+#define REC_Curs_v10_NAME_BYTES_m11         		136
 
 // Structures
 typedef struct {
