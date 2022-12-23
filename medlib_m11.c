@@ -17366,6 +17366,36 @@ si4     UTF8_is_locale_utf8_m11(si1 *locale)
 }
 
 
+TERN_m11 UTF8_is_valid_m11(si1 *string)
+{
+	si4	i, cnt;
+	ui1	x;
+
+	
+	for (cnt = 0, i = (si4) strlen(string); i--;) {
+		x = (ui1) *string++;
+		if (cnt) {
+			if ((x & 0xC0) != 0x80)  // 0bxx000000 & 0b11000000 == 0b10000000
+				return(FALSE_m11);
+			--cnt;
+		} else {
+			if ((x & 0xE0) == 0xC0)  // 0bxxx00000 & 0b11100000 == 0b11000000
+			    	cnt = 1;
+			else if ((x & 0xF0) == 0xE0)  // 0bxxxx0000 & 0b11110000 == 0b11100000
+				cnt = 2;
+			else if ((x & 0xF8) == 0xF0)  // 0bxxxxx000 & 0b11111000 == 0b11110000
+				cnt = 3;
+			else if (x & 0x80)  // 0bx0000000 & 0b10000000 == 0b10000000
+				return(FALSE_m11);
+		}
+	}
+	if (cnt)
+		return(FALSE_m11);
+
+	return(TRUE_m11);
+}
+
+
 si1	*UTF8_memchr_m11(si1 *s, ui4 ch, size_t sz, si4 *char_num)
 {
 	si4	i = 0, last_i = 0;
