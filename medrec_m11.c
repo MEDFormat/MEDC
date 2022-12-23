@@ -1259,6 +1259,7 @@ void    show_rec_CSti_type_m11(RECORD_HEADER_m11 *record_header)
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		csti = (REC_CSti_v10_m11 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m11);
+		printf_m11("Stimulus Duration: %ld (usecs)\n", csti->stimulus_duration);
 		UTF8_printf_m11("Task Type: %s\n", csti->task_type);
 		UTF8_printf_m11("Stimulus Type: %s\n", csti->stimulus_type);
 		UTF8_printf_m11("Patient Response: %s\n", csti->patient_response);
