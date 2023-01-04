@@ -2301,6 +2301,7 @@ si4    		vsprintf_m11(si1 *target, si1 *fmt, va_list args);
 #define CMP_DIRECTIVES_POSITIVE_DERIVATIVES_DEFAULT_m11    		FALSE_m11
 #define CMP_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m11			FALSE_m11	// user sets value in parameters
 #define CMP_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m11		FALSE_m11
+#define CMP_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m11		TRUE_m11
 // lossy compression directives
 #define CMP_DIRECTIVES_DETREND_DATA_DEFAULT_m11				FALSE_m11
 #define CMP_DIRECTIVES_REQUIRE_NORMALITY_DEFAULT_m11			FALSE_m11
@@ -2448,6 +2449,7 @@ typedef struct {
 	TERN_m11        find_derivative_level;  // mutually exclusive with "set_derivative_level"
 	TERN_m11	set_overflow_bytes;  // value passed in "goal_overflow_bytes" parameter (range 2-4 bytes)
 	TERN_m11	find_overflow_bytes;  // mutually exclusive with "set_overflow_bytes"
+	TERN_m11	convert_to_native_units;  // use amplitude_units_conversion_factor to to convert to units of amplitude_units_description on read
 	// lossy compression directives
 	TERN_m11        detrend_data;  // lossless operation, but most useful for lossy compression.
 	TERN_m11        require_normality;  // for lossy compression - use lossless if data amplitudes are too oddly distributed.  Pairs with "minimum_normality" parameter.
@@ -2568,6 +2570,7 @@ void    	CMP_retrend_2_sf8_m11(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m,
 si2      	CMP_round_si2_m11(sf8 val);
 si4     	CMP_round_si4_m11(sf8 val);
 void      	CMP_sf8_to_si4_m11(sf8 *sf8_arr, si4 *si4_arr, si8 len);
+void      	CMP_sf8_to_si4_and_scale_m11(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
 void    	CMP_show_block_header_m11(CMP_BLOCK_FIXED_HEADER_m11 *block_header);
 void    	CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recursed_call);
 void      	CMP_si4_to_sf8_m11(si4 *si4_arr, sf8 *sf8_arr, si8 len);

@@ -8711,9 +8711,11 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 
 si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 {
+	si4					*start_decomp_ptr;
 	si8                                     i, terminal_ts_ind, n_samps, n_blocks, start_offset;
 	si8                                     offset_pts, start_block, end_block, compressed_data_bytes;
 	si8					local_start_idx, local_end_idx, seg_start_samp_num;
+	sf8					scale_factor, val;
 	FILE_PROCESSING_STRUCT_m11		*tsd_fps, *tsi_fps;
 	TIME_SERIES_INDEX_m11			*tsi;
 	TIME_SERIES_METADATA_SECTION_2_m11	*tmd2;
@@ -8777,6 +8779,7 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 	offset_pts = local_start_idx - tsi[start_block].start_sample_number;
 	bh = cps->block_header;
 	
+	start_decomp_ptr = cps->decompressed_ptr;
 	if (offset_pts) {
 		CMP_decode_m11(tsd_fps);
 		memmove(cps->decompressed_ptr, cps->decompressed_ptr + offset_pts, (bh->number_of_samples - offset_pts) * sizeof(si4));
@@ -8791,6 +8794,18 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 		bh = CMP_update_CPS_pointers_m11(tsd_fps, CMP_UPDATE_BLOCK_HEADER_PTR_m11 | CMP_UPDATE_DECOMPRESSED_PTR_m11);
 	}
 	n_samps = (local_end_idx - local_start_idx) + 1;  // trim value (was total samps in blocks)
+	
+	// scale to native units
+	if (cps->directives.convert_to_native_units == TRUE_m11) {
+		scale_factor = tmd2->amplitude_units_conversion_factor;
+		if (scale_factor != 1.0 && scale_factor != TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m11) {
+			i = n_samps;
+			while (i--) {
+				val = (sf8) *start_decomp_ptr * scale_factor;
+				*start_decomp_ptr++ = CMP_round_si4_m11(val);
+			}
+		}
+	}
 	
 	return(n_samps);
 }
@@ -13748,6 +13763,7 @@ void	CMP_initialize_directives_m11(CMP_DIRECTIVES_m11 *directives, ui1 mode)
 	directives->find_derivative_level = CMP_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m11;
 	directives->set_overflow_bytes = CMP_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m11;
 	directives->find_overflow_bytes = CMP_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m11;
+	directives->convert_to_native_units = CMP_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m11;
 	directives->detrend_data = CMP_DIRECTIVES_DETREND_DATA_DEFAULT_m11;
 	directives->require_normality = CMP_DIRECTIVES_REQUIRE_NORMALITY_DEFAULT_m11;
 	directives->use_compression_ratio = CMP_DIRECTIVES_USE_COMPRESSION_RATIO_DEFAULT_m11;
@@ -14750,6 +14766,41 @@ void      CMP_sf8_to_si4_m11(sf8 *sf8_arr, si4 *si4_arr, si8 len)
 	
 	while (len--) {
 		val = *sf8_arr++;
+		if (isnan(val)) {
+			*si4_arr++ = NAN_SI4_m11;
+			continue;
+		}
+		if (val >= (sf8) 0.0) {
+			if ((val += (sf8) 0.5) > (sf8) POS_INF_SI4_m11) {
+				*si4_arr++ = POS_INF_SI4_m11;
+				continue;
+			}
+		} else {
+			if ((val -= (sf8) 0.5) < (sf8) NEG_INF_SI4_m11) {
+				*si4_arr++ = NEG_INF_SI4_m11;
+				continue;
+			}
+		}
+		*si4_arr++ = (si4) val;
+	}
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+void      CMP_sf8_to_si4_and_scale_m11(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale)
+{
+	sf8	val;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	while (len--) {
+		val = *sf8_arr++ * scale;
 		if (isnan(val)) {
 			*si4_arr++ = NAN_SI4_m11;
 			continue;
