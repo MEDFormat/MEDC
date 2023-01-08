@@ -470,7 +470,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 	
 	// set sample/frame numbers to NO ENTRY for variable frequency sessions
 	if (level_header->type_code == LH_SESSION_m11) {
-		if (sess->Sgmt_records[0].sampling_frequency == FREQUENCY_VARIABLE_m11) {
+		if (globals_m11->time_series_frequencies_vary == TRUE_m11) {
 			for (i = 0; i < *n_contigua; ++i)
 				(*contigua)[i].start_sample_number = (*contigua)[i].end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;  // sample_number == frame_number
 		}
@@ -4145,28 +4145,22 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 }
 
 
-TERN_m11	frequencies_vary_m11(SESSION_m11 *sess)
+void	frequencies_vary_m11(SESSION_m11 *sess)
 {
-	TERN_m11				freqs_vary;
-	si4					i, n_chans, n_segs, start_seg, seg_idx;
-	sf8					rate;
+	si4					i, n_chans, seg_idx;
+	sf8					rate, min_rate, max_rate;
 	CHANNEL_m11				*chan;
 	SEGMENT_m11				*seg;
-	TIME_SERIES_METADATA_SECTION_2_m11	*tmd2;
-	VIDEO_METADATA_SECTION_2_m11		*vmd2;
-	Sgmt_RECORD_m11				*Sgmt;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	freqs_vary = FALSE_m11;
-	
 	// check time series channels
-	start_seg = sess->time_slice.start_segment_number;
-	seg_idx = get_segment_index_m11(start_seg);
+	seg_idx = get_segment_index_m11(sess->time_slice.start_segment_number);
 	n_chans = sess->number_of_time_series_channels;
-	rate = (sf8) 0.0;
+	globals_m11->time_series_frequencies_vary = UNKNOWN_m11;
+	globals_m11->minimum_time_series_frequency = globals_m11->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->time_series_channels[i];
@@ -4175,69 +4169,53 @@ TERN_m11	frequencies_vary_m11(SESSION_m11 *sess)
 		}
 		if (i < n_chans) {
 			seg = chan->segments[seg_idx];
-			tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
-			rate = tmd2->sampling_frequency;
+			min_rate = max_rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 			for (++i; i < n_chans; ++i) {
 				chan = sess->time_series_channels[i];
 				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 					seg = chan->segments[seg_idx];
-					tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
-					if (rate != tmd2->sampling_frequency) {
-						freqs_vary = TRUE_m11;
-						break;
-					}
+					rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+					if (min_rate > rate)
+						min_rate = rate;
+					else if (max_rate < rate)
+						max_rate = rate;
 				}
 			}
+			if (min_rate != max_rate)
+				globals_m11->time_series_frequencies_vary = TRUE_m11;
+			globals_m11->minimum_time_series_frequency = min_rate;
+			globals_m11->maximum_time_series_frequency = max_rate;
 		}
 	}
 
 	// check video channels
 	n_chans = sess->number_of_video_channels;
+	globals_m11->video_frequencies_vary = UNKNOWN_m11;
+	globals_m11->minimum_video_frequency = globals_m11->maximum_video_frequency = FREQUENCY_NO_ENTRY_m11;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->video_channels[i];
 			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
 				break;
 		}
-		if (rate != (sf8) 0.0) {  // active time series & video channels => not same frequency
-			freqs_vary = TRUE_m11;
-		} else if (i < n_chans) {
+		if (i < n_chans) {
 			seg = chan->segments[seg_idx];
-			vmd2 = &seg->metadata_fps->metadata->video_section_2;
-			rate = vmd2->frame_rate;
+			min_rate = max_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
 			for (++i; i < n_chans; ++i) {
 				chan = sess->video_channels[i];
 				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 					seg = chan->segments[seg_idx];
-					vmd2 = &seg->metadata_fps->metadata->video_section_2;
-					if (rate != vmd2->frame_rate) {
-						freqs_vary = TRUE_m11;
-						break;
-					}
+					rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
+					if (min_rate > rate)
+						min_rate = rate;
+					else if (max_rate < rate)
+						max_rate = rate;
 				}
 			}
 		}
 	}
 	
-	// no active channels
-	if (rate == (sf8) 0.0)
-		freqs_vary = UNKNOWN_m11;
-	
-	// update session Sgmt records
-	Sgmt = sess->Sgmt_records;
-	n_segs = globals_m11->number_of_session_segments;
-	if (freqs_vary == TRUE_m11) {
-		for (i = 0; i < n_segs; ++i, ++Sgmt)
-			Sgmt->sampling_frequency = FREQUENCY_VARIABLE_m11;
-	} else if (freqs_vary == UNKNOWN_m11) {
-		for (i = 0; i < n_segs; ++i, ++Sgmt)
-			Sgmt->sampling_frequency = FREQUENCY_NO_ENTRY_m11;
-	} else {  // FALSE_m11
-		for (i = 0; i < n_segs; ++i, ++Sgmt)
-			Sgmt->sampling_frequency = rate;
-	}
-
-	return(freqs_vary);
+	return;
 }
 
 
@@ -5398,6 +5376,14 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m11;
 	globals_m11->reference_channel = NULL;
 	*globals_m11->reference_channel_name = 0;
+	
+	// active channel constants
+	globals_m11->time_series_frequencies_vary = UNKNOWN_m11;
+	globals_m11->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->video_frequencies_vary = UNKNOWN_m11;;
+	globals_m11->minimum_video_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->maximum_video_frequency = FREQUENCY_NO_ENTRY_m11;
 
 	// time constants
 	globals_m11->time_constants_set = FALSE_m11;
@@ -7226,6 +7212,22 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	slice->end_segment_number = chan->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
 
+	// update for variable frequencies on active channel set
+	frequencies_vary_m11(sess);
+	if (globals_m11->time_series_frequencies_vary == TRUE_m11 && globals_m11->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m11) {
+		if (get_search_mode_m11(slice) == SAMPLE_SEARCH_m11) {
+			slice->start_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_sample_number, FIND_START_m11);
+			slice->end_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_sample_number, FIND_END_m11);
+			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
+		}
+	} else if (globals_m11->video_frequencies_vary == TRUE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
+		if (get_search_mode_m11(slice) == FRAME_SEARCH_m11) {
+			slice->start_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_frame_number, FIND_START_m11);
+			slice->end_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_frame_number, FIND_END_m11);
+			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m11;
+		}
+	}
+
 	// sort channels
 	sort_channels_by_acq_num_m11(sess);
 	
@@ -8489,7 +8491,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 
 SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  // varargs: void *file_list, si4 list_len, ui8 flags, si1 *password
 {
-	TERN_m11			open_session, free_session, var_freq;
+	TERN_m11			open_session, free_session;
 	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m11 + 1];
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m11];
 	si4                             i, j, list_len, seg_idx;
@@ -8557,14 +8559,20 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 		return(NULL);
 	}
 
-	// update Sgmt record array for active channels
-	var_freq = frequencies_vary_m11(sess);
-	if (var_freq == TRUE_m11) {
+	// update for variable frequencies on active channel set
+	frequencies_vary_m11(sess);
+	if (globals_m11->time_series_frequencies_vary == TRUE_m11 && globals_m11->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m11) {
 		if (get_search_mode_m11(slice) == SAMPLE_SEARCH_m11) {
 			slice->start_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_sample_number, FIND_START_m11);
 			slice->end_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_sample_number, FIND_END_m11);
+			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
 		}
-		slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
+	} else if (globals_m11->video_frequencies_vary == TRUE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
+		if (get_search_mode_m11(slice) == FRAME_SEARCH_m11) {
+			slice->start_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_frame_number, FIND_START_m11);
+			slice->end_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_frame_number, FIND_END_m11);
+			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m11;
+		}
 	}
 
 	// read time series channels
@@ -8621,9 +8629,12 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	slice->start_segment_number = chan->time_slice.start_segment_number;
 	slice->end_segment_number = chan->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m11(slice);
-	if (var_freq == FALSE_m11) {
+	if (globals_m11->time_series_frequencies_vary == FALSE_m11 && globals_m11->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m11) {
 		slice->start_sample_number = chan->time_slice.start_sample_number;
 		slice->end_sample_number = chan->time_slice.end_sample_number;
+	} else if (globals_m11->video_frequencies_vary == FALSE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
+		slice->start_frame_number = chan->time_slice.start_frame_number;
+		slice->end_frame_number = chan->time_slice.end_frame_number;
 	}
 
 	// read session record data
@@ -9887,6 +9898,42 @@ void    show_globals_m11(void)
 		printf_m11("not set\n");
 	else
 		printf_m11("set\n");
+
+	printf_m11("\nActive Channels\n---------------\n");
+	printf_m11("Time Series Frequencies Vary: ");
+	if (globals_m11->time_series_frequencies_vary == UNKNOWN_m11)
+		printf_m11("unknown\n");
+	else if (globals_m11->time_series_frequencies_vary == TRUE_m11)
+		printf_m11("true\n");
+	else if (globals_m11->time_series_frequencies_vary == FALSE_m11)
+		printf_m11("false\n");
+	else
+		printf_m11("%hhd\n", globals_m11->time_series_frequencies_vary);
+	if (globals_m11->minimum_time_series_frequency == FREQUENCY_NO_ENTRY_m11)
+		printf_m11("Minimum Time Series Frequency: no entry\n");
+	else
+		printf_m11("Minimum Time Series Frequency: %lf\n", globals_m11->minimum_time_series_frequency);
+	if (globals_m11->maximum_time_series_frequency == FREQUENCY_NO_ENTRY_m11)
+		printf_m11("Maximum Time Series Frequency: no entry\n");
+	else
+		printf_m11("Maximum Time Series Frequency: %lf\n", globals_m11->maximum_time_series_frequency);
+	printf_m11("Video Frequencies Vary: ");
+	if (globals_m11->video_frequencies_vary == UNKNOWN_m11)
+		printf_m11("unknown\n");
+	else if (globals_m11->video_frequencies_vary == TRUE_m11)
+		printf_m11("true\n");
+	else if (globals_m11->video_frequencies_vary == FALSE_m11)
+		printf_m11("false\n");
+	else
+		printf_m11("%hhd\n", globals_m11->video_frequencies_vary);
+	if (globals_m11->minimum_video_frequency == FREQUENCY_NO_ENTRY_m11)
+		printf_m11("Minimum Video Frequency: no entry\n");
+	else
+		printf_m11("Minimum Video Frequency: %lf\n", globals_m11->minimum_video_frequency);
+	if (globals_m11->maximum_video_frequency == FREQUENCY_NO_ENTRY_m11)
+		printf_m11("Maximum Video Frequency: no entry\n");
+	else
+		printf_m11("Minimum Video Frequency: %lf\n", globals_m11->maximum_video_frequency);
 
 	printf_m11("\nTime Constants\n--------------\n");
 	printf_m11("time_constants_set: %hhd\n", globals_m11->time_constants_set);

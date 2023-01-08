@@ -357,6 +357,7 @@ typedef struct {
 #define UNKNOWN_SEARCH_m11                      0
 #define TIME_SEARCH_m11                         1
 #define SAMPLE_SEARCH_m11			2
+#define FRAME_SEARCH_m11			SAMPLE_SEARCH_m11
 #define NO_OVERFLOWS_m11			4  // e.g. in find_index_m11(), restrict returned index to valid segment values
 #define IPV4_ADDRESS_BYTES_m11			4
 #define POSTAL_CODE_BYTES_m11			16
@@ -1176,6 +1177,13 @@ typedef struct {
 	si4				first_mapped_segment_number;
 	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m11];	// contains user specified value if needed, open_session_m11() matches to session channel
 	struct CHANNEL_m11		*reference_channel;		// note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
+	// Active Channels (applies to active channel set)
+	TERN_m11 			time_series_frequencies_vary;
+	sf8				minimum_time_series_frequency;
+	sf8				maximum_time_series_frequency;
+	TERN_m11 			video_frequencies_vary;
+	sf8				minimum_video_frequency;
+	sf8				maximum_video_frequency;
 	// Time Constants
 	TERN_m11			time_constants_set;
 	TERN_m11			RTO_known;
@@ -1893,7 +1901,7 @@ void            free_channel_m11(CHANNEL_m11* channel, TERN_m11 free_channel_str
 void            free_globals_m11(TERN_m11 cleanup_for_exit);
 void            free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure);
 void            free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure);
-TERN_m11	frequencies_vary_m11(SESSION_m11 *sess);
+void		frequencies_vary_m11(SESSION_m11 *sess);
 si1		**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		*generate_hex_string_m11(ui1 *bytes, si4 num_bytes, si1 *string);
 ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* MED_name);
