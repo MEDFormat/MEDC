@@ -592,6 +592,16 @@ typedef struct {
 #define TIME_SERIES_CHANNEL_TYPE_m11	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m11
 #define VIDEO_CHANNEL_TYPE_m11		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m11
 
+// Reference Channel Types (used in change_reference_channel_m11() vararg)
+#define DEFAULT_CHANNEL_m11			0
+#define DEFAULT_TIME_SERIES_CHANNEL_m11		1
+#define DEFAULT_VIDEO_CHANNEL_m11		2
+#define HIGHEST_RATE_TIME_SERIES_CHANNEL_m11	3
+#define LOWEST_RATE_TIME_SERIES_CHANNEL_m11	4
+#define HIGHEST_RATE_VIDEO_CHANNEL_m11		5
+#define LOWEST_RATE_VIDEO_CHANNEL_m11		6
+
+
 // Generate File List flags
 	// Path Parts
 #define GFL_PATH_m11             		((ui4) 1)
@@ -1181,9 +1191,13 @@ typedef struct {
 	TERN_m11 			time_series_frequencies_vary;
 	sf8				minimum_time_series_frequency;
 	sf8				maximum_time_series_frequency;
-	TERN_m11 			video_frequencies_vary;
-	sf8				minimum_video_frequency;
-	sf8				maximum_video_frequency;
+	struct CHANNEL_m11		*minimum_time_series_frequency_channel;
+	struct CHANNEL_m11		*maximum_time_series_frequency_channel;
+	TERN_m11 			video_frame_rates_vary;
+	sf8				minimum_video_frame_rate;
+	sf8				maximum_video_frame_rate;
+	struct CHANNEL_m11		*minimum_video_frame_rate_channel;
+	struct CHANNEL_m11		*maximum_video_frame_rate_channel;
 	// Time Constants
 	TERN_m11			time_constants_set;
 	TERN_m11			RTO_known;
@@ -1855,7 +1869,7 @@ void    	calculate_indices_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            calculate_metadata_CRC_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            calculate_record_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 void            calculate_time_series_data_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps);
-void		change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *channel_name);
+void		change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *channel_name, si1 channel_type);
 ui4             channel_type_from_path_m11(si1 *path);
 wchar_t		*char2wchar_m11(wchar_t *target, si1 *source);
 TERN_m11	check_all_alignments_m11(void);
@@ -1908,7 +1922,7 @@ ui4             generate_MED_path_components_m11(si1 *path, si1 *MED_dir, si1* M
 si8             generate_recording_time_offset_m11(si8 recording_start_time_uutc);
 si1		*generate_segment_name_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *segment_name);
 ui8             generate_UID_m11(ui8 *uid);
-CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess);
+CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess, si1 channel_type);
 ui1		get_cpu_endianness_m11(void);
 ui4		get_level_m11(si1 *full_file_name, ui4 *input_type_code);
 LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 set_timezone_globals, TERN_m11 prompt);

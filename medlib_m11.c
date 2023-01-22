@@ -790,83 +790,114 @@ void    calculate_indices_CRCs_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 }
 
 
-void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *channel_name)
+void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *channel_name, si1 channel_type)
 {
 	TERN_m11			use_default_channel;
 	si8				i, n_chans;
 	FILE_PROCESSING_STRUCT_m11	*ri_fps, *rd_fps;
 	CHANNEL_m11			*chan;
+
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
 	// pass either channel, or channel name (if both passed channel will be used)
+	// if both NULL, use channel_type
 	
-	// find channel from name
 	use_default_channel = FALSE_m11;
 	if (channel == NULL) {
 		if (channel_name == NULL)
 			use_default_channel = TRUE_m11;
 		else if (*channel_name == 0)
 			use_default_channel = TRUE_m11;
+	}
+	if (use_default_channel == FALSE_m11)  // if channel or channel_name passed, channel type options ignored
+		channel_type = DEFAULT_CHANNEL_m11;
+
+	switch (channel_type) {
+		case DEFAULT_CHANNEL_m11:
+		case DEFAULT_TIME_SERIES_CHANNEL_m11:
+		case DEFAULT_VIDEO_CHANNEL_m11:
+			break;
+		case HIGHEST_RATE_TIME_SERIES_CHANNEL_m11:
+			channel = globals_m11->maximum_time_series_frequency_channel;
+			channel_type = DEFAULT_TIME_SERIES_CHANNEL_m11;
+			break;
+		case LOWEST_RATE_TIME_SERIES_CHANNEL_m11:
+			channel = globals_m11->minimum_time_series_frequency_channel;
+			channel_type = DEFAULT_TIME_SERIES_CHANNEL_m11;
+			break;
+		case HIGHEST_RATE_VIDEO_CHANNEL_m11:
+			channel = globals_m11->maximum_video_frame_rate_channel;
+			channel_type = DEFAULT_VIDEO_CHANNEL_m11;
+			break;
+		case LOWEST_RATE_VIDEO_CHANNEL_m11:
+			channel = globals_m11->minimum_video_frame_rate_channel;
+			channel_type = DEFAULT_VIDEO_CHANNEL_m11;
+			break;
+		default:
+			channel_type = DEFAULT_CHANNEL_m11;
+			break;
+	}
+	
+	// find channel from name
+	globals_m11->reference_channel = NULL;
+	if (channel == NULL) {
 		if (use_default_channel == TRUE_m11) {
-			channel = get_active_channel_m11(sess);
-			if (channel == NULL) {
-				warning_message_m11("%s(): no active channels => exiting\n", __FUNCTION__);
+			if ((channel = get_active_channel_m11(sess, channel_type)) == NULL) {
+				error_message_m11("%s(): no matching active channels\n", __FUNCTION__);
 				exit_m11(-1);
 			}
-			globals_m11->reference_channel = channel;
-			strcpy(globals_m11->reference_channel_name, channel->name);
-			return;
+			goto CHANGE_REF_MATCH_m11;
 		}
-		globals_m11->reference_channel = NULL;
-		if (globals_m11->reference_channel_name != channel_name)
-			strcpy(globals_m11->reference_channel_name, channel_name);
-		n_chans = sess->number_of_time_series_channels;  // check for match in time_series_channels
-		for (i = 0; i < n_chans; ++i) {
-			chan = sess->time_series_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-				if (strcmp(chan->name, channel_name) == 0)
-					break;
+		if (channel_type == DEFAULT_CHANNEL_m11 || channel_type == DEFAULT_TIME_SERIES_CHANNEL_m11) {
+			n_chans = sess->number_of_time_series_channels;  // check for match in time_series_channels
+			for (i = 0; i < n_chans; ++i) {
+				chan = sess->time_series_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
+					if (strcmp(chan->name, channel_name) == 0) {
+						channel = chan;
+						goto CHANGE_REF_MATCH_m11;
+					}
+				}
+			}
 		}
-		if (i == n_chans) {  // no match in time series channels, check video channels
+		if (channel_type == DEFAULT_CHANNEL_m11 || channel_type == DEFAULT_VIDEO_CHANNEL_m11) {
 			n_chans = sess->number_of_video_channels;
 			for (i = 0; i < n_chans; ++i) {
 				chan = sess->video_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-					if (strcmp(chan->name, channel_name) == 0)
-						break;
-			}
-			if (i == n_chans) { // no match in video channels
-				warning_message_m11("%s(): no matching reference channel => setting to first active channel\n", __FUNCTION__);
-				globals_m11->reference_channel = get_active_channel_m11(sess);
-				if (globals_m11->reference_channel == NULL) {
-					warning_message_m11("%s(): no active channels => exiting\n", __FUNCTION__);
-					exit_m11(-1);
+				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
+					if (strcmp(chan->name, channel_name) == 0) {
+						channel = chan;
+						goto CHANGE_REF_MATCH_m11;
+					}
 				}
-			} else {
-				globals_m11->reference_channel = chan;
 			}
-		} else {
-			globals_m11->reference_channel = chan;
 		}
-		strcpy(globals_m11->reference_channel_name, chan->name);
-	} else {
-		if ((channel->flags & LH_CHANNEL_ACTIVE_m11) == 0)
-			channel = get_active_channel_m11(sess);
-		globals_m11->reference_channel = channel;
-		strcpy(globals_m11->reference_channel_name, channel->name);
+	} else {  // channel known
+		if (channel->flags & LH_CHANNEL_ACTIVE_m11)
+			goto CHANGE_REF_MATCH_m11;
+		if ((channel = get_active_channel_m11(sess, channel_type)) != NULL)
+			goto CHANGE_REF_MATCH_m11;
 	}
+
+	error_message_m11("%s(): no matching active channels\n", __FUNCTION__);
+	exit_m11(-1);
 	
+CHANGE_REF_MATCH_m11:
+	globals_m11->reference_channel = channel;
+	strcpy(globals_m11->reference_channel_name, channel->name);
+
 	if (sess->Sgmt_records != NULL)
 		free_m11((void *) sess->Sgmt_records, __FUNCTION__);
-	channel = globals_m11->reference_channel;
 	ri_fps = channel->record_indices_fps;
 	rd_fps = channel->record_data_fps;
 	sess->Sgmt_records = build_Sgmt_records_array_m11(ri_fps, rd_fps, channel);
-
+			    
 	return;
+		
+
 }
 
 
@@ -4149,7 +4180,7 @@ void	frequencies_vary_m11(SESSION_m11 *sess)
 {
 	si4					i, n_chans, seg_idx;
 	sf8					rate, min_rate, max_rate;
-	CHANNEL_m11				*chan;
+	CHANNEL_m11				*chan, *max_chan, *min_chan;
 	SEGMENT_m11				*seg;
 	
 #ifdef FN_DEBUG_m11
@@ -4157,10 +4188,11 @@ void	frequencies_vary_m11(SESSION_m11 *sess)
 #endif
 	
 	// check time series channels
-	seg_idx = get_segment_index_m11(sess->time_slice.start_segment_number);
+	seg_idx = get_segment_index_m11(FIRST_OPEN_SEGMENT_m11);
 	n_chans = sess->number_of_time_series_channels;
 	globals_m11->time_series_frequencies_vary = UNKNOWN_m11;
 	globals_m11->minimum_time_series_frequency = globals_m11->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->minimum_time_series_frequency_channel = globals_m11->maximum_time_series_frequency_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->time_series_channels[i];
@@ -4168,6 +4200,7 @@ void	frequencies_vary_m11(SESSION_m11 *sess)
 				break;
 		}
 		if (i < n_chans) {
+			min_chan = max_chan = chan;
 			seg = chan->segments[seg_idx];
 			min_rate = max_rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 			for (++i; i < n_chans; ++i) {
@@ -4175,23 +4208,31 @@ void	frequencies_vary_m11(SESSION_m11 *sess)
 				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 					seg = chan->segments[seg_idx];
 					rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-					if (min_rate > rate)
+					if (min_rate > rate) {
 						min_rate = rate;
-					else if (max_rate < rate)
+						min_chan = chan;
+					} else if (max_rate < rate) {
 						max_rate = rate;
+						max_chan = chan;
+					}
 				}
 			}
-			if (min_rate != max_rate)
+			if (min_rate == max_rate)
+				globals_m11->time_series_frequencies_vary = FALSE_m11;
+			else
 				globals_m11->time_series_frequencies_vary = TRUE_m11;
 			globals_m11->minimum_time_series_frequency = min_rate;
 			globals_m11->maximum_time_series_frequency = max_rate;
+			globals_m11->minimum_time_series_frequency_channel = min_chan;
+			globals_m11->maximum_time_series_frequency_channel = max_chan;
 		}
 	}
 
 	// check video channels
 	n_chans = sess->number_of_video_channels;
-	globals_m11->video_frequencies_vary = UNKNOWN_m11;
-	globals_m11->minimum_video_frequency = globals_m11->maximum_video_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->video_frame_rates_vary = UNKNOWN_m11;
+	globals_m11->minimum_video_frame_rate = globals_m11->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->minimum_video_frame_rate_channel = globals_m11->maximum_video_frame_rate_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->video_channels[i];
@@ -4199,6 +4240,7 @@ void	frequencies_vary_m11(SESSION_m11 *sess)
 				break;
 		}
 		if (i < n_chans) {
+			min_chan = max_chan = chan;
 			seg = chan->segments[seg_idx];
 			min_rate = max_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
 			for (++i; i < n_chans; ++i) {
@@ -4206,15 +4248,26 @@ void	frequencies_vary_m11(SESSION_m11 *sess)
 				if (chan->flags & LH_CHANNEL_ACTIVE_m11) {
 					seg = chan->segments[seg_idx];
 					rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
-					if (min_rate > rate)
+					if (min_rate > rate) {
 						min_rate = rate;
-					else if (max_rate < rate)
+						min_chan = chan;
+					} else if (max_rate < rate) {
 						max_rate = rate;
+						max_chan = chan;
+					}
 				}
+				if (min_rate == max_rate)
+					globals_m11->video_frame_rates_vary = FALSE_m11;
+				else
+					globals_m11->video_frame_rates_vary = TRUE_m11;
+				globals_m11->minimum_video_frame_rate = min_rate;
+				globals_m11->maximum_video_frame_rate = max_rate;
+				globals_m11->minimum_video_frame_rate_channel = min_chan;
+				globals_m11->maximum_video_frame_rate_channel = max_chan;
 			}
 		}
 	}
-	
+
 	return;
 }
 
@@ -4241,7 +4294,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	n_in_files = *n_files;
 	n_out_files = n_files;
 	path_parts = flags & GFL_PATH_PARTS_MASK_m11;
-
+	
 	// quick bailout for nothing to do (file_list passed, paths are from root, & contain no regex)
 	if (check_file_list_m11(file_list, n_in_files) == TRUE_m11) {
 		if ((flags & GFL_FREE_INPUT_FILE_LIST_m11) == 0) {  // caller expects a copy to be returned
@@ -4396,7 +4449,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		// clean up
 		fclose(fp);
 	}
-	
+
 GFL_CONDITION_RETURN_DATA_m11:
 	
 	// return requested path parts
@@ -4637,26 +4690,30 @@ RESERVED_UID_VALUE_m11:
 }
 
 
-CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess)
+CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess, si1 chan_type)
 {
 	si4		i, n_chans;
 	CHANNEL_m11	*chan;
 
 
 	// check time series channels
-	n_chans = sess->number_of_time_series_channels;
-	for (i = 0; i < n_chans; ++i) {
-		chan = sess->time_series_channels[i];
-		if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-			return(chan);
+	if (chan_type == DEFAULT_CHANNEL_m11 || chan_type == DEFAULT_TIME_SERIES_CHANNEL_m11) {
+		n_chans = sess->number_of_time_series_channels;
+		for (i = 0; i < n_chans; ++i) {
+			chan = sess->time_series_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+				return(chan);
+		}
 	}
 
 	// check video channels
-	n_chans = sess->number_of_video_channels;
-	for (i = 0; i < n_chans; ++i) {
-		chan = sess->video_channels[i];
-		if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-			return(chan);
+	if (chan_type == DEFAULT_CHANNEL_m11 || chan_type == DEFAULT_VIDEO_CHANNEL_m11) {
+		n_chans = sess->number_of_video_channels;
+		for (i = 0; i < n_chans; ++i) {
+			chan = sess->video_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
+				return(chan);
+		}
 	}
 	
 	warning_message_m11("%s((): no active channels\n", __FUNCTION__);
@@ -5381,9 +5438,13 @@ TERN_m11	initialize_globals_m11(void)
 	globals_m11->time_series_frequencies_vary = UNKNOWN_m11;
 	globals_m11->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
 	globals_m11->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
-	globals_m11->video_frequencies_vary = UNKNOWN_m11;;
-	globals_m11->minimum_video_frequency = FREQUENCY_NO_ENTRY_m11;
-	globals_m11->maximum_video_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->minimum_time_series_frequency_channel = NULL;
+	globals_m11->maximum_time_series_frequency_channel = NULL;
+	globals_m11->video_frame_rates_vary = UNKNOWN_m11;;
+	globals_m11->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+	globals_m11->minimum_video_frame_rate_channel = NULL;
+	globals_m11->maximum_video_frame_rate_channel = NULL;
 
 	// time constants
 	globals_m11->time_constants_set = FALSE_m11;
@@ -7143,7 +7204,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 		condition_time_slice_m11(slice);
 	
 	// set global sample/frame number reference channel
-	change_reference_channel_m11(sess, NULL, globals_m11->reference_channel_name);
+	change_reference_channel_m11(sess, NULL, globals_m11->reference_channel_name, DEFAULT_CHANNEL_m11);
 
 	// get segment range
 	n_segs = slice->number_of_segments;
@@ -7191,21 +7252,8 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 
 	// update session slice
 	chan = globals_m11->reference_channel;
-	if ((chan->flags & LH_CHANNEL_ACTIVE_m11) == 0) {
-		// reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
-		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
-			chan = sess->time_series_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-				break;
-		}
-		if (i == sess->number_of_time_series_channels) {
-			for (i = 0; i < sess->number_of_video_channels; ++i) {
-				chan = sess->video_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-					break;
-			}
-		}
-	}
+	if ((chan->flags & LH_CHANNEL_ACTIVE_m11) == 0)
+		chan = get_active_channel_m11(sess, DEFAULT_CHANNEL_m11);
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
 	slice->start_segment_number = chan->time_slice.start_segment_number;
@@ -7220,7 +7268,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			slice->end_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_sample_number, FIND_END_m11);
 			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
 		}
-	} else if (globals_m11->video_frequencies_vary == TRUE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
+	} else if (globals_m11->video_frame_rates_vary == TRUE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
 		if (get_search_mode_m11(slice) == FRAME_SEARCH_m11) {
 			slice->start_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_frame_number, FIND_START_m11);
 			slice->end_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_frame_number, FIND_END_m11);
@@ -8484,7 +8532,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m11)
 		if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
 			read_record_data_m11((LEVEL_HEADER_m11 *) seg, slice);
-	
+
 	return(seg);
 }
 
@@ -8540,9 +8588,13 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	}
 	slice = &sess->time_slice;
 
-	// set global sample/frame number reference channel
-	if ((globals_m11->reference_channel->flags & LH_CHANNEL_ACTIVE_m11) == 0)
-		change_reference_channel_m11(sess, NULL, NULL);
+	// set global sample/frame number reference channel (before get segment range)
+	if ((globals_m11->reference_channel->flags & LH_CHANNEL_ACTIVE_m11) == 0) {
+		if (globals_m11->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m11)
+			change_reference_channel_m11(sess, NULL, NULL, DEFAULT_TIME_SERIES_CHANNEL_m11);
+		else
+			change_reference_channel_m11(sess, NULL, NULL, DEFAULT_VIDEO_CHANNEL_m11);
+	}
 
 	// get segment range
 	if (slice->number_of_segments == UNKNOWN_m11) {
@@ -8567,7 +8619,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 			slice->end_time = uutc_for_sample_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_sample_number, FIND_END_m11);
 			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
 		}
-	} else if (globals_m11->video_frequencies_vary == TRUE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
+	} else if (globals_m11->video_frame_rates_vary == TRUE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
 		if (get_search_mode_m11(slice) == FRAME_SEARCH_m11) {
 			slice->start_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->start_frame_number, FIND_START_m11);
 			slice->end_time = uutc_for_frame_number_m11((LEVEL_HEADER_m11 *) sess, slice->end_frame_number, FIND_END_m11);
@@ -8606,24 +8658,11 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 			}
 		}
 	}
-	
+
 	// update session slice
 	chan = globals_m11->reference_channel;
-	if ((chan->flags & LH_CHANNEL_ACTIVE_m11) == 0) {
-		// reference channel not active, so it's slice wasn't updated => use first active channel to update session slice
-		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
-			chan = sess->time_series_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-				break;
-		}
-		if (i == sess->number_of_time_series_channels) {
-			for (i = 0; i < sess->number_of_video_channels; ++i) {
-				chan = sess->video_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m11)
-					break;
-			}
-		}
-	}
+	if ((chan->flags & LH_CHANNEL_ACTIVE_m11) == 0)
+		chan = get_active_channel_m11(sess, DEFAULT_CHANNEL_m11);
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
 	slice->start_segment_number = chan->time_slice.start_segment_number;
@@ -8632,7 +8671,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 	if (globals_m11->time_series_frequencies_vary == FALSE_m11 && globals_m11->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m11) {
 		slice->start_sample_number = chan->time_slice.start_sample_number;
 		slice->end_sample_number = chan->time_slice.end_sample_number;
-	} else if (globals_m11->video_frequencies_vary == FALSE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
+	} else if (globals_m11->video_frame_rates_vary == FALSE_m11 && globals_m11->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m11) {
 		slice->start_frame_number = chan->time_slice.start_frame_number;
 		slice->end_frame_number = chan->time_slice.end_frame_number;
 	}
@@ -9917,23 +9956,39 @@ void    show_globals_m11(void)
 		printf_m11("Maximum Time Series Frequency: no entry\n");
 	else
 		printf_m11("Maximum Time Series Frequency: %lf\n", globals_m11->maximum_time_series_frequency);
-	printf_m11("Video Frequencies Vary: ");
-	if (globals_m11->video_frequencies_vary == UNKNOWN_m11)
+	if (globals_m11->minimum_time_series_frequency_channel == NULL)
+		printf_m11("Minimum Time Series Frequency Channel: no entry\n");
+	else
+		printf_m11("Minimum Time Series Frequency Channel Name: %s\n", globals_m11->minimum_time_series_frequency_channel->name);
+	if (globals_m11->maximum_time_series_frequency_channel == NULL)
+		printf_m11("Maximum Time Series Frequency Channel: no entry\n");
+	else
+		printf_m11("Maximum Time Series Frequency Channel Name: %s\n", globals_m11->maximum_time_series_frequency_channel->name);
+	printf_m11("Video frame Rates Vary: ");
+	if (globals_m11->video_frame_rates_vary == UNKNOWN_m11)
 		printf_m11("unknown\n");
-	else if (globals_m11->video_frequencies_vary == TRUE_m11)
+	else if (globals_m11->video_frame_rates_vary == TRUE_m11)
 		printf_m11("true\n");
-	else if (globals_m11->video_frequencies_vary == FALSE_m11)
+	else if (globals_m11->video_frame_rates_vary == FALSE_m11)
 		printf_m11("false\n");
 	else
-		printf_m11("%hhd\n", globals_m11->video_frequencies_vary);
-	if (globals_m11->minimum_video_frequency == FREQUENCY_NO_ENTRY_m11)
-		printf_m11("Minimum Video Frequency: no entry\n");
+		printf_m11("%hhd\n", globals_m11->video_frame_rates_vary);
+	if (globals_m11->minimum_video_frame_rate == FREQUENCY_NO_ENTRY_m11)
+		printf_m11("Minimum Video Frame Rate: no entry\n");
 	else
-		printf_m11("Minimum Video Frequency: %lf\n", globals_m11->minimum_video_frequency);
-	if (globals_m11->maximum_video_frequency == FREQUENCY_NO_ENTRY_m11)
-		printf_m11("Maximum Video Frequency: no entry\n");
+		printf_m11("Minimum Video Frame Rate: %lf\n", globals_m11->minimum_video_frame_rate);
+	if (globals_m11->maximum_video_frame_rate == FREQUENCY_NO_ENTRY_m11)
+		printf_m11("Maximum Video Frame Rate: no entry\n");
 	else
-		printf_m11("Minimum Video Frequency: %lf\n", globals_m11->maximum_video_frequency);
+		printf_m11("Minimum Video Frame Rate: %lf\n", globals_m11->maximum_video_frame_rate);
+	if (globals_m11->minimum_video_frame_rate_channel == NULL)
+		printf_m11("Minimum Video Frame Rate Channel: no entry\n");
+	else
+		printf_m11("Minimum Video Frame Rate Channel Name: %s\n", globals_m11->minimum_video_frame_rate_channel->name);
+	if (globals_m11->maximum_video_frame_rate_channel == NULL)
+		printf_m11("Maximum Video Frame Rate Channel: no entry\n");
+	else
+		printf_m11("Maximum Video Frame Rate Channel Name: %s\n", globals_m11->maximum_video_frame_rate_channel->name);
 
 	printf_m11("\nTime Constants\n--------------\n");
 	printf_m11("time_constants_set: %hhd\n", globals_m11->time_constants_set);
@@ -11281,11 +11336,12 @@ si8     uutc_for_frame_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_fra
 				error_message_m11("%s(): invalid level type\n", __FUNCTION__);
 				return(UUTC_NO_ENTRY_m11);
 		}
-		if (seg == NULL) {  // channel or session
+		// open segment
+		if (seg == NULL) {
 			numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_num);
 			sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m11);
 			seg = chan->segments[seg_idx] = open_segment_m11(NULL, NULL, tmp_str, chan->flags, NULL);
-		} else if (!(seg->flags & LH_OPEN_m11)) {  // closed segment
+		} else if (!(seg->flags & LH_OPEN_m11)) {
 			open_segment_m11(seg, NULL, NULL, seg->flags, NULL);
 		}
 		if (seg == NULL) {
@@ -11422,11 +11478,12 @@ si8     uutc_for_sample_number_m11(LEVEL_HEADER_m11 *level_header, si8 target_sa
 				warning_message_m11("%s(): invalid level type\n", __FUNCTION__);
 				return(UUTC_NO_ENTRY_m11);
 		}
-		if (seg == NULL) {  // channel or session
+		// open segment
+		if (seg == NULL) {
 			numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, seg_num);
 			sprintf_m11(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11);
 			seg = chan->segments[seg_idx] = open_segment_m11(NULL, NULL, tmp_str, chan->flags, NULL);
-		} else if (!(seg->flags & LH_OPEN_m11)) {  // closed segment
+		} else if (!(seg->flags & LH_OPEN_m11)) {
 			open_segment_m11(seg, NULL, NULL, seg->flags, NULL);
 		}
 		if (seg == NULL) {
