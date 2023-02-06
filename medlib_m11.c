@@ -99,7 +99,7 @@
 
 // Globals
 GLOBALS_m11		*globals_m11 = NULL;
-volatile TERN_m11	globals_m11_mutex = FALSE_m11;
+pthread_mutex_t_m11	globals_m11_mutex;
 
 
 
@@ -3917,13 +3917,7 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 	if (globals_m11 == NULL)
 		return;
 
-	if (globals_m11_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return;
-	}
-	globals_m11_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11_mutex);
 	
 	if (cleanup_for_exit == TRUE_m11) {
 		si1	command[FULL_FILE_NAME_BYTES_m11];
@@ -3988,6 +3982,15 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 	if (globals_m11->UTF8_trailing_bytes_table != NULL)
 		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);
 	
+	// destroy mutices
+	pthread_mutex_destroy_m11(&globals_m11->TZ_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->CRC_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->AES_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->SHA_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->UTF8_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->behavior_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->AT_mutex);
+	
 	mxFree((void *) globals_m11);
 #else
 	if (globals_m11->AT_nodes != NULL) {
@@ -3996,19 +3999,30 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		#endif
 		free((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
-	
+	pthread_mutex_destroy_m11(&globals_m11->AT_mutex);
+
 	// UTF8 tables are not allocted with AT functions
 	if (globals_m11->UTF8_offsets_table != NULL)
 		free((void *) globals_m11->UTF8_offsets_table);
 	if (globals_m11->UTF8_trailing_bytes_table != NULL)
 		free((void *) globals_m11->UTF8_trailing_bytes_table);
 	
+	// destroy mutices
+	pthread_mutex_destroy_m11(&globals_m11->TZ_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->CRC_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->AES_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->SHA_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->UTF8_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->behavior_mutex);
+	pthread_mutex_destroy_m11(&globals_m11->AT_mutex);
+	
 	free((void *) globals_m11);
 #endif
 	globals_m11 = NULL;
 
-	globals_m11_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11_mutex);
+	pthread_mutex_destroy_m11(&globals_m11_mutex);
+
 	return;
 }
 
@@ -4793,7 +4807,7 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 #endif
 	
 	if (loc_info == NULL) {
-		loc_info = (LOCATION_INFO_m11 *) calloc_m11((size_t)1, sizeof(LOCATION_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		loc_info = (LOCATION_INFO_m11 *) calloc((size_t)1, sizeof(LOCATION_INFO_m11));
 		free_loc_info = TRUE_m11;
 	}
 	
@@ -4814,11 +4828,10 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	
 	// read output
 	buffer = (si1 *) calloc((size_t)sz, sizeof(si1));
-	fread_m11(buffer, sizeof(si1), (size_t)sz, fp, globals_m11->temp_file, __FUNCTION__, EXIT_ON_FAIL_m11);
+	fread_m11(buffer, sizeof(si1), (size_t) sz, fp, globals_m11->temp_file, __FUNCTION__, EXIT_ON_FAIL_m11);
 	fclose(fp);
 	
 	// condition output
-	STR_strip_character_m11(buffer, '"');
 	STR_strip_character_m11(buffer, '"');
 	
 	// parse output
@@ -4886,20 +4899,14 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 		strcpy(loc_info->timezone_info.daylight_timezone, _tzname[1]);
 #endif
 
-	if (set_timezone_globals == TRUE_m11) {
-		if (set_global_time_constants_m11(&loc_info->timezone_info, 0, prompt) == FALSE_m11) {
-			if (free_loc_info == TRUE_m11)
-				free_m11((void *) loc_info, __FUNCTION__);
-			warning_message_m11("%s(): Could not set timezone globals => returning NULL\n", __FUNCTION__);
-			return(NULL);
-		}
-	}
+	if (set_global_time_constants_m11(&loc_info->timezone_info, 0, prompt) == FALSE_m11)
+		warning_message_m11("%s(): could not set timezone globals => returning NULL\n", __FUNCTION__);
 	
 	if (free_loc_info == TRUE_m11) {
-		free_m11((void *) loc_info, __FUNCTION__);
-		loc_info = NULL;
+		free((void *) loc_info);
+		return(NULL);
 	}
-	
+
 	return(loc_info);
 }
 
@@ -5361,13 +5368,8 @@ TERN_m11	initialize_globals_m11(void)
 	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return(TRUE_m11);
-	}
-	globals_m11_mutex = TRUE_m11;
+	pthread_mutex_init_m11(&globals_m11_mutex, NULL);
+	pthread_mutex_lock_m11(&globals_m11_mutex);
 
 	// globals themselves
 	if (globals_m11 == NULL) {
@@ -5377,19 +5379,19 @@ TERN_m11	initialize_globals_m11(void)
 		globals_m11 = (GLOBALS_m11 *) calloc((size_t) 1, sizeof(GLOBALS_m11));
 		#endif
 		if (globals_m11 == NULL) {
-			globals_m11_mutex = FALSE_m11;
+			pthread_mutex_lock_m11(&globals_m11_mutex);
 			return(FALSE_m11);
 		}
 	}
 
 	// set global mutices
-	globals_m11->TZ_mutex = FALSE_m11;
-	globals_m11->CRC_mutex = FALSE_m11;
-	globals_m11->AES_mutex = FALSE_m11;
-	globals_m11->SHA_mutex = FALSE_m11;
-	globals_m11->UTF8_mutex = FALSE_m11;
-	globals_m11->AT_mutex = FALSE_m11;
-	globals_m11->behavior_mutex = FALSE_m11;
+	pthread_mutex_init_m11(&globals_m11->TZ_mutex, NULL);
+	pthread_mutex_init_m11(&globals_m11->CRC_mutex, NULL);
+	pthread_mutex_init_m11(&globals_m11->AES_mutex, NULL);
+	pthread_mutex_init_m11(&globals_m11->SHA_mutex, NULL);
+	pthread_mutex_init_m11(&globals_m11->UTF8_mutex, NULL);
+	pthread_mutex_init_m11(&globals_m11->behavior_mutex, NULL);
+	pthread_mutex_init_m11(&globals_m11->AT_mutex, NULL);
 
 	// AT (do this as soon as possible)
 #ifdef MATLAB_PERSISTENT_m11
@@ -5556,7 +5558,7 @@ TERN_m11	initialize_globals_m11(void)
 	printf_m11("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m11, TC_RESET_m11);
 #endif
 
-	globals_m11_mutex = FALSE_m11;
+	pthread_mutex_unlock_m11(&globals_m11_mutex);
 
 	return(TRUE_m11);
 }
@@ -5690,13 +5692,7 @@ TERN_m11	initialize_timezone_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11->TZ_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11->TZ_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return(TRUE_m11);
-	}
-	globals_m11->TZ_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->TZ_mutex);
 	
 	// timezone table
 	if (globals_m11->timezone_table == NULL) {
@@ -5725,8 +5721,8 @@ TERN_m11	initialize_timezone_tables_m11(void)
 		}
 	}
 	
-	globals_m11->TZ_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->TZ_mutex);
+
 	return(TRUE_m11);
 }
 
@@ -7611,20 +7607,18 @@ void	pop_behavior_m11(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIO
 #endif
 	
 	// get mutex
-	while (globals_m11->behavior_mutex == TRUE_m11)
-		nap_m11("500 ns");
-	globals_m11->behavior_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->behavior_mutex);
 	
 	if (globals_m11->behavior_stack_entries == 0) {  // this shouldn't happen, but is possible
 		globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
-		globals_m11->behavior_mutex = FALSE_m11;
+		pthread_mutex_unlock_m11(&globals_m11->behavior_mutex);
 		return;
 	}
 	
 	globals_m11->behavior_on_fail = globals_m11->behavior_stack[--globals_m11->behavior_stack_entries];
 
 	// release mutex
-	globals_m11->behavior_mutex = FALSE_m11;
+	pthread_mutex_unlock_m11(&globals_m11->behavior_mutex);
 
 	return;
 }
@@ -7844,6 +7838,103 @@ void	propogate_flags_m11(LEVEL_HEADER_m11 *level_header, ui8 new_flags)
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
+si4	pthread_mutex_destroy_m11(pthread_mutex_t_m11 *mutex)
+{
+	si4	ret_val;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+
+#if defined MACOS_m11 || defined LINUX_m11
+	ret_val = pthread_mutex_destroy(mutex);
+#endif
+#ifdef WINDOWS_m11
+	ret_val = 1 - (si4) CloseHandle(*mutex);  // CloseHandle returns zero on fail
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_init_m11(pthread_mutex_t_m11 *mutex, pthread_mutexattr_t_m11 *attr)
+{
+	si4	ret_val;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+
+#if defined MACOS_m11 || defined LINUX_m11
+	ret_val = pthread_mutex_init(mutex, attr);
+#endif
+#ifdef WINDOWS_m11
+	if ((*mutex = CreateMutex(attr, 0, NULL)) == NULL)
+		ret_val = -1;
+	else
+		ret_val = 0;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_lock_m11(pthread_mutex_t_m11 *mutex)
+{
+	si4	ret_val;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+
+#if defined MACOS_m11 || defined LINUX_m11
+	ret_val = pthread_mutex_lock(mutex);
+#endif
+#ifdef WINDOWS_m11
+	if (WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0)
+		ret_val = 0;
+	else
+		ret_val = -1;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_unlock_m11(pthread_mutex_t_m11 *mutex)
+{
+	si4	ret_val;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+
+#if defined MACOS_m11 || defined LINUX_m11
+	ret_val = pthread_mutex_unlock(mutex);
+#endif
+#ifdef WINDOWS_m11
+	if (ReleaseMutex(*mutex) == 0)
+		ret_val = -1;
+	else
+		ret_val = 0;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
 void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
 {
 #ifdef FN_DEBUG_m11
@@ -7856,9 +7947,7 @@ void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - US
 	}
 	
 	// get mutex
-	while (globals_m11->behavior_mutex == TRUE_m11)
-		nap_m11("500 ns");
-	globals_m11->behavior_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->behavior_mutex);
 	
 	if (globals_m11->behavior_stack_entries == globals_m11->behavior_stack_size) {
 		globals_m11->behavior_stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
@@ -7869,7 +7958,7 @@ void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - US
 	globals_m11->behavior_on_fail = behavior;
 	
 	// release mutex
-	globals_m11->behavior_mutex = FALSE_m11;
+	pthread_mutex_unlock_m11(&globals_m11->behavior_mutex);
 
 	return;
 }
@@ -9646,8 +9735,7 @@ TERN_m11    set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 
 			exit_m11(-1);
 		}
 		potential_timezone_entries[0] = potential_timezone_entries[--response_num];
-	}
-	else {
+	} else {
 		return(FALSE_m11);
 	}
 	
@@ -9726,10 +9814,8 @@ void	show_behavior_m11(void)
 	
 	
 	// get mutex
-	while (globals_m11->behavior_mutex == TRUE_m11)
-		nap_m11("500 ns");
-	globals_m11->behavior_mutex = TRUE_m11;
-	
+	pthread_mutex_lock_m11(&globals_m11->behavior_mutex);
+
 	printf_m11("\nCurrent Global Behavior:\n------------------------\n");
 	behavior_string_m11(globals_m11->behavior_on_fail, behavior_string);
 	printf_m11("%s\n\n", behavior_string);
@@ -9744,13 +9830,13 @@ void	show_behavior_m11(void)
 	}
 	
 	// release mutex
-	globals_m11->behavior_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->behavior_mutex);
+
 	return;
 }
 
 
-void    show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 * code, si1 * prefix)
+void    show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 *code, si1 *prefix)
 {
 	static si1	*relative_days[7] = { "", "First", "Second", "Third", "Fourth", "Fifth", "Last"};
 	static si1	*weekdays[8] = { "", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
@@ -9773,18 +9859,15 @@ void    show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 * code, si1 
 	printf_m11("%sHours of Day [-128 : +127] hours relative to 00:00 (midnight): %hhd\n", prefix, code->hours_of_day);
 	printf_m11("%sReference Time (Local / UTC) ==  (0 / 1): %hhd\n", prefix, code->reference_time);
 	printf_m11("%sShift Minutes [-120 : +120] minutes: %hhd\n", prefix, code->shift_minutes);
-	printf_m11("%sValue: 0x%lx\n\n", prefix, code->value);
+	printf_m11("%sValue: 0x%lX\n\n", prefix, code->value);
 
 	// human readable
-	printf_m11("Translated Content:\n");
-	if (prefix != NULL)
-		if (*prefix)
-			printf_m11("%s: ");
+	printf_m11("%sTranslated Content: ", prefix);
 	switch (code->value) {
 		case DTCC_VALUE_NO_ENTRY_m11:
 			printf_m11("daylight saving change information not entered\n\n");
 			return;
-	case DTCC_VALUE_NOT_OBSERVED_m11:
+		case DTCC_VALUE_NOT_OBSERVED_m11:
 			printf_m11("daylight saving not observed\n\n");
 			return;
 	}
@@ -9797,13 +9880,12 @@ void    show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 * code, si1 
 			break;
 	}
 
-	printf_m11("%s: ", prefix);
+	printf_m11("%s", prefix);
 	if (code->relative_weekday_of_month) {
 		printf_m11("%s ", relative_days[(si4) code->relative_weekday_of_month]);
 		printf_m11("%s ", weekdays[(si4) (code->day_of_week + 1)]);
 		printf_m11("in %s ", months[(si4) code->month]);
-	}
-	else if (code->day_of_month) {
+	} else if (code->day_of_month) {
 		printf_m11("%s ", months[(si4) code->month]);
 		printf_m11("%hhd%s ", code->day_of_month, mday_num_sufs[(si4) code->day_of_month]);
 	}
@@ -9818,7 +9900,7 @@ void    show_daylight_change_code_m11(DAYLIGHT_TIME_CHANGE_CODE_m11 * code, si1 
 			break;
 	}
 	if (code->shift_minutes < 0)
-		printf_m11(" (shift back by %hhd minutes)\n\n", ABS_m11(code->shift_minutes));
+		printf_m11(" (shift back by %hhd minutes)\n\n", -(code->shift_minutes));
 	else
 		printf_m11(" (shift forward by %hhd minutes)\n\n", code->shift_minutes);
 
@@ -9964,7 +10046,7 @@ void    show_globals_m11(void)
 		printf_m11("Maximum Time Series Frequency Channel: no entry\n");
 	else
 		printf_m11("Maximum Time Series Frequency Channel Name: %s\n", globals_m11->maximum_time_series_frequency_channel->name);
-	printf_m11("Video frame Rates Vary: ");
+	printf_m11("Video Frame Rates Vary: ");
 	if (globals_m11->video_frame_rates_vary == UNKNOWN_m11)
 		printf_m11("unknown\n");
 	else if (globals_m11->video_frame_rates_vary == TRUE_m11)
@@ -11199,6 +11281,12 @@ si1	*time_string_m11(si8 uutc, si1 *time_str, TERN_m11 fixed_width, TERN_m11 rel
 	
 	standard_timezone_acronym = globals_m11->standard_timezone_acronym;
 	standard_timezone_string = globals_m11->standard_timezone_string;
+	if (offset == FALSE_m11) {
+		if (strncmp(standard_timezone_string, "offset", 6) == 0) {
+			standard_timezone_acronym = "UTC";
+			standard_timezone_string = "Coordinated Universal Time";
+		}
+	}
 	local_time = (si8) (uutc / (si8) 1000000) + (si8) (globals_m11->standard_UTC_offset + DST_offset);
 	microseconds = (si4) (uutc % (si8) 1000000);
 #if defined MACOS_m11 || defined LINUX_m11
@@ -11263,7 +11351,7 @@ si1	*time_string_m11(si8 uutc, si1 *time_str, TERN_m11 fixed_width, TERN_m11 rel
 		if (DST_offset)
 			sprintf_m11(time_str, "%s %s%s", time_str, globals_m11->daylight_timezone_string, color_reset);
 		else
-			sprintf_m11(time_str, "%s %s%s", time_str, standard_timezone_string, color_reset);
+				sprintf_m11(time_str, "%s %s%s", time_str, standard_timezone_string, color_reset);
 	}
 	
 	return(time_str);
@@ -12309,13 +12397,7 @@ TERN_m11	AES_initialize_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11->AES_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11->AES_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return(TRUE_m11);
-	}
-	globals_m11->AES_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->AES_mutex);
 
 	// rcon table
 	if (globals_m11->AES_rcon_table == NULL) {
@@ -12344,8 +12426,8 @@ TERN_m11	AES_initialize_tables_m11(void)
 		}
 	}
 	
-	globals_m11->AES_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->AES_mutex);
+
 	return(TRUE_m11);
 }
 
@@ -12721,8 +12803,8 @@ inline
 #endif
 void	AT_mutex_off(void)
 {
-	globals_m11->AT_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->AT_mutex);
+
 	return;
 }
 
@@ -12733,9 +12815,7 @@ inline
 #endif
 void	AT_mutex_on(void)
 {
-	while (globals_m11->AT_mutex == TRUE_m11)
-	      	nap_m11("500 ns");
-	globals_m11->AT_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->AT_mutex);
 
 	return;
 }
@@ -12749,6 +12829,9 @@ TERN_m11	AT_remove_entry_m11(void *address, const si1 *function)
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
+	
+	
+	// Note this function does not free the accociated memory, just removes it from AT list
 	
 	if (address == NULL) {
 		#ifdef AT_DEBUG_m11
@@ -13069,7 +13152,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	if (fps->parameters.cps == NULL)
 		fps->parameters.cps = (CMP_PROCESSING_STRUCT_m11 *) calloc_m11((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 	cps = fps->parameters.cps;
-	cps->parameters.mutex = FALSE_m11;
+	pthread_mutex_init_m11(&cps->parameters.mutex,  NULL);
 	
 	// set up directives
 	if (directives != NULL)
@@ -13089,7 +13172,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	}
 	
 	// allocate RED/PRED buffers
-	if (cps->directives.algorithm == CMP_RED_COMPRESSION_m11 || cps->directives.algorithm == CMP_VDS_COMPRESSION_m11) {  // VDS uses RED, not PRED
+	if (cps->directives.algorithm == CMP_RED_COMPRESSION_m11) {  // VDS uses RED & PRED, but allocated for PRED
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m11) {
 			cps->parameters.count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.sorted_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -13102,7 +13185,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 		}
 		cps->parameters.cumulative_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11 + 1, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.minimum_range = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	} else if (cps->directives.algorithm == CMP_PRED_COMPRESSION_m11) {
+	} else if (cps->directives.algorithm == CMP_PRED_COMPRESSION_m11 || cps->directives.algorithm == CMP_VDS_COMPRESSION_m11) {  // VDS uses RED & PRED, but buffers allocated for PRED
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m11) {
 			cps->parameters.count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.sorted_count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -13132,10 +13215,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 		need_compressed_data = TRUE_m11;
 		need_decompressed_data = TRUE_m11;
 		need_keysample_buffer = TRUE_m11;
-	}
-	
-	// compression
-	else {
+	} else {  // compression
 		need_compressed_data = TRUE_m11;
 		need_original_data = TRUE_m11;
 		need_keysample_buffer = TRUE_m11;
@@ -13413,7 +13493,7 @@ inline
 #endif
 void	CMP_cps_mutex_off_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
-	cps->parameters.mutex = FALSE_m11;
+	pthread_mutex_unlock_m11(&cps->parameters.mutex);
 	
 	return;
 }
@@ -13424,10 +13504,8 @@ inline
 #endif
 void	CMP_cps_mutex_on_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
-	while (cps->parameters.mutex == TRUE_m11)
-		nap_m11("500 ns");
-	cps->parameters.mutex = TRUE_m11;
-	
+	pthread_mutex_lock_m11(&cps->parameters.mutex);
+
 	return;
 }
 
@@ -13650,6 +13728,8 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 		warning_message_m11("%s(): trying to free a NULL CMP_PROCESSING_STRUCT_m11 => returning with no action\n", __FUNCTION__);
 		return;
 	}
+	
+	pthread_mutex_lock_m11(&cps->parameters.mutex);
 
 	if (cps->original_data != NULL)
 		free_m11((void *) cps->original_data, __FUNCTION__);
@@ -13692,6 +13772,9 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 	if (cps->parameters.VDS_output_buffers != NULL)
 		CMP_free_buffers_m11(cps->parameters.VDS_output_buffers, TRUE_m11);
 	
+	pthread_mutex_unlock_m11(&cps->parameters.mutex);
+	pthread_mutex_destroy_m11(&cps->parameters.mutex);
+
 	if (free_cps_structure == TRUE_m11) {
 		free_m11((void *) cps, __FUNCTION__);
 	} else {
@@ -13701,6 +13784,7 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 		cps->directives = saved_directives;
 		cps->parameters = saved_parameters;		
 	}
+
 
 	return;
 }
@@ -13891,7 +13975,7 @@ void	CMP_initialize_parameters_m11(CMP_PARAMETERS_m11 *parameters)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	parameters->mutex = FALSE_m11;
+	pthread_mutex_init_m11(&parameters->mutex, NULL);
 	parameters->allocated_block_samples = 0;
 	parameters->allocated_keysample_bytes = 0;
 	parameters->allocated_compressed_bytes = 0;
@@ -14132,12 +14216,7 @@ void    CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 		if ((in_bit += bits_per_samp) > 63) {
 			in_word_val = *++in_word;
 			if (in_bit &= 63) {
-#if defined MACOS_m11 || defined LINUX_m11
-				temp_mask = (ui8) 0xFFFFFFFFFFFFFFFF >> (64 - in_bit);
-#endif
-#ifdef WINDOWS_m11
 				temp_mask = ((ui8) 1 << in_bit) - 1;
-#endif
 				high_bits = in_word_val & temp_mask;
 				out_val |= (high_bits << (bits_per_samp - in_bit));
 				in_word_val >>= in_bit;
@@ -14192,12 +14271,24 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 	tmp_out_x = (sf8 *) out_bufs->buffer[2];
 	index = (si8 *) out_bufs->buffer[3];
 
+	// special cases
 	if (in_len <= 1) {
 		if (in_len == 0)
 			return(out_y);
 		for (i = 0; i < out_len; ++i)
 			out_y[i] = in_y[0];
 		return(out_y);
+	}
+	if (in_len == out_len) {
+		sf8_p1 = out_x;
+		si8_p1 = in_x;
+		for (i = in_len; i--;)  // check for non-linearly spaced interpolation
+			if (*sf8_p1++ != (sf8) *si8_p1++)
+				break;
+		if (i == -1) {
+			memcpy((void *) out_y, (void *) in_y, (size_t) (in_len << 3));
+			return(out_y);
+		}
 	}
 
 	in_nm1 = in_len - 1;
@@ -14435,7 +14526,7 @@ void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 		}
 		prev_high_bound = low_bound;
 	} PRED_RANGE_DECODE_DONE_m11:
-	
+
 	// generate output from keysample data
 	si4_p = cps->decompressed_ptr + n_derivs;
 	si1_p1 = (si1 *) cps->parameters.keysample_buffer;
@@ -14454,7 +14545,7 @@ void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 			*si4_p++ = (si4) *si1_p1++;
 		}
 	}
-	
+
 	// integrate derivatives
 	CMP_integrate_m11(cps);
 
@@ -14488,15 +14579,20 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 	if (cps->parameters.allocated_block_samples < block_samples)
 		realloc_flag = TRUE_m11;
 	
+	switch (cps->directives.algorithm) {
+		case CMP_RED_COMPRESSION_m11:
+		case CMP_PRED_COMPRESSION_m11:
+		case CMP_VDS_COMPRESSION_m11:
+			new_val = CMP_MAX_KEYSAMPLE_BYTES_m11(block_samples);
+			if (cps->parameters.allocated_keysample_bytes < new_val) {
+				new_keysample_bytes = new_val;
+				realloc_flag = TRUE_m11;
+			}
+			break;
+	}
+	
 	switch (mode) {
 		case CMP_COMPRESSION_MODE_m11:
-			if (cps->directives.algorithm == CMP_RED_COMPRESSION_m11 || cps->directives.algorithm == CMP_PRED_COMPRESSION_m11) {
-				new_val = CMP_MAX_KEYSAMPLE_BYTES_m11(block_samples);
-				if (cps->parameters.allocated_keysample_bytes < new_val) {
-					new_keysample_bytes = new_val;
-					realloc_flag = TRUE_m11;
-				}
-			}
 			if (cps->parameters.allocated_compressed_bytes) {
 				mem_units_used = (ui1 *) cps->block_header - fps->time_series_data;
 				mem_units_avail = cps->parameters.allocated_compressed_bytes - mem_units_used;
@@ -14516,13 +14612,6 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 			}
 			break;
 		case CMP_DECOMPRESSION_MODE_m11:
-			if (cps->directives.algorithm == CMP_RED_COMPRESSION_m11 || cps->directives.algorithm == CMP_PRED_COMPRESSION_m11) {
-				new_val = CMP_MAX_KEYSAMPLE_BYTES_m11(block_samples);
-				if (cps->parameters.allocated_keysample_bytes < new_val) {
-					new_keysample_bytes = new_val;
-					realloc_flag = TRUE_m11;
-				}
-			}
 			if (cps->parameters.allocated_decompressed_samples != CMP_SELF_MANAGED_MEMORY_m11) {
 				mem_units_used = cps->decompressed_ptr - cps->decompressed_data;
 				mem_units_avail = cps->parameters.allocated_decompressed_samples - mem_units_used;
@@ -15479,6 +15568,7 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	si8				i, *si8_p, offset, *in_x;
 	sf8				amplitude_scale;
 	sf8				*in_y, *out_x, *out_y, *sf8_p;
+	void				*saved_cumulative_count_p, *saved_minimum_range_p;
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	CMP_BUFFERS_m11			*VDS_in_bufs, *VDS_out_bufs;
 	CMP_VDS_MODEL_FIXED_HEADER_m11	*VDS_header;
@@ -15498,9 +15588,6 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	block_header->model_region_bytes = VDS_header->amplitude_block_model_bytes;
 	algorithm = VDS_header->flags & CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11;
 	switch (algorithm) {
-		case CMP_VDS_FLAGS_AMPLITUDE_RED_MASK_m11:
-			CMP_RED_decode_m11(cps);
-			break;
 		case CMP_VDS_FLAGS_AMPLITUDE_PRED_MASK_m11:
 			CMP_PRED_decode_m11(cps);
 			break;
@@ -15508,7 +15595,7 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 			CMP_MBE_decode_m11(cps);
 			break;
 	}
-	
+
 	// set up VDS buffers
 	cps->parameters.VDS_input_buffers = CMP_allocate_buffers_m11(cps->parameters.VDS_input_buffers, CMP_VDS_INPUT_BUFFERS_m11, (si8) (VDS_header->number_of_VDS_samples + CMP_MAK_PAD_SAMPLES_m11), sizeof(sf8), FALSE_m11, FALSE_m11);
 	cps->parameters.VDS_output_buffers = CMP_allocate_buffers_m11(cps->parameters.VDS_output_buffers, CMP_VDS_OUTPUT_BUFFERS_m11, (si8) number_of_samples, sizeof(sf8), FALSE_m11, FALSE_m11);
@@ -15537,10 +15624,15 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	algorithm = VDS_header->flags & CMP_VDS_TIME_ALGORITHMS_MASK_m11;
 	switch (algorithm) {
 		case CMP_VDS_FLAGS_TIME_RED_MASK_m11:
+			// change PRED amplitude buffers to RED time buffers
+			saved_cumulative_count_p = cps->parameters.cumulative_count;
+			saved_minimum_range_p = cps->parameters.minimum_range;
+			cps->parameters.cumulative_count = *((void **) saved_cumulative_count_p);
+			cps->parameters.minimum_range = *((void **) saved_minimum_range_p);
 			CMP_RED_decode_m11(cps);
-			break;
-		case CMP_VDS_FLAGS_TIME_PRED_MASK_m11:
-			CMP_PRED_decode_m11(cps);
+			// restore PRED amplitude buffers
+			cps->parameters.cumulative_count = saved_cumulative_count_p;
+			cps->parameters.minimum_range = saved_minimum_range_p;
 			break;
 		case CMP_VDS_FLAGS_TIME_MBE_MASK_m11:
 			CMP_MBE_decode_m11(cps);
@@ -15688,13 +15780,7 @@ TERN_m11	CRC_initialize_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11->CRC_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11->CRC_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return(TRUE_m11);
-	}
-	globals_m11->CRC_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->CRC_mutex);
 	
 	if (globals_m11->CRC_table == NULL) {
 		globals_m11->CRC_table = (ui4 **) calloc_2D_m11((size_t) CRC_TABLES_m11, (size_t) CRC_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -15719,8 +15805,8 @@ TERN_m11	CRC_initialize_tables_m11(void)
 		}
 	}
 	
-	globals_m11->CRC_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->CRC_mutex);
+
 	return(TRUE_m11);
 }
 
@@ -16091,7 +16177,7 @@ FPS_PARAMETERS_m11	*FPS_initialize_parameters_m11(FPS_PARAMETERS_m11 *parameters
 	parameters->mmap_block_bytes = 0;
 	parameters->mmap_number_of_blocks = 0;
 	parameters->mmap_block_bitmap = NULL;
-	parameters->mutex = FALSE_m11;
+	pthread_mutex_init_m11(&parameters->mutex, NULL);
 
 	return(parameters);
 }
@@ -16221,7 +16307,7 @@ inline
 #endif
 void FPS_mutex_off_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 {
-	fps->parameters.mutex = FALSE_m11;
+	pthread_mutex_unlock_m11(&fps->parameters.mutex);
 	
 	return;
 }
@@ -16232,10 +16318,8 @@ inline
 #endif
 void FPS_mutex_on_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 {
-	while (fps->parameters.mutex == TRUE_m11)
-	      	nap_m11("500 ns");
-	fps->parameters.mutex = TRUE_m11;
-	
+	pthread_mutex_lock_m11(&fps->parameters.mutex);
+
 	return;
 }
 
@@ -16738,13 +16822,7 @@ TERN_m11	SHA_initialize_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11->SHA_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11->SHA_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return(TRUE_m11);
-	}
-	globals_m11->SHA_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->SHA_mutex);
 
 	// h0 table
 	if (globals_m11->SHA_h0_table == NULL) {
@@ -16764,8 +16842,8 @@ TERN_m11	SHA_initialize_tables_m11(void)
 		}
 	}
 	
-	globals_m11->SHA_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->SHA_mutex);
+
 	return(TRUE_m11);
 }
 
@@ -17469,13 +17547,7 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11->UTF8_mutex == TRUE_m11) {
-		// another process is doing this concurrently - just wait
-		while (globals_m11->UTF8_mutex == TRUE_m11)
-			nap_m11("1 ms");
-		return(TRUE_m11);
-	}
-	globals_m11->UTF8_mutex = TRUE_m11;
+	pthread_mutex_lock_m11(&globals_m11->UTF8_mutex);
 
 	// offsets table
 	if (globals_m11->UTF8_offsets_table == NULL) {
@@ -17495,8 +17567,8 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 		}
 	}
 	
-	globals_m11->UTF8_mutex = FALSE_m11;
-	
+	pthread_mutex_unlock_m11(&globals_m11->UTF8_mutex);
+
 	return(TRUE_m11);
 }
 

@@ -119,6 +119,7 @@
 	#include <fileapi.h>
 	#include <share.h>
 	#include <memoryapi.h>
+	#include <synchapi.h>
 	#define _USE_MATH_DEFINES  // Needed for standard math constants. Must be defined before math.h included.
 #endif
 #if defined MACOS_m11 || defined LINUX_m11
@@ -129,6 +130,7 @@
 	#include <sys/resource.h>
 	#include <stdatomic.h>
 	#include <sys/mman.h>
+	#include <pthread.h>
 #endif
 #if defined LINUX_m11 || defined WINDOWS_m11
 	#include <malloc.h>
@@ -1057,6 +1059,26 @@ typedef struct {
 
 
 //**********************************************************************************//
+//************************************  Mutices  ***********************************//
+//**********************************************************************************//
+
+#if defined MACOS_m11 || defined LINUX_m11
+	typedef	pthread_mutex_t		pthread_mutex_t_m11;
+	typedef	pthread_mutexattr_t	pthread_mutexattr_t_m11;
+#endif
+
+#ifdef WINDOWS_m11
+	typedef	HANDLE			pthread_mutex_t_m11;
+	typedef	SECURITY_ATTRIBUTES	pthread_mutexattr_t_m11;
+#endif
+
+si4		pthread_mutex_destroy_m11(pthread_mutex_t_m11 *mutex);
+si4		pthread_mutex_init_m11(pthread_mutex_t_m11 *mutex, pthread_mutexattr_t_m11 *attr);
+si4		pthread_mutex_lock_m11(pthread_mutex_t_m11 *mutex);
+si4		pthread_mutex_unlock_m11(pthread_mutex_t_m11 *mutex);
+
+
+//**********************************************************************************//
 //**********************************  MED Globals  *********************************//
 //**********************************************************************************//
 
@@ -1213,7 +1235,7 @@ typedef struct {
 	TIMEZONE_INFO_m11		*timezone_table;
 	TIMEZONE_ALIAS_m11		*country_aliases_table;
 	TIMEZONE_ALIAS_m11		*country_acronym_aliases_table;
-	volatile TERN_m11		TZ_mutex;
+	pthread_mutex_t_m11		TZ_mutex;
 	// Alignment Fields
 	TERN_m11                        universal_header_aligned;
 	TERN_m11                        metadata_section_1_aligned;
@@ -1231,25 +1253,25 @@ typedef struct {
 	TERN_m11                        all_structures_aligned;
 	ui4				**CRC_table;
 	ui4                             CRC_mode;
-	volatile TERN_m11		CRC_mutex;
+	pthread_mutex_t_m11		CRC_mutex;
 	// AES tables
 	si4				*AES_sbox_table;
 	si4				*AES_rcon_table;
 	si4				*AES_rsbox_table;
-	volatile TERN_m11		AES_mutex;
+	pthread_mutex_t_m11		AES_mutex;
 	// SHA256 tables
 	ui4				*SHA_h0_table;
 	ui4				*SHA_k_table;
-	volatile TERN_m11		SHA_mutex;
+	pthread_mutex_t_m11		SHA_mutex;
 	// UTF8 tables
 	ui4				*UTF8_offsets_table;
 	si1				*UTF8_trailing_bytes_table;
-	volatile TERN_m11		UTF8_mutex;
+	pthread_mutex_t_m11		UTF8_mutex;
 	// allocation tracking (AT)
 	AT_NODE				*AT_nodes;
 	si8				AT_node_count;  // total allocated nodes
 	si8				AT_used_node_count;  // nodes in use
-	volatile TERN_m11		AT_mutex;
+	pthread_mutex_t_m11		AT_mutex;
 	// Errors
 	si4				err_code;
 	const si1			*err_func;
@@ -1263,7 +1285,7 @@ typedef struct {
 	ui4				*behavior_stack;
 	volatile ui4			behavior_stack_entries;
 	volatile ui4			behavior_stack_size;
-	volatile TERN_m11		behavior_mutex;
+	pthread_mutex_t_m11		behavior_mutex;
 	ui8				level_header_flags;
 	ui4				mmap_block_bytes;  // read size for memory mapped files
 } GLOBALS_m11;
@@ -1522,7 +1544,7 @@ typedef struct {
 
 // Parameters contain "mechanics" of FPS (mostly used internally by library functions)
 typedef struct {
-	volatile TERN_m11			mutex;
+	pthread_mutex_t_m11			mutex;
 	si8					last_access_time;	// uutc of last read into or write from this structure to the file system (update by read_file_m11 & write_file_m11)
 	TERN_m11				full_file_read;		// full file has been read in / decrypted
 	si8					raw_data_bytes;		// bytes in raw data array,
@@ -2487,7 +2509,7 @@ typedef struct {
 
 // Parameters contain "mechanics" of CPS
 typedef struct {
-	volatile TERN_m11	mutex;
+	pthread_mutex_t_m11	mutex;
 	si8		allocated_block_samples;
 	si8		allocated_keysample_bytes;
 	si8		allocated_compressed_bytes;  // == time series data fps: (raw_data_bytes - UNIVERSAL_HEADER_BYTES_m11)
@@ -3312,10 +3334,11 @@ void		SHA_update_m11(SHA_CTX_m11 *ctx, const ui1 *data, si8 len);
 	{ "ZIMBABWE", "ZW", "ZWE", "", "", "CENTRAL AFRICA TIME", "CAT", 7200, "", "", 0x0, 0x0, -1 } \
 }
 
-#define TZ_COUNTRY_ALIASES_ENTRIES_m11      15
+#define TZ_COUNTRY_ALIASES_ENTRIES_m11      16
 #define TZ_COUNTRY_ALIASES_TABLE_m11 { \
 	{ "CHINA", "PEOPLE'S REPUBIC OF CHINA" }, \
 	{ "CHINA", "PEOPLES REPUBIC OF CHINA" }, \
+	{ "CZECH REPUBLIC", "CZECHIA" }, \
 	{ "RUSSIA", "RUSSIAN FEDERATION" }, \
 	{ "TURKS AND CAICOS", "TURKS & CAICOS" }, \
 	{ "TURKS AND CAICOS", "TURKS" }, \
