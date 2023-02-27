@@ -176,12 +176,8 @@ si1	*behavior_string_m11(ui4 behavior, si1 *behavior_string)
 		strcat(behavior_string, "USE GLOBAL BEHAVIOR == ");
 	}
 	
-	if (behavior & RESTORE_BEHAVIOR_m11)
-		strcat(behavior_string, "RESTORE BEHAVIOR | ");
 	if (behavior & EXIT_ON_FAIL_m11)
 		strcat(behavior_string, "EXIT ON FAIL | ");
-	if (behavior & RETURN_ON_FAIL_m11)
-		strcat(behavior_string, "RETURN ON FAIL | ");
 	if (behavior & RETURN_ON_FAIL_m11)
 		strcat(behavior_string, "RETURN ON FAIL | ");
 	if (behavior & SUPPRESS_ERROR_OUTPUT_m11)
@@ -297,7 +293,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 			if (seg->metadata_fps == NULL) {
 				sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
-					seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				} else {
 					force_discont = TRUE_m11;
 					continue;
@@ -311,7 +307,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 			if (seg->time_series_indices_fps == NULL) {
 				sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
-					seg->time_series_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					seg->time_series_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				} else {
 					force_discont = TRUE_m11;
 					continue;
@@ -381,7 +377,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 			if (seg->metadata_fps == NULL) {
 				sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
-					seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				} else {
 					force_discont = TRUE_m11;
 					continue;
@@ -395,7 +391,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 			if (seg->time_series_indices_fps == NULL) {
 				sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
-					seg->video_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					seg->video_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				} else {
 					force_discont = TRUE_m11;
 					continue;
@@ -520,13 +516,13 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 			if ((data_len / seek_data_size) >= SEEK_THRESHOLD)
 				seek_mode = TRUE_m11;
 			else
-				read_file_m11(rd_fps, NULL, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11); // read in full file
+				read_file_m11(rd_fps, NULL, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11); // read in full file
 		}
 		if (seek_mode == TRUE_m11) {  // ? more efficient to seek (large records files)
 			ri = ri_fps->record_indices;
 			for (i = 0; i < n_segs; ++ri) {
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m11) {
-					read_file_m11(rd_fps, NULL, ri->file_offset, sizeof(Sgmt_RECORD_m11), 1, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					read_file_m11(rd_fps, NULL, ri->file_offset, sizeof(Sgmt_RECORD_m11), 1, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 					Sgmt_records[i] = *((Sgmt_RECORD_m11 *) rd_fps->record_data);
 					Sgmt_records[i++].total_record_bytes = sizeof(Sgmt_RECORD_m11);  // discard description, if any
 				}
@@ -563,7 +559,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		for (i = 0; i < n_segs; ++i) {
 			extract_path_parts_m11(seg_list[i], NULL, seg_name, NULL);
 			sprintf_m11(tmp_str, "%s/%s.%s", seg_list[i], seg_name, metadata_ext);
-			md_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			md_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			Sgmt_rec = Sgmt_records + i;
 			Sgmt_rec->record_CRC = CRC_NO_ENTRY_m11;
 			Sgmt_rec->total_record_bytes = RECORD_HEADER_BYTES_m11 + REC_Sgmt_v10_BYTES_m11;  // no description
@@ -600,7 +596,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 			
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
-	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number;  // frame numbers are unioned
+	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
 	
 	return(Sgmt_records);
 }
@@ -893,6 +889,8 @@ CHANGE_REF_MATCH_m11:
 		free_m11((void *) sess->Sgmt_records, __FUNCTION__);
 	ri_fps = channel->record_indices_fps;
 	rd_fps = channel->record_data_fps;
+	if (sess->Sgmt_records != NULL)
+		free_m11(sess->Sgmt_records, __FUNCTION__);
 	sess->Sgmt_records = build_Sgmt_records_array_m11(ri_fps, rd_fps, channel);
 			    
 	return;
@@ -2028,6 +2026,23 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m11:
 }
 
 
+void clear_terminal_m11(void)
+{
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+
+#if defined MACOS_m11 || defined LINUX_m11
+	system_m11("clear", FALSE_m11, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+#endif
+#ifdef WINDOWS_m11
+	win_clear_m11();
+#endif
+	
+	return;
+}
+
+
 si4	compare_acq_nums_m11(const void *a, const void *b)
 {
 	ACQ_NUM_SORT_m11	*as, *bs;
@@ -3132,9 +3147,9 @@ CONTIGUON_m11	*find_discontinuities_m11(LEVEL_HEADER_m11 *level_header, si8 *num
 		if (chan != NULL) {
 			numerical_fixed_width_string_m11(seg_num_str, FILE_NUMBERING_DIGITS_m11, i);
 			sprintf_m11(temp_str, "%s/%s_s%s.tisd/%s_s%s.tidx", chan->path, chan->name, seg_num_str, chan->name, seg_num_str);
-			tsi_fps[j] = read_file_m11(NULL, temp_str, 0, 0, FPS_FULL_FILE_m11, LH_NO_FLAGS_m11, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			tsi_fps[j] = read_file_m11(NULL, temp_str, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			sprintf_m11(temp_str, "%s/%s_s%s.tisd/%s_s%s.tmet", chan->path, chan->name, seg_num_str, chan->name, seg_num_str);
-			md_fps = read_file_m11(NULL, temp_str, 0, 0, FPS_FULL_FILE_m11, LH_NO_FLAGS_m11, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			md_fps = read_file_m11(NULL, temp_str, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			sample_offsets[j] = md_fps->metadata->time_series_section_2.absolute_start_sample_number;
 			samp_period = (sf8)1e6 / md_fps->metadata->time_series_section_2.sampling_frequency;
 			FPS_free_processing_struct_m11(md_fps, TRUE_m11);
@@ -3477,7 +3492,7 @@ FIND_MDF_SEG_LEVEL_m11:
 	}
 	match = FALSE_m11;
 	while ((entry = readdir(dir)) != NULL) {  // if we were able to read something from the directory
-		if (entry->d_type != DT_REG)
+		if (entry->d_type != DT_REG && entry->d_type != DT_LNK)
 			continue;
 		name = entry->d_name;
 		if (*name == '.')
@@ -4809,6 +4824,8 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	if (loc_info == NULL) {
 		loc_info = (LOCATION_INFO_m11 *) calloc((size_t)1, sizeof(LOCATION_INFO_m11));
 		free_loc_info = TRUE_m11;
+	} else {
+		memset((void *) loc_info, 0, sizeof(LOCATION_INFO_m11));
 	}
 	
 #if defined MACOS_m11 || defined LINUX_m11
@@ -4837,43 +4854,43 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	// parse output
 	pattern = "ip: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->WAN_IPv4_address);
 	
 	pattern = "city: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->locality);
 	
 	pattern = "region: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->timezone_info.territory);
 	
 	pattern = "country: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->timezone_info.country_acronym_2_letter);
 	
 	pattern = "loc: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%lf,%lf", &loc_info->latitude, &loc_info->longitude);
 	
 	pattern = "postal: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->postal_code);
 	
 	pattern = "timezone: ";
 	if ((c = STR_match_end_m11(pattern, buffer)) == NULL)
-		error_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		warning_message_m11("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^, ]", loc_info->timezone_description);
 	
@@ -5051,7 +5068,8 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
-			ri_fps = chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, FPS_FULL_FILE_m11, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			ri_fps = chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, FPS_FULL_FILE_m11, level_header, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			chan->record_indices_fps->parent = (void *) chan;
 			n_recs = ri_fps->universal_header->number_of_entries;
 			ri = ri_fps->record_indices;
 			for (i = n_recs; i--; ++ri)
@@ -5059,7 +5077,8 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 					break;
 			if (i >= 0) {
 				sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m11);
-				rd_fps = chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				rd_fps = chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, level_header, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				chan->record_data_fps->parent = (void *) chan;
 				Sgmt_records = build_Sgmt_records_array_m11(ri_fps, rd_fps, NULL);
 				if (Sgmt_records != NULL && level_header->type_code == LH_SESSION_m11) {  // copy ref chan Sgmt records into ref chan, if used for session
 					n_bytes = (size_t) globals_m11->number_of_session_segments * sizeof(Sgmt_RECORD_m11);
@@ -5074,7 +5093,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 			// get global session name(s)
 			if (globals_m11->session_UID == UID_NO_ENTRY_m11) {
 				find_metadata_file_m11(chan->path, tmp_str);
-				md_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				md_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				FPS_free_processing_struct_m11(md_fps, TRUE_m11);
 			}
 			sess_name = globals_m11->session_name;
@@ -5105,7 +5124,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 				}
 			}
 			if (file_exists == FILE_EXISTS_m11) {
-				ri_fps = read_file_m11(ri_fps, tmp_str, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				ri_fps = read_file_m11(ri_fps, tmp_str, 0, 0, FPS_FULL_FILE_m11, level_header, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				n_recs = ri_fps->universal_header->number_of_entries;
 				ri = ri_fps->record_indices;
 				for (i = n_recs; i--; ++ri)
@@ -5113,7 +5132,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 						break;
 				if (i >= 0) {  // check that session Sgmt records contain sampling frequency
 					sprintf_m11(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_DATA_FILE_TYPE_STRING_m11);
-					rd_fps = read_file_m11(rd_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					rd_fps = read_file_m11(rd_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, level_header, NULL, USE_GLOBAL_BEHAVIOR_m11);
 					Sgmts_adequate = TRUE_m11;
 					if (search_mode == SAMPLE_SEARCH_m11) {
 						read_file_m11(rd_fps, NULL, ri->file_offset, 0, 1, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
@@ -6723,13 +6742,13 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, 0, chan->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			chan->record_indices_fps = read_file_m11(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m11)
-				chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, 0, chan->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			else  // just read in data universal header & leave open
-				chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				chan->record_data_fps = read_file_m11(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, (LEVEL_HEADER_m11 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		}
 	}
 	
@@ -6770,10 +6789,10 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 		}
 		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m11) {
 			sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
-			chan->metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, seg->metadata_fps, METADATA_BYTES_m11);
+			chan->metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, (LEVEL_HEADER_m11 *) chan, seg->metadata_fps, METADATA_BYTES_m11);
 		} else if (chan->type_code == LH_VIDEO_CHANNEL_m11) {
 			sprintf_m11(tmp_str, "%s/%s.%s", chan->path, chan->name, VIDEO_METADATA_FILE_TYPE_STRING_m11);
-			chan->metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, seg->metadata_fps, METADATA_BYTES_m11);
+			chan->metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, (LEVEL_HEADER_m11 *) chan, seg->metadata_fps, METADATA_BYTES_m11);
 		}
 		// merge segments
 		for (i++, j++; i < n_segs; ++i, ++j) {
@@ -6879,7 +6898,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 		else // seg->type_code == LH_VIDEO_SEGMENT_m11
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			seg->metadata_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 	}
 	
 	// segment data
@@ -6891,16 +6910,16 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 		else // seg->type_code == LH_VIDEO_SEGMENT_m11
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)  // note seg->video_indices_fps is the same pointer, so works for either
-			seg->time_series_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			seg->time_series_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		
 		// data (time series only)
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11) {
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m11);
 			if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 				if (seg->flags & LH_READ_FULL_SEGMENT_DATA_m11)
-					seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				else
-					seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					seg->time_series_data_fps = read_file_m11(NULL, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			}
 		}
 	}
@@ -6908,14 +6927,16 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	// segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
-		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			seg->record_indices_fps = read_file_m11(seg->record_indices_fps, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
+			seg->record_indices_fps = read_file_m11(seg->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			seg->record_indices_fps->parent = (void *) seg;
+		}
 		sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 			if (seg->flags & LH_READ_FULL_SEGMENT_RECORDS_m11)
-				seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, 0, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			else  // just read in data universal header & leave open
-				seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				seg->record_data_fps = read_file_m11(seg->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		}
 	}
 	
@@ -7279,13 +7300,13 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m11) {
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-			sess->record_indices_fps = read_file_m11(sess->record_indices_fps, tmp_str, 0, 0, 0, sess->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+			sess->record_indices_fps = read_file_m11(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		sprintf_m11(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m11);
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m11)
-				sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, 0, sess->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			else  // just read in data universal header & leave open
-				sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				sess->record_data_fps = read_file_m11(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, (LEVEL_HEADER_m11 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		}
 	}
 
@@ -7308,13 +7329,13 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, i);
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-					ssr->record_indices_fps[j] = read_file_m11(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					ssr->record_indices_fps[j] = read_file_m11(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
 					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m11)
-						ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+						ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m11);
 					else  // just read in data universal header & leave open
-						ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+						ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m11, (LEVEL_HEADER_m11 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				}
 			}
 		}
@@ -7327,7 +7348,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				FPS_free_processing_struct_m11(sess->time_series_metadata_fps, TRUE_m11);
 			sprintf_m11(tmp_str, "%s/%s_time_series.%s", sess->path, sess->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 			chan = sess->time_series_channels[0];
-			sess->time_series_metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, chan->metadata_fps, METADATA_BYTES_m11);
+			sess->time_series_metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, (LEVEL_HEADER_m11 *) sess, chan->metadata_fps, METADATA_BYTES_m11);
 			for (i = 1; i < sess->number_of_time_series_channels; ++i) {
 				chan = sess->time_series_channels[i];
 				if (chan->flags & LH_UPDATE_EPHEMERAL_DATA_m11) {
@@ -7357,7 +7378,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 				FPS_free_processing_struct_m11(sess->video_metadata_fps, TRUE_m11);
 			sprintf_m11(tmp_str, "%s/%s_video.%s", sess->path, sess->name, VIDEO_METADATA_FILE_TYPE_STRING_m11);
 			chan = sess->video_channels[0];
-			sess->video_metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, chan->metadata_fps, METADATA_BYTES_m11);
+			sess->video_metadata_fps = FPS_allocate_processing_struct_m11(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m11, METADATA_BYTES_m11, (LEVEL_HEADER_m11 *) sess, chan->metadata_fps, METADATA_BYTES_m11);
 			for (i = 1; i < sess->number_of_video_channels; ++i) {
 				chan = sess->video_channels[i];
 				if (chan->flags & LH_UPDATE_EPHEMERAL_DATA_m11) {
@@ -8219,9 +8240,10 @@ LEVEL_HEADER_m11	*read_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *
 }
 
 
-FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, ui8 lh_flags, si1 *password, ui4 behavior_on_fail)
+FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m11 *lh, si1 *password, ui4 behavior_on_fail)
 {
 	TERN_m11		opened_flag, mmap_flag, close_flag, data_read_flag, allocated_flag, readable, CRC_valid;
+	ui8			lh_flags;
 	si8			bytes_read, required_bytes;
 	UNIVERSAL_HEADER_m11	*uh;
 	FILE_TIMES_m11		ft;
@@ -8245,7 +8267,12 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 	// if number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m11, the universal header is read, and file is left open (close flag is not changed, so will close on next read if set)
 	// if lh_flags != 0, they are interpreted as LEVEL_HEADER flags, and used to determined whether the should be opened with FPS_FULL_FILE_m11, FPS_UNIVERSAL_HEADER_ONLY_m11, or memory mapping
 	
-	if (bytes_to_read == 0 && number_of_items == 0 && lh_flags == 0) {
+	if (lh == NULL)
+		lh_flags = LH_NO_FLAGS_m11;
+	else
+		lh_flags = lh->flags;
+	
+	if (bytes_to_read == 0 && number_of_items == 0 && lh_flags == LH_NO_FLAGS_m11) {
 		error_message_m11("%s(): must specify either bytes_to_read, number_of_items, or lh_flags \n", __FUNCTION__);
 		set_error_m11(E_READ_ERR_m11, __FUNCTION__, __LINE__);
 		return(NULL);
@@ -8272,9 +8299,9 @@ FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *
 			mmap_flag = FALSE_m11;
 		// allocate
 		if (mmap_flag == TRUE_m11 || number_of_items == FPS_FULL_FILE_m11)
-			fps = FPS_allocate_processing_struct_m11(NULL, full_file_name, NO_FILE_TYPE_CODE_m11, FPS_FULL_FILE_m11, NULL, 0);
+			fps = FPS_allocate_processing_struct_m11(NULL, full_file_name, NO_FILE_TYPE_CODE_m11, FPS_FULL_FILE_m11, lh, NULL, 0);
 		else
-			fps = FPS_allocate_processing_struct_m11(NULL, full_file_name, NO_FILE_TYPE_CODE_m11, bytes_to_read, NULL, 0);
+			fps = FPS_allocate_processing_struct_m11(NULL, full_file_name, NO_FILE_TYPE_CODE_m11, bytes_to_read, lh, NULL, 0);
 		if (fps == NULL)
 			return(NULL);
 		fps->directives.memory_map = mmap_flag;
@@ -8505,7 +8532,7 @@ si8     read_record_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sli
 	n_recs = end_idx - start_idx;
 	offset = REMOVE_DISCONTINUITY_m11(ri_fps->record_indices[start_idx].file_offset);
 	bytes_to_read = REMOVE_DISCONTINUITY_m11(ri_fps->record_indices[end_idx].file_offset) - offset;
-	rd_fps = read_file_m11(rd_fps, NULL, offset, bytes_to_read, n_recs, level_header->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+	rd_fps = read_file_m11(rd_fps, NULL, offset, bytes_to_read, n_recs, level_header, NULL, USE_GLOBAL_BEHAVIOR_m11);
 	if (rd_fps == NULL)
 		return((si8) FALSE_m11);
 	
@@ -8779,10 +8806,10 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, i);
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-					ssr->record_indices_fps[j] = read_file_m11(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					ssr->record_indices_fps[j] = read_file_m11(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				sprintf_m11(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m11);
 				if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)
-					ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, ssr->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+					ssr->record_data_fps[j] = read_file_m11(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m11);
 			}
 			if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
 				read_record_data_m11((LEVEL_HEADER_m11 *) ssr, slice, i);
@@ -8850,16 +8877,19 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 
 si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 {
-	si4					*start_decomp_ptr;
-	si8                                     i, terminal_ts_ind, n_samps, n_blocks, start_offset;
-	si8                                     offset_pts, start_block, end_block, compressed_data_bytes;
-	si8					local_start_idx, local_end_idx, seg_start_samp_num;
-	sf8					scale_factor, val;
+	TERN_m11				cps_caching, scale;
+	ui4					cached_block_samples;
+	si4					cached_block_cnt, *to_ptr, *from_ptr, *si4_p, to_idx, from_idx;
+	si4					first_cached_block, first_cached_block_idx, last_cached_block, last_cached_block_idx;
+	si8                                     i, j, terminal_ts_ind, n_samps, n_blocks, start_offset;
+	si8                                     start_block, end_block, read_start_block, read_end_block, read_n_blocks, compressed_data_bytes;
+	si8					local_start_idx, local_end_idx, seg_start_samp_num, n_cached_samples, cache_offset;
+	sf8					scale_factor;
+	CMP_CACHE_BLOCK_INFO_m11		*cached_blocks;
 	FILE_PROCESSING_STRUCT_m11		*tsd_fps, *tsi_fps;
 	TIME_SERIES_INDEX_m11			*tsi;
 	TIME_SERIES_METADATA_SECTION_2_m11	*tmd2;
 	CMP_PROCESSING_STRUCT_m11		*cps;
-	CMP_BLOCK_FIXED_HEADER_m11		*bh;
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
@@ -8875,6 +8905,10 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 	}
 	if ((tsi_fps = seg->time_series_indices_fps) == NULL) {
 		error_message_m11("%s(): time series indices FILE_PROCESSING_STRUCT_m11 is NULL\n", __FUNCTION__);
+		return(-1);
+	}
+	if (seg->flags & LH_NO_CPS_PTR_RESET_m11){
+		error_message_m11("%s(): CPS pointer resets are required for this function \n", __FUNCTION__);
 		return(-1);
 	}
 	
@@ -8901,51 +8935,170 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 	// allocate cps
 	n_samps = tsi[end_block + 1].start_sample_number - tsi[start_block].start_sample_number;
 	start_offset = REMOVE_DISCONTINUITY_m11(tsi[start_block].file_offset);
-	compressed_data_bytes = REMOVE_DISCONTINUITY_m11(tsi[end_block + 1].file_offset) - start_offset;
 	tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
+	cached_block_cnt = 0;
+	read_start_block = start_block;
+	read_end_block = end_block;
 	if (tsd_fps->parameters.cps == NULL) {
+		compressed_data_bytes = REMOVE_DISCONTINUITY_m11(tsi[end_block + 1].file_offset) - start_offset;
 		cps = CMP_allocate_processing_struct_m11(tsd_fps, CMP_DECOMPRESSION_MODE_m11, n_samps, compressed_data_bytes, tmd2->maximum_block_keysample_bytes, tmd2->maximum_block_samples, NULL, NULL);
+		if ((cps_caching = cps->directives.cps_caching) == TRUE_m11) {
+			cached_blocks = cps->parameters.cached_blocks = (CMP_CACHE_BLOCK_INFO_m11 *) calloc_m11((size_t) n_blocks, sizeof(CMP_CACHE_BLOCK_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.cached_block_list_len = n_blocks;
+		}
 	} else {
-		if (seg->flags & LH_RESET_CPS_POINTERS_m11)
-			(void) CMP_update_CPS_pointers_m11(tsd_fps, CMP_RESET_DECOMPRESSED_PTR_m11 | CMP_RESET_BLOCK_HEADER_PTR_m11);
+		cps = tsd_fps->parameters.cps;
+		cps_caching = cps->directives.cps_caching;
+		if (cps_caching == TRUE_m11) {
+			if (cps->parameters.cached_block_list_len < n_blocks) {
+				cps->parameters.cached_blocks = (CMP_CACHE_BLOCK_INFO_m11 *) realloc_m11((void *) cps->parameters.cached_blocks, (size_t) n_blocks * sizeof(CMP_CACHE_BLOCK_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+				cps->parameters.cached_block_list_len = n_blocks;
+			}
+			cached_blocks = cps->parameters.cached_blocks;
+			cached_block_cnt = cps->parameters.cached_block_cnt;
+			if (cached_block_cnt) {
+				// reallocate cache manually so CMP_reallocate_processing_struct_m11() does not free
+				if (n_samps > cps->parameters.allocated_decompressed_samples) {
+					cps->decompressed_data = cps->parameters.cache = (si4 *) realloc_m11((void *) cps->parameters.cache, n_samps * sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+					cps->parameters.allocated_decompressed_samples = n_samps;
+				}
+				first_cached_block = cached_blocks[0].block_number;
+				last_cached_block = cached_blocks[cached_block_cnt - 1].block_number;
+				if (first_cached_block <= end_block && last_cached_block >= start_block) {
+					last_cached_block_idx = end_block - first_cached_block;
+					if (last_cached_block_idx >= cached_block_cnt)
+						last_cached_block_idx = cached_block_cnt - 1;
+					last_cached_block = cached_blocks[last_cached_block_idx].block_number;
+					first_cached_block_idx = start_block - first_cached_block;
+					if (first_cached_block_idx < 0)
+						first_cached_block_idx = 0;
+					first_cached_block = cached_blocks[first_cached_block_idx].block_number;
+					cached_block_cnt = (last_cached_block - first_cached_block) + 1;
+					// full request is cached
+					if (first_cached_block == start_block && last_cached_block == end_block) {  // full request is cached
+						cache_offset = cached_blocks[first_cached_block_idx].cache_offset + (local_start_idx - tsi[start_block].start_sample_number);
+						cps->decompressed_ptr = cps->decompressed_data = cps->parameters.cache + cache_offset;
+						n_samps = (local_end_idx - local_start_idx) + 1;
+						return(n_samps);
+					}
+					// shift samples
+					to_ptr = cps->parameters.cache + (tsi[first_cached_block].start_sample_number - tsi[start_block].start_sample_number);
+					from_ptr = cps->parameters.cache + cached_blocks[first_cached_block_idx].cache_offset;
+					n_cached_samples = (cached_blocks[last_cached_block_idx].cache_offset + (si8) cached_blocks[last_cached_block_idx].block_samples) - cached_blocks[first_cached_block_idx].cache_offset;
+					if (to_ptr > from_ptr) {  // right shift (move backwards)
+						to_ptr += n_cached_samples;
+						from_ptr += n_cached_samples;
+						for (i = n_cached_samples; i--;)
+							*--to_ptr = *--from_ptr;
+					} else if (to_ptr < from_ptr) {  // left shift (move forwards)
+						for (i = n_cached_samples; i--;)
+							*to_ptr++ = *from_ptr++;
+					}  // else don't move anything
+					// shift cached block infos
+					to_idx = first_cached_block - start_block;
+					from_idx = first_cached_block_idx;
+					first_cached_block_idx = to_idx;
+					last_cached_block_idx = (first_cached_block_idx + cached_block_cnt) - 1;
+					if (to_idx > from_idx) {  // right shift (move backwards)
+						to_idx += cached_block_cnt;
+						from_idx += cached_block_cnt;
+						for (i = 0; i < cached_block_cnt; ++i)
+							cached_blocks[--to_idx] = cached_blocks[--from_idx];
+					} else if (to_idx < from_idx) {  // left shift (move forwards)
+						for (i = 0; i < cached_block_cnt; ++i)
+							cached_blocks[to_idx++] = cached_blocks[from_idx++];
+					}  // else don't move anything
+					// set uncached blocks to zero samples (used as flag to cache)
+					for (i = 0; i < first_cached_block_idx; ++i)
+						cached_blocks[i].block_samples = 0;
+					for (i = last_cached_block_idx + 1; i < n_blocks; ++i)
+						cached_blocks[i].block_samples = 0;
+				} else {
+					cached_block_cnt = 0;  // none of requested blocks in requested range
+				}
+			}
+		}
+		// limit read, if possible (if cached blocks are in middle, they are read - but this should be uncommon)
+		if (cached_block_cnt) {
+			if (first_cached_block == start_block) {
+				read_start_block = last_cached_block + 1;
+				for (i = 0; i <= last_cached_block_idx; ++i)
+					cached_blocks[i].data_read = FALSE_m11;
+				for (; i < n_blocks; ++i)
+					cached_blocks[i].data_read = TRUE_m11;
+			} else if (last_cached_block == end_block) {
+				read_end_block = first_cached_block - 1;
+				for (i = 0; i < first_cached_block_idx; ++i)
+					cached_blocks[i].data_read = TRUE_m11;
+				for (; i < n_blocks; ++i)
+					cached_blocks[i].data_read = FALSE_m11;
+			} else {
+				for (i = 0; i < n_blocks; ++i)
+					cached_blocks[i].data_read = FALSE_m11;
+			}
+			start_offset = REMOVE_DISCONTINUITY_m11(tsi[read_start_block].file_offset);
+			compressed_data_bytes = REMOVE_DISCONTINUITY_m11(tsi[read_end_block + 1].file_offset) - start_offset;
+		} else {
+			start_offset = REMOVE_DISCONTINUITY_m11(tsi[start_block].file_offset);
+			compressed_data_bytes = REMOVE_DISCONTINUITY_m11(tsi[end_block + 1].file_offset) - start_offset;
+		}
+		CMP_update_CPS_pointers_m11(tsd_fps, CMP_RESET_DECOMPRESSED_PTR_m11 | CMP_RESET_BLOCK_HEADER_PTR_m11);
 		cps = CMP_reallocate_processing_struct_m11(tsd_fps, CMP_DECOMPRESSION_MODE_m11, n_samps, tmd2->maximum_block_samples);
 	}
 
 	// read in compressed data
-	read_file_m11(tsd_fps, NULL, start_offset, compressed_data_bytes, n_blocks, seg->flags, NULL, USE_GLOBAL_BEHAVIOR_m11);
+	read_n_blocks = (read_end_block - read_start_block) + 1;
+	read_file_m11(tsd_fps, NULL, start_offset, compressed_data_bytes, read_n_blocks, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 
-	// decompress first block & discard any unrequested initial points
-	offset_pts = local_start_idx - tsi[start_block].start_sample_number;
-	bh = cps->block_header;
+	// set limit on first block
+	cps->parameters.block_start_index = local_start_idx - tsi[start_block].start_sample_number;
 	
-	start_decomp_ptr = cps->decompressed_ptr;
-	if (offset_pts) {
-		CMP_decode_m11(tsd_fps);
-		memmove(cps->decompressed_ptr, cps->decompressed_ptr + offset_pts, (bh->number_of_samples - offset_pts) * sizeof(si4));
-		cps->decompressed_ptr += (bh->number_of_samples - offset_pts);
-		bh = CMP_update_CPS_pointers_m11(tsd_fps, CMP_UPDATE_BLOCK_HEADER_PTR_m11);
-		++start_block;
-	}
-	
-	// loop over rest of blocks
-	for (i = start_block; i <= end_block; ++i) {
-		CMP_decode_m11(tsd_fps);
-		bh = CMP_update_CPS_pointers_m11(tsd_fps, CMP_UPDATE_BLOCK_HEADER_PTR_m11 | CMP_UPDATE_DECOMPRESSED_PTR_m11);
-	}
-	n_samps = (local_end_idx - local_start_idx) + 1;  // trim value (was total samps in blocks)
-	
-	// scale to native units
+	scale = FALSE_m11;
 	if (cps->directives.convert_to_native_units == TRUE_m11) {
 		scale_factor = tmd2->amplitude_units_conversion_factor;
-		if (scale_factor != 1.0 && scale_factor != TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m11) {
-			i = n_samps;
-			while (i--) {
-				val = (sf8) *start_decomp_ptr * scale_factor;
-				*start_decomp_ptr++ = CMP_round_si4_m11(val);
+		if (scale_factor != 1.0 && scale_factor != TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m11)
+			scale = TRUE_m11;
+	}
+		
+	// loop over blocks
+	cache_offset = 0;
+	cps->decompressed_ptr = cps->parameters.cache;
+	for (i = 0, j = start_block; i < n_blocks; ++i, ++j) {
+		if (cached_block_cnt) {
+			if ((cached_block_samples = cached_blocks[i].block_samples)) {
+				cps->decompressed_ptr += cached_block_samples;
+				if (cached_blocks[i].data_read == TRUE_m11)  // data read because in middle, but block is still cached
+					CMP_update_CPS_pointers_m11(tsd_fps, CMP_UPDATE_BLOCK_HEADER_PTR_m11);
+				cached_blocks[i].cache_offset = cache_offset;
+				cache_offset += cached_block_samples;
+				continue;
 			}
 		}
+		// set limit on last block
+		if (j == end_block)
+			cps->parameters.block_end_index = local_end_idx - tsi[j].start_sample_number;
+		CMP_decode_m11(tsd_fps);
+
+		if (cps_caching == TRUE_m11) {
+			cached_blocks[i].cache_offset = cache_offset;
+			cached_blocks[i].block_samples = cps->block_header->number_of_samples;
+			cache_offset += cached_blocks[i].block_samples;
+			cached_blocks[i].block_number = j;
+		}
+		if (scale == TRUE_m11) {  // scale to native units
+			i = cps->block_header->number_of_samples;
+			si4_p = cps->decompressed_ptr;
+			while (i--) {
+				*si4_p = CMP_round_si4_m11((sf8) *si4_p * scale_factor);
+				++si4_p;
+			}
+		}
+		CMP_update_CPS_pointers_m11(tsd_fps, CMP_UPDATE_BLOCK_HEADER_PTR_m11 | CMP_UPDATE_DECOMPRESSED_PTR_m11);
 	}
-	
+	if (cps_caching == TRUE_m11)
+		cps->parameters.cached_block_cnt = n_blocks;  // all blocks now cached
+		
+	n_samps = (local_end_idx - local_start_idx) + 1;  // trim (it did contain total samps in blocks)
 	return(n_samps);
 }
 
@@ -9255,7 +9408,7 @@ si4	search_Sgmt_records_m11(Sgmt_RECORD_m11 *Sgmt_records, TIME_SLICE_m11 *slice
 				numerical_fixed_width_string_m11(num_str, FILE_NUMBERING_DIGITS_m11, Sgmt_records[i].segment_number);
 				sprintf_m11(seg_name, "%s_s%s", chan->name, num_str);
 				sprintf_m11(md_file, "%s/%s.%s/%s.%s", chan->path, seg_name, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11, seg_name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
-				md_fps = read_file_m11(NULL, md_file, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				md_fps = read_file_m11(NULL, md_file, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				if (md_fps == NULL)
 					continue;
 				Sgmt_records[i].end_sample_number = Sgmt_records[i].start_sample_number = md_fps->metadata->time_series_section_2.absolute_start_sample_number;
@@ -9788,7 +9941,7 @@ TERN_m11	set_time_and_password_data_m11(si1 *unspecified_password, si1 *MED_dire
 	// read_file_m11() will process password and set current session directory globals
 	// decrypt_metadata_m11() will set global time constants, from section 3
 	globals_m11->password_data.processed = 0;  // not ternary FALSE_m11 (so when structure is zeroed it is marked as not processed)
-	metadata_fps = read_file_m11(NULL, metadata_file, 0, 0, FPS_FULL_FILE_m11, 0, unspecified_password, RETURN_ON_FAIL_m11);
+	metadata_fps = read_file_m11(NULL, metadata_file, 0, 0, FPS_FULL_FILE_m11, NULL, unspecified_password, RETURN_ON_FAIL_m11);
 	if (metadata_fps == NULL)
 		return(FALSE_m11);
 	globals_m11->session_start_time = metadata_fps->universal_header->session_start_time;
@@ -10236,10 +10389,14 @@ void	show_level_header_flags_m11(ui8 flags)
 		printf_m11("LH_MEM_MAP_SEGMENT_RECORDS_m11: %strue%s\n", TC_RED_m11, TC_RESET_m11);
 	else
 		printf_m11("LH_MEM_MAP_SEGMENT_RECORDS_m11: %sfalse%s\n", TC_BLUE_m11, TC_RESET_m11);
-	if (flags & LH_RESET_CPS_POINTERS_m11)
-		printf_m11("LH_RESET_CPS_POINTERS_m11: %strue%s\n", TC_RED_m11, TC_RESET_m11);
+	if (flags & LH_NO_CPS_PTR_RESET_m11)
+		printf_m11("LH_NO_CPS_PTR_RESET_m11: %strue%s\n", TC_RED_m11, TC_RESET_m11);
 	else
-		printf_m11("LH_RESET_CPS_POINTERS_m11: %sfalse%s\n", TC_BLUE_m11, TC_RESET_m11);
+		printf_m11("LH_NO_CPS_PTR_RESET_m11: %sfalse%s\n", TC_BLUE_m11, TC_RESET_m11);
+	if (flags & LH_NO_CPS_CACHING_m11)
+		printf_m11("LH_NO_CPS_CACHING_m11: %strue%s\n", TC_RED_m11, TC_RESET_m11);
+	else
+		printf_m11("LH_NO_CPS_CACHING_m11: %sfalse%s\n", TC_BLUE_m11, TC_RESET_m11);
 
 	printf_m11("\n");
 	
@@ -11183,7 +11340,7 @@ TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess)
 			sprintf_m11(seg_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m11);
 			sprintf_m11(md_file, "%s/%s_s%s.%s", seg_dir, chan->name, num_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m11);
 			if (file_exists_m11(md_file) == FILE_EXISTS_m11) {
-				md_fps = read_file_m11(NULL, md_file, 0, 0, FPS_FULL_FILE_m11, 0, NULL, USE_GLOBAL_BEHAVIOR_m11);
+				md_fps = read_file_m11(NULL, md_file, 0, 0, FPS_FULL_FILE_m11, NULL, NULL, USE_GLOBAL_BEHAVIOR_m11);
 				if (md_fps == NULL) {
 					warning_message_m11("%s(): error reading metadata file \"%s\"\n", __FUNCTION__, md_file);
 					free((void *) acq_idxs);
@@ -11806,6 +11963,52 @@ void    win_cleanup_m11(void)
 	return;
 }
 	
+
+void win_clear_m11(void)
+{
+#ifdef WINDOWS_m11
+	HANDLE				hStdout;
+	CONSOLE_SCREEN_BUFFER_INFO	csbi;
+	SMALL_RECT			scrollRect;
+	COORD				scrollTarget;
+	CHAR_INFO			fill;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+
+	// Get the number of character cells in the current buffer.
+	if (!GetConsoleScreenBufferInfo(hStdout, &csbi))
+		return;
+	
+	// Scroll the rectangle of the entire buffer.
+	scrollRect.Left = 0;
+	scrollRect.Top = 0;
+	scrollRect.Right = csbi.dwSize.X;
+	scrollRect.Bottom = csbi.dwSize.Y;
+	
+	// Scroll it upwards off the top of the buffer with a magnitude of the entire height.
+	scrollTarget.X = 0;
+	scrollTarget.Y = (SHORT)(0 - csbi.dwSize.Y);
+	
+	// Fill with empty spaces with the buffer's default text attribute.
+	fill.Char.UnicodeChar = TEXT(' ');
+	fill.Attributes = csbi.wAttributes;
+	
+	// Do the scroll
+	ScrollConsoleScreenBuffer(hStdout, &scrollRect, NULL, scrollTarget, &fill);
+	
+	// Move the cursor to the top left corner too.
+	csbi.dwCursorPosition.X = 0;
+	csbi.dwCursorPosition.Y = 0;
+	
+	SetConsoleCursorPosition(hStdout, csbi.dwCursorPosition);
+#endif
+	return;
+}
+
 
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
@@ -13159,6 +13362,12 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 		cps->directives = *directives;
 	else // set defaults
 		CMP_initialize_directives_m11(&cps->directives, (ui1) mode);
+	if (fps->parent != NULL) {  // set level header directives
+		if (((LEVEL_HEADER_m11 *) fps->parent)->flags & LH_NO_CPS_PTR_RESET_m11)
+			cps->directives.cps_pointer_reset = FALSE_m11;  // default is TRUE_m11
+		if (((LEVEL_HEADER_m11 *) fps->parent)->flags & LH_NO_CPS_CACHING_m11)
+			cps->directives.cps_caching = FALSE_m11;  // default is TRUE_m11
+	}
 	
 	// set up parameters
 	if (parameters != NULL)
@@ -13268,17 +13477,17 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	if (need_decompressed_data == TRUE_m11) {
 		if (cps->directives.mode == CMP_DECOMPRESSION_MODE_m11) {
 			if (data_samples > 0) {
-				cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+				cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			} else {
-				cps->decompressed_data = cps->decompressed_ptr = NULL;
+				cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = NULL;
 			}
 			cps->parameters.allocated_decompressed_samples = data_samples;
 		} else { // cps->directives.mode == CMP_COMPRESSION_MODE_m11  (decompressed_ptr used to calculate mean residual ratio for each block)
-			cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+			cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.allocated_decompressed_samples = block_samples;
 		}
 	} else {
-		cps->decompressed_data = cps->decompressed_ptr = NULL;
+		cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = NULL;
 		cps->parameters.allocated_decompressed_samples = 0;
 	}
 	
@@ -13527,7 +13736,7 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		error_message_m11("%s(): FPS must be time series data\n", __FUNCTION__);
 		return;
 	}
-
+	
 	cps = fps->parameters.cps;
 	block_header = cps->block_header;
 	if (cps->parameters.allocated_block_samples < block_header->number_of_samples) {
@@ -13537,7 +13746,7 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		}
 		block_header = cps->block_header;
 	}
-	
+
 	// decrypt (probably done in read_file_m11(), but if not, do here)
 	if (block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m11)
 		CMP_decrypt_m11(fps);
@@ -13606,6 +13815,14 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		}
 	}
 	
+	// restrict returned samples
+	cps->parameters.block_end_index = 0xFFFFFFFF;  // reset
+	if (cps->parameters.block_start_index) {
+		if (cps->directives.algorithm != CMP_VDS_COMPRESSION_m11 || cps->directives.cps_caching == TRUE_m11)
+			cps->decompressed_data = cps->parameters.cache + cps->parameters.block_start_index;
+		cps->parameters.block_start_index = 0;  // reset
+	}
+
 	return;
 }
 
@@ -13734,8 +13951,8 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 	if (cps->original_data != NULL)
 		free_m11((void *) cps->original_data, __FUNCTION__);
 	
-	if (cps->decompressed_data != NULL && cps->parameters.allocated_decompressed_samples != CMP_SELF_MANAGED_MEMORY_m11)
-		free_m11((void *) cps->decompressed_data, __FUNCTION__);
+	if (cps->parameters.cache != NULL)  // decompressed_data is pointer into this
+		free_m11((void *) cps->parameters.cache, __FUNCTION__);
 	
 	if (cps->parameters.keysample_buffer != NULL)
 		free_m11((void *) cps->parameters.keysample_buffer, __FUNCTION__);
@@ -13782,7 +13999,22 @@ void    CMP_free_processing_struct_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 
 		saved_parameters = cps->parameters;
 		memset((void *) cps, 0, sizeof(CMP_PROCESSING_STRUCT_m11));
 		cps->directives = saved_directives;
-		cps->parameters = saved_parameters;		
+		cps->parameters = saved_parameters;
+		cps->original_data = NULL;
+		cps->parameters.cache = NULL;
+		cps->decompressed_data = NULL;
+		cps->parameters.keysample_buffer = NULL;
+		cps->parameters.detrended_buffer = NULL;
+		cps->parameters.scaled_amplitude_buffer = NULL;
+		cps->parameters.scaled_frequency_buffer = NULL;
+		cps->parameters.scrap_buffers = NULL;
+		cps->parameters.count = NULL;
+		cps->parameters.cumulative_count = NULL;
+		cps->parameters.sorted_count = NULL;
+		cps->parameters.minimum_range = NULL;
+		cps->parameters.symbol_map = NULL;
+		cps->parameters.VDS_input_buffers = NULL;
+		cps->parameters.VDS_output_buffers = NULL;
 	}
 
 
@@ -13943,6 +14175,8 @@ void	CMP_initialize_directives_m11(CMP_DIRECTIVES_m11 *directives, ui1 mode)
 	directives->mode = mode;
 	directives->algorithm = CMP_DIRECTIVES_ALGORITHM_DEFAULT_m11;
 	directives->encryption_level = CMP_DIRECTIVES_ENCRYPTION_LEVEL_DEFAULT_m11;
+	directives->cps_pointer_reset = CMP_DIRECTIVES_CPS_POINTER_RESET_DEFAULT_m11;
+	directives->cps_caching = CMP_DIRECTIVES_CPS_CACHING_DEFAULT_m11;
 	directives->fall_through_to_best_encoding = CMP_DIRECTIVES_FALL_THROUGH_TO_BEST_ENCODING_DEFAULT_m11;
 	directives->reset_discontinuity = CMP_DIRECTIVES_RESET_DISCONTINUITY_DEFAULT_m11;
 	directives->include_noise_scores = CMP_DIRECTIVES_INCLUDE_NOISE_SCORES_DEFAULT_m11;
@@ -13976,6 +14210,12 @@ void	CMP_initialize_parameters_m11(CMP_PARAMETERS_m11 *parameters)
 #endif
 	
 	pthread_mutex_init_m11(&parameters->mutex, NULL);
+	parameters->cache = NULL;
+	parameters->cached_blocks = NULL;
+	parameters->cached_block_cnt = 0;
+	parameters->cached_block_list_len = 0;
+	parameters->block_start_index = 0;
+	parameters->block_end_index = 0xFFFFFFFF;
 	parameters->allocated_block_samples = 0;
 	parameters->allocated_keysample_bytes = 0;
 	parameters->allocated_compressed_bytes = 0;
@@ -14237,8 +14477,8 @@ void    CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 // Note: input x's are integers, output x's are floats
 sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m11 *out_bufs, si8 out_len)
 {
-	si8		*index, *si8_p1, *si8_p2, bin, next_bin;
-	si8     	i, j, filled_slopes, in_nm1, in_nm2, tmp_delta_len;
+	si8		*index, *si8_p1, *si8_p2;
+	si8     	i, j, filled_slopes, in_nm1, tmp_delta_len;
 	si8		*in_x;
 	sf8     	*delta, *tmp_delta, *weights, *slopes;
 	sf8		delta_0, delta_m1, delta_n, delta_n1;
@@ -14292,7 +14532,6 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 	}
 
 	in_nm1 = in_len - 1;
-	in_nm2 = in_nm1 - 1;
 	tmp_delta_len = in_nm1 + 4;
 	delta = tmp_delta + 2;
 	si8_p1 = in_x;
@@ -14362,16 +14601,19 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 		*sf8_p6++ = ((*sf8_p4++ * (sf8) 3.0) - (*sf8_p2++ * (sf8) 2.0) - *sf8_p3++) / *sf8_p1++;  // column 1
 	}
 
-	next_bin = (si8) out_x[0];
-	bin = next_bin - 1;
-	for (i = 0; i < out_len; ++i) {
-		if (out_x[i] >= in_x[next_bin]) {
-			if (bin < in_nm2) {
-				++bin;
-				++next_bin;
-			}
+	for (i = 0, j = 0; i < out_len; ++i) {
+		sf8_v1 = out_x[i];
+		while (((sf8) in_x[j]) <= sf8_v1) {
+			++j;
+			if (j == in_nm1)
+				break;
 		}
-		index[i] = bin;
+		index[i] = j - 1;
+		if (j == in_nm1) {
+			for (++i, --j; i < out_len; ++i)
+				index[i] = j;
+			break;
+		}
 	}
 
 	memcpy((void *) tmp_out_x, (void *) out_x, (size_t) (out_len << 3));  // don't destroy out_x (for repeat calls)
@@ -14644,8 +14886,8 @@ CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_
 	
 	if (new_decompressed_samples) {
 		if (cps->decompressed_data != NULL)
-			free_m11((void * ) cps->decompressed_data, __FUNCTION__);
-		if ((cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m11((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
+			free_m11((void * ) cps->parameters.cache, __FUNCTION__);
+		if ((cps->decompressed_data = cps->decompressed_ptr = cps->parameters.cache = (si4 *) calloc_m11((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11)) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m11;
 		cps->parameters.allocated_decompressed_samples = new_decompressed_samples;
 	}
@@ -15552,7 +15794,7 @@ CMP_BLOCK_FIXED_HEADER_m11	*CMP_update_CPS_pointers_m11(FILE_PROCESSING_STRUCT_m
 	if (flags & CMP_UPDATE_DECOMPRESSED_PTR_m11)
 		cps->decompressed_ptr += block_header->number_of_samples;
 	else if (flags & CMP_RESET_DECOMPRESSED_PTR_m11)
-		cps->decompressed_ptr = cps->decompressed_data;
+		cps->decompressed_ptr = cps->decompressed_data = cps->parameters.cache;
 
 	return(cps->block_header);
 }
@@ -15561,13 +15803,12 @@ CMP_BLOCK_FIXED_HEADER_m11	*CMP_update_CPS_pointers_m11(FILE_PROCESSING_STRUCT_m
 void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
 	ui1				*VDS_model_region;
-	ui4				VDS_total_header_bytes;
-	ui4				number_of_samples, algorithm;
+	ui4				VDS_total_header_bytes, number_of_samples, algorithm;
+	ui4				start_sample;
 	si4				*si4_p;
 	sf4				*sf4_p;
 	si8				i, *si8_p, offset, *in_x;
-	sf8				amplitude_scale;
-	sf8				*in_y, *out_x, *out_y, *sf8_p;
+	sf8				amplitude_scale, *in_y, *out_x, *out_y, *sf8_p, val;
 	void				*saved_cumulative_count_p, *saved_minimum_range_p;
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	CMP_BUFFERS_m11			*VDS_in_bufs, *VDS_out_bufs;
@@ -15588,6 +15829,18 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	block_header->model_region_bytes = VDS_header->amplitude_block_model_bytes;
 	algorithm = VDS_header->flags & CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11;
 	switch (algorithm) {
+		case CMP_VDS_FLAGS_AMPLITUDE_RED_MASK_m11:  // older VDS used RED for amplitudes - this should go away eventually
+			// change PRED buffers to RED
+			saved_cumulative_count_p = cps->parameters.cumulative_count;
+			saved_minimum_range_p = cps->parameters.minimum_range;
+			cps->parameters.cumulative_count = *((void **) saved_cumulative_count_p);
+			cps->parameters.minimum_range = *((void **) saved_minimum_range_p);
+			// decode
+			CMP_RED_decode_m11(cps);
+			// restore PRED buffers
+			cps->parameters.cumulative_count = saved_cumulative_count_p;
+			cps->parameters.minimum_range = saved_minimum_range_p;
+			break;
 		case CMP_VDS_FLAGS_AMPLITUDE_PRED_MASK_m11:
 			CMP_PRED_decode_m11(cps);
 			break;
@@ -15608,7 +15861,7 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 
 	// copy amplitudes to sf8 buffer
 	CMP_si4_to_sf8_m11(cps->decompressed_ptr, in_y, (si8) VDS_header->number_of_VDS_samples);
-	
+
 	// apply amplitude scaling (if applied) here (b/c fewer samples)
 	if (block_header->parameter_flags & CMP_PF_AMPLITUDE_SCALE_MASK_m11) {
 		sf4_p = (sf4 *) cps->block_parameters;
@@ -15638,7 +15891,7 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 			CMP_MBE_decode_m11(cps);
 			break;
 	}
-
+	
 	// copy times to si8 buffer
 	si8_p = in_x;
 	si4_p = cps->decompressed_ptr;
@@ -15646,14 +15899,25 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 		*si8_p++ = (si8) *si4_p++;
 
 	// reconstruct trace
-	sf8_p = out_x + number_of_samples;  // create mak out_x array
+	if (cps->directives.cps_caching == TRUE_m11) {
+		start_sample = 0;
+	} else {
+		start_sample = cps->parameters.block_start_index;
+		if (cps->parameters.block_end_index != 0xFFFFFFFF)
+			number_of_samples = cps->parameters.block_end_index + 1;
+		number_of_samples -= start_sample;
+	}
+	
+	// build out array & interpolate
+	sf8_p = out_x;  // create mak out_x array
+	val = (sf8) start_sample - (sf8) 1.0;
 	for (i = number_of_samples; i--;)
-		*--sf8_p = (sf8) i;
+		*sf8_p++ = (val += (sf8) 1.0);
 	CMP_mak_interp_sf8_m11(VDS_in_bufs, (si8) VDS_header->number_of_VDS_samples, VDS_out_bufs, (si8) number_of_samples);
 
 	// copy interpolated data to decompressed buffer
 	CMP_sf8_to_si4_m11(out_y, cps->decompressed_ptr, number_of_samples);
-	
+
 	// restore block_header
 	block_header->number_of_samples = number_of_samples;
 	block_header->total_header_bytes = VDS_total_header_bytes;
@@ -15937,7 +16201,7 @@ TERN_m11	CRC_validate_m11(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_vali
 //***********************************************************************//
 
 
-FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m11 *proto_fps, si8 bytes_to_copy)
+FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m11 *parent, FILE_PROCESSING_STRUCT_m11 *proto_fps, si8 bytes_to_copy)
 {
 	TERN_m11			free_fps;
 	UNIVERSAL_HEADER_m11		*uh;
@@ -15956,6 +16220,8 @@ FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_S
 		free_m11((void *) fps->parameters.raw_data, __FUNCTION__);
 		fps->parameters.raw_data = NULL;
 	}
+	if (parent != NULL)
+		fps->parent = (void *) parent;
 	if (full_file_name != NULL)
 		if (*full_file_name)
 			strncpy_m11(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m11);

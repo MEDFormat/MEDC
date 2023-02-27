@@ -124,7 +124,6 @@
 #endif
 #if defined MACOS_m11 || defined LINUX_m11
 	#include <unistd.h>
-	#include <wchar.h>
 	#include <dirent.h>
 	#include <sys/time.h>
 	#include <sys/resource.h>
@@ -141,6 +140,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 #include <math.h>
 #include <float.h>
 #include <time.h>
@@ -594,7 +594,7 @@ typedef struct {
 #define TIME_SERIES_CHANNEL_TYPE_m11	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m11
 #define VIDEO_CHANNEL_TYPE_m11		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m11
 
-// Reference Channel Types (used in change_reference_channel_m11() vararg)
+// Reference Channel Types (used in change_reference_channel_m11())
 #define DEFAULT_CHANNEL_m11			0
 #define DEFAULT_TIME_SERIES_CHANNEL_m11		1
 #define DEFAULT_VIDEO_CHANNEL_m11		2
@@ -602,7 +602,6 @@ typedef struct {
 #define LOWEST_RATE_TIME_SERIES_CHANNEL_m11	4
 #define HIGHEST_RATE_VIDEO_CHANNEL_m11		5
 #define LOWEST_RATE_VIDEO_CHANNEL_m11		6
-
 
 // Generate File List flags
 	// Path Parts
@@ -984,7 +983,8 @@ typedef struct {
 #define LH_READ_FULL_SEGMENT_RECORDS_m11		((ui8) 1 << 52)	// read full indices file & data files, close all files
 #define LH_MEM_MAP_SEGMENT_RECORDS_m11			((ui8) 1 << 53)	// allocate, but don't read full file
 #define LH_READ_SEGMENT_METADATA_m11			((ui8) 1 << 54)	// read segment metadata
-#define LH_RESET_CPS_POINTERS_m11			((ui8) 1 << 60)	// set original_ptr = original_data, block_header = compressed_data, decompressed_ptr = decompressed_data
+#define LH_NO_CPS_PTR_RESET_m11				((ui8) 1 << 60) // caller will update pointers
+#define LH_NO_CPS_CACHING_m11				((ui8) 1 << 61) // set cps_caching parameter to FALSE
 
 // flag groups
 #define LH_MAP_ALL_CHANNELS_m11       	      (	LH_MAP_ALL_TIME_SERIES_CHANNELS_m11 | LH_MAP_ALL_VIDEO_CHANNELS_m11 )
@@ -1563,6 +1563,7 @@ typedef struct {
 } FPS_PARAMETERS_m11;
 
 typedef struct {  // struct name for CMP functions interdependency
+	void					*parent;  // parent structure, NULL if created alone
 	si1					full_file_name[FULL_FILE_NAME_BYTES_m11];  // full path from root including extension
 	UNIVERSAL_HEADER_m11			*universal_header;  // points to base of raw_data array
 	FPS_DIRECTIVES_m11	        	directives;
@@ -1910,6 +1911,7 @@ TERN_m11	check_time_series_metadata_section_2_alignment_m11(ui1 *bytes);
 TERN_m11	check_universal_header_alignment_m11(ui1 *bytes);
 TERN_m11	check_video_indices_alignment_m11(ui1 *bytes);
 TERN_m11	check_video_metadata_section_2_alignment_m11(ui1 *bytes);
+void		clear_terminal_m11(void);
 si4		compare_acq_nums_m11(const void *a, const void *b);
 void		condition_timezone_info_m11(TIMEZONE_INFO_m11 *tz_info);
 void		condition_time_slice_m11(TIME_SLICE_m11 *slice);
@@ -1981,7 +1983,7 @@ void		propogate_flags_m11(LEVEL_HEADER_m11 *level_header, ui8 new_flags);
 void            push_behavior_m11(ui4 behavior);
 CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...);  // varargs: si1 *chan_path, ui8 flags, si1 *password
 LEVEL_HEADER_m11	*read_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
-FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, ui8 lh_flags, si1 *password, ui4 behavior_on_fail);
+FILE_PROCESSING_STRUCT_m11	*read_file_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m11 *lh, si1 *password, ui4 behavior_on_fail);
 SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...);  // varargs: si1 *seg_path, ui8 flags, si1 *password
 SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...);  // varargs: void *file_list, si4 list_len, ui8 flags, si1 *password
 si8     	read_record_data_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice, ...);  // varargs: si4 seg_num
@@ -2028,6 +2030,7 @@ si1		*wchar2char_m11(si1 *target, wchar_t *source);
 #ifdef WINDOWS_m11
 FILETIME	uutc_to_win_time_m11(si8 uutc);
 void		win_cleanup_m11(void);
+void		win_clear_m11(void);
 si8		win_DATE_to_uutc_m11(sf8 date);
 si4		win_ls_1d_to_tmp_m11(si1 **dir_strs, si4 n_dirs, TERN_m11 full_path);
 TERN_m11	win_initialize_terminal_m11(void);
@@ -2068,7 +2071,7 @@ TERN_m11 	AT_update_entry_m11(void *orig_address, void *new_address, const si1 *
 //**********************************************************************************//
 
 // Prototypes
-FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, FILE_PROCESSING_STRUCT_m11 *proto_fps, si8 bytes_to_copy);
+FILE_PROCESSING_STRUCT_m11	*FPS_allocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m11 *parent, FILE_PROCESSING_STRUCT_m11 *proto_fps, si8 bytes_to_copy);
 void		FPS_close_m11(FILE_PROCESSING_STRUCT_m11 *fps);
 si4		FPS_compare_start_times_m11(const void *a, const void *b);
 void            FPS_free_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, TERN_m11 free_fps_structure);
@@ -2335,6 +2338,8 @@ si4    		vsprintf_m11(si1 *target, si1 *fmt, va_list args);
 #define CMP_DIRECTIVES_COMPRESSION_MODE_DEFAULT_m11			CMP_COMPRESSION_MODE_NO_ENTRY_m11
 #define CMP_DIRECTIVES_ALGORITHM_DEFAULT_m11				CMP_PRED_COMPRESSION_m11
 #define CMP_DIRECTIVES_ENCRYPTION_LEVEL_DEFAULT_m11			NO_ENCRYPTION_m11
+#define CMP_DIRECTIVES_CPS_POINTER_RESET_DEFAULT_m11			TRUE_m11
+#define CMP_DIRECTIVES_CPS_CACHING_DEFAULT_m11				TRUE_m11
 #define CMP_DIRECTIVES_FALL_THROUGH_TO_BEST_ENCODING_DEFAULT_m11	TRUE_m11
 #define CMP_DIRECTIVES_RESET_DISCONTINUITY_DEFAULT_m11			TRUE_m11
 #define CMP_DIRECTIVES_INCLUDE_NOISE_SCORES_DEFAULT_m11			FALSE_m11
@@ -2482,9 +2487,24 @@ typedef struct {
 } CMP_BUFFERS_m11;
 
 typedef struct {
+	si8		cache_offset;
+	ui4		block_samples;
+	si4		block_number;
+	TERN_m11	data_read;
+} CMP_CACHE_BLOCK_INFO_m11;
+
+typedef struct NODE_STRUCT_m11 {
+	si4                     val;
+	ui4                     count;
+	struct NODE_STRUCT_m11	*prev, *next;
+} CMP_NODE_m11;
+
+typedef struct {
 	ui4             mode;  // CMP_COMPRESSION_MODE_m11, CMP_DECOMPRESSION_MODE_m11
 	ui4             algorithm;  // RED, PRED, MBE, or VDS
 	si1             encryption_level;  // encryption level for data blocks: passed in compression
+	TERN_m11	cps_pointer_reset;  // FALSE to maunually control cps pointers
+	TERN_m11        cps_caching;  // use for largely sequential reads, not random reads or open/close behavior
 	TERN_m11        fall_through_to_best_encoding;  // if another encoding would be smaller than RED/PRED, use it for the block
 	TERN_m11        reset_discontinuity;  // if discontinuity directive == TRUE_m11, reset to FALSE_m11 after compressing the block
 	TERN_m11        include_noise_scores;  // a set of 4 metrics that measure different types of noise (range 0-254: 0 no noise, 254 max noise, 0xFF no entry)
@@ -2510,16 +2530,25 @@ typedef struct {
 // Parameters contain "mechanics" of CPS
 typedef struct {
 	pthread_mutex_t_m11	mutex;
+	// cache parameters
+	CMP_CACHE_BLOCK_INFO_m11	*cached_blocks;
+	si4		cached_block_list_len;
+	si4		cached_block_cnt;
+	si4		*cache;
+	// memory parameters
 	si8		allocated_block_samples;
 	si8		allocated_keysample_bytes;
 	si8		allocated_compressed_bytes;  // == time series data fps: (raw_data_bytes - UNIVERSAL_HEADER_BYTES_m11)
 	si8		allocated_decompressed_samples;
-	TERN_m11	discontinuity;  // set if block is first after a discontinuity, passed in compression, returned in decompression
+	// compression parameters
 	ui1		goal_derivative_level;  // used with set_derivative_level directive
 	ui1		derivative_level;  // goal/actual pairs because not always possible
 	ui1		goal_overflow_bytes;  // used with set_overflow_bytes directive
 	ui1		overflow_bytes;  // goal/actual pairs because not always possible
 	// block parameters
+	TERN_m11	discontinuity;  // set if block is first after a discontinuity, passed in compression, returned in decompression
+	ui4		block_start_index;  // block relative
+	ui4		block_end_index;  // block relative
 	si4		number_of_block_parameters;
 	ui4		block_parameter_map[CMP_PF_PARAMETER_FLAG_BITS_m11];
 	si4		minimum_sample_value;  // found on compression, stored for general use (and MBE, if used)
@@ -2562,12 +2591,6 @@ typedef struct {
 	void			*minimum_range;  // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void			*symbol_map;  // used by RED/PRED encode & decode (ui1 * or ui1 **)
 } CMP_PARAMETERS_m11;
-
-typedef struct NODE_STRUCT_m11 {
-	si4                     val;
-	ui4                     count;
-	struct NODE_STRUCT_m11	*prev, *next;
-} CMP_NODE_m11;
 
 typedef struct CMP_PROCESSING_STRUCT_m11 {
 	CMP_DIRECTIVES_m11   		directives;
