@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 {
 	extern GLOBALS_m11		*globals_m11;
 	TERN_m11			show_records, show_file_processing_structs, show_time_slices;
-	si1				out_dir[FULL_FILE_NAME_BYTES_m11], out_file[FULL_FILE_NAME_BYTES_m11], *password;
+	si1				out_dir[FULL_FILE_NAME_BYTES_m11], out_file[FULL_FILE_NAME_BYTES_m11], *password, *end_ptr;
 	si4				list_len, seg_idx, n_segs;
 	ui8				flags;
 	si8				i, j, k, n_samps;
@@ -71,22 +71,25 @@ int main(int argc, char *argv[])
 
 	// start time
 	if (argc >= 4) {
-		if (*argv[3]) {  // LINUX strtol() returns zero for a zero-length string and does not set errno for EINVAL
-			if ((strcmp(argv[3], "start")) == 0)
+		if (*argv[3]) {
+			if ((strcmp(argv[3], "start")) == 0) {
 				slice.start_time = BEGINNING_OF_TIME_m11;
-			else
-				slice.start_time = (si8) strtol(argv[3], NULL, 10);
+			} else {
+				slice.start_time = (si8) strtol(argv[3], &end_ptr, 10);
+				if (end_ptr == argv[3])
+					slice.start_time = UUTC_NO_ENTRY_m11;
+			}
 		}
 	}
 
 	// end time
 	if (argc >= 5) {
-		if (*argv[4]) {  // LINUX strtol() returns zero for a zero-length string and does not set errno for EINVAL
-			if ((strcmp(argv[4], "end")) == 0)
+		if (*argv[4]) {
+			if ((strcmp(argv[4], "end")) == 0) {
 				slice.end_time = END_OF_TIME_m11;
-			else {
-				slice.end_time = (si8) strtol(argv[4], NULL, 10);
-				if (slice.end_time == 0)
+			} else {
+				slice.end_time = (si8) strtol(argv[4], &end_ptr, 10);
+				if (end_ptr == argv[4])
 					slice.end_time = UUTC_NO_ENTRY_m11;
 			}
 		}
@@ -94,11 +97,14 @@ int main(int argc, char *argv[])
 
 	// start sample number
 	if (argc >= 6) {
-		if (*argv[5]) {  // LINUX strtol() returns zero for a zero-length string and does not set errno for EINVAL
-			if ((strcmp(argv[5], "start")) == 0)
+		if (*argv[5]) {
+			if ((strcmp(argv[5], "start")) == 0) {
 				slice.start_sample_number = BEGINNING_OF_SAMPLE_NUMBERS_m11;
-			else
-				slice.start_sample_number = (si8) strtol(argv[5], NULL, 10);
+			} else {
+				slice.start_sample_number = (si8) strtol(argv[5], &end_ptr, 10);
+				if (end_ptr == argv[5])
+					slice.start_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
+			}
 		}
 	}
 
@@ -108,9 +114,9 @@ int main(int argc, char *argv[])
 			if ((strcmp(argv[6], "end")) == 0)
 				slice.end_sample_number = END_OF_SAMPLE_NUMBERS_m11;
 			else {
-				slice.end_sample_number = (si8) strtol(argv[6], NULL, 10);
-				if (slice.end_sample_number == 0)
-					slice.end_time = SAMPLE_NUMBER_NO_ENTRY_m11;
+				slice.end_sample_number = (si8) strtol(argv[6], &end_ptr, 10);
+				if (end_ptr == argv[6])
+					slice.end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m11;
 			}
 		}
 	}
@@ -131,7 +137,7 @@ int main(int argc, char *argv[])
 	}
 
 	// read session
-	flags = LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_SLICE_ALL_RECORDS_m11;
+	flags = LH_INCLUDE_TIME_SERIES_CHANNELS_m11 | LH_READ_SLICE_SEGMENT_DATA_m11 | LH_READ_SLICE_ALL_RECORDS_m11 | LH_NO_CPS_CACHING_m11;  // no caching more efficient for single read (with VDS compression)
 	// show_level_header_flags_m11(flags);
 	sess = read_session_m11(NULL, &slice, (void *) file_list, list_len, flags, password);
 	if (sess == NULL) {
