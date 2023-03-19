@@ -5389,7 +5389,7 @@ TERN_m11	initialize_globals_m11(void)
 
 	pthread_mutex_init_m11(&globals_m11_mutex, NULL);
 	pthread_mutex_lock_m11(&globals_m11_mutex);
-
+	
 	// globals themselves
 	if (globals_m11 == NULL) {
 		#ifdef MATLAB_PERSISTENT_m11
@@ -5593,7 +5593,7 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 	TERN_m11			return_value = TRUE_m11;
 	si1				command[FULL_FILE_NAME_BYTES_m11];
 
-#ifdef FN_DEBUG_m11  // don't use MED print functions until UTF8 tablesinitialized
+#ifdef FN_DEBUG_m11  // don't use MED print functions until UTF8 tables initialized
 	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
@@ -7513,108 +7513,26 @@ TERN_m11	path_from_root_m11(si1 *path, si1 *root_path)
 		sprintf_m11(root_path, "%s/%s", base_dir, c);  // Note c may overlap root_path so use sprintf_m11()
 	else
 		strcpy(root_path, base_dir);
-
-	return(TRUE_m11);
 #endif
 	
 #ifdef WINDOWS_m11
-	if (root_path != NULL && root_path != path)
-		strcpy(root_path, path);
-		
-	// remove terminal '\' from passed path if present
-	if (root_path != NULL) {
-		len = strlen(path);
-		if (len)
-			if (root_path[len - 1] == '\\' || root_path[len - 1] == '/')
-				root_path[--len] = 0;
-	}
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m11];
+	DWORD	ret_val;
 	
-	if (*path == '\\' || *path == '/') {
-		if (root_path != NULL) {  // add the "C:"
-			len = strlen(path);
-			memmove(root_path + 2, path, len + 1);
-			// get current drive letter
-			_getcwd(base_dir, FULL_FILE_NAME_BYTES_m11);
-			root_path[0] = base_dir[0];
-			// capitalize
-			if (root_path[0] >= 'a' && root_path[0] <= 'z')
-				root_path[0] -= 32;
-			root_path[1] = ':';
-			// change non standard delimiters
-			if (*path == '/')
-				STR_replace_char_m11('/', '\\', root_path);
-		}
-		return(TRUE_m11);
-	}
-	
-	// awkward but coeorces AND order
-	// any "letter" drive can be considered path from root in Windows - no mount directory equivalent.
-	if ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) {
-		if (path[1] == ':') {
-			if (path[2] == '\\' || path[2] == '/') {
-				if (root_path != NULL) {
-					// capitalize
-					if (root_path[0] >= 'a' && root_path[0] <= 'z')
-						root_path[0] -= 32;
-					// change non standard delimiters
-					if (root_path[2] == '/')
-						STR_replace_char_m11('/', '\\', path);
-				}
-				return(TRUE_m11);
-			}
-		}
-	}
-	
-	if (root_path == NULL)
+
+	len = (si8) GetFullPathNameA(path, (DWORD) FULL_FILE_NAME_BYTES_m11, tmp_path, NULL);
+	if (len == 0)
 		return(FALSE_m11);
-	
-	// change non standard delimiters
-	STR_replace_char_m11('/', '\\', root_path);
-	
-	// get base directory
-	c = root_path;
-	if (*c == '~') {
-		strcpy(base_dir, getenv("HOMEDRIVE"));
-		strcat(base_dir, getenv("HOMEPATH"));
-		++c;
-		if (*c == '\\')
-			++c;
-	} else {
-		getcwd_m11(base_dir, FULL_FILE_NAME_BYTES_m11);
-	}
-	
-	// drop terminal '\' from base_dir if present
-	len2 = strlen(base_dir);
-	if (base_dir[len2 - 1] == '\\') {
-		if (len2 > 3)  // at root: e.g. "C:\"
-			base_dir[--len2] = 0;
-	}
-	
-	// handle "." & ".."
-	while (*c == '.') {
-		if (*(c + 1) == '.') {  // backup base_dir to previous directory
-			c2 = base_dir + len2;
-			while (*--c2 != '\\');
-			if (c2 == (base_dir + 2))  // at root: "C:\"
-				*++c2 = 0;
-			else
-				*c2 = 0;
-			len2 = strlen(base_dir);
-			++c;
-		}
-		if (*(c + 1) == '\\')
-			c += 2;
+	if (root_path == NULL) {  // just return T/F
+		if (strncmp(path, tmp_path, len))
+			return(FALSE_m11);
 		else
-			break;  // ".filename" (invisible) form
+			return(TRUE_m11);
 	}
-	
-	if (*c)
-		sprintf_m11(root_path, "%s\\%s", base_dir, c);  // Note c may overlap root_path so use sprintf_m11()
-	else
-		strcpy(root_path, base_dir);
-	
-	return(TRUE_m11);
+	strcpy(root_path, tmp_path);
 #endif
+
+	return(TRUE_m11);
 }
 
 
@@ -7863,10 +7781,6 @@ si4	pthread_mutex_destroy_m11(pthread_mutex_t_m11 *mutex)
 {
 	si4	ret_val;
 	
-#ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
-#endif
-
 #if defined MACOS_m11 || defined LINUX_m11
 	ret_val = pthread_mutex_destroy(mutex);
 #endif
@@ -7885,10 +7799,6 @@ si4	pthread_mutex_init_m11(pthread_mutex_t_m11 *mutex, pthread_mutexattr_t_m11 *
 {
 	si4	ret_val;
 	
-#ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
-#endif
-
 #if defined MACOS_m11 || defined LINUX_m11
 	ret_val = pthread_mutex_init(mutex, attr);
 #endif
@@ -7910,10 +7820,6 @@ si4	pthread_mutex_lock_m11(pthread_mutex_t_m11 *mutex)
 {
 	si4	ret_val;
 	
-#ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
-#endif
-
 #if defined MACOS_m11 || defined LINUX_m11
 	ret_val = pthread_mutex_lock(mutex);
 #endif
@@ -7935,10 +7841,6 @@ si4	pthread_mutex_unlock_m11(pthread_mutex_t_m11 *mutex)
 {
 	si4	ret_val;
 	
-#ifdef FN_DEBUG_m11
-	message_m11("%s()\n", __FUNCTION__);
-#endif
-
 #if defined MACOS_m11 || defined LINUX_m11
 	ret_val = pthread_mutex_unlock(mutex);
 #endif
@@ -8974,8 +8876,8 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 						first_cached_block_idx = 0;
 					first_cached_block = cached_blocks[first_cached_block_idx].block_number;
 					cached_block_cnt = (last_cached_block - first_cached_block) + 1;
-					// full request is cached
-					if (first_cached_block == start_block && last_cached_block == end_block) {  // full request is cached
+					// full request is cached (don't update cache until there's at least one uncached block)
+					if (first_cached_block <= start_block && last_cached_block >= end_block) {  // full request is cached
 						cache_offset = cached_blocks[first_cached_block_idx].cache_offset + (local_start_idx - tsi[start_block].start_sample_number);
 						cps->decompressed_ptr = cps->decompressed_data = cps->parameters.cache + cache_offset;
 						n_samps = (local_end_idx - local_start_idx) + 1;
@@ -9013,6 +8915,7 @@ si8     read_time_series_data_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice)
 						cached_blocks[i].block_samples = 0;
 					for (i = last_cached_block_idx + 1; i < n_blocks; ++i)
 						cached_blocks[i].block_samples = 0;
+					// full request is cached (cache updated here)
 				} else {
 					cached_block_cnt = 0;  // none of requested blocks in requested range
 				}
