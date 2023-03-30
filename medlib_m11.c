@@ -4745,7 +4745,7 @@ CHANNEL_m11	*get_active_channel_m11(SESSION_m11 *sess, si1 chan_type)
 		}
 	}
 	
-	warning_message_m11("%s((): no active channels\n", __FUNCTION__);
+	warning_message_m11("%s(): no active channels\n", __FUNCTION__);
 	
 	return(NULL);
 }
@@ -7292,7 +7292,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m11;
 		}
 	}
-
+	
 	// sort channels
 	sort_channels_by_acq_num_m11(sess);
 	
@@ -7780,7 +7780,7 @@ inline
 si4	pthread_mutex_destroy_m11(pthread_mutex_t_m11 *mutex)
 {
 	si4	ret_val;
-	
+		
 #if defined MACOS_m11 || defined LINUX_m11
 	ret_val = pthread_mutex_destroy(mutex);
 #endif
@@ -12191,7 +12191,6 @@ sf8	win_uutc_to_DATE_m11(si8 uutc)
 
 void	windify_file_paths_m11(si1 *target, si1 *source)
 {
-	TERN_m11	match_made = FALSE_m11;
 	si1		*c1, *c2;
 
 #ifdef FN_DEBUG_m11
@@ -12206,35 +12205,32 @@ void	windify_file_paths_m11(si1 *target, si1 *source)
 	else if (target != source)
 		strcpy(target, source);
 
-	// Replace all '/' in string except if preceded by "http or "HTTP", including those not part of a path (not common & not the end of the world)
-	// Note: "<white space>\" == "C:\" so don't need to handle that separately
+	// Replace all '/' in string except if escaped ("\/" -> note if in string literal, you have to escape the escae "\\/"), or part of "://"
 
-	// try with "http"
-	c1 = target;
-	while ((c2 = STR_match_start_m11("http", c1)) != NULL) {
-		*c2 = 0;
-		STR_replace_char_m11('/', '\\', c1);
-		*c2 = 'h';
-		while (*c2 && *c2 != ' ')
+	c1 = c2 = target;
+	while (*c2) {
+		if (*c2 == '\\') {
+			if (*(c2 + 1) == '/') {  // unescape forward slash
+				*c1++ = '/';
+				c2 += 2;
+				continue;
+			}
+		} else if (*c2 == ':') {
+			if (*(c2 + 1) == '/') {  // leave "http://" etc. alone
+				if (*(c2 + 2) == '/') {
+					while (*c2 && *c2 != ' ')
+						*c1++ = *c2++;
+					continue;
+				}
+			}
+		} else if (*c2 == '/') {  // replace all other '/' with '\'
+			*c1++ = '\\';
 			++c2;
-		c1 = c2;
-		match_made = TRUE_m11;
+			continue;
+		}
+		*c1++ = *c2++;
 	}
-	if (match_made == TRUE_m11) {
-		STR_replace_char_m11('/', '\\', c1);
-		return;
-	}
-	
-	// try with "HTTP"
-	while ((c2 = STR_match_start_m11("HTTP", c1)) != NULL) {
-		*c2 = 0;
-		STR_replace_char_m11('/', '\\', c1);
-		*c2 = 'H';
-		while (*c2 && *c2 != ' ')
-			++c2;
-		c1 = c2;
-	}
-	STR_replace_char_m11('/', '\\', c1);
+	*c1 = 0;
 
 	return;
 }
