@@ -490,6 +490,16 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
+	
+	// nothing passed - see if we can use global reference channel (can happen if no records read on open)
+	if (ri_fps == NULL && rd_fps == NULL && chan == NULL) {
+		if (globals_m11->reference_channel == NULL) {
+			error_message_m11("%s(): no records or channel passed or found\n", __FUNCTION__);
+			return(NULL);
+		} else {
+			chan = globals_m11->reference_channel;
+		}
+	}
 
 	// use Sgmt records
 	if (ri_fps != NULL) {  // assume rd_fps != NULL
@@ -540,7 +550,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 	}
 	
 	// use metadata files (much less efficient)
-	else if (chan != NULL) {  // ri_fps == NULL
+	else {  // ri_fps == NULL
 		seg_list = generate_file_list_m11(NULL, &n_segs, chan->path, NULL, "?isd", GFL_FULL_PATH_m11);
 		globals_m11->number_of_session_segments = n_segs;
 		
@@ -589,11 +599,6 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		}
 	}
 	
-	else {  // ri_fps == NULL && chan == NULL
-		error_message_m11("%s(): no records or channel passed\n", __FUNCTION__);
-		return(NULL);
-	}
-			
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
@@ -2795,6 +2800,16 @@ void	extract_path_parts_m11(si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
+	// handle bad calls
+	if (full_file_name == NULL) {
+		warning_message_m11("%s(): full_file_name is NULL => returning\n", __FUNCTION__);
+		return;
+	}
+	if (*full_file_name == 0) {
+		warning_message_m11("%s(): full_file_name is empty => returning\n", __FUNCTION__);
+		return;
+	}
+		
 	// get path from root
 	path_from_root_m11(full_file_name, temp_full_file_name);
 
