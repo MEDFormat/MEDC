@@ -97,9 +97,12 @@
 #include "medlib_m11.h"
 #include "medrec_m11.h"
 
+
 // Globals
-GLOBALS_m11		*globals_m11 = NULL;
-pthread_mutex_t_m11	globals_m11_mutex;
+GLOBALS_m11		**globals_list_m11 = NULL;
+volatile si4		globals_list_len_m11 = 0;
+pthread_mutex_t_m11	globals_list_mutex_m11;
+GLOBAL_TABLES_m11	*global_tables_m11;
 
 
 
@@ -330,7 +333,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 					if (*n_contigua) {
 						contiguon = *contigua + *n_contigua - 1;
 						contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;
-						contiguon->end_segment_number = j + 1;
+						contiguon->end_segment_number = (si4) j + 1;
 						if (k) {
 							contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;
 							last_block_samples = tsi[k].start_sample_number - tsi[k - 1].start_sample_number;
@@ -339,7 +342,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 						} else {  // discontinuity on segment transition
 							contiguon->end_sample_number = last_segment_end_sample_number;
 							contiguon->end_time = last_segment_end_time;
-							contiguon->end_segment_number = last_segment_number;
+							contiguon->end_segment_number = (si4) last_segment_number;
 						}
 					}
 					// open new contiguon
@@ -350,7 +353,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 					++(*n_contigua);
 					contiguon->start_sample_number = tsi[k].start_sample_number + absolute_numbering_offset;
 					contiguon->start_time = tsi[k].start_time;
-					contiguon->start_segment_number = j + 1;
+					contiguon->start_segment_number = (si4) j + 1;
 
 					force_discont = FALSE_m11;
 				}
@@ -363,7 +366,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 		// close final contiguon
 		contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;  // k == next index of last set of indices
 		contiguon->end_time = tsi[k].start_time - 1;  // next index start time
-		contiguon->end_segment_number = j;
+		contiguon->end_segment_number = (si4) j;
 
 	} else {  // LH_VIDEO_CHANNEL_m11
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
@@ -411,8 +414,9 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 				if (vi[k].file_offset < 0 || force_discont == TRUE_m11) {
 					// close last contiguon
 					if (*n_contigua) {
+						contiguon = *contigua + *n_contigua - 1;
 						contiguon->end_frame_number = ((si8) vi[k].start_frame_number + absolute_numbering_offset) - 1;
-						contiguon->end_segment_number = j + 1;
+						contiguon->end_segment_number = (si4) j + 1;
 						// end time
 						if (k) {
 							last_block_frames = vi[k].start_frame_number - vi[k - 1].start_frame_number;
@@ -421,7 +425,7 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 						} else {  // discontinuity on segment transition
 							contiguon->end_frame_number = last_segment_end_frame_number;
 							contiguon->end_time = last_segment_end_time;
-							contiguon->end_segment_number = last_segment_number;
+							contiguon->end_segment_number = (si4) last_segment_number;
 						}
 					}
 					// open new contiguon
@@ -432,20 +436,20 @@ si8	build_contigua_m11(LEVEL_HEADER_m11 *level_header)
 					++(*n_contigua);
 					contiguon->start_frame_number = vi[k].start_frame_number + absolute_numbering_offset;
 					contiguon->start_time = vi[k].start_time;
-					contiguon->start_segment_number = j + 1;
+					contiguon->start_segment_number = (si4) j + 1;
 					
 					force_discont = FALSE_m11;
 				}
 			}
 			last_segment_end_frame_number = (vi[k].start_frame_number + absolute_numbering_offset) - 1;
 			last_segment_end_time = vi[k].start_time - 1;
-			last_segment_number = j + 1;
+			last_segment_number = (si4) j + 1;
 		}
 		
 		// close final contiguon
 		contiguon->end_frame_number = ((si8) vi[k].start_frame_number + absolute_numbering_offset) - 1;  // k == next index of last set of indices
 		contiguon->end_time = vi[k].start_time - 1;  // next index start time
-		contiguon->end_segment_number = j;
+		contiguon->end_segment_number = (si4) j;
 	}
 	
 	if (*n_contigua == 0) {
@@ -480,8 +484,8 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 {
 	TERN_m11			seek_mode;
 	si1				**seg_list, *metadata_ext, tmp_str[FULL_FILE_NAME_BYTES_m11], seg_name[SEGMENT_BASE_FILE_NAME_BYTES_m11];
-	si4				i, n_segs;
-	si8				file_offset, data_len, n_recs, seek_data_size;
+	si4				n_segs;
+	si8				i, file_offset, data_len, n_recs, seek_data_size;
 	const si8			SEEK_THRESHOLD = 10;  // this factor is a guess, for now
 	FILE_PROCESSING_STRUCT_m11	*md_fps;
 	RECORD_INDEX_m11		*ri;
@@ -2073,7 +2077,7 @@ void	condition_timezone_info_m11(TIMEZONE_INFO_m11 *tz_info)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	if (globals_m11->timezone_table == NULL)
+	if (global_tables_m11->timezone_table == NULL)
 		initialize_timezone_tables_m11();
 
 	// Country: at this time there are no 2 or 3 letter country names => user probably entered acronym
@@ -2109,7 +2113,7 @@ void	condition_timezone_info_m11(TIMEZONE_INFO_m11 *tz_info)
 	STR_to_upper_m11(tz_info->daylight_timezone_acronym);
 	
 	// check country aliases
-	tz_aliases_table = globals_m11->country_aliases_table;
+	tz_aliases_table = global_tables_m11->country_aliases_table;
 	
 	if (*tz_info->country) {
 		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m11; ++i) {
@@ -2121,7 +2125,7 @@ void	condition_timezone_info_m11(TIMEZONE_INFO_m11 *tz_info)
 	}
 	
 	// check country acronyms
-	tz_aliases_table = globals_m11->country_acronym_aliases_table;
+	tz_aliases_table = global_tables_m11->country_acronym_aliases_table;
 	
 	if (*tz_info->country_acronym_2_letter) {
 		for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11; ++i) {
@@ -2296,7 +2300,7 @@ TERN_m11	decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	
 	// time series encryption global
 	globals_m11->time_series_data_encryption_level = fps->metadata->section_1.time_series_data_encryption_level;
-	
+		
 	// section 2 decryption
 	if (fps->metadata->section_1.section_2_encryption_level > NO_ENCRYPTION_m11) {  // natively encrypted and currently encrypted
 		if (pwd->access_level >= fps->metadata->section_1.section_2_encryption_level) {
@@ -2361,7 +2365,7 @@ TERN_m11	decrypt_metadata_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		globals_m11->daylight_time_end_code.value = section_3->daylight_time_end_code.value;
 		globals_m11->time_constants_set = TRUE_m11;
 	}
-	
+
 	return(TRUE_m11);
 }
 
@@ -2498,7 +2502,7 @@ TERN_m11     decrypt_time_series_data_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 			encryption_blocks = encryptable_blocks;
 		} else {
 			encryption_bytes = bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m11 + ENCRYPTION_BLOCK_BYTES_m11;
-			encryption_blocks = ((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m11) + 1;
+			encryption_blocks = (si4) ((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m11) + 1;
 			if (encryptable_blocks < encryption_blocks)
 				encryption_blocks = encryptable_blocks;
 		}
@@ -3549,7 +3553,7 @@ FIND_MDF_SEG_LEVEL_m11:
 #ifdef WINDOWS_m11
 si1	*find_metadata_file_m11(si1 *path, si1 *md_path)
 {
-	si1			*name, *c;
+	si1			*name;
 	ui4			code;
 	size_t			len;
 	WIN32_FIND_DATAA 	ffd;
@@ -3938,120 +3942,199 @@ void	free_channel_m11(CHANNEL_m11 *channel, TERN_m11 free_channel_structure)
 }
 
 
+void	free_global_tables_m11(void)
+{
+	if (global_tables_m11 == NULL)
+		return;
+	
+	if (global_tables_m11->timezone_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->timezone_table);
+	#else
+		free((void *) global_tables_m11->timezone_table);
+	#endif
+		pthread_mutex_destroy_m11(&global_tables_m11->TZ_mutex);
+	}
+	
+	if (global_tables_m11->country_aliases_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->country_aliases_table);
+	#else
+		free((void *) global_tables_m11->country_aliases_table);
+	#endif
+	}
+	
+	if (global_tables_m11->country_acronym_aliases_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->country_acronym_aliases_table);
+	#else
+		free((void *) global_tables_m11->country_acronym_aliases_table);
+	#endif
+	}
+	
+	if (global_tables_m11->CRC_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->CRC_table);
+	#else
+		free((void *) global_tables_m11->CRC_table);
+	#endif
+		pthread_mutex_destroy_m11(&global_tables_m11->CRC_mutex);
+	}
+	
+	if (global_tables_m11->AES_sbox_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->AES_sbox_table);
+	#else
+		free((void *) global_tables_m11->AES_sbox_table);
+	#endif
+		pthread_mutex_destroy_m11(&global_tables_m11->AES_mutex);
+	}
+	
+	if (global_tables_m11->AES_rsbox_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->AES_rsbox_table);
+	#else
+		free((void *) global_tables_m11->AES_rsbox_table);
+	#endif
+	}
+	
+	if (global_tables_m11->AES_rcon_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->AES_rcon_table);
+	#else
+		free((void *) global_tables_m11->AES_rcon_table);
+	#endif
+	}
+	
+	if (global_tables_m11->SHA_h0_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->SHA_h0_table);
+	#else
+		free((void *) global_tables_m11->SHA_h0_table);
+	#endif
+		pthread_mutex_destroy_m11(&global_tables_m11->SHA_mutex);
+	}
+	
+	if (global_tables_m11->SHA_k_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->SHA_k_table);
+	#else
+		free((void *) global_tables_m11->SHA_k_table);
+	#endif
+	}
+
+	if (global_tables_m11->UTF8_offsets_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->UTF8_offsets_table);
+	#else
+		free((void *) global_tables_m11->UTF8_offsets_table);
+	#endif
+		pthread_mutex_destroy_m11(&global_tables_m11->UTF8_mutex);
+	}
+
+	if (global_tables_m11->UTF8_trailing_bytes_table != NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) global_tables_m11->UTF8_trailing_bytes_table);
+	#else
+		free((void *) global_tables_m11->UTF8_trailing_bytes_table);
+	#endif
+	}
+
+	
+#ifdef MATLAB_PERSISTENT_m11
+	mxFree((void *) global_tables_m11);
+#else
+	free((void *) global_tables_m11);
+#endif
+	global_tables_m11 = NULL;
+	
+	return;
+}
+
+
 void    free_globals_m11(TERN_m11 cleanup_for_exit)
 {
+	si4		i;
+	GLOBALS_m11	*globals;
+	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m11 == NULL)
+	globals = globals_m11;
+	if (globals == NULL)
 		return;
-
-	pthread_mutex_lock_m11(&globals_m11_mutex);
 	
 	if (cleanup_for_exit == TRUE_m11) {
 		si1	command[FULL_FILE_NAME_BYTES_m11];
 
 		#if defined MACOS_m11 || defined LINUX_m11
-		sprintf_m11(command, "rm -f %s", globals_m11->temp_file);
+		sprintf_m11(command, "rm -f %s", globals->temp_file);
 		#endif
 		#ifdef WINDOWS_m11
 		win_cleanup_m11();
-		sprintf_m11(command, "del %s", globals_m11->temp_file);
+		sprintf_m11(command, "del %s", globals->temp_file);
 		#endif
 		system_m11(command, TRUE_m11, __FUNCTION__, RETURN_ON_FAIL_m11 | SUPPRESS_OUTPUT_m11);
 	}
 	
-	if (globals_m11->record_filters != NULL)
-		free_m11((void *) globals_m11->record_filters, __FUNCTION__);
+	if (globals->record_filters != NULL)
+		free_m11((void *) globals->record_filters, __FUNCTION__);
 		// often statically allocated, so can't use regular free()
 		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m11, REC_Note_TYPE_CODE_m11, NO_TYPE_CODE_m11 };
 		// globals_m11->record_filters = rec_filts;
-		
-	if (globals_m11->timezone_table != NULL)
-		free_m11((void *) globals_m11->timezone_table, __FUNCTION__);
-	
-	if (globals_m11->country_aliases_table != NULL)
-		free_m11((void *) globals_m11->country_aliases_table, __FUNCTION__);
-	
-	if (globals_m11->country_acronym_aliases_table != NULL)
-		free_m11((void *) globals_m11->country_acronym_aliases_table, __FUNCTION__);
-	
-	if (globals_m11->CRC_table != NULL)
-		free_m11((void *) globals_m11->CRC_table, __FUNCTION__);
-	
-	if (globals_m11->AES_sbox_table != NULL)
-		free_m11((void *) globals_m11->AES_sbox_table, __FUNCTION__);
-	
-	if (globals_m11->AES_rsbox_table != NULL)
-		free_m11((void *) globals_m11->AES_rsbox_table, __FUNCTION__);
-	
-	if (globals_m11->AES_rcon_table != NULL)
-		free_m11((void *) globals_m11->AES_rcon_table, __FUNCTION__);
-	
-	if (globals_m11->SHA_h0_table != NULL)
-		free_m11((void *) globals_m11->SHA_h0_table, __FUNCTION__);
-	
-	if (globals_m11->SHA_k_table != NULL)
-		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__);
-	
-	if (globals_m11->behavior_stack != NULL)
-		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
+			
+	if (globals->behavior_stack != NULL)
+		free_m11((void *) globals->behavior_stack, __FUNCTION__);
 
 #ifdef MATLAB_PERSISTENT_m11
-	if (globals_m11->AT_nodes != NULL) {
+	if (globals->AT_nodes != NULL) {
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
 		#endif
-		mxFree((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
+		mxFree((void *) globals->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
-	
-	// UTF8 tables are not allocted with AT functions
-	if (globals_m11->UTF8_offsets_table != NULL)
-		mxFree((void *) globals_m11->UTF8_offsets_table);
-	if (globals_m11->UTF8_trailing_bytes_table != NULL)
-		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);
-	
+		
 	// destroy mutices
-	pthread_mutex_destroy_m11(&globals_m11->TZ_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->CRC_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->AES_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->SHA_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->UTF8_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->behavior_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->AT_mutex);
+	pthread_mutex_destroy_m11(&globals->behavior_mutex);
+	pthread_mutex_destroy_m11(&globals->AT_mutex);
 	
-	mxFree((void *) globals_m11);
+	mxFree((void *) globals);
 #else
 	if (globals_m11->AT_nodes != NULL) {
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
 		#endif
-		free((void *) globals_m11->AT_nodes);  // AT nodes are not allocted with AT functions
+		free((void *) globals->AT_nodes);  // AT nodes are not allocted with AT functions
 	}
-	pthread_mutex_destroy_m11(&globals_m11->AT_mutex);
-
-	// UTF8 tables are not allocted with AT functions
-	if (globals_m11->UTF8_offsets_table != NULL)
-		free((void *) globals_m11->UTF8_offsets_table);
-	if (globals_m11->UTF8_trailing_bytes_table != NULL)
-		free((void *) globals_m11->UTF8_trailing_bytes_table);
 	
 	// destroy mutices
-	pthread_mutex_destroy_m11(&globals_m11->TZ_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->CRC_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->AES_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->SHA_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->UTF8_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->behavior_mutex);
-	pthread_mutex_destroy_m11(&globals_m11->AT_mutex);
+	pthread_mutex_destroy_m11(&globals->behavior_mutex);
+	pthread_mutex_destroy_m11(&globals->AT_mutex);
 	
-	free((void *) globals_m11);
+	free((void *) globals);
 #endif
-	globals_m11 = NULL;
 
-	pthread_mutex_unlock_m11(&globals_m11_mutex);
-	pthread_mutex_destroy_m11(&globals_m11_mutex);
+	// remove current globals from global list
+	pthread_mutex_lock_m11(&globals_list_mutex_m11);
+	for (i = 0; i < globals_list_len_m11; ++i)
+		if (globals_list_m11[i] == globals)
+			break;
+	for (++i; i < globals_list_len_m11; ++i)
+		globals_list_m11[i - 1] = globals_list_m11[i];
+	if (--globals_list_len_m11 == 0) {
+	#ifdef MATLAB_PERSISTENT_m11
+		mxFree((void *) globals_list_m11);
+	#else
+		free((void *) globals_list_m11);
+	#endif
+		globals_list_m11 = NULL;
+		pthread_mutex_unlock_m11(&globals_list_mutex_m11);
+		pthread_mutex_destroy_m11(&globals_list_mutex_m11);
+		free_global_tables_m11();  // if no remaining globals, free tables
+	} else {
+		pthread_mutex_unlock_m11(&globals_list_mutex_m11);
+	}
 
 	return;
 }
@@ -4323,8 +4406,7 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 	si1		tmp_name[FULL_FILE_NAME_BYTES_m11], tmp_extension[16], tmp_ext[16];
 	si1		**tmp_ptr_ptr;
 	ui4		path_parts;
-	si4		i, j, ret_val, n_in_files, *n_out_files;
-	size_t		command_len;
+	si4		i, j, n_in_files, *n_out_files;
 	FILE		*fp;
 	
 #ifdef FN_DEBUG_m11
@@ -4426,7 +4508,8 @@ si1	**generate_file_list_m11(si1 **file_list, si4 *n_files, si1 *enclosing_direc
 		
 	#if defined MACOS_m11 || defined LINUX_m11
 		si1	*command, *tmp_str;
-		
+		si4	ret_val;
+		si8	command_len;
 		
 		command_len = n_in_files * FULL_FILE_NAME_BYTES_m11;
 		if (flags & GFL_INCLUDE_INVISIBLE_FILES_m11)
@@ -4827,7 +4910,7 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	TERN_m11	free_loc_info = FALSE_m11;
 	si1		*command, temp_str[128], *buffer, *pattern, *c;
 	si4		ret_val;
-	si8		sz, len;
+	si8		sz;
 	FILE		*fp;
 	time_t 		curr_time;
 	struct tm 	loc_time;
@@ -4914,6 +4997,8 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	// get timezone acronym from system
 	curr_time = time(NULL);
 #if defined MACOS_m11 || defined LINUX_m11
+	si8	len;
+	
 	localtime_r(&curr_time, &loc_time);
 	len = strlen(loc_time.tm_zone);
 	if (len >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
@@ -4940,6 +5025,41 @@ LOCATION_INFO_m11	*get_location_info_m11(LOCATION_INFO_m11 *loc_info, TERN_m11 s
 	}
 
 	return(loc_info);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+pid_t_m11	getpid_m11(void)
+{
+#if defined MACOS_m11 || defined LINUX_m11
+	return(getpid());
+#endif
+#ifdef WINDOWS_m11
+	return(GetCurrentProcessId());
+#endif
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
+pid_t_m11	gettid_m11(void)
+{
+#ifdef LINUX_m11
+	return(gettid());
+#endif
+	
+#ifdef MACOS_m11
+	__uint64_t	tid;
+	pthread_threadid_np(NULL, &tid);  // NULL for thread returns current thread id
+	return((pid_t_m11) tid);
+#endif
+	
+#ifdef WINDOWS_m11
+	return(GetCurrentThreadId());
+#endif
 }
 
 
@@ -5338,6 +5458,57 @@ si1	*get_session_directory_m11(si1 *session_directory, si1 *MED_file_name, FILE_
 #ifndef WINDOWS_m11  // inline causes linking problem in Windows
 inline
 #endif
+GLOBALS_m11	*globals_pointer_m11(void)
+{
+	si4		i;
+	pid_t_m11	_id;
+	GLOBALS_m11	*globals;
+	
+	
+	// return parent (or only) globals
+	// most common usage, so check first
+	if (globals_list_len_m11 == 1)
+		return(globals_list_m11[0]);
+	
+	// no globals exist
+	if (globals_list_len_m11 == 0)
+		return(NULL);
+	
+	// return thread local globals
+	_id = gettid_m11();
+	
+	// lock list
+	pthread_mutex_lock_m11(&globals_list_mutex_m11);
+
+	for (i = 0; i < globals_list_len_m11; ++i) {
+		if (globals_list_m11[i]->_id == _id) {
+			globals = globals_list_m11[i];
+			pthread_mutex_unlock_m11(&globals_list_mutex_m11); // unlock list
+			return(globals);
+		}
+	}
+
+	// return process globals
+	_id = getpid_m11();
+
+	for (i = 0; i < globals_list_len_m11; ++i) {
+		if (globals_list_m11[i]->_id == _id) {
+			globals = globals_list_m11[i];
+			pthread_mutex_unlock_m11(&globals_list_mutex_m11); // unlock list
+			return(globals);
+		}
+	}
+
+	// unlock list
+	pthread_mutex_unlock_m11(&globals_list_mutex_m11);
+	
+	return(NULL);
+}
+
+
+#ifndef WINDOWS_m11  // inline causes linking problem in Windows
+inline
+#endif
 TERN_m11     include_record_m11(ui4 type_code, si4 *record_filters)
 {
 	si1			mode;
@@ -5396,203 +5567,194 @@ TERN_m11     include_record_m11(ui4 type_code, si4 *record_filters)
 //****************************  MED GLOBALS  ****************************//
 //***********************************************************************//
 
-TERN_m11	initialize_globals_m11(void)
+
+TERN_m11	initialize_global_tables_m11(TERN_m11 initialize_all_tables)
 {
+	TERN_m11	ret_val;
+	
+	
+	ret_val = TRUE_m11;
+	
+	if (global_tables_m11 == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11 = (GLOBAL_TABLES_m11 *) calloc((mwSize) 1, (mwSize) sizeof(GLOBAL_TABLES_m11));
+	#else
+		global_tables_m11 = (GLOBAL_TABLES_m11 *) calloc((size_t) 1, sizeof(GLOBAL_TABLES_m11));
+	#endif
+		if (global_tables_m11 == NULL)
+			ret_val = FALSE_m11;
+	}
+	
+	if (initialize_all_tables == TRUE_m11) {  // otherwise load on demand
+		if (CRC_initialize_tables_m11() == FALSE_m11)
+			ret_val = FALSE_m11;
+		if (AES_initialize_tables_m11() == FALSE_m11)
+			ret_val = FALSE_m11;
+		if (SHA_initialize_tables_m11() == FALSE_m11)
+			ret_val = FALSE_m11;
+		if (UTF8_initialize_tables_m11() == FALSE_m11)
+			ret_val = FALSE_m11;
+		if (initialize_timezone_tables_m11() == FALSE_m11)
+			ret_val = FALSE_m11;
+	}
+
+	return(ret_val);
+}
+
+
+TERN_m11	initialize_globals_m11(TERN_m11 initialize_all_tables)
+{
+	GLOBALS_m11	*globals;
+
 #ifdef FN_DEBUG_m11  // don't use message() until UTF8 tables initialized
 	printf_m11("%s()\n", __FUNCTION__);
 #endif
-
-	pthread_mutex_init_m11(&globals_m11_mutex, NULL);
-	pthread_mutex_lock_m11(&globals_m11_mutex);
 	
-	// globals themselves
-	if (globals_m11 == NULL) {
-		#ifdef MATLAB_PERSISTENT_m11
-		globals_m11 = (GLOBALS_m11 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBALS_m11));
-		#else
-		globals_m11 = (GLOBALS_m11 *) calloc((size_t) 1, sizeof(GLOBALS_m11));
-		#endif
-		if (globals_m11 == NULL) {
-			pthread_mutex_lock_m11(&globals_m11_mutex);
-			return(FALSE_m11);
-		}
-	}
+	// initialize global list mutex
+	if (globals_list_m11 == NULL)
+		pthread_mutex_init_m11(&globals_list_mutex_m11, NULL);
+	pthread_mutex_lock_m11(&globals_list_mutex_m11);  // lock immediately - only this function initializes other global mutices
 
-	// set global mutices
-	pthread_mutex_init_m11(&globals_m11->TZ_mutex, NULL);
-	pthread_mutex_init_m11(&globals_m11->CRC_mutex, NULL);
-	pthread_mutex_init_m11(&globals_m11->AES_mutex, NULL);
-	pthread_mutex_init_m11(&globals_m11->SHA_mutex, NULL);
-	pthread_mutex_init_m11(&globals_m11->UTF8_mutex, NULL);
-	pthread_mutex_init_m11(&globals_m11->behavior_mutex, NULL);
-	pthread_mutex_init_m11(&globals_m11->AT_mutex, NULL);
+	// realloc global list
+	#ifdef MATLAB_PERSISTENT_m11
+	globals_list_m11 = (GLOBALS_m11 **) mxRealloc((void *) globals_list_m11, (mwSize) ((globals_list_len_m11 + 1) * sizeof(GLOBALS_m11 *)));
+	#else
+	globals_list_m11 = (GLOBALS_m11 **) realloc((void *) globals_list_m11, (size_t) ((globals_list_len_m11 + 1) * sizeof(GLOBALS_m11 *)));
+	#endif
+	if (globals_list_m11 == NULL) {
+		pthread_mutex_unlock_m11(&globals_list_mutex_m11);
+		return(FALSE_m11);
+	}
+	#ifdef MATLAB_PERSISTENT_m11
+	globals = (GLOBALS_m11 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBALS_m11));
+	#else
+	globals = (GLOBALS_m11 *) calloc((size_t) 1, sizeof(GLOBALS_m11));
+	#endif
+	if (globals == NULL) {
+		pthread_mutex_unlock_m11(&globals_list_mutex_m11);
+		return(FALSE_m11);
+	}
+	if (globals_list_len_m11 == 0)
+		globals->_id = getpid_m11();    // use process id for first entry, so threads without their own globals can share
+	else
+		globals->_id = gettid_m11();    // use thread id for subsequent entries - thread local
+	globals_list_m11[globals_list_len_m11++] = globals;
+	pthread_mutex_unlock_m11(&globals_list_mutex_m11);
+	
+	// initialize new globals mutices
+	pthread_mutex_init_m11(&globals->behavior_mutex, NULL);
+	pthread_mutex_init_m11(&globals->AT_mutex, NULL);
 
 	// AT (do this as soon as possible)
 #ifdef MATLAB_PERSISTENT_m11
-	if (globals_m11->AT_nodes != NULL) {
-		mxFree((void *) globals_m11->AT_nodes);
-		globals_m11->AT_nodes = NULL;
-	}
-	globals_m11->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m11, (mwSize)sizeof(AT_NODE));
+	globals->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m11, (mwSize) sizeof(AT_NODE));
 #else
-	if (globals_m11->AT_nodes != NULL) {
-		free((void *) globals_m11->AT_nodes);
-		globals_m11->AT_nodes = NULL;
-	}
-	globals_m11->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11, sizeof(AT_NODE));
+	globals->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m11, sizeof(AT_NODE));
 #endif
-	if (globals_m11->AT_nodes == NULL) {
+	if (globals->AT_nodes == NULL) {
 		printf_m11("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
 		exit(-1);
 	}
-	globals_m11->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m11;
-	globals_m11->AT_used_node_count = 0;
+	globals->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m11;
+	globals->AT_used_node_count = 0;
 	
 	// password structure
-	memset((void *) &globals_m11->password_data, 0, sizeof(PASSWORD_DATA_m11));
+	memset((void *) &globals->password_data, 0, sizeof(PASSWORD_DATA_m11));
 	
 	// record filters
-	globals_m11->record_filters = NULL;
+	globals->record_filters = NULL;
 	
 	// current session constants
-	globals_m11->session_UID = UID_NO_ENTRY_m11;
-	*globals_m11->session_directory = 0;
-	globals_m11->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m11;
-	globals_m11->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m11;
-	globals_m11->session_name = NULL;
-	*globals_m11->uh_session_name = 0;
-	*globals_m11->fs_session_name = 0;
-	globals_m11->session_start_time = UUTC_NO_ENTRY_m11;
-	globals_m11->session_end_time = UUTC_NO_ENTRY_m11;
-	globals_m11->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m11;  // == number_of_session_frames
-	globals_m11->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m11;
-	globals_m11->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m11;
-	globals_m11->reference_channel = NULL;
-	*globals_m11->reference_channel_name = 0;
+	globals->session_UID = UID_NO_ENTRY_m11;
+	*globals->session_directory = 0;
+	globals->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m11;
+	globals->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m11;
+	globals->session_name = NULL;
+	*globals->uh_session_name = 0;
+	*globals->fs_session_name = 0;
+	globals->session_start_time = UUTC_NO_ENTRY_m11;
+	globals->session_end_time = UUTC_NO_ENTRY_m11;
+	globals->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m11;  // == number_of_session_frames
+	globals->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m11;
+	globals->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m11;
+	globals->reference_channel = NULL;
+	*globals->reference_channel_name = 0;
 	
 	// active channel constants
-	globals_m11->time_series_frequencies_vary = UNKNOWN_m11;
-	globals_m11->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
-	globals_m11->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
-	globals_m11->minimum_time_series_frequency_channel = NULL;
-	globals_m11->maximum_time_series_frequency_channel = NULL;
-	globals_m11->video_frame_rates_vary = UNKNOWN_m11;;
-	globals_m11->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
-	globals_m11->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
-	globals_m11->minimum_video_frame_rate_channel = NULL;
-	globals_m11->maximum_video_frame_rate_channel = NULL;
+	globals->time_series_frequencies_vary = UNKNOWN_m11;
+	globals->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+	globals->minimum_time_series_frequency_channel = NULL;
+	globals->maximum_time_series_frequency_channel = NULL;
+	globals->video_frame_rates_vary = UNKNOWN_m11;;
+	globals->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+	globals->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+	globals->minimum_video_frame_rate_channel = NULL;
+	globals->maximum_video_frame_rate_channel = NULL;
 
 	// time constants
-	globals_m11->time_constants_set = FALSE_m11;
-	globals_m11->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m11;
-	globals_m11->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m11;
-	globals_m11->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m11;
-	globals_m11->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m11;
-	globals_m11->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m11;
-	globals_m11->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m11;
-	strcpy(globals_m11->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m11);
-	strcpy(globals_m11->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m11);
-	strcpy(globals_m11->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m11);
-	strcpy(globals_m11->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m11);
-	if (globals_m11->timezone_table != NULL) {
-		free((void *) globals_m11->timezone_table);
-		globals_m11->timezone_table = NULL;
-	}
+	globals->time_constants_set = FALSE_m11;
+	globals->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m11;
+	globals->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m11;
+	globals->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m11;
+	globals->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m11;
+	globals->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m11;
+	globals->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m11;
+	strcpy(globals->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m11);
+	strcpy(globals->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m11);
+	strcpy(globals->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m11);
+	strcpy(globals->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m11);
 	
 	// alignment fields
-	globals_m11->universal_header_aligned = UNKNOWN_m11;
-	globals_m11->metadata_section_1_aligned = UNKNOWN_m11;
-	globals_m11->time_series_metadata_section_2_aligned = UNKNOWN_m11;
-	globals_m11->video_metadata_section_2_aligned = UNKNOWN_m11;
-	globals_m11->metadata_section_3_aligned = UNKNOWN_m11;
-	globals_m11->all_metadata_structures_aligned = UNKNOWN_m11;
-	globals_m11->time_series_indices_aligned = UNKNOWN_m11;
-	globals_m11->video_indices_aligned = UNKNOWN_m11;
-	globals_m11->CMP_block_header_aligned = UNKNOWN_m11;
-	globals_m11->CMP_record_header_aligned = UNKNOWN_m11;
-	globals_m11->record_header_aligned = UNKNOWN_m11;
-	globals_m11->record_indices_aligned = UNKNOWN_m11;
-	globals_m11->all_record_structures_aligned = UNKNOWN_m11;
-	globals_m11->all_structures_aligned = UNKNOWN_m11;
+	globals->universal_header_aligned = UNKNOWN_m11;
+	globals->metadata_section_1_aligned = UNKNOWN_m11;
+	globals->time_series_metadata_section_2_aligned = UNKNOWN_m11;
+	globals->video_metadata_section_2_aligned = UNKNOWN_m11;
+	globals->metadata_section_3_aligned = UNKNOWN_m11;
+	globals->all_metadata_structures_aligned = UNKNOWN_m11;
+	globals->time_series_indices_aligned = UNKNOWN_m11;
+	globals->video_indices_aligned = UNKNOWN_m11;
+	globals->CMP_block_header_aligned = UNKNOWN_m11;
+	globals->CMP_record_header_aligned = UNKNOWN_m11;
+	globals->record_header_aligned = UNKNOWN_m11;
+	globals->record_indices_aligned = UNKNOWN_m11;
+	globals->all_record_structures_aligned = UNKNOWN_m11;
+	globals->all_structures_aligned = UNKNOWN_m11;
 	
-	// CRC
-	if (globals_m11->CRC_table != NULL) {
-		free_m11((void *) globals_m11->CRC_table, __FUNCTION__);
-		globals_m11->CRC_table = NULL;
-	}
-	globals_m11->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m11;
-	
-	// AES
-	if (globals_m11->AES_sbox_table != NULL) {
-		free_m11((void *) globals_m11->AES_sbox_table, __FUNCTION__);
-		globals_m11->AES_sbox_table = NULL;
-	}
-	if (globals_m11->AES_rsbox_table != NULL) {
-		free_m11((void *) globals_m11->AES_rsbox_table, __FUNCTION__);
-		globals_m11->AES_rsbox_table = NULL;
-	}
-	if (globals_m11->AES_rcon_table != NULL) {
-		free_m11((void *) globals_m11->AES_rcon_table, __FUNCTION__);
-		globals_m11->AES_rcon_table = NULL;
-	}
-	
-	// SHA
-	if (globals_m11->SHA_h0_table != NULL) {
-		free_m11((void *) globals_m11->SHA_h0_table, __FUNCTION__);
-		globals_m11->SHA_h0_table = NULL;
-	}
-	if (globals_m11->SHA_k_table != NULL) {
-		free_m11((void *) globals_m11->SHA_k_table, __FUNCTION__);
-		globals_m11->SHA_k_table = NULL;
-	}
-	
-	// UTF-8 (UTF8 tables are not allocated with AT functions)
-	if (globals_m11->UTF8_offsets_table != NULL) {
-		#ifdef MATLAB_PERSISTENT_m11
-		mxFree((void *) globals_m11->UTF8_offsets_table);
-		#else
-		free((void *) globals_m11->UTF8_offsets_table);
-		#endif
-		globals_m11->UTF8_offsets_table = NULL;
-	}
-	if (globals_m11->UTF8_trailing_bytes_table != NULL) {
-		#ifdef MATLAB_PERSISTENT_m11
-		mxFree((void *) globals_m11->UTF8_trailing_bytes_table);
-		#else
-		free((void *) globals_m11->UTF8_trailing_bytes_table);
-		#endif
-		globals_m11->UTF8_trailing_bytes_table = NULL;
-	}
-	
-	// error
-	globals_m11->err_code = E_NO_ERR_m11;
-	globals_m11->err_func = NULL;
-	globals_m11->err_line = 0;
+	// errors
+	globals->err_code = E_NO_ERR_m11;
+	globals->err_func = NULL;
+	globals->err_line = 0;
 
 	// miscellaneous
-	globals_m11->verbose = GLOBALS_VERBOSE_DEFAULT_m11;
-	globals_m11->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
-	if (globals_m11->behavior_stack != NULL) {
-		free_m11((void *) globals_m11->behavior_stack, __FUNCTION__);
-		globals_m11->behavior_stack = NULL;
+	globals->verbose = GLOBALS_VERBOSE_DEFAULT_m11;
+	globals->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m11;
+	if (globals->behavior_stack != NULL) {
+		free_m11((void *) globals->behavior_stack, __FUNCTION__);
+		globals->behavior_stack = NULL;
 	}
-	globals_m11->behavior_stack_entries = globals_m11->behavior_stack_size = 0;
+	globals->behavior_stack_entries = globals->behavior_stack_size = 0;
 	#if defined MACOS_m11 || defined LINUX_m11
-	strcpy(globals_m11->temp_dir, "/tmp");
-	strcpy(globals_m11->temp_file, "/tmp/junk");
+	strcpy(globals->temp_dir, "/tmp");
+	strcpy(globals->temp_file, "/tmp/junk");
 	#endif
 	#ifdef WINDOWS_m11
-	GetTempPathA(FULL_FILE_NAME_BYTES_m11, globals_m11->temp_dir);
-	sprintf_m11(globals_m11->temp_file, "%sjunk", globals_m11->temp_dir);
+	GetTempPathA(FULL_FILE_NAME_BYTES_m11, globals->temp_dir);
+	sprintf_m11(globals->temp_file, "%sjunk", globals->temp_dir);
 	#endif
-	globals_m11->level_header_flags = LH_NO_FLAGS_m11;
-	globals_m11->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m11;
+	globals->level_header_flags = LH_NO_FLAGS_m11;
+	globals->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m11;
+
+	// tables
+	if (global_tables_m11 == NULL)
+		initialize_global_tables_m11(initialize_all_tables);
+		
 
 #ifdef AT_DEBUG_m11  // do this at end, because message() will load UTF8 tables
 	printf_m11("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m11, TC_RESET_m11);
 #endif
 
-	pthread_mutex_unlock_m11(&globals_m11_mutex);
+	pthread_mutex_unlock_m11(&globals_list_mutex_m11);
 
 	return(TRUE_m11);
 }
@@ -5605,7 +5767,7 @@ TERN_m11	initialize_globals_m11(void)
 
 TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables)
 {
-	TERN_m11			return_value = TRUE_m11;
+	TERN_m11			ret_val = TRUE_m11;
 	si1				command[FULL_FILE_NAME_BYTES_m11];
 
 #ifdef FN_DEBUG_m11  // don't use MED print functions until UTF8 tables initialized
@@ -5614,16 +5776,16 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 
 	// set up globals
 	if (globals_m11 == NULL) {
-		if (initialize_globals_m11() == FALSE_m11) {
+		if (initialize_globals_m11(initialize_all_tables) == FALSE_m11) {
 			printf_m11("%s(): error initializing globals\n", __FUNCTION__);
 			exit_m11(-1);
 		}
 	}
 
 #if defined FN_DEBUG_m11 || defined AT_DEBUG  // need UTF8 tables for message_m11()
-	if (globals_m11->UTF8_offsets_table == NULL) {
+	if (global_tables_m11->UTF8_offsets_table == NULL) {
 		if (UTF8_initialize_tables_m11() == FALSE_m11)
-			return_value = FALSE_m11;
+			ret_val = FALSE_m11;
 	}
 #endif
 	
@@ -5642,7 +5804,7 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 	// check structure alignments
 	if (check_structure_alignments == TRUE_m11)
 		if (check_all_alignments_m11() == FALSE_m11)
-			return_value = FALSE_m11;
+			ret_val = FALSE_m11;
 	
 	// seed random number generator
 #if defined MACOS_m11 || defined LINUX_m11
@@ -5655,38 +5817,15 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 #if defined WINDOWS_m11 && defined NEED_WIN_SOCKETS_m11
 	// initialize Windows sockets DLL
 	if (win_socket_startup_m11() == FALSE_m11)
-		return_value = FALSE_m11;
+		ret_val = FALSE_m11;
 #endif
 	
 #if defined WINDOWS_m11 && !defined MATLAB_m11
 	// initialize Windows terminal
 	if (win_initialize_terminal_m11() == FALSE_m11)
-		return_value = FALSE_m11;
+		ret_val = FALSE_m11;
 #endif
-	
-	if (initialize_all_tables == TRUE_m11) {
 		
-		if (globals_m11->CRC_table == NULL)
-			if (CRC_initialize_tables_m11() == FALSE_m11)
-				return_value = FALSE_m11;
-		
-		if (globals_m11->UTF8_offsets_table == NULL)
-			if (UTF8_initialize_tables_m11() == FALSE_m11)
-				return_value = FALSE_m11;
-		
-		if (globals_m11->AES_sbox_table == NULL)
-			if (AES_initialize_tables_m11() == FALSE_m11)
-				return_value = FALSE_m11;
-		
-		if (globals_m11->SHA_h0_table == NULL)
-			if (SHA_initialize_tables_m11() == FALSE_m11)
-				return_value = FALSE_m11;
-		
-		if (globals_m11->timezone_table == NULL)
-			if (initialize_timezone_tables_m11() == FALSE_m11)
-				return_value = FALSE_m11;
-	}
-	
 	// clear any residual temp file
 #if defined MACOS_m11 || defined LINUX_m11
 	sprintf_m11(command, "rm -f %s", globals_m11->temp_file);
@@ -5696,7 +5835,7 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 #endif
 	system_m11(command, TRUE_m11, __FUNCTION__, RETURN_ON_FAIL_m11 | SUPPRESS_OUTPUT_m11);
 
-	return(return_value);
+	return(ret_val);
 }
 
 
@@ -5726,36 +5865,52 @@ TERN_m11	initialize_timezone_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	pthread_mutex_lock_m11(&globals_m11->TZ_mutex);
+	if (global_tables_m11->timezone_table != NULL)
+		return(TRUE_m11);
+
+	pthread_mutex_init_m11(&global_tables_m11->TZ_mutex, NULL);
+	pthread_mutex_lock_m11(&global_tables_m11->TZ_mutex);
 	
 	// timezone table
-	if (globals_m11->timezone_table == NULL) {
-		globals_m11->timezone_table = (TIMEZONE_INFO_m11 *) calloc_m11((size_t) TZ_TABLE_ENTRIES_m11, sizeof(TIMEZONE_INFO_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->timezone_table == NULL) {
+#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->timezone_table = (TIMEZONE_INFO_m11 *) mxCalloc((mwSize) TZ_TABLE_ENTRIES_m11, (mwSize) sizeof(TIMEZONE_INFO_m11));
+#else
+		global_tables_m11->timezone_table = (TIMEZONE_INFO_m11 *) calloc((size_t) TZ_TABLE_ENTRIES_m11, sizeof(TIMEZONE_INFO_m11));
+#endif
 		{
 			TIMEZONE_INFO_m11 temp[TZ_TABLE_ENTRIES_m11] = TZ_TABLE_m11;
-			memcpy(globals_m11->timezone_table, temp, TZ_TABLE_ENTRIES_m11 * sizeof(TIMEZONE_INFO_m11));
+			memcpy(global_tables_m11->timezone_table, temp, TZ_TABLE_ENTRIES_m11 * sizeof(TIMEZONE_INFO_m11));
 		}
 	}
 
 	// country aliases
-	if (globals_m11->country_aliases_table == NULL) {
-		globals_m11->country_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc_m11((size_t)TZ_COUNTRY_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->country_aliases_table == NULL) {
+#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->country_aliases_table = (TIMEZONE_ALIAS_m11 *) mxCalloc((mwSize) TZ_COUNTRY_ALIASES_ENTRIES_m11, (mwSize) sizeof(TIMEZONE_ALIAS_m11));
+#else
+		global_tables_m11->country_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc((size_t) TZ_COUNTRY_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11));
+#endif
 		{
 			TIMEZONE_ALIAS_m11 temp[TZ_COUNTRY_ALIASES_ENTRIES_m11] = TZ_COUNTRY_ALIASES_TABLE_m11;
-			memcpy(globals_m11->country_aliases_table, temp, TZ_COUNTRY_ALIASES_ENTRIES_m11 * sizeof(TIMEZONE_ALIAS_m11));
+			memcpy(global_tables_m11->country_aliases_table, temp, TZ_COUNTRY_ALIASES_ENTRIES_m11 * sizeof(TIMEZONE_ALIAS_m11));
 		}
 	}
-	
+
 	// country acronym aliases
-	if (globals_m11->country_acronym_aliases_table == NULL) {
-		globals_m11->country_acronym_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc_m11((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->country_acronym_aliases_table == NULL) {
+#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->country_acronym_aliases_table = (TIMEZONE_ALIAS_m11 *) mxCalloc((mwSize) TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11, (mwSize) sizeof(TIMEZONE_ALIAS_m11));
+#else
+		global_tables_m11->country_acronym_aliases_table = (TIMEZONE_ALIAS_m11 *) calloc((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11, sizeof(TIMEZONE_ALIAS_m11));
+#endif
 		{
 			TIMEZONE_ALIAS_m11 temp[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m11;
-			memcpy(globals_m11->country_acronym_aliases_table, temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11 * sizeof(TIMEZONE_ALIAS_m11));
+			memcpy(global_tables_m11->country_acronym_aliases_table, temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m11 * sizeof(TIMEZONE_ALIAS_m11));
 		}
 	}
-	
-	pthread_mutex_unlock_m11(&globals_m11->TZ_mutex);
+
+	pthread_mutex_unlock_m11(&global_tables_m11->TZ_mutex);
 
 	return(TRUE_m11);
 }
@@ -6023,12 +6178,11 @@ ui4     MED_type_code_from_string_m11(si1 *string)
 		return(NO_FILE_TYPE_CODE_m11);
 	}
 	
-	len = strlen(string);
+	len = (si4) strlen(string);
 	if (len < 5) {
 		if (len != 4)
 			return(NO_FILE_TYPE_CODE_m11);
-	}
-	else {
+	} else {
 		string += (len - 5);
 		if (*string++ != '.')
 			return(NO_FILE_TYPE_CODE_m11);
@@ -8472,7 +8626,7 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
-	
+
 	// open segment
 	open_segment = free_segment = FALSE_m11;
 	if (seg == NULL)
@@ -9632,7 +9786,7 @@ TERN_m11    set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	if (globals_m11->timezone_table == NULL)
+	if (global_tables_m11->timezone_table == NULL)
 		initialize_timezone_tables_m11();
 	
 	// reset
@@ -9643,7 +9797,7 @@ TERN_m11    set_global_time_constants_m11(TIMEZONE_INFO_m11 *timezone_info, si8 
 	
 	// start search
 	n_potential_timezones = TZ_TABLE_ENTRIES_m11;
-	tz_table = globals_m11->timezone_table;
+	tz_table = global_tables_m11->timezone_table;
 	for (i = 0; i < n_potential_timezones; ++i)
 		potential_timezone_entries[i] = i;
 	
@@ -10066,7 +10220,7 @@ void    show_globals_m11(void)
 	printf_m11("\tuh_session_name: %s\n", globals_m11->uh_session_name);  // from session universal headers
 	printf_m11("\tfs_session_name: %s\n", globals_m11->fs_session_name);  // from file system (different if user created channel subset with different name)
 	printf_m11("Number of Session Samples / Frames: ");
-	if (globals_m11->number_of_session_samples == 0)
+	if (globals_m11->number_of_session_samples == SAMPLE_NUMBER_NO_ENTRY_m11)
 		printf_m11("no entry\n");
 	else
 		printf_m11("%ld\n", globals_m11->number_of_session_samples);
@@ -10175,8 +10329,10 @@ void    show_globals_m11(void)
 	
 	printf_m11("\nError\n-------------\n");
 	printf_m11("err_code: %d\n", globals_m11->err_code);
-	printf_m11("err_func: %s\n", globals_m11->err_func);
-	printf_m11("err_line: %s\n", globals_m11->err_line);
+	if (globals_m11->err_code) {
+		printf_m11("err_func: %s\n", globals_m11->err_func);
+		printf_m11("err_line: %s\n", globals_m11->err_line);
+	}
 
 	printf_m11("\nMiscellaneous\n-------------\n");
 	printf_m11("time_series_data_encryption_level: %hhd\n", globals_m11->time_series_data_encryption_level);
@@ -12380,7 +12536,7 @@ void	AES_decrypt_m11(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	if (globals_m11->AES_sbox_table == NULL)  // all tables initialized together
+	if (global_tables_m11->AES_sbox_table == NULL)  // all tables initialized together
 		AES_initialize_tables_m11();
 	
 	if (expanded_key != NULL) {
@@ -12406,7 +12562,7 @@ void	AES_decrypt_m11(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 // NOTE: make sure any terminal unused bytes in key array (password) are zeroed
 void	AES_key_expansion_m11(ui1 *expanded_key, si1 *key)
 {
-	si4	i, j;
+	si4	i, j, *rcon_table;
 	ui1	temp[4], k;
 	
 #ifdef FN_DEBUG_m11
@@ -12417,11 +12573,9 @@ void	AES_key_expansion_m11(ui1 *expanded_key, si1 *key)
 	// x to the power (i - 1) being powers of x (x is denoted as {02}) in the field GF(28)
 	// Note that i starts at 1, not 0).
 
-	if (globals_m11->AES_rcon_table == NULL)
-		if (AES_initialize_tables_m11() == FALSE_m11) {
-			error_message_m11("%s(): error\n", __FUNCTION__);
-			return;
-		}
+	if (global_tables_m11->AES_rcon_table == NULL)
+		AES_initialize_tables_m11();
+	rcon_table = global_tables_m11->AES_rcon_table;
 	
 	// The first round key is the key itself.
 	for (i = j = 0; i < AES_NK_m11; i++, j += 4) {
@@ -12434,9 +12588,8 @@ void	AES_key_expansion_m11(ui1 *expanded_key, si1 *key)
 	// All other round keys are found from the previous round keys.
 	while (i < (AES_NB_m11 * (AES_NR_m11 + 1))) {
 		
-		for (j = 0; j < 4; j++) {
+		for (j = 0; j < 4; j++)
 			temp[j] = expanded_key[(i - 1) * 4 + j];
-		}
 		
 		if (i % AES_NK_m11 == 0) {
 			// This rotates the 4 bytes in a word to the left once.
@@ -12454,7 +12607,7 @@ void	AES_key_expansion_m11(ui1 *expanded_key, si1 *key)
 			temp[2] = (ui1)AES_get_sbox_value_m11(temp[2]);
 			temp[3] = (ui1)AES_get_sbox_value_m11(temp[3]);
 			
-			temp[0] = temp[0] ^ (ui1)globals_m11->AES_rcon_table[i / AES_NK_m11];
+			temp[0] = temp[0] ^ (ui1) rcon_table[i / AES_NK_m11];
 		}
 		else if (AES_NK_m11 > 6 && i % AES_NK_m11 == 4) {
 			// This takes a four-byte input word and applies the S-box
@@ -12482,14 +12635,10 @@ inline
 #endif
 si4	AES_get_sbox_invert_m11(si4 num)
 {
-	if (globals_m11->AES_rsbox_table == NULL) {
-		if (AES_initialize_tables_m11() == FALSE_m11) {
-			error_message_m11("%s(): error\n", __FUNCTION__);
-			return(-1);
-		}
-	}
+	if (global_tables_m11->AES_rsbox_table == NULL)
+		AES_initialize_tables_m11();
 	
-	return(globals_m11->AES_rsbox_table[num]);
+	return(global_tables_m11->AES_rsbox_table[num]);
 }
 
 
@@ -12498,13 +12647,10 @@ inline
 #endif
 si4	AES_get_sbox_value_m11(si4 num)
 {
-	if (globals_m11->AES_sbox_table == NULL)
-		if (AES_initialize_tables_m11() == FALSE_m11) {
-			error_message_m11("%s(): error\n", __FUNCTION__);
-			return(-1);
-		}
+	if (global_tables_m11->AES_sbox_table == NULL)
+		AES_initialize_tables_m11();
 	
-	return(globals_m11->AES_sbox_table[num]);
+	return(global_tables_m11->AES_sbox_table[num]);
 }
 
 
@@ -12514,36 +12660,52 @@ TERN_m11	AES_initialize_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	pthread_mutex_lock_m11(&globals_m11->AES_mutex);
+	if (global_tables_m11->AES_rcon_table != NULL)
+		return(TRUE_m11);
+
+	pthread_mutex_init_m11(&global_tables_m11->AES_mutex, NULL);
+	pthread_mutex_lock_m11(&global_tables_m11->AES_mutex);
 
 	// rcon table
-	if (globals_m11->AES_rcon_table == NULL) {
-		globals_m11->AES_rcon_table = (si4*) calloc_m11((size_t)AES_RCON_ENTRIES_m11, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->AES_rcon_table == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->AES_rcon_table = (si4 *) mxCalloc((mwSize) AES_RCON_ENTRIES_m11, (mwSize) sizeof(si4));
+	#else
+		global_tables_m11->AES_rcon_table = (si4 *) calloc((size_t) AES_RCON_ENTRIES_m11, sizeof(si4));
+	#endif
 		{
 			si4 temp[AES_RCON_ENTRIES_m11] = AES_RCON_m11;
-			memcpy(globals_m11->AES_rcon_table, temp, AES_RCON_ENTRIES_m11 * sizeof(si4));
+			memcpy(global_tables_m11->AES_rcon_table, temp, AES_RCON_ENTRIES_m11 * sizeof(si4));
 		}
 	}
 	
 	// rsbox table
-	if (globals_m11->AES_rsbox_table == NULL) {
-		globals_m11->AES_rsbox_table = (si4*) calloc_m11((size_t)AES_RSBOX_ENTRIES_m11, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->AES_rsbox_table == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->AES_rsbox_table = (si4 *) mxCalloc((mwSize) AES_RSBOX_ENTRIES_m11, (mwSize) sizeof(si4));
+	#else
+		global_tables_m11->AES_rsbox_table = (si4 *) calloc((size_t) AES_RSBOX_ENTRIES_m11, sizeof(si4));
+	#endif
 		{
 			si4 temp[AES_RSBOX_ENTRIES_m11] = AES_RSBOX_m11;
-			memcpy(globals_m11->AES_rsbox_table, temp, AES_RSBOX_ENTRIES_m11 * sizeof(si4));
+			memcpy(global_tables_m11->AES_rsbox_table, temp, AES_RSBOX_ENTRIES_m11 * sizeof(si4));
 		}
 	}
-	
+
 	// sbox table
-	if (globals_m11->AES_sbox_table == NULL) {
-		globals_m11->AES_sbox_table = (si4*) calloc_m11((size_t)AES_SBOX_ENTRIES_m11, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->AES_sbox_table == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->AES_sbox_table = (si4 *) mxCalloc((mwSize) AES_SBOX_ENTRIES_m11, (mwSize) sizeof(si4));
+	#else
+		global_tables_m11->AES_sbox_table = (si4 *) calloc((size_t) AES_SBOX_ENTRIES_m11, sizeof(si4));
+	#endif
 		{
 			si4 temp[AES_SBOX_ENTRIES_m11] = AES_SBOX_m11;
-			memcpy(globals_m11->AES_sbox_table, temp, AES_SBOX_ENTRIES_m11 * sizeof(si4));
+			memcpy(global_tables_m11->AES_sbox_table, temp, AES_SBOX_ENTRIES_m11 * sizeof(si4));
 		}
 	}
-	
-	pthread_mutex_unlock_m11(&globals_m11->AES_mutex);
+
+	pthread_mutex_unlock_m11(&global_tables_m11->AES_mutex);
 
 	return(TRUE_m11);
 }
@@ -13660,7 +13822,7 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		}
 		block_header = cps->block_header;
 	}
-
+	
 	// decrypt (probably done in read_file_m11(), but if not, do here)
 	if (block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m11)
 		CMP_decrypt_m11(fps);
@@ -13964,7 +14126,7 @@ ui1    CMP_get_overflow_bytes_m11(CMP_PROCESSING_STRUCT_m11 *cps, ui4 mode, ui4 
 {
 	ui1					bits_per_samp;
 	ui2					flags;
-	si4					i, val, abs_min, abs_max;
+	si8					i, val, abs_min, abs_max;
 	CMP_RED_MODEL_FIXED_HEADER_m11		*RED_header;
 	CMP_PRED_MODEL_FIXED_HEADER_m11		*PRED_header;
 
@@ -13975,11 +14137,11 @@ ui1    CMP_get_overflow_bytes_m11(CMP_PROCESSING_STRUCT_m11 *cps, ui4 mode, ui4 
 	if (mode == CMP_COMPRESSION_MODE_m11) {  // assumes extrema are known & derivative level is set
 		if (cps->directives.find_overflow_bytes == TRUE_m11) {
 			if (cps->parameters.derivative_level) {
-				abs_min = ABS_m11(cps->parameters.minimum_difference_value);
-				abs_max = ABS_m11(cps->parameters.maximum_difference_value);
-			} else {  // level zero => raw_data
-				abs_min = ABS_m11(cps->parameters.minimum_sample_value);
-				abs_max = ABS_m11(cps->parameters.maximum_sample_value);
+				abs_min = ABS_m11((si8) cps->parameters.minimum_difference_value);   // cannot make 0x80000000 positive as si4, must use si8 here
+				abs_max = ABS_m11((si8) cps->parameters.maximum_difference_value);
+			} else {  // level zero => use raw data
+				abs_min = ABS_m11((si8) cps->parameters.minimum_sample_value);
+				abs_max = ABS_m11((si8) cps->parameters.maximum_sample_value);
 			}
 			val = (abs_min > abs_max) ? abs_min : abs_max;
 			for (bits_per_samp = 1, i = val; i; i >>= 1)
@@ -15253,14 +15415,18 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 	switch (block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m11) {
 		case CMP_BF_RED_ENCODING_MASK_m11:
 			RED_header = (CMP_RED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
-			printf_m11("%sModel: Range Encoded Differences (RED)\n", indent);
+			printf_m11("%sModel: Range Encoded Derivatives (RED)\n", indent);
 			printf_m11("%sNumber of Keysample Bytes: %u\n", indent, RED_header->number_of_keysample_bytes);
 			printf_m11("%sDerivative Level: %hhu\n", indent, RED_header->derivative_level);
 			if (RED_header->derivative_level > 0) {
 				derivs = (si4 *) (cps->parameters.model_region + CMP_RED_MODEL_FIXED_HEADER_BYTES_m11);
-				printf_m11("%sDerivative Initial Values: %d", indent, derivs[0]);
-				for (i = 1; i < RED_header->derivative_level; ++i)
-					printf_m11(", %d", derivs[i]);
+				if (RED_header->derivative_level == 1) {
+					printf_m11("%sDerivative Initial Value: %d", indent, derivs[0]);
+				} else {
+					printf_m11("%sDerivative Initial Values: %d", indent, derivs[0]);
+					for (i = 1; i < RED_header->derivative_level; ++i)
+						printf_m11(", %d", derivs[i]);
+				}
 				printf_m11("\n");
 			}
 			printf_m11("%sRED Model Flag Bits: ", indent);
@@ -15274,19 +15440,23 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 			counts = (ui2 *) (cps->parameters.model_region + CMP_RED_MODEL_FIXED_HEADER_BYTES_m11 + (RED_header->derivative_level * 4));
 			symbols = (si1 *) (counts + RED_header->number_of_statistics_bins);
 			for (i = 0; i < RED_header->number_of_statistics_bins; ++i)
-				printf_m11("%s\tsymbol: %hhd\tcount: %hu\n", indent, *symbols++, *counts++);
+				printf_m11("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
 			break;
 			
 		case CMP_BF_PRED_ENCODING_MASK_m11:
 			PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
-			printf_m11("%sModel: Predictive Range Encoded Differences (PRED)\n", indent);
+			printf_m11("%sModel: Predictive Range Encoded Derivatives (PRED)\n", indent);
 			printf_m11("%sNumber of Keysample Bytes: %u\n", indent, PRED_header->number_of_keysample_bytes);
 			printf_m11("%sDerivative Level: %hhu\n", indent, PRED_header->derivative_level);
 			if (PRED_header->derivative_level > 0) {
 				derivs = (si4 *) (cps->parameters.model_region + CMP_PRED_MODEL_FIXED_HEADER_BYTES_m11);
-				printf_m11("%sDerivative Initial Values: %d", indent, derivs[0]);
-				for (i = 1; i < PRED_header->derivative_level; ++i)
-					printf_m11(", %d", derivs[i]);
+				if (PRED_header->derivative_level == 1) {
+					printf_m11("%sDerivative Initial Value: %d", indent, derivs[0]);
+				} else {
+					printf_m11("%sDerivative Initial Values: %d", indent, derivs[0]);
+					for (i = 1; i < PRED_header->derivative_level; ++i)
+						printf_m11(", %d", derivs[i]);
+				}
 				printf_m11("\n");
 			}
 			printf_m11("%sPRED Model Flag Bits: ", indent);
@@ -15301,13 +15471,13 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 			symbols = (si1 *) (counts + total_counts);
 			printf_m11("\n%sNumber of NIL Statistics Bins: %hu  (counts are scaled)\n", indent, PRED_header->number_of_nil_statistics_bins);
 			for (i = 0; i < PRED_header->number_of_nil_statistics_bins; ++i)
-				printf_m11("%sbin %02d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
-			printf_m11("\n%sNumber of POS Statistics Bins: %hu  (counts are scaled)\n", PRED_header->number_of_pos_statistics_bins);
+				printf_m11("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
+			printf_m11("\n%sNumber of POS Statistics Bins: %hu  (counts are scaled)\n", indent, PRED_header->number_of_pos_statistics_bins);
 			for (i = 0; i < PRED_header->number_of_pos_statistics_bins; ++i)
-				printf_m11("%sbin %02d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
+				printf_m11("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
 			printf_m11("\n%sNumber of NEG Statistics Bins: %hu  (counts are scaled)\n", indent, PRED_header->number_of_neg_statistics_bins);
 			for (i = 0; i < PRED_header->number_of_neg_statistics_bins; ++i)
-				printf_m11("%sbin %02d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
+				printf_m11("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
 			break;
 			
 		case CMP_BF_MBE_ENCODING_MASK_m11:
@@ -15953,18 +16123,35 @@ ui4     CRC_combine_m11(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes)
 TERN_m11	CRC_initialize_tables_m11(void)
 {
 	ui4	**crc_table, c, n, k;
+	si8	dim1_bytes, dim2_bytes, content_bytes, total_bytes;
 
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	pthread_mutex_lock_m11(&globals_m11->CRC_mutex);
-	
-	if (globals_m11->CRC_table == NULL) {
-		globals_m11->CRC_table = (ui4 **) calloc_2D_m11((size_t) CRC_TABLES_m11, (size_t) CRC_TABLE_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	
+	if (global_tables_m11->CRC_table != NULL)
+		return(TRUE_m11);
+
+	pthread_mutex_init_m11(&global_tables_m11->CRC_mutex, NULL);
+	pthread_mutex_lock_m11(&global_tables_m11->CRC_mutex);
+
+	if (global_tables_m11->CRC_table == NULL) {
+		
+		// allocate (2D but not AT)
+		dim1_bytes = CRC_TABLES_m11 * sizeof(ui4 *) ;
+		dim2_bytes = CRC_TABLE_ENTRIES_m11 * sizeof(ui4);
+		content_bytes = CRC_TABLES_m11 * dim2_bytes;
+		total_bytes = dim1_bytes + content_bytes;
+	#ifdef MATLAB_PERSISTENT_m11
+		crc_table = (ui4 **) mxCalloc((mwSize) total_bytes, (mwSize) sizeof(ui1));
+	#else
+		crc_table = (ui4 **) calloc((size_t) total_bytes, sizeof(ui1));
+	#endif
+		crc_table[0] = (ui4 *) (crc_table + CRC_TABLES_m11);
+		for (k = 1; k < CRC_TABLES_m11; ++k)
+			crc_table[k] = crc_table[k - 1] + CRC_TABLE_ENTRIES_m11;
+
 		// generate a crc for every 8-bit value
-		crc_table = globals_m11->CRC_table;
 		for (n = 0; n < CRC_TABLE_ENTRIES_m11; n++) {
 			for (c = n, k = 0; k < 8; k++)
 				c = c & 1 ? CRC_POLYNOMIAL_m11 ^ (c >> 1) : c >> 1;
@@ -15981,9 +16168,11 @@ TERN_m11	CRC_initialize_tables_m11(void)
 				crc_table[k + 4][n] = CRC_SWAP32_m11(c);
 			}
 		}
+		
+		global_tables_m11->CRC_table = crc_table;
 	}
 	
-	pthread_mutex_unlock_m11(&globals_m11->CRC_mutex);
+	pthread_mutex_unlock_m11(&global_tables_m11->CRC_mutex);
 
 	return(TRUE_m11);
 }
@@ -16034,14 +16223,10 @@ ui4	CRC_update_m11(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
 	register const ui4	*ui4_buf;
 	
 	
-	if (globals_m11->CRC_table == NULL)  {
-		if (CRC_initialize_tables_m11() == FALSE_m11) {
-			error_message_m11("%s(): error\n", __FUNCTION__);
-			return(0);
-		}
-	}
+	if (global_tables_m11->CRC_table == NULL)
+		CRC_initialize_tables_m11();
 	
-	crc_table = globals_m11->CRC_table;
+	crc_table = global_tables_m11->CRC_table;
 	
 	c = ~current_crc;
 	
@@ -16959,7 +17144,7 @@ ui1    *SHA_hash_m11(const ui1 *data, si8 len, ui1 *hash)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	if (globals_m11->SHA_h0_table == NULL)  // all tables initialized together
+	if (global_tables_m11->SHA_h0_table == NULL)  // all tables initialized together
 		SHA_initialize_tables_m11();
 
 	// if hash not passed, up to caller to free it
@@ -16982,7 +17167,7 @@ void	SHA_initialize_m11(SHA_CTX_m11 *ctx)
 	ctx->datalen = 0;
 	ctx->bitlen = 0;
 	
-	SHA_h0 = globals_m11->SHA_h0_table;
+	SHA_h0 = global_tables_m11->SHA_h0_table;
 	ctx->state[0] = SHA_h0[0];
 	ctx->state[1] = SHA_h0[1];
 	ctx->state[2] = SHA_h0[2];
@@ -17002,27 +17187,39 @@ TERN_m11	SHA_initialize_tables_m11(void)
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 
-	pthread_mutex_lock_m11(&globals_m11->SHA_mutex);
+	if (global_tables_m11->SHA_h0_table != NULL)
+		return(TRUE_m11);
+
+	pthread_mutex_init_m11(&global_tables_m11->SHA_mutex, NULL);
+	pthread_mutex_lock_m11(&global_tables_m11->SHA_mutex);
 
 	// h0 table
-	if (globals_m11->SHA_h0_table == NULL) {
-		globals_m11->SHA_h0_table = (ui4 *) calloc_m11((size_t) SHA_H0_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->SHA_h0_table == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->SHA_h0_table = (ui4 *) mxCalloc((mwSize) SHA_H0_ENTRIES_m11, (mwSize) sizeof(ui4));
+	#else
+		global_tables_m11->SHA_h0_table = (ui4 *) calloc((size_t) SHA_H0_ENTRIES_m11, sizeof(ui4));
+	#endif
 		{
 			ui4 temp[SHA_H0_ENTRIES_m11] = SHA_H0_m11;
-			memcpy(globals_m11->SHA_h0_table, temp, SHA_H0_ENTRIES_m11 * sizeof(ui4));
+			memcpy(global_tables_m11->SHA_h0_table, temp, SHA_H0_ENTRIES_m11 * sizeof(ui4));
 		}
 	}
-	
+
 	// k table
-	if (globals_m11->SHA_k_table == NULL) {
-		globals_m11->SHA_k_table = (ui4 *) calloc_m11((size_t) SHA_K_ENTRIES_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+	if (global_tables_m11->SHA_k_table == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->SHA_k_table = (ui4 *) mxCalloc((mwSize) SHA_K_ENTRIES_m11, (mwSize) sizeof(ui4));
+	#else
+		global_tables_m11->SHA_k_table = (ui4 *) calloc((size_t) SHA_K_ENTRIES_m11, sizeof(ui4));
+	#endif
 		{
 			ui4 temp[SHA_K_ENTRIES_m11] = SHA_K_m11;
-			memcpy(globals_m11->SHA_k_table, temp, SHA_K_ENTRIES_m11 * sizeof(ui4));
+			memcpy(global_tables_m11->SHA_k_table, temp, SHA_K_ENTRIES_m11 * sizeof(ui4));
 		}
 	}
-	
-	pthread_mutex_unlock_m11(&globals_m11->SHA_mutex);
+
+	pthread_mutex_unlock_m11(&global_tables_m11->SHA_mutex);
 
 	return(TRUE_m11);
 }
@@ -17047,7 +17244,7 @@ void	SHA_transform_m11(SHA_CTX_m11 *ctx, const ui1 *data)
 	g = ctx->state[6];
 	h = ctx->state[7];
 	
-	sha_k = globals_m11->SHA_k_table;
+	sha_k = global_tables_m11->SHA_k_table;
 	for (i = 0; i < 64; ++i) {
 		t1 = h + SHA_EP1_m11(e) + SHA_CH_m11(e,f,g) + sha_k[i] + m[i];
 		t2 = SHA_EP0_m11(a) + SHA_MAJ_m11(a,b,c);
@@ -17175,7 +17372,6 @@ TERN_m11	STR_contains_regex_m11(si1 *string)
 		switch (c) {
 			case '*':
 			case '?':
-			case '+':
 			case '|':
 			case '^':
 			case '$':
@@ -17727,27 +17923,39 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 	printf_m11("%s()\n", __FUNCTION__);
 #endif
 
-	pthread_mutex_lock_m11(&globals_m11->UTF8_mutex);
+	if (global_tables_m11->UTF8_offsets_table != NULL)
+		return(TRUE_m11);
+
+	pthread_mutex_init_m11(&global_tables_m11->UTF8_mutex, NULL);
+	pthread_mutex_lock_m11(&global_tables_m11->UTF8_mutex);
 
 	// offsets table
-	if (globals_m11->UTF8_offsets_table == NULL) {
-		globals_m11->UTF8_offsets_table = (ui4 *) malloc((size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
+	if (global_tables_m11->UTF8_offsets_table == NULL) {
+	#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->UTF8_offsets_table = (ui4 *) mxMalloc((mwSize) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
+	#else
+		global_tables_m11->UTF8_offsets_table = (ui4 *) malloc((size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
+	#endif
 		{
 			ui4 temp[UTF8_OFFSETS_TABLE_ENTRIES_m11] = UTF8_OFFSETS_TABLE_m11;
-			memcpy((void *) globals_m11->UTF8_offsets_table, (void *) temp, (size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
+			memcpy((void *) global_tables_m11->UTF8_offsets_table, (void *) temp, (size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m11 << 2));
 		}
 	}
-	
+
 	// trailing bytes table
-	if (globals_m11->UTF8_trailing_bytes_table == NULL) {
-		globals_m11->UTF8_trailing_bytes_table = (si1 *) malloc((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
+	if (global_tables_m11->UTF8_trailing_bytes_table == NULL) {
+#ifdef MATLAB_PERSISTENT_m11
+		global_tables_m11->UTF8_trailing_bytes_table = (si1 *) mxMalloc((mwSize) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
+#else
+		global_tables_m11->UTF8_trailing_bytes_table = (si1 *) malloc((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
+#endif
 		{
 			si1 temp[UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11] = UTF8_TRAILING_BYTES_TABLE_m11;
-			memcpy((void *) globals_m11->UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
+			memcpy((void *) global_tables_m11->UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m11);
 		}
 	}
-	
-	pthread_mutex_unlock_m11(&globals_m11->UTF8_mutex);
+
+	pthread_mutex_unlock_m11(&global_tables_m11->UTF8_mutex);
 
 	return(TRUE_m11);
 }
@@ -17806,12 +18014,13 @@ TERN_m11 UTF8_is_valid_m11(si1 *string)
 si1	*UTF8_memchr_m11(si1 *s, ui4 ch, size_t sz, si4 *char_num)
 {
 	si4	i = 0, last_i = 0;
-	ui4	c;
+	ui4	c, *offsets_table;
 	si4	csz;
 	
 
-	if (globals_m11->UTF8_offsets_table == NULL)
+	if (global_tables_m11->UTF8_offsets_table == NULL)
 		UTF8_initialize_tables_m11();
+	offsets_table = global_tables_m11->UTF8_offsets_table;
 	
 	*char_num = 0;
 	while (i < sz) {
@@ -17821,7 +18030,7 @@ si1	*UTF8_memchr_m11(si1 *s, ui4 ch, size_t sz, si4 *char_num)
 			c += (ui1) s[i++];
 			csz++;
 		} while (i < sz && !UTF8_ISUTF_m11(s[i]));
-		c -= globals_m11->UTF8_offsets_table[csz - 1];
+		c -= offsets_table[csz - 1];
 		
 		if (c == ch) {
 			return(&s[last_i]);
@@ -17847,7 +18056,7 @@ ui4     UTF8_next_char_m11(si1 *s, si4 *i)
 	if (s[*i] == 0)
 		return(0);
 	
-	if (globals_m11->UTF8_offsets_table == NULL)
+	if (global_tables_m11->UTF8_offsets_table == NULL)
 		UTF8_initialize_tables_m11();
 	
 	do {
@@ -17856,7 +18065,7 @@ ui4     UTF8_next_char_m11(si1 *s, si4 *i)
 		sz++;
 	} while (s[*i] && !UTF8_ISUTF_m11(s[*i]));
 	
-	ch -= globals_m11->UTF8_offsets_table[sz - 1];
+	ch -= global_tables_m11->UTF8_offsets_table[sz - 1];
 
 	return(ch);
 }
@@ -17994,10 +18203,10 @@ inline
 #endif
 si4      UTF8_seqlen_m11(si1 *s)
 {
-	if (globals_m11->UTF8_offsets_table == NULL)
+	if (global_tables_m11->UTF8_offsets_table == NULL)
 		UTF8_initialize_tables_m11();
 	
-	return(globals_m11->UTF8_trailing_bytes_table[(si4) ((ui1) s[0])] + 1);
+	return(global_tables_m11->UTF8_trailing_bytes_table[(si4) ((ui1) s[0])] + 1);
 }
 
 
@@ -18048,17 +18257,18 @@ si4     UTF8_strlen_m11(si1 *s)
 // if sz == srcsz + 1 (i.e. 4 * srcsz + 4 bytes), there will always be enough space
 si4     UTF8_to_ucs_m11(ui4 *dest, si4 sz, si1 *src, si4 srcsz)
 {
-	ui4	ch;
-	si1	*src_end = src + srcsz;
-	si4	nb;
-	si4	i = 0;
+	si1	*trailing_bytes_table, *src_end = src + srcsz;
+	ui4	*offsets_table, ch;
+	si4	nb, i = 0;
 	
 	
-	if (globals_m11->UTF8_offsets_table == NULL)
+	if (global_tables_m11->UTF8_offsets_table == NULL)
 		UTF8_initialize_tables_m11();
+	offsets_table = global_tables_m11->UTF8_offsets_table;
+	trailing_bytes_table = global_tables_m11->UTF8_trailing_bytes_table;
 	
 	while (i < sz - 1) {
-		nb = globals_m11->UTF8_trailing_bytes_table[(ui1) *src];
+		nb = trailing_bytes_table[(ui1) *src];
 		if (srcsz == -1 && *src == 0)
 			goto UTF8_DONE_TOUCS_m11;
 		else if (src + nb >= src_end)
@@ -18072,7 +18282,7 @@ si4     UTF8_to_ucs_m11(ui4 *dest, si4 sz, si1 *src, si4 srcsz)
 			case 1: ch += (ui1) *src++; ch <<= 6;
 			case 0: ch += (ui1) *src++;
 		}
-		ch -= globals_m11->UTF8_offsets_table[nb];
+		ch -= offsets_table[nb];
 		dest[i++] = ch;
 	}
 	

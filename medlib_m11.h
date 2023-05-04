@@ -310,7 +310,7 @@ typedef struct {
 	si1     level_1_password_hint[PASSWORD_HINT_BYTES_m11];
 	si1     level_2_password_hint[PASSWORD_HINT_BYTES_m11];
 	ui1	access_level;
-	ui1	processed;  // 0 or 1 (not ternary)
+	ui1	processed;  // 0 or 1 (boolean, not ternary)
 } PASSWORD_DATA_m11;
 
 
@@ -484,10 +484,10 @@ typedef struct {
 #define EMPTY_SLICE_m11					-1
 #define SAMPLE_NUMBER_NO_ENTRY_m11                      ((si8) 0x8000000000000000)
 #define FRAME_NUMBER_NO_ENTRY_m11                       SAMPLE_NUMBER_NO_ENTRY_m11
-#define BEGINNING_OF_SAMPLE_NUMBERS_m11                 ((si8) 0x000000000)
+#define BEGINNING_OF_SAMPLE_NUMBERS_m11                 ((si8) 0x0000000000000000)
 #define END_OF_SAMPLE_NUMBERS_m11                       ((si8) 0x7FFFFFFFFFFFFFFF)
 #define UUTC_NO_ENTRY_m11                               ((si8) 0x8000000000000000)
-#define UUTC_EARLIEST_TIME_m11                          ((si8) 0x000000000)  // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
+#define UUTC_EARLIEST_TIME_m11                          ((si8) 0x0000000000000000)  // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
 #define UUTC_LATEST_TIME_m11                            ((si8) 0x7FFFFFFFFFFFFFFF)  // 04:00:54.775808 Sunday, 10 Jan 29424, UTC
 #define BEGINNING_OF_TIME_m11                           UUTC_EARLIEST_TIME_m11
 #define END_OF_TIME_m11                                 UUTC_LATEST_TIME_m11
@@ -1059,8 +1059,11 @@ typedef struct {
 
 
 //**********************************************************************************//
-//************************************  Mutices  ***********************************//
+//***********************************  Processes  **********************************//
 //**********************************************************************************//
+
+typedef ui8	pid_t_m11;	// big enough for all OSs, none use signed values
+				// (pid_t_m11 is used for both process and thread IDs throughout the library)
 
 #if defined MACOS_m11 || defined LINUX_m11
 	typedef	pthread_mutex_t		pthread_mutex_t_m11;
@@ -1076,6 +1079,8 @@ si4		pthread_mutex_destroy_m11(pthread_mutex_t_m11 *mutex);
 si4		pthread_mutex_init_m11(pthread_mutex_t_m11 *mutex, pthread_mutexattr_t_m11 *attr);
 si4		pthread_mutex_lock_m11(pthread_mutex_t_m11 *mutex);
 si4		pthread_mutex_unlock_m11(pthread_mutex_t_m11 *mutex);
+pid_t_m11	getpid_m11(void);  // calling process id
+pid_t_m11	gettid_m11(void);  // calling thread id
 
 
 //**********************************************************************************//
@@ -1181,6 +1186,8 @@ typedef struct {
 #endif
 
 typedef struct {
+	// Identifier
+	pid_t_m11			_id;  // thread or process id
 	// Password
 	PASSWORD_DATA_m11               password_data;
 	// Record Filters
@@ -1232,10 +1239,6 @@ typedef struct {
 	si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m11];
 	DAYLIGHT_TIME_CHANGE_CODE_m11   daylight_time_start_code;  // si1[8] / si8
 	DAYLIGHT_TIME_CHANGE_CODE_m11   daylight_time_end_code;  // si1[8] / si8
-	TIMEZONE_INFO_m11		*timezone_table;
-	TIMEZONE_ALIAS_m11		*country_aliases_table;
-	TIMEZONE_ALIAS_m11		*country_acronym_aliases_table;
-	pthread_mutex_t_m11		TZ_mutex;
 	// Alignment Fields
 	TERN_m11                        universal_header_aligned;
 	TERN_m11                        metadata_section_1_aligned;
@@ -1251,22 +1254,8 @@ typedef struct {
 	TERN_m11                        record_indices_aligned;
 	TERN_m11                        all_record_structures_aligned;
 	TERN_m11                        all_structures_aligned;
-	ui4				**CRC_table;
+	// CRC
 	ui4                             CRC_mode;
-	pthread_mutex_t_m11		CRC_mutex;
-	// AES tables
-	si4				*AES_sbox_table;
-	si4				*AES_rcon_table;
-	si4				*AES_rsbox_table;
-	pthread_mutex_t_m11		AES_mutex;
-	// SHA256 tables
-	ui4				*SHA_h0_table;
-	ui4				*SHA_k_table;
-	pthread_mutex_t_m11		SHA_mutex;
-	// UTF8 tables
-	ui4				*UTF8_offsets_table;
-	si1				*UTF8_trailing_bytes_table;
-	pthread_mutex_t_m11		UTF8_mutex;
 	// allocation tracking (AT)
 	AT_NODE				*AT_nodes;
 	si8				AT_node_count;  // total allocated nodes
@@ -1289,6 +1278,29 @@ typedef struct {
 	ui8				level_header_flags;
 	ui4				mmap_block_bytes;  // read size for memory mapped files
 } GLOBALS_m11;
+
+typedef struct {
+	TIMEZONE_INFO_m11	*timezone_table;
+	TIMEZONE_ALIAS_m11	*country_aliases_table;
+	TIMEZONE_ALIAS_m11	*country_acronym_aliases_table;
+	ui4			**CRC_table;
+	si4			*AES_sbox_table;
+	si4			*AES_rsbox_table;
+	si4			*AES_rcon_table;
+	ui4			*SHA_h0_table;
+	ui4			*SHA_k_table;
+	ui4			*UTF8_offsets_table;
+	si1			*UTF8_trailing_bytes_table;
+	pthread_mutex_t_m11	TZ_mutex;
+	pthread_mutex_t_m11	SHA_mutex;
+	pthread_mutex_t_m11	AES_mutex;
+	pthread_mutex_t_m11	CRC_mutex;
+	pthread_mutex_t_m11	UTF8_mutex;
+} GLOBAL_TABLES_m11;
+
+// Globals List (thread local storage)
+#define globals_m11	(globals_pointer_m11())  // thread local globals accessed with process id => use "globals_m11" like a pointer
+
 
 
 //**********************************************************************************//
@@ -1936,6 +1948,7 @@ si1		*find_metadata_file_m11(si1 *path, si1 *md_path);
 si8		find_record_index_m11(FILE_PROCESSING_STRUCT_m11 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8     	frame_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 void            free_channel_m11(CHANNEL_m11* channel, TERN_m11 free_channel_structure);
+void		free_global_tables_m11(void);
 void            free_globals_m11(TERN_m11 cleanup_for_exit);
 void            free_segment_m11(SEGMENT_m11 *segment, TERN_m11 free_segment_structure);
 void            free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure);
@@ -1955,8 +1968,10 @@ si4		get_segment_index_m11(si4 segment_number);
 si4             get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *slice);
 ui4		*get_segment_video_start_frames_m11(FILE_PROCESSING_STRUCT_m11 *video_indices_fps, ui4 *number_of_video_files);
 si1		*get_session_directory_m11(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m11 *MED_fps);
+GLOBALS_m11	*globals_pointer_m11(void);
 TERN_m11	include_record_m11(ui4 type_code, si4 *record_filters);
-TERN_m11	initialize_globals_m11(void);
+TERN_m11	initialize_global_tables_m11(TERN_m11 initialize_all_tables);
+TERN_m11	initialize_globals_m11(TERN_m11 initialize_all_tables);
 TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables);
 TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice);
 TERN_m11	initialize_timezone_tables_m11(void);
