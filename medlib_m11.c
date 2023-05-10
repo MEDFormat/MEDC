@@ -5583,6 +5583,9 @@ TERN_m11	initialize_global_tables_m11(TERN_m11 initialize_all_tables)
 	#endif
 		if (global_tables_m11 == NULL)
 			ret_val = FALSE_m11;
+		
+		// note: performance_specs is a statically allocated member - set to FALSE on allocation
+		global_tables_m11->performance_specs.initialized = FALSE_m11;
 	}
 	
 	if (initialize_all_tables == TRUE_m11) {  // otherwise load on demand
@@ -5595,6 +5598,8 @@ TERN_m11	initialize_global_tables_m11(TERN_m11 initialize_all_tables)
 		if (UTF8_initialize_tables_m11() == FALSE_m11)
 			ret_val = FALSE_m11;
 		if (initialize_timezone_tables_m11() == FALSE_m11)
+			ret_val = FALSE_m11;
+		if (initialize_performance_specs_m11() == FALSE_m11)
 			ret_val = FALSE_m11;
 	}
 
@@ -5748,7 +5753,7 @@ TERN_m11	initialize_globals_m11(TERN_m11 initialize_all_tables)
 	// tables
 	if (global_tables_m11 == NULL)
 		initialize_global_tables_m11(initialize_all_tables);
-		
+				
 
 #ifdef AT_DEBUG_m11  // do this at end, because message() will load UTF8 tables
 	printf_m11("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m11, TC_RESET_m11);
@@ -5836,6 +5841,72 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 	system_m11(command, TRUE_m11, __FUNCTION__, RETURN_ON_FAIL_m11 | SUPPRESS_OUTPUT_m11);
 
 	return(ret_val);
+}
+
+
+TERN_m11	initialize_performance_specs_m11(void)
+{
+	const si8	ROUNDS = 1000000;
+	clock_t		start_t, end_t, elapsed_time;
+	ui8		*p1, *p2, *p3;
+	ui8		*test_arr1, *test_arr2, *test_arr3;
+	si8		i;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+
+	if (global_tables_m11->performance_specs.initialized == TRUE_m11)
+		return(TRUE_m11);
+
+	pthread_mutex_init_m11(&global_tables_m11->performance_mutex, NULL);
+	pthread_mutex_lock_m11(&global_tables_m11->performance_mutex);
+	
+	// setup
+	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
+	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
+	test_arr3 = (ui8 *) malloc((size_t) ROUNDS << 3);
+	p1 = test_arr1;
+	p2 = test_arr2;
+	for (i = ROUNDS; i--; ++p1, ++p2) {
+		*p1 = ((ui8) random()) << 16;
+		*p1 ^= (ui8) random();  // 48 bit number
+		*p2 = ((ui8) random() >> 16) + 1;  // 16 bit non-zero number
+	}
+
+	// multiplication
+	p1 = test_arr1;
+	p2 = test_arr2;
+	p3 = test_arr3;
+	start_t = clock();
+	for (i = ROUNDS; i--;)
+		*p3++ = *p1++ * *p2++;
+	end_t = clock();
+	elapsed_time = end_t - start_t;
+	global_tables_m11->performance_specs.integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
+	global_tables_m11->performance_specs.nsecs_per_integer_multiplication = (sf8) 1000000000.0 / global_tables_m11->performance_specs.integer_multiplications_per_sec;
+	// division
+	p1 = test_arr1;
+	p2 = test_arr2;
+	p3 = test_arr3;
+	start_t = clock();
+	for (i = ROUNDS; i--;)
+		*p3++ = *p1++ / *p2++;
+	end_t = clock();
+	elapsed_time = end_t - start_t;
+	global_tables_m11->performance_specs.integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
+	global_tables_m11->performance_specs.nsecs_per_integer_division = (sf8) 1000000000.0 / global_tables_m11->performance_specs.integer_divisions_per_sec;
+
+	// clean up
+	free((void *) test_arr1);
+	free((void *) test_arr2);
+	free((void *) test_arr3);
+	
+	global_tables_m11->performance_specs.initialized = TRUE_m11;
+	
+	pthread_mutex_unlock_m11(&global_tables_m11->TZ_mutex);
+
+	return(TRUE_m11);
 }
 
 
@@ -13457,7 +13528,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 	}
 	
 	// allocate RED/PRED buffers
-	if (cps->directives.algorithm == CMP_RED_COMPRESSION_m11) {  // VDS uses RED & PRED, but allocated for PRED
+	if (cps->directives.algorithm == CMP_RED1_COMPRESSION_m11 || cps->directives.algorithm == CMP_RED2_COMPRESSION_m11) {  // VDS uses RED & PRED, but allocated for PRED
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m11) {
 			cps->parameters.count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.sorted_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -13470,7 +13541,7 @@ CMP_PROCESSING_STRUCT_m11	*CMP_allocate_processing_struct_m11(FILE_PROCESSING_ST
 		}
 		cps->parameters.cumulative_count = calloc_m11(CMP_RED_MAX_STATS_BINS_m11 + 1, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 		cps->parameters.minimum_range = calloc_m11(CMP_RED_MAX_STATS_BINS_m11, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
-	} else if (cps->directives.algorithm == CMP_PRED_COMPRESSION_m11 || cps->directives.algorithm == CMP_VDS_COMPRESSION_m11) {  // VDS uses RED & PRED, but buffers allocated for PRED
+	} else if (cps->directives.algorithm == CMP_PRED1_COMPRESSION_m11 || cps->directives.algorithm == CMP_PRED2_COMPRESSION_m11 || cps->directives.algorithm == CMP_VDS_COMPRESSION_m11) {  // VDS uses RED & PRED, but buffers allocated for PRED
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m11) {
 			cps->parameters.count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
 			cps->parameters.sorted_count = (void *) calloc_2D_m11((size_t) CMP_PRED_CATS_m11, CMP_RED_MAX_STATS_BINS_m11, sizeof(CMP_STATISTICS_BIN_m11), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
@@ -13838,13 +13909,13 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 	
 	// decompress
 	switch (block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m11) {
-		case CMP_BF_RED_ENCODING_MASK_m11:
-			cps->directives.algorithm = CMP_RED_COMPRESSION_m11;
-			CMP_RED_decode_m11(cps);
+		case CMP_BF_RED1_ENCODING_MASK_m11:
+			cps->directives.algorithm = CMP_RED1_COMPRESSION_m11;
+			CMP_RED1_decode_m11(cps);
 			break;
-		case CMP_BF_PRED_ENCODING_MASK_m11:
-			cps->directives.algorithm = CMP_PRED_COMPRESSION_m11;
-			CMP_PRED_decode_m11(cps);
+		case CMP_BF_PRED1_ENCODING_MASK_m11:
+			cps->directives.algorithm = CMP_PRED1_COMPRESSION_m11;
+			CMP_PRED1_decode_m11(cps);
 			break;
 		case CMP_BF_MBE_ENCODING_MASK_m11:
 			cps->directives.algorithm = CMP_MBE_COMPRESSION_m11;
@@ -13853,6 +13924,14 @@ void    CMP_decode_m11(FILE_PROCESSING_STRUCT_m11 *fps)
 		case CMP_BF_VDS_ENCODING_MASK_m11:
 			cps->directives.algorithm = CMP_VDS_COMPRESSION_m11;
 			CMP_VDS_decode_m11(cps);
+			break;
+		case CMP_BF_RED2_ENCODING_MASK_m11:
+			cps->directives.algorithm = CMP_RED2_COMPRESSION_m11;
+			CMP_RED2_decode_m11(cps);
+			break;
+		case CMP_BF_PRED2_ENCODING_MASK_m11:
+			cps->directives.algorithm = CMP_PRED2_COMPRESSION_m11;
+			CMP_PRED2_decode_m11(cps);
 			break;
 		default:
 			error_message_m11("%s(): unrecognized compression algorithm (%u)\n", __FUNCTION__, block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m11);
@@ -14146,7 +14225,7 @@ ui1    CMP_get_overflow_bytes_m11(CMP_PROCESSING_STRUCT_m11 *cps, ui4 mode, ui4 
 			val = (abs_min > abs_max) ? abs_min : abs_max;
 			for (bits_per_samp = 1, i = val; i; i >>= 1)
 				++bits_per_samp;
-			if (algorithm == CMP_RED_COMPRESSION_m11) {
+			if (algorithm == CMP_RED1_COMPRESSION_m11 || algorithm == CMP_RED2_COMPRESSION_m11) {
 				RED_header = (CMP_RED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
 				if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m11)
 					--bits_per_samp;  // don't need a sign bit
@@ -14163,13 +14242,13 @@ ui1    CMP_get_overflow_bytes_m11(CMP_PROCESSING_STRUCT_m11 *cps, ui4 mode, ui4 
 			cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m11;  // 4
 		}
 		// set block flag
-		if (algorithm == CMP_RED_COMPRESSION_m11) {
+		if (algorithm == CMP_RED1_COMPRESSION_m11 || algorithm == CMP_RED2_COMPRESSION_m11) {
 			RED_header->flags &= ~CMP_RED_OVERFLOW_BYTES_MASK_m11;
 			if (cps->parameters.overflow_bytes == 2)
 				RED_header->flags |= CMP_RED_2_BYTE_OVERFLOWS_MASK_m11;
 			else if	(cps->parameters.overflow_bytes == 3)
 				RED_header->flags |= CMP_RED_3_BYTE_OVERFLOWS_MASK_m11;
-		} else if (algorithm == CMP_PRED_COMPRESSION_m11) {
+		} else if (algorithm == CMP_PRED1_COMPRESSION_m11 || algorithm == CMP_PRED2_COMPRESSION_m11 ) {
 			PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
 			PRED_header->flags &= ~CMP_PRED_OVERFLOW_BYTES_MASK_m11;
 			if (cps->parameters.overflow_bytes == 2)
@@ -14178,7 +14257,7 @@ ui1    CMP_get_overflow_bytes_m11(CMP_PROCESSING_STRUCT_m11 *cps, ui4 mode, ui4 
 				PRED_header->flags |= CMP_PRED_3_BYTE_OVERFLOWS_MASK_m11;
 		}
 	} else {  // CMP_DECOMPRESSION_MODE_m11
-		if (algorithm == CMP_RED_COMPRESSION_m11) {
+		if (algorithm == CMP_RED1_COMPRESSION_m11 || algorithm == CMP_RED2_COMPRESSION_m11) {
 			RED_header = (CMP_RED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
 			flags = RED_header->flags & CMP_RED_OVERFLOW_BYTES_MASK_m11;
 			if (flags == CMP_RED_2_BYTE_OVERFLOWS_MASK_m11)
@@ -14716,7 +14795,7 @@ sf8	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 }
 
 
-void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
+void    CMP_PRED1_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
 	TERN_m11	no_zero_counts;
 	ui1		*comp_p, *ui1_p, *low_bound_high_byte_p, *high_bound_high_byte_p;
@@ -14804,19 +14883,18 @@ void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	high_bound_high_byte_p = ((ui1 *) &high_bound) + 5;
 	goal_bound_high_byte_p = ((ui1 *) &goal_bound) + 5;
 	ui1_p = goal_bound_high_byte_p;
-	j = 6; do {
-		*ui1_p-- = *comp_p++;
-	} while (--j);
+	*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+	*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
 	prev_cat = CMP_PRED_NIL_m11;
-	
+		
 	for (i = n_keysample_bytes; i;) {
 		for (j = 0; range >= minimum_range[prev_cat][j];) {
 			high_bound = low_bound + ((range * cumulative_count[prev_cat][j + 1]) >> 16);
 			if (high_bound > goal_bound) {
-				range = high_bound - (low_bound = prev_high_bound);
 				*key_p = symbol_map[prev_cat][j];
 				if (!--i)
-					goto PRED_RANGE_DECODE_DONE_m11;
+					goto PRED1_RANGE_DECODE_DONE_m11;
+				range = high_bound - (low_bound = prev_high_bound);
 				prev_cat = CMP_PRED_CAT_m11(*key_p); ++key_p;
 				j = 0;
 			} else {
@@ -14827,9 +14905,8 @@ void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 		high_bound = low_bound + range;
 		if (*low_bound_high_byte_p != *high_bound_high_byte_p) {
 			ui1_p = goal_bound_high_byte_p;
-			j = 6; do {
-				*ui1_p-- = *comp_p++;
-			} while (--j);
+			*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+			*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
 			low_bound = 0;
 			range = CMP_RED_MAXIMUM_RANGE_m11;
 		} else {
@@ -14843,9 +14920,233 @@ void    CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 			goal_bound &= CMP_RED_RANGE_MASK_m11;
 		}
 		prev_high_bound = low_bound;
-	} PRED_RANGE_DECODE_DONE_m11:
+	} PRED1_RANGE_DECODE_DONE_m11:
 
-	// generate output from keysample data
+	// generate derivatives from keysample data
+	si4_p = cps->decompressed_ptr + n_derivs;
+	si1_p1 = (si1 *) cps->parameters.keysample_buffer;
+	for (i = n_samps - n_derivs; i--;) {
+		if (*si1_p1 == CMP_SI1_KEYSAMPLE_FLAG_m11) {
+			overflow_val = 0;
+			++si1_p1;
+			si1_p2 = (si1 *) &overflow_val;
+			j = overflow_bytes; do {
+				*si1_p2++ = *si1_p1++;
+			} while (--j);
+			if (overflow_val & sign_bit)
+				overflow_val |= sign_bytes;
+			*si4_p++ = overflow_val;
+		} else {
+			*si4_p++ = (si4) *si1_p1++;
+		}
+	}
+
+	// integrate derivatives
+	CMP_integrate_m11(cps);
+
+	return;
+}
+
+
+void    CMP_PRED2_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
+{
+	TERN_m11	no_zero_counts, multiply_method;
+	ui1		*comp_p, *ui1_p, prev_cat, overflow_bytes;
+	ui1		*low_bound_high_byte_p, *high_bound_high_byte_p, *goal_bound_high_byte_p;
+	ui1		*symbol_map[CMP_PRED_CATS_m11], *symbols;
+	si1		*si1_p1, *si1_p2, *key_p;
+	ui2		*bin_counts, *stats_entries, *count[CMP_PRED_CATS_m11], *tc;
+	ui4		n_samps, n_derivs, n_keysample_bytes, total_stats_entries, sign_bit, sign_bytes;
+	si4		*si4_p, *init_val_p, overflow_val;
+	ui8		**minimum_range, **cumulative_count, *cc;
+	ui8		low_bound, high_bound, prev_high_bound, goal_bound, range, target_cc;
+	si8		i, j;
+	sf8		average_steps, multiply_time;
+	CMP_BLOCK_FIXED_HEADER_m11		*block_header;
+	CMP_PRED_MODEL_FIXED_HEADER_m11		*PRED_header;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+		
+	// CMP decompress from block_header to decompressed_ptr
+	block_header = cps->block_header;
+	n_samps = block_header->number_of_samples;
+	
+	// zero samples, or only one value
+	if (n_samps <= 1) {
+		if (block_header->number_of_samples == 1)
+			cps->decompressed_ptr[0] = *((si4 *) (cps->parameters.model_region + CMP_PRED_MODEL_FIXED_HEADER_BYTES_m11));
+		cps->parameters.derivative_level = 0;
+		return;
+	}
+	
+	PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
+	n_derivs = PRED_header->derivative_level;
+	n_keysample_bytes = PRED_header->number_of_keysample_bytes;
+	stats_entries = PRED_header->numbers_of_statistics_bins;
+	for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m11; ++i)
+		total_stats_entries += (ui4) stats_entries[i];
+	
+	// set parameters for return
+	cps->parameters.derivative_level = n_derivs;
+	
+	// get block flags
+	no_zero_counts = FALSE_m11;
+	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_MASK_m11)
+		no_zero_counts = TRUE_m11;
+	overflow_bytes = CMP_get_overflow_bytes_m11(cps, CMP_DECOMPRESSION_MODE_m11, CMP_PRED_COMPRESSION_m11);
+	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
+	if (overflow_bytes == 4)
+		sign_bytes = (ui4) 0;
+	else  // Windows: shift of 32 bits is equated to shift of 0, so have to do this
+		sign_bytes = (ui4) 0xFFFFFFFF << (overflow_bytes << 3);
+
+	// copy initial derivative values to output buffer
+	init_val_p = (si4 *) (cps->parameters.model_region + CMP_PRED_MODEL_FIXED_HEADER_BYTES_m11);
+	for (i = 0; i < n_derivs; ++i)
+		cps->decompressed_ptr[i] = *init_val_p++;
+
+	// build symbol map, count arrays, & minimum ranges
+	bin_counts = (ui2 *) init_val_p;
+	symbols = (ui1 *) (bin_counts + total_stats_entries);
+	cumulative_count = (ui8 **) cps->parameters.cumulative_count;
+	minimum_range = (ui8 **) cps->parameters.minimum_range;
+	for (i = 0; i < CMP_PRED_CATS_m11; ++i) {
+		count[i] = bin_counts; bin_counts += stats_entries[i];
+		symbol_map[i] = symbols; symbols += stats_entries[i];
+		if (no_zero_counts == TRUE_m11) {  // TO DO: decide mapping scheme for unmapped symbols in symbol map
+			// TO DO: copy count & symbol map to arrays with 256 elements
+			for (j = stats_entries[i]; i < 256; ++i)
+				count[i][j] = 1;
+		}
+		for (cumulative_count[i][0] = j = 0; j < stats_entries[i]; ++j) {
+			cumulative_count[i][j + 1] = cumulative_count[i][j] + (ui8) count[i][j];
+			minimum_range[i][j] = CMP_RED_TOTAL_COUNTS_m11 / count[i][j];
+			if (CMP_RED_TOTAL_COUNTS_m11 > (count[i][j] * minimum_range[i][j]))
+				++minimum_range[i][j];
+		}
+	}
+	
+	// determine decompression method
+	if (global_tables_m11->performance_specs.initialized == FALSE_m11)
+		initialize_performance_specs_m11();
+	for (average_steps = (sf8) 0.0, i = 0; i < CMP_PRED_CATS_m11; ++i) {
+		tc = count[i];
+		for (j = 0; j < stats_entries[i]; ++j)
+			average_steps += (sf8) (j * (si8) tc[j]);
+	}
+	average_steps /= (sf8) (CMP_RED_TOTAL_COUNTS_m11 * CMP_PRED_CATS_m11);
+	multiply_time = average_steps * global_tables_m11->performance_specs.nsecs_per_integer_multiplication;
+	if (multiply_time < global_tables_m11->performance_specs.nsecs_per_integer_division)
+		multiply_method = TRUE_m11;
+	else
+		multiply_method = FALSE_m11;
+
+	// range decode
+	key_p = cps->parameters.keysample_buffer;
+	prev_high_bound = goal_bound = low_bound = 0;
+	range = CMP_RED_MAXIMUM_RANGE_m11;
+	comp_p = (ui1 *) block_header + block_header->total_header_bytes;
+	low_bound_high_byte_p = ((ui1 *) &low_bound) + 5;
+	high_bound_high_byte_p = ((ui1 *) &high_bound) + 5;
+	goal_bound_high_byte_p = ((ui1 *) &goal_bound) + 5;
+	ui1_p = goal_bound_high_byte_p;
+	*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+	*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+	prev_cat = CMP_PRED_NIL_m11;
+	
+	if (multiply_method == TRUE_m11) {
+		for (j = 0, i = n_keysample_bytes; i;) {
+			while (range >= minimum_range[prev_cat][j]) {
+				high_bound = low_bound + ((range * cumulative_count[prev_cat][j + 1]) >> 16);
+				if (high_bound > goal_bound) {
+					*key_p = symbol_map[prev_cat][j];
+					if (!--i)
+						goto PRED2_RANGE_DECODE_DONE_m11;
+					range = high_bound - (low_bound = prev_high_bound);
+					prev_cat = CMP_PRED_CAT_m11(*key_p); ++key_p;
+					j = 0;
+				} else {
+					prev_high_bound = high_bound;
+					++j;
+				}
+			}
+			high_bound = low_bound + range;
+			if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p) {
+				ui1_p = goal_bound_high_byte_p;
+				*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+				*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+				low_bound = 0;
+				range = CMP_RED_MAXIMUM_RANGE_m11;
+			} else {
+				do {
+					low_bound <<= 8;
+					high_bound <<= 8;
+					goal_bound = (goal_bound << 8) | (ui8) *comp_p++;
+				} while (*low_bound_high_byte_p == *high_bound_high_byte_p);
+				low_bound &= CMP_RED_RANGE_MASK_m11;
+				high_bound &= CMP_RED_RANGE_MASK_m11;
+				goal_bound &= CMP_RED_RANGE_MASK_m11;
+				range = high_bound - low_bound;
+			}
+			prev_high_bound = low_bound;
+			if (j)
+				prev_high_bound += (range * cumulative_count[prev_cat][j]) >> 16;
+		}
+	} else {  // division method
+		for (j = 0, i = n_keysample_bytes; i;) {
+			while (range >= minimum_range[prev_cat][j]) {
+				high_bound = low_bound + ((range * cumulative_count[prev_cat][j + 1]) >> 16);
+				if (high_bound > goal_bound) {
+					*key_p = symbol_map[prev_cat][j];
+					if (!--i)
+						goto PRED2_RANGE_DECODE_DONE_m11;
+					range = high_bound - (low_bound = prev_high_bound);
+					prev_cat = CMP_PRED_CAT_m11(*key_p); ++key_p;
+					target_cc =  ((goal_bound - low_bound) << 16) / range;
+					cc = cumulative_count[prev_cat];
+					for (j = 1; j < stats_entries[prev_cat]; ++j)
+						if (target_cc <= cc[j])
+							break;
+					if (--j)
+						prev_high_bound += (range * cumulative_count[prev_cat][j]) >> 16;
+				} else {
+					prev_high_bound = high_bound;
+					++j;
+				}
+			}
+			high_bound = low_bound + range;
+			if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p) {
+				ui1_p = goal_bound_high_byte_p;
+				*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+				*ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++; *ui1_p-- = *comp_p++;
+				low_bound = 0;
+				range = CMP_RED_MAXIMUM_RANGE_m11;
+			} else {
+				do {
+					low_bound <<= 8;
+					high_bound <<= 8;
+					goal_bound = (goal_bound << 8) | (ui8) *comp_p++;
+				} while (*low_bound_high_byte_p == *high_bound_high_byte_p);
+				low_bound &= CMP_RED_RANGE_MASK_m11;
+				high_bound &= CMP_RED_RANGE_MASK_m11;
+				goal_bound &= CMP_RED_RANGE_MASK_m11;
+				range = high_bound - low_bound;
+			}
+			prev_high_bound = low_bound;
+			target_cc =  ((goal_bound - low_bound) << 16) / range;
+			cc = cumulative_count[prev_cat];
+			for (j = 1; j < stats_entries[prev_cat]; ++j)
+				if (target_cc <= cc[j])
+					break;
+			if (--j)
+				prev_high_bound += (range * cumulative_count[prev_cat][j]) >> 16;
+		}
+	}
+	PRED2_RANGE_DECODE_DONE_m11:
+
+	// generate derivatives from keysample data
 	si4_p = cps->decompressed_ptr + n_derivs;
 	si1_p1 = (si1 *) cps->parameters.keysample_buffer;
 	for (i = n_samps - n_derivs; i--;) {
@@ -15012,18 +15313,18 @@ CMP_REALLOC_CPS_FAIL_m11:
 }
 
 
-void    CMP_RED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
+void    CMP_RED1_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 {
-	TERN_m11			pos_derivs, no_zero_counts;
-	ui1				*comp_p, *low_bound_high_byte_p, *high_bound_high_byte_p, *goal_bound_high_byte_p;
-	ui1				*ui1_p1, *ui1_p2, *symbol_map, n_derivs, overflow_bytes;
-	si1				*si1_p1, *si1_p2, *key_p;
-	ui2				*count;
-	ui4				n_samps, n_keysample_bytes;
-	si4				*si4_p, overflow_val, sign_bit, sign_bytes, *init_val_p;
-	ui8				*minimum_range, *cumulative_count;
-	ui8				low_bound, high_bound, prev_high_bound, goal_bound, range;
-	si8				i, j, n_stats_entries;
+	TERN_m11	pos_derivs, no_zero_counts;
+	ui1		*comp_p, *low_bound_high_byte_p, *high_bound_high_byte_p, *goal_bound_high_byte_p;
+	ui1		*ui1_p1, *ui1_p2, *symbol_map, n_derivs, overflow_bytes;
+	si1		*si1_p1, *si1_p2, *key_p;
+	ui2		*count;
+	ui4		n_samps, n_keysample_bytes;
+	si4		*si4_p, overflow_val, sign_bit, sign_bytes, *init_val_p;
+	ui8		*minimum_range, *cumulative_count;
+	ui8		low_bound, high_bound, prev_high_bound, goal_bound, range;
+	si8		i, j, n_stats_entries;
 	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
 	CMP_RED_MODEL_FIXED_HEADER_m11	*RED_header;
 	
@@ -15106,7 +15407,7 @@ void    CMP_RED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 				range = high_bound - (low_bound = prev_high_bound);
 				*key_p = symbol_map[j];
 				if (!--i)
-					goto RED_RANGE_DECODE_DONE_m11;
+					goto RED1_RANGE_DECODE_DONE_m11;
 				++key_p;
 				j = 0;
 			} else {
@@ -15133,9 +15434,237 @@ void    CMP_RED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 			goal_bound &= CMP_RED_RANGE_MASK_m11;
 		}
 		prev_high_bound = low_bound;
-	} RED_RANGE_DECODE_DONE_m11:
+	} RED1_RANGE_DECODE_DONE_m11:
 		
-	// generate output from keysample data
+	// generate derivatives from keysample data
+	si4_p = cps->decompressed_ptr + n_derivs;
+	if (pos_derivs == TRUE_m11) {
+		ui1_p1 = (ui1 *) cps->parameters.keysample_buffer;
+		for (i = n_samps - n_derivs; i--;) {
+			if (*ui1_p1 == CMP_POS_DERIV_KEYSAMPLE_FLAG_m11) {
+				++ui1_p1;
+				overflow_val = 0;
+				ui1_p2 = (ui1 *) &overflow_val;
+				j = overflow_bytes; do {
+					*ui1_p2++ = *ui1_p1++;
+				} while (--j);
+				*si4_p++ = overflow_val;
+			} else {
+				*si4_p++ = (si4) *ui1_p1++;
+			}
+		}
+	} else {
+		si1_p1 = (si1 *) cps->parameters.keysample_buffer;
+		for (i = n_samps - n_derivs; i--;) {
+			if (*si1_p1 == CMP_SI1_KEYSAMPLE_FLAG_m11) {
+				overflow_val = 0;
+				++si1_p1;
+				si1_p2 = (si1 *) &overflow_val;
+				j = overflow_bytes; do {
+					*si1_p2++ = *si1_p1++;
+				} while (--j);
+				if (overflow_val & sign_bit)
+					overflow_val |= sign_bytes;
+				*si4_p++ = overflow_val;
+			} else {
+				*si4_p++ = (si4) *si1_p1++;
+			}
+		}
+	}
+	
+	// integrate derivatives
+	CMP_integrate_m11(cps);
+	
+	return;
+}
+
+
+void    CMP_RED2_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
+{
+	TERN_m11	pos_derivs, no_zero_counts, multiply_method;
+	ui1		*comp_p, *low_bound_high_byte_p, *high_bound_high_byte_p, *goal_bound_high_byte_p;
+	ui1		*ui1_p1, *ui1_p2, *symbol_map, n_derivs, overflow_bytes;
+	si1		*si1_p1, *si1_p2, *key_p;
+	ui2		*count;
+	ui4		n_samps, n_keysample_bytes;
+	si4		*si4_p, overflow_val, sign_bit, sign_bytes, *init_val_p;
+	ui8		*minimum_range, *cumulative_count;
+	ui8		low_bound, high_bound, prev_high_bound, goal_bound, range, target_cc;
+	si8		i, j, n_stats_entries;
+	sf8		average_steps, multiply_time;
+	CMP_BLOCK_FIXED_HEADER_m11	*block_header;
+	CMP_RED_MODEL_FIXED_HEADER_m11	*RED_header;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// CMP decompress from block_header to decompressed_ptr
+	block_header = cps->block_header;
+	n_samps = block_header->number_of_samples;
+	
+	// zero or one or samples
+	if (n_samps <= 1) {
+		if (block_header->number_of_samples == 1)
+			cps->decompressed_ptr[0] = *((si4 *) (cps->parameters.model_region + CMP_RED_MODEL_FIXED_HEADER_BYTES_m11));
+		cps->parameters.derivative_level = 0;
+		return;
+	}
+
+	RED_header = (CMP_RED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
+	n_derivs = RED_header->derivative_level;
+	n_keysample_bytes = RED_header->number_of_keysample_bytes;
+	n_stats_entries = (si8) RED_header->number_of_statistics_bins;
+	
+	// set parameters for return
+	cps->parameters.derivative_level = RED_header->derivative_level;
+	
+	// get block flags
+	no_zero_counts = FALSE_m11;
+	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_MASK_m11)
+		no_zero_counts = TRUE_m11;
+	pos_derivs = FALSE_m11;
+	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m11)
+		pos_derivs = TRUE_m11;
+	overflow_bytes = CMP_get_overflow_bytes_m11(cps, CMP_DECOMPRESSION_MODE_m11, CMP_RED_COMPRESSION_m11);
+	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
+	if (overflow_bytes == 4)
+		sign_bytes = (ui4) 0;
+	else  // Windows: shift of 32 bits is equated to shift of 0, so have to do this
+		sign_bytes = (ui4) 0xFFFFFFFF << (overflow_bytes << 3);
+	
+	// copy initial derivative values to output buffer
+	init_val_p = (si4 *) (cps->parameters.model_region + CMP_RED_MODEL_FIXED_HEADER_BYTES_m11);
+	for (i = 0; i < n_derivs; ++i)
+		cps->decompressed_ptr[i] = *init_val_p++;
+
+	// build symbol map, count array, & minimum ranges
+	count = (ui2 *) init_val_p;
+	symbol_map = (ui1 *) (count + n_stats_entries);
+	if (no_zero_counts == TRUE_m11) {  // TO DO: decide mapping scheme for unmapped symbols in symbol map
+		for (i = n_stats_entries; i < 256; ++i)  // TO DO: copy count & symbol map to arrays with 256 elements
+			count[i] = 1;
+	}
+	cumulative_count = (ui8 *) cps->parameters.cumulative_count;
+	minimum_range = (ui8 *) cps->parameters.minimum_range;
+	for (cumulative_count[0] = i = 0; i < n_stats_entries; ++i) {
+		cumulative_count[i + 1] = cumulative_count[i] + (ui8) count[i];
+		minimum_range[i] = CMP_RED_TOTAL_COUNTS_m11 / count[i];
+		if (CMP_RED_TOTAL_COUNTS_m11 > (count[i] * minimum_range[i]))
+			++minimum_range[i];
+	}
+
+	// determine decompression method
+	if (global_tables_m11->performance_specs.initialized == FALSE_m11)
+		initialize_performance_specs_m11();
+	for (average_steps = (sf8) 0.0, i = 0; i < n_stats_entries; ++i)
+		average_steps += (sf8) (i * (si8) count[i]);
+	average_steps /= (sf8) CMP_RED_TOTAL_COUNTS_m11;
+	multiply_time = average_steps * global_tables_m11->performance_specs.nsecs_per_integer_multiplication;
+	if (multiply_time < global_tables_m11->performance_specs.nsecs_per_integer_division)
+		multiply_method = TRUE_m11;
+	else
+		multiply_method = FALSE_m11;
+	
+	// range decode
+	key_p = cps->parameters.keysample_buffer;
+	prev_high_bound = goal_bound = low_bound = 0;
+	range = CMP_RED_MAXIMUM_RANGE_m11;
+	comp_p = symbol_map + n_stats_entries;
+	low_bound_high_byte_p = ((ui1 *) &low_bound) + 5;
+	high_bound_high_byte_p = ((ui1 *) &high_bound) + 5;
+	goal_bound_high_byte_p = ((ui1 *) &goal_bound) + 5;
+	ui1_p1 = goal_bound_high_byte_p;
+	*ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++;
+	*ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++;
+
+	if (multiply_method == TRUE_m11) {
+		for (j = 0, i = n_keysample_bytes; i;) {
+			while (range >= minimum_range[j]) {
+				high_bound = low_bound + ((range * cumulative_count[j + 1]) >> 16);
+				if (high_bound > goal_bound) {
+					*key_p++ = symbol_map[j];
+					if (!--i)
+						goto RED2_RANGE_DECODE_DONE_m11;
+					range = high_bound - (low_bound = prev_high_bound);
+					j = 0;
+				} else {
+					prev_high_bound = high_bound;
+					++j;
+				}
+			}
+			high_bound = low_bound + range;
+			if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p) {
+				ui1_p1 = goal_bound_high_byte_p;
+				*ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++;
+				*ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++;
+				low_bound = 0;
+				range = CMP_RED_MAXIMUM_RANGE_m11;
+			} else {
+				do {
+					low_bound <<= 8;
+					high_bound <<= 8;
+					goal_bound = (goal_bound << 8) | (ui8) *comp_p++;
+				} while (*low_bound_high_byte_p == *high_bound_high_byte_p);
+				low_bound &= CMP_RED_RANGE_MASK_m11;
+				high_bound &= CMP_RED_RANGE_MASK_m11;
+				goal_bound &= CMP_RED_RANGE_MASK_m11;
+				range = high_bound - low_bound;
+			}
+			prev_high_bound = low_bound;
+			if (j)
+				prev_high_bound += (range * cumulative_count[j]) >> 16;
+		}
+	} else {  // division method
+		for (j = 0, i = n_keysample_bytes; i;) {
+			while (range >= minimum_range[j]) {
+				high_bound = low_bound + ((range * cumulative_count[j + 1]) >> 16);
+				if (high_bound > goal_bound) {
+					*key_p++ = symbol_map[j];
+					if (!--i)
+						goto RED2_RANGE_DECODE_DONE_m11;
+					range = high_bound - (low_bound = prev_high_bound);
+					target_cc = ((goal_bound - low_bound) << 16) / range;
+					for (j = 1; j < n_stats_entries; ++j)
+						if (target_cc <= cumulative_count[j])
+							break;
+					if (--j)
+						prev_high_bound += (range * cumulative_count[j]) >> 16;
+				} else {
+					prev_high_bound = high_bound;
+					++j;
+				}
+			}
+			high_bound = low_bound + range;
+			if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p) {
+				ui1_p1 = goal_bound_high_byte_p;
+				*ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++;
+				*ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++; *ui1_p1-- = *comp_p++;
+				low_bound = 0;
+				range = CMP_RED_MAXIMUM_RANGE_m11;
+			} else {
+				do {
+					low_bound <<= 8;
+					high_bound <<= 8;
+					goal_bound = (goal_bound << 8) | (ui8) *comp_p++;
+				} while (*low_bound_high_byte_p == *high_bound_high_byte_p);
+				low_bound &= CMP_RED_RANGE_MASK_m11;
+				high_bound &= CMP_RED_RANGE_MASK_m11;
+				goal_bound &= CMP_RED_RANGE_MASK_m11;
+				range = high_bound - low_bound;
+			}
+			prev_high_bound = low_bound;
+			target_cc = ((goal_bound - low_bound) << 16) / range;
+			for (j = 1; j < n_stats_entries; ++j)
+				if (target_cc <= cumulative_count[j])
+					break;
+			if (--j)
+				prev_high_bound += (range * cumulative_count[j]) >> 16;
+		}
+	}
+	RED2_RANGE_DECODE_DONE_m11:
+		
+	// generate derivatives from keysample data
 	si4_p = cps->decompressed_ptr + n_derivs;
 	if (pos_derivs == TRUE_m11) {
 		ui1_p1 = (ui1 *) cps->parameters.keysample_buffer;
@@ -15413,9 +15942,13 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 		printf_m11("------------------- CMP Block Model - START ------------------\n");
 	}
 	switch (block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m11) {
-		case CMP_BF_RED_ENCODING_MASK_m11:
+		case CMP_BF_RED1_ENCODING_MASK_m11:
+		case CMP_BF_RED2_ENCODING_MASK_m11:
 			RED_header = (CMP_RED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
-			printf_m11("%sModel: Range Encoded Derivatives (RED)\n", indent);
+			if (block_header->block_flags & CMP_BF_RED1_ENCODING_MASK_m11)
+				printf_m11("%sModel: Range Encoded Derivatives 1 (RED1)\n", indent);
+			else
+				printf_m11("%sModel: Range Encoded Derivatives 2 (RED2)\n", indent);
 			printf_m11("%sNumber of Keysample Bytes: %u\n", indent, RED_header->number_of_keysample_bytes);
 			printf_m11("%sDerivative Level: %hhu\n", indent, RED_header->derivative_level);
 			if (RED_header->derivative_level > 0) {
@@ -15443,9 +15976,13 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 				printf_m11("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
 			break;
 			
-		case CMP_BF_PRED_ENCODING_MASK_m11:
+		case CMP_BF_PRED1_ENCODING_MASK_m11:
+		case CMP_BF_PRED2_ENCODING_MASK_m11:
 			PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m11 *) cps->parameters.model_region;
-			printf_m11("%sModel: Predictive Range Encoded Derivatives (PRED)\n", indent);
+			if (block_header->block_flags & CMP_BF_PRED1_ENCODING_MASK_m11)
+				printf_m11("%sModel: Predictive Range Encoded Derivatives 1 (PRED1)\n", indent);
+			else
+				printf_m11("%sModel: Predictive Range Encoded Derivatives 2 (PRED2)\n", indent);
 			printf_m11("%sNumber of Keysample Bytes: %u\n", indent, PRED_header->number_of_keysample_bytes);
 			printf_m11("%sDerivative Level: %hhu\n", indent, PRED_header->derivative_level);
 			if (PRED_header->derivative_level > 0) {
@@ -15506,13 +16043,15 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 			VDS_header = (CMP_VDS_MODEL_FIXED_HEADER_m11 *) VDS_model_region;
 			algorithm = VDS_header->flags & CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11;
 			switch (algorithm) {
-				case CMP_VDS_FLAGS_AMPLITUDE_RED_MASK_m11:
+				case CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m11:
+				case CMP_VDS_FLAGS_AMPLITUDE_RED2_MASK_m11:
 					amp_alg = "RED";
-					amp_alg_flag = CMP_BF_RED_ENCODING_MASK_m11;
+					amp_alg_flag = CMP_BF_RED2_ENCODING_MASK_m11;  // either fine, headers same
 					break;
-				case CMP_VDS_FLAGS_AMPLITUDE_PRED_MASK_m11:
+				case CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m11:
+				case CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m11:
 					amp_alg = "PRED";
-					amp_alg_flag = CMP_BF_PRED_ENCODING_MASK_m11;
+					amp_alg_flag = CMP_BF_PRED2_ENCODING_MASK_m11;  // either fine, headers same
 					break;
 				case CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m11:
 					amp_alg = "MBE";
@@ -15521,13 +16060,15 @@ void    CMP_show_block_model_m11(CMP_PROCESSING_STRUCT_m11 *cps, TERN_m11 recurs
 			}
 			algorithm = VDS_header->flags & CMP_VDS_TIME_ALGORITHMS_MASK_m11;
 			switch (algorithm) {
-				case CMP_VDS_FLAGS_TIME_RED_MASK_m11:
+				case CMP_VDS_FLAGS_TIME_RED1_MASK_m11:
+				case CMP_VDS_FLAGS_TIME_RED2_MASK_m11:
 					time_alg = "RED";
-					time_alg_flag = CMP_BF_RED_ENCODING_MASK_m11;
+					time_alg_flag = CMP_BF_RED2_ENCODING_MASK_m11;  // either fine, headers same
 					break;
-				case CMP_VDS_FLAGS_TIME_PRED_MASK_m11:
+				case CMP_VDS_FLAGS_TIME_PRED1_MASK_m11:
+				case CMP_VDS_FLAGS_TIME_PRED2_MASK_m11:
 					time_alg = "PRED";
-					time_alg_flag = CMP_BF_PRED_ENCODING_MASK_m11;
+					time_alg_flag = CMP_BF_PRED2_ENCODING_MASK_m11;  // either fine, headers same
 					break;
 				case CMP_VDS_FLAGS_TIME_MBE_MASK_m11:
 					time_alg = "MBE";
@@ -15913,20 +16454,27 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	block_header->model_region_bytes = VDS_header->amplitude_block_model_bytes;
 	algorithm = VDS_header->flags & CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11;
 	switch (algorithm) {
-		case CMP_VDS_FLAGS_AMPLITUDE_RED_MASK_m11:  // older VDS used RED for amplitudes - this should go away eventually
+		case CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m11:  // older VDS used RED for amplitudes - this should go away eventually
+		case CMP_VDS_FLAGS_AMPLITUDE_RED2_MASK_m11:
 			// change PRED buffers to RED
 			saved_cumulative_count_p = cps->parameters.cumulative_count;
 			saved_minimum_range_p = cps->parameters.minimum_range;
 			cps->parameters.cumulative_count = *((void **) saved_cumulative_count_p);
 			cps->parameters.minimum_range = *((void **) saved_minimum_range_p);
 			// decode
-			CMP_RED_decode_m11(cps);
+			if (algorithm == CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m11)
+				CMP_RED1_decode_m11(cps);
+			else
+				CMP_RED2_decode_m11(cps);
 			// restore PRED buffers
 			cps->parameters.cumulative_count = saved_cumulative_count_p;
 			cps->parameters.minimum_range = saved_minimum_range_p;
 			break;
-		case CMP_VDS_FLAGS_AMPLITUDE_PRED_MASK_m11:
-			CMP_PRED_decode_m11(cps);
+		case CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m11:
+			CMP_PRED1_decode_m11(cps);
+			break;
+		case CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m11:
+			CMP_PRED2_decode_m11(cps);
 			break;
 		case CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m11:
 			CMP_MBE_decode_m11(cps);
@@ -15960,13 +16508,17 @@ void	CMP_VDS_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps)
 	block_header->model_region_bytes = VDS_header->time_block_model_bytes;
 	algorithm = VDS_header->flags & CMP_VDS_TIME_ALGORITHMS_MASK_m11;
 	switch (algorithm) {
-		case CMP_VDS_FLAGS_TIME_RED_MASK_m11:
+		case CMP_VDS_FLAGS_TIME_RED1_MASK_m11:
+		case CMP_VDS_FLAGS_TIME_RED2_MASK_m11:
 			// change PRED amplitude buffers to RED time buffers
 			saved_cumulative_count_p = cps->parameters.cumulative_count;
 			saved_minimum_range_p = cps->parameters.minimum_range;
 			cps->parameters.cumulative_count = *((void **) saved_cumulative_count_p);
 			cps->parameters.minimum_range = *((void **) saved_minimum_range_p);
-			CMP_RED_decode_m11(cps);
+			if (algorithm == CMP_VDS_FLAGS_TIME_RED1_MASK_m11)
+				CMP_RED1_decode_m11(cps);
+			else
+				CMP_RED2_decode_m11(cps);
 			// restore PRED amplitude buffers
 			cps->parameters.cumulative_count = saved_cumulative_count_p;
 			cps->parameters.minimum_range = saved_minimum_range_p;

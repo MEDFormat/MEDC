@@ -1186,6 +1186,14 @@ typedef struct {
 #endif
 
 typedef struct {
+	TERN_m11	initialized;
+	sf8		integer_multiplications_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
+	sf8		integer_divisions_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
+	sf8		nsecs_per_integer_multiplication;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
+	sf8		nsecs_per_integer_division;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
+} PERFORMANCE_SPECS_m11;
+
+typedef struct {
 	// Identifier
 	pid_t_m11			_id;  // thread or process id
 	// Password
@@ -1291,11 +1299,13 @@ typedef struct {
 	ui4			*SHA_k_table;
 	ui4			*UTF8_offsets_table;
 	si1			*UTF8_trailing_bytes_table;
+	PERFORMANCE_SPECS_m11	performance_specs;
 	pthread_mutex_t_m11	TZ_mutex;
 	pthread_mutex_t_m11	SHA_mutex;
 	pthread_mutex_t_m11	AES_mutex;
 	pthread_mutex_t_m11	CRC_mutex;
 	pthread_mutex_t_m11	UTF8_mutex;
+	pthread_mutex_t_m11	performance_mutex;
 } GLOBAL_TABLES_m11;
 
 // Globals List (thread local storage)
@@ -1973,6 +1983,7 @@ TERN_m11	include_record_m11(ui4 type_code, si4 *record_filters);
 TERN_m11	initialize_global_tables_m11(TERN_m11 initialize_all_tables);
 TERN_m11	initialize_globals_m11(TERN_m11 initialize_all_tables);
 TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 initialize_all_tables);
+TERN_m11	initialize_performance_specs_m11(void);
 TIME_SLICE_m11	*initialize_time_slice_m11(TIME_SLICE_m11 *slice);
 TERN_m11	initialize_timezone_tables_m11(void);
 void		initialize_universal_header_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 type_code, TERN_m11 generate_file_UID, TERN_m11 originating_file);
@@ -2295,28 +2306,35 @@ si4    		vsprintf_m11(si1 *target, si1 *fmt, va_list args);
 #define CMP_VDS_MODEL_FLAGS_OFFSET_m11                  		12                      // ui4  (more options for VDS)
 #define CMP_VDS_MODEL_FIXED_HEADER_BYTES_m11                            16
 // VDS Model Flags
-#define CMP_VDS_FLAGS_AMPLITUDE_RED_MASK_m11				((ui4) 1)       	// bit 0
-#define CMP_VDS_FLAGS_AMPLITUDE_PRED_MASK_m11				((ui4) 1 << 1)       	// bit 1
+#define CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m11				((ui4) 1)       	// bit 0
+#define CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m11				((ui4) 1 << 1)       	// bit 1
 #define CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m11				((ui4) 1 << 2)		// bit 2
-#define CMP_VDS_FLAGS_TIME_RED_MASK_m11					((ui4) 1 << 5)		// bit 5
-#define CMP_VDS_FLAGS_TIME_PRED_MASK_m11				((ui4) 1 << 6)		// bit 6
+#define CMP_VDS_FLAGS_AMPLITUDE_RED2_MASK_m11				((ui4) 1 << 3)       	// bit 3
+#define CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m11				((ui4) 1 << 4)       	// bit 4
+#define CMP_VDS_FLAGS_TIME_RED1_MASK_m11				((ui4) 1 << 5)		// bit 5
+#define CMP_VDS_FLAGS_TIME_PRED1_MASK_m11				((ui4) 1 << 6)		// bit 6
 #define CMP_VDS_FLAGS_TIME_MBE_MASK_m11					((ui4) 1 << 7)		// bit 7
-#define CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11				(CMP_VDS_FLAGS_AMPLITUDE_RED_MASK_m11 | CMP_VDS_FLAGS_AMPLITUDE_PRED_MASK_m11 | CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m11)
-#define CMP_VDS_TIME_ALGORITHMS_MASK_m11				(CMP_VDS_FLAGS_TIME_RED_MASK_m11 | CMP_VDS_FLAGS_TIME_PRED_MASK_m11 | CMP_VDS_FLAGS_TIME_MBE_MASK_m11)
-#define CMP_VDS_ALGORITHMS_MASK_m11					(CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11 | CMP_VDS_TIME_ALGORITHMS_MASK_m11)
+#define CMP_VDS_FLAGS_TIME_RED2_MASK_m11				((ui4) 1 << 8)		// bit 8
+#define CMP_VDS_FLAGS_TIME_PRED2_MASK_m11				((ui4) 1 << 9)		// bit 9
+#define CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11				((ui4) (CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m11 | CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m11 |   CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m11 | CMP_VDS_FLAGS_AMPLITUDE_RED2_MASK_m11 | CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m11))
+#define CMP_VDS_TIME_ALGORITHMS_MASK_m11				((ui4) (CMP_VDS_FLAGS_TIME_RED1_MASK_m11 | CMP_VDS_FLAGS_TIME_PRED1_MASK_m11 | CMP_VDS_FLAGS_TIME_MBE_MASK_m11 | CMP_VDS_FLAGS_TIME_RED2_MASK_m11 | CMP_VDS_FLAGS_TIME_PRED2_MASK_m11))
+#define CMP_VDS_ALGORITHMS_MASK_m11					((ui4) (CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m11 | CMP_VDS_TIME_ALGORITHMS_MASK_m11))
 
 // CMP Block Flag Masks
 #define CMP_BF_BLOCK_FLAG_BITS_m11			32
 #define CMP_BF_DISCONTINUITY_MASK_m11			((ui4) 1)       	// bit 0
 #define CMP_BF_LEVEL_1_ENCRYPTION_MASK_m11		((ui4) 1 << 4)		// bit 4
 #define CMP_BF_LEVEL_2_ENCRYPTION_MASK_m11		((ui4) 1 << 5)		// bit 5
-#define CMP_BF_RED_ENCODING_MASK_m11			((ui4) 1 << 8)		// bit 8
-#define CMP_BF_PRED_ENCODING_MASK_m11			((ui4) 1 << 9)		// bit 9
+#define CMP_BF_RED1_ENCODING_MASK_m11			((ui4) 1 << 8)		// bit 8
+#define CMP_BF_PRED1_ENCODING_MASK_m11			((ui4) 1 << 9)		// bit 9
 #define CMP_BF_MBE_ENCODING_MASK_m11			((ui4) 1 << 10)		// bit 10
 #define CMP_BF_VDS_ENCODING_MASK_m11			((ui4) 1 << 11)		// bit 11
+#define CMP_BF_RED2_ENCODING_MASK_m11			((ui4) 1 << 12)		// bit 12 - faster, use as default RED version
+#define CMP_BF_PRED2_ENCODING_MASK_m11			((ui4) 1 << 13)		// bit 13 - faster, use as default PRED version
 
-#define CMP_BF_ALGORITHMS_MASK_m11			((ui4) (CMP_BF_RED_ENCODING_MASK_m11 | CMP_BF_PRED_ENCODING_MASK_m11 | \
-							CMP_BF_MBE_ENCODING_MASK_m11 | CMP_BF_VDS_ENCODING_MASK_m11))
+#define CMP_BF_ALGORITHMS_MASK_m11			((ui4) (CMP_BF_RED1_ENCODING_MASK_m11 | CMP_BF_PRED1_ENCODING_MASK_m11 | \
+							CMP_BF_MBE_ENCODING_MASK_m11 | CMP_BF_VDS_ENCODING_MASK_m11 | \
+							CMP_BF_RED2_ENCODING_MASK_m11 | CMP_BF_PRED2_ENCODING_MASK_m11 ))
 #define CMP_BF_ENCRYPTION_MASK_m11			((ui4) (CMP_BF_LEVEL_1_ENCRYPTION_MASK_m11 | CMP_BF_LEVEL_2_ENCRYPTION_MASK_m11))
 
 // CMP Parameter Map Indices
@@ -2344,14 +2362,19 @@ si4    		vsprintf_m11(si1 *target, si1 *fmt, va_list args);
 #define CMP_FREQUENCY_SCALE_MODE_m11		((ui1) 2)
 
 // Compression Algorithms
-#define CMP_RED_COMPRESSION_m11		CMP_BF_RED_ENCODING_MASK_m11
-#define CMP_PRED_COMPRESSION_m11	CMP_BF_PRED_ENCODING_MASK_m11
+#define CMP_RED1_COMPRESSION_m11	CMP_BF_RED1_ENCODING_MASK_m11
+#define CMP_PRED1_COMPRESSION_m11	CMP_BF_PRED1_ENCODING_MASK_m11
 #define CMP_MBE_COMPRESSION_m11		CMP_BF_MBE_ENCODING_MASK_m11
 #define CMP_VDS_COMPRESSION_m11		CMP_BF_VDS_ENCODING_MASK_m11
+#define CMP_RED2_COMPRESSION_m11	CMP_BF_RED2_ENCODING_MASK_m11
+#define CMP_PRED2_COMPRESSION_m11	CMP_BF_PRED2_ENCODING_MASK_m11
+
+#define CMP_RED_COMPRESSION_m11		CMP_RED2_COMPRESSION_m11	// use RED v2 as default
+#define CMP_PRED_COMPRESSION_m11	CMP_PRED2_COMPRESSION_m11	// use PRED v2 as default
 
 // CMP Directives Defaults
 #define CMP_DIRECTIVES_COMPRESSION_MODE_DEFAULT_m11			CMP_COMPRESSION_MODE_NO_ENTRY_m11
-#define CMP_DIRECTIVES_ALGORITHM_DEFAULT_m11				CMP_PRED_COMPRESSION_m11
+#define CMP_DIRECTIVES_ALGORITHM_DEFAULT_m11				CMP_PRED2_COMPRESSION_m11
 #define CMP_DIRECTIVES_ENCRYPTION_LEVEL_DEFAULT_m11			NO_ENCRYPTION_m11
 #define CMP_DIRECTIVES_CPS_POINTER_RESET_DEFAULT_m11			TRUE_m11
 #define CMP_DIRECTIVES_CPS_CACHING_DEFAULT_m11				TRUE_m11
@@ -2644,9 +2667,11 @@ void		CMP_lock_buffers_m11(CMP_BUFFERS_m11 *buffers);
 void    	CMP_MBE_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 sf8     	*CMP_mak_interp_sf8_m11(CMP_BUFFERS_m11 *in_bufs, si8 in_len, CMP_BUFFERS_m11 *out_bufs, si8 out_len);
 void    	CMP_offset_time_m11(CMP_BLOCK_FIXED_HEADER_m11 *block_header, si4 action);
-void    	CMP_PRED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
+void    	CMP_PRED1_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
+void    	CMP_PRED2_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 CMP_PROCESSING_STRUCT_m11	*CMP_reallocate_processing_struct_m11(FILE_PROCESSING_STRUCT_m11 *fps, ui4 mode, si8 data_samples, ui4 block_samples);
-void    	CMP_RED_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
+void    	CMP_RED1_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
+void    	CMP_RED2_decode_m11(CMP_PROCESSING_STRUCT_m11 *cps);
 void    	CMP_retrend_si4_m11(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b);
 void    	CMP_retrend_2_sf8_m11(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b);
 si2      	CMP_round_si2_m11(sf8 val);
