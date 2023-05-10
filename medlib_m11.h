@@ -2413,7 +2413,7 @@ si4    		vsprintf_m11(si1 *target, si1 *fmt, va_list args);
 #define CMP_PARAMETERS_GOAL_RATIO_DEFAULT_m11			((sf8) 0.05)
 #define CMP_PARAMETERS_GOAL_TOLERANCE_DEFAULT_m11		((sf8) 0.005)
 #define CMP_PARAMETERS_MAXIMUM_GOAL_ATTEMPTS_DEFAULT_m11	20
-#define CMP_PARAMETERS_MINIMUM_NORMALITY_DEFAULT_m11		((ui1) 128)	// ronge 0-254 (low to high)
+#define CMP_PARAMETERS_MINIMUM_NORMALITY_DEFAULT_m11		((ui1) 128)	// range 0-254 (low to high)
 #define CMP_PARAMETERS_AMPLITUDE_SCALE_DEFAULT_m11		((sf4) 1.0)
 #define CMP_PARAMETERS_FREQUENCY_SCALE_DEFAULT_m11		((sf4) 1.0)
 #define CMP_PARAMETERS_VDS_THRESHOLD_DEFAULT_m11		((sf8) 5.0)	// generally an integer, but any float value is fine. Range 0.0 to 10.0; default == 5.0  (0.0 == lossless compression)

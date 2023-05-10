@@ -5869,9 +5869,16 @@ TERN_m11	initialize_performance_specs_m11(void)
 	p1 = test_arr1;
 	p2 = test_arr2;
 	for (i = ROUNDS; i--; ++p1, ++p2) {
+#if defined MACOS_m11 || defined LINUX_m11
 		*p1 = ((ui8) random()) << 16;
 		*p1 ^= (ui8) random();  // 48 bit number
 		*p2 = ((ui8) random() >> 16) + 1;  // 16 bit non-zero number
+#endif
+#ifdef WINDOWS_m11
+		*p1 = ((ui8) rand()) << 16;
+		*p1 ^= (ui8) rand();  // 48 bit number
+		*p2 = ((ui8) rand() >> 16) + 1;  // 16 bit non-zero number
+#endif
 	}
 
 	// multiplication
