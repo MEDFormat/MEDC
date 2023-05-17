@@ -6926,7 +6926,7 @@ CHANNEL_m11	*open_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, si1 *cha
 	chan->flags = flags | (LH_OPEN_m11 | LH_CHANNEL_ACTIVE_m11);
 	
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (globals_m11->password_data.processed == 0) {
+	if (globals_m11->password_data.processed == 0 || globals_m11->time_constants_set != TRUE_m11) {
 		if (set_time_and_password_data_m11(password, chan->path, NULL, NULL) == FALSE_m11) {
 			if (free_channel == TRUE_m11)
 				free_channel_m11(chan, TRUE_m11);
@@ -7119,7 +7119,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 	seg->flags = flags | LH_OPEN_m11;
 
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (globals_m11->password_data.processed == 0) {
+	if (globals_m11->password_data.processed == 0 || globals_m11->time_constants_set != TRUE_m11) {
 		if (set_time_and_password_data_m11(password, seg->path, NULL, NULL) == FALSE_m11) {
 			if (free_segment == TRUE_m11)
 				free_segment_m11(seg, TRUE_m11);
@@ -7443,7 +7443,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	}
 
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (globals_m11->password_data.processed == 0) {
+	if (globals_m11->password_data.processed == 0 || globals_m11->time_constants_set != TRUE_m11) {
 		if (set_time_and_password_data_m11(password, sess->path, NULL, NULL) == FALSE_m11) {
 			if (free_session == TRUE_m11)
 				free_session_m11(sess, TRUE_m11);
