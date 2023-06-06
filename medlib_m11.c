@@ -4262,7 +4262,8 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 	
 	if (free_session_structure == TRUE_m11) {
 		free_m11((void *) session, __FUNCTION__);
-		// reset current session globals
+		
+		// current session constants
 		globals_m11->session_UID = UID_NO_ENTRY_m11;
 		*globals_m11->session_directory = 0;
 		globals_m11->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m11;
@@ -4277,12 +4278,36 @@ void	free_session_m11(SESSION_m11 *session, TERN_m11 free_session_structure)
 		globals_m11->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m11;
 		globals_m11->reference_channel = NULL;
 		*globals_m11->reference_channel_name = 0;
-		// reset time globals
+
+		// active channel constants
+		globals_m11->time_series_frequencies_vary = UNKNOWN_m11;
+		globals_m11->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+		globals_m11->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m11;
+		globals_m11->minimum_time_series_frequency_channel = NULL;
+		globals_m11->maximum_time_series_frequency_channel = NULL;
+		globals_m11->video_frame_rates_vary = UNKNOWN_m11;;
+		globals_m11->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+		globals_m11->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m11;
+		globals_m11->minimum_video_frame_rate_channel = NULL;
+		globals_m11->maximum_video_frame_rate_channel = NULL;
+		
+		// Time Constants
 		globals_m11->time_constants_set = FALSE_m11;
 		globals_m11->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m11;
-		// do not zero password data so hints can be shown, if they exist
+		globals_m11->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m11;
+		globals_m11->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m11;
+		globals_m11->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m11;
+		globals_m11->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m11;
+		globals_m11->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m11;
+		strcpy(globals_m11->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m11);
+		strcpy(globals_m11->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m11);
+		strcpy(globals_m11->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m11);
+		strcpy(globals_m11->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m11);
+
 		// reset miscellaneous globals
 		globals_m11->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m11;
+		globals_m11->password_data.processed = 0;  // don't zero password hints can be shown, if they exist
+
 	} else {  // leave name, path, slice, & globals intact (i.e. clear everything with allocated memory)
 		session->flags &= ~LH_OPEN_m11;
 		session->last_access_time = UUTC_NO_ENTRY_m11;
@@ -6257,6 +6282,14 @@ ui4     MED_type_code_from_string_m11(si1 *string)
 	}
 	
 	len = (si4) strlen(string);
+#if defined MACOS_m11 || defined LINUX_m11
+	if (string[len - 1] == '/')
+		--len;
+#endif
+#ifdef WINDOWS_m11
+	if (string[len - 1] == '\\')
+		--len;
+#endif
 	if (len < 5) {
 		if (len != 4)
 			return(NO_FILE_TYPE_CODE_m11);
@@ -7159,7 +7192,7 @@ SEGMENT_m11	*open_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, si1 *seg_
 		if (file_exists_m11(tmp_str) == FILE_EXISTS_m11)  // note seg->video_indices_fps is the same pointer, so works for either
 			seg->time_series_indices_fps = read_file_m11(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m11 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m11);
 		
-		// data (time series only)
+		// data (time series data only)
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m11) {
 			sprintf_m11(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m11);
 			if (file_exists_m11(tmp_str) == FILE_EXISTS_m11) {
@@ -8217,7 +8250,7 @@ CHANNEL_m11	*read_channel_m11(CHANNEL_m11 *chan, TIME_SLICE_m11 *slice, ...)  //
 		else
 			seg->parent = (void *) chan;
 	}
-	
+
 	// empty slice
 	if (null_segment_cnt == n_segs) {
 		slice->number_of_segments = EMPTY_SLICE_m11;
@@ -8775,8 +8808,10 @@ SEGMENT_m11	*read_segment_m11(SEGMENT_m11 *seg, TIME_SLICE_m11 *slice, ...)  // 
 			slice->start_time = uh->segment_start_time;
 		if (slice->end_time > uh->segment_end_time)
 			slice->end_time = uh->segment_end_time;
-		slice->start_sample_number = sample_number_for_uutc_m11((LEVEL_HEADER_m11 *) seg, slice->start_time, FIND_CURRENT_m11);
-		slice->end_sample_number = sample_number_for_uutc_m11((LEVEL_HEADER_m11 *) seg, slice->end_time, FIND_CURRENT_m11);
+		if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m11) {  // may only be reading records
+			slice->start_sample_number = sample_number_for_uutc_m11((LEVEL_HEADER_m11 *) seg, slice->start_time, FIND_CURRENT_m11);
+			slice->end_sample_number = sample_number_for_uutc_m11((LEVEL_HEADER_m11 *) seg, slice->end_time, FIND_CURRENT_m11);
+		}
 	}
 	slice->start_segment_number = slice->end_segment_number = seg->metadata_fps->universal_header->segment_number;
 	slice->number_of_segments = 1;
@@ -8907,7 +8942,7 @@ SESSION_m11	*read_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, ...)  //
 			}
 		}
 	}
-	
+
 	// read video channels
 	for (i = 0; i < sess->number_of_video_channels; ++i) {
 		chan = sess->video_channels[i];
