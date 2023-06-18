@@ -2070,6 +2070,7 @@ void		windify_file_paths_m11(si1 *target, si1 *source);
 si1		*windify_format_string_m11(si1 *fmt);
 #endif
 
+si8		win_filetime_to_uutc_m11(ui1 *win_filetime);  // for conversion of windows file time to uutc on any platform
 
 
 //**********************************************************************************//

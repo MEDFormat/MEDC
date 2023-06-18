@@ -601,12 +601,13 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 			}
 			FPS_free_processing_struct_m11(md_fps, TRUE_m11);
 		}
+		free_m11((void *) seg_list, __FUNCTION__);
 	}
 	
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
-	
+
 	return(Sgmt_records);
 }
 
@@ -4085,7 +4086,7 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		// globals_m11->record_filters = rec_filts;
 			
 	if (globals->behavior_stack != NULL)
-		free_m11((void *) globals->behavior_stack, __FUNCTION__);
+		free((void *) globals->behavior_stack);
 
 #ifdef MATLAB_PERSISTENT_m11
 	if (globals->AT_nodes != NULL) {
@@ -4105,7 +4106,7 @@ void    free_globals_m11(TERN_m11 cleanup_for_exit)
 		#ifdef AT_DEBUG_m11
 		AT_free_all_m11();  // display memory still allocated & free it
 		#endif
-		free((void *) globals->AT_nodes);  // AT nodes are not allocted with AT functions
+		free((void *) globals->AT_nodes);  // AT nodes are not allocated with AT functions
 	}
 	
 	// destroy mutices
@@ -5613,6 +5614,14 @@ TERN_m11	initialize_global_tables_m11(TERN_m11 initialize_all_tables)
 		global_tables_m11->performance_specs.initialized = FALSE_m11;
 	}
 	
+	// initialize all table muticies
+	pthread_mutex_init_m11(&global_tables_m11->TZ_mutex, NULL);
+	pthread_mutex_init_m11(&global_tables_m11->SHA_mutex, NULL);
+	pthread_mutex_init_m11(&global_tables_m11->AES_mutex, NULL);
+	pthread_mutex_init_m11(&global_tables_m11->CRC_mutex, NULL);
+	pthread_mutex_init_m11(&global_tables_m11->UTF8_mutex, NULL);
+	pthread_mutex_init_m11(&global_tables_m11->performance_mutex, NULL);
+	
 	if (initialize_all_tables == TRUE_m11) {  // otherwise load on demand
 		if (CRC_initialize_tables_m11() == FALSE_m11)
 			ret_val = FALSE_m11;
@@ -5871,7 +5880,7 @@ TERN_m11	initialize_medlib_m11(TERN_m11 check_structure_alignments, TERN_m11 ini
 
 TERN_m11	initialize_performance_specs_m11(void)
 {
-	const si8	ROUNDS = 1000000;
+	const si8	ROUNDS = 100000;
 	clock_t		start_t, end_t, elapsed_time;
 	ui8		*p1, *p2, *p3;
 	ui8		*test_arr1, *test_arr2, *test_arr3;
@@ -5883,10 +5892,13 @@ TERN_m11	initialize_performance_specs_m11(void)
 
 	if (global_tables_m11->performance_specs.initialized == TRUE_m11)
 		return(TRUE_m11);
-
-	pthread_mutex_init_m11(&global_tables_m11->performance_mutex, NULL);
-	pthread_mutex_lock_m11(&global_tables_m11->performance_mutex);
 	
+	pthread_mutex_lock_m11(&global_tables_m11->performance_mutex);
+	if (global_tables_m11->performance_specs.initialized == TRUE_m11)  { // may have been done by another thread while waiting
+		pthread_mutex_unlock_m11(&global_tables_m11->performance_mutex);
+		return(TRUE_m11);
+	}
+
 	// setup
 	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
@@ -5917,6 +5929,7 @@ TERN_m11	initialize_performance_specs_m11(void)
 	elapsed_time = end_t - start_t;
 	global_tables_m11->performance_specs.integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
 	global_tables_m11->performance_specs.nsecs_per_integer_multiplication = (sf8) 1000000000.0 / global_tables_m11->performance_specs.integer_multiplications_per_sec;
+
 	// division
 	p1 = test_arr1;
 	p2 = test_arr2;
@@ -5935,8 +5948,7 @@ TERN_m11	initialize_performance_specs_m11(void)
 	free((void *) test_arr3);
 	
 	global_tables_m11->performance_specs.initialized = TRUE_m11;
-	
-	pthread_mutex_unlock_m11(&global_tables_m11->TZ_mutex);
+	pthread_mutex_unlock_m11(&global_tables_m11->performance_mutex);
 
 	return(TRUE_m11);
 }
@@ -5971,8 +5983,11 @@ TERN_m11	initialize_timezone_tables_m11(void)
 	if (global_tables_m11->timezone_table != NULL)
 		return(TRUE_m11);
 
-	pthread_mutex_init_m11(&global_tables_m11->TZ_mutex, NULL);
 	pthread_mutex_lock_m11(&global_tables_m11->TZ_mutex);
+	if (global_tables_m11->timezone_table != NULL) {  // may have been done by another thread while waiting
+		pthread_mutex_unlock_m11(&global_tables_m11->TZ_mutex);
+		return(TRUE_m11);
+	}
 	
 	// timezone table
 	if (global_tables_m11->timezone_table == NULL) {
@@ -7244,7 +7259,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	message_m11("%s()\n", __FUNCTION__);
 #endif
 	
-	// if file_list is a pointer to single string, make list_len zero to indicate a one dimention char array
+	// if file_list is a pointer to single string, make list_len zero to indicate a one dimentional char array
 	// if list_len > 0, assumed to be two dimensional array
 	
 	// allocate session
@@ -8154,7 +8169,7 @@ void	push_behavior_m11(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - US
 	
 	if (globals_m11->behavior_stack_entries == globals_m11->behavior_stack_size) {
 		globals_m11->behavior_stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m11;
-		globals_m11->behavior_stack = (ui4 *) realloc_m11((void *) globals_m11->behavior_stack, (size_t) globals_m11->behavior_stack_size * sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m11);
+		globals_m11->behavior_stack = (ui4 *) realloc((void *) globals_m11->behavior_stack, (size_t) globals_m11->behavior_stack_size * sizeof(ui4));
 	}
 	
 	globals_m11->behavior_stack[globals_m11->behavior_stack_entries++] = globals_m11->behavior_on_fail;
@@ -9468,6 +9483,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 
 		ref_uutc = tsi->start_time;
 		ref_sample_number = tsi->start_sample_number;
+
 		++tsi;  // advance to next index
 		if (tsi->file_offset > 0) {  // get local sampling frequency, unless discontinuity
 			sampling_frequency = (sf8) (tsi->start_sample_number - ref_sample_number);
@@ -9502,6 +9518,7 @@ si8     sample_number_for_uutc_m11(LEVEL_HEADER_m11 *level_header, si8 target_uu
 			break;
 	}
 	sample_number = ref_sample_number + (si8) tmp_sf8;
+
 	if (tsi != NULL) {
 		if (sample_number >= tsi->start_sample_number) {
 			sample_number = tsi->start_sample_number;
@@ -10094,8 +10111,7 @@ SET_GTC_TIMEZONE_MATCH_m11:
 			globals_m11->daylight_time_start_code.value = timezone_info->daylight_time_start_code;
 			globals_m11->daylight_time_end_code.value = timezone_info->daylight_time_end_code;
 		}
-	}
-	else {
+	} else {
 		globals_m11->observe_DST = FALSE_m11;
 	}
 	globals_m11->time_constants_set = TRUE_m11;
@@ -11546,7 +11562,7 @@ TERN_m11	sort_channels_by_acq_num_m11(SESSION_m11 *sess)
 		}
 		acq_idxs[i].chan = chan;
 	}
-	
+		
 	// sort it
 	qsort((void *) acq_idxs, (size_t) n_chans, sizeof(ACQ_NUM_SORT_m11), compare_acq_nums_m11);
 	
@@ -12216,6 +12232,28 @@ si8	win_DATE_to_uutc_m11(sf8 date)
 }
 
 
+// for conversion of windows file time to uutc on any platform
+si8	win_filetime_to_uutc_m11(ui1 *win_filetime)  // pass pointer to beginning of FILETIME structure as ui1 pointer
+{
+	ui1	*ui1_p;
+	si8	uutc, leftovers;
+	
+#ifdef FN_DEBUG_m11
+	message_m11("%s()\n", __FUNCTION__);
+#endif
+	
+	// A Windows time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
+	ui1_p = (ui1 *) &uutc;  // can't guarantee alignment so copy bytewise to uutc variable
+	*ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++;
+	*ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p = *win_filetime;
+	leftovers = uutc % (si8) WIN_TICKS_PER_USEC_m11;
+	leftovers = ((2 * leftovers) + WIN_TICKS_PER_USEC_m11) / (2 * WIN_TICKS_PER_USEC_m11);
+	uutc /= (si8) WIN_TICKS_PER_USEC_m11;
+	uutc -= (WIN_USECS_TO_EPOCH_m11 - leftovers);
+	
+	return(uutc);
+}
+
 
 TERN_m11	win_initialize_terminal_m11(void)
 {
@@ -12776,8 +12814,11 @@ TERN_m11	AES_initialize_tables_m11(void)
 	if (global_tables_m11->AES_rcon_table != NULL)
 		return(TRUE_m11);
 
-	pthread_mutex_init_m11(&global_tables_m11->AES_mutex, NULL);
 	pthread_mutex_lock_m11(&global_tables_m11->AES_mutex);
+	if (global_tables_m11->AES_rcon_table != NULL) {  // may have been done by another thread while waiting
+		pthread_mutex_unlock_m11(&global_tables_m11->AES_mutex);
+		return(TRUE_m11);
+	}
 
 	// rcon table
 	if (global_tables_m11->AES_rcon_table == NULL) {
@@ -16726,8 +16767,11 @@ TERN_m11	CRC_initialize_tables_m11(void)
 	if (global_tables_m11->CRC_table != NULL)
 		return(TRUE_m11);
 
-	pthread_mutex_init_m11(&global_tables_m11->CRC_mutex, NULL);
 	pthread_mutex_lock_m11(&global_tables_m11->CRC_mutex);
+	if (global_tables_m11->CRC_table != NULL) {  // may have been done by another thread while waiting
+		pthread_mutex_unlock_m11(&global_tables_m11->CRC_mutex);
+		return(TRUE_m11);
+	}
 
 	if (global_tables_m11->CRC_table == NULL) {
 		
@@ -17784,8 +17828,11 @@ TERN_m11	SHA_initialize_tables_m11(void)
 	if (global_tables_m11->SHA_h0_table != NULL)
 		return(TRUE_m11);
 
-	pthread_mutex_init_m11(&global_tables_m11->SHA_mutex, NULL);
 	pthread_mutex_lock_m11(&global_tables_m11->SHA_mutex);
+	if (global_tables_m11->SHA_h0_table != NULL) {  // may have been done by another thread while waiting
+		pthread_mutex_unlock_m11(&global_tables_m11->SHA_mutex);
+		return(TRUE_m11);
+	}
 
 	// h0 table
 	if (global_tables_m11->SHA_h0_table == NULL) {
@@ -18520,8 +18567,11 @@ TERN_m11	UTF8_initialize_tables_m11(void)
 	if (global_tables_m11->UTF8_offsets_table != NULL)
 		return(TRUE_m11);
 
-	pthread_mutex_init_m11(&global_tables_m11->UTF8_mutex, NULL);
 	pthread_mutex_lock_m11(&global_tables_m11->UTF8_mutex);
+	if (global_tables_m11->UTF8_offsets_table != NULL) {  // may have been done by another thread while waiting
+		pthread_mutex_unlock_m11(&global_tables_m11->UTF8_mutex);
+		return(TRUE_m11);
+	}
 
 	// offsets table
 	if (global_tables_m11->UTF8_offsets_table == NULL) {
