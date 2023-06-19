@@ -3954,7 +3954,6 @@ void	free_global_tables_m11(void)
 	#else
 		free((void *) global_tables_m11->timezone_table);
 	#endif
-		pthread_mutex_destroy_m11(&global_tables_m11->TZ_mutex);
 	}
 	
 	if (global_tables_m11->country_aliases_table != NULL) {
@@ -3979,7 +3978,6 @@ void	free_global_tables_m11(void)
 	#else
 		free((void *) global_tables_m11->CRC_table);
 	#endif
-		pthread_mutex_destroy_m11(&global_tables_m11->CRC_mutex);
 	}
 	
 	if (global_tables_m11->AES_sbox_table != NULL) {
@@ -3988,7 +3986,6 @@ void	free_global_tables_m11(void)
 	#else
 		free((void *) global_tables_m11->AES_sbox_table);
 	#endif
-		pthread_mutex_destroy_m11(&global_tables_m11->AES_mutex);
 	}
 	
 	if (global_tables_m11->AES_rsbox_table != NULL) {
@@ -4013,7 +4010,6 @@ void	free_global_tables_m11(void)
 	#else
 		free((void *) global_tables_m11->SHA_h0_table);
 	#endif
-		pthread_mutex_destroy_m11(&global_tables_m11->SHA_mutex);
 	}
 	
 	if (global_tables_m11->SHA_k_table != NULL) {
@@ -4030,7 +4026,6 @@ void	free_global_tables_m11(void)
 	#else
 		free((void *) global_tables_m11->UTF8_offsets_table);
 	#endif
-		pthread_mutex_destroy_m11(&global_tables_m11->UTF8_mutex);
 	}
 
 	if (global_tables_m11->UTF8_trailing_bytes_table != NULL) {
@@ -4041,6 +4036,13 @@ void	free_global_tables_m11(void)
 	#endif
 	}
 
+	// destroy muticies
+	pthread_mutex_destroy_m11(&global_tables_m11->TZ_mutex);
+	pthread_mutex_destroy_m11(&global_tables_m11->CRC_mutex);
+	pthread_mutex_destroy_m11(&global_tables_m11->AES_mutex);
+	pthread_mutex_destroy_m11(&global_tables_m11->SHA_mutex);
+	pthread_mutex_destroy_m11(&global_tables_m11->UTF8_mutex);
+	pthread_mutex_destroy_m11(&global_tables_m11->performance_mutex);
 	
 #ifdef MATLAB_PERSISTENT_m11
 	mxFree((void *) global_tables_m11);
