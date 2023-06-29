@@ -504,7 +504,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 			chan = globals_m11->reference_channel;
 		}
 	}
-
+	
 	// use Sgmt records
 	if (ri_fps != NULL) {  // assume rd_fps != NULL
 		// full record index file already read in
@@ -603,7 +603,7 @@ Sgmt_RECORD_m11	*build_Sgmt_records_array_m11(FILE_PROCESSING_STRUCT_m11 *ri_fps
 		}
 		free_m11((void *) seg_list, __FUNCTION__);
 	}
-	
+
 	// fill in global end fields
 	globals_m11->session_end_time = Sgmt_records[n_segs - 1].end_time;
 	globals_m11->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
@@ -800,17 +800,25 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 {
 	TERN_m11			use_default_channel;
 	si8				i, n_chans;
-	FILE_PROCESSING_STRUCT_m11	*ri_fps, *rd_fps;
 	CHANNEL_m11			*chan;
 
 	
 #ifdef FN_DEBUG_m11
 	message_m11("%s()\n", __FUNCTION__);
 #endif
-	
+
 	// pass either channel, or channel name (if both passed channel will be used)
 	// if both NULL, use channel_type
 	
+	// reference channel already set
+	if (channel != NULL) {
+		if (channel == globals_m11->reference_channel) {
+			if (*globals_m11->reference_channel_name == 0)
+				strcpy(globals_m11->reference_channel_name, channel->name);
+			return;
+		}
+	}
+
 	use_default_channel = FALSE_m11;
 	if (channel == NULL) {
 		if (channel_name == NULL)
@@ -894,15 +902,7 @@ void	change_reference_channel_m11(SESSION_m11 *sess, CHANNEL_m11 *channel, si1 *
 CHANGE_REF_MATCH_m11:
 	globals_m11->reference_channel = channel;
 	strcpy(globals_m11->reference_channel_name, channel->name);
-
-	if (sess->Sgmt_records != NULL)
-		free_m11((void *) sess->Sgmt_records, __FUNCTION__);
-	ri_fps = channel->record_indices_fps;
-	rd_fps = channel->record_data_fps;
-	if (sess->Sgmt_records != NULL)
-		free_m11(sess->Sgmt_records, __FUNCTION__);
-	sess->Sgmt_records = build_Sgmt_records_array_m11(ri_fps, rd_fps, channel);
-			    
+	
 	return;
 		
 
@@ -5186,7 +5186,7 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 {
 	TERN_m11			Sgmts_adequate, free_fps;
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m11], sess_path[FULL_FILE_NAME_BYTES_m11], *sess_name;
-	ui4				file_exists;
+	ui4				file_exists, type_code;
 	si4				search_mode, n_segs;
 	si8				i, n_recs;
 	size_t				n_bytes;
@@ -5208,6 +5208,17 @@ si4     get_segment_range_m11(LEVEL_HEADER_m11 *level_header, TIME_SLICE_m11 *sl
 	switch (level_header->type_code) {
 		case LH_SESSION_m11:
 			sess = (SESSION_m11 *) level_header;
+			if (globals_m11->reference_channel == NULL) {
+				if (*globals_m11->reference_channel_name == 0) {
+					change_reference_channel_m11(sess, NULL, globals_m11->reference_channel_name, DEFAULT_CHANNEL_m11);
+				} else {
+					type_code = MED_type_code_from_string_m11(globals_m11->reference_channel_name);
+					if (type_code == TIME_SERIES_CHANNEL_TYPE_m11)
+						change_reference_channel_m11(sess, NULL, NULL, DEFAULT_TIME_SERIES_CHANNEL_m11);
+					else  // VIDEO_CHANNEL_TYPE_m11
+						change_reference_channel_m11(sess, NULL, NULL, DEFAULT_VIDEO_CHANNEL_m11);
+				}
+			}
 			chan = globals_m11->reference_channel;
 			Sgmt_records = sess->Sgmt_records;
 			break;
@@ -7517,10 +7528,7 @@ SESSION_m11	*open_session_m11(SESSION_m11 *sess, TIME_SLICE_m11 *slice, void *fi
 	if (slice->conditioned == FALSE_m11)
 		condition_time_slice_m11(slice);
 	
-	// set global sample/frame number reference channel
-	change_reference_channel_m11(sess, NULL, globals_m11->reference_channel_name, DEFAULT_CHANNEL_m11);
-
-	// get segment range
+	// get segment range (& set global sample/frame number reference channel)
 	n_segs = slice->number_of_segments;
 	if (n_segs == UNKNOWN_m11) {
 		if (get_segment_range_m11((LEVEL_HEADER_m11 *) sess, slice) == 0) {
