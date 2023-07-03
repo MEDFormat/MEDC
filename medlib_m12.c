@@ -20131,7 +20131,7 @@ sf8     CMP_quantval_m12(sf8 *x, si8 len, sf8 quantile, TERN_m12 preserve_input,
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
-ui1	CMP_CMP_random_byte_m12(ui4 *m_w, ui4 *m_z)
+ui1	CMP_random_byte_m12(ui4 *m_w, ui4 *m_z)
 {
 	ui1	rb;
 	
