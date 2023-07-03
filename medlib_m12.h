@@ -1535,7 +1535,7 @@ typedef struct {
 	pthread_mutex_t_m12		AES_mutex;
 	pthread_mutex_t_m12		CRC_mutex;
 	pthread_mutex_t_m12		UTF8_mutex;
-	pthread_mutex_t_m12		CMP_m12_mutex;
+	pthread_mutex_t_m12		CMP_mutex;
 	pthread_mutex_t_m12		performance_mutex;
 } GLOBAL_TABLES_m12;
 

@@ -4610,7 +4610,7 @@ void	G_free_global_tables_m12(void)
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->AES_mutex);
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->SHA_mutex);
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->UTF8_mutex);
-	PROC_pthread_mutex_destroy_m12(&global_tables_m12->CMP_m12_mutex);
+	PROC_pthread_mutex_destroy_m12(&global_tables_m12->CMP_mutex);
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->performance_mutex);
 	
 #ifdef MATLAB_PERSISTENT_m12
@@ -6421,7 +6421,7 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 	PROC_pthread_mutex_init_m12(&global_tables_m12->AES_mutex, NULL);
 	PROC_pthread_mutex_init_m12(&global_tables_m12->CRC_mutex, NULL);
 	PROC_pthread_mutex_init_m12(&global_tables_m12->UTF8_mutex, NULL);
-	PROC_pthread_mutex_init_m12(&global_tables_m12->CMP_m12_mutex, NULL);
+	PROC_pthread_mutex_init_m12(&global_tables_m12->CMP_mutex, NULL);
 	PROC_pthread_mutex_init_m12(&global_tables_m12->performance_mutex, NULL);
 	
 	if (initialize_all_tables == TRUE_m12) {  // otherwise load on demand
@@ -6434,6 +6434,8 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 		if (UTF8_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (G_initialize_timezone_tables_m12() == FALSE_m12)
+			ret_val = FALSE_m12;
+		if (CMP_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (HW_initialize_performance_specs_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
@@ -12532,7 +12534,12 @@ void    G_show_globals_m12(void)
 #endif
 	
 	printf_m12("\nMED Globals\n-----------\n-----------\n");
-	
+	printf_m12("\n_id: 0x%ld: ");
+	if (globals_m12->_id == 0)
+		printf_m12("no entry\n");
+	else
+		printf_m12("%ld\n");
+
 	printf_m12("\nRecord Filters\n--------------\n");
 	if (globals_m12->record_filters == NULL) {
 		printf_m12("no entry\n");
@@ -12688,6 +12695,7 @@ void    G_show_globals_m12(void)
 	}
 
 	printf_m12("\nMiscellaneous\n-------------\n");
+	printf_m12("file_creation_umask: %u\n", globals_m12->file_creation_umask);
 	printf_m12("time_series_data_encryption_level: %hhd\n", globals_m12->time_series_data_encryption_level);
 	printf_m12("CRC_mode: %u\n", globals_m12->CRC_mode);
 	printf_m12("verbose: %hhd\n", globals_m12->verbose);
@@ -17924,9 +17932,9 @@ TERN_m12	CMP_initialize_tables_m12(void)
 	if (global_tables_m12->CMP_normal_CDF_table != NULL)
 		return(TRUE_m12);
 	
-	PROC_pthread_mutex_lock_m12(&global_tables_m12->CMP_m12_mutex);
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->CMP_mutex);
 	if (global_tables_m12->CMP_normal_CDF_table != NULL) {
-		PROC_pthread_mutex_unlock_m12(&global_tables_m12->CMP_m12_mutex);
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->CMP_mutex);
 		return(TRUE_m12);
 	}
 
@@ -17956,7 +17964,7 @@ TERN_m12	CMP_initialize_tables_m12(void)
 		global_tables_m12->CMP_VDS_threshold_map = threshold_map;
 	}
 		
-	PROC_pthread_mutex_unlock_m12(&global_tables_m12->CMP_m12_mutex);
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->CMP_mutex);
 
 	return(TRUE_m12);
 }
