@@ -5,14 +5,14 @@
 # /Volumes/devdrv (or /mnt/devdrv) (mount point)
 # 	lib (dir)
 #		MacOS (or Linux) (dir)
-#			targets_m11.h (file) (edited to define "MACOS_m11" or "LINUX_m11")
-#		medlib_m11.c (file)
-#		medlib_m11.h (file)
-#		medrec_m11.c (file)
-#		medrec_m11.h (file)
+#			targets_m11.h (file) (edited to define "MACOS_m12" or "LINUX_m12")
+#		medlib_m12.c (file)
+#		medlib_m12.h (file)
+#		medrec_m12.c (file)
+#		medrec_m12.h (file)
 #
-# The library object code will be "/Volumes/devdrv/lib/MacOS/libmed_m11_mac.a" (or "/mnt/devdrv/lib/Linux/libmed_m11_lin.a").
-# Link the library with "-L$LIBOBJ -lmed_m11$LIBSFX" in executables (see "compile.sh" for an example).
+# The library object code will be "/Volumes/devdrv/lib/MacOS/libmed_m12_mac.a" (or "/mnt/devdrv/lib/Linux/libmed_m12_lin.a").
+# Link the library with "-L$LIBOBJ -lmed_m12$LIBSFX" in executables (see "compile.sh" for an example).
 #
 
 
@@ -144,7 +144,7 @@ elif [ $BIN = "all" ]; then
 	$CMD
 fi
 
-CMD="ar rcs libmed_m11${LIBSFX}.a medlib_m11.o medrec_m11.o"
+CMD="ar rcs libmed_m12${LIBSFX}.a medlib_m12.o medrec_m12.o"
 echo $CMD
 $CMD
 echo " "
