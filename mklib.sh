@@ -81,7 +81,7 @@ $CMD
 
 
 # build libaries
-LIBNAME="medlib_m11"
+LIBNAME="medlib_m12"
 if [ $BIN = "x86" ]; then
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
 	CMD="$CC $TMP_CC_OPT -I$LIBINC -I$TGTINC ${LIBSRC}/${LIBNAME}.c"
@@ -113,7 +113,7 @@ elif [ $BIN = "all" ]; then
 fi
 
 
-LIBNAME="medrec_m11"
+LIBNAME="medrec_m12"
 if [ $BIN = "x86" ]; then
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
 	CMD="$CC $TMP_CC_OPT -I$LIBINC -I$TGTINC ${LIBSRC}/${LIBNAME}.c"
