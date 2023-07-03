@@ -7,13 +7,13 @@
 # /Volumes/devdrv (or /mnt/devdrv) (mount point)
 # 	lib (dir)
 #		MacOS (or Linux) (dir)
-#			targets_m11.h (file) (edited to define "MACOS_m11" or "LINUX_m11")
-#			libmed_m11_mac.a (or libmed_m11_lin.a) (file)
+#			targets_m12.h (file) (edited to define "MACOS_m12" or "LINUX_m122")
+#			libmed_m12_mac.a (or libmed_m11_lin.a) (file)
 #	MED2RAW (dir)
 #		MacOS (or Linux) (dir)
 #			MED2RAW.c (file)
 #
-# Link the library with "-L$LIBOBJ -lmed_m11$LIBSFX" in executables, as below.
+# Link the library with "-L$LIBOBJ -lmed_m12$LIBSFX" in executables, as below.
 #
 
 
@@ -81,25 +81,25 @@ fi
 # compile
 if [ $BIN = "x86" ]; then
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m11$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 elif [ $BIN = "arm" ]; then
 	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m11$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 elif [ $BIN = "all" ]; then	
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_x86 -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m11$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_x86 -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 
 	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_arm -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m11$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_arm -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
