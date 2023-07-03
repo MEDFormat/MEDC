@@ -1,15 +1,15 @@
-m11::
+::
 :: This script relies on the following directory hierarchy and library existing:
 :: Z: (drive)
 ::	lib (dir)
 ::		Windows (dir)
-::			targets_m11.h (file) (edited to define "WINDOWS_m11")
-::			libmed_m11_win.lib (file)
+::			targets_m12.h (file) (edited to define "WINDOWS_m12")
+::			libmed_m12_win.lib (file)
 ::	MED2RAW (dir)
 ::		Windows (dir)
 ::			MED2RAW.c (file)
 ::
-:: Link the library with "/link %LIBOBJ%\libmed_m11%LIBSFX%.lib" in executables, as below.
+:: Link the library with "/link %LIBOBJ%\libmed_m12%LIBSFX%.lib" in executables, as below.
 ::
 
 ::
@@ -38,7 +38,7 @@ set LIBSFX=_win
 
 set TGTINC=%PRGOBJ%
 
-cl /I%LIBINC% /I%PRGINC% /I%TGTINC% /Gd /GL /EHsc /nologo /O2 /D NDEBUG /D _CONSOLE /D UNICODE /D _UNICODE %PRGSRC%\%PRG%.c /link /MACHINE:X64 %LIBOBJ%\libmed_m11%LIBSFX%.lib /OUT:%PRGOBJ%\%PRG%.exe
+cl /I%LIBINC% /I%PRGINC% /I%TGTINC% /Gd /GL /EHsc /nologo /O2 /D NDEBUG /D _CONSOLE /D UNICODE /D _UNICODE %PRGSRC%\%PRG%.c /link /MACHINE:X64 %LIBOBJ%\libmed_m12%LIBSFX%.lib /OUT:%PRGOBJ%\%PRG%.exe
 
 del *.obj
 
