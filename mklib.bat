@@ -4,14 +4,14 @@
 :: Z: (drive)
 ::	lib (dir)
 ::		Windows (dir)
-::			targets_m11.h (file) (edited to define "WINDOWS_m11")
-::		medlib_m11.c (file)
-::		medlib_m11.h (file)
-::		medrec_m11.c (file)
-::		medrec_m11.h (file)
+::			targets_m12.h (file) (edited to define "WINDOWS_m12")
+::		medlib_m12.c (file)
+::		medlib_m12.h (file)
+::		medrec_m12.c (file)
+::		medrec_m12.h (file)
 ::
 :: The library object code will be "Z:\lib\Windows\libmed_m11_win.lib"
-:: Link the library with "/link %LIBOBJ%\libmed_m11%LIBSFX%.lib" in executables (see "compile.bat" for an example).
+:: Link the library with "/link %LIBOBJ%\libmed_m12%LIBSFX%.lib" in executables (see "compile.bat" for an example).
 ::
 
 ::
@@ -34,9 +34,9 @@ set LIBOBJ=%LIBSRC%\Windows
 set TGTINC=%LIBOBJ%
 set LIBSFX=_win
 
-cl /c /I%LIBINC% /I%TGTINC% /Gd /GL /EHsc /nologo /O2 /D NDEBUG /D _CONSOLE /D _UNICODE /D UNICODE %LIBSRC%\medlib_m11.c
-cl /c /I%LIBINC% /I%TGTINC% /Gd /GL /EHsc /nologo /O2 /D NDEBUG /D _CONSOLE /D _UNICODE /D UNICODE %LIBSRC%\medrec_m11.c
-lib /LTCG /nologo %LIBOBJ%\medlib_m11.obj %LIBOBJ%\medrec_m11.obj /OUT:%LIBOBJ%\libmed_m11%LIBSFX%.lib
+cl /c /I%LIBINC% /I%TGTINC% /Gd /GL /EHsc /nologo /O2 /D NDEBUG /D _CONSOLE /D _UNICODE /D UNICODE %LIBSRC%\medlib_m12.c
+cl /c /I%LIBINC% /I%TGTINC% /Gd /GL /EHsc /nologo /O2 /D NDEBUG /D _CONSOLE /D _UNICODE /D UNICODE %LIBSRC%\medrec_m12.c
+lib /LTCG /nologo %LIBOBJ%\medlib_m12.obj %LIBOBJ%\medrec_m12.obj /OUT:%LIBOBJ%\libmed_m12%LIBSFX%.lib
 
 del %LIBOBJ%\*.obj
 
