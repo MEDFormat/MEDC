@@ -1034,13 +1034,13 @@ void    G_calculate_time_series_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type)
 {
-	TERN_m12			use_default_channel;
+	TERN_m12			use_default_channel, use_global_name;
 	si8				i, n_chans;
 	CHANNEL_m12			*chan;
 
 	
 #ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
+	message_m12("%s()\n", __FUNCTION__);
 #endif
 
 	// pass either channel, or channel name (if both passed channel will be used)
@@ -1057,38 +1057,47 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 
 	use_default_channel = FALSE_m12;
 	if (channel == NULL) {
+		use_global_name = FALSE_m12;
 		if (channel_name == NULL)
-			use_default_channel = TRUE_m12;
+			use_global_name = TRUE_m12;
 		else if (*channel_name == 0)
-			use_default_channel = TRUE_m12;
+			use_global_name = TRUE_m12;
+		if (use_global_name == TRUE_m12) {
+			if (*globals_m12->reference_channel_name)
+				channel_name = globals_m12->reference_channel_name;
+			else
+				use_default_channel = TRUE_m12;
+		}
 	}
 	if (use_default_channel == FALSE_m12)  // if channel or channel_name passed, channel type options ignored
 		channel_type = DEFAULT_CHANNEL_m12;
 
-	switch (channel_type) {
-		case DEFAULT_CHANNEL_m12:
-		case DEFAULT_TIME_SERIES_CHANNEL_m12:
-		case DEFAULT_VIDEO_CHANNEL_m12:
-			break;
-		case HIGHEST_RATE_TIME_SERIES_CHANNEL_m12:
-			channel = globals_m12->maximum_time_series_frequency_channel;
-			channel_type = DEFAULT_TIME_SERIES_CHANNEL_m12;
-			break;
-		case LOWEST_RATE_TIME_SERIES_CHANNEL_m12:
-			channel = globals_m12->minimum_time_series_frequency_channel;
-			channel_type = DEFAULT_TIME_SERIES_CHANNEL_m12;
-			break;
-		case HIGHEST_RATE_VIDEO_CHANNEL_m12:
-			channel = globals_m12->maximum_video_frame_rate_channel;
-			channel_type = DEFAULT_VIDEO_CHANNEL_m12;
-			break;
-		case LOWEST_RATE_VIDEO_CHANNEL_m12:
-			channel = globals_m12->minimum_video_frame_rate_channel;
-			channel_type = DEFAULT_VIDEO_CHANNEL_m12;
-			break;
-		default:
-			channel_type = DEFAULT_CHANNEL_m12;
-			break;
+	if (use_default_channel == TRUE_m12) {
+		switch (channel_type) {
+			case DEFAULT_CHANNEL_m12:
+			case DEFAULT_TIME_SERIES_CHANNEL_m12:
+			case DEFAULT_VIDEO_CHANNEL_m12:
+				break;
+			case HIGHEST_RATE_TIME_SERIES_CHANNEL_m12:
+				channel = globals_m12->maximum_time_series_frequency_channel;
+				channel_type = DEFAULT_TIME_SERIES_CHANNEL_m12;
+				break;
+			case LOWEST_RATE_TIME_SERIES_CHANNEL_m12:
+				channel = globals_m12->minimum_time_series_frequency_channel;
+				channel_type = DEFAULT_TIME_SERIES_CHANNEL_m12;
+				break;
+			case HIGHEST_RATE_VIDEO_CHANNEL_m12:
+				channel = globals_m12->maximum_video_frame_rate_channel;
+				channel_type = DEFAULT_VIDEO_CHANNEL_m12;
+				break;
+			case LOWEST_RATE_VIDEO_CHANNEL_m12:
+				channel = globals_m12->minimum_video_frame_rate_channel;
+				channel_type = DEFAULT_VIDEO_CHANNEL_m12;
+				break;
+			default:
+				channel_type = DEFAULT_CHANNEL_m12;
+				break;
+		}
 	}
 	
 	// find channel from name
@@ -1140,8 +1149,6 @@ CHANGE_REF_MATCH_m12:
 	strcpy(globals_m12->reference_channel_name, channel->name);
 	
 	return;
-		
-
 }
 
 
@@ -5833,7 +5840,7 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 {
 	TERN_m12			Sgmts_adequate, free_fps;
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12], sess_path[FULL_FILE_NAME_BYTES_m12], *sess_name;
-	ui4				file_exists, type_code;
+	ui4				file_exists;
 	si4				search_mode, n_segs;
 	si8				i, n_recs;
 	size_t				n_bytes;
@@ -5844,7 +5851,7 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 	Sgmt_RECORD_m12			*Sgmt_records, *Sgmt_rec;
 	
 #ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
+	message_m12("%s()\n", __FUNCTION__);
 #endif
 	
 	if (slice->conditioned == FALSE_m12)
@@ -5855,17 +5862,8 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 	switch (level_header->type_code) {
 		case LH_SESSION_m12:
 			sess = (SESSION_m12 *) level_header;
-			if (globals_m12->reference_channel == NULL) {
-				if (*globals_m12->reference_channel_name == 0) {
-					G_change_reference_channel_m12(sess, NULL, globals_m12->reference_channel_name, DEFAULT_CHANNEL_m12);
-				} else {
-					type_code = G_MED_type_code_from_string_m12(globals_m12->reference_channel_name);
-					if (type_code == TIME_SERIES_CHANNEL_TYPE_m12)
-						G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_TIME_SERIES_CHANNEL_m12);
-					else  // VIDEO_CHANNEL_TYPE_m12
-						G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_VIDEO_CHANNEL_m12);
-				}
-			}
+			if (globals_m12->reference_channel == NULL)
+				G_change_reference_channel_m12(sess, NULL, globals_m12->reference_channel_name, DEFAULT_CHANNEL_m12);
 			chan = globals_m12->reference_channel;
 			Sgmt_records = sess->Sgmt_records;
 			break;
@@ -18330,7 +18328,7 @@ sf8	*CMP_lin_interp_sf8_m12(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len
 	sf8     x, inc, f_bot_x, bot_y, range;
 	si8     i, bot_x, top_x, last_bot_x;
 	
-#ifdef FN_DEBUG_m11
+#ifdef FN_DEBUG_m12
 	message_m12("%s()\n", __FUNCTION__);
 #endif
 	
@@ -18382,7 +18380,7 @@ si4	*CMP_lin_interp_si4_m12(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len
 	sf8     x, inc, f_bot_x, bot_y, range;
 	si8     i, bot_x, top_x, last_bot_x;
 	
-#ifdef FN_DEBUG_m11
+#ifdef FN_DEBUG_m12
 	message_m12("%s()\n", __FUNCTION__);
 #endif
 	
