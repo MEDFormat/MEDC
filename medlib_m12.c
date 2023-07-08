@@ -2779,8 +2779,8 @@ FILE_TIMES_m12	*G_file_times_m12(FILE *fp, si1 *path, FILE_TIMES_m12 *ft, TERN_m
 			SystemTimeToFileTime(&sys_time, &set_access_time);
 			set_modify_time = set_access_time;
 		}
-		set_access_time = uutc_to_win_time_m12(ft->access);
-		set_modify_time = uutc_to_win_time_m12(ft->modification);
+		set_access_time = WN_uutc_to_win_time_m12(ft->access);
+		set_modify_time = WN_uutc_to_win_time_m12(ft->modification);
 	}
 
 	if (fp == NULL) {
@@ -5825,7 +5825,7 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 
 	// check structure alignments
 	if (check_structure_alignments == TRUE_m12)
-		if (ALGN_all_m12() == FALSE_m12)
+		if (ALCK_all_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 	
 	// umask
@@ -14130,7 +14130,7 @@ void	AES_sub_bytes_m12(ui1 state[][4])
 //***********************************************************************//
 
 
-TERN_m12        ALGN_all_m12(void)
+TERN_m12        ALCK_all_m12(void)
 {
 	TERN_m12        return_value;
 	ui1		*bytes;
@@ -14147,17 +14147,17 @@ TERN_m12        ALGN_all_m12(void)
 	bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);  // METADATA is largest file structure
 	
 	// check all structures
-	if ((ALGN_universal_header_m12(bytes)) == FALSE_m12)
+	if ((ALCK_universal_header_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
-	if ((ALGN_metadata_m12(bytes)) == FALSE_m12)
+	if ((ALCK_metadata_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
-	if ((ALGN_time_series_indices_m12(bytes)) == FALSE_m12)
+	if ((ALCK_time_series_indices_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
-	if ((ALGN_video_indices_m12(bytes)) == FALSE_m12)
+	if ((ALCK_video_indices_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
-	if ((ALGN_record_indices_m12(bytes)) == FALSE_m12)
+	if ((ALCK_record_indices_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
-	if ((ALGN_record_header_m12(bytes)) == FALSE_m12)
+	if ((ALCK_record_header_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
 	if ((REC_check_structure_alignments_m12(bytes)) == FALSE_m12)
 		return_value = FALSE_m12;
@@ -14178,7 +14178,7 @@ TERN_m12        ALGN_all_m12(void)
 }
 
 
-TERN_m12        ALGN_metadata_m12(ui1 *bytes)
+TERN_m12        ALCK_metadata_m12(ui1 *bytes)
 {
 	TERN_m12	return_value, free_flag = FALSE_m12;
 	METADATA_m12	*md;
@@ -14213,13 +14213,13 @@ TERN_m12        ALGN_metadata_m12(ui1 *bytes)
 		return_value = FALSE_m12;
 
 	// check substructure contents
-	if (ALGN_metadata_section_1_m12(bytes) == FALSE_m12)
+	if (ALCK_metadata_section_1_m12(bytes) == FALSE_m12)
 		return_value = FALSE_m12;
-	if (ALGN_time_series_metadata_section_2_m12(bytes) == FALSE_m12)
+	if (ALCK_time_series_metadata_section_2_m12(bytes) == FALSE_m12)
 		return_value = FALSE_m12;
-	if (ALGN_video_metadata_section_2_m12(bytes) == FALSE_m12)
+	if (ALCK_video_metadata_section_2_m12(bytes) == FALSE_m12)
 		return_value = FALSE_m12;
-	if (ALGN_metadata_section_3_m12(bytes) == FALSE_m12)
+	if (ALCK_metadata_section_3_m12(bytes) == FALSE_m12)
 			return_value = FALSE_m12;
 	
 	if (free_flag == TRUE_m12)
@@ -14232,7 +14232,7 @@ TERN_m12        ALGN_metadata_m12(ui1 *bytes)
 }
 
 
-TERN_m12	ALGN_metadata_section_1_m12(ui1 *bytes)
+TERN_m12	ALCK_metadata_section_1_m12(ui1 *bytes)
 {
 	METADATA_SECTION_1_m12	*md1;
 	TERN_m12		free_flag = FALSE_m12;
@@ -14296,7 +14296,7 @@ METADATA_SECTION_1_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_metadata_section_3_m12(ui1 *bytes)
+TERN_m12	ALCK_metadata_section_3_m12(ui1 *bytes)
 {
 	METADATA_SECTION_3_m12	*md3;
 	TERN_m12		free_flag = FALSE_m12;
@@ -14386,7 +14386,7 @@ METADATA_SECTION_3_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_record_header_m12(ui1 *bytes)
+TERN_m12	ALCK_record_header_m12(ui1 *bytes)
 {
 	RECORD_HEADER_m12	*rh;
 	TERN_m12                free_flag = FALSE_m12;
@@ -14454,7 +14454,7 @@ RECORD_HEADER_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_record_indices_m12(ui1 *bytes)
+TERN_m12	ALCK_record_indices_m12(ui1 *bytes)
 {
 	RECORD_INDEX_m12	*ri;
 	TERN_m12		free_flag = FALSE_m12;
@@ -14520,7 +14520,7 @@ RECORD_INDICES_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_time_series_indices_m12(ui1 *bytes)
+TERN_m12	ALCK_time_series_indices_m12(ui1 *bytes)
 {
 	TIME_SERIES_INDEX_m12	*tsi;
 	TERN_m12		free_flag = FALSE_m12;
@@ -14576,7 +14576,7 @@ TIME_SERIES_INDICES_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_time_series_metadata_section_2_m12(ui1 *bytes)
+TERN_m12	ALCK_time_series_metadata_section_2_m12(ui1 *bytes)
 {
 	TIME_SERIES_METADATA_SECTION_2_m12	*md2;
 	TERN_m12				free_flag = FALSE_m12;
@@ -14684,7 +14684,7 @@ TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_universal_header_m12(ui1 *bytes)
+TERN_m12	ALCK_universal_header_m12(ui1 *bytes)
 {
 	UNIVERSAL_HEADER_m12	*uh;
 	TERN_m12		free_flag = FALSE_m12;
@@ -14788,7 +14788,7 @@ UNIVERSAL_HEADER_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_video_indices_m12(ui1 *bytes)
+TERN_m12	ALCK_video_indices_m12(ui1 *bytes)
 {
 	VIDEO_INDEX_m12		*vi;
 	TERN_m12		free_flag = FALSE_m12;
@@ -14846,7 +14846,7 @@ VIDEO_INDICES_NOT_ALIGNED_m12:
 }
 
 
-TERN_m12	ALGN_video_metadata_section_2_m12(ui1 *bytes)
+TERN_m12	ALCK_video_metadata_section_2_m12(ui1 *bytes)
 {
 	VIDEO_METADATA_SECTION_2_m12	*vmd2;
 	TERN_m12			free_flag = FALSE_m12;
@@ -30134,7 +30134,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	// _beginthreadex() is supposed to be better than CreateThread() for memory leaks & cleanup - called identically
 
 	// Set Priority
-	if (priority != DEFAULT_PRIORITY_m12) {
+	if (priority != PROC_DEFAULT_PRIORITY_m12) {
 		switch (priority) {
 			case PROC_MIN_PRIORITY_m12:
 				priority = THREAD_PRIORITY_LOWEST;
@@ -34538,7 +34538,7 @@ si4     fscanf_m12(FILE *stream, si1 *fmt, ...)
 	si1	*new_fmt = NULL;
 	
 	// convert format string
-	new_fmt = windify_format_string_m12(fmt);
+	new_fmt = WN_windify_format_string_m12(fmt);
 	
 	va_start(args, fmt);
 	ret_val = vfscanf(stream, new_fmt, args);
@@ -35236,7 +35236,7 @@ si4     scanf_m12(si1 *fmt, ...)
 	si1* new_fmt = NULL;
 	
 	// convert format string
-	new_fmt = windify_format_string_m12(fmt);
+	new_fmt = WN_windify_format_string_m12(fmt);
 	
 	va_start(args, fmt);
 	ret_val = vscanf(new_fmt, args);
@@ -35314,7 +35314,7 @@ si4     sscanf_m12(si1 *target, si1 *fmt, ...)
 	si1* new_fmt = NULL;
 	
 	// convert format string
-	new_fmt = windify_format_string_m12(fmt);
+	new_fmt = WN_windify_format_string_m12(fmt);
 	
 	va_start(args, fmt);
 	ret_val = vsscanf(target, new_fmt, args);
@@ -35643,7 +35643,7 @@ si4    vsnprintf_m12(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 	si1		*new_fmt;
 	
 	// convert format string
-	new_fmt = windify_format_string_m12(fmt);
+	new_fmt = WN_windify_format_string_m12(fmt);
 	
 	if (new_fmt != fmt) {
 		fmt = new_fmt;

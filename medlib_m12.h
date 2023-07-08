@@ -2309,7 +2309,7 @@ TERN_m12	WN_reset_terminal_m12(void);
 TERN_m12	WN_socket_startup_m12(void);
 inline si4	WN_system_m12(si1 *command);
 si8		WN_time_to_uutc_m12(FILETIME win_time);
-sf8		WN_uutc_to_DATE_m12(si8 uutc);
+sf8		WN_uutc_to_date_m12(si8 uutc);
 void		WN_windify_file_paths_m12(si1 *target, si1 *source);
 si1		*WN_windify_format_string_m12(si1 *fmt);
 #endif
@@ -2319,20 +2319,20 @@ si8		WN_filetime_to_uutc_m12(ui1 *win_filetime);  // for conversion of windows f
 
 
 //**********************************************************************************//
-//********************  MED Alignmment Checking (ALGN) Functions  ******************//
+//********************  MED Alignmment Checking (ALCK) Functions  ******************//
 //**********************************************************************************//
 
-TERN_m12	ALGN_all_m12(void);
-TERN_m12	ALGN_metadata_m12(ui1 *bytes);
-TERN_m12	ALGN_metadata_section_1_m12(ui1 *bytes);
-TERN_m12	ALGN_metadata_section_3_m12(ui1 *bytes);
-TERN_m12	ALGN_record_header_m12(ui1 *bytes);
-TERN_m12	ALGN_record_indices_m12(ui1 *bytes);
-TERN_m12	ALGN_time_series_indices_m12(ui1 *bytes);
-TERN_m12	ALGN_time_series_metadata_section_2_m12(ui1 *bytes);
-TERN_m12	ALGN_universal_header_m12(ui1 *bytes);
-TERN_m12	ALGN_video_indices_m12(ui1 *bytes);
-TERN_m12	ALGN_video_metadata_section_2_m12(ui1 *bytes);
+TERN_m12	ALCK_all_m12(void);
+TERN_m12	ALCK_metadata_m12(ui1 *bytes);
+TERN_m12	ALCK_metadata_section_1_m12(ui1 *bytes);
+TERN_m12	ALCK_metadata_section_3_m12(ui1 *bytes);
+TERN_m12	ALCK_record_header_m12(ui1 *bytes);
+TERN_m12	ALCK_record_indices_m12(ui1 *bytes);
+TERN_m12	ALCK_time_series_indices_m12(ui1 *bytes);
+TERN_m12	ALCK_time_series_metadata_section_2_m12(ui1 *bytes);
+TERN_m12	ALCK_universal_header_m12(ui1 *bytes);
+TERN_m12	ALCK_video_indices_m12(ui1 *bytes);
+TERN_m12	ALCK_video_metadata_section_2_m12(ui1 *bytes);
 
 
 
