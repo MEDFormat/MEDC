@@ -398,9 +398,6 @@ void	G_apply_recording_time_offset_m12(si8 *time)
 }
 
 
-
-
-
 si1	*G_behavior_string_m12(ui4 behavior, si1 *behavior_string)
 {
 	si8	len;
@@ -1206,54 +1203,6 @@ ui4	G_channel_type_from_path_m12(si1 *path)
 }
 
 
-TERN_m12        G_check_all_alignments_m12(void)
-{
-	TERN_m12        return_value;
-	ui1		*bytes;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->all_structures_aligned != UNKNOWN_m12)
-		return(globals_m12->all_structures_aligned);
-	
-	return_value = TRUE_m12;
-	bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);  // METADATA is largest file structure
-	
-	// check all structures
-	if ((G_check_universal_header_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((G_check_metadata_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((G_check_time_series_indices_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((G_check_video_indices_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((G_check_record_indices_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((G_check_record_header_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((REC_check_structure_alignments_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-	if ((CMP_check_block_header_alignment_m12(bytes)) == FALSE_m12)
-		return_value = FALSE_m12;
-
-	free((void *) bytes);
-	
-	if (return_value == TRUE_m12) {
-		globals_m12->all_structures_aligned = TRUE_m12;
-		if (globals_m12->verbose == TRUE_m12)
-			G_message_m12("All MED Library structures are aligned\n");
-	} else {
-		G_error_message_m12("%s(): unaligned MED structures\n", __FUNCTION__);
-	}
-	
-	return(return_value);
-}
-
-
 TERN_m12	G_check_char_type_m12(void)
 {
 	char	c;
@@ -1375,214 +1324,6 @@ TERN_m12	G_check_file_system_m12(si1 *file_system_path, si4 is_cloud, ...)  // v
 }
 
 
-TERN_m12        G_check_metadata_alignment_m12(ui1 *bytes)
-{
-	TERN_m12	return_value, free_flag = FALSE_m12;
-	METADATA_m12	*md;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->all_metadata_structures_aligned != UNKNOWN_m12)
-		return(globals_m12->all_metadata_structures_aligned);
-	
-	return_value = TRUE_m12;
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	
-	// check overall size
-	if (sizeof(METADATA_m12) != METADATA_BYTES_m12)
-		return_value = FALSE_m12;
-
-	// check substructure offsets
-	md = (METADATA_m12 *) bytes;
-	if (&md->section_1 != (METADATA_SECTION_1_m12 *) bytes)
-		return_value = FALSE_m12;
-	if (&md->time_series_section_2 != (TIME_SERIES_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_1_BYTES_m12))
-		return_value = FALSE_m12;
-	if (&md->video_section_2 != (VIDEO_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_1_BYTES_m12))
-		return_value = FALSE_m12;
-	if (&md->section_3 != (METADATA_SECTION_3_m12 *) (bytes + METADATA_SECTION_1_BYTES_m12 + METADATA_SECTION_2_BYTES_m12))
-		return_value = FALSE_m12;
-
-	// check substructure contents
-	if (G_check_metadata_section_1_alignment_m12(bytes) == FALSE_m12)
-		return_value = FALSE_m12;
-	if (G_check_time_series_metadata_section_2_alignment_m12(bytes) == FALSE_m12)
-		return_value = FALSE_m12;
-	if (G_check_video_metadata_section_2_alignment_m12(bytes) == FALSE_m12)
-		return_value = FALSE_m12;
-	if (G_check_metadata_section_3_alignment_m12(bytes) == FALSE_m12)
-			return_value = FALSE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (return_value == TRUE_m12)
-		globals_m12->all_metadata_structures_aligned = TRUE_m12;
-
-	return(return_value);
-}
-
-
-TERN_m12	G_check_metadata_section_1_alignment_m12(ui1 *bytes)
-{
-	METADATA_SECTION_1_m12	*md1;
-	TERN_m12		free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->metadata_section_1_aligned == UNKNOWN_m12)
-		globals_m12->metadata_section_1_aligned = FALSE_m12;
-	else
-		return(globals_m12->metadata_section_1_aligned);
-	
-	// check overall size
-	if (sizeof(METADATA_SECTION_1_m12) != METADATA_SECTION_1_BYTES_m12)
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	md1 = (METADATA_SECTION_1_m12 *) (bytes + UNIVERSAL_HEADER_BYTES_m12);
-	if (md1->level_1_password_hint != (si1 *) (bytes + METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	if (md1->level_2_password_hint != (si1 *) (bytes + METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	if (&md1->section_2_encryption_level != (si1 *) (bytes + METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	if (&md1->section_3_encryption_level != (si1 *) (bytes + METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	if (&md1->time_series_data_encryption_level != (si1 *) (bytes + METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	if (md1->protected_region != (ui1 *) (bytes + METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	if (md1->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m12))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->metadata_section_1_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("METADATA_SECTION_1_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-METADATA_SECTION_1_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): METADATA_SECTION_1_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_metadata_section_3_alignment_m12(ui1 *bytes)
-{
-	METADATA_SECTION_3_m12	*md3;
-	TERN_m12		free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->metadata_section_3_aligned == UNKNOWN_m12)
-		globals_m12->metadata_section_3_aligned = FALSE_m12;
-	else
-		return(globals_m12->metadata_section_3_aligned);
-	
-	// check overall size
-	if (sizeof(METADATA_SECTION_3_m12) != METADATA_SECTION_3_BYTES_m12)
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	md3 = (METADATA_SECTION_3_m12 *) (bytes + METADATA_SECTION_3_OFFSET_m12);
-	if (&md3->recording_time_offset != (si8 *) (bytes + METADATA_RECORDING_TIME_OFFSET_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (&md3->daylight_time_start_code != (DAYLIGHT_TIME_CHANGE_CODE_m12 *) (bytes + METADATA_DAYLIGHT_TIME_START_CODE_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (&md3->daylight_time_end_code != (DAYLIGHT_TIME_CHANGE_CODE_m12 *) (bytes + METADATA_DAYLIGHT_TIME_END_CODE_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->standard_timezone_acronym != (si1 *) (bytes + METADATA_STANDARD_TIMEZONE_ACRONYM_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->standard_timezone_string != (si1 *) (bytes + METADATA_STANDARD_TIMEZONE_STRING_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->daylight_timezone_acronym != (si1 *) (bytes + METADATA_DAYLIGHT_TIMEZONE_ACRONYM_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->daylight_timezone_string != (si1 *) (bytes + METADATA_DAYLIGHT_TIMEZONE_STRING_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->subject_name_1 != (si1 *) (bytes + METADATA_SUBJECT_NAME_1_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->subject_name_2 != (si1 *) (bytes + METADATA_SUBJECT_NAME_2_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->subject_name_3 != (si1 *) (bytes + METADATA_SUBJECT_NAME_3_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->subject_ID != (si1 *) (bytes + METADATA_SUBJECT_ID_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->recording_country != (si1 *) (bytes + METADATA_RECORDING_COUNTRY_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->recording_territory != (si1 *) (bytes + METADATA_RECORDING_TERRITORY_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->recording_locality != (si1 *) (bytes + METADATA_RECORDING_LOCALITY_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->recording_institution != (si1 *) (bytes + METADATA_RECORDING_INSTITUTION_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->geotag_format != (si1 *) (bytes + METADATA_GEOTAG_FORMAT_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->geotag_data != (si1 *) (bytes + METADATA_GEOTAG_DATA_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (&md3->standard_UTC_offset != (si4 *) (bytes + METADATA_STANDARD_UTC_OFFSET_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->protected_region != (ui1 *) (bytes + METADATA_SECTION_3_PROTECTED_REGION_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	if (md3->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_3_DISCRETIONARY_REGION_OFFSET_m12))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->metadata_section_3_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("METADATA_SECTION_3_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-METADATA_SECTION_3_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): METADATA_SECTION_3_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
 TERN_m12	G_check_password_m12(si1 *password)
 {
 	si4	pw_len;
@@ -1613,564 +1354,6 @@ TERN_m12	G_check_password_m12(si1 *password)
 	
 	// return TRUE_m12 for valid password
 	return(TRUE_m12);
-}
-
-
-TERN_m12	G_check_record_header_alignment_m12(ui1 *bytes)
-{
-	RECORD_HEADER_m12	*rh;
-	TERN_m12                free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->record_header_aligned == UNKNOWN_m12)
-		globals_m12->record_header_aligned = FALSE_m12;
-	else
-		return(globals_m12->record_header_aligned);
-	
-	// check overall size
-	if (sizeof(RECORD_HEADER_m12) != RECORD_HEADER_BYTES_m12)
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(RECORD_HEADER_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	rh = (RECORD_HEADER_m12 *) bytes;
-	if (&rh->record_CRC != (ui4 *) (bytes + RECORD_HEADER_RECORD_CRC_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->total_record_bytes != (ui4 *) (bytes + RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->start_time != (si8 *) (bytes + RECORD_HEADER_START_TIME_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (rh->type_string != (si1 *) (bytes + RECORD_HEADER_TYPE_STRING_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->type_code != (ui4 *) (bytes + RECORD_HEADER_TYPE_CODE_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->type_string_terminal_zero != (si1 *) (bytes + RECORD_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->version_major != (ui1 *) (bytes + RECORD_HEADER_VERSION_MAJOR_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->version_minor != (ui1 *) (bytes + RECORD_HEADER_VERSION_MINOR_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	if (&rh->encryption_level != (si1 *) (bytes + RECORD_HEADER_ENCRYPTION_LEVEL_OFFSET_m12))
-		goto RECORD_HEADER_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->record_header_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("RECORD_HEADER_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-RECORD_HEADER_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): RECORD_HEADER_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_record_indices_alignment_m12(ui1 *bytes)
-{
-	RECORD_INDEX_m12	*ri;
-	TERN_m12		free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->record_indices_aligned == UNKNOWN_m12)
-		globals_m12->record_indices_aligned = FALSE_m12;
-	else
-		return(globals_m12->record_indices_aligned);
-	
-	// check overall size
-	if (sizeof(RECORD_INDEX_m12) != RECORD_INDEX_BYTES_m12)
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(RECORD_INDEX_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	ri = (RECORD_INDEX_m12 *) bytes;
-	if (&ri->file_offset != (si8 *) (bytes + RECORD_INDEX_FILE_OFFSET_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (&ri->start_time != (si8 *) (bytes + RECORD_INDEX_START_TIME_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (ri->type_string != (si1 *) (bytes + RECORD_INDEX_TYPE_STRING_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (&ri->type_code != (ui4 *) (bytes + RECORD_INDEX_TYPE_CODE_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (&ri->type_string_terminal_zero != (si1 *) (bytes + RECORD_INDEX_TYPE_STRING_TERMINAL_ZERO_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (&ri->version_major != (ui1 *) (bytes + RECORD_INDEX_VERSION_MAJOR_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (&ri->version_minor != (ui1 *) (bytes + RECORD_INDEX_VERSION_MINOR_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	if (&ri->encryption_level != (si1 *) (bytes + RECORD_INDEX_ENCRYPTION_LEVEL_OFFSET_m12))
-		goto RECORD_INDICES_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->record_indices_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		printf_m12("RECORD_INDEX_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-RECORD_INDICES_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): RECORD_INDEX_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_time_series_indices_alignment_m12(ui1 *bytes)
-{
-	TIME_SERIES_INDEX_m12	*tsi;
-	TERN_m12		free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->time_series_indices_aligned == UNKNOWN_m12)
-		globals_m12->time_series_indices_aligned = FALSE_m12;
-	else
-		return(globals_m12->time_series_indices_aligned);
-	
-	// check overall size
-	if (sizeof(TIME_SERIES_INDEX_m12) != TIME_SERIES_INDEX_BYTES_m12)
-		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(TIME_SERIES_INDEX_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	tsi = (TIME_SERIES_INDEX_m12 *) bytes;
-	if (&tsi->file_offset != (si8 *) (bytes + TIME_SERIES_INDEX_FILE_OFFSET_OFFSET_m12))
-		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
-	if (&tsi->start_time != (si8 *) (bytes + TIME_SERIES_INDEX_START_TIME_OFFSET_m12))
-		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
-	if (&tsi->start_sample_number != (si8 *) (bytes + TIME_SERIES_INDEX_START_SAMPLE_NUMBER_OFFSET_m12))
-		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->time_series_indices_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("TIME_SERIES_INDEX_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-TIME_SERIES_INDICES_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): TIME_SERIES_INDEX_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_time_series_metadata_section_2_alignment_m12(ui1 *bytes)
-{
-	TIME_SERIES_METADATA_SECTION_2_m12	*md2;
-	TERN_m12				free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->time_series_metadata_section_2_aligned == UNKNOWN_m12)
-		globals_m12->time_series_metadata_section_2_aligned = FALSE_m12;
-	else
-		return(globals_m12->time_series_metadata_section_2_aligned);
-	
-	// check overall size
-	if (sizeof(TIME_SERIES_METADATA_SECTION_2_m12) != METADATA_SECTION_2_BYTES_m12)
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	md2 = (TIME_SERIES_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_2_OFFSET_m12);
-	// channel type independent fields
-	if (md2->session_description != (si1 *) (bytes + METADATA_SESSION_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->channel_description != (si1 *) (bytes + METADATA_CHANNEL_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->segment_description != (si1 *) (bytes + METADATA_SEGMENT_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->equipment_description != (si1 *) (bytes + METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	// channel type specific fields
-	if (md2->reference_description != (si1 *) (bytes + TIME_SERIES_METADATA_REFERENCE_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->sampling_frequency != (sf8 *) (bytes + TIME_SERIES_METADATA_SAMPLING_FREQUENCY_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->low_frequency_filter_setting != (sf8 *) (bytes + TIME_SERIES_METADATA_LOW_FREQUENCY_FILTER_SETTING_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->high_frequency_filter_setting != (sf8 *) (bytes + TIME_SERIES_METADATA_HIGH_FREQUENCY_FILTER_SETTING_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->notch_filter_frequency_setting != (sf8 *) (bytes + TIME_SERIES_METADATA_NOTCH_FILTER_FREQUENCY_SETTING_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->AC_line_frequency != (sf8 *) (bytes + TIME_SERIES_METADATA_AC_LINE_FREQUENCY_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->amplitude_units_conversion_factor != (sf8 *) (bytes + TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->amplitude_units_description != (si1 *) (bytes + TIME_SERIES_METADATA_AMPLITUDE_UNITS_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->time_base_units_conversion_factor != (sf8 *) (bytes + TIME_SERIES_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->time_base_units_description != (si1 *) (bytes + TIME_SERIES_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->absolute_start_sample_number != (si8 *) (bytes + TIME_SERIES_METADATA_ABSOLUTE_START_SAMPLE_NUMBER_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->number_of_samples != (si8 *) (bytes + TIME_SERIES_METADATA_NUMBER_OF_SAMPLES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->number_of_blocks != (si8 *) (bytes + TIME_SERIES_METADATA_NUMBER_OF_BLOCKS_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_block_bytes != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_BYTES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_block_samples != (ui4 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_SAMPLES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_block_keysample_bytes != (ui4 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_KEYSAMPLE_BYTES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_block_duration != (sf8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_DURATION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->number_of_discontinuities != (si8 *) (bytes + TIME_SERIES_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_contiguous_blocks != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCKS_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_contiguous_block_bytes != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCK_BYTES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&md2->maximum_contiguous_samples != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_SAMPLES_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->protected_region != (ui1 *) (bytes + TIME_SERIES_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (md2->discretionary_region != (ui1 *) (bytes + TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m12))
-		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->time_series_metadata_section_2_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("TIME_SERIES_METADATA_SECTION_2_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): TIME_SERIES_METADATA_SECTION_2_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_universal_header_alignment_m12(ui1 *bytes)
-{
-	UNIVERSAL_HEADER_m12	*uh;
-	TERN_m12		free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->universal_header_aligned == UNKNOWN_m12)
-		globals_m12->universal_header_aligned = FALSE_m12;
-	else
-		return(globals_m12->universal_header_aligned);
-	
-	// check overall size
-	if (sizeof(UNIVERSAL_HEADER_m12) != UNIVERSAL_HEADER_BYTES_m12)
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(UNIVERSAL_HEADER_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	uh = (UNIVERSAL_HEADER_m12 *) bytes;
-	if (&uh->header_CRC != (ui4 *) (bytes + UNIVERSAL_HEADER_HEADER_CRC_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->body_CRC != (ui4 *) (bytes + UNIVERSAL_HEADER_BODY_CRC_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->segment_end_time != (si8 *) (bytes + UNIVERSAL_HEADER_FILE_END_TIME_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->number_of_entries != (si8 *) (bytes + UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->maximum_entry_size != (ui4 *) (bytes + UNIVERSAL_HEADER_MAXIMUM_ENTRY_SIZE_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->segment_number != (si4 *) (bytes + UNIVERSAL_HEADER_SEGMENT_NUMBER_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->type_string != (si1 *) (bytes + UNIVERSAL_HEADER_TYPE_STRING_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->type_code != (ui4 *) (bytes + UNIVERSAL_HEADER_TYPE_CODE_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->type_string_terminal_zero != (si1 *) (bytes + UNIVERSAL_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->MED_version_major != (ui1 *) (bytes + UNIVERSAL_HEADER_MED_VERSION_MAJOR_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->MED_version_minor != (ui1 *) (bytes + UNIVERSAL_HEADER_MED_VERSION_MINOR_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->byte_order_code != (ui1 *) (bytes + UNIVERSAL_HEADER_BYTE_ORDER_CODE_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->session_start_time != (si8 *) (bytes + UNIVERSAL_HEADER_SESSION_START_TIME_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->segment_start_time != (si8 *) (bytes + UNIVERSAL_HEADER_FILE_START_TIME_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->session_name != (si1 *) (bytes + UNIVERSAL_HEADER_SESSION_NAME_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->channel_name != (si1 *)  (bytes + UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->anonymized_subject_ID != (si1 *) (bytes + UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->session_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_SESSION_UID_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->channel_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->segment_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_SEGMENT_UID_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->file_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_FILE_UID_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (&uh->provenance_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_PROVENANCE_UID_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->level_1_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_1_PASSWORD_VALIDATION_FIELD_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->level_2_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->level_3_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->protected_region != (ui1 *) (bytes + UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	if (uh->discretionary_region != (ui1 *) (bytes + UNIVERSAL_HEADER_DISCRETIONARY_REGION_OFFSET_m12))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->universal_header_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("UNIVERSAL_HEADER_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-UNIVERSAL_HEADER_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): UNIVERSAL_HEADER_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_video_indices_alignment_m12(ui1 *bytes)
-{
-	VIDEO_INDEX_m12		*vi;
-	TERN_m12		free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->video_indices_aligned == UNKNOWN_m12)
-		globals_m12->video_indices_aligned = FALSE_m12;
-	else
-		return(globals_m12->video_indices_aligned);
-	
-	// check overall size
-	if (sizeof(VIDEO_INDEX_m12) != VIDEO_INDEX_BYTES_m12)
-		goto VIDEO_INDICES_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(VIDEO_INDEX_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	vi = (VIDEO_INDEX_m12 *) bytes;
-	if (&vi->file_offset != (si8 *) (bytes + VIDEO_INDEX_FILE_OFFSET_OFFSET_m12))
-		goto VIDEO_INDICES_NOT_ALIGNED_m12;
-	if (&vi->start_time != (si8 *) (bytes + VIDEO_INDEX_START_TIME_OFFSET_m12))
-		goto VIDEO_INDICES_NOT_ALIGNED_m12;
-	if (&vi->start_frame_number != (ui4 *) (bytes + VIDEO_INDEX_START_FRAME_OFFSET_m12))
-		goto VIDEO_INDICES_NOT_ALIGNED_m12;
-	if (&vi->video_file_number != (ui4 *) (bytes + VIDEO_INDEX_VIDEO_FILE_NUMBER_OFFSET_m12))
-		goto VIDEO_INDICES_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->video_indices_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("VIDEO_INDEX_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-VIDEO_INDICES_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): VIDEO_INDEX_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
-}
-
-
-TERN_m12	G_check_video_metadata_section_2_alignment_m12(ui1 *bytes)
-{
-	VIDEO_METADATA_SECTION_2_m12	*vmd2;
-	TERN_m12			free_flag = FALSE_m12;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// see if already checked
-	if (globals_m12->video_metadata_section_2_aligned == UNKNOWN_m12)
-		globals_m12->video_metadata_section_2_aligned = FALSE_m12;
-	else
-		return(globals_m12->video_metadata_section_2_aligned);
-	
-	// check overall size
-	if (sizeof(VIDEO_METADATA_SECTION_2_m12) != METADATA_SECTION_2_BYTES_m12)
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
-		free_flag = TRUE_m12;
-	}
-	vmd2 = (VIDEO_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_2_OFFSET_m12);
-	// channel type independent fields
-	if (vmd2->session_description != (si1 *) (bytes + METADATA_SESSION_DESCRIPTION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (vmd2->channel_description != (si1 *) (bytes + METADATA_CHANNEL_DESCRIPTION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (vmd2->equipment_description != (si1 *) (bytes + METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	// channel type specific fields
-	if (&vmd2->time_base_units_conversion_factor != (sf8 *) (bytes + VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (vmd2->time_base_units_description != (si1 *) (bytes + VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->absolute_start_frame_number != (si8 *) (bytes + VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->number_of_frames != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_FRAMES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->frame_rate != (sf8 *) (bytes + VIDEO_METADATA_FRAME_RATE_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->number_of_clips != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_CLIPS_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->maximum_clip_bytes != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->maximum_clip_frames != (ui4 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->number_of_video_files != (si4 *) (bytes + VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->maximum_clip_duration != (sf8 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_DURATION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->number_of_discontinuities != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->maximum_contiguous_clips != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->maximum_contiguous_clip_bytes != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->maximum_contiguous_frames != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->horizontal_pixels != (ui4 *) (bytes + VIDEO_METADATA_HORIZONTAL_PIXELS_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (&vmd2->vertical_pixels != (ui4 *) (bytes + VIDEO_METADATA_VERTICAL_PIXELS_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (vmd2->video_format != (si1 *) (bytes + VIDEO_METADATA_VIDEO_FORMAT_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (vmd2->protected_region != (ui1 *) (bytes + VIDEO_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	if (vmd2->discretionary_region != (ui1 *) (bytes + VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m12))
-		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
-	
-	// aligned
-	globals_m12->video_metadata_section_2_aligned = TRUE_m12;
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("VIDEO_METADATA_SECTION_2_m12 structure is aligned\n");
-	
-	return(TRUE_m12);
-	
-	// not aligned
-VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
-	
-	if (free_flag == TRUE_m12)
-		free((void *) bytes);
-	
-	if (globals_m12->verbose == TRUE_m12)
-		G_error_message_m12("%s(): VIDEO_METADATA_SECTION_2_m12 structure is NOT aligned\n", __FUNCTION__);
-	
-	return(FALSE_m12);
 }
 
 
@@ -6642,7 +5825,7 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 
 	// check structure alignments
 	if (check_structure_alignments == TRUE_m12)
-		if (G_check_all_alignments_m12() == FALSE_m12)
+		if (ALGN_all_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 	
 	// umask
@@ -14937,6 +14120,827 @@ void	AES_sub_bytes_m12(ui1 state[][4])
 	}
 	
 	return;
+}
+
+
+
+// TODO: ALIGNMENT FUNCTIONS
+//***********************************************************************//
+//****************  ALIGNMENT TRACKING (ALGN) FUNCTIONS  ****************//
+//***********************************************************************//
+
+
+TERN_m12        ALGN_all_m12(void)
+{
+	TERN_m12        return_value;
+	ui1		*bytes;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->all_structures_aligned != UNKNOWN_m12)
+		return(globals_m12->all_structures_aligned);
+	
+	return_value = TRUE_m12;
+	bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);  // METADATA is largest file structure
+	
+	// check all structures
+	if ((ALGN_universal_header_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((ALGN_metadata_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((ALGN_time_series_indices_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((ALGN_video_indices_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((ALGN_record_indices_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((ALGN_record_header_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((REC_check_structure_alignments_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+	if ((CMP_check_block_header_alignment_m12(bytes)) == FALSE_m12)
+		return_value = FALSE_m12;
+
+	free((void *) bytes);
+	
+	if (return_value == TRUE_m12) {
+		globals_m12->all_structures_aligned = TRUE_m12;
+		if (globals_m12->verbose == TRUE_m12)
+			G_message_m12("All MED Library structures are aligned\n");
+	} else {
+		G_error_message_m12("%s(): unaligned MED structures\n", __FUNCTION__);
+	}
+	
+	return(return_value);
+}
+
+
+TERN_m12        ALGN_metadata_m12(ui1 *bytes)
+{
+	TERN_m12	return_value, free_flag = FALSE_m12;
+	METADATA_m12	*md;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->all_metadata_structures_aligned != UNKNOWN_m12)
+		return(globals_m12->all_metadata_structures_aligned);
+	
+	return_value = TRUE_m12;
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	
+	// check overall size
+	if (sizeof(METADATA_m12) != METADATA_BYTES_m12)
+		return_value = FALSE_m12;
+
+	// check substructure offsets
+	md = (METADATA_m12 *) bytes;
+	if (&md->section_1 != (METADATA_SECTION_1_m12 *) bytes)
+		return_value = FALSE_m12;
+	if (&md->time_series_section_2 != (TIME_SERIES_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_1_BYTES_m12))
+		return_value = FALSE_m12;
+	if (&md->video_section_2 != (VIDEO_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_1_BYTES_m12))
+		return_value = FALSE_m12;
+	if (&md->section_3 != (METADATA_SECTION_3_m12 *) (bytes + METADATA_SECTION_1_BYTES_m12 + METADATA_SECTION_2_BYTES_m12))
+		return_value = FALSE_m12;
+
+	// check substructure contents
+	if (ALGN_metadata_section_1_m12(bytes) == FALSE_m12)
+		return_value = FALSE_m12;
+	if (ALGN_time_series_metadata_section_2_m12(bytes) == FALSE_m12)
+		return_value = FALSE_m12;
+	if (ALGN_video_metadata_section_2_m12(bytes) == FALSE_m12)
+		return_value = FALSE_m12;
+	if (ALGN_metadata_section_3_m12(bytes) == FALSE_m12)
+			return_value = FALSE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (return_value == TRUE_m12)
+		globals_m12->all_metadata_structures_aligned = TRUE_m12;
+
+	return(return_value);
+}
+
+
+TERN_m12	ALGN_metadata_section_1_m12(ui1 *bytes)
+{
+	METADATA_SECTION_1_m12	*md1;
+	TERN_m12		free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->metadata_section_1_aligned == UNKNOWN_m12)
+		globals_m12->metadata_section_1_aligned = FALSE_m12;
+	else
+		return(globals_m12->metadata_section_1_aligned);
+	
+	// check overall size
+	if (sizeof(METADATA_SECTION_1_m12) != METADATA_SECTION_1_BYTES_m12)
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	md1 = (METADATA_SECTION_1_m12 *) (bytes + UNIVERSAL_HEADER_BYTES_m12);
+	if (md1->level_1_password_hint != (si1 *) (bytes + METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	if (md1->level_2_password_hint != (si1 *) (bytes + METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	if (&md1->section_2_encryption_level != (si1 *) (bytes + METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	if (&md1->section_3_encryption_level != (si1 *) (bytes + METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	if (&md1->time_series_data_encryption_level != (si1 *) (bytes + METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	if (md1->protected_region != (ui1 *) (bytes + METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	if (md1->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m12))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->metadata_section_1_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("METADATA_SECTION_1_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+METADATA_SECTION_1_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): METADATA_SECTION_1_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_metadata_section_3_m12(ui1 *bytes)
+{
+	METADATA_SECTION_3_m12	*md3;
+	TERN_m12		free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->metadata_section_3_aligned == UNKNOWN_m12)
+		globals_m12->metadata_section_3_aligned = FALSE_m12;
+	else
+		return(globals_m12->metadata_section_3_aligned);
+	
+	// check overall size
+	if (sizeof(METADATA_SECTION_3_m12) != METADATA_SECTION_3_BYTES_m12)
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	md3 = (METADATA_SECTION_3_m12 *) (bytes + METADATA_SECTION_3_OFFSET_m12);
+	if (&md3->recording_time_offset != (si8 *) (bytes + METADATA_RECORDING_TIME_OFFSET_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (&md3->daylight_time_start_code != (DAYLIGHT_TIME_CHANGE_CODE_m12 *) (bytes + METADATA_DAYLIGHT_TIME_START_CODE_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (&md3->daylight_time_end_code != (DAYLIGHT_TIME_CHANGE_CODE_m12 *) (bytes + METADATA_DAYLIGHT_TIME_END_CODE_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->standard_timezone_acronym != (si1 *) (bytes + METADATA_STANDARD_TIMEZONE_ACRONYM_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->standard_timezone_string != (si1 *) (bytes + METADATA_STANDARD_TIMEZONE_STRING_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->daylight_timezone_acronym != (si1 *) (bytes + METADATA_DAYLIGHT_TIMEZONE_ACRONYM_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->daylight_timezone_string != (si1 *) (bytes + METADATA_DAYLIGHT_TIMEZONE_STRING_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->subject_name_1 != (si1 *) (bytes + METADATA_SUBJECT_NAME_1_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->subject_name_2 != (si1 *) (bytes + METADATA_SUBJECT_NAME_2_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->subject_name_3 != (si1 *) (bytes + METADATA_SUBJECT_NAME_3_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->subject_ID != (si1 *) (bytes + METADATA_SUBJECT_ID_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->recording_country != (si1 *) (bytes + METADATA_RECORDING_COUNTRY_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->recording_territory != (si1 *) (bytes + METADATA_RECORDING_TERRITORY_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->recording_locality != (si1 *) (bytes + METADATA_RECORDING_LOCALITY_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->recording_institution != (si1 *) (bytes + METADATA_RECORDING_INSTITUTION_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->geotag_format != (si1 *) (bytes + METADATA_GEOTAG_FORMAT_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->geotag_data != (si1 *) (bytes + METADATA_GEOTAG_DATA_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (&md3->standard_UTC_offset != (si4 *) (bytes + METADATA_STANDARD_UTC_OFFSET_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->protected_region != (ui1 *) (bytes + METADATA_SECTION_3_PROTECTED_REGION_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	if (md3->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_3_DISCRETIONARY_REGION_OFFSET_m12))
+		goto METADATA_SECTION_3_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->metadata_section_3_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("METADATA_SECTION_3_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+METADATA_SECTION_3_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): METADATA_SECTION_3_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_record_header_m12(ui1 *bytes)
+{
+	RECORD_HEADER_m12	*rh;
+	TERN_m12                free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->record_header_aligned == UNKNOWN_m12)
+		globals_m12->record_header_aligned = FALSE_m12;
+	else
+		return(globals_m12->record_header_aligned);
+	
+	// check overall size
+	if (sizeof(RECORD_HEADER_m12) != RECORD_HEADER_BYTES_m12)
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(RECORD_HEADER_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	rh = (RECORD_HEADER_m12 *) bytes;
+	if (&rh->record_CRC != (ui4 *) (bytes + RECORD_HEADER_RECORD_CRC_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->total_record_bytes != (ui4 *) (bytes + RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->start_time != (si8 *) (bytes + RECORD_HEADER_START_TIME_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (rh->type_string != (si1 *) (bytes + RECORD_HEADER_TYPE_STRING_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->type_code != (ui4 *) (bytes + RECORD_HEADER_TYPE_CODE_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->type_string_terminal_zero != (si1 *) (bytes + RECORD_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->version_major != (ui1 *) (bytes + RECORD_HEADER_VERSION_MAJOR_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->version_minor != (ui1 *) (bytes + RECORD_HEADER_VERSION_MINOR_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	if (&rh->encryption_level != (si1 *) (bytes + RECORD_HEADER_ENCRYPTION_LEVEL_OFFSET_m12))
+		goto RECORD_HEADER_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->record_header_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("RECORD_HEADER_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+RECORD_HEADER_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): RECORD_HEADER_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_record_indices_m12(ui1 *bytes)
+{
+	RECORD_INDEX_m12	*ri;
+	TERN_m12		free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->record_indices_aligned == UNKNOWN_m12)
+		globals_m12->record_indices_aligned = FALSE_m12;
+	else
+		return(globals_m12->record_indices_aligned);
+	
+	// check overall size
+	if (sizeof(RECORD_INDEX_m12) != RECORD_INDEX_BYTES_m12)
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(RECORD_INDEX_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	ri = (RECORD_INDEX_m12 *) bytes;
+	if (&ri->file_offset != (si8 *) (bytes + RECORD_INDEX_FILE_OFFSET_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (&ri->start_time != (si8 *) (bytes + RECORD_INDEX_START_TIME_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (ri->type_string != (si1 *) (bytes + RECORD_INDEX_TYPE_STRING_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (&ri->type_code != (ui4 *) (bytes + RECORD_INDEX_TYPE_CODE_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (&ri->type_string_terminal_zero != (si1 *) (bytes + RECORD_INDEX_TYPE_STRING_TERMINAL_ZERO_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (&ri->version_major != (ui1 *) (bytes + RECORD_INDEX_VERSION_MAJOR_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (&ri->version_minor != (ui1 *) (bytes + RECORD_INDEX_VERSION_MINOR_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	if (&ri->encryption_level != (si1 *) (bytes + RECORD_INDEX_ENCRYPTION_LEVEL_OFFSET_m12))
+		goto RECORD_INDICES_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->record_indices_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		printf_m12("RECORD_INDEX_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+RECORD_INDICES_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): RECORD_INDEX_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_time_series_indices_m12(ui1 *bytes)
+{
+	TIME_SERIES_INDEX_m12	*tsi;
+	TERN_m12		free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->time_series_indices_aligned == UNKNOWN_m12)
+		globals_m12->time_series_indices_aligned = FALSE_m12;
+	else
+		return(globals_m12->time_series_indices_aligned);
+	
+	// check overall size
+	if (sizeof(TIME_SERIES_INDEX_m12) != TIME_SERIES_INDEX_BYTES_m12)
+		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(TIME_SERIES_INDEX_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	tsi = (TIME_SERIES_INDEX_m12 *) bytes;
+	if (&tsi->file_offset != (si8 *) (bytes + TIME_SERIES_INDEX_FILE_OFFSET_OFFSET_m12))
+		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
+	if (&tsi->start_time != (si8 *) (bytes + TIME_SERIES_INDEX_START_TIME_OFFSET_m12))
+		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
+	if (&tsi->start_sample_number != (si8 *) (bytes + TIME_SERIES_INDEX_START_SAMPLE_NUMBER_OFFSET_m12))
+		goto TIME_SERIES_INDICES_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->time_series_indices_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("TIME_SERIES_INDEX_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+TIME_SERIES_INDICES_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): TIME_SERIES_INDEX_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_time_series_metadata_section_2_m12(ui1 *bytes)
+{
+	TIME_SERIES_METADATA_SECTION_2_m12	*md2;
+	TERN_m12				free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->time_series_metadata_section_2_aligned == UNKNOWN_m12)
+		globals_m12->time_series_metadata_section_2_aligned = FALSE_m12;
+	else
+		return(globals_m12->time_series_metadata_section_2_aligned);
+	
+	// check overall size
+	if (sizeof(TIME_SERIES_METADATA_SECTION_2_m12) != METADATA_SECTION_2_BYTES_m12)
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	md2 = (TIME_SERIES_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_2_OFFSET_m12);
+	// channel type independent fields
+	if (md2->session_description != (si1 *) (bytes + METADATA_SESSION_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->channel_description != (si1 *) (bytes + METADATA_CHANNEL_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->segment_description != (si1 *) (bytes + METADATA_SEGMENT_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->equipment_description != (si1 *) (bytes + METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	// channel type specific fields
+	if (md2->reference_description != (si1 *) (bytes + TIME_SERIES_METADATA_REFERENCE_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->sampling_frequency != (sf8 *) (bytes + TIME_SERIES_METADATA_SAMPLING_FREQUENCY_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->low_frequency_filter_setting != (sf8 *) (bytes + TIME_SERIES_METADATA_LOW_FREQUENCY_FILTER_SETTING_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->high_frequency_filter_setting != (sf8 *) (bytes + TIME_SERIES_METADATA_HIGH_FREQUENCY_FILTER_SETTING_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->notch_filter_frequency_setting != (sf8 *) (bytes + TIME_SERIES_METADATA_NOTCH_FILTER_FREQUENCY_SETTING_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->AC_line_frequency != (sf8 *) (bytes + TIME_SERIES_METADATA_AC_LINE_FREQUENCY_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->amplitude_units_conversion_factor != (sf8 *) (bytes + TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->amplitude_units_description != (si1 *) (bytes + TIME_SERIES_METADATA_AMPLITUDE_UNITS_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->time_base_units_conversion_factor != (sf8 *) (bytes + TIME_SERIES_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->time_base_units_description != (si1 *) (bytes + TIME_SERIES_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->absolute_start_sample_number != (si8 *) (bytes + TIME_SERIES_METADATA_ABSOLUTE_START_SAMPLE_NUMBER_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->number_of_samples != (si8 *) (bytes + TIME_SERIES_METADATA_NUMBER_OF_SAMPLES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->number_of_blocks != (si8 *) (bytes + TIME_SERIES_METADATA_NUMBER_OF_BLOCKS_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_block_bytes != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_BYTES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_block_samples != (ui4 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_SAMPLES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_block_keysample_bytes != (ui4 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_KEYSAMPLE_BYTES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_block_duration != (sf8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_BLOCK_DURATION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->number_of_discontinuities != (si8 *) (bytes + TIME_SERIES_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_contiguous_blocks != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCKS_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_contiguous_block_bytes != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCK_BYTES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&md2->maximum_contiguous_samples != (si8 *) (bytes + TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_SAMPLES_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->protected_region != (ui1 *) (bytes + TIME_SERIES_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (md2->discretionary_region != (ui1 *) (bytes + TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m12))
+		goto TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->time_series_metadata_section_2_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("TIME_SERIES_METADATA_SECTION_2_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+TIME_SERIES_METADATA_SECTION_2_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): TIME_SERIES_METADATA_SECTION_2_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_universal_header_m12(ui1 *bytes)
+{
+	UNIVERSAL_HEADER_m12	*uh;
+	TERN_m12		free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->universal_header_aligned == UNKNOWN_m12)
+		globals_m12->universal_header_aligned = FALSE_m12;
+	else
+		return(globals_m12->universal_header_aligned);
+	
+	// check overall size
+	if (sizeof(UNIVERSAL_HEADER_m12) != UNIVERSAL_HEADER_BYTES_m12)
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(UNIVERSAL_HEADER_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	uh = (UNIVERSAL_HEADER_m12 *) bytes;
+	if (&uh->header_CRC != (ui4 *) (bytes + UNIVERSAL_HEADER_HEADER_CRC_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->body_CRC != (ui4 *) (bytes + UNIVERSAL_HEADER_BODY_CRC_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->segment_end_time != (si8 *) (bytes + UNIVERSAL_HEADER_FILE_END_TIME_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->number_of_entries != (si8 *) (bytes + UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->maximum_entry_size != (ui4 *) (bytes + UNIVERSAL_HEADER_MAXIMUM_ENTRY_SIZE_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->segment_number != (si4 *) (bytes + UNIVERSAL_HEADER_SEGMENT_NUMBER_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->type_string != (si1 *) (bytes + UNIVERSAL_HEADER_TYPE_STRING_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->type_code != (ui4 *) (bytes + UNIVERSAL_HEADER_TYPE_CODE_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->type_string_terminal_zero != (si1 *) (bytes + UNIVERSAL_HEADER_TYPE_STRING_TERMINAL_ZERO_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->MED_version_major != (ui1 *) (bytes + UNIVERSAL_HEADER_MED_VERSION_MAJOR_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->MED_version_minor != (ui1 *) (bytes + UNIVERSAL_HEADER_MED_VERSION_MINOR_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->byte_order_code != (ui1 *) (bytes + UNIVERSAL_HEADER_BYTE_ORDER_CODE_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->session_start_time != (si8 *) (bytes + UNIVERSAL_HEADER_SESSION_START_TIME_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->segment_start_time != (si8 *) (bytes + UNIVERSAL_HEADER_FILE_START_TIME_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->session_name != (si1 *) (bytes + UNIVERSAL_HEADER_SESSION_NAME_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->channel_name != (si1 *)  (bytes + UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->anonymized_subject_ID != (si1 *) (bytes + UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->session_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_SESSION_UID_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->channel_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->segment_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_SEGMENT_UID_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->file_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_FILE_UID_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (&uh->provenance_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_PROVENANCE_UID_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->level_1_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_1_PASSWORD_VALIDATION_FIELD_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->level_2_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->level_3_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->protected_region != (ui1 *) (bytes + UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	if (uh->discretionary_region != (ui1 *) (bytes + UNIVERSAL_HEADER_DISCRETIONARY_REGION_OFFSET_m12))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->universal_header_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("UNIVERSAL_HEADER_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+UNIVERSAL_HEADER_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): UNIVERSAL_HEADER_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_video_indices_m12(ui1 *bytes)
+{
+	VIDEO_INDEX_m12		*vi;
+	TERN_m12		free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->video_indices_aligned == UNKNOWN_m12)
+		globals_m12->video_indices_aligned = FALSE_m12;
+	else
+		return(globals_m12->video_indices_aligned);
+	
+	// check overall size
+	if (sizeof(VIDEO_INDEX_m12) != VIDEO_INDEX_BYTES_m12)
+		goto VIDEO_INDICES_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(VIDEO_INDEX_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	vi = (VIDEO_INDEX_m12 *) bytes;
+	if (&vi->file_offset != (si8 *) (bytes + VIDEO_INDEX_FILE_OFFSET_OFFSET_m12))
+		goto VIDEO_INDICES_NOT_ALIGNED_m12;
+	if (&vi->start_time != (si8 *) (bytes + VIDEO_INDEX_START_TIME_OFFSET_m12))
+		goto VIDEO_INDICES_NOT_ALIGNED_m12;
+	if (&vi->start_frame_number != (ui4 *) (bytes + VIDEO_INDEX_START_FRAME_OFFSET_m12))
+		goto VIDEO_INDICES_NOT_ALIGNED_m12;
+	if (&vi->video_file_number != (ui4 *) (bytes + VIDEO_INDEX_VIDEO_FILE_NUMBER_OFFSET_m12))
+		goto VIDEO_INDICES_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->video_indices_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("VIDEO_INDEX_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+VIDEO_INDICES_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): VIDEO_INDEX_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
+}
+
+
+TERN_m12	ALGN_video_metadata_section_2_m12(ui1 *bytes)
+{
+	VIDEO_METADATA_SECTION_2_m12	*vmd2;
+	TERN_m12			free_flag = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// see if already checked
+	if (globals_m12->video_metadata_section_2_aligned == UNKNOWN_m12)
+		globals_m12->video_metadata_section_2_aligned = FALSE_m12;
+	else
+		return(globals_m12->video_metadata_section_2_aligned);
+	
+	// check overall size
+	if (sizeof(VIDEO_METADATA_SECTION_2_m12) != METADATA_SECTION_2_BYTES_m12)
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m12);
+		free_flag = TRUE_m12;
+	}
+	vmd2 = (VIDEO_METADATA_SECTION_2_m12 *) (bytes + METADATA_SECTION_2_OFFSET_m12);
+	// channel type independent fields
+	if (vmd2->session_description != (si1 *) (bytes + METADATA_SESSION_DESCRIPTION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (vmd2->channel_description != (si1 *) (bytes + METADATA_CHANNEL_DESCRIPTION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (vmd2->equipment_description != (si1 *) (bytes + METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	// channel type specific fields
+	if (&vmd2->time_base_units_conversion_factor != (sf8 *) (bytes + VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (vmd2->time_base_units_description != (si1 *) (bytes + VIDEO_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->absolute_start_frame_number != (si8 *) (bytes + VIDEO_METADATA_ABSOLUTE_START_FRAME_NUMBER_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->number_of_frames != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_FRAMES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->frame_rate != (sf8 *) (bytes + VIDEO_METADATA_FRAME_RATE_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->number_of_clips != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_CLIPS_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->maximum_clip_bytes != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->maximum_clip_frames != (ui4 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->number_of_video_files != (si4 *) (bytes + VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->maximum_clip_duration != (sf8 *) (bytes + VIDEO_METADATA_MAXIMUM_CLIP_DURATION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->number_of_discontinuities != (si8 *) (bytes + VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->maximum_contiguous_clips != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->maximum_contiguous_clip_bytes != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->maximum_contiguous_frames != (si8 *) (bytes + VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->horizontal_pixels != (ui4 *) (bytes + VIDEO_METADATA_HORIZONTAL_PIXELS_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (&vmd2->vertical_pixels != (ui4 *) (bytes + VIDEO_METADATA_VERTICAL_PIXELS_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (vmd2->video_format != (si1 *) (bytes + VIDEO_METADATA_VIDEO_FORMAT_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (vmd2->protected_region != (ui1 *) (bytes + VIDEO_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	if (vmd2->discretionary_region != (ui1 *) (bytes + VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m12))
+		goto VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12;
+	
+	// aligned
+	globals_m12->video_metadata_section_2_aligned = TRUE_m12;
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_message_m12("VIDEO_METADATA_SECTION_2_m12 structure is aligned\n");
+	
+	return(TRUE_m12);
+	
+	// not aligned
+VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
+	
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+	
+	if (globals_m12->verbose == TRUE_m12)
+		G_error_message_m12("%s(): VIDEO_METADATA_SECTION_2_m12 structure is NOT aligned\n", __FUNCTION__);
+	
+	return(FALSE_m12);
 }
 
 

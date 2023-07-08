@@ -2159,21 +2159,10 @@ void            G_calculate_record_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps
 void            G_calculate_time_series_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 void		G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type);
 ui4             G_channel_type_from_path_m12(si1 *path);
-TERN_m12	G_check_all_alignments_m12(void);
 TERN_m12	G_check_char_type_m12(void);
 TERN_m12	G_check_file_list_m12(si1 **file_list, si4 n_files);
 TERN_m12	G_check_file_system_m12(si1 *file_system_path, si4 is_cloud, ...);  // varargs: si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
-TERN_m12	G_check_metadata_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_metadata_section_1_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_metadata_section_3_alignment_m12(ui1 *bytes);
 TERN_m12        G_check_password_m12(si1 *password);
-TERN_m12	G_check_record_header_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_record_indices_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_time_series_indices_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_time_series_metadata_section_2_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_universal_header_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_video_indices_alignment_m12(ui1 *bytes);
-TERN_m12	G_check_video_metadata_section_2_alignment_m12(ui1 *bytes);
 void		G_clear_terminal_m12(void);
 si4		G_compare_acq_nums_m12(const void *a, const void *b);
 void		G_condition_timezone_info_m12(TIMEZONE_INFO_m12 *tz_info);
@@ -2326,6 +2315,25 @@ si1		*WN_windify_format_string_m12(si1 *fmt);
 #endif
 
 si8		WN_filetime_to_uutc_m12(ui1 *win_filetime);  // for conversion of windows file time to uutc on any platform
+
+
+
+//**********************************************************************************//
+//********************  MED Alignmment Checking (ALGN) Functions  ******************//
+//**********************************************************************************//
+
+TERN_m12	ALGN_all_m12(void);
+TERN_m12	ALGN_metadata_m12(ui1 *bytes);
+TERN_m12	ALGN_metadata_section_1_m12(ui1 *bytes);
+TERN_m12	ALGN_metadata_section_3_m12(ui1 *bytes);
+TERN_m12	ALGN_record_header_m12(ui1 *bytes);
+TERN_m12	ALGN_record_indices_m12(ui1 *bytes);
+TERN_m12	ALGN_time_series_indices_m12(ui1 *bytes);
+TERN_m12	ALGN_time_series_metadata_section_2_m12(ui1 *bytes);
+TERN_m12	ALGN_universal_header_m12(ui1 *bytes);
+TERN_m12	ALGN_video_indices_m12(ui1 *bytes);
+TERN_m12	ALGN_video_metadata_section_2_m12(ui1 *bytes);
+
 
 
 //**********************************************************************************//
