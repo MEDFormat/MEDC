@@ -4,7 +4,7 @@
 //**********************************************************************************//
 
 
-// Multiscale Electrophysiology Data (MED) Format Software Library, Version 1.0.1
+// Multiscale Electrophysiology Data (MED) Format Software Library, Version 1.0.2
 // Written by Matt Stead
 
 
