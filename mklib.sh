@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 #
 # This script relies on the following directory hierarchy existing:
 # /Volumes/devdrv (or /mnt/devdrv) (mount point)
