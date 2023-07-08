@@ -30294,6 +30294,21 @@ si4	PROC_pthread_mutex_unlock_m12(pthread_mutex_t_m12 *mutex)
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+pthread_t_m12	PROC_pthread_self_m12(void)
+{
+#if defined MACOS_m12 || defined LINUX_m12
+	return(pthread_self());
+#endif
+	
+#ifdef WINDOWS_m12
+	return(GetCurrentThread());
+#endif
+}
+
+
 #ifdef LINUX_m12
 TERN_m12    PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_attr_t_m12 *attributes, cpu_set_t_m12 *cpu_set_p, TERN_m12 wait_for_lauch)
 {

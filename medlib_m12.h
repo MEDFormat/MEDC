@@ -1107,8 +1107,9 @@ si4		PROC_pthread_mutex_destroy_m12(pthread_mutex_t_m12 *mutex);
 si4		PROC_pthread_mutex_init_m12(pthread_mutex_t_m12 *mutex, pthread_mutexattr_t_m12 *attr);
 si4		PROC_pthread_mutex_lock_m12(pthread_mutex_t_m12 *mutex);
 si4		PROC_pthread_mutex_unlock_m12(pthread_mutex_t_m12 *mutex);
+pthread_t_m12	PROC_pthread_self_m12(void);
 TERN_m12	PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_attr_t_m12 *attributes, cpu_set_t_m12 *cpu_set_p, TERN_m12 wait_for_lauch);
-void            PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id);
+void		PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id);
 
 
 
