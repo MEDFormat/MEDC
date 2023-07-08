@@ -29917,7 +29917,6 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 
 	// verbose_flag passed because this function is usually called before the MED libraries are initialized
 	// no printf_m12() calls for the same reason
-	// relaunch_flag sets executable to launch with root permissions, but may require user to relaunch
 	
 	#if (defined MACOS_m12 || defined LINUX_m12) && !defined MATLAB_m12
 	if (sudo_prompt_flag == TRUE_m12) {
@@ -29953,8 +29952,8 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 					G_warning_message_m12("%s(): Invalid sudo password\n", __FUNCTION__);
 					return(FALSE_m12);
 				} else {
-					// change executable's permissions (for next time)
-					// (changing permissions may fail silently if executable is on a network file system)
+					// change executable's permissions (for subsequent runs)
+					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
 					sprintf_m12(command, "echo %s | sudo -S chown root %s", pw, exec_name);  // in case owner wasn't root
 					if (system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) {  // just check for password failure once
@@ -29994,24 +29993,22 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 		ret_val = FALSE_m12;
 	#endif
 	
-	if (ret_val == FALSE_m12) {
-		if (verbose_flag == TRUE_m12) {
-		#if defined MACOS_m12 || defined LINUX_m12
-			#ifdef MATLAB_m12
-			mexPrintf("%s(): could not increase priority\nTo run with high priority, in a terminal type: \"sudo chown root <mex file>; sudo chmod ug+s <mex file>\"\n", __FUNCTION__);
-			#else
-			fprintf(stderr, "%s(): could not increase priority\nTo run with high priority, run with sudo or as root.\nOr: \"sudo chown root <program name>; sudo chmod ug+s <program name>\"\n", __FUNCTION__);
-			#endif
+	if (ret_val == FALSE_m12 && verbose_flag == TRUE_m12) {
+	#if defined MACOS_m12 || defined LINUX_m12
+		#ifdef MATLAB_m12
+		mexPrintf("%s(): could not increase priority\nTo run with high priority, in a terminal type: \"sudo chown root <mex file>; sudo chmod ug+s <mex file>\"\n", __FUNCTION__);
+		#else
+		fprintf(stderr, "%s(): could not increase priority\nTo run with high priority, run with sudo or as root.\nOr: \"sudo chown root <program name>; sudo chmod ug+s <program name>\"\n", __FUNCTION__);
 		#endif
-			
-		#ifdef WINDOWS_m12
-			#ifdef MATLAB_m12
-			mexPrintf("%s(): could not increase priority\n", __FUNCTION__);
-			#else
-			fprintf(stderr, "%s(): could not increase priority\n", __FUNCTION__);
-			#endif
+	#endif
+		
+	#ifdef WINDOWS_m12
+		#ifdef MATLAB_m12
+		mexPrintf("%s(): could not increase priority\n", __FUNCTION__);
+		#else
+		fprintf(stderr, "%s(): could not increase priority\n", __FUNCTION__);
 		#endif
-		}
+	#endif
 	}
 	
 	return(ret_val);
@@ -30083,7 +30080,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 		if (*affinity_str) {
 			if (cpu_set_p == NULL)  // caller did't supply cpu set
 				cpu_set_p = &local_cpu_set;
-			generate_cpu_set_m12(affinity_str, cpu_set_p);
+			PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 		}
 	}
 	// set affinity
@@ -30161,7 +30158,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 		if (*affinity_str) {
 			if (cpu_set_p == NULL)
 				cpu_set_p = &local_cpu_set_p;
-			generate_cpu_set_m12(affinity_str, cpu_set_p);
+			PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 		}
 	}
 	if (cpu_set_p != NULL)
