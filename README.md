@@ -18,5 +18,5 @@ mklib.bat is a shell script to a create MED library in Windows
 compile.sh is a shell script to compile MED2RAW using the MED library in MacOS & Linux
 compile.bat is a shell script to compile MED2RAW using the MED library in Windows
 
-The API documentation is currently being upddated for m12 libraries.  
+The API documentation is currently being updated for m12 libraries.  
 New record types may be added to the medrec_m12 prior to their appearance in the MED Records documentation.
