@@ -3,7 +3,7 @@ MED Format C library and documentation
 
 For more information about MED, see medformat.org
 
-Edit targets.h to set the target operating system, and if appropriate, target application.
+Edit targets_m12.h to set the target operating system, and if appropriate, target application.
 Currently, Matlab is the only supported target application.
 
 MED2RAW.c is example code for converting MED files to a series of 4-byte integer files, one per channel.
