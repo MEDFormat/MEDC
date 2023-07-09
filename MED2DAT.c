@@ -17,7 +17,6 @@
 
 int main(int argc, char *argv[])
 {
-	extern GLOBALS_m12			*globals_m12;
 	TERN_m12				use_matrix;
 	si1					out_dir[FULL_FILE_NAME_BYTES_m12], out_file[FULL_FILE_NAME_BYTES_m12], *password, *end_ptr;
 	si2					*out_arr;

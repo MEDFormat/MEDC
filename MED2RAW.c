@@ -17,7 +17,6 @@
 
 si4	main(si4 argc, si1 **argv)
 {
-	extern GLOBALS_m12		*globals_m12;
 	TERN_m12			show_records, show_file_processing_structs, show_time_slices;
 	si1				out_dir[FULL_FILE_NAME_BYTES_m12], out_file[FULL_FILE_NAME_BYTES_m12], *password, *end_ptr;
 	si4				list_len, seg_idx, n_segs;
