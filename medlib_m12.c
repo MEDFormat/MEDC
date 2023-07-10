@@ -2804,9 +2804,9 @@ FILE_TIMES_m12	*G_file_times_m12(FILE *fp, si1 *path, FILE_TIMES_m12 *ft, TERN_m
 	if (ft == NULL)
 		ft = (FILE_TIMES_m12 *) malloc_m12(sizeof(FILE_TIMES_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 
-	ft->creation = win_time_to_uutc_m12(win_create_time);
-	ft->access = win_time_to_uutc_m12(win_access_time);
-	ft->modification = win_time_to_uutc_m12(win_modify_time);
+	ft->creation = WN_time_to_uutc_m12(win_create_time);
+	ft->access = WN_time_to_uutc_m12(win_access_time);
+	ft->modification = WN_time_to_uutc_m12(win_modify_time);
 	
 	if (set_time == TRUE_m12) {
 		if (!SetFileTime(file_h, NULL, &set_access_time, &set_modify_time))
@@ -3834,7 +3834,7 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 		sprintf_m12(command, "rm -f %s", globals->temp_file);
 		#endif
 		#ifdef WINDOWS_m12
-		win_cleanup_m12();
+		WN_cleanup_m12();
 		sprintf_m12(command, "del %s", globals->temp_file);
 		#endif
 		system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
@@ -4342,7 +4342,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	#endif  // MACOS_m12 || LINUX_m12
 		
 	#ifdef WINDOWS_m12
-		*n_out_files = win_ls_1d_to_tmp_m12(file_list, n_in_files, TRUE_m12);
+		*n_out_files = WN_ls_1d_to_tmp_m12(file_list, n_in_files, TRUE_m12);
 		free_m12((void *) file_list, __FUNCTION__);
 		if (*n_out_files == -1) {  // error
 			*n_out_files = 0;
@@ -5846,13 +5846,13 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 	
 #if defined WINDOWS_m12 && defined NEED_WIN_SOCKETS_m12
 	// initialize Windows sockets DLL
-	if (win_socket_startup_m12() == FALSE_m12)
+	if (WN_socket_startup_m12() == FALSE_m12)
 		ret_val = FALSE_m12;
 #endif
 	
 #if defined WINDOWS_m12 && !defined MATLAB_m12
 	// initialize Windows terminal
-	if (win_initialize_terminal_m12() == FALSE_m12)
+	if (WN_initialize_terminal_m12() == FALSE_m12)
 		ret_val = FALSE_m12;
 #endif
 		
@@ -11290,7 +11290,7 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 		sprintf(command, "curl.exe --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
 		sprintf(command, "curl.exe --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
-	win_system_m12(command);
+	WN_system_m12(command);
 #endif
 
 	return;
@@ -13042,7 +13042,7 @@ void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 #endif
 #ifdef WINDOWS_m12
 	sprintf(command, "curl.exe -X POST https://textbelt.com/text --data-urlencode phone=\"%s\" --data-urlencode message=\"%s\" -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
-	win_system_m12(command);
+	WN_system_m12(command);
 #endif
 
 	return;
@@ -28138,7 +28138,7 @@ si1	*HW_get_machine_serial_m12(si1 *machine_sn)
 #endif
 #ifdef WINDOWS_m12
 	buf[file_length - 7] = buf[file_length - 8] = 0;  // <cr><lf>
-	wchar2char_m12(buf, (wchar_t *) buf);
+	STR_wchar2char_m12(buf, (wchar_t *) buf);
 	local_machine_sn = STR_match_end_m12("SerialNumber  \r\n", buf);
 #endif
 
@@ -30171,7 +30171,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	// set thread name
 	if (thread_name != NULL) {
 		if (*thread_name) {
-			char2wchar_m12(w_thread_name, thread_name);
+			STR_char2wchar_m12(w_thread_name, thread_name);
 			SetThreadDescription(*thread_hp, w_thread_name);
 		}
 	}
@@ -30394,7 +30394,7 @@ TERN_m12    PROC_set_thread_affinity_m12(pthread_t_m12 *thread_handle_p, pthread
 		*thread_name = 0;
 		hr = GetThreadDescription(thread_h, (PWSTR *) &w_thread_name);
 		if (SUCCEEDED(hr)) {
-			wchar2char_m12(thread_name, w_thread_name);
+			STR_wchar2char_m12(thread_name, w_thread_name);
 			free((void *) w_thread_name);
 		}
 		if (*thread_name)
@@ -30508,7 +30508,7 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 	*thread_name = 0;
 	hr = GetThreadDescription(thread_h, (PWSTR *) &w_thread_name);
 	if (SUCCEEDED(hr)) {
-		wchar2char_m12(thread_name, w_thread_name);
+		STR_wchar2char_m12(thread_name, w_thread_name);
 		free((void *) w_thread_name);
 	}
 	if (*thread_name)
@@ -32813,7 +32813,7 @@ void	TR_set_socket_timeout_m12(TR_INFO_m12 *trans_info)
 }
 
 
-TERN_m12	TR_show_G_message_m12(TR_HEADER_m12 *header)
+TERN_m12	TR_show_message_m12(TR_HEADER_m12 *header)
 {
 	ui1			type;
 	si1			*msg;
@@ -33687,7 +33687,7 @@ void    WN_cleanup_m12(void)
 	#endif
 	
 	#ifndef MATLAB_m12
-		win_reset_terminal_m12();
+		WN_reset_terminal_m12();
 	#endif
 #endif
 	return;
@@ -34306,7 +34306,7 @@ void	exit_m12(si4 status)
 #endif
 	
 #ifdef WINDOWS_m12
-	win_cleanup_m12();
+	WN_cleanup_m12();
 #endif
 
 #ifdef MATLAB_m12
@@ -35504,7 +35504,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 	ret_val = system(command);
 #endif
 #ifdef WINDOWS_m12
-	ret_val = win_system_m12(command);
+	ret_val = WN_system_m12(command);
 #endif
 
 	if (ret_val) {
@@ -35514,7 +35514,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 			ret_val = system(command);
 #endif
 #ifdef WINDOWS_m12
-			ret_val = win_system_m12(command);
+			ret_val = WN_system_m12(command);
 #endif
 			if (ret_val == 0) {
 				if (null_std_streams == TRUE_m12)
@@ -35679,7 +35679,7 @@ si4    vsnprintf_m12(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 	
 #ifdef WINDOWS_m12
 	// convert file system paths
-	windify_file_paths_m12(NULL, target);
+	WN_windify_file_paths_m12(NULL, target);
 
 	// clean up
 	if (free_fmt == TRUE_m12)
