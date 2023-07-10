@@ -2285,7 +2285,7 @@ void    	G_show_time_slice_m12(TIME_SLICE_m12 *slice);
 void            G_show_timezone_info_m12(TIMEZONE_INFO_m12 *timezone_entry, TERN_m12 show_DST_detail);
 void            G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEADER_m12 *uh);
 TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess);
-void		G_textbelt_text_d12(si1 *phone_number, si1 *content, si1 *textbelt_key);
+void		G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void		G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 si8		G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
@@ -4281,7 +4281,7 @@ void		TR_show_transmission_m12(TR_INFO_m12 *trans_info);
 #ifdef DATABASE_m12
 
 	// Defines
-	#define EXPECTED_ROWS_NO_ENTRY_m12	((si4) -1)
+	#define DB_EXPECTED_ROWS_NO_ENTRY_m12	((si4) -1)
 
 	// Prototypes
 	TERN_m12	DB_check_result_m12(PGresult *result);

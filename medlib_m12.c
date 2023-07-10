@@ -11257,14 +11257,14 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 #endif
 
 	if (sendgrid_key == NULL) {
-#ifdef DHNKEYS_m12
-		sendgrid_key = SG_KEY_m12;
-#else
 		G_warning_message_m12("%s(): key is NULL => returning\n");
 		return;
-#endif
 	}
-	
+	if (*sendgrid_key == 0) {
+		G_warning_message_m12("%s(): key is empty => returning\n");
+		return;
+	}
+
 	if (content != NULL) {
 		if (*content)
 			STR_re_escape_m12(content, escaped_content);
@@ -13089,12 +13089,12 @@ void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 #endif
 	
 	if (textbelt_key == NULL) {
-#ifdef DHNKEYS_m12
-		textbelt_key = TB_KEY_m12;
-#else
 		G_warning_message_m12("%s(): key is NULL => returning\n");
 		return;
-#endif
+	}
+	if (*textbelt_key == 0) {
+		G_warning_message_m12("%s(): key is empty => returning\n");
+		return;
 	}
 
 #if defined MACOS_m12 || defined LINUX_m12
@@ -23229,7 +23229,7 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
 	result = PQexec(conn, command);
-	result_ok = check_pg_result_m12(result);
+	result_ok = DB_check_result_m12(result);
 	
 	if (result_ok == FALSE_m12) {
 		PQclear(result);
@@ -23256,7 +23256,7 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 	if (rows != NULL)
 		*rows = local_rows;
 	
-	if (expected_rows != EXPECTED_ROWS_NO_ENTRY_m12) {
+	if (expected_rows != DB_EXPECTED_ROWS_NO_ENTRY_m12) {
 		if (local_rows != expected_rows) {
 			if (!(behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m12)) {
 				(void) fprintf_m12(stderr, "%c\n\t%s(): rows != expected_rows\n\tcalled from function %s()\n\n", 7, __FUNCTION__, function);
@@ -32120,7 +32120,7 @@ TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port)
 
 
 
-void	TR_build_G_message_m12(TR_MESSAGE_HEADER_m12 *msg, si1 *message_text)
+void	TR_build_message_m12(TR_MESSAGE_HEADER_m12 *msg, si1 *message_text)
 {
 	si4	encrpyption_blocks;
 #ifdef FN_DEBUG_m12
@@ -32628,7 +32628,7 @@ TR_RECV_FAIL_m12:
 }
 
 
-TERN_m12	TR_send_G_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt, si1 *fmt, ...)
+TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt, si1 *fmt, ...)
 {
 	si1			*message_text;
 	si8			bytes_sent;
@@ -32657,7 +32657,7 @@ TERN_m12	TR_send_G_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encry
 	va_start(args, fmt);
 	vsprintf_m12(message_text, fmt, args);
 	va_end(args);
-	TR_build_G_message_m12(msg, message_text);
+	TR_build_message_m12(msg, message_text);
 
 	header->type = type;
 	if (type == TR_ERROR_TYPE_m12)
