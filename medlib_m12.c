@@ -11530,6 +11530,67 @@ SET_GTC_TIMEZONE_MATCH_m12:
 }
 
 
+void	G_set_globals_pointer_m12(GLOBALS_m12 *new_globals)
+{
+	si4		i;
+	pid_t_m12	_id;
+	
+	
+	// NOTE if this is temporary, caller should save previous glopbals & call this again to restore
+	
+	// lock list
+	PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
+
+	// return parent (or only) globals
+	// most common usage, so check first
+	if (globals_list_len_m12 == 1) {
+		globals_list_m12[0] = new_globals;
+		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12); // unlock list
+		return;
+	}
+	
+	// no globals exist
+	if (globals_list_len_m12 == 0) {
+		globals_list_len_m12 = 1;
+#ifdef MATLAB_PERSISTENT_m12
+		globals_list_m12 = (GLOBALS_m12 **) mxCalloc((mwSize) globals_list_len_m12, sizeof(GLOBALS_m12 *));
+#else
+		globals_list_m12 = (GLOBALS_m12 **) calloc((size_t) globals_list_len_m12, sizeof(GLOBALS_m12 *));
+#endif
+		globals_list_m12[0] = new_globals;
+		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12); // unlock list
+		return;
+	}
+	
+	// return thread local globals
+	_id = PROC_gettid_m12();
+	
+	for (i = 0; i < globals_list_len_m12; ++i) {
+		if (globals_list_m12[i]->_id == _id) {
+			globals_list_m12[i] = new_globals;
+			PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12); // unlock list
+			return;
+		}
+	}
+
+	// return process globals
+	_id = PROC_getpid_m12();
+
+	for (i = 0; i < globals_list_len_m12; ++i) {
+		if (globals_list_m12[i]->_id == _id) {
+			globals_list_m12[i] = new_globals;
+			PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12); // unlock list
+			return;
+		}
+	}
+
+	// unlock list
+	PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
+	
+	return;
+}
+
+
 TERN_m12	G_set_time_and_password_data_m12(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level)
 {
 	si1                             metadata_file[FULL_FILE_NAME_BYTES_m12];

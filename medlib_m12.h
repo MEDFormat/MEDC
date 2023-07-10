@@ -2268,6 +2268,7 @@ si4		G_segment_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_time);
 void		G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
 void		G_set_error_m12(const si4 err_code, const si1 *function, const si4 line);
 TERN_m12	G_set_global_time_constants_m12(TIMEZONE_INFO_m12 *timezone_info, si8 session_start_time, TERN_m12 prompt);
+void		G_set_globals_pointer_m12(GLOBALS_m12 *new_globals);
 TERN_m12	G_set_time_and_password_data_m12(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
 void		G_show_behavior_m12(void);
 void            G_show_daylight_change_code_m12(DAYLIGHT_TIME_CHANGE_CODE_m12 *code, si1 *prefix);
@@ -3825,23 +3826,6 @@ void		TR_show_transmission_m12(TR_INFO_m12 *trans_info);
 
 
 //**********************************************************************************//
-//***************************  Database (DB) functions  ****************************//
-//**********************************************************************************//
-
-#ifdef DATABASE_m12
-
-	// Defines
-	#define EXPECTED_ROWS_NO_ENTRY_d11	((si4) -1)
-
-	// Prototypes
-	TERN_m11	DB_check_result_d11(PGresult *result);
-	PGresult	*DB_execute_command_d11(PGconn *conn, si1 *command, si4 *rows, si4 expected_rows, const si1 *function, ui4 behavior_on_fail);
-
-#endif  // DATABASE_m12
-
-
-
-//**********************************************************************************//
 //********************************  Time Zone Data  ********************************//
 //**********************************************************************************//
 
@@ -4300,7 +4284,7 @@ void		TR_show_transmission_m12(TR_INFO_m12 *trans_info);
 	#define EXPECTED_ROWS_NO_ENTRY_m12	((si4) -1)
 
 	// Prototypes
-	TERN_m11	DB_check_result_m12(PGresult *result);
+	TERN_m12	DB_check_result_m12(PGresult *result);
 	PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expected_rows, const si1 *function, ui4 behavior_on_fail);
 
 #endif
