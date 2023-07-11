@@ -105,7 +105,7 @@ GLOBAL_TABLES_m12	*global_tables_m12;
 
 
 
-// TODO: GENERAL MED FUNCTIONS
+// MARK: GENERAL MED FUNCTIONS
 //***********************************************************************//
 //********************  GENERAL MED LIBRARY FUNCTIONS  ******************//
 //***********************************************************************//
@@ -11246,7 +11246,7 @@ si4	G_segment_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_time)
 	return(idx + 1);
 }
 
-		
+
 void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name)
 {
 	TERN_m12	include_cc = TRUE_m12;
@@ -13675,7 +13675,7 @@ si8	G_write_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes
 
 
 
-// TODO: ENCRYPTION FUNCTIONS
+// MARK: ENCRYPTION FUNCTIONS
 //***********************************************************************//
 //**************************  AES-128 FUNCTIONS  ************************//
 //***********************************************************************//
@@ -14185,7 +14185,7 @@ void	AES_sub_bytes_m12(ui1 state[][4])
 
 
 
-// TODO: ALIGNMENT FUNCTIONS
+// MARK: ALIGNMENT FUNCTIONS
 //***********************************************************************//
 //****************  ALIGNMENT TRACKING (ALGN) FUNCTIONS  ****************//
 //***********************************************************************//
@@ -15006,7 +15006,7 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
 
 
 
-// TODO: ALLOCATION FUNCTIONS
+// MARK: ALLOCATION FUNCTIONS
 //***********************************************************************//
 //*****************  ALLOCATION TRACKING (AT) FUNCTIONS  ****************//
 //***********************************************************************//
@@ -15511,7 +15511,7 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, const si1 *f
 
 
 
-// TODO: COMPRESSION FUNCTIONS
+// MARK: COMPRESSION FUNCTIONS
 //***********************************************************************//
 //************* COMPRESSION & COMPUTATION (CMP) FUNCTIONS  **************//
 //***********************************************************************//
@@ -22880,7 +22880,7 @@ void    CMP_zero_buffers_m12(CMP_BUFFERS_m12 *buffers)
 
 
 
-// TODO: CHECKSUM FUNCTIONS
+// MARK: CHECKSUM FUNCTIONS
 //***********************************************************************//
 //***************************  CRC FUNCTIONS  ***************************//
 //***********************************************************************//
@@ -23147,7 +23147,7 @@ TERN_m12	CRC_validate_m12(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_vali
 
 
 
-// TODO: DATABASE FUNCTIONS
+// MARK: DATABASE FUNCTIONS
 //***********************************************************************//
 //**********************  DATABASE (DB) FUNCTIONS  **********************//
 //***********************************************************************//
@@ -23271,7 +23271,7 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 
 
 
-// TODO: MATRIX FUNCTIONS
+// MARK: MATRIX FUNCTIONS
 //***********************************************************************//
 //*********************  DATA MATRIX (DM) FUNCTIONS  ********************//
 //***********************************************************************//
@@ -24831,7 +24831,7 @@ void	DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12 *
 
 
 
-// TODO: FILTER FUNCTIONS
+// MARK: FILTER FUNCTIONS
 //***********************************************************************//
 //**************************  FILTER FUNCTIONS  *************************//
 //***********************************************************************//
@@ -27191,7 +27191,7 @@ void	FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs)
 
 
 
-// TODO: FILE PROCESSING FUNCTIONS
+// MARK: FILE PROCESSING FUNCTIONS
 //***********************************************************************//
 //**************  FILE PROCESSING STRUCT (FPS)) FUNCTIONS  **************//
 //***********************************************************************//
@@ -28075,7 +28075,7 @@ si8	FPS_write_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes_to
 
 
 
-// TODO: HARDWARE FUNCTIONS
+// MARK: HARDWARE FUNCTIONS
 //**********************************************************************************//
 //*********************************  Hardware (HW)  ********************************//
 //**********************************************************************************//
@@ -28398,7 +28398,7 @@ void	HW_show_cpu_info_m12(void)
 
 
 
-// TODO: NETWORK FUNCTIONS
+// MARK: NETWORK FUNCTIONS
 //**********************************************************************************//
 //*************************  Networking (NET) Functions  ***************************//
 //**********************************************************************************//
@@ -29306,7 +29306,7 @@ void	NET_trim_addr_str_m12(si1 *addr_str)
 
 
 
-// TODO: PARALELL FUNCTIONS
+// MARK: PARALELL FUNCTIONS
 //**********************************************************************************//
 //**************************  Parallel (PAR) Functions  ****************************//
 //**********************************************************************************//
@@ -29746,7 +29746,7 @@ void	PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval)
 
 
 
-// TODO: PROCESS FUNCTIONS
+// MARK: PROCESS FUNCTIONS
 //**********************************************************************************//
 //*******************************  Processes (PROC)  *******************************//
 //**********************************************************************************//
@@ -30591,7 +30591,7 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 
 
 
-// TODO: RUNTIME CONFIGURATION FUNCTIONS
+// MARK: RUNTIME CONFIGURATION FUNCTIONS
 //**********************************************************************************//
 //********************  Runtime Configuration (RC) Functions  **********************//
 //**********************************************************************************//
@@ -30844,7 +30844,7 @@ READ_RC_HANDLE_DEFAULT_m12:
 
 
 
-// TODO: HASH FUNCTIONS
+// MARK: HASH FUNCTIONS
 //***********************************************************************//
 //**************************  SHA-256 FUNCTIONS  ************************//
 //***********************************************************************//
@@ -31072,7 +31072,7 @@ void	SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len)
 
 
 
-// TODO: STRING FUNCTIONS
+// MARK: STRING FUNCTIONS
 //***********************************************************************//
 //****************************  STR FUNCTIONS  **************************//
 //***********************************************************************//
@@ -31987,7 +31987,7 @@ si1	*STR_wchar2char_m12(si1 *target, wchar_t *source)
 
 
 
-// TODO: TRANSMISSION FUNCTIONS
+// MARK: TRANSMISSION FUNCTIONS
 //***********************************************************************//
 //************************  TRANSMISSION FUNCTIONS  *********************//
 //***********************************************************************//
@@ -33004,7 +33004,7 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 
 
 
-// TODO: UNICODE FUNCTIONS
+// MARK: UNICODE FUNCTIONS
 //***********************************************************************//
 //******************************  UTF-8 FUNCTIONS  **********************//
 //***********************************************************************//
@@ -33731,7 +33731,7 @@ si4     UTF8_wc_to_utf8_m12(si1 *dest, ui4 ch)
 
 
 
-// TODO: WINDOWS FUNCTIONS
+// MARK: WINDOWS FUNCTIONS
 //**********************************************************************************//
 //************************  Windows-specific (WN) Functions  ***********************//
 //**********************************************************************************//
@@ -34240,7 +34240,7 @@ si1	*WN_windify_format_string_m12(si1 *fmt)
 }
 
 
-// TODO: STANDARD FUNCTIONS
+// MARK: STANDARD FUNCTIONS
 //***********************************************************************//
 //*****************  MED VERSIONS OF STANDARD FUNCTIONS  ****************//
 //***********************************************************************//
