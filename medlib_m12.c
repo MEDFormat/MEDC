@@ -8710,7 +8710,7 @@ void	G_pop_behavior_m12(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDIC
 
 TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspecified_pw)
 {
-	TERN_m12		pw_ok;
+	TERN_m12		pw_ok, LEVEL_1_valid;
 	PASSWORD_DATA_m12	*pwd;
 	ui1			hash[SHA_HASH_BYTES_m12];
 	si1			unspecified_pw_bytes[PASSWORD_BYTES_m12] = {0}, putative_L1_pw_bytes[PASSWORD_BYTES_m12] = {0};
@@ -8768,15 +8768,16 @@ TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspe
 		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m12; ++i)  // compare with stored level 1 hash
 			if (hash[i] != uh->level_1_password_validation_field[i])
 				break;
-		if (i == PASSWORD_BYTES_m12) {  // Level 1 password valid (cannot be level 2 password)
+		LEVEL_1_valid = FALSE_m12;
+		if (i == PASSWORD_BYTES_m12) {  // Level 1 password valid (could be level 2 password also)
 			pwd->access_level = LEVEL_1_ACCESS_m12;
 			AES_key_expansion_m12(pwd->level_1_encryption_key, unspecified_pw_bytes);  // generate key
 			if (globals_m12->verbose == TRUE_m12)
 				G_message_m12("Unspecified password is valid for Level 1 access");
-			return(TRUE_m12);
+			LEVEL_1_valid = TRUE_m12;
 		}
 			
-		// invalid level 1 => check if level 2 password
+		// check if level 2 password
 		for (i = 0; i < PASSWORD_BYTES_m12; ++i)  // xor with level 2 password validation field
 			putative_L1_pw_bytes[i] = hash[i] ^ uh->level_2_password_validation_field[i];
 			
@@ -8793,6 +8794,8 @@ TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspe
 				G_message_m12("Unspecified password is valid for Level 1 and Level 2 access\n");
 			return(TRUE_m12);
 		}
+		if (LEVEL_1_valid == TRUE_m12)
+			return(TRUE_m12);
 
 		// invalid as level 2 password
 		G_warning_message_m12("%s(): password is not valid for Level 1 or Level 2 access\n", __FUNCTION__);
