@@ -4624,56 +4624,57 @@ TERN_m12	G_generate_password_data_m12(FILE_PROCESSING_STRUCT_m12* fps, si1 *L1_p
 
 si8	G_generate_recording_time_offset_m12(si8 recording_start_time_uutc)
 {
-	si4		dst_offset;
-	time_t		epoch_utc, recording_start_time_utc, offset_utc_time;
-	struct tm	local_time_info, offset_time_info;
+	time_t		recording_start_time_utc, offset_utc_time, UTC_offset, secs_since_midnight;
+	struct tm	time_info;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// receives UNOFFSET recording start time (or CURRENT_TIME_m12); returns OFFSET recording start time
+	// receives UNOFFSET recording start time (or CURRENT_TIME_m12)
+	// returns OFFSET recording start time
 	
 	if (recording_start_time_uutc == CURRENT_TIME_m12) // use current system time
 		recording_start_time_uutc = G_current_uutc_m12();
 	
-	recording_start_time_utc = recording_start_time_uutc / (si8)1000000;
+	recording_start_time_utc = recording_start_time_uutc / (si8) 1000000;
 	
-	// get epoch & local time
-	epoch_utc = 0;
+	// convert to same time of day in GMT
+	// (can't just use localtime() because might system may not be in timezone of recording, as in conversions)
+	if (globals_m12->time_constants_set == TRUE_m12) {
+		UTC_offset = globals_m12->standard_UTC_offset;
+	} else {
+		G_warning_message_m12("%s(): global time constants not set, using local UTC offset\n", __FUNCTION__);
 #if defined MACOS_m12 || defined LINUX_m12
-	gmtime_r(&epoch_utc, &offset_time_info);
-	localtime_r(&recording_start_time_utc, &local_time_info);
+		localtime_r(&recording_start_time_utc, &time_info);
 #endif
 #ifdef WINDOWS_m12
-	offset_time_info = *(gmtime(&epoch_utc));
-	local_time_info = *(localtime(&recording_start_time_utc));
+		time_info = *(localtime(&recording_start_time_utc));
 #endif
+		UTC_offset = time_info.tm_gmtoff;  // this is offset to standard time regardless of DST status (same number if tm_isdst true or false)
+	}
+	offset_utc_time = recording_start_time_utc + UTC_offset;
 	
-	// set offset time info
-	offset_time_info.tm_sec = local_time_info.tm_sec;
-	offset_time_info.tm_min = local_time_info.tm_min;
-	offset_time_info.tm_hour = local_time_info.tm_hour;
-	
-	// get offset UTC time
+	// get GMT time structure
 #if defined MACOS_m12 || defined LINUX_m12
-	offset_utc_time = timegm(&offset_time_info);
+	gmtime_r(&offset_utc_time, &time_info);
 #endif
 #ifdef WINDOWS_m12
-	offset_utc_time = _mkgmtime(&offset_time_info);
+	time_info = *(gmtime(&offset_utc_time));
 #endif
-	dst_offset = G_DST_offset_m12(recording_start_time_uutc);
-	if (dst_offset)  // adjust to standard time if DST in effect
-		offset_utc_time -= dst_offset;
-	
+	// get time from midnight, same day in GMT
+	secs_since_midnight = (time_info.tm_hour * 3600) + (time_info.tm_min * 60) + time_info.tm_sec;
+
 	// set global offset
-	globals_m12->recording_time_offset = (recording_start_time_utc - offset_utc_time) * (si8)1000000;
-	
+	globals_m12->recording_time_offset = (recording_start_time_utc - secs_since_midnight) * (si8) 1000000;
+		
 	if (globals_m12->verbose == TRUE_m12)
 		G_message_m12("Recording Time Offset = %ld", globals_m12->recording_time_offset);
 	
+	if (recording_start_time_uutc == globals_m12->recording_time_offset)	// recording started at exactly midnight local standard time
+		--globals_m12->recording_time_offset;				// this can cause problems with oUTC and BEGINNING_OF_TIME_m12 (== 0)
 	globals_m12->RTO_known = TRUE_m12;
-	
+
 	return(recording_start_time_uutc - globals_m12->recording_time_offset);
 }
 
