@@ -105,9 +105,8 @@ GLOBAL_TABLES_m12	*global_tables_m12;
 
 
 
-// MARK: GENERAL MED FUNCTIONS
 //***********************************************************************//
-//********************  GENERAL MED LIBRARY FUNCTIONS  ******************//
+// MARK: GENERAL MED FUNCTIONS  (G)
 //***********************************************************************//
 
 
@@ -13679,9 +13678,8 @@ si8	G_write_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes
 
 
 
-// MARK: ENCRYPTION FUNCTIONS
 //***********************************************************************//
-//**************************  AES-128 FUNCTIONS  ************************//
+// MARK: ENCRYPTION FUNCTIONS  (AES)
 //***********************************************************************//
 
 // ATTRIBUTION
@@ -14189,9 +14187,8 @@ void	AES_sub_bytes_m12(ui1 state[][4])
 
 
 
-// MARK: ALIGNMENT FUNCTIONS
 //***********************************************************************//
-//****************  ALIGNMENT TRACKING (ALGN) FUNCTIONS  ****************//
+// MARK: ALIGNMENT CHECKING FUNCTIONS  (ALCK)
 //***********************************************************************//
 
 
@@ -15010,9 +15007,8 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
 
 
 
-// MARK: ALLOCATION FUNCTIONS
 //***********************************************************************//
-//*****************  ALLOCATION TRACKING (AT) FUNCTIONS  ****************//
+// MARK: ALLOCATION FUNCTIONS  (AT)
 //***********************************************************************//
 
 
@@ -15515,9 +15511,8 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, const si1 *f
 
 
 
-// MARK: COMPRESSION FUNCTIONS
 //***********************************************************************//
-//************* COMPRESSION & COMPUTATION (CMP) FUNCTIONS  **************//
+// MARK: COMPRESSION & COMPUTATION FUNCTIONS  (CMP)
 //***********************************************************************//
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
@@ -22884,9 +22879,8 @@ void    CMP_zero_buffers_m12(CMP_BUFFERS_m12 *buffers)
 
 
 
-// MARK: CHECKSUM FUNCTIONS
 //***********************************************************************//
-//***************************  CRC FUNCTIONS  ***************************//
+// MARK: CHECKSUM FUNCTIONS  (CRC)
 //***********************************************************************//
 
 // ATTRIBUTION
@@ -23151,9 +23145,8 @@ TERN_m12	CRC_validate_m12(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_vali
 
 
 
-// MARK: DATABASE FUNCTIONS
 //***********************************************************************//
-//**********************  DATABASE (DB) FUNCTIONS  **********************//
+// MARK: DATABASE FUNCTIONS  (DB)
 //***********************************************************************//
 
 // Currently these functions only support postgres databases.
@@ -23275,9 +23268,8 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 
 
 
-// MARK: MATRIX FUNCTIONS
 //***********************************************************************//
-//*********************  DATA MATRIX (DM) FUNCTIONS  ********************//
+// MARK: DATA MATRIX FUNCTIONS  (DM)
 //***********************************************************************//
 
 void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
@@ -24835,9 +24827,8 @@ void	DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12 *
 
 
 
-// MARK: FILTER FUNCTIONS
 //***********************************************************************//
-//**************************  FILTER FUNCTIONS  *************************//
+// MARK: FILTER FUNCTIONS  (FILT)
 //***********************************************************************//
 
 // ATTRIBUTION
@@ -27195,9 +27186,8 @@ void	FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs)
 
 
 
-// MARK: FILE PROCESSING FUNCTIONS
 //***********************************************************************//
-//**************  FILE PROCESSING STRUCT (FPS)) FUNCTIONS  **************//
+// MARK: FILE PROCESSING FUNCTIONS  (FPS)
 //***********************************************************************//
 
 FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m12 *parent, FILE_PROCESSING_STRUCT_m12 *proto_fps, si8 bytes_to_copy)
@@ -28079,9 +28069,8 @@ si8	FPS_write_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes_to
 
 
 
-// MARK: HARDWARE FUNCTIONS
 //**********************************************************************************//
-//*********************************  Hardware (HW)  ********************************//
+// MARK: HARDWARE FUNCTIONS  (HW)
 //**********************************************************************************//
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
@@ -28402,9 +28391,8 @@ void	HW_show_cpu_info_m12(void)
 
 
 
-// MARK: NETWORK FUNCTIONS
 //**********************************************************************************//
-//*************************  Networking (NET) Functions  ***************************//
+// MARK: NETWORK FUNCTIONS  (NET)
 //**********************************************************************************//
 
 TERN_m12	NET_check_internet_connection_m12(void)
@@ -29310,9 +29298,8 @@ void	NET_trim_addr_str_m12(si1 *addr_str)
 
 
 
-// MARK: PARALELL FUNCTIONS
 //**********************************************************************************//
-//**************************  Parallel (PAR) Functions  ****************************//
+// MARK: PARALLEL FUNCTIONS  (PAR)
 //**********************************************************************************//
 
 void	PAR_free_m12(PAR_INFO_m12 **par_info_ptr)  // frees thread globals (both medlib & dhnlib) & par itself - sets par pointer to NULL
@@ -29750,9 +29737,8 @@ void	PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval)
 
 
 
-// MARK: PROCESS FUNCTIONS
 //**********************************************************************************//
-//*******************************  Processes (PROC)  *******************************//
+// MARK: PROCESS FUNCTIONS  (PROC)
 //**********************************************************************************//
 
 TERN_m12	PROC_adjust_open_file_limit_m12(si4 new_limit, TERN_m12 verbose_flag)
@@ -30595,9 +30581,8 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 
 
 
-// MARK: RUNTIME CONFIGURATION FUNCTIONS
 //**********************************************************************************//
-//********************  Runtime Configuration (RC) Functions  **********************//
+// MARK: RUNTIME CONFIGURATION FUNCTIONS  (RC)
 //**********************************************************************************//
 
 si4     RC_read_field_m12(si1 *field_name, si1 **buffer, TERN_m12 update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, TERN_m12 *TERN_val)
@@ -30847,11 +30832,9 @@ READ_RC_HANDLE_DEFAULT_m12:
 }
 
 
-
-// MARK: HASH FUNCTIONS
-//***********************************************************************//
-//**************************  SHA-256 FUNCTIONS  ************************//
-//***********************************************************************//
+//**********************************************************************************//
+// MARK: HASH FUNCTIONS  (SHA)
+//**********************************************************************************//
 
 // ATTRIBUTION:
 //
@@ -31076,9 +31059,8 @@ void	SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len)
 
 
 
-// MARK: STRING FUNCTIONS
 //***********************************************************************//
-//****************************  STR FUNCTIONS  **************************//
+// MARK: STRING FUNCTIONS  (STR)
 //***********************************************************************//
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
@@ -31991,9 +31973,8 @@ si1	*STR_wchar2char_m12(si1 *target, wchar_t *source)
 
 
 
-// MARK: TRANSMISSION FUNCTIONS
 //***********************************************************************//
-//************************  TRANSMISSION FUNCTIONS  *********************//
+// MARK: TRANSMISSION FUNCTIONS  (TR)
 //***********************************************************************//
 
 TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, si4 timeout_secs, si1 *password)
@@ -32993,24 +32974,21 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 
 	// body
 	// most of these not coded yet
-	switch (header->ID_code) {
-		case TR_ID_CODE_NO_ENTRY_m12:
-			break;
+	switch (header->type) {
 		case TR_TYPE_KEEP_ALIVE_m12:
 			printf_m12("Type: TR_TYPE_KEEP_ALIVE_m12\n");
 			break;
 		default:
-			G_warning_message_m12("%s(): unrecognized transmission ID code\n", __FUNCTION__);
 			break;
 	}
+	
 	return;
 }
 
 
 
-// MARK: UNICODE FUNCTIONS
 //***********************************************************************//
-//******************************  UTF-8 FUNCTIONS  **********************//
+// MARK: UNICODE FUNCTIONS  (UTF8)
 //***********************************************************************//
 
 // ATTRIBUTION
@@ -33735,9 +33713,8 @@ si4     UTF8_wc_to_utf8_m12(si1 *dest, ui4 ch)
 
 
 
-// MARK: WINDOWS FUNCTIONS
 //**********************************************************************************//
-//************************  Windows-specific (WN) Functions  ***********************//
+// MARK: WINDOWS FUNCTIONS  (WN)
 //**********************************************************************************//
 
 void    WN_cleanup_m12(void)
@@ -34244,9 +34221,8 @@ si1	*WN_windify_format_string_m12(si1 *fmt)
 }
 
 
-// MARK: STANDARD FUNCTIONS
 //***********************************************************************//
-//*****************  MED VERSIONS OF STANDARD FUNCTIONS  ****************//
+// MARK: STANDARD LIBRARY FUNCTIONS  (no prefix)
 //***********************************************************************//
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
