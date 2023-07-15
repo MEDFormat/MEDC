@@ -29302,7 +29302,7 @@ void	NET_trim_addr_str_m12(si1 *addr_str)
 // MARK: PARALLEL FUNCTIONS  (PAR)
 //********************************//
 
-void	PAR_free_m12(PAR_INFO_m12 **par_info_ptr)  // frees thread globals (both medlib & dhnlib) & par itself - sets par pointer to NULL
+void	PAR_free_m12(PAR_INFO_m12 **par_info_ptr)  // frees thread globals & par itself - sets par pointer to NULL
 {
 	extern GLOBALS_m12		**globals_list_m12;
 	extern volatile si4		globals_list_len_m12;
@@ -29326,7 +29326,7 @@ void	PAR_free_m12(PAR_INFO_m12 **par_info_ptr)  // frees thread globals (both me
 	// lock list
 	PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
 
-	// find main dhnlib globals
+	// find main globals
 	main_pid = PROC_getpid_m12();
 	for (i = 0; i < globals_list_len_m12; ++i)
 		if (globals_list_m12[i]->_id == main_pid)
@@ -29339,61 +29339,14 @@ void	PAR_free_m12(PAR_INFO_m12 **par_info_ptr)  // frees thread globals (both me
 		main_globals_exist = TRUE_m12;
 	}
 	
-	// find thread dhnlib globals
-	for (i = 0; i < globals_list_len_m12; ++i)
-		if (globals_list_m12[i]->_id == par_info->tid)
-			break;
-
 	// set thread global to thread tid & free them
 	if (i < globals_list_len_m12) {
 		globals_list_m12[i]->_id = main_pid;
 		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);  // free_globals() will want the mutex
 		if (globals_list_len_m12 == 1)
-			G_free_globals_m12(TRUE_m12);
+			G_free_globals_m12(TRUE_m12);  // clean up for exit
 		else
-			G_free_globals_m12(FALSE_m12);
-		PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);  // reclaim mutex
-	}
-	
-	// reset main globals
-	if (main_globals_exist == TRUE_m12) {
-		for (i = 0; i < globals_list_len_m12; ++i)
-			if (globals_list_m12[i]->_id == 0)
-				break;
-		globals_list_m12[i]->_id = main_pid;
-	}
-	
-	// unlock list
-	PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
-
-	// lock list
-	PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
-
-	// find main medlib globals
-	for (i = 0; i < globals_list_len_m12; ++i)
-		if (globals_list_m12[i]->_id == main_pid)
-			break;
-	
-	// temporarily set to zero
-	main_globals_exist = FALSE_m12;
-	if (i < globals_list_len_m12) {
-		globals_list_m12[i]->_id = 0;
-		main_globals_exist = TRUE_m12;
-	}
-	
-	// find thread dhnlib globals
-	for (i = 0; i < globals_list_len_m12; ++i)
-		if (globals_list_m12[i]->_id == par_info->tid)
-			break;
-
-	// set thread global to thread tid & free them
-	if (i < globals_list_len_m12) {
-		globals_list_m12[i]->_id = main_pid;
-		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);  // free_globals() will want the mutex
-		if (globals_list_len_m12 == 1)
-			G_free_globals_m12(TRUE_m12);
-		else
-			G_free_globals_m12(FALSE_m12);
+			G_free_globals_m12(FALSE_m12);  // other threads have globals
 		PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);  // reclaim mutex
 	}
 	
@@ -29583,20 +29536,6 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 		if (i == globals_list_len_m12) {
 			PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
 			G_warning_message_m12("%s() can't match preexisting medlib globals => returning\n", __FUNCTION__);
-			par_info->status = PAR_FINISHED_m12;
-			return((pthread_rval_m12) 0);
-		}
-		globals_list_m12[i]->_id = tid;
-		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
-
-		// dhnlib globals
-		PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
-		for (i = 0; i < globals_list_len_m12; ++i)\
-			if (globals_list_m12[i]->_id == par_info->tid)
-				break;
-		if (i == globals_list_len_m12) {
-			PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
-			G_warning_message_m12("%s() can't match preexisting dhnlib globals => returning\n", __FUNCTION__);
 			par_info->status = PAR_FINISHED_m12;
 			return((pthread_rval_m12) 0);
 		}
