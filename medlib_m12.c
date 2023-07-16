@@ -4646,11 +4646,16 @@ si8	G_generate_recording_time_offset_m12(si8 recording_start_time_uutc)
 		G_warning_message_m12("%s(): global time constants not set, using local UTC offset\n", __FUNCTION__);
 #if defined MACOS_m12 || defined LINUX_m12
 		localtime_r(&recording_start_time_utc, &time_info);
+		UTC_offset = time_info.tm_gmtoff;  // this is offset to standard time regardless of DST status (same number if tm_isdst true or false)
 #endif
 #ifdef WINDOWS_m12
+		TIME_ZONE_INFORMATION	win_tz_info;
+		
 		time_info = *(localtime(&recording_start_time_utc));
+				
+		GetTimeZoneInformation(&win_tz_info);
+		UTC_offset = (win_tz_info.Bias + win_tz_info.StandardBias) * -60;
 #endif
-		UTC_offset = time_info.tm_gmtoff;  // this is offset to standard time regardless of DST status (same number if tm_isdst true or false)
 	}
 	offset_utc_time = recording_start_time_utc + UTC_offset;
 	
@@ -32424,7 +32429,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket timed out\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
 					data_bytes_received = TR_ERR_SOCK_TIMED_OUT_m12;
 				} else {
-					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
+					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, ret_val);
 					data_bytes_received = TR_ERR_SOCK_FAILED_m12;
 				}
 			} else {
