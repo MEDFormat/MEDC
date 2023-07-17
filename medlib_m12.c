@@ -25647,8 +25647,6 @@ void	FILT_free_CPS_filtps_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 free_orig
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	// filtps in CMP_PROCESSING_STRUCT_m12 are not freed by CMP_free_processing_struct_m12() because FILT_PROCESSING_STRUCT_m12 is define in the dhn library
-	// Call this function before freeing a cps to prevent memory leaks.
 	
 	if (cps->parameters.filtps == NULL)
 		return;
