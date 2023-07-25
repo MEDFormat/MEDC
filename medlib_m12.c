@@ -31944,6 +31944,7 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	header->type = TR_TYPE_DEFAULT_m12;
 	header->version = TR_VERSION_DEFAULT_m12;
 	
+	// password only required for encrypted transissions
 	if (password != NULL) {
 		trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		AES_key_expansion_m12(trans_info->expanded_key, password);
@@ -32355,6 +32356,7 @@ void	TR_realloc_trans_info_m12(TR_INFO_m12 *trans_info, si8 buffer_bytes, TR_HEA
 si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_header)
 {
 	extern si4	errno;
+	TERN_m12	key_received;
 	ui1		*data, *pkt, *partial_pkt, *ui1_p;
 	ui2		data_bytes, max_pkt_bytes;
 	ui4		ID_code;
@@ -32394,7 +32396,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 				G_warning_message_m12("%s(): no password or expanded key => cannot decrypt transmission\n", __FUNCTION__);
 				return(TR_ERR_UNSPECIFIED_m12);
 			}
-			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			AES_key_expansion_m12(trans_info->expanded_key, trans_info->password);
 		}
 	}
@@ -32410,6 +32412,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 	// receive
 	attempts = 0;
 	data_bytes_received = 0;
+	key_received = FALSE_m12;
 	do {
 	TR_RECV_RETRANSMIT_m12:
 		
@@ -32505,6 +32508,16 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			TR_send_transmission_m12(ack_trans_info);
 		}
 		
+		// get key
+		if (pkt_header->flags & TR_FLAGS_INCLUDE_KEY_m12 && key_received == FALSE_m12) {
+			if (trans_info->expanded_key == NULL)
+				trans_info->expanded_key = malloc_m12(ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			memcpy(trans_info->expanded_key, trans_info->data, ENCRYPTION_KEY_BYTES_m12);
+			pkt_header->transmission_bytes -= ENCRYPTION_KEY_BYTES_m12;
+			memmove(trans_info->data, trans_info->data + ENCRYPTION_KEY_BYTES_m12, header->transmission_bytes);
+			key_received = TRUE_m12;
+		}
+		
 		// decrypt
 		data_bytes = pkt_header->packet_bytes - (ui2) TR_HEADER_BYTES_m12;
 		if (pkt_header->flags & TR_FLAGS_ENCRYPT_m12) {
@@ -32537,8 +32550,9 @@ TR_RECV_FAIL_m12:
 	header->packet_bytes = 0;
 	header->offset = 0;
 
-	// reset encryption flag
+	// reset encryption flags
 	header->flags &= ~TR_FLAGS_ENCRYPT_m12;
+	header->flags &= ~TR_FLAGS_INCLUDE_KEY_m12;
 	
 	// close on request or error
 	if (data_bytes_received < 0 || header->flags & TR_FLAGS_CLOSE_m12) {
@@ -32645,6 +32659,14 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			AES_key_expansion_m12(trans_info->expanded_key, trans_info->password);
 		}
+	}
+	
+	// include key
+	if (header->flags & TR_FLAGS_INCLUDE_KEY_m12) {
+		header->transmission_bytes += ENCRYPTION_KEY_BYTES_m12;
+		TR_realloc_trans_info_m12(trans_info, header->transmission_bytes, &header);
+		memcpy(trans_info->data, trans_info->expanded_key, ENCRYPTION_KEY_BYTES_m12);
+		
 	}
 	
 	// non-destructive send
@@ -32763,8 +32785,9 @@ TR_SEND_FAIL:
 	header->packet_bytes = 0;
 	header->offset = 0;
 
-	// reset encryption flag
+	// reset encryption flags
 	header->flags &= ~TR_FLAGS_ENCRYPT_m12;
+	header->flags &= ~TR_FLAGS_INCLUDE_KEY_m12;
 	
 	// close
 	if (header->flags & TR_FLAGS_CLOSE_m12) {

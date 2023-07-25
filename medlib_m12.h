@@ -3689,35 +3689,34 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_TYPE_OPERATION_FAILED_WITH_WARNING_MESSAGE_m12	((ui1) 8)
 #define TR_TYPE_OPERATION_FAILED_WITH_ERROR_MESSAGE_m12		((ui1) 9)
 
-
-// Transmission Error Codes
-#define TR_ERR_UNSPECIFIED_m12					(si8) FALSE_m12
-#define TR_ERR_SOCK_FAILED_m12					(si8) -1
-#define TR_ERR_SOCK_FAILED_TO_OPEN_m12				(si8) -2
-#define TR_ERR_SOCK_CLOSED_m12					(si8) -3
-#define TR_ERR_SOCK_TIMED_OUT_m12				(si8) -4
-#define TR_ERR_ID_MISMATCH_m12					(si8) -5
-#define TR_ERR_TRANS_FAILED_m12					(si8) -6
-#define TR_ERR_CRC_MISMATCH_m12					(si8) -7
-#define TR_ERR_NO_ACK_m12					(si8) -8
-
-
 // Header Message Type Aliases (shorter :)
 #define TR_ERROR_TYPE_m12	TR_TYPE_OPERATION_FAILED_WITH_ERROR_MESSAGE_m12
 #define TR_WARNING_TYPE_m12	TR_TYPE_OPERATION_FAILED_WITH_WARNING_MESSAGE_m12
 #define TR_SUCCESS_TYPE_m12	TR_TYPE_OPERATION_SUCCEEDED_WITH_MESSAGE_m12
 #define TR_MESSAGE_TYPE_m12	TR_TYPE_MESSAGE_m12
 
+// Transmission Error Codes
+#define TR_ERR_UNSPECIFIED_m12					(si8) FALSE_m12
+#define TR_ERR_SOCK_FAILED_m12					(si8) -2
+#define TR_ERR_SOCK_FAILED_TO_OPEN_m12				(si8) -3
+#define TR_ERR_SOCK_CLOSED_m12					(si8) -4
+#define TR_ERR_SOCK_TIMED_OUT_m12				(si8) -5
+#define TR_ERR_ID_MISMATCH_m12					(si8) -6
+#define TR_ERR_TRANS_FAILED_m12					(si8) -7
+#define TR_ERR_CRC_MISMATCH_m12					(si8) -8
+#define TR_ERR_NO_ACK_m12					(si8) -9
+
 // Transmission Flags
 #define TR_FLAGS_DEFAULT_m12			((ui2) 0)
 #define TR_FLAGS_BIG_ENDIAN_m12			((ui2) 1)       // Bit 0  (LITTLE_ENDIAN == 0, BIG_ENDIAN == 1)
 #define TR_FLAGS_UDP_m12			((ui2) 1 << 1)	// Bit 1  (TCP == 0, UDP == 1)
 #define TR_FLAGS_ENCRYPT_m12			((ui2) 1 << 2)	// Bit 2  (body only - header is not encrypted)
-#define TR_FLAGS_CLOSE_m12			((ui2) 1 << 3)	// Bit 3  (close socket after send/recv)
-#define TR_FLAGS_ACKNOWLEDGE_m12		((ui2) 1 << 4)	// Bit 4  (acknowledge receipt with OK or retransmit)
-#define TR_FLAGS_CRC_m12			((ui2) 1 << 5)	// Bit 5  (calculate/check transmission CRC - last 4 bytes of transmission)
-#define TR_FLAGS_NO_DESTRUCT_m12		((ui2) 1 << 6)	// Bit 6  (set if local memory should not be altered - applies to encrpyted transmissions & transmissions that exceed TR_MTU_BYTES_m12)
-#define TR_FLAGS_TO_FILE_m12			((ui2) 1 << 7)	// Bit 7  (set if received data should go to a file rather than buffer - pseudo FTP)
+#define TR_FLAGS_INCLUDE_KEY_m12		((ui2) 1 << 3)  // Bit 3  (expanded encryrtion key included in data - less secure than bilateral prescience of key)
+#define TR_FLAGS_CLOSE_m12			((ui2) 1 << 4)	// Bit 4  (close socket after send/recv)
+#define TR_FLAGS_ACKNOWLEDGE_m12		((ui2) 1 << 5)	// Bit 5  (acknowledge receipt with OK or retransmit)
+#define TR_FLAGS_CRC_m12			((ui2) 1 << 6)	// Bit 6  (calculate/check transmission CRC - last 4 bytes of transmission)
+#define TR_FLAGS_NO_DESTRUCT_m12		((ui2) 1 << 7)	// Bit 7  (set if local memory should not be altered - applies to encrpyted transmissions & transmissions that exceed TR_MTU_BYTES_m12)
+#define TR_FLAGS_TO_FILE_m12			((ui2) 1 << 8)	// Bit 8  (set if received data should go to a file rather than buffer - pseudo FTP)
 
 // TR Defaults
 #define TR_VERSION_DEFAULT_m12		((ui1) 1)
@@ -3750,8 +3749,9 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_OFFSET_OFFSET_m12				24				// ui8
 
 // Miscellaneous
-#define TR_INET_MSS_BYTES_m12				1376  // highest multiple of 16, that stays below internet standard frame size (1500) minus [32 (TR header) + 40 (TCP/IP header) + some extra (possible intermediary protocols like GRE, IPsec, PPPoE, or SNAP that may be in the route)]
-#define TR_LO_MSS_BYTES_m12				65456  // highest multiple of 16, that stays below backplane standard frame size (65535) minus [32 (TR header) + 40 (TCP/IP header)])
+#define TR_INET_MSS_BYTES_m12				1376  // highest multiple of 16, that stays below internet standard frame size (1500) minus [32 (TR header) + 40 (TCP/IP header)
+							      // + some extra (possible intermediary protocols like GRE, IPsec, PPPoE, or SNAP that may be in the route)]
+#define TR_LO_MSS_BYTES_m12				65456  // highest multiple of 16, that stays below backplane (loopback) standard frame size (65535) minus [32 (TR header) + 40 (TCP/IP header)])
 #define TR_PORT_STRLEN_m12				8
 #define TR_TIMEOUT_NEVER_m12				0
 #define TR_PORT_ANY_m12					0  // system assigned port
@@ -3767,18 +3767,18 @@ typedef struct {
 	union {
 		struct {
 			si1     ID_string[TYPE_BYTES_m12];  // transmission ID is typically application specific
-			ui1     type;  // transmission type (transmission ID specific)
-			ui1	type_2;  // currently only used as 2nd confirmation in keep alive messages
+			ui1     type;  // transmission type (general [0-63] or transmission ID specific [64-255])
+			ui1	type_2;  // used as 2nd confirmation in keep alive messages
 			ui1     version;  // transmission header version (also 3rd confirmation in keep alive messages)
 		};
 		struct {
 			ui4     ID_code;  // transmission ID is typically application specific
-			si1	ID_string_terminal_zero;
-			ui1	pad_bytes[2];
+			si1	ID_string_terminal_zero;  // here for clarity
+			ui1	pad_bytes[3];  // not available for use (type, type_2, & version above)
 		};
 	};
-	si8	transmission_bytes;  // full size of tramsmitted data in bytes (not including header)
-	si8	offset;  // offset (in bytes) of packet data into full data (not including header)
+	si8	transmission_bytes;  // full size of tramsmitted data in bytes (*** does not include header ***)
+	si8	offset;  // offset (in bytes) of packet data into full data (*** does not include header ***)
 } TR_HEADER_m12;
 
 typedef struct {
@@ -3796,7 +3796,7 @@ typedef struct {
 	si1			iface_addr[INET6_ADDRSTRLEN];  // zero-length string for any default internet interface
 	ui2			iface_port;
 	si4			timeout_secs;
-	ui2			mss;  // maximum segment size (max bytes of data per packet)
+	ui2			mss;  // maximum segment size (max bytes of data per packet [*** does not include header ***])
 } TR_INFO_m12;
 
 typedef struct {
