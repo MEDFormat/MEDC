@@ -32513,8 +32513,6 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			if (trans_info->expanded_key == NULL)
 				trans_info->expanded_key = malloc_m12(ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			memcpy(trans_info->expanded_key, trans_info->data, ENCRYPTION_KEY_BYTES_m12);
-			pkt_header->transmission_bytes -= ENCRYPTION_KEY_BYTES_m12;
-			memmove(trans_info->data, trans_info->data + ENCRYPTION_KEY_BYTES_m12, header->transmission_bytes);
 			key_received = TRUE_m12;
 		}
 		
@@ -32541,6 +32539,12 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		attempts = 0;  // reset counter
 		
 	} while (data_bytes_received < pkt_header->transmission_bytes);
+	
+	// key included => move data
+	if (key_received == TRUE_m12) {
+		data_bytes_received -= ENCRYPTION_KEY_BYTES_m12;
+		memmove(trans_info->data, trans_info->data + ENCRYPTION_KEY_BYTES_m12, data_bytes_received);
+	}
 					       
 TR_RECV_FAIL_m12:
 	
