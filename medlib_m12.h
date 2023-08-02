@@ -112,7 +112,7 @@
 			#define WIN32
 		#endif
 		#include <winsock2.h>
-		#pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib
+		// #pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib (necessary, but repeated below for other libs)
 	#endif
 	#include <windows.h>
 	#include <io.h>
@@ -130,8 +130,8 @@
 	#include <processthreadsapi.h>
 	#include <synchapi.h>
 	#include <sysinfoapi.h>
-	#pragma comment(lib, "Ws2_32.lib")  // Link with ws2_32.lib
-	#pragma comment(lib, "Iphlpapi.lib") // Link with Iphlpapi.lib
+	#pragma comment(lib, "Ws2_32.lib")  // link with ws2_32.lib
+	#pragma comment(lib, "Iphlpapi.lib") // link with Iphlpapi.lib
 	#define _USE_MATH_DEFINES  // Needed for standard math constants. Must be defined before math.h included.
 #endif
 #if defined MACOS_m12 || defined LINUX_m12
