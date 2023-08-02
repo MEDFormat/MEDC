@@ -81,12 +81,12 @@
 // MED_FORMAT_VERSION_MINOR is restricted to 0 through 254, minor version resets to zero with new major format version
 // MED_LIBRARY_VERSION is restricted to 1 through 254, library version resets to one with new major format version
 
-// MED_FULL_FORMAT_NAME == "<MED_VERSION_MAJOR_m12>.<MED_VERSION_MINOR_m12>"
-// MED_FULL_LIBRARY_NAME == "<MED_FULL_FORMAT_NAME_m12>.<MED_LIBRARY_VERSION_m12>"
-// MED_LIBRARY_TAG == "<MED_VERSION_MAJOR_m12>.<MED_LIBRARY_VERSION_m12>"
+// MED_FULL_FORMAT_NAME == "<MED_VERSION_MAJOR>.<MED_VERSION_MINOR>"
+// MED_FULL_LIBRARY_NAME == "<MED_FULL_FORMAT_NAME>.<MED_LIBRARY_VERSION>"
+// MED_LIBRARY_TAG == "<MED_VERSION_MAJOR>.<MED_LIBRARY_VERSION>"
 
-// Examples:
-// "_m12" indicates "MED format major version 1, library version 1"
+// Tag Examples:
+// "_m12" indicates "MED format major version 1, library version 2"
 // "_m21" indicates "MED format major version 2, library version 1" (for MED 2)
 // "_m213" indicates "MED format major version 2, library version 13" (for MED 2)
 
