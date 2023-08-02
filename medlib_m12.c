@@ -78,12 +78,12 @@
 // MED_FORMAT_VERSION_MINOR is restricted to 0 through 254, minor version resets to zero with new major format version
 // MED_LIBRARY_VERSION is restricted to 1 through 254, library version resets to one with new major format version
 
-// MED_FULL_FORMAT_NAME == "<MED_VERSION_MAJOR_m12>.<MED_VERSION_MINOR_m12>"
-// MED_FULL_LIBRARY_NAME == "<MED_FULL_FORMAT_NAME_m12>.<MED_LIBRARY_VERSION_m12>"
-// MED_LIBRARY_TAG == "<MED_VERSION_MAJOR_m12>.<MED_LIBRARY_VERSION_m12>"
+// MED_FULL_FORMAT_NAME == "<MED_VERSION_MAJOR>.<MED_VERSION_MINOR>"
+// MED_FULL_LIBRARY_NAME == "<MED_FULL_FORMAT_NAME>.<MED_LIBRARY_VERSION>"
+// MED_LIBRARY_TAG == "<MED_VERSION_MAJOR>.<MED_LIBRARY_VERSION>"
 
-// Examples:
-// "_m12" indicates "MED format major version 1, library version 1"
+// Tag Examples:
+// "_m12" indicates "MED format major version 1, library version 2"
 // "_m21" indicates "MED format major version 2, library version 1" (for MED 2)
 // "_m213" indicates "MED format major version 2, library version 13" (for MED 2)
 
@@ -95,7 +95,6 @@
 
 
 #include "medlib_m12.h"
-
 
 // Globals
 GLOBALS_m12		**globals_list_m12 = NULL;
@@ -1337,7 +1336,7 @@ TERN_m12	G_check_password_m12(si1 *password)
 		return(FALSE_m12);
 	}
 		
-	// check password length:  return +1 for length error
+	// check password length
 	pw_len = UTF8_strlen_m12(password);
 	if (pw_len == 0) {
 		G_warning_message_m12("%s(): password has no characters\n", __FUNCTION__);
@@ -1377,6 +1376,7 @@ si4	G_compare_acq_nums_m12(const void *a, const void *b)
 {
 	ACQ_NUM_SORT_m12	*as, *bs;
 	
+	
 	as = (ACQ_NUM_SORT_m12 *) a;
 	bs = (ACQ_NUM_SORT_m12 *) b;
 	
@@ -1384,6 +1384,26 @@ si4	G_compare_acq_nums_m12(const void *a, const void *b)
 		return(1);
 	if (as->acq_num < bs->acq_num)
 		return(-1);
+	return(0);
+}
+
+
+si4	G_compare_record_index_times(const void *a, const void *b)
+{
+	si8			time_d;
+	RECORD_INDEX_m12	*ria, *rib;
+	
+	
+	ria = (RECORD_INDEX_m12 *) a;
+	rib = (RECORD_INDEX_m12 *) b;
+	time_d = ria->start_time - rib->start_time;
+	
+	// can't return time_d - cast to int may overflow
+	if (time_d > 0)
+		return(1);
+	if (time_d < 0)
+		return(-1);
+	
 	return(0);
 }
 
@@ -1573,8 +1593,6 @@ si8      G_current_uutc_m12(void)
 inline
 #endif
 si4      G_days_in_month_m12(si4 month, si4 year)
-// Note month is [0 - 11], January == 0, as in unix struct tm.tm_mon
-// Note struct tm.tm_year is (year - 1900), this function expects the full value
 {
 	static const si4        standard_days[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 	si4                     days;
@@ -1582,7 +1600,10 @@ si4      G_days_in_month_m12(si4 month, si4 year)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+
+	// Note month is [0 - 11], January == 0, as in unix struct tm.tm_mon
+	// Note struct tm.tm_year is (year - 1900), this function expects the full value
+
 	days = standard_days[month];
 	
 	// leap years
@@ -7578,7 +7599,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 {
 	TERN_m12			free_session, all_channels_selected;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
-	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1];;
+	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	ui4				type_code;
 	si4				i, j, k, n_chans, mapped_segs, n_segs, seg_idx;
 	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, active_ts_chans, active_vid_chans;
@@ -13085,6 +13106,120 @@ TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess)
 	free((void *) acq_idxs);
 
 	return(TRUE_m12);
+}
+
+
+void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
+{
+	ui1				*tmp_rec_data;
+	si1				ri_path[FULL_FILE_NAME_BYTES_m12], rd_path[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
+	si4				seg_idx;
+	si8				i, n_recs, file_start_time;
+	SEGMENT_m12			*seg;
+	CHANNEL_m12			*chan;
+	SESSION_m12			*sess;
+	SEGMENTED_SESS_RECS_m12		*ssr;
+	FILE_PROCESSING_STRUCT_m12	*ri_fps, *rd_fps;
+	RECORD_INDEX_m12		*ri;
+	RECORD_HEADER_m12		*rh;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// for efficient searching of records during reading, MED requires records to be in temporal order
+	// this function exists because in some converted file formats, records of different types are in different files, & it is not convenient to sort them during the conversion
+	// call this function after records are completely written to disk, including terminal indices (if files are open they will be closed & reopened)
+	// call for each potentially affected level
+	// sorted records will overwrite the unsorted records
+	// records with start times of UUTC_NO_ENTRY_m12 (information not associated with a specific time) will be assigned the segment start time if segmented, or the session start time
+	// the segment_number argument is only required for segmented session records, otherwise ignored
+	// this process is not terribly efficient, but should only need to be done once
+	
+	switch (level_header->type_code) {
+		case LH_VIDEO_SEGMENT_m12:
+		case LH_TIME_SERIES_SEGMENT_m12:
+			seg = (SEGMENT_m12 *) level_header;
+			sprintf_m12(ri_path, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			sprintf_m12(rd_path, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m12);
+			FPS_close_m12(seg->record_indices_fps);
+			FPS_close_m12(seg->record_data_fps);
+			break;
+		case LH_TIME_SERIES_CHANNEL_m12:
+		case LH_VIDEO_CHANNEL_m12:
+			chan = (CHANNEL_m12 *) level_header;
+			sprintf_m12(ri_path, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			sprintf_m12(rd_path, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m12);
+			FPS_close_m12(chan->record_indices_fps);
+			FPS_close_m12(chan->record_data_fps);
+			break;
+		case LH_SESSION_m12:
+			sess = (SESSION_m12 *) level_header;
+			sprintf_m12(ri_path, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			sprintf_m12(rd_path, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
+			FPS_close_m12(sess->record_indices_fps);
+			FPS_close_m12(sess->record_data_fps);
+			break;
+		case LH_SEGMENTED_SESS_RECS_m12:
+			ssr = (SEGMENTED_SESS_RECS_m12 *) level_header;
+			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, segment_number);
+			sprintf_m12(ri_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			sprintf_m12(ri_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			seg_idx = G_get_segment_index_m12(segment_number);
+			FPS_close_m12(ssr->record_indices_fps[seg_idx]);
+			FPS_close_m12(ssr->record_data_fps[seg_idx]);
+			break;
+		default:
+			G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
+			return;
+	}
+	
+	// read data (full file read will automatically close files)
+	ri_fps = G_read_file_m12(NULL, ri_path, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
+	rd_fps = G_read_file_m12(NULL, ri_path, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
+	
+	// fix any no-entry start times
+	n_recs = rd_fps->number_of_items;
+	ri = ri_fps->record_indices;
+	file_start_time = ri_fps->universal_header->file_start_time;
+	for (i = n_recs; i--; ++ri) {
+		if (ri->start_time == UUTC_NO_ENTRY_m12) {
+			rh = (RECORD_HEADER_m12 *) (rd_fps->parameters.raw_data + ri->file_offset);
+			ri->start_time = rh->start_time = file_start_time;
+		}
+	}
+	
+	// sort indices (leave file offsets intact)
+	qsort((void *) ri_fps->record_indices, (size_t) n_recs, sizeof(RECORD_INDEX_m12), G_compare_record_index_times);  // leave terminal index where it is
+	
+	// copy record data before writing
+	tmp_rec_data = (ui1 *) malloc((size_t) rd_fps->parameters.raw_data_bytes);
+	memcpy((void *) tmp_rec_data, (void *) rd_fps->parameters.raw_data, (size_t) rd_fps->parameters.raw_data_bytes);
+		
+	// reopen files for writing
+	ri_fps->directives.close_file = FALSE_m12;
+	G_write_file_m12(ri_fps, 0, UNIVERSAL_HEADER_BYTES_m12, FPS_UNIVERSAL_HEADER_ONLY_m12, NULL, USE_GLOBAL_BEHAVIOR_m12);
+	rd_fps->directives.close_file = FALSE_m12;
+	G_write_file_m12(rd_fps, 0, UNIVERSAL_HEADER_BYTES_m12, FPS_UNIVERSAL_HEADER_ONLY_m12, NULL, USE_GLOBAL_BEHAVIOR_m12);
+
+	// write out sorted records
+	ri = ri_fps->record_indices;
+	for (i = n_recs; i--; ++ri) {
+		rh = (RECORD_HEADER_m12 *) (tmp_rec_data + ri->file_offset);
+		ri->file_offset = rd_fps->parameters.flen;
+		G_write_file_m12(ri_fps, FPS_APPEND_m12, INDEX_BYTES_m12, 1, (void *) ri, USE_GLOBAL_BEHAVIOR_m12);
+		G_write_file_m12(rd_fps, FPS_APPEND_m12, rh->total_record_bytes, 1, (void *) rh, USE_GLOBAL_BEHAVIOR_m12);
+	}
+	
+	// write terminal index
+	G_write_file_m12(ri_fps, FPS_APPEND_m12, INDEX_BYTES_m12, 1, (void *) ri, USE_GLOBAL_BEHAVIOR_m12);
+
+	// clean up
+	FPS_free_processing_struct_m12(ri_fps, TRUE_m12);
+	FPS_free_processing_struct_m12(rd_fps, TRUE_m12);
+	free((void *) tmp_rec_data);
+	
+	return;
 }
 
 
@@ -27297,11 +27432,15 @@ FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_S
 inline
 #endif
 void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
 	if (fps->parameters.fp != NULL) {
+#ifdef LINUX_m12
+		if (fileno(fps->parameters.fp) > 2)  // fclose() crashes if called on closed file in Linux (< 0 if closed, 0-2 standard streams)
+#endif
 		fclose(fps->parameters.fp);
 		fps->parameters.fp = NULL;
 	}

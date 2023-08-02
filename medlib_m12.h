@@ -2166,6 +2166,7 @@ TERN_m12	G_check_file_system_m12(si1 *file_system_path, si4 is_cloud, ...);  // 
 TERN_m12        G_check_password_m12(si1 *password);
 void		G_clear_terminal_m12(void);
 si4		G_compare_acq_nums_m12(const void *a, const void *b);
+si4    		G_compare_record_index_times(const void *a, const void *b);
 void		G_condition_timezone_info_m12(TIMEZONE_INFO_m12 *tz_info);
 void		G_condition_time_slice_m12(TIME_SLICE_m12 *slice);
 si8		G_current_uutc_m12(void);
@@ -2285,6 +2286,7 @@ void    	G_show_time_slice_m12(TIME_SLICE_m12 *slice);
 void            G_show_timezone_info_m12(TIMEZONE_INFO_m12 *timezone_entry, TERN_m12 show_DST_detail);
 void            G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEADER_m12 *uh);
 TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess);
+void		G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number);
 void		G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void		G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 si8		G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
