@@ -135,18 +135,22 @@ CHANNEL_m12	*G_allocate_channel_m12(CHANNEL_m12 *chan, FILE_PROCESSING_STRUCT_m1
 	// if records are requested, enough memory for 1 record of size REC_LARGEST_RECORD_BYTES_m12 is allocated (FPS_reallocate_processing_struct_m12() to change this)
 	// if records are requested, enough memory for 1 record index is allocated (FPS_reallocate_processing_struct_m12() to change this)
 	
+	// allocate channel
+	if (chan == NULL)
+		chan = (CHANNEL_m12 *) calloc_m12((size_t) 1, sizeof(CHANNEL_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+
 	switch (type_code) {
 		case TIME_SERIES_CHANNEL_TYPE_m12:
+			chan->type_code = LH_TIME_SERIES_CHANNEL_m12;
+			break;
 		case VIDEO_CHANNEL_TYPE_m12:
+			chan->type_code = LH_VIDEO_CHANNEL_m12;
 			break;
 		default:
 			G_error_message_m12("%s():: unrecognized channel type code \"0x%x\"\n", __FUNCTION__);
 			return(NULL);
 	}
 	
-	// allocate channel
-	if (chan == NULL)
-		chan = (CHANNEL_m12 *) calloc_m12((size_t) 1, sizeof(CHANNEL_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	globals_m12->number_of_mapped_segments = n_segs;
 
 	// make new prototype fps (don't modify original)
@@ -214,6 +218,7 @@ SEGMENT_m12	*G_allocate_segment_m12(SEGMENT_m12 *seg, FILE_PROCESSING_STRUCT_m12
 	// allocate metadata, data, & indices
 	switch (type_code) {
 		case TIME_SERIES_CHANNEL_TYPE_m12:
+			seg->type_code = LH_TIME_SERIES_SEGMENT_m12;
 			// metadata: used as prototype
 			seg->metadata_fps = FPS_allocate_processing_struct_m12(NULL, NULL, TIME_SERIES_METADATA_FILE_TYPE_CODE_m12, METADATA_BYTES_m12, (LEVEL_HEADER_m12 *) seg, proto_fps, METADATA_BYTES_m12);
 			uh = seg->metadata_fps->universal_header;
@@ -230,6 +235,7 @@ SEGMENT_m12	*G_allocate_segment_m12(SEGMENT_m12 *seg, FILE_PROCESSING_STRUCT_m12
 			snprintf_m12(seg->time_series_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m12, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
 			break;
 		case VIDEO_CHANNEL_TYPE_m12:
+			seg->type_code = LH_VIDEO_SEGMENT_m12;
 			// metadata: used as prototype
 			seg->metadata_fps = FPS_allocate_processing_struct_m12(NULL, NULL, VIDEO_METADATA_FILE_TYPE_CODE_m12, METADATA_BYTES_m12, (LEVEL_HEADER_m12 *) seg, proto_fps, METADATA_BYTES_m12);
 			uh = seg->metadata_fps->universal_header;
@@ -285,8 +291,8 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 	globals_m12->number_of_mapped_segments = n_segs;
 	sess->number_of_time_series_channels = n_ts_chans;
 	sess->number_of_video_channels = n_vid_chans;
+	sess->type_code = LH_SESSION_m12;
 
-	
 	// create a prototype fps
 	proto_fps = FPS_allocate_processing_struct_m12(NULL, NULL, FPS_PROTOTYPE_FILE_TYPE_CODE_m12, FPS_PROTOTYPE_BYTES_m12, NULL, proto_fps, FPS_PROTOTYPE_BYTES_m12);
 	uh = proto_fps->universal_header;
@@ -13130,7 +13136,7 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 	// for efficient searching of records during reading, MED requires records to be in temporal order
 	// this function exists because in some converted file formats, records of different types are in different files, & it is not convenient to sort them during the conversion
 	// call this function after records are completely written to disk, including terminal indices (if files are open they will be closed & reopened)
-	// call for each potentially affected level
+	// call for each potentially affected MED level
 	// sorted records will overwrite the unsorted records
 	// records with start times of UUTC_NO_ENTRY_m12 (information not associated with a specific time) will be assigned the segment start time if segmented, or the session start time
 	// the segment_number argument is only required for segmented session records, otherwise ignored
@@ -13164,8 +13170,16 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 			ssr = (SEGMENTED_SESS_RECS_m12 *) level_header;
 			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, segment_number);
 			sprintf_m12(ri_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			sprintf_m12(ri_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			seg_idx = G_get_segment_index_m12(segment_number);
+			sprintf_m12(rd_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+			if (globals_m12->number_of_mapped_segments == 1) {  // most commonly just allocate one ssr & overwrite with new segments, but not required to do it that way
+				seg_idx = 0;
+			} else {
+				G_push_behavior_m12(SUPPRESS_OUTPUT_m12);
+				seg_idx = G_get_segment_index_m12(segment_number);
+				G_pop_behavior_m12();
+				if (seg_idx == FALSE_m12)
+					return;
+			}
 			FPS_close_m12(ssr->record_indices_fps[seg_idx]);
 			FPS_close_m12(ssr->record_data_fps[seg_idx]);
 			break;
@@ -13173,10 +13187,14 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 			G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
 			return;
 	}
-	
+	if (G_file_exists_m12(ri_path) != FILE_EXISTS_m12)
+		return;
+	if (G_file_exists_m12(rd_path) != FILE_EXISTS_m12)
+		return;
+
 	// read data (full file read will automatically close files)
 	ri_fps = G_read_file_m12(NULL, ri_path, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
-	rd_fps = G_read_file_m12(NULL, ri_path, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
+	rd_fps = G_read_file_m12(NULL, rd_path, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
 	
 	// fix any no-entry start times
 	n_recs = rd_fps->number_of_items;
@@ -27432,22 +27450,29 @@ FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_S
 inline
 #endif
 void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
+	si4	fd;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (fps->parameters.fp != NULL) {
-#ifdef LINUX_m12
-		if (fileno(fps->parameters.fp) > 2)  // fclose() crashes if called on closed file in Linux (< 0 if closed, 0-2 standard streams)
+	if (fps != NULL) {
+		if (fps->parameters.fp != NULL) {
+#if defined MACOS_m12 || defined LINUX_m12
+			fd = fileno(fps->parameters.fp);
 #endif
-		fclose(fps->parameters.fp);
-		fps->parameters.fp = NULL;
+#ifdef WINDOWS_m12
+			fd = _fileno(fps->parameters.fp);
+#endif
+			if (fd > 2)  // fclose() may crashes if called on closed file (< 0 if closed, 0-2 standard streams)
+				fclose(fps->parameters.fp);
+			fps->parameters.fp = NULL;
+		}
+		fps->parameters.fd = FPS_FD_CLOSED_m12;
+		fps->parameters.fpos = 0;
 	}
-	fps->parameters.fd = FPS_FD_CLOSED_m12;
-	fps->parameters.fpos = 0;
-	
-	// leave flen intact
+
+	// leave fps->flen intact
 
 	return;
 }

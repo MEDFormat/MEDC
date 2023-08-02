@@ -441,7 +441,7 @@ TERN_m12        REC_check_Curs_type_alignment_m12(ui1 *bytes);
 #define REC_Epoc_TYPE_CODE_m12               (ui4) 0x636F7045        // ui4 (little endian)
 // #define REC_Epoc_TYPE_CODE_m12            (ui4) 0x45706F63        // ui4 (big endian)
 
-// Version 1.0
+// Version 1.0 Defines
 #define REC_Epoc_v10_BYTES_m12                          176
 #define REC_Epoc_v10_ID_NUMBER_OFFSET_m12          	0	// si8
 #define REC_Epoc_v10_END_TIME_OFFSET_m12		8	// si8
@@ -450,13 +450,35 @@ TERN_m12        REC_check_Curs_type_alignment_m12(ui1 *bytes);
 #define REC_Epoc_v10_TEXT_OFFSET_m12			48	// si1[128]
 #define REC_Epoc_v10_TEXT_BYTES_m12          		128
 
+// Version 1.0 Structures
+typedef struct {
+	si8 id_number;
+	si8 end_time;
+	si1 epoch_type[REC_Epoc_v10_EPOCH_TYPE_BYTES_m12];
+	si1 text[REC_Epoc_v10_TEXT_BYTES_m12];
+} REC_Epoc_v10_m12;
+
+// Version 2.0 Defines
+#define REC_Epoc_v20_BYTES_m12                          48
+#define REC_Epoc_v20_END_TIME_OFFSET_m12		0	// si8
+#define REC_Epoc_v20_STAGE_CODE_OFFSET_m12		8	// ui1
+#define REC_Epoc_v20_SCORER_ID_OFFSET_m12		9	// si1[39]
+#define REC_Epoc_v20_SCORER_ID_BYTES_m12		39
+
+#define REC_Epoc_v20_STAGE_AWAKE_m12			0
+#define REC_Epoc_v20_STAGE_NREM_1_m12			1
+#define REC_Epoc_v20_STAGE_NREM_2_m12			2
+#define REC_Epoc_v20_STAGE_NREM_3_m12			3
+#define REC_Epoc_v20_STAGE_NREM_4_m12			4
+#define REC_Epoc_v20_STAGE_REM_m12			5
+#define REC_Epoc_v20_STAGE_UNKNOWN_m12			255
+
 // Structures
 typedef struct {
-    si8 id_number;
-    si8 end_time;
-    si1 epoch_type[REC_Epoc_v10_EPOCH_TYPE_BYTES_m12];
-    si1 text[REC_Epoc_v10_TEXT_BYTES_m12];
-} REC_Epoc_v10_m12;
+	si8 end_time;
+	ui1 stage_code;
+	si1 scorer_id[REC_Epoc_v20_SCORER_ID_BYTES_m12];  // person or algorithm
+} REC_Epoc_v20_m12;
 
 // Prototypes
 void            REC_show_Epoc_type_m12(RECORD_HEADER_m12 *record_header);

@@ -1033,7 +1033,8 @@ REC_Curs_v10_NOT_ALIGNED_m12:
 
 void    REC_show_Epoc_type_m12(RECORD_HEADER_m12 *record_header)
 {
-	REC_Epoc_v10_m12	*epoc;
+	REC_Epoc_v10_m12	*epoc1;
+	REC_Epoc_v20_m12	*epoc2;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -1041,15 +1042,48 @@ void    REC_show_Epoc_type_m12(RECORD_HEADER_m12 *record_header)
 	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		epoc = (REC_Epoc_v10_m12 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m12);
-		printf_m12("ID Number: %ld\n", epoc->id_number);
-		printf_m12("End Time: %ld\n", epoc->end_time);
-		UTF8_printf_m12("Epoch Type: %s\n", epoc->epoch_type);
-		UTF8_printf_m12("Text: %s\n", epoc->text);
+		epoc1 = (REC_Epoc_v10_m12 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m12);
+		printf_m12("ID Number: %ld\n", epoc1->id_number);
+		printf_m12("End Time: %ld\n", epoc1->end_time);
+		UTF8_printf_m12("Epoch Type: %s\n", epoc1->epoch_type);
+		UTF8_printf_m12("Text: %s\n", epoc1->text);
+	}
+	// Version 2.0
+	else if (record_header->version_major == 2 && record_header->version_minor == 0) {
+		epoc2 = (REC_Epoc_v20_m12 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m12);
+		printf_m12("ID Number: %ld\n", epoc2->end_time);
+		printf_m12("Stage: ");
+		switch (epoc2->stage_code) {
+			case REC_Epoc_v20_STAGE_AWAKE_m12:
+				printf_m12("awake\n");
+				break;
+			case REC_Epoc_v20_STAGE_NREM_1_m12:
+				printf_m12("non-REM 1\n");
+				break;
+			case REC_Epoc_v20_STAGE_NREM_2_m12:
+				printf_m12("non-REM 2\n");
+				break;
+			case REC_Epoc_v20_STAGE_NREM_3_m12:
+				printf_m12("non-REM 3\n");
+				break;
+			case REC_Epoc_v20_STAGE_NREM_4_m12:
+				printf_m12("non-REM 4\n");
+				break;
+			case REC_Epoc_v20_STAGE_REM_m12:
+				printf_m12("REM\n");
+				break;
+			case REC_Epoc_v20_STAGE_UNKNOWN_m12:
+				printf_m12("unknown\n");
+				break;
+			default:
+				G_warning_message_m12("%s(): Unrecognized Epoc v2.0 stage code (%hhu)\n", __FUNCTION__, epoc2->stage_code);
+				break;
+		}
+		UTF8_printf_m12("Scorer ID: %s\n", epoc2->scorer_id);
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m12("%s(): Unrecognized Curs Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_warning_message_m12("%s(): Unrecognized Epoc Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
 	return;
@@ -1058,16 +1092,21 @@ void    REC_show_Epoc_type_m12(RECORD_HEADER_m12 *record_header)
 
 TERN_m12     REC_check_Epoc_type_alignment_m12(ui1 *bytes)
 {
-	REC_Epoc_v10_m12	*epoc;
+	si1			*version_string;
+	REC_Epoc_v10_m12	*epoc1;
+	REC_Epoc_v20_m12	*epoc2;
 	TERN_m12                free_flag = FALSE_m12;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	// Version 1.0
+	version_string = "REC_Epoc_v10_m12";
+	
 	// check overall size
 	if (sizeof(REC_Epoc_v10_m12) != REC_Epoc_v10_BYTES_m12)
-		goto REC_Epoc_v10_NOT_ALIGNED_m12;
+		goto REC_Epoc_NOT_ALIGNED_m12;
 
 	// check fields
 	if (bytes == NULL) {
@@ -1075,35 +1114,53 @@ TERN_m12     REC_check_Epoc_type_alignment_m12(ui1 *bytes)
 		free_flag = TRUE_m12;
 	}
 
-	epoc = (REC_Epoc_v10_m12 *) bytes;
-	if (&epoc->id_number != (si8 *) (bytes + REC_Epoc_v10_ID_NUMBER_OFFSET_m12))
-		goto REC_Epoc_v10_NOT_ALIGNED_m12;
-	if (&epoc->end_time != (si8 *) (bytes + REC_Epoc_v10_END_TIME_OFFSET_m12))
-		goto REC_Epoc_v10_NOT_ALIGNED_m12;
-	if (epoc->epoch_type != (si1 *) (bytes + REC_Epoc_v10_EPOCH_TYPE_OFFSET_m12))
-		goto REC_Epoc_v10_NOT_ALIGNED_m12;
-	if (epoc->text != (si1 *) (bytes + REC_Epoc_v10_TEXT_OFFSET_m12))
-		goto REC_Epoc_v10_NOT_ALIGNED_m12;
+	epoc1 = (REC_Epoc_v10_m12 *) bytes;
+	if (&epoc1->id_number != (si8 *) (bytes + REC_Epoc_v10_ID_NUMBER_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
+	if (&epoc1->end_time != (si8 *) (bytes + REC_Epoc_v10_END_TIME_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
+	if (epoc1->epoch_type != (si1 *) (bytes + REC_Epoc_v10_EPOCH_TYPE_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
+	if (epoc1->text != (si1 *) (bytes + REC_Epoc_v10_TEXT_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
 
 	// aligned
+	if (globals_m12->verbose == TRUE_m12)
+		printf_m12("%s(): %s structure is aligned\n", __FUNCTION__, version_string);
+	
+	// Version 2.0
+	version_string = "REC_Epoc_v20_m12";
+	
+	// check overall size
+	if (sizeof(REC_Epoc_v20_m12) != REC_Epoc_v20_BYTES_m12)
+		goto REC_Epoc_NOT_ALIGNED_m12;
+
+	epoc2 = (REC_Epoc_v20_m12 *) bytes;
+	if (&epoc2->end_time != (si8 *) (bytes + REC_Epoc_v20_END_TIME_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
+	if (&epoc2->stage_code != (ui1 *) (bytes + REC_Epoc_v20_STAGE_CODE_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
+	if (epoc2->scorer_id != (si1 *) (bytes + REC_Epoc_v20_SCORER_ID_OFFSET_m12))
+		goto REC_Epoc_NOT_ALIGNED_m12;
+
+	// aligned
+	if (globals_m12->verbose == TRUE_m12)
+		printf_m12("%s(): %s structure is aligned\n", __FUNCTION__, version_string);
+
 	if (free_flag == TRUE_m12)
 		free((void *) bytes);
-
-	if (globals_m12->verbose == TRUE_m12)
-		printf_m12("%s(): REC_Epoc_v10_m12 structure is aligned\n", __FUNCTION__);
 
 	return(TRUE_m12);
 
 	// not aligned
-REC_Epoc_v10_NOT_ALIGNED_m12:
+REC_Epoc_NOT_ALIGNED_m12:
 
 	if (free_flag == TRUE_m12)
 		free((void *) bytes);
 
-	G_error_message_m12("%s(): REC_Epoc_v10_m12 structure is NOT aligned\n", __FUNCTION__);
+	G_error_message_m12("%s(): %s structure is NOT aligned\n", __FUNCTION__, version_string);
 
 	return(FALSE_m12);
-
 }
 
 
