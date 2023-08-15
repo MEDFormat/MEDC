@@ -732,13 +732,19 @@ Sgmt_RECORD_m12	*G_build_Sgmt_records_array_m12(FILE_PROCESSING_STRUCT_m12 *ri_f
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// nothing passed - see if we can use global reference channel (can happen if no records read on open)
-	if (ri_fps == NULL && rd_fps == NULL && chan == NULL) {
-		if (globals_m12->reference_channel == NULL) {
-			G_error_message_m12("%s(): no records or channel passed or found\n", __FUNCTION__);
-			return(NULL);
-		} else {
-			chan = globals_m12->reference_channel;
+	if (ri_fps == NULL && rd_fps == NULL) {
+		if (chan == NULL ) {  // nothing passed - see if we can use global reference channel (can happen if no records read on open)
+			if (globals_m12->reference_channel == NULL) {
+				G_error_message_m12("%s(): no records or channel passed or found\n", __FUNCTION__);
+				return(NULL);
+			} else {
+				chan = globals_m12->reference_channel;
+			}
+		}
+		// use channel records
+		if (chan != NULL) {
+			ri_fps = chan->record_indices_fps;
+			rd_fps = chan->record_data_fps;
 		}
 	}
 	
@@ -1035,9 +1041,9 @@ void    G_calculate_time_series_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type)
 {
-	TERN_m12			use_default_channel, use_global_name;
-	si8				i, n_chans;
-	CHANNEL_m12			*chan;
+	TERN_m12	use_default_channel, use_global_name;
+	si8		i, n_chans;
+	CHANNEL_m12	*chan;
 
 	
 #ifdef FN_DEBUG_m12
@@ -1148,6 +1154,11 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 CHANGE_REF_MATCH_m12:
 	globals_m12->reference_channel = channel;
 	strcpy(globals_m12->reference_channel_name, channel->name);
+	
+	// reset session Sgmt records
+	if (sess->Sgmt_records != NULL)
+		free_m12((void *) sess->Sgmt_records, __FUNCTION__);
+	sess->Sgmt_records = G_build_Sgmt_records_array_m12(NULL, NULL, NULL);  // defaults to use current reference channel
 	
 	return;
 }
@@ -2163,7 +2174,7 @@ TERN_m12     G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		
 		
 #if defined MACOS_m12 || defined LINUX_m12
-TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 create_password, sf8 timeout_secs)
+TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 confirm_no_entry, sf8 timeout_secs, TERN_m12 create_password)
 {
 	si1		pw_copy[MAX_ASCII_PASSWORD_STRING_BYTES_m12], dc[8];
 	const si4	MAX_ATTEMPTS = 3;
@@ -2195,7 +2206,8 @@ TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 create_
 	
 	// set the new bits
 	tcsetattr(STDIN_FILENO, TCSANOW, &term);
-		
+	
+	
 ENTER_ASCII_PASSWORD_RETRY_1_m12:
 		
 	if (timeout_secs > (sf8) 0.0) {
@@ -2209,6 +2221,7 @@ ENTER_ASCII_PASSWORD_RETRY_1_m12:
 		// set timeout
 		tv.tv_sec = (time_t) timeout_secs;
 		timeout_secs -= (sf8) tv.tv_sec;
+		tv.tv_usec = (time_t) (timeout_secs * (sf8) 1e6);
 
 		// wait for keyboard entry
 		FD_ZERO(&fds);
@@ -2236,12 +2249,16 @@ ENTER_ASCII_PASSWORD_RETRY_1_m12:
 	password[i] = 0;
 	putchar_m12('\n');
 	if (*password == 0) {
-		printf_m12("\tIs %s<no entry>%s correct (y/n): ", TC_RED_m12, TC_RESET_m12);
-		fflush(stdout);
-		*dc = 0;
-		scanf("%[^\n]", dc);
-		getchar();  // clear '\n' from stdin
-		putchar_m12(*dc);
+		if (confirm_no_entry == TRUE_m12) {
+			printf_m12("\tIs %s<no entry>%s correct (y/n): ", TC_RED_m12, TC_RESET_m12);
+			fflush(stdout);
+			*dc = 0;
+			scanf("%[^\n]", dc);
+			getchar();  // clear '\n' from stdin
+			putchar_m12(*dc);
+		} else {
+			*dc = 'y';
+		}
 		if (*dc == 'y' || *dc == 'Y') {
 			putchar_m12('\n');
 			tcsetattr(STDIN_FILENO, TCSANOW, &saved_term);
@@ -2290,11 +2307,11 @@ ENTER_ASCII_PASSWORD_RETRY_1_m12:
 
 
 #ifdef WINDOWS_m12
-TERN_m12	G_enter_ascii_password_m12(si1* password, si1* prompt, TERN_m12 create_password, sf8 timeout_secs)
+TERN_m12	G_enter_ascii_password_m12(si1* password, si1* prompt, TERN_m12 confirm_no_entry, sf8 timeout_secs, TERN_m12 create_password)
 {
 	si1		pw_copy[MAX_ASCII_PASSWORD_STRING_BYTES_m12];
 	const si4	MAX_ATTEMPTS = 3;
-	si4		i, c, dc, primay_attempts, match_attempts;
+	si4		i, c, dc, primary_attempts, match_attempts;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -2311,7 +2328,7 @@ TERN_m12	G_enter_ascii_password_m12(si1* password, si1* prompt, TERN_m12 create_
 	else if (*prompt == 0)
 		prompt = "Enter password";
 	
-	primay_attempts = 0;
+	primary_attempts = 0;
 	ENTER_ASCII_PASSWORD_RETRY_1_m12:
 	
 	if (timeout_secs > (sf8) 0.0) {
@@ -2325,7 +2342,8 @@ TERN_m12	G_enter_ascii_password_m12(si1* password, si1* prompt, TERN_m12 create_
 		// set timeout
 		tv.tv_sec = (time_t) timeout_secs;
 		timeout_secs -= (sf8) tv.tv_sec;
-		
+		tv.tv_usec = (time_t) (timeout_secs * (sf8) 1e6);
+
 		// wait for keyboard entry
 		FD_ZERO(&fds);
 		FD_SET(0, &fds);
@@ -2368,13 +2386,17 @@ TERN_m12	G_enter_ascii_password_m12(si1* password, si1* prompt, TERN_m12 create_
 	}
 	
 	if (*password == 0) {
-		printf_m12("\tIs %s<no entry>%s correct (y/n): ", TC_RED_m12, TC_RESET_m12);
-		fflush(stdout);
-		dc = _getch();
-		putch_m12(dc); putch_m12('\r'); putch_m12('\n');
+		if (confirm_no_entry == TRUE_m12) {
+			printf_m12("\tIs %s<no entry>%s correct (y/n): ", TC_RED_m12, TC_RESET_m12);
+			fflush(stdout);
+			dc = _getch();
+			putch_m12(dc); putch_m12('\r'); putch_m12('\n');
+		} else {
+			dc = 'y';
+		}
 		if (dc == 'y' || dc == 'Y') {
 			return(TRUE_m12);  // user intends no entry so return TRUE. Calling function should decide what to do with no password.
-		} else if (++primay_attempts < MAX_ATTEMPTS) {
+		} else if (++primary_attempts < MAX_ATTEMPTS) {
 			goto ENTER_ASCII_PASSWORD_RETRY_1_m12;
 		} else {
 			printf_m12("%sMaximum attempts made.\n%s", TC_RED_m12, TC_RESET_m12);
@@ -2423,7 +2445,7 @@ TERN_m12	G_enter_ascii_password_m12(si1* password, si1* prompt, TERN_m12 create_
 
 		if (strcmp(password, pw_copy)) {
 			if (++match_attempts == MAX_ATTEMPTS) {
-				if (++primay_attempts < MAX_ATTEMPTS) {
+				if (++primary_attempts < MAX_ATTEMPTS) {
 					printf_m12("%sPasswords do not match. Re-enter password.\n%s", TC_RED_m12, TC_RESET_m12);
 					goto ENTER_ASCII_PASSWORD_RETRY_1_m12;
 				} else {
@@ -30108,11 +30130,8 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 			timeout_secs = va_arg(arg_p, sf8);
 			va_end(arg_p);
 			
-			if (G_enter_ascii_password_m12(pw, "Enter sudo password", FALSE_m12, (sf8) timeout_secs) == TRUE_m12) {
-				if (*pw == 0) {
-					G_warning_message_m12("%s(): Invalid sudo password\n", __FUNCTION__);
-					return(FALSE_m12);
-				} else {
+			if (G_enter_ascii_password_m12(pw, "Enter sudo password", FALSE_m12, (sf8) timeout_secs, FALSE_m12) == TRUE_m12) {
+				if (*pw) {
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
@@ -30135,6 +30154,8 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 					}
 					G_pop_behavior_m12();
 					return(TRUE_m12);
+				} else {
+					return(FALSE_m12);  // no password entered
 				}
 			} else {
 				return(FALSE_m12);

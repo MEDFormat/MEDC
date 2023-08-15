@@ -2178,7 +2178,7 @@ si4             G_DST_offset_m12(si8 uutc);
 TERN_m12        G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12        G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
-TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 create_password, sf8 timeout_secs);
+TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 confirm_no_entry, sf8 timeout_secs, TERN_m12 create_password);
 void            G_error_message_m12(si1 *fmt, ...);
 void		G_error_string_m12(void);
 void            G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
