@@ -75,7 +75,7 @@
 // VERSIONING:
 
 // All functions, constants, macros, and data types defined in the library are tagged
-// with the suffix "_mFL" (for "MED major format 'F', library 'L'").
+// with the suffix "_mFL" (for "MED major format 'F', library version 'L'").
 
 // MED_FORMAT_VERSION_MAJOR is restricted to single digits 1 through 9
 // MED_FORMAT_VERSION_MINOR is restricted to 0 through 254, minor version resets to zero with new major format version
@@ -112,7 +112,7 @@
 			#define WIN32
 		#endif
 		#include <winsock2.h>
-		// #pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib (necessary, but repeated below for other libs)
+		// #pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib (required, but repeated below for other libs)
 	#endif
 	#include <windows.h>
 	#include <io.h>
@@ -1825,8 +1825,8 @@ typedef struct {  // struct name for CMP functions interdependency
 	union {					// the MED file types
 						// these are set to point to current data (just read, or to write)
 		METADATA_m12			*metadata;
-		RECORD_INDEX_m12		*record_indices;  // if filters applied & file mem map or full file, points to filt_rec_data in FPS parameters
-		ui1				*record_data;  // if filters applied & file mem map or full file, points to filt_rec_data in FPS parameters
+		RECORD_INDEX_m12		*record_indices;
+		ui1				*record_data;
 		TIME_SERIES_INDEX_m12		*time_series_indices;
 		ui1				*time_series_data;  // compressed data (not modified), CPS block header is modifiable pointer within this array
 		VIDEO_INDEX_m12			*video_indices;
@@ -1901,7 +1901,7 @@ typedef struct {
 #else
 typedef struct {
 	union {
-		RECORD_HEADER_m12	header;  // in case just want the record heade
+		RECORD_HEADER_m12	header;  // in case just want the record header
 		RECORD_HEADER_m12;	// anonoymous RECORD_HEADER_m12
 	};
 	union {
@@ -2691,7 +2691,7 @@ si1		*STR_wchar2char_m12(si1 *target, wchar_t *source);
 // Binterpolate() center mode codes
 #define CMP_CENT_MODE_NONE_m12			0  // extrema only
 #define CMP_CENT_MODE_MIDPOINT_m12		1  // best performance if extrema needed: (min + max) / 2
-#define CMP_CENT_MODE_MEAN_m12			2  // best performance  if extrema not needed
+#define CMP_CENT_MODE_MEAN_m12			2  // best performance if extrema not needed
 #define CMP_CENT_MODE_MEDIAN_m12		3  // best measure of central tendency
 #define CMP_CENT_MODE_FASTEST_m12		4  // CMP_CENT_MODE_MIDPOINT_m12 if extrema requested, CMP_CENT_MODE_MEAN_m12 if not
 #define CMP_CENT_MODE_DEFAULT_m12		CMP_CENT_MODE_MEAN_m12
@@ -3262,7 +3262,7 @@ si4		UTF8_wc_to_utf8_m12(si1 *dest, ui4 ch);  // single character to UTF-8
 #define AES_XTIME_m12(x)        ((x << 1) ^ (((x >> 7) & 1) * 0x1b)) // AES_XTIME is a macro that finds the product of {02} and the argument to AES_XTIME modulo {1b}
 #define AES_MULTIPLY_m12(x, y)  (((y & 1) * x) ^ ((y >> 1 & 1) * AES_XTIME_m12(x)) ^ ((y >> 2 & 1) * AES_XTIME_m12(AES_XTIME_m12(x))) ^ \
 				((y >> 3 & 1) * AES_XTIME_m12(AES_XTIME_m12(AES_XTIME_m12(x)))) ^ ((y >> 4 & 1) * \
-				AES_XTIME_m12(AES_XTIME_m12(AES_XTIME_m12(AES_XTIME_m12(x)))))) // Multiplty is a macro used to multiply numbers in the field GF(2^8)
+				AES_XTIME_m12(AES_XTIME_m12(AES_XTIME_m12(AES_XTIME_m12(x)))))) // Multiply is a macro used to multiply numbers in the field GF(2^8)
 
 #define AES_SBOX_ENTRIES_m12	256
 #define AES_SBOX_m12          {	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, \
@@ -3322,8 +3322,8 @@ si4		UTF8_wc_to_utf8_m12(si1 *dest, ui4 ch);  // single character to UTF-8
 // Function Prototypes
 void		AES_add_round_key_m12(si4 round, ui1 state[][4], ui1 *round_key);
 void		AES_cipher_m12(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
-void		AES_decrypt_m12(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key);
-void		AES_encrypt_m12(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key);
+void		AES_decrypt_m12(ui1 *data, si8 len, si1 *password, ui1 *expanded_key);
+void		AES_encrypt_m12(ui1 *data, si8 len, si1 *password, ui1 *expanded_keyy);
 void		AES_key_expansion_m12(ui1 *round_key, si1 *key);
 si4		AES_get_sbox_invert_m12(si4 num);
 si4		AES_get_sbox_value_m12(si4 num);
@@ -3332,6 +3332,8 @@ void		AES_inv_cipher_m12(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void		AES_inv_mix_columns_m12(ui1 state[][4]);
 void		AES_inv_shift_rows_m12(ui1 state[][4]);
 void		AES_inv_sub_bytes_m12(ui1 state[][4]);
+void		AES_leftover_decrypt_m12(si4 n_leftovers, ui1 *data);
+void		AES_leftover_encrypt_m12(si4 n_leftovers, ui1 *data);
 void		AES_mix_columns_m12(ui1 state[][4]);
 void		AES_shift_rows_m12(ui1 state[][4]);
 void		AES_sub_bytes_m12(ui1 state[][4]);
@@ -3759,6 +3761,7 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_PORT_ANY_m12					0  // system assigned port
 #define TR_IFACE_ANY_m12				((void *) 0)  // all interfaces
 #define TR_IFACE_DFLT_m12				""  // default internet interface
+#define TR_RETRANSMIT_ATTEMPTS_m12			3
 
 
 // Typedefs
@@ -3788,17 +3791,18 @@ typedef struct {
 		ui1		*buffer;  // used internally, first portion is the transmission header
 		TR_HEADER_m12	*header;
 	};
+	si8			buffer_bytes;  // bytes available for data (actual allocation also includes room for header)
 	ui1			*data;  // buffer + TR_HEADER_BYTES_m12
 	si1			*password;   // for encryption (NOT freed by TR_free_transmission_info_m12)
 	ui1			*expanded_key;   // for encryption
-	si8			buffer_bytes;  // bytes available for data (actual allocation also includes room for header)
+	TERN_m12		expanded_key_allocated;  // determines whether to free expanded key
 	si4			sock_fd;
 	si1			dest_addr[INET6_ADDRSTRLEN];  // INET6_ADDRSTRLEN == 46 (this can be an IP address string or or a domain name [< 46 characters])
 	ui2			dest_port;
 	si1			iface_addr[INET6_ADDRSTRLEN];  // zero-length string for any default internet interface
 	ui2			iface_port;
 	si4			timeout_secs;
-	ui2			mss;  // maximum segment size (max bytes of data per packet [*** does not include header ***])
+	ui2			mss;  // maximum segment size (max bytes of data per packet [*** does not include header ***]) (typically multiple of 16, must be at least multiple of 8 for library)
 } TR_INFO_m12;
 
 typedef struct {

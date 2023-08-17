@@ -1642,8 +1642,7 @@ si4      G_days_in_month_m12(si4 month, si4 year)
 
 TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1			*ui1_p, *decryption_key;
-	si4		        i, decryption_blocks;
+	ui1			*decryption_key;
 	PASSWORD_DATA_m12	*pwd;
 	METADATA_SECTION_3_m12	*section_3;
 	
@@ -1670,12 +1669,7 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
-			decryption_blocks = METADATA_SECTION_2_BYTES_m12 / ENCRYPTION_BLOCK_BYTES_m12;
-			ui1_p = fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m12;
-			for (i = 0; i < decryption_blocks; ++i) {
-				AES_decrypt_m12(ui1_p, ui1_p, NULL, decryption_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
+			AES_decrypt_m12(fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m12, METADATA_SECTION_2_BYTES_m12, NULL, decryption_key);
 			fps->metadata->section_1.section_2_encryption_level = -fps->metadata->section_1.section_2_encryption_level;  // mark as currently decrypted
 		} else {
 			G_error_message_m12("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_2_encryption_level);
@@ -1692,12 +1686,7 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
-			decryption_blocks = METADATA_SECTION_3_BYTES_m12 / ENCRYPTION_BLOCK_BYTES_m12;
-			ui1_p = fps->parameters.raw_data + METADATA_SECTION_3_OFFSET_m12;
-			for (i = 0; i < decryption_blocks; ++i) {
-				AES_decrypt_m12(ui1_p, ui1_p, NULL, decryption_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
+			AES_decrypt_m12(fps->parameters.raw_data + METADATA_SECTION_3_OFFSET_m12, METADATA_SECTION_3_BYTES_m12, NULL, decryption_key);
 			fps->metadata->section_1.section_3_encryption_level = -fps->metadata->section_1.section_3_encryption_level;  // mark as currently decrypted
 		} else {
 			if (globals_m12->verbose == TRUE_m12) {
@@ -1734,8 +1723,7 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // varargs (fps == NULL): RECORD_HEADER_m12 *rh, si8 number_of_records
 {
-	ui1			*ui1_p, *encryption_key;
-	ui4			j, encryption_blocks;
+	ui1			*encryption_key;
 	si8			i, failed_decryption_count, number_of_records;
 	va_list			args;
 	RECORD_HEADER_m12	*rh;
@@ -1762,19 +1750,13 @@ TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // var
 		pwd = &globals_m12->password_data;
 
 	for (i = failed_decryption_count = 0; i < number_of_records; ++i) {
-		ui1_p = (ui1 *) rh;
 		if (rh->encryption_level > NO_ENCRYPTION_m12) {
 			if (pwd->access_level >= rh->encryption_level) {
 				if (rh->encryption_level == LEVEL_1_ENCRYPTION_m12)
 					encryption_key = pwd->level_1_encryption_key;
 				else
 					encryption_key = pwd->level_2_encryption_key;
-				encryption_blocks = (rh->total_record_bytes - RECORD_HEADER_BYTES_m12) / ENCRYPTION_BLOCK_BYTES_m12;
-				ui1_p += RECORD_HEADER_BYTES_m12;
-				for (j = 0; j < encryption_blocks; ++j) {
-					AES_decrypt_m12(ui1_p, ui1_p, NULL, encryption_key);
-					ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-				}
+				AES_decrypt_m12((ui1 *) rh + RECORD_HEADER_BYTES_m12, rh->total_record_bytes - RECORD_HEADER_BYTES_m12, NULL, encryption_key);
 				rh->encryption_level = -rh->encryption_level;  // mark as currently decrypted
 			} else {
 				++failed_decryption_count;
@@ -1794,9 +1776,8 @@ TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // var
 
 TERN_m12     G_decrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1				*ui1_p, *key = NULL;
-	si4                             encryption_blocks, encryptable_blocks;
-	si8                             i, encryption_bytes, number_of_items;
+	ui1				*key = NULL;
+	si8                             i, encryption_bytes, encryptable_bytes, number_of_items;
 	CMP_BLOCK_FIXED_HEADER_m12	*bh;
 	PASSWORD_DATA_m12		*pwd;
 	
@@ -1858,25 +1839,20 @@ TERN_m12     G_decrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 			continue;
 		}
 		
-		// calculated encryption blocks
-		encryptable_blocks = (bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) / ENCRYPTION_BLOCK_BYTES_m12;
+		// calculate encryption bytes
+		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
 		if (bh->block_flags | CMP_BF_MBE_ENCODING_MASK_m12) {
-			encryption_blocks = encryptable_blocks;
+			encryption_bytes = encryptable_bytes;
 		} else {
-			encryption_bytes = bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12 + ENCRYPTION_BLOCK_BYTES_m12;
-			encryption_blocks = (si4) ((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m12) + 1;
-			if (encryptable_blocks < encryption_blocks)
-				encryption_blocks = encryptable_blocks;
+			encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) + ENCRYPTION_BLOCK_BYTES_m12;
+			if (encryption_bytes > encryptable_bytes)
+				encryption_bytes = encryptable_bytes;
 		}
 		
 		// decrypt
-		ui1_p = (ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
-		for (i = 0; i < encryption_blocks; ++i) {
-			AES_decrypt_m12(ui1_p, ui1_p, NULL, key);
-			ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-		}
+		AES_decrypt_m12((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12, encryption_bytes, NULL, key);
 		
-		// set block flags to decrypted
+		// set block flag to decrypted
 		bh->block_flags &= ~CMP_BF_ENCRYPTION_MASK_m12;
 		
 		// set pointer to next block
@@ -2022,8 +1998,7 @@ si4     G_DST_offset_m12(si8 uutc)
 
 TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1			*ui1_p, *encryption_key;
-	si8		        i, encryption_blocks;
+	ui1			*encryption_key;
 	PASSWORD_DATA_m12	*pwd;
 	METADATA_m12		*md;
 	
@@ -2044,12 +2019,7 @@ TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
-			encryption_blocks = METADATA_SECTION_2_BYTES_m12 / ENCRYPTION_BLOCK_BYTES_m12;
-			ui1_p = (ui1 *) &md->section_2;
-			for (i = encryption_blocks; i--;) {
-				AES_encrypt_m12(ui1_p, ui1_p, NULL, encryption_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
+			AES_encrypt_m12((ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m12, NULL, encryption_key);
 		}
 	}
 	
@@ -2061,12 +2031,7 @@ TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
-			encryption_blocks = METADATA_SECTION_3_BYTES_m12 / ENCRYPTION_BLOCK_BYTES_m12;
-			ui1_p = (ui1 *) &md->section_3;
-			for (i = encryption_blocks; i--;) {
-				AES_encrypt_m12(ui1_p, ui1_p, NULL, encryption_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
+			AES_encrypt_m12((ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m12, NULL, encryption_key);
 		}
 	}
 	
@@ -2076,8 +2041,8 @@ TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1			*ui1_p, *encryption_key;
-	si8			i, j, encryption_blocks;
+	ui1			*encryption_key;
+	si8			i;
 	PASSWORD_DATA_m12	*pwd;
 	RECORD_HEADER_m12	*rh;
 	
@@ -2091,19 +2056,13 @@ TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 	rh = (RECORD_HEADER_m12 *) fps->data_pointers;
 		
 	for (i = fps->number_of_items; i--;) {
-		ui1_p = (ui1 *) rh;
 		if (rh->encryption_level < NO_ENCRYPTION_m12) {
 			rh->encryption_level = -rh->encryption_level;  // mark as currently encrypted
 			if (rh->encryption_level == LEVEL_1_ENCRYPTION_m12)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
-			encryption_blocks = (rh->total_record_bytes - RECORD_HEADER_BYTES_m12) / ENCRYPTION_BLOCK_BYTES_m12;
-			ui1_p += RECORD_HEADER_BYTES_m12;
-			for (j = encryption_blocks; j--;) {
-				AES_encrypt_m12(ui1_p, ui1_p, NULL, encryption_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
+			AES_encrypt_m12((ui1 *) rh + RECORD_HEADER_BYTES_m12, rh->total_record_bytes - RECORD_HEADER_BYTES_m12, NULL, encryption_key);
 		}
 		rh = (RECORD_HEADER_m12 *) ((ui1 *) rh + rh->total_record_bytes);
 	}
@@ -2114,10 +2073,10 @@ TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		
 TERN_m12     G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1				*ui1_p, *key;
+	ui1				*key;
 	si1				encryption_level;
 	ui4				encryption_mask;
-	si8				i, j, encryption_blocks, encryptable_blocks, encryption_bytes;
+	si8				i, encryptable_bytes, encryption_bytes;
 	PASSWORD_DATA_m12		*pwd;
 	CMP_BLOCK_FIXED_HEADER_m12	*bh;
 	
@@ -2150,20 +2109,21 @@ TERN_m12     G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 	bh = (CMP_BLOCK_FIXED_HEADER_m12 *) fps->data_pointers;
 	for (i = fps->number_of_items; i--;) {
 		if (!(bh->block_flags & CMP_BF_ENCRYPTION_MASK_m12)) {  // already encrypted
-			encryptable_blocks = (bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) / ENCRYPTION_BLOCK_BYTES_m12;
+			
+			// calculate encryption bytes
+			encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
 			if (bh->block_flags | CMP_BF_MBE_ENCODING_MASK_m12) {
-				encryption_blocks = encryptable_blocks;
+				encryption_bytes = encryptable_bytes;
 			} else {
-				encryption_bytes = bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12 + ENCRYPTION_BLOCK_BYTES_m12;
-				encryption_blocks = ((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m12) + 1;
-				if (encryptable_blocks < encryption_blocks)
-					encryption_blocks = encryptable_blocks;
+				encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) + ENCRYPTION_BLOCK_BYTES_m12;
+				if (encryption_bytes > encryptable_bytes)
+					encryption_bytes = encryptable_bytes;
 			}
-			ui1_p = (ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
-			for (j = encryption_blocks; j--;) {
-				AES_encrypt_m12(ui1_p, ui1_p, NULL, key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
+			
+			// encrypt
+			AES_encrypt_m12((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12, encryption_bytes, NULL, key);
+
+			// set block flag to encyrpted
 			bh->block_flags |= encryption_mask;
 		}
 		bh = (CMP_BLOCK_FIXED_HEADER_m12 *) ((ui1 *) bh + bh->total_block_bytes);
@@ -13940,14 +13900,15 @@ void	AES_cipher_m12(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 }
 
 
-// "in" is buffer to be encrypted (16 bytes)
-// "out" is encrypted buffer (16 bytes)
-// "in" can equal "out", i.e. can be done in place
-// pass in expanded key externally - this is more efficient than passing the password
-// if encrypting multiple times with the same encryption key
-void	AES_decrypt_m12(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
+// "data" is buffer to be decrypted
+// "len" is bytes to be decrypted
+// if decrypting multiple times with the same encryption key, pass in expanded key
+// decryption is done in place
+void	AES_decrypt_m12(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 {
+	ui1	*ui1_p;
 	si1	key[AES_KEY_BYTES_m12] = {0};
+	si8	i, encryption_blocks, n_leftovers;
 	ui1	state[4][4]; // the array that holds the intermediate results during encryption
 	ui1	round_key[AES_EXPANDED_KEY_BYTES_m12]; // The array that stores the round keys
 	
@@ -13958,34 +13919,49 @@ void	AES_decrypt_m12(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 	if (global_tables_m12->AES_sbox_table == NULL)  // all tables initialized together
 		AES_initialize_tables_m12();
 	
-	if (expanded_key != NULL) {
-		AES_inv_cipher_m12(in, out, state, expanded_key);
-	} else if (password != NULL) {
-		// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
-		strncpy_m12(key, password, 16);
-		
-		//The Key-Expansion routine must be called before the decryption routine.
-		AES_key_expansion_m12(round_key, key);
-		
-		// The next function call decrypts the CipherText with the Key using AES algorithm.
-		AES_inv_cipher_m12(in, out, state, round_key);
-	} else {
-		G_error_message_m12("%s(): No password or expanded key\n", __FUNCTION__);
+	if (expanded_key == NULL) {
+		if (password != NULL) {
+			if (*password) {
+				// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
+				strncpy_m12(key, password, 16);
+				
+				// The KeyExpansion routine must be called before encryption.
+				AES_key_expansion_m12(round_key, key);
+				expanded_key = round_key;
+			}
+		}
 	}
+	if (expanded_key == NULL) {
+		G_warning_message_m12("%s(): No password or expanded key\n", __FUNCTION__);
+		return;
+	}
+
+	// AES decryption
+	encryption_blocks = len >> 4;
+	ui1_p = data;
+	for (i = encryption_blocks; i--;) {
+		AES_inv_cipher_m12(ui1_p, ui1_p, state, expanded_key);
+		ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
+	}
+
+	// non-AES addition invoked only if not multiple of 16
+	n_leftovers = len - (encryption_blocks << 4);
+	if (n_leftovers)
+		AES_leftover_decrypt_m12(n_leftovers, ui1_p);
 	
 	return;
 }
 
 
-// "in" is buffer to be encrypted (16 bytes)
-// "out" is encrypted buffer (16 bytes)
-// "in" can equal "out", i.e. can be done in place
-// pass in expanded key externally - this is more efficient than passing the password
-// if encrypting multiple times with the same encryption key
-void	AES_encrypt_m12(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
+// "data" is buffer to be encrypted
+// "len" is bytes to be encrypted
+// if encrypting multiple times with the same encryption key, pass in expanded key
+// encryption is done in place
+void	AES_encrypt_m12(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 {
-	extern GLOBAL_TABLES_m12	*global_tables_m12;
+	ui1	*ui1_p;
 	si1	key[AES_KEY_BYTES_m12] = {0};
+	si8	i, encryption_blocks, n_leftovers;
 	ui1	state[4][4]; // the array that holds the intermediate results during encryption
 	ui1	round_key[AES_EXPANDED_KEY_BYTES_m12]; // The array that stores the round keys
 	
@@ -13995,22 +13971,37 @@ void	AES_encrypt_m12(ui1 *in, ui1 *out, si1 *password, ui1 *expanded_key)
 	
 	if (global_tables_m12->AES_sbox_table == NULL)  // all tables initialized together
 		AES_initialize_tables_m12();
-
-	if (expanded_key != NULL) {
-		AES_cipher_m12(in, out, state, expanded_key);
-	} else if (password != NULL) {
-		// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
-		strncpy_m12(key, password, 16);
-		
-		// The KeyExpansion routine must be called before encryption.
-		AES_key_expansion_m12(round_key, key);
-		
-		// The next function call encrypts the PlainText with the Key using AES algorithm.
-		AES_cipher_m12(in, out, state, round_key);
-	} else {
-		G_error_message_m12("%s(): No password or expanded key\n", __FUNCTION__);
-	}
 	
+	if (expanded_key == NULL) {
+		if (password != NULL) {
+			if (*password) {
+				// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
+				strncpy_m12(key, password, 16);
+				
+				// The KeyExpansion routine must be called before encryption.
+				AES_key_expansion_m12(round_key, key);
+				expanded_key = round_key;
+			}
+		}
+	}
+	if (expanded_key == NULL) {
+		G_warning_message_m12("%s(): No password or expanded key\n", __FUNCTION__);
+		return;
+	}
+
+	// AES encryption
+	encryption_blocks = len >> 4;
+	ui1_p = data;
+	for (i = encryption_blocks; i--;) {
+		AES_cipher_m12(ui1_p, ui1_p, state, expanded_key);
+		ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
+	}
+
+	// non-AES addition invoked only if not multiple of 16
+	n_leftovers = len - (encryption_blocks << 4);
+	if (n_leftovers)
+		AES_leftover_encrypt_m12(n_leftovers, ui1_p);
+
 	return;
 }
 
@@ -14280,6 +14271,41 @@ void	AES_inv_sub_bytes_m12(ui1 state[][4])
 		}
 	}
 	
+	return;
+}
+
+
+void	AES_leftover_decrypt_m12(si4 n_leftovers, ui1 *data)
+{
+	ui1	*ui1_p1, *ui1_p2;
+	
+	
+	ui1_p1 = data;
+	if (n_leftovers--) {
+		ui1_p2 = ui1_p1 + n_leftovers;
+		ui1_p1 = ui1_p2 - 1;
+		for (; n_leftovers--; --ui1_p2)
+			*ui1_p2 = *ui1_p2 ^ *ui1_p1--;
+		*ui1_p1 = ~*ui1_p1;
+	}
+
+	return;
+}
+
+
+void	AES_leftover_encrypt_m12(si4 n_leftovers, ui1 *data)
+{
+	ui1	*ui1_p1, *ui1_p2;
+	
+	
+	ui1_p1 = data;
+	if (n_leftovers) {
+		*ui1_p1 = ~*ui1_p1;
+		ui1_p2 = ui1_p1 + 1;
+		for (; --n_leftovers; ++ui1_p2)
+			*ui1_p2 = *ui1_p2 ^ *ui1_p1++;
+	}
+
 	return;
 }
 
@@ -16901,9 +16927,8 @@ void    CMP_decode_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 TERN_m12	CMP_decrypt_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1				*ui1_p, *key;
-	si4				encryption_blocks, encryptable_blocks;
-	si8				i, encryption_bytes;
+	ui1				*key;
+	si8				encryption_bytes, encryptable_bytes;
 	CMP_BLOCK_FIXED_HEADER_m12	*block_header;
 	PASSWORD_DATA_m12		*pwd;
 	CMP_PROCESSING_STRUCT_m12	*cps;
@@ -16945,23 +16970,18 @@ TERN_m12	CMP_decrypt_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		}
 	}
 	
-	// calculated encryption blocks
-	encryptable_blocks = (block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) / ENCRYPTION_BLOCK_BYTES_m12;
+	// calculate encryption bytes
+	encryptable_bytes = block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
 	if (block_header->block_flags | CMP_BF_MBE_ENCODING_MASK_m12) {
-		encryption_blocks = encryptable_blocks;
+		encryption_bytes = encryptable_bytes;
 	} else {
-		encryption_bytes = block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12 + ENCRYPTION_BLOCK_BYTES_m12;
-		encryption_blocks = (si4)(((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m12) + 1);
-		if (encryptable_blocks < encryption_blocks)
-			encryption_blocks = encryptable_blocks;
+		encryption_bytes = (block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) + ENCRYPTION_BLOCK_BYTES_m12;
+		if (encryption_bytes > encryptable_bytes)
+			encryption_bytes = encryptable_bytes;
 	}
 	
 	// decrypt
-	ui1_p = (ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
-	for (i = 0; i < encryption_blocks; ++i) {
-		AES_decrypt_m12(ui1_p, ui1_p, NULL, key);
-		ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-	}
+	AES_decrypt_m12((ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12, encryption_bytes, NULL, key);
 	
 	// set block flags to decrypted
 	block_header->block_flags &= ~CMP_BF_ENCRYPTION_MASK_m12;
@@ -17317,11 +17337,10 @@ void    CMP_encode_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 start_time, si4 acqu
 
 TERN_m12     CMP_encrypt_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
-	ui1				*ui1_p, *key;
+	ui1				*key;
 	si1				encryption_level;
 	ui4				encryption_mask, encryption_bits;
-	si4				encryption_blocks, encryptable_blocks;
-	si8				i, encryption_bytes;
+	si8				encryption_bytes, encryptable_bytes;
 	PASSWORD_DATA_m12		*pwd;
 	CMP_PROCESSING_STRUCT_m12	*cps;
 	CMP_BLOCK_FIXED_HEADER_m12	*block_header;
@@ -17378,21 +17397,20 @@ TERN_m12     CMP_encrypt_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		return(FALSE_m12);
 	}
 	
-	// encrypt
-	encryptable_blocks = (block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) / ENCRYPTION_BLOCK_BYTES_m12;
-	if (block_header->block_flags & CMP_BF_MBE_ENCODING_MASK_m12) {
-		encryption_blocks = encryptable_blocks;
+	// calculate encryption bytes
+	encryptable_bytes = block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
+	if (block_header->block_flags | CMP_BF_MBE_ENCODING_MASK_m12) {
+		encryption_bytes = encryptable_bytes;
 	} else {
-		encryption_bytes = block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12 + ENCRYPTION_BLOCK_BYTES_m12;
-		encryption_blocks = (si4)(((encryption_bytes - 1) / ENCRYPTION_BLOCK_BYTES_m12) + 1);
-		if (encryptable_blocks < encryption_blocks)
-			encryption_blocks = encryptable_blocks;
+		encryption_bytes = (block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m12) + ENCRYPTION_BLOCK_BYTES_m12;
+		if (encryption_bytes > encryptable_bytes)
+			encryption_bytes = encryptable_bytes;
 	}
-	ui1_p = (ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12;
-	for (i = 0; i < encryption_blocks; ++i) {
-		AES_encrypt_m12(ui1_p, ui1_p, NULL, key);
-		ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-	}
+	
+	// encrypt
+	AES_encrypt_m12((ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m12, encryption_bytes, NULL, key);
+
+	// set block flags to encrypted
 	block_header->block_flags |= encryption_mask;
 	
 	return(TRUE_m12);
@@ -32129,10 +32147,14 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	header->type = TR_TYPE_DEFAULT_m12;
 	header->version = TR_VERSION_DEFAULT_m12;
 	
-	// password only required for encrypted transissions
+	// password / exapnded key only required for encrypted transissions
+	trans_info->expanded_key_allocated = FALSE_m12;
 	if (password != NULL) {
-		trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		AES_key_expansion_m12(trans_info->expanded_key, password);
+		if (*password) {
+			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			AES_key_expansion_m12(trans_info->expanded_key, password);
+			trans_info->expanded_key_allocated = TRUE_m12;
+		}
 	}
 	
 	// create socket (this function also sets timeout)
@@ -32144,8 +32166,8 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 
 TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port)
 {
-	TERN_m12		sys_asgn_iface_addr = FALSE_m12, sys_asgn_iface_port = FALSE_m12;
-	si4			sock_fd, flags = 1;
+	TERN_m12		sys_asgn_iface_addr, sys_asgn_iface_port;
+	si4			sock_fd;
 	si2			sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
 	NET_PARAMS_m12		np;
 	struct sockaddr_in	sock_addr = { 0 };
@@ -32155,6 +32177,8 @@ TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
+	sys_asgn_iface_addr = sys_asgn_iface_port = FALSE_m12;
+	
 	if (iface_addr == TR_IFACE_ANY_m12) {
 		*trans_info->iface_addr = 0;
 		sys_asgn_iface_addr = TRUE_m12;
@@ -32186,17 +32210,16 @@ TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port)
 
 	// set socket reuse address option
 	#if defined MACOS_m12 || defined LINUX_m12
-	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(si4)) == -1) {
-		G_warning_message_m12("%s: socket option error\n", __FUNCTION__);
-		return(FALSE_m12);
-	}
+	si4	flags;
 	#endif
 	#ifdef WINDOWS_m12
-	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, (char *) &flags, sizeof(si4)) == -1) {
+	si1	flags;
+	#endif
+	flags = 1;
+	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1) {
 		G_warning_message_m12("%s: socket option error\n", __FUNCTION__);
 		return(FALSE_m12);
 	}
-	#endif
 
 	// set socket info
 	si_len = sizeof(struct sockaddr_in);
@@ -32446,7 +32469,6 @@ TERN_m12	TR_connect_to_server_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 d
 	}
 
 	return(TRUE_m12);
-
 }
 
 
@@ -32503,7 +32525,7 @@ void	TR_free_transmission_info_m12(TR_INFO_m12 **trans_info_ptr, TERN_m12 free_s
 
 	free_m12((void *) trans_info->buffer, __FUNCTION__);
 	
-	if (trans_info->expanded_key != NULL)  // don't free password itself - possibly/likely reused memory, tiny leak if not
+	if (trans_info->expanded_key_allocated == TRUE_m12)  // don't free password itself - passed by caller
 		free_m12((void *) trans_info->expanded_key, __FUNCTION__);
 		
 	if (free_structure == TRUE_m12) {
@@ -32513,6 +32535,7 @@ void	TR_free_transmission_info_m12(TR_INFO_m12 **trans_info_ptr, TERN_m12 free_s
 		trans_info->buffer = NULL;
 		trans_info->buffer_bytes = 0;
 		trans_info->expanded_key = NULL;
+		trans_info->expanded_key_allocated = FALSE_m12;
 	}
 
 	return;
@@ -32541,12 +32564,12 @@ void	TR_realloc_trans_info_m12(TR_INFO_m12 *trans_info, si8 buffer_bytes, TR_HEA
 si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_header)
 {
 	extern si4	errno;
-	TERN_m12	key_received;
-	ui1		*data, *pkt, *partial_pkt, *ui1_p;
-	ui2		data_bytes, max_pkt_bytes;
+	TERN_m12	password_passed, acknowledge;
+	ui1		*data, *pkt, *partial_pkt;
+	ui2		max_pkt_bytes;
 	ui4		ID_code;
-	si4		i, sock_fd, encryption_blocks, attempts, curr_timeout;
-	si8		data_bytes_received, ret_val, packet_bytes_remaining;
+	si4		sock_fd, attempts, curr_timeout;
+	si8		data_bytes, data_bytes_received, ret_val, packet_bytes_remaining;
 	TR_HEADER_m12	*header, *pkt_header, *ack_header;
 	TR_INFO_m12	*ack_trans_info;
 
@@ -32573,39 +32596,17 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 	pkt = malloc((size_t) max_pkt_bytes);
 	pkt_header = (TR_HEADER_m12 *) pkt;
 	pkt_header->transmission_bytes = 0;
-
-	// encryption
-	if (header->flags & TR_FLAGS_ENCRYPT_m12) {
-		if (trans_info->expanded_key == NULL) {
-			if (trans_info->password == NULL) {
-				G_warning_message_m12("%s(): no password or expanded key => cannot decrypt transmission\n", __FUNCTION__);
-				return(TR_ERR_UNSPECIFIED_m12);
-			}
-			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			AES_key_expansion_m12(trans_info->expanded_key, trans_info->password);
-		}
-	}
-	
-	// acknowledge
-	if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
-		ack_trans_info = (TR_INFO_m12 *) calloc((size_t) 1, sizeof(TR_INFO_m12));
-		ack_header = ack_trans_info->header;
-		ack_header->ID_code = ID_code;
-		ack_trans_info->sock_fd = sock_fd;
-	}
 	
 	// receive
 	attempts = 0;
 	data_bytes_received = 0;
-	key_received = FALSE_m12;
+	acknowledge = UNKNOWN_m12;
 	do {
-	TR_RECV_RETRANSMIT_m12:
-		
 		// recv
 		errno = 0;
 		ret_val = recv(sock_fd, (void *) pkt, max_pkt_bytes, 0);
 		
-		// checks
+		// receive checks
 		if (ret_val < TR_HEADER_BYTES_m12) {
 			if (ret_val == 0) {
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
@@ -32624,14 +32625,38 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			}
 			goto TR_RECV_FAIL_m12;
 		}
+
+		// keep alive
+		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12) {  // keep alive check
+			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)  // 1st check
+				if (pkt_header->type_2 == TR_TYPE_KEEP_ALIVE_m12)  // 2nd check
+					if (pkt_header->version == TR_TYPE_KEEP_ALIVE_m12)  // 3rd check
+						continue;  // discard packet
+		}
+		
+		// sender requested acknowledgment
+		if (acknowledge == UNKNOWN_m12) {
+			acknowledge = FALSE_m12;
+			if (header->flags & TR_FLAGS_UDP_m12) {  // TCP has built in acknowledgment
+				if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
+					acknowledge = TRUE_m12;
+					ack_trans_info = (TR_INFO_m12 *) calloc((size_t) 1, sizeof(TR_INFO_m12));
+					ack_header = ack_trans_info->header;
+					ack_header->ID_code = ID_code;
+					ack_trans_info->sock_fd = sock_fd;
+				}
+			}
+		}
+
 		if (ID_code) {  // ID check (allow any ID code if receiver didn't specify)
 			if (pkt_header->ID_code != ID_code) {
-				if (attempts++ < 3)
+				if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12)
 					continue;
 				data_bytes_received = TR_ERR_ID_MISMATCH_m12;
 				goto TR_RECV_FAIL_m12;
 			}
 		}
+				
 		if (ret_val < (si8) pkt_header->packet_bytes) {
 			// first try to receive rest of packet (shouldn't happen often: inet mss chosen to avoid this)
 			partial_pkt = pkt;
@@ -32651,34 +32676,27 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 
 			// couldn't get full packet
 			if (packet_bytes_remaining > 0) {
-				if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
-					if (pkt_header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
-						if (attempts++ < 3) {
-							ack_header->flags = TR_TYPE_ACK_RETRANSMIT_m12;
-							TR_send_transmission_m12(ack_trans_info);
-							goto TR_RECV_RETRANSMIT_m12;
-						}
-					}
-				} else {
-					G_warning_message_m12("%s(%s:%hu <- %s:%hu): packet size error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
-					data_bytes_received = TR_ERR_TRANS_FAILED_m12;
-					goto TR_RECV_FAIL_m12;
-				}
-			}
-		}
-		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12) {  // keep alive check
-			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)  // 1st check
-				if (pkt_header->type_2 == TR_TYPE_KEEP_ALIVE_m12)  // 2nd check
-					if (pkt_header->version == TR_TYPE_KEEP_ALIVE_m12)  // 3rd check
-						continue;  // discard
-		}
-		if (pkt_header->flags & TR_FLAGS_CRC_m12) {  // CRC check
-			if (CRC_validate_m12(pkt + CRC_BYTES_m12, pkt_header->packet_bytes - CRC_BYTES_m12, pkt_header->crc) == FALSE_m12) {
-				if (pkt_header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
-					if (attempts++ < 3) {
+				if (acknowledge == TRUE_m12) {
+					if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12) {
 						ack_header->flags = TR_TYPE_ACK_RETRANSMIT_m12;
 						TR_send_transmission_m12(ack_trans_info);
-						goto TR_RECV_RETRANSMIT_m12;
+						continue;
+					}
+				}
+				G_warning_message_m12("%s(%s:%hu <- %s:%hu): packet size error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
+				data_bytes_received = TR_ERR_TRANS_FAILED_m12;
+				goto TR_RECV_FAIL_m12;
+			}
+		}
+		
+		// CRC
+		if (pkt_header->flags & TR_FLAGS_CRC_m12) {
+			if (CRC_validate_m12(pkt + CRC_BYTES_m12, pkt_header->packet_bytes - CRC_BYTES_m12, pkt_header->crc) == FALSE_m12) {
+				if (acknowledge == TRUE_m12) {
+					if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12) {
+						ack_header->type = TR_TYPE_ACK_RETRANSMIT_m12;
+						TR_send_transmission_m12(ack_trans_info);
+						continue;
 					}
 				}
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): packet CRC error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
@@ -32687,36 +32705,17 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			}
 		}
 		
-		// acknowledge
-		if (pkt_header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
+		if (acknowledge == TRUE_m12) {
 			ack_header->type = TR_TYPE_ACK_OK_m12;
 			TR_send_transmission_m12(ack_trans_info);
 		}
 		
-		// get key
-		if (pkt_header->flags & TR_FLAGS_INCLUDE_KEY_m12 && key_received == FALSE_m12) {
-			if (trans_info->expanded_key == NULL)
-				trans_info->expanded_key = malloc_m12(ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			memcpy(trans_info->expanded_key, trans_info->data, ENCRYPTION_KEY_BYTES_m12);
-			key_received = TRUE_m12;
-		}
-		
-		// decrypt
-		data_bytes = pkt_header->packet_bytes - (ui2) TR_HEADER_BYTES_m12;
-		if (pkt_header->flags & TR_FLAGS_ENCRYPT_m12) {
-			ui1_p = pkt + TR_HEADER_BYTES_m12;  // (encryption does not include header)
-			encryption_blocks = data_bytes / ENCRYPTION_BLOCK_BYTES_m12;
-			for (i = 0; i < encryption_blocks; ++i) {
-				AES_decrypt_m12(ui1_p, ui1_p, NULL, trans_info->expanded_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
-		}
-
 		// realloc
 		if (pkt_header->transmission_bytes > trans_info->buffer_bytes)
 			TR_realloc_trans_info_m12(trans_info, pkt_header->transmission_bytes, &header);
 		
 		// move data into place
+		data_bytes = (si8) (pkt_header->packet_bytes - (ui2) TR_HEADER_BYTES_m12);
 		memcpy((void *) (data + pkt_header->offset), (void *) (pkt + TR_HEADER_BYTES_m12), (size_t) data_bytes);
 
 		// update
@@ -32725,10 +32724,34 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		
 	} while (data_bytes_received < pkt_header->transmission_bytes);
 	
-	// key included => move data
-	if (key_received == TRUE_m12) {
+	// get key
+	if (pkt_header->flags & TR_FLAGS_INCLUDE_KEY_m12) {
+		if (trans_info->expanded_key == NULL) {
+			trans_info->expanded_key = malloc_m12(ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			trans_info->expanded_key_allocated = TRUE_m12;
+		}
+		pkt_header->transmission_bytes -= ENCRYPTION_KEY_BYTES_m12;
 		data_bytes_received -= ENCRYPTION_KEY_BYTES_m12;
-		memmove(trans_info->data, trans_info->data + ENCRYPTION_KEY_BYTES_m12, data_bytes_received);
+		memcpy((void *) trans_info->expanded_key, (void *) (trans_info->data + pkt_header->transmission_bytes), (size_t) ENCRYPTION_KEY_BYTES_m12);
+		AES_leftover_decrypt_m12(ENCRYPTION_KEY_BYTES_m12, trans_info->expanded_key);
+	}
+
+	// decrypt
+	if (pkt_header->flags & TR_FLAGS_ENCRYPT_m12) {
+		if (trans_info->expanded_key == NULL) {
+			password_passed = FALSE_m12;
+			if (trans_info->password != NULL)
+				if (*trans_info->password)
+					password_passed = TRUE_m12;
+			if (password_passed == FALSE_m12) {
+				G_warning_message_m12("%s(): no password or expanded key => cannot decrypt transmission\n", __FUNCTION__);
+				return(TR_ERR_UNSPECIFIED_m12);
+			}
+			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			trans_info->expanded_key_allocated = TRUE_m12;
+			AES_key_expansion_m12(trans_info->expanded_key, trans_info->password);
+		}
+		AES_decrypt_m12(trans_info->data, data_bytes_received, NULL, trans_info->expanded_key);
 	}
 					       
 TR_RECV_FAIL_m12:
@@ -32740,8 +32763,7 @@ TR_RECV_FAIL_m12:
 	header->offset = 0;
 
 	// reset encryption flags
-	header->flags &= ~TR_FLAGS_ENCRYPT_m12;
-	header->flags &= ~TR_FLAGS_INCLUDE_KEY_m12;
+	header->flags &= ~(TR_FLAGS_ENCRYPT_m12 | TR_FLAGS_INCLUDE_KEY_m12);
 	
 	// close on request or error
 	if (data_bytes_received < 0 || header->flags & TR_FLAGS_CLOSE_m12) {
@@ -32751,7 +32773,7 @@ TR_RECV_FAIL_m12:
 	
 	// clean up
 	free((void *) pkt);
-	if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12)
+	if (acknowledge == TRUE_m12)
 		free((void *) ack_trans_info);
 	
 	return(data_bytes_received);
@@ -32807,12 +32829,12 @@ TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt
 
 si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NULL if not encypting
 {
-	TERN_m12	non_destructive = FALSE_m12;
-	ui1		*buffer, *data, *ui1_p;
-	ui2		data_bytes, packet_bytes, max_pkt_data_bytes;
-	si4		i, sock_fd, encryption_blocks, attempts;
-	si8		ret_val, data_bytes_sent, saved_data_bytes_sent, data_bytes_remaining, bytes_received;
-	TR_HEADER_m12	*header, *pkt_header, *ack_header;
+	TERN_m12	password_passed, acknowledge;
+	ui1		*buffer, *data;
+	ui2		data_bytes, packet_bytes;
+	si4		sock_fd, attempts;
+	si8		ret_val, data_bytes_sent, data_bytes_remaining, bytes_received, actual_data_bytes;
+	TR_HEADER_m12	*header, *pkt_header, *ack_header, saved_data;
 	TR_INFO_m12	*ack_trans_info;
 	
 #ifdef FN_DEBUG_m12
@@ -32841,78 +32863,63 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 	// encryption
 	if (header->flags & TR_FLAGS_ENCRYPT_m12) {
 		if (trans_info->expanded_key == NULL) {
-			if (trans_info->password == NULL) {
+			password_passed = FALSE_m12;
+			if (trans_info->password != NULL)
+				if (*trans_info->password)
+					password_passed = TRUE_m12;
+			if (password_passed == FALSE_m12) {
 				G_warning_message_m12("%s(): no password or expanded key => cannot encrypt transmission\n", __FUNCTION__);
 				return(TR_ERR_UNSPECIFIED_m12);
 			}
-			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			trans_info->expanded_key_allocated = TRUE_m12;
 			AES_key_expansion_m12(trans_info->expanded_key, trans_info->password);
 		}
 	}
 	
 	// include key
+	actual_data_bytes = header->transmission_bytes;  // save this value for encryption
 	if (header->flags & TR_FLAGS_INCLUDE_KEY_m12) {
+		TR_realloc_trans_info_m12(trans_info, header->transmission_bytes + ENCRYPTION_KEY_BYTES_m12, &header);
+		memcpy((void *) (trans_info->data + header->transmission_bytes), (void *) trans_info->expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m12);
+		AES_leftover_encrypt_m12(ENCRYPTION_KEY_BYTES_m12, trans_info->data + header->transmission_bytes);
 		header->transmission_bytes += ENCRYPTION_KEY_BYTES_m12;
-		TR_realloc_trans_info_m12(trans_info, header->transmission_bytes, &header);
-		memcpy(trans_info->data, trans_info->expanded_key, ENCRYPTION_KEY_BYTES_m12);
-		
 	}
 	
-	// non-destructive send
-	non_destructive = FALSE_m12;
-	max_pkt_data_bytes = trans_info->mss;
-	if (header->flags & TR_FLAGS_NO_DESTRUCT_m12) {
-		if (header->flags & TR_FLAGS_ENCRYPT_m12)
-			non_destructive = TRUE_m12;
-		else if (header->transmission_bytes > max_pkt_data_bytes)
-			non_destructive = TRUE_m12;
-		if (non_destructive == TRUE_m12) {
-			buffer = (ui1 *) malloc((size_t) max_pkt_data_bytes + TR_HEADER_BYTES_m12);
-			data = buffer + TR_HEADER_BYTES_m12;
-		}
-	}
+	// encrypt
+	if (header->flags & TR_FLAGS_ENCRYPT_m12)
+		AES_encrypt_m12(data, actual_data_bytes, NULL, trans_info->expanded_key);
 	
 	// acknowledge
-	if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
+	acknowledge = FALSE_m12;
+	if (header->flags & TR_FLAGS_UDP_m12)  // TCP has built in acknowledgment
+		if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12)
+			acknowledge = TRUE_m12;
+	if (acknowledge == TRUE_m12) {
 		ack_trans_info = (TR_INFO_m12 *) calloc((size_t) 1, sizeof(TR_INFO_m12));
 		ack_header = ack_trans_info->header;
 		ack_header->ID_code = header->ID_code;
 		ack_trans_info->sock_fd = sock_fd;
-		ack_trans_info->timeout_secs = 2;
+		ack_trans_info->timeout_secs = 2;  // wait 2 seconds for acknowledgment
 	}
-	
+		
 	// transmit
 	data_bytes_sent = 0;
 	data_bytes_remaining = header->transmission_bytes;
 	do {
-		if (data_bytes_remaining > max_pkt_data_bytes)
-			data_bytes = max_pkt_data_bytes;
+		if (data_bytes_remaining > trans_info->mss)
+			data_bytes = trans_info->mss;
 		else
 			data_bytes = (ui2) data_bytes_remaining;
 		packet_bytes = data_bytes + (ui2) TR_HEADER_BYTES_m12;
 
-		// non-destructive
-		if (non_destructive == TRUE_m12) {
-			if (data_bytes_sent) {
-				memcpy((void *) (buffer + TR_HEADER_BYTES_m12), (void *) (trans_info->data + data_bytes_sent), (size_t) data_bytes);
-			}
-			saved_data_bytes_sent = data_bytes_sent;
-			data_bytes_sent = 0;
-		}
-		
-		// encrypt
-		if (header->flags & TR_FLAGS_ENCRYPT_m12) {
-			ui1_p = data + data_bytes_sent;  // (does not include header)
-			encryption_blocks = data_bytes / ENCRYPTION_BLOCK_BYTES_m12;
-			for (i = 0; i < encryption_blocks; ++i) {
-				AES_encrypt_m12(ui1_p, ui1_p, NULL, trans_info->expanded_key);
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m12;
-			}
-		}
-		
 		// set packet header
 		pkt_header = (TR_HEADER_m12 *) (buffer + data_bytes_sent);
-		*pkt_header = *header;
+		if (data_bytes_sent) {
+			if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)  // preserve data in header region
+				saved_data = *pkt_header;
+			*pkt_header = *header;
+		}
 		pkt_header->packet_bytes = packet_bytes;
 		pkt_header->offset = data_bytes_sent;
 		
@@ -32940,7 +32947,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		}
 
 		// acknowledge
-		if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12) {
+		if (acknowledge == TRUE_m12) {
 			TR_set_socket_timeout_m12(ack_trans_info);
 			attempts = 0; do {
 				bytes_received = TR_recv_transmission_m12(ack_trans_info, NULL);
@@ -32948,7 +32955,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 					continue;
 				if (ack_header->type == TR_TYPE_ACK_RETRANSMIT_m12)
 					goto TR_SEND_RETRANSMIT_m12;
-			} while (header->type != TR_TYPE_ACK_OK_m12 && attempts++ < 3);
+			} while (header->type != TR_TYPE_ACK_OK_m12 && attempts++ < TR_RETRANSMIT_ATTEMPTS_m12);
 			
 			if (ack_header->type != TR_TYPE_ACK_OK_m12) {
 				G_warning_message_m12("%s(): send not acknowledged\n", __FUNCTION__);
@@ -32959,12 +32966,14 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 			TR_set_socket_timeout_m12(trans_info);  // reset timeout
 		}
 		
-		// non-destructive reset
-		if (non_destructive == TRUE_m12)
-			data_bytes_sent = saved_data_bytes_sent;
-		
+		// restore data in header region
+		if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)
+			if (data_bytes_sent)
+				*pkt_header = saved_data;
+				
 		data_bytes_sent += (si8) data_bytes;
 		data_bytes_remaining -= (si8) data_bytes;
+		
 	} while (data_bytes_remaining);
 	
 TR_SEND_FAIL:
@@ -32975,8 +32984,7 @@ TR_SEND_FAIL:
 	header->offset = 0;
 
 	// reset encryption flags
-	header->flags &= ~TR_FLAGS_ENCRYPT_m12;
-	header->flags &= ~TR_FLAGS_INCLUDE_KEY_m12;
+	header->flags &= ~(TR_FLAGS_ENCRYPT_m12 | TR_FLAGS_INCLUDE_KEY_m12);
 	
 	// close
 	if (header->flags & TR_FLAGS_CLOSE_m12) {
@@ -32985,10 +32993,13 @@ TR_SEND_FAIL:
 	}
 	
 	// clean up
-	if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12)
+	if (acknowledge == TRUE_m12)
 		free((void *) ack_trans_info);
-	if (non_destructive == TRUE_m12)
-		free((void *) buffer);
+	
+	// decrypt for non destructive mode
+	// note: faster to copy & substitute buffer than decrypt after transmitting, but may cause memory issue for large transmissions & this mode is rarely necessary)
+	if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)
+		AES_decrypt_m12(data, actual_data_bytes, NULL, trans_info->expanded_key);
 	
 	return(data_bytes_sent);
 }
@@ -33076,6 +33087,26 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 	else
 		printf_m12("Buffer: allocated\n");
 	printf_m12("Buffer Bytes: %ld\n", trans_info->buffer_bytes);
+	if (trans_info->data == trans_info->buffer + TR_HEADER_BYTES_m12)
+		printf_m12("Data: set\n");
+	else
+		printf_m12("Data: not set\n");
+	if (trans_info->password == NULL)
+		printf_m12("Password: NULL\n");
+	else if (*trans_info->password == 0)
+		printf_m12("Password: empty\n");
+	else
+		printf_m12("Password: %s\n", trans_info->password);
+	if (trans_info->expanded_key == NULL)
+		printf_m12("Expanded Key: NULL\n");
+	else
+		printf_m12("Expanded Key: set\n");
+	if (trans_info->expanded_key_allocated == TRUE_m12)
+		printf_m12("Expanded Key Allocated: true\n");
+	if (trans_info->expanded_key_allocated == FALSE_m12)
+		printf_m12("Expanded Key Allocated: false\n");
+	else
+		printf_m12("Expanded Key Allocated: not set\n");
 	printf_m12("Socket File Descriptor: %d\n", trans_info->sock_fd);
 	if (*trans_info->dest_addr == 0)
 		printf_m12("Destination Address: any\n");
@@ -33093,13 +33124,23 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("Interface Port: any\n");
 	else
 		printf_m12("Interface Port: %hu\n", trans_info->iface_port);
+	if (trans_info->timeout_secs == 0)
+		printf_m12("Timeout (seconds): never\n");
+	else
+		printf_m12("Timeout (seconds): %d\n", trans_info->timeout_secs);
+	if (trans_info->mss == 0)
+		printf_m12("Maximum Segment Size (bytes): not set\n");
+	else
+		printf_m12("Maximum Segment Size (bytes): %hu\n", trans_info->mss);
 	printf_m12("--------------- Transmission Info - END -------------\n");
-
+	
 	// header
-	if (trans_info->buffer == NULL)
-		return;
 	printf_m12("-------------- Transmission Header - START ------------\n");
 	header = trans_info->header;
+	if (header == NULL) {
+		printf_m12("Header not set\n--------------- Transmission Header - END -------------\n");
+		return;
+	}
 	if (header->crc == CRC_NO_ENTRY_m12) {
 		printf_m12("CRC: no entry\n");
 	} else {
@@ -33118,6 +33159,10 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("Type: %hhu (no entry)\n", header->type);
 	else
 		printf_m12("Type: %hhu\n", header->type);
+	if (header->type_2 == TR_TYPE_NO_ENTRY_m12)
+		printf_m12("Type 2: %hhu (no entry)\n", header->type_2);
+	else
+		printf_m12("Type 2: %hhu\n", header->type_2);
 	if (header->version == TR_VERSION_NO_ENTRY_m12)
 		printf_m12("Version: %hhu (no entry)\n", header->version);
 	else
