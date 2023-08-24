@@ -34219,9 +34219,9 @@ si4	WN_system_m12(si1 *command)  // Windows has a system() function which works 
 #endif
 	
 #ifdef WINDOWS_m12
-	si1			*c, *tmp_command;
+	si1			*tmp_command;
 	si1			*cmd_exe_path;
-	si4			i, ret_val;
+	si4			ret_val;
 	si8			len;
 	PROCESS_INFORMATION	process_info = {0};
 	STARTUPINFOA		startup_info = {0};
@@ -34233,19 +34233,15 @@ si4	WN_system_m12(si1 *command)  // Windows has a system() function which works 
 	tmp_command[1] = 0x63;  // 'c'
 	tmp_command[2] = 0x20;  // <space>
 	
-	// if command contains any double quotes, surround the whole command in another set of double quotes
-	c = command;
-	for (i = len; i--;)
-		if (*c++ == 0x22)  // <double quote>
-			break;
-	if (i < 0) {
-		memcpy(tmp_command + 3, command, len + 1);
-	} else {
+	// if first charactr is a double quote, surround the whole command in another set of double quotes
+	if (command[0] == 0x22) {
 		tmp_command = malloc(len + 6);
 		tmp_command[3] = 0x22;  // <double quote>
 		memcpy(tmp_command + 4, command, len);
 		tmp_command[len + 4] = 0x22;  // <double quote>
 		tmp_command[len + 5] = 0;  // <terminal zero>
+	} else {
+		memcpy(tmp_command + 3, command, len + 1);
 	}
 
 	startup_info.cb = sizeof(STARTUPINFOA);
