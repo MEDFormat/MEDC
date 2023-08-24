@@ -1331,7 +1331,7 @@ TERN_m12	G_check_file_system_m12(si1 *file_system_path, si4 is_cloud, ...)  // v
 	sprintf(command, "rm \"%s/test_file-remove_me\"", full_path);
 	#endif
 	#ifdef WINDOWS_m12
-	sprintf(command, "del \"%s/test_file-remove_me\"", full_path);
+	sprintf(command, "del \"%s\\test_file-remove_me\"", full_path);
 	#endif
 	system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 
@@ -32983,8 +32983,16 @@ TR_SEND_FAIL:
 	header->packet_bytes = 0;
 	header->offset = 0;
 
-	// reset encryption flags
-	header->flags &= ~(TR_FLAGS_ENCRYPT_m12 | TR_FLAGS_INCLUDE_KEY_m12);
+	// decrypt for non destructive mode
+	// note: faster to copy & substitute buffer than decrypt after transmitting, but may cause memory issue for large transmissions & this mode is rarely necessary)
+	if (header->flags & TR_FLAGS_ENCRYPT_m12) {
+		if (header->flags & TR_FLAGS_NO_DESTRUCT_m12) {
+			AES_decrypt_m12(data, actual_data_bytes, NULL, trans_info->expanded_key);
+			header->flags &= ~TR_FLAGS_NO_DESTRUCT_m12;
+		}
+		// reset encryption flags
+		header->flags &= ~(TR_FLAGS_ENCRYPT_m12 | TR_FLAGS_INCLUDE_KEY_m12);
+	}
 	
 	// close
 	if (header->flags & TR_FLAGS_CLOSE_m12) {
@@ -32995,11 +33003,6 @@ TR_SEND_FAIL:
 	// clean up
 	if (acknowledge == TRUE_m12)
 		free((void *) ack_trans_info);
-	
-	// decrypt for non destructive mode
-	// note: faster to copy & substitute buffer than decrypt after transmitting, but may cause memory issue for large transmissions & this mode is rarely necessary)
-	if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)
-		AES_decrypt_m12(data, actual_data_bytes, NULL, trans_info->expanded_key);
 	
 	return(data_bytes_sent);
 }
@@ -34211,11 +34214,13 @@ si4	WN_system_m12(si1 *command)  // Windows has a system() function which works 
 
 	
 	len = strlen(command);
-	tmp_command = malloc(len + 4);
+	tmp_command = malloc(len + 6);
 	tmp_command[0] = 0x2F;  // '/'
 	tmp_command[1] = 0x63;  // 'c'
-	tmp_command[2] = 0x20;  // <space>;
-	memcpy(tmp_command + 3, command, len + 1);
+	tmp_command[2] = 0x20;  // <space>
+	tmp_command[3] = 0x22;  // <double quote> (surround whole command in double quotes, even if it has internal quotes)
+	memcpy(tmp_command + 4, command, len + 1);
+	tmp_command[len + 4] = 0x22;  // <double quote> (surround whole command in double quotes, even if it has internal quotes)
 	
 	startup_info.cb = sizeof(STARTUPINFOA);
 	cmd_exe_path = getenv("COMSPEC");
@@ -34315,7 +34320,7 @@ void	WN_windify_file_paths_m12(si1 *target, si1 *source)
 	else if (target != source)
 		strcpy(target, source);
 
-	// Replace all '/' in string except if escaped ("\/" -> note if in string literal, you have to escape the escae "\\/"), or part of "://"
+	// Replace all '/' in string except if escaped ("\/" -> note if in string literal, you have to escape the escape "\\/"), or part of "://"
 
 	c1 = c2 = target;
 	while (*c2) {
@@ -35736,7 +35741,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 	if (null_std_streams == TRUE_m12) {
 		len = strlen(command);
 		temp_command = malloc(len + (FULL_FILE_NAME_BYTES_m12 * 2) + 9);
-		sprintf_m12(temp_command, "%s 1> %s 2> %s", command, NULL_DEVICE_m12, NULL_DEVICE_m12);
+		sprintf(temp_command, "%s 1> %s 2> %s", command, NULL_DEVICE_m12, NULL_DEVICE_m12);  // don't use sprintf_m12() here - can screw up Windows options
 		command = temp_command;
 	}
 	
