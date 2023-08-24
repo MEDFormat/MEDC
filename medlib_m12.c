@@ -23721,6 +23721,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 			G_warning_message_m12("%s(): invalid extents limits (DM_EXTMD_ABSOLUTE_LIMITS_m12 or DM_EXTMD_RELATIVE_LIMITS_m12) => returning\n", __FUNCTION__);
 			return(NULL);
 	}
+
 	req_slice->start_sample_number = req_slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;  // all extents now changed to time (for variable frequency channels)
 	if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12 || changed_to_relative == TRUE_m12)  // force re-evaluation of segment range for relative modes
 		req_slice->number_of_segments = UNKNOWN_m12;
@@ -28329,7 +28330,7 @@ void	HW_get_cpu_info_m12(void)
 #endif  // WINDOWS_m12
 	
 	HW_get_machine_serial_m12(cpu_info->machine_serial);
-	
+
 	return;
 	
 }
@@ -28385,7 +28386,7 @@ si1	*HW_get_machine_serial_m12(si1 *machine_sn)
 	system_m12(command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	file_length = G_file_length_m12(fp, NULL);
-	buf = calloc((size_t) file_length, sizeof(si1));
+	buf = malloc((size_t) file_length);
 	fread_m12((void *) buf, sizeof(si1), (size_t) file_length, fp, globals_m12->temp_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	fclose(fp);
 
@@ -28404,10 +28405,15 @@ si1	*HW_get_machine_serial_m12(si1 *machine_sn)
 #endif
 
 	// copy machine serial number
-	len = strlen(local_machine_sn) + 1;
+	len = 1;
+	if (local_machine_sn != NULL)
+		len += strlen(local_machine_sn);
 	if (machine_sn == NULL)
 		machine_sn = (si1 *) malloc_m12((size_t) len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	strcpy(machine_sn, local_machine_sn);
+	if (local_machine_sn == NULL)
+		*machine_sn = 0;
+	else
+		strcpy(machine_sn, local_machine_sn);
 
 	free(buf);
 	
@@ -30273,19 +30279,22 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 		pthread_attr_setdetachstate(&thread_attributes, PTHREAD_CREATE_DETACHED);
 
 # ifdef LINUX_m12
-	cpu_set_t_m12 	local_cpu_set;
+	TERN_m12	free_cpu_set = FALSE_m12;
 	
 	// generate affinity
 	if (affinity_str != NULL) {
 		if (*affinity_str) {
-			if (cpu_set_p == NULL)  // caller did't supply cpu set
-				cpu_set_p = &local_cpu_set;
-			PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
+			if (cpu_set_p == NULL)  // PROC_generate_cpu_set_m12() will allocate
+				free_cpu_set = TRUE_m12;
+			cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 		}
 	}
 	// set affinity
-	if (cpu_set_p != NULL)
+	if (cpu_set_p != NULL) {
 		PROC_set_thread_affinity_m12(NULL, &thread_attributes, cpu_set_p, TRUE_m12);
+		if (free_cpu_set == TRUE_m12)
+			free((void *) cpu_set_p);
+	}
 # endif  // LINUX_m12
 
 	// start thread
@@ -30309,6 +30318,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 #ifdef WINDOWS_m12
 ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m12 *cpu_set_p, TERN_m12 detached, si1 *thread_name)
 {
+	TERN_m12	free_cpu_set;
 	HANDLE		*thread_hp, local_thread_h;
 	ui4		thread_id;
 	wchar_t		w_thread_name[THREAD_NAME_BYTES_m12];
@@ -30354,15 +30364,19 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	}
 	
 	// Set Affinity
+	free_cpu_set = FALSE_m12;
 	if (affinity_str != NULL) {
 		if (*affinity_str) {
 			if (cpu_set_p == NULL)
-				cpu_set_p = &local_cpu_set_p;
-			PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
+				free_cpu_set = TRUE_m12;  // PROC_generate_cpu_set_m12() will allocate
+			cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 		}
 	}
-	if (cpu_set_p != NULL)
+	if (cpu_set_p != NULL) {
 		PROC_set_thread_affinity_m12(thread_hp, NULL, cpu_set_p, TRUE_m12);
+		if (free_cpu_set == TRUE_m12)
+			free((void *) cpu_set_p);
+	}
 	
 	// set thread name
 	if (thread_name != NULL) {
@@ -30374,11 +30388,11 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	
 	// start thread
 	ResumeThread(*thread_hp);
-	
+
 	// detach thread
 	if (detached == TRUE_m12)
 		CloseHandle(*thread_hp);
-
+	
 	return(thread_id);  // zero indicates failure
 }
 #endif  // WINDOWS_m12
@@ -34205,9 +34219,9 @@ si4	WN_system_m12(si1 *command)  // Windows has a system() function which works 
 #endif
 	
 #ifdef WINDOWS_m12
-	si1			*tmp_command;
+	si1			*c, *tmp_command;
 	si1			*cmd_exe_path;
-	si4			ret_val;
+	si4			i, ret_val;
 	si8			len;
 	PROCESS_INFORMATION	process_info = {0};
 	STARTUPINFOA		startup_info = {0};
@@ -34218,10 +34232,22 @@ si4	WN_system_m12(si1 *command)  // Windows has a system() function which works 
 	tmp_command[0] = 0x2F;  // '/'
 	tmp_command[1] = 0x63;  // 'c'
 	tmp_command[2] = 0x20;  // <space>
-	tmp_command[3] = 0x22;  // <double quote> (surround whole command in double quotes, even if it has internal quotes)
-	memcpy(tmp_command + 4, command, len + 1);
-	tmp_command[len + 4] = 0x22;  // <double quote> (surround whole command in double quotes, even if it has internal quotes)
 	
+	// if command contains any double quotes, surround the whole command in another set of double quotes
+	c = command;
+	for (i = len; i--;)
+		if (*c++ == 0x22)  // <double quote>
+			break;
+	if (i < 0) {
+		memcpy(tmp_command + 3, command, len + 1);
+	} else {
+		tmp_command = malloc(len + 6);
+		tmp_command[3] = 0x22;  // <double quote>
+		memcpy(tmp_command + 4, command, len);
+		tmp_command[len + 4] = 0x22;  // <double quote>
+		tmp_command[len + 5] = 0;  // <terminal zero>
+	}
+
 	startup_info.cb = sizeof(STARTUPINFOA);
 	cmd_exe_path = getenv("COMSPEC");
 	_flushall();  // required for Windows system() calls, probably a good idea here too
