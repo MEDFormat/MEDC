@@ -34227,15 +34227,19 @@ si4	WN_system_m12(si1 *command)  // Windows has a system() function which works 
 	STARTUPINFOA		startup_info = {0};
 
 	
+	if (command == NULL)
+		return(-1);
+	if (*command == 0)
+		return(-1);
+
 	len = strlen(command);
 	tmp_command = malloc(len + 6);
 	tmp_command[0] = 0x2F;  // '/'
 	tmp_command[1] = 0x63;  // 'c'
 	tmp_command[2] = 0x20;  // <space>
 	
-	// if first charactr is a double quote, surround the whole command in another set of double quotes
-	if (command[0] == 0x22) {
-		tmp_command = malloc(len + 6);
+	
+	if (command[0] == 0x22) {  // if first character is a double quote, surround the whole command in another set of double quotes (e.g. if path to utility contains a space [e.g. "Program Files"])
 		tmp_command[3] = 0x22;  // <double quote>
 		memcpy(tmp_command + 4, command, len);
 		tmp_command[len + 4] = 0x22;  // <double quote>
