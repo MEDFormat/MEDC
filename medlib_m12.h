@@ -3211,7 +3211,7 @@ si4		UTF8_hex_digit_m12(si1 c);  // utility predicates used by the above
 void		UTF8_inc_m12(si1 *s, si4 *i);  // move to next character
 TERN_m12	UTF8_initialize_tables_m12(void);
 si4		UTF8_is_locale_utf8_m12(si1 *locale);  // boolean function returns if locale is UTF-8, 0 otherwise
-TERN_m12	UTF8_is_valid_m12(si1 *string);
+TERN_m12	UTF8_is_valid_m12(si1 *string, TERN_m12 zero_invalid, si1 *field_name);
 si1		*UTF8_memchr_m12(si1 *s, ui4 ch, size_t sz, si4 *char_num);  // same as the above, but searches a buffer of a given size instead of a NUL-terminated string.
 ui4		UTF8_next_char_m12(si1 *s, si4* i);  // return next character, updating an index variable
 si4		UTF8_octal_digit_m12(si1 c);  // utility predicates used by the above

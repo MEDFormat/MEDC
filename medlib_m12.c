@@ -11266,7 +11266,7 @@ si4	G_segment_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_time)
 
 void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name)
 {
-	TERN_m12	include_cc = TRUE_m12;
+	TERN_m12	include_cc;
 	si1     	command[2048], escaped_content[2048];
 	
 #ifdef FN_DEBUG_m12
@@ -11281,18 +11281,38 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 		G_warning_message_m12("%s(): key is empty => returning\n");
 		return;
 	}
-
-	if (content != NULL) {
-		if (*content)
-			STR_re_escape_m12(content, escaped_content);
-	} else {
-		content = " ";  // sendgrid requires at least one character
+	if (to_email == NULL) {
+		G_warning_message_m12("%s(): to_email is NULL => returning\n");
+		return;
 	}
-	
+	if (*to_email == 0) {
+		G_warning_message_m12("%s(): to_email is empty => returning\n");
+		return;
+	}
+	include_cc = TRUE_m12;
 	if (cc_email == NULL)
 		include_cc = FALSE_m12;
 	else if (*cc_email == 0)
 		include_cc = FALSE_m12;
+	if (to_name == NULL)
+		to_name = "";
+	if (subject == NULL)
+		subject = "";
+	if (content == NULL)
+		content = "";
+	if (*content)
+		STR_re_escape_m12(content, escaped_content);
+	else
+		content = " ";  // sendgrid requires at least one character
+	if (from_email == NULL)
+		from_email = "";
+	if (from_name == NULL)
+		from_name = "";
+	if (reply_to_email == NULL)
+		reply_to_email = "";
+	if (reply_to_name == NULL)
+		reply_to_name = "";
+
 
 #if defined MACOS_m12 || defined LINUX_m12
 	if (include_cc == TRUE_m12)
@@ -13231,6 +13251,22 @@ void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	if (phone_number == NULL) {
+		G_warning_message_m12("%s(): phone number is NULL => returning\n");
+		return;
+	}
+	if (*phone_number == 0) {
+		G_warning_message_m12("%s(): phone number is empty => returning\n");
+		return;
+	}
+	if (content == NULL) {
+		G_warning_message_m12("%s(): content is NULL => returning\n");
+		return;
+	}
+	if (*content == 0) {
+		G_warning_message_m12("%s(): content is empty => returning\n");
+		return;
+	}
 	if (textbelt_key == NULL) {
 		G_warning_message_m12("%s(): key is NULL => returning\n");
 		return;
@@ -16355,8 +16391,7 @@ void    CMP_calculate_statistics_m12(REC_Stat_v10_m12 *stats, si4 *input_buffer,
 				if (running_cnt == mid_idx) {
 					true_median = (sf8) np->val + (sf8) np->next->val;
 					stats->median = CMP_round_si4_m12(true_median);
-				}
-				else {
+				} else {
 					stats->median = np->val;
 				}
 				median_found = 1;
@@ -16365,7 +16400,7 @@ void    CMP_calculate_statistics_m12(REC_Stat_v10_m12 *stats, si4 *input_buffer,
 	}
 	n = (sf8) len;
 	stats->minimum = head.next->val;
-	stats->maximum = head.prev->val;
+	stats->maximum = tail.prev->val;
 	m1 = sum_x / n;
 	stats->mean = CMP_round_si4_m12((sf8) m1);
 	
@@ -22237,14 +22272,13 @@ si8     CMP_ts_sort_m12(si4 *x, si8 len, CMP_NODE_m12 *nodes, CMP_NODE_m12 *head
 	if (nodes == NULL) {
 		nodes = (CMP_NODE_m12 *) calloc_m12((size_t)len, sizeof(CMP_NODE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		free_nodes = TRUE_m12;
-	}
-	else {
+	} else {
 		free_nodes = FALSE_m12;
 	}
 	
 	np = nodes;
 	head->next = tail;
-	head->val = (si4) NAN_SI4_m12;  // This is 0x80000000, but NEG_INF_SI4_m12 (0x80000001) could theoretically fail
+	head->val = (si4) NAN_SI4_m12;  // This is 0x80000000 because NEG_INF_SI4_m12 (0x80000001) could theoretically fail
 	tail->val = (si4) POS_INF_SI4_m12;  // This is 0x7FFFFFFF
 	tail->prev = head;
 	
@@ -22254,8 +22288,7 @@ si8     CMP_ts_sort_m12(si4 *x, si8 len, CMP_NODE_m12 *nodes, CMP_NODE_m12 *head
 		if (new_val == last_node->val) {
 			++last_node->count;
 			continue;
-		}
-		else if (new_val > last_node->val) {
+		} else if (new_val > last_node->val) {
 			for (next_node = last_node->next; new_val > next_node->val; next_node = next_node->next);
 			if (new_val == next_node->val) {
 				++next_node->count;
@@ -22263,8 +22296,7 @@ si8     CMP_ts_sort_m12(si4 *x, si8 len, CMP_NODE_m12 *nodes, CMP_NODE_m12 *head
 				continue;
 			}
 			prev_node = next_node->prev;
-		}
-		else {  // new_val < last_node->val
+		} else {  // new_val < last_node->val
 			for (prev_node = last_node->prev; new_val < prev_node->val; prev_node = prev_node->prev);
 			if (new_val == prev_node->val) {
 				++prev_node->count;
@@ -23964,7 +23996,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		}
 	}
 
-	// wait for threads
+	// wait for channel threads
 	ti = gm_thread_infos;
 	for (i = matrix->channel_count; i--; ++ti)
 		PROC_pthread_join_m12(ti->thread_id, NULL);
@@ -25762,7 +25794,7 @@ si4	FILT_filtfilt_m12(FILT_PROCESSING_STRUCT_m12 *filtps)
 	buf = filtps->buffer;
 	data = filtps->orig_data;
 	
-	// copy data to filt_data with romm for pads
+	// copy data to filt_data with room for pads
 	if (data == filt_data) {  // just shift data by pad_len  [ equivalent: memmove((void *) (filt_data + pad_len), (void *) data, data_len * sizeof(sf8)); ]
 		dp = data + data_len;
 		fdp = dp + pad_len;
@@ -32363,6 +32395,9 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	printf("%s(%d)\n", __FUNCTION__, __LINE__);
+	TR_show_transmission_m12(trans_info);
 
 #if defined MACOS_m12 || defined LINUX_m12
 	shutdown(trans_info->sock_fd, SHUT_RDWR);
@@ -32537,7 +32572,8 @@ void	TR_free_transmission_info_m12(TR_INFO_m12 **trans_info_ptr, TERN_m12 free_s
 	
 	TR_close_transmission_m12(trans_info);
 
-	free_m12((void *) trans_info->buffer, __FUNCTION__);
+	if (trans_info->buffer != NULL)
+		free_m12((void *) trans_info->buffer, __FUNCTION__);
 	
 	if (trans_info->expanded_key_allocated == TRUE_m12)  // don't free password itself - passed by caller
 		free_m12((void *) trans_info->expanded_key, __FUNCTION__);
@@ -32577,12 +32613,17 @@ void	TR_realloc_trans_info_m12(TR_INFO_m12 *trans_info, si8 buffer_bytes, TR_HEA
 
 si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_header)
 {
+#if defined MACOS_m12 || defined LINUX_m12
 	extern si4	errno;
+#endif
+#ifdef WINDOWS_m12
+	si4		errno;
+#endif
 	TERN_m12	password_passed, acknowledge;
 	ui1		*data, *pkt, *partial_pkt;
 	ui2		max_pkt_bytes;
 	ui4		ID_code;
-	si4		sock_fd, attempts, curr_timeout;
+	si4		sock_fd, attempts, curr_timeout, timeout_errno;
 	si8		data_bytes, data_bytes_received, ret_val, packet_bytes_remaining;
 	TR_HEADER_m12	*header, *pkt_header, *ack_header;
 	TR_INFO_m12	*ack_trans_info;
@@ -32611,6 +32652,13 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 	pkt_header = (TR_HEADER_m12 *) pkt;
 	pkt_header->transmission_bytes = 0;
 	
+#if defined MACOS_m12 || defined LINUX_m12
+	timeout_errno = ETIMEDOUT;
+#endif
+#ifdef WINDOWS_m12
+	timeout_errno = WSAETIMEDOUT;
+#endif
+
 	// receive
 	attempts = 0;
 	data_bytes_received = 0;
@@ -32626,11 +32674,14 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
 				data_bytes_received = TR_ERR_SOCK_CLOSED_m12;
 			} else if (ret_val < 0) {
-				if (errno == ETIMEDOUT) {  // timeout
+#ifdef WINDOWS_m12
+				errno = WSAGetLastError();
+#endif
+				if (errno == timeout_errno) {  // timeout
 					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket timed out\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
 					data_bytes_received = TR_ERR_SOCK_TIMED_OUT_m12;
 				} else {
-					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, ret_val);
+					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, errno);
 					data_bytes_received = TR_ERR_SOCK_FAILED_m12;
 				}
 			} else {
@@ -32644,7 +32695,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12) {  // keep alive check
 			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)  // 1st check
 				if (pkt_header->type_2 == TR_TYPE_KEEP_ALIVE_m12)  // 2nd check
-					if (pkt_header->version == TR_TYPE_KEEP_ALIVE_m12)  // 3rd check
+					if (pkt_header->version == TR_VERSION_DEFAULT_m12)  // 3rd check
 						continue;  // discard packet
 		}
 		
@@ -32843,6 +32894,12 @@ TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt
 
 si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NULL if not encypting
 {
+#if defined MACOS_m12 || defined LINUX_m12
+	extern si4	errno;
+#endif
+#ifdef WINDOWS_m12
+	si4		errno;
+#endif
 	TERN_m12	password_passed, acknowledge;
 	ui1		*buffer, *data;
 	ui2		data_bytes, packet_bytes;
@@ -32921,7 +32978,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 	data_bytes_sent = 0;
 	data_bytes_remaining = header->transmission_bytes;
 	do {
-		if (data_bytes_remaining > trans_info->mss)
+		if (data_bytes_remaining > trans_info->mss)  // this is set so 8 byte alignment will be maintained
 			data_bytes = trans_info->mss;
 		else
 			data_bytes = (ui2) data_bytes_remaining;
@@ -32943,12 +33000,17 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		
 		// send
 	TR_SEND_RETRANSMIT_m12:
+		errno = 0;
 		ret_val = send(sock_fd, (void *) pkt_header, packet_bytes, 0);
 		if (ret_val <= 0) {
-			if (ret_val == 0)
+			if (ret_val == 0) {
 				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
-			else
-				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
+			} else {
+#ifdef WINDOWS_m12
+				errno = WSAGetLastError();
+#endif
+				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, errno);
+			}
 			header->flags |= TR_FLAGS_CLOSE_m12;
 			data_bytes_sent = TR_ERR_SOCK_FAILED_m12;
 			goto TR_SEND_FAIL;
@@ -33165,7 +33227,30 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("CRC: %s (%s)\n", header->crc, hex_str);
 	}
 	printf_m12("Packet Bytes: %hu\n", header->packet_bytes);
-	printf_m12("Flags: %hu\n", header->flags);
+	printf_m12("Flags (%hu): ", header->flags);
+	if (header->flags & TR_FLAGS_BIG_ENDIAN_m12)
+		printf_m12("BIG_ENDIAN");
+	else
+		printf_m12("LITTLE_ENDIAN");
+	if (header->flags & TR_FLAGS_UDP_m12)
+		printf_m12(", UDP");
+	else
+		printf_m12(", TCP");
+	if (header->flags & TR_FLAGS_ENCRYPT_m12)
+		printf_m12(", ENCRYPT");
+	if (header->flags & TR_FLAGS_INCLUDE_KEY_m12)
+		printf_m12(", INCLUDE_KEY");
+	if (header->flags & TR_FLAGS_CLOSE_m12)
+		printf_m12(", CLOSE");
+	if (header->flags & TR_FLAGS_ACKNOWLEDGE_m12)
+		printf_m12(", ACKNOWLEDGE");
+	if (header->flags & TR_FLAGS_CRC_m12)
+		printf_m12(", CRC");
+	if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)
+		printf_m12(", NO_DESTRUCT");
+	if (header->flags & TR_FLAGS_TO_FILE_m12)
+		printf_m12(", TO_FILE");
+	printf_m12("\n");
 	if (header->ID_code == TR_ID_CODE_NO_ENTRY_m12) {
 		printf_m12("ID String: no entry\n");
 	} else {
@@ -33432,17 +33517,31 @@ si4     UTF8_is_locale_utf8_m12(si1 *locale)
 }
 
 
-TERN_m12 UTF8_is_valid_m12(si1 *string)
+// medlib addition
+TERN_m12 UTF8_is_valid_m12(si1 *string, TERN_m12 zero_invalid, si1 *field_name)
 {
-	si4	i, cnt;
-	ui1	x;
+	TERN_m12	valid, warn_invalid;
+	si4		i, cnt;
+	ui1		x;
 
 	
+	if (*string == 0)  // common occurrence in MED fields
+		return(TRUE_m12);
+	
+	// if field name passed, warning will be displayed
+	warn_invalid = FALSE_m12;
+	if (field_name != NULL)
+		if (*field_name)
+			warn_invalid = TRUE_m12;
+	
+	valid = TRUE_m12;
 	for (cnt = 0, i = (si4) strlen(string); i--;) {
 		x = (ui1) *string++;
 		if (cnt) {
-			if ((x & 0xC0) != 0x80)  // 0bxx000000 & 0b11000000 == 0b10000000
-				return(FALSE_m12);
+			if ((x & 0xC0) != 0x80) {  // 0bxx000000 & 0b11000000 == 0b10000000
+				valid = FALSE_m12;
+				break;
+			}
 			--cnt;
 		} else {
 			if ((x & 0xE0) == 0xC0)  // 0bxxx00000 & 0b11100000 == 0b11000000
@@ -33451,12 +33550,26 @@ TERN_m12 UTF8_is_valid_m12(si1 *string)
 				cnt = 2;
 			else if ((x & 0xF8) == 0xF0)  // 0bxxxxx000 & 0b11111000 == 0b11110000
 				cnt = 3;
-			else if (x & 0x80)  // 0bx0000000 & 0b10000000 == 0b10000000
-				return(FALSE_m12);
+			else if (x & 0x80) {  // 0bx0000000 & 0b10000000 == 0b10000000
+				valid = FALSE_m12;
+				break;
+			}
 		}
 	}
 	if (cnt)
+		valid = FALSE_m12;
+	
+	if (valid == FALSE_m12) {
+		if (zero_invalid == TRUE_m12)
+			*string = 0;
+		if (warn_invalid == TRUE_m12) {
+			if (zero_invalid == TRUE_m12)
+				G_warning_message_m12("%s(): field \"%s\" is invalid UTF-8 and was zeroed\n", __FUNCTION__, field_name);
+			else
+				G_warning_message_m12("%s(): field \"%s\" is invalid UTF-8\n", __FUNCTION__, field_name);
+		}
 		return(FALSE_m12);
+	}
 
 	return(TRUE_m12);
 }
