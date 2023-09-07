@@ -32396,9 +32396,6 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	printf("%s(%d)\n", __FUNCTION__, __LINE__);
-	TR_show_transmission_m12(trans_info);
-
 #if defined MACOS_m12 || defined LINUX_m12
 	shutdown(trans_info->sock_fd, SHUT_RDWR);
 	close(trans_info->sock_fd);
