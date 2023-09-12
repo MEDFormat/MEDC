@@ -2629,11 +2629,12 @@ ui4     G_file_exists_m12(si1 *path)  // can be used for directories also
 	tmp_path[0] = 0;
 	G_path_from_root_m12(path, tmp_path);
 	
-	errno = 0;
+	errno_reset_m12();
 #if defined MACOS_m12 || defined LINUX_m12
 	err = stat(tmp_path, &sb);
 	if (err == -1) {
-		if (errno == ENOENT)
+		err = errno_m12();
+		if (err == ENOENT)
 			return(DOES_NOT_EXIST_m12);
 		return(FILE_EXISTS_ERROR_m12);
 	} else if (S_ISDIR(sb.st_mode)) {
@@ -2643,7 +2644,8 @@ ui4     G_file_exists_m12(si1 *path)  // can be used for directories also
 #ifdef WINDOWS_m12
 	err = _stat64(tmp_path, &sb);
 	if (err == -1) {
-		if (errno == ENOENT)
+		err = errno_m12();
+		if (err == ENOENT)
 			return(DOES_NOT_EXIST_m12);
 		return(FILE_EXISTS_ERROR_m12);
 	} else if ((sb.st_mode & S_IFMT) == S_IFDIR) {
@@ -27683,6 +27685,8 @@ inline
 #endif
 TERN_m12	FPS_lock_m12(FILE_PROCESSING_STRUCT_m12 *fps, si4 lock_type, const si1 *function, ui4 behavior_on_fail)
 {
+	si4	err;
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -27694,13 +27698,16 @@ TERN_m12	FPS_lock_m12(FILE_PROCESSING_STRUCT_m12 *fps, si4 lock_type, const si1 
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
+	errno_reset_m12();
+	
 	fl.l_type = lock_type;
 	fl.l_whence = SEEK_SET;
 	fl.l_start = 0;
 	fl.l_len = 0;
 	fl.l_pid = getpid();
 	if (fcntl(fps->parameters.fd, F_SETLKW, &fl) == -1) {
-		G_error_message_m12("%s(): fcntl() failed to lock file\n\tsystem error: %s (# %d)\n\tcalled from function %s()\n", __FUNCTION__, strerror(errno), errno, function);
+		err = errno_m12();
+		G_error_message_m12("%s(): fcntl() failed to lock file\n\tsystem error: %s (# %d)\n\tcalled from function %s()\n", __FUNCTION__, strerror(err), err, function);
 		return(-1);
 	}
 #endif
@@ -27825,7 +27832,7 @@ TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 
 	si1		*mode, path[FULL_FILE_NAME_BYTES_m12], command[FULL_FILE_NAME_BYTES_m12 + 16];
 	si1		name[BASE_FILE_NAME_BYTES_m12], extension[TYPE_BYTES_m12];
 	static ui4	create_modes = (ui4) (FPS_R_PLUS_OPEN_MODE_m12 | FPS_W_OPEN_MODE_m12 | FPS_W_PLUS_OPEN_MODE_m12 | FPS_A_OPEN_MODE_m12 | FPS_A_PLUS_OPEN_MODE_m12);
-	si4		lock_type;
+	si4		lock_type, err;
 #if defined MACOS_m12 || defined LINUX_m12
 	struct stat	sb;
 #endif
@@ -27873,18 +27880,23 @@ TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 
 			return(FALSE_m12);
 	}
 	
+	errno_reset_m12();
+	
 	fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
-	if (fps->parameters.fp == NULL && errno == ENOENT && create_file == TRUE_m12) {
-		// A component of the required directory tree does not exist - build it & try again
-		G_extract_path_parts_m12(fps->full_file_name, path, name, extension);
+	if (fps->parameters.fp == NULL) {
+		err = errno_m12();
+		if (err == ENOENT && create_file == TRUE_m12) {
+			// A component of the required directory tree does not exist - build it & try again
+			G_extract_path_parts_m12(fps->full_file_name, path, name, extension);
 #if defined MACOS_m12 || defined LINUX_m12
-		sprintf_m12(command, "mkdir -p \"%s\"", path);
+			sprintf_m12(command, "mkdir -p \"%s\"", path);
 #endif
 #ifdef WINDOWS_m12
-		sprintf_m12(command, "mkdir \"%s\"", path);
+			sprintf_m12(command, "mkdir \"%s\"", path);
 #endif
-		system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, behavior_on_fail);
+			system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, behavior_on_fail);
+		}
 	}
 	if (fps->parameters.fp == NULL) {
 		G_error_message_m12("%s(): failed to open file \"%s\"\n\tcalled from function %s()\n", __FUNCTION__, fps->full_file_name, function);
@@ -28170,6 +28182,8 @@ inline
 #endif
 si4	FPS_unlock_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 behavior_on_fail)
 {
+	si4	err;
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -28181,13 +28195,16 @@ si4	FPS_unlock_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 beh
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
+	errno_reset_m12();
+	
 	fl.l_type = F_UNLCK;
 	fl.l_whence = SEEK_SET;
 	fl.l_start = 0;
 	fl.l_len = 0;
 	fl.l_pid = getpid();
 	if (fcntl(fps->parameters.fd, F_SETLKW, &fl) == -1) {
-		G_error_message_m12("%s(): fcntl() failed to unlock file\n\tsystem error: %s (# %d)\n\tcalled from function %s()\n", __FUNCTION__, strerror(errno), errno, function);
+		err = errno_m12();
+		G_error_message_m12("%s(): fcntl() failed to unlock file\n\tsystem error: %s (# %d)\n\tcalled from function %s()\n", __FUNCTION__, strerror(err), err, function);
 		return(-1);
 	}
 #endif
@@ -32413,7 +32430,7 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 {
 	si2				sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
-	si4				sock_fd;
+	si4				sock_fd, err;
 	struct sockaddr_in		sock_addr = { 0 };
 
 #ifdef FN_DEBUG_m12
@@ -32445,14 +32462,15 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 	inet_pton(sock_fam, trans_info->dest_addr, &sock_addr.sin_addr);   // set remote address for connect()
 	sock_addr.sin_port = htons(trans_info->dest_port);  // set local port (in internet byte order)
 	sock_addr.sin_family = sock_fam;  // set socket family
-	errno = 0;
+	errno_reset_m12();
 	if (connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in))) {
+		err = errno_m12();
 		#if defined MACOS_m12 || defined LINUX_m12
-		G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, errno, strerror(errno));
+		G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
 		close(sock_fd);
 		#endif
 		#ifdef WINDOWS_m12
-		G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, WSAGetLastError());
+		G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, err);
 		closesocket(sock_fd);
 		#endif
 		return(FALSE_m12);
@@ -32465,7 +32483,7 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 TERN_m12	TR_connect_to_server_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 {
 	si2				sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
-	si4				sock_fd;
+	si4				sock_fd, err;
 	struct sockaddr_in		sock_addr = { 0 };
 
 #ifdef FN_DEBUG_m12
@@ -32501,14 +32519,15 @@ TERN_m12	TR_connect_to_server_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 d
 	inet_pton(sock_fam, trans_info->dest_addr, &sock_addr.sin_addr);   // set remote address for connect()
 	sock_addr.sin_port = htons(trans_info->dest_port);  // set local port (in internet byte order)
 	sock_addr.sin_family = sock_fam;  // set socket family
-	errno = 0;
+	errno_reset_m12();
 	if (connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in))) {
-		G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, errno, strerror(errno));
+		err = errno_m12();
+		G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
 		#if defined MACOS_m12 || defined LINUX_m12
 		close(sock_fd);
 		#endif
 		#ifdef WINDOWS_m12
-		G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, WSAGetLastError());
+		G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, err);
 		closesocket(sock_fd);
 		#endif
 		return(FALSE_m12);
@@ -32610,19 +32629,13 @@ void	TR_realloc_trans_info_m12(TR_INFO_m12 *trans_info, si8 buffer_bytes, TR_HEA
 
 si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_header)
 {
-#if defined MACOS_m12 || defined LINUX_m12
-	extern si4	errno;
-#endif
-#ifdef WINDOWS_m12
-	si4		errno;
-#endif
 	TERN_m12	password_passed, acknowledge;
-	ui1		*data, *pkt, *partial_pkt;
+	ui1		*buffer, *partial_pkt;
 	ui2		max_pkt_bytes;
 	ui4		ID_code;
-	si4		sock_fd, attempts, curr_timeout, timeout_errno;
+	si4		sock_fd, attempts, curr_timeout, err;
 	si8		data_bytes, data_bytes_received, ret_val, packet_bytes_remaining;
-	TR_HEADER_m12	*header, *pkt_header, *ack_header;
+	TR_HEADER_m12	*header, *pkt_header, *ack_header, saved_data;
 	TR_INFO_m12	*ack_trans_info;
 
 #ifdef FN_DEBUG_m12
@@ -32638,47 +32651,37 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		TR_bind_m12(trans_info, trans_info->iface_addr, TR_PORT_ANY_m12);
 		TR_connect_m12(trans_info, trans_info->dest_addr, trans_info->dest_port);
 	}
+	buffer = trans_info->buffer;
 	header = trans_info->header;
-	data = trans_info->data;
 	sock_fd = trans_info->sock_fd;
 	ID_code = header->ID_code;
-
-	// get receive buffer
 	max_pkt_bytes = trans_info->mss + TR_HEADER_BYTES_m12;
-	pkt = malloc((size_t) max_pkt_bytes);
-	pkt_header = (TR_HEADER_m12 *) pkt;
-	pkt_header->transmission_bytes = 0;
 	
-#if defined MACOS_m12 || defined LINUX_m12
-	timeout_errno = ETIMEDOUT;
-#endif
-#ifdef WINDOWS_m12
-	timeout_errno = WSAETIMEDOUT;
-#endif
-
 	// receive
 	attempts = 0;
 	data_bytes_received = 0;
 	acknowledge = UNKNOWN_m12;
 	do {
+		pkt_header = (TR_HEADER_m12 *) (buffer + data_bytes_received);
+		if (data_bytes_received)
+			saved_data = *pkt_header;
+			
 		// recv
-		errno = 0;
-		ret_val = recv(sock_fd, (void *) pkt, max_pkt_bytes, 0);
+		errno_reset_m12();
+		ret_val = recv(sock_fd, (void *) pkt_header, max_pkt_bytes, 0);
 		
 		// receive checks
-		if (ret_val < TR_HEADER_BYTES_m12) {
+		if (ret_val < TR_HEADER_BYTES_m12 && data_bytes_received == 0) {
 			if (ret_val == 0) {
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
 				data_bytes_received = TR_ERR_SOCK_CLOSED_m12;
 			} else if (ret_val < 0) {
-#ifdef WINDOWS_m12
-				errno = WSAGetLastError();
-#endif
-				if (errno == timeout_errno) {  // timeout
+				err = errno_m12();
+				if (err == ETIMEDOUT) {  // timeout
 					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket timed out\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
 					data_bytes_received = TR_ERR_SOCK_TIMED_OUT_m12;
 				} else {
-					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, errno);
+					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, err);
 					data_bytes_received = TR_ERR_SOCK_FAILED_m12;
 				}
 			} else {
@@ -32721,7 +32724,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 				
 		if (ret_val < (si8) pkt_header->packet_bytes) {
 			// first try to receive rest of packet (shouldn't happen often: inet mss chosen to avoid this)
-			partial_pkt = pkt;
+			partial_pkt = (ui1 *) pkt_header;
 			packet_bytes_remaining = (si8) pkt_header->packet_bytes - ret_val;
 			curr_timeout = trans_info->timeout_secs;
 			trans_info->timeout_secs = 2;  // wait no more than 2 seconds for subsequent sends
@@ -32742,6 +32745,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 					if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12) {
 						ack_header->flags = TR_TYPE_ACK_RETRANSMIT_m12;
 						TR_send_transmission_m12(ack_trans_info);
+						data_bytes_received = 0;
 						continue;
 					}
 				}
@@ -32753,7 +32757,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		
 		// CRC
 		if (pkt_header->flags & TR_FLAGS_CRC_m12) {
-			if (CRC_validate_m12(pkt + CRC_BYTES_m12, pkt_header->packet_bytes - CRC_BYTES_m12, pkt_header->crc) == FALSE_m12) {
+			if (CRC_validate_m12((ui1 *) pkt_header + CRC_BYTES_m12, pkt_header->packet_bytes - CRC_BYTES_m12, pkt_header->crc) == FALSE_m12) {
 				if (acknowledge == TRUE_m12) {
 					if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12) {
 						ack_header->type = TR_TYPE_ACK_RETRANSMIT_m12;
@@ -32778,7 +32782,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		
 		// move data into place
 		data_bytes = (si8) (pkt_header->packet_bytes - (ui2) TR_HEADER_BYTES_m12);
-		memcpy((void *) (data + pkt_header->offset), (void *) (pkt + TR_HEADER_BYTES_m12), (size_t) data_bytes);
+		if (data_bytes_received)
+			*pkt_header = saved_data;
 
 		// update
 		data_bytes_received += data_bytes;
@@ -32834,7 +32839,6 @@ TR_RECV_FAIL_m12:
 	}
 	
 	// clean up
-	free((void *) pkt);
 	if (acknowledge == TRUE_m12)
 		free((void *) ack_trans_info);
 	
@@ -32891,16 +32895,10 @@ TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt
 
 si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NULL if not encypting
 {
-#if defined MACOS_m12 || defined LINUX_m12
-	extern si4	errno;
-#endif
-#ifdef WINDOWS_m12
-	si4		errno;
-#endif
 	TERN_m12	password_passed, acknowledge;
 	ui1		*buffer, *data;
 	ui2		data_bytes, packet_bytes;
-	si4		sock_fd, attempts;
+	si4		sock_fd, attempts, err;
 	si8		ret_val, data_bytes_sent, data_bytes_remaining, bytes_received, actual_data_bytes;
 	TR_HEADER_m12	*header, *pkt_header, *ack_header, saved_data;
 	TR_INFO_m12	*ack_trans_info;
@@ -32997,16 +32995,14 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		
 		// send
 	TR_SEND_RETRANSMIT_m12:
-		errno = 0;
+		errno_reset_m12();
 		ret_val = send(sock_fd, (void *) pkt_header, packet_bytes, 0);
 		if (ret_val <= 0) {
 			if (ret_val == 0) {
 				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
 			} else {
-#ifdef WINDOWS_m12
-				errno = WSAGetLastError();
-#endif
-				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, errno);
+				err = errno_m12();
+				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, err);
 			}
 			header->flags |= TR_FLAGS_CLOSE_m12;
 			data_bytes_sent = TR_ERR_SOCK_FAILED_m12;
@@ -34591,6 +34587,7 @@ si4    asprintf_m12(si1 **target, si1 *fmt, ...)
 void	*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
+	si4	err;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -34602,6 +34599,8 @@ void	*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
+	errno_reset_m12();
+	
 #ifdef MATLAB_PERSISTENT_m12
 	ptr = mxCalloc((mwSize) n_members, (mwSize) el_size);
 #else
@@ -34610,7 +34609,8 @@ void	*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed to allocate the requested array (%ld members of size %ld)\n", 7, __FUNCTION__, n_members, el_size);
-			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -34680,6 +34680,63 @@ size_t	calloc_size_m12(void *address, size_t element_size)
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+si4	errno_m12(void)
+{
+	// Note: zero errno with errno_reset_m12() before running the function you may need it in
+	// Note: Windows errno.h defines almost all the same error codes as Macos & Linux, but the numbers may differ, so use defined names rather than numbers
+	
+#if defined MACOS_m12 || defined LINUX_m12
+	extern si4	errno;
+	
+	return(errno);
+#endif
+
+#ifdef WINDOWS_m12
+	si4	err;
+	
+	err = (si4) _get_errno(&err);  // Windows runtime
+	if (err == 0)
+		err = (si4) GetLastError();  // WinAPI
+	
+	#ifdef NEED_WIN_SOCKETS_m12
+	if (err == 0)
+		err = WSAGetLastError();  // Windows sockets
+	#endif
+	
+	return(err);
+#endif
+	
+}
+
+
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+void	errno_reset_m12(void)
+{
+	// use this function to zero errno before function call that may set it
+
+#if defined MACOS_m12 || defined LINUX_m12
+	extern si4	errno;
+	
+	errno = 0;
+#endif
+	
+#ifdef WINDOWS_m12
+	_set_errno((si4) 0);  // Windows runtime
+	SetLastError((DWORD) 0);  // WinAPI
+	#ifdef NEED_WIN_SOCKETS_m12
+		WSASetLastError((si4) 0);  // Windows sockets
+	#endif
+#endif
+	
+	return;
+}
+
+
 void	exit_m12(si4 status)
 {
 #ifdef FN_DEBUG_m12
@@ -34704,6 +34761,7 @@ void	exit_m12(si4 status)
 FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 {
 	FILE	*fp;
+	si4	err;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -34712,11 +34770,14 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 
+	errno_reset_m12();
+	
 #if defined MACOS_m12 || defined LINUX_m12
 	if ((fp = fopen(path, mode)) == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -34736,7 +34797,7 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 	TERN_m12	binary_set = FALSE_m12;
 	TERN_m12	write_mode = FALSE_m12;
 	si1		tmp_mode[8], *c, *tc;
-	
+
 	
 	// MED requires binary mode
 	c = mode;
@@ -34763,7 +34824,8 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 	if (fp == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -34833,7 +34895,8 @@ si4	fputc_m12(si4 c, FILE *stream)
 size_t	fread_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
 	size_t	nr;
-	
+	si4	err;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -34841,10 +34904,13 @@ size_t	fread_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
+	errno_reset_m12();
+	
 	if ((nr = fread(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, __FUNCTION__, path);
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -34956,6 +35022,8 @@ si4     fscanf_m12(FILE *stream, si1 *fmt, ...)
 
 si4	fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
+	si4	err;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -34963,12 +35031,15 @@ si4	fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
+	errno_reset_m12();
+	
 #if defined MACOS_m12 || defined LINUX_m12
 	if ((fseek(stream, offset, whence)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed to move the file pointer to requested location (offset %ld, whence %d)\n", 7, __FUNCTION__, offset, whence);
 			(void) UTF8_fprintf_m12(stderr, "%\tin file \"%s\"\n", path);
-			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -34989,7 +35060,8 @@ si4	fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed to move the file pointer to requested location (offset %ld, whence %d)\n", 7, __FUNCTION__, offset, whence);
 			(void) UTF8_fprintf_m12(stderr, "%\tin file \"%s\"\n", path);
-			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35011,6 +35083,7 @@ si4	fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 		
 si8	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 {
+	si4	err;
 	si8	pos;
 	
 #ifdef FN_DEBUG_m12
@@ -35019,12 +35092,15 @@ si8	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
-	
+
+	errno_reset_m12();
+
 #if defined MACOS_m12 || defined LINUX_m12
 	if ((pos = ftell(stream)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
-			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35043,7 +35119,8 @@ si8	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 	if ((pos = _ftelli64(stream)) == -1) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
-			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35065,6 +35142,7 @@ si8	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 		
 size_t	fwrite_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail)
 {
+	si4	err;
 	size_t	nw;
 	
 #ifdef FN_DEBUG_m12
@@ -35074,10 +35152,13 @@ size_t	fwrite_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
+	errno_reset_m12();
+	
 	if ((nw = fwrite(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to write file \"%s\"\n", 7, __FUNCTION__, path);
-			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35122,6 +35203,7 @@ char	*getcwd_m12(char *buf, size_t size)
 void	*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
+	si4	err;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -35129,6 +35211,8 @@ void	*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
+	
+	errno_reset_m12();
 	
 	if (n_bytes == 0)
 		return((void *) NULL);
@@ -35141,7 +35225,8 @@ void	*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void)fprintf_m12(stderr, "%c\n\t%s() failed to allocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
-			(void)fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			(void)fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35288,12 +35373,14 @@ inline
 TERN_m12	mlock_m12(void *addr, size_t len, TERN_m12 zero_data, const si1 *function, ui4 behavior_on_fail)
 {
 	si1			*err_str;
-	si4			ret_val;
+	si4			ret_val, err;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+
+	errno_reset_m12();
+
 	#if defined MACOS_m12 || defined LINUX_m12
 	ret_val = mlock(addr, len);
 	#endif
@@ -35315,18 +35402,18 @@ TERN_m12	mlock_m12(void *addr, size_t len, TERN_m12 zero_data, const si1 *functi
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
 	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
+		err = errno_m12();
 		#if defined MACOS_m12 || defined LINUX_m12
-		err_str = strerror(errno);
+		err_str = strerror(err);
 		#endif
 		#ifdef WINDOWS_m12
-		errno = (si4) GetLastError();
-		if (errno = 1453)
+		if (err = 1453)
 			err_str = "insufficient quota to complete the requested service";
 		else
 			err_str = "unknown error";
 		#endif
 		fprintf_m12(stderr, "%c\n\t%s() failed to lock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
-		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, err_str);
+		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, err_str);
 		if (function != NULL)
 			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 		if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35347,9 +35434,13 @@ inline
 #endif
 TERN_m12	munlock_m12(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail)
 {
+	si4	err;
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	errno_reset_m12();
 	
 	#if defined MACOS_m12 || defined LINUX_m12
 	if (munlock(addr, len) == 0)
@@ -35366,7 +35457,8 @@ TERN_m12	munlock_m12(void *addr, size_t len, const si1 *function, ui4 behavior_o
 
 	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 		fprintf_m12(stderr, "%c\n\t%s() failed to unlock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
-		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+		err = errno_m12();
+		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 		if (function != NULL)
 			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 		if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35452,6 +35544,7 @@ si4	putchar_m12(si4 c)
 void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 {
 	void	*ptr;
+	si4	err;
 	ui8	alloced_bytes;
 	
 #ifdef FN_DEBUG_m12
@@ -35475,6 +35568,8 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	if (alloced_bytes >= n_bytes)
 		return(orig_ptr);
 	
+	err = errno_m12();
+	
 #ifdef MATLAB_PERSISTENT_m12
 	ptr = mxRealloc(orig_ptr, (mwSize) n_bytes);
 #else
@@ -35483,7 +35578,7 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			fprintf_m12(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35562,6 +35657,7 @@ void	*recalloc_m12(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 {
 	void	*ptr;
 	ui1	*ui1_p;
+	si4	err;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -35575,6 +35671,8 @@ void	*recalloc_m12(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 			free_m12((void *) orig_ptr, function);
 		return((void *) NULL);
 	}
+	
+	errno_reset_m12();
 		
 #ifdef MATLAB_PERSISTENT_m12
 	ptr = mxRealloc(orig_ptr, (mwSize) new_bytes);
@@ -35584,7 +35682,8 @@ void	*recalloc_m12(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 	if (ptr == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			fprintf_m12(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, new_bytes);
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (function != NULL)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
@@ -35865,7 +35964,7 @@ si8    strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes)
 si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail)
 {
 	si1	*temp_command;
-	si4	ret_val, len;
+	si4	ret_val, len, err;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -35880,6 +35979,8 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 		sprintf(temp_command, "%s 1> %s 2> %s", command, NULL_DEVICE_m12, NULL_DEVICE_m12);  // don't use sprintf_m12() here - can screw up Windows options
 		command = temp_command;
 	}
+	
+	errno_reset_m12();
 	
 #if defined MACOS_m12 || defined LINUX_m12
 	ret_val = system(command);
@@ -35906,7 +36007,8 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
 			fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", errno, strerror(errno));
+			err = errno_m12();
+			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			fprintf_m12(stderr, "\tshell return value %d\n", ret_val);
 			if (function != NULL)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);

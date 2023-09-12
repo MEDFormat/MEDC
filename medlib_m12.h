@@ -1188,6 +1188,7 @@ si4	RC_read_field_m12(si1 *field_name, si1 **buffer, TERN_m12 update_buffer_ptr,
 #define NET_IPV4_ADDRESS_BYTES_m12		4
 #define NET_IPV4_ADDRESS_STR_BYTES_m12		(NET_IPV4_ADDRESS_BYTES_m12 * 4)  // 4 dec bytes plus periods & terminal zero
 
+
 // Structures
 typedef struct {
 	si1		interface_name[64];
@@ -4301,10 +4302,13 @@ void		TR_show_transmission_m12(TR_INFO_m12 *trans_info);
 //*****************  MED VERSIONS OF STANDARD FUNCTIONS  ****************//
 //***********************************************************************//
 
+
 si4		asprintf_m12(si1 **target, si1 *fmt, ...);
 void		*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 behavior_on_fail);
 void		**calloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
 size_t		calloc_size_m12(void *address, size_t element_size);
+si4		errno_m12(void);
+void		errno_reset_m12(void);  // zero errno before calling functions that may set it
 void		exit_m12(si4 status);
 FILE		*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail);
 si4     	fprintf_m12(FILE *stream, si1 *fmt, ...);
