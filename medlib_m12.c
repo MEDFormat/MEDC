@@ -4836,7 +4836,7 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 #endif
 	
 	if (loc_info == NULL) {
-		loc_info = (LOCATION_INFO_m12 *) calloc((size_t)1, sizeof(LOCATION_INFO_m12));
+		loc_info = (LOCATION_INFO_m12 *) calloc((size_t) 1, sizeof(LOCATION_INFO_m12));
 		free_loc_info = TRUE_m12;
 	} else {
 		memset((void *) loc_info, 0, sizeof(LOCATION_INFO_m12));
@@ -8609,10 +8609,6 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 	// if root_path == path : return T/F on path, do modify path
 	// if root_path != path && root_path != NULL : return T/F on path, return path to root in root_path
 	
-	// if path starts with "/", returns TRUE ("C:" prepended in Windows, if "modify_path" is TRUE)
-	// Windows: if path starts with "<capital letter>:\" returns TRUE
-	// if path starts with ".", "..", or "~", these are resolved as expected.
-	
 	if (path == NULL)
 		return(FALSE_m12);
 		
@@ -8677,9 +8673,7 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 #endif
 	
 #ifdef WINDOWS_m12
-	si1	tmp_path[FULL_FILE_NAME_BYTES_m12];
-	DWORD	ret_val;
-	
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m12];	
 
 	len = (si8) GetFullPathNameA(path, (DWORD) FULL_FILE_NAME_BYTES_m12, tmp_path, NULL);
 	if (len == 0)
