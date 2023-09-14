@@ -6901,26 +6901,43 @@ void     G_nap_m12(si1 *nap_str)
 	if (*c == 32)
 		++c;
 
-	// units: ns, us, ms, sec
+	// units: ns, us (or microseconds), ms (or milliseconds), sec, min, hours
 	switch(*c) {
+		case 'h':  // hours
+			nap.tv_sec = num * (ui8) 3600;
+			nap.tv_nsec = 0;
+			break;
+		case 'm':  // microseconds, milliseconds (default), or minutes
+			if( *(c + 1) == 'i') {
+				if (*(c + 2) == 'c') {  // microseconds
+					nap.tv_sec = 0;
+					nap.tv_nsec = num * (ui8) 1e3;
+					break;
+				}
+				if (*(c + 2) == 'n') {  // minutes
+					nap.tv_sec = num * (ui8) 60;
+					nap.tv_nsec = 0;
+					break;
+				}
+			}
+			// milliseconds
+			nap.tv_sec = 0;
+			nap.tv_nsec = num * (ui8) 1e6;
+			break;
 		case 'n':  // nanoseconds
 			nap.tv_sec = 0;
 			nap.tv_nsec = num;
-			break;
-		case 'u':  // microseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num * (ui8) 1e3;
-			break;
-		case 'm':  // milliseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num * (ui8) 1e6;
 			break;
 		case 's':  // seconds
 			nap.tv_sec = num;
 			nap.tv_nsec = 0;
 			break;
+		case 'u':  // microseconds
+			nap.tv_sec = 0;
+			nap.tv_nsec = num * (ui8) 1e3;
+			break;
 		default:
-			G_error_message_m12("%s(): \"%s\" is not a valid input string => not napping", __FUNCTION__, nap_str);
+			G_warning_message_m12("%s(): \"%s\" is not a valid input string => not napping\n", __FUNCTION__, nap_str);
 			return;
 	}
 	
@@ -8673,7 +8690,7 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 #endif
 	
 #ifdef WINDOWS_m12
-	si1	tmp_path[FULL_FILE_NAME_BYTES_m12];	
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m12];
 
 	len = (si8) GetFullPathNameA(path, (DWORD) FULL_FILE_NAME_BYTES_m12, tmp_path, NULL);
 	if (len == 0)
