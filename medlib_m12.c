@@ -6467,7 +6467,7 @@ TERN_m12	G_merge_metadata_m12(FILE_PROCESSING_STRUCT_m12 *md_fps_1, FILE_PROCESS
 		memset(md1_m->discretionary_region, 0, METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m12); equal = FALSE_m12;
 	}
 	
-	// section 2: times series channel
+	// section 2: time series channel
 	if (type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m12) {
 		tmd2_1 = &md_fps_1->metadata->time_series_section_2;
 		tmd2_2 = &md_fps_2->metadata->time_series_section_2;
@@ -6560,8 +6560,9 @@ TERN_m12	G_merge_metadata_m12(FILE_PROCESSING_STRUCT_m12 *md_fps_1, FILE_PROCESS
 		if (memcmp(tmd2_1->discretionary_region, tmd2_2->discretionary_region, TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m12)) {
 			memset(tmd2_m->discretionary_region, 0, TIME_SERIES_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m12); equal = FALSE_m12;
 		}
-		// section 2: times series channel
+		// end section 2: time series channel
 	}
+	// section 2: video channel
 	else if (type_code == VIDEO_METADATA_FILE_TYPE_CODE_m12) {
 		vmd2_1 = &md_fps_1->metadata->video_section_2;
 		vmd2_2 = &md_fps_2->metadata->video_section_2;
@@ -6638,6 +6639,7 @@ TERN_m12	G_merge_metadata_m12(FILE_PROCESSING_STRUCT_m12 *md_fps_1, FILE_PROCESS
 		if (memcmp(vmd2_1->discretionary_region, vmd2_2->discretionary_region, VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m12)) {
 			memset(vmd2_m->discretionary_region, 0, VIDEO_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m12); equal = FALSE_m12;
 		}
+		// end section 2: video channel
 	}
 	
 	// section 3
@@ -22622,6 +22624,7 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	if (cps->parameters.VDS_threshold == (sf8) 0.0) {
 		cps->directives.algorithm = CMP_PRED_COMPRESSION_m12;  // change directive so don't do this for every block
 		CMP_PRED2_encode_m12(cps);
+		return;
 	}
 
 	// convert user to algorithm threshold
@@ -22754,6 +22757,7 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	if ((change_made == TRUE_m12) && (rounds > maximum_rounds)) {
 		G_warning_message_m12("%s(): could not achieve requested fidelity in %d rounds => redirecting block to PRED\n", __FUNCTION__, maximum_rounds);
 		CMP_PRED2_encode_m12(cps);
+		return;
 	}
 
 	// scale data (if requested)
