@@ -2397,6 +2397,7 @@ si8		FPS_write_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes_t
 wchar_t		*STR_char2wchar_m12(wchar_t *target, si1 *source);
 ui4             STR_check_spaces_m12(si1 *string);
 si4		STR_compare_m12(const void *a, const void *b);
+TERN_m12    	STR_contains_formatting_m12(si1 *string, si1 *plain_string);
 TERN_m12	STR_contains_regex_m12(si1 *string);
 si1		*STR_duration_string_m12(si1 *dur_str, si8 i_usecs);
 void            STR_escape_chars_m12(si1 *string, si1 target_char, si8 buffer_len);

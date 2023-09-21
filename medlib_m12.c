@@ -283,7 +283,7 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 	
 	// enclosing_path is the path to the enclosing directory
 	// sess_name is the base name, with no extension
-	// if records are requested, enough memory for 1 record of data size REC_LARGEST_RECORD_BYTES_m12 is allocated (reFPS_allocate_processing_struct_m12() to change this)
+	// if records are requested, enough memory for 1 record of data size REC_LARGEST_RECORD_BYTES_m12 is allocated (FPS_reallocate_processing_struct_m12() to change this)
 	// if records are requested, enough memory for 1 record index is allocated (FPS_reallocate_processing_struct_m12() to change this)
 	
 	// allocate session
@@ -8615,9 +8615,10 @@ si8     G_pad_m12(ui1 *buffer, si8 content_len, ui4 alignment)
 
 TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 {
-	si1	*c, *c2, base_dir[FULL_FILE_NAME_BYTES_m12];
-	si8	len, len2;
-	
+	TERN_m12	contains_formatting;
+	si1		tmp_path[FULL_FILE_NAME_BYTES_m12];
+	si8	len;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -8626,57 +8627,70 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 	
 	// if root_path == NULL : return T/F on path, do not modify path
 	// if root_path == path : return T/F on path, do modify path
-	// if root_path != path && root_path != NULL : return T/F on path, return path to root in root_path
+	// if root_path != path && root_path != NULL : return T/F on path, return path from root in root_path, leaving path unmodified
 	
-	if (path == NULL)
+	if (path == NULL) {
+		if (root_path != NULL)
+			*root_path = 0;
 		return(FALSE_m12);
-		
-#if defined MACOS_m12 || defined LINUX_m12
-	if (root_path != NULL && root_path != path)
-		strcpy(root_path, path);
-
-	// remove terminal '/' from passed path if present
-	if (root_path != NULL) {
-		len = strlen(path);
-		if (len)
-			if (root_path[len - 1] == '/')
-				root_path[--len] = 0;
 	}
 	
-	if (*path == '/')
-		return(TRUE_m12);
+	// remove formatting
+	contains_formatting = STR_contains_formatting_m12(path, tmp_path);
+
+#if defined MACOS_m12 || defined LINUX_m12
+	si1	*c, *c2, base_dir[FULL_FILE_NAME_BYTES_m12];
 	
-	if (root_path == NULL)
+
+	// don't modify path, just return T/F
+	if (root_path == NULL) {
+		if (*tmp_path == '/') {
+			if (contains_formatting == TRUE_m12)
+				G_warning_message_m12("%s(): path contains formatting\n", __FUNCTION__);   // only message if from root & can't modify path
+			return(TRUE_m12);
+		}
 		return(FALSE_m12);
+	}
+	
+	strcpy(root_path, tmp_path);
+
+	// remove terminal '/' from passed path if present
+	len = strlen(root_path);
+	if (len)
+		if (root_path[len - 1] == '/')
+			root_path[--len] = 0;
+	
+	if (*root_path == '/')
+		return(TRUE_m12);
 	
 	// get base directory
 	c = root_path;
 	if (*c == '~') {
 		strcpy(base_dir, getenv("HOME"));
-		++c;
-		if (*c == '/')
+		++c;  // skip '~'
+		if (*c == '/')  // skip "~/"
 			++c;
 	} else {
 		getcwd_m12(base_dir, FULL_FILE_NAME_BYTES_m12);
 	}
 	
 	// drop terminal '/' from base_dir, if present
-	len2 = strlen(base_dir);
-	if (base_dir[len2 - 1] == '/') {
-		if (len2 > 1)  // at root
-			base_dir[--len2] = 0;
+	len = strlen(base_dir);
+	if (base_dir[len - 1] == '/') {
+		if (len > 1)  // not at root
+			base_dir[--len] = 0;
 	}
 	
 	// handle "." & ".."
 	while (*c == '.') {
 		if (*(c + 1) == '.') {  // backup base_dir to previous directory
-			c2 = base_dir + len2;
+			c2 = base_dir + len;
 			while (*--c2 != '/');
 			if (c2 == base_dir)  // at root
 				*++c2 = 0;
 			else
 				*c2 = 0;
-			len2 = strlen(base_dir);
+			len = c2 - base_dir;
 			++c;
 		}
 		if (*(c + 1) == '/')
@@ -8692,18 +8706,28 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 #endif
 	
 #ifdef WINDOWS_m12
-	si1	tmp_path[FULL_FILE_NAME_BYTES_m12];
-
-	len = (si8) GetFullPathNameA(path, (DWORD) FULL_FILE_NAME_BYTES_m12, tmp_path, NULL);
-	if (len == 0)
+	si1		tmp_path2[FULL_FILE_NAME_BYTES_m12];
+	
+	
+	len = (si8) GetFullPathNameA(tmp_path, (DWORD) FULL_FILE_NAME_BYTES_m12, tmp_path2, NULL);
+	if (len == 0) {  // can't resolve path
+		if (root_path != path)  // if in place, leave path intact
+			*root_path = 0;
 		return(FALSE_m12);
-	if (root_path == NULL) {  // just return T/F
-		if (strncmp(path, tmp_path, len))
-			return(FALSE_m12);
-		else
-			return(TRUE_m12);
 	}
-	strcpy(root_path, tmp_path);
+	
+	// don't modify path, just return T/F
+	if (root_path == NULL) {
+		if (strncmp(tmp_path, tmp_path2, len)) {
+			return(FALSE_m12);
+		} else {
+			if (contains_formatting == TRUE_m12)
+				G_warning_message_m12("%s(): path contains formatting\n", __FUNCTION__);  // only message if from root & can't modify path
+			return(TRUE_m12);
+		}
+	}
+	
+	strcpy(root_path, tmp_path2);
 #endif
 
 	return(TRUE_m12);
@@ -17884,23 +17908,7 @@ void    CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 
 		memset((void *) cps, 0, sizeof(CMP_PROCESSING_STRUCT_m12));
 		cps->directives = saved_directives;
 		cps->parameters = saved_parameters;
-		cps->original_data = NULL;
-		cps->parameters.cache = NULL;
-		cps->decompressed_data = NULL;
-		cps->parameters.keysample_buffer = NULL;
-		cps->parameters.detrended_buffer = NULL;
-		cps->parameters.scaled_amplitude_buffer = NULL;
-		cps->parameters.scaled_frequency_buffer = NULL;
-		cps->parameters.scrap_buffers = NULL;
-		cps->parameters.count = NULL;
-		cps->parameters.cumulative_count = NULL;
-		cps->parameters.sorted_count = NULL;
-		cps->parameters.minimum_range = NULL;
-		cps->parameters.symbol_map = NULL;
-		cps->parameters.VDS_input_buffers = NULL;
-		cps->parameters.VDS_output_buffers = NULL;
 	}
-
 
 	return;
 }
@@ -27540,7 +27548,6 @@ FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_S
 inline
 #endif
 void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
-	si4	fd;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -27548,21 +27555,22 @@ void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
 	
 	if (fps != NULL) {
 		if (fps->parameters.fp != NULL) {
+			if (fps->parameters.fd > 2)  { // fclose() can crash under some circumstances (e.g. if file is already closed)  (fd < 0 == closed, 0-2 == standard streams)
+				fflush(fps->parameters.fp);  // close() alone doesn't flush internal file buffers
 #if defined MACOS_m12 || defined LINUX_m12
-			fd = fileno(fps->parameters.fp);
+				close(fps->parameters.fd);
 #endif
 #ifdef WINDOWS_m12
-			fd = _fileno(fps->parameters.fp);
+				_close(fps->parameters.fd);
 #endif
-			if (fd > 2)  // fclose() may crashes if called on closed file (< 0 if closed, 0-2 standard streams)
-				fclose(fps->parameters.fp);
+			}
 			fps->parameters.fp = NULL;
+			fps->parameters.fd = FPS_FD_CLOSED_m12;
+			fps->parameters.fpos = 0;
+			// leave fps->flen intact
 		}
-		fps->parameters.fd = FPS_FD_CLOSED_m12;
-		fps->parameters.fpos = 0;
 	}
 
-	// leave fps->flen intact
 
 	return;
 }
@@ -30024,10 +30032,11 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 	"~2-5" set to any cpu except 2 through 5  (read: "not 2 through 5")
 	*/
 	
+	// set default
 	if (affinity_str == NULL)
-		return(NULL);
-	if (!*affinity_str)
-		return(NULL);
+		affinity_str = "~0";
+	else if (*affinity_str == 0)
+		affinity_str = "~0";
 
 	if (passed_cpu_set_p == NULL)  // up to caller to receive & free
 		cpu_set_p = (cpu_set_t_m12 *) malloc(sizeof(cpu_set_t_m12));
@@ -30163,9 +30172,10 @@ pid_t_m12	PROC_gettid_m12(void)
 #endif
 	
 #ifdef MACOS_m12
-	__uint64_t	tid;
+	pid_t_m12	tid;
+	
 	pthread_threadid_np(NULL, &tid);  // NULL for thread returns current thread id
-	return((pid_t_m12) tid);
+	return(tid);
 #endif
 	
 #ifdef WINDOWS_m12
@@ -30202,10 +30212,12 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 			va_list			arg_p;
 			pid_t			pid;
 			
+			
 			// check that medlib initialized (required for G_enter_ascii_password_m12)
 			if (globals_m12 == NULL) {
 				#ifdef MATLAB_m12
-				mexPrintf("\n%s(): initialize medlib before calling with sudo_prompt_flag\n\n", __FUNCTION__);
+				sprintf((char *) command, "\n%s(): initialize medlib before calling with sudo_prompt_flag\n\n", __FUNCTION__);
+				mexErrMsgTxt(command);
 				#else
 				fprintf(stderr, "\n%s(): initialize medlib before calling with sudo_prompt_flag => exiting\n\n", __FUNCTION__);
 				exit(-1);
@@ -30311,7 +30323,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 			f_max_priority = (sf8) sched_get_priority_max(SCHED_OTHER);
 			f_min_priority = (sf8) sched_get_priority_min(SCHED_OTHER);
 			low_priority = (si4) round((0.75 * f_min_priority) + (0.25 * f_max_priority));
-			medium_priority = (si4) round((0.5 * f_min_priority) + (0.5 * f_max_priority));
+			medium_priority = (si4) round(0.5 * (f_min_priority + f_max_priority));
 			high_priority = (si4) round((0.25 * f_min_priority) + (0.75 * f_max_priority));
 			max_priority = (si4) f_max_priority;
 			min_priority = (si4) f_min_priority;
@@ -30498,7 +30510,7 @@ si4	PROC_pthread_mutex_destroy_m12(pthread_mutex_t_m12 *mutex)
 	ret_val = pthread_mutex_destroy(mutex);
 #endif
 #ifdef WINDOWS_m12
-	ret_val = 1 - (si4) CloseHandle(*mutex);  // CloseHandle returns zero on fail
+	ret_val = (si4) CloseHandle(*mutex) - (si4) 1;  // CloseHandle returns zero on fail
 #endif
 	
 	return(ret_val);
@@ -30598,7 +30610,7 @@ TERN_m12    PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_att
 
 	// if thread_id_p is passed, it is used
 	// if thread_id_p is NULL & attributes is passed, it is used
-	// attributes allow affinity to be set befor thread is launched
+	// attributes allow affinity to be set before thread is launched
 	// thread_id can be used to change affinity whie thread is running
 	
 	if (thread_id_p == NULL) {
@@ -31081,7 +31093,7 @@ void	SHA_finalize_m12(SHA_CTX_m12 *ctx, ui1 *hash)
 	
 	i = ctx->datalen;
 
-	// Pad whatever data is left in the buffer.
+	// pad whatever data is left in the buffer
 	if (ctx->datalen < 56) {
 		ctx->data[i++] = 0x80;
 		while (i < 56)
@@ -31309,8 +31321,7 @@ wchar_t	*STR_char2wchar_m12(wchar_t *target, si1 *source)
 		tmp_source = (si1 *) malloc((size_t) len + 1);
 		memcpy((void *) tmp_source, (void *)  source, (size_t)len + 1);
 		c2 = tmp_source;
-	}
-	else {
+	} else {
 		c2 = source;
 	}
 	memset((void *) target, 0, wsz * (len + 1));
@@ -31411,6 +31422,90 @@ si4	STR_compare_m12(const void *a, const void *b)
 }
 
 
+TERN_m12    STR_contains_formatting_m12(si1 *string, si1 *plain_string)
+{
+	TERN_m12	format_seq;
+	si1		*c1, *c2, *c3;
+	
+	// if plain_string == NULL : return T/F on path, do not modify string
+	// if plain_string == string : return T/F on path, do modify string (done in place)
+	// if plain_string != string && plain_string != NULL : return T/F on path, return string with formatting removed in plain_string, leave formatted string intact
+	// assumes plain_string has adequate space for deformatted string if passed
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	c1 = string;
+	format_seq = FALSE_m12;
+	while (*c1) {
+		if (*c1 == 27) {  // escape
+			if (*(c1 + 1) == 91) {  // '['
+				c2 = c1 + 3;
+				if (*c2++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				else if (*c2++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				else if (*c2++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				else if (*c2++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				if (format_seq == TRUE_m12)
+					break;
+			}
+		}
+		++c1;
+	}
+	
+	if (plain_string == NULL)
+		return(format_seq);
+	
+	if (format_seq == TRUE_m12) {
+		if (plain_string != string) {
+			c2 = plain_string;
+			c3 = string;
+			while (c3 != c1)  // copy string up to c1 into plain_string
+				*c2++ = *c3++;
+		} else {
+			c2 = c1;  // same string - no copying needed
+		}
+	} else {
+		if (plain_string != string)
+			strcpy(plain_string, string);
+		return(FALSE_m12);
+	}
+	
+	// remove formatting
+	while (*c1) {
+		if (*c1 == 27) {  // escape
+			if (*(c1 + 1) == 91) {  // '['
+				c3 = c1 + 3;
+				format_seq = FALSE_m12;
+				if (*c3++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				else if (*c3++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				else if (*c3++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				else if (*c3++ == 109)  // 'm'
+					format_seq = TRUE_m12;
+				if (format_seq == TRUE_m12) {
+					c1 = c3;
+					if (*c1 == 0) // end of string
+						break;
+					if (*c1 == 27)  // possibly another escape sequence
+						continue;
+				}
+			}
+		}
+		*c2++ = *c1++;
+	}
+	*c2 = 0;
+	
+	return(TRUE_m12);
+}
+
+
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
@@ -31439,6 +31534,7 @@ TERN_m12	STR_contains_regex_m12(si1 *string)
 				return(TRUE_m12);
 		}
 	}
+	
 	return(FALSE_m12);
 }
 
@@ -31557,7 +31653,7 @@ si1	*STR_generate_hex_string_m12(ui1 *bytes, si4 num_bytes, si1 *string)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (string == NULL)  // allocate if NULL is passed
+	if (string == NULL)  // up to caller to free
 		string = (si1 *) calloc_m12((size_t)((num_bytes + 1) * 3), sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	s = string;
@@ -31699,7 +31795,7 @@ si1     *STR_re_escape_m12(si1 *str, si1 *esc_str)
 	c1 = str;
 	while (*c1++);
 	len = c1 - str;
-	if (esc_str == NULL)
+	if (esc_str == NULL)  // up to caller to free
 		esc_str = (si1 *) calloc((size_t) (len * 2), sizeof(si1));
 	strcpy(esc_str, str);
 	c1 = esc_str;
