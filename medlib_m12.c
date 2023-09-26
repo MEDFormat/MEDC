@@ -27851,9 +27851,8 @@ void FPS_mutex_on_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 behavior_on_fail)
 {
-	TERN_m12	create_file = FALSE_m12;
+	TERN_m12	create_file = FALSE_m12, create_path = FALSE_m12;
 	si1		*mode, path[FULL_FILE_NAME_BYTES_m12], command[FULL_FILE_NAME_BYTES_m12 + 16];
-	si1		name[BASE_FILE_NAME_BYTES_m12], extension[TYPE_BYTES_m12];
 	static ui4	create_modes = (ui4) (FPS_R_PLUS_OPEN_MODE_m12 | FPS_W_OPEN_MODE_m12 | FPS_W_PLUS_OPEN_MODE_m12 | FPS_A_OPEN_MODE_m12 | FPS_A_PLUS_OPEN_MODE_m12);
 	si4		lock_type, err;
 #if defined MACOS_m12 || defined LINUX_m12
@@ -27908,17 +27907,27 @@ TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 
 	fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	if (fps->parameters.fp == NULL) {
 		err = errno_m12();
-		if (err == ENOENT && create_file == TRUE_m12) {
-			// A component of the required directory tree does not exist - build it & try again
-			G_extract_path_parts_m12(fps->full_file_name, path, name, extension);
+		if (create_file == TRUE_m12) {
+			if (err == ENOENT)
+				create_path = TRUE_m12;
+#ifdef WINDOWS_m12
+			if (err == ERROR_PATH_NOT_FOUND)  // Windows can also return this code for same thing
+				create_path = TRUE_m12;
+#endif
+			if (create_path == TRUE_m12) {
+				G_extract_path_parts_m12(fps->full_file_name, path, NULL, NULL);
+				if (G_file_exists_m12(path) != DIR_EXISTS_m12) {  // a component of the required directory tree does not exist - build it & try again
+					
 #if defined MACOS_m12 || defined LINUX_m12
-			sprintf_m12(command, "mkdir -p \"%s\"", path);
+					sprintf_m12(command, "mkdir -p \"%s\"", path);
 #endif
 #ifdef WINDOWS_m12
-			sprintf_m12(command, "mkdir \"%s\"", path);
+					sprintf_m12(command, "mkdir \"%s\"", path);
 #endif
-			system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, behavior_on_fail);
+					system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+					fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, behavior_on_fail);
+				}
+			}
 		}
 	}
 	if (fps->parameters.fp == NULL) {
@@ -31427,10 +31436,10 @@ TERN_m12    STR_contains_formatting_m12(si1 *string, si1 *plain_string)
 	TERN_m12	format_seq;
 	si1		*c1, *c2, *c3;
 	
-	// if plain_string == NULL : return T/F on path, do not modify string
-	// if plain_string == string : return T/F on path, do modify string (done in place)
-	// if plain_string != string && plain_string != NULL : return T/F on path, return string with formatting removed in plain_string, leave formatted string intact
-	// assumes plain_string has adequate space for deformatted string if passed
+	// if plain_string == NULL : return T/F on string, do not modify string
+	// if plain_string == string : return T/F on string, do modify string (done in place)
+	// if plain_string != string && plain_string != NULL : return T/F on path, return plain_string with formatting removed, leave string intact
+	// assumes plain_string has adequate space for deformatted string if passed (length plain_string will always be <= length of string)
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -34884,24 +34893,7 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 	errno_reset_m12();
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	if ((fp = fopen(path, mode)) == NULL) {
-		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
-			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
-			err = errno_m12();
-			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
-				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
-			if (behavior_on_fail & RETURN_ON_FAIL_m12)
-				fprintf_m12(stderr, "\t=> returning NULL\n\n");
-			else if (behavior_on_fail & EXIT_ON_FAIL_m12)
-				fprintf_m12(stderr, "\t=> exiting program\n\n");
-			fflush(stderr);
-		}
-		if (behavior_on_fail & RETURN_ON_FAIL_m12)
-			return(NULL);
-		else if (behavior_on_fail & EXIT_ON_FAIL_m12)
-			exit_m12(-1);
-}
+	fp = fopen(path, mode);
 #endif
 	
 #ifdef WINDOWS_m12
@@ -34931,7 +34923,8 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 		fp = _fsopen(path, tmp_mode, _SH_DENYNO);
 	else
 		fp = fopen(path, tmp_mode);
-		
+#endif
+	
 	if (fp == NULL) {
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
@@ -34950,7 +34943,6 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 		else if (behavior_on_fail & EXIT_ON_FAIL_m12)
 			exit_m12(-1);
 	}
-#endif
 
 	return(fp);
 }
