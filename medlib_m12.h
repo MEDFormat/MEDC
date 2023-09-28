@@ -3702,15 +3702,30 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_MESSAGE_TYPE_m12	TR_TYPE_MESSAGE_m12
 
 // Transmission Error Codes
-#define TR_ERR_UNSPECIFIED_m12					(si8) FALSE_m12
-#define TR_ERR_SOCK_FAILED_m12					(si8) -2
-#define TR_ERR_SOCK_FAILED_TO_OPEN_m12				(si8) -3
-#define TR_ERR_SOCK_CLOSED_m12					(si8) -4
-#define TR_ERR_SOCK_TIMED_OUT_m12				(si8) -5
-#define TR_ERR_ID_MISMATCH_m12					(si8) -6
-#define TR_ERR_TRANS_FAILED_m12					(si8) -7
-#define TR_ERR_CRC_MISMATCH_m12					(si8) -8
-#define TR_ERR_NO_ACK_m12					(si8) -9
+#define TR_E_NO_ERR_m12			(si8) E_NO_ERR_m12  // 0
+#define TR_E_UNSPEC_m12			(si8) FALSE_m12
+#define TR_E_SOCK_FAILED_m12		(si8) -2
+#define TR_E_SOCK_NO_OPEN_m12		(si8) -3
+#define TR_E_SOCK_CLOSED_m12		(si8) -4
+#define TR_E_SOCK_TIMED_OUT_m12		(si8) -5
+#define TR_E_NO_DATA_m12		(si8) -6
+#define TR_E_ID_MISMATCH_m12		(si8) -7
+#define TR_E_TRANS_FAILED_m12		(si8) -8
+#define TR_E_CRC_MISMATCH_m12		(si8) -9
+#define TR_E_NO_ACK_m12			(si8) -10
+
+// Transmission Error Strings
+#define	TR_E_NO_ERR_STR_m12		"no error"
+#define	TR_E_UNSPEC_STR_m12		"unspecified transmission error"
+#define TR_E_SOCK_FAILED_STR_m12	"socket failed"
+#define TR_E_SOCK_NO_OPEN_STR_m12	"could not open socket"
+#define TR_E_SOCK_CLOSED_STR_m12	"socket closed"
+#define TR_E_SOCK_TIMED_OUT_STR_m12	"socket timed out"
+#define TR_E_NO_DATA_STR_m12		"no data available"
+#define TR_E_ID_MISMATCH_STR_m12	"transmission ID mismatch"
+#define TR_E_TRANS_FAILED_STR_m12	"transmission failed"
+#define TR_E_CRC_MISMATCH_STR_m12	"checksum mismatch"
+#define TR_E_NO_ACK_STR_m12		"no acknowlegment"
 
 // Transmission Flags
 #define TR_FLAGS_DEFAULT_m12			((ui2) 0)
@@ -3827,9 +3842,11 @@ void		TR_realloc_trans_info_m12(TR_INFO_m12 *trans_info, si8 buffer_bytes, TR_HE
 si8		TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_header);  // receive may reallocate, pass caller header to have function set local variable, otherwise pass NULL, can do manually
 TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt, si1 *fmt, ...);
 si8		TR_send_transmission_m12(TR_INFO_m12 *trans_info);
+TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking);
 void		TR_set_socket_timeout_m12(TR_INFO_m12 *trans_info);
 TERN_m12	TR_show_message_m12(TR_HEADER_m12 *header);
 void		TR_show_transmission_m12(TR_INFO_m12 *trans_info);
+si1		*TR_strerror(si4 err_num);
 
 
 

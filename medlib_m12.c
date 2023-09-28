@@ -27903,11 +27903,10 @@ TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 
 	}
 	
 	errno_reset_m12();
-	
 	fps->parameters.fp = fopen_m12(fps->full_file_name, mode, function, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	if (fps->parameters.fp == NULL) {
-		err = errno_m12();
 		if (create_file == TRUE_m12) {
+			err = errno_m12();
 			if (err == ENOENT)
 				create_path = TRUE_m12;
 #ifdef WINDOWS_m12
@@ -27929,10 +27928,10 @@ TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 
 				}
 			}
 		}
-	}
-	if (fps->parameters.fp == NULL) {
-		G_error_message_m12("%s(): failed to open file \"%s\"\n\tcalled from function %s()\n", __FUNCTION__, fps->full_file_name, function);
-		return(-1);
+		if (fps->parameters.fp == NULL) {
+			G_error_message_m12("%s(): failed to open file \"%s\"\n\tcalled from function %s()\n", __FUNCTION__, fps->full_file_name, function);
+			return(-1);
+		}
 	}
 	
 	// file descriptor & file length
@@ -28477,7 +28476,7 @@ si1	*HW_get_machine_serial_m12(si1 *machine_sn)
 #endif
 #ifdef MACOS_m12
 	local_machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
-	buf[file_length - 2] = 0;  // <qu><lf>
+	buf[file_length - 2] = 0;  // <quote><lf>
 #endif
 #ifdef WINDOWS_m12
 	buf[file_length - 7] = buf[file_length - 8] = 0;  // <cr><lf>
@@ -32330,7 +32329,7 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	header->type = TR_TYPE_DEFAULT_m12;
 	header->version = TR_VERSION_DEFAULT_m12;
 	
-	// password / exapnded key only required for encrypted transissions
+	// password / expanded key only required for encrypted transissions
 	trans_info->expanded_key_allocated = FALSE_m12;
 	if (password != NULL) {
 		if (*password) {
@@ -32687,7 +32686,7 @@ TERN_m12	TR_create_socket_m12(TR_INFO_m12 *trans_info)
 	// set socket timeout
 	if (trans_info->timeout_secs)
 		TR_set_socket_timeout_m12(trans_info);
-	
+			
 	return(TRUE_m12);
 }
 
@@ -32789,24 +32788,27 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		// recv
 		errno_reset_m12();
 		ret_val = recv(sock_fd, (void *) pkt_header, max_pkt_bytes, 0);
-		
+				
 		// receive checks
 		if (ret_val < TR_HEADER_BYTES_m12 && data_bytes_received == 0) {
 			if (ret_val == 0) {
-				G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
-				data_bytes_received = TR_ERR_SOCK_CLOSED_m12;
+				data_bytes_received = TR_E_SOCK_CLOSED_m12;
+				G_warning_message_m12("%s(%s:%hu <- %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_received));
 			} else if (ret_val < 0) {
 				err = errno_m12();
+				if (TR_set_socket_blocking_m12(trans_info, UNKNOWN_m12) == FALSE_m12)
+					if (err == EAGAIN || err == EWOULDBLOCK)  // no data available on non-blocking socket (on most OS implementations these are the same number)
+						return(TR_E_NO_DATA_m12);
 				if (err == ETIMEDOUT) {  // timeout
-					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket timed out\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
-					data_bytes_received = TR_ERR_SOCK_TIMED_OUT_m12;
+					data_bytes_received = TR_E_SOCK_TIMED_OUT_m12;
+					G_warning_message_m12("%s(%s:%hu <- %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_received));
 				} else {
-					G_warning_message_m12("%s(%s:%hu <- %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, err);
-					data_bytes_received = TR_ERR_SOCK_FAILED_m12;
+					data_bytes_received = TR_E_SOCK_FAILED_m12;
+					G_warning_message_m12("%s(%s:%hu <- %s:%hu): %s (sock errno %d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_received), err);
 				}
 			} else {
+				data_bytes_received = TR_E_UNSPEC_m12;
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): receive too small for header (%ld bytes)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, ret_val);
-				data_bytes_received = TR_ERR_UNSPECIFIED_m12;
 			}
 			goto TR_RECV_FAIL_m12;
 		}
@@ -32837,7 +32839,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			if (pkt_header->ID_code != ID_code) {
 				if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12)
 					continue;
-				data_bytes_received = TR_ERR_ID_MISMATCH_m12;
+				data_bytes_received = TR_E_ID_MISMATCH_m12;
 				goto TR_RECV_FAIL_m12;
 			}
 		}
@@ -32869,8 +32871,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 						continue;
 					}
 				}
+				data_bytes_received = TR_E_TRANS_FAILED_m12;
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): packet size error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
-				data_bytes_received = TR_ERR_TRANS_FAILED_m12;
 				goto TR_RECV_FAIL_m12;
 			}
 		}
@@ -32885,8 +32887,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 						continue;
 					}
 				}
-				G_warning_message_m12("%s(%s:%hu <- %s:%hu): packet CRC error\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
-				data_bytes_received = TR_ERR_CRC_MISMATCH_m12;
+				data_bytes_received = TR_E_CRC_MISMATCH_m12;
+				G_warning_message_m12("%s(%s:%hu <- %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_received));
 				goto TR_RECV_FAIL_m12;
 			}
 		}
@@ -32932,7 +32934,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 					password_passed = TRUE_m12;
 			if (password_passed == FALSE_m12) {
 				G_warning_message_m12("%s(): no password or expanded key => cannot decrypt transmission\n", __FUNCTION__);
-				return(TR_ERR_UNSPECIFIED_m12);
+				return(TR_E_UNSPEC_m12);
 			}
 			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			trans_info->expanded_key_allocated = TRUE_m12;
@@ -33015,7 +33017,7 @@ TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt
 
 si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NULL if not encypting
 {
-	TERN_m12	password_passed, acknowledge;
+	TERN_m12	password_passed, acknowledge, no_destruct_flag;
 	ui1		*buffer, *data;
 	ui2		data_bytes, packet_bytes;
 	si4		sock_fd, attempts, err;
@@ -33043,7 +33045,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 	
 	if (header->transmission_bytes > trans_info->buffer_bytes) {
 		G_warning_message_m12("%s(): buffer too small for transmission\n", __FUNCTION__);
-		return(TR_ERR_UNSPECIFIED_m12);
+		return(TR_E_UNSPEC_m12);
 	}
 	
 	// encryption
@@ -33055,12 +33057,19 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 					password_passed = TRUE_m12;
 			if (password_passed == FALSE_m12) {
 				G_warning_message_m12("%s(): no password or expanded key => cannot encrypt transmission\n", __FUNCTION__);
-				return(TR_ERR_UNSPECIFIED_m12);
+				return(TR_E_UNSPEC_m12);
 			}
 			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) ENCRYPTION_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			trans_info->expanded_key_allocated = TRUE_m12;
 			AES_key_expansion_m12(trans_info->expanded_key, trans_info->password);
 		}
+	}
+	
+	// no destruct flag - send side only
+	no_destruct_flag = FALSE_m12;
+	if (header->flags & TR_FLAGS_NO_DESTRUCT_m12) {
+		no_destruct_flag = TRUE_m12;
+		header->flags &= ~TR_FLAGS_NO_DESTRUCT_m12; // reset before transmission so receiver doesn't use it on subsequent send
 	}
 	
 	// include key
@@ -33102,7 +33111,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		// set packet header
 		pkt_header = (TR_HEADER_m12 *) (buffer + data_bytes_sent);
 		if (data_bytes_sent) {
-			if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)  // preserve data in header region
+			if (no_destruct_flag == TRUE_m12)  // preserve data in header region
 				saved_data = *pkt_header;
 			*pkt_header = *header;
 		}
@@ -33119,19 +33128,20 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		ret_val = send(sock_fd, (void *) pkt_header, packet_bytes, 0);
 		if (ret_val <= 0) {
 			if (ret_val == 0) {
-				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket closed\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port);
+				data_bytes_sent = TR_E_SOCK_CLOSED_m12;
+				G_warning_message_m12("%s(%s:%hu -> %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_sent));
 			} else {
+				data_bytes_sent = TR_E_SOCK_FAILED_m12;
 				err = errno_m12();
-				G_warning_message_m12("%s(%s:%hu -> %s:%hu): socket error (%d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, err);
+				G_warning_message_m12("%s(%s:%hu -> %s:%hu): %s (sock errno %d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_sent), err);
 			}
 			header->flags |= TR_FLAGS_CLOSE_m12;
-			data_bytes_sent = TR_ERR_SOCK_FAILED_m12;
 			goto TR_SEND_FAIL;
 		}
 		if (ret_val != (si8) packet_bytes) {
 			G_warning_message_m12("%s(): packet size error\n", __FUNCTION__);
 			header->flags |= TR_FLAGS_CLOSE_m12;
-			data_bytes_sent = TR_ERR_TRANS_FAILED_m12;
+			data_bytes_sent = TR_E_TRANS_FAILED_m12;
 			goto TR_SEND_FAIL;
 		}
 
@@ -33147,16 +33157,16 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 			} while (header->type != TR_TYPE_ACK_OK_m12 && attempts++ < TR_RETRANSMIT_ATTEMPTS_m12);
 			
 			if (ack_header->type != TR_TYPE_ACK_OK_m12) {
-				G_warning_message_m12("%s(): send not acknowledged\n", __FUNCTION__);
+				data_bytes_sent = TR_E_NO_ACK_m12;
+				G_warning_message_m12("%s(): %s\n", __FUNCTION__, TR_strerror(data_bytes_sent));
 				header->flags |= TR_FLAGS_CLOSE_m12;
-				data_bytes_sent = TR_ERR_NO_ACK_m12;
 				goto TR_SEND_FAIL;
 			}
 			TR_set_socket_timeout_m12(trans_info);  // reset timeout
 		}
 		
 		// restore data in header region
-		if (header->flags & TR_FLAGS_NO_DESTRUCT_m12)
+		if (TR_FLAGS_NO_DESTRUCT_m12 == TRUE_m12)
 			if (data_bytes_sent)
 				*pkt_header = saved_data;
 				
@@ -33175,10 +33185,8 @@ TR_SEND_FAIL:
 	// decrypt for non destructive mode
 	// note: faster to copy & substitute buffer than decrypt after transmitting, but may cause memory issue for large transmissions & this mode is rarely necessary)
 	if (header->flags & TR_FLAGS_ENCRYPT_m12) {
-		if (header->flags & TR_FLAGS_NO_DESTRUCT_m12) {
+		if (no_destruct_flag == TRUE_m12)
 			AES_decrypt_m12(data, actual_data_bytes, NULL, trans_info->expanded_key);
-			header->flags &= ~TR_FLAGS_NO_DESTRUCT_m12;
-		}
 		// reset encryption flags
 		header->flags &= ~(TR_FLAGS_ENCRYPT_m12 | TR_FLAGS_INCLUDE_KEY_m12);
 	}
@@ -33194,6 +33202,85 @@ TR_SEND_FAIL:
 		free((void *) ack_trans_info);
 	
 	return(data_bytes_sent);
+}
+
+
+TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
+{
+#if defined MACOS_m12 || defined LINUX_m12
+	si4		socket_flags;
+
+	
+	socket_flags = fcntl(trans_info->sock_fd, F_GETFL, 0);  // get existing flags
+
+	// set socket to blocking
+	if (blocking == TRUE_m12) {
+		socket_flags &= ~O_NONBLOCK;
+		if (fcntl(trans_info->sock_fd, F_SETFL, socket_flags) == -1) {
+			G_warning_message_m12("%s(): could not set socket to blocking\n", __FUNCTION__);
+			blocking = UNKNOWN_m12;
+		}
+	}
+
+	// set socket to non-blocking
+	else if (blocking == FALSE_m12) {
+		socket_flags |= O_NONBLOCK;
+		if (fcntl(c, F_SETFL, socket_flags) == -1) {
+			G_warning_message_m12("%s(): could not set socket to non-blocking\n", __FUNCTION__);
+			blocking = UNKNOWN_m12;
+		}
+	}
+	
+	// blocking == UNKNOWN_m12 => just return current state
+	else {
+		if (socket_flags & O_NONBLOCK)
+			blocking = FALSE_m12;
+		else
+			blocking = TRUE_m12;
+	}
+#endif
+	
+#ifdef WINDOWS_m12
+	ui4	enable;
+	si4	err;
+	
+	
+	// set socket to blocking
+	if (blocking == TRUE_m12) {
+		enable = 1;
+		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
+		if (err != NO_ERROR) {
+			G_warning_message_m12("%s(): could not set socket to blocking\n", __FUNCTION__);
+			blocking = UNKNOWN_m12;
+		}
+	}
+
+	// set socket to non-blocking
+	else if (blocking == FALSE_m12) {
+		enable = 0;
+		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
+		if (err != NO_ERROR) {
+			G_warning_message_m12("%s(): could not set socket to blocking\n", __FUNCTION__);
+			blocking = UNKNOWN_m12;
+		}
+	}
+	
+	// blocking == UNKNOWN_m12 => just return current state
+	else {
+		enable = 1;  // set to blocking mode
+		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);  // apparently this will fail if already in blocking mode, with error code WSAEOPNOTSUPP
+		
+		if (err == NO_ERROR) {  // reset to non-blocking
+			enable = 0;
+			ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
+			blocking = FALSE_m12;
+		} else if (WSAGetLastError() == WSAEOPNOTSUPP) {
+			blocking = TRUE_m12;
+		}
+	}
+#endif
+
+	return(blocking);
 }
 
 
@@ -33265,6 +33352,7 @@ TERN_m12	TR_show_message_m12(TR_HEADER_m12 *header)
 
 void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 {
+	TERN_m12		blocking;
 	si1			hex_str[HEX_STRING_BYTES_m12(sizeof(ui4))];
 	TR_HEADER_m12		*header;
 		
@@ -33363,6 +33451,13 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12(", NO_DESTRUCT");
 	if (header->flags & TR_FLAGS_TO_FILE_m12)
 		printf_m12(", TO_FILE");
+	
+	// socket flags not included in header flags
+	blocking = TR_set_socket_blocking_m12(trans_info, UNKNOWN_m12);
+	if (blocking == TRUE_m12)
+		printf_m12(", BLOCKING");
+	else if (blocking == FALSE_m12)
+		printf_m12(", NON_BLOCKING");
 	printf_m12("\n");
 	if (header->ID_code == TR_ID_CODE_NO_ENTRY_m12) {
 		printf_m12("ID String: no entry\n");
@@ -33399,6 +33494,37 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 	return;
 }
 
+
+si1	*TR_strerror(si4 err_num)
+{
+	switch(err_num) {
+		case TR_E_NO_ERR_m12:
+			return(TR_E_NO_ERR_STR_m12);
+		case TR_E_UNSPEC_m12:
+			return(TR_E_UNSPEC_STR_m12);
+		case TR_E_SOCK_FAILED_m12:
+			return(TR_E_SOCK_FAILED_STR_m12);
+		case TR_E_SOCK_NO_OPEN_m12:
+			return(TR_E_SOCK_NO_OPEN_STR_m12);
+		case TR_E_SOCK_CLOSED_m12:
+			return(TR_E_SOCK_CLOSED_STR_m12);
+		case TR_E_SOCK_TIMED_OUT_m12:
+			return(TR_E_SOCK_TIMED_OUT_STR_m12);
+		case TR_E_NO_DATA_m12:
+			return(TR_E_NO_DATA_STR_m12);
+		case TR_E_ID_MISMATCH_m12:
+			return(TR_E_ID_MISMATCH_STR_m12);
+		case TR_E_TRANS_FAILED_m12:
+			return(TR_E_TRANS_FAILED_STR_m12);
+		case TR_E_CRC_MISMATCH_m12:
+			return(TR_E_CRC_MISMATCH_STR_m12);
+		case TR_E_NO_ACK_m12:
+			return(TR_E_NO_ACK_STR_m12);
+		default:
+			return("unknown error code");
+	}
+}
+	
 
 
 //********************************//
