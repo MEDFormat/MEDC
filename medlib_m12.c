@@ -3017,6 +3017,23 @@ si8	G_find_index_m12(SEGMENT_m12 *seg, si8 target, ui4 mode)  // returns index c
 	// NO_OVERFLOWS_m12: restrict returned index to valid segment values (ORed with search type)
 	// SAMPLE_SEARCH_m12 indices must be session-relative (global indexing)
 	
+	// check for un-updated headers
+	if (seg->type_code == LH_TIME_SERIES_SEGMENT_m12) {
+		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries;
+		if (n_inds == 0) {
+			n_inds = (seg->time_series_indices_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m12) / INDEX_BYTES_m12;
+			seg->time_series_indices_fps->universal_header->number_of_entries = n_inds;
+			seg->time_series_data_fps->universal_header->number_of_entries = n_inds;
+		}
+	} else { // LEVEL_VIDEO_SEGMENT_m12
+		n_inds = seg->video_indices_fps->universal_header->number_of_entries;
+		if (n_inds == 0) {
+			n_inds = (seg->video_indices_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m12) / INDEX_BYTES_m12;
+			seg->video_indices_fps->universal_header->number_of_entries = n_inds;
+		}
+	}
+	--n_inds;  // account for terminal index here - cleaner code below
+
 	if (mode & NO_OVERFLOWS_m12) {
 		mode &= ~NO_OVERFLOWS_m12;
 		no_overflows = TRUE_m12;
@@ -3024,7 +3041,6 @@ si8	G_find_index_m12(SEGMENT_m12 *seg, si8 target, ui4 mode)  // returns index c
 
 	if (seg->type_code == LH_TIME_SERIES_SEGMENT_m12) {
 		tsi = seg->time_series_indices_fps->time_series_indices;
-		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		if (mode == TIME_SEARCH_m12) {
 			seg_start_time = seg->time_series_indices_fps->universal_header->segment_start_time;
 			if (target < seg_start_time) {
@@ -3074,7 +3090,6 @@ si8	G_find_index_m12(SEGMENT_m12 *seg, si8 target, ui4 mode)  // returns index c
 		}
 	} else {  // LEVEL_VIDEO_SEGMENT_m12
 		vi = seg->video_indices_fps->video_indices;
-		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		if (mode == TIME_SEARCH_m12) {
 			seg_start_time = seg->video_indices_fps->universal_header->segment_start_time;
 			if (target < seg_start_time) {
@@ -3394,8 +3409,11 @@ WIN_FIND_MDF_SEG_LEVEL_m12:
 
 si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx)
 {
-	si8			i, idx, n_inds, high_idx, high_time_diff, low_time_diff;
-	RECORD_INDEX_m12	*ri;
+	si8				i, idx, n_inds, high_idx, high_time_diff, low_time_diff;
+	RECORD_INDEX_m12		*ri;
+	LEVEL_HEADER_m12		*level_header;
+	FILE_PROCESSING_STRUCT_m12	*rd_fps;
+	SEGMENTED_SESS_RECS_m12		*ssr;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -3415,7 +3433,38 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 
 	ri = record_indices_fps->record_indices;
 	n_inds = record_indices_fps->universal_header->number_of_entries;
-	if (n_inds == 1)  // only a terminal index, no records
+	if (n_inds == 0) {  // un-updated header
+		n_inds = (record_indices_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m12) / INDEX_BYTES_m12;
+		record_indices_fps->universal_header->number_of_entries = n_inds;
+		
+		// update corresponding record data file universal header
+		level_header = (LEVEL_HEADER_m12 *) record_indices_fps->parent;
+		rd_fps = NULL;
+		if (level_header != NULL) {
+			switch (level_header->type_code) {
+				case LH_TIME_SERIES_SEGMENT_m12:
+				case LH_VIDEO_SEGMENT_m12:
+					rd_fps = ((SEGMENT_m12 *) level_header)->record_data_fps;
+					break;
+				case LH_TIME_SERIES_CHANNEL_m12:
+				case LH_VIDEO_CHANNEL_m12:
+					rd_fps = ((CHANNEL_m12 *) level_header)->record_data_fps;
+					break;
+				case LH_SESSION_m12:
+					rd_fps = ((SESSION_m12 *) level_header)->record_data_fps;
+					break;
+				case LH_SEGMENTED_SESS_RECS_m12:
+					ssr = (SEGMENTED_SESS_RECS_m12 *) level_header;
+					idx = record_indices_fps - ssr->record_indices_fps[0];
+					if (ssr->record_data_fps != NULL)
+						rd_fps = ssr->record_data_fps[idx];
+					break;
+			}
+			if (rd_fps != NULL)
+				rd_fps->universal_header->number_of_entries = n_inds;
+		}
+	}
+	if (n_inds <= 1)  // only a terminal index, no records
 		return(NO_INDEX_m12);
 
 	if (target_time < ri[low_idx].start_time) {
@@ -33225,7 +33274,7 @@ TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 	// set socket to non-blocking
 	else if (blocking == FALSE_m12) {
 		socket_flags |= O_NONBLOCK;
-		if (fcntl(c, F_SETFL, socket_flags) == -1) {
+		if (fcntl(trans_info->sock_fd, F_SETFL, socket_flags) == -1) {
 			G_warning_message_m12("%s(): could not set socket to non-blocking\n", __FUNCTION__);
 			blocking = UNKNOWN_m12;
 		}
@@ -33260,15 +33309,15 @@ TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 		enable = 0;
 		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
 		if (err != NO_ERROR) {
-			G_warning_message_m12("%s(): could not set socket to blocking\n", __FUNCTION__);
+			G_warning_message_m12("%s(): could not set socket to non-blocking\n", __FUNCTION__);
 			blocking = UNKNOWN_m12;
 		}
 	}
 	
 	// blocking == UNKNOWN_m12 => just return current state
 	else {
-		enable = 1;  // set to blocking mode
-		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);  // apparently this will fail if already in blocking mode, with error code WSAEOPNOTSUPP
+		enable = 1;  // set to blocking
+		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);  // apparently this will fail if already set to blocking, with error code WSAEOPNOTSUPP
 		
 		if (err == NO_ERROR) {  // reset to non-blocking
 			enable = 0;
