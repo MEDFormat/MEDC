@@ -2170,6 +2170,7 @@ si4		G_compare_acq_nums_m12(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
 void		G_condition_timezone_info_m12(TIMEZONE_INFO_m12 *tz_info);
 void		G_condition_time_slice_m12(TIME_SLICE_m12 *slice);
+TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 si8		G_current_uutc_m12(void);
 si4		G_days_in_month_m12(si4 month, si4 year);
 TERN_m12        G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps);

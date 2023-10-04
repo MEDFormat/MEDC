@@ -1459,7 +1459,7 @@ void	G_condition_timezone_info_m12(TIMEZONE_INFO_m12 *tz_info)
 		}
 	}
 	
-	// change potential matching strings to caps
+	// change potentially matching strings to caps
 	STR_to_upper_m12(tz_info->country);
 	STR_to_upper_m12(tz_info->country_acronym_2_letter);
 	STR_to_upper_m12(tz_info->country_acronym_3_letter);
@@ -1557,6 +1557,142 @@ void	G_condition_time_slice_m12(TIME_SLICE_m12 *slice)
 	slice->conditioned = TRUE_m12;
 		
 	return;
+}
+
+
+TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
+{
+	static TERN_m12			warning_given = FALSE_m12;
+	TERN_m12			free_fps2;
+	si1				path[FULL_FILE_NAME_BYTES_m12], name[SEGMENT_BASE_FILE_NAME_BYTES_m12];
+	si8				number_of_entries, file_offset, idx;
+	ui4				maximum_entry_size;
+	FILE_PROCESSING_STRUCT_m12	*fps2;
+	UNIVERSAL_HEADER_m12		*uh, *uh2;
+	SEGMENT_m12			*seg;
+	SEGMENTED_SESS_RECS_m12		*ssr;
+	LEVEL_HEADER_m12		*level_header;
+	CMP_BLOCK_FIXED_HEADER_m12	block_header;
+	
+	
+	// called if universal_header->number_of_entries == 0 in live recording or improperly closed file
+	
+	if (warning_given == FALSE_m12) {  // don't give this warning for every file
+		G_warning_message_m12("%s(): file header not complete.\nThis can occur if the file is still being recorded, or was not closed properly.\n");
+		warning_given = TRUE_m12;
+	}
+	
+	uh = fps->universal_header;
+	number_of_entries = 0;
+	maximum_entry_size = 0;
+	free_fps2 = FALSE_m12;
+	switch (uh->type_code) {
+		case VIDEO_INDICES_FILE_TYPE_CODE_m12:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
+		case RECORD_INDICES_FILE_TYPE_CODE_m12:
+			number_of_entries = (fps->parameters.flen - (si8) UNIVERSAL_HEADER_BYTES_m12) / (si8) INDEX_BYTES_m12;
+			maximum_entry_size = (ui4) INDEX_BYTES_m12;
+			break;
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
+			// see if indices known
+			fps2 = NULL;
+			seg = (SEGMENT_m12 *) fps->parent;
+			if (seg != NULL) {  // try using parent
+				fps2 = seg->record_indices_fps;
+			} else {  // try using file name
+				G_extract_path_parts_m12(fps->full_file_name, path, name, NULL);
+				sprintf_m12(path, "%s/%s.%s", path, name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
+				fps2 = G_read_file_m12(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m12, FPS_UNIVERSAL_HEADER_ONLY_m12, NULL, NULL, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+				free_fps2 = TRUE_m12;
+			}
+			if (fps2 != NULL) {
+				uh2 = fps2->universal_header;
+				if (uh2->number_of_entries != 0)
+					number_of_entries = uh2->number_of_entries;
+				else
+					number_of_entries = (fps2->parameters.flen - (si8) UNIVERSAL_HEADER_BYTES_m12) / (si8) INDEX_BYTES_m12;
+				--number_of_entries;  // don't include last index
+				if (free_fps2 == TRUE_m12)
+					FPS_free_processing_struct_m12(fps2, TRUE_m12);
+			}
+			if (number_of_entries > 0) {  // read second block header for maximum entry size (CPS will reallocate if needed, but first block often truncated)
+				// read first block header
+				file_offset = UNIVERSAL_HEADER_BYTES_m12;
+				if (fseek_m12(fps->parameters.fp, file_offset, SEEK_SET, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
+					break;
+				if (fread_m12((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m12), (size_t) 1, fps->parameters.fp, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
+					break;
+				// read second block header
+				file_offset += block_header.total_block_bytes;
+				if (fseek_m12(fps->parameters.fp, file_offset, SEEK_SET, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
+					break;
+				if (fread_m12((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m12), (size_t) 1, fps->parameters.fp, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
+					break;
+				maximum_entry_size = block_header.total_block_bytes;
+			}  // the only other option would be to read full data file counting blocks - will add this if need arises, but for now, just fail
+			break;
+		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
+			break;  // these are wirtten on close - there won't be anything to read except universal header
+		case RECORD_DATA_FILE_TYPE_CODE_m12:
+			// see if indices known
+			level_header = (LEVEL_HEADER_m12 *) fps->parent;  // try using parent
+			fps2 = NULL;
+			if (level_header != NULL) {
+				switch (level_header->type_code) {
+					case LH_TIME_SERIES_SEGMENT_m12:
+					case LH_VIDEO_SEGMENT_m12:
+						fps2 = ((SEGMENT_m12 *) level_header)->record_indices_fps;
+						break;
+					case LH_TIME_SERIES_CHANNEL_m12:
+					case LH_VIDEO_CHANNEL_m12:
+						fps2 = ((CHANNEL_m12 *) level_header)->record_indices_fps;
+						break;
+					case LH_SESSION_m12:
+						fps2 = ((SESSION_m12 *) level_header)->record_indices_fps;
+						break;
+					case LH_SEGMENTED_SESS_RECS_m12:
+						ssr = (SEGMENTED_SESS_RECS_m12 *) level_header;
+						if (ssr->record_indices_fps != NULL) {
+							idx = fps - ssr->record_data_fps[0];
+							fps2 = ssr->record_indices_fps[idx];
+						}
+						break;
+				}
+			}
+			if (fps2 == NULL) {  // try using file name
+				G_extract_path_parts_m12(fps->full_file_name, path, name, NULL);
+				sprintf_m12(path, "%s/%s.%s", path, name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+				fps2 = G_read_file_m12(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m12, FPS_UNIVERSAL_HEADER_ONLY_m12, NULL, NULL, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+				free_fps2 = TRUE_m12;
+			}
+			if (fps2 != NULL) {
+				uh2 = fps2->universal_header;
+				if (uh2->number_of_entries != 0)
+					number_of_entries = uh2->number_of_entries;
+				else
+					number_of_entries = (fps2->parameters.flen - (si8) UNIVERSAL_HEADER_BYTES_m12) / (si8) INDEX_BYTES_m12;
+				--number_of_entries;  // don't include last index
+				if (free_fps2 == TRUE_m12)
+					FPS_free_processing_struct_m12(fps2, TRUE_m12);
+			}
+			if (number_of_entries > 0)  // the only option to get true maximum record size be to read full record data (or index) file
+				maximum_entry_size = REC_LARGEST_RECORD_BYTES_m12;
+			// the only other option would be to read full record data file counting records - will add this if need arises, but for now, just fail
+			break;
+		default:
+			G_warning_message_m12("%s(): unrecognized file type\n", __FUNCTION__);
+			break;
+	}
+	
+	if (number_of_entries <= 0 || maximum_entry_size <= 0)
+		return(FALSE_m12);
+
+	uh->number_of_entries = number_of_entries;
+	uh->maximum_entry_size = maximum_entry_size;
+	
+	return(TRUE_m12);
+
 }
 
 
@@ -3017,22 +3153,7 @@ si8	G_find_index_m12(SEGMENT_m12 *seg, si8 target, ui4 mode)  // returns index c
 	// NO_OVERFLOWS_m12: restrict returned index to valid segment values (ORed with search type)
 	// SAMPLE_SEARCH_m12 indices must be session-relative (global indexing)
 	
-	// check for un-updated headers
-	if (seg->type_code == LH_TIME_SERIES_SEGMENT_m12) {
-		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries;
-		if (n_inds == 0) {
-			n_inds = (seg->time_series_indices_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m12) / INDEX_BYTES_m12;
-			seg->time_series_indices_fps->universal_header->number_of_entries = n_inds;
-			seg->time_series_data_fps->universal_header->number_of_entries = n_inds;
-		}
-	} else { // LEVEL_VIDEO_SEGMENT_m12
-		n_inds = seg->video_indices_fps->universal_header->number_of_entries;
-		if (n_inds == 0) {
-			n_inds = (seg->video_indices_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m12) / INDEX_BYTES_m12;
-			seg->video_indices_fps->universal_header->number_of_entries = n_inds;
-		}
-	}
-	--n_inds;  // account for terminal index here - cleaner code below
+	n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 
 	if (mode & NO_OVERFLOWS_m12) {
 		mode &= ~NO_OVERFLOWS_m12;
@@ -3411,9 +3532,6 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 {
 	si8				i, idx, n_inds, high_idx, high_time_diff, low_time_diff;
 	RECORD_INDEX_m12		*ri;
-	LEVEL_HEADER_m12		*level_header;
-	FILE_PROCESSING_STRUCT_m12	*rd_fps;
-	SEGMENTED_SESS_RECS_m12		*ssr;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -3433,37 +3551,6 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 
 	ri = record_indices_fps->record_indices;
 	n_inds = record_indices_fps->universal_header->number_of_entries;
-	if (n_inds == 0) {  // un-updated header
-		n_inds = (record_indices_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m12) / INDEX_BYTES_m12;
-		record_indices_fps->universal_header->number_of_entries = n_inds;
-		
-		// update corresponding record data file universal header
-		level_header = (LEVEL_HEADER_m12 *) record_indices_fps->parent;
-		rd_fps = NULL;
-		if (level_header != NULL) {
-			switch (level_header->type_code) {
-				case LH_TIME_SERIES_SEGMENT_m12:
-				case LH_VIDEO_SEGMENT_m12:
-					rd_fps = ((SEGMENT_m12 *) level_header)->record_data_fps;
-					break;
-				case LH_TIME_SERIES_CHANNEL_m12:
-				case LH_VIDEO_CHANNEL_m12:
-					rd_fps = ((CHANNEL_m12 *) level_header)->record_data_fps;
-					break;
-				case LH_SESSION_m12:
-					rd_fps = ((SESSION_m12 *) level_header)->record_data_fps;
-					break;
-				case LH_SEGMENTED_SESS_RECS_m12:
-					ssr = (SEGMENTED_SESS_RECS_m12 *) level_header;
-					idx = record_indices_fps - ssr->record_indices_fps[0];
-					if (ssr->record_data_fps != NULL)
-						rd_fps = ssr->record_data_fps[idx];
-					break;
-			}
-			if (rd_fps != NULL)
-				rd_fps->universal_header->number_of_entries = n_inds;
-		}
-	}
 	if (n_inds <= 1)  // only a terminal index, no records
 		return(NO_INDEX_m12);
 
@@ -9639,12 +9726,10 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 	uh = fps->universal_header;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12 || number_of_items == FPS_FULL_FILE_m12 || opened_flag == TRUE_m12) {
 		
-		// ************************************************************************************************* //
-		// **** handle number of entriies / maximum entries size == zero here (make it's own function) ***** //
-		// ****                     live recordding or impropoerly closed files                        ***** //
-		// ************************************************************************************************* //
-
 		FPS_read_m12(fps, 0, UNIVERSAL_HEADER_BYTES_m12, __FUNCTION__, behavior_on_fail);
+		if (uh->number_of_entries == 0)
+			if (G_correct_universal_header_m12(fps) == FALSE_m12)  // live or abnormally terminated file
+				return(NULL);
 		if (uh->session_UID != globals_m12->session_UID)  // set current session directory globals
 			G_get_session_directory_m12(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12) {
