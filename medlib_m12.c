@@ -9638,6 +9638,12 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 	// universal header
 	uh = fps->universal_header;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12 || number_of_items == FPS_FULL_FILE_m12 || opened_flag == TRUE_m12) {
+		
+		// ************************************************************************************************* //
+		// **** handle number of entriies / maximum entries size == zero here (make it's own function) ***** //
+		// ****                     live recordding or impropoerly closed files                        ***** //
+		// ************************************************************************************************* //
+
 		FPS_read_m12(fps, 0, UNIVERSAL_HEADER_BYTES_m12, __FUNCTION__, behavior_on_fail);
 		if (uh->session_UID != globals_m12->session_UID)  // set current session directory globals
 			G_get_session_directory_m12(NULL, NULL, fps);
