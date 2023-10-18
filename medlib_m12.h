@@ -1507,7 +1507,7 @@ typedef struct {
 	TERN_m12                        verbose;
 	ui4                             behavior_on_fail;
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m12];  // system temp directory (periodically auto-cleared)
-	si1				temp_file[FULL_FILE_NAME_BYTES_m12];  // full path to temp file (i.e. incudes temp_dir)
+	si1				temp_file[FULL_FILE_NAME_BYTES_m12];  // full path to temp file (i.e. incudes temp_dir), not thread safe => use G_unique_temp_file_m12() in threaded applications
 	ui4				*behavior_stack;
 	volatile ui4			behavior_stack_entries;
 	volatile ui4			behavior_stack_size;
@@ -2290,6 +2290,7 @@ void            G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNI
 TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess);
 void		G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number);
 void		G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key);
+si1		*G_unique_temp_file_m12(si1 *temp_file);
 void		G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 si8		G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
@@ -2309,7 +2310,7 @@ FILETIME	WN_uutc_to_win_time_m12(si8 uutc);
 void		WN_cleanup_m12(void);
 void		WN_clear_m12(void);
 si8		WN_date_to_uutc_m12(sf8 date);
-si4		WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path);
+si4		WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *temp_file);
 TERN_m12	WN_initialize_terminal_m12(void);
 TERN_m12	WN_reset_terminal_m12(void);
 TERN_m12	WN_socket_startup_m12(void);

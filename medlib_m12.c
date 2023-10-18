@@ -4336,7 +4336,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 {
 	TERN_m12	regex;
 	si1		tmp_enclosing_directory[FULL_FILE_NAME_BYTES_m12], tmp_path[FULL_FILE_NAME_BYTES_m12];
-	si1		tmp_name[FULL_FILE_NAME_BYTES_m12], tmp_extension[16], tmp_ext[16];
+	si1		tmp_name[FULL_FILE_NAME_BYTES_m12], tmp_extension[16], tmp_ext[16], temp_file[FULL_FILE_NAME_BYTES_m12];
 	si1		**tmp_ptr_ptr;
 	ui4		path_parts;
 	si4		i, j, n_in_files, *n_out_files;
@@ -4345,6 +4345,8 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	G_unique_temp_file_m12(temp_file);
 	
 	// can be used to get a directory list also
 	// file_list entries, enclosing_directory, name, & extension can contain regexp
@@ -4461,7 +4463,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 					sprintf_m12(command, "%s.%s", command, extension);
 			}
 		}
-		sprintf_m12(command, "%s > %s 2> %s", command, globals_m12->temp_file, NULL_DEVICE_m12);
+		sprintf_m12(command, "%s > %s 2> %s", command, temp_file, NULL_DEVICE_m12);
 		free_m12((void *) file_list, __FUNCTION__);
 		
 		// count expanded file list
@@ -4471,7 +4473,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			free((void *) command);
 			return(NULL);
 		}
-		fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		
 		tmp_str = command;
 		while (fscanf(fp, "%[^\n]", tmp_str) != EOF) {
@@ -4488,13 +4490,13 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	#endif  // MACOS_m12 || LINUX_m12
 		
 	#ifdef WINDOWS_m12
-		*n_out_files = WN_ls_1d_to_tmp_m12(file_list, n_in_files, TRUE_m12);
+		*n_out_files = WN_ls_1d_to_tmp_m12(file_list, n_in_files, TRUE_m12, temp_file);
 		free_m12((void *) file_list, __FUNCTION__);
 		if (*n_out_files == -1) {  // error
 			*n_out_files = 0;
 			return(NULL);
 		}
-		fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	#endif  // WINDOWS_m12
 
 		// re-allocate
@@ -4960,7 +4962,7 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12 set_timezone_globals, TERN_m12 prompt)
 {
 	TERN_m12	free_loc_info = FALSE_m12;
-	si1		*command, temp_str[128], *buffer, *pattern, *c;
+	si1		*command, temp_str[128], *buffer, *pattern, *c, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4		ret_val;
 	si8		sz;
 	FILE		*fp;
@@ -4971,6 +4973,8 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	G_unique_temp_file_m12(temp_file);
+	
 	if (loc_info == NULL) {
 		loc_info = (LOCATION_INFO_m12 *) calloc((size_t) 1, sizeof(LOCATION_INFO_m12));
 		free_loc_info = TRUE_m12;
@@ -4979,23 +4983,25 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 	}
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "curl -s ipinfo.io";
+	command = "curl --connect-timeout 2.0 -s ipinfo.io";
 #endif
 #ifdef WINDOWS_m12
-	command = "curl.exe -s ipinfo.io";
+	command = "curl.exe --connect-timeout 2.0 .exe -s ipinfo.io";
 #endif
-	sprintf_m12(temp_str, "%s > %s 2> %s", command, globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "%s > %s 2> %s", command, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	// get file length
 	sz = G_file_length_m12(fp, NULL);
+	if (sz == 0)
+		return(NULL);
 	
 	// read output
 	buffer = (si1 *) calloc((size_t)sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
 	
 	// condition output
@@ -5917,8 +5923,12 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 	strcpy(globals->temp_file, "/tmp/junk");
 	#endif
 	#ifdef WINDOWS_m12
+	si8	len;
+	
 	GetTempPathA(FULL_FILE_NAME_BYTES_m12, globals->temp_dir);
-	sprintf_m12(globals->temp_file, "%sjunk", globals->temp_dir);
+	sprintf(globals->temp_file, "%sjunk", globals->temp_dir);
+	len = strlen(globals->temp_dir);
+	globals->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
 	globals->level_header_flags = LH_NO_FLAGS_m12;
 	globals->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12;
@@ -6008,12 +6018,12 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 		ret_val = FALSE_m12;
 #endif
 		
-	// clear any residual temp file
+	// clear any residual temp files
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf_m12(command, "rm -f %s", globals_m12->temp_file);
+	sprintf_m12(command, "rm -f %s*", globals_m12->temp_file);
 #endif
 #ifdef WINDOWS_m12
-	sprintf_m12(command, "del %s", globals_m12->temp_file);
+	sprintf_m12(command, "del %s*", globals_m12->temp_file);
 #endif
 	system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 
@@ -11495,17 +11505,17 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 
 #if defined MACOS_m12 || defined LINUX_m12
 	if (include_cc == TRUE_m12)
-		sprintf(command, "curl --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
-		sprintf(command, "curl --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	system(command);
 #endif
 	
 #ifdef WINDOWS_m12
 	if (include_cc == TRUE_m12)
-		sprintf(command, "curl.exe --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl.exe --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
-		sprintf(command, "curl.exe --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl.exe --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	WN_system_m12(command);
 #endif
 
@@ -13456,15 +13466,46 @@ void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 	}
 
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf(command, "curl -X POST https://textbelt.com/text --data-urlencode phone='%s' --data-urlencode message='%s' -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
+	sprintf(command, "curl --connect-timeout 2.0 -X POST https://textbelt.com/text --data-urlencode phone='%s' --data-urlencode message='%s' -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
 	system(command);
 #endif
 #ifdef WINDOWS_m12
-	sprintf(command, "curl.exe -X POST https://textbelt.com/text --data-urlencode phone=\"%s\" --data-urlencode message=\"%s\" -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
+	sprintf(command, "curl.exe --connect-timeout 2.0 -X POST https://textbelt.com/text --data-urlencode phone=\"%s\" --data-urlencode message=\"%s\" -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
 	WN_system_m12(command);
 #endif
 
 	return;
+}
+
+
+si1	*G_unique_temp_file_m12(si1 *temp_file)
+{
+	ui8	rand_val;
+	
+	// use instead of globals_m12->temp_file for anything that could be threaded
+	
+	// if NULL is passed, caller is responsible for freeing
+	if (temp_file == NULL)
+		temp_file = (si1 *) malloc_m12((size_t) FULL_FILE_NAME_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	
+#if defined MACOS_m12 || defined LINUX_m12
+	rand_val = (ui8) random();
+	rand_val <<= 32;
+	rand_val |= (ui8) random();
+#endif
+#ifdef WINDOWS_m12
+	rand_val = (ui8) rand();
+	rand_val <<= 16;
+	rand_val |= (ui8) rand();
+	rand_val <<= 16;
+	rand_val |= (ui8) rand();
+	rand_val <<= 16;
+	rand_val |= (ui8) rand();
+#endif
+
+	sprintf_m12(temp_file, "%s/junk_%016lx", globals_m12->temp_dir, rand_val);
+	
+	return(temp_file);
 }
 
 
@@ -28578,7 +28619,7 @@ ui4	HW_get_machine_code_m12(void)
 
 si1	*HW_get_machine_serial_m12(si1 *machine_sn)
 {
-	si1			command[1024], *buf, *local_machine_sn;
+	si1			command[1024], *buf, *local_machine_sn, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si8			file_length, len;
 	FILE			*fp;
 
@@ -28586,33 +28627,62 @@ si1	*HW_get_machine_serial_m12(si1 *machine_sn)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	G_unique_temp_file_m12(temp_file);
+	
 	// get machine serial number
 #ifdef LINUX_m12
-	NET_PARAMS_m12	np = { 0 };
-	
 	// Linux makes it impossible to get product serial from within program, even with sudo password. Using default interface MAC.
-	NET_get_parameters_m12(NULL, &np);  // call NET_get_parameters_m12() to get MAC of default route interface
-	sprintf_m12(command, "echo %s > %s", np.MAC_address_string, globals_m12->temp_file);
-#endif
-#ifdef MACOS_m12
-	// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
-	sprintf_m12(command, "ioreg -l | grep IOPlatformSerialNumber > %s", globals_m12->temp_file);
-#endif
-#ifdef WINDOWS_m12
-	// out example: SerialNumber\nC02RP18FG8WM
-	sprintf_m12(command, "wmic bios get serialnumber > %s", globals_m12->temp_file);
-#endif
+	si1		*c;
+	NET_PARAMS_m12	np;
 
-	system_m12(command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	// call NET_get_lan_ipv4_address_m12() to get default route interface name
+	memset((void *) &np, 0, sizeof(NET_PARAMS_m12));
+	if (NET_get_lan_ipv4_address_m12(&np) == NULL) {
+		G_warning_message_m12("%s(): no internet connection => no default interface\n", __FUNCTION__);
+		return(NULL);
+	}
+
+	sprintf_m12(command, "ifconfig %s > %s 2> %s", np.interface_name, temp_file, NULL_DEVICE_m12);
+	system_m12(command, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	
+	// get file length
 	file_length = G_file_length_m12(fp, NULL);
-	buf = malloc((size_t) file_length);
-	fread_m12((void *) buf, sizeof(si1), (size_t) file_length, fp, globals_m12->temp_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+
+	// read ifconfig() output
+	buf = calloc((size_t) file_length + 1, sizeof(si1));
+	fread_m12(buf, sizeof(si1), (size_t) file_length, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
+
+	// parse ifconfig() output
+	if ((c = STR_match_end_m12("ether ", buf)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"ether \" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, np.interface_name);
+		free((void *) buf);
+		return(NULL);
+	} else {
+		sscanf(c, "%s", buf);
+		STR_to_upper_m12(buf);
+	}
+#endif
+#if defined MACOS_m12 || defined WINDOWS_m12
+	#ifdef MACOS_m12
+		// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
+		sprintf_m12(command, "ioreg -l | grep IOPlatformSerialNumber > %s", temp_file);
+	#endif
+	#ifdef WINDOWS_m12
+		// out example: SerialNumber\nC02RP18FG8WM
+		sprintf_m12(command, "wmic bios get serialnumber > %s", temp_file);
+	#endif
+	system_m12(command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	file_length = G_file_length_m12(fp, NULL);
+	buf = calloc((size_t) file_length + 1, sizeof(si1));
+	fread_m12((void *) buf, sizeof(si1), (size_t) file_length, fp, temp_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+#endif
 
 #ifdef LINUX_m12
 	local_machine_sn = buf;
-	buf[file_length - 1] = 0;  // <lf>
 #endif
 #ifdef MACOS_m12
 	local_machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
@@ -28833,18 +28903,28 @@ TERN_m12	NET_check_internet_connection_m12(void)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	// if want to know if machine can reach internet, check == TRUE_m12
+	// if want to know if network connected locally != FALSE_m12
 
 	// no default route => no internet, so use NET_get_lan_ipv4_address_m12().
 	NET_PARAMS_m12	np = { 0 };
 	
 
-	if (NET_get_lan_ipv4_address_m12(&np) == NULL)
-		return(FALSE_m12);
-
+	G_push_behavior_m12(SUPPRESS_OUTPUT_m12);
+	NET_get_lan_ipv4_address_m12(&np);
+	G_pop_behavior_m12();
 	if (*np.LAN_IPv4_address_string == 0)
-		return(FALSE_m12);
+		return(FALSE_m12);  // FALSE == LAN down (if machine has static IP, WAN == LAN)
+	
+	// LAN can be up but WAN still down, so check wan IP
+	G_push_behavior_m12(SUPPRESS_OUTPUT_m12);
+	NET_get_wan_ipv4_address_m12(&np);
+	G_pop_behavior_m12();
+	if (*np.WAN_IPv4_address_string == 0)
+		return(UNKNOWN_m12);  // UNKNOWN == LAN up, WAN down
 
-	return(TRUE_m12);
+	return(TRUE_m12);  // TRUE == LAN + WAN up (if machine has static ip, WAN == LAN)
 }
 
 
@@ -28896,7 +28976,7 @@ void	*NET_get_in_addr_m12(struct sockaddr *sa)	// get sockaddr, IPv4 or IPv6
 
 NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 {
-	si1			command[1024], *buffer, *c;
+	si1			command[1024], *buffer, *c, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4			ret_val;
 	si8			sz;
 	FILE			*fp;
@@ -28904,6 +28984,8 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	G_unique_temp_file_m12(temp_file);
 
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
@@ -28915,25 +28997,25 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	}
 	
 #ifdef MACOS_m12
-	sprintf_m12(command, "route -n get default | grep interface > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(command, "route -n get default | grep interface > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 #ifdef LINUX_m12
-	sprintf_m12(command, "ip route get 8.8.8.8 > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(command, "ip route get 8.8.8.8 > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 #ifdef WINDOWS_m12
-	sprintf_m12(command, "route PRINT -4 0.0.0.0 > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(command, "route PRINT -4 0.0.0.0 > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 	ret_val = system_m12(command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
 	if (ret_val) // probably no internet connection, otherwise route() error
 		return(NULL);
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
 	sz = G_file_length_m12(fp, NULL);
 
 	// read route() output
 	buffer = (si1 *) calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
 
 	G_push_behavior_m12(RETURN_ON_FAIL_m12);
@@ -28948,21 +29030,21 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 		sscanf(c, "%s", np->interface_name);
 		
 		// send ifconfig() output to temp file
-		sprintf_m12(command, "ifconfig %s > %s 2> %s", np->interface_name, globals_m12->temp_file, NULL_DEVICE_m12);
+		sprintf_m12(command, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
 		ret_val = system_m12(command, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 		if (ret_val) {
 			G_pop_behavior_m12();
 			free((void *) buffer);
 			return(NULL);
 		}
-		fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 		// get file length
 		sz = G_file_length_m12(fp, NULL);
 	
 		// read ifconfig() output
 		buffer = (si1 *) realloc((void *) buffer, (size_t) sz);
-		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 		fclose(fp);
 		if ((c = STR_match_end_m12("inet ", buffer)) == NULL) {
 			G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
@@ -29022,7 +29104,7 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 #ifdef LINUX_m12
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
-	si1             	temp_str[256], *buffer, *c, *pattern;
+	si1             	temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4             	ret_val;
 	si8             	sz;
 	FILE            	*fp;
@@ -29031,6 +29113,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	G_unique_temp_file_m12(temp_file);
+
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (interface_name != NULL) {
@@ -29051,18 +29135,18 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
 
 	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
 	sz = G_file_length_m12(fp, NULL);
 
 	// read ifconfig() output
 	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
 
 	// parse ifconfig() output
@@ -29126,19 +29210,19 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 
 	// use ethtool() to get link speed & duplex
 	*np->link_speed = *np->duplex = 0;
-	sprintf_m12(temp_str, "ethtool %s > %s 2> %s", np->interface_name, globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "ethtool %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 	if (ret_val) {
 		G_warning_message_m12("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__, pattern, np->interface_name);
 	} else {
-		fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 		// get file length
 		sz = G_file_length_m12(fp, NULL);
 
 		// read ethtool() output
 		buffer = realloc((void *) buffer, (size_t) sz);
-		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 		fclose(fp);
 
 		pattern = "Speed: ";
@@ -29162,7 +29246,7 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 #ifdef MACOS_m12
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
-	si1             	temp_str[256], *buffer, *c, *pattern;
+	si1             	temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4             	ret_val;
 	si8             	sz;
 	FILE            	*fp;
@@ -29170,6 +29254,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+
+	G_unique_temp_file_m12(temp_file);
 
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, __LINE__);
@@ -29191,18 +29277,18 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
 
 	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
 	sz = G_file_length_m12(fp, NULL);
 
 	// read ifconfig() output
 	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
 
 	// parse ifconfig() output
@@ -29288,7 +29374,7 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 #ifdef WINDOWS_m12
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
-	si1             		temp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
+	si1             		temp_str[256], *buffer, *iface_start, *c, *c2, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4             		i, ret_val, attempts;
 	si8             		sz;
 	FILE            		*fp;
@@ -29297,11 +29383,12 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	LPVOID 				lpMsgBuf;
 	PIP_ADAPTER_ADDRESSES 		pAddresses, pCurrAddress;
 
-
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	G_unique_temp_file_m12(temp_file);
+
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (interface_name != NULL) {
@@ -29319,18 +29406,18 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	}
 	
 	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "ipconfig /all > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "ipconfig /all > %s 2> %s", temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
 	sz = G_file_length_m12(fp, NULL);
 
 	// read ifconfig() output
 	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
 
 	// parse ifconfig() output
@@ -29493,7 +29580,7 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 
 NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 {
-	si1		temp_str[1024], *buffer, *pattern, *c, retry_count;
+	si1		temp_str[1024], *buffer, *pattern, *c, retry_count, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4		ret_val;
 	si8		sz;
 	FILE		*fp;
@@ -29502,6 +29589,8 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
+	G_unique_temp_file_m12(temp_file);
+
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
 
@@ -29509,30 +29598,34 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	retry_count = 0;
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf_m12(temp_str, "curl -s checkip.dyndns.org > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "curl --connect-timeout 2.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 #ifdef WINDOWS_m12
-	sprintf_m12(temp_str, "curl.exe -s checkip.dyndns.org > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "curl.exe --connect-timeout 2.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 	
 GET_WAN_IPV4_ADDR_RETRY_m12:
 
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12 | RETRY_ONCE_m12);
 	if (ret_val) {
-		if (NET_check_internet_connection_m12() == FALSE_m12)
+		if (NET_get_lan_ipv4_address_m12(np) == NULL)
 			G_warning_message_m12("%s(): no internet connection\n", __FUNCTION__);
 		else
 			G_warning_message_m12("%s(): cannot connect to checkip.dyndns.org\n", __FUNCTION__);
 		return(NULL);
 	}
-	fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
 	sz = G_file_length_m12(fp, NULL);
+	if (sz == 0) {  // probably timed out
+		G_warning_message_m12("%s(): cannot connect to checkip.dyndns.org\n", __FUNCTION__);
+		return(NULL);
+	}
 
 	// read output
 	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 	fclose(fp);
 
 	// parse output
@@ -29620,7 +29713,7 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 #ifdef WINDOWS_m12
 si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 {
-	si1			local_iface_name[64], *buffer, *c, *c2, command[256];
+	si1			local_iface_name[64], *buffer, *c, *c2, command[256], temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4			ret_val;
 	si8			sz;
 	FILE			*fp;
@@ -29629,20 +29722,22 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
+	G_unique_temp_file_m12(temp_file);
+
 	if (iface_name == NULL)
 		iface_name = local_iface_name;  // not thread safe
 
 	// get interface name (aka connection name in Windows)
-	sprintf(command, "ipconfig > %s 2> %s", globals_m12->temp_file, NULL_DEVICE_m12);
+	sprintf(command, "ipconfig > %s 2> %s", temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
 	*iface_name = 0;
 	if (ret_val == 0) {
-		fp = fopen_m12(globals_m12->temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		// get file length
 		sz = G_file_length_m12(fp, NULL);
 		// read ipconfig() output
 		buffer = (si1 *) calloc((size_t) sz, sizeof(si1));
-		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, globals_m12->temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
+		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
 		fclose(fp);
 		// parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m12(iface_addr, buffer)) != NULL) {
@@ -30746,7 +30841,7 @@ pthread_t_m12	PROC_pthread_self_m12(void)
 #ifdef LINUX_m12
 TERN_m12    PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_attr_t_m12 *attributes, cpu_set_t_m12 *cpu_set_p, TERN_m12 wait_for_lauch)
 {
-	const si4	MAX_ATTEMPTS = 100;
+	const si4	MAX_ATTEMPTS = 10;
 	TERN_m12	use_attributes;
 	si1		thread_name[THREAD_NAME_BYTES_m12];
 	si4		err, attempts;
@@ -30759,7 +30854,7 @@ TERN_m12    PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_att
 	// if thread_id_p is passed, it is used
 	// if thread_id_p is NULL & attributes is passed, it is used
 	// attributes allow affinity to be set before thread is launched
-	// thread_id can be used to change affinity whie thread is running
+	// thread_id can be used to change affinity while thread is running
 	
 	if (thread_id_p == NULL) {
 		if (attributes == NULL)
@@ -34566,14 +34661,15 @@ TERN_m12	WN_initialize_terminal_m12(void)
 }
 
 
-si4    WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path)  // replacement for unix "ls -1d > temp_file (on a directory list)"
+si4    WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *temp_file)  // replacement for unix "ls -1d > temp_file (on a directory list)"
 {
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
 #ifdef WINDOWS_m12
-	si1			*file_name, *dir_name, enclosing_directory[FULL_FILE_NAME_BYTES_m12], tmp_dir[FULL_FILE_NAME_BYTES_m12];
+	si1			*file_name, *dir_name, enclosing_directory[FULL_FILE_NAME_BYTES_m12];
+	si1			tmp_dir[FULL_FILE_NAME_BYTES_m12];
 	ui4			fe;
 	si4			i, n_files;
 	WIN32_FIND_DATAA 	ffd;
@@ -34591,8 +34687,14 @@ si4    WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path)  // r
 	if (n_dirs < 1)
 		return(-1);
 	
+	if (temp_file == NULL)
+		temp_file = globals_m12->temp_file;  // not thread safe
+	else if (*temp_file == 0)  // generate a unique temp file
+		G_unique_temp_file_m12(temp_file);
+	// else caller passed temp file name
+	
 	// open temp file
-	fp = fopen_m12(globals_m12->temp_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fp = fopen_m12(temp_file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	find_h = INVALID_HANDLE_VALUE;
 	n_files = 0;
