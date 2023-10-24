@@ -5951,8 +5951,7 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 
 TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 initialize_all_tables)
 {
-	TERN_m12			ret_val = TRUE_m12;
-	si1				command[FULL_FILE_NAME_BYTES_m12];
+	TERN_m12	ret_val = TRUE_m12;
 
 #ifdef FN_DEBUG_m12  // don't use MED print functions until UTF8 tables initialized
 	printf_m12("%s()\n", __FUNCTION__);
@@ -6018,15 +6017,6 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 		ret_val = FALSE_m12;
 #endif
 		
-	// clear any residual temp files
-#if defined MACOS_m12 || defined LINUX_m12
-	sprintf_m12(command, "rm -f %s*", globals_m12->temp_file);
-#endif
-#ifdef WINDOWS_m12
-	sprintf_m12(command, "del %s*", globals_m12->temp_file);
-#endif
-	system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
-
 	return(ret_val);
 }
 
@@ -10879,6 +10869,54 @@ TERN_m12    G_recover_passwords_m12(si1 *L3_password, UNIVERSAL_HEADER_m12 *univ
 	return(TRUE_m12);
 }
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m12	G_remove_path_m12(si1 *path)
+{
+	si1	command[FULL_FILE_NAME_BYTES_m12 + 8];
+	si4	fe, ret_val;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	fe = G_file_exists_m12(path);
+	
+	if (fe == FILE_EXISTS_m12) {
+		
+		#if defined MACOS_m12 || defined LINUX_m12
+		sprintf_m12(command, "rm -f \"%s\"", path);
+		#endif
+		#ifdef WINDOWS_m12
+		sprintf_m12(command, "del \"%s\"", path);
+		#endif
+		ret_val = system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+		if (ret_val) {
+			G_warning_message_m12("%s(): could not remove file \"%s\"\n", __FUNCTION__, path);
+			return(FALSE_m12);
+		}
+		
+		return(TRUE_m12);
+	} else if (fe == DIR_EXISTS_m12) {
+		#if defined MACOS_m12 || defined LINUX_m12
+		sprintf_m12(command, "rm -Rf \"\"%s", path);
+		#endif
+		#ifdef WINDOWS_m12
+		sprintf_m12(command, "rmdir \\/s \\/q \"%s\"", path);
+		#endif
+		ret_val = system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+		if (ret_val) {
+			G_warning_message_m12("%s(): could not remove directory \"%s\"\n", __FUNCTION__, path);
+			return(FALSE_m12);
+		}
+
+		return(TRUE_m12);
+	}
+	
+	return(TRUE_m12);
+}
+
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
@@ -13430,6 +13468,223 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 	
 	return;
 }
+
+
+#if defined MACOS_m12 || defined LINUX_m12
+si1	*G_system_pipe_m12(si1 *buffer, si8 buf_len, si1* command)
+{
+	TERN_m12	free_buffer;
+	si1		**args, *c;
+	si4		ret_val, child_pid, master_fd, arg_cnt, alloced_args;
+	si8		bytes_in_buffer;
+	const si4	ALLOCED_ARGS_INC = 10;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns NULL terminated string from system command
+	// returns NULL for failure
+	// (more efficient than redirecting to temp file & reading)
+
+	if (buf_len == 0)
+		buf_len = FULL_FILE_NAME_BYTES_m12 * 4;  // default len (if potentially very long, caller should pass buffer)
+	--buf_len;  // allow room for terminal zero
+	
+	free_buffer = FALSE_m12;
+	if (buffer == NULL) {  // caller responsible for freeing
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_buffer = TRUE_m12;
+	}
+	
+	args = NULL;
+	master_fd = 0;
+	
+	// spawn child and connect to a pseudoterminal
+	child_pid = (int) forkpty(&master_fd, NULL, NULL, NULL);
+	
+	// launch command in child process
+	if (child_pid == -1) {
+		G_warning_message_m12("%s(): forkpty() error\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	} else if (child_pid == 0) {  // in child
+		// parse args
+		alloced_args = ALLOCED_ARGS_INC;
+		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
+		arg_cnt = 0;
+		c = command;  // command is modified here (terminal zeroes replace spaces)
+		while (*c) {
+			if (arg_cnt == alloced_args) {
+				alloced_args += ALLOCED_ARGS_INC;
+				args = (si1 **) realloc((void *) args, (size_t) (alloced_args + 1) * sizeof(si1 *));
+			}
+			if (*c == 34) {  // quote, include all characters
+				args[arg_cnt++] = ++c;
+				while (*++c != 34);
+				continue;
+			}
+			if (*c == 92) {  // skip escaped spaces
+				if (*(c + 1) == 32)
+					c += 2;
+			}
+			if (*c == 32) {  // space delimiter
+				if (*(c + 1)) {
+					*c = 0;
+					args[arg_cnt++] = ++c;
+					continue;
+				}
+			}
+			++c;
+		}
+		args[arg_cnt] = (si1 *) NULL;  // terminal
+		
+		// convert child to command
+		if (execv(args[0], args) == -1) {
+			G_warning_message_m12("%s(): execv() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m12;
+		}
+	}  // rest is parent
+	
+	// read child output
+	bytes_in_buffer = 0;
+	c = buffer;
+	while (1) {
+		ret_val = read(master_fd, c, buf_len - bytes_in_buffer);
+		if (ret_val <= 0 )
+			break;
+		bytes_in_buffer += ret_val;
+		c += ret_val;
+	}
+	*c = 0;  // set terminal zero
+	
+	free((void *) args);
+	close(master_fd);
+
+	return(buffer);
+	
+SYSTEM_PIPE_FAIL_m12:
+	
+	if (child_pid == 0) {
+		if (args != NULL)  // alloced in child
+			free((void *) args);
+		kill(child_pid, SIGKILL);
+	}
+	if (master_fd)
+		close(master_fd);
+	if (free_buffer == TRUE_m12)
+		free_m12((void *) buffer, __FUNCTION__);
+
+	return(NULL);
+}
+#endif
+
+
+#ifdef WINDOWS_m12
+si1	*G_system_pipe_m12(si1 *buffer, si8 buf_len, si1* command)
+{
+	TERN_m12		free_buffer;
+	si1			cmd_exe_path[MAX_PATH], *tmp_command, *c;
+	si8			len;
+	PROCESS_INFORMATION	process_info;
+	STARTUPINFOA		startup_info;
+	SECURITY_ATTRIBUTES 	sec_attr;
+	HANDLE 			read_h, write_h;
+	DWORD 			n_bytes_read, n_bytes_written, bytes_in_buffer, bytes_avail, input_len, exit_code;
+	BOOL 			success;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns NULL terminated string from system command
+	// returns NULL for failure
+	// (more efficient than redirecting to temp file & reading)
+
+	if (buf_len == 0)
+		buf_len = FULL_FILE_NAME_BYTES_m12 * 4;  // default len (if potentially very long, caller should pass buffer)
+	--buf_len;  // allow room for terminal zero
+
+	free_buffer = FALSE_m12;
+	if (buffer == NULL) {  // caller responsible for freeing
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_buffer = TRUE_m12;
+	}
+	
+	tmp_command = NULL;
+	read_h = NULL;
+	write_h = NULL;
+	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
+	ZeroMemory(&startup_info, sizeof(STARTUPINFO));
+
+	// create pipes
+	sec_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
+	sec_attr.lpSecurityDescriptor = NULL;
+	sec_attr.bInheritHandle = TRUE;
+	if (CreatePipe(&read_h, &write_h, &sec_attr, 0) == FALSE) {
+		G_warning_message_m12("%s(): CreatePipe() failed\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	}
+	if (SetHandleInformation(read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
+		G_warning_message_m12("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	}
+	
+	// set up process
+	GetEnvironmentVariableA("COMSPEC", cmd_exe_path, MAX_PATH);
+	len = 5;
+	len += strlen(cmd_exe_path);
+	len += strlen(command);
+	tmp_command = (si1 *) malloc((size_t) len);
+	sprintf(tmp_command, "%s /c %s", cmd_exe_path, command);
+
+	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;  // make nShowWindow member valid
+	startup_info.wShowWindow = SW_HIDE;
+	startup_info.hStdOutput = startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
+	
+	// start process
+	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
+		G_warning_message_m12("%s(): CreateProcess() failed\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	}
+	
+	// close unused pipe end
+	CloseHandle(write_h);
+
+	// read pipe
+	bytes_in_buffer = 0;
+	c = buffer;
+	while(TRUE) {
+		success = ReadFile(read_h, c, buf_len - bytes_in_buffer, &n_bytes_read, NULL);
+		if (success == FALSE)
+			break;
+		bytes_in_buffer += n_bytes_read;
+		c += n_bytes_read;
+	}
+	*c = 0;  // add terminal zero
+
+	free((void *) tmp_command);
+	CloseHandle(read_h);
+	CloseHandle(process_info.hProcess);  // process handle
+	CloseHandle(process_info.hThread);  // process' primary thread handle
+
+	return(buffer);
+	
+SYSTEM_PIPE_FAIL_m12:
+	
+	if (free_buffer == TRUE_m12)
+		free_m12((void *) buffer, __FUNCTION__);
+	if (tmp_command != NULL)
+		free((void *) tmp_command);
+	if (read_h != NULL)
+		CloseHandle(read_h);
+	if (process_info.hProcess != NULL)
+		CloseHandle(process_info.hProcess);
+	if (process_info.hThread != NULL)
+		CloseHandle(process_info.hThread);
+
+	return(NULL);
+}
+#endif
 
 
 void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
@@ -29000,7 +29255,7 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	sprintf_m12(command, "route -n get default | grep interface > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 #ifdef LINUX_m12
-	sprintf_m12(command, "ip route get 8.8.8.8 > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	printf_m12("%s(%d): command = %s\n", __FUNCTION__, __LINE__, command);
 #endif
 #ifdef WINDOWS_m12
 	sprintf_m12(command, "route PRINT -4 0.0.0.0 > %s 2> %s", temp_file, NULL_DEVICE_m12);

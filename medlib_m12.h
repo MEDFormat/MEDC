@@ -152,14 +152,17 @@
 	#include <sys/param.h>
 	#include <sys/mount.h>
 	#include <termios.h>
+	#include <signal.h>
 #endif
 #ifdef MACOS_m12
 	#include <malloc/malloc.h>
 	#include <sys/sysctl.h>
+	#include <util.h>
 #endif
 #ifdef LINUX_m12
 	#include <sys/statfs.h>
 	#include <sys/sysinfo.h>
+	#include <pty.h>
 #endif
 #if defined LINUX_m12 || defined WINDOWS_m12
 	#include <malloc.h>
@@ -2261,6 +2264,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...); 
 SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...);  // varargs: void *file_list, si4 list_len, ui8 flags, si1 *password  ("nt" == not threaded)
 si8     	G_read_time_series_data_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice);
 TERN_m12	G_recover_passwords_m12(si1 *L3_password, UNIVERSAL_HEADER_m12* universal_header);
+TERN_m12	G_remove_path_m12(si1 *path);
 void     	G_remove_recording_time_offset_m12(si8 *time);
 void            G_reset_metadata_for_update_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 si8		G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
@@ -2289,6 +2293,7 @@ void            G_show_timezone_info_m12(TIMEZONE_INFO_m12 *timezone_entry, TERN
 void            G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEADER_m12 *uh);
 TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess);
 void		G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number);
+si1		*G_system_pipe_m12(si1 *buffer, si8 buf_len, si1* command);
 void		G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key);
 si1		*G_unique_temp_file_m12(si1 *temp_file);
 void		G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
