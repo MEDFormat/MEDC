@@ -3947,7 +3947,8 @@ void	G_free_global_tables_m12(void)
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->SHA_mutex);
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->UTF8_mutex);
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->CMP_mutex);
-	PROC_pthread_mutex_destroy_m12(&global_tables_m12->performance_mutex);
+	PROC_pthread_mutex_destroy_m12(&global_tables_m12->NET_mutex);
+	PROC_pthread_mutex_destroy_m12(&global_tables_m12->HW_mutex);
 	
 #ifdef MATLAB_PERSISTENT_m12
 	mxFree((void *) global_tables_m12);
@@ -5749,9 +5750,6 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 	#endif
 		if (global_tables_m12 == NULL)
 			ret_val = FALSE_m12;
-		
-		// note: performance_specs is a statically allocated member - set to FALSE on allocation
-		global_tables_m12->performance_specs.initialized = FALSE_m12;
 	}
 	
 	// initialize all table muticies
@@ -5761,7 +5759,8 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 	PROC_pthread_mutex_init_m12(&global_tables_m12->CRC_mutex, NULL);
 	PROC_pthread_mutex_init_m12(&global_tables_m12->UTF8_mutex, NULL);
 	PROC_pthread_mutex_init_m12(&global_tables_m12->CMP_mutex, NULL);
-	PROC_pthread_mutex_init_m12(&global_tables_m12->performance_mutex, NULL);
+	PROC_pthread_mutex_init_m12(&global_tables_m12->NET_mutex, NULL);
+	PROC_pthread_mutex_init_m12(&global_tables_m12->HW_mutex, NULL);
 	
 	if (initialize_all_tables == TRUE_m12) {  // otherwise load on demand
 		if (CRC_initialize_tables_m12() == FALSE_m12)
@@ -5776,7 +5775,9 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 			ret_val = FALSE_m12;
 		if (CMP_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
-		if (HW_initialize_performance_specs_m12() == FALSE_m12)
+		if (NET_initialize_tables_m12() == FALSE_m12)
+			ret_val = FALSE_m12;
+		if (HW_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 	}
 
@@ -5973,7 +5974,8 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 #endif
 	
 	// check cpu endianness
-	if (HW_get_cpu_endianness_m12() != LITTLE_ENDIAN_m12) {
+	HW_get_endianness_m12();
+	if (global_tables_m12->HW_params.endianness != LITTLE_ENDIAN_m12) {
 		G_error_message_m12("%s(): Library only coded for little-endian machines currently\n", __FUNCTION__);
 		exit_m12(-1);
 	}
@@ -19871,6 +19873,7 @@ void    CMP_PRED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	sf8		average_steps, multiply_time;
 	CMP_BLOCK_FIXED_HEADER_m12		*block_header;
 	CMP_PRED_MODEL_FIXED_HEADER_m12		*PRED_header;
+	HW_PERFORMANCE_SPECS_m12		*perf_specs;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -19936,16 +19939,17 @@ void    CMP_PRED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	}
 	
 	// determine decompression method
-	if (global_tables_m12->performance_specs.initialized == FALSE_m12)
-		HW_initialize_performance_specs_m12();
+	perf_specs = &global_tables_m12->HW_params.performance_specs;
+	if (perf_specs->integer_multiplications_per_sec == 0.0)
+		HW_get_performance_specs_m12();
 	for (average_steps = (sf8) 0.0, i = 0; i < CMP_PRED_CATS_m12; ++i) {
 		tc = count[i];
 		for (j = 0; j < stats_entries[i]; ++j)
 			average_steps += (sf8) (j * (si8) tc[j]);
 	}
 	average_steps /= (sf8) (CMP_RED_TOTAL_COUNTS_m12 * CMP_PRED_CATS_m12);
-	multiply_time = average_steps * global_tables_m12->performance_specs.nsecs_per_integer_multiplication;
-	if (multiply_time < global_tables_m12->performance_specs.nsecs_per_integer_division)
+	multiply_time = average_steps * perf_specs->nsecs_per_integer_multiplication;
+	if (multiply_time < perf_specs->nsecs_per_integer_division)
 		multiply_method = TRUE_m12;
 	else
 		multiply_method = FALSE_m12;
@@ -21113,7 +21117,8 @@ void    CMP_RED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	sf8		average_steps, multiply_time;
 	CMP_BLOCK_FIXED_HEADER_m12	*block_header;
 	CMP_RED_MODEL_FIXED_HEADER_m12	*RED_header;
-	
+	HW_PERFORMANCE_SPECS_m12		*perf_specs;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -21174,13 +21179,14 @@ void    CMP_RED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	}
 
 	// determine decompression method
-	if (global_tables_m12->performance_specs.initialized == FALSE_m12)
-		HW_initialize_performance_specs_m12();
+	perf_specs = &global_tables_m12->HW_params.performance_specs;
+	if (perf_specs->integer_multiplications_per_sec == 0.0)
+		HW_get_performance_specs_m12();
 	for (average_steps = (sf8) 0.0, i = 0; i < n_stats_entries; ++i)
 		average_steps += (sf8) (i * (si8) count[i]);
 	average_steps /= (sf8) CMP_RED_TOTAL_COUNTS_m12;
-	multiply_time = average_steps * global_tables_m12->performance_specs.nsecs_per_integer_multiplication;
-	if (multiply_time < global_tables_m12->performance_specs.nsecs_per_integer_division)
+	multiply_time = average_steps * perf_specs->nsecs_per_integer_multiplication;
+	if (multiply_time < perf_specs->nsecs_per_integer_division)
 		multiply_method = TRUE_m12;
 	else
 		multiply_method = FALSE_m12;
@@ -28800,209 +28806,234 @@ si8	FPS_write_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes_to
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
-ui1	HW_get_cpu_endianness_m12(void)
+void	HW_get_core_info_m12()
 {
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	ui2	x = 1;
-
-	return(*((ui1 *) &x));
-}
-
-
-void	HW_get_cpu_info_m12(void)
-{
-	HW_CPU_INFO_m12	*cpu_info;
+	HW_PARAMS_m12	*hw_params;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-
-	cpu_info = &globals_m12->cpu_info;
-	cpu_info->endianness = HW_get_cpu_endianness_m12();
+	
+	hw_params = &global_tables_m12->HW_params;
+	
+	if (hw_params->logical_cores)
+		return;
+	
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
+	if (hw_params->logical_cores) {  // may have been set by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
+	}
 
 #ifdef LINUX_m12
-	cpu_info->logical_cores = (si4) get_nprocs_conf();
+	hw_params->logical_cores = (si4) get_nprocs_conf();
 #endif  // LINUX_m12
 	
 #ifdef MACOS_m12
-	size_t			len;
+	size_t	len;
 	
 	len = sizeof(si4);
 	
-	sysctlbyname("machdep.cpu.core_count", &cpu_info->physical_cores, &len, NULL, 0);
-	sysctlbyname("machdep.cpu.thread_count", &cpu_info->logical_cores, &len, NULL, 0);
-	if (cpu_info->physical_cores < cpu_info->logical_cores)
-		cpu_info->hyperthreading = TRUE_m12;
+	sysctlbyname("machdep.cpu.core_count", &hw_params->physical_cores, &len, NULL, 0);
+	sysctlbyname("machdep.cpu.thread_count", &hw_params->logical_cores, &len, NULL, 0);
+	if (hw_params->physical_cores < hw_params->logical_cores)
+		hw_params->hyperthreading = TRUE_m12;
 #endif  // MACOS_m12
 	
 #ifdef WINDOWS_m12
 	SYSTEM_INFO	sys_info;
 	
 	GetSystemInfo(&sys_info);  // I think this returns logical, not physical, cores
-	cpu_info->logical_cores = (si4) sys_info.dwNumberOfProcessors;
+	hw_params->logical_cores = (si4) sys_info.dwNumberOfProcessors;
 #endif  // WINDOWS_m12
+
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	
-	HW_get_machine_serial_m12(cpu_info->machine_serial);
+	return;
+}
+
+
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+void	HW_get_endianness_m12(void)
+{
+	ui1		endianness;
+	ui2		x;
+	HW_PARAMS_m12	*hw_params;
+
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	hw_params = &global_tables_m12->HW_params;
+	if (hw_params->endianness == LITTLE_ENDIAN_m12)
+		return;
+
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
+	if (hw_params->endianness == LITTLE_ENDIAN_m12) {  // may have been set by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
+	}
+
+	x = 1;
+	endianness = *((ui1 *) &x);
+
+	hw_params->endianness = endianness;
+
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 
 	return;
-	
 }
 
 
-ui4	HW_get_machine_code_m12(void)
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+void	HW_get_machine_code_m12(void)
 {
-	si1	*machine_sn;
-	ui4	machine_code;
+	HW_PARAMS_m12	*hw_params;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	hw_params = &global_tables_m12->HW_params;
+	if (hw_params->machine_code)
+		return;
+
 	// get machine serial number
-	machine_sn =  HW_get_machine_serial_m12(NULL);
+	if (*hw_params->serial_number == 0)
+		HW_get_machine_serial_m12();
+
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
+	if (hw_params->machine_code) {  // may have been set by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
+	}
 
 	// get CRC of machine serial number
-	machine_code = CRC_calculate_m12((ui1 *) machine_sn, strlen(machine_sn));
-	free(machine_sn);
-		
-	return(machine_code);
+	hw_params->machine_code = CRC_calculate_m12((ui1 *) hw_params->serial_number, strlen(hw_params->serial_number));
+	
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+
+	return;
 }
 
 
-si1	*HW_get_machine_serial_m12(si1 *machine_sn)
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+void	HW_get_machine_serial_m12(void)
 {
-	si1			command[1024], *buf, *local_machine_sn, temp_file[FULL_FILE_NAME_BYTES_m12];
-	si8			file_length, len;
-	FILE			*fp;
+	si1		command[1024], *buf, *machine_sn, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si8		file_length;
+	FILE		*fp;
+	HW_PARAMS_m12	*hw_params;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	G_unique_temp_file_m12(temp_file);
+	hw_params = &global_tables_m12->HW_params;
+	if (*hw_params->serial_number)
+		return;
+
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
+	if (*hw_params->serial_number) {  // may have been set by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
+	}
 	
 	// get machine serial number
 #ifdef LINUX_m12
 	// Linux makes it impossible to get product serial from within program, even with sudo password. Using default interface MAC.
-	si1		*c;
-	NET_PARAMS_m12	np;
-
-	// call NET_get_lan_ipv4_address_m12() to get default route interface name
-	memset((void *) &np, 0, sizeof(NET_PARAMS_m12));
-	if (NET_get_lan_ipv4_address_m12(&np) == NULL) {
-		G_warning_message_m12("%s(): no internet connection => no default interface\n", __FUNCTION__);
-		return(NULL);
-	}
-
-	sprintf_m12(command, "ifconfig %s > %s 2> %s", np.interface_name, temp_file, NULL_DEVICE_m12);
-	system_m12(command, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	
-	// get file length
-	file_length = G_file_length_m12(fp, NULL);
-
-	// read ifconfig() output
-	buf = calloc((size_t) file_length + 1, sizeof(si1));
-	fread_m12(buf, sizeof(si1), (size_t) file_length, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
-
-	// parse ifconfig() output
-	if ((c = STR_match_end_m12("ether ", buf)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"ether \" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, np.interface_name);
-		free((void *) buf);
-		return(NULL);
-	} else {
-		sscanf(c, "%s", buf);
-		STR_to_upper_m12(buf);
-	}
+	if (*global_tables_m12->NET_params.MAC_address_string == 0)
+		NET_get_mac_address_m12(NULL, NULL);
+	strcpy(hw_params->serial_number, global_tables_m12->NET_params.MAC_address_string);
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+	return;
 #endif
-#if defined MACOS_m12 || defined WINDOWS_m12
+	
+	G_unique_temp_file_m12(temp_file);
+
 	#ifdef MACOS_m12
-		// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
-		sprintf_m12(command, "ioreg -l | grep IOPlatformSerialNumber > %s", temp_file);
+	// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
+	sprintf_m12(command, "ioreg -l | grep IOPlatformSerialNumber > %s", temp_file);
 	#endif
+	
 	#ifdef WINDOWS_m12
-		// out example: SerialNumber\nC02RP18FG8WM
-		sprintf_m12(command, "wmic bios get serialnumber > %s", temp_file);
+	// out example: SerialNumber\nC02RP18FG8WM
+	sprintf_m12(command, "wmic bios get serialnumber > %s", temp_file);
 	#endif
+	
 	system_m12(command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	file_length = G_file_length_m12(fp, NULL);
 	buf = calloc((size_t) file_length + 1, sizeof(si1));
 	fread_m12((void *) buf, sizeof(si1), (size_t) file_length, fp, temp_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	fclose(fp);
-#endif
 
-#ifdef LINUX_m12
-	local_machine_sn = buf;
-#endif
 #ifdef MACOS_m12
-	local_machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
+	machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
 	buf[file_length - 2] = 0;  // <quote><lf>
 #endif
+	
 #ifdef WINDOWS_m12
 	buf[file_length - 7] = buf[file_length - 8] = 0;  // <cr><lf>
 	STR_wchar2char_m12(buf, (wchar_t *) buf);
-	local_machine_sn = STR_match_end_m12("SerialNumber  \r\n", buf);
+	machine_sn = STR_match_end_m12("SerialNumber  \r\n", buf);
 #endif
 
 	// copy machine serial number
-	len = 1;
-	if (local_machine_sn != NULL)
-		len += strlen(local_machine_sn);
-	if (machine_sn == NULL)
-		machine_sn = (si1 *) malloc_m12((size_t) len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	if (local_machine_sn == NULL)
-		*machine_sn = 0;
-	else
-		strcpy(machine_sn, local_machine_sn);
+	if (machine_sn != NULL)
+		strcpy(hw_params->serial_number, machine_sn);
 
 	free(buf);
 	
-	return(machine_sn);
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+
+	return;
 }
 
 
-si8	HW_get_system_memory_m12(void)
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+void	HW_get_system_memory_m12(void)
 {
-	// returns system memory in bytes, or -1 on error
+	si8		pages, page_size;
+	HW_PARAMS_m12	*hw_params;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	// gets system memory in bytes
+
+	hw_params = &global_tables_m12->HW_params;
+	if (hw_params->system_memory)
+		return;
+
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
+	if (hw_params->system_memory) {  // may have been set by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
+	}
 
 #if defined MACOS_m12 || defined LINUX_m12
-	si8	pages, page_size;
-	
 	pages = sysconf(_SC_PHYS_PAGES);
 	page_size = sysconf(_SC_PAGE_SIZE);
 	
 	if (pages == -1 || page_size == -1) {
 		G_warning_message_m12("%s(): sysconf() error\n", __FUNCTION__);
-		return(-1);
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
 	}
 
-	return (pages * page_size);
+	hw_params->system_memory = pages * page_size;
 #endif
-
-//#ifdef MACOS_m12  //  Another MacOS mechanism, but not necessary because sysconf() works on MacOS
-//	ui4	namelen;
-//	si4	mib[2] = { CTL_HW, HW_MEMSIZE };
-//	ui8	size;
-//	size_t	len;
-//
-//	namelen = sizeof(mib) / sizeof(mib[0]);
-//	len = sizeof(ui8);
-//
-//	if (sysctl(mib, namelen, &size, &len, NULL, 0) < 0) {
-//		G_warning_message_m12("%s(): sysctl() error\n", __FUNCTION__);
-//		return(-1);
-//	}
-//
-//	return((si8) size);
-//#endif
 	
 #ifdef WINDOWS_m12
 	MEMORYSTATUSEX	status;
@@ -29011,33 +29042,41 @@ si8	HW_get_system_memory_m12(void)
 	
 	if (GlobalMemoryStatusEx(&status) == 0) {
 		G_warning_message_m12("%s(): GlobalMemoryStatusEx() error\n", __FUNCTION__);
-		return(-1);
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
 	}
 
-	return((si8) status.ullTotalPhys);
+	hw_params->system_memory = (si8) status.ullTotalPhys;
 #endif
+	
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+	
+	return;
 }
 
 
-TERN_m12	HW_initialize_performance_specs_m12(void)
+void	HW_get_performance_specs_m12(void)
 {
 	const si8	ROUNDS = 100000;
 	clock_t		start_t, end_t, elapsed_time;
 	ui8		*p1, *p2, *p3;
 	ui8		*test_arr1, *test_arr2, *test_arr3;
 	si8		i;
-	
+	HW_PARAMS_m12	*hw_params;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-
-	if (global_tables_m12->performance_specs.initialized == TRUE_m12)
-		return(TRUE_m12);
 	
-	PROC_pthread_mutex_lock_m12(&global_tables_m12->performance_mutex);
-	if (global_tables_m12->performance_specs.initialized == TRUE_m12)  { // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m12(&global_tables_m12->performance_mutex);
-		return(TRUE_m12);
+	hw_params = &global_tables_m12->HW_params;
+
+	if (hw_params->performance_specs.integer_multiplications_per_sec != 0.0)
+		return;
+	
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
+	if (hw_params->performance_specs.integer_multiplications_per_sec != 0.0)  {  // may have been done by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return;
 	}
 
 	// setup
@@ -29068,8 +29107,8 @@ TERN_m12	HW_initialize_performance_specs_m12(void)
 		*p3++ = *p1++ * *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	global_tables_m12->performance_specs.integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	global_tables_m12->performance_specs.nsecs_per_integer_multiplication = (sf8) 1000000000.0 / global_tables_m12->performance_specs.integer_multiplications_per_sec;
+	hw_params->performance_specs.integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
+	hw_params->performance_specs.nsecs_per_integer_multiplication = (sf8) 1000000000.0 / hw_params->performance_specs.integer_multiplications_per_sec;
 
 	// division
 	p1 = test_arr1;
@@ -29080,40 +29119,89 @@ TERN_m12	HW_initialize_performance_specs_m12(void)
 		*p3++ = *p1++ / *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	global_tables_m12->performance_specs.integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	global_tables_m12->performance_specs.nsecs_per_integer_division = (sf8) 1000000000.0 / global_tables_m12->performance_specs.integer_divisions_per_sec;
+	hw_params->performance_specs.integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
+	hw_params->performance_specs.nsecs_per_integer_division = (sf8) 1000000000.0 / hw_params->performance_specs.integer_divisions_per_sec;
 
 	// clean up
 	free((void *) test_arr1);
 	free((void *) test_arr2);
 	free((void *) test_arr3);
 	
-	global_tables_m12->performance_specs.initialized = TRUE_m12;
-	PROC_pthread_mutex_unlock_m12(&global_tables_m12->performance_mutex);
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 
-	return(TRUE_m12);
+	return;
 }
 
 
-void	HW_show_cpu_info_m12(void)
+TERN_m12	HW_initialize_tables_m12(void)
 {
-	HW_CPU_INFO_m12	*cpu_info;
+	HW_PARAMS_m12	*hw_params;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (globals_m12->cpu_info.logical_cores == 0)
-		HW_get_cpu_info_m12();
-	cpu_info = &globals_m12->cpu_info;
+	// fill all unfilled fields in HW table
 	
-	printf_m12("logical_cores = %d\n", cpu_info->logical_cores);
-	if (cpu_info->physical_cores == 0)
+	hw_params = &global_tables_m12->HW_params;
+
+	if (hw_params->endianness != LITTLE_ENDIAN_m12)
+		HW_get_endianness_m12();
+
+	if (hw_params->logical_cores == 0)
+		HW_get_core_info_m12();
+
+	if (hw_params->performance_specs.integer_multiplications_per_sec == 0)
+		HW_get_performance_specs_m12();
+	
+	if (hw_params->system_memory == 0)
+		HW_get_system_memory_m12();
+
+	if (*hw_params->serial_number == 0)
+		HW_get_machine_serial_m12();
+
+	if (hw_params->machine_code == 0)
+		HW_get_machine_code_m12();
+
+	return(TRUE_m12);
+}
+
+
+void	HW_show_info_m12(void)
+{
+	HW_PARAMS_m12	*hw_params;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	hw_params = &global_tables_m12->HW_params;
+
+	printf_m12("endianness = ");
+	switch (hw_params->endianness) {
+		case BIG_ENDIAN_m12:
+			printf_m12("big endian\n");
+			break;
+		case LITTLE_ENDIAN_m12:
+			printf_m12("little endian\n");
+			break;
+		default:
+			printf_m12("invalid value (%hhu)\n", hw_params->endianness);
+			break;
+	}
+	
+	if (hw_params->logical_cores == 0)
+		printf_m12("logical_cores = unknown\n");
+	else
+		printf_m12("logical_cores = %d\n", hw_params->logical_cores);
+
+	if (hw_params->physical_cores == 0)
 		printf_m12("physical_cores = unknown\n");
 	else
-		printf_m12("physical_cores = %d\n", cpu_info->physical_cores);
+		printf_m12("physical_cores = %d\n", hw_params->physical_cores);
+	
 	printf_m12("hyperthreading = ");
-	switch (cpu_info->hyperthreading) {
+	switch (hw_params->hyperthreading) {
 		case FALSE_m12:
 			printf_m12("false\n");
 			break;
@@ -29124,25 +29212,66 @@ void	HW_show_cpu_info_m12(void)
 			printf_m12("unknown\n");
 			break;
 		default:
-			printf_m12("invalid value (%hhd)\n", cpu_info->hyperthreading);
+			printf_m12("invalid value (%hhd)\n", hw_params->hyperthreading);
 			break;
 	}
-	printf_m12("endianness = ");
-	switch (cpu_info->endianness) {
-		case BIG_ENDIAN_m12:
-			printf_m12("big endian\n");
-			break;
-		case LITTLE_ENDIAN_m12:
-			printf_m12("little endian\n");
-			break;
-		default:
-			printf_m12("invalid value (%hhu)\n", cpu_info->endianness);
-			break;
-	}
-	if (*cpu_info->machine_serial == 0)
-		printf_m12("machine_serial = unknown\n");
+	
+	if (hw_params->minimum_speed == 0.0)
+		printf_m12("minimum_speed = unknown\n");
 	else
-		printf_m12("machine_serial = \"%s\"\n", cpu_info->machine_serial);
+		printf_m12("minimum_speed = %lf\n", hw_params->minimum_speed);
+	
+	if (hw_params->maximum_speed == 0.0)
+		printf_m12("maximum_speed = unknown\n");
+	else
+		printf_m12("maximum_speed = %lf\n", hw_params->maximum_speed);
+	
+	if (hw_params->current_speed == 0.0)
+		printf_m12("current_speed = unknown\n");
+	else
+		printf_m12("current_speed = %lf\n", hw_params->current_speed);
+	
+	if (hw_params->performance_specs.integer_multiplications_per_sec == 0.0)
+		printf_m12("integer_multiplications_per_sec = unknown\n");
+	else
+		printf_m12("integer_multiplications_per_sec = %lf\n", hw_params->performance_specs.integer_multiplications_per_sec);
+	if (hw_params->performance_specs.nsecs_per_integer_multiplication == 0.0)
+		printf_m12("nsecs_per_integer_multiplication = unknown\n");
+	else
+		printf_m12("nsecs_per_integer_multiplication = %lf\n", hw_params->performance_specs.nsecs_per_integer_multiplication);
+	if (hw_params->performance_specs.integer_divisions_per_sec == 0.0)
+		printf_m12("integer_divisions_per_sec = unknown\n");
+	else
+		printf_m12("integer_multiplications_per_sec = %lf\n", hw_params->performance_specs.integer_divisions_per_sec);
+	if (hw_params->performance_specs.nsecs_per_integer_division == 0.0)
+		printf_m12("nsecs_per_integer_division = unknown\n");
+	else
+		printf_m12("nsecs_per_integer_division = %lf\n", hw_params->performance_specs.nsecs_per_integer_division);
+
+	if (hw_params->system_memory == 0)
+		printf_m12("system_memory = unknown\n");
+	else
+		printf_m12("system_memory = %ld\n", hw_params->system_memory);
+	
+	if (*hw_params->manufacturer == 0)
+		printf_m12("manufacturer = unknown\n");
+	else
+		printf_m12("manufacturer = \"%s\"\n", hw_params->manufacturer);
+	
+	if (*hw_params->model == 0)
+		printf_m12("model = unknown\n");
+	else
+		printf_m12("model = \"%s\"\n", hw_params->model);
+	
+	if (*hw_params->serial_number == 0)
+		printf_m12("serial_number = unknown\n");
+	else
+		printf_m12("serial_number = \"%s\"\n", hw_params->serial_number);
+	
+	if (hw_params->machine_code == 0)
+		printf_m12("machine_code = unknown\n");
+	else
+		printf_m12("machine_code = 0x%08x\n", hw_params->machine_code);
 
 	return;
 }
@@ -29255,7 +29384,7 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	sprintf_m12(command, "route -n get default | grep interface > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 #ifdef LINUX_m12
-	printf_m12("%s(%d): command = %s\n", __FUNCTION__, __LINE__, command);
+	sprintf_m12(command, "ip route get 8.8.8.8 > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 #ifdef WINDOWS_m12
 	sprintf_m12(command, "route PRINT -4 0.0.0.0 > %s 2> %s", temp_file, NULL_DEVICE_m12);
@@ -29359,14 +29488,30 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 #ifdef LINUX_m12
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
-	si1             	temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
-	si4             	ret_val;
-	si8             	sz;
-	FILE            	*fp;
+	TERN_m12	global_np;
+	si1		temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si4		ret_val;
+	si8		sz;
+	FILE		*fp;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	// if np == NULL, use global np with mutex
+	global_np = FALSE_m12;
+	if (np == NULL)
+		np = &global_tables_m12->NET_params;
+	if (np == &global_tables_m12->NET_params)
+		global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->interface_name)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(np);
+		}
+	}
 	
 	G_unique_temp_file_m12(temp_file);
 
@@ -29381,6 +29526,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	if (*np->interface_name == 0) {  // pass NULL or "" for interface_name to use default internet interface
 		if (NET_get_lan_ipv4_address_m12(np) == NULL) {  // call NET_get_lan_ipv4_address_m12() to get default route interface name
 			G_warning_message_m12("%s(): no internet connection => no default interface\n", __FUNCTION__);
+			if (global_np == TRUE_m12)
+				PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 			return(NULL);
 		}
 		interface_name = np->interface_name;
@@ -29493,6 +29640,9 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	G_pop_behavior_m12();
 	free(buffer);
 
+	if (global_np == TRUE_m12)
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+
 	return(np);
 }
 #endif  // LINUX_m12
@@ -29501,15 +29651,31 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 #ifdef MACOS_m12
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
-	si1             	temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
-	si4             	ret_val;
-	si8             	sz;
-	FILE            	*fp;
+	TERN_m12	global_np;
+	si1		temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si4		ret_val;
+	si8		sz;
+	FILE		*fp;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
+	// if np == NULL, use global np with mutex
+	global_np = FALSE_m12;
+	if (np == NULL)
+		np = &global_tables_m12->NET_params;
+	if (np == &global_tables_m12->NET_params)
+		global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->interface_name) {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(np);
+		}
+	}
+	
 	G_unique_temp_file_m12(temp_file);
 
 	if (np == NULL)
@@ -29523,6 +29689,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	if (*np->interface_name == 0) {  // pass NULL or "" for interface_name to use default internet interface
 		if (NET_get_lan_ipv4_address_m12(np) == NULL) {  // call NET_get_lan_ipv4_address_m12() to get default route interface (name & ip)
 			G_warning_message_m12("%s(): no internet connection => no default interface\n");
+			if (global_np == TRUE_m12)
+				PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 			return(NULL);
 		}
 		interface_name = np->interface_name;
@@ -29534,8 +29702,11 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	// send ifconfig() output to temp file
 	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
-	if (ret_val)
+	if (ret_val) {
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(NULL);
+	}
 	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
@@ -29621,6 +29792,9 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	G_pop_behavior_m12();
 	free(buffer);
 
+	if (global_np == TRUE_m12)
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+
 	return(np);
 }
 #endif  // MACOS_m12
@@ -29629,18 +29803,34 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 #ifdef WINDOWS_m12
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
-	si1             		temp_str[256], *buffer, *iface_start, *c, *c2, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
-	si4             		i, ret_val, attempts;
-	si8             		sz;
-	FILE            		*fp;
-	DWORD 				dwSize, dwRetVal;
-	ULONG				flags, family, outBufLen;
-	LPVOID 				lpMsgBuf;
-	PIP_ADAPTER_ADDRESSES 		pAddresses, pCurrAddress;
+	TERN_m12		global_np;
+	si1             	temp_str[256], *buffer, *iface_start, *c, *c2, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si4             	i, ret_val, attempts;
+	si8             	sz;
+	FILE            	*fp;
+	DWORD 			dwSize, dwRetVal;
+	ULONG			flags, family, outBufLen;
+	LPVOID 			lpMsgBuf;
+	PIP_ADAPTER_ADDRESSES	pAddresses, pCurrAddress;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	// if np == NULL, use global np with mutex
+	global_np = FALSE_m12;
+	if (np == NULL)
+		np = &global_tables_m12->NET_params;
+	if (np == &global_tables_m12->NET_params)
+		global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->interface_name) {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(np);
+		}
+	}
 	
 	G_unique_temp_file_m12(temp_file);
 
@@ -29655,6 +29845,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	if (*np->interface_name == 0) {  // pass NULL or "" for interface_name to use default internet interface
 		if (NET_get_lan_ipv4_address_m12(np) == NULL) {  // call NET_get_lan_ipv4_address_m12() to get default route interface name
 			G_warning_message_m12("%s(): no internet connection => no default interface\n", __FUNCTION__);
+			if (global_np == TRUE_m12)
+				PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 			return(NULL);
 		}
 		interface_name = np->interface_name;
@@ -29663,8 +29855,11 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	// send ifconfig() output to temp file
 	sprintf_m12(temp_str, "ipconfig /all > %s 2> %s", temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
-	if (ret_val)
+	if (ret_val) {
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(NULL);
+	}
 	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
        
 	// get file length
@@ -29696,6 +29891,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	// search for interface entry
 	if ((c = STR_match_end_m12(interface_name, buffer)) == NULL) {
 		G_warning_message_m12("%s(): Could not find interface \"%s\" in output of ipconfig()\n", __FUNCTION__, interface_name);
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(NULL);
 	}
 	iface_start = c;  // start all subsequent searches fro this point
@@ -29828,6 +30025,9 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	// clean up
 	G_pop_behavior_m12();
 
+	if (global_np == TRUE_m12)
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	
 	return(np);
 }
 #endif  // WINDOWS_m12
@@ -30017,7 +30217,16 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 	return(iface_name);
 }
 #endif
+
+
+TERN_m12	NET_initialize_tables_m12(void)
+{
+	if (NET_get_parameters_m12(NULL, NULL) == NULL)
+		return(FALSE_m12);
 	
+	return(TRUE_m12);
+}
+
 
 void    NET_show_parameters_m12(NET_PARAMS_m12 *np)
 {
@@ -30542,9 +30751,9 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 		cpu_set_p = passed_cpu_set_p;
 
 	// get logical cpus
-	if (globals_m12->cpu_info.logical_cores == 0)
-		HW_get_cpu_info_m12();
-	n_cpus = globals_m12->cpu_info.logical_cores;
+	if (global_tables_m12->HW_params.logical_cores == 0)
+		HW_get_core_info_m12();
+	n_cpus = global_tables_m12->HW_params.logical_cores;
 	if (n_cpus == 1) {
 	#ifdef LINUX_m12
 		CPU_ZERO(cpu_set_p);
@@ -31235,8 +31444,6 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id_p)
 #endif
 
 	thread_id = *thread_id_p;
-	if (globals_m12->cpu_info.logical_cores == 0)
-		HW_get_cpu_info_m12();
 
 	*thread_name = 0;
 	pthread_getname_np(thread_id, thread_name, (size_t) THREAD_NAME_BYTES_m12);  // _np is for "not portable"
@@ -31245,7 +31452,9 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id_p)
 	
 	pthread_getaffinity_np(thread_id, sizeof(cpu_set_t), &cpu_set);  // _np is for "not portable"
 	
-	n_cpus = globals_m12->cpu_info.logical_cores;
+	if (global_tables_m12->HW_params.logical_cores == 0)
+		HW_get_core_info_m12();
+	n_cpus = global_tables_m12->HW_params.logical_cores;
 	for (i = 0; i < n_cpus; ++i) {
 		if (CPU_ISSET(i, &cpu_set))
 			printf_m12("1 ");
@@ -31274,8 +31483,6 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 #endif
 
 	thread_h = *thread_handle_p;
-	if (globals_m12->cpu_info.logical_cores == 0)
-		HW_get_cpu_info_m12();
 
 	SuspendThread(thread_h);  // suspend thread to get current cpu set
 	tmp_cpu_set = ~((cpu_set_t_m12) 0);
@@ -31288,7 +31495,6 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 		return;
 	}
 
-	n_cpus = globals_m12->cpu_info.logical_cores;
 	*thread_name = 0;
 	hr = GetThreadDescription(thread_h, (PWSTR *) &w_thread_name);
 	if (SUCCEEDED(hr)) {
@@ -31299,6 +31505,10 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 		printf_m12("thread \"%s()\": ", thread_name);
 	else
 		printf_m12("thread: ");
+	
+	if (global_tables_m12->HW_params.logical_cores == 0)
+		HW_get_core_info_m12();
+	n_cpus = global_tables_m12->HW_params.logical_cores;
 	
 	for (mask = 1, i = 0; i < n_cpus; ++i, mask <<= 1) {
 		if (cpu_set & mask)

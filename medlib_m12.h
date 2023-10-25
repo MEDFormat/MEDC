@@ -1228,9 +1228,11 @@ TERN_m12	NET_check_internet_connection_m12(void);
 TERN_m12	NET_domain_to_ip_m12(si1 *domain_name, si1 *ip);
 void		*NET_get_in_addr_m12(struct sockaddr *sa);
 NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_mac_address_m12(si1 *interface_name, NET_PARAMS_m12 *np);
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np);
 NET_PARAMS_m12	*NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np);
 si1		*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr);
+TERN_m12	NET_initialize_tables_m12(void);  // set global NET_PARAMS for default internet interface
 void            NET_show_parameters_m12(NET_PARAMS_m12 *np);
 void		NET_trim_addr_str_m12(si1 *addr_str);
 
@@ -1289,7 +1291,6 @@ void		NET_trim_addr_str_m12(si1 *addr_str);
 
 // Structures
 typedef struct {
-	TERN_m12	initialized;
 	sf8		integer_multiplications_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
 	sf8		integer_divisions_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
 	sf8		nsecs_per_integer_multiplication;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
@@ -1297,26 +1298,31 @@ typedef struct {
 } HW_PERFORMANCE_SPECS_m12;
 
 typedef struct {
-	si4		physical_cores;
-	si4		logical_cores;
-	TERN_m12	hyperthreading;
-	sf8		minimum_speed;
-	sf8		maximum_speed;
-	sf8		current_speed;
-	ui1		endianness;
-	si1		manufacturer[64];
-	si1		model[64];
-	si1		machine_serial[56];  // maximum serial number length is 50 characters
-} HW_CPU_INFO_m12;
+	ui1				endianness;
+	si4				physical_cores;
+	si4				logical_cores;
+	TERN_m12			hyperthreading;
+	sf8				minimum_speed;
+	sf8				maximum_speed;
+	sf8				current_speed;
+	HW_PERFORMANCE_SPECS_m12	performance_specs;
+	si8				system_memory;
+	si1				manufacturer[64];
+	si1				model[64];
+	si1				serial_number[56];  // maximum serial number length is 50 characters
+	ui4				machine_code;
+} HW_PARAMS_m12;
 
 // Prototypes
-ui1		HW_get_cpu_endianness_m12(void);
-void		HW_get_cpu_info_m12(void);
-ui4		HW_get_machine_code_m12(void);
-si1		*HW_get_machine_serial_m12(si1 *machine_sn);
-si8		HW_get_system_memory_m12(void);
-TERN_m12	HW_initialize_performance_specs_m12(void);
-void		HW_show_cpu_info_m12(void);
+void		HW_get_core_info_m12(void);
+void		HW_get_endianness_m12(void);
+void		HW_get_info_m12(void);
+void		HW_get_machine_code_m12(void);
+void		HW_get_machine_serial_m12(void);
+void		HW_get_performance_specs_m12(void);
+void		HW_get_system_memory_m12(void);
+TERN_m12	HW_initialize_tables_m12(void);
+void		HW_show_info_m12(void);
 
 
 
@@ -1505,7 +1511,6 @@ typedef struct {
 	si4				err_line;
 	// Miscellaneous
 	ui4				file_creation_umask;
-	HW_CPU_INFO_m12			cpu_info;
 	TERN_m12			time_series_data_encryption_level;
 	TERN_m12                        verbose;
 	ui4                             behavior_on_fail;
@@ -1533,15 +1538,17 @@ typedef struct {
 	si1				*UTF8_trailing_bytes_table;
 	sf8				*CMP_normal_CDF_table;
 	CMP_VDS_THRESHOLD_MAP_ENTRY_m12	*CMP_VDS_threshold_map;
-	HW_PERFORMANCE_SPECS_m12	performance_specs;
-	
+	NET_PARAMS_m12			NET_params;  // parameters for default internet interface
+	HW_PARAMS_m12			HW_params;
+
 	pthread_mutex_t_m12		TZ_mutex;
 	pthread_mutex_t_m12		SHA_mutex;
 	pthread_mutex_t_m12		AES_mutex;
 	pthread_mutex_t_m12		CRC_mutex;
 	pthread_mutex_t_m12		UTF8_mutex;
 	pthread_mutex_t_m12		CMP_mutex;
-	pthread_mutex_t_m12		performance_mutex;
+	pthread_mutex_t_m12		NET_mutex;
+	pthread_mutex_t_m12		HW_mutex;
 } GLOBAL_TABLES_m12;
 
 // Globals List (thread local storage)
