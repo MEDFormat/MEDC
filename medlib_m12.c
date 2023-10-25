@@ -28950,7 +28950,7 @@ void	HW_get_machine_serial_m12(void)
 #ifdef LINUX_m12
 	// Linux makes it impossible to get product serial from within program, even with sudo password. Using default interface MAC.
 	if (*global_tables_m12->NET_params.MAC_address_string == 0)
-		NET_get_mac_address_m12(NULL, NULL);
+		NET_get_parameters_m12(NULL, NULL);
 	strcpy(hw_params->serial_number, global_tables_m12->NET_params.MAC_address_string);
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	return;
