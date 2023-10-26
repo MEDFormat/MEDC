@@ -13472,223 +13472,6 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 }
 
 
-#if defined MACOS_m12 || defined LINUX_m12
-si1	*G_system_pipe_m12(si1 *buffer, si8 buf_len, si1* command)
-{
-	TERN_m12	free_buffer;
-	si1		**args, *c;
-	si4		ret_val, child_pid, master_fd, arg_cnt, alloced_args;
-	si8		bytes_in_buffer;
-	const si4	ALLOCED_ARGS_INC = 10;
-
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// returns NULL terminated string from system command
-	// returns NULL for failure
-	// (more efficient than redirecting to temp file & reading)
-
-	if (buf_len == 0)
-		buf_len = FULL_FILE_NAME_BYTES_m12 * 4;  // default len (if potentially very long, caller should pass buffer)
-	--buf_len;  // allow room for terminal zero
-	
-	free_buffer = FALSE_m12;
-	if (buffer == NULL) {  // caller responsible for freeing
-		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		free_buffer = TRUE_m12;
-	}
-	
-	args = NULL;
-	master_fd = 0;
-	
-	// spawn child and connect to a pseudoterminal
-	child_pid = (int) forkpty(&master_fd, NULL, NULL, NULL);
-	
-	// launch command in child process
-	if (child_pid == -1) {
-		G_warning_message_m12("%s(): forkpty() error\n", __FUNCTION__);
-		goto SYSTEM_PIPE_FAIL_m12;
-	} else if (child_pid == 0) {  // in child
-		// parse args
-		alloced_args = ALLOCED_ARGS_INC;
-		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
-		arg_cnt = 0;
-		c = command;  // command is modified here (terminal zeroes replace spaces)
-		while (*c) {
-			if (arg_cnt == alloced_args) {
-				alloced_args += ALLOCED_ARGS_INC;
-				args = (si1 **) realloc((void *) args, (size_t) (alloced_args + 1) * sizeof(si1 *));
-			}
-			if (*c == 34) {  // quote, include all characters
-				args[arg_cnt++] = ++c;
-				while (*++c != 34);
-				continue;
-			}
-			if (*c == 92) {  // skip escaped spaces
-				if (*(c + 1) == 32)
-					c += 2;
-			}
-			if (*c == 32) {  // space delimiter
-				if (*(c + 1)) {
-					*c = 0;
-					args[arg_cnt++] = ++c;
-					continue;
-				}
-			}
-			++c;
-		}
-		args[arg_cnt] = (si1 *) NULL;  // terminal
-		
-		// convert child to command
-		if (execv(args[0], args) == -1) {
-			G_warning_message_m12("%s(): execv() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m12;
-		}
-	}  // rest is parent
-	
-	// read child output
-	bytes_in_buffer = 0;
-	c = buffer;
-	while (1) {
-		ret_val = read(master_fd, c, buf_len - bytes_in_buffer);
-		if (ret_val <= 0 )
-			break;
-		bytes_in_buffer += ret_val;
-		c += ret_val;
-	}
-	*c = 0;  // set terminal zero
-	
-	free((void *) args);
-	close(master_fd);
-
-	return(buffer);
-	
-SYSTEM_PIPE_FAIL_m12:
-	
-	if (child_pid == 0) {
-		if (args != NULL)  // alloced in child
-			free((void *) args);
-		kill(child_pid, SIGKILL);
-	}
-	if (master_fd)
-		close(master_fd);
-	if (free_buffer == TRUE_m12)
-		free_m12((void *) buffer, __FUNCTION__);
-
-	return(NULL);
-}
-#endif
-
-
-#ifdef WINDOWS_m12
-si1	*G_system_pipe_m12(si1 *buffer, si8 buf_len, si1* command)
-{
-	TERN_m12		free_buffer;
-	si1			cmd_exe_path[MAX_PATH], *tmp_command, *c;
-	si8			len;
-	PROCESS_INFORMATION	process_info;
-	STARTUPINFOA		startup_info;
-	SECURITY_ATTRIBUTES 	sec_attr;
-	HANDLE 			read_h, write_h;
-	DWORD 			n_bytes_read, n_bytes_written, bytes_in_buffer, bytes_avail, input_len, exit_code;
-	BOOL 			success;
-
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// returns NULL terminated string from system command
-	// returns NULL for failure
-	// (more efficient than redirecting to temp file & reading)
-
-	if (buf_len == 0)
-		buf_len = FULL_FILE_NAME_BYTES_m12 * 4;  // default len (if potentially very long, caller should pass buffer)
-	--buf_len;  // allow room for terminal zero
-
-	free_buffer = FALSE_m12;
-	if (buffer == NULL) {  // caller responsible for freeing
-		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		free_buffer = TRUE_m12;
-	}
-	
-	tmp_command = NULL;
-	read_h = NULL;
-	write_h = NULL;
-	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
-	ZeroMemory(&startup_info, sizeof(STARTUPINFO));
-
-	// create pipes
-	sec_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
-	sec_attr.lpSecurityDescriptor = NULL;
-	sec_attr.bInheritHandle = TRUE;
-	if (CreatePipe(&read_h, &write_h, &sec_attr, 0) == FALSE) {
-		G_warning_message_m12("%s(): CreatePipe() failed\n", __FUNCTION__);
-		goto SYSTEM_PIPE_FAIL_m12;
-	}
-	if (SetHandleInformation(read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
-		G_warning_message_m12("%s(): SetHandleInformation() failed\n", __FUNCTION__);
-		goto SYSTEM_PIPE_FAIL_m12;
-	}
-	
-	// set up process
-	GetEnvironmentVariableA("COMSPEC", cmd_exe_path, MAX_PATH);
-	len = 5;
-	len += strlen(cmd_exe_path);
-	len += strlen(command);
-	tmp_command = (si1 *) malloc((size_t) len);
-	sprintf(tmp_command, "%s /c %s", cmd_exe_path, command);
-
-	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;  // make nShowWindow member valid
-	startup_info.wShowWindow = SW_HIDE;
-	startup_info.hStdOutput = startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
-	
-	// start process
-	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
-		G_warning_message_m12("%s(): CreateProcess() failed\n", __FUNCTION__);
-		goto SYSTEM_PIPE_FAIL_m12;
-	}
-	
-	// close unused pipe end
-	CloseHandle(write_h);
-
-	// read pipe
-	bytes_in_buffer = 0;
-	c = buffer;
-	while(TRUE) {
-		success = ReadFile(read_h, c, buf_len - bytes_in_buffer, &n_bytes_read, NULL);
-		if (success == FALSE)
-			break;
-		bytes_in_buffer += n_bytes_read;
-		c += n_bytes_read;
-	}
-	*c = 0;  // add terminal zero
-
-	free((void *) tmp_command);
-	CloseHandle(read_h);
-	CloseHandle(process_info.hProcess);  // process handle
-	CloseHandle(process_info.hThread);  // process' primary thread handle
-
-	return(buffer);
-	
-SYSTEM_PIPE_FAIL_m12:
-	
-	if (free_buffer == TRUE_m12)
-		free_m12((void *) buffer, __FUNCTION__);
-	if (tmp_command != NULL)
-		free((void *) tmp_command);
-	if (read_h != NULL)
-		CloseHandle(read_h);
-	if (process_info.hProcess != NULL)
-		CloseHandle(process_info.hProcess);
-	if (process_info.hThread != NULL)
-		CloseHandle(process_info.hThread);
-
-	return(NULL);
-}
-#endif
-
-
 void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 {
 	si1     command[1024];
@@ -29515,8 +29298,6 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	
 	G_unique_temp_file_m12(temp_file);
 
-	if (np == NULL)
-		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (interface_name != NULL) {
 		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
 			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
@@ -29610,7 +29391,7 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	// get WAN IPV4 address
 	NET_get_wan_ipv4_address_m12(np);
 
-	// use ethtool() to get link speed & duplex
+	// use ethtool() to get link speed & duplex (doesn't seem to work on WiFi networks)
 	*np->link_speed = *np->duplex = 0;
 	sprintf_m12(temp_str, "ethtool %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
@@ -29678,8 +29459,6 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	
 	G_unique_temp_file_m12(temp_file);
 
-	if (np == NULL)
-		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, __LINE__);
 	if (interface_name != NULL) {
 		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
 			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
@@ -29834,8 +29613,6 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	
 	G_unique_temp_file_m12(temp_file);
 
-	if (np == NULL)
-		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (interface_name != NULL) {
 		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
 			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
@@ -30035,7 +29812,7 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 
 NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 {
-	si1		temp_str[1024], *buffer, *pattern, *c, retry_count, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1		temp_str[1024], *buffer, *pattern, *c, temp_file[FULL_FILE_NAME_BYTES_m12];
 	si4		ret_val;
 	si8		sz;
 	FILE		*fp;
@@ -30050,17 +29827,18 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
 
 	// get WAN IPV4 address
-	retry_count = 0;
 	
 #if defined MACOS_m12 || defined LINUX_m12
 	sprintf_m12(temp_str, "curl --connect-timeout 2.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
+//	sprintf_m12(temp_str, "/usr/bin/curl --connect-timeout 2.0 -s checkip.dyndns.org");  // specify path so system doesn't have to find executable
 #endif
 #ifdef WINDOWS_m12
 	sprintf_m12(temp_str, "curl.exe --connect-timeout 2.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 	
-GET_WAN_IPV4_ADDR_RETRY_m12:
-
+//	si1	tmp_buf[2048];
+//	system_pipe_m12(tmp_buf, 2048, temp_str, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+//	printf_m12("xxx \"%s\" xxx\n", tmp_buf);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12 | RETRY_ONCE_m12);
 	if (ret_val) {
 		if (NET_get_lan_ipv4_address_m12(np) == NULL)
@@ -30088,15 +29866,9 @@ GET_WAN_IPV4_ADDR_RETRY_m12:
 	*np->WAN_IPv4_address_string = 0;
 	pattern = "Current IP Address: ";
 	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		if (retry_count) {
-			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of \"curl -s checkip.dyndns.org\"\n", __FUNCTION__, pattern);
-			np->WAN_IPv4_address_string[0] = 0;
-			memset(np->WAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
-		} else {
-			retry_count = 1;
-			G_nap_m12("1 sec");
-			goto GET_WAN_IPV4_ADDR_RETRY_m12;
-		}
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of \"curl -s checkip.dyndns.org\"\n", __FUNCTION__, pattern);
+		np->WAN_IPv4_address_string[0] = 0;
+		memset(np->WAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
 	} else {
 		sscanf(c, "%[^< ]s", np->WAN_IPv4_address_string);
 		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->WAN_IPv4_address_bytes, np->WAN_IPv4_address_bytes + 1, np->WAN_IPv4_address_bytes + 2, np->WAN_IPv4_address_bytes + 3);
@@ -30236,36 +30008,76 @@ void    NET_show_parameters_m12(NET_PARAMS_m12 *np)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	printf_m12("interface_name: %s\n", np->interface_name);
-	printf_m12("host_name: %s\n", np->host_name);
-	STR_generate_hex_string_m12(np->MAC_address_bytes, NET_MAC_ADDRESS_BYTES_m12, hex_str);
-	printf_m12("MAC_address_bytes: %s\n", hex_str);
-	printf_m12("MAC_address_string: %s\n", np->MAC_address_string);
-	STR_generate_hex_string_m12(np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m12, hex_str);
-	printf_m12("WAN_IPv4_address_bytes: %s\n", hex_str);
-	printf_m12("WAN_IPv4_address_string: %s\n", np->WAN_IPv4_address_string);
-	STR_generate_hex_string_m12(np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m12, hex_str);
-	printf_m12("LAN_IPv4_address_bytes: %s\n", hex_str);
-	printf_m12("LAN_IPv4_address_string: %s\n", np->LAN_IPv4_address_string);
-	STR_generate_hex_string_m12(np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m12, hex_str);
-	printf_m12("LAN_IPv4_subnet_mask_bytes: %s\n", hex_str);
-	printf_m12("LAN_IPv4_subnet_mask_string: %s\n", np->LAN_IPv4_subnet_mask_string);
-	printf_m12("MTU: %d\n", np->MTU);
-	printf_m12("link speed: %s\n", np->link_speed);
+	if (np == NULL)
+		np = &global_tables_m12->NET_params;
+
+	printf_m12("interface_name: ");
+	if (*np->interface_name)
+		printf_m12("%s\n", np->interface_name);
+	else
+		printf_m12("unknown\n");
+	printf_m12("host_name: ", np->host_name);
+	if (*np->host_name)
+		printf_m12("%s\n", np->host_name);
+	else
+		printf_m12("unknown\n");
+	if (np->MAC_address_num) {
+		STR_generate_hex_string_m12(np->MAC_address_bytes, NET_MAC_ADDRESS_BYTES_m12, hex_str);
+		printf_m12("MAC_address_bytes: %s\n", hex_str);
+		printf_m12("MAC_address_string: %s\n", np->MAC_address_string);
+	} else {
+		printf_m12("MAC_address_bytes: unknown\n");
+		printf_m12("MAC_address_string: unknown\n");
+	}
+	if (np->LAN_IPv4_address_num) {
+		STR_generate_hex_string_m12(np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m12, hex_str);
+		printf_m12("LAN_IPv4_address_bytes: %s\n", hex_str);
+		printf_m12("LAN_IPv4_address_string: %s\n", np->LAN_IPv4_address_string);
+	} else {
+		printf_m12("LAN_IPv4_address_bytes: unknown\n");
+		printf_m12("LAN_IPv4_address_string: unknown\n");
+	}
+	if (np->LAN_IPv4_subnet_mask_num) {
+		STR_generate_hex_string_m12(np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m12, hex_str);
+		printf_m12("LAN_IPv4_subnet_mask_bytes: %s\n", hex_str);
+		printf_m12("LAN_IPv4_subnet_mask_string: %s\n", np->LAN_IPv4_subnet_mask_string);
+	} else {
+		printf_m12("LAN_IPv4_subnet_mask_bytes: unknown\n");
+		printf_m12("LAN_IPv4_subnet_mask_string: unknown\n");
+	}
+	if (np->WAN_IPv4_address_num) {
+		STR_generate_hex_string_m12(np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m12, hex_str);
+		printf_m12("WAN_IPv4_address_bytes: %s\n", hex_str);
+		printf_m12("WAN_IPv4_address_string: %s\n", np->WAN_IPv4_address_string);
+	} else {
+		printf_m12("WAN_IPv4_address_bytes: unknown\n");
+		printf_m12("WAN_IPv4_address_string: unknown\n");
+	}
+	if (np->MTU)
+		printf_m12("MTU: %d\n", np->MTU);
+	else
+		printf_m12("MTU: unknown\n");
+	if (*np->link_speed)
+		printf_m12("link speed: %s\n", np->link_speed);
+	else
+		printf_m12("link speed: unknown\n");
 	if (np->active == TRUE_m12)
 		printf_m12("active: true\n");
 	else if (np->active == FALSE_m12)
 		printf_m12("active: false\n");
 	else
-		printf_m12("active: unknown (%hhd)\n", np->plugged_in);
+		printf_m12("active: unknown\n");
 #ifdef LINUX_m12
-	printf_m12("duplex: %s\n", np->duplex);
+	if (*np->duplex)
+		printf_m12("duplex: %s\n", np->duplex);
+	else
+		printf_m12("duplex: unknown\n");
 	if (np->plugged_in == TRUE_m12)
 		printf_m12("plugged_in: true\n");
 	else if (np->plugged_in == FALSE_m12)
 		printf_m12("plugged_in: false\n");
 	else
-		printf_m12("plugged_in: unknown (%hhd)\n", np->plugged_in);
+		printf_m12("plugged_in: unknown\n");
 #endif
 
 	return;
@@ -36968,6 +36780,295 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 	
 	return(0);
 }
+
+
+#if defined MACOS_m12 || defined LINUX_m12
+si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
+{
+	TERN_m12	free_buffer, retried;
+	si4		ret_val, child_pid, master_fd, status, err;
+	si8		bytes_in_buffer, bytes_avail;
+	const si4	BUFFER_SIZE_INC = 1024;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns NULL terminated string from system command
+	// returns NULL on failure
+	// (more efficient than redirecting to temp file & reading)
+	// if buffer is NULL, it is dynamically expanded, caller responsible for freeing
+
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
+		behavior_on_fail = globals_m12->behavior_on_fail;
+	
+	if (buffer == NULL) {
+		buf_len = BUFFER_SIZE_INC;
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_buffer = TRUE_m12;
+	} else {
+		if (buf_len <= 0) {
+			G_warning_message_m12("%s(): buffer length not specified\n", __FUNCTION__);
+			return(NULL);
+		}
+		free_buffer = FALSE_m12;
+	}
+	
+	retried = FALSE_m12;
+SYSTEM_PIPE_RETRY_m12:
+	
+	*buffer = 0;
+	master_fd = 0;
+	err = 0;
+	
+	// spawn child and connect to a pseudoterminal
+	child_pid = (int) forkpty(&master_fd, NULL, NULL, NULL);
+	
+	// launch command in child process
+	if (child_pid == -1) {
+		G_warning_message_m12("%s(): forkpty() error\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	} else if (child_pid == 0) {  // child process
+		si1		**args, *c;
+		si4		arg_cnt, alloced_args;
+		const si4	ALLOCED_ARGS_INC = 10;
+
+		// parse args
+		alloced_args = ALLOCED_ARGS_INC;
+		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
+		arg_cnt = 0;
+		c = args[arg_cnt++] = command;  // command is modified here (terminal zeroes replace spaces)
+		while (*c) {
+			if (arg_cnt == alloced_args) {
+				alloced_args += ALLOCED_ARGS_INC;
+				args = (si1 **) realloc((void *) args, (size_t) (alloced_args + 1) * sizeof(si1 *));
+			}
+			if (*c == 34) {  // quote, include all characters
+				args[arg_cnt++] = ++c;
+				while (*++c != 34);
+				continue;
+			}
+			if (*c == 92) {  // skip escaped spaces
+				if (*(c + 1) == 32) {
+					c += 2;
+					continue;
+				}
+			}
+			if (*c == 32) {  // space delimiter
+				if (*(c + 1)) {
+					*c = 0;
+					args[arg_cnt++] = ++c;
+					continue;
+				}
+			}
+			++c;
+		}
+		args[arg_cnt] = (si1 *) NULL;  // terminal NULL argument
+		
+		// convert child to command
+		// if execvp() is successful, it does not return
+		// "p" version uses environment path if no "/" in args[0]
+		errno_reset_m12();
+		if (execvp(args[0], args) == -1) {
+			err = errno_m12();  // capture errno to send back to parent
+			free((void *) args);
+			if (!(behavior_on_fail & RETRY_ONCE_m12) || retried == TRUE_m12)
+				printf("%s(): execvp() error\n", __FUNCTION__);  // goes to pipe
+			exit_m12(err);  // exit child to allow parent to continue
+		}
+	}  // rest is parent
+	
+	// wait for child (in case of error)
+	waitpid(child_pid, &status, 0);
+	err = WEXITSTATUS(status);
+	if (err)
+		goto SYSTEM_PIPE_FAIL_m12;
+		
+	// read child output
+	bytes_in_buffer = 0;
+	bytes_avail = buf_len;
+	while (bytes_avail > 1) {
+		if (free_buffer == TRUE_m12) {
+			if (bytes_avail < BUFFER_SIZE_INC) {
+				buf_len += BUFFER_SIZE_INC;
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				bytes_avail += BUFFER_SIZE_INC;
+			}
+		}
+		ret_val = read(master_fd, buffer + bytes_in_buffer, bytes_avail - 1);  // leave room for terminal zero
+		if (ret_val <= 0 )
+			break;
+		bytes_in_buffer += ret_val;
+		bytes_avail -= ret_val;
+	}
+	buffer[bytes_in_buffer] = 0;  // set terminal zero
+
+	close(master_fd);
+	
+	if (tee_to_terminal == TRUE_m12)
+		if (!(behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m12))
+			printf_m12("%s\n", buffer);
+
+	return(buffer);
+	
+SYSTEM_PIPE_FAIL_m12:
+	
+	if (master_fd)
+		close(master_fd);
+	
+	if (behavior_on_fail & RETRY_ONCE_m12) {
+		if (retried == FALSE_m12) {
+			G_nap_m12("1 ms");  // wait 1 ms
+			retried = TRUE_m12;
+			goto SYSTEM_PIPE_RETRY_m12;
+		}
+	}
+
+	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
+		fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
+		fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
+		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
+		if (tee_to_terminal == TRUE_m12)
+			if (*buffer)
+				printf_m12("captured output: \"%s\"\n", buffer);
+		if (function != NULL)
+			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
+		if (behavior_on_fail & EXIT_ON_FAIL_m12)
+			fprintf_m12(stderr, "\t=> exiting\n\n");
+		else
+			fprintf_m12(stderr, "\t=> returning\n\n");
+		fflush(stderr);
+	}
+
+	if (free_buffer == TRUE_m12)
+		free_m12((void *) buffer, __FUNCTION__);
+
+	if (behavior_on_fail & EXIT_ON_FAIL_m12)
+		exit_m12(-1);
+
+	return(NULL);
+}
+#endif
+
+
+#ifdef WINDOWS_m12
+// NOTE: not fully implemented or tested yet
+si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
+{
+	TERN_m12		free_buffer;
+	si1			cmd_exe_path[MAX_PATH], *tmp_command;
+	const si4		BUFFER_SIZE_INC = 1024;
+	si8			len;
+	PROCESS_INFORMATION	process_info;
+	STARTUPINFOA		startup_info;
+	SECURITY_ATTRIBUTES 	sec_attr;
+	HANDLE 			read_h, write_h;
+	DWORD 			n_bytes_read, bytes_in_buffer, bytes_avail;
+	BOOL 			success;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns NULL terminated string from system command
+	// returns NULL on failure
+	// (more efficient than redirecting to temp file & reading)
+	// if buffer is NULL, it is dynamically expanded, caller responsible for freeing
+
+	if (buffer == NULL) {
+		buf_len = BUFFER_SIZE_INC;
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_buffer = TRUE_m12;
+	} else {
+		if (buf_len <= 0) {
+			G_warning_message_m12("%s(): buffer length not specified\n", __FUNCTION__);
+			return(NULL);
+		}
+		free_buffer = FALSE_m12;
+	}
+	
+	tmp_command = NULL;
+	read_h = NULL;
+	write_h = NULL;
+	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
+	ZeroMemory(&startup_info, sizeof(STARTUPINFO));
+
+	// create pipes
+	sec_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
+	sec_attr.lpSecurityDescriptor = NULL;
+	sec_attr.bInheritHandle = TRUE;
+	if (CreatePipe(&read_h, &write_h, &sec_attr, 0) == FALSE) {
+		G_warning_message_m12("%s(): CreatePipe() failed\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	}
+	if (SetHandleInformation(read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
+		G_warning_message_m12("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	}
+	
+	// set up process
+	GetEnvironmentVariableA("COMSPEC", cmd_exe_path, MAX_PATH);
+	len = 5;
+	len += strlen(cmd_exe_path);
+	len += strlen(command);
+	tmp_command = (si1 *) malloc((size_t) len);
+	sprintf(tmp_command, "%s /c %s", cmd_exe_path, command);
+
+	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;  // make nShowWindow member valid
+	startup_info.wShowWindow = SW_HIDE;
+	startup_info.hStdOutput = startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
+	
+	// start process
+	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
+		G_warning_message_m12("%s(): CreateProcess() failed\n", __FUNCTION__);
+		goto SYSTEM_PIPE_FAIL_m12;
+	}
+	
+	// close unused pipe end
+	CloseHandle(write_h);
+
+	// read pipe
+	bytes_in_buffer = 0;
+	bytes_avail = buf_len;
+	while (bytes_avail > 1) {
+		if (free_buffer == TRUE_m12) {
+			if (bytes_avail < BUFFER_SIZE_INC) {
+				buf_len += BUFFER_SIZE_INC;
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				bytes_avail += BUFFER_SIZE_INC;
+			}
+		}
+		success = ReadFile(read_h, buffer + bytes_in_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
+		if (success == FALSE || n_bytes_read == 0)
+			break;
+		bytes_in_buffer += n_bytes_read;
+		bytes_avail -= n_bytes_read;
+	}
+	buffer[bytes_in_buffer] = 0;  // set terminal zero
+
+	free((void *) tmp_command);
+	CloseHandle(read_h);
+	CloseHandle(process_info.hProcess);  // process handle
+	CloseHandle(process_info.hThread);  // process' primary thread handle
+
+	return(buffer);
+	
+SYSTEM_PIPE_FAIL_m12:
+	
+	if (free_buffer == TRUE_m12)
+		free_m12((void *) buffer, __FUNCTION__);
+	if (tmp_command != NULL)
+		free((void *) tmp_command);
+	if (read_h != NULL)
+		CloseHandle(read_h);
+	if (process_info.hProcess != NULL)
+		CloseHandle(process_info.hProcess);
+	if (process_info.hThread != NULL)
+		CloseHandle(process_info.hThread);
+
+	return(NULL);
+}
+#endif
 
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows

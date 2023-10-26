@@ -153,6 +153,7 @@
 	#include <sys/mount.h>
 	#include <termios.h>
 	#include <signal.h>
+	#include <sys/wait.h>
 #endif
 #ifdef MACOS_m12
 	#include <malloc/malloc.h>
@@ -1228,7 +1229,6 @@ TERN_m12	NET_check_internet_connection_m12(void);
 TERN_m12	NET_domain_to_ip_m12(si1 *domain_name, si1 *ip);
 void		*NET_get_in_addr_m12(struct sockaddr *sa);
 NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np);
-NET_PARAMS_m12	*NET_get_mac_address_m12(si1 *interface_name, NET_PARAMS_m12 *np);
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np);
 NET_PARAMS_m12	*NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np);
 si1		*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr);
@@ -2300,7 +2300,6 @@ void            G_show_timezone_info_m12(TIMEZONE_INFO_m12 *timezone_entry, TERN
 void            G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEADER_m12 *uh);
 TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess);
 void		G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number);
-si1		*G_system_pipe_m12(si1 *buffer, si8 buf_len, si1* command);
 void		G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key);
 si1		*G_unique_temp_file_m12(si1 *temp_file);
 void		G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
@@ -4375,6 +4374,7 @@ si8		strcpy_m12(si1 *target, si1 *source);
 si8		strncat_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail);
+si1		*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail);
 si4		vasprintf_m12(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m12(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m12(si1 *fmt, va_list args);
