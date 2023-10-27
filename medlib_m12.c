@@ -4984,10 +4984,10 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 	}
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "curl --connect-timeout 2.0 -s ipinfo.io";
+	command = "curl --connect-timeout 5.0 -s ipinfo.io";
 #endif
 #ifdef WINDOWS_m12
-	command = "curl.exe --connect-timeout 2.0 .exe -s ipinfo.io";
+	command = "curl.exe --connect-timeout 5.0 .exe -s ipinfo.io";
 #endif
 	sprintf_m12(temp_str, "%s > %s 2> %s", command, temp_file, NULL_DEVICE_m12);
 	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -11545,17 +11545,17 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 
 #if defined MACOS_m12 || defined LINUX_m12
 	if (include_cc == TRUE_m12)
-		sprintf(command, "curl --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
-		sprintf(command, "curl --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	system(command);
 #endif
 	
 #ifdef WINDOWS_m12
 	if (include_cc == TRUE_m12)
-		sprintf(command, "curl.exe --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
-		sprintf(command, "curl.exe --connect-timeout 2.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	WN_system_m12(command);
 #endif
 
@@ -13506,11 +13506,11 @@ void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 	}
 
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf(command, "curl --connect-timeout 2.0 -X POST https://textbelt.com/text --data-urlencode phone='%s' --data-urlencode message='%s' -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
+	sprintf(command, "curl --connect-timeout 5.0 -X POST https://textbelt.com/text --data-urlencode phone='%s' --data-urlencode message='%s' -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
 	system(command);
 #endif
 #ifdef WINDOWS_m12
-	sprintf(command, "curl.exe --connect-timeout 2.0 -X POST https://textbelt.com/text --data-urlencode phone=\"%s\" --data-urlencode message=\"%s\" -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
+	sprintf(command, "curl.exe --connect-timeout 5.0 -X POST https://textbelt.com/text --data-urlencode phone=\"%s\" --data-urlencode message=\"%s\" -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
 	WN_system_m12(command);
 #endif
 
@@ -15821,7 +15821,6 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 		return(FALSE_m12);
 	}
 
-	// already freed
 	#ifdef AT_DEBUG_m12
 	if (atn->free_function != NULL) {
 		AT_mutex_off();
@@ -16051,7 +16050,9 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 	
 	// allocate
 	total_requested_bytes = pointer_bytes + (n_buffers * array_bytes);
+	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	if (total_requested_bytes > buffers->total_allocated_bytes) {
+		printf_m12("%s(%d): %ld, %ld\n", __FUNCTION__, __LINE__, total_requested_bytes, buffers->total_allocated_bytes);
 		if (buffers->buffer != NULL) {
 			if (buffers->locked == TRUE_m12)
 				buffers->locked = munlock_m12((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -22875,10 +22876,8 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	// allocate
 	poles = FILT_POLES_m12(CMP_VDS_LOWPASS_ORDER_m12, 1);
 	pad_samps = FILT_FILT_PAD_SAMPLES_m12(poles);
-	cps->parameters.VDS_input_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_input_buffers, CMP_VDS_INPUT_BUFFERS_m12, block_samps + pad_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
-	cps->parameters.VDS_output_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_output_buffers, CMP_VDS_OUTPUT_BUFFERS_m12, block_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
-	VDS_in_bufs = cps->parameters.VDS_input_buffers;
-	VDS_out_bufs = cps->parameters.VDS_output_buffers;
+	VDS_in_bufs = cps->parameters.VDS_input_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_input_buffers, CMP_VDS_INPUT_BUFFERS_m12, block_samps + pad_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
+	VDS_out_bufs = cps->parameters.VDS_output_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_output_buffers, CMP_VDS_OUTPUT_BUFFERS_m12, block_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
 
 	// convert block samples to sf8 array
 	in_y = (sf8 *) VDS_in_bufs->buffer[0];
@@ -22886,7 +22885,7 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 
 	// generate template
 	CMP_VDS_generate_template_m12(cps, block_samps);
-	
+
 	// get baseline
 	template = (sf8 *) VDS_in_bufs->buffer[8];
 	abs_diffs = (sf8 *) VDS_in_bufs->buffer[2];
@@ -22914,11 +22913,13 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	sf8_p1 = in_y;
 	sf8_p2 = in_y + 1;
 	sf8_p3 = abs_diffs;
+	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	for (i = in_len; --i;) {
 		diff = *sf8_p2++ - *sf8_p1++;
 		*sf8_p3++ = (diff >= (sf8) 0.0) ? diff : -diff;
 	}
-
+	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
+	
 	// eliminate spurious critical points
 	sf8_p1 = abs_diffs;
 	si8_p1 = si8_p2 = in_x + 1;
@@ -23102,6 +23103,7 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	block_header->model_region_bytes = (ui2) CMP_VDS_MODEL_FIXED_HEADER_BYTES_m12;
 	cps->parameters.model_region = VDS_model_region;
 	
+	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	return;
 }
 
@@ -29829,11 +29831,11 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	// get WAN IPV4 address
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf_m12(temp_str, "curl --connect-timeout 2.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "curl --connect-timeout 5.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
 //	sprintf_m12(temp_str, "/usr/bin/curl --connect-timeout 2.0 -s checkip.dyndns.org");  // specify path so system doesn't have to find executable
 #endif
 #ifdef WINDOWS_m12
-	sprintf_m12(temp_str, "curl.exe --connect-timeout 2.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	sprintf_m12(temp_str, "curl.exe --connect-timeout 5.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
 #endif
 	
 //	si1	tmp_buf[2048];
@@ -33060,9 +33062,12 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 
 TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 {
-	si2				sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
-	si4				sock_fd, err;
-	struct sockaddr_in		sock_addr = { 0 };
+	TERN_m12		blocking;
+	si2			sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
+	si4			sock_fd, err, ret_val;
+	struct sockaddr_in	sock_addr = { 0 };
+	fd_set			fds;
+	struct timeval		tv;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -33093,19 +33098,55 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 	inet_pton(sock_fam, trans_info->dest_addr, &sock_addr.sin_addr);   // set remote address for connect()
 	sock_addr.sin_port = htons(trans_info->dest_port);  // set local port (in internet byte order)
 	sock_addr.sin_family = sock_fam;  // set socket family
+	
+	// set socket to non-blocking (if not already)
+	blocking = TR_set_socket_blocking_m12(trans_info, UNKNOWN_m12);
+	if (blocking == TRUE_m12)
+		blocking = TR_set_socket_blocking_m12(trans_info, FALSE_m12);
+
+	// try to connect
 	errno_reset_m12();
 	if (connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in))) {
 		err = errno_m12();
-		#if defined MACOS_m12 || defined LINUX_m12
-		G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
-		close(sock_fd);
-		#endif
-		#ifdef WINDOWS_m12
-		G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, err);
-		closesocket(sock_fd);
-		#endif
-		return(FALSE_m12);
+		ret_val = 0;
+		if (errno == EINPROGRESS) {
+			// wait for socket to be writable, or return after socket timeout
+			if (trans_info->timeout_secs)
+				tv.tv_sec = (time_t) trans_info->timeout_secs;
+			else
+				tv.tv_sec = (time_t) 5;  // default to 5 second timeout
+			tv.tv_usec = (time_t) 0;
+			
+			FD_ZERO(&fds);
+			FD_SET(trans_info->sock_fd, &fds);
+			errno_reset_m12();
+			ret_val = select(trans_info->sock_fd + 1, NULL, &fds, NULL, &tv);
+			if (ret_val == -1)
+				err = errno_m12();
+			else if (ret_val == 0) {
+				err = ETIMEDOUT;
+				ret_val = -1;
+			}
+		}
+		if (ret_val == -1) {
+#if defined MACOS_m12 || defined LINUX_m12
+			G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
+			close(sock_fd);
+#endif
+#ifdef WINDOWS_m12
+			G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, err);
+			closesocket(sock_fd);
+#endif
+			if (blocking == TRUE_m12)
+				blocking = TR_set_socket_blocking_m12(trans_info, TRUE_m12);
+
+			return(FALSE_m12);
+		}
 	}
+
+	// reset socket to blocking if necessary
+	if (blocking == TRUE_m12)
+		blocking = TR_set_socket_blocking_m12(trans_info, TRUE_m12);
 
 	return(TRUE_m12);
 }
@@ -33720,10 +33761,15 @@ TR_SEND_FAIL:
 TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 {
 #if defined MACOS_m12 || defined LINUX_m12
+	TERN_m12	current_state;
 	si4		socket_flags;
 
 	
 	socket_flags = fcntl(trans_info->sock_fd, F_GETFL, 0);  // get existing flags
+	
+	current_state = (socket_flags & O_NONBLOCK) ? FALSE_m12 : TRUE_m12;
+	if (current_state == blocking || blocking == UNKNOWN_m12)
+		return(current_state);
 
 	// set socket to blocking
 	if (blocking == TRUE_m12) {
@@ -33735,20 +33781,12 @@ TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 	}
 
 	// set socket to non-blocking
-	else if (blocking == FALSE_m12) {
+	else {
 		socket_flags |= O_NONBLOCK;
 		if (fcntl(trans_info->sock_fd, F_SETFL, socket_flags) == -1) {
 			G_warning_message_m12("%s(): could not set socket to non-blocking\n", __FUNCTION__);
 			blocking = UNKNOWN_m12;
 		}
-	}
-	
-	// blocking == UNKNOWN_m12 => just return current state
-	else {
-		if (socket_flags & O_NONBLOCK)
-			blocking = FALSE_m12;
-		else
-			blocking = TRUE_m12;
 	}
 #endif
 	
