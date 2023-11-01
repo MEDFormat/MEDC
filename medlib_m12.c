@@ -4965,7 +4965,7 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 	}
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "curl --connect-timeout 5.0 -s ipinfo.io";
+	command = "/usr/bin/curl --connect-timeout 5.0 -s ipinfo.io";
 #endif
 #ifdef WINDOWS_m12
 	command = "curl.exe --connect-timeout 5.0 .exe -s ipinfo.io";
@@ -11517,9 +11517,9 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 
 #if defined MACOS_m12 || defined LINUX_m12
 	if (include_cc == TRUE_m12)
-		sprintf(command, "curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
-		sprintf(command, "curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	system(command);
 #endif
 	
@@ -13478,7 +13478,7 @@ void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 	}
 
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf(command, "curl --connect-timeout 5.0 -X POST https://textbelt.com/text --data-urlencode phone='%s' --data-urlencode message='%s' -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
+	sprintf(command, "/usr/bin/curl --connect-timeout 5.0 -X POST https://textbelt.com/text --data-urlencode phone='%s' --data-urlencode message='%s' -d key=%s > %s 2>&1", phone_number, content, textbelt_key, NULL_DEVICE_m12);
 	system(command);
 #endif
 #ifdef WINDOWS_m12
@@ -29691,7 +29691,7 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	// get WAN IPV4 address
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "curl --connect-timeout 5.0 -s checkip.dyndns.org";
+	command = "/usr/bin/curl --connect-timeout 5.0 -s checkip.dyndns.org";
 //	sprintf_m12(temp_str, "/usr/bin/curl --connect-timeout 2.0 -s checkip.dyndns.org");  // specify path so system doesn't have to find executable
 #endif
 #ifdef WINDOWS_m12
@@ -36321,7 +36321,6 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 {
 	void	*ptr;
 	si4	err;
-	ui8	alloced_bytes;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -36336,6 +36335,7 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 		return((void *) NULL);
 	}
 	
+#ifdef AT_DEBUG_m12
 	// see if already has enough memory
 	if (orig_ptr != NULL)
 		alloced_bytes = AT_alloc_size_m12(orig_ptr);
@@ -36343,6 +36343,7 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 		alloced_bytes = 0;
 	if (alloced_bytes >= n_bytes)
 		return(orig_ptr);
+#endif
 	
 	err = errno_m12();
 	
