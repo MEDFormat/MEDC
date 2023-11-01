@@ -34838,12 +34838,18 @@ si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 	if (n_dirs < 1)
 		return(-1);
 	
-	if (*buffer != NULL) {
-		G_warning_message_m12("%s(): buffer should not be allocated in this version\n");
+	if (buffer == NULL) {
+		G_warning_message_m12("%s(): buffer is NULL\n");
 		return(-1);
 	}
+
+	if (*buffer != NULL) {
+		if (freeable_m12((void *) *buffer) == FALSE_m12) {
+			G_warning_message_m12("%s(): *buffer cannot be statically allocated\n");
+			return(-1);
+		}
+	}
 	
-	*buffer = (si1 *) malloc((size_t) FULL_FILE_NAME_BYTES_m12);
 	if (full_path == TRUE_m12)
 		file_name_size = FULL_FILE_NAME_BYTES_m12;
 	else
