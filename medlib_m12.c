@@ -3995,32 +3995,22 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 			
 	if (globals->behavior_stack != NULL)
 		free((void *) globals->behavior_stack);
-
-#ifdef MATLAB_PERSISTENT_m12
+#ifdef AT_DEBUG_m12
 	if (globals->AT_nodes != NULL) {
-		#ifdef AT_DEBUG_m12
 		AT_free_all_m12();  // display memory still allocated & free it
-		#endif
+#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) globals->AT_nodes);  // AT nodes are not allocted with AT functions
+#else
+		free((void *) globals->AT_nodes);  // AT nodes are not allocated with AT functions
+#endif
 	}
-		
-	// destroy mutices
-	PROC_pthread_mutex_destroy_m12(&globals->behavior_mutex);
 	PROC_pthread_mutex_destroy_m12(&globals->AT_mutex);
+#endif
 	
+	PROC_pthread_mutex_destroy_m12(&globals->behavior_mutex);
+#ifdef MATLAB_PERSISTENT_m12
 	mxFree((void *) globals);
 #else
-	if (globals_m12->AT_nodes != NULL) {
-		#ifdef AT_DEBUG_m12
-		AT_free_all_m12();  // display memory still allocated & free it
-		#endif
-		free((void *) globals->AT_nodes);  // AT nodes are not allocated with AT functions
-	}
-	
-	// destroy mutices
-	PROC_pthread_mutex_destroy_m12(&globals->behavior_mutex);
-	PROC_pthread_mutex_destroy_m12(&globals->AT_mutex);
-	
 	free((void *) globals);
 #endif
 
@@ -4337,18 +4327,15 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 {
 	TERN_m12	regex;
 	si1		tmp_enclosing_directory[FULL_FILE_NAME_BYTES_m12], tmp_path[FULL_FILE_NAME_BYTES_m12];
-	si1		tmp_name[FULL_FILE_NAME_BYTES_m12], tmp_extension[16], tmp_ext[16], temp_file[FULL_FILE_NAME_BYTES_m12];
-	si1		**tmp_ptr_ptr;
+	si1		tmp_name[FULL_FILE_NAME_BYTES_m12], tmp_extension[16], tmp_ext[16], *buffer;
+	si1		*c, **tmp_ptr_ptr;
 	ui4		path_parts;
 	si4		i, j, n_in_files, *n_out_files;
-	FILE		*fp;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
-	G_unique_temp_file_m12(temp_file);
-	
+		
 	// can be used to get a directory list also
 	// file_list entries, enclosing_directory, name, & extension can contain regexp
 	// if file_list is NULL it will be allocated
@@ -4417,7 +4404,8 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 				sprintf_m12(tmp_ptr_ptr[i], "%s.%s", tmp_ptr_ptr[i], extension);
 		}
 		if (flags & GFL_FREE_INPUT_FILE_LIST_m12)
-			free_2D_m12((void **) file_list, n_in_files, __FUNCTION__);
+			if (freeable_m12((void *) file_list) == TRUE_m12)
+				free_2D_m12((void **) file_list, n_in_files, __FUNCTION__);
 		file_list = tmp_ptr_ptr;
 	}
 
@@ -4464,53 +4452,50 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 					sprintf_m12(command, "%s.%s", command, extension);
 			}
 		}
-		sprintf_m12(command, "%s > %s 2> %s", command, temp_file, NULL_DEVICE_m12);
 		free_m12((void *) file_list, __FUNCTION__);
 		
 		// count expanded file list
 		*n_out_files = 0;
-		ret_val = system_m12(command, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+		buffer = NULL;
+		ret_val = system_pipe_m12(&buffer, NULL, command, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		if (ret_val) {
 			free((void *) command);
 			return(NULL);
 		}
-		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		
+
 		tmp_str = command;
-		while (fscanf(fp, "%[^\n]", tmp_str) != EOF) {
-			fgetc(fp);
+		c = buffer;
+		while (sscanf(c, "%[^\n]", tmp_str) != EOF) {
+			c += strlen(c) + 1;
 			++(*n_out_files);
 		}
 		free((void *) tmp_str);
 		
-		if (*n_out_files == 0) {
-			fclose(fp);
+		if (*n_out_files == 0)
 			return(NULL);
-		}
-		rewind(fp);
+		
 	#endif  // MACOS_m12 || LINUX_m12
 		
 	#ifdef WINDOWS_m12
-		*n_out_files = WN_ls_1d_to_tmp_m12(file_list, n_in_files, TRUE_m12, temp_file);
+		buffer = NULL;
+		*n_out_files = WN_ls_1d_to_buf_m12(file_list, n_in_files, TRUE_m12, &buffer);
 		free_m12((void *) file_list, __FUNCTION__);
 		if (*n_out_files == -1) {  // error
 			*n_out_files = 0;
 			return(NULL);
 		}
-		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	#endif  // WINDOWS_m12
 
 		// re-allocate
 		file_list = (si1 **) calloc_2D_m12((size_t) *n_out_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		
 		// build file list
+		c = buffer;
 		for (i = 0; i < *n_out_files; ++i) {
-			fscanf(fp, "%[^\n]", file_list[i]);
-			fgetc(fp);
+			sscanf(c, "%[^\n]", file_list[i]);
+			c += strlen(c) + 1;
 		}
-
-		// clean up
-		fclose(fp);
+		free((void *) buffer);
 	}
 
 GFL_CONDITION_RETURN_DATA_m12:
@@ -4963,19 +4948,15 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12 set_timezone_globals, TERN_m12 prompt)
 {
 	TERN_m12	free_loc_info = FALSE_m12;
-	si1		*command, temp_str[128], *buffer, *pattern, *c, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1		*command, *buffer, *pattern, *c;
 	si4		ret_val;
-	si8		sz;
-	FILE		*fp;
 	time_t 		curr_time;
 	struct tm 	loc_time;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
-	G_unique_temp_file_m12(temp_file);
-	
+		
 	if (loc_info == NULL) {
 		loc_info = (LOCATION_INFO_m12 *) calloc((size_t) 1, sizeof(LOCATION_INFO_m12));
 		free_loc_info = TRUE_m12;
@@ -4989,21 +4970,10 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 #ifdef WINDOWS_m12
 	command = "curl.exe --connect-timeout 5.0 .exe -s ipinfo.io";
 #endif
-	sprintf_m12(temp_str, "%s > %s 2> %s", command, temp_file, NULL_DEVICE_m12);
-	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, NULL, command, FALSE_m12,  __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	
-	// get file length
-	sz = G_file_length_m12(fp, NULL);
-	if (sz == 0)
-		return(NULL);
-	
-	// read output
-	buffer = (si1 *) calloc((size_t)sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
 	
 	// condition output
 	STR_strip_character_m12(buffer, '"');
@@ -5826,20 +5796,22 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 	
 	// initialize new globals mutices
 	PROC_pthread_mutex_init_m12(&globals->behavior_mutex, NULL);
-	PROC_pthread_mutex_init_m12(&globals->AT_mutex, NULL);
 
 	// AT (do this as soon as possible)
-#ifdef MATLAB_PERSISTENT_m12
-	globals->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m12, (mwSize) sizeof(AT_NODE));
-#else
-	globals->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m12, sizeof(AT_NODE));
+#ifdef AT_DEBUG_m12
+	PROC_pthread_mutex_init_m12(&globals->AT_mutex, NULL);
+	#ifdef MATLAB_PERSISTENT_m12
+		globals->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m12, (mwSize) sizeof(AT_NODE));
+	#else
+		globals->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m12, sizeof(AT_NODE));
+	#endif
+		if (globals->AT_nodes == NULL) {
+			printf_m12("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
+			exit(-1);
+		}
+		globals->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m12;
+		globals->AT_used_node_count = 0;
 #endif
-	if (globals->AT_nodes == NULL) {
-		printf_m12("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
-		exit(-1);
-	}
-	globals->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m12;
-	globals->AT_used_node_count = 0;
 	
 	// password structure
 	memset((void *) &globals->password_data, 0, sizeof(PASSWORD_DATA_m12));
@@ -5965,8 +5937,8 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 			exit_m12(-1);
 		}
 	}
-
-#if defined FN_DEBUG_m12 || defined AT_DEBUG  // need UTF8 tables for G_message_m12()
+	
+#if defined FN_DEBUG_m12 || defined AT_DEBUG_m12  // need UTF8 tables for G_message_m12()
 	if (global_tables_m12->UTF8_offsets_table == NULL) {
 		if (UTF8_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
@@ -9920,8 +9892,8 @@ si8     G_read_record_data_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *s
 	if (end_idx == NO_INDEX_m12) // no records after slice end, but some in slice => use terminal index
 		end_idx = ri_fps->universal_header->number_of_entries - 1;
 	n_recs = end_idx - start_idx;
-	offset = REMOVE_DISCONTINUITY_m12(ri_fps->record_indices[start_idx].file_offset);
-	bytes_to_read = REMOVE_DISCONTINUITY_m12(ri_fps->record_indices[end_idx].file_offset) - offset;
+	offset = ri_fps->record_indices[start_idx].file_offset;
+	bytes_to_read = ri_fps->record_indices[end_idx].file_offset - offset;
 	rd_fps = G_read_file_m12(rd_fps, NULL, offset, bytes_to_read, n_recs, level_header, NULL, USE_GLOBAL_BEHAVIOR_m12);
 	if (rd_fps == NULL)
 		return((si8) FALSE_m12);
@@ -15514,9 +15486,10 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
 //******************************************//
 
 
-void	AT_add_entry_m12(void *address, const si1 *function)
+#ifdef AT_DEBUG_m12
+void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function)
 {
-	ui8		bytes;
+	ui8		actual_bytes;
 	si8		i, prev_node_count;
 	AT_NODE		*atn;
 
@@ -15525,17 +15498,14 @@ void	AT_add_entry_m12(void *address, const si1 *function)
 #endif
 	
 	if (address == NULL) {
-		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): attempting to add NULL object, called from function %s()\n", __FUNCTION__, function);
-		#endif
 		return;
 	}
 	
 	// get mutex
 	AT_mutex_on();
 	
-	// check if address exists in list and was previously free
-	#ifdef AT_DEBUG_m12
+	// check if address exists in list and was previously freed
 	atn = globals_m12->AT_nodes;
 	for (i = globals_m12->AT_node_count; i--; ++atn)
 		if (atn->address == address)
@@ -15545,14 +15515,15 @@ void	AT_add_entry_m12(void *address, const si1 *function)
 			// replace existing entry (keeps addresses in list unique)
 			atn->alloc_function = function;
 			atn->free_function = NULL;
+			atn->requested_bytes = requested_bytes;
 			#ifdef MACOS_m12
-			atn->bytes = (ui8) malloc_size(address);
+			atn->actual_bytes = (ui8) malloc_size(address);
 			#endif
 			#ifdef LINUX_m12
-			atn->bytes = (ui8) malloc_usable_size(address);
+			atn->actual_bytes = (ui8) malloc_usable_size(address);
 			#endif
 			#ifdef WINDOWS_m12
-			atn->bytes = (ui8) _msize(address);
+			atn->actual_bytes = (ui8) _msize(address);
 			#endif
 			AT_mutex_off();
 			return;
@@ -15563,7 +15534,6 @@ void	AT_add_entry_m12(void *address, const si1 *function)
 			return;
 		}
 	}
-	#endif
 	
 	// expand list if needed
 	if (globals_m12->AT_used_node_count == globals_m12->AT_node_count) {
@@ -15579,36 +15549,27 @@ void	AT_add_entry_m12(void *address, const si1 *function)
 		memset((void *) (globals_m12->AT_nodes + prev_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m12 * sizeof(AT_NODE));
 		atn = globals_m12->AT_nodes + prev_node_count;
 	} else {
-		// find a free node
-		#ifdef AT_DEBUG_m12
 		atn = globals_m12->AT_nodes + globals_m12->AT_used_node_count;
-		#else
-		atn = globals_m12->AT_nodes;
-		for (i = globals_m12->AT_node_count; i--; ++atn)
-			if (atn->address == NULL)
-				break;
-		#endif
 	}
 	
 	// get true allocated bytes
 #ifdef MACOS_m12
-	bytes = (ui8) malloc_size(address);
+	actual_bytes = (ui8) malloc_size(address);
 #endif
 #ifdef LINUX_m12
-	bytes = (ui8) malloc_usable_size(address);
+	actual_bytes = (ui8) malloc_usable_size(address);
 #endif
 #ifdef WINDOWS_m12
-	bytes = (ui8) _msize(address);
+	actual_bytes = (ui8) _msize(address);
 #endif
 			
 	// fill in
-	++globals_m12->AT_used_node_count;
+	atn->requested_bytes = requested_bytes;
 	atn->address = address;
-	atn->bytes = bytes;
-#ifdef AT_DEBUG_m12
+	atn->actual_bytes = actual_bytes;
 	atn->alloc_function = function;
-#endif
-	
+	++globals_m12->AT_used_node_count;
+
 	// return mutex
 	AT_mutex_off();
 	
@@ -15619,7 +15580,7 @@ void	AT_add_entry_m12(void *address, const si1 *function)
 ui8	AT_alloc_size_m12(void *address)
 {
 	si8		i;
-	ui8		bytes;
+	ui8		requested_bytes;
 	AT_NODE		*atn;
 	
 #ifdef FN_DEBUG_m12
@@ -15627,9 +15588,7 @@ ui8	AT_alloc_size_m12(void *address)
 #endif
 	
 	if (address == NULL) {
-		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): attempting find a NULL object\n", __FUNCTION__);
-		#endif
 		return(0);
 	}
 	
@@ -15638,15 +15597,13 @@ ui8	AT_alloc_size_m12(void *address)
 	atn = globals_m12->AT_nodes;
 	for (i = globals_m12->AT_node_count; i--; ++atn) {
 		if (atn->address == address) {
-			bytes = atn->bytes;
+			requested_bytes = atn->requested_bytes;
 			AT_mutex_off();
-			return(bytes);
+			return(requested_bytes);
 		}
 	}
 	
-	#ifdef AT_DEBUG_m12
 	G_message_m12("%s(): no entry for address %lu\n", __FUNCTION__, (ui8) address);
-	#endif
 	AT_mutex_off();
 
 	return(0);
@@ -15655,13 +15612,9 @@ ui8	AT_alloc_size_m12(void *address)
 
 void	AT_free_all_m12(void)
 {
-	si8		i;
+	si8		i, alloced_entries = 0;
 	AT_NODE		*atn;
 	
-#ifdef AT_DEBUG_m12
-	si8		alloced_entries = 0;
-#endif
-
 #ifdef FN_DEBUG_m12
 	#ifdef MATLAB_m12
 	mexPrintf("%s()\n", __FUNCTION__);
@@ -15676,7 +15629,6 @@ void	AT_free_all_m12(void)
 	for (i = globals_m12->AT_node_count; i--; ++atn) {
 		if (atn->address == NULL)
 			continue;
-		#ifdef AT_DEBUG_m12
 		if (atn->free_function == NULL) {
 			++alloced_entries;
 			atn->free_function = __FUNCTION__;
@@ -15689,17 +15641,8 @@ void	AT_free_all_m12(void)
 			free(atn->address);
 			#endif
 		}
-		#else
-			#ifdef MATLAB_PERSISTENT_m12
-			mxFree(atn->address);
-			#else
-			free(atn->address);
-			#endif
-			atn->address = NULL;
-		#endif
 	}
 
-#ifdef AT_DEBUG_m12
 	if (alloced_entries) {
 		#ifdef MATLAB_m12
 		mexPrintf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
@@ -15707,9 +15650,6 @@ void	AT_free_all_m12(void)
 		printf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
 		#endif
 	}
-#else
-	globals_m12->AT_used_node_count = 0;
-#endif
 
 	AT_mutex_off();
 
@@ -15747,12 +15687,10 @@ TERN_m12	AT_freeable_m12(void *address)
 	}
 
 	// already freed
-	#ifdef AT_DEBUG_m12
 	if (atn->free_function != NULL) {
 		AT_mutex_off();
 		return(FALSE_m12);
 	}
-	#endif
 
 	// return mutex
 	AT_mutex_off();
@@ -15797,9 +15735,7 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	// Note this function does not free the accociated memory, just removes it from AT list
 	
 	if (address == NULL) {
-		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): attempting to free NULL object, called from function %s()\n", __FUNCTION__, function);
-		#endif
 		return(FALSE_m12);
 	}
 
@@ -15815,28 +15751,19 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	// no entry
 	if (i < 0) {
 		AT_mutex_off();
-		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): address %lu is not allocated, called from function %s()\n", __FUNCTION__, (ui8) address, function);
-		#endif
 		return(FALSE_m12);
 	}
 
-	#ifdef AT_DEBUG_m12
 	if (atn->free_function != NULL) {
 		AT_mutex_off();
 		G_warning_message_m12("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
 		AT_show_entry_m12(address);
 		return(FALSE_m12);
 	}
-	#endif
 
 	// remove
-	#ifdef AT_DEBUG_m12
 	atn->free_function = function;
-	#else
-	--globals_m12->AT_used_node_count;
-	atn->address = NULL;
-	#endif
 
 	// return mutex
 	AT_mutex_off();
@@ -15849,10 +15776,8 @@ void	AT_show_entries_m12(ui4	entry_type)
 {
 	si8		i;
 	AT_NODE		*atn;
-	#ifdef AT_DEBUG_m12
 	si8		alloced_entries = 0;
 	si8		freed_entries = 0;
-	#endif
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -15864,34 +15789,28 @@ void	AT_show_entries_m12(ui4	entry_type)
 	for (i = globals_m12->AT_node_count; i--; ++atn) {
 		if (atn->address == NULL)
 			continue;
-		#ifdef AT_DEBUG_m12
 		if (atn->free_function == NULL) {
 			if (entry_type & AT_CURRENTLY_ALLOCATED_m12) {
 				G_message_m12("\naddress: %lu\n", (ui8) atn->address);
-				G_message_m12("bytes: %lu\n", atn->bytes);
+				G_message_m12("requested bytes: %lu\n", atn->requested_bytes);
+				G_message_m12("actual bytes: %lu\n", atn->actual_bytes);
 				G_message_m12("allocated by: %s()\n", atn->alloc_function);
 			}
 			++alloced_entries;
 		} else {
 			if (entry_type & AT_PREVIOUSLY_FREED_m12) {
 				G_message_m12("\naddress: %lu\n", (ui8) atn->address);
-				G_message_m12("bytes: %lu\n", atn->bytes);
+				G_message_m12("requested bytes: %lu\n", atn->requested_bytes);
+				G_message_m12("actual bytes: %lu\n", atn->actual_bytes);
 				G_message_m12("allocated by: %s()\n", atn->alloc_function);
 				G_message_m12("freed by: %s()\n", atn->free_function);
 			}
 			++freed_entries;
 		}
-		#else
-		G_message_m12("\naddress: %lu\n", (ui8) atn->address);
-		G_message_m12("bytes: %lu\n", atn->bytes);
-		#endif
 	}
-#ifdef AT_DEBUG_m12
+
 	G_message_m12("\ncurrently allocated AT entries: %lu\n", alloced_entries);
 	G_message_m12("previously freed AT entries: %lu\n", freed_entries);
-#else
-	G_message_m12("\ncurrently allocated AT entries: %lu\n", globals_m12->AT_used_node_count);
-#endif
 
 	AT_mutex_off();
 
@@ -15921,12 +15840,11 @@ void	AT_show_entry_m12(void *address)
 	for (i = globals_m12->AT_node_count; i--; ++atn) {
 		if (atn->address == address) {
 			G_message_m12("\naddress: %lu\n", (ui8) atn->address);
-			G_message_m12("bytes: %lu\n", atn->bytes);
-			#ifdef AT_DEBUG_m12
+			G_message_m12("requested bytes: %lu\n", atn->requested_bytes);
+			G_message_m12("actual bytes: %lu\n", atn->actual_bytes);
 			G_message_m12("allocated by: %s()\n", atn->alloc_function);
 			if (atn->free_function != NULL)
 				G_message_m12("freed by: %s()\n", atn->free_function);
-			#endif
 			AT_mutex_off();
 			return;
 		}
@@ -15939,7 +15857,7 @@ void	AT_show_entry_m12(void *address)
 }
 
 
-TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, const si1 *function)
+TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, size_t requested_bytes, const si1 *function)
 {
 	si8		i;
 	AT_NODE		*atn;
@@ -15950,14 +15868,12 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, const si1 *f
 	
 	if (orig_address == NULL) {
 		if (new_address != NULL) {
-			AT_add_entry_m12(new_address, function);
+			AT_add_entry_m12(new_address, requested_bytes, function);
 			return(TRUE_m12);
 		}
 	}
 	if (new_address == NULL) {
-		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): attempting to reassign to NULL object, called from function %s()\n", __FUNCTION__, function);
-		#endif
 		return(FALSE_m12);
 	}
 	
@@ -15973,42 +15889,37 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, const si1 *f
 	// no entry
 	if (i < 0) {
 		AT_mutex_off();
-		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): address %lu is not in the list, called from function %s()\n", __FUNCTION__, (ui8) orig_address, function);
-		#endif
 		return(FALSE_m12);
 	}
 	
-	#ifdef AT_DEBUG_m12
 	if (atn->free_function != NULL) {
 		G_warning_message_m12("%s(): original address was already freed, called from function %s():", __FUNCTION__, function);
 		AT_show_entry_m12(orig_address);
 		G_warning_message_m12("=> replacing with new data\n");
 		atn->free_function = NULL;
 	}
-	#endif
 
 	// update
 	atn->address = new_address;
 #ifdef MACOS_m12
-	atn->bytes = (ui8) malloc_size(new_address);
+	atn->actual_bytes = (ui8) malloc_size(new_address);
 #endif
 #ifdef LINUX_m12
-	atn->bytes = (ui8) malloc_usable_size(new_address);
+	atn->actual_bytes = (ui8) malloc_usable_size(new_address);
 #endif
 #ifdef WINDOWS_m12
-	atn->bytes = (ui8) _msize(new_address);
+	atn->actual_bytes = (ui8) _msize(new_address);
 #endif
-
-#ifdef AT_DEBUG_m12
+	atn->requested_bytes = requested_bytes;
 	atn->alloc_function = function;
-#endif
 
 	// return mutex
 	AT_mutex_off();
 
 	return(TRUE_m12);
 }
+#endif // AT_DEBUG_m12
 
 
 
@@ -28712,9 +28623,6 @@ inline
 #endif
 void	HW_get_machine_serial_m12(void)
 {
-	si1		command[1024], *buf, *machine_sn, temp_file[FULL_FILE_NAME_BYTES_m12];
-	si8		file_length;
-	FILE		*fp;
 	HW_PARAMS_m12	*hw_params;
 
 #ifdef FN_DEBUG_m12
@@ -28740,33 +28648,30 @@ void	HW_get_machine_serial_m12(void)
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	return;
 #endif
-	
-	G_unique_temp_file_m12(temp_file);
+#if defined MACOS_m12 || defined WINDOWS_m12
+	si1		*command, *buf, *machine_sn;
+	si8		buf_len;
 
 	#ifdef MACOS_m12
 	// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
-	sprintf_m12(command, "ioreg -l | grep IOPlatformSerialNumber > %s", temp_file);
+	command = "ioreg -l | grep IOPlatformSerialNumber";
 	#endif
 	
 	#ifdef WINDOWS_m12
 	// out example: SerialNumber\nC02RP18FG8WM
-	sprintf_m12(command, "wmic bios get serialnumber > %s", temp_file);
+	command = "wmic bios get serialnumber";
 	#endif
 	
-	system_m12(command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	file_length = G_file_length_m12(fp, NULL);
-	buf = calloc((size_t) file_length + 1, sizeof(si1));
-	fread_m12((void *) buf, sizeof(si1), (size_t) file_length, fp, temp_file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	fclose(fp);
-
+	buf = NULL;
+	system_pipe_m12(&buf, &buf_len, command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	
 #ifdef MACOS_m12
 	machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
-	buf[file_length - 2] = 0;  // <quote><lf>
+	buf[buf_len - 2] = 0;  // <quote><lf>
 #endif
 	
 #ifdef WINDOWS_m12
-	buf[file_length - 7] = buf[file_length - 8] = 0;  // <cr><lf>
+	buf[buf_len - 7] = buf[buf_len - 8] = 0;  // <cr><lf>
 	STR_wchar2char_m12(buf, (wchar_t *) buf);
 	machine_sn = STR_match_end_m12("SerialNumber  \r\n", buf);
 #endif
@@ -28780,13 +28685,14 @@ void	HW_get_machine_serial_m12(void)
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 
 	return;
+#endif
 }
 
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
-void	HW_get_system_memory_m12(void)
+void	HW_get_memory_info_m12(void)
 {
 	si8		pages, page_size;
 	HW_PARAMS_m12	*hw_params;
@@ -28795,14 +28701,14 @@ void	HW_get_system_memory_m12(void)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// gets system memory in bytes
+	// gets system memory & page size in bytes
 
 	hw_params = &global_tables_m12->HW_params;
-	if (hw_params->system_memory)
+	if (hw_params->system_memory_size)
 		return;
 
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
-	if (hw_params->system_memory) {  // may have been set by another thread while waiting
+	if (hw_params->system_memory_size) {  // may have been set by another thread while waiting
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 		return;
 	}
@@ -28812,27 +28718,34 @@ void	HW_get_system_memory_m12(void)
 	page_size = sysconf(_SC_PAGE_SIZE);
 	
 	if (pages == -1 || page_size == -1) {
-		G_warning_message_m12("%s(): sysconf() error\n", __FUNCTION__);
+		fprintf_m12(stderr, "%s(): sysconf() error\n", __FUNCTION__);
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 		return;
 	}
 
-	hw_params->system_memory = pages * page_size;
+	hw_params->system_memory_size = (ui8) (pages * page_size);
+	hw_params->system_page_size = (ui4) page_size;
 #endif
 	
 #ifdef WINDOWS_m12
 	MEMORYSTATUSEX	status;
+	SYSTEM_INFO 	system_info;
 	
 	status.dwLength = sizeof(status);
-	
 	if (GlobalMemoryStatusEx(&status) == 0) {
-		G_warning_message_m12("%s(): GlobalMemoryStatusEx() error\n", __FUNCTION__);
+		fprintf_m12(stderr, "%s(): GlobalMemoryStatusEx() error\n", __FUNCTION__);
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 		return;
 	}
-
-	hw_params->system_memory = (si8) status.ullTotalPhys;
+	hw_params->system_memory_size = (ui8) status.ullTotalPhys;
+	
+	GetNativeSystemInfo(&system_info);
+	hw_params->system_page_size = (ui4) system_info.dwPageSize;
 #endif
+	
+	hw_params->heap_base_address = (ui8) globals_list_m12;  // first thing allocated by initialize_medlib_m12()
+	hw_params->heap_max_address = (hw_params->heap_base_address + hw_params->system_memory_size) - 1;
+	// in all 64-bit OSs tested, stack addresses are > heap_max_address (even for child processes)
 	
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	
@@ -28939,8 +28852,8 @@ TERN_m12	HW_initialize_tables_m12(void)
 	if (hw_params->performance_specs.integer_multiplications_per_sec == 0)
 		HW_get_performance_specs_m12();
 	
-	if (hw_params->system_memory == 0)
-		HW_get_system_memory_m12();
+	if (hw_params->system_memory_size == 0)
+		HW_get_memory_info_m12();
 
 	if (*hw_params->serial_number == 0)
 		HW_get_machine_serial_m12();
@@ -29033,20 +28946,35 @@ void	HW_show_info_m12(void)
 	else
 		printf_m12("nsecs_per_integer_division = %lf\n", hw_params->performance_specs.nsecs_per_integer_division);
 
-	if (hw_params->system_memory == 0)
-		printf_m12("system_memory = unknown\n");
+	if (hw_params->system_memory_size == 0)
+		printf_m12("system_memory_size = unknown\n");
 	else
-		printf_m12("system_memory = %ld\n", hw_params->system_memory);
+		printf_m12("system_memory_size = %lu\n", hw_params->system_memory_size);
 	
-	if (*hw_params->manufacturer == 0)
-		printf_m12("manufacturer = unknown\n");
+	if (hw_params->system_page_size == 0)
+		printf_m12("system_page_size = unknown\n");
 	else
-		printf_m12("manufacturer = \"%s\"\n", hw_params->manufacturer);
+		printf_m12("system_page_size = %u\n", hw_params->system_page_size);
 	
-	if (*hw_params->model == 0)
-		printf_m12("model = unknown\n");
+	if (hw_params->heap_base_address == 0)
+		printf_m12("heap_base_address = unknown\n");
 	else
-		printf_m12("model = \"%s\"\n", hw_params->model);
+		printf_m12("heap_base_address = %lu\n", hw_params->heap_base_address);
+	
+	if (hw_params->heap_max_address == 0)
+		printf_m12("heap_max_address = unknown\n");
+	else
+		printf_m12("heap_max_address = %lu\n", hw_params->heap_max_address);
+	
+	if (*hw_params->cpu_manufacturer == 0)
+		printf_m12("cpu_manufacturer = unknown\n");
+	else
+		printf_m12("cpu_manufacturer = \"%s\"\n", hw_params->cpu_manufacturer);
+	
+	if (*hw_params->cpu_model == 0)
+		printf_m12("cpu_model = unknown\n");
+	else
+		printf_m12("cpu_model = \"%s\"\n", hw_params->cpu_model);
 	
 	if (*hw_params->serial_number == 0)
 		printf_m12("serial_number = unknown\n");
@@ -29145,17 +29073,14 @@ void	*NET_get_in_addr_m12(struct sockaddr *sa)	// get sockaddr, IPv4 or IPv6
 
 NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 {
-	si1			command[1024], *buffer, *c, temp_file[FULL_FILE_NAME_BYTES_m12];
-	si4			ret_val;
-	si8			sz;
-	FILE			*fp;
+	si1	*command, *buffer, *c;
+	si4	ret_val;
+	si8	buf_len;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	G_unique_temp_file_m12(temp_file);
-
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
 	
@@ -29166,29 +29091,23 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	}
 	
 #ifdef MACOS_m12
-	sprintf_m12(command, "route -n get default | grep interface > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	command = "route -n get default";
 #endif
 #ifdef LINUX_m12
-	sprintf_m12(command, "ip route get 8.8.8.8 > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	command = "ip route get 8.8.8.8";
 #endif
 #ifdef WINDOWS_m12
-	sprintf_m12(command, "route PRINT -4 0.0.0.0 > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	command = "route PRINT -4 0.0.0.0";
 #endif
-	ret_val = system_m12(command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, &buf_len, command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
 	if (ret_val) // probably no internet connection, otherwise route() error
 		return(NULL);
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-       
-	// get file length
-	sz = G_file_length_m12(fp, NULL);
-
-	// read route() output
-	buffer = (si1 *) calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
-
+	
 	G_push_behavior_m12(RETURN_ON_FAIL_m12);
 #ifdef MACOS_m12
+	si1	tmp_str[128];
+	
 	// parse route() output to get internet interface name
 	if ((c = STR_match_end_m12("interface: ", buffer)) == NULL) {
 		G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
@@ -29197,24 +29116,15 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	}
 	if (c != NULL) {
 		sscanf(c, "%s", np->interface_name);
-		
+
 		// send ifconfig() output to temp file
-		sprintf_m12(command, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
-		ret_val = system_m12(command, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+		command = tmp_str;
+		sprintf_m12(command, "ifconfig %s", np->interface_name);
+		ret_val = system_pipe_m12(&buffer, &buf_len, command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
 		if (ret_val) {
 			G_pop_behavior_m12();
-			free((void *) buffer);
 			return(NULL);
 		}
-		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	
-		// get file length
-		sz = G_file_length_m12(fp, NULL);
-	
-		// read ifconfig() output
-		buffer = (si1 *) realloc((void *) buffer, (size_t) sz);
-		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-		fclose(fp);
 		if ((c = STR_match_end_m12("inet ", buffer)) == NULL) {
 			G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
 			np->LAN_IPv4_address_string[0] = 0;
@@ -29253,11 +29163,11 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	}
 #endif
 #ifdef WINDOWS_m12
-	si1	*junk_str = command;
+	si1	tmp_str[128];
 
 	// get internet ip address
 	if (c != NULL) {
-		sscanf(c, "%s%s%s", junk_str, junk_str, np->LAN_IPv4_address_string);
+		sscanf(c, "%s%s%s", tmp_str, tmp_str, np->LAN_IPv4_address_string);
 		sscanf(np->LAN_IPv4_address_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
 		NET_iface_name_for_addr_m12(np->interface_name, np->LAN_IPv4_address_string);
 	}
@@ -29274,10 +29184,9 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
 	TERN_m12	global_np;
-	si1		temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1		temp_str[256], *buffer, *c, *pattern;
 	si4		ret_val;
-	si8		sz;
-	FILE		*fp;
+	si8		buf_len;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -29298,8 +29207,6 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		}
 	}
 	
-	G_unique_temp_file_m12(temp_file);
-
 	if (interface_name != NULL) {
 		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
 			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
@@ -29320,19 +29227,11 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
 
 	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
-	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	sprintf_m12(temp_str, "ifconfig %s", np->interface_name);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, &buf_len, temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
 		return(NULL);
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-       
-	// get file length
-	sz = G_file_length_m12(fp, NULL);
-
-	// read ifconfig() output
-	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
 
 	// parse ifconfig() output
 	G_push_behavior_m12(RETURN_ON_FAIL_m12);
@@ -29395,21 +29294,11 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 
 	// use ethtool() to get link speed & duplex (doesn't seem to work on WiFi networks)
 	*np->link_speed = *np->duplex = 0;
-	sprintf_m12(temp_str, "ethtool %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
-	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+	sprintf_m12(temp_str, "ethtool %s", np->interface_name);
+	ret_val = system_pipe_m12(&buffer, &buf_len, temp_str, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 	if (ret_val) {
 		G_warning_message_m12("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__, pattern, np->interface_name);
 	} else {
-		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-       
-		// get file length
-		sz = G_file_length_m12(fp, NULL);
-
-		// read ethtool() output
-		buffer = realloc((void *) buffer, (size_t) sz);
-		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-		fclose(fp);
-
 		pattern = "Speed: ";
 		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
 			sscanf(c, "%s", np->link_speed);
@@ -29435,10 +29324,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
 	TERN_m12	global_np;
-	si1		temp_str[256], *buffer, *c, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1		temp_str[256], *buffer, *c, *pattern;
 	si4		ret_val;
-	si8		sz;
-	FILE		*fp;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -29459,8 +29346,6 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		}
 	}
 	
-	G_unique_temp_file_m12(temp_file);
-
 	if (interface_name != NULL) {
 		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
 			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
@@ -29481,22 +29366,14 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
 
 	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "ifconfig %s > %s 2> %s", np->interface_name, temp_file, NULL_DEVICE_m12);
-	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	sprintf_m12(temp_str, "ifconfig %s", np->interface_name);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, NULL, temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val) {
 		if (global_np == TRUE_m12)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(NULL);
 	}
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-       
-	// get file length
-	sz = G_file_length_m12(fp, NULL);
-
-	// read ifconfig() output
-	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
 
 	// parse ifconfig() output
 	G_push_behavior_m12(RETURN_ON_FAIL_m12);
@@ -29585,10 +29462,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 {
 	TERN_m12		global_np;
-	si1             	temp_str[256], *buffer, *iface_start, *c, *c2, *pattern, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1             	temp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
 	si4             	i, ret_val, attempts;
-	si8             	sz;
-	FILE            	*fp;
 	DWORD 			dwSize, dwRetVal;
 	ULONG			flags, family, outBufLen;
 	LPVOID 			lpMsgBuf;
@@ -29613,8 +29488,6 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 		}
 	}
 	
-	G_unique_temp_file_m12(temp_file);
-
 	if (interface_name != NULL) {
 		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
 			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
@@ -29632,22 +29505,13 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	}
 	
 	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "ipconfig /all > %s 2> %s", temp_file, NULL_DEVICE_m12);
-	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, NULL, "ipconfig", FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val) {
 		if (global_np == TRUE_m12)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(NULL);
 	}
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-       
-	// get file length
-	sz = G_file_length_m12(fp, NULL);
-
-	// read ifconfig() output
-	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
 
 	// parse ifconfig() output
 	G_push_behavior_m12(RETURN_ON_FAIL_m12);
@@ -29814,16 +29678,12 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 
 NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 {
-	si1		temp_str[1024], *buffer, *pattern, *c, temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1		*command, *buffer, *pattern, *c;
 	si4		ret_val;
-	si8		sz;
-	FILE		*fp;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-
-	G_unique_temp_file_m12(temp_file);
 
 	if (np == NULL)
 		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
@@ -29831,17 +29691,15 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	// get WAN IPV4 address
 	
 #if defined MACOS_m12 || defined LINUX_m12
-	sprintf_m12(temp_str, "curl --connect-timeout 5.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	command = "curl --connect-timeout 5.0 -s checkip.dyndns.org";
 //	sprintf_m12(temp_str, "/usr/bin/curl --connect-timeout 2.0 -s checkip.dyndns.org");  // specify path so system doesn't have to find executable
 #endif
 #ifdef WINDOWS_m12
-	sprintf_m12(temp_str, "curl.exe --connect-timeout 5.0 -s checkip.dyndns.org > %s 2> %s", temp_file, NULL_DEVICE_m12);
+	command = "curl.exe --connect-timeout 5.0 -s checkip.dyndns.org";
 #endif
 	
-//	si1	tmp_buf[2048];
-//	system_pipe_m12(tmp_buf, 2048, temp_str, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-//	printf_m12("xxx \"%s\" xxx\n", tmp_buf);
-	ret_val = system_m12(temp_str, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12 | RETRY_ONCE_m12);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, NULL, command, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12 | RETRY_ONCE_m12);
 	if (ret_val) {
 		if (NET_get_lan_ipv4_address_m12(np) == NULL)
 			G_warning_message_m12("%s(): no internet connection\n", __FUNCTION__);
@@ -29849,19 +29707,6 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 			G_warning_message_m12("%s(): cannot connect to checkip.dyndns.org\n", __FUNCTION__);
 		return(NULL);
 	}
-	fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-       
-	// get file length
-	sz = G_file_length_m12(fp, NULL);
-	if (sz == 0) {  // probably timed out
-		G_warning_message_m12("%s(): cannot connect to checkip.dyndns.org\n", __FUNCTION__);
-		return(NULL);
-	}
-
-	// read output
-	buffer = calloc((size_t) sz, sizeof(si1));
-	fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-	fclose(fp);
 
 	// parse output
 	np->WAN_IPv4_address_num = 0;
@@ -29942,7 +29787,7 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 #ifdef WINDOWS_m12
 si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 {
-	si1			local_iface_name[64], *buffer, *c, *c2, command[256], temp_file[FULL_FILE_NAME_BYTES_m12];
+	si1			local_iface_name[64], *buffer, *c, *c2;
 	si4			ret_val;
 	si8			sz;
 	FILE			*fp;
@@ -29951,24 +29796,14 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	G_unique_temp_file_m12(temp_file);
-
 	if (iface_name == NULL)
 		iface_name = local_iface_name;  // not thread safe
 
 	// get interface name (aka connection name in Windows)
-	sprintf(command, "ipconfig > %s 2> %s", temp_file, NULL_DEVICE_m12);
-	ret_val = system_m12(command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, NULL, "ipconfig", FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
 	*iface_name = 0;
-	if (ret_val == 0) {
-		fp = fopen_m12(temp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		// get file length
-		sz = G_file_length_m12(fp, NULL);
-		// read ipconfig() output
-		buffer = (si1 *) calloc((size_t) sz, sizeof(si1));
-		fread_m12(buffer, sizeof(si1), (size_t) sz, fp, temp_file, __FUNCTION__, EXIT_ON_FAIL_m12);
-		fclose(fp);
-		// parse ipconfig() output to find internet ip address
+	if (ret_val == 0) {  // parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m12(iface_addr, buffer)) != NULL) {
 			// find "LAN adapter" backwards fromm here
 			while (c >= buffer) {
@@ -32495,12 +32330,12 @@ si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
 	static si1      	private_time_str[TIME_STRING_BYTES_m12];
-	static si1      	*mos[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-	static si1      	*months[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
-	static si1      	*wdays[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-	static si1      	*mday_num_sufs[32] = {	"", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
+	const si1      		*mos[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+	const si1		*months[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+	const si1		*wdays[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+	const si1		*mday_num_sufs[32] = {	"", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
 							"th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st" };
-	static si1      	*weekdays[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+	const si1		*weekdays[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 	TERN_m12		offset;
 	si4             	microseconds, DST_offset, day_num;
 	time_t             	local_time, test_time;
@@ -34976,6 +34811,96 @@ TERN_m12	WN_initialize_terminal_m12(void)
 }
 
 
+si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 **buffer)  // replacement for unix "ls -1d (on a directory list)"
+{
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+#ifdef WINDOWS_m12
+	si1			*file_name, *dir_name, enclosing_directory[FULL_FILE_NAME_BYTES_m12];
+	si1			tmp_dir[FULL_FILE_NAME_BYTES_m12];
+	ui4			fe;
+	si4			i, n_files, file_name_size;
+	WIN32_FIND_DATAA 	ffd;
+	HANDLE 		        find_h;
+	FILE			*fp;
+	
+	
+	// returns number of files or -1 for error
+	// dir_strs can include "*" & "?" regex characters
+	// right now, *buffer should not be allocated
+	
+	if (dir_strs == NULL)
+		return(-1);
+	if (dir_strs[0] == NULL)
+		return(-1);
+	if (n_dirs < 1)
+		return(-1);
+	
+	if (*buffer != NULL) {
+		G_warning_message_m12("%s(): buffer should not be allocated\n");
+		return(-1);
+	}
+	
+	*buffer = (si1 *) malloc((size_t) FULL_FILE_NAME_BYTES_m12);
+	if (full_path == TRUE_m12)
+		file_name_size = FULL_FILE_NAME_BYTES_m12;
+	else
+		file_name_size = SEGMENT_BASE_FILE_NAME_BYTES_m12;
+		
+	find_h = INVALID_HANDLE_VALUE;
+	n_files = 0;
+	for (i = 0; i < n_dirs; ++i) {
+		dir_name = dir_strs[i];
+		if (STR_contains_regex_m12(dir_name) == FALSE_m12) {
+			fe = G_file_exists_m12(dir_name);
+			// a plain directory name will not list it's contents => must append "\*"
+			if (fe == DIR_EXISTS_m12) {
+				sprintf(tmp_dir, "%s\\*", dir_name);
+				dir_name = tmp_dir;
+			} else if (fe == DOES_NOT_EXIST_m12) {
+				continue;
+			}
+			// regular files will list
+		}
+		find_h = FindFirstFileA((LPCSTR) dir_name, &ffd);
+		if (find_h == INVALID_HANDLE_VALUE)
+			continue;
+		if (full_path == TRUE_m12)
+			G_extract_path_parts_m12(dir_name, enclosing_directory, NULL, NULL);
+		do {
+			file_name = ffd.cFileName;
+			// exclude files/directories starting with "$"
+			if (*file_name == '$')
+				continue;
+			// exclude ".", "..", & files/directories starting with "._"
+			// invisible files (".<file_name>") are not excluded
+			if (*file_name == '.') {
+				if (file_name[1] == 0 || file_name[1] == '.' || file_name[1] == '_')
+					continue;
+			}
+			++n_files;
+			*buffer = (si1 *) realloc_m12(*buffer, (size_t) (n_files * file_name_size), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			if (full_path == TRUE_m12)
+				sprintf_m12(*buffer, "%s\\%s\n", enclosing_directory, file_name);
+			else
+				sprintf_m12(*buffer, "%s\n", file_name);
+		} while (FindNextFileA(find_h, &ffd));
+		
+		FindClose(find_h);
+	}
+		
+	if (find_h == INVALID_HANDLE_VALUE && n_files == 0)
+		return(-1);
+	
+	return(n_files);
+#endif
+	
+	return(-1);
+}
+
+
 si4    WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *temp_file)  // replacement for unix "ls -1d > temp_file (on a directory list)"
 {
 #ifdef FN_DEBUG_m12
@@ -35381,7 +35306,12 @@ si4    asprintf_m12(si1 **target, si1 *fmt, ...)
 	va_end(args);
 	
 	// this function returns the allocated string, so add it to the AT list
-	AT_add_entry_m12(*target, __FUNCTION__);
+#ifdef AT_DEBUG_m12
+	size_t	len;
+	
+	len = strlen(*target);
+	AT_add_entry_m12(*target, len + 1, __FUNCTION__);
+#endif
 
 	return(ret_val);
 }
@@ -35429,7 +35359,9 @@ void	*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 	}
 	
 	// alloc tracking
-	AT_add_entry_m12(ptr, function);
+#ifdef AT_DEBUG_m12
+	AT_add_entry_m12(ptr, (size_t) (n_members * el_size), function);
+#endif
 
 #ifdef MATLAB_PERSISTENT_m12
 	mexMakeMemoryPersistent(ptr);
@@ -35724,13 +35656,15 @@ void    free_m12(void *ptr, const si1 *function)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (AT_remove_entry_m12(ptr, function) == TRUE_m12) {
-		#ifdef MATLAB_PERSISTENT_m12
-		mxFree(ptr);
-		#else
-		free(ptr);
-		#endif
-	}
+#ifdef AT_DEBUG_m12
+	if (AT_remove_entry_m12(ptr, function) == FALSE_m12)
+		return;
+#endif
+	#ifdef MATLAB_PERSISTENT_m12
+	mxFree(ptr);
+	#else
+	free(ptr);
+	#endif
 	
 	return;
 }
@@ -35767,6 +35701,38 @@ void    free_2D_m12(void **ptr, size_t dim1, const si1 *function)
 	free_m12((void *) ptr, function);
 
 	return;
+}
+
+
+// not a standard function, but closely related
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m12	freeable_m12(void *address)
+{
+	ui8		address_val;
+	HW_PARAMS_m12	*hw_params;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+#ifdef AT_DEBUG_m12
+	return(AT_freeable_m12(address));
+#endif
+
+	// just returns whether address is in heap range
+	// does not prevent double free errors or unallocated errors
+	       
+	hw_params = &global_tables_m12->HW_params;
+	address_val = (ui8) address;
+
+	if (address_val > hw_params->heap_max_address)
+		return(FALSE_m12);
+	if (address_val < hw_params->heap_base_address)  // covers NULL address case
+		return(FALSE_m12);
+	
+	return(TRUE_m12);
 }
 
 
@@ -36028,7 +35994,9 @@ void	*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 	}
 	
 	// alloc tracking
-	AT_add_entry_m12(ptr, function);
+#ifdef AT_DEBUG_m12
+	AT_add_entry_m12(ptr, (size_t) n_bytes, function);
+#endif
 
 #ifdef MATLAB_PERSISTENT_m12
 	mexMakeMemoryPersistent(ptr);
@@ -36073,22 +36041,38 @@ void	**malloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *functi
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
 size_t	malloc_size_m12(void *address)
 {
-	si8		i;
-	AT_NODE		*atn;
-	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+#ifdef AT_DEBUG_m12
+	si8		i;
+	AT_NODE		*atn;
+	
 	atn = globals_m12->AT_nodes;
 	for (i = globals_m12->AT_node_count; i--; ++atn) {
 		if (atn->address == address)
-			return(atn->bytes);
+			return(atn->actual_bytes);
 	}
+	return((size_t) 0);
+#else
 	
-	return(0);
+#ifdef MACOS_m12
+	return(malloc_size(address));
+#endif
+#ifdef LINUX_m12
+	return(malloc_usable_size(address));
+#endif
+#ifdef WINDOWS_m12
+	return(_msize(address));
+#endif
+	
+#endif
 }
 
 
@@ -36380,8 +36364,9 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	}
 	
 	// alloc tracking
-	AT_update_entry_m12(orig_ptr, ptr, function);
-
+#ifdef AT_DEBUG
+	AT_update_entry_m12(orig_ptr, ptr, n_bytes, function);
+#endif
 #ifdef MATLAB_PERSISTENT_m12
 	mexMakeMemoryPersistent(ptr);
 #endif
@@ -36491,7 +36476,9 @@ void	*recalloc_m12(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 	}
 	
 	// alloc tracking
-	AT_update_entry_m12(orig_ptr, ptr, function);
+#ifdef AT_DEBUG
+	AT_update_entry_m12(orig_ptr, ptr, new_bytes, function);
+#endif
 	
 #ifdef MATLAB_PERSISTENT_m12
 	mexMakeMemoryPersistent(ptr);
@@ -36820,38 +36807,71 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 }
 
 
+// not a standard function, but closely related
 #if defined MACOS_m12 || defined LINUX_m12
-si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
+si4	system_pipe_m12(si1 **buffer_ptr, si8 *buf_len_ptr, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
 {
-	TERN_m12	free_buffer, retried;
+	TERN_m12	no_command, assign_buffer, assign_buf_len, free_buffer, retried;
+	si1		*buffer;
 	si4		ret_val, child_pid, master_fd, status, err;
-	si8		bytes_in_buffer, bytes_avail;
+	si8		bytes_in_buffer, bytes_avail, buf_len;
 	const si4	BUFFER_SIZE_INC = 1024;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// returns NULL terminated string from system command
-	// returns NULL on failure
-	// (more efficient than redirecting to temp file & reading)
-	// if buffer is NULL, it is dynamically expanded, caller responsible for freeing
+	// executes command (for output, more efficient than redirecting temp file & reading)
+	// if buffer_ptr == NULL, no buffer is returned
+	// if *buffer_ptr == NULL buffer is allocated
+	// if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
+	// *buffer_ptr contains a NULL terminated string from the system command, if passed
+	// *buf_len_ptr contains string length, if passed
+	// returns zero on success, or system error number
+	
+	no_command = FALSE_m12;
+	if (command == NULL)
+		no_command = TRUE_m12;
+	else if (*command == 0)
+		no_command = TRUE_m12;
+	if (no_command == TRUE_m12) {
+		G_warning_message_m12("%s(): no command\n", __FUNCTION__);
+		return(-1);
+	}
 
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
-	if (buffer == NULL) {
-		buf_len = BUFFER_SIZE_INC;
-		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m12;
+		assign_buffer = FALSE_m12;
+		buffer = NULL;
+		buf_len = 0;
 	} else {
-		if (buf_len <= 0) {
-			G_warning_message_m12("%s(): buffer length not specified\n", __FUNCTION__);
-			return(NULL);
-		}
 		free_buffer = FALSE_m12;
+		buffer = *buffer_ptr;
+		if (buffer == NULL)
+			assign_buffer = TRUE_m12;
+		else
+			assign_buffer = freeable_m12((void *) buffer);
 	}
 	
+	if (buf_len_ptr == NULL) {
+		assign_buf_len = FALSE_m12;
+		buf_len = 0;
+	} else {
+		assign_buf_len = TRUE_m12;
+		buf_len = *buf_len_ptr;
+	}
+	
+	if (buf_len == 0)
+		if (assign_buffer == TRUE_m12)
+			buf_len = malloc_size_m12((void *) buffer);
+	if (buf_len == 0 || buffer == NULL) {
+		buf_len = BUFFER_SIZE_INC;
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	}
+		
 	retried = FALSE_m12;
 SYSTEM_PIPE_RETRY_m12:
 	
@@ -36926,7 +36946,7 @@ SYSTEM_PIPE_RETRY_m12:
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
-		if (free_buffer == TRUE_m12) {
+		if (assign_buffer == TRUE_m12) {
 			if (bytes_avail < BUFFER_SIZE_INC) {
 				buf_len += BUFFER_SIZE_INC;
 				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -36946,8 +36966,19 @@ SYSTEM_PIPE_RETRY_m12:
 	if (tee_to_terminal == TRUE_m12)
 		if (!(behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m12))
 			printf_m12("%s\n", buffer);
+	
+	if (free_buffer == TRUE_m12) {
+		free((void *) buffer);
+		return(0);
+	}
+	
+	if (assign_buffer == TRUE_m12)
+		*buffer_ptr = buffer;
 
-	return(buffer);
+	if (assign_buf_len == TRUE_m12)
+		*buf_len_ptr = bytes_in_buffer;
+
+	return(0);
 	
 SYSTEM_PIPE_FAIL_m12:
 	
@@ -36984,19 +37015,20 @@ SYSTEM_PIPE_FAIL_m12:
 	if (behavior_on_fail & EXIT_ON_FAIL_m12)
 		exit_m12(-1);
 
-	return(NULL);
+	return(err);
 }
 #endif
 
 
+// not a standard function, but closely related
 #ifdef WINDOWS_m12
-// NOTE: not fully implemented or tested yet
-si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
+si4	system_pipe_m12(si1 **buffer_ptr, si8 *buf_len_ptr, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
 {
-	TERN_m12		free_buffer;
-	si1			cmd_exe_path[MAX_PATH], *tmp_command;
+	TERN_m12		no_command, assign_buffer, assign_buf_len, free_buffer, retried;
+	si1			*buffer, cmd_exe_path[MAX_PATH], *tmp_command;
 	const si4		BUFFER_SIZE_INC = 1024;
-	si8			len;
+	si4			err;
+	si8			len, buf_len;
 	PROCESS_INFORMATION	process_info;
 	STARTUPINFOA		startup_info;
 	SECURITY_ATTRIBUTES 	sec_attr;
@@ -37008,23 +37040,59 @@ si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_ter
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// returns NULL terminated string from system command
-	// returns NULL on failure
-	// (more efficient than redirecting to temp file & reading)
-	// if buffer is NULL, it is dynamically expanded, caller responsible for freeing
+	// executes command (for output, more efficient than redirecting temp file & reading)
+	// if buffer_ptr == NULL, no buffer is returned
+	// if *buffer_ptr == NULL buffer is allocated
+	// if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
+	// *buffer_ptr contains a NULL terminated string from the system command, if passed
+	// *buf_len_ptr contains string length, if passed
+	// returns zero on success, or system error number
+	
+	no_command = FALSE_m12;
+	if (command == NULL)
+		no_command = TRUE_m12;
+	else if (*command == 0)
+		no_command = TRUE_m12;
+	if (no_command == TRUE_m12) {
+		G_warning_message_m12("%s(): no command\n", __FUNCTION__);
+		return(-1);
+	}
 
-	if (buffer == NULL) {
-		buf_len = BUFFER_SIZE_INC;
-		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
+		behavior_on_fail = globals_m12->behavior_on_fail;
+	
+	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m12;
+		assign_buffer = FALSE_m12;
+		buffer = NULL;
+		buf_len = 0;
 	} else {
-		if (buf_len <= 0) {
-			G_warning_message_m12("%s(): buffer length not specified\n", __FUNCTION__);
-			return(NULL);
-		}
 		free_buffer = FALSE_m12;
+		buffer = *buffer_ptr;
+		if (buffer == NULL)
+			assign_buffer = TRUE_m12;
+		else
+			assign_buffer = freeable_m12((void *) buffer);
 	}
 	
+	if (buf_len_ptr == NULL) {
+		assign_buf_len = FALSE_m12;
+		buf_len = 0;
+	} else {
+		assign_buf_len = TRUE_m12;
+		buf_len = *buf_len_ptr;
+	}
+	
+	if (buf_len == 0)
+		if (assign_buffer == TRUE_m12)
+			buf_len = malloc_size_m12((void *) buffer);
+	if (buf_len == 0 || buffer == NULL) {
+		buf_len = BUFFER_SIZE_INC;
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	}
+
+	retried = FALSE_m12;
+SYSTEM_PIPE_RETRY_m12:
 	tmp_command = NULL;
 	read_h = NULL;
 	write_h = NULL;
@@ -37057,6 +37125,7 @@ si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_ter
 	startup_info.hStdOutput = startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
 	
 	// start process
+	errno_reset_m12();
 	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
 		G_warning_message_m12("%s(): CreateProcess() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m12;
@@ -37069,7 +37138,7 @@ si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_ter
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
-		if (free_buffer == TRUE_m12) {
+		if (assign_buffer == TRUE_m12) {
 			if (bytes_avail < BUFFER_SIZE_INC) {
 				buf_len += BUFFER_SIZE_INC;
 				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -37089,12 +37158,26 @@ si1	*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_ter
 	CloseHandle(process_info.hProcess);  // process handle
 	CloseHandle(process_info.hThread);  // process' primary thread handle
 
-	return(buffer);
+	if (tee_to_terminal == TRUE_m12)
+		if (!(behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m12))
+			printf_m12("%s\n", buffer);
+	
+	if (free_buffer == TRUE_m12) {
+		free((void *) buffer);
+		return(0);
+	}
+	
+	if (assign_buffer == TRUE_m12)
+		*buffer_ptr = buffer;
+
+	if (assign_buf_len == TRUE_m12)
+		*buf_len_ptr = bytes_in_buffer;
+
+	return(0);
 	
 SYSTEM_PIPE_FAIL_m12:
-	
-	if (free_buffer == TRUE_m12)
-		free_m12((void *) buffer, __FUNCTION__);
+	err = errno_m12();
+
 	if (tmp_command != NULL)
 		free((void *) tmp_command);
 	if (read_h != NULL)
@@ -37104,7 +37187,37 @@ SYSTEM_PIPE_FAIL_m12:
 	if (process_info.hThread != NULL)
 		CloseHandle(process_info.hThread);
 
-	return(NULL);
+	if (behavior_on_fail & RETRY_ONCE_m12) {
+		if (retried == FALSE_m12) {
+			G_nap_m12("1 ms");  // wait 1 ms
+			retried = TRUE_m12;
+			goto SYSTEM_PIPE_RETRY_m12;
+		}
+	}
+
+	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
+		fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
+		fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
+		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
+		if (tee_to_terminal == TRUE_m12)
+			if (*buffer)
+				printf_m12("captured output: \"%s\"\n", buffer);
+		if (function != NULL)
+			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
+		if (behavior_on_fail & EXIT_ON_FAIL_m12)
+			fprintf_m12(stderr, "\t=> exiting\n\n");
+		else
+			fprintf_m12(stderr, "\t=> returning\n\n");
+		fflush(stderr);
+	}
+
+	if (free_buffer == TRUE_m12)
+		free_m12((void *) buffer, __FUNCTION__);
+
+	if (behavior_on_fail & EXIT_ON_FAIL_m12)
+		exit_m12(-1);
+
+	return(err);
 }
 #endif
 

@@ -1306,21 +1306,24 @@ typedef struct {
 	sf8				maximum_speed;
 	sf8				current_speed;
 	HW_PERFORMANCE_SPECS_m12	performance_specs;
-	si8				system_memory;
-	si1				manufacturer[64];
-	si1				model[64];
+	ui8				system_memory_size;  // system physical RAM (in bytes)
+	ui4				system_page_size;  // memory page (in bytes)
+	ui8				heap_base_address;
+	ui8				heap_max_address;
+	si1				cpu_manufacturer[64];
+	si1				cpu_model[64];
 	si1				serial_number[56];  // maximum serial number length is 50 characters
-	ui4				machine_code;
+	ui4				machine_code;  // code based on serial number
 } HW_PARAMS_m12;
 
 // Prototypes
 void		HW_get_core_info_m12(void);
 void		HW_get_endianness_m12(void);
-void		HW_get_info_m12(void);
+void		HW_get_info_m12(void);  // fill whole HW_PARAMS_m12 structure
 void		HW_get_machine_code_m12(void);
 void		HW_get_machine_serial_m12(void);
 void		HW_get_performance_specs_m12(void);
-void		HW_get_system_memory_m12(void);
+void		HW_get_memory_info_m12(void);
 TERN_m12	HW_initialize_tables_m12(void);
 void		HW_show_info_m12(void);
 
@@ -1417,14 +1420,10 @@ typedef struct {  // fields from ipinfo.io
 #ifdef AT_DEBUG_m12
 typedef struct {
 	void 		*address;
-	ui8		bytes;  // actual bytes allocated => may be more than were requested
+	ui8		requested_bytes;
+	ui8		actual_bytes;  // actual bytes allocated => may be more than were requested
 	const si1	*alloc_function;
 	const si1	*free_function;
-} AT_NODE;
-#else
-typedef struct {
-	void 		*address;
-	ui8		bytes;  // actual bytes allocated => may be more than were requested
 } AT_NODE;
 #endif
 
@@ -1500,11 +1499,13 @@ typedef struct {
 	TERN_m12			transmission_header_aligned;
 	// CRC
 	ui4                             CRC_mode;
+#ifdef AT_DEBUG_m12
 	// allocation tracking (AT)
 	AT_NODE				*AT_nodes;
 	si8				AT_node_count;  // total allocated nodes
 	si8				AT_used_node_count;  // nodes in use
 	pthread_mutex_t_m12		AT_mutex;
+#endif
 	// Errors
 	si4				err_code;
 	const si1			*err_func;
@@ -2321,6 +2322,7 @@ FILETIME	WN_uutc_to_win_time_m12(si8 uutc);
 void		WN_cleanup_m12(void);
 void		WN_clear_m12(void);
 si8		WN_date_to_uutc_m12(sf8 date);
+si4    		WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 **buffer);
 si4		WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *temp_file);
 TERN_m12	WN_initialize_terminal_m12(void);
 TERN_m12	WN_reset_terminal_m12(void);
@@ -2362,7 +2364,7 @@ TERN_m12	ALCK_video_metadata_section_2_m12(ui1 *bytes);
 #define AT_PREVIOUSLY_FREED_m12		((ui4) 2)
 #define AT_ALL_m12			(AT_CURRENTLY_ALLOCATED_m12 | AT_PREVIOUSLY_FREED_m12)
 
-void		AT_add_entry_m12(void *address, const si1 *function);
+void		AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function);
 ui8		AT_alloc_size_m12(void *address);
 void		AT_free_all_m12(void);
 TERN_m12	AT_freeable_m12(void *address);
@@ -2371,7 +2373,7 @@ void		AT_mutex_on(void);
 TERN_m12 	AT_remove_entry_m12(void *address, const si1 *function);
 void		AT_show_entries_m12(ui4 entry_type);
 void		AT_show_entry_m12(void *address);
-TERN_m12 	AT_update_entry_m12(void *orig_address, void *new_address, const si1 *function);
+TERN_m12 	AT_update_entry_m12(void *orig_address, void *new_address, size_t requested_bytes, const si1 *function);
 
 
 
@@ -4347,6 +4349,7 @@ si4		fputc_m12(si4 c, FILE *stream);
 size_t          fread_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path, const si1 *function, ui4 behavior_on_fail);
 void            free_m12(void *ptr, const si1 *function);
 void            free_2D_m12(void **ptr, size_t dim1, const si1 *function);
+TERN_m12	freeable_m12(void *address);
 si4     	fscanf_m12(FILE *stream, si1 *fmt, ...);
 si4             fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *function, ui4 behavior_on_fail);
 si8            	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail);
@@ -4374,7 +4377,7 @@ si8		strcpy_m12(si1 *target, si1 *source);
 si8		strncat_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail);
-si1		*system_pipe_m12(si1 *buffer, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail);
+si4		system_pipe_m12(si1 **buffer_ptr, si8 *buf_len_ptr, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail);
 si4		vasprintf_m12(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m12(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m12(si1 *fmt, va_list args);
