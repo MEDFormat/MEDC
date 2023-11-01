@@ -10,7 +10,7 @@
 
 // LICENSE & COPYRIGHT:
 
-// MED library source code (medlib) is copyrighted by Dark Horse Neuro Inc, 2021 (Matt Stead & Casey Stengel)
+// MED library source code (medlib) is copyrighted by Dark Horse Neuro Inc, 2021
 
 // Medlib is free software:
 // You can redistribute it and/or modify it under the terms of the Gnu General Public License (Gnu GPL),
@@ -34839,7 +34839,7 @@ si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 		return(-1);
 	
 	if (*buffer != NULL) {
-		G_warning_message_m12("%s(): buffer should not be allocated\n");
+		G_warning_message_m12("%s(): buffer should not be allocated in this version\n");
 		return(-1);
 	}
 	

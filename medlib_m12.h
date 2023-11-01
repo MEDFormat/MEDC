@@ -13,7 +13,7 @@
 
 // LICENSE & COPYRIGHT:
 
-// MED library source code (medlib) is copyrighted by Dark Horse Neuro Inc, 2021 (Matt Stead & Casey Stengel)
+// MED library source code (medlib) is copyrighted by Dark Horse Neuro Inc, 2021
 
 // Medlib is free software:
 // You can redistribute it and/or modify it under the terms of the Gnu General Public License (Gnu GPL),
