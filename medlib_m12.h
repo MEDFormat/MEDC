@@ -4377,7 +4377,7 @@ si8		strcpy_m12(si1 *target, si1 *source);
 si8		strncat_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail);
-si4		system_pipe_m12(si1 **buffer_ptr, si8 *buf_len_ptr, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail);
+si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail);
 si4		vasprintf_m12(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m12(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m12(si1 *fmt, va_list args);
