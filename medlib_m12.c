@@ -28994,6 +28994,8 @@ void	HW_show_info_m12(void)
 
 TERN_m12	NET_check_internet_connection_m12(void)
 {
+	NET_PARAMS_m12	*np;
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -29001,21 +29003,25 @@ TERN_m12	NET_check_internet_connection_m12(void)
 	// if want to know if machine can reach internet, check == TRUE_m12
 	// if want to know if network connected locally != FALSE_m12
 
-	// no default route => no internet, so use NET_get_lan_ipv4_address_m12().
-	NET_PARAMS_m12	np = { 0 };
+	np = &global_tables_m12->NET_params;
 	
-
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+	*np->interface_name = 0;
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 	G_push_behavior_m12(SUPPRESS_OUTPUT_m12);
-	NET_get_lan_ipv4_address_m12(&np);
+	np = NET_get_default_interface_m12(np);
 	G_pop_behavior_m12();
-	if (*np.LAN_IPv4_address_string == 0)
-		return(FALSE_m12);  // FALSE == LAN down (if machine has static IP, WAN == LAN)
+	if (np == NULL)
+		return(FALSE_m12);
 	
 	// LAN can be up but WAN still down, so check wan IP
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+	*np->WAN_IPv4_address_string = 0;
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 	G_push_behavior_m12(SUPPRESS_OUTPUT_m12);
-	NET_get_wan_ipv4_address_m12(&np);
+	np = NET_get_wan_ipv4_address_m12(np);
 	G_pop_behavior_m12();
-	if (*np.WAN_IPv4_address_string == 0)
+	if (np == NULL)
 		return(UNKNOWN_m12);  // UNKNOWN == LAN up, WAN down
 
 	return(TRUE_m12);  // TRUE == LAN + WAN up (if machine has static ip, WAN == LAN)
@@ -29055,407 +29061,47 @@ TERN_m12	NET_domain_to_ip_m12(si1 *domain_name, si1 *ip)
 }
 
 
-void	*NET_get_in_addr_m12(struct sockaddr *sa)	// get sockaddr, IPv4 or IPv6
+NET_PARAMS_m12	*NET_get_active_m12(si1 *iface, NET_PARAMS_m12 *np)
 {
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
+	TERN_m12	copy_global, free_np;
 
-	if (sa->sa_family == AF_INET)
-		return(&(((struct sockaddr_in *) sa)->sin_addr));
-
-	return(&(((struct sockaddr_in6 *) sa)->sin6_addr));
-}
-
-
-NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np)
-{
-	si1	*command, *buffer, *c;
-	si4	ret_val;
-	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (np == NULL)
-		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
-	
-	*np->host_name = 0;
-	if (gethostname(np->host_name, sizeof(np->host_name)) == -1) {
-		G_warning_message_m12("%s(): cannot get host name\n", __FUNCTION__);
-		return(NULL);
-	}
-	
-#ifdef MACOS_m12
-	command = "/sbin/route -n get default";
-#endif
-#ifdef LINUX_m12
-	command = "/usr/sbin/ip route get 8.8.8.8";
-#endif
-#ifdef WINDOWS_m12
-	command = "route PRINT -4 0.0.0.0";
-#endif
-	buffer = NULL;
-	ret_val = system_pipe_m12(&buffer, 0, command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
-	if (ret_val < 0) // probably no internet connection, otherwise route() error
-		return(NULL);
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
 
-	G_push_behavior_m12(RETURN_ON_FAIL_m12);
-#ifdef MACOS_m12
-	si1	tmp_str[128];
+	if (copy_global == TRUE_m12) {
+		if (global_tables_m12->NET_params.active != UNKNOWN_m12)
+			np->active = global_tables_m12->NET_params.active;
+	}
+	if (np->active != UNKNOWN_m12)
+		return(np);
 	
-	// parse route() output to get internet interface name
-	if ((c = STR_match_end_m12("interface: ", buffer)) == NULL) {
-		G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
-		np->LAN_IPv4_address_string[0] = 0;
-		memset(np->LAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
-	}
-	if (c != NULL) {
-		sscanf(c, "%s", np->interface_name);
-
-		// get ifconfig() output
-		command = tmp_str;
-		sprintf_m12(command, "/sbin/ifconfig %s", np->interface_name);
-		ret_val = system_pipe_m12(&buffer, 0, command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
-		if (ret_val) {
-			G_pop_behavior_m12();
-			return(NULL);
-		}
-		if ((c = STR_match_end_m12("inet ", buffer)) == NULL) {
-			G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
-			np->LAN_IPv4_address_string[0] = 0;
-			memset(np->LAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
-		}
-	}
-#endif  // MACOS_m12
-#ifdef LINUX_m12
-	// parse route() output to get internet interface name
-	if ((c = STR_match_end_m12("dev ", buffer)) == NULL) {
-		G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
-		*np->interface_name = 0;
-	} else {
-		sscanf(c, "%s", np->interface_name);
-	}
-	// parse route() output to get internet ip address
-	if ((c = STR_match_end_m12("src ", buffer)) == NULL) {
-		G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
-		*np->LAN_IPv4_address_string = 0;
-		memset(np->LAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
-	}
-#endif  // LINUX_m12
-#ifdef WINDOWS_m12
-	// parse route() output to get internet ip address
-	if ((c = STR_match_end_m12("0.0.0.0", buffer)) == NULL) {
-		G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
-		np->LAN_IPv4_address_string[0] = 0;
-		memset(np->LAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
-	}
-#endif
 #if defined MACOS_m12 || defined LINUX_m12
-	// get internet ip address
-	if (c != NULL) {
-		sscanf(c, "%s", np->LAN_IPv4_address_string);
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
 	}
 #endif
 #ifdef WINDOWS_m12
-	si1	tmp_str[128];
-
-	// get internet ip address
-	if (c != NULL) {
-		sscanf(c, "%s%s%s", tmp_str, tmp_str, np->LAN_IPv4_address_string);
-		sscanf(np->LAN_IPv4_address_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
-		NET_iface_name_for_addr_m12(np->interface_name, np->LAN_IPv4_address_string);
-	}
-#endif
-	
-	G_pop_behavior_m12();
-	free((void *) buffer);
-	
-	return(np);
-}
-
-
-#ifdef LINUX_m12
-NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
-{
-	TERN_m12	global_np;
-	si1		temp_str[256], *buffer, *c, *pattern;
-	si4		ret_val;
-
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// if np == NULL, use global np with mutex
-	global_np = FALSE_m12;
-	if (np == NULL)
-		np = &global_tables_m12->NET_params;
-	if (np == &global_tables_m12->NET_params)
-		global_np = TRUE_m12;
-
-	if (global_np == TRUE_m12) {
-		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
-		if (*np->interface_name)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-			return(np);
-		}
-	}
-	
-	if (interface_name != NULL) {
-		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
-			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
-		else
-			strcpy(np->interface_name, interface_name);
-	}
-	if (*np->interface_name == 0) {  // pass NULL or "" for interface_name to use default internet interface
-		if (NET_get_lan_ipv4_address_m12(np) == NULL) {  // call NET_get_lan_ipv4_address_m12() to get default route interface name
-			G_warning_message_m12("%s(): no internet connection => no default interface\n", __FUNCTION__);
-			if (global_np == TRUE_m12)
-				PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-			return(NULL);
-		}
-		interface_name = np->interface_name;
-	}
-
-	if (gethostname(np->host_name, sizeof(np->host_name)) == -1)
-		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
-
-	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "/usr/sbin/ifconfig %s", np->interface_name);
-	buffer = NULL;
-	ret_val = system_pipe_m12(&buffer, 0, temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
-	if (ret_val < 0)
-		return(NULL);
-
-	// parse ifconfig() output
-	G_push_behavior_m12(RETURN_ON_FAIL_m12);
-	
-	pattern = "mtu ";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->MTU = 0;
-	} else {
-		sscanf(c, "%d", &np->MTU);
-	}
-	
-	pattern = "ether ";
-	np->MAC_address_num = 0;
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		*np->MAC_address_string = 0;
-	} else {
-		sscanf(c, "%s", np->MAC_address_string);
-		STR_to_upper_m12(np->MAC_address_string);
-		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
-	}
-
-	if (*np->LAN_IPv4_address_string == 0) {
-		pattern = "inet ";
-		if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-			np->LAN_IPv4_address_num = 0;
-			*np->LAN_IPv4_address_string = 0;
-		} else {
-			sscanf(c, "%s", np->LAN_IPv4_address_string);
-			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
-		}
-	}
-
-	pattern = "netmask ";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->LAN_IPv4_subnet_mask_num = 0;
-		*np->LAN_IPv4_subnet_mask_string = 0;
-	} else {
-		sscanf(c, "%s", np->LAN_IPv4_subnet_mask_string);
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);
-	}
-
-	pattern = "UP";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL)
-		np->active = FALSE_m12;
-	else
-		np->active = TRUE_m12;
- 
-	pattern = "RUNNING";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL)
-		np->plugged_in = FALSE_m12;
-	else
-		np->plugged_in = TRUE_m12;
-
-	// get WAN IPV4 address
-	NET_get_wan_ipv4_address_m12(np);
-
-	// use ethtool() to get link speed & duplex (doesn't seem to work on WiFi networks)
-	*np->link_speed = *np->duplex = 0;
-	sprintf_m12(temp_str, "/usr/sbin/ethtool %s", np->interface_name);
-	ret_val = system_pipe_m12(&buffer, 0, temp_str, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
-	if (ret_val < 0) {
-		G_warning_message_m12("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__, pattern, np->interface_name);
-	} else {
-		pattern = "Speed: ";
-		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
-			sscanf(c, "%s", np->link_speed);
-
-		pattern = "Duplex: ";
-		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
-			sscanf(c, "%s", np->duplex);
-	}
-	
-	// clean up
-	G_pop_behavior_m12();
-	free(buffer);
-
-	if (global_np == TRUE_m12)
-		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-
-	return(np);
-}
-#endif  // LINUX_m12
-
-
-#ifdef MACOS_m12
-NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
-{
-	TERN_m12	global_np;
-	si1		temp_str[256], *buffer, *c, *pattern;
-	si4		ret_val;
-
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-
-	// if np == NULL, use global np with mutex
-	global_np = FALSE_m12;
-	if (np == NULL)
-		np = &global_tables_m12->NET_params;
-	if (np == &global_tables_m12->NET_params)
-		global_np = TRUE_m12;
-
-	if (global_np == TRUE_m12) {
-		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
-		if (*np->interface_name) {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-			return(np);
-		}
-	}
-	
-	if (interface_name != NULL) {
-		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
-			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
-		else
-			strcpy(np->interface_name, interface_name);
-	}
-	if (*np->interface_name == 0) {  // pass NULL or "" for interface_name to use default internet interface
-		if (NET_get_lan_ipv4_address_m12(np) == NULL) {  // call NET_get_lan_ipv4_address_m12() to get default route interface (name & ip)
-			G_warning_message_m12("%s(): no internet connection => no default interface\n");
-			if (global_np == TRUE_m12)
-				PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-			return(NULL);
-		}
-		interface_name = np->interface_name;
-	}
-
-	if (gethostname(np->host_name, sizeof(np->host_name)) == -1)
-		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
-
-	// send ifconfig() output to temp file
-	sprintf_m12(temp_str, "/sbin/ifconfig %s", np->interface_name);
-	buffer = NULL;
-	ret_val = system_pipe_m12(&buffer, 0, temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
-	if (ret_val < 0) {
-		if (global_np == TRUE_m12)
-			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	if (NET_get_adapter_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
 		return(NULL);
 	}
-
-	// parse ifconfig() output
-	G_push_behavior_m12(RETURN_ON_FAIL_m12);
+#endif
 	
-	pattern = "mtu ";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->MTU = 0;
-	} else {
-		sscanf(c, "%d", &np->MTU);
-	}
-	
-	pattern = "ether ";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->MAC_address_num = 0;
-		*np->MAC_address_string = 0;
-	} else {
-		sscanf(c, "%s", np->MAC_address_string);
-		STR_to_upper_m12(np->MAC_address_string);
-		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
-	}
-
-	if (*np->LAN_IPv4_address_string == 0) {
-		pattern = "inet ";
-		if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\".\nCheck that cable is plugged in\n", __FUNCTION__, pattern, interface_name);
-			np->LAN_IPv4_address_num = 0;
-			*np->LAN_IPv4_address_string = 0;
-		} else {
-			sscanf(c, "%s", np->LAN_IPv4_address_string);
-			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
-		}
-	}
-
-	pattern = "netmask 0x";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->LAN_IPv4_subnet_mask_num = 0;
-		*np->LAN_IPv4_subnet_mask_string = 0;
-	} else {
-		sscanf(c, "%02hhx%02hhx%02hhx%02hhx", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);  // network byte order
-		sprintf_m12(np->LAN_IPv4_subnet_mask_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes[0], np->LAN_IPv4_subnet_mask_bytes[1], np->LAN_IPv4_subnet_mask_bytes[2], np->LAN_IPv4_subnet_mask_bytes[3]);
-	}
-
-	pattern = "media: ";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->link_speed[0] = np->duplex[0] = 0;
-	} else {
-		sscanf(c, "%s %s", np->link_speed, np->duplex);
-	}
-
-	pattern = "status: ";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->active = UNKNOWN_m12;
-	} else {
-		sscanf(c, "%s", temp_str);
-		if (strcmp(temp_str, "active") == 0)
-			np->active = TRUE_m12;
-		else if (strcmp(temp_str, "inactive") == 0)
-			np->active = FALSE_m12;
-		else {
-			G_warning_message_m12("%s(): Unrecognized value (\"%s\") for field \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, temp_str, pattern, interface_name);
-			np->active = UNKNOWN_m12;
-		}
-	}
-	
-	// get WAN IPV4 address
-	NET_get_wan_ipv4_address_m12(np);
-	
-	// clean up
-	G_pop_behavior_m12();
-	free(buffer);
-
-	if (global_np == TRUE_m12)
-		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-
 	return(np);
 }
-#endif  // MACOS_m12
 
 
-#ifdef WINDOWS_m12
-NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
+TERN_m12	NET_get_adapter_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 {
+#ifndef WINDOWS_m12
+	return(UNKNOWN_m12);
+#else
 	TERN_m12		global_np;
 	si1             	temp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
 	si4             	i, ret_val, attempts;
@@ -29464,141 +29110,37 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 	LPVOID 			lpMsgBuf;
 	PIP_ADAPTER_ADDRESSES	pAddresses, pCurrAddress;
 
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// if np == NULL, use global np with mutex
+	// (get all info present in same buffers regardless of which was requested)
+	//
+	// called for mtu, duplex, link_speed, & active status in Windows
+
 	global_np = FALSE_m12;
-	if (np == NULL)
-		np = &global_tables_m12->NET_params;
-	if (np == &global_tables_m12->NET_params)
-		global_np = TRUE_m12;
+	if (copy_global == FALSE_m12)
+		if (np == &global_tables_m12->NET_params)
+			global_np = TRUE_m12;
 
 	if (global_np == TRUE_m12) {
 		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
-		if (*np->interface_name) {  // may have been done by another thread while waiting
+		if (*np->link_speed)  {  // may have been done by another thread while waiting
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-			return(np);
+			return(TRUE_m12);
 		}
 	}
-	
-	if (interface_name != NULL) {
-		if (*interface_name >= '0' && *interface_name <= '9')  // caller passed interface ip for interface name
-			NET_iface_name_for_addr_m12(np->interface_name, interface_name);
-		else
-			strcpy(np->interface_name, interface_name);
-	}
-	if (*np->interface_name == 0) {  // pass NULL or "" for interface_name to use default internet interface
-		if (NET_get_lan_ipv4_address_m12(np) == NULL) {  // call NET_get_lan_ipv4_address_m12() to get default route interface name
-			G_warning_message_m12("%s(): no internet connection => no default interface\n", __FUNCTION__);
-			if (global_np == TRUE_m12)
-				PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-			return(NULL);
-		}
-		interface_name = np->interface_name;
-	}
-	
-	// get ipconfig() output
-	buffer = NULL;
-	ret_val = system_pipe_m12(&buffer, 0, "ipconfig", FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
-	if (ret_val < 0) {
+		
+	// need MAC address
+	if (NET_get_mac_address_m12(NULL, np) == NULL) {
+		G_warning_message_m12("%s(): cannot get MAC address\n", __FUNCTION__);
 		if (global_np == TRUE_m12)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-		return(NULL);
+		return(FALSE_m12);
 	}
 
-	// parse ipconfig() output
-	G_push_behavior_m12(RETURN_ON_FAIL_m12);
-
-	pattern = "Host Name";
-	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		if (gethostname(np->host_name, sizeof(np->host_name)) == -1) {
-			*np->host_name = 0;
-			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		}
-	} else {
-		while (*c++ != ':');
-		++c;
-		c2 = np->host_name;
-		while (*c != '\r' && *c != '\n')
-			*c2++ = *c++;
-		*c2 = 0;
-	}
-	
-	// search for interface entry
-	if ((c = STR_match_end_m12(interface_name, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not find interface \"%s\" in output of ipconfig()\n", __FUNCTION__, interface_name);
-		if (global_np == TRUE_m12)
-			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
-		return(NULL);
-	}
-	iface_start = c;  // start all subsequent searches fro this point
-	
-	// find next network adapter
-	pattern = "LAN adapter";
-	if ((c = STR_match_start_m12(pattern, iface_start)) != NULL)
-		*c = 0;  // terminate all subsequent searches here
-	
-	np->plugged_in = TRUE_m12;
-	pattern = "Media disconnected";
-	if ((c = STR_match_end_m12(pattern, iface_start)) != NULL)
-		np->plugged_in = FALSE_m12;
-
-	pattern = "Physical Address";
-	if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
-		np->MAC_address_num = 0;
-		*np->MAC_address_string = 0;
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-	} else {
-		while (*c++ != ':');
-		++c;
-		c2 = np->MAC_address_string;
-		while (*c != '\r' && *c != '\n')
-			*c2++ = *c++;
-		*c2 = 0;
-		STR_replace_char_m12('-', ':', np->MAC_address_string);
-		STR_to_upper_m12(np->MAC_address_string);
-		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
-	}
-
-	if (*np->LAN_IPv4_address_string == 0) {  // may have been filled in above
-		pattern = "IPv4 Address";
-		if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
-			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-			np->LAN_IPv4_address_num = 0;
-			*np->LAN_IPv4_address_string = 0;
-		} else {
-			while (*c++ != ':');
-			++c;
-			c2 = np->LAN_IPv4_address_string;
-			while (*c != '\r' && *c != '\n' && *c != '(')  // MS attaches "(Preferred)" with no space to default interface
-				*c2++ = *c++;
-			*c2 = 0;
-			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
-		}
-	}
-
-	pattern = "Subnet Mask";
-	if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, interface_name);
-		np->LAN_IPv4_subnet_mask_num = 0;
-		*np->LAN_IPv4_subnet_mask_string = 0;
-	} else {
-		while (*c++ != ':');
-		++c;
-		c2 = np->LAN_IPv4_subnet_mask_string;
-		while (*c != '\r' && *c != '\n')
-			*c2++ = *c++;
-		*c2 = 0;
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);
-	}
-
-	// get WAN IPV4 address
-	NET_get_wan_ipv4_address_m12(np);
-	
-	// use GetAdapterAdddresses() for MTU, duplex, link_speed, & active status
-	free((void *) buffer);
+	// read GetAdapterAddresses() output
 	flags = 0;
 	family = AF_INET;  //IPv4
 	lpMsgBuf = NULL;
@@ -29639,14 +29181,14 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 				strcpy_m12(np->duplex, "false");
 			else
 				strcpy_m12(np->duplex, "true");
-			if (pCurrAddress->ReceiveLinkSpeed > 1000000000)
+			if (pCurrAddress->ReceiveLinkSpeed >= 1000000000)
 				sprintf_m12(np->link_speed, "1 Gbps");
-			else if (pCurrAddress->ReceiveLinkSpeed > 100000000)
+			else if (pCurrAddress->ReceiveLinkSpeed >= 100000000)
 				sprintf_m12(np->link_speed, "100 Mbps");
-			else if (pCurrAddress->ReceiveLinkSpeed > 10000000)
+			else if (pCurrAddress->ReceiveLinkSpeed >= 10000000)
 				sprintf_m12(np->link_speed, "10 Mbps");
 			else
-				*np->link_speed = 0;
+				strcpy(np->link_speed, "unknown");
 			if (pCurrAddress->OperStatus == 1)
 				np->active = TRUE_m12;
 			else if
@@ -29657,22 +29199,930 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np)
 			break;  // found correct entry - exit loop
 		}
 	}
+
+	// clean up
 	if (pAddresses != NULL)
 		free((void *) pAddresses);
 
-	// clean up
-	G_pop_behavior_m12();
-
-	if (global_np == TRUE_m12)
+	// called for mtu, duplex, link_speed, & active status in Windows
+	if (copy_global == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		global_tables_m12->NET_params.MTU = np->MTU;
+		global_tables_m12->NET_params.active = np->active;
+		strcpy(global_tables_m12->NET_params.link_speed, np->link_speed);
+		strcpy(global_tables_m12->NET_params.duplex, np->duplex);
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
+
+	return(TRUE_m12);
+#endif
+}
+
+
+#ifdef LINUX_m12
+TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
+{
+	TERN_m12	global_np;
+	si1		temp_str[256], *buffer, *c, *pattern;
+	si4		ret_val;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
 	
-	return(np);
+	// (get all info present in same buffers regardless of which was requested)
+	//
+	// called for mtu, MAC_address, LAN_IPv4, plugged_in, & active in Linux
+
+	global_np = FALSE_m12;
+	if (copy_global == FALSE_m12)
+		if (np == &global_tables_m12->NET_params)
+			global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->MAC_address_string)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(TRUE_m12);
+		}
+	}
+	
+	// get ifconfig() output
+	sprintf_m12(temp_str, "/usr/sbin/ifconfig %s", np->interface_name);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, 0, temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	if (ret_val < 0) {
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+		return(FALSE_m12);
+	}
+
+	// mtu
+	pattern = "mtu ";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->MTU = 0;
+	} else {
+		sscanf(c, "%d", &np->MTU);
+	}
+	
+	// MAC address
+	pattern = "ether ";
+	np->MAC_address_num = 0;
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		strcpy(np->MAC_address_string, "unknown");
+	} else {
+		sscanf(c, "%s", np->MAC_address_string);
+		STR_to_upper_m12(np->MAC_address_string);
+		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
+	}
+
+	// LAN_IPv4
+	if (*np->LAN_IPv4_address_string == 0) {
+		pattern = "inet ";
+		if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+			np->LAN_IPv4_address_num = 0;
+			strcpy(np->LAN_IPv4_address_string, "unknown");
+		} else {
+			sscanf(c, "%s", np->LAN_IPv4_address_string);
+			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
+		}
+	}
+
+	pattern = "netmask ";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->LAN_IPv4_subnet_mask_num = 0;
+		strcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+	} else {
+		sscanf(c, "%s", np->LAN_IPv4_subnet_mask_string);
+		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);
+	}
+
+	// status
+	pattern = "UP";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL)
+		np->active = FALSE_m12;
+	else
+		np->active = TRUE_m12;
+ 
+	pattern = "RUNNING";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL)
+		np->plugged_in = FALSE_m12;
+	else
+		np->plugged_in = TRUE_m12;
+
+	// clean up
+	free(buffer);
+
+	if (copy_global == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		global_tables_m12->NET_params.MTU = np->MTU;
+		strcpy(global_tables_m12->NET_params.MAC_address_string, np->MAC_address_string);
+		global_tables_m12->NET_params.MAC_address_num = np->MAC_address_num;
+		strcpy(global_tables_m12->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
+		global_tables_m12->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
+		strcpy(global_tables_m12->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
+		global_tables_m12->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
+		global_tables_m12->NET_params.plugged_in = np->plugged_in;
+		global_tables_m12->NET_params.active = np->active;
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
+
+	return(TRUE_m12);
+}
+#endif  // LINUX_m12
+
+
+#ifdef MACOS_m12
+TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
+{
+	TERN_m12	global_np;
+	si1		temp_str[256], *buffer, *c, *pattern;
+	si4		ret_val;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// (get all info present in same buffer regardless of which was requested)
+	//
+	// called for mtu, MAC_address, LAN_IPv4, plugged_in, active, link_speed, & duplex fields in MacOS
+
+	global_np = FALSE_m12;
+	if (copy_global == FALSE_m12)
+		if (np == &global_tables_m12->NET_params)
+			global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->MAC_address_string)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(TRUE_m12);
+		}
+	}
+	
+	// get ifconfig() output
+	sprintf_m12(temp_str, "/sbin/ifconfig %s", np->interface_name);
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, 0, temp_str, FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	if (ret_val < 0) {
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+		return(FALSE_m12);
+	}
+
+	// parse ifconfig() output
+	pattern = "mtu ";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->MTU = 0;
+	} else {
+		sscanf(c, "%d", &np->MTU);
+	}
+	
+	pattern = "ether ";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->MAC_address_num = 0;
+		strcpy(np->MAC_address_string, "unknown");
+	} else {
+		sscanf(c, "%s", np->MAC_address_string);
+		STR_to_upper_m12(np->MAC_address_string);
+		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
+	}
+
+	if (*np->LAN_IPv4_address_string == 0) {  // may have been filled in by NET_get_lan_ipv4_address_m12()
+		pattern = "inet ";
+		if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\".\nCheck that cable is plugged in\n", __FUNCTION__, pattern, np->interface_name);
+			np->LAN_IPv4_address_num = 0;
+			strcpy(np->LAN_IPv4_address_string, "unknown");
+		} else {
+			sscanf(c, "%s", np->LAN_IPv4_address_string);
+			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
+		}
+	}
+
+	pattern = "netmask 0x";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->LAN_IPv4_subnet_mask_num = 0;
+		strcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+	} else {
+		sscanf(c, "%02hhx%02hhx%02hhx%02hhx", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);  // network byte order
+		sprintf_m12(np->LAN_IPv4_subnet_mask_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes[0], np->LAN_IPv4_subnet_mask_bytes[1], np->LAN_IPv4_subnet_mask_bytes[2], np->LAN_IPv4_subnet_mask_bytes[3]);
+	}
+
+	pattern = "media: ";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		strcpy(np->link_speed, "unknown");
+		strcpy(np->duplex, "unknown");
+	} else {
+		sscanf(c, "%s %s", np->link_speed, np->duplex);
+	}
+
+	pattern = "status: ";
+	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->active = UNKNOWN_m12;
+	} else {
+		sscanf(c, "%s", temp_str);
+		if (strcmp(temp_str, "active") == 0)
+			np->active = TRUE_m12;
+		else if (strcmp(temp_str, "inactive") == 0)
+			np->active = FALSE_m12;
+		else {
+			G_warning_message_m12("%s(): Unrecognized value (\"%s\") for field \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, temp_str, pattern, np->interface_name);
+			np->active = UNKNOWN_m12;
+		}
+	}
+	
+	// clean up
+	free(buffer);
+
+	if (copy_global == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		global_tables_m12->NET_params.MTU = np->MTU;
+		strcpy(global_tables_m12->NET_params.MAC_address_string, np->MAC_address_string);
+		global_tables_m12->NET_params.MAC_address_num = np->MAC_address_num;
+		strcpy(global_tables_m12->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
+		global_tables_m12->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
+		strcpy(global_tables_m12->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
+		global_tables_m12->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
+		global_tables_m12->NET_params.plugged_in = np->plugged_in;
+		global_tables_m12->NET_params.active = np->active;
+		strcpy(global_tables_m12->NET_params.link_speed, np->link_speed);
+		strcpy(global_tables_m12->NET_params.duplex, np->duplex);
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
+
+	return(TRUE_m12);
+}
+#endif  // MACOS_m12
+
+
+#ifdef WINDOWS_m12
+TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
+{
+	TERN_m12		global_np;
+	si1             	temp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
+	si4             	i, ret_val, attempts;
+	DWORD 			dwSize, dwRetVal;
+	ULONG			flags, family, outBufLen;
+	LPVOID 			lpMsgBuf;
+	PIP_ADAPTER_ADDRESSES	pAddresses, pCurrAddress;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// (get all info present in same buffers regardless of which was requested)
+	//
+	// called for host_name, MAC_address, LAN_IPv4, & plugged_in fields in Windows
+
+	global_np = FALSE_m12;
+	if (copy_global == FALSE_m12)
+		if (np == &global_tables_m12->NET_params)
+			global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->MAC_address_string)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(TRUE_m12);
+		}
+	}
+		
+	// get ipconfig() output
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, 0, "ipconfig", FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	if (ret_val < 0) {
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+		return(FALSE_m12);
+	}
+
+	// parse ipconfig() output
+	if (*np->host_name == 0) {
+		pattern = "Host Name";
+		if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
+			if (gethostname(np->host_name, sizeof(np->host_name)) == -1) {
+				G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+				strcpy(np->host_name, "unknown");
+			}
+		} else {
+			while (*c++ != ':');
+			++c;
+			c2 = np->host_name;
+			while (*c != '\r' && *c != '\n')
+				*c2++ = *c++;
+			*c2 = 0;
+		}
+	}
+	
+	// search for interface entry
+	if ((c = STR_match_end_m12(np->interface_name, buffer)) == NULL) {
+		G_warning_message_m12("%s(): Could not find interface \"%s\" in output of ipconfig()\n", __FUNCTION__, np->interface_name);
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+		return(FALSE_m12);
+	}
+	iface_start = c;  // start all subsequent searches fro this point
+	
+	// find next network adapter
+	pattern = "LAN adapter";
+	if ((c = STR_match_start_m12(pattern, iface_start)) != NULL)
+		*c = 0;  // terminate all subsequent searches here
+	
+	np->plugged_in = TRUE_m12;
+	pattern = "Media disconnected";
+	if ((c = STR_match_end_m12(pattern, iface_start)) != NULL)
+		np->plugged_in = FALSE_m12;
+
+	pattern = "Physical Address";
+	if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->MAC_address_num = 0;
+		strcpy(np->MAC_address_string, "unknown");
+	} else {
+		while (*c++ != ':');
+		++c;
+		c2 = np->MAC_address_string;
+		while (*c != '\r' && *c != '\n')
+			*c2++ = *c++;
+		*c2 = 0;
+		STR_replace_char_m12('-', ':', np->MAC_address_string);
+		STR_to_upper_m12(np->MAC_address_string);
+		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
+	}
+
+	if (*np->LAN_IPv4_address_string == 0) {  // may have been filled in above
+		pattern = "IPv4 Address";
+		if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
+			G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+			np->LAN_IPv4_address_num = 0;
+			strcpy(np->LAN_IPv4_address_string, "unknown");
+		} else {
+			while (*c++ != ':');
+			++c;
+			c2 = np->LAN_IPv4_address_string;
+			while (*c != '\r' && *c != '\n' && *c != '(')  // MS attaches "(Preferred)" with no space to default interface
+				*c2++ = *c++;
+			*c2 = 0;
+			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
+		}
+	}
+
+	pattern = "Subnet Mask";
+	if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
+		np->LAN_IPv4_subnet_mask_num = 0;
+		sttrcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+	} else {
+		while (*c++ != ':');
+		++c;
+		c2 = np->LAN_IPv4_subnet_mask_string;
+		while (*c != '\r' && *c != '\n')
+			*c2++ = *c++;
+		*c2 = 0;
+		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);
+	}
+	free((void *) buffer);
+
+	if (copy_global == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		strcpy(global_tables_m12->NET_params.host_name, np->host_name);
+		strcpy(global_tables_m12->NET_params.MAC_address_string, np->MAC_address_string);
+		global_tables_m12->NET_params.MAC_address_num = np->MAC_address_num;
+		strcpy(global_tables_m12->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
+		global_tables_m12->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
+		strcpy(global_tables_m12->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
+		global_tables_m12->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
+		global_tables_m12->NET_params.plugged_in = np->plugged_in;
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
+
+	return(TRUE_m12);
 }
 #endif  // WINDOWS_m12
 
 
+NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np)
+{
+	TERN_m12	global_np, free_np;
+	si1		*command, *buffer, *c;
+	si4		ret_val;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	free_np = global_np = FALSE_m12;
+	if (np == &global_tables_m12->NET_params) {
+		global_np = TRUE_m12;
+	} else if (np == NULL) {
+		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_np = TRUE_m12;
+	}
+
+	if (*global_tables_m12->NET_params.interface_name) {
+		if (global_np == FALSE_m12)
+			strcpy(np->interface_name, global_tables_m12->NET_params.interface_name);
+		return(np);
+	}
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->interface_name)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(np);
+		}
+	}
+			
+	#ifdef MACOS_m12
+	command = "/sbin/route -n get default";
+	#endif
+	#ifdef LINUX_m12
+	command = "/usr/sbin/ip route get 8.8.8.8";
+	#endif
+	#ifdef WINDOWS_m12
+	command = "route PRINT -4 0.0.0.0";
+	#endif
+	buffer = NULL;
+	ret_val = system_pipe_m12(&buffer, 0, command, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
+	if (ret_val < 0) {  // probably no internet connection, otherwise route() error
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+		if (free_np == TRUE_m12)
+			free((void *) np);
+		return(NULL);
+	}
+	
+	#ifdef MACOS_m12
+	// parse route() output to get internet interface name
+	if ((c = STR_match_end_m12("interface: ", buffer)) != NULL)
+		sscanf(c, "%s", np->interface_name);
+	#endif  // MACOS_m12
+	
+	#ifdef LINUX_m12
+	// parse route() output to get internet interface name
+	if ((c = STR_match_end_m12("dev ", buffer)) != NULL)
+		sscanf(c, "%s", np->interface_name);
+	// parse route() output to get internet ip address
+	if ((c = STR_match_end_m12("src ", buffer)) != NULL) {
+		sscanf(c, "%s", np->LAN_IPv4_address_string);
+		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
+	}
+	#endif  // LINUX_m12
+	
+	#ifdef WINDOWS_m12
+	si1	tmp_str[128];
+
+	// parse route() output to get default ip address
+	if ((c = STR_match_end_m12("0.0.0.0", buffer)) != NULL) {
+		sscanf(c, "%s%s%s", tmp_str, tmp_str, np->LAN_IPv4_address_string);
+		sscanf(np->LAN_IPv4_address_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
+		NET_iface_name_for_addr_m12(np->interface_name, np->LAN_IPv4_address_string);
+	}
+	#endif
+	
+	free((void *) buffer);
+	
+	if (*np->interface_name) {
+		if (global_np == FALSE_m12) {
+			strcpy(global_tables_m12->NET_params.interface_name, np->interface_name);
+			#if defined LINUX_m12 || defined WINDOWS_m12
+			strcpy(global_tables_m12->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
+			global_tables_m12->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
+			#endif
+		}
+	} else {
+		G_set_error_m12(E_NO_INET_m12, __FUNCTION__, __LINE__);
+		*np->LAN_IPv4_address_string = 0;
+		np->LAN_IPv4_address_num = 0;
+		if (free_np == TRUE_m12)
+			free((void *) np);
+		np = NULL;
+	}
+	
+	if (global_np == TRUE_m12)
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+
+	return(np);
+}
+
+
+NET_PARAMS_m12	*NET_get_duplex_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (*global_tables_m12->NET_params.duplex)
+			strcpy(np->duplex, global_tables_m12->NET_params.duplex);
+	}
+	if (*np->duplex)
+		return(np);
+	
+#ifdef LINUX_m12
+	if (NET_get_ethtool_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef MACOS_m12
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef WINDOWS_m12
+	if (NET_get_adapter_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+	
+	return(np);
+}
+
+
+TERN_m12	NET_get_ethtool_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
+{
+#ifndef LINUX_m12
+	return(UNKNOWN_m12);
+#else
+
+	TERN_m12	global_np;
+	si1		temp_str[256], *buffer, *c, *pattern;
+	si4		ret_val;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// (get all info present in same buffers regardless of which was requested)
+	//
+	// called for link speed & duplex in Linux
+
+	global_np = FALSE_m12;
+	if (copy_global == FALSE_m12)
+		if (np == &global_tables_m12->NET_params)
+			global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->link_speed)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(TRUE_m12);
+		}
+	}
+	
+	// Note: ethtool() doesn't seem to work on WiFi networks
+	buffer = NULL;
+	sprintf_m12(temp_str, "/usr/sbin/ethtool %s", np->interface_name);
+	ret_val = system_pipe_m12(&buffer, 0, temp_str, FALSE_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+	if (ret_val < 0) {  // don't return false => this is typically superfluous info
+		G_warning_message_m12("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__);
+	} else {
+		pattern = "Speed: ";
+		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
+			sscanf(c, "%s", np->link_speed);
+
+		pattern = "Duplex: ";
+		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
+			sscanf(c, "%s", np->duplex);
+		free(buffer);
+	}
+	if (*np->link_speed == 0)
+		strcpy(np->link_speed, "unknown");
+	if (*np->duplex == 0)
+		strcpy(np->duplex, "unknown");
+
+	if (copy_global == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		strcpy(global_tables_m12->NET_params.link_speed, np->link_speed);
+		strcpy(global_tables_m12->NET_params.duplex, np->duplex);
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
+
+	return(TRUE_m12);
+#endif
+}
+
+
+NET_PARAMS_m12	*NET_get_host_name_m12(NET_PARAMS_m12 *np)
+{
+	TERN_m12	global_np, free_np;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	free_np = FALSE_m12;
+	if (np == NULL) {
+		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_np = TRUE_m12;
+	} else if (*np->host_name) {
+		return(np);
+	}
+	
+	global_np = FALSE_m12;
+	if (np == &global_tables_m12->NET_params)
+		global_np = TRUE_m12;
+
+	if (*global_tables_m12->NET_params.host_name) {
+		if (global_np == FALSE_m12)
+			strcpy(np->host_name, global_tables_m12->NET_params.host_name);
+		return(np);
+	}
+	
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->host_name)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(np);
+		}
+	}
+	
+	if (gethostname(np->host_name, sizeof(np->host_name)) == -1) {
+		G_warning_message_m12("%s(): cannot get host_name\n", __FUNCTION__);
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		else
+			strcpy(np->host_name, "unknown");
+		return(NULL);
+	}
+	
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		strcpy(global_tables_m12->NET_params.host_name, np->host_name);
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
+
+	return(np);
+}
+
+
+void	*NET_get_in_addr_m12(struct sockaddr *sa)	// get sockaddr, IPv4 or IPv6
+{
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	if (sa->sa_family == AF_INET)
+		return(&(((struct sockaddr_in *) sa)->sin_addr));
+
+	return(&(((struct sockaddr_in6 *) sa)->sin6_addr));
+}
+
+
+NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (*global_tables_m12->NET_params.LAN_IPv4_address_string) {
+			strcpy(np->LAN_IPv4_address_string, global_tables_m12->NET_params.LAN_IPv4_address_string);
+			np->LAN_IPv4_address_num = global_tables_m12->NET_params.LAN_IPv4_address_num;
+		}
+	}
+	if (*np->LAN_IPv4_address_string)
+		return(np);
+		
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+	
+	return(np);
+}
+
+
+NET_PARAMS_m12	*NET_get_link_speed_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (*global_tables_m12->NET_params.link_speed)
+			strcpy(np->link_speed, global_tables_m12->NET_params.link_speed);
+	}
+	if (*np->link_speed)
+		return(np);
+	
+#ifdef LINUX_m12
+	if (NET_get_ethtool_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef MACOS_m12
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef WINDOWS_m12
+	if (NET_get_adapter_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+	
+	return(np);
+}
+
+
+NET_PARAMS_m12	*NET_get_mac_address_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (*global_tables_m12->NET_params.MAC_address_string) {
+			strcpy(np->MAC_address_string, global_tables_m12->NET_params.MAC_address_string);
+			np->MAC_address_num = global_tables_m12->NET_params.MAC_address_num;
+		}
+	}
+	if (*np->MAC_address_string)
+		return(np);
+	
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+	
+	return(np);
+}
+
+
+NET_PARAMS_m12	*NET_get_mtu_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (global_tables_m12->NET_params.MTU > 0)
+			np->MTU = global_tables_m12->NET_params.MTU;
+	}
+	if (np->MTU > 0)
+		return(np);
+
+#if defined MACOS_m12 || defined LINUX_m12
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef WINDOWS_m12
+	if (NET_get_adapter_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+	
+	return(np);
+}
+
+
+NET_PARAMS_m12	*NET_get_parameters_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// fill all fields of NET_PARAMS_m12 structure
+
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (global_tables_m12->NET_params.plugged_in != UNKNOWN_m12)
+			np->plugged_in = global_tables_m12->NET_params.plugged_in;
+	}
+	
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+
+#ifdef LINUX_m12
+	if (NET_get_host_name_m12(np) == NULL) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+
+	if (NET_get_ethtool_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef MACOS_m12
+	if (NET_get_host_name_m12(np) == NULL) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+#ifdef WINDOWS_m12
+	if (NET_get_adapter_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+#endif
+
+	return(np);
+}
+
+
+NET_PARAMS_m12	*NET_get_plugged_in_m12(si1 *iface, NET_PARAMS_m12 *np)
+{
+	TERN_m12	copy_global, free_np;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+
+	if (copy_global == TRUE_m12) {
+		if (global_tables_m12->NET_params.plugged_in != UNKNOWN_m12)
+			np->plugged_in = global_tables_m12->NET_params.plugged_in;
+	}
+	if (np->plugged_in != UNKNOWN_m12)
+		return(np);
+	
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12) {
+		if (free_np == TRUE_m12)
+			free_m12((void *) np, __FUNCTION__);
+		return(NULL);
+	}
+	
+	return(np);
+}
+
+
 NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 {
+	TERN_m12	global_np;
 	si1		*command, *buffer, *pattern, *c;
 	si4		ret_val;
 	
@@ -29681,13 +30131,34 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 #endif
 
 	if (np == NULL)
-		np = (NET_PARAMS_m12 *) calloc((size_t) 1, sizeof(NET_PARAMS_m12));
+		np = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	else if (*np->WAN_IPv4_address_string)
+		return(np);
+	
+	global_np = FALSE_m12;
+	if (np == &global_tables_m12->NET_params)
+		global_np = TRUE_m12;
+	
+	if (*global_tables_m12->NET_params.WAN_IPv4_address_string) {
+		if (global_np == FALSE_m12) {
+			strcpy(np->WAN_IPv4_address_string, global_tables_m12->NET_params.WAN_IPv4_address_string);
+			np->WAN_IPv4_address_num = global_tables_m12->NET_params.WAN_IPv4_address_num;
+		}
+		return(np);
+	}
+	
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		if (*np->WAN_IPv4_address_string)  {  // may have been done by another thread while waiting
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+			return(np);
+		}
+	}
+
 
 	// get WAN IPV4 address
-	
 #if defined MACOS_m12 || defined LINUX_m12
 	command = "/usr/bin/curl --connect-timeout 5.0 -s checkip.dyndns.org";
-//	sprintf_m12(temp_str, "/usr/bin/curl --connect-timeout 2.0 -s checkip.dyndns.org");  // specify path so system doesn't have to find executable
 #endif
 #ifdef WINDOWS_m12
 	command = "curl.exe --connect-timeout 5.0 -s checkip.dyndns.org";
@@ -29696,27 +30167,37 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	buffer = NULL;
 	ret_val = system_pipe_m12(&buffer, 0, command, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12 | RETRY_ONCE_m12);
 	if (ret_val < 0) {
-		if (NET_get_lan_ipv4_address_m12(np) == NULL)
+		if (NET_get_lan_ipv4_address_m12(NULL, np) == NULL)
 			G_warning_message_m12("%s(): no internet connection\n", __FUNCTION__);
 		else
 			G_warning_message_m12("%s(): cannot connect to checkip.dyndns.org\n", __FUNCTION__);
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(NULL);
 	}
 
 	// parse output
-	np->WAN_IPv4_address_num = 0;
-	*np->WAN_IPv4_address_string = 0;
 	pattern = "Current IP Address: ";
 	if ((c = STR_match_end_m12(pattern, buffer)) == NULL) {
-		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of \"curl -s checkip.dyndns.org\"\n", __FUNCTION__, pattern);
-		np->WAN_IPv4_address_string[0] = 0;
-		memset(np->WAN_IPv4_address_bytes, 0, IPV4_ADDRESS_BYTES_m12);
-	} else {
-		sscanf(c, "%[^< ]s", np->WAN_IPv4_address_string);
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->WAN_IPv4_address_bytes, np->WAN_IPv4_address_bytes + 1, np->WAN_IPv4_address_bytes + 2, np->WAN_IPv4_address_bytes + 3);
+		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
+		if (global_np == TRUE_m12)
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+		free((void *) buffer);
+		return(NULL);
 	}
+	sscanf(c, "%[^< ]s", np->WAN_IPv4_address_string);
+	sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->WAN_IPv4_address_bytes, np->WAN_IPv4_address_bytes + 1, np->WAN_IPv4_address_bytes + 2, np->WAN_IPv4_address_bytes + 3);
 	
 	free((void *) buffer);
+
+	if (global_np == TRUE_m12) {
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	} else {
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+		strcpy(global_tables_m12->NET_params.WAN_IPv4_address_string, np->WAN_IPv4_address_string);
+		global_tables_m12->NET_params.WAN_IPv4_address_num = np->WAN_IPv4_address_num;
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	}
 
 	return(np);
 }
@@ -29825,10 +30306,154 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 
 TERN_m12	NET_initialize_tables_m12(void)
 {
-	if (NET_get_parameters_m12(NULL, NULL) == NULL)
-		return(FALSE_m12);
+	TERN_m12	copy_global;
+	NET_PARAMS_m12	*np;
 	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	np = &global_tables_m12->NET_params;
+	NET_reset_parameters_m12(np);
+	NET_get_default_interface_m12(np);
+	copy_global = FALSE_m12;
+	
+	if (NET_get_config_m12(np, copy_global) == FALSE_m12)
+		return(FALSE_m12);
+
+#ifdef LINUX_m12
+	if (NET_get_host_name_m12(np) == NULL)
+		return(FALSE_m12);
+
+	if (NET_get_ethtool_m12(np, copy_global) == FALSE_m12)
+		return(FALSE_m12);
+#endif
+#ifdef MACOS_m12
+	if (NET_get_host_name_m12(np) == NULL)
+		return(FALSE_m12);
+#endif
+#ifdef WINDOWS_m12
+	if (NET_get_adapter_m12(np, copy_global) == FALSE_m12)
+		return(FALSE_m12);
+#endif
+
 	return(TRUE_m12);
+}
+
+
+void	NET_reset_parameters_m12(NET_PARAMS_m12 *np)
+{
+	TERN_m12	global_np;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// call to clear NET_PARAMS_m12 structure (e.g. to obtain current values)
+	// can call with NULL to reset global parameters)
+	
+	if (np == NULL)
+		np = &global_tables_m12->NET_params;
+	
+	global_np = FALSE_m12;
+	if (np == &global_tables_m12->NET_params)
+		global_np = TRUE_m12;
+
+	if (global_np == TRUE_m12)
+		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
+	
+	memset((void *) np, 0, sizeof(NET_PARAMS_m12));
+	
+	if (global_np == TRUE_m12)
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+
+	return;
+}
+
+
+TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN_m12 *free_params)
+{
+	TERN_m12	interface_is_global, params_are_global;
+	si1		tmp_str[64];
+	NET_PARAMS_m12	*params;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns "copy global" (if global value known, just copy to np, else get & copy to global)
+	
+	if (iface != NULL) {
+		if (*iface == 0)
+			iface = NULL;
+	}
+	if (params_ptr == NULL)
+		params = NULL;
+	else
+		params = *params_ptr;
+	
+	*free_params = FALSE_m12;
+	
+	params_are_global = FALSE_m12;
+	if (params != NULL) {
+		if (params == &global_tables_m12->NET_params)
+			params_are_global = TRUE_m12;
+		if (iface == NULL)
+			if (*params->interface_name)
+				iface = params->interface_name;
+	}
+	
+	if (*global_tables_m12->NET_params.interface_name == 0)
+		NET_get_default_interface_m12(&global_tables_m12->NET_params);
+
+	interface_is_global = FALSE_m12;
+	if (iface != NULL) {
+		if (*iface >= '0' && *iface <= '9') {  // caller passed interface ip for interface name
+			strcpy_m12(tmp_str, iface);
+			NET_iface_name_for_addr_m12(iface, tmp_str);
+		}
+		if (strcmp(global_tables_m12->NET_params.interface_name, iface) == 0)
+			interface_is_global = TRUE_m12;
+	}
+	
+	if (iface != NULL) {
+		// case: +iface, +params
+		if (params != NULL) {
+			if (iface != params->interface_name) {
+				if (strcmp(iface, params->interface_name)) {  // interface changed, zero other params
+					memset((void *) params, 0, sizeof(NET_PARAMS_m12));
+					strcpy(params->interface_name, iface);
+				}
+			}
+		}
+		// case: +iface, -params
+		else {
+			params = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			*free_params = TRUE_m12;
+			strcpy(params->interface_name, iface);
+		}
+	} else { // iface == NULL
+		interface_is_global = TRUE_m12;  // true for both cases because if params->interface_name exists, iface != NULL
+		iface = global_tables_m12->NET_params.interface_name;
+		 // case: -iface, +params
+		if (params != NULL) {
+			if (params_are_global == FALSE_m12)
+				strcpy(iface, params->interface_name);
+		}
+		// case: -iface, -params
+		else {
+			params = (NET_PARAMS_m12 *) calloc_m12((size_t) 1, sizeof(NET_PARAMS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			*free_params = TRUE_m12;
+			strcpy(iface, params->interface_name);
+		}
+	}
+
+	*params_ptr = params;
+
+	if (interface_is_global == TRUE_m12 && params_are_global == FALSE_m12)
+		return(TRUE_m12);
+
+	return(FALSE_m12);
 }
 
 
@@ -29916,7 +30541,7 @@ void    NET_show_parameters_m12(NET_PARAMS_m12 *np)
 }
 
 
-void	NET_trim_addr_str_m12(si1 *addr_str)
+void	NET_trim_address_m12(si1 *address)
 {
 	size_t	len;
 	
@@ -29924,9 +30549,11 @@ void	NET_trim_addr_str_m12(si1 *addr_str)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (strncmp(addr_str, "::ffff:", 7) == 0) {
-		len = strlen(addr_str);
-		memmove(addr_str, addr_str + 7, len - 6);
+	// trim ipv6 version of ipv4 address to standard ipv4 address
+	
+	if (strncmp(address, "::ffff:", 7) == 0) {
+		len = strlen(address);
+		memmove(address, address + 7, len - 6);
 	}
 	
 	return;
@@ -32709,9 +33336,11 @@ TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port)
 		*trans_info->iface_addr = 0;
 		sys_asgn_iface_addr = TRUE_m12;
 	} else if (*iface_addr == 0) {  // TR_IFACE_DFLT_m12
-		NET_get_lan_ipv4_address_m12(&np);
-		strcpy(trans_info->iface_addr, np.LAN_IPv4_address_string);
+		if (*global_tables_m12->NET_params.LAN_IPv4_address_string == 0)
+			NET_get_lan_ipv4_address_m12(NULL, &global_tables_m12->NET_params);
+		strcpy(trans_info->iface_addr, global_tables_m12->NET_params.LAN_IPv4_address_string);
 	} else if (*iface_addr >= 'A' && *iface_addr <= 'z') {  // user passed interface name, get ip
+		NET_get_lan_ipv4_address_m12(NULL, &global_tables_m12->NET_params);
 		if (NET_get_parameters_m12(iface_addr, &np) == NULL) {
 			G_warning_message_m12("%s(): cannot get IP address for interface name \"%s\"\n", __FUNCTION__, iface_addr);
 			return(FALSE_m12);
@@ -36778,8 +37407,8 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 #if defined MACOS_m12 || defined LINUX_m12
 si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail)
 {
-	TERN_m12	no_command, assign_buffer, free_buffer, retried;
-	si1		*buffer;
+	TERN_m12	no_command, command_needs_shell, assign_buffer, free_buffer, retried;
+	si1		*buffer, *c;
 	si4		ret_val, master_fd, status, err, BUFFER_SIZE_INC;
 	si8		bytes_in_buffer, bytes_avail;
 	pid_t		child_pid;
@@ -36809,6 +37438,31 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to
 			G_warning_message_m12("%s(): no command\n", __FUNCTION__);
 		return(-1);
 	}
+	
+	// see if shell required
+	command_needs_shell = FALSE_m12;
+	c = --command;  // (command re-incremented below)
+	while (*++c) {
+		switch (*c) {
+			case '>':
+			case '<':
+			case '&':
+			case '|':
+			case '*':
+			case '?':
+			case '^':
+			case '$':
+			case '[':
+			case '{':
+			case 39:  // single quote / apostrophe
+			case 96:  // grave accent
+				command_needs_shell = TRUE_m12;
+				goto SYSTEM_PIPE_NEEDS_SHELL_m12;
+		}
+	} SYSTEM_PIPE_NEEDS_SHELL_m12:
+
+	// skip any leading spaces in command (& re-increment from above)
+	while (*++command == 32);
 
 	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m12;
@@ -36848,22 +37502,22 @@ SYSTEM_PIPE_RETRY_m12:
 		goto SYSTEM_PIPE_FAIL_m12;
 	} else if (child_pid == 0) {  // child process
 		
-		si1		*tmp_command, **args, *c, *c2, *c3;
-		si4		arg_cnt, alloced_args;
-		const si4	ALLOCED_ARGS_INC = 10;  // needs to be at least 4 for shell path
+		si1		*tmp_command, **args, *c2, *c3;
+		si4		arg_cnt, alloced_args, ALLOCED_ARGS_INC;
 		si8		command_len;
 
 		
+		// allocate argument pointers
+		if (command_needs_shell == TRUE_m12)
+			ALLOCED_ARGS_INC = 3;
+		else
+			ALLOCED_ARGS_INC = 10;
 		alloced_args = ALLOCED_ARGS_INC;
 		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
 		
-		// skip any initial spaces
-		while (*command == 32)
-			++command;
-
 		// use shell to expand regex (less efficient, but simplest)
 		tmp_command = NULL;
-		if (STR_contains_regex_m12(command) == TRUE_m12) {
+		if (command_needs_shell == TRUE_m12) {
 			#ifdef MACOS_m12
 			args[0] = "/bin/sh";
 			#endif
@@ -36888,7 +37542,7 @@ SYSTEM_PIPE_RETRY_m12:
 					alloced_args += ALLOCED_ARGS_INC;
 					args = (si1 **) realloc((void *) args, (size_t) (alloced_args + 1) * sizeof(si1 *));
 				}
-				if (*c == 34) {  // quote, include all characters
+				if (*c == 34) {  // double quote, include all characters
 					args[arg_cnt++] = ++c;  // skip initial quote
 					while (*c != 34 && *c)
 						++c;

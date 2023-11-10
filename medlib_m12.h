@@ -1227,14 +1227,27 @@ typedef struct {
 // Prototypes
 TERN_m12	NET_check_internet_connection_m12(void);
 TERN_m12	NET_domain_to_ip_m12(si1 *domain_name, si1 *ip);
+NET_PARAMS_m12	*NET_get_active_m12(si1 *iface, NET_PARAMS_m12 *np);
+TERN_m12	NET_get_adapter_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global);
+TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global);
+NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_duplex_m12(si1 *iface, NET_PARAMS_m12 *np);
+TERN_m12	NET_get_ethtool_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global);
+NET_PARAMS_m12	*NET_get_host_name_m12(NET_PARAMS_m12 *np);
 void		*NET_get_in_addr_m12(struct sockaddr *sa);
-NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(NET_PARAMS_m12 *np);
-NET_PARAMS_m12	*NET_get_parameters_m12(si1 *interface_name, NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(si1 *iface, NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_link_speed_m12(si1 *iface, NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_mac_address_m12(si1 *iface, NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_mtu_m12(si1 *iface, NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_parameters_m12(si1 *iface, NET_PARAMS_m12 *np);
+NET_PARAMS_m12	*NET_get_plugged_in_m12(si1 *iface, NET_PARAMS_m12 *np);
 NET_PARAMS_m12	*NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np);
 si1		*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr);
 TERN_m12	NET_initialize_tables_m12(void);  // set global NET_PARAMS for default internet interface
+void		NET_reset_parameters_m12(NET_PARAMS_m12 *np);
+TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN_m12 *free_params);
 void            NET_show_parameters_m12(NET_PARAMS_m12 *np);
-void		NET_trim_addr_str_m12(si1 *addr_str);
+void		NET_trim_address_m12(si1 *addr_str);
 
 
 
