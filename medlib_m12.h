@@ -79,7 +79,7 @@
 
 // MED_FORMAT_VERSION_MAJOR is restricted to single digits 1 through 9
 // MED_FORMAT_VERSION_MINOR is restricted to 0 through 254, minor version resets to zero with new major format version
-// MED_LIBRARY_VERSION is restricted to 1 through 254, library version resets to one with new major format version
+// MED_LIBRARY_VERSION is restricted to 1 through 255, library version resets to one with new major format version
 
 // MED_FULL_FORMAT_NAME == "<MED_VERSION_MAJOR>.<MED_VERSION_MINOR>"
 // MED_FULL_LIBRARY_NAME == "<MED_FULL_FORMAT_NAME>.<MED_LIBRARY_VERSION>"

@@ -76,7 +76,7 @@
 
 // MED_FORMAT_VERSION_MAJOR is restricted to single digits 1 through 9
 // MED_FORMAT_VERSION_MINOR is restricted to 0 through 254, minor version resets to zero with new major format version
-// MED_LIBRARY_VERSION is restricted to 1 through 254, library version resets to one with new major format version
+// MED_LIBRARY_VERSION is restricted to 1 through 255, library version resets to one with new major format version
 
 // MED_FULL_FORMAT_NAME == "<MED_VERSION_MAJOR>.<MED_VERSION_MINOR>"
 // MED_FULL_LIBRARY_NAME == "<MED_FULL_FORMAT_NAME>.<MED_LIBRARY_VERSION>"
@@ -5708,7 +5708,10 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 {
 	TERN_m12	ret_val;
 	
-	
+#ifdef FN_DEBUG_m12
+	printf_m12("%s()\n", __FUNCTION__);
+#endif
+
 	ret_val = TRUE_m12;
 	
 	if (global_tables_m12 == NULL) {
@@ -5736,6 +5739,8 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 			ret_val = FALSE_m12;
 		if (UTF8_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
+		if (NET_initialize_tables_m12() == FALSE_m12)
+			ret_val = FALSE_m12;
 		if (CRC_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (AES_initialize_tables_m12() == FALSE_m12)
@@ -5743,8 +5748,6 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 		if (SHA_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (CMP_initialize_tables_m12() == FALSE_m12)
-			ret_val = FALSE_m12;
-		if (NET_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (G_initialize_timezone_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
@@ -28638,7 +28641,7 @@ void	HW_get_machine_serial_m12(void)
 #ifdef LINUX_m12
 	// Linux makes it impossible to get product serial from within program, even with sudo password. Using default interface MAC.
 	if (*global_tables_m12->NET_params.MAC_address_string == 0)
-		NET_get_parameters_m12(NULL, NULL);
+		NET_get_mac_address_m12(NULL, &global_tables_m12->NET_params);
 	strcpy(hw_params->serial_number, global_tables_m12->NET_params.MAC_address_string);
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	return;
@@ -29808,7 +29811,6 @@ TERN_m12	NET_get_ethtool_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 		pattern = "Speed: ";
 		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
 			sscanf(c, "%s", np->link_speed);
-
 		pattern = "Duplex: ";
 		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
 			sscanf(c, "%s", np->duplex);
@@ -30319,6 +30321,9 @@ TERN_m12	NET_initialize_tables_m12(void)
 	copy_global = FALSE_m12;
 	
 	if (NET_get_config_m12(np, copy_global) == FALSE_m12)
+		return(FALSE_m12);
+	
+	if (NET_get_wan_ipv4_address_m12(np) == NULL)
 		return(FALSE_m12);
 
 #ifdef LINUX_m12
@@ -37422,8 +37427,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to
 	// if *buffer_ptr == NULL buffer is allocated on the heap (caller responsible for freeing)
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
 	// *buffer_ptr contains a NULL terminated string from the system command, if passed
-	// *buf_len_ptr is filled with string length, if passed
-	// returns negative system error number or buffer string length on success
+	// returns negative system error number or buffer string length on success (zero if no buffer returned)
 	
 	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
 		behavior_on_fail = globals_m12->behavior_on_fail;
@@ -37484,7 +37488,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to
 	BUFFER_SIZE_INC = global_tables_m12->HW_params.system_page_size;
 	if (buf_len == 0) {
 		buf_len = BUFFER_SIZE_INC;
-		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, behavior_on_fail);
 	}
 
 	retried = FALSE_m12;
@@ -37691,22 +37695,22 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to
 	// if *buffer_ptr == NULL buffer is allocated on the heap (caller responsible for freeing)
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
 	// *buffer_ptr contains a NULL terminated string from the system command, if passed
-	// *buf_len_ptr is filled with string length, if passed
-	// returns system error number (zero on success)
+	// returns negative system error number or buffer string length on success (zero if no buffer returned)
 
+	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
+		behavior_on_fail = globals_m12->behavior_on_fail;
+	
 	no_command = FALSE_m12;
 	if (command == NULL)
 		no_command = TRUE_m12;
 	else if (*command == 0)
 		no_command = TRUE_m12;
 	if (no_command == TRUE_m12) {
-		G_warning_message_m12("%s(): no command\n", __FUNCTION__);
+		if (!(behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m12))
+			G_warning_message_m12("%s(): no command\n", __FUNCTION__);
 		return(-1);
 	}
 
-	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
-		behavior_on_fail = globals_m12->behavior_on_fail;
-	
 	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m12;
 		assign_buffer = FALSE_m12;
@@ -37727,7 +37731,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to
 	BUFFER_SIZE_INC = global_tables_m12->HW_params.system_page_size;
 	if (buf_len == 0) {
 		buf_len = BUFFER_SIZE_INC;
-		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		buffer = (si1 *) malloc_m12((size_t) buf_len, __FUNCTION__, behavior_on_fail);
 	}
 
 	retried = FALSE_m12;
@@ -37743,11 +37747,13 @@ SYSTEM_PIPE_RETRY_m12:
 	sec_attr.lpSecurityDescriptor = NULL;
 	sec_attr.bInheritHandle = TRUE;
 	if (CreatePipe(&read_h, &write_h, &sec_attr, 0) == FALSE) {
-		G_warning_message_m12("%s(): CreatePipe() failed\n", __FUNCTION__);
+		if (!(behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m12))
+			G_warning_message_m12("%s(): CreatePipe() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m12;
 	}
 	if (SetHandleInformation(read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
-		G_warning_message_m12("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+		if (!(behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m12))
+			G_warning_message_m12("%s(): SetHandleInformation() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m12;
 	}
 	
@@ -37766,7 +37772,8 @@ SYSTEM_PIPE_RETRY_m12:
 	// start process
 	errno_reset_m12();
 	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
-		G_warning_message_m12("%s(): CreateProcess() failed\n", __FUNCTION__);
+		if (!(behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m12))
+			G_warning_message_m12("%s(): CreateProcess() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m12;
 	}
 	
