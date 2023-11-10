@@ -4465,9 +4465,10 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		// count expanded file list
 		c = buffer;
 		*n_out_files = 0;
-		while (*c++)
+		while (*c++) {
 			if (*c == '\n')
 				++(*n_out_files);
+		}
 		if (*n_out_files == 0)
 			return(NULL);
 	#endif  // MACOS_m12 || LINUX_m12
@@ -4489,9 +4490,11 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		c = buffer;
 		for (i = 0; i < *n_out_files; ++i) {
 			c2 = file_list[i];
-			while (*c != '\n')
+			while (*c != '\n' && *c != '\r')
 				*c2++ = *c++;
 			*c2 = 0;
+			if (*c == '\r')
+				++c;
 			++c;
 		}
 		free((void *) buffer);
