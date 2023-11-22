@@ -23137,15 +23137,12 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 				FILT_free_processing_struct_m12(lfp_filtps, FALSE_m12, FALSE_m12, FALSE_m12, TRUE_m12);
 			cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12] = (void *) FILT_initialize_processing_struct_m12(CMP_VDS_LOWPASS_ORDER_m12, FILT_LOWPASS_TYPE_m12, samp_freq, block_samps, FALSE_m12, FALSE_m12, FALSE_m12, (RETURN_ON_FAIL_m12 | SUPPRESS_WARNING_OUTPUT_m12), LFP_high_fc);
 			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12];
-			FILT_show_processing_struct_m12(lfp_filtps);
 		}
 		// put smooth data into offset position
 		smooth = (sf8 *) cps->parameters.VDS_input_buffers->buffer[2];
 		lfp_filtps->filt_data = smooth;  // smooth data will end up in buffer 2
 		lfp_filtps->orig_data = FILT_OFFSET_ORIG_DATA_m12(lfp_filtps);  // offset smooth data for filtering
 		cps->parameters.VDS_input_buffers->buffer[2] = (void *) lfp_filtps->orig_data;  // offset smooth data (buffer 2) pointer
-
-		FILT_show_processing_struct_m12(lfp_filtps);
 	}
 	
 	// excise transients
