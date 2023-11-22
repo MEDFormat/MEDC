@@ -2132,6 +2132,21 @@ si4     G_DST_offset_m12(si8 uutc)
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m12	G_empty_string_m12(si1 *string)
+{
+	if (string == NULL)
+		return(TRUE_m12);
+	
+	if (*string)
+		return(FALSE_m12);
+	
+	return(TRUE_m12);
+}
+
+
 TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
 	ui1			*encryption_key;
@@ -6994,7 +7009,7 @@ void     G_nap_m12(si1 *nap_str)
 	si8             num;
 	
 	
-	// string format: <number>[<space>]<unit letter>
+	// string format: <number>[<space>]<unit letter(s)>
 	// e.g. to sleep for 1 millisecond:
 	// "1 millisecond" == "1millisecond" == "1 ms" == "1ms" == "1 m" == "1m"
 
@@ -9089,10 +9104,6 @@ void	G_propogate_flags_m12(LEVEL_HEADER_m12 *level_header, ui8 new_flags)
 
 	return;
 }
-
-
-
-
 
 
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
@@ -15938,8 +15949,9 @@ inline
 #endif
 CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, TERN_m12 zero_data, TERN_m12 lock_memory)
 {
-	ui1	*array_base;
-	ui8	i, pointer_bytes, array_bytes, total_requested_bytes, mod;
+	TERN_m12	free_structure;
+	ui1		*array_base;
+	ui8		i, pointer_bytes, array_bytes, total_requested_bytes, mod;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -15950,10 +15962,15 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 	// cast buffer pointers to desired type (as long as element_size <= allocated type size)
 	// e.g.  sf8_array = (sf8 *) buffer[0]; si4_array = (si4 *) buffer[1];
 	
-	if (buffers == NULL)
+	free_structure = FALSE_m12;
+	if (buffers == NULL) {
 		buffers = (CMP_BUFFERS_m12 *) calloc_m12((size_t) 1, sizeof(CMP_BUFFERS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	else if (buffers->n_buffers >= n_buffers && buffers->n_elements >= n_elements && buffers->element_size >= element_size)
+		if (buffers == NULL)
+			return(NULL);
+		free_structure = TRUE_m12;
+	} else if (buffers->n_buffers >= n_buffers && buffers->n_elements >= n_elements && buffers->element_size >= element_size) {
 		return(buffers);
+	}
 	
 	// buffer pointers
 	pointer_bytes = (ui8) (n_buffers * sizeof(void *));
@@ -15977,6 +15994,11 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 			buffers->buffer = (void **) calloc_m12((size_t) total_requested_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		else
 			buffers->buffer = (void **) malloc_m12((size_t) total_requested_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (buffers->buffer == NULL) {
+			if (free_structure == TRUE_m12)
+				free_m12((void *) buffers, __FUNCTION__);
+			return(NULL);
+		}
 		buffers->total_allocated_bytes = total_requested_bytes;
 	} else if (zero_data == TRUE_m12) {
 		memset((void *) buffers->buffer, 0, (size_t) total_requested_bytes);
@@ -17724,7 +17746,7 @@ si8    *CMP_find_crits_m12(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 {
 	const si1	PEAK = 1, TROUGH = -1;
 	si1     	mode;
-	si8     	nc, i, j, crit;
+	si8     	nc, i, j, n, crit;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -17737,12 +17759,15 @@ si8    *CMP_find_crits_m12(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 		G_error_message_m12("%s(): NULL pointer passed", __FUNCTION__);
 		return(NULL);
 	}
-	
+
 	if (crit_xs == NULL)
 		crit_xs = (si8 *) malloc((size_t) (data_len << 3));
 	
-	for (j = 1; j < data_len; ++j)
-		if (data[j] != data[0])
+	// skip leading nans
+	for (n = 0; isnan(data[n]) && n < data_len; ++n);
+	     
+	for (j = n; j < data_len; ++j)
+		if (data[j] != data[n])
 			break;
 	
 	crit_xs[0] = 0;
@@ -17766,8 +17791,10 @@ si8    *CMP_find_crits_m12(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 					i = j++;
 				else if (data[j] == data[i])
 					++j;
-				else
+				else if (data[j] < data[i])
 					break;
+				else  // nan
+					++j;
 			}
 			mode = TROUGH;
 		} else {  // mode == TROUGH
@@ -17776,8 +17803,10 @@ si8    *CMP_find_crits_m12(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 					i = j++;
 				else if (data[j] == data[i])
 					++j;
-				else
+				else if (data[j] > data[i])
 					break;
+				else  // nan
+					++j;
 			}
 			mode = PEAK;
 		}
@@ -17803,7 +17832,7 @@ void    CMP_find_crits_2_m12(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs
 {
 	const si1	PEAK = 1, TROUGH = 2;
 	si1     	mode;
-	si8     	np, nt, i, j, crit;
+	si8     	np, nt, i, j, n, crit;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -17816,8 +17845,10 @@ void    CMP_find_crits_2_m12(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs
 		return;
 	}
 	
-	for (j = 1; j < data_len; ++j)
-		if (data[j] != data[0])
+	for (n = 0; isnan(data[n]) && n < data_len; ++n);
+	     
+	for (j = n + 1; j < data_len; ++j)
+		if (data[j] != data[n])
 			break;
 	
 	peak_xs[0] = trough_xs[0] = 0;
@@ -17841,8 +17872,10 @@ void    CMP_find_crits_2_m12(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs
 					i = j++;
 				else if (data[j] == data[i])
 					++j;
-				else
+				else if (data[j] < data[i])
 					break;
+				else  // nan
+					++j;
 			}
 			mode = TROUGH;
 		} else {  // mode == TROUGH
@@ -17851,8 +17884,10 @@ void    CMP_find_crits_2_m12(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs
 					i = j++;
 				else if (data[j] == data[i])
 					++j;
-				else
+				else if (data[j] > data[i])
 					break;
+				else  // nan
+					++j;
 			}
 			mode = PEAK;
 		}
@@ -22769,7 +22804,7 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	// 	VDS_in_bufs[CMP_MAK_IN_X_BUF] == VDS_in_bufs[1]: mak() in_x
 	// 	VDS_in_bufs[8]:	template
 
-	// redirect to PRED for lossless encoding
+       	// redirect to PRED for lossless encoding
 	if (cps->parameters.VDS_threshold == (sf8) 0.0) {
 		cps->directives.algorithm = CMP_PRED_COMPRESSION_m12;  // change directive so don't do this for every block
 		CMP_PRED2_encode_m12(cps);
@@ -22791,8 +22826,10 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	// allocate
 	poles = FILT_POLES_m12(CMP_VDS_LOWPASS_ORDER_m12, 1);
 	pad_samps = FILT_FILT_PAD_SAMPLES_m12(poles);
-	VDS_in_bufs = cps->parameters.VDS_input_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_input_buffers, CMP_VDS_INPUT_BUFFERS_m12, block_samps + pad_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
-	VDS_out_bufs = cps->parameters.VDS_output_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_output_buffers, CMP_VDS_OUTPUT_BUFFERS_m12, block_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
+	cps->parameters.VDS_input_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_input_buffers, CMP_VDS_INPUT_BUFFERS_m12, block_samps + pad_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
+	cps->parameters.VDS_output_buffers = CMP_allocate_buffers_m12(cps->parameters.VDS_output_buffers, CMP_VDS_OUTPUT_BUFFERS_m12, block_samps, sizeof(sf8), FALSE_m12, FALSE_m12);
+	VDS_in_bufs = cps->parameters.VDS_input_buffers;
+	VDS_out_bufs = cps->parameters.VDS_output_buffers;
 
 	// convert block samples to sf8 array
 	in_y = (sf8 *) VDS_in_bufs->buffer[0];
@@ -22800,7 +22837,7 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 
 	// generate template
 	CMP_VDS_generate_template_m12(cps, block_samps);
-
+	
 	// get baseline
 	template = (sf8 *) VDS_in_bufs->buffer[8];
 	abs_diffs = (sf8 *) VDS_in_bufs->buffer[2];
@@ -22845,15 +22882,15 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 		in_x[in_len++] = block_samps - 1;
 
 	// create out_x array
-	out_x = VDS_out_bufs->buffer[1];
+	out_x = (sf8 *) VDS_out_bufs->buffer[1];
 	sf8_p1 = out_x + block_samps;
 	for (i = block_samps; i--;)
 		*--sf8_p1 = (sf8) i;
-
+	
 	// refine fit
-	new_in_x = VDS_in_bufs->buffer[2];
-	out_y = VDS_out_bufs->buffer[0];
-	resids = VDS_out_bufs->buffer[2];
+	new_in_x = (si8 *) VDS_in_bufs->buffer[2];
+	out_y = (sf8 *) VDS_out_bufs->buffer[0];
+	resids = (sf8 *) VDS_out_bufs->buffer[2];
 	maximum_rounds = cps->parameters.maximum_goal_attempts;
 	rounds = 0;
 	do {
@@ -22954,9 +22991,6 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	VDS_header->flags &= ~CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m12;
 	algorithm = block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m12;
 	switch (algorithm) {
-		case CMP_BF_PRED1_ENCODING_MASK_m12:
-			VDS_header->flags |= CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m12;
-			break;
 		case CMP_BF_PRED2_ENCODING_MASK_m12:
 			VDS_header->flags |= CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m12;
 			break;
@@ -22990,9 +23024,6 @@ void	CMP_VDS_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	VDS_header->flags &= ~CMP_VDS_TIME_ALGORITHMS_MASK_m12;
 	algorithm = block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m12;
 	switch (algorithm) {
-		case CMP_BF_RED1_ENCODING_MASK_m12:
-			VDS_header->flags |= CMP_VDS_FLAGS_TIME_RED1_MASK_m12;
-			break;
 		case CMP_BF_RED2_ENCODING_MASK_m12:
 			VDS_header->flags |= CMP_VDS_FLAGS_TIME_RED2_MASK_m12;
 			break;
@@ -23052,7 +23083,7 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 		LFP_filter = TRUE_m12;
 	
 	// get filter processing struct: minimal filter
-	min_cutoff = samp_freq / (sf8) 5.0;
+	min_cutoff = samp_freq / (sf8) FILT_VDS_MIN_SAMPS_PER_CYCLE_m12;  
 	realloc_flag = FALSE_m12;
 	if (cps->parameters.n_filtps < (FILT_VDS_TEMPLATE_MIN_PS_m12 + 1) || cps->parameters.filtps == NULL) {
 		realloc_flag = TRUE_m12;
@@ -23086,7 +23117,8 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 			realloc_flag = TRUE_m12;
 			cps->parameters.n_filtps = FILT_VDS_TEMPLATE_LFP_PS_m12 + 1;
 			cps->parameters.filtps = (void **) realloc((void *) cps->parameters.filtps, sizeof(void *) * cps->parameters.n_filtps);
-			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) (cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12] = NULL);
+			cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12] = NULL;
+			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12];
 		} else {
 			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12];
 			if (lfp_filtps == NULL)
@@ -23105,16 +23137,18 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 				FILT_free_processing_struct_m12(lfp_filtps, FALSE_m12, FALSE_m12, FALSE_m12, TRUE_m12);
 			cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12] = (void *) FILT_initialize_processing_struct_m12(CMP_VDS_LOWPASS_ORDER_m12, FILT_LOWPASS_TYPE_m12, samp_freq, block_samps, FALSE_m12, FALSE_m12, FALSE_m12, (RETURN_ON_FAIL_m12 | SUPPRESS_WARNING_OUTPUT_m12), LFP_high_fc);
 			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12];
+			FILT_show_processing_struct_m12(lfp_filtps);
 		}
-	}
-	
-	// excise transients
-	if (LFP_filter == TRUE_m12) {  // if LFP filtering have smooth data put into offset position
+		// put smooth data into offset position
 		smooth = (sf8 *) cps->parameters.VDS_input_buffers->buffer[2];
 		lfp_filtps->filt_data = smooth;  // smooth data will end up in buffer 2
 		lfp_filtps->orig_data = FILT_OFFSET_ORIG_DATA_m12(lfp_filtps);  // offset smooth data for filtering
 		cps->parameters.VDS_input_buffers->buffer[2] = (void *) lfp_filtps->orig_data;  // offset smooth data (buffer 2) pointer
+
+		FILT_show_processing_struct_m12(lfp_filtps);
 	}
+	
+	// excise transients
 	FILT_excise_transients_m12(cps, data_len, &n_extrema);
 	extrema = (si8 *) cps->parameters.VDS_input_buffers->buffer[4];
 	transients = (sf8 *) cps->parameters.VDS_input_buffers->buffer[3];
@@ -27561,6 +27595,60 @@ si4     FILT_sf8_sort_m12(const void *n1, const void *n2)
 		return(-1);
 	
 	return(0);
+}
+
+
+void	FILT_show_processing_struct_m12(FILT_PROCESSING_STRUCT_m12 *filt_ps)
+{
+	si4	i;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	printf_m12("\n\n----------- Filter Processing Structure - START ----------\n");
+	printf_m12("behavior_on_fail: %u\n", filt_ps->behavior_on_fail);
+	printf_m12("order: %d\n", filt_ps->order);
+	printf_m12("n_poles: %d\n", filt_ps->n_poles);
+	printf_m12("type: %d\n", filt_ps->type);
+	printf_m12("sampling_frequency: %lf\n", filt_ps->sampling_frequency);
+	printf_m12("data_length: %ld\n", filt_ps->data_length);
+	printf_m12("cutoffs[0]: %lf\n", filt_ps->cutoffs[0]);
+	if (filt_ps->type == FILT_BANDPASS_TYPE_m12 || filt_ps->type == FILT_BANDSTOP_TYPE_m12)
+		printf_m12("cutoffs[1]: %lf\n", filt_ps->cutoffs[1]);
+	if (filt_ps->numerators == NULL) {
+		printf_m12("numerators: NULL\n");
+	} else {
+		for (i = 0; i <= filt_ps->n_poles; ++i)
+			printf_m12("numerators[%d]: %lf\n", i, filt_ps->numerators[i]);
+	}
+	if (filt_ps->denominators == NULL) {
+		printf_m12("denominators: NULL\n");
+	} else {
+		for (i = 0; i <= filt_ps->n_poles; ++i)
+			printf_m12("denominators[%d]: %lf\n", i, filt_ps->denominators[i]);
+	}
+	if (filt_ps->initial_conditions == NULL) {
+		printf_m12("initial_conditions: NULL\n");
+	} else {
+		for (i = 0; i < filt_ps->n_poles; ++i)
+			printf_m12("initial_conditions[%d]: %lf\n", i, filt_ps->initial_conditions[i]);
+	}
+	if (filt_ps->orig_data)
+		printf_m12("orig_data: NULL\n");
+	else
+		printf_m12("orig_data: assigned\n");
+	if (filt_ps->filt_data)
+		printf_m12("filt_data: NULL\n");
+	else
+		printf_m12("filt_data: assigned\n");
+	if (filt_ps->buffer)
+		printf_m12("buffer: NULL\n");
+	else
+		printf_m12("buffer: assigned\n");
+	printf_m12("------------ Filter Processing Structure - END -----------\n\n");
+
+	return;
 }
 
 
@@ -36325,14 +36413,18 @@ TERN_m12	freeable_m12(void *address)
 #endif
 
 	// just returns whether address is in heap range
-	// does not prevent double free errors or unallocated errors
+	// does not prevent double free errors or unallocated errors (consider using AT_DEBUG to track these down)
+	// heap starts at heap base & grows upward
+	// MacOS & Linux stack base > heap_max_address & grows downward
+	// Windows stack base < heap base & grows upward
+	// NOTE: not tested under 32-bit hardware or compilation
 	       
 	hw_params = &global_tables_m12->HW_params;
 	address_val = (ui8) address;
 
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m12);
-	if (address_val < hw_params->heap_base_address)  // covers NULL address case
+	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
 	
 	return(TRUE_m12);

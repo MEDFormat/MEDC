@@ -2201,6 +2201,7 @@ TERN_m12        G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12        G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...);  // varargs (fps == NULL): RECORD_HEADER_m12 *rh, si8 number_of_records  (used to decrypt Sgmt_records arrays)
 TERN_m12        G_decrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 si4             G_DST_offset_m12(si8 uutc);
+TERN_m12	G_empty_string_m12(si1 *string);
 TERN_m12        G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12        G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
@@ -2934,6 +2935,7 @@ typedef struct NODE_STRUCT_m12 {
 	struct NODE_STRUCT_m12	*prev, *next;
 } CMP_NODE_m12;
 
+// Directives contain "behavior" of CPS
 typedef struct {
 	ui4             mode;  // CMP_COMPRESSION_MODE_m12, CMP_DECOMPRESSION_MODE_m12
 	ui4             algorithm;  // RED, PRED, MBE, or VDS
@@ -3464,6 +3466,7 @@ void		SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len);
 #define FILT_NFF_BUFFERS_m12				4
 #define FILT_VDS_TEMPLATE_MIN_PS_m12			0  // index of CPS filtps
 #define FILT_VDS_TEMPLATE_LFP_PS_m12			1  // index of CPS filtps
+#define	FILT_VDS_MIN_SAMPS_PER_CYCLE_m12		((sf8) 4.5)  // rolloff starts at ~5 samples per cycle
 
 // Quantfilt Tail Options
 #define FILT_TRUNCATE_m12                        1
@@ -3540,6 +3543,7 @@ QUANTFILT_DATA_m12	*FILT_quantfilt_head_m12(QUANTFILT_DATA_m12 *qd, ...);  // va
 void	FILT_quantfilt_mid_m12(QUANTFILT_DATA_m12 *qd);
 void	FILT_quantfilt_tail_m12(QUANTFILT_DATA_m12 *qd);
 si4     FILT_sf8_sort_m12(const void *n1, const void *n2);
+void	FILT_show_processing_struct_m12(FILT_PROCESSING_STRUCT_m12 *filt_ps);
 void    FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs);
 
 
