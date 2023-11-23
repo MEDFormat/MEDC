@@ -33368,7 +33368,7 @@ si1	*STR_wchar2char_m12(si1 *target, wchar_t *source)
 // MARK: TRANSMISSION FUNCTIONS  (TR)
 //***********************************//
 
-TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, si4 timeout_secs, si1 *password)
+TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, si1 *password)
 {
 	TR_INFO_m12	*trans_info;
 	TR_HEADER_m12	*header;
@@ -33384,7 +33384,7 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	trans_info->data = trans_info->buffer + TR_HEADER_BYTES_m12;
 	trans_info->mss = TR_INET_MSS_BYTES_m12;  // change to TR_LO_MSS_BYTES_m12 for backplane
 	trans_info->sock_fd = -1;
-	trans_info->timeout_secs = timeout_secs;
+	trans_info->timeout = timeout;
 	header = trans_info->header;
 	header->flags = header_flags;
 	header->ID_code = ID_code;
@@ -33614,20 +33614,24 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 
 TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 {
-	TERN_m12		blocking;
+	TERN_m12		blocking, connected;
 	si2			sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
-	si4			sock_fd, err, ret_val;
+	si4			sock_fd, err, ret_val, timeout_ms;
 	struct sockaddr_in	sock_addr = { 0 };
-	fd_set			fds;
-	struct timeval		tv;
+#if defined MACOS_m12 || defined LINUX_m12
+	struct pollfd		fds;
+#endif
+#ifdef WINDOWS_m12
+	WSAPOLLFD		fds;
+#endif
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
 	// connect() does not use the socket timeout value
-	// this function uses select() to accomplish that
-	// the timeout value is stored in the TR_INFO_m12 structure
+	// this function uses poll() to accomplish that
+	// the timeout value is read from the TR_INFO_m12 structure
 	
 	if (trans_info->sock_fd <= 0)
 		TR_create_socket_m12(trans_info);
@@ -33658,33 +33662,50 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 	// set socket to non-blocking (if not already)
 	blocking = TR_set_socket_blocking_m12(trans_info, UNKNOWN_m12);
 	if (blocking == TRUE_m12)
-		blocking = TR_set_socket_blocking_m12(trans_info, FALSE_m12);
+		TR_set_socket_blocking_m12(trans_info, FALSE_m12);
 
 	// try to connect
+	connected = TRUE_m12;
 	errno_reset_m12();
-	if (connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in))) {
+	ret_val = connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in));
+	if (ret_val == -1) {
 		err = errno_m12();
-		ret_val = 0;
+		// see if just not connected yet
 		if (errno == EINPROGRESS) {
 			// wait for socket to be writable, or return after socket timeout
-			if (trans_info->timeout_secs)
-				tv.tv_sec = (time_t) trans_info->timeout_secs;
+			if (trans_info->timeout > (sf4) 0.0)
+				timeout_ms = (si4) (((sf8) trans_info->timeout * (sf8) 1000.0) + (sf8) 0.5);  // timeout in ms
 			else
-				tv.tv_sec = (time_t) 5;  // default to 5 second timeout
-			tv.tv_usec = (time_t) 0;
-			
-			FD_ZERO(&fds);
-			FD_SET(trans_info->sock_fd, &fds);
+				timeout_ms = 5;  // default to 5 second timeout
+
+			// use poll() because socket fd's often exceed set size limit (1024) of select()
+#if defined MACOS_m12 || defined LINUX_m12
+			memset((void *) &fds, 0, sizeof(struct pollfd));
+#endif
+#ifdef WINDOWS_m12
+			memset((void *) &fds, 0, sizeof(WSAPOLLFD));
+#endif
+			fds.fd = sock_fd;
+			fds.events = POLLOUT;
 			errno_reset_m12();
-			ret_val = select(trans_info->sock_fd + 1, NULL, &fds, NULL, &tv);
-			if (ret_val == -1)
+#if defined MACOS_m12 || defined LINUX_m12
+			ret_val = poll(&fds, (nfds_t) 1, timeout_ms);
+#endif
+#ifdef WINDOWS_m12
+			ret_val = WSAPoll(&fds, (ULONG) 1, timeout_ms);
+#endif
+			if (ret_val == -1) {
 				err = errno_m12();
-			else if (ret_val == 0) {
-				err = ETIMEDOUT;
+			} else if (ret_val == 0) {
+				err = ETIMEDOUT;  // timed out
+				ret_val = -1;
+			} else if (fds.revents != POLLOUT) {
+				err = EACCES;  // socket not writable
 				ret_val = -1;
 			}
 		}
 		if (ret_val == -1) {
+			connected = FALSE_m12;
 #if defined MACOS_m12 || defined LINUX_m12
 			G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
 			close(sock_fd);
@@ -33693,18 +33714,14 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 			G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, err);
 			closesocket(sock_fd);
 #endif
-			if (blocking == TRUE_m12)
-				blocking = TR_set_socket_blocking_m12(trans_info, TRUE_m12);
-
-			return(FALSE_m12);
 		}
 	}
 
 	// reset socket to blocking if necessary
 	if (blocking == TRUE_m12)
-		blocking = TR_set_socket_blocking_m12(trans_info, TRUE_m12);
+		TR_set_socket_blocking_m12(trans_info, TRUE_m12);
 
-	return(TRUE_m12);
+	return(connected);
 }
 
 
@@ -33755,7 +33772,7 @@ TERN_m12	TR_create_socket_m12(TR_INFO_m12 *trans_info)
 	}
 
 	// set socket timeout
-	if (trans_info->timeout_secs)
+	if (trans_info->timeout > (sf4) 0.0)
 		TR_set_socket_timeout_m12(trans_info);
 			
 	return(TRUE_m12);
@@ -33823,7 +33840,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 	ui1		*buffer, *partial_pkt;
 	ui2		max_pkt_bytes;
 	ui4		ID_code;
-	si4		sock_fd, attempts, curr_timeout, err;
+	si4		sock_fd, attempts, err;
+	sf4		curr_timeout;
 	si8		data_bytes, data_bytes_received, ret_val, packet_bytes_remaining;
 	TR_HEADER_m12	*header, *pkt_header, *ack_header, saved_data;
 	TR_INFO_m12	*ack_trans_info;
@@ -33919,8 +33937,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			// first try to receive rest of packet (shouldn't happen often: inet mss chosen to avoid this)
 			partial_pkt = (ui1 *) pkt_header;
 			packet_bytes_remaining = (si8) pkt_header->packet_bytes - ret_val;
-			curr_timeout = trans_info->timeout_secs;
-			trans_info->timeout_secs = 2;  // wait no more than 2 seconds for subsequent sends
+			curr_timeout = trans_info->timeout;
+			trans_info->timeout = (sf4) 2.0;  // wait no more than 2 seconds for subsequent sends
 			TR_set_socket_timeout_m12(trans_info);
 			attempts = 0; do {
 				partial_pkt += ret_val;
@@ -33929,7 +33947,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 					break;
 				packet_bytes_remaining -= ret_val;
 			} while (packet_bytes_remaining > 0 && attempts++ < 3);
-			trans_info->timeout_secs = curr_timeout;  // reset timeout
+			trans_info->timeout = curr_timeout;  // reset timeout
 			TR_set_socket_timeout_m12(trans_info);
 
 			// couldn't get full packet
@@ -34166,7 +34184,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		ack_header = ack_trans_info->header;
 		ack_header->ID_code = header->ID_code;
 		ack_trans_info->sock_fd = sock_fd;
-		ack_trans_info->timeout_secs = 2;  // wait 2 seconds for acknowledgment
+		ack_trans_info->timeout = (sf4) 2.0;  // wait 2 seconds for acknowledgment
 	}
 		
 	// transmit
@@ -34355,17 +34373,19 @@ TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 void	TR_set_socket_timeout_m12(TR_INFO_m12 *trans_info)
 {
 #if defined MACOS_m12 || defined LINUX_m12
-	struct timeval          	tv;
+	struct timeval	tv;
 	
-	tv.tv_sec = trans_info->timeout_secs; tv.tv_usec = 0;
+	tv.tv_sec = (time_t) trans_info->timeout;
+	tv.tv_usec = (time_t) ((((sf8) trans_info->timeout - (sf8) tv.tv_sec) * (sf8) 1e6) + (sf8) 0.5);
 	setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(struct timeval));
 #endif
 #ifdef WINDOWS_m12
-	si1	timeout_in_ms[16];
-	si8 	len;
+	si1	timeout_str[16];
+	si8 	len, timeout_ms;
 	
-	len = sprintf_m12(timeout_in_ms, "%d", trans_info->timeout_secs * 1000) + 1;  // leave room for terminal zero
-	setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_RCVTIMEO, timeout_in_ms, len);
+	timeout_ms = (si8) (((sf8) trans_info->timeout * (sf8) 1000.0) + (sf8) 0.5);
+	len = sprintf_m12(timeout_str, "%ld", timeout_ms) + 1;  // leave room for terminal zero
+	setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_RCVTIMEO, timeout_str, len);
 #endif
 	return;
 }
@@ -34472,10 +34492,10 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("Interface Port: any\n");
 	else
 		printf_m12("Interface Port: %hu\n", trans_info->iface_port);
-	if (trans_info->timeout_secs == 0)
+	if (trans_info->timeout == (sf4) 0.0)
 		printf_m12("Timeout (seconds): never\n");
 	else
-		printf_m12("Timeout (seconds): %d\n", trans_info->timeout_secs);
+		printf_m12("Timeout (seconds): %f\n", trans_info->timeout);
 	if (trans_info->mss == 0)
 		printf_m12("Maximum Segment Size (bytes): not set\n");
 	else

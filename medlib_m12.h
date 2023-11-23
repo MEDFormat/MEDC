@@ -154,6 +154,7 @@
 	#include <termios.h>
 	#include <signal.h>
 	#include <sys/wait.h>
+	#include <poll.h>
 #endif
 #ifdef MACOS_m12
 	#include <malloc/malloc.h>
@@ -3806,7 +3807,7 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 							      // + some extra (possible intermediary protocols like GRE, IPsec, PPPoE, or SNAP that may be in the route)]
 #define TR_LO_MSS_BYTES_m12				65456  // highest multiple of 16, that stays below backplane (loopback) standard frame size (65535) minus [32 (TR header) + 40 (TCP/IP header)])
 #define TR_PORT_STRLEN_m12				8
-#define TR_TIMEOUT_NEVER_m12				0
+#define TR_TIMEOUT_NEVER_m12				((sf4) 0.0)
 #define TR_PORT_ANY_m12					0  // system assigned port
 #define TR_IFACE_ANY_m12				((void *) 0)  // all interfaces
 #define TR_IFACE_DFLT_m12				""  // default internet interface
@@ -3850,7 +3851,7 @@ typedef struct {
 	ui2			dest_port;
 	si1			iface_addr[INET6_ADDRSTRLEN];  // zero-length string for any default internet interface
 	ui2			iface_port;
-	si4			timeout_secs;
+	sf4			timeout;  // seconds
 	ui2			mss;  // maximum segment size (max bytes of data per packet [*** does not include header ***]) (typically multiple of 16, must be at least multiple of 8 for library)
 } TR_INFO_m12;
 
@@ -3861,7 +3862,7 @@ typedef struct {
 
 
 // Prototypes
-TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, si4 timeout_secs, si1 *password);
+TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, si1 *password);
 TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port);
 void		TR_build_message_m12(TR_MESSAGE_HEADER_m12 *msg, si1 *message_text);
 TERN_m12	TR_check_transmission_header_alignment_m12(ui1 *bytes);
