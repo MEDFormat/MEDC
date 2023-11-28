@@ -33706,14 +33706,9 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 		}
 		if (ret_val == -1) {
 			connected = FALSE_m12;
-#if defined MACOS_m12 || defined LINUX_m12
 			G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
-			close(sock_fd);
-#endif
-#ifdef WINDOWS_m12
-			G_warning_message_m12("%s(): socket connect error: #%d\n", __FUNCTION__, err);
-			closesocket(sock_fd);
-#endif
+			TR_close_transmission_m12(trans_info);
+			return(FALSE_m12);
 		}
 	}
 
@@ -34302,6 +34297,8 @@ TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 
 	
 	socket_flags = fcntl(trans_info->sock_fd, F_GETFL, 0);  // get existing flags
+	if (socket_flags == -1)
+		return(UNKNOWN_m12);
 	
 	current_state = (socket_flags & O_NONBLOCK) ? FALSE_m12 : TRUE_m12;
 	if (current_state == blocking || blocking == UNKNOWN_m12)
@@ -34495,7 +34492,7 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 	if (trans_info->timeout == (sf4) 0.0)
 		printf_m12("Timeout (seconds): never\n");
 	else
-		printf_m12("Timeout (seconds): %f\n", trans_info->timeout);
+		printf_m12("Timeout (seconds): %0.2f\n", trans_info->timeout);
 	if (trans_info->mss == 0)
 		printf_m12("Maximum Segment Size (bytes): not set\n");
 	else
