@@ -30246,12 +30246,12 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	}
 
 
-	// get WAN IPV4 address
+	// get WAN IPV4 address (this can take some time
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "/usr/bin/curl --connect-timeout 5.0 -s checkip.dyndns.org";
+	command = "/usr/bin/curl --connect-timeout 10.0 -s checkip.dyndns.org";
 #endif
 #ifdef WINDOWS_m12
-	command = "curl.exe --connect-timeout 5.0 -s checkip.dyndns.org";
+	command = "curl.exe --connect-timeout 10.0 -s checkip.dyndns.org";
 #endif
 	
 	buffer = NULL;
@@ -32134,6 +32134,294 @@ READ_RC_HANDLE_DEFAULT_m12:
 
 	if (free_field_value_str == TRUE_m12)
 		free((void *) field_value_str);
+	
+	return(option_selected);
+}
+
+
+si4     RC_read_field_2_m12(si1 *field_name, si1 **buffer, TERN_m12 update_buffer_ptr, void *val, si4 val_type, ...)  // vararg (val_type == RC_UNKNOWN_m12): *returned_val_type
+{
+	TERN_m12        *tern_val, option_selected, options_only;
+	si1             *str_val, *c, temp_str[RC_STRING_BYTES_m12], *temp_si1_ptr, *field_title_ptr, local_str_val[RC_STRING_BYTES_m12];
+	si1             *type_ptr, type_str[RC_STRING_BYTES_m12];
+	si1             *options_ptr, options_str[RC_STRING_BYTES_m12];
+	si1             *default_value_ptr, default_value_str[RC_STRING_BYTES_m12];
+	si1             *field_value_ptr;
+	si4             type, option_number, *returned_val_type;
+	si8             *int_val, item, default_item;
+	sf8             *float_val;
+	va_list		arg_p;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// If update_buffer_ptr == TRUE_m12, caller can use it to progress serially through the RC file instead of starting at beginning each time.
+	// Requires that caller knows that order of entries will stay the same. It is more efficient, but less flexible.
+	// IMPORTANT: Caller responsible for saving a copy of *buffer for freeing, if it will be modified.
+	// if type unknown, caller should pass RC_STRING_BYTES_m12 byte block of memory in val, and pass the address of an si4 in returned_val_type vararg
+	// Version 2 has fewer arguments, but does not return field value as a string unless the field type was a string
+	// All strings are presumed to be < RC_STRING_BYTES_m12 bytes
+
+	if (val == NULL) {
+		G_error_message_m12("%s(): NULL value pointer passed \"%s\" in rc file\n", __FUNCTION__);
+		return(-1);
+	}
+
+	// setup
+	if (val_type != RC_STRING_TYPE_m12)  // need str_val regardless of type
+		str_val = local_str_val;
+	returned_val_type = NULL;
+	switch (val_type) {
+		case RC_STRING_TYPE_m12:
+			str_val = (si1 *) val;
+			break;
+		case RC_FLOAT_TYPE_m12:
+			float_val = (sf8 *) val;
+			break;
+		case RC_INTEGER_TYPE_m12:
+			int_val = (si8 *) val;
+			break;
+		case RC_TERNARY_TYPE_m12:
+			tern_val = (si1 *) val;
+			break;
+		case RC_UNKNOWN_TYPE_m12:
+			va_start(arg_p, val_type);
+			returned_val_type = va_arg(arg_p, si4 *);
+			va_end(arg_p);
+			break;
+		default:
+			G_error_message_m12("%s(): unrecognized type (%d) passed\n", __FUNCTION__, val_type);
+			return(-1);
+	}
+	// zero strings
+	*str_val = *type_str = *options_str = *default_value_str = 0;
+	
+	// find requested field entry
+	c = *buffer;
+	sprintf_m12(temp_str, "%%%% FIELD: %s", field_name);
+	if ((field_title_ptr = STR_match_end_m12(temp_str, c)) == NULL)
+		G_error_message_m12("%s(): Could not match field label \"%s\" in rc file\n", __FUNCTION__, temp_str);
+	
+	// get type
+	c = field_title_ptr;
+	if ((type_ptr = STR_match_end_m12("%% TYPE:", c)) == NULL)
+		G_error_message_m12("%s(): Could not match TYPE subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	while (*type_ptr == (si1) 32)  // space
+		++type_ptr;
+	item = sscanf(type_ptr, "%[^\r\n]", type_str);
+	if (item) {
+		temp_si1_ptr = type_str + strlen(type_str);
+		while (*--temp_si1_ptr == (si1) 32);
+		*++temp_si1_ptr = 0;
+	} else {
+		G_error_message_m12("%s(): No TYPE subfield specified in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	}
+
+	type = 0;
+	if (strcmp(type_str, "string") == 0)
+		type = RC_STRING_TYPE_m12;
+	else if (strcmp(type_str, "float") == 0)
+		type = RC_FLOAT_TYPE_m12;
+	else if (strcmp(type_str, "integer") == 0)
+		type = RC_INTEGER_TYPE_m12;
+	else if (strcmp(type_str, "ternary") == 0)
+		type = RC_TERNARY_TYPE_m12;
+	else
+	       G_error_message_m12("%s(): Could not match TYPE subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	
+	if (type != val_type) {
+		if (val_type == RC_UNKNOWN_TYPE_m12) {
+			*returned_val_type = type;
+			switch (type) {
+				case RC_STRING_TYPE_m12:
+					str_val = (si1 *) val;
+					break;
+				case RC_FLOAT_TYPE_m12:
+					float_val = (sf8 *) val;
+					break;
+				case RC_INTEGER_TYPE_m12:
+					int_val = (si8 *) val;
+					break;
+				case RC_TERNARY_TYPE_m12:
+					tern_val = (si1 *) val;
+					break;
+			}
+		} else {
+			G_error_message_m12("%s(): field type (%d) != passed type (%d) in field \"%s\" of rc file\n", __FUNCTION__, type, val_type, field_name);
+		}
+	}
+
+	// get options pointer
+	c = type_ptr;
+	options_only = FALSE_m12;
+	if ((options_ptr = STR_match_end_m12("%% OPTIONS", c)) == NULL)
+		G_error_message_m12("%s(): Could not match OPTIONS subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if (*options_ptr == ':') {
+		++options_ptr;
+	} else if (strncmp(options_ptr, " ONLY:", 6) == 0) {
+		options_ptr += 6;
+		options_only = TRUE_m12;
+	} else {
+		G_error_message_m12("%s(): Could not match OPTIONS subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	}
+	while (*options_ptr == (si1) 32)  // space
+		++options_ptr;
+	item = sscanf(options_ptr, "%[^\r\n]", options_str);
+	if (item) {
+		temp_si1_ptr = options_str + strlen(options_str);
+		while (*--temp_si1_ptr == (si1) 32);
+		*++temp_si1_ptr = 0;
+	}
+
+	// get default value pointer
+	c = options_ptr;
+	if ((default_value_ptr = STR_match_end_m12("%% DEFAULT:", c)) == NULL)
+		G_error_message_m12("%s(): Could not match DEFAULT subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	while (*default_value_ptr == (si1) 32)  // space
+		++default_value_ptr;
+	
+	default_item = sscanf(default_value_ptr, "%[^\r\n]", default_value_str);
+	if (default_item) {
+		temp_si1_ptr = default_value_str + strlen(default_value_str);
+		while (*--temp_si1_ptr == (si1) 32);  // space
+		*++temp_si1_ptr = 0;
+	}
+
+	// get field value as string
+	c = default_value_ptr;
+	if ((field_value_ptr = STR_match_end_m12("%% VALUE:", c)) == NULL)
+		G_error_message_m12("%s(): Could not match value field label \"%s\" in rc file\n", __FUNCTION__, temp_str);
+	while (*field_value_ptr == (si1) 32)  // space
+		++field_value_ptr;
+	item = sscanf(field_value_ptr, "%[^\r\n]", str_val);
+	temp_si1_ptr = str_val + strlen(str_val);
+	if (update_buffer_ptr == TRUE_m12)
+		*buffer = temp_si1_ptr;
+	if (item) {
+		while (*--temp_si1_ptr == (si1) 32);  // space
+		*++temp_si1_ptr = 0;
+	} else {
+		strcpy(str_val, "DEFAULT");
+	}
+	
+READ_RC_HANDLE_DEFAULT_m12:
+	
+	// VALUE field is "DEFAULT", and default may be "PROMPT"
+	if (strcmp(str_val, "DEFAULT") == 0) {
+		if (default_item)
+			strcpy(str_val, default_value_str);
+		else
+			G_error_message_m12("%s(): No DEFAULT value to enter in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	}
+
+	// PROMPT (Note: user can enter "DEFAULT", "NO ENTRY", or any of the recognized OPTIONS here if desired)
+	if (strcmp(str_val, "PROMPT") == 0) {
+		if (options_only == TRUE_m12)
+			printf_m12("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter an option: ", field_name, options_str, default_value_str);
+		else
+			printf_m12("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter a value: ", field_name, options_str, default_value_str);
+		item = scanf("%[^\r\n]", str_val); fgetc(stdin); putchar_m12('\n');
+		if (item) {
+			temp_si1_ptr = str_val + strlen(str_val);
+			while (*--temp_si1_ptr == (si1) 32);  // space
+			*++temp_si1_ptr = 0;
+		}
+	}
+
+	// no entry
+	option_selected = RC_NO_OPTION_m12;
+	if ((strcmp(str_val, "NO ENTRY") == 0)) {
+		if (options_only == TRUE_m12) {
+			G_error_message_m12("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
+			strcpy(str_val, "DEFAULT");
+			goto READ_RC_HANDLE_DEFAULT_m12;
+		} else
+			option_selected = RC_NO_ENTRY_m12;
+	}
+
+	// options
+	if (option_selected == RC_NO_OPTION_m12) {
+		option_number = 0;
+		options_ptr = options_str;
+		while (1) {
+			while (*options_ptr == 32 || *options_ptr == ',')  // space or comma
+				++options_ptr;
+			if (*options_ptr == 0)
+				break;
+			++option_number;
+			item = sscanf(options_ptr, "%[^,\r\n]", temp_str);
+			if (item) {
+				if (strcmp(temp_str, str_val) == 0) {
+					option_selected = option_number;
+					strcpy(str_val, temp_str);
+					break;
+				}
+				options_ptr += strlen(temp_str);
+			} else {
+				break;
+			}
+		}
+		if (option_selected == RC_NO_OPTION_m12) {
+			if (options_only == TRUE_m12) {
+				G_error_message_m12("%s(): String \"%s\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, str_val, field_name);
+				strcpy(str_val, "DEFAULT");
+				goto READ_RC_HANDLE_DEFAULT_m12;
+			}
+		}
+	}
+			
+	// user entered value
+	switch (type) {
+		case RC_STRING_TYPE_m12:
+			if (option_selected == RC_NO_ENTRY_m12)
+				str_val[0] = 0;  // function default
+			break;
+		case RC_FLOAT_TYPE_m12:
+			if (option_selected == RC_NO_ENTRY_m12)
+				*float_val = 0.0;  // function default
+			else {
+				item = sscanf(str_val, "%lf", float_val);
+				if (item != 1 && option_selected == RC_NO_OPTION_m12)
+					G_error_message_m12("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, str_val, type_str, field_name);
+			}
+			break;
+		case RC_INTEGER_TYPE_m12:
+			if (option_selected == RC_NO_ENTRY_m12)
+				*int_val = 0;  // function default
+			else {
+				// I have no idea why, but the Visual Studio linker can't find sscanf_m12() - just this function
+				item = sscanf_m12(str_val, "%ld", int_val);
+				if (item != 1 && option_selected == RC_NO_OPTION_m12)
+					G_error_message_m12("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, str_val, type_str, field_name);
+			}
+			break;
+		case RC_TERNARY_TYPE_m12:
+			if (option_selected == RC_NO_ENTRY_m12) {
+				*tern_val = UNKNOWN_m12;  // function default
+				break;
+			}
+			if (option_selected == RC_NO_OPTION_m12) {  // user entered value
+				item = sscanf(str_val, "%hhd", tern_val);
+				if (item != 1) {
+					G_error_message_m12("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, str_val, type_str, field_name);
+					break;
+				}
+				if (*tern_val < FALSE_m12 || *tern_val > TRUE_m12)
+					G_error_message_m12("%s(): Invalid value for type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, type_str, field_name);
+			} else {  // user entered option
+				if (strcmp(str_val, "YES") == 0 || strcmp(str_val, "TRUE") == 0) {
+					*tern_val = TRUE_m12;
+				} else if (strcmp(str_val, "NO") == 0 || strcmp(str_val, "FALSE") == 0) {
+					*tern_val = FALSE_m12;
+				} else if (strcmp(str_val, "UNKNOWN") == 0) {
+					*tern_val = UNKNOWN_m12;
+				}
+			}
+			break;
+		default:
+			break;
+	}
 	
 	return(option_selected);
 }

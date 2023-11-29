@@ -1177,10 +1177,14 @@ void			PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval);
 #define RC_FLOAT_TYPE_m12       	2
 #define RC_INTEGER_TYPE_m12     	3
 #define RC_TERNARY_TYPE_m12     	4
+#define RC_UNKNOWN_TYPE_m12     	5
+
+#define RC_STRING_BYTES_m12		256
+
 
 // Prototypes
 si4	RC_read_field_m12(si1 *field_name, si1 **buffer, TERN_m12 update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, TERN_m12 *TERN_val);
-
+si4     RC_read_field_2_m12(si1 *field_name, si1 **buffer, TERN_m12 update_buffer_ptr, void *val, si4 val_type, ...);  // vararg (val_type == RC_UNKNOWN_m12): *returned_val_type
 
 
 //**********************************************************************************//
