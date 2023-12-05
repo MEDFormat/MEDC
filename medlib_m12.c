@@ -10803,10 +10803,11 @@ si8     G_read_time_series_data_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice)
 
 TERN_m12    G_recover_passwords_m12(si1 *L3_password, UNIVERSAL_HEADER_m12 *universal_header)
 {
-	ui1     hash[SHA_HASH_BYTES_m12], L3_hash[SHA_HASH_BYTES_m12];
-	si1     L3_password_bytes[PASSWORD_BYTES_m12], hex_str[HEX_STRING_BYTES_m12(PASSWORD_BYTES_m12)];
-	si1     putative_L1_password_bytes[PASSWORD_BYTES_m12], putative_L2_password_bytes[PASSWORD_BYTES_m12];
-	si4     i;
+	TERN_m12	level_1_valid;
+	ui1     	hash[SHA_HASH_BYTES_m12], L3_hash[SHA_HASH_BYTES_m12];
+	si1     	L3_password_bytes[PASSWORD_BYTES_m12], hex_str[HEX_STRING_BYTES_m12(PASSWORD_BYTES_m12)];
+	si1     	saved_L1_password_bytes[PASSWORD_BYTES_m12], putative_L1_password_bytes[PASSWORD_BYTES_m12], putative_L2_password_bytes[PASSWORD_BYTES_m12];
+	si4     	i;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -10830,13 +10831,13 @@ TERN_m12    G_recover_passwords_m12(si1 *L3_password, UNIVERSAL_HEADER_m12 *univ
 	for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m12; ++i)  // compare with stored level 1 hash
 		if (hash[i] != universal_header->level_1_password_validation_field[i])
 			break;
+	level_1_valid = FALSE_m12;
 	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m12) {  // Level 1 password recovered
-		STR_generate_hex_string_m12((ui1 *) putative_L1_password_bytes, PASSWORD_BYTES_m12, hex_str);
-		G_message_m12("Level 1 password (bytes): '%s' (%s)", putative_L1_password_bytes, hex_str);
-		return(TRUE_m12);
+		memcpy(saved_L1_password_bytes, putative_L1_password_bytes, PASSWORD_BYTES_m12);
+		level_1_valid = TRUE_m12;
 	}
 	
-	// invalid for level 1 (alone) => check if level 2 password
+	// check for level 2 password (may be same password for both levels)
 	memcpy(putative_L2_password_bytes, putative_L1_password_bytes, PASSWORD_BYTES_m12);
 	for (i = 0; i < PASSWORD_BYTES_m12; ++i)  // xor with level 2 password validation field
 		putative_L1_password_bytes[i] = hash[i] ^ universal_header->level_2_password_validation_field[i];
@@ -10847,13 +10848,18 @@ TERN_m12    G_recover_passwords_m12(si1 *L3_password, UNIVERSAL_HEADER_m12 *univ
 		if (hash[i] != universal_header->level_1_password_validation_field[i])
 			break;
 	
-	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m12) {  // Level 2 password valid
-		STR_generate_hex_string_m12((ui1 *)putative_L1_password_bytes, PASSWORD_BYTES_m12, hex_str);
-		G_message_m12("Level 1 password (bytes): '%s' (%s)", putative_L1_password_bytes, hex_str);
-		STR_generate_hex_string_m12((ui1 *)putative_L2_password_bytes, PASSWORD_BYTES_m12, hex_str);
-		G_message_m12("Level 2 password (bytes): '%s' (%s)", putative_L2_password_bytes, hex_str);
+	// Level 2 password valid
+	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m12) {
+		STR_generate_hex_string_m12((ui1 *) putative_L1_password_bytes, PASSWORD_BYTES_m12, hex_str);
+		G_message_m12("Level 1 password (bytes): '%s' (%s)\n", putative_L1_password_bytes, hex_str);
+		STR_generate_hex_string_m12((ui1 *) putative_L2_password_bytes, PASSWORD_BYTES_m12, hex_str);
+		G_message_m12("Level 2 password (bytes): '%s' (%s)\n", putative_L2_password_bytes, hex_str);
+	} else if (level_1_valid == TRUE_m12) {
+		STR_generate_hex_string_m12((ui1 *) saved_L1_password_bytes, PASSWORD_BYTES_m12, hex_str);
+		G_message_m12("Level 1 password (bytes): '%s' (%s)\n", saved_L1_password_bytes, hex_str);
+		G_message_m12("No Level 2 password\n");
 	} else {
-		G_warning_message_m12("%s(): the passed password is not valid for Level 3 access\n", __FUNCTION__, __LINE__);
+		G_warning_message_m12("%s(): the level 3 password is not valid for recovery\n", __FUNCTION__, __LINE__);
 		return(FALSE_m12);
 	}
 	
@@ -30246,12 +30252,12 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	}
 
 
-	// get WAN IPV4 address (this can take some time
+	// get WAN IPV4 address (this server can take some time)
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "/usr/bin/curl --connect-timeout 10.0 -s checkip.dyndns.org";
+	command = "/usr/bin/curl --connect-timeout 7.0 -s checkip.dyndns.org";
 #endif
 #ifdef WINDOWS_m12
-	command = "curl.exe --connect-timeout 10.0 -s checkip.dyndns.org";
+	command = "curl.exe --connect-timeout 7.0 -s checkip.dyndns.org";
 #endif
 	
 	buffer = NULL;
@@ -30411,8 +30417,9 @@ TERN_m12	NET_initialize_tables_m12(void)
 	if (NET_get_config_m12(np, copy_global) == FALSE_m12)
 		return(FALSE_m12);
 	
-	if (NET_get_wan_ipv4_address_m12(np) == NULL)
-		return(FALSE_m12);
+	// this can is problematic and is rarely needed
+//	if (NET_get_wan_ipv4_address_m12(np) == NULL)
+//		return(FALSE_m12);
 
 #ifdef LINUX_m12
 	if (NET_get_host_name_m12(np) == NULL)
