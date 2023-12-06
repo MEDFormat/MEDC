@@ -2225,13 +2225,13 @@ si1		*G_find_timezone_acronym_m12(si1 *timezone_acronym, si4 standard_UTC_offset
 si1		*G_find_metadata_file_m12(si1 *path, si1 *md_path);
 si8		G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8     	G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
-void            G_free_channel_m12(CHANNEL_m12* channel, TERN_m12 free_channel_structure);
+TERN_m12	G_free_channel_m12(CHANNEL_m12* channel, TERN_m12 free_channel_structure);
 void		G_free_global_tables_m12(void);
 void            G_free_globals_m12(TERN_m12 cleanup_for_exit);
-void            G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structure);
+TERN_m12	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structure);
 void		G_free_segmented_sess_recs_m12(SEGMENTED_SESS_RECS_m12 *ssr, TERN_m12 free_segmented_sess_rec_structure);
 void            G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure);
-void		G_frequencies_vary_m12(SESSION_m12 *sess);
+TERN_m12	G_frequencies_vary_m12(SESSION_m12 *sess);
 si1		**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 ui4             G_generate_MED_path_components_m12(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		**G_generate_numbered_names_m12(si1 **names, si1 *prefix, si4 number_of_names);

@@ -3797,7 +3797,7 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 }
 
 
-void	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structure)
+TERN_m12	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structure)
 {
 	si4		i;
 	SEGMENT_m12	*seg;
@@ -3806,9 +3806,11 @@ void	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structure)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	// returns FALSE_m12 if cannot free channel structure
+	
 	if (channel == NULL) {
 		G_warning_message_m12("%s(): trying to free a NULL CHANNEL_m12 structure => returning with no action\n", __FUNCTION__);
-		return;
+		return(FALSE_m12);
 	}
 	if (channel->segments != NULL) {
 		for (i = 0; i < globals_m12->number_of_mapped_segments; ++i) {
@@ -3816,7 +3818,7 @@ void	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structure)
 			if (seg != NULL)
 				G_free_segment_m12(seg, TRUE_m12);
 		}
-		free_m12((void *) channel->segments, __FUNCTION__);
+		free_m12((void *) channel->segments, __FUNCTION__);  // ok whether allocated en bloc or not
 	}
 	if (channel->metadata_fps != NULL)
 		FPS_free_processing_struct_m12(channel->metadata_fps, TRUE_m12);
@@ -3830,7 +3832,9 @@ void	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structure)
 		free_m12(channel->contigua, __FUNCTION__);
 
 	if (free_channel_structure == TRUE_m12) {
-		free_m12((void *) channel, __FUNCTION__);
+		if (malloc_size_m12((void *) channel))
+			free_m12((void *) channel, __FUNCTION__);  // allocated en bloc
+		return(FALSE_m12);
 	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
 		channel->flags &= ~(LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
 		channel->last_access_time = UUTC_NO_ENTRY_m12;
@@ -3842,7 +3846,7 @@ void	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structure)
 		channel->number_of_contigua = 0;
 	}
 
-	return;
+	return(TRUE_m12);
 }
 
 
@@ -4054,15 +4058,16 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 }
 
 
-void	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structure)
+TERN_m12	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structure)
 {
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+	// returns FALSE_m12 if cannot free segment structure
+
 	if (segment == NULL) {
 		G_warning_message_m12("$s(): trying to free a NULL SEGMENT_m12 structure => returning with no action\n", __FUNCTION__);
-		return;
+		return(FALSE_m12);
 	}
 	if (segment->metadata_fps != NULL)
 		FPS_free_processing_struct_m12(segment->metadata_fps, TRUE_m12);
@@ -4078,7 +4083,9 @@ void	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structure)
 		free_m12(segment->contigua, __FUNCTION__);
 
 	if (free_segment_structure == TRUE_m12) {
-		free_m12((void *) segment, __FUNCTION__);
+		if (malloc_size_m12((void *) segment))
+			free_m12((void *) segment, __FUNCTION__);
+		return(FALSE_m12);  // allocated en bloc
 	} else {
 		// leave name, path, & slice intact (i.e. clear everything with allocated memory)
 		segment->flags &= ~(LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
@@ -4092,7 +4099,7 @@ void	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structure)
 		segment->number_of_contigua = 0;
 	}
 
-	return;
+	return(TRUE_m12);
 }
 
 
@@ -4114,13 +4121,15 @@ void	G_free_segmented_sess_recs_m12(SEGMENTED_SESS_RECS_m12 *ssr, TERN_m12 free_
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->record_indices_fps[i];
 		if (gen_fps != NULL)
-			FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
+			if (malloc_size_m12((void *) gen_fps))
+				FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
 		gen_fps = ssr->record_data_fps[i];
 		if (gen_fps != NULL)
-			FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
+			if (malloc_size_m12((void *) gen_fps))
+				FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
 	}
-	free_m12((void *) ssr->record_indices_fps, __FUNCTION__);
-	free_m12((void *) ssr->record_data_fps, __FUNCTION__);
+	free_m12((void *) ssr->record_indices_fps, __FUNCTION__);  // ok whether allocated en bloc or not
+	free_m12((void *) ssr->record_data_fps, __FUNCTION__);  // ok whether allocated en bloc or not
 
 	if (free_segmented_sess_rec_structure == TRUE_m12)
 		free_m12((void *) ssr, __FUNCTION__);
@@ -4158,7 +4167,7 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 			if (chan != NULL)
 				G_free_channel_m12(chan, TRUE_m12);
 		}
-		free_m12((void *) session->time_series_channels, __FUNCTION__);
+		free_m12((void *) session->time_series_channels, __FUNCTION__);  // ok whether allocated en bloc or not
 	}
 	if (session->video_channels != NULL) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -4237,12 +4246,12 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 		session->contigua = NULL;
 		session->number_of_contigua = 0;
 	}
-	
+
 	return;
 }
 
 
-void	G_frequencies_vary_m12(SESSION_m12 *sess)
+TERN_m12	G_frequencies_vary_m12(SESSION_m12 *sess)
 {
 	si4					i, n_chans, seg_idx;
 	sf8					rate, min_rate, max_rate;
@@ -4252,6 +4261,8 @@ void	G_frequencies_vary_m12(SESSION_m12 *sess)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	// returns TRUE_m12 if any frequencies vary
 	
 	// check time series channels
 	seg_idx = G_get_segment_index_m12(FIRST_OPEN_SEGMENT_m12);
@@ -4333,8 +4344,11 @@ void	G_frequencies_vary_m12(SESSION_m12 *sess)
 			}
 		}
 	}
+	
+	if (globals_m12->time_series_frequencies_vary == TRUE_m12 || globals_m12->video_frame_rates_vary == TRUE_m12)
+		return(TRUE_m12);
 
-	return;
+	return(FALSE_m12);
 }
 
 
