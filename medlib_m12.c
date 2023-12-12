@@ -38304,13 +38304,11 @@ SYSTEM_PIPE_FAIL_m12:
 	}
 
 	// try with system_m12() redirected to temp file
-	si1	*tmp_command, tmp_file[FULL_FILE_NAME_BYTES_m12];
-	si8	len;
+	si1	tmp_file[FULL_FILE_NAME_BYTES_m12];
 	FILE	*fp;
 	
 	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m12) + 9;
-	tmp_command = (si1 *) malloc(len);
-	G_unique_temp_file_m12(tmp_file);
+	tmp_command = G_unique_temp_file_m12(NULL);
 	sprintf_m12(tmp_command, "%s 1> %s 2> %s", command, tmp_file, tmp_file);
 	err = system_m12(tmp_command, FALSE_m12, __FUNCTION__, SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
 	free((void *) tmp_command);
