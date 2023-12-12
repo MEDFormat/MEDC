@@ -7753,7 +7753,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 {
 	TERN_m12			free_session, all_channels_selected;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
-	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
+	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1], *regex_str;
 	ui4				type_code;
 	si4				i, j, k, n_chans, mapped_segs, n_segs, seg_idx;
 	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, active_ts_chans, active_vid_chans;
@@ -7767,7 +7767,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// if file_list is a pointer to single string, make list_len zero to indicate a one dimention char array
+	// if file_list is a pointer to single string, make list_len zero to indicate a one dimensional char array
 	// if list_len > 0, assumed to be two dimensional array
 	
 	// allocate session
@@ -7827,7 +7827,13 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		chan_list = (si1 **) file_list;
 		n_chans = list_len;
 	}
-	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, "?icd", GFL_FULL_PATH_m12);  // extension could be more specific ("[tv]icd") in MacOS & Linux, but not Windows
+#if defined MACOS_m12 || defined LINUX_m12
+	regex_str = "[tv]icd";  // more specific (than Windows)
+#endif
+#ifdef WINDOWS_m12
+	regex_str = "?icd";  // less specific (than MacOS or Linux)
+#endif
+	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m12);  // more specific (than Windows)
 
 	if (n_chans == 0) {
 		if (free_session == TRUE_m12)
@@ -8280,7 +8286,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 {
 	TERN_m12			free_session, all_channels_selected;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
-	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1];;
+	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1], *regex_str;
 	ui4				type_code;
 	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, n_segs, seg_idx;
 	si8				curr_time;
@@ -8352,7 +8358,14 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 		chan_list = (si1 **) file_list;
 		n_chans = list_len;
 	}
-	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, "?icd", GFL_FULL_PATH_m12);  // extension could be more specific ("[tv]icd") in MacOS & Linux, but not Windows
+#if defined MACOS_m12 || defined LINUX_m12
+	regex_str = "[tv]icd";  // more specific (than Windows)
+#endif
+#ifdef WINDOWS_m12
+	regex_str = "?icd";  // less specific (than MacOS or Linux)
+#endif
+
+	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m12);  // extension could be more specific ("[tv]icd") in MacOS & Linux, but not Windows
 
 	if (n_chans == 0) {
 		if (free_session == TRUE_m12)
@@ -29616,7 +29629,7 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 		
 	// get ipconfig() output
 	buffer = NULL;
-	ret_val = system_pipe_m12(&buffer, 0, "ipconfig", FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	ret_val = system_pipe_m12(&buffer, 0, "ipconfig /all", FALSE_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val < 0) {
 		if (global_np == TRUE_m12)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
@@ -29642,19 +29655,20 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	}
 	
 	// search for interface entry
-	if ((c = STR_match_end_m12(np->interface_name, buffer)) == NULL) {
+	sprintf_m12(temp_str, "LAN adapter %s:", np->interface_name);  // pattern
+	if ((c = STR_match_end_m12(temp_str, buffer)) == NULL) {
 		G_warning_message_m12("%s(): Could not find interface \"%s\" in output of ipconfig()\n", __FUNCTION__, np->interface_name);
 		if (global_np == TRUE_m12)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(FALSE_m12);
 	}
 	iface_start = c;  // start all subsequent searches fro this point
-	
+
 	// find next network adapter
-	pattern = "LAN adapter";
+	pattern = "adapter";
 	if ((c = STR_match_start_m12(pattern, iface_start)) != NULL)
 		*c = 0;  // terminate all subsequent searches here
-	
+
 	np->plugged_in = TRUE_m12;
 	pattern = "Media disconnected";
 	if ((c = STR_match_end_m12(pattern, iface_start)) != NULL)
@@ -29698,7 +29712,7 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	if ((c = STR_match_end_m12(pattern, iface_start)) == NULL) {
 		G_warning_message_m12("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
 		np->LAN_IPv4_subnet_mask_num = 0;
-		sttrcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+		strcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
 	} else {
 		while (*c++ != ':');
 		++c;
@@ -35852,18 +35866,19 @@ si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 		return(-1);
 	}
 
-	if (*buffer != NULL) {
-		if (freeable_m12((void *) *buffer) == FALSE_m12) {
-			G_warning_message_m12("%s(): *buffer cannot be statically allocated\n");
-			return(-1);
-		}
-	}
-	
 	if (full_path == TRUE_m12)
 		file_name_size = FULL_FILE_NAME_BYTES_m12;
 	else
 		file_name_size = SEGMENT_BASE_FILE_NAME_BYTES_m12;
 		
+	if (*buffer == NULL) {
+		*buffer = (si1 *) malloc_m12((size_t) file_name_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	} else if (freeable_m12((void *) *buffer) == FALSE_m12) {
+		G_warning_message_m12("%s(): *buffer cannot be statically allocated\n");
+		return(-1);
+	}
+	**buffer = 0;
+	
 	find_h = INVALID_HANDLE_VALUE;
 	n_files = 0;
 	for (i = 0; i < n_dirs; ++i) {
@@ -35882,8 +35897,10 @@ si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 		find_h = FindFirstFileA((LPCSTR) dir_name, &ffd);
 		if (find_h == INVALID_HANDLE_VALUE)
 			continue;
-		if (full_path == TRUE_m12)
+		if (full_path == TRUE_m12) {
+			G_path_from_root_m12(dir_name, dir_name);
 			G_extract_path_parts_m12(dir_name, enclosing_directory, NULL, NULL);
+		}
 		do {
 			file_name = ffd.cFileName;
 			// exclude files/directories starting with "$"
@@ -35898,9 +35915,9 @@ si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 			++n_files;
 			*buffer = (si1 *) realloc_m12(*buffer, (size_t) (n_files * file_name_size), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			if (full_path == TRUE_m12)
-				sprintf_m12(*buffer, "%s\\%s\n", enclosing_directory, file_name);
+				sprintf_m12(*buffer, "%s%s\\%s\n", *buffer, enclosing_directory, file_name);
 			else
-				sprintf_m12(*buffer, "%s\n", file_name);
+				sprintf_m12(*buffer, "%s%s\n", *buffer, file_name);
 		} while (FindNextFileA(find_h, &ffd));
 		
 		FindClose(find_h);
