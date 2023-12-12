@@ -849,7 +849,8 @@ Sgmt_RECORD_m12	*G_build_Sgmt_records_array_m12(FILE_PROCESSING_STRUCT_m12 *ri_f
 
 	// fill in global end fields
 	globals_m12->session_end_time = Sgmt_records[n_segs - 1].end_time;
-	globals_m12->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
+	if (Sgmt_records[n_segs - 1].end_sample_number != SAMPLE_NUMBER_NO_ENTRY_m12)
+		globals_m12->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
 
 	return(Sgmt_records);
 }
