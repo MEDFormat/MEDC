@@ -29780,7 +29780,7 @@ NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np)
 			free((void *) np);
 		return(NULL);
 	}
-	
+
 	#ifdef MACOS_m12
 	// parse route() output to get internet interface name
 	if ((c = STR_match_end_m12("interface: ", buffer)) != NULL)
@@ -29797,7 +29797,7 @@ NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np)
 		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
 	}
 	#endif  // LINUX_m12
-	
+
 	#ifdef WINDOWS_m12
 	si1	tmp_str[128];
 
@@ -36735,11 +36735,11 @@ TERN_m12	freeable_m12(void *address)
 	return(AT_freeable_m12(address));
 #endif
 
-	// just returns whether address is in heap range
-	// does not prevent double free errors or unallocated errors (consider using AT_DEBUG to track these down)
+	// returns whether address is freeable
 	// heap starts at heap base & grows upward
 	// MacOS & Linux stack base > heap_max_address & grows downward
 	// Windows stack base < heap base & grows upward
+	// consider compiling with AT_DEBUG_m12 to track down where errors occur
 	// NOTE: not tested under 32-bit hardware or compilation
 	       
 	hw_params = &global_tables_m12->HW_params;
@@ -36749,8 +36749,10 @@ TERN_m12	freeable_m12(void *address)
 		return(FALSE_m12);
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
+	if (malloc_size_m12(address))  // in heap, so check if in allocation table
+		return(TRUE_m12);
 	
-	return(TRUE_m12);
+	return(FALSE_m12);
 }
 
 
@@ -37773,7 +37775,6 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 	}
 	
 	errno_reset_m12();
-	
 #if defined MACOS_m12 || defined LINUX_m12
 	ret_val = system(command);
 #endif
@@ -37784,6 +37785,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 	if (ret_val) {
 		if (behavior_on_fail & RETRY_ONCE_m12) {
 			G_nap_m12("1 ms");  // wait 1 ms
+			errno_reset_m12();
 #if defined MACOS_m12 || defined LINUX_m12
 			ret_val = system(command);
 #endif
@@ -37796,10 +37798,10 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 				return(0);
 			}
 		}
+		err = errno_m12();
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
 			fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
-			err = errno_m12();
 			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			fprintf_m12(stderr, "\tshell return value %d\n", ret_val);
 			if (function != NULL)
@@ -37810,12 +37812,14 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 				fprintf_m12(stderr, "\t=> exiting program\n\n");
 			fflush(stderr);
 		}
+		// make error negative, if not
+		err = (err > 0) ? -err : err;
 		if (behavior_on_fail & RETURN_ON_FAIL_m12) {
 			if (null_std_streams == TRUE_m12)
 				free((void *) temp_command);
-			return(-1);
+			return(err);
 		} else if (behavior_on_fail & EXIT_ON_FAIL_m12) {
-			exit_m12(-1);
+			exit_m12(err);
 		}
 	}
 	
@@ -38017,7 +38021,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (assign_buffer == 1) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
-				buffer = (char *) realloc((void *) buffer, (size_t) buf_len);
+				buffer = (si1 *) realloc((void *) buffer, (size_t) buf_len);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -38057,6 +38061,44 @@ SYSTEM_PIPE_FAIL_m12:
 			retried = TRUE_m12;
 			goto SYSTEM_PIPE_RETRY_m12;
 		}
+	}
+
+	// try with system_m12() redirected to temp file
+	si1	*tmp_command, tmp_file[FULL_FILE_NAME_BYTES_m12];
+	si8	len;
+	FILE	*fp;
+	
+	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m12) + 9;
+	tmp_command = (si1 *) malloc(len);
+	G_unique_temp_file_m12(tmp_file);
+	sprintf_m12(tmp_command, "%s 1> %s 2> %s", command, tmp_file, tmp_file);
+	err = system_m12(tmp_command, FALSE_m12, __FUNCTION__, SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
+	free((void *) tmp_command);
+	fp = fopen(tmp_file, "r");
+	bytes_in_buffer = G_file_length_m12(fp, NULL);
+	if (bytes_in_buffer >= buf_len) {
+		buf_len = bytes_in_buffer;
+		buffer = (si1 *) realloc((void *) buffer, (size_t) (buf_len + 1));  // allow for terminal zero
+	}
+	fread((void *) buffer, sizeof(si1), (size_t) (buf_len), fp);
+	fclose(fp);
+	buffer[bytes_in_buffer] = 0;  // terminal zero
+	G_remove_path_m12(tmp_file);  // delete temp file
+
+	if (err) {
+		err = (err < 0) ? -err : err;  // make positive for strerror() below
+	} else {
+		if (tee_to_terminal == TRUE_m12) {
+			if (!(behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m12))
+				printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
+		}
+		if (free_buffer == TRUE_m12) {
+			free((void *) buffer);
+			return(0);
+		}
+		if (assign_buffer == TRUE_m12)
+			*buffer_ptr = buffer;
+		return(bytes_in_buffer);
 	}
 
 	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
@@ -38261,6 +38303,44 @@ SYSTEM_PIPE_FAIL_m12:
 		}
 	}
 
+	// try with system_m12() redirected to temp file
+	si1	*tmp_command, tmp_file[FULL_FILE_NAME_BYTES_m12];
+	si8	len;
+	FILE	*fp;
+	
+	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m12) + 9;
+	tmp_command = (si1 *) malloc(len);
+	G_unique_temp_file_m12(tmp_file);
+	sprintf_m12(tmp_command, "%s 1> %s 2> %s", command, tmp_file, tmp_file);
+	err = system_m12(tmp_command, FALSE_m12, __FUNCTION__, SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
+	free((void *) tmp_command);
+	fp = fopen(tmp_file, "r");
+	bytes_in_buffer = G_file_length_m12(fp, NULL);
+	if (bytes_in_buffer >= buf_len) {
+		buf_len = bytes_in_buffer;
+		buffer = (si1 *) realloc((void *) buffer, (size_t) (buf_len + 1));  // allow for terminal zero
+	}
+	fread((void *) buffer, sizeof(si1), (size_t) (buf_len), fp);
+	fclose(fp);
+	buffer[bytes_in_buffer] = 0;  // terminal zero
+	G_remove_path_m12(tmp_file);  // delete temp file
+		
+	if (err) {
+		err = (err < 0) ? -err : err;  // make positive for strerror() below
+	} else {
+		if (tee_to_terminal == TRUE_m12) {
+			if (!(behavior_on_fail & SUPPRESS_MESSAGE_OUTPUT_m12))
+				printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
+		}
+		if (free_buffer == TRUE_m12) {
+			free((void *) buffer);
+			return(0);
+		}
+		if (assign_buffer == TRUE_m12)
+			*buffer_ptr = buffer;
+		return(bytes_in_buffer);
+	}
+
 	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 		fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
 		fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
@@ -38282,7 +38362,7 @@ SYSTEM_PIPE_FAIL_m12:
 
 	if (behavior_on_fail & EXIT_ON_FAIL_m12)
 		exit_m12(-1);
-
+	
 	// make negative, if not
 	err = (err > 0) ? -err : err;
 	
