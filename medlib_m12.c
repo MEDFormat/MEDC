@@ -3564,11 +3564,19 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 	//
 	//	low_idx: as indices are often needed in pairs, pass low_idx to reduce search time if known (if not, pass zero)
 
+	// NOTE: this function does not currently handle record files with no terminal index
+	// needs to be updated
 
 	ri = record_indices_fps->record_indices;
 	n_inds = record_indices_fps->universal_header->number_of_entries;
-	if (n_inds <= 1)  // only a terminal index, no records
-		return(NO_INDEX_m12);
+	if (n_inds <= 1) {
+		if (n_inds == 1) {
+			if (ri->type_code == REC_Term_TYPE_CODE_m12)
+				return(NO_INDEX_m12);  // only a terminal index, no records
+		} else {
+			return(NO_INDEX_m12); // no records
+		}
+	}
 
 	if (target_time < ri[low_idx].start_time) {
 		switch (mode) {
@@ -3585,14 +3593,16 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 				return(NO_INDEX_m12);
 		}
 	}
-	high_idx = n_inds - 1; // terminal index index
-	if (target_time >= ri[high_idx].start_time) {  // terminal start_time == next segment start time
+	high_idx = n_inds - 1;
+	if (ri[high_idx].type_code == REC_Term_TYPE_CODE_m12)
+		--high_idx;    // last true index (only a terminal index handled above)
+	if (target_time >= ri[high_idx].start_time) {
 		switch (mode) {
 			case FIND_CLOSEST_m12:
 			case FIND_LAST_BEFORE_m12:
 			case FIND_LAST_ON_OR_BEFORE_m12:
-				return(high_idx - 1);  // last true index
-			// "after" condition impossible
+				return(high_idx);
+			// "on" or "after" condition impossible
 			case FIND_FIRST_ON_OR_AFTER_m12:
 			case FIND_FIRST_AFTER_m12:
 				return(NO_INDEX_m12);
@@ -3600,19 +3610,34 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 	}
 	if (low_idx == high_idx)
 		return(low_idx);
-
+	
 	// binary search
 	do {
 		idx = (low_idx + high_idx) >> 1;
+		// NOTE: Sgmt indices have start time of segment start but are last records written in segment -  could screw up binary search
+		// This should be addressed in future MED version - start time should be in body (they need to be last records in segment for CRCs)
+		// header start time could be segment end time, body end time could be start time
+//		if (ri[idx].type_code == REC_Sgmt_TYPE_CODE_m12) {  // switch to linear search
+//			for (i = low_idx; i <= high_idx; ++i) {
+//				if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m12)
+//					continue;
+//				if (ri[i].start_time > target_time) {
+//					high_idx = i - 1;
+//					break;
+//				}
+//			}
+//			low_idx = high_idx;
+//			break;
+//		}
 		if (ri[idx].start_time > target_time)
 			high_idx = idx;
 		else
 			low_idx = idx;
 	} while ((high_idx - low_idx) > 1);
 	if (target_time >= ri[high_idx].start_time)
-	    idx = high_idx;
+		idx = high_idx;
 	else if (target_time < ri[high_idx].start_time)
-	    idx = low_idx;
+		idx = low_idx;
 	// search exits with idx == FIND_LAST_ON_OR_BEFORE_m12 condition
 	// i.e. where:  ri[idx].start_time <= target_time < ri[idx + 1].start_time
 	// i.e. the last index where target_time >= index start_time
@@ -5768,13 +5793,13 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 	PROC_pthread_mutex_init_m12(&global_tables_m12->HW_mutex, NULL);
 	
 	if (initialize_all_tables == TRUE_m12) {  // otherwise load on demand
+		if (CRC_initialize_tables_m12() == FALSE_m12)  // do this before initializing hardware tables (CRC used to get machine code)
+			ret_val = FALSE_m12;
 		if (HW_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (UTF8_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (NET_initialize_tables_m12() == FALSE_m12)
-			ret_val = FALSE_m12;
-		if (CRC_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
 		if (AES_initialize_tables_m12() == FALSE_m12)
 			ret_val = FALSE_m12;
@@ -19709,7 +19734,7 @@ void    CMP_PRED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	// determine decompression method
 	perf_specs = &global_tables_m12->HW_params.performance_specs;
 	if (perf_specs->integer_multiplications_per_sec == 0.0)
-		HW_get_performance_specs_m12();
+		HW_get_performance_specs_m12(FALSE_m12);
 	for (average_steps = (sf8) 0.0, i = 0; i < CMP_PRED_CATS_m12; ++i) {
 		tc = count[i];
 		for (j = 0; j < stats_entries[i]; ++j)
@@ -20949,7 +20974,7 @@ void    CMP_RED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	// determine decompression method
 	perf_specs = &global_tables_m12->HW_params.performance_specs;
 	if (perf_specs->integer_multiplications_per_sec == 0.0)
-		HW_get_performance_specs_m12();
+		HW_get_performance_specs_m12(FALSE_m12);
 	for (average_steps = (sf8) 0.0, i = 0; i < n_stats_entries; ++i)
 		average_steps += (sf8) (i * (si8) count[i]);
 	average_steps /= (sf8) CMP_RED_TOTAL_COUNTS_m12;
@@ -28875,28 +28900,41 @@ void	HW_get_memory_info_m12(void)
 }
 
 
-void	HW_get_performance_specs_m12(void)
+void	HW_get_performance_specs_m12(TERN_m12 get_current)
 {
-	const si8	ROUNDS = 100000;
-	clock_t		start_t, end_t, elapsed_time;
-	ui8		*p1, *p2, *p3;
-	ui8		*test_arr1, *test_arr2, *test_arr3;
-	si8		i;
-	HW_PARAMS_m12	*hw_params;
+	const si8			ROUNDS = 100000;
+	clock_t				start_t, end_t, elapsed_time;
+	si1				file[FULL_FILE_NAME_BYTES_m12];
+	ui8				*p1, *p2, *p3;
+	ui8				*test_arr1, *test_arr2, *test_arr3;
+	si8				i;
+	FILE				*fp;
+	HW_PARAMS_m12			*hw_params;
+	HW_PERFORMANCE_SPECS_m12	*perf_specs;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
 	hw_params = &global_tables_m12->HW_params;
+	perf_specs = &hw_params->performance_specs;
 
-	if (hw_params->performance_specs.integer_multiplications_per_sec != 0.0)
+	if (perf_specs->integer_multiplications_per_sec != 0.0 && get_current == FALSE_m12)
 		return;
 	
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
-	if (hw_params->performance_specs.integer_multiplications_per_sec != 0.0)  {  // may have been done by another thread while waiting
+	// may have been done by another thread while waiting
+	if (perf_specs->integer_multiplications_per_sec != 0.0)  {
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 		return;
+	}
+	
+	// see if they've been written out previously
+	if (get_current == FALSE_m12) {
+		if (HW_get_performance_specs_from_file_m12() == TRUE_m12) {
+			PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+			return;
+		}
 	}
 
 	// setup
@@ -28927,8 +28965,8 @@ void	HW_get_performance_specs_m12(void)
 		*p3++ = *p1++ * *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	hw_params->performance_specs.integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	hw_params->performance_specs.nsecs_per_integer_multiplication = (sf8) 1000000000.0 / hw_params->performance_specs.integer_multiplications_per_sec;
+	perf_specs->integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
+	perf_specs->nsecs_per_integer_multiplication = (sf8) 1000000000.0 / perf_specs->integer_multiplications_per_sec;
 
 	// division
 	p1 = test_arr1;
@@ -28939,8 +28977,8 @@ void	HW_get_performance_specs_m12(void)
 		*p3++ = *p1++ / *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	hw_params->performance_specs.integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	hw_params->performance_specs.nsecs_per_integer_division = (sf8) 1000000000.0 / hw_params->performance_specs.integer_divisions_per_sec;
+	perf_specs->integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
+	perf_specs->nsecs_per_integer_division = (sf8) 1000000000.0 / hw_params->performance_specs.integer_divisions_per_sec;
 
 	// clean up
 	free((void *) test_arr1);
@@ -28948,8 +28986,158 @@ void	HW_get_performance_specs_m12(void)
 	free((void *) test_arr3);
 	
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+	
+	// write out (for future use)
+	if (HW_get_performance_specs_file_m12(file) == NULL)
+		return;
+	fp = fopen_m12(file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fprintf_m12(fp, "machine code: 0x%08x\n", hw_params->machine_code);
+	fprintf_m12(fp, "integer multiplications per sec: %0.2lf\n", perf_specs->integer_multiplications_per_sec);
+	fprintf_m12(fp, "integer divisions per sec: %0.2lf\n", perf_specs->integer_divisions_per_sec);
+	fprintf_m12(fp, "nsecs per integer multiplication: %0.2lf\n", perf_specs->nsecs_per_integer_multiplication);
+	fprintf_m12(fp, "nsecs per integer division: %0.2lf\n", perf_specs->nsecs_per_integer_division);
+	fclose(fp);
 
 	return;
+}
+
+
+si1	*HW_get_performance_specs_file_m12(si1 *file)
+{
+	TERN_m12	free_file;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	free_file = FALSE_m12;
+	if (file == NULL) {  // caller responsible for freeing
+		file = (si1 *) malloc_m12((size_t) FULL_FILE_NAME_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free_file = TRUE_m12;
+	}
+	
+#if defined MACOS_m12 || defined LINUX_m12
+	si1		*env_var;
+
+	env_var = getenv("HOME");
+	if (env_var == NULL) {
+		G_warning_message_m12("%s(): \"HOME\" is not defined in the environment\n", __FUNCTION__);
+		if (free_file == TRUE_m12)
+			free_m12((void *) file, __FUNCTION__);
+		return(NULL);
+	}
+	sprintf_m12(file, "%s/.hw_performance_specs", env_var);
+#endif
+#ifdef WINDOWS_m12
+	si1	*home_drive, *home_path;
+	
+	home_drive = getenv("HOMEDRIVE");
+	home_path = getenv("HOMEPATH");
+	if (home_path == NULL || home_drive == NULL) {
+		G_warning_message_m12("%s(): either \"HOMEDRIVE\" or \"HOMEPATH\" is not defined in the environment\n", __FUNCTION__);
+		if (free_file == TRUE_m12)
+			free_m12((void *) file, __FUNCTION__);
+		return(NULL);
+	}
+	sprintf_m12(file, "%s%s/.hw_performance_specs", home_drive, home_path);
+#endif
+
+	return(file);
+}
+
+
+TERN_m12	HW_get_performance_specs_from_file_m12(void)
+{
+	si1				file[FULL_FILE_NAME_BYTES_m12], *buffer, *c;
+	ui4				file_machine_code;
+	si8				flen, items;
+	FILE				*fp;
+	HW_PARAMS_m12			*hw_params;
+	HW_PERFORMANCE_SPECS_m12	*perf_specs;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	if (HW_get_performance_specs_file_m12(file) == NULL)
+		return(FALSE_m12);
+		
+	if (G_file_exists_m12(file) == DOES_NOT_EXIST_m12)
+		return(FALSE_m12);
+	
+	// read in file
+	fp = fopen_m12(file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	flen = G_file_length_m12(fp, NULL);
+	buffer = (si1 *) malloc((size_t) (flen + 1));
+	fread_m12((void *) buffer, sizeof(si1), (size_t) flen, fp, file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+	buffer[flen] = 0;
+	
+	// parse file
+	hw_params = &global_tables_m12->HW_params;
+	perf_specs = &hw_params->performance_specs;
+	if (hw_params->machine_code == 0)
+		HW_get_machine_code_m12();
+
+	c = buffer;
+	c = STR_match_end_m12("machine code: ", c);
+	if (c == NULL) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+	items = sscanf(c, "%x", &file_machine_code);
+	if (file_machine_code != hw_params->machine_code || items == 0) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+
+	c = STR_match_end_m12("integer multiplications per sec: ", c);
+	if (c == NULL) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+	items = sscanf(c, "%lf", &perf_specs->integer_multiplications_per_sec);
+	if (items == 0) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+	
+	c = STR_match_end_m12("integer divisions per sec: ", c);
+	if (c == NULL) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+	items = sscanf(c, "%lf", &perf_specs->integer_divisions_per_sec);
+	if (items == 0) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+
+	c = STR_match_end_m12("nsecs per integer multiplication: ", c);
+	if (c == NULL) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_multiplication);
+	if (items == 0) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+
+	c = STR_match_end_m12("nsecs per integer division: ", c);
+	if (c == NULL) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_division);
+	if (items == 0) {
+		free((void *) buffer);
+		return(FALSE_m12);
+	}
+
+	free((void *) buffer);
+
+	return(TRUE_m12);
 }
 
 
@@ -28974,14 +29162,15 @@ TERN_m12	HW_initialize_tables_m12(void)
 	if (hw_params->logical_cores == 0)
 		HW_get_core_info_m12();
 
-	if (hw_params->performance_specs.integer_multiplications_per_sec == 0)
-		HW_get_performance_specs_m12();
-	
-	if (*hw_params->serial_number == 0)
+	if (*hw_params->serial_number == 0)  // do this before getting machine code
 		HW_get_machine_serial_m12();
 
-	if (hw_params->machine_code == 0)
+	if (hw_params->machine_code == 0)  // do this before getting performance specs
 		HW_get_machine_code_m12();
+
+	if (hw_params->performance_specs.integer_multiplications_per_sec == 0)
+		HW_get_performance_specs_m12(FALSE_m12);
+	
 
 	return(TRUE_m12);
 }
@@ -29167,12 +29356,12 @@ TERN_m12	NET_domain_to_ip_m12(si1 *domain_name, si1 *ip)
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
-	if ((rv = getaddrinfo(domain_name , "http" , &hints , &servinfo)) != 0) {
-		G_error_message_m12("%s(): getaddrinfo: %s\n", gai_strerror(rv));
+	if ((rv = getaddrinfo(domain_name, NULL, &hints , &servinfo)) != 0) {
+		G_error_message_m12("%s(): getaddrinfo: %s (%d)\n", __FUNCTION__, gai_strerror(rv), rv);
 		return(FALSE_m12);
 	}
-
-	// just use the first one addrinfo
+	
+	// just use the first addrinfo
 	if ((h = (struct sockaddr_in *) servinfo->ai_addr) == NULL) {
 		*ip = 0;
 		freeaddrinfo(servinfo);

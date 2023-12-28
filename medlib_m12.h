@@ -267,6 +267,27 @@ typedef struct {
 		sf8     frame_rate;  	     // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m12 in session level records, if frame rates vary across video channels)
 	};
 } REC_Sgmt_v10_m12;
+
+// need to switch to this in next version
+//typedef struct {
+//	si8     start_time;
+//	union {
+//		si8     start_sample_number;	// session-relative (global indexing)
+//		si8     start_frame_number;	// session-relative (global indexing)
+//	};
+//	union {
+//		si8     end_sample_number;	// session-relative (global indexing)
+//		si8     end_frame_number;	// session-relative (global indexing)
+//	};
+//	ui8     segment_UID;
+//	si4     segment_number;
+//	si4     acquisition_channel_number;  // REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m12 in session level records
+//	union {
+//		sf8     sampling_frequency;  // channel sampling frequency (REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m12 in session level records, if sampling frequencies vary across time series channels)
+//		sf8     frame_rate;  	     // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m12 in session level records, if frame rates vary across video channels)
+//	};
+//} REC_Sgmt_v11_m12;
+
 // Description follows sampling_frequency / frame_rate in structure.
 // The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
@@ -1340,7 +1361,9 @@ void		HW_get_endianness_m12(void);
 void		HW_get_info_m12(void);  // fill whole HW_PARAMS_m12 structure
 void		HW_get_machine_code_m12(void);
 void		HW_get_machine_serial_m12(void);
-void		HW_get_performance_specs_m12(void);
+void		HW_get_performance_specs_m12(TERN_m12 get_current);
+si1		*HW_get_performance_specs_file_m12(si1 *file);
+TERN_m12	HW_get_performance_specs_from_file_m12(void);
 void		HW_get_memory_info_m12(void);
 TERN_m12	HW_initialize_tables_m12(void);
 void		HW_show_info_m12(void);
@@ -1750,7 +1773,7 @@ typedef struct {
 typedef struct RECORD_HEADER_m12 {  // struct name for medrec_m12.h interdependency
 	ui4	record_CRC;
 	ui4     total_record_bytes;  // header + body bytes
-	si8     start_time;
+	si8     start_time;  // for record types with a start_time (records written when all info known)
 	union {  // anonymous union
 		struct {
 			si1     type_string[TYPE_BYTES_m12];
@@ -1765,9 +1788,31 @@ typedef struct RECORD_HEADER_m12 {  // struct name for medrec_m12.h interdepende
 	};
 } RECORD_HEADER_m12;
 
+// need to switch to this in next version
+//typedef struct RECORD_HEADER_m12 {  // struct name for medrec_m12.h interdependency
+//	ui4	record_CRC;
+//	ui4     total_record_bytes;  // header + body bytes
+//	union {  // anonymous union
+//		si8     time;
+//		si8     end_time;  // for record types with a start_time (records written when all info known)
+//	};
+//	union {  // anonymous union
+//		struct {
+//			si1     type_string[TYPE_BYTES_m12];
+//			ui1     version_major;
+//			ui1     version_minor;
+//			si1     encryption_level;
+//		};
+//		struct {
+//			ui4     type_code;
+//			si1	type_string_terminal_zero;  // not used - here for clarity
+//		};
+//	};
+//} RECORD_HEADER_m12;
+
 typedef struct {
 	si8	file_offset;  // never negative: the record indices are not used to indicate discontinuities
-	si8	start_time;
+	si8     start_time;  // for record types with a start_time (records written when all info known)
 	union {  // anonymous union
 		struct {
 			si1     type_string[TYPE_BYTES_m12];
@@ -1781,6 +1826,27 @@ typedef struct {
 		};
 	};
 } RECORD_INDEX_m12;
+
+// need to switch to this in next version
+//typedef struct {
+//	si8	file_offset;  // never negative: the record indices are not used to indicate discontinuities
+//	union {  // anonymous union
+//		si8     time;
+//		si8     end_time;  // for record types with a start_time (records written when all info known)
+//	};
+//	union {  // anonymous union
+//		struct {
+//			si1     type_string[TYPE_BYTES_m12];
+//			ui1     version_major;
+//			ui1     version_minor;
+//			si1     encryption_level;
+//		};
+//		struct {
+//			ui4     type_code;
+//			si1	type_string_terminal_zero;  // not used - there for clarity
+//		};
+//	};
+//} RECORD_INDEX_m12;
 
 // Time Series Indices Structures
 typedef struct {
