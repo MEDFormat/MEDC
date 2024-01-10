@@ -28667,11 +28667,102 @@ void	HW_get_core_info_m12()
 	}
 
 #ifdef LINUX_m12
-	hw_params->logical_cores = (si4) get_nprocs_conf();
+	si1	*buf = NULL, *c;;
+	si8	buf_len;
+
+	buf_len = system_pipe_m12(&buf, 0, "lscpu", FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (buf_len < 0) {
+		hw_params->logical_cores = (si4) get_nprocs_conf();
+	} else {
+		si4	threads_per_core, cores_per_socket, sockets;
+		sf8	scaling, min_mhz, max_mhz;
+		
+		threads_per_core = cores_per_socket = sockets = 0;
+		scaling = min_mhz = max_mhz = (sf8) 0.0;
+		
+		c = STR_match_end_m12("Vendor ID:", buf);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%[^\r\n]s", hw_params->cpu_manufacturer);
+		}
+		c = STR_match_end_m12("Model name:", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%[^\r\n]s", hw_params->cpu_model);
+		}
+		c = STR_match_end_m12("Thread(s) per core:", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%d", &threads_per_core);
+		}
+		c = STR_match_end_m12("Core(s) per socket:", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%d", &cores_per_socket);
+		}
+		c = STR_match_end_m12("Socket(s):", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%d", &sockets);
+		}
+		c = STR_match_end_m12("CPU(s) scaling MHz:", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%lf", &scaling);
+		}
+		c = STR_match_end_m12("CPU max MHz:", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%lf", &max_mhz);
+		}
+		c = STR_match_end_m12("CPU min MHz:", c);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%lf", &min_mhz);
+		}
+		free(buf);
+		
+		hw_params->physical_cores = sockets * cores_per_socket;
+		hw_params->logical_cores = hw_params->physical_cores * threads_per_core;
+		if (threads_per_core)
+			hw_params->hyperthreading = TRUE_m12;
+		else
+			hw_params->hyperthreading = FALSE_m12;
+		
+		hw_params->minimum_speed = min_mhz / (sf8) 1000.0;
+		hw_params->maximum_speed = max_mhz / (sf8) 1000.0;
+		hw_params->current_speed = hw_params->maximum_speed * (scaling / (sf8) 100.0);
+	}
 #endif  // LINUX_m12
 	
 #ifdef MACOS_m12
 	size_t	len;
+	si1	brand_string[128], *c;
+	si8	max_speed;
 	
 	len = sizeof(si4);
 	
@@ -28679,17 +28770,63 @@ void	HW_get_core_info_m12()
 	sysctlbyname("machdep.cpu.thread_count", &hw_params->logical_cores, &len, NULL, 0);
 	if (hw_params->physical_cores < hw_params->logical_cores)
 		hw_params->hyperthreading = TRUE_m12;
+	else
+		hw_params->hyperthreading = FALSE_m12;
+	len = 128;
+	sysctlbyname("machdep.cpu.brand_string", brand_string, &len, NULL, 0);
+	c = STR_match_end_m12("(TM)", brand_string);
+	if (c == NULL) {
+		strncpy_m12(hw_params->cpu_manufacturer, brand_string, 64);
+	} else {
+		*c = 0;
+		strcpy_m12(hw_params->cpu_manufacturer, brand_string);
+		*c = ' ';
+		while (*c == ' ')
+			++c;
+		strcpy_m12(hw_params->cpu_model, c);
+	}
+	len = sizeof(si8);
+	sysctlbyname("hw.cpufrequency", &max_speed, &len, NULL, 0);
+	hw_params->maximum_speed = (sf8) max_speed / (sf8) 1000000000.0;
 #endif  // MACOS_m12
 	
 #ifdef WINDOWS_m12
 	SYSTEM_INFO	sys_info;
 	
-	GetSystemInfo(&sys_info);  // I think this returns logical, not physical, cores
+	GetSystemInfo(&sys_info);  // returns logical cores
 	hw_params->logical_cores = (si4) sys_info.dwNumberOfProcessors;
+	hw_params->physical_cores = 0;  // unknown
+	hw_params->hyperthreading = UNKNOWN_m12;
+	
+	switch((si4) sys_info.wProcessorArchitecture) {
+		case PROCESSOR_ARCHITECTURE_AMD64:
+			strcpy(hw_params->cpu_manufacturer, "Intel or AMD");
+			strcpy(hw_params->cpu_model, "x64");
+			break;
+		case PROCESSOR_ARCHITECTURE_ARM:
+			strcpy(hw_params->cpu_manufacturer, "ARM");
+			*hw_params->cpu_model = 0;
+			break;
+		case PROCESSOR_ARCHITECTURE_ARM64:
+			strcpy(hw_params->cpu_manufacturer, "ARM");
+			strcpy(hw_params->cpu_model, "x64");
+			break;
+		case PROCESSOR_ARCHITECTURE_IA64:
+			strcpy(hw_params->cpu_manufacturer, "Intel");
+			strcpy(hw_params->cpu_model, "Itanium x64");
+			break;
+		case PROCESSOR_ARCHITECTURE_INTEL:
+			strcpy(hw_params->cpu_manufacturer, "Intel");
+			strcpy(hw_params->cpu_model, "x86");
+			break;
+		case PROCESSOR_ARCHITECTURE_UNKNOWN:
+		default:
+			break;
+	}
 #endif  // WINDOWS_m12
 
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
-	
+
 	return;
 }
 
@@ -28786,10 +28923,11 @@ void	HW_get_machine_serial_m12(void)
 	
 	// get machine serial number
 #ifdef LINUX_m12
-	// Linux makes it impossible to get product serial from within program, even with sudo password. Using default interface MAC.
+	// Linux makes it impossible to get product serial from within program, even with sudo password. Use default interface MAC.
 	if (*global_tables_m12->NET_params.MAC_address_string == 0)
 		NET_get_mac_address_m12(NULL, &global_tables_m12->NET_params);
 	strcpy(hw_params->serial_number, global_tables_m12->NET_params.MAC_address_string);
+	STR_strip_character_m12(hw_params->serial_number, ':');
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	return;
 #endif
@@ -28814,7 +28952,7 @@ void	HW_get_machine_serial_m12(void)
 	
 #ifdef MACOS_m12
 	machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
-	buf[buf_len - 2] = 0;  // <quote><lf>
+	buf[buf_len - 3] = 0;  // <quote><lf>
 #endif
 	
 #ifdef WINDOWS_m12
@@ -28902,7 +29040,7 @@ void	HW_get_memory_info_m12(void)
 
 void	HW_get_performance_specs_m12(TERN_m12 get_current)
 {
-	const si8			ROUNDS = 100000;
+	si8				ROUNDS;
 	clock_t				start_t, end_t, elapsed_time;
 	si1				file[FULL_FILE_NAME_BYTES_m12];
 	ui8				*p1, *p2, *p3;
@@ -28919,9 +29057,9 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	hw_params = &global_tables_m12->HW_params;
 	perf_specs = &hw_params->performance_specs;
 
-	if (perf_specs->integer_multiplications_per_sec != 0.0 && get_current == FALSE_m12)
+	if (perf_specs->integer_multiplications_per_sec != 0.0 && get_current != TRUE_m12)
 		return;
-	
+		
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
 	// may have been done by another thread while waiting
 	if (perf_specs->integer_multiplications_per_sec != 0.0)  {
@@ -28930,7 +29068,7 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	}
 	
 	// see if they've been written out previously
-	if (get_current == FALSE_m12) {
+	if (get_current != TRUE_m12) {
 		if (HW_get_performance_specs_from_file_m12() == TRUE_m12) {
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 			return;
@@ -28938,9 +29076,18 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	}
 
 	// setup
+	if (get_current == TRUE_m12)
+		ROUNDS = 100000;
+	else
+		ROUNDS = 100000000;
+	
 	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr3 = (ui8 *) malloc((size_t) ROUNDS << 3);
+	mlock_m12((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	mlock_m12((void *) test_arr2, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	mlock_m12((void *) test_arr3, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+
 	p1 = test_arr1;
 	p2 = test_arr2;
 	for (i = ROUNDS; i--; ++p1, ++p2) {
@@ -28981,6 +29128,9 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	perf_specs->nsecs_per_integer_division = (sf8) 1000000000.0 / hw_params->performance_specs.integer_divisions_per_sec;
 
 	// clean up
+	munlock_m12((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	munlock_m12((void *) test_arr2, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	munlock_m12((void *) test_arr3, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) test_arr1);
 	free((void *) test_arr2);
 	free((void *) test_arr3);
@@ -28988,16 +29138,18 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	
 	// write out (for future use)
-	if (HW_get_performance_specs_file_m12(file) == NULL)
-		return;
-	fp = fopen_m12(file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	fprintf_m12(fp, "machine code: 0x%08x\n", hw_params->machine_code);
-	fprintf_m12(fp, "integer multiplications per sec: %0.2lf\n", perf_specs->integer_multiplications_per_sec);
-	fprintf_m12(fp, "integer divisions per sec: %0.2lf\n", perf_specs->integer_divisions_per_sec);
-	fprintf_m12(fp, "nsecs per integer multiplication: %0.2lf\n", perf_specs->nsecs_per_integer_multiplication);
-	fprintf_m12(fp, "nsecs per integer division: %0.2lf\n", perf_specs->nsecs_per_integer_division);
-	fclose(fp);
-
+	if (get_current != TRUE_m12) {
+		if (HW_get_performance_specs_file_m12(file) == NULL)
+			return;
+		fp = fopen_m12(file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fprintf_m12(fp, "machine code: 0x%08x\n", hw_params->machine_code);
+		fprintf_m12(fp, "integer multiplications per sec: %ld\n", (si8) round(perf_specs->integer_multiplications_per_sec));
+		fprintf_m12(fp, "integer divisions per sec: %ld\n", (si8) round(perf_specs->integer_divisions_per_sec));
+		fprintf_m12(fp, "nsecs per integer multiplication: %0.6lf\n", perf_specs->nsecs_per_integer_multiplication);
+		fprintf_m12(fp, "nsecs per integer division: %0.6lf\n", perf_specs->nsecs_per_integer_division);
+		fclose(fp);
+	}
+	
 	return;
 }
 
@@ -29171,13 +29323,13 @@ TERN_m12	HW_initialize_tables_m12(void)
 	if (hw_params->performance_specs.integer_multiplications_per_sec == 0)
 		HW_get_performance_specs_m12(FALSE_m12);
 	
-
 	return(TRUE_m12);
 }
 
 
 void	HW_show_info_m12(void)
 {
+	si1		size_str[SIZE_STRING_BYTES_m12];
 	HW_PARAMS_m12	*hw_params;
 	
 #ifdef FN_DEBUG_m12
@@ -29228,22 +29380,22 @@ void	HW_show_info_m12(void)
 	if (hw_params->minimum_speed == 0.0)
 		printf_m12("minimum_speed = unknown\n");
 	else
-		printf_m12("minimum_speed = %lf\n", hw_params->minimum_speed);
+		printf_m12("minimum_speed = %lf GHz\n", hw_params->minimum_speed);
 	
 	if (hw_params->maximum_speed == 0.0)
 		printf_m12("maximum_speed = unknown\n");
 	else
-		printf_m12("maximum_speed = %lf\n", hw_params->maximum_speed);
+		printf_m12("maximum_speed = %lf GHz\n", hw_params->maximum_speed);
 	
 	if (hw_params->current_speed == 0.0)
 		printf_m12("current_speed = unknown\n");
 	else
-		printf_m12("current_speed = %lf\n", hw_params->current_speed);
+		printf_m12("current_speed = %lf GHz  (average across logical cores)\n", hw_params->current_speed);
 	
 	if (hw_params->performance_specs.integer_multiplications_per_sec == 0.0)
 		printf_m12("integer_multiplications_per_sec = unknown\n");
 	else
-		printf_m12("integer_multiplications_per_sec = %lf\n", hw_params->performance_specs.integer_multiplications_per_sec);
+		printf_m12("integer_multiplications_per_sec = %ld\n", (si8) hw_params->performance_specs.integer_multiplications_per_sec);
 	if (hw_params->performance_specs.nsecs_per_integer_multiplication == 0.0)
 		printf_m12("nsecs_per_integer_multiplication = unknown\n");
 	else
@@ -29251,21 +29403,25 @@ void	HW_show_info_m12(void)
 	if (hw_params->performance_specs.integer_divisions_per_sec == 0.0)
 		printf_m12("integer_divisions_per_sec = unknown\n");
 	else
-		printf_m12("integer_divisions_per_sec = %lf\n", hw_params->performance_specs.integer_divisions_per_sec);
+		printf_m12("integer_divisions_per_sec = %ld\n", (si8) hw_params->performance_specs.integer_divisions_per_sec);
 	if (hw_params->performance_specs.nsecs_per_integer_division == 0.0)
 		printf_m12("nsecs_per_integer_division = unknown\n");
 	else
 		printf_m12("nsecs_per_integer_division = %lf\n", hw_params->performance_specs.nsecs_per_integer_division);
 
-	if (hw_params->system_memory_size == 0)
+	if (hw_params->system_memory_size == 0) {
 		printf_m12("system_memory_size = unknown\n");
-	else
-		printf_m12("system_memory_size = %lu\n", hw_params->system_memory_size);
+	} else {
+		STR_size_string_m12(size_str, hw_params->system_memory_size);
+		printf_m12("system_memory_size = %s\n", size_str);
+	}
 	
-	if (hw_params->system_page_size == 0)
+	if (hw_params->system_page_size == 0) {
 		printf_m12("system_page_size = unknown\n");
-	else
-		printf_m12("system_page_size = %u\n", hw_params->system_page_size);
+	} else {
+		STR_size_string_m12(size_str, hw_params->system_page_size);
+		printf_m12("system_page_size = %s\n", size_str);
+	}
 	
 	if (hw_params->heap_base_address == 0)
 		printf_m12("heap_base_address = unknown\n");
@@ -33493,7 +33649,7 @@ si1	*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes)
 {
 	static si1              private_size_str[SIZE_STRING_BYTES_m12];
-	static const si1        units[6][8] = {"bytes", "kB", "MB", "GB", "TB", "PB"};
+	static const si1        units[6][8] = {"bytes", "KiB", "MiB", "GiB", "TiB", "PiB"};
 	ui8                     i, j, t;
 	sf8                     size;
 	
@@ -34362,10 +34518,13 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		G_warning_message_m12("%s(): transmission info is NULL\n", __FUNCTION__);
 		return((si8) FALSE_m12);
 	}
-	if (trans_info->sock_fd == -1) {  // reopen socket
-		TR_create_socket_m12(trans_info);
-		TR_bind_m12(trans_info, trans_info->iface_addr, TR_PORT_ANY_m12);
-		TR_connect_m12(trans_info, trans_info->dest_addr, trans_info->dest_port);
+	if (trans_info->sock_fd == -1) {  // try to reopen socket
+		if (TR_create_socket_m12(trans_info) == FALSE_m12)
+			return((si8) FALSE_m12);
+		if (TR_bind_m12(trans_info, trans_info->iface_addr, TR_PORT_ANY_m12) == FALSE_m12)
+			return((si8) FALSE_m12);
+		if (TR_connect_m12(trans_info, trans_info->dest_addr, trans_info->dest_port) == FALSE_m12)
+			return((si8) FALSE_m12);
 	}
 	buffer = trans_info->buffer;
 	header = trans_info->header;
@@ -34539,7 +34698,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		}
 		AES_decrypt_m12(trans_info->data, data_bytes_received, NULL, trans_info->expanded_key);
 	}
-					       
+
 TR_RECV_FAIL_m12:
 	
 	// update & clean header
@@ -34630,10 +34789,13 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		G_warning_message_m12("%s(): transmission info is NULL\n", __FUNCTION__);
 		return((si8) FALSE_m12);
 	}
-	if (trans_info->sock_fd == -1) {  // reopen socket
-		TR_create_socket_m12(trans_info);
-		TR_bind_m12(trans_info, trans_info->iface_addr, TR_PORT_ANY_m12);
-		TR_connect_m12(trans_info, trans_info->dest_addr, trans_info->dest_port);
+	if (trans_info->sock_fd == -1) {  // try to reopen socket
+		if (TR_create_socket_m12(trans_info) == FALSE_m12)
+			return((si8) FALSE_m12);
+		if (TR_bind_m12(trans_info, trans_info->iface_addr, TR_PORT_ANY_m12) == FALSE_m12)
+			return((si8) FALSE_m12);
+		if (TR_connect_m12(trans_info, trans_info->dest_addr, trans_info->dest_port) == FALSE_m12)
+			return((si8) FALSE_m12);
 	}
 	header = trans_info->header;
 	buffer = trans_info->buffer;

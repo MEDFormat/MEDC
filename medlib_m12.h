@@ -1341,9 +1341,9 @@ typedef struct {
 	si4				physical_cores;
 	si4				logical_cores;
 	TERN_m12			hyperthreading;
-	sf8				minimum_speed;
-	sf8				maximum_speed;
-	sf8				current_speed;
+	sf8				minimum_speed;  // GHz
+	sf8				maximum_speed;  // GHz
+	sf8				current_speed;  // GHz
 	HW_PERFORMANCE_SPECS_m12	performance_specs;
 	ui8				system_memory_size;  // system physical RAM (in bytes)
 	ui4				system_page_size;  // memory page (in bytes)
