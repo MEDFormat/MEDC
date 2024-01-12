@@ -29046,6 +29046,7 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	ui8				*p1, *p2, *p3;
 	ui8				*test_arr1, *test_arr2, *test_arr3;
 	si8				i;
+	sf8				temp_sf8;
 	FILE				*fp;
 	HW_PARAMS_m12			*hw_params;
 	HW_PERFORMANCE_SPECS_m12	*perf_specs;
@@ -29060,6 +29061,11 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	if (perf_specs->integer_multiplications_per_sec != 0.0 && get_current != TRUE_m12)
 		return;
 		
+	// see if they've been written out previously
+	if (get_current != TRUE_m12)
+		if (HW_get_performance_specs_from_file_m12() == TRUE_m12)
+			return;
+	
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
 	// may have been done by another thread while waiting
 	if (perf_specs->integer_multiplications_per_sec != 0.0)  {
@@ -29067,19 +29073,11 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 		return;
 	}
 	
-	// see if they've been written out previously
-	if (get_current != TRUE_m12) {
-		if (HW_get_performance_specs_from_file_m12() == TRUE_m12) {
-			PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
-			return;
-		}
-	}
-
 	// setup
 	if (get_current == TRUE_m12)
-		ROUNDS = 100000;
+		ROUNDS = 100000;  // 1e5
 	else
-		ROUNDS = 100000000;
+		ROUNDS = 100000000;  // 1e8
 	
 	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
@@ -29112,8 +29110,9 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 		*p3++ = *p1++ * *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	perf_specs->integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	perf_specs->nsecs_per_integer_multiplication = (sf8) 1000000000.0 / perf_specs->integer_multiplications_per_sec;
+	temp_sf8 = (sf8) (CLOCKS_PER_SEC * ROUNDS) / (sf8) elapsed_time;
+	perf_specs->integer_multiplications_per_sec = (si8) (temp_sf8 + (sf8) 0.5);
+	perf_specs->nsecs_per_integer_multiplication = (sf8) 1e9 / temp_sf8;
 
 	// division
 	p1 = test_arr1;
@@ -29124,8 +29123,9 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 		*p3++ = *p1++ / *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	perf_specs->integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	perf_specs->nsecs_per_integer_division = (sf8) 1000000000.0 / hw_params->performance_specs.integer_divisions_per_sec;
+	temp_sf8 = (sf8) (CLOCKS_PER_SEC * ROUNDS) / (sf8) elapsed_time;
+	perf_specs->integer_divisions_per_sec = (si8) (temp_sf8 + (sf8) 0.5);
+	perf_specs->nsecs_per_integer_division = (sf8) 1e9 / temp_sf8;
 
 	// clean up
 	munlock_m12((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -29217,6 +29217,18 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 	if (G_file_exists_m12(file) == DOES_NOT_EXIST_m12)
 		return(FALSE_m12);
 	
+	hw_params = &global_tables_m12->HW_params;
+	if (hw_params->machine_code == 0)
+		HW_get_machine_code_m12();
+	perf_specs = &hw_params->performance_specs;
+
+	// get mutex
+	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);  // delay getting mutex until machine code known
+	if (perf_specs->integer_multiplications_per_sec != 0.0) {  // may have been done by another thread while waiting
+		PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+		return(TRUE_m12);
+	}
+
 	// read in file
 	fp = fopen_m12(file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	flen = G_file_length_m12(fp, NULL);
@@ -29226,71 +29238,53 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 	buffer[flen] = 0;
 	
 	// parse file
-	hw_params = &global_tables_m12->HW_params;
-	perf_specs = &hw_params->performance_specs;
-	if (hw_params->machine_code == 0)
-		HW_get_machine_code_m12();
-
 	c = buffer;
 	c = STR_match_end_m12("machine code: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 	items = sscanf(c, "%x", &file_machine_code);
-	if (file_machine_code != hw_params->machine_code || items == 0) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (file_machine_code != hw_params->machine_code || items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("integer multiplications per sec: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
-	items = sscanf(c, "%lf", &perf_specs->integer_multiplications_per_sec);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
-	
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
+	items = sscanf(c, "%ld", &perf_specs->integer_multiplications_per_sec);
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
+
 	c = STR_match_end_m12("integer divisions per sec: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
-	items = sscanf(c, "%lf", &perf_specs->integer_divisions_per_sec);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
+	items = sscanf(c, "%ld", &perf_specs->integer_divisions_per_sec);
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("nsecs per integer multiplication: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_multiplication);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("nsecs per integer division: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_division);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m12);
-	}
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	free((void *) buffer);
-
 	return(TRUE_m12);
+
+HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12:
+	
+	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
+	free((void *) buffer);
+	return(FALSE_m12);
 }
+
 
 
 TERN_m12	HW_initialize_tables_m12(void)

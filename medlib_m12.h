@@ -1330,8 +1330,8 @@ void		NET_trim_address_m12(si1 *addr_str);
 
 // Structures
 typedef struct {
-	sf8		integer_multiplications_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
-	sf8		integer_divisions_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
+	si8		integer_multiplications_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
+	si8		integer_divisions_per_sec;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
 	sf8		nsecs_per_integer_multiplication;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
 	sf8		nsecs_per_integer_division;  // test mimics RED/PRED in operand length, other tests may yield somewhat different results
 } HW_PERFORMANCE_SPECS_m12;

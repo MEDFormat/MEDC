@@ -96,12 +96,9 @@
 
 #include "medlib_m13.h"
 
-// Globals
-GLOBALS_m13		**globals_list_m13 = NULL;
-volatile si4		globals_list_len_m13 = 0;
-pthread_mutex_t_m13	globals_list_mutex_m13;
-GLOBAL_TABLES_m13	*global_tables_m13;
-
+// Globals (tagged in case using with other versions of the library)
+GLOBALS_m13		*globals_m13 = NULL;
+pthread_mutex_t_m13	globals_mutex_m13;  // tagged in case using with other versions of the library
 
 
 //*********************************//
@@ -5449,57 +5446,6 @@ GET_TERMINAL_ENTRY_RETRY_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-GLOBALS_m13	*G_globals_pointer_m13(void)
-{
-	si4		i;
-	pid_t_m13	_id;
-	GLOBALS_m13	*globals;
-	
-	
-	// return parent (or only) globals
-	// most common usage, so check first
-	if (globals_list_len_m13 == 1)
-		return(globals_list_m13[0]);
-	
-	// no globals exist
-	if (globals_list_len_m13 == 0)
-		return(NULL);
-	
-	// return thread local globals
-	_id = PROC_gettid_m13();
-	
-	// lock list
-	PROC_pthread_mutex_lock_m13(&globals_list_mutex_m13);
-
-	for (i = 0; i < globals_list_len_m13; ++i) {
-		if (globals_list_m13[i]->_id == _id) {
-			globals = globals_list_m13[i];
-			PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13); // unlock list
-			return(globals);
-		}
-	}
-
-	// return process globals
-	_id = PROC_getpid_m13();
-
-	for (i = 0; i < globals_list_len_m13; ++i) {
-		if (globals_list_m13[i]->_id == _id) {
-			globals = globals_list_m13[i];
-			PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13); // unlock list
-			return(globals);
-		}
-	}
-
-	// unlock list
-	PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-	
-	return(NULL);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 TERN_m13     G_include_record_m13(ui4 type_code, si4 *record_filters)
 {
 	si1			mode;
@@ -5611,57 +5557,40 @@ TERN_m13	G_initialize_global_tables_m13(TERN_m13 initialize_all_tables)
 
 TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor)
 {
-	GLOBALS_m13	*globals;
+	if (globals_m13 != NULL)
+		return(TRUE_m13);
 
-	
-	// initialize global list mutex
-	if (globals_list_m13 == NULL)
-		PROC_pthread_mutex_init_m13(&globals_list_mutex_m13, NULL);
-	PROC_pthread_mutex_lock_m13(&globals_list_mutex_m13);  // lock immediately - only this function initializes other global mutices
-
-	// realloc global list
-	#ifdef MATLAB_PERSISTENT_m13
-	globals_list_m13 = (GLOBALS_m13 **) mxRealloc((void *) globals_list_m13, (mwSize) ((globals_list_len_m13 + 1) * sizeof(GLOBALS_m13 *)));
-	#else
-	globals_list_m13 = (GLOBALS_m13 **) realloc((void *) globals_list_m13, (size_t) ((globals_list_len_m13 + 1) * sizeof(GLOBALS_m13 *)));
-	#endif
-	if (globals_list_m13 == NULL) {
-		PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-		return(FALSE_m13);
+	PROC_pthread_mutex_init_m13(&globals_mutex_m13, NULL);
+	PROC_pthread_mutex_lock_m13(&globals_mutex_m13);
+	if (globals_m13 != NULL) {  // another thread initialized while waiting
+		PROC_pthread_mutex_unlock_m13(&globals_mutex_m13);
+		return(TRUE_m13);
 	}
-	#ifdef MATLAB_PERSISTENT_m13
-	globals = (GLOBALS_m13 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBALS_m13));
-	#else
-	globals = (GLOBALS_m13 *) calloc((size_t) 1, sizeof(GLOBALS_m13));
-	#endif
-	if (globals == NULL) {
-		PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-		return(FALSE_m13);
-	}
-	if (globals_list_len_m13 == 0)
-		globals->_id = PROC_getpid_m13();    // use process id for first entry, so threads without their own globals can share
-	else
-		globals->_id = PROC_gettid_m13();    // use thread id for subsequent entries - thread local
-	globals_list_m13[globals_list_len_m13++] = globals;
-	PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
 	
-	// initialize new globals mutices
-	PROC_pthread_mutex_init_m13(&globals->behavior_mutex, NULL);
+	#ifdef MATLAB_PERSISTENT_m13
+	globals_m13 = (GLOBALS_m13 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBALS_m13));
+	#else
+	globals_m13 = (GLOBALS_m13 *) calloc((size_t) 1, sizeof(GLOBALS_m13));
+	#endif
+	if (globals_m13 == NULL) {
+		printf_m13("%s(): calloc failure for globals => exiting\n", __FUNCTION__);
+		exit_m13(-1);
+	}
 
 	// AT (do this as soon as possible)
 #ifdef AT_DEBUG_m13
-	PROC_pthread_mutex_init_m13(&globals->AT_mutex, NULL);
+	PROC_pthread_mutex_init_m13(&globals_m13->AT_mutex, NULL);
 	#ifdef MATLAB_PERSISTENT_m13
-		globals->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, (mwSize) sizeof(AT_NODE));
+	globals_m13->AT_nodes = (AT_NODE *) mxCalloc((mwSize) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, (mwSize) sizeof(AT_NODE));
 	#else
-		globals->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, sizeof(AT_NODE));
+	globals_m13->AT_nodes = (AT_NODE *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, sizeof(AT_NODE));
 	#endif
-		if (globals->AT_nodes == NULL) {
+		if (globals_m13->AT_nodes == NULL) {
 			printf_m13("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
 			exit(-1);
 		}
-		globals->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
-		globals->AT_used_node_count = 0;
+	globals_m13->AT_node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
+	globals_m13->AT_used_node_count = 0;
 #endif
 	
 	if (*app_path) {
@@ -5672,99 +5601,28 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path,
 	globals_m13->app_version_major = version_major;
 	globals_m13->app_version_minor = version_minor;
 
-	// password structure
-	memset((void *) &globals->password_data, 0, sizeof(PASSWORD_DATA_m13));
-	
 	// record filters
-	globals->record_filters = NULL;
-	
-	// current session constants
-	globals->session_UID = UID_NO_ENTRY_m13;
-	*globals->session_directory = 0;
-	globals->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m13;
-	globals->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m13;
-	globals->session_name = NULL;
-	*globals->uh_session_name = 0;
-	*globals->fs_session_name = 0;
-	globals->session_start_time = UUTC_NO_ENTRY_m13;
-	globals->session_end_time = UUTC_NO_ENTRY_m13;
-	globals->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m13;  // == number_of_session_frames
-	globals->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	globals->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	globals->reference_channel = NULL;
-	*globals->reference_channel_name = 0;
-	
-	// active channel constants
-	globals->time_series_frequencies_vary = UNKNOWN_m13;
-	globals->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m13;
-	globals->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m13;
-	globals->minimum_time_series_frequency_channel = NULL;
-	globals->maximum_time_series_frequency_channel = NULL;
-	globals->video_frame_rates_vary = UNKNOWN_m13;;
-	globals->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m13;
-	globals->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m13;
-	globals->minimum_video_frame_rate_channel = NULL;
-	globals->maximum_video_frame_rate_channel = NULL;
-
-	// time constants
-	globals->time_constants_set = FALSE_m13;
-	globals->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m13;
-	globals->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m13;
-	globals->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;
-	globals->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13;
-	globals->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m13;
-	globals->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m13;
-	strcpy(globals->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m13);
-	strcpy(globals->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13);
-	strcpy(globals->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13);
-	strcpy(globals->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13);
-	
-	// alignment fields
-	globals->universal_header_aligned = UNKNOWN_m13;
-	globals->metadata_section_1_aligned = UNKNOWN_m13;
-	globals->time_series_metadata_section_2_aligned = UNKNOWN_m13;
-	globals->video_metadata_section_2_aligned = UNKNOWN_m13;
-	globals->metadata_section_3_aligned = UNKNOWN_m13;
-	globals->all_metadata_structures_aligned = UNKNOWN_m13;
-	globals->time_series_indices_aligned = UNKNOWN_m13;
-	globals->video_indices_aligned = UNKNOWN_m13;
-	globals->CMP_block_header_aligned = UNKNOWN_m13;
-	globals->CMP_record_header_aligned = UNKNOWN_m13;
-	globals->record_header_aligned = UNKNOWN_m13;
-	globals->record_indices_aligned = UNKNOWN_m13;
-	globals->all_record_structures_aligned = UNKNOWN_m13;
-	globals->all_structures_aligned = UNKNOWN_m13;
-	globals->transmission_header_aligned = UNKNOWN_m13;
-
+	globals_m13->record_filters = NULL;
+		
 	// errors
-	globals->err_code = E_NO_ERR_m13;
-	globals->err_func = NULL;
-	globals->err_line = 0;
+	globals_m13->err_code = E_NO_ERR_m13;
+	globals_m13->err_func = NULL;
+	globals_m13->err_line = 0;
 
 	// miscellaneous
-	globals->verbose = GLOBALS_VERBOSE_DEFAULT_m13;
-	globals->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
-	globals->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m13;
-	if (globals->behavior_stack != NULL) {
-		free_m13((void *) globals->behavior_stack, __FUNCTION__);
-		globals->behavior_stack = NULL;
-	}
-	globals->behavior_stack_entries = globals->behavior_stack_size = 0;
+	globals_m13->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
 	#if defined MACOS_m13 || defined LINUX_m13
-	strcpy(globals->temp_dir, "/tmp");
-	strcpy(globals->temp_file, "/tmp/junk");
+	strcpy(globals_m13->temp_dir, "/tmp");
+	strcpy(globals_m13->temp_file, "/tmp/junk");
 	#endif
 	#ifdef WINDOWS_m13
 	si8	len;
 	
-	GetTempPathA(FULL_FILE_NAME_BYTES_m13, globals->temp_dir);
-	sprintf(globals->temp_file, "%sjunk", globals->temp_dir);
-	len = strlen(globals->temp_dir);
-	globals->temp_dir[len] = 0;  // remove trailing '\'
+	GetTempPathA(FULL_FILE_NAME_BYTES_m13, globals_m13->temp_dir);
+	sprintf(globals->temp_file, "%sjunk", globals_m13->temp_dir);
+	len = strlen(globals_m13->temp_dir);
+	globals_m13->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
-	globals->level_header_flags = LH_NO_FLAGS_m13;
-	globals->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
-
 
 	// tables
 	if (global_tables_m13 == NULL)
@@ -5773,8 +5631,6 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path,
 #ifdef AT_DEBUG_m13  // do this at end, because message() will load UTF8 tables
 	printf_m13("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m13, TC_RESET_m13);
 #endif
-
-	PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
 
 	return(TRUE_m13);
 }
@@ -5970,6 +5826,80 @@ void	G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 initial
 	memset(md3->geotag_data, 0, METADATA_GEOTAG_DATA_BYTES_m13);
 	md3->standard_UTC_offset = globals_m13->standard_UTC_offset;
 	
+	return;
+}
+
+
+void	G_initialize_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
+{
+	PROC_GLOBALS_m13	*proc_globals;
+	
+	
+	proc_globals = (PROC_GLOBALS_m13 *) calloc_m13((size_t) 1, sizeof(PROC_GLOBALS_m13), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
+	level_header->parent = (LEVEL_HEADER_m13 *) proc_globals;
+	
+	// password structure
+	memset((void *) &proc_globals->password_data, 0, sizeof(PASSWORD_DATA_m12));
+		
+	// current session constants
+	proc_globals->session_UID = UID_NO_ENTRY_m12;
+	*proc_globals->session_directory = 0;
+	proc_globals->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m12;
+	proc_globals->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m12;
+	proc_globals->session_name = NULL;
+	*proc_globals->uh_session_name = 0;
+	*proc_globals->fs_session_name = 0;
+	proc_globals->session_start_time = UUTC_NO_ENTRY_m12;
+	proc_globals->session_end_time = UUTC_NO_ENTRY_m12;
+	proc_globals->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m12;  // == number_of_session_frames
+	proc_globals->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m12;
+	proc_globals->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m12;
+	proc_globals->reference_channel = NULL;
+	*proc_globals->reference_channel_name = 0;
+	
+	// active channel constants
+	proc_globals->time_series_frequencies_vary = UNKNOWN_m12;
+	proc_globals->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m12;
+	proc_globals->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m12;
+	proc_globals->minimum_time_series_frequency_channel = NULL;
+	proc_globals->maximum_time_series_frequency_channel = NULL;
+	proc_globals->video_frame_rates_vary = UNKNOWN_m12;;
+	proc_globals->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m12;
+	proc_globals->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m12;
+	proc_globals->minimum_video_frame_rate_channel = NULL;
+	proc_globals->maximum_video_frame_rate_channel = NULL;
+
+	// time constants
+	proc_globals->time_constants_set = FALSE_m12;
+	proc_globals->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m12;
+	proc_globals->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m12;
+	proc_globals->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m12;
+	proc_globals->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m12;
+	proc_globals->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m12;
+	proc_globals->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m12;
+	proc_globals(globals->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m12);
+	proc_globals(globals->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m12);
+	proc_globals(globals->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m12);
+	proc_globals(globals->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m12);
+	
+	// behavior stack
+	PROC_pthread_mutex_init_m12(&proc_globals->behavior_mutex, NULL);
+	proc_globals->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m13;
+	if (proc_globals->behavior_stack != NULL) {
+		free_m12((void *) proc_globals->behavior_stack, __FUNCTION__);
+		proc_globals->behavior_stack = NULL;
+	}
+	proc_globals->behavior_stack_entries = proc_globals->behavior_stack_size = 0;
+	
+#ifdef ERROR_STACKS_m13
+	PROC_pthread_mutex_init_m12(&proc_globals->error_mutex, NULL);
+	if (proc_globals->error_stack != NULL) {
+		free_m12((void *) proc_globals->error_stack, __FUNCTION__);
+		proc_globals->error_stack = NULL;
+	}
+	proc_globals->error_stack_entries = proc_globals->error_stack_size = 0;
+#endif
+
 	return;
 }
 
@@ -8650,25 +8580,179 @@ TERN_m13	G_path_from_root_m13(si1 *path, si1 *root_path)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_pop_behavior_m13(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
+BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 {
+	si4			i, n_stacks;
+	pid_t_m13		tid, pid;
+	BEHAVIOR_STACK_m13	*stack_info;
 	
-	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->behavior_mutex);
-	
-	if (globals_m13->behavior_stack_entries == 0) {  // this shouldn't happen, but is possible
-		globals_m13->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m13;
-		PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_mutex);
-		return;
-	}
-	
-	globals_m13->behavior_on_fail = globals_m13->behavior_stack[--globals_m13->behavior_stack_entries];
 
-	// release mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_mutex);
+	// get behavior stacks mutex
+	// NOTE: the calling function is expected to release the mutex, unless it returns NULL
+	PROC_pthread_mutex_lock_m12(&globals_m13->behavior_stacks_mutex);
+	
+	// find stack
+	tid = PROC_gettid_m12();  // in single thread process tid == pid
+	stack_info = globals_m13->behavior_stacks;
+	n_stacks = globals_m13->n_behavior_stacks;
+	for (i = n_stacks; i--; ++stack_info)
+		if (stack_info->)id == tid)
+			break;
+		
+	if (i == -1) {  // thread stack not found, try process id (child pids are different from parent)
+		pid = PROC_getpid_m12();
+		stack_info = globals_m13->behavior_stacks;  // reset
+		for (i = n_stacks; i--; ++stack_info)
+			if (stack_info->_id == pid)
+				break;
+		
+		// new process, create a new stack (use tid)
+		if (i == -1) {
+			stack_info = G_add_behavior_stack_m13();
+			if (stack_info == NULL) {  // return with no changes to globals
+				PROC_pthread_mutex_unlock_m12(&globals_m13->behavior_stacks_mutex);
+				return(NULL);
+			}
+		}
+	}
+
+	return(stack_info);  // mutex still set
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void)
+{
+	si4			n_stacks;
+	BEHAVIOR_STACK_m13	*stack_info;
+
+	
+	// NOTE: the calling function is expected to obtain and release the mutex
+	
+	n_stacks = globals_m13->n_behavior_stacks;
+	stack_info = (BEHAVIOR_STACK_m13 *) realloc((void *) globals_m13->behavior_stacks, (size_t) (n_stacks + 1) * sizeof(BEHAVIOR_STACK_m13));
+	if (stack_info == NULL)  // return with no changes to globals
+		return(NULL);
+	globals_m13->behavior_stacks = stack_info;
+	stack_info += n_stacks;
+	memset((void *) stack_info, 0, sizeof(BEHAVIOR_STACK_m13));  // realloc doesn't zero new memory
+	stack_info->_id = PROC_gettid_m12();
+	stack_info->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13
+	stack_info->stack = (ui4 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(ui4));
+	if (stack_info->stack == NULL)
+		return(NULL);
+	stack_info->stack[0] = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m13;
+	
+	stack_info->entries = 1;
+	++globals_m13->n_behavior_stacks;
+	
+	return(stack_info);
+	
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	G_delete_behavior_stack_m13(void)
+{
+	si4			i, n_stacks;
+	BEHAVIOR_STACK_m13	*stack_info, *global_stacks;
+
+	
+	n_stacks = globals_m13->n_behavior_stacks - 1;
+	if (n_stacks == 0)
+		return;
+
+	// NOTE: the calling function is expected to obtain and release the mutex (unless fails)
+	stack_info = G_get_behavior_stack_m13();  // gets mutex
+	if (stack_info == NULL)
+		return;
+	
+	global_stacks = globals_m13->behavior_stacks;
+	for (i = (si4) (stack_info - global_stacks); i < n_stacks; ++i)
+		global_stacks[i] = global_stacks[i + 1];
+	--globals_m13->n_behavior_stacks;
+	
+	// release behavior stacks mutex
+	PROC_pthread_mutex_unlock_m12(&globals_m13->behavior_stacks_mutex);
 
 	return;
 }
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui4	G_current_behavior_m13(void)
+{
+	ui4			behavior;
+	BEHAVIOR_STACK_m13	*stack_info;
+	
+	
+	stack_info = G_get_behavior_stack_m13();  // gets mutex
+	if (stack_info == NULL)
+		return(UNKNOWN_BEHAVIOR_m13);
+	
+	behavior = stack_info->stack[stack_info->entries - 1];
+	
+	// release behavior stacks mutex
+	PROC_pthread_mutex_unlock_m12(&globals_m13->behavior_stacks_mutex);
+
+	return(behavior);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	G_pop_behavior_m13(void)
+{
+	BEHAVIOR_STACK_m13	*stack_info;
+	
+	
+	stack_info = G_get_behavior_stack_m13();  // gets mutex
+	if (stack_info == NULL)
+		return;
+
+	if (stack_info->entries == 1)  // this shouldn't happen, but is possible if keep popping stack
+		stack_info->stack[0] = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m13;
+	else
+		--stack_info->entries;
+
+	// release behavior stacks mutex
+	PROC_pthread_mutex_unlock_m12(&globals_m13->behavior_stacks_mutex);
+
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	G_pop_error_m13(LEVEL_HEADER_m13 *level_header)
+{
+	PROC_GLOBALS_m13	*proc_globals;
+	ERROR_m13		*err;
+	
+	
+	proc_globals = G_proc_globals_m13(level_header);
+	if (proc_globals->error_stack_entries == 0)  // this shouldn't happen, but is possible
+		return;
+
+	// get mutex
+	PROC_pthread_mutex_lock_m13(&proc_globals->error_mutex);
+
+	--globals_m13->behavior_stack_entries;
+
+	// release mutex
+	PROC_pthread_mutex_unlock_m13(&proc_globals->error_mutex);
+
+	return;
+}
+#endif
 
 
 TERN_m13	G_process_password_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *unspecified_pw)
@@ -8882,31 +8966,102 @@ void	G_propogate_flags_m13(LEVEL_HEADER_m13 *level_header, ui8 new_flags)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_push_behavior_m13(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDICIOUSLY IN THREADED APPLICATIONS ***//
+void	G_push_behavior_m13(ui4 behavior)
 {
+	BEHAVIOR_STACK_m13	*stack_info;
+	
 	
 	if (behavior == RESTORE_BEHAVIOR_m13) {
 		G_pop_behavior_m13();
 		return;
 	}
 	
-	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->behavior_mutex);
+	stack_info = G_get_behavior_stack_m13();  // gets mutex
+	if (stack_info == NULL)
+		return;
 	
-	if (globals_m13->behavior_stack_entries == globals_m13->behavior_stack_size) {
-		globals_m13->behavior_stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		globals_m13->behavior_stack = (ui4 *) realloc((void *) globals_m13->behavior_stack, (size_t) globals_m13->behavior_stack_size * sizeof(ui4));
+	// realloc
+	if (stack_info->entries == stack_info->size) {
+		stack_info->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+		stack_info->stack = (ui4 *) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(ui4));
 	}
 	
-	globals_m13->behavior_stack[globals_m13->behavior_stack_entries++] = globals_m13->behavior_on_fail;
-	globals_m13->behavior_on_fail = behavior;
+	// add to stack
+	stack_info->stack[stack_info->entries++] = behavior;
 	
-	// release mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_mutex);
+	// release behavior stacks mutex
+	PROC_pthread_mutex_unlock_m12(&globals_m13->behavior_stacks_mutex);
 
 	return;
 }
 
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	G_push_error_m13(si4 code, const si1 *function, const si4 line, si1 *message)
+{
+#ifdef ERROR_STACK_DEBUG_m13
+#endif
+	si4			i, n_stacks;
+	pid_t_m13		_id;
+	ERROR_STACK_m13		*stack_info;
+	
+	
+	if (behavior == RESTORE_BEHAVIOR_m13) {
+		G_pop_behavior_m13();
+		return;
+	}
+	
+	// get behavior stacks mutex
+	PROC_pthread_mutex_lock_m12(&globals_m13->error_stacks_mutex);
+
+	// find stack
+	if (globals_m13->error_stacks_len == 1) {
+		stack_info = globals_m13->error_stacks;  // process stack (first entry & most common scenario)
+	} else {  // find thread local stack
+		_id = PROC_gettid_m12();
+		stack_info = globals_m13->behavior_stacks;
+		n_stacks = globals_m13->behavior_stacks_len;
+		for (i = n_stacks; i--; ++stack_info)
+			if (stack_info->_id == _id)
+				break;
+		
+		if (i == -1) {  // thread stack not found
+			_id = PROC_getpid_m12();  // try process id (child pids are different from parent)
+			stack_info = globals_m13->behavior_stacks;
+			for (i = n_stacks; i--; ++stack_info)
+				if (stack_info->_id == _id)
+					break;
+		}
+	}
+
+	// realloc
+	if (stack_info->entries == stack_info->size) {
+		stack_info->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+		stack_info->stack = (ui4 *) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(ui4));
+	}
+	
+	// add to stack
+	stack_info->stack[stack_info->entries++] = behavior;
+	
+	// release behavior stacks mutex
+	PROC_pthread_mutex_unlock_m12(&globals_m13->behavior_stacks_mutex);
+
+	err = proc_globals->error_stack + proc_globals->error_stack_entries++;
+	err->code = code;
+	err->function = function;
+	err->line = line;
+	*err->message = 0;
+	if (message != NULL)
+		if (*message)
+			strncpy_m13(err->message, message, E_MESSAGE_LEN_m13);
+	
+	// release mutex
+	PROC_pthread_mutex_unlock_m13(&proc_globals->error_mutex);
+
+	return;
+}
 
 CHANNEL_m13	*G_read_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, ...)  // varargs: si1 *chan_path, ui4 flags, si1 *password
 {
@@ -11261,6 +11416,24 @@ void    G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
+{
+	if (level_header == NULL)
+		return(NULL);
+	
+	while (level_header->type_code != PROC_GLOBALS_TYPE_CODE_m13)  // top of hieracrchy
+		if (level_header->parent == NULL)  // top of hieracrchy
+			G_initialize_proc_globals_m13(level_header);
+		level_header = level_header->parent;
+	}
+	
+	return((PROC_GLOBALS_m13 *) level_header)
+}
+
+
 void	G_set_error_m13(const si4 err_code, const si1 *function, const si4 line)
 {
 	
@@ -11485,67 +11658,6 @@ SET_GTC_TIMEZONE_MATCH_m13:
 		G_generate_recording_time_offset_m13(session_start_time);
 
 	return(TRUE_m13);
-}
-
-
-void	G_set_globals_pointer_m13(GLOBALS_m13 *new_globals)
-{
-	si4		i;
-	pid_t_m13	_id;
-	
-	
-	// NOTE if this is temporary, caller should save previous glopbals & call this again to restore
-	
-	// lock list
-	PROC_pthread_mutex_lock_m13(&globals_list_mutex_m13);
-
-	// return parent (or only) globals
-	// most common usage, so check first
-	if (globals_list_len_m13 == 1) {
-		globals_list_m13[0] = new_globals;
-		PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13); // unlock list
-		return;
-	}
-	
-	// no globals exist
-	if (globals_list_len_m13 == 0) {
-		globals_list_len_m13 = 1;
-#ifdef MATLAB_PERSISTENT_m13
-		globals_list_m13 = (GLOBALS_m13 **) mxCalloc((mwSize) globals_list_len_m13, sizeof(GLOBALS_m13 *));
-#else
-		globals_list_m13 = (GLOBALS_m13 **) calloc((size_t) globals_list_len_m13, sizeof(GLOBALS_m13 *));
-#endif
-		globals_list_m13[0] = new_globals;
-		PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13); // unlock list
-		return;
-	}
-	
-	// return thread local globals
-	_id = PROC_gettid_m13();
-	
-	for (i = 0; i < globals_list_len_m13; ++i) {
-		if (globals_list_m13[i]->_id == _id) {
-			globals_list_m13[i] = new_globals;
-			PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13); // unlock list
-			return;
-		}
-	}
-
-	// return process globals
-	_id = PROC_getpid_m13();
-
-	for (i = 0; i < globals_list_len_m13; ++i) {
-		if (globals_list_m13[i]->_id == _id) {
-			globals_list_m13[i] = new_globals;
-			PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13); // unlock list
-			return;
-		}
-	}
-
-	// unlock list
-	PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-	
-	return;
 }
 
 
@@ -27758,9 +27870,6 @@ si8	FPS_write_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to
 // MARK: HARDWARE FUNCTIONS  (HW)
 //*******************************//
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	HW_get_core_info_m13()
 {
 	HW_PARAMS_m13	*hw_params;
@@ -27943,9 +28052,6 @@ void	HW_get_core_info_m13()
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	HW_get_endianness_m13(void)
 {
 	ui1		endianness;
@@ -27974,9 +28080,6 @@ void	HW_get_endianness_m13(void)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	HW_get_machine_code_m13(void)
 {
 	HW_PARAMS_m13	*hw_params;
@@ -28005,9 +28108,6 @@ void	HW_get_machine_code_m13(void)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	HW_get_machine_serial_m13(void)
 {
 	HW_PARAMS_m13	*hw_params;
@@ -28076,9 +28176,6 @@ void	HW_get_machine_serial_m13(void)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	HW_get_memory_info_m13(void)
 {
 	si8		pages, page_size;
@@ -28145,18 +28242,23 @@ void	HW_get_performance_specs_m13(TERN_m13 get_current)
 	ui8				*p1, *p2, *p3;
 	ui8				*test_arr1, *test_arr2, *test_arr3;
 	si8				i;
+	sf8				temp_sf8;
 	FILE				*fp;
 	HW_PARAMS_m13			*hw_params;
 	HW_PERFORMANCE_SPECS_m13	*perf_specs;
 
 	
-	printf_m13("%d(%s)\n", __FUNCTION__, __LINE__);
 	hw_params = &global_tables_m13->HW_params;
 	perf_specs = &hw_params->performance_specs;
 
 	if (perf_specs->integer_multiplications_per_sec != 0.0 && get_current != TRUE_m13)
 		return;
-		
+
+	// see if they've been written out previously
+	if (get_current != TRUE_m13)
+		if (HW_get_performance_specs_from_file_m13() == TRUE_m13)
+			return;
+
 	PROC_pthread_mutex_lock_m13(&global_tables_m13->HW_mutex);
 	// may have been done by another thread while waiting
 	if (perf_specs->integer_multiplications_per_sec != 0.0)  {
@@ -28164,14 +28266,6 @@ void	HW_get_performance_specs_m13(TERN_m13 get_current)
 		return;
 	}
 	
-	// see if they've been written out previously
-	if (get_current != TRUE_m13) {
-		if (HW_get_performance_specs_from_file_m13() == TRUE_m13) {
-			PROC_pthread_mutex_unlock_m13(&global_tables_m13->HW_mutex);
-			return;
-		}
-	}
-
 	// setup
 	if (get_current == TRUE_m13) {
 		ROUNDS = 100000;
@@ -28211,8 +28305,9 @@ void	HW_get_performance_specs_m13(TERN_m13 get_current)
 		*p3++ = *p1++ * *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	perf_specs->integer_multiplications_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	perf_specs->nsecs_per_integer_multiplication = (sf8) 1000000000.0 / perf_specs->integer_multiplications_per_sec;
+	temp_sf8 = (sf8) (CLOCKS_PER_SEC * ROUNDS) / (sf8) elapsed_time;
+	perf_specs->integer_multiplications_per_sec = (si8) (temp_sf8 + (sf8) 0.5);
+	perf_specs->nsecs_per_integer_multiplication = (sf8) 1e9 / temp_sf8;
 
 	// division
 	p1 = test_arr1;
@@ -28223,8 +28318,9 @@ void	HW_get_performance_specs_m13(TERN_m13 get_current)
 		*p3++ = *p1++ / *p2++;
 	end_t = clock();
 	elapsed_time = end_t - start_t;
-	perf_specs->integer_divisions_per_sec = ((sf8) CLOCKS_PER_SEC * (sf8) ROUNDS) / (sf8) elapsed_time;
-	perf_specs->nsecs_per_integer_division = (sf8) 1000000000.0 / hw_params->performance_specs.integer_divisions_per_sec;
+	temp_sf8 = (sf8) (CLOCKS_PER_SEC * ROUNDS) / (sf8) elapsed_time;
+	perf_specs->integer_divisions_per_sec = (si8) (temp_sf8 + (sf8) 0.5);
+	perf_specs->nsecs_per_integer_division = (sf8) 1e9 / temp_sf8;
 
 	// clean up
 	munlock_m13((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
@@ -28243,14 +28339,13 @@ void	HW_get_performance_specs_m13(TERN_m13 get_current)
 			return;
 		fp = fopen_m13(file, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
 		fprintf_m13(fp, "machine code: 0x%08x\n", hw_params->machine_code);
-		fprintf_m13(fp, "integer multiplications per sec: %ld\n", (si8) round(perf_specs->integer_multiplications_per_sec));
-		fprintf_m13(fp, "integer divisions per sec: %ld\n", (si8) round(perf_specs->integer_divisions_per_sec));
+		fprintf_m13(fp, "integer multiplications per sec: %ld\n", perf_specs->integer_multiplications_per_sec);
+		fprintf_m13(fp, "integer divisions per sec: %ld\n", perf_specs->integer_divisions_per_sec);
 		fprintf_m13(fp, "nsecs per integer multiplication: %0.6lf\n", perf_specs->nsecs_per_integer_multiplication);
 		fprintf_m13(fp, "nsecs per integer division: %0.6lf\n", perf_specs->nsecs_per_integer_division);
 		fclose(fp);
 	}
 	
-	printf_m13("%d(%s)\n", __FUNCTION__, __LINE__);
 	return;
 }
 
@@ -28316,10 +28411,24 @@ TERN_m13	HW_get_performance_specs_from_file_m13(void)
 	// read in file
 	fp = fopen_m13(file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
 	G_file_times_m13(fp, NULL, &hw_specs_file_time, FALSE_m13); // app newer than specs => create new specs file
-	if (globals_m13->app_file_times.modification > hw_specs_file_time.modification) {
+	if (globals_m13->app_info.file_times.modification > hw_specs_file_time.modification) {
 		fclose(fp);
 		return(FALSE_m13);
 	}
+	
+	hw_params = &global_tables_m13->HW_params;
+	if (hw_params->machine_code == 0)
+		HW_get_machine_code_m13();
+	perf_specs = &hw_params->performance_specs;
+
+	// get mutex
+	PROC_pthread_mutex_lock_m13(&global_tables_m13->HW_mutex);  // delay getting mutex until machine code known
+	if (perf_specs->integer_multiplications_per_sec != 0.0) {  // may have been done by another thread while waiting
+		PROC_pthread_mutex_unlock_m13(&global_tables_m13->HW_mutex);
+		fclose(fp);
+		return(TRUE_m13);
+	}
+
 	flen = G_file_length_m13(fp, NULL);
 	buffer = (si1 *) malloc((size_t) (flen + 1));
 	fread_m13((void *) buffer, sizeof(si1), (size_t) flen, fp, file, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
@@ -28327,70 +28436,51 @@ TERN_m13	HW_get_performance_specs_from_file_m13(void)
 	buffer[flen] = 0;
 	
 	// parse file
-	hw_params = &global_tables_m13->HW_params;
-	perf_specs = &hw_params->performance_specs;
-	if (hw_params->machine_code == 0)
-		HW_get_machine_code_m13();
-
 	c = buffer;
 	c = STR_match_end_m13("machine code: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 	items = sscanf(c, "%x", &file_machine_code);
-	if (file_machine_code != hw_params->machine_code || items == 0) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (file_machine_code != hw_params->machine_code || items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 
 	c = STR_match_end_m13("integer multiplications per sec: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
-	items = sscanf(c, "%lf", &perf_specs->integer_multiplications_per_sec);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
-	
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
+	items = sscanf(c, "%ld", &perf_specs->integer_multiplications_per_sec);
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
+
 	c = STR_match_end_m13("integer divisions per sec: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
-	items = sscanf(c, "%lf", &perf_specs->integer_divisions_per_sec);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
+	items = sscanf(c, "%ld", &perf_specs->integer_divisions_per_sec);
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 
 	c = STR_match_end_m13("nsecs per integer multiplication: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_multiplication);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 
 	c = STR_match_end_m13("nsecs per integer division: ", c);
-	if (c == NULL) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (c == NULL)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_division);
-	if (items == 0) {
-		free((void *) buffer);
-		return(FALSE_m13);
-	}
+	if (items == 0)
+		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 
+	PROC_pthread_mutex_unlock_m13(&global_tables_m13->HW_mutex);
 	free((void *) buffer);
-
 	return(TRUE_m13);
+
+HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13:
+	
+	PROC_pthread_mutex_unlock_m13(&global_tables_m13->HW_mutex);
+	free((void *) buffer);
+	return(FALSE_m13);
 }
 
 
@@ -28491,7 +28581,7 @@ void	HW_show_info_m13(void)
 	if (hw_params->performance_specs.integer_multiplications_per_sec == 0.0)
 		printf_m13("integer_multiplications_per_sec = unknown\n");
 	else
-		printf_m13("integer_multiplications_per_sec = %ld\n", (si8) hw_params->performance_specs.integer_multiplications_per_sec);
+		printf_m13("integer_multiplications_per_sec = %ld\n", hw_params->performance_specs.integer_multiplications_per_sec);
 	if (hw_params->performance_specs.nsecs_per_integer_multiplication == 0.0)
 		printf_m13("nsecs_per_integer_multiplication = unknown\n");
 	else
@@ -28499,7 +28589,7 @@ void	HW_show_info_m13(void)
 	if (hw_params->performance_specs.integer_divisions_per_sec == 0.0)
 		printf_m13("integer_divisions_per_sec = unknown\n");
 	else
-		printf_m13("integer_divisions_per_sec = %ld\n", (si8) hw_params->performance_specs.integer_divisions_per_sec);
+		printf_m13("integer_divisions_per_sec = %ld\n", hw_params->performance_specs.integer_divisions_per_sec);
 	if (hw_params->performance_specs.nsecs_per_integer_division == 0.0)
 		printf_m13("nsecs_per_integer_division = unknown\n");
 	else
@@ -30078,44 +30168,6 @@ void	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)  // frees thread globals & par it
 		return;
 	}
 
-	// lock list
-	PROC_pthread_mutex_lock_m13(&globals_list_mutex_m13);
-
-	// find main globals
-	main_pid = PROC_getpid_m13();
-	for (i = 0; i < globals_list_len_m13; ++i)
-		if (globals_list_m13[i]->_id == main_pid)
-			break;
-	
-	// temporarily set to zero
-	main_globals_exist = FALSE_m13;
-	if (i < globals_list_len_m13) {
-		globals_list_m13[i]->_id = 0;
-		main_globals_exist = TRUE_m13;
-	}
-	
-	// set thread global to thread tid & free them
-	if (i < globals_list_len_m13) {
-		globals_list_m13[i]->_id = main_pid;
-		PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);  // free_globals() will want the mutex
-		if (globals_list_len_m13 == 1)
-			G_free_globals_m13(TRUE_m13);  // clean up for exit
-		else
-			G_free_globals_m13(FALSE_m13);  // other threads have globals
-		PROC_pthread_mutex_lock_m13(&globals_list_mutex_m13);  // reclaim mutex
-	}
-	
-	// reset main globals
-	if (main_globals_exist == TRUE_m13) {
-		for (i = 0; i < globals_list_len_m13; ++i)
-			if (globals_list_m13[i]->_id == 0)
-				break;
-		globals_list_m13[i]->_id = main_pid;
-	}
-	
-	// unlock list
-	PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-
 	// free par & set to NULL
 	free((void *) par_info);  // caller responsible for disposing of anything in par_info->ret_val, if neceessary
 	*par_info_ptr = NULL;
@@ -30268,7 +30320,6 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	void				*file_list;
 	PAR_THREAD_INFO_m13		*par_t_info;
 	PAR_INFO_m13 			*par_info;
-	pid_t_m13			tid;
 	SESSION_m13			*sess;
 	CHANNEL_m13			*chan;
 	SEGMENT_m13			*seg;
@@ -30279,43 +30330,23 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	par_t_info = (PAR_THREAD_INFO_m13 *) arg;
 	par_info = par_t_info->par_info;
 	function = par_info->function;
-	
-	// set globals
-	tid = PROC_gettid_m13();
-	if (par_info->tid && globals_list_m13 != NULL && globals_list_m13 != NULL) {  // find prior thread globals and change to this tid
-		// medlib globals
-		PROC_pthread_mutex_lock_m13(&globals_list_mutex_m13);
-		for (i = 0; i < globals_list_len_m13; ++i)
-			if (globals_list_m13[i]->_id == par_info->tid)
-				break;
-		if (i == globals_list_len_m13) {
-			PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-			G_warning_message_m13("%s() can't match preexisting medlib globals => returning\n", __FUNCTION__);
-			par_info->status = PAR_FINISHED_m13;
-			return((pthread_rval_m13) 0);
-		}
-		globals_list_m13[i]->_id = tid;
-		PROC_pthread_mutex_unlock_m13(&globals_list_mutex_m13);
-	} else {
-		G_initialize_globals_m13(TRUE_m13);
-	}
-	par_info->tid = tid;
+	par_info->tid = PROC_gettid_m13();
 
 	// get function
 	if (strcmp(function, "G_open_session_m13") == 0)
-		fn = PAR_OPEN_SESSION_M12;
+		fn = PAR_OPEN_SESSION_M13;
 	else if (strcmp(function, "G_read_session_m13") == 0)
-		fn = PAR_READ_SESSION_M12;
+		fn = PAR_READ_SESSION_M13;
 	else if (strcmp(function, "G_open_channel_m13") == 0)
-		fn = PAR_OPEN_CHANNEL_M12;
+		fn = PAR_OPEN_CHANNEL_M13;
 	else if (strcmp(function, "G_read_channel_m13") == 0)
-		fn = PAR_READ_CHANNEL_M12;
+		fn = PAR_READ_CHANNEL_M13;
 	else if (strcmp(function, "G_open_segment_m13") == 0)
-		fn = PAR_OPEN_SEGMENT_M12;
+		fn = PAR_OPEN_SEGMENT_M13;
 	else if (strcmp(function, "G_read_segment_m13") == 0)
-		fn = PAR_READ_SEGMENT_M12;
+		fn = PAR_READ_SEGMENT_M13;
 	else if (strcmp(function, "DM_get_matrix_m13") == 0)
-		fn = PAR_DM_GET_MATRIX_M12;
+		fn = PAR_DM_GET_MATRIX_M13;
 	else {
 		G_warning_message_m13("%s() can't match function => returning\n", __FUNCTION__);
 		par_info->status = PAR_FINISHED_m13;
@@ -30324,11 +30355,11 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 
 	// launch function
 	switch (fn) {
-		case PAR_OPEN_SESSION_M12:
-		case PAR_READ_SESSION_M12:
+		case PAR_OPEN_SESSION_M13:
+		case PAR_READ_SESSION_M13:
 			sess = va_arg(par_t_info->args, SESSION_m13 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m13 *);
-			if (fn == PAR_READ_SESSION_M12 && sess != NULL) {
+			if (fn == PAR_READ_SESSION_M13 && sess != NULL) {
 				par_info->status = PAR_RUNNING_m13;
 				par_info->ret_val = (void *) G_read_session_m13(sess, slice);
 			} else {
@@ -30338,28 +30369,28 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				password = va_arg(par_t_info->args, si1 *);
 				par_info->status = PAR_RUNNING_m13;
 				switch (fn) {
-					case PAR_OPEN_SESSION_M12:
+					case PAR_OPEN_SESSION_M13:
 						par_info->ret_val = (void *) G_open_session_m13(sess, slice, file_list, list_len, flags, password);
 						break;
-					case PAR_READ_SESSION_M12:
+					case PAR_READ_SESSION_M13:
 						par_info->ret_val = (void *) G_read_session_m13(sess, slice, file_list, list_len, flags, password);
 						break;
 				}
 			}
 			break;
-		case PAR_OPEN_CHANNEL_M12:
-		case PAR_READ_CHANNEL_M12:
-		case PAR_OPEN_SEGMENT_M12:
-		case PAR_READ_SEGMENT_M12:
-			if (fn == PAR_OPEN_SEGMENT_M12 || fn == PAR_READ_SEGMENT_M12)
+		case PAR_OPEN_CHANNEL_M13:
+		case PAR_READ_CHANNEL_M13:
+		case PAR_OPEN_SEGMENT_M13:
+		case PAR_READ_SEGMENT_M13:
+			if (fn == PAR_OPEN_SEGMENT_M13 || fn == PAR_READ_SEGMENT_M13)
 				seg = va_arg(par_t_info->args, SEGMENT_m13 *);
 			else
 				chan = va_arg(par_t_info->args, CHANNEL_m13 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m13 *);
-			if (fn == PAR_READ_CHANNEL_M12 && chan != NULL) {
+			if (fn == PAR_READ_CHANNEL_M13 && chan != NULL) {
 				par_info->status = PAR_RUNNING_m13;
 				par_info->ret_val = (void *) G_read_channel_m13(chan, slice);
-			} else if (fn == PAR_READ_SEGMENT_M12 && seg != NULL) {
+			} else if (fn == PAR_READ_SEGMENT_M13 && seg != NULL) {
 				par_info->status = PAR_RUNNING_m13;
 				par_info->ret_val = (void *) G_read_segment_m13(seg, slice);
 			} else {
@@ -30368,22 +30399,22 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				password = va_arg(par_t_info->args, si1 *);
 				par_info->status = PAR_RUNNING_m13;
 				switch (fn) {
-					case PAR_OPEN_CHANNEL_M12:
+					case PAR_OPEN_CHANNEL_M13:
 						par_info->ret_val = (void *) G_open_channel_m13(chan, slice, path, flags, password);
 						break;
-					case PAR_READ_CHANNEL_M12:
+					case PAR_READ_CHANNEL_M13:
 						par_info->ret_val = (void *) G_read_channel_m13(chan, slice, path, flags, password);
 						break;
-					case PAR_OPEN_SEGMENT_M12:
+					case PAR_OPEN_SEGMENT_M13:
 						par_info->ret_val = (void *) G_open_segment_m13(seg, slice, path, flags, password);
 						break;
-					case PAR_READ_SEGMENT_M12:
+					case PAR_READ_SEGMENT_M13:
 						par_info->ret_val = (void *) G_read_segment_m13(seg, slice, path, flags, password);
 						break;
 				}
 			}
 			break;
-		case PAR_DM_GET_MATRIX_M12:
+		case PAR_DM_GET_MATRIX_M13:
 			mat = va_arg(par_t_info->args, DATA_MATRIX_m13 *);
 			sess = va_arg(par_t_info->args, SESSION_m13 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m13 *);
