@@ -200,8 +200,8 @@ TERN_m13        REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13                          24							// si4
 #define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13                        SEGMENT_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_PAD_OFFSET_m13                     		28							// ui1
-#define REC_Sgmt_v11_PAD_BYTES_m13                     			4
 #define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13                     REC_Sgmt_v11_PAD_OFFSET_m13
+#define REC_Sgmt_v11_PAD_BYTES_m13                     			4
 #define REC_Sgmt_v11_SAMPLING_FREQUENCY_VARIABLE_m13		        SAMPLE_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13		        	FRAME_NUMBER_NO_ENTRY_m13
 
@@ -298,11 +298,11 @@ TERN_m13        REC_check_EDFA_type_alignment_m13(ui1 *bytes);
 
 // Structures
 typedef struct {
-	si8     end_time;  // time when note entered into record
+	si8     end_time;  // time when note entered into record (header start time is time when note initiated)
 	union {
 		si1     pad[REC_Note_v11_PAD_BYTES_m13];
 		si1     text[REC_Note_v11_PAD_BYTES_m13];  // first 8 bytes of note, can extend beyondend of structure
-	}
+	};
 } REC_Note_v11_m13;
 
 // Annotation follows structure - aribitrary length array of si1s padded to 16 byte alignment (struct plus text)

@@ -118,12 +118,12 @@ void	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *rec
 	if (record_header->record_CRC == RECORD_HEADER_RECORD_CRC_NO_ENTRY_m13) {
 		printf_m13("Record CRC: no entry\n");
 	} else {
-		STR_generate_hex_string_m13((ui1 *) &record_header->record_CRC, CRC_BYTES_m13, hex_str);
+		STR_hex_m13((ui1 *) &record_header->record_CRC, CRC_BYTES_m13, hex_str);
 		printf_m13("Record CRC: %s\n", hex_str);
 	}
 	type_code = record_header->type_code;
 	if (type_code) {
-		STR_generate_hex_string_m13((ui1 *) record_header->type_string, CRC_BYTES_m13, hex_str);
+		STR_hex_m13((ui1 *) record_header->type_string, CRC_BYTES_m13, hex_str);
 		printf_m13("Record Type String: %s (%s)\n", record_header->type_string, hex_str);
 	} else {
 		printf_m13("Record Type String: no entry\n");
@@ -161,7 +161,7 @@ void	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *rec
 	if (record_header->start_time == RECORD_HEADER_START_TIME_NO_ENTRY_m13)
 		printf_m13("Record Start Time: no entry\n");
 	else {
-		STR_time_string_m13(record_header->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		STR_time_m13((LEVEL_HEADER_m13 *) fps, record_header->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("Record Start Time: %ld (oUTC), %s\n", record_header->start_time, time_str);
 	}
 	printf_m13("----------------- Record Header - END -----------------\n");
@@ -228,10 +228,6 @@ TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
 	TERN_m13	return_value, free_flag = FALSE_m13;
 
 	
-	// see if already checked
-	if (globals_m13->all_record_structures_aligned != UNKNOWN_m13)
-		return(globals_m13->all_record_structures_aligned);
-
 	return_value = TRUE_m13;
 	if (bytes == NULL) {
 		bytes = (ui1 *) malloc(REC_LARGEST_RECORD_BYTES_m13);
@@ -265,15 +261,8 @@ TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	if (return_value == TRUE_m13) {
-		globals_m13->all_record_structures_aligned = TRUE_m13;
-		if (globals_m13->verbose == TRUE_m13)
-			printf_m13("%s(): All Record structures are aligned\n", __FUNCTION__);
-	}
-	else {
-		globals_m13->all_record_structures_aligned = FALSE_m13;
+	if (return_value == FALSE_m13)
 		G_error_message_m13("%s(): One or more Record structures are NOT aligned\n", __FUNCTION__);
-	}
 
 	return(return_value);
 }
@@ -294,22 +283,22 @@ void    REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		Sgmt_v10 = (REC_Sgmt_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
 
-		STR_time_string_m13(Sgmt_v10->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		STR_time_m13(NULL, Sgmt_v10->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v10->end_time, time_str);
 		if (Sgmt_v10->start_sample_number == REC_Sgmt_v10_START_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("Start Sample Number: no entry\n");
 		else
 			printf_m13("Start Sample Number: %ld\n", Sgmt_v10->start_sample_number);
-		if (Sgmt->end_sample_number == REC_Sgmt_v10_END_SAMPLE_NUMBER_NO_ENTRY_m13)
+		if (Sgmt_v10->end_sample_number == REC_Sgmt_v10_END_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("End Sample Number: no entry\n");
 		else
 			printf_m13("End Sample Number: %ld\n", Sgmt_v10->end_sample_number);
-		STR_generate_hex_string_m13((ui1 *) &Sgmt_v10->segment_UID, 8, hex_str);
+		STR_hex_m13((ui1 *) &Sgmt_v10->segment_UID, 8, hex_str);
 		printf_m13("Segment UID: %s\n", hex_str);
 		if (Sgmt_v10->segment_number == REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
-			printf_m13("Segment Number: %d\n", Sgmt->segment_number);
+			printf_m13("Segment Number: %d\n", Sgmt_v10->segment_number);
 
 		if (Sgmt_v10->acquisition_channel_number == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13)
 			printf_m13("Acquisition Channel Number: all channels\n");
@@ -339,9 +328,9 @@ void    REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 	if (record_header->version_major == 1 && record_header->version_minor == 1) {
 		Sgmt_v11 = (REC_Sgmt_v11_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
 
-		STR_time_string_m13(Sgmt_v11->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		STR_time_m13(NULL, Sgmt_v11->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v11->end_time, time_str);
-		if (Sgmt->start_sample_number == REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13)
+		if (Sgmt_v11->start_sample_number == REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("Start Sample Number: no entry\n");
 		else
 			printf_m13("Start Sample Number: %ld\n", Sgmt_v11->start_sample_number);
@@ -349,8 +338,6 @@ void    REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 			printf_m13("End Sample Number: no entry\n");
 		else
 			printf_m13("End Sample Number: %ld\n", Sgmt_v11->end_sample_number);
-		STR_generate_hex_string_m13((ui1 *) &Sgmt_v11->segment_UID, 8, hex_str);
-		printf_m13("Segment UID: %s\n", hex_str);
 		if (Sgmt_v11->segment_number == REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
@@ -372,6 +359,7 @@ void    REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 
 TERN_m13     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 {
+	si1			*version_string;
 	REC_Sgmt_v10_m13	*Sgmt_v10;
 	REC_Sgmt_v11_m13	*Sgmt_v11;
 	TERN_m13                free_flag = FALSE_m13;
@@ -379,80 +367,67 @@ TERN_m13     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	
 	// check overall size
 	if (sizeof(REC_Sgmt_v10_m13) != REC_Sgmt_v10_BYTES_m13)
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_Sgmt_v10_BYTES_m13);
+		bytes = (ui1 *) malloc(REC_Sgmt_v10_BYTES_m13);  // REC_Sgmt_v10_BYTES_m13 larger than REC_Sgmt_v11_BYTES_m13
 		free_flag = TRUE_m13;
 	}
 	
 	// Version 1.0
 	Sgmt_v10 = (REC_Sgmt_v10_m13 *) bytes;
+	version_string = "REC_Sgmt_v10_m13";
 	if (&Sgmt_v10->end_time != (si8 *) (bytes + REC_Sgmt_v10_END_TIME_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->start_sample_number != (si8 *) (bytes + REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->start_frame_number != (si8 *) (bytes + REC_Sgmt_v10_START_FRAME_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->end_sample_number != (si8 *) (bytes + REC_Sgmt_v10_END_SAMPLE_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->end_frame_number != (si8 *) (bytes + REC_Sgmt_v10_END_FRAME_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->segment_UID != (ui8 *) (bytes + REC_Sgmt_v10_SEGMENT_UID_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->segment_number != (si4 *) (bytes + REC_Sgmt_v10_SEGMENT_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->acquisition_channel_number != (si4 *) (bytes + REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->sampling_frequency != (sf8 *) (bytes + REC_Sgmt_v10_SAMPLING_FREQUENCY_OFFSET_m13))
-		goto REC_Sgmt_v10_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 
 	// Version 1.1
 	Sgmt_v11 = (REC_Sgmt_v11_m13 *) bytes;
+	version_string = "REC_Sgmt_v11_m13";
 	if (&Sgmt_v11->end_time != (si8 *) (bytes + REC_Sgmt_v11_END_TIME_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->start_sample_number != (si8 *) (bytes + REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->start_frame_number != (si8 *) (bytes + REC_Sgmt_v11_START_FRAME_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->end_sample_number != (si8 *) (bytes + REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->end_frame_number != (si8 *) (bytes + REC_Sgmt_v11_END_FRAME_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->segment_number != (si4 *) (bytes + REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (Sgmt_v11->description != (si1 *) (bytes + REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13))
-		goto REC_Sgmt_v11_NOT_ALIGNED_m13;
+		goto REC_Sgmt_NOT_ALIGNED_m13;
 	
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	if (globals_m13->verbose == TRUE_m13) {
-		printf_m13("%s(): REC_Sgmt_v10_m13 structure is aligned\n", __FUNCTION__);
-		printf_m13("%s(): REC_Sgmt_v11_m13 structure is aligned\n", __FUNCTION__);
-	}
-
 	return(TRUE_m13);
 
 	// not aligned
-REC_Sgmt_v10_NOT_ALIGNED_m13:
+REC_Sgmt_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_Sgmt_v10_m13 structure is NOT aligned", __FUNCTION__);
-
-	return(FALSE_m13);
-	
-	// not aligned
-REC_Sgmt_v11_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_error_message_m13("%s(): REC_Sgmt_v11_m13 structure is NOT aligned", __FUNCTION__);
+	G_error_message_m13("%s(): %s structure is NOT aligned", __FUNCTION__, version_string);
 
 	return(FALSE_m13);
 
@@ -551,9 +526,6 @@ TERN_m13     REC_check_Stat_type_alignment_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_Stat_v10_m13 structure is aligned\n", __FUNCTION__);
-
 	return(TRUE_m13);
 
 	// not aligned
@@ -594,10 +566,10 @@ void	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 	// Version 1.1
 	else if (record_header->version_major == 1 && record_header->version_minor == 1) {
 		note = (REC_Note_v11_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
-		if (note->start_time)
-			printf_m13("Start Time: %ld\n", note->start_time);
+		if (note->end_time <= 0)  // covers zero & UUTC_NO_ENTRY_m13
+			printf_m13("End Time: no entry\n");
 		else
-			printf_m13("Start Time: no entry\n");
+			printf_m13("End Time: %ld\n", note->end_time);
 		note_text = (si1 *) ((ui1 *) note + REC_Note_v11_TEXT_OFFSET_m13);
 		if (*note_text)
 			UTF8_printf_m13("Text: %s\n", note_text);
@@ -673,9 +645,6 @@ TERN_m13	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_EDFA_v10_m13 structure is aligned\n", __FUNCTION__);
-
 	return(TRUE_m13);
 
 	// not aligned
@@ -702,13 +671,15 @@ void	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 	REC_Seiz_v10_m13		*Seiz;
 	REC_Seiz_v10_CHANNEL_m13	*chans;
 	si1			        time_str[TIME_STRING_BYTES_m13];
+	PROC_GLOBALS_m13		*proc_globals;
 
 	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
+		proc_globals = G_proc_globals_m13(NULL);
 		Seiz = (REC_Seiz_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
-		STR_time_string_m13(Seiz->latest_offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + globals_m13->recording_time_offset, time_str);
+		STR_time_m13(NULL, Seiz->latest_offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globals->recording_time_offset, time_str);
 		printf_m13("Number of Channels: %d\n", Seiz->number_of_channels);
 		printf_m13("Onset Code: %d ", Seiz->onset_code);
 		switch (Seiz->onset_code) {
@@ -756,10 +727,10 @@ void	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 				UTF8_printf_m13("Channel Name: %s\n", chans[i].name);
 			else
 				printf_m13("Channel Name: no entry\n");
-			STR_time_string_m13(chans[i].onset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + globals_m13->recording_time_offset, time_str);
-			STR_time_string_m13(chans[i].offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + globals_m13->recording_time_offset, time_str);
+			STR_time_m13(NULL, chans[i].onset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globals->recording_time_offset, time_str);
+			STR_time_m13(NULL, chans[i].offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globals->recording_time_offset, time_str);
 			if (chans[i].segment_number == REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13)
 				printf_m13("Segment Number: no entry\n");
 			else
@@ -824,9 +795,6 @@ TERN_m13	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
-
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_Seiz_v10_m13 structure is aligned\n", __FUNCTION__);
 
 	return(TRUE_m13);
 
@@ -909,7 +877,7 @@ void    REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 			break;
 		}
 		printf_m13("Raw Port Value: %u  (unsigned dec)\n", nlxp->raw_port_value);
-		STR_generate_hex_string_m13((ui1 *) &nlxp->raw_port_value, 4, hex_str);
+		STR_hex_m13((ui1 *) &nlxp->raw_port_value, 4, hex_str);
 		printf_m13("Raw Port Bytes: %s  (hex)\n", hex_str);
 	}
 	// Unrecognized record version
@@ -954,9 +922,6 @@ TERN_m13     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
-
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_NlxP_v10_m13 structure is aligned\n", __FUNCTION__);
 
 	return(TRUE_m13);
 
@@ -1029,9 +994,6 @@ TERN_m13     REC_check_Curs_type_alignment_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_Curs_v10_m13 structure is aligned\n", __FUNCTION__);
-
 	return(TRUE_m13);
 
 	// not aligned
@@ -1043,7 +1005,6 @@ REC_Curs_v10_NOT_ALIGNED_m13:
 	G_error_message_m13("%s(): REC_Curs_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
 	return(FALSE_m13);
-
 }
 
 
@@ -1138,10 +1099,6 @@ TERN_m13     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 	if (epoc1->text != (si1 *) (bytes + REC_Epoc_v10_TEXT_OFFSET_m13))
 		goto REC_Epoc_NOT_ALIGNED_m13;
 
-	// aligned
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): %s structure is aligned\n", __FUNCTION__, version_string);
-	
 	// Version 2.0
 	version_string = "REC_Epoc_v20_m13";
 	
@@ -1156,10 +1113,6 @@ TERN_m13     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 		goto REC_Epoc_NOT_ALIGNED_m13;
 	if (epoc2->scorer_id != (si1 *) (bytes + REC_Epoc_v20_SCORER_ID_OFFSET_m13))
 		goto REC_Epoc_NOT_ALIGNED_m13;
-
-	// aligned
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): %s structure is aligned\n", __FUNCTION__, version_string);
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
@@ -1280,9 +1233,6 @@ TERN_m13     REC_check_ESti_type_alignment_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_ESti_v10_m13 structure is aligned\n", __FUNCTION__);
-
 	return(TRUE_m13);
 
 	// not aligned
@@ -1353,9 +1303,6 @@ TERN_m13     REC_check_CSti_type_alignment_m13(ui1 *bytes)
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
-
-	if (globals_m13->verbose == TRUE_m13)
-		printf_m13("%s(): REC_CSti_v10_m13 structure is aligned\n", __FUNCTION__);
 
 	return(TRUE_m13);
 
