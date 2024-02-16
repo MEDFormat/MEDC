@@ -101,12 +101,15 @@
 //**********************************   show_record()   ********************************//
 //*************************************************************************************//
 
-void	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
+TERN_m13	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
 {
 	ui4                     type_code;
 	si1	                time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(CRC_BYTES_m13)];
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// decrypt record body if necesary
 	if (record_header->encryption_level > NO_ENCRYPTION_m13)
 		G_decrypt_record_data_m13(fps, record_header, 1);
@@ -171,7 +174,7 @@ void	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *rec
 	if (record_header->encryption_level > NO_ENCRYPTION_m13) {
 		printf_m13("No access to this record\n");
 		printf_m13("------------------ Record Body - END ------------------\n\n");
-		return;
+		return_m13(TRUE_m13);
 	}
 
 	// pass the display off to custom functions - new records types should be added here (maintain alphabetical order of record types)
@@ -215,7 +218,7 @@ void	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *rec
 	}
 	printf_m13("------------------ Record Body - END ------------------\n\n");
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -227,7 +230,10 @@ TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
 {
 	TERN_m13	return_value, free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	return_value = TRUE_m13;
 	if (bytes == NULL) {
 		bytes = (ui1 *) malloc(REC_LARGEST_RECORD_BYTES_m13);
@@ -264,7 +270,7 @@ TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
 	if (return_value == FALSE_m13)
 		G_error_message_m13("%s(): One or more Record structures are NOT aligned\n", __FUNCTION__);
 
-	return(return_value);
+	return_m13(return_value);
 }
 
 
@@ -272,13 +278,16 @@ TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
 //*******************************   Sgmt: Segment Record   ****************************//
 //*************************************************************************************//
 
-void    REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Sgmt_v10_m13	*Sgmt_v10;
 	REC_Sgmt_v11_m13	*Sgmt_v11;
 	si1                     time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(8)], *segment_description;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		Sgmt_v10 = (REC_Sgmt_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -353,7 +362,7 @@ void    REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized Sgmt Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -364,7 +373,10 @@ TERN_m13     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	REC_Sgmt_v11_m13	*Sgmt_v11;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_Sgmt_v10_m13) != REC_Sgmt_v10_BYTES_m13)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
@@ -419,7 +431,7 @@ TERN_m13     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
 REC_Sgmt_NOT_ALIGNED_m13:
@@ -429,7 +441,7 @@ REC_Sgmt_NOT_ALIGNED_m13:
 
 	G_error_message_m13("%s(): %s structure is NOT aligned", __FUNCTION__, version_string);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 
 }
 
@@ -438,11 +450,14 @@ REC_Sgmt_NOT_ALIGNED_m13:
 //*******************************   Stat: Segment Record   ****************************//
 //*************************************************************************************//
 
-void    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Stat_v10_m13	*Stat;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		Stat = (REC_Stat_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -484,7 +499,7 @@ void    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized Stat Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 
 }
 
@@ -494,10 +509,13 @@ TERN_m13     REC_check_Stat_type_alignment_m13(ui1 *bytes)
 	REC_Stat_v10_m13	*Stat;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_Stat_v10_m13) != REC_Stat_v10_BYTES_m13)
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
@@ -506,37 +524,37 @@ TERN_m13     REC_check_Stat_type_alignment_m13(ui1 *bytes)
 	}
 	Stat = (REC_Stat_v10_m13 *) bytes;
 	if (&Stat->minimum != (si4 *) (bytes + REC_Stat_v10_MINIMUM_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->maximum != (si4 *) (bytes + REC_Stat_v10_MAXIMUM_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->mean != (si4 *) (bytes + REC_Stat_v10_MEAN_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->median != (si4 *) (bytes + REC_Stat_v10_MEDIAN_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->mode != (si4 *) (bytes + REC_Stat_v10_MODE_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->variance != (sf4 *) (bytes + REC_Stat_v10_VARIANCE_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->skewness != (sf4 *) (bytes + REC_Stat_v10_SKEWNESS_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 	if (&Stat->kurtosis != (sf4 *) (bytes + REC_Stat_v10_KURTOSIS_OFFSET_m13))
-		goto REC_Stat_v10_NOT_ALIGNED_m13;
+		goto REC_Stat_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_Stat_v10_NOT_ALIGNED_m13:
+REC_Stat_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_Stat_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -544,12 +562,14 @@ REC_Stat_v10_NOT_ALIGNED_m13:
 //********************************   Note: Note Record   ******************************//
 //*************************************************************************************//
 
-void	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si1			*note_text;
 	REC_Note_v11_m13	*note;
 	
-
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
 	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
@@ -581,15 +601,56 @@ void	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized Note Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
 TERN_m13        REC_check_Note_type_alignment_m13(ui1 *bytes)
 {
+	REC_Note_v11_m13	*note;
+	const si1		*vers_str;
+	TERN_m13		free_flag = FALSE_m13;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// Version 1.0
+	// no structure for REC_Note_v10_m13
 	
-	// no structures to check
-	return(TRUE_m13);
+	// Version 1.1
+	vers_str = "REC_Note_v11_m13";
+
+	// check overall size
+	if (sizeof(REC_Note_v11_m13) != REC_Note_v11_BYTES_m13)
+		goto REC_NOTE_NOT_ALIGNED_m13;
+
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc((size_t) REC_Note_v11_BYTES_m13);
+		free_flag = TRUE_m13;
+	}
+	note = (REC_Note_v11_m13 *) bytes;
+	if (&note->end_time != (si8 *) (bytes + REC_Note_v11_END_TIME_OFFSET_m13))
+		goto REC_NOTE_NOT_ALIGNED_m13;
+	if (note->text != (si1 *) (bytes + REC_Note_v11_TEXT_OFFSET_m13))
+		goto REC_NOTE_NOT_ALIGNED_m13;
+
+	// aligned
+	if (free_flag == TRUE_m13)
+		free((void *) bytes);
+
+	return_m13(TRUE_m13);
+
+	// not aligned
+REC_NOTE_NOT_ALIGNED_m13:
+
+	if (free_flag == TRUE_m13)
+		free((void *) bytes);
+
+	G_error_message_m13("%s(): %s structure is NOT aligned\n", __FUNCTION__, vers_str);
+
+	return_m13(FALSE_m13);
 }
 
 
@@ -597,12 +658,15 @@ TERN_m13        REC_check_Note_type_alignment_m13(ui1 *bytes)
 //******************   EDFA: European Data Format Annotation Record   *****************//
 //*************************************************************************************//
 
-void	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_EDFA_v10_m13	*edfa;
 	si1			*annotation;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		edfa = (REC_EDFA_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -618,7 +682,7 @@ void	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized EDFA Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -627,10 +691,13 @@ TERN_m13	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
 	REC_EDFA_v10_m13	*edfa;
 	TERN_m13		free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_EDFA_v10_m13) != REC_EDFA_v10_BYTES_m13)
-		goto REC_EDFA_v10_NOT_ALIGNED_m13;
+		goto REC_EDFA_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
@@ -639,23 +706,23 @@ TERN_m13	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
 	}
 	edfa = (REC_EDFA_v10_m13 *) bytes;
 	if (&edfa->duration != (si8 *) (bytes + REC_EDFA_v10_DURATION_OFFSET_m13))
-		goto REC_EDFA_v10_NOT_ALIGNED_m13;
+		goto REC_EDFA_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_EDFA_v10_NOT_ALIGNED_m13:
+REC_EDFA_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_EDFA_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -664,7 +731,7 @@ REC_EDFA_v10_NOT_ALIGNED_m13:
 //*******************************   Seiz: Seizure Record   ****************************//
 //*************************************************************************************//
 
-void	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si4			        i;
 	TERN_m13                        mn1 = FALSE_m13, mn2 = FALSE_m13;
@@ -673,7 +740,10 @@ void	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 	si1			        time_str[TIME_STRING_BYTES_m13];
 	PROC_GLOBALS_m13		*proc_globals;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		proc_globals = G_proc_globals_m13(NULL);
@@ -742,7 +812,7 @@ void	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized Seiz Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -753,12 +823,15 @@ TERN_m13	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
 	TERN_m13			free_flag = FALSE_m13;
 	ui1				*chan_bytes;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall sizes
 	if (sizeof(REC_Seiz_v10_m13) != REC_Seiz_v10_BYTES_m13)
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (sizeof(REC_Seiz_v10_CHANNEL_m13) != REC_Seiz_v10_CHANNEL_BYTES_m13)
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 
 	// check fields - base structure
 	if (bytes == NULL) {
@@ -767,46 +840,46 @@ TERN_m13	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
 	}
 	Seiz = (REC_Seiz_v10_m13 *) bytes;
 	if (&Seiz->latest_offset_time != (si8 *) (bytes + REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (&Seiz->number_of_channels != (si4 *) (bytes + REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (&Seiz->onset_code != (si4 *) (bytes + REC_Seiz_v10_ONSET_CODE_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (Seiz->marker_name_1 != (si1 *) (bytes + REC_Seiz_v10_MARKER_NAME_1_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (Seiz->marker_name_2 != (si1 *) (bytes + REC_Seiz_v10_MARKER_NAME_2_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (Seiz->annotation != (si1 *) (bytes + REC_Seiz_v10_ANNOTATION_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	// check fields - channel structures
 	chan_bytes = bytes + REC_Seiz_v10_CHANNELS_OFFSET_m13;
 	chan = (REC_Seiz_v10_CHANNEL_m13 *) chan_bytes;
 	if (chan->name != (si1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_NAME_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (&chan->onset_time != (si8 *) (chan_bytes + REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (&chan->offset_time != (si8 *) (chan_bytes + REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (&chan->segment_number != (si4 *) (chan_bytes + REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 	if (chan->pad != (ui1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_PAD_OFFSET_m13))
-		goto REC_Seiz_v10_NOT_ALIGNED_m13;
+		goto REC_Seiz_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_Seiz_v10_NOT_ALIGNED_m13:
+REC_Seiz_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_Seiz_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -814,11 +887,14 @@ REC_Seiz_v10_NOT_ALIGNED_m13:
 //*****************************   SyLg: System Log Record   ***************************//
 //*************************************************************************************//
 
-void	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si1	*log_entry;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		log_entry = (si1 *) record_header + RECORD_HEADER_BYTES_m13;
@@ -832,15 +908,18 @@ void	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized SyLg Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
 TERN_m13	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 {
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// no structures to check
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 }
 
 
@@ -849,12 +928,15 @@ TERN_m13	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 //*********************   NlxP: NeuraLynx Parallel Port Record   **********************//
 //*************************************************************************************//
 
-void    REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si1                     hex_str[HEX_STRING_BYTES_m13(4)];
 	REC_NlxP_v10_m13	*nlxp;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		nlxp = (REC_NlxP_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -885,7 +967,7 @@ void    REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized NlxP Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -894,10 +976,13 @@ TERN_m13     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
 	REC_NlxP_v10_m13	*nlxp;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_NlxP_v10_m13) != REC_NlxP_v10_BYTES_m13)
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
@@ -907,33 +992,33 @@ TERN_m13     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
 
 	nlxp = (REC_NlxP_v10_m13 *) bytes;
 	if (&nlxp->raw_port_value != (ui4 *) (bytes + REC_NlxP_v10_RAW_PORT_VALUE_OFFSET_m13))
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 	if (&nlxp->value != (ui4 *) (bytes + REC_NlxP_v10_VALUE_OFFSET_m13))
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 	if (&nlxp->subport != (ui1 *) (bytes + REC_NlxP_v10_SUBPORT_OFFSET_m13))
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 	if (&nlxp->number_of_subports != (ui1 *) (bytes + REC_NlxP_v10_NUMBER_OF_SUBPORTS_OFFSET_m13))
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 	if (&nlxp->trigger_mode != (ui1 *) (bytes + REC_NlxP_v10_TRIGGER_MODE_OFFSET_m13))
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 	if (nlxp->pad != (ui1 *) (bytes + REC_NlxP_v10_PAD_OFFSET_m13))
-		goto REC_NlxP_v10_NOT_ALIGNED_m13;
+		goto REC_NlxP_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_NlxP_v10_NOT_ALIGNED_m13:
+REC_NlxP_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_NlxP_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 
 }
 
@@ -942,11 +1027,14 @@ REC_NlxP_v10_NOT_ALIGNED_m13:
 //***********************   Curs: Cadwell EMG Cursor Annotation   *********************//
 //*************************************************************************************//
 
-void    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Curs_v10_m13	*curs;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		curs = (REC_Curs_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -960,7 +1048,7 @@ void    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized Curs Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -969,10 +1057,13 @@ TERN_m13     REC_check_Curs_type_alignment_m13(ui1 *bytes)
 	REC_Curs_v10_m13	*curs;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_Curs_v10_m13) != REC_Curs_v10_BYTES_m13)
-		goto REC_Curs_v10_NOT_ALIGNED_m13;
+		goto REC_Curs_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
@@ -982,29 +1073,29 @@ TERN_m13     REC_check_Curs_type_alignment_m13(ui1 *bytes)
 
 	curs = (REC_Curs_v10_m13 *) bytes;
 	if (&curs->id_number != (si8 *) (bytes + REC_Curs_v10_ID_NUMBER_OFFSET_m13))
-		goto REC_Curs_v10_NOT_ALIGNED_m13;
+		goto REC_Curs_NOT_ALIGNED_m13;
 	if (&curs->latency != (si8 *) (bytes + REC_Curs_v10_LATENCY_OFFSET_m13))
-		goto REC_Curs_v10_NOT_ALIGNED_m13;
+		goto REC_Curs_NOT_ALIGNED_m13;
 	if (&curs->value != (sf8 *) (bytes + REC_Curs_v10_VALUE_OFFSET_m13))
-		goto REC_Curs_v10_NOT_ALIGNED_m13;
+		goto REC_Curs_NOT_ALIGNED_m13;
 	if (curs->name != (si1 *) (bytes + REC_Curs_v10_NAME_OFFSET_m13))
-		goto REC_Curs_v10_NOT_ALIGNED_m13;
+		goto REC_Curs_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_Curs_v10_NOT_ALIGNED_m13:
+REC_Curs_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_Curs_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -1012,12 +1103,15 @@ REC_Curs_v10_NOT_ALIGNED_m13:
 //****************************   Epoc: Sleep Stage Record   ***************************//
 //*************************************************************************************//
 
-void    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Epoc_v10_m13	*epoc1;
 	REC_Epoc_v20_m13	*epoc2;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		epoc1 = (REC_Epoc_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -1064,7 +1158,7 @@ void    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
 		G_warning_message_m13("%s(): Unrecognized Epoc Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -1075,7 +1169,10 @@ TERN_m13     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 	REC_Epoc_v20_m13	*epoc2;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	version_string = "REC_Epoc_v10_m13";
 	
@@ -1117,7 +1214,7 @@ TERN_m13     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
 REC_Epoc_NOT_ALIGNED_m13:
@@ -1127,7 +1224,7 @@ REC_Epoc_NOT_ALIGNED_m13:
 
 	G_error_message_m13("%s(): %s structure is NOT aligned\n", __FUNCTION__, version_string);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -1135,11 +1232,14 @@ REC_Epoc_NOT_ALIGNED_m13:
 //**************************   ESti: Electrical Stimulation   *************************//
 //*************************************************************************************//
 
-void    REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_ESti_v10_m13	*esti;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		esti = (REC_ESti_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -1191,7 +1291,7 @@ void    REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized ESti Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -1200,10 +1300,13 @@ TERN_m13     REC_check_ESti_type_alignment_m13(ui1 *bytes)
 	REC_ESti_v10_m13	*esti;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_ESti_v10_m13) != REC_ESti_v10_BYTES_m13)
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
@@ -1213,37 +1316,37 @@ TERN_m13     REC_check_ESti_type_alignment_m13(ui1 *bytes)
 
 	esti = (REC_ESti_v10_m13 *) bytes;
 	if (&esti->amplitude != (sf8 *) (bytes + REC_ESti_v10_AMPLITUDE_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (&esti->frequency != (sf8 *) (bytes + REC_ESti_v10_FREQUENCY_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (&esti->pulse_width != (si8 *) (bytes + REC_ESti_v10_PULSE_WIDTH_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (&esti->amp_unit_code != (si4 *) (bytes + REC_ESti_v10_AMP_UNIT_CODE_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (&esti->mode_code != (si4 *) (bytes + REC_ESti_v10_MODE_CODE_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (esti->waveform != (si1 *) (bytes + REC_ESti_v10_WAVEFORM_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (esti->anode != (si1 *) (bytes + REC_ESti_v10_ANODE_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 	if (esti->cathode != (si1 *) (bytes + REC_ESti_v10_CATHODE_OFFSET_m13))
-		goto REC_ESti_v10_NOT_ALIGNED_m13;
+		goto REC_ESti_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_ESti_v10_NOT_ALIGNED_m13:
+REC_ESti_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_ESti_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 
 }
 
@@ -1252,11 +1355,14 @@ REC_ESti_v10_NOT_ALIGNED_m13:
 //**************************   CSti: Cognitive Stimulation   **************************//
 //*************************************************************************************//
 
-void    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
+TERN_m13    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_CSti_v10_m13	*csti;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		csti = (REC_CSti_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
@@ -1270,7 +1376,7 @@ void    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
 		G_error_message_m13("%s(): Unrecognized CSti Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
 	}
 
-	return;
+	return_m13(TRUE_m13);
 }
 
 
@@ -1279,10 +1385,13 @@ TERN_m13     REC_check_CSti_type_alignment_m13(ui1 *bytes)
 	REC_CSti_v10_m13	*csti;
 	TERN_m13                free_flag = FALSE_m13;
 
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// check overall size
 	if (sizeof(REC_CSti_v10_m13) != REC_CSti_v10_BYTES_m13)
-		goto REC_CSti_v10_NOT_ALIGNED_m13;
+		goto REC_CSti_NOT_ALIGNED_m13;
 
 	// check fields
 	if (bytes == NULL) {
@@ -1292,29 +1401,29 @@ TERN_m13     REC_check_CSti_type_alignment_m13(ui1 *bytes)
 
 	csti = (REC_CSti_v10_m13 *) bytes;
 	if (&csti->stimulus_duration != (si8 *) (bytes + REC_CSti_v10_STIMULUS_DURATION_OFFSET_m13))
-		goto REC_CSti_v10_NOT_ALIGNED_m13;
+		goto REC_CSti_NOT_ALIGNED_m13;
 	if (csti->task_type != (si1 *) (bytes + REC_CSti_v10_TASK_TYPE_OFFSET_m13))
-		goto REC_CSti_v10_NOT_ALIGNED_m13;
+		goto REC_CSti_NOT_ALIGNED_m13;
 	if (csti->stimulus_type != (si1 *) (bytes + REC_CSti_v10_STIMULUS_TYPE_OFFSET_m13))
-		goto REC_CSti_v10_NOT_ALIGNED_m13;
+		goto REC_CSti_NOT_ALIGNED_m13;
 	if (csti->patient_response != (si1 *) (bytes + REC_CSti_v10_PATIENT_RESPONSE_OFFSET_m13))
-		goto REC_CSti_v10_NOT_ALIGNED_m13;
+		goto REC_CSti_NOT_ALIGNED_m13;
 
 	// aligned
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	return(TRUE_m13);
+	return_m13(TRUE_m13);
 
 	// not aligned
-REC_CSti_v10_NOT_ALIGNED_m13:
+REC_CSti_NOT_ALIGNED_m13:
 
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
 	G_error_message_m13("%s(): REC_CSti_v10_m13 structure is NOT aligned\n", __FUNCTION__);
 
-	return(FALSE_m13);
+	return_m13(FALSE_m13);
 
 }
 
