@@ -34,45 +34,45 @@
 // #define DATABASE_m13  // MED database (DB) functions (postgres only at this time)
 // #define MATLAB_m13  // for screen output & exit functions
 // #define MATLAB_PERSISTENT_m13	// For persistent memory between mex calls.
-				// NOTE: it may be more convenient to define MATLAB_PERSISTENT_m13
-				// only within mex functions that use it, rather than here
-
-	// If using persistent memory, do something like the following:
-	//
-	//	// Global session pointer
-	//	SESSION_m13	*sess = NULL;
-	//
-	// 	#ifdef MATLAB_PERSISTENT_m13
-	//	void mexExitFcn(void) {
-	//
-	//		// free session seperately to close files
-	//		free_session_m13(sess, TRUE_m13);
-	//
-	//		// free everything else
-	//		AT_free_all_m13();
-	//
-	//		// free globals (most already freed by AT_free_all_m13)
-	//		free_globals_m13(TRUE_m13);
-	//	}
-	// 	#endif
-	//
-	//	void mexFunction(...) {
-	//		...
-	// 		#ifdef MATLAB_PERSISTENT_m13
-	//		globals_m13 = <passed_value>;  // possibly NULL
-	//		sess = <passed_value>;  // possibly NULL
-	//		mexAtExit(mexExitFcn);  // register on every entry into mex
-	// 		#endif
-	//
-	//		if (globals_m13 == NULL)
-	//			initialize_medlib_m13(FALSE_m13, FALSE_m13);  // always NULL until library initialized
-	//		...
-	//	}
-
+					// NOTE: it may be more convenient to define MATLAB_PERSISTENT_m13
+					// only within mex functions that use it, rather than here
 
 #ifdef MATLAB_PERSISTENT_m13
 	#define MATLAB_m13
 #endif
+
+// If using persistent memory, do something like the following:
+//
+//	
+//	SESSION_m13	*sess = NULL;  // Global session pointer
+//
+// 	#ifdef MATLAB_PERSISTENT_m13
+//	void mexExitFcn(void) {
+//
+//		// free session seperately to close files
+//		free_session_m13(sess, TRUE_m13);
+//
+//		// free everything else (if using AT_DEBUG mode)
+//		AT_free_all_m13();
+//
+//		// free globals (most already freed by AT_free_all_m13)
+//		free_globals_m13(TRUE_m13);
+//	}
+// 	#endif
+//
+//	void mexFunction(...) {
+//		...
+// 		#ifdef MATLAB_PERSISTENT_m13
+//		globals_m13 = <passed_value>;  // possibly NULL
+//		sess = <passed_value>;  // possibly NULL
+//		mexAtExit(mexExitFcn);  // register on every entry into mex
+// 		#endif
+//
+//		if (globals_m13 == NULL)
+//			initialize_medlib_m13(FALSE_m13, FALSE_m13);  // always NULL until library initialized
+//		...
+//	}
+
 
 
 //**********************************************************************************//
