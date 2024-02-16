@@ -579,7 +579,7 @@ typedef struct {
 #define GLOBALS_CRC_MODE_DEFAULT_m13			CRC_CALCULATE_m13
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13	32
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13	32
-#define GLOBALS_PROC_GLOBALS_STACK_SIZE_INCREMENT_m13	32
+#define GLOBALS_PROC_GLOBALS_LIST_SIZE_INCREMENT_m13	32
 #define GLOBALS_REFERENCE_CHANNEL_INDEX_NO_ENTRY_m13	-1
 #define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13		-1
 #define GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13		4096  // 4 KiB
@@ -1122,7 +1122,7 @@ si4		PROC_pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
 si4		PROC_pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
 pthread_t_m13	PROC_pthread_self_m13(void);
 TERN_m13	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, TERN_m13 wait_for_lauch);
-void		PROC_show_thread_affinity_m13(pthread_t_m13 *thread_id);
+TERN_m13	PROC_show_thread_affinity_m13(pthread_t_m13 *thread_id);
 
 
 
@@ -1164,13 +1164,13 @@ typedef struct {
 } PAR_THREAD_INFO_m13;
 
 // Protoypes
-void			PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
+TERN_m13		PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
 PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...); // varagrgs(label == PAR_DEFAULTS_m13): si4 priority, si1 *affinity, si4 detached
 PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...);	// varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, si4 detached, <function arguments>
 									// varargs (par_info != NULL): <function arguments>
-void			PAR_show_info_m13(PAR_INFO_m13 *par_info);
+TERN_m13		PAR_show_info_m13(PAR_INFO_m13 *par_info);
 pthread_rval_m13	PAR_thread_m13(void *arg);
-void			PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
+TERN_m13		PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
 
 
 
@@ -1257,10 +1257,10 @@ NET_PARAMS_m13	*NET_get_plugged_in_m13(si1 *iface, NET_PARAMS_m13 *np);
 NET_PARAMS_m13	*NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np);
 si1		*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr);
 TERN_m13	NET_initialize_tables_m13(void);  // set global NET_PARAMS for default internet interface
-void		NET_reset_parameters_m13(NET_PARAMS_m13 *np);
+TERN_m13	NET_reset_parameters_m13(NET_PARAMS_m13 *np);
 TERN_m13	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, TERN_m13 *free_params);
-void            NET_show_parameters_m13(NET_PARAMS_m13 *np);
-void		NET_trim_address_m13(si1 *addr_str);
+TERN_m13	NET_show_parameters_m13(NET_PARAMS_m13 *np);
+TERN_m13	NET_trim_address_m13(si1 *addr_str);
 
 
 
@@ -1369,17 +1369,17 @@ typedef struct {
 } HW_PARAMS_m13;
 
 // Prototypes
-void		HW_get_core_info_m13(void);
-void		HW_get_endianness_m13(void);
-void		HW_get_info_m13(void);  // fill whole HW_PARAMS_m13 structure
-void		HW_get_machine_code_m13(void);
-void		HW_get_machine_serial_m13(void);
-void		HW_get_performance_specs_m13(TERN_m13 get_current);
+TERN_m13	HW_get_core_info_m13(void);
+TERN_m13	HW_get_endianness_m13(void);
+TERN_m13	HW_get_info_m13(void);  // fill whole HW_PARAMS_m13 structure
+TERN_m13	HW_get_machine_code_m13(void);
+TERN_m13	HW_get_machine_serial_m13(void);
+TERN_m13	HW_get_performance_specs_m13(TERN_m13 get_current);
 si1		*HW_get_performance_specs_file_m13(si1 *file);
 TERN_m13	HW_get_performance_specs_from_file_m13(void);
-void		HW_get_memory_info_m13(void);
+TERN_m13	HW_get_memory_info_m13(void);
 TERN_m13	HW_initialize_tables_m13(void);
-void		HW_show_info_m13(void);
+TERN_m13	HW_show_info_m13(void);
 
 
 
@@ -1678,10 +1678,11 @@ typedef struct {
 #endif  // FN_DEBUG_m13
 
 typedef struct {
-	PROC_GLOBALS_m13	**stack;
+	pthread_mutex_t_m13	mutex;
+	PROC_GLOBALS_m13	**list;
 	si4			size;
 	si4			entries;
-} PROC_GLOBALS_STACK_m13;
+} PROC_GLOBALS_LIST_INFO_m13;
 
 #ifdef AT_DEBUG_m13
 typedef struct {
@@ -1724,8 +1725,7 @@ typedef struct {
 	pthread_mutex_t_m13		function_stacks_mutex;
 #endif  // FN_DEBUG_m13
 	// Process Globals (stack used when LEVEL_HEADER_m13 unknown - searched by process/thread id)
-	PROC_GLOBALS_STACK_m13		proc_globals_stack;
-	pthread_mutex_t_m13		proc_globals_stack_mutex;
+	PROC_GLOBALS_LIST_INFO_m13	proc_globals_list_info;
 	// Record Filters
 	si4 				*record_filters;	// signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
 								// The terminal entry is NO_TYPE_CODE_m13 (== zero). NULL or no filter codes includes all records (== no filters).
@@ -2399,21 +2399,21 @@ si1		*G_behavior_string_m13(ui4 behavior, si1 *behavior_string);
 si8		G_build_contigua_m13(LEVEL_HEADER_m13 *level_header);
 Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_fps, FILE_PROCESSING_STRUCT_m13 *rd_fps, CHANNEL_m13 *chan);
 si8		G_bytes_for_items_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_items, si8 read_file_offset);
-void    	G_calculate_indices_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-void            G_calculate_metadata_CRC_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-void            G_calculate_record_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-void            G_calculate_time_series_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-void		G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si1 *chan_name, si1 chan_type);
+TERN_m13    	G_calculate_indices_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	G_calculate_metadata_CRC_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	G_calculate_record_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	G_calculate_time_series_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si1 *chan_name, si1 chan_type);
 ui4             G_channel_type_from_path_m13(si1 *path);
 TERN_m13	G_check_char_type_m13(void);
 TERN_m13	G_check_file_list_m13(si1 **file_list, si4 n_files);
 TERN_m13	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...);  // varargs: si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
 TERN_m13        G_check_password_m13(si1 *password);
-void		G_clear_terminal_m13(void);
+TERN_m13	G_clear_terminal_m13(void);
 si4		G_compare_acq_nums_m13(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
-void		G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
-void		G_condition_time_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header);
+TERN_m13	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
+TERN_m13	G_condition_time_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header);
 TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 ui4		G_current_behavior_m13(void);  // returns behavior code
 BEHAVIOR_m13	*G_current_behavior_entry_m13(void);  // returns pointer to BEHAVIOR_m13 struct (useful for debugging)
@@ -2424,20 +2424,18 @@ TERN_m13        G_decrypt_record_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, ...);
 TERN_m13        G_decrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 void		G_delete_behavior_stack_m13(void);
 void		G_delete_function_stack_m13(void);
-void		G_delete_proc_globals_m13(LEVEL_HEADER_m13 *level_header);
 si4             G_DST_offset_m13(si8 uutc);
-TERN_m13	G_empty_string_m13(si1 *string);
 TERN_m13        G_encrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13	G_encrypt_record_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13        G_encrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13	G_enter_ascii_password_m13(si1 *password, si1 *prompt, TERN_m13 confirm_no_entry, sf8 timeout_secs, TERN_m13 create_password);
 void            G_error_message_m13(si1 *fmt, ...);
-void            G_extract_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
-void            G_extract_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
+TERN_m13	G_extract_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
+TERN_m13	G_extract_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
 ui4             G_file_exists_m13(si1 *path);
 si8		G_file_length_m13(FILE *fp, si1 *path);
 FILE_TIMES_m13	*G_file_times_m13(FILE *fp, si1 *path, FILE_TIMES_m13 *ft, TERN_m13 set_time);
-void            G_fill_empty_password_bytes_m13(si1 *password_bytes);
+TERN_m13            G_fill_empty_password_bytes_m13(si1 *password_bytes);
 CONTIGUON_m13	*G_find_discontinuities_m13(LEVEL_HEADER_m13 *level_header, si8 *num_contigua);
 si8		G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode);
 si1		*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
@@ -2449,8 +2447,8 @@ void		G_free_global_tables_m13(void);
 void            G_free_globals_m13(TERN_m13 cleanup_for_exit);
 void		G_free_thread_local_storage_m13(void);
 TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structure);
-void		G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, TERN_m13 free_segmented_sess_rec_structure);
-void            G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structure);
+TERN_m13	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, TERN_m13 free_segmented_sess_rec_structure);
+TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structure);
 TERN_m13	G_frequencies_vary_m13(SESSION_m13 *sess);
 si1		**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 ui4             G_generate_MED_path_components_m13(si1 *path, si1 *MED_dir, si1* MED_name);
@@ -2476,13 +2474,12 @@ TERN_m13	G_include_record_m13(ui4 type_code, si4 *record_filters);
 TERN_m13	G_initialize_global_tables_m13(TERN_m13 initialize_all_tables);
 TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor);
 TERN_m13	G_initialize_medlib_m13(TERN_m13 check_structure_alignments, TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor);
-void            G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 initialize_for_update);
-void		G_initialize_session_globals_m13(LEVEL_HEADER_m13 *level_header);
+TERN_m13	G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 initialize_for_update);
 TIME_SLICE_m13	*G_initialize_time_slice_m13(TIME_SLICE_m13 *slice);
 TERN_m13	G_initialize_timezone_tables_m13(void);
-void		G_initialize_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 type_code, TERN_m13 generate_file_UID, TERN_m13 originating_file);
+TERN_m13		G_initialize_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 type_code, TERN_m13 generate_file_UID, TERN_m13 originating_file);
 si8		G_items_for_bytes_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_bytes);
-void		G_lh_set_directives_m13(si1 *full_file_name, ui8 lh_flags, TERN_m13 *mmap_flag, TERN_m13 *close_flag, si8 *number_of_items);
+TERN_m13		G_lh_set_directives_m13(si1 *full_file_name, ui8 lh_flags, TERN_m13 *mmap_flag, TERN_m13 *close_flag, si8 *number_of_items);
 si1		*G_MED_type_string_from_code_m13(ui4 code);
 ui4             G_MED_type_code_from_string_m13(si1 *string);
 TERN_m13        G_merge_metadata_m13(FILE_PROCESSING_STRUCT_m13 *md_fps_1, FILE_PROCESSING_STRUCT_m13 *md_fps_2, FILE_PROCESSING_STRUCT_m13 *merged_md_fps);
@@ -2502,10 +2499,11 @@ TERN_m13	G_path_from_root_m13(si1 *path, si1 *root_path);
 void            G_pop_behavior_m13(void);
 void            G_pop_function_m13(void);
 PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header);  // top of process heirarchy
+void		G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header);
 PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header);
 void		G_proc_globals_reset_m13(PROC_GLOBALS_m13 *);
 TERN_m13	G_process_password_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *unspecified_pw);
-void		G_propogate_flags_m13(LEVEL_HEADER_m13 *level_header, ui8 new_flags);
+TERN_m13		G_propogate_flags_m13(LEVEL_HEADER_m13 *level_header, ui8 new_flags);
 void            G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 #ifdef FN_DEBUG_m13
 void		G_push_function_exec_m13(const si1 *function);
@@ -2525,39 +2523,39 @@ TERN_m13	G_recover_passwords_m13(si1 *L3_password, UNIVERSAL_HEADER_m13* univers
 void		G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 TERN_m13	G_remove_path_m13(si1 *path);
 void     	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
-void            G_reset_metadata_for_update_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	G_reset_metadata_for_update_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 si8		G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4		G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *slice, ui4 search_mode);
 si4		G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
 si4		G_segment_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
 si4		G_segment_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_time);
-void		G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
+TERN_m13	G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
 void		G_set_error_exec_m13(si1 *message, si4 code, LEVEL_HEADER_m13 *level_header, const si1 *function, si4 line);
 TERN_m13	G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, TERN_m13 prompt);
 TERN_m13	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
-void		G_show_behavior_m13(ui4 mode);
-void            G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
-void		G_show_error_m13(LEVEL_HEADER_m13 *level_header);
-void		G_show_file_times_m13(FILE_TIMES_m13 *ft);
+TERN_m13	G_show_behavior_m13(ui4 mode);
+TERN_m13	G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
+TERN_m13	G_show_error_m13(LEVEL_HEADER_m13 *level_header);
+TERN_m13	G_show_file_times_m13(FILE_TIMES_m13 *ft);
 #ifdef FN_DEBUG_m13
 void		G_show_function_stack_m13(void);
 #endif
-void            G_show_globals_m13(void);
-void		G_show_level_header_flags_m13(ui8 flags);
-void    	G_show_location_info_m13(LOCATION_INFO_m13 *li);
-void            G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, ui4 type_code);
-void            G_show_password_data_m13(PASSWORD_DATA_m13 *pwd);
-void		G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd);
-void		G_show_records_m13(FILE_PROCESSING_STRUCT_m13 *record_data_fps, si4 *record_filters);
-void		G_show_Sgmt_records_array_m13(LEVEL_HEADER_m13 *level_header, Sgmt_RECORD_m13 *Sgmt);
-void    	G_show_time_slice_m13(TIME_SLICE_m13 *slice);
-void            G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, TERN_m13 show_DST_detail);
-void            G_show_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, UNIVERSAL_HEADER_m13 *uh);
+void		G_show_globals_m13(void);
+TERN_m13	G_show_level_header_flags_m13(ui8 flags);
+TERN_m13	G_show_location_info_m13(LOCATION_INFO_m13 *li);
+TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, ui4 type_code);
+TERN_m13	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd);
+TERN_m13	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd);
+TERN_m13	G_show_records_m13(FILE_PROCESSING_STRUCT_m13 *record_data_fps, si4 *record_filters);
+TERN_m13	G_show_Sgmt_records_array_m13(LEVEL_HEADER_m13 *level_header, Sgmt_RECORD_m13 *Sgmt);
+TERN_m13    	G_show_time_slice_m13(TIME_SLICE_m13 *slice);
+TERN_m13	G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, TERN_m13 show_DST_detail);
+TERN_m13	G_show_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, UNIVERSAL_HEADER_m13 *uh);
 TERN_m13	G_sort_channels_by_acq_num_m13(SESSION_m13 *sess);
-void		G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number);
-void		G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
+TERN_m13	G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number);
+TERN_m13	G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 si1		*G_unique_temp_file_m13(si1 *temp_file);
-void		G_update_maximum_entry_size_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
+TERN_m13	G_update_maximum_entry_size_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 si8		G_uutc_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		G_uutc_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 TERN_m13        G_validate_record_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
@@ -2573,18 +2571,18 @@ si8     	G_write_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 
 
 #ifdef WINDOWS_m13
 FILETIME	WN_uutc_to_win_time_m13(si8 uutc);
-void		WN_cleanup_m13(void);
-void		WN_clear_m13(void);
+TERN_m13	WN_cleanup_m13(void);
+TERN_m13	WN_clear_m13(void);
 si8		WN_date_to_uutc_m13(sf8 date);
 si4    		WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, TERN_m13 full_path, si1 **buffer);
 si4		WN_ls_1d_to_tmp_m13(si1 **dir_strs, si4 n_dirs, TERN_m13 full_path, si1 *temp_file);
 TERN_m13	WN_initialize_terminal_m13(void);
 TERN_m13	WN_reset_terminal_m13(void);
 TERN_m13	WN_socket_startup_m13(void);
-inline si4	WN_system_m13(si1 *command);
+si4		WN_system_m13(si1 *command);
 si8		WN_time_to_uutc_m13(FILETIME win_time);
 sf8		WN_uutc_to_date_m13(si8 uutc);
-void		WN_windify_file_paths_m13(si1 *target, si1 *source);
+TERN_m13	WN_windify_file_paths_m13(si1 *target, si1 *source);
 si1		*WN_windify_format_string_m13(si1 *fmt);
 #endif  // WINDOWS_m13
 
@@ -2663,9 +2661,9 @@ void		*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, s
 
 // Prototypes
 FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FILE_PROCESSING_STRUCT_m13 *proto_fps, si8 bytes_to_copy);
-void		FPS_close_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	FPS_close_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 si4		FPS_compare_start_times_m13(const void *a, const void *b);
-void            FPS_free_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 free_fps_structure);
+TERN_m13	FPS_free_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 free_fps_structure);
 FPS_DIRECTIVES_m13	*FPS_initialize_directives_m13(FPS_DIRECTIVES_m13 *directives);
 FPS_PARAMETERS_m13	*FPS_initialize_parameters_m13(FPS_PARAMETERS_m13 *parameters);
 void		FPS_lock_m13(FILE_PROCESSING_STRUCT_m13 *fps);
@@ -2673,10 +2671,10 @@ si8		FPS_memory_map_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, s
 TERN_m13	FPS_open_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 si8		FPS_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_read);
 TERN_m13	FPS_reallocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 raw_data_bytes);
-void		FPS_seek_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset);
-void		FPS_set_pointers_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset);
-void		FPS_show_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-void		FPS_sort_m13(FILE_PROCESSING_STRUCT_m13 **fps_array, si4 n_fps);
+TERN_m13	FPS_seek_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset);
+TERN_m13	FPS_set_pointers_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset);
+TERN_m13	FPS_show_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13	FPS_sort_m13(FILE_PROCESSING_STRUCT_m13 **fps_array, si4 n_fps);
 void		FPS_unlock_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 si8		FPS_write_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_write);
 
@@ -2693,23 +2691,24 @@ si4		STR_compare_m13(const void *a, const void *b);
 TERN_m13    	STR_contains_formatting_m13(si1 *string, si1 *plain_string);
 TERN_m13	STR_contains_regex_m13(si1 *string);
 si1		*STR_duration_m13(si1 *dur_str, si8 i_usecs);
-void            STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
+TERN_m13	STR_empty_m13(si1 *string);
+TERN_m13	STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string);
 si1		*STR_match_end_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_line_end_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_line_start_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_start_m13(si1 *pattern, si1 *buffer);
 si1     	*STR_re_escape_m13(si1 *str, si1 *esc_str);
-void    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
+TERN_m13    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
 si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m13 free_input_buffer);
 si1		*STR_size_m13(si1 *size_str, si8 n_bytes);
-void		STR_sort_m13(si1 **string_array, si8 n_strings);
-void		STR_strip_character_m13(si1 *s, si1 character);
+TERN_m13	STR_sort_m13(si1 **string_array, si8 n_strings);
+TERN_m13	STR_strip_character_m13(si1 *s, si1 character);
 si1		*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc_time, si1 *time_str, TERN_m13 fixed_width, TERN_m13 relative_days, si4 colored_text, ...);
-void		STR_to_lower_m13(si1 *s);
-void		STR_to_title_m13(si1 *s);
-void		STR_to_upper_m13(si1 *s);
-void            STR_unescape_chars_m13(si1 *string, si1 target_char);
+TERN_m13	STR_to_lower_m13(si1 *s);
+TERN_m13	STR_to_title_m13(si1 *s);
+TERN_m13	STR_to_upper_m13(si1 *s);
+TERN_m13	STR_unescape_chars_m13(si1 *string, si1 target_char);
 si1		*STR_wchar2char_m13(si1 *target, wchar_t *source);
 
 
@@ -3315,10 +3314,10 @@ typedef struct CMP_PROCESSING_STRUCT_m13 {
 // Function Prototypes
 CMP_BUFFERS_m13	*CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, TERN_m13 zero_data, TERN_m13 lock_memory);
 CMP_PROCESSING_STRUCT_m13	*CMP_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CMP_DIRECTIVES_m13 *directives, CMP_PARAMETERS_m13 *parameters);
-void		CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, TERN_m13 extrema, sf8 *minima, sf8 *maxima);
-void		CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
+TERN_m13	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, TERN_m13 extrema, sf8 *minima, sf8 *maxima);
+TERN_m13	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
 sf8      	CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps);
-void		CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats_ptr, si4 *data, si8 len, CMP_NODE_m13 *nodes);
+TERN_m13	CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats_ptr, si4 *data, si8 len, CMP_NODE_m13 *nodes);
 TERN_m13	CMP_check_block_header_alignment_m13(ui1 *bytes);
 TERN_m13	CMP_check_CPS_allocation_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13        CMP_check_record_header_alignment_m13(ui1 *bytes);
@@ -3326,85 +3325,85 @@ si4		CMP_compare_sf8_m13(const void *a, const void * b);
 si4		CMP_compare_si4_m13(const void *a, const void * b);
 si4     	CMP_compare_si8_m13(const void *a, const void * b);
 si4		CMP_count_bins_m13(CMP_PROCESSING_STRUCT_m13 *cps, si4 *deriv_buffer, ui1 n_derivs);
-void    	CMP_decode_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+TERN_m13    	CMP_decode_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13     	CMP_decrypt_m13(FILE_PROCESSING_STRUCT_m13 *fps);  // single block decrypt (see also decrypt_time_series_data_m13)
-void    	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len);
+TERN_m13    	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len);
 ui1		CMP_differentiate_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void		CMP_encode_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples);
+TERN_m13	CMP_encode_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples);
 TERN_m13	CMP_encrypt_m13(FILE_PROCESSING_STRUCT_m13 *fps);  // single block encrypt (see also encrypt_time_series_data_m13)
-TERN_m13	CMP_find_amplitude_scale_m13(CMP_PROCESSING_STRUCT_m13 *cps, void (*compression_f)(CMP_PROCESSING_STRUCT_m13 *cps));
+TERN_m13	CMP_find_amplitude_scale_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 (*compression_f)(CMP_PROCESSING_STRUCT_m13 *cps));
 si8    		*CMP_find_crits_m13(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs);
-void    	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, si8 *n_troughs, si8 *trough_xs);
-void    	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CMP_PROCESSING_STRUCT_m13 *cps);
-TERN_m13	CMP_find_frequency_scale_m13(CMP_PROCESSING_STRUCT_m13 *cps, void (*compression_f)(CMP_PROCESSING_STRUCT_m13 *cps));
-void    	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, TERN_m13 free_structure);
-void    	CMP_free_processing_struct_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 free_cps_structure);
-void    	CMP_generate_lossy_data_m13(CMP_PROCESSING_STRUCT_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
-void		CMP_generate_parameter_map_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, si8 *n_troughs, si8 *trough_xs);
+TERN_m13    	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13	CMP_find_frequency_scale_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 (*compression_f)(CMP_PROCESSING_STRUCT_m13 *cps));
+TERN_m13    	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, TERN_m13 free_structure);
+TERN_m13    	CMP_free_processing_struct_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 free_cps_structure);
+TERN_m13    	CMP_generate_lossy_data_m13(CMP_PROCESSING_STRUCT_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
+TERN_m13	CMP_generate_parameter_map_m13(CMP_PROCESSING_STRUCT_m13 *cps);
 ui1    		CMP_get_overflow_bytes_m13(CMP_PROCESSING_STRUCT_m13 *cps, ui4 mode, ui4 algorithm);
-void    	CMP_get_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_get_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
 TERN_m13	CMP_hex_to_int_m13(ui1 *in, ui1 *out, si4 len);
-void		CMP_initialize_directives_m13(CMP_DIRECTIVES_m13 *directives, ui1 compression_mode);
-void		CMP_initialize_parameters_m13(CMP_PARAMETERS_m13 *parameters);
+TERN_m13	CMP_initialize_directives_m13(CMP_DIRECTIVES_m13 *directives, ui1 compression_mode);
+TERN_m13	CMP_initialize_parameters_m13(CMP_PARAMETERS_m13 *parameters);
 TERN_m13	CMP_initialize_tables_m13(void);
-void		CMP_integrate_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void    	CMP_lad_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void    	CMP_lad_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void    	CMP_lad_reg_si4_m13(si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13	CMP_integrate_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13    	CMP_lad_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13    	CMP_lad_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13    	CMP_lad_reg_si4_m13(si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 sf8		*CMP_lin_interp_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len);
 si4		*CMP_lin_interp_si4_m13(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len);
-void    	CMP_lin_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void    	CMP_lin_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void    	CMP_lin_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void    	CMP_lin_reg_si4_m13(si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
-void		CMP_lock_buffers_m13(CMP_BUFFERS_m13 *buffers);
-void    	CMP_MBE_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_MBE_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_lin_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13    	CMP_lin_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13    	CMP_lin_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13    	CMP_lin_reg_si4_m13(si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+TERN_m13	CMP_lock_buffers_m13(CMP_BUFFERS_m13 *buffers);
+TERN_m13    	CMP_MBE_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_MBE_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
 sf8     	*CMP_mak_interp_sf8_m13(CMP_BUFFERS_m13 *in_bufs, si8 in_len, CMP_BUFFERS_m13 *out_bufs, si8 out_len);
 ui1     	CMP_normality_score_m13(si4 *data, ui4 n_samps);
 sf8		CMP_p2z_m13(sf8 p);
-void    	CMP_PRED1_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_PRED2_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_PRED1_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_PRED2_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_PRED1_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_PRED2_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_PRED1_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_PRED2_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
 CMP_PROCESSING_STRUCT_m13	*CMP_reallocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 sf8     	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, TERN_m13 preserve_input, sf8 *buff);
 ui1             CMP_random_byte_m13(ui4 *m_w, ui4 *m_z);
-void    	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
-void    	CMP_RED1_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_RED2_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_RED1_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_RED2_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_retrend_si4_m13(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b);
-void    	CMP_retrend_2_sf8_m13(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b);
+TERN_m13    	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
+TERN_m13    	CMP_RED1_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_RED2_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_RED1_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_RED2_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_retrend_si4_m13(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b);
+TERN_m13    	CMP_retrend_2_sf8_m13(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b);
 si2      	CMP_round_si2_m13(sf8 val);
 si4     	CMP_round_si4_m13(sf8 val);
-void    	CMP_scale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_scale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
-void    	CMP_set_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void      	CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len);
-void      	CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
-void    	CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXED_HEADER_m13 *block_header);
-void    	CMP_show_block_model_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 recursed_call);
-void      	CMP_si4_to_sf8_m13(si4 *si4_arr, sf8 *sf8_arr, si8 len);
+TERN_m13    	CMP_scale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_scale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13    	CMP_set_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13      	CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len);
+TERN_m13      	CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
+TERN_m13    	CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXED_HEADER_m13 *block_header);
+TERN_m13    	CMP_show_block_model_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 recursed_call);
+TERN_m13      	CMP_si4_to_sf8_m13(si4 *si4_arr, sf8 *sf8_arr, si8 len);
 sf8		*CMP_spline_interp_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, CMP_BUFFERS_m13 *spline_bufs);
 si4		*CMP_spline_interp_si4_m13(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len, CMP_BUFFERS_m13 *spline_bufs);
 sf8		CMP_splope_m13(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt);
 sf8		CMP_trace_amplitude_m13(sf8 *y, sf8 *buffer, si8 len, TERN_m13 detrend);
 si8             CMP_ts_sort_m13(si4 *x, si8 len, CMP_NODE_m13 *nodes, CMP_NODE_m13 *head, CMP_NODE_m13 *tail, si4 return_sorted_ts, ...);
-void		CMP_unlock_buffers_m13(CMP_BUFFERS_m13 *buffers);
-void    	CMP_unscale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
-void    	CMP_unscale_amplitude_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len, sf8 scale_factor);
-void    	CMP_unscale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
+TERN_m13	CMP_unlock_buffers_m13(CMP_BUFFERS_m13 *buffers);
+TERN_m13    	CMP_unscale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
+TERN_m13    	CMP_unscale_amplitude_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len, sf8 scale_factor);
+TERN_m13    	CMP_unscale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
 CMP_BLOCK_FIXED_HEADER_m13 *CMP_update_CPS_pointers_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui1 flags);
-void		CMP_VDS_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void		CMP_VDS_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-void		CMP_VDS_generate_template_m13(CMP_PROCESSING_STRUCT_m13 *cps, si8 data_len);
+TERN_m13	CMP_VDS_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13	CMP_VDS_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+TERN_m13	CMP_VDS_generate_template_m13(CMP_PROCESSING_STRUCT_m13 *cps, si8 data_len);
 sf8		CMP_VDS_get_theshold_m13(CMP_PROCESSING_STRUCT_m13 *cps);
 sf8		CMP_z2p_m13(sf8 z);
-void    	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
+TERN_m13    	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
 
 
 
@@ -3782,32 +3781,32 @@ typedef struct {
 
 // Prototypes
 QUANTFILT_DATA_m13	*FILT_alloc_quantfilt_data_m13(si8 len, si8 span);
-void    FILT_balance_m13(sf8 **a, si4 poles);
-si4     FILT_butter_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
-void    FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *quotient);
-void    FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans);
-void    FILT_complex_mult_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *product);
-void    FILT_elmhes_m13(sf8 **a, si4 poles);
-void	FILT_excise_transients_m13(CMP_PROCESSING_STRUCT_m13 *cps, si8 data_len, si8 *n_extrema);
-si4     FILT_filtfilt_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
-void	FILT_free_CPS_filtps_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 free_orig_data, TERN_m13 free_filt_data, TERN_m13 free_buffer);
-void    FILT_free_processing_struct_m13(FILT_PROCESSING_STRUCT_m13 *filtps, TERN_m13 free_orig_data, TERN_m13 free_filt_data, TERN_m13 free_buffer, TERN_m13 free_structure);
-void	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 *qd, TERN_m13 free_structure);
+TERN_m13	FILT_balance_m13(sf8 **a, si4 poles);
+si4     	FILT_butter_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
+void    	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *quotient);
+void    	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans);
+void    	FILT_complex_mult_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *product);
+TERN_m13	FILT_elmhes_m13(sf8 **a, si4 poles);
+TERN_m13	FILT_excise_transients_m13(CMP_PROCESSING_STRUCT_m13 *cps, si8 data_len, si8 *n_extrema);
+si4     	FILT_filtfilt_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
+TERN_m13	FILT_free_CPS_filtps_m13(CMP_PROCESSING_STRUCT_m13 *cps, TERN_m13 free_orig_data, TERN_m13 free_filt_data, TERN_m13 free_buffer);
+TERN_m13	FILT_free_processing_struct_m13(FILT_PROCESSING_STRUCT_m13 *filtps, TERN_m13 free_orig_data, TERN_m13 free_filt_data, TERN_m13 free_buffer, TERN_m13 free_structure);
+TERN_m13	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 *qd, TERN_m13 free_structure);
 FILT_PROCESSING_STRUCT_m13  *FILT_initialize_processing_struct_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, TERN_m13 alloc_orig_data, TERN_m13 alloc_filt_data, TERN_m13 alloc_buffer, ui4 behavior_on_fail, sf8 cutoff_1, ...);
-void    FILT_generate_initial_conditions_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
-void    FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
-void    FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order);
-ui1	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, TERN_m13 calculate_score, TERN_m13 fast_mode, CMP_BUFFERS_m13 *lnf_buffers);
-void    FILT_mat_mult_m13(void *a, void *b, void *product, si4 outer_dim1, si4 inner_dim, si4 outer_dim2);
-sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option_code);
-sf8    	*FILT_noise_floor_filter_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers);
-sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si1 tail_option_code);
+TERN_m13	FILT_generate_initial_conditions_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
+TERN_m13	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
+TERN_m13	FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order);
+ui1		FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, TERN_m13 calculate_score, TERN_m13 fast_mode, CMP_BUFFERS_m13 *lnf_buffers);
+void    	FILT_mat_mult_m13(void *a, void *b, void *product, si4 outer_dim1, si4 inner_dim, si4 outer_dim2);
+sf8		*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option_code);
+sf8    		*FILT_noise_floor_filter_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers);
+sf8		*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si1 tail_option_code);
 QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, ...);  // varargs: sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si4 tail_option_code
-void	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd);
-void	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd);
-si4     FILT_sf8_sort_m13(const void *n1, const void *n2);
-void	FILT_show_processing_struct_m13(FILT_PROCESSING_STRUCT_m13 *filt_ps);
-void    FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
+TERN_m13	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd);
+TERN_m13	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd);
+si4     	FILT_sf8_sort_m13(const void *n1, const void *n2);
+TERN_m13	FILT_show_processing_struct_m13(FILT_PROCESSING_STRUCT_m13 *filt_ps);
+TERN_m13	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 
 
 
@@ -3952,7 +3951,7 @@ typedef struct {
 
 
 // Prototypes
-void			DM_free_matrix_m13(DATA_MATRIX_m13 *matrix, TERN_m13 free_structure);
+TERN_m13		DM_free_matrix_m13(DATA_MATRIX_m13 *matrix, TERN_m13 free_structure);
 DATA_MATRIX_m13 	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, TIME_SLICE_m13 *slice, si4 varargs, ...);  // can't use TERN_m13 to flag varargs (undefined behavior)
 // DM_get_matrix_m13() varargs: si8 sample_count, sf8 sampling_frequency, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
 //
@@ -3963,10 +3962,10 @@ DATA_MATRIX_m13 	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, 
 // varargs DM_FILT_BANDPASS_m13 set: fc1 == low_cutoff, fc2 == high_cutoff
 // varargs DM_FILT_BANDSTOP_m13 set: fc1 == low_cutoff, fc2 == high_cutoff
 pthread_rval_m13	DM_gm_thread_f_m13(void *ptr);
-void			DM_show_flags_m13(ui8 flags);
+TERN_m13		DM_show_flags_m13(ui8 flags);
 DATA_MATRIX_m13		*DM_transpose_m13(DATA_MATRIX_m13 **in_matrix, DATA_MATRIX_m13 **out_matrix);  // if *in_matrix == *out_matrix, done in place; if *out_matrix == NULL, allocated and returned
-void			DM_transpose_in_place_m13(DATA_MATRIX_m13 *matrix, void *base);
-void			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13 *out_matrix, void *in_base, void *out_base);  // used by DM_transpose_m13(), assumes array allocation is taken care of, so use independently with care
+TERN_m13		DM_transpose_in_place_m13(DATA_MATRIX_m13 *matrix, void *base);
+TERN_m13		DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13 *out_matrix, void *in_base, void *out_base);  // used by DM_transpose_m13(), assumes array allocation is taken care of, so use independently with care
 
 
 
@@ -4126,21 +4125,21 @@ typedef struct {
 // Prototypes
 TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, si1 *password);
 TERN_m13	TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port);
-void		TR_build_message_m13(TR_MESSAGE_HEADER_m13 *msg, si1 *message_text);
+TERN_m13	TR_build_message_m13(TR_MESSAGE_HEADER_m13 *msg, si1 *message_text);
 TERN_m13	TR_check_transmission_header_alignment_m13(ui1 *bytes);
-void		TR_close_transmission_m13(TR_INFO_m13 *trans_info);
+TERN_m13	TR_close_transmission_m13(TR_INFO_m13 *trans_info);
 TERN_m13	TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port);
 TERN_m13	TR_connect_to_server_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port);
 TERN_m13	TR_create_socket_m13(TR_INFO_m13 *trans_info);
-void		TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr, TERN_m13 free_structure);
-void		TR_realloc_trans_info_m13(TR_INFO_m13 *trans_info, si8 buffer_bytes, TR_HEADER_m13 **caller_header);
+TERN_m13	TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr, TERN_m13 free_structure);
+TERN_m13	TR_realloc_trans_info_m13(TR_INFO_m13 *trans_info, si8 buffer_bytes, TR_HEADER_m13 **caller_header);
 si8		TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HEADER_m13 **caller_header);  // receive may reallocate, pass caller header to have function set local variable, otherwise pass NULL, can do manually
 TERN_m13	TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, TERN_m13 encrypt, si1 *fmt, ...);
 si8		TR_send_transmission_m13(TR_INFO_m13 *trans_info);
 TERN_m13	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, TERN_m13 blocking);
-void		TR_set_socket_timeout_m13(TR_INFO_m13 *trans_info);
+TERN_m13	TR_set_socket_timeout_m13(TR_INFO_m13 *trans_info);
 TERN_m13	TR_show_message_m13(TR_HEADER_m13 *header);
-void		TR_show_transmission_m13(TR_INFO_m13 *trans_info);
+TERN_m13	TR_show_transmission_m13(TR_INFO_m13 *trans_info);
 si1		*TR_strerror(si4 err_num);
 
 
@@ -4632,7 +4631,7 @@ si8            	ftell_m13(FILE *stream);
 size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path);  // path parameter included for error messages
 char		*getcwd_m13(char *buf, size_t size);
 size_t		malloc_size_m13(void *address);
-void		memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
+void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
 TERN_m13	mlock_m13(void *addr, size_t len, TERN_m13 zero_data);
 TERN_m13	munlock_m13(void *addr, size_t len);
 si4     	printf_m13(si1 *fmt, ...);
@@ -4669,11 +4668,11 @@ si4    		vsprintf_m13(si1 *target, si1 *fmt, va_list args);
 #endif  // AT_DEBUG_m13
 
 #ifdef FN_DEBUG_m13
-#define void_return_m13 	do { G_pop_function_m13(); return; } while(0)   // "loop" to deal with terminal semicolon (optimized out on compile)
 #define return_m13(arg) 	do { G_pop_function_m13(); return(arg); } while(0)   // "loop" to deal with terminal semicolon (optimized out on compile)
+#define return_void_m13 	do { G_pop_function_m13(); return; } while(0)   // "loop" to deal with terminal semicolon (optimized out on compile)
 #else
-#define void_return_m13 	return
 #define return_m13(arg) 	return(arg)
+#define return_void_m13 	return
 #endif  // FN_DEBUG_m13
 
 
