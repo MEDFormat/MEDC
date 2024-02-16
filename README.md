@@ -12,11 +12,11 @@ fp = fopen('<channel_name>.raw', 'r');
 <channel_name> = fread(fp, 'int32=>double');
 fclose(fp);
 
-Shell Scripts: (edit these for your target locations & compiler, specified at the top)
-mklib.sh is a shell script to a create MED library in MacOS & Linux
-mklib.bat is a shell script to a create MED library in Windows
-compile.sh is a shell script to compile MED2RAW using the MED library in MacOS & Linux
-compile.bat is a shell script to compile MED2RAW using the MED library in Windows
+Shell Scripts: (edit these for your target locations & compiler, specified at the top). 
+mklib.sh is a shell script to a create MED library in MacOS & Linux. 
+mklib.bat is a shell script to a create MED library in Windows. 
+compile.sh is a shell script to compile MED2RAW using the MED library in MacOS & Linux. 
+compile.bat is a shell script to compile MED2RAW using the MED library in Windows. 
 
 The API documentation is currently being updated for m12 libraries.  
 New record types may be added to the medrec_m12 prior to their appearance in the MED Records documentation.
