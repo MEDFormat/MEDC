@@ -29242,35 +29242,35 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 	c = STR_match_end_m12("machine code: ", c);
 	if (c == NULL)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
-	items = sscanf(c, "%x", &file_machine_code);
+	items = sscanf_m12(c, "%x", &file_machine_code);
 	if (file_machine_code != hw_params->machine_code || items == 0)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("integer multiplications per sec: ", c);
 	if (c == NULL)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
-	items = sscanf(c, "%ld", &perf_specs->integer_multiplications_per_sec);
+	items = sscanf_m12(c, "%ld", &perf_specs->integer_multiplications_per_sec);
 	if (items == 0)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("integer divisions per sec: ", c);
 	if (c == NULL)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
-	items = sscanf(c, "%ld", &perf_specs->integer_divisions_per_sec);
+	items = sscanf_m12(c, "%ld", &perf_specs->integer_divisions_per_sec);
 	if (items == 0)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("nsecs per integer multiplication: ", c);
 	if (c == NULL)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
-	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_multiplication);
+	items = sscanf_m12(c, "%lf", &perf_specs->nsecs_per_integer_multiplication);
 	if (items == 0)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
 	c = STR_match_end_m12("nsecs per integer division: ", c);
 	if (c == NULL)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
-	items = sscanf(c, "%lf", &perf_specs->nsecs_per_integer_division);
+	items = sscanf_m12(c, "%lf", &perf_specs->nsecs_per_integer_division);
 	if (items == 0)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12;
 
