@@ -33439,6 +33439,44 @@ si1	*STR_match_end_m12(si1 *pattern, si1 *buffer)
 }
 
 
+si1	*STR_match_end_bin_m12(si1 *pattern, si1 *buffer, si8 buf_len)
+{
+	si1	*pat_p, *buf_p, *buf_end;
+	si8	pat_len;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes pattern is zero-terminated)
+	// "bin" version allows for binary data in buffer (zeros in buffer)
+	// NOTE: if updating buffer pointer in sequential calls, adjust buf_len accordingly
+
+	pat_len = (si8) strlen(pattern);
+	if (pat_len >= buf_len)
+		return(NULL);
+	
+	buf_end = (buffer + buf_len) - pat_len;
+	do {
+		pat_p = pattern;
+		buf_p = buffer++;
+		while (*buf_p++ == *pat_p++) {
+			if (buf_p == buf_end)
+				return(NULL);
+			if (!*pat_p)
+				return(buf_p);
+		}
+		if (!*pat_p) {
+			if (buf_p < buf_end)
+				return(buf_p);
+			return(NULL);
+		}
+	} while (buffer < buf_end);
+	
+	return(NULL);
+}
+
+
 si1	*STR_match_line_end_m12(si1 *pattern, si1 *buffer)
 {
 #ifdef FN_DEBUG_m12
@@ -33513,6 +33551,44 @@ si1	*STR_match_start_m12(si1 *pattern, si1 *buffer)
 			if (!*pat_p)
 				return(--buffer);
 	} while (*buf_p);
+	
+	return(NULL);
+}
+
+
+si1	*STR_match_start_bin_m12(si1 *pattern, si1 *buffer, si8 buf_len)
+{
+	si1	*pat_p, *buf_p, *buf_end;
+	si8	pat_len;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// returns pointer to beginning of the first match in the buffer, NULL if no match (assumes pattern is zero-terminated)
+	// "bin" version allows for binary data in buffer (zeros in buffer)
+	// NOTE: if updating buffer pointer in sequential calls, adjust buf_len accordingly
+
+	pat_len = (si8) strlen(pattern);
+	if (pat_len >= buf_len)
+		return(NULL);
+	
+	buf_end = (buffer + buf_len) - pat_len;
+	do {
+		pat_p = pattern;
+		buf_p = buffer++;
+		while (*buf_p++ == *pat_p++) {
+			if (!*pat_p)
+				return(--buffer);
+			if (buf_p == buf_end)
+				return(NULL);
+		}
+		if (!*pat_p) {
+			if (buf_p <= buf_end)
+				return(--buffer);
+			return(NULL);
+		}
+	} while (buffer < buf_end);
 	
 	return(NULL);
 }
@@ -37449,7 +37525,13 @@ size_t	malloc_size_m12(void *address)
 	return(malloc_size(address));
 #endif
 #ifdef LINUX_m12
-	return(malloc_usable_size(address));
+	size_t	sz = 0;
+
+	signal(SIGSEGV, SIG_IGN);
+	sz = malloc_usable_size(address);  // seg faults if not allocated (unless NULL)
+	signal(SIGSEGV, SIG_DFL);
+	
+	return(sz);
 #endif
 #ifdef WINDOWS_m12
 	return(_msize(address));

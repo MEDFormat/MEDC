@@ -2503,6 +2503,7 @@ si1		*STR_duration_string_m12(si1 *dur_str, si8 i_usecs);
 void            STR_escape_chars_m12(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_generate_hex_string_m12(ui1 *bytes, si4 num_bytes, si1 *string);
 si1		*STR_match_end_m12(si1 *pattern, si1 *buffer);
+si1		*STR_match_end_bin_m12(si1 *pattern, si1 *buffer, si8 buf_len);
 si1		*STR_match_line_end_m12(si1 *pattern, si1 *buffer);
 si1		*STR_match_line_start_m12(si1 *pattern, si1 *buffer);
 si1		*STR_match_start_m12(si1 *pattern, si1 *buffer);

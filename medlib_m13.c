@@ -257,7 +257,7 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 			chan->type_code = LH_VIDEO_CHANNEL_m13;
 			break;
 		default:
-			G_error_message_m13("%s():: unrecognized channel type code \"0x%x\"\n");
+			G_error_message_m13("%s(): unrecognized channel type code \"0x%x\"\n", __FUNCTION__, type_code);
 			return_m13(NULL);
 	}
 	
@@ -298,7 +298,10 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 	}
 
 	// clean up
-	FPS_free_processing_struct_m13(proto_fps, TRUE_m13);
+	if (FPS_free_processing_struct_m13(proto_fps, TRUE_m13) == FALSE_m13) {
+		G_error_message_m13("%s():: unrecognized channel type code \"0x%x\"\n");
+		return_m13(NULL);
+	}
 	
 	return_m13(chan);
 }
@@ -3482,8 +3485,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
 			goto FIND_MDF_SEG_LEVEL_m13;
 		default:
-			G_warning_message_m13("%s(): input path must be a MED session, channel, or segment directory\n");
-			G_set_error_m13(NULL, E_NOT_MED_m13, NULL);  // global error
+			G_set_error_m13(NULL, E_NOT_MED_m13, "input path must be a MED session, channel, or segment directory");  // global error
 			return_m13(NULL);
 	}
 	
@@ -3570,7 +3572,7 @@ FIND_MDF_CHAN_LEVEL_m13:
 FIND_MDF_SEG_LEVEL_m13:
 	dir = opendir(md_path); // open the path
 	if (dir == NULL) {
-		G_set_error_m13(NULL, E_NO_METADATA_m13, NULL);  // global error
+		G_set_error_m13(NULL, E_NO_METADATA_m13, NULL);
 		return_m13(NULL); // if was not able, return
 	}
 	match = FALSE_m13;
@@ -4287,9 +4289,9 @@ void    G_free_globals_m13(TERN_m13 cleanup_for_exit)
 	PROC_pthread_mutex_destroy_m13(&globals_m13->function_stacks_mutex);
 #endif
 
-	if (globals_m13->proc_globals_list_info.list != NULL)
-		free((void *) globals_m13->proc_globals_list_info.list);
-	PROC_pthread_mutex_destroy_m13(&globals_m13->proc_globals_list_info.mutex);
+	if (globals_m13->proc_globals_info.list != NULL)
+		free((void *) globals_m13->proc_globals_info.list);
+	PROC_pthread_mutex_destroy_m13(&globals_m13->proc_globals_info.mutex);
 	
 #ifdef AT_DEBUG_m13
 	if (globals_m13->AT_info.nodes != NULL) {
@@ -6173,7 +6175,7 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path,
 #ifdef FN_DEBUG_m13
 	PROC_pthread_mutex_init_m13(&globals_m13->function_stacks_mutex, NULL);
 #endif
-	PROC_pthread_mutex_init_m13(&globals_m13->proc_globals_list_info.mutex, NULL);
+	PROC_pthread_mutex_init_m13(&globals_m13->proc_globals_info.mutex, NULL);
 
 	// miscellaneous
 	globals_m13->FPS_locking = GLOBALS_FPS_LOCKING_DEFAULT_m13;
@@ -9192,12 +9194,12 @@ PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 		
 		
 		// get mutex
-		PROC_pthread_mutex_lock_m13(&globals_m13->proc_globals_list_info.mutex);
+		PROC_pthread_mutex_lock_m13(&globals_m13->proc_globals_info.mutex);
 		
 		// find proc globals by _id
 		_id = PROC_gettid_m13();  // in single thread process tid == pid
-		list = globals_m13->proc_globals_list_info.list;
-		entries = globals_m13->proc_globals_list_info.entries;
+		list = globals_m13->proc_globals_info.list;
+		entries = globals_m13->proc_globals_info.entries;
 		for (i = 0; i < entries; ++i) {
 			proc_globals = list[i];
 			if (proc_globals->_id == _id)
@@ -9214,13 +9216,13 @@ PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 
 			// not found, create new
 			if (i == entries) {
-				PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_list_info.mutex);  // relase mutex for G_proc_globals_init_m13()
+				PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_info.mutex);  // relase mutex for G_proc_globals_init_m13()
 				return(G_proc_globals_init_m13(NULL));
 			}
 		}
 	
 		// relase mutex
-		PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_list_info.mutex);
+		PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_info.mutex);
 		
 		return(proc_globals);
 	}
@@ -9249,11 +9251,11 @@ void	G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header)
 	_id = G_proc_globals_m13(level_header)->_id;
 
 	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->proc_globals_list_info.mutex);
+	PROC_pthread_mutex_lock_m13(&globals_m13->proc_globals_info.mutex);
 
 	// find stack entry
-	list = globals_m13->proc_globals_list_info.list;
-	entries = globals_m13->proc_globals_list_info.entries;
+	list = globals_m13->proc_globals_info.list;
+	entries = globals_m13->proc_globals_info.entries;
 	for (i = 0; i < entries; ++i)
 		if (list[i]->_id == _id)
 			break;
@@ -9265,7 +9267,7 @@ void	G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header)
 				break;
 		// not found (shouldn't happen)
 		if (i == entries) {
-			PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_list_info.mutex);
+			PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_info.mutex);
 			return;
 		}
 	}
@@ -9274,10 +9276,10 @@ void	G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header)
 	free((void *) list[i]);
 	for (++i; i < entries; ++i)
 		list[i - 1] = list[i];
-	--globals_m13->proc_globals_list_info.entries;
+	--globals_m13->proc_globals_info.entries;
 	
 	// relase mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_list_info.mutex);
+	PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_info.mutex);
 	
 	return;
 }
@@ -9285,8 +9287,8 @@ void	G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header)
 
 PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 {
-	PROC_GLOBALS_m13		*proc_globals;
-	PROC_GLOBALS_LIST_INFO_m13	*list_info;
+	PROC_GLOBALS_m13	*proc_globals;
+	PROC_GLOBALS_INFO_m13	*list_info;
 	
 
 	// allocate
@@ -9300,7 +9302,7 @@ PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 		level_header->parent = (LEVEL_HEADER_m13 *) proc_globals;
 
 	// get global stack mutex
-	list_info = &globals_m13->proc_globals_list_info;
+	list_info = &globals_m13->proc_globals_info;
 	PROC_pthread_mutex_lock_m13(&list_info->mutex);
 		
 	// realloc
@@ -9309,7 +9311,7 @@ PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 		list_info->list = (PROC_GLOBALS_m13 **) realloc((void *) list_info->list, (size_t) list_info->size * sizeof(PROC_GLOBALS_m13 *));
 	}
 	
-	// add to global list
+	// add to list
 	list_info->list[list_info->entries++] = proc_globals;
 	
 	// release stack mutex
@@ -10141,16 +10143,15 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	// if lh_flags != 0, they are interpreted as LEVEL_HEADER_m13 flags, and used to determined whether the should be opened with FPS_FULL_FILE_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, or memory mapping
 	
 	if (lh == NULL)
+		if (fps != NULL)
+			lh = (LEVEL_HEADER_m13 *) fps;
+	if (lh == NULL)
 		lh_flags = LH_NO_FLAGS_m13;
 	else
 		lh_flags = lh->flags;
 	
 	if (bytes_to_read == 0 && number_of_items == 0 && lh_flags == LH_NO_FLAGS_m13) {
-		G_error_message_m13("%s(): must specify either bytes_to_read, number_of_items, or lh_flags \n");
-		if (fps == NULL)
-			G_set_error_m13(NULL, E_READ_ERR_m13, lh);  // if lh == NULL also, will set global error
-		else
-			G_set_error_m13(NULL, E_READ_ERR_m13, (LEVEL_HEADER_m13 *) fps);
+		G_set_error_m13(lh, E_READ_ERR_m13, "mst specify either bytes_to_read, number_of_items, or lh_flags");
 		return_m13(NULL);
 	}
 	file_offset = REMOVE_DISCONTINUITY_m13(file_offset);
@@ -10159,8 +10160,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	allocated_flag = FALSE_m13;
 	if (fps == NULL) {
 		if (full_file_name == NULL) {
-			G_warning_message_m13("%s(): FILE_PROCESSING_STRUCT_m13 and full_file_name are both NULL\n");
-			G_set_error_m13(NULL, E_NO_FILE_m13, lh);  // if lh == NULL also, will set global error
+			G_set_error_m13(lh, E_NO_FILE_m13, "FILE_PROCESSING_STRUCT_m13 and full_file_name are both NULL");
 			return_m13(NULL);
 		}
 		close_flag = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m13;
@@ -10263,10 +10263,9 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	if (fps->directives.close_file == TRUE_m13)
 		FPS_close_m13(fps);
 	if (bytes_read != bytes_to_read) {
-		G_error_message_m13("%s(): file read error\n");
 		if (allocated_flag == TRUE_m13)
 			FPS_free_processing_struct_m13(fps, TRUE_m13);
-		G_set_error_m13(NULL, E_READ_ERR_m13, (LEVEL_HEADER_m13 *) fps);
+		G_set_error_m13((LEVEL_HEADER_m13 *) fps, E_READ_ERR_m13, NULL);
 		return_m13(NULL);
 	}
 
@@ -10329,10 +10328,9 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 			break;
 	}
 	if (readable == FALSE_m13) {
-		G_warning_message_m13("%s(): cannot read file \"%s\"\n", fps->full_file_name);
 		if (allocated_flag == TRUE_m13)
 			FPS_free_processing_struct_m13(fps, TRUE_m13);
-		G_set_error_m13(NULL, E_READ_ERR_m13, (LEVEL_HEADER_m13 *) fps);
+		G_set_error_m13((LEVEL_HEADER_m13 *) fps, E_READ_ERR_m13, NULL);
 		return_m13(NULL);
 	}
 	
@@ -12120,44 +12118,56 @@ TERN_m13    G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email
 }
 
 
-void	G_set_error_exec_m13(si1 *message, si4 code, LEVEL_HEADER_m13 *level_header, const si1 *function, si4 line)
+void	G_set_error_exec_m13(const si1 *function, si4 line, LEVEL_HEADER_m13 *level_header, si4 code, si1 *message, ...)
 {
-	TERN_m13		message_passed;
+	ui4			behavior;
 	PROC_GLOBALS_m13	*proc_globals;
 	ERROR_m13		*err;
 	
 	
-	// pass NULL for level header to set global error
-
-	if (level_header == NULL) {  // global error
-		err = &globals_m13->error;
-	} else {  // thread-local error
-		proc_globals = G_proc_globals_m13(level_header);
-		err = &proc_globals->error;
-	}
+	proc_globals = G_proc_globals_m13(level_header);
+	err = &proc_globals->error;
 	if (err->code != E_NO_ERR_m13)  // already set (only keep causal error)
 		return;
-	
-	if (message == NULL)
-		message_passed = FALSE_m13;
-	else if (*message == 0)
-		message_passed = FALSE_m13;
-	else
-		message_passed = TRUE_m13;
-	
-	if (message_passed == FALSE_m13 && code == E_NO_ERR_m13)  // no error set
-		return;
+		
+	// set error message
+	if (STR_empty_m13(message) == TRUE_m13) {
+		if (code == E_NO_ERR_m13)  // no error specified in code or message
+			return;
+		if (code > E_NO_ERR_m13 && code < E_STR_TABLE_ENTRIES_m13)  // use table message
+			strcpy_m13(err->message, (si1 *) globals_m13->tables->E_strings_table[code]);
+		else  // unspecified message, custom code
+			strcpy_m13(err->message, (si1 *) globals_m13->tables->E_strings_table[E_UNSPECIFIED_m13]);
+	} else {
+		va_list		args;
 
+		va_start(args, message);
+		vsnprintf_m13(err->message, E_MESSAGE_LEN_m13, message, args);
+		va_end(args);
+		
+		if (code == E_NO_ERR_m13)  // caller passsed an error message, but did not set code
+			code = E_UNSPECIFIED_m13;
+	}
+
+	// set other error parameters
 	err->code = code;
 	err->line = line;
 	err->function = function;
+		
+	// print error message
+	behavior = G_current_behavior_m13();
+	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
+		G_show_error_m13(level_header);
 	
-	if (message_passed == TRUE_m13)
-		strncpy_m13(err->message, message, E_MESSAGE_LEN_m13);
-	else if (code < E_STR_TABLE_ENTRIES_m13)
-		strcpy_m13(err->message, (si1 *) globals_m13->tables->E_strings_table[code]);
-	else
-		strcpy_m13(err->message, (si1 *) globals_m13->tables->E_strings_table[E_UNSPECIFIED_m13]);
+	// exit
+	if (!(behavior & RETURN_ON_FAIL_m13)) {
+		#ifdef MATLAB_m13
+		mexPrintf("Exiting.\n\n");
+		#else
+		fprintf(stderr, "Exiting.\n\n");
+		#endif
+		exit_m13(-1);
+	}
 	
 	return;
 }
@@ -12544,25 +12554,18 @@ TERN_m13	G_show_error_m13(LEVEL_HEADER_m13 *level_header)
 	G_push_function_m13();
 #endif
 	
-	if (level_header == NULL) {  // global error
-		err = &globals_m13->error;
-	} else {  // thread-local error
-		proc_globals = G_proc_globals_m13(level_header);
-		err = &proc_globals->error;
-		if (err->code == E_NO_ERR_m13) {  // could be a global error
-			err = &globals_m13->error;
-			if (err->code == E_NO_ERR_m13) {
-				G_message_m13("%s(): no error\n", __FUNCTION__);
-				return_m13(TRUE_m13);
-			}
-		}
+	proc_globals = G_proc_globals_m13(level_header);
+	err = &proc_globals->error;
+	if (err->code == E_NO_ERR_m13) {
+		G_message_m13("%s(): no error\n", __FUNCTION__);
+		return_m13(TRUE_m13);
 	}
 
 #ifndef MATLAB_m13
 	fprintf_m13(stderr, TC_RED_m13);
 #endif
 
-	fprintf_m13(stderr, "error %d: %s\n(set in %s at line %d)\n\n", err->code, err->message, err->function, err->line);
+	UTF8_fprintf_m13(stderr, "%s\n(error code %d, set in %s() at line %d)\n\n", err->message, err->code, err->function, err->line);
 	
 #ifndef MATLAB_m13
 	fprintf(stderr, TC_RESET_m13);
@@ -30443,7 +30446,8 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 			#endif
 		}
 	} else {
-		G_set_error_m13(NULL, E_NO_INET_m13, NULL);  // gloabl error
+		G_set_error_m13(NULL, E_NO_INET_m13, "error %d", ret_val);
+		// G_set_error_m13(NULL, E_NO_INET_m13, NULL);
 		*np->LAN_IPv4_address_string = 0;
 		np->LAN_IPv4_address_num = 0;
 		if (free_np == TRUE_m13)
@@ -33609,7 +33613,10 @@ si1	*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string)
 	si4	i;
 	si1	*s;
 	
-	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	if (string == NULL)  // up to caller to free
 		string = (si1 *) calloc_m13((size_t)((num_bytes + 1) * 3), sizeof(si1));
 	
@@ -33631,14 +33638,15 @@ si1	*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string)
 
 si1	*STR_match_end_m13(si1 *pattern, si1 *buffer)
 {
-	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
-	si4	pat_len, buf_len;
 	si1	*pat_p, *buf_p;
+	si4	pat_len, buf_len;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	
 	pat_len = strlen(pattern);
 	buf_len = strlen(buffer);
 	if (pat_len >= buf_len)
@@ -33656,6 +33664,44 @@ si1	*STR_match_end_m13(si1 *pattern, si1 *buffer)
 			}
 		}
 	} while (*buf_p);
+	
+	return_m13(NULL);
+}
+
+
+si1	*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
+{
+	si1	*pat_p, *buf_p, *buf_end;
+	si8	pat_len;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes pattern is zero-terminated)
+	// "bin" version allows for binary data in buffer (zeros in buffer)
+	// NOTE: if updating buffer pointer in sequential calls, adjust buf_len accordingly
+
+	pat_len = (si8) strlen(pattern);
+	if (pat_len >= buf_len)
+		return_m13(NULL);
+	
+	buf_end = (buffer + buf_len) - pat_len;
+	do {
+		pat_p = pattern;
+		buf_p = buffer++;
+		while (*buf_p++ == *pat_p++) {
+			if (buf_p == buf_end)
+				return_m13(NULL);
+			if (!*pat_p)
+				return_m13(buf_p);
+		}
+		if (!*pat_p) {
+			if (buf_p < buf_end)
+				return_m13(buf_p);
+			return_m13(NULL);
+		}
+	} while (buffer < buf_end);
 	
 	return_m13(NULL);
 }
@@ -33714,9 +33760,9 @@ si1	*STR_match_line_start_m13(si1 *pattern, si1 *buffer)
 
 si1	*STR_match_start_m13(si1 *pattern, si1 *buffer)
 {
-	si4	pat_len, buf_len;
 	si1	*pat_p, *buf_p;
-	
+	si4	pat_len, buf_len;
+
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -33732,9 +33778,47 @@ si1	*STR_match_start_m13(si1 *pattern, si1 *buffer)
 		pat_p = pattern;
 		buf_p = buffer++;
 		while (*buf_p++ == *pat_p++)
+		if (!*pat_p)
+			return_m13(--buffer);
+	} while (*buf_p);
+	
+	return_m13(NULL);
+}
+
+
+si1	*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
+{
+	si1	*pat_p, *buf_p, *buf_end;
+	si8	pat_len;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns pointer to beginning of the first match in the buffer, NULL if no match (assumes pattern is zero-terminated)
+	// "bin" version allows for binary data in buffer (zeros in buffer)
+	// NOTE: if updating buffer pointer in sequential calls, adjust buf_len accordingly
+
+	pat_len = (si8) strlen(pattern);
+	if (pat_len >= buf_len)
+		return_m13(NULL);
+	
+	buf_end = (buffer + buf_len) - pat_len;
+	do {
+		pat_p = pattern;
+		buf_p = buffer++;
+		while (*buf_p++ == *pat_p++) {
 			if (!*pat_p)
 				return_m13(--buffer);
-	} while (*buf_p);
+			if (buf_p == buf_end)
+				return_m13(NULL);
+		}
+		if (!*pat_p) {
+			if (buf_p <= buf_end)
+				return_m13(--buffer);
+			return_m13(NULL);
+		}
+	} while (buffer < buf_end);
 	
 	return_m13(NULL);
 }

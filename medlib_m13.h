@@ -1314,7 +1314,7 @@ typedef struct {
 	si1		message[E_MAX_STR_LEN_m13];
 } ERROR_m13;
 
-#define G_set_error_m13(message, code, level_header)	G_set_error_exec_m13(message, code, level_header, __FUNCTION__, __LINE__)
+#define G_set_error_m13(level_header, code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, level_header, code, message, ##__VA_ARGS__)
 
 
 //**********************************************************************************//
@@ -1682,7 +1682,7 @@ typedef struct {
 	PROC_GLOBALS_m13	**list;
 	si4			size;
 	si4			entries;
-} PROC_GLOBALS_LIST_INFO_m13;
+} PROC_GLOBALS_INFO_m13;
 
 #ifdef AT_DEBUG_m13
 typedef struct {
@@ -1725,7 +1725,7 @@ typedef struct {
 	pthread_mutex_t_m13		function_stacks_mutex;
 #endif  // FN_DEBUG_m13
 	// Process Globals (stack used when LEVEL_HEADER_m13 unknown - searched by process/thread id)
-	PROC_GLOBALS_LIST_INFO_m13	proc_globals_list_info;
+	PROC_GLOBALS_INFO_m13		proc_globals_info;
 	// Record Filters
 	si4 				*record_filters;	// signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
 								// The terminal entry is NO_TYPE_CODE_m13 (== zero). NULL or no filter codes includes all records (== no filters).
@@ -1739,8 +1739,6 @@ typedef struct {
 	// Allocation Tracking
 	AT_INFO_m13			AT_info;
 #endif  // AT_DEBUG_m13
-	// Global Error
-	ERROR_m13			error;
 	// Miscellaneous
 	ui4				file_creation_umask;
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m13];	// system temp directory (periodically auto-cleared)
@@ -1749,7 +1747,6 @@ typedef struct {
 	TERN_m13			FPS_locking;
 	TERN_m13			access_times;  // record time of each structure access
 	ui4				CRC_mode;
-	
 } GLOBALS_m13;
 
 
@@ -2530,7 +2527,7 @@ si4		G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_s
 si4		G_segment_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
 si4		G_segment_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_time);
 TERN_m13	G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
-void		G_set_error_exec_m13(si1 *message, si4 code, LEVEL_HEADER_m13 *level_header, const si1 *function, si4 line);
+void		G_set_error_exec_m13(const si1 *function, si4 line, LEVEL_HEADER_m13 *level_header, si4 code, si1 *message, ...);
 TERN_m13	G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, TERN_m13 prompt);
 TERN_m13	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
 TERN_m13	G_show_behavior_m13(ui4 mode);
@@ -2695,9 +2692,11 @@ TERN_m13	STR_empty_m13(si1 *string);
 TERN_m13	STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string);
 si1		*STR_match_end_m13(si1 *pattern, si1 *buffer);
+si1		*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1		*STR_match_line_end_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_line_start_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_start_m13(si1 *pattern, si1 *buffer);
+si1		*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1     	*STR_re_escape_m13(si1 *str, si1 *esc_str);
 TERN_m13    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
 si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m13 free_input_buffer);
