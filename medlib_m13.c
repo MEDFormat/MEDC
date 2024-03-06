@@ -110,7 +110,7 @@ inline
 #endif
 void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 behavior)
 {
-	BEHAVIOR_m13		*behavior_struct;
+	BEHAVIOR_m13		*behavior_struct, *new_stack;
 	BEHAVIOR_STACK_m13	*stack_info;
 	
 	
@@ -123,7 +123,10 @@ void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 behavior)
 	// realloc
 	if (stack_info->entries == stack_info->size) {
 		stack_info->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		stack_info->stack = (BEHAVIOR_m13 *) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(BEHAVIOR_m13));
+		new_stack = (BEHAVIOR_m13 *) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(BEHAVIOR_m13));
+		if (new_stack == NULL)
+			return;
+		stack_info->stack = new_stack;
 	}
 	
 	// add to stack
@@ -154,15 +157,16 @@ BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void)
 	n_stacks = globals_m13->n_behavior_stacks;
 	stack_info = (BEHAVIOR_STACK_m13 *) realloc((void *) globals_m13->behavior_stacks, (size_t) (n_stacks + 1) * sizeof(BEHAVIOR_STACK_m13));
 	if (stack_info == NULL)  // return with no changes to globals
-		return_m13(NULL);
+		return(NULL);
 	globals_m13->behavior_stacks = stack_info;
 	stack_info += n_stacks;
 	memset((void *) stack_info, 0, sizeof(BEHAVIOR_STACK_m13));  // realloc doesn't zero new memory
 	stack_info->_id = PROC_gettid_m13();
 	stack_info->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-	behavior = stack_info->stack = (BEHAVIOR_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_m13));
-	if (stack_info->stack == NULL)
-		return_m13(NULL);
+	behavior = (BEHAVIOR_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_m13));
+	if (behavior == NULL)
+		return(NULL);
+	stack_info->stack = behavior;
 	behavior->function = __FUNCTION__;
 	behavior->line = __LINE__;
 	behavior->code = GLOBALS_BEHAVIOR_DEFAULT_m13;
@@ -181,6 +185,7 @@ inline
 #endif
 FUNCTION_STACK_m13	*G_add_function_stack_m13(void)
 {
+	const si1		**new_stack;
 	si4			n_stacks;
 	FUNCTION_STACK_m13	*stack_info;
 
@@ -190,15 +195,16 @@ FUNCTION_STACK_m13	*G_add_function_stack_m13(void)
 	n_stacks = globals_m13->n_function_stacks;
 	stack_info = (FUNCTION_STACK_m13 *) realloc((void *) globals_m13->function_stacks, (size_t) (n_stacks + 1) * sizeof(FUNCTION_STACK_m13));
 	if (stack_info == NULL)  // return with no changes to globals
-		return_m13(NULL);
+		return(NULL);
 	globals_m13->function_stacks = stack_info;
 	stack_info += n_stacks;
 	memset((void *) stack_info, 0, sizeof(FUNCTION_STACK_m13));  // realloc doesn't zero new memory
 	stack_info->_id = PROC_gettid_m13();
 	stack_info->size = GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
-	stack_info->stack = (const si1 **) calloc((size_t) GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13, sizeof(const si1 *));
-	if (stack_info->stack == NULL)
-		return_m13(NULL);
+	new_stack = (const si1 **) calloc((size_t) GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13, sizeof(const si1 *));
+	if (new_stack == NULL)
+		return(NULL);
+	stack_info->stack = new_stack;
 	stack_info->stack[0] = __FUNCTION__;
 
 	stack_info->entries = 1;
@@ -257,7 +263,7 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 			chan->type_code = LH_VIDEO_CHANNEL_m13;
 			break;
 		default:
-			G_error_message_m13("%s(): unrecognized channel type code \"0x%x\"\n", __FUNCTION__, type_code);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
 			return_m13(NULL);
 	}
 	
@@ -269,6 +275,8 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 		proto_fps = FPS_allocate_processing_struct_m13(NULL, NULL, TIME_SERIES_METADATA_FILE_TYPE_CODE_m13, FPS_PROTOTYPE_BYTES_m13, NULL, proto_fps, FPS_PROTOTYPE_BYTES_m13);
 	else // type_code == VIDEO_CHANNEL_TYPE_m13
 		proto_fps = FPS_allocate_processing_struct_m13(NULL, NULL, VIDEO_METADATA_FILE_TYPE_CODE_m13, FPS_PROTOTYPE_BYTES_m13, NULL, proto_fps, FPS_PROTOTYPE_BYTES_m13);
+	if (proto_fps == NULL)
+		return_m13(NULL);
 	uh = proto_fps->universal_header;
 	if (uh->channel_UID == UID_NO_ENTRY_m13)
 		G_generate_UID_m13(&uh->channel_UID);
@@ -276,13 +284,19 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 	strncpy_m13(uh->channel_name, chan_name, BASE_FILE_NAME_BYTES_m13);
 	strncpy_m13(chan->name, chan_name, BASE_FILE_NAME_BYTES_m13);
 	type_str = G_MED_type_string_from_code_m13(type_code);
+	if (type_str == NULL)
+		return_m13(NULL);
 	snprintf_m13(chan->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", enclosing_path, chan->name, type_str);
 
 	// allocate channel records
 	if (chan_recs == TRUE_m13) {
 		chan->record_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) chan, proto_fps, 0);
+		if (chan->record_data_fps == NULL)
+			return_m13(NULL);
 		snprintf_m13(chan->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		chan->record_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) chan, proto_fps, 0);
+		if (chan->record_indices_fps == NULL)
+			return_m13(NULL);
 		snprintf_m13(chan->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 	} else {
 		chan->record_data_fps = chan->record_indices_fps = NULL;
@@ -291,17 +305,19 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 	// allocate segments
 	if (n_segs) {
 		chan->segments = (SEGMENT_m13 **) calloc_2D_m13((size_t) n_segs, 1, sizeof(SEGMENT_m13));
+		if (chan->segments == NULL)
+			return_m13(NULL);
 		for (i = 0; i < n_segs; ++i) {
 			seg = chan->segments[i];
-			G_allocate_segment_m13(seg, proto_fps, chan->path, chan->name, chan, type_code, (si4) i + 1, seg_recs);
+			seg = G_allocate_segment_m13(seg, proto_fps, chan->path, chan->name, chan, type_code, (si4) i + 1, seg_recs);
+			if (seg == NULL)
+				return_m13(NULL);
 		}
 	}
 
 	// clean up
-	if (FPS_free_processing_struct_m13(proto_fps, TRUE_m13) == FALSE_m13) {
-		G_error_message_m13("%s():: unrecognized channel type code \"0x%x\"\n");
+	if (FPS_free_processing_struct_m13(proto_fps, TRUE_m13) == FALSE_m13)
 		return_m13(NULL);
-	}
 	
 	return_m13(chan);
 }
@@ -336,6 +352,8 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 			seg->type_code = LH_TIME_SERIES_SEGMENT_m13;
 			// metadata: used as prototype
 			seg->metadata_fps = FPS_allocate_processing_struct_m13(NULL, NULL, TIME_SERIES_METADATA_FILE_TYPE_CODE_m13, METADATA_BYTES_m13, (LEVEL_HEADER_m13 *) seg, proto_fps, METADATA_BYTES_m13);
+			if (seg->metadata_fps == NULL)
+				return_m13(NULL);
 			uh = seg->metadata_fps->universal_header;
 			if (uh->segment_UID == UID_NO_ENTRY_m13)
 				G_generate_UID_m13(&uh->segment_UID);
@@ -344,15 +362,21 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 			snprintf_m13(seg->metadata_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
 			// time series data
 			seg->time_series_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, TIME_SERIES_DATA_FILE_TYPE_CODE_m13, 0, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
+			if (seg->time_series_data_fps == NULL)
+				return_m13(NULL);
 			snprintf_m13(seg->time_series_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
 			// time series indices
 			seg->time_series_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, TIME_SERIES_INDICES_FILE_TYPE_CODE_m13, TIME_SERIES_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
+			if (seg->time_series_indices_fps == NULL)
+				return_m13(NULL);
 			snprintf_m13(seg->time_series_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
 			break;
 		case VIDEO_CHANNEL_TYPE_m13:
 			seg->type_code = LH_VIDEO_SEGMENT_m13;
 			// metadata: used as prototype
 			seg->metadata_fps = FPS_allocate_processing_struct_m13(NULL, NULL, VIDEO_METADATA_FILE_TYPE_CODE_m13, METADATA_BYTES_m13, (LEVEL_HEADER_m13 *) seg, proto_fps, METADATA_BYTES_m13);
+			if (seg->metadata_fps == NULL)
+				return_m13(NULL);
 			uh = seg->metadata_fps->universal_header;
 			if (uh->segment_UID == UID_NO_ENTRY_m13)
 				G_generate_UID_m13(&uh->segment_UID);
@@ -361,6 +385,8 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 			snprintf_m13(seg->metadata_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
 			// video indices
 			seg->video_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, VIDEO_INDICES_FILE_TYPE_CODE_m13, VIDEO_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
+			if (seg->video_indices_fps == NULL)
+				return_m13(NULL);
 			snprintf_m13(seg->video_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
 			break;
 		default:
@@ -371,8 +397,12 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 	// allocate session records
 	if (seg_recs == TRUE_m13) {
 		seg->record_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
+		if (seg->record_data_fps == NULL)
+			return_m13(NULL);
 		snprintf_m13(seg->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		seg->record_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
+		if (seg->record_indices_fps == NULL)
+			return_m13(NULL);
 		snprintf_m13(seg->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 	} else {
 		seg->record_data_fps = seg->record_indices_fps = NULL;
@@ -413,6 +443,8 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 
 	// create a prototype fps
 	proto_fps = FPS_allocate_processing_struct_m13(NULL, NULL, FPS_PROTOTYPE_FILE_TYPE_CODE_m13, FPS_PROTOTYPE_BYTES_m13, NULL, proto_fps, FPS_PROTOTYPE_BYTES_m13);
+	if (proto_fps == NULL)
+		return_m13(NULL);
 	uh = proto_fps->universal_header;
 	if (uh->session_UID == UID_NO_ENTRY_m13)
 		G_generate_UID_m13(&uh->session_UID);
@@ -427,12 +459,24 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 		free_names = FALSE_m13;
 		if (ts_chan_names == NULL) {
 			ts_chan_names = G_generate_numbered_names_m13(NULL, "tch_", n_ts_chans);
+			if (ts_chan_names == NULL)
+				return_m13(NULL);
 			free_names = TRUE_m13;
 		}
 		sess->time_series_channels = (CHANNEL_m13 **) calloc_2D_m13((size_t) n_ts_chans, 1, sizeof(CHANNEL_m13));
+		if (sess->time_series_channels == NULL) {
+			if (free_names == TRUE_m13)
+				free_m13((void *) ts_chan_names);
+			return_m13(NULL);
+		}
 		for (i = 0; i < n_ts_chans; ++i) {
 			chan = sess->time_series_channels[i];
-			G_allocate_channel_m13(chan, proto_fps, sess->path, ts_chan_names[i], sess, TIME_SERIES_CHANNEL_TYPE_m13, n_segs, chan_recs, seg_recs);
+			chan = G_allocate_channel_m13(chan, proto_fps, sess->path, ts_chan_names[i], sess, TIME_SERIES_CHANNEL_TYPE_m13, n_segs, chan_recs, seg_recs);
+			if (chan == NULL) {
+				if (free_names == TRUE_m13)
+					free_m13((void *) ts_chan_names);
+				return_m13(NULL);
+			}
 		}
 		if (free_names == TRUE_m13)
 			free_m13((void *) ts_chan_names);
@@ -442,12 +486,24 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 		free_names = FALSE_m13;
 		if (vid_chan_names == NULL) {
 			vid_chan_names = G_generate_numbered_names_m13(NULL, "vch_", n_vid_chans);
+			if (vid_chan_names == NULL)
+				return_m13(NULL);
 			free_names = TRUE_m13;
 		}
 		sess->video_channels = (CHANNEL_m13 **) calloc_2D_m13((size_t) n_vid_chans, 1, sizeof(CHANNEL_m13));
+		if (sess->time_series_channels == NULL) {
+			if (free_names == TRUE_m13)
+				free_m13((void *) vid_chan_names);
+			return_m13(NULL);
+		}
 		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->video_channels[i];
-			G_allocate_channel_m13(chan, proto_fps, sess->path, vid_chan_names[i], sess, VIDEO_CHANNEL_TYPE_m13, n_segs, chan_recs, seg_recs);
+			chan = G_allocate_channel_m13(chan, proto_fps, sess->path, vid_chan_names[i], sess, VIDEO_CHANNEL_TYPE_m13, n_segs, chan_recs, seg_recs);
+			if (chan == NULL) {
+				if (free_names == TRUE_m13)
+					free_m13((void *) vid_chan_names);
+				return_m13(NULL);
+			}
 		}
 		if (free_names == TRUE_m13)
 			free((void *) vid_chan_names);
@@ -456,20 +512,31 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 	// allocate session records
 	if (sess_recs == TRUE_m13) {
 		sess->record_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) sess, proto_fps, 0);
+		if (sess->record_data_fps == NULL)
+			return_m13(NULL);
 		snprintf_m13(sess->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		sess->record_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) sess, proto_fps, 0);
+		if (sess->record_indices_fps == NULL)
+			return_m13(NULL);
 		snprintf_m13(sess->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 	} else {
 		sess->record_data_fps = sess->record_indices_fps = NULL;
 	}
-	FPS_free_processing_struct_m13(proto_fps, TRUE_m13);  // done with session prototype
+	if (FPS_free_processing_struct_m13(proto_fps, TRUE_m13) == FALSE_m13)  // done with session prototype
+		return_m13(NULL);
 	
 	// allocate segmented session records
 	if (segmented_sess_recs == TRUE_m13) {
 		ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m13 *) calloc_m13((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m13));
+		if (ssr == NULL)
+			return_m13(NULL);
 		ssr->parent = (LEVEL_HEADER_m13 *) sess;
 		ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m13 **) calloc_2D_m13((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m13));
+		if (ssr->record_data_fps == NULL)
+			return_m13(NULL);
 		ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m13 **) calloc_2D_m13((size_t) n_segs, 1, sizeof(FILE_PROCESSING_STRUCT_m13));
+		if (ssr->record_indices_fps == NULL)
+			return_m13(NULL);
 		sprintf_m13(ssr->path, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m13);
 		strcpy_m13(ssr->name, sess->name);
 		ssr->type_code = LH_SEGMENTED_SESS_RECS_m13;
@@ -484,12 +551,16 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 			G_numerical_fixed_width_string_m13(number_str, FILE_NUMBERING_DIGITS_m13, (si4) i + 1); // segments numbered from 1
 			snprintf_m13(ssr->record_indices_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
 			gen_fps = FPS_allocate_processing_struct_m13(ssr->record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) ssr, proto_fps, 0);
+			if (gen_fps == NULL)
+				return_m13(NULL);
 			uh = gen_fps->universal_header;
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13);
 			uh->channel_UID = UID_NO_ENTRY_m13;
 			// record data fps
 			snprintf_m13(ssr->record_data_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m13);
 			gen_fps = FPS_allocate_processing_struct_m13(ssr->record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) ssr, proto_fps, 0);
+			if (gen_fps == NULL)
+				return_m13(NULL);
 			uh = gen_fps->universal_header;
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13);
 			uh->channel_UID = UID_NO_ENTRY_m13;
@@ -518,9 +589,15 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 {
 	si8	len;
 	
-	
-	if (behavior_string == NULL)  // caller responsible for freeing
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (behavior_string == NULL) {  // caller responsible for freeing
 		behavior_string = malloc_m13(256);
+		if (behavior_string == NULL)
+			return_m13(NULL);
+	}
 	*behavior_string = 0;
 		
 	if (behavior & RETURN_ON_FAIL_m13)
@@ -548,7 +625,7 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 	if (len)
 		behavior_string[len - 3] = 0;
 		
-	return(behavior_string);
+	return_m13(behavior_string);
 }
 
 
@@ -618,7 +695,7 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 			type_code = chan->type_code;
 			break;
 		default:
-			G_warning_message_m13("%s(): invalid level type\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "invalid level type");
 			return_m13(FALSE_m13);
 	}
 	
@@ -649,6 +726,8 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
 				if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 					seg->metadata_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, (LEVEL_HEADER_m13 *) seg, NULL);
+					if (seg->metadata_fps == NULL)
+						return_m13(FALSE_m13);
 				} else {
 					force_discont = TRUE_m13;
 					continue;
@@ -663,6 +742,8 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
 				if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 					seg->time_series_indices_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, (LEVEL_HEADER_m13 *) seg, NULL);
+					if (seg->time_series_indices_fps == NULL)
+						return_m13(FALSE_m13);
 				} else {
 					force_discont = TRUE_m13;
 					continue;
@@ -701,6 +782,8 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 					curr_bytes = (size_t) *n_contigua * sizeof(CONTIGUON_m13);
 					new_bytes = curr_bytes + sizeof(CONTIGUON_m13);
 					*contigua = (CONTIGUON_m13 *) recalloc_m13((void *) *contigua, curr_bytes, new_bytes);
+					if (*contigua)
+						return_m13(FALSE_m13);
 					contiguon = *contigua + *n_contigua;
 					++(*n_contigua);
 					contiguon->start_sample_number = tsi[k].start_sample_number + absolute_numbering_offset;
@@ -733,6 +816,8 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
 				if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 					seg->metadata_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, (LEVEL_HEADER_m13 *) seg, NULL);
+					if (seg->metadata_fps == NULL)
+						return_m13(FALSE_m13);
 				} else {
 					force_discont = TRUE_m13;
 					continue;
@@ -747,6 +832,8 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
 				if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 					seg->video_indices_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, (LEVEL_HEADER_m13 *) seg, NULL);
+					if (seg->video_indices_fps == NULL)
+						return_m13(FALSE_m13);
 				} else {
 					force_discont = TRUE_m13;
 					continue;
@@ -851,7 +938,7 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 	
 	if (ri_fps == NULL && rd_fps == NULL) {
 		if (chan == NULL ) {
-			G_error_message_m13("%s(): no records or channel passed or found\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "no records or channel passed or found");
 			return_m13(NULL);
 		}
 		// use channel records
@@ -861,6 +948,10 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 	
 	// use Sgmt records
 	if (ri_fps != NULL) {  // assume rd_fps != NULL
+		if (rd_fps == NULL ) {
+			G_set_error_m13(E_UNSPECIFIED_m13, "NULL data file passed with non-NULL indices file");
+			return_m13(NULL);
+		}
 		// full record index file already read in
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) ri_fps);
 		n_recs = ri_fps->universal_header->number_of_entries;
@@ -876,22 +967,29 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 				
 		// allocate Sgmt_records array
 		Sgmt_records = (Sgmt_RECORD_m13 *) calloc_m13((size_t) n_segs, sizeof(Sgmt_RECORD_m13));
+		if (Sgmt_records == NULL)
+			return_m13(NULL);
 		
 		// decide if more efficient to read full file, or seek to specific records
 		seek_mode = FALSE_m13;
 		if (rd_fps->parameters.full_file_read == FALSE_m13) {  // full file not already read in
 			data_len = rd_fps->parameters.flen - UNIVERSAL_HEADER_BYTES_m13;
 			seek_data_size = (si8) n_segs * sizeof(Sgmt_RECORD_m13);
-			if ((data_len / seek_data_size) >= SEEK_THRESHOLD)
+			if ((data_len / seek_data_size) >= SEEK_THRESHOLD) {
 				seek_mode = TRUE_m13;
-			else
-				G_read_file_m13(rd_fps, NULL, 0, 0, FPS_FULL_FILE_m13, NULL, NULL); // read in full file
+			} else {
+				rd_fps = G_read_file_m13(rd_fps, NULL, 0, 0, FPS_FULL_FILE_m13, NULL, NULL); // read in full file
+				if (rd_fps == NULL)
+					return_m13(NULL);
+			}
 		}
 		if (seek_mode == TRUE_m13) {  // ? more efficient to seek (large records files)
 			ri = ri_fps->record_indices;
 			for (i = 0; i < n_segs; ++ri) {
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m13) {
-					G_read_file_m13(rd_fps, NULL, ri->file_offset, sizeof(Sgmt_RECORD_m13), 1, NULL, NULL);
+					rd_fps = G_read_file_m13(rd_fps, NULL, ri->file_offset, sizeof(Sgmt_RECORD_m13), 1, NULL, NULL);
+					if (rd_fps == NULL)
+						return_m13(NULL);
 					Sgmt_records[i] = *((Sgmt_RECORD_m13 *) rd_fps->record_data);
 					Sgmt_records[i++].total_record_bytes = sizeof(Sgmt_RECORD_m13);  // discard description, if any
 				}
@@ -911,11 +1009,15 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 	// use metadata files (much less efficient)
 	else {  // ri_fps == NULL
 		seg_list = G_generate_file_list_m13(NULL, &n_segs, chan->path, NULL, "?isd", GFL_FULL_PATH_m13);
+		if (seg_list == NULL)
+			return_m13(NULL);
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) chan);
 		proc_globals->number_of_session_segments = n_segs;
 		
 		// allocate Sgmt_records array
 		Sgmt_records = (Sgmt_RECORD_m13 *) calloc_m13((size_t) n_segs, sizeof(Sgmt_RECORD_m13));
+		if (Sgmt_records == NULL)
+			return_m13(NULL);
 
 		switch (chan->type_code) {
 			case LH_TIME_SERIES_CHANNEL_m13:
@@ -930,6 +1032,8 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 			G_extract_path_parts_m13(seg_list[i], NULL, seg_name, NULL);
 			sprintf_m13(tmp_str, "%s/%s.%s", seg_list[i], seg_name, metadata_ext);
 			md_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
+			if (md_fps == NULL)
+				return_m13(NULL);
 			Sgmt_rec = Sgmt_records + i;
 			Sgmt_rec->record_CRC = CRC_NO_ENTRY_m13;
 			Sgmt_rec->total_record_bytes = RECORD_HEADER_BYTES_m13 + REC_Sgmt_v11_BYTES_m13;  // no description
@@ -950,7 +1054,8 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 					Sgmt_rec->end_frame_number = Sgmt_rec->start_frame_number + md_fps->metadata->video_section_2.number_of_frames - 1;
 					break;
 			}
-			FPS_free_processing_struct_m13(md_fps, TRUE_m13);
+			if (FPS_free_processing_struct_m13(md_fps, TRUE_m13) == FALSE_m13)
+				return_m13(NULL);
 		}
 		free_m13((void *) seg_list);
 	}
@@ -979,6 +1084,7 @@ si8	G_bytes_for_items_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_items,
 	
 	// read_file_offset only needed for items with variable size data (TIME_SERIES_DATA_FILE_TYPE_CODE_m13 & RECORD_DATA_FILE_TYPE_CODE_m13)
 	// read_file_offset == 0 for writing
+	// returns FALSE_m13 for error
 	
 	bytes = 0;
 	uh = fps->universal_header;
@@ -1028,8 +1134,12 @@ si8	G_bytes_for_items_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_items,
 	
 	// reading (this is why it's better to pass this value)
 	max_bytes = (si8) uh->maximum_entry_size * *number_of_items;
-	FPS_reallocate_processing_struct_m13(fps, max_bytes);
+	if (FPS_reallocate_processing_struct_m13(fps, max_bytes) == FALSE_m13)
+		return_m13(FALSE_m13);
+		
 	max_bytes = FPS_read_m13(fps, read_file_offset, max_bytes);
+	if (max_bytes == FALSE_m13)
+		return_m13(FALSE_m13);
 	switch (uh->type_code) {
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
 			bh = fps->parameters.cps->block_header;
@@ -1171,7 +1281,7 @@ TERN_m13	G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si
 	} else if (chan != NULL) {
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) chan);
 	} else {
-		G_warning_message_m13("%s(): both session and channel are NULL\n", __FUNCTION__);  // need one for proc_globals
+		G_set_error_m13(E_UNSPECIFIED_m13, "both session and channel are NULL");
 		return_m13(FALSE_m13);
 	}
 
@@ -1233,10 +1343,9 @@ TERN_m13	G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si
 	proc_globals->reference_channel = NULL;
 	if (chan == NULL) {
 		if (use_default_channel == TRUE_m13) {
-			if ((chan = G_get_active_channel_m13(sess, chan_type)) == NULL) {
-				G_error_message_m13("%s(): no matching active channels\n");
-				exit_m13(-1);
-			}
+			chan = G_get_active_channel_m13(sess, chan_type);
+			if (chan == NULL)
+				return_m13(FALSE_m13);
 			goto CHANGE_REF_MATCH_m13;
 		}
 		if (chan_type == DEFAULT_CHANNEL_m13 || chan_type == DEFAULT_TIME_SERIES_CHANNEL_m13) {
@@ -1266,12 +1375,12 @@ TERN_m13	G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si
 	} else {  // channel known
 		if (chan->flags & LH_CHANNEL_ACTIVE_m13)
 			goto CHANGE_REF_MATCH_m13;
-		if ((chan = G_get_active_channel_m13(sess, chan_type)) != NULL)
+		chan = G_get_active_channel_m13(sess, chan_type);
+		if (chan != NULL)
 			goto CHANGE_REF_MATCH_m13;
 	}
 
-	G_remove_behavior_m13(RETURN_ON_FAIL_m13);
-	G_error_message_m13("%s(): no matching active channels\n");
+	G_set_error_m13(E_UNSPECIFIED_m13, "no matching active channels");
 	return_m13(FALSE_m13);
 	
 CHANGE_REF_MATCH_m13:
@@ -1282,6 +1391,8 @@ CHANGE_REF_MATCH_m13:
 	if (sess->Sgmt_records != NULL)
 		free_m13((void *) sess->Sgmt_records);
 	sess->Sgmt_records = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
+	if (sess->Sgmt_records == NULL)
+		return_m13(FALSE_m13);
 	
 	return_m13(TRUE_m13);
 }
@@ -1289,7 +1400,8 @@ CHANGE_REF_MATCH_m13:
 
 ui4	G_channel_type_from_path_m13(si1 *path)
 {
-	si1	*c, temp_path[FULL_FILE_NAME_BYTES_m13], name[SEGMENT_BASE_FILE_NAME_BYTES_m13], extension[TYPE_BYTES_m13];
+	si1	*c, temp_path[FULL_FILE_NAME_BYTES_m13], extension[TYPE_BYTES_m13];
+	ui4	type_code;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -1302,42 +1414,36 @@ ui4	G_channel_type_from_path_m13(si1 *path)
 	if (*c == '/')
 		c--;
 	
-	// copy extension
 	c -= 4;
 	if (*c != '.')
 		return_m13(UNKNOWN_CHANNEL_TYPE_m13);
-	strncpy_m13(extension, ++c, TYPE_BYTES_m13);
+	memcpy((void *) &type_code, (void *) ++c, 4);
 	
-	// compare extension: record types => get extension of next level up the hierarchy
-	if (!(strcmp(extension, RECORD_DATA_FILE_TYPE_STRING_m13)) || !(strcmp(extension, RECORD_INDICES_FILE_TYPE_STRING_m13))) {
+	// record types => get extension of next level up the hierarchy
+	if (type_code == RECORD_DATA_FILE_TYPE_CODE_m13 || type_code == RECORD_INDICES_FILE_TYPE_CODE_m13) {
 		G_extract_path_parts_m13(path, temp_path, NULL, NULL);
-		G_extract_path_parts_m13(temp_path, temp_path, name, extension);
+		G_extract_path_parts_m13(temp_path, NULL, NULL, extension);
+		memcpy((void *) &type_code, (void *) extension, 4);
 	}
 	
-	// compare extension: TIMES_SERIES_CHANNEL_TYPE
-	if (!(strcmp(extension, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13)))
-		return_m13(TIME_SERIES_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13)))
-		return_m13(TIME_SERIES_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13)))
-		return_m13(TIME_SERIES_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, TIME_SERIES_DATA_FILE_TYPE_STRING_m13)))
-		return_m13(TIME_SERIES_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13)))
-		return_m13(TIME_SERIES_CHANNEL_TYPE_m13);
-	
-	// compare extension: VIDEO_CHANNEL_TYPE
-	else if (!(strcmp(extension, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13)))
-		return_m13(VIDEO_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13)))
-		return_m13(VIDEO_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, VIDEO_METADATA_FILE_TYPE_STRING_m13)))
-		return_m13(VIDEO_CHANNEL_TYPE_m13);
-	else if (!(strcmp(extension, VIDEO_INDICES_FILE_TYPE_STRING_m13)))
-		return_m13(VIDEO_CHANNEL_TYPE_m13);
-	
-	// unknown channel type
-	return_m13(UNKNOWN_CHANNEL_TYPE_m13);
+	// compare extension
+	switch (type_code) {
+		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13:
+		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13:
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
+			return_m13(TIME_SERIES_CHANNEL_TYPE_m13);
+			
+		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13:
+		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
+		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
+			return_m13(VIDEO_CHANNEL_TYPE_m13);
+			
+		default:  // session, segmented session records, or non-MED
+			return_m13(UNKNOWN_CHANNEL_TYPE_m13);
+	}
 }
 
 
@@ -1416,7 +1522,7 @@ TERN_m13	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // v
 	sprintf_m13(command, "echo x > \"%s/test_file-remove_me\"", full_path);  // create non-empty file in case file system is cloud
 	ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 	if (ret_val) {
-		G_error_message_m13("%s(): Cannot create files on \"%s\"\n", full_path);
+		G_set_error_m13(E_UNSPECIFIED_m13, "cannot create files on \"%s\"", full_path);
 		return_m13(FALSE_m13);
 	}
 
@@ -1435,9 +1541,9 @@ TERN_m13	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // v
 		
 		// copy file system test file to cloud
 		sprintf(command, "%scp %s/test_file-remove_me %s/test_file-remove_me", cloud_prefix, file_system_path, cloud_directory);
-		system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
-			G_error_message_m13("%s(): Cannot create files on \"%s\"\n", cloud_directory);
+			G_set_error_m13(E_UNSPECIFIED_m13, "cannot create files on \"%s\"", cloud_directory);
 			return_m13(FALSE_m13);
 		} else {
 			// clean up
@@ -1469,18 +1575,18 @@ TERN_m13	G_check_password_m13(si1 *password)
 
 	// check pointer: return FALSE_m13 for NULL
 	if (password == NULL) {
-		G_warning_message_m13("%s(): password is NULL\n");
+		G_set_error_m13(E_BAD_PASSWORD_m13, "password is NULL");
 		return_m13(FALSE_m13);
 	}
 		
 	// check password length
 	pw_len = UTF8_strlen_m13(password);
 	if (pw_len == 0) {
-		G_warning_message_m13("%s(): password has no characters\n");
+		G_set_error_m13(E_BAD_PASSWORD_m13, "password has no characters");
 		return_m13(FALSE_m13);
 	}
 	if (pw_len > MAX_PASSWORD_CHARACTERS_m13) {
-		G_warning_message_m13("%s(): password too long (1 to  %d characters)\n", MAX_PASSWORD_CHARACTERS_m13);
+		G_set_error_m13(E_BAD_PASSWORD_m13, "password too long (1 to  %d characters)", MAX_PASSWORD_CHARACTERS_m13);
 		return_m13(FALSE_m13);
 	}
 		
@@ -1524,18 +1630,16 @@ si4	G_compare_acq_nums_m13(const void *a, const void *b)
 
 si4	G_compare_record_index_times(const void *a, const void *b)
 {
-	si8			time_d;
 	RECORD_INDEX_m13	*ria, *rib;
 	
 	
 	ria = (RECORD_INDEX_m13 *) a;
 	rib = (RECORD_INDEX_m13 *) b;
-	time_d = ria->start_time - rib->start_time;
 	
-	// can't return time_d - cast to int may overflow
-	if (time_d > 0)
+	// can't return time diff - cast to int may overflow
+	if (ria->start_time > rib->start_time)
 		return(1);
-	if (time_d < 0)
+	if (ria->start_time < rib->start_time)
 		return(-1);
 	
 	return(0);
@@ -1634,7 +1738,7 @@ TERN_m13	G_condition_time_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *lev
 #endif
 
 	if (slice == NULL) {
-		G_warning_message_m13("%s(): passed time slice is NULL\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "time slice is NULL");
 		return_m13(FALSE_m13);
 	}
 	
@@ -1719,14 +1823,15 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 			fps2 = NULL;
 			seg = (SEGMENT_m13 *) fps->parent;
 			if (seg != NULL) {  // try using parent
-				fps2 = seg->record_indices_fps;
+				fps2 = seg->time_series_indices_fps;
 			} else {  // try using file name
 				G_extract_path_parts_m13(fps->full_file_name, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
 				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 				fps2 = G_read_file_m13(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
 				G_pop_behavior_m13();
-				free_fps2 = TRUE_m13;
+				if (fps2 != NULL)
+					free_fps2 = TRUE_m13;
 			}
 			if (fps2 != NULL) {
 				uh2 = fps2->universal_header;
@@ -1798,7 +1903,8 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 				fps2 = G_read_file_m13(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
 				G_pop_behavior_m13();
-				free_fps2 = TRUE_m13;
+				if (fps2 != NULL)
+					free_fps2 = TRUE_m13;
 			}
 			if (fps2 != NULL) {
 				uh2 = fps2->universal_header;
@@ -1815,12 +1921,14 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 			// the only other option would be to read full record data file counting records - will add this if need arises, but for now, just fail
 			break;
 		default:
-			G_warning_message_m13("%s(): unrecognized file type\n");
-			break;
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized file type");
+			return_m13(FALSE_m13);
 	}
 	
-	if (number_of_entries <= 0 || maximum_entry_size <= 0)
+	if (number_of_entries <= 0 || maximum_entry_size <= 0) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "bad entry size or number of entries");
 		return_m13(FALSE_m13);
+	}
 
 	uh->number_of_entries = number_of_entries;
 	uh->maximum_entry_size = maximum_entry_size;
@@ -1884,7 +1992,7 @@ inline si8      G_current_uutc_m13(void)
 #endif
 
 	gettimeofday(&tv, NULL);
-	uutc = (si8) tv.tv_sec * (si8) 1000000 + (si8) tv.tv_usec;
+	uutc = ((si8) tv.tv_sec * (si8) 1000000) + (si8) tv.tv_usec;
 	
 	return_m13(uutc);
 }
@@ -1896,7 +2004,7 @@ si8      G_current_uutc_m13(void)
 {
 	static const ui8    EPOCH = (ui8) 116444736000000000;
 	struct timeval      tv;
-	si8                 uutc;
+	si8                 uutc, sec, usec;
 	SYSTEMTIME          system_time;
 	FILETIME            file_time;
 	ui8                 time;
@@ -1907,12 +2015,12 @@ si8      G_current_uutc_m13(void)
 
 	GetSystemTime(&system_time);
 	SystemTimeToFileTime(&system_time, &file_time);
-	time = ((ui8)file_time.dwLowDateTime);
-	time += ((ui8)file_time.dwHighDateTime) << 32;
+	time = ((ui8) file_time.dwLowDateTime);
+	time += ((ui8) file_time.dwHighDateTime) << 32;
 	
-	tv.tv_sec = (si4)((time - EPOCH) / (ui8) 10000000);
-	tv.tv_usec = (si4)(system_time.wMilliseconds * 1000);
-	uutc = (si8)tv.tv_sec * (si8) 1000000 + (si8) tv.tv_usec;
+	sec = (si8) (time - EPOCH) / (si8) 10000000;
+	usec = (si8) system_time.wMilliseconds * (si8) 1000;
+	uutc = (sec * (si8) 1000000) + usec;
 	
 	return_m13(uutc);
 }
@@ -1965,14 +2073,10 @@ TERN_m13	G_decrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 #endif
 
 	if (fps == NULL) {
-		G_error_message_m13("%s(): FILE_PROCESSING_STRUCT is NULL\n");
+		G_set_error_m13(E_NO_METADATA_m13, "FILE_PROCESSING_STRUCT is NULL");
 		return_m13(FALSE_m13);
 	}
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	if (proc_globals == NULL) {
-		G_error_message_m13("%s(): PROC_GLOBALS are NULL\n");
-		return_m13(FALSE_m13);
-	}
 	pwd = &proc_globals->password_data;
 
 	// time series encryption global
@@ -1988,12 +2092,12 @@ TERN_m13	G_decrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, NULL, decryption_key);
 			fps->metadata->section_1.section_2_encryption_level = -fps->metadata->section_1.section_2_encryption_level;  // mark as currently decrypted
 		} else {
-			G_add_behavior_m13(RETURN_ON_FAIL_m13);
-			G_error_message_m13("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", fps->metadata->section_1.section_2_encryption_level);
-			G_pop_behavior_m13();
+			G_add_behavior_m13(RETURN_ON_FAIL_m13);  // force return to show hints
+			G_set_error_m13(E_NO_METADATA_m13, "Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt", fps->metadata->section_1.section_2_encryption_level);
+			G_pop_behavior_m13();  // restore behavior
 			G_show_password_hints_m13(pwd);
 			if (G_current_behavior_m13() & RETURN_ON_FAIL_m13)
-				return_m13(FALSE_m13);  // can't do anything without section 2, so fail
+				return_m13(FALSE_m13);
 			exit(-1);
 		}
 	}
@@ -2058,7 +2162,7 @@ TERN_m13	G_decrypt_record_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, ...)  // var
 		rh = (RECORD_HEADER_m13 *) fps->record_data;
 		number_of_records = fps->number_of_items;
 	}
-	if (number_of_records == 0)  // failure == all records unreadable
+	if (number_of_records == 0)  // failure == all records unreadable, not no records
 		return_m13(TRUE_m13);
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
@@ -2115,14 +2219,14 @@ TERN_m13     G_decrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 		}
 		if (bh->block_flags & CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13) {
 			if (bh->block_flags & CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13) {
-				G_error_message_m13("%s(): Cannot decrypt data: flags indicate both level 1 & level 2 encryption\n");
+				G_set_error_m13(E_UNSPECIFIED_m13, "cannot decrypt data: flags indicate both level 1 & level 2 encryption");
 				return_m13(FALSE_m13);
 			}
 			if (pwd->access_level >= LEVEL_1_ENCRYPTION_m13) {
 				key = pwd->level_1_encryption_key;
 				break;
 			} else {
-				G_error_message_m13("%s(): Cannot decrypt data: insufficient access\n");
+				G_set_error_m13(E_NO_ACCESS_m13, "cannot decrypt data: insufficient access");
 				return_m13(FALSE_m13);
 			}
 		} else {  // level 2 bit is set
@@ -2130,7 +2234,7 @@ TERN_m13     G_decrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 				key = pwd->level_2_encryption_key;
 				break;
 			} else {
-				G_error_message_m13("%s(): Cannot decrypt data: insufficient access\n");
+				G_set_error_m13(E_NO_ACCESS_m13, "cannot decrypt data: insufficient access");
 				return_m13(FALSE_m13);
 			}
 		}
@@ -2300,19 +2404,19 @@ si4     G_DST_offset_m13(si8 uutc)
 	if (month != DST_start_month && month != DST_end_month) {
 		if (month > first_DTCC->month && month < last_DTCC->month) {
 			if (first_DTCC->month == DST_start_month)
-				return_m13((si4)first_DTCC->shift_minutes * (si4)60);
+				return_m13((si4) first_DTCC->shift_minutes * (si4) 60);
 			else
 				return_m13(0);
 		} else if (month < first_DTCC->month) {
 			if (first_DTCC->month == DST_start_month)
 				return_m13(0);
 			else
-				return_m13((si4)first_DTCC->shift_minutes * (si4)60);
+				return_m13((si4) first_DTCC->shift_minutes * (si4) 60);
 		} else {  // month > last_DTCC->month
 			if (last_DTCC->month == DST_end_month)
 				return_m13(0);
 			else
-				return_m13((si4)first_DTCC->shift_minutes * (si4)60);
+				return_m13((si4) first_DTCC->shift_minutes * (si4) 60);
 		}
 	}
 	
@@ -2356,12 +2460,12 @@ si4     G_DST_offset_m13(si8 uutc)
 	
 	if (change_DTCC->month == DST_start_month) {
 		if (utc >= change_utc)
-			return_m13((si4)change_DTCC->shift_minutes * (si4)60);
+			return_m13((si4) change_DTCC->shift_minutes * (si4) 60);
 		else
 			return_m13(0);
 	} else {  // change_DTCC->month == DST_end_month
 		if (utc < change_utc)
-			return_m13((si4)change_DTCC->shift_minutes * (si4)-60);
+			return_m13((si4) change_DTCC->shift_minutes * (si4) -60);
 		else
 			return_m13(0);
 	}
@@ -2474,7 +2578,7 @@ TERN_m13     G_encrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 			encryption_mask = CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13;
 		}
 	} else {
-		G_error_message_m13("%s(): Cannot encrypt data => returning without encrypting\n");
+		G_warning_message_m13("%s(): Cannot encrypt data => returning without encrypting\n", __FUNCTION__);
 		fps->parameters.cps->directives.encryption_level = NO_ENCRYPTION_m13;
 		return_m13(FALSE_m13);
 	}
@@ -2521,7 +2625,7 @@ TERN_m13	G_enter_ascii_password_m13(si1 *password, si1 *prompt, TERN_m13 confirm
 	// pass timeout_secs == 0.0 for no timeout
 
 	if (password == NULL) {
-		G_warning_message_m13("password is NULL\n");
+		G_warning_message_m13("%s(): password is NULL\n", __FUNCTION__);
 		return_m13(FALSE_m13);
 	}
 		
@@ -2652,7 +2756,7 @@ TERN_m13	G_enter_ascii_password_m13(si1* password, si1* prompt, TERN_m13 confirm
 
 	// pass timeout_secs == 0.0 for no timeout
 	if (password == NULL) {
-		G_warning_message_m13("password is NULL\n");
+		G_warning_message_m13("%s(): password is NULL\n", __FUNCTION__);
 		return_m13(FALSE_m13);
 	}
 	
@@ -3100,41 +3204,46 @@ FILE_TIMES_m13	*G_file_times_m13(FILE *fp, si1 *path, FILE_TIMES_m13 *ft, TERN_m
 			GetSystemTime(&sys_time);
 			SystemTimeToFileTime(&sys_time, &set_access_time);
 			set_modify_time = set_access_time;
+		} else {
+			set_access_time = WN_uutc_to_win_time_m13(ft->access);
+			set_modify_time = WN_uutc_to_win_time_m13(ft->modification);
 		}
-		set_access_time = WN_uutc_to_win_time_m13(ft->access);
-		set_modify_time = WN_uutc_to_win_time_m13(ft->modification);
 	}
 
 	if (fp == NULL) {
 		if ((file_h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
-		    G_warning_message_m13("%s(): CreateFile failed with error %d\n", GetLastError());
+		    G_warning_message_m13("%s(): CreateFile failed with error %d\n", __FUNCTION__, GetLastError());
 		    return_m13(NULL);
 		}
 	} else {
 		fd = _fileno(fp);
 		if ((file_h = (HANDLE) _get_osfhandle(fd)) == INVALID_HANDLE_VALUE) {
-		    G_warning_message_m13("%s(): get_osfhandle failed with error %d\n", GetLastError());
+		    G_warning_message_m13("%s(): get_osfhandle failed with error %d\n", __FUNCTION__, GetLastError());
 		    return_m13(NULL);
 		}
 	}
+	
+	if (set_time == TRUE_m13) {
+		if (!SetFileTime(file_h, NULL, &set_access_time, &set_modify_time))
+			G_warning_message_m13("%s(): SetFileTime failed with error %d\n", __FUNCTION__, GetLastError());
+		return_m13(NULL);
+	}
 
 	if (!GetFileTime(file_h, &win_create_time, &win_access_time, &win_modify_time)) {
-		G_warning_message_m13("%s(): GetFileTime failed with error %d\n", GetLastError());
+		G_warning_message_m13("%s(): GetFileTime failed with error %d\n", __FUNCTION__, GetLastError());
 		return_m13(NULL);
 	}
 	
-	if (ft == NULL)
+	if (ft == NULL) {
 		ft = (FILE_TIMES_m13 *) malloc_m13(sizeof(FILE_TIMES_m13));
+		if (ft == NULL)
+			return_m13(NULL);
+	}
 
 	ft->creation = WN_time_to_uutc_m13(win_create_time);
 	ft->access = WN_time_to_uutc_m13(win_access_time);
 	ft->modification = WN_time_to_uutc_m13(win_modify_time);
 	
-	if (set_time == TRUE_m13) {
-		if (!SetFileTime(file_h, NULL, &set_access_time, &set_modify_time))
-			G_warning_message_m13("%s(): SetFileTime failed with error %d\n", GetLastError());
-	}
-
 	if (fp == NULL)
 		CloseHandle(file_h);
 	
@@ -3354,7 +3463,7 @@ si8	G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode)  // returns index c
 				return_m13(n_inds);
 			}
 			block_duration = (si8) (seg->metadata_fps->metadata->time_series_section_2.maximum_block_duration + (sf8) 0.5);
-			i = ((target - seg_start_time) / block_duration) + 1;  // more efficient to serch backward
+			i = ((target - seg_start_time) / block_duration) + 1;  // more efficient to search backward
 			if (i > n_inds)
 				i = n_inds;
 			if (tsi[i].start_time <= target) {  // forward linear search
@@ -3404,7 +3513,7 @@ si8	G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode)  // returns index c
 			}
 
 			clip_duration = (si8) (seg->metadata_fps->metadata->video_section_2.maximum_clip_duration + (sf8) 0.5);
-			i = ((target - seg_start_time) / clip_duration) + 1;  // more efficient to serch backward
+			i = ((target - seg_start_time) / clip_duration) + 1;  // more efficient to search backward
 			if (i > n_inds)
 				i = n_inds;
 			if (vi[i].start_time <= target) {  // forward linear search
@@ -3427,7 +3536,7 @@ si8	G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode)  // returns index c
 				return_m13(n_inds);
 			}
 			clip_frames = (si8) seg->metadata_fps->metadata->video_section_2.maximum_clip_frames;
-			i = (target / clip_frames) + 1;  // more efficient to serch backward
+			i = (target / clip_frames) + 1;  // more efficient to search backward
 			if (i > n_inds)
 				i = n_inds;
 			target_frame_number = (ui4) target;
@@ -3485,7 +3594,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
 			goto FIND_MDF_SEG_LEVEL_m13;
 		default:
-			G_set_error_m13(NULL, E_NOT_MED_m13, "input path must be a MED session, channel, or segment directory");  // global error
+			G_set_error_m13(E_NOT_MED_m13, "input path must be a MED session, channel, or segment directory");  // global error
 			return_m13(NULL);
 	}
 	
@@ -3520,7 +3629,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 	}
 	
 	if (match == FALSE_m13) {
-		G_set_error_m13(NULL, E_NO_METADATA_m13, NULL);  // global error
+		G_set_error_m13(E_NO_METADATA_m13, NULL);  // global error
 		return_m13(NULL);
 	}
 	
@@ -3560,7 +3669,7 @@ FIND_MDF_CHAN_LEVEL_m13:
 	}
 	
 	if (match == FALSE_m13) {
-		G_set_error_m13(NULL, E_NO_METADATA_m13, NULL);  // global error
+		G_set_error_m13(E_NO_METADATA_m13, NULL);  // global error
 		return_m13(NULL);
 	}
 	
@@ -3572,7 +3681,7 @@ FIND_MDF_CHAN_LEVEL_m13:
 FIND_MDF_SEG_LEVEL_m13:
 	dir = opendir(md_path); // open the path
 	if (dir == NULL) {
-		G_set_error_m13(NULL, E_NO_METADATA_m13, NULL);
+		G_set_error_m13(E_NO_METADATA_m13, NULL);
 		return_m13(NULL); // if was not able, return
 	}
 	match = FALSE_m13;
@@ -3602,7 +3711,7 @@ FIND_MDF_SEG_LEVEL_m13:
 	}
 	
 	if (match == FALSE_m13) {
-		G_set_error_m13(NULL, E_NO_METADATA_m13, NULL);  // global error
+		G_set_error_m13(E_NO_METADATA_m13, NULL);  // global error
 		return_m13(NULL);
 	}
 	
@@ -3640,6 +3749,10 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 	G_path_from_root_m13(path, md_path);
 	code = G_MED_type_code_from_string_m13(path);
 	switch(code) {
+		case RECORD_DIRECTORY_TYPE_CODE_m13:
+			G_extract_path_parts_m13(md_path, md_path, NULL, NULL);
+			code = SESSION_DIRECTORY_TYPE_CODE_m13;
+			break;
 		case SESSION_DIRECTORY_TYPE_CODE_m13:
 			break;
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13:
@@ -3649,7 +3762,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
 			goto WIN_FIND_MDF_SEG_LEVEL_m13;
 		default:
-			G_warning_message_m13("%s(): input path must be a MED session, channel, or segment directory\n");
+			G_set_error_m13(E_NOT_MED_m13, "input path must be a MED session, channel, or segment directory");  // global error
 			return_m13(NULL);
 	}
 	
@@ -3750,7 +3863,7 @@ si8	G_find_record_index_m13(FILE_PROCESSING_STRUCT_m13 *record_indices_fps, si8 
 			case FIND_LAST_BEFORE_m13:
 				return_m13(NO_INDEX_m13);
 			default:
-				G_warning_message_m13("%s(): unsupported mode (%u)\n", mode);
+				G_set_error_m13(E_UNSPECIFIED_m13, "unsupported mode (%u)\n", mode);
 				return_m13(NO_INDEX_m13);
 		}
 	}
@@ -3775,21 +3888,6 @@ si8	G_find_record_index_m13(FILE_PROCESSING_STRUCT_m13 *record_indices_fps, si8 
 	// binary search
 	do {
 		idx = (low_idx + high_idx) >> 1;
-		// NOTE: Sgmt indices have start time of segment start but are last records written in segment -  could screw up binary search
-		// This should be addressed in future MED version - start time should be in body (they need to be last records in segment for CRCs)
-		// header start time could be segment end time, body end time could be start time
-//		if (ri[idx].type_code == REC_Sgmt_TYPE_CODE_m13) {  // switch to linear search
-//			for (i = low_idx; i <= high_idx; ++i) {
-//				if (ri[i].type_code == REC_Sgmt_TYPE_CODE_m13)
-//					continue;
-//				if (ri[i].start_time > target_time) {
-//					high_idx = i - 1;
-//					break;
-//				}
-//			}
-//			low_idx = high_idx;
-//			break;
-//		}
 		if (ri[idx].start_time > target_time)
 			high_idx = idx;
 		else
@@ -3859,8 +3957,7 @@ void	G_function_stack_trap_m13(si4 sig_num)
 		case SIGTERM:
 			error_type = "Terminate (SIGTERM)";
 			break;
-		#if defined MACOS_m13 || defined LINUX_m13
-		// Windows signal mechanism is limited
+		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
 		case SIGQUIT:
 			error_type = "Quit (SIGQUIT)";
 			break;
@@ -3960,7 +4057,7 @@ si8     G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_u
 			case LH_TIME_SERIES_SEGMENT_m13:
 				return_m13(G_sample_number_for_uutc_m13(level_header, target_uutc, mode));
 			default:
-				G_error_message_m13("%s(): invalid level type\n");
+				G_set_error_m13(E_UNSPECIFIED_m13, "invalid level type");
 				return_m13(FRAME_NUMBER_NO_ENTRY_m13);
 		}
 		if (seg == NULL) {  // channel or session
@@ -3971,13 +4068,13 @@ si8     G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_u
 			G_open_segment_m13(seg, NULL, NULL, (CHANNEL_m13 *) seg->parent, seg->flags, NULL);
 		}
 		if (seg == NULL) {
-			G_warning_message_m13("%s(): can't open segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "can't open segment");
 			return_m13(FRAME_NUMBER_NO_ENTRY_m13);
 		}
 
 		vi = seg->video_indices_fps->video_indices;
 		if (vi == NULL) {
-			G_warning_message_m13("%s(): video indices are NULL => returning FRAME_NUMBER_NO_ENTRY_m13\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "video indices are NULL");
 			return_m13(FRAME_NUMBER_NO_ENTRY_m13);
 		}
 		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
@@ -4054,10 +4151,10 @@ TERN_m13	G_free_channel_m13(CHANNEL_m13 *channel, TERN_m13 free_channel_structur
 	G_push_function_m13();
 #endif
 
-	// returns FALSE_m13 if cannot free channel structure
+	// returns FALSE_m13 if  does not free channel structure
 	
 	if (channel == NULL) {
-		G_warning_message_m13("%s(): trying to free a NULL CHANNEL_m13 structure => returning with no action\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "CHANNEL_m13 structure is NULL");
 		return_m13(FALSE_m13);
 	}
 	if (channel->segments != NULL) {
@@ -4079,18 +4176,20 @@ TERN_m13	G_free_channel_m13(CHANNEL_m13 *channel, TERN_m13 free_channel_structur
 		FPS_free_processing_struct_m13(channel->record_indices_fps, TRUE_m13);
 	if (channel->contigua != NULL)
 		free_m13(channel->contigua);
-
+	
+	// delete proc_globals only if top of hierarchy, otherwise may still be used by other threads
 	if (channel->parent != NULL)
 		if (channel->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) channel);
 	
 	if (free_channel_structure == TRUE_m13) {
-		if (malloc_size_m13((void *) channel))
-			free_m13((void *) channel);  // allocated en bloc
-		return_m13(FALSE_m13);
-	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
-		channel->flags &= ~(LH_OPEN_m13 | LH_CHANNEL_ACTIVE_m13);
+		if (freeable_m13((void *) channel) == TRUE_m13) {
+			free_m13((void *) channel);
+			return_m13(TRUE_m13);
+		}
+	} else {  // clear everything with allocated memory
 		channel->parent = NULL;
+		channel->flags &= ~(LH_OPEN_m13 | LH_CHANNEL_ACTIVE_m13);
 		channel->access_time = UUTC_NO_ENTRY_m13;
 		channel->metadata_fps = NULL;
 		channel->record_data_fps = NULL;
@@ -4100,7 +4199,7 @@ TERN_m13	G_free_channel_m13(CHANNEL_m13 *channel, TERN_m13 free_channel_structur
 		channel->number_of_contigua = 0;
 	}
 
-	return_m13(TRUE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -4320,18 +4419,18 @@ void    G_free_globals_m13(TERN_m13 cleanup_for_exit)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_free_thread_local_storage_m13(void)
+void	G_free_thread_local_storage_m13(LEVEL_HEADER_m13 *level_header)
 {
 	// Call this function to release thread-local memory when leaving a thread.
 	// If not done, memory will be released by G_free_globals_m13(), or program termination.
 	// Only important in programs where many threads start & complete during course of operation.
-	// Currently the behavior stack, function stack, & proc globals entry are the only thread-local globals, but this could change in the future.
+	// Currently the behavior stack, & function stack are the only (pure) thread-local globals, but this could change in the future.
+	// proc_globals can be shared between threads
 	
 	G_delete_behavior_stack_m13();
 #ifdef FN_DEBUG_m13
 	G_delete_function_stack_m13();
 #endif
-	G_proc_globals_delete_m13(NULL);
 
 	return;
 }
@@ -4339,13 +4438,14 @@ void	G_free_thread_local_storage_m13(void)
 
 TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structure)
 {
-	// returns FALSE_m13 if cannot free segment structure
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// returns FALSE_m13 if did not free segment structure
+	
 	if (segment == NULL) {
-		G_warning_message_m13("$s(): trying to free a NULL SEGMENT_m13 structure => returning with no action\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "SEGMENT_m13 structure is NULL");
 		return_m13(FALSE_m13);
 	}
 	if (segment->metadata_fps != NULL)
@@ -4361,18 +4461,20 @@ TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structur
 	if (segment->contigua != NULL)
 		free_m13(segment->contigua);
 	
+	// delete proc_globals only if top of hierarchy, otherwise may still be used by other threads
 	if (segment->parent != NULL)
 		if (segment->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) segment);
-
+	
 	if (free_segment_structure == TRUE_m13) {
-		if (malloc_size_m13((void *) segment))
+		if (freeable_m13((void *) segment) == TRUE_m13) {
 			free_m13((void *) segment);
-		return_m13(FALSE_m13);  // allocated en bloc
+			return_m13(TRUE_m13);
+		}
 	} else {
-		// leave name, path, & slice intact (i.e. clear everything with allocated memory)
-		segment->flags &= ~(LH_OPEN_m13 | LH_CHANNEL_ACTIVE_m13);
+		// clear everything with allocated memory
 		segment->parent = NULL;
+		segment->flags &= ~(LH_OPEN_m13 | LH_CHANNEL_ACTIVE_m13);
 		segment->access_time = UUTC_NO_ENTRY_m13;
 		segment->metadata_fps = NULL;
 		segment->time_series_data_fps = NULL;
@@ -4383,7 +4485,7 @@ TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structur
 		segment->number_of_contigua = 0;
 	}
 
-	return_m13(TRUE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -4397,8 +4499,10 @@ TERN_m13	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, TERN_m13 f
 	G_push_function_m13();
 #endif
 
+	// returns FALSE_m13 if did not free ssr structure
+
 	if (ssr == NULL) {
-		G_warning_message_m13("%s(): trying to free a NULL SEGMENTED_SESS_RECS_m13 structure => returning with no action\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "SEGMENTED_SESS_RECS_m13 structure is NULL");
 		return_m13(FALSE_m13);
 	}
 	
@@ -4407,26 +4511,30 @@ TERN_m13	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, TERN_m13 f
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->record_indices_fps[i];
 		if (gen_fps != NULL)
-			if (malloc_size_m13((void *) gen_fps))
+			if (freeable_m13((void *) gen_fps) == TRUE_m13)
 				FPS_free_processing_struct_m13(gen_fps, TRUE_m13);
 		gen_fps = ssr->record_data_fps[i];
 		if (gen_fps != NULL)
-			if (malloc_size_m13((void *) gen_fps))
+			if (freeable_m13((void *) gen_fps) == TRUE_m13)
 				FPS_free_processing_struct_m13(gen_fps, TRUE_m13);
 	}
-	free_m13((void *) ssr->record_indices_fps);  // ok whether allocated en bloc or not
-	free_m13((void *) ssr->record_data_fps);  // ok whether allocated en bloc or not
+	free_m13((void *) ssr->record_indices_fps);
+	free_m13((void *) ssr->record_data_fps);
 
 	if (ssr->parent != NULL)
 		if (ssr->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) ssr);
 
-	if (free_segmented_sess_rec_structure == TRUE_m13)
+	if (free_segmented_sess_rec_structure == TRUE_m13) {
 		free_m13((void *) ssr);
-	else
+		return_m13(TRUE_m13);
+	} else {
 		ssr->parent = NULL;
-
-	return_m13(TRUE_m13);
+		ssr->record_indices_fps = NULL;
+		ssr->record_data_fps = NULL;
+	}
+	
+	return_m13(FALSE_m13);
 }
 
 
@@ -4439,8 +4547,10 @@ TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structur
 	G_push_function_m13();
 #endif
 
+	// returns FALSE_m13 if did not free session structure
+
 	if (session == NULL) {
-		G_warning_message_m13("%s(): trying to free a NULL SESSION_m13 structure => returning with no action\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "SESSION_m13 structure is NULL");
 		return_m13(FALSE_m13);
 	}
 	if (session->time_series_metadata_fps != NULL)
@@ -4459,7 +4569,7 @@ TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structur
 			if (chan != NULL)
 				G_free_channel_m13(chan, TRUE_m13);
 		}
-		free_m13((void *) session->time_series_channels);  // ok whether allocated en bloc or not
+		free_m13((void *) session->time_series_channels);
 	}
 	if (session->video_channels != NULL) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -4474,18 +4584,17 @@ TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structur
 
 	if (session->contigua != NULL)
 		free_m13(session->contigua);
-	
-	if (session->parent != NULL)
-		if (session->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
-			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) session);
-	
+
+	// session is always top of hierarchy, so always delete proc_globals
+	G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) session);
+
 	if (free_session_structure == TRUE_m13) {
-		G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) session);
 		free((void *) session);
+			return_m13(TRUE_m13);
 	} else {
-		// leave name, path, slice, & globals intact (i.e. clear everything with allocated memory)
-		session->flags &= ~LH_OPEN_m13;
+		// clear everything with allocated memory
 		session->parent = NULL;
+		session->flags &= ~LH_OPEN_m13;
 		session->access_time = UUTC_NO_ENTRY_m13;
 		session->number_of_time_series_channels = 0;
 		session->time_series_channels = NULL;
@@ -4500,7 +4609,7 @@ TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structur
 		session->number_of_contigua = 0;
 	}
 	
-	return_m13(TRUE_m13);
+	return_m13(FALSE_m13);
 }
 
 
@@ -4809,8 +4918,8 @@ GFL_CONDITION_RETURN_DATA_m13:
 				strcpy(file_list[j], tmp_name);
 				break;
 			default:
-				G_error_message_m13("%s(): unrecognized path component combination (path_parts == %hhu)\n", path_parts);
-				break;
+				G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized path component combination (path_parts == %hhu)\n", path_parts);
+				return_m13(NULL);
 		}
 		++j;
 	}
@@ -4897,8 +5006,11 @@ si1	**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 number_of_name
 	G_push_function_m13();
 #endif
 
-	if (names == NULL)
+	if (names == NULL) {
 		names = (si1 **) calloc_2D_m13((size_t) number_of_names, SEGMENT_BASE_FILE_NAME_BYTES_m13, sizeof(si1));
+		if (names == NULL)
+			return_m13(NULL);
+	}
 	
 	for (i = 0; i < number_of_names; ++i) {
 		G_numerical_fixed_width_string_m13(number_str, FILE_NUMBERING_DIGITS_m13, i + 1);
@@ -5058,7 +5170,7 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 	if (proc_globals->time_constants_set == TRUE_m13) {
 		UTC_offset = proc_globals->standard_UTC_offset;
 	} else {
-		G_warning_message_m13("%s(): global time constants not set, using local UTC offset\n");
+		G_warning_message_m13("%s(): global time constants not set, using local UTC offset\n", __FUNCTION__);
 #if defined MACOS_m13 || defined LINUX_m13
 		localtime_r(&recording_start_time_utc, &time_info);
 		UTC_offset = time_info.tm_gmtoff;  // this is offset to standard time regardless of DST status (same number if tm_isdst true or false)
@@ -5178,7 +5290,7 @@ CHANNEL_m13	*G_get_active_channel_m13(SESSION_m13 *sess, si1 chan_type)
 		}
 	}
 	
-	G_warning_message_m13("%s(): no active channels\n");
+	G_set_error_m13(E_UNSPECIFIED_m13, "no active channels");
 	
 	return_m13(NULL);
 }
@@ -5281,11 +5393,13 @@ ui4	G_get_level_m13(si1 *full_file_name, ui4 *input_type_code)
 	G_push_function_m13();
 #endif
 
-	code = G_MED_type_code_from_string_m13(full_file_name);
+	code = NO_FILE_TYPE_CODE_m13;
 	if (input_type_code != NULL)
-		*input_type_code = code;
-	
-	// Note: if code == RECORD_DIRECTORY_TYPE_CODE_m13, this is session level, but from segmented session records; return this code so caller knows it was not global session records
+		code = *input_type_code;
+	if (code == NO_FILE_TYPE_CODE_m13)
+		if (full_file_name != NULL)
+			code = G_MED_type_code_from_string_m13(full_file_name);
+
 	switch (code) {
 		case NO_FILE_TYPE_CODE_m13:
 		case SESSION_DIRECTORY_TYPE_CODE_m13:
@@ -5324,7 +5438,7 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, TERN_m13
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
 	if (loc_info == NULL) {
 		loc_info = (LOCATION_INFO_m13 *) calloc((size_t) 1, sizeof(LOCATION_INFO_m13));
 		free_loc_info = TRUE_m13;
@@ -5349,43 +5463,43 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, TERN_m13
 	// parse output
 	pattern = "ip: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->WAN_IPv4_address);
 	
 	pattern = "city: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->locality);
 	
 	pattern = "region: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->timezone_info.territory);
 	
 	pattern = "country: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->timezone_info.country_acronym_2_letter);
 	
 	pattern = "loc: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%lf,%lf", &loc_info->latitude, &loc_info->longitude);
 	
 	pattern = "postal: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^,]", loc_info->postal_code);
 	
 	pattern = "timezone: ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL)
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", pattern, command);
+		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 	else
 		sscanf(c, "%[^, ]", loc_info->timezone_description);
 	
@@ -5414,7 +5528,7 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, TERN_m13
 #endif
 
 	if (G_set_global_time_constants_m13(&loc_info->timezone_info, 0, prompt) == FALSE_m13)
-		G_warning_message_m13("%s(): could not set timezone globals => returning NULL\n");
+		G_warning_message_m13("%s(): could not set timezone globals => returning NULL\n", __FUNCTION__);
 	
 	if (free_loc_info == TRUE_m13) {
 		free((void *) loc_info);
@@ -5441,7 +5555,7 @@ si4	G_get_search_mode_m13(TIME_SLICE_m13 *slice)
 	if (slice->start_sample_number != SAMPLE_NUMBER_NO_ENTRY_m13 && slice->end_sample_number != SAMPLE_NUMBER_NO_ENTRY_m13)
 		return_m13(SAMPLE_SEARCH_m13);
 	
-	G_warning_message_m13("%s(): no valid limit pair\n");
+	G_set_error_m13(E_UNSPECIFIED_m13, "no valid limit pair\n");
 	
 	return_m13(FALSE_m13);
 }
@@ -5469,14 +5583,14 @@ si4	G_get_segment_index_m13(si4 segment_number)
 
 	mapped_segs = proc_globals->number_of_mapped_segments;
 	if (mapped_segs == 0) {
-		G_warning_message_m13("%s(): no mapped segments\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "no mapped segments\n");
 		return_m13((si4) FALSE_m13);
 	}
 
 	if (segment_number == FIRST_OPEN_SEGMENT_m13 || segment_number == SEGMENT_NUMBER_NO_ENTRY_m13) {
 		chan = proc_globals->reference_channel;
 		if (chan == NULL) {
-			G_warning_message_m13("%s(): cannot find open segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "cannot find open segment\n");
 			return_m13((si4) FALSE_m13);
 		}
 		for (i = 0; i < mapped_segs; ++i) {
@@ -5487,11 +5601,11 @@ si4	G_get_segment_index_m13(si4 segment_number)
 					
 		}
 		if (i == mapped_segs) {
-			G_warning_message_m13("%s(): cannot find open segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "cannot find open segment\n");
 			return_m13((si4) FALSE_m13);
 		}
 		if (segment_number == SEGMENT_NUMBER_NO_ENTRY_m13)
-			G_warning_message_m13("%s(): segment not specified => returning first open segment from reference channel\n");
+			G_warning_message_m13("%s(): segment not specified => returning first open segment from reference channel\n", __FUNCTION__);
 		return_m13(i);
 	}
 	
@@ -5500,10 +5614,10 @@ si4	G_get_segment_index_m13(si4 segment_number)
 		if (segment_number >= 1 && segment_number <= mapped_segs) {
 			return_m13(segment_number - 1);
 		} else if (segment_number < 1) {
-			G_warning_message_m13("%s(): invalid segment number\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "invalid segment number\n");
 			return_m13((si4) FALSE_m13);
 		} else {
-			G_warning_message_m13("%s(): unmapped segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "unmapped segment\n");
 			return_m13((si4) FALSE_m13);
 		}
 	}
@@ -5511,7 +5625,7 @@ si4	G_get_segment_index_m13(si4 segment_number)
 	first_seg = proc_globals->first_mapped_segment_number;
 	seg_idx = segment_number - first_seg;
 	if (seg_idx < 0 || seg_idx >= mapped_segs) {
-		G_warning_message_m13("%s(): unmapped segment\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "unmapped segment\n");
 		return_m13((si4) FALSE_m13);
 	}
 	
@@ -5537,8 +5651,9 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
-
 	
+	// returns UNKNOWN_m13 on failure
+
 	if (slice->conditioned == FALSE_m13)
 		G_condition_time_slice_m13(slice, level_header);
 	slice->start_segment_number = slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;
@@ -5560,7 +5675,7 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 			Sgmt_records = chan->Sgmt_records;
 			break;
 		default:
-			G_error_message_m13("%s(): invalid level\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "invalid level\n");
 			return_m13(0);
 	}
 
@@ -5657,9 +5772,11 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 		}
 
 		// no adequate session level Sgmt records => build from reference channel metadata (least efficient option)
-		if (Sgmt_records == NULL)
+		if (Sgmt_records == NULL) {
 			Sgmt_records = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
-		
+			if (Sgmt_records == NULL)
+				return_m13((si4) UNKNOWN_m13);
+		}
 		// assign level Sgmt_records pointer
 		switch (level_header->type_code) {
 			case LH_SESSION_m13:
@@ -5723,6 +5840,8 @@ ui4	*G_get_segment_video_start_frames_m13(FILE_PROCESSING_STRUCT_m13 *video_indi
 	n_inds = video_indices_fps->universal_header->number_of_entries - 1;
 	*number_of_video_files = vidx[n_inds].video_file_number - 1;  // terminal index video file number is number of imaginary next file
 	start_frames = (ui4 *) calloc_m13((size_t) (*number_of_video_files + 1), sizeof(ui4));  // indexing from 1
+	if (start_frames == NULL)
+		return_m13(NULL);
 	
 	for (i = n_inds, j = 1; i--; ++vidx)
 		if (vidx->video_file_number == j)
@@ -5807,7 +5926,6 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FIL
 		case RECORD_INDICES_FILE_TYPE_CODE_m13:
 			G_extract_path_parts_m13(session_directory, temp_str, NULL, NULL);
 			return_m13(G_get_session_directory_m13(session_directory, temp_str, MED_fps));
-			break;
 	}
 	
 	if (set_global_session_name == TRUE_m13) {
@@ -5863,7 +5981,7 @@ GET_TERMINAL_ENTRY_RETRY_m13:
 				*((si1 *) buffer) = (si1) 0;
 				break;
 			default:
-				G_warning_message_m13("%s(): unrecognized data type => returning FALSE\n");
+				G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized data type");
 				return_m13(FALSE_m13);
 		}
 	}
@@ -6115,18 +6233,19 @@ TERN_m13	G_initialize_global_tables_m13(TERN_m13 initialize_all_tables)
 	} else {
 		HW_get_endianness_m13();  // the library is only written for little endian machines right now, so always done
 		HW_get_memory_info_m13();  // this is needed for alloc operations, so always done
-		G_initialize_error_tables_m13();  // standard MED error strings
+		G_initialize_error_tables_m13();  // standard MED error strings - always done
 	}
 
 	return(ret_val);
 }
 
 
-TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor)
+TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, ui4 default_behavior, si1 *app_path, ... )  // varargs (app_path != NULL) ui4 version_major, ui4 version_minor
 {
 	if (globals_m13 != NULL)
 		return(TRUE_m13);
 
+	// get varargs, if present
 	PROC_pthread_mutex_init_m13(&globals_mutex_m13, NULL);
 	PROC_pthread_mutex_lock_m13(&globals_mutex_m13);
 	if (globals_m13 != NULL) {  // another thread initialized while waiting
@@ -6140,11 +6259,11 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path,
 	globals_m13 = (GLOBALS_m13 *) calloc((size_t) 1, sizeof(GLOBALS_m13));
 	#endif
 	if (globals_m13 == NULL) {
-		printf_m13("%s(): calloc failure for globals => exiting\n", __FUNCTION__);
+		printf_m13("%s(): calloc() failure for globals => exiting\n", __FUNCTION__);
 		exit_m13(-1);
 	}
 
-	// AT (do this as soon as possible)
+	// Allocation tracking (do this as soon as possible)
 #ifdef AT_DEBUG_m13
 	PROC_pthread_mutex_init_m13(&globals_m13->AT_info.mutex, NULL);
 	#ifdef MATLAB_PERSISTENT_m13
@@ -6153,20 +6272,30 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path,
 	globals_m13->AT_info.nodes = (AT_NODE_m13 *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, sizeof(AT_NODE_m13));
 	#endif
 		if (globals_m13->AT_info.nodes == NULL) {
-			printf_m13("%s(): calloc failure for AT list => exiting\n", __FUNCTION__);
+			printf_m13("%s(): calloc() failure for AT list => exiting\n", __FUNCTION__);
 			exit(-1);
 		}
 	globals_m13->AT_info.node_count = GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
 #endif
 	
-	if (*app_path) {
+	// application info
+	if (app_path != NULL) {
+		va_list		args;
+
+		va_start(args, app_path);
+		globals_m13->app_info.version_major = (ui1) va_arg(args, ui4);  // varargs can't take single byte arguments
+		globals_m13->app_info.version_minor = (ui1) va_arg(args, ui4);  // varargs can't take single byte arguments
+		va_end(args);
+		
 		G_path_from_root_m13(app_path, globals_m13->app_info.path);
 		G_extract_path_parts_m13(globals_m13->app_info.path, NULL, globals_m13->app_info.name, NULL);
+
 		G_file_times_m13(NULL, globals_m13->app_info.path, &globals_m13->app_info.file_times, FALSE_m13);
 	}
-	globals_m13->app_info.version_major = version_major;
-	globals_m13->app_info.version_minor = version_minor;
-
+	
+	// default behavior
+	globals_m13->default_behavior = default_behavior;
+	
 	// record filters
 	globals_m13->record_filters = NULL;
 		
@@ -6200,24 +6329,37 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path,
 		G_initialize_global_tables_m13(initialize_all_tables);
 				
 #ifdef AT_DEBUG_m13  // do this at end, because G_message() will load UTF8 tables
-	printf_m13("%s(): %sAllocation tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m13, TC_RESET_m13);
+	printf_m13("%s(): %sAllocation Tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m13, TC_RESET_m13);
 #endif
 #ifdef FN_DEBUG_m13  // do this at end, because G_message() will load UTF8 tables
-	printf_m13("%s(): %sFunction tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m13, TC_RESET_m13);
+	printf_m13("%s(): %sFunction Tracking debug mode enabled%s\n", __FUNCTION__, TC_GREEN_m13, TC_RESET_m13);
 #endif
 
 	return(TRUE_m13);
 }
 
 
-TERN_m13	G_initialize_medlib_m13(TERN_m13 check_structure_alignments, TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor)
+TERN_m13	G_initialize_medlib_m13(TERN_m13 initialize_all_tables, ui4 default_behavior, si1 *app_path, ... )  // varargs (app_path != NULL) ui4 version_major, ui4 version_minor
 {
 	TERN_m13	ret_val = TRUE_m13;
+	ui4		version_major, version_minor;
 
 
+	// get varargs, if present
+	if (app_path != NULL) {
+		va_list		args;
+
+		va_start(args, app_path);
+		version_major = va_arg(args, ui4);  // varargs can't take single byte arguments
+		version_minor = va_arg(args, ui4);  // varargs can't take single byte arguments
+		va_end(args);
+	} else {
+		version_major = version_minor = 0;
+	}
+	
 	// set up globals
 	if (globals_m13 == NULL) {
-		if (G_initialize_globals_m13(initialize_all_tables, app_path, version_major, version_minor) == FALSE_m13) {
+		if (G_initialize_globals_m13(initialize_all_tables, default_behavior, app_path, version_major, version_minor) == FALSE_m13) {
 			printf_m13("%s(): error initializing globals\n", __FUNCTION__);
 			exit_m13(-1);
 		}
@@ -6251,12 +6393,7 @@ TERN_m13	G_initialize_medlib_m13(TERN_m13 check_structure_alignments, TERN_m13 i
 		exit_m13(-1);
 	}
 
-	// check structure alignments
-	if (check_structure_alignments == TRUE_m13)
-		if (ALCK_all_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
-	
-	// umask
+	// set umask
 #if defined MACOS_m13 || defined LINUX_m13
 	umask(globals_m13->file_creation_umask);
 #endif
@@ -6388,7 +6525,7 @@ TERN_m13	G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 ini
 			}
 			break;
 		default:
-			G_error_message_m13("%s(): Unrecognized METADATA SECTION 2 type in file \"%s\"\n", fps->full_file_name);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized metadata section 2 type in file \"%s\"", fps->full_file_name);
 			break;
 	}
 	
@@ -6424,9 +6561,13 @@ TIME_SLICE_m13	*G_initialize_time_slice_m13(TIME_SLICE_m13 *slice)
 #endif
 
 	// NOTE: also initializes for frame numbers (via unions)
+	// returns NULL on failure
 	
-	if (slice == NULL)  // caller responsible for freeing
+	if (slice == NULL) {  // caller responsible for freeing
 		slice = (TIME_SLICE_m13 *) malloc_m13(sizeof(TIME_SLICE_m13));
+		if (slice == NULL)
+			return_m13(NULL);
+	}
 	slice->conditioned = FALSE_m13;
 	slice->number_of_segments = UNKNOWN_m13;  // number_of_segments == 0
 	slice->start_time = slice->end_time = UUTC_NO_ENTRY_m13;
@@ -6743,11 +6884,10 @@ si1	*G_MED_type_string_from_code_m13(ui4 code)
 			return TIME_SERIES_DATA_FILE_TYPE_STRING_m13;
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
 			return TIME_SERIES_INDICES_FILE_TYPE_STRING_m13;
+		default:
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized MED file type code (0x%08x)", code);
+			return_m13(NULL);
 	}
-	
-	G_warning_message_m13("%s(): 0x%08x is not a recognized MED file type code\n", code);
-
-	return_m13(NULL);
 }
 
 
@@ -6761,7 +6901,7 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 #endif
 
 	if (string == NULL) {
-		G_warning_message_m13("%s(): string is NULL\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "string is NULL");
 		return_m13(NO_FILE_TYPE_CODE_m13);
 	}
 	
@@ -6801,13 +6941,11 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
 			return code;
+		default:
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized MED file type code (0x%08x)", code);
+			return_m13(NO_FILE_TYPE_CODE_m13);
 	}
-	
-	G_warning_message_m13("%s(): \"%s\" is not a recognized MED file type\n", string);
-	
-	return_m13(NO_FILE_TYPE_CODE_m13);
 }
-
 
 
 TERN_m13	G_merge_metadata_m13(FILE_PROCESSING_STRUCT_m13 *md_fps_1, FILE_PROCESSING_STRUCT_m13 *md_fps_2, FILE_PROCESSING_STRUCT_m13 *merged_md_fps)
@@ -6843,7 +6981,7 @@ TERN_m13	G_merge_metadata_m13(FILE_PROCESSING_STRUCT_m13 *md_fps_1, FILE_PROCESS
 	
 	type_code = md_fps_1->universal_header->type_code;
 	if (type_code != md_fps_2->universal_header->type_code) {
-		G_error_message_m13("%s(): mismatched type codes\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "mismatched type codes");
 		return_m13(UNKNOWN_m13);
 	}
 	
@@ -6852,7 +6990,7 @@ TERN_m13	G_merge_metadata_m13(FILE_PROCESSING_STRUCT_m13 *md_fps_1, FILE_PROCESS
 		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
 			break;
 		default:
-			G_error_message_m13("%s(): unrecognized type code 0x%x\n", type_code);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized type code (0x%08x)", type_code);
 			return_m13(UNKNOWN_m13);
 	}
 	equal = TRUE_m13;
@@ -7209,8 +7347,8 @@ TERN_m13        G_merge_universal_headers_m13(FILE_PROCESSING_STRUCT_m13 *fps_1,
 	if (memcmp(uh_1->channel_name, uh_2->channel_name, BASE_FILE_NAME_BYTES_m13)) {
 		memset(merged_uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13); equal = FALSE_m13;
 	}
-	if (memcmp(uh_1->anonymized_subject_ID, uh_2->anonymized_subject_ID, BASE_FILE_NAME_BYTES_m13)) {
-		memset(merged_uh->anonymized_subject_ID, 0, UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_BYTES_m13); equal = FALSE_m13;
+	if (uh_1->ordered != uh_2->ordered) {
+		merged_uh->ordered = UNKNOWN_m13; equal = FALSE_m13;
 	}
 	if (uh_1->session_UID != uh_2->session_UID) {
 		merged_uh->session_UID = UID_NO_ENTRY_m13; equal = FALSE_m13;
@@ -7280,13 +7418,8 @@ void     G_nap_m13(si1 *nap_str)
 	// e.g. to sleep for 1 millisecond:
 	// "1 millisecond" == "1millisecond" == "1 ms" == "1ms" == "1 m" == "1m"
 
-	if (nap_str == NULL) {
-		G_error_message_m13("%s(): NULL input string => not napping", nap_str);
-		return;
-	}
-	
-	if (*nap_str == 0) {
-		G_error_message_m13("%s(): no input string => not napping", nap_str);
+	if (STR_empty_m13(nap_str) == TRUE_m13) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "NULL input string");
 		return;
 	}
 
@@ -7337,7 +7470,7 @@ void     G_nap_m13(si1 *nap_str)
 			nap.tv_nsec = num * (ui8) 1e3;
 			break;
 		default:
-			G_warning_message_m13("%s(): \"%s\" is not a valid input string => not napping\n", nap_str);
+			G_set_error_m13(E_UNSPECIFIED_m13, "\"%s\" is not a valid input string", nap_str);
 			return;
 	}
 	
@@ -7359,7 +7492,7 @@ void     G_nap_m13(si1 *nap_str)
 	if (ms == 0) {
 		ms = 1;  // Windows limited to 1 ms rseolution
 	} else if (ms > 0x7FFFFFFF) {
-		G_warning_message_m13("%s(): millisecond overflow\n");
+		G_warning_message_m13("%s(): millisecond overflow (%lu)\n", __FUNCTION__, ms);
 		ms = 0x7FFFFFFF;
 	}
 	Sleep((si4) ms);
@@ -7394,8 +7527,10 @@ si1	*G_numerical_fixed_width_string_m13(si1 *string, si4 string_bytes, si4 numbe
 	
 	c = string;
 	temp = string_bytes - native_numerical_length;
-	if (temp < 0)
-		G_warning_message_m13("%s(): required digits exceed string length\n");
+	if (temp < 0) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "required digits exceed string length");
+		return_m13(NULL);
+	}
 	while (temp--)
 		*c++ = '0';
 	
@@ -7423,6 +7558,8 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	free_channel = FALSE_m13;
 	if (chan == NULL) {
 		chan = (CHANNEL_m13 *) calloc_m13((size_t) 1, sizeof(CHANNEL_m13));
+		if (chan == NULL)
+			return_m13(NULL);
 		free_channel = TRUE_m13;
 	} else if (chan->flags & LH_OPEN_m13) {
 		return_m13(chan);
@@ -7435,15 +7572,10 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	if (chan->type_code == NO_TYPE_CODE_m13 && *chan->path)
 		chan->type_code = G_generate_MED_path_components_m13(chan->path, NULL, chan->name);
 	if (chan->type_code != LH_TIME_SERIES_CHANNEL_m13 && chan->type_code != LH_VIDEO_CHANNEL_m13) {
-		if (chan->type_code == LH_TIME_SERIES_SEGMENT_m13 || chan->type_code == LH_VIDEO_SEGMENT_m13) {  // segment passed: don't think it will be used this way, but never know
-			G_extract_path_parts_m13(chan->path, chan->path, NULL, NULL);
-			chan->type_code = G_generate_MED_path_components_m13(chan->path, NULL, chan->name);
-		} else {
-			if (free_channel == TRUE_m13)
-				G_free_channel_m13(chan, TRUE_m13);
-			G_error_message_m13("%s(): indeterminate channel type\n");
-			return_m13(NULL);
-		}
+		if (free_channel == TRUE_m13)
+			G_free_channel_m13(chan, TRUE_m13);
+		G_set_error_m13(E_UNSPECIFIED_m13, "invalid channel type");
+		return_m13(NULL);
 	}
 	if (flags == LH_NO_FLAGS_m13)
 		flags = chan->flags;  // use existing channel flags, if none passed
@@ -7493,8 +7625,14 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	n_segs = slice->number_of_segments;
 	mapped_segs = proc_globals->number_of_mapped_segments;
 
-	if (chan->segments == NULL)
+	if (chan->segments == NULL) {
 		chan->segments = (SEGMENT_m13 **) calloc_m13((size_t) mapped_segs, sizeof(SEGMENT_m13 *));  // map segments
+		if (chan->segments == NULL) {
+			if (free_channel == TRUE_m13)
+				G_free_channel_m13(chan, TRUE_m13);
+			return_m13(NULL);
+		}
+	}
 	null_segment_cnt = 0;
 	if (n_segs == 1 || (chan->flags & LH_THREAD_SEGMENT_READS_m13) == 0) {  // this is most common scenario - no need for extra thread overhead
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
@@ -7529,6 +7667,11 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 					sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13);
 				if (G_file_exists_m13(seg_thread_infos[k].MED_dir) == DIR_EXISTS_m13) {  // not every segment may be present
 					seg = chan->segments[j] = G_open_segment_m13(NULL, slice, tmp_str, chan, (flags & ~LH_OPEN_m13), NULL);
+					if (seg == NULL) {
+						if (free_channel == TRUE_m13)
+							G_free_channel_m13(chan, TRUE_m13);
+						return_m13(NULL);
+					}
 				} else {
 					++null_segment_cnt;
 					continue;
@@ -7567,14 +7710,25 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	// channel records
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m13) {
 		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13)
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			chan->record_indices_fps = G_read_file_m13(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
+			if (chan->record_indices_fps == NULL) {
+				if (free_channel == TRUE_m13)
+					G_free_channel_m13(chan, TRUE_m13);
+				return_m13(NULL);
+			}
+		}
 		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m13)
 				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
 			else  // just read in data universal header & leave open
 				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) chan, NULL);
+			if (chan->record_data_fps == NULL) {
+				if (free_channel == FALSE_m13)
+					G_free_channel_m13(chan, TRUE_m13);
+				return_m13(NULL);
+			}
 		}
 	}
 	
@@ -7619,6 +7773,11 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 		} else if (chan->type_code == LH_VIDEO_CHANNEL_m13) {
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
 			chan->metadata_fps = FPS_allocate_processing_struct_m13(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m13, METADATA_BYTES_m13, (LEVEL_HEADER_m13 *) chan, seg->metadata_fps, METADATA_BYTES_m13);
+		}
+		if (chan->metadata_fps == NULL) {
+			if (free_channel == TRUE_m13)
+				G_free_channel_m13(chan, TRUE_m13);
+			return_m13(NULL);
 		}
 		// merge segments
 		for (++i, ++j; i < n_segs; ++i, ++j) {
@@ -7669,6 +7828,8 @@ CHANNEL_m13	*G_open_channel_nt_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1
 	free_channel = FALSE_m13;
 	if (chan == NULL) {
 		chan = (CHANNEL_m13 *) calloc_m13((size_t) 1, sizeof(CHANNEL_m13));
+		if (chan == NULL)
+			return_m13(NULL);
 		free_channel = TRUE_m13;
 	} else if (chan->flags & LH_OPEN_m13) {
 		return_m13(chan);
@@ -7681,15 +7842,10 @@ CHANNEL_m13	*G_open_channel_nt_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1
 	if (chan->type_code == NO_TYPE_CODE_m13 && *chan->path)
 		chan->type_code = G_generate_MED_path_components_m13(chan->path, NULL, chan->name);
 	if (chan->type_code != LH_TIME_SERIES_CHANNEL_m13 && chan->type_code != LH_VIDEO_CHANNEL_m13) {
-		if (chan->type_code == LH_TIME_SERIES_SEGMENT_m13 || chan->type_code == LH_VIDEO_SEGMENT_m13) {  // segment passed: don't think it will be used this way, but never know
-			G_extract_path_parts_m13(chan->path, chan->path, NULL, NULL);
-			chan->type_code = G_generate_MED_path_components_m13(chan->path, NULL, chan->name);
-		} else {
-			if (free_channel == TRUE_m13)
-				G_free_channel_m13(chan, TRUE_m13);
-			G_error_message_m13("%s(): indeterminate channel type\n");
-			return_m13(NULL);
-		}
+		G_set_error_m13(E_UNSPECIFIED_m13, "invalid channel type");
+		if (free_channel == TRUE_m13)
+			G_free_channel_m13(chan, TRUE_m13);
+		return_m13(NULL);
 	}
 	if (flags == LH_NO_FLAGS_m13)
 		flags = chan->flags;  // use existing channel flags, if none passed
@@ -7739,8 +7895,14 @@ CHANNEL_m13	*G_open_channel_nt_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1
 	n_segs = slice->number_of_segments;
 	mapped_segs = proc_globals->number_of_mapped_segments;
 
-	if (chan->segments == NULL)
+	if (chan->segments == NULL) {
 		chan->segments = (SEGMENT_m13 **) calloc_m13((size_t) mapped_segs, sizeof(SEGMENT_m13 *));  // map segments
+		if (chan->segments == NULL) {
+			if (free_channel == TRUE_m13)
+				G_free_channel_m13(chan, TRUE_m13);
+			return_m13(NULL);
+		}
+	}
 	null_segment_cnt = 0;
 	for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 		seg = chan->segments[j];
@@ -7764,14 +7926,25 @@ CHANNEL_m13	*G_open_channel_nt_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1
 	// channel records
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m13) {
 		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13)
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			chan->record_indices_fps = G_read_file_m13(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
+			if (chan->record_indices_fps == NULL) {
+				if (free_channel == TRUE_m13)
+					G_free_channel_m13(chan, TRUE_m13);
+				return_m13(NULL);
+			}
+		}
 		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m13)
 				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
 			else  // just read in data universal header & leave open
 				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) chan, NULL);
+			if (chan->record_data_fps == NULL) {
+				if (free_channel == TRUE_m13)
+					G_free_channel_m13(chan, TRUE_m13);
+				return_m13(NULL);
+			}
 		}
 	}
 	
@@ -7817,6 +7990,11 @@ CHANNEL_m13	*G_open_channel_nt_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
 			chan->metadata_fps = FPS_allocate_processing_struct_m13(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m13, METADATA_BYTES_m13, (LEVEL_HEADER_m13 *) chan, seg->metadata_fps, METADATA_BYTES_m13);
 		}
+		if (chan->metadata_fps == NULL) {
+			if (free_channel == TRUE_m13)
+				G_free_channel_m13(chan, TRUE_m13);
+			return_m13(NULL);
+		}
 		// merge segments
 		for (i++, j++; i < n_segs; ++i, ++j) {
 			if (chan->segments[j] == NULL)
@@ -7860,7 +8038,7 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 	ti = (READ_MED_THREAD_INFO_m13 *) ptr;
 	ti->MED_struct = (LEVEL_HEADER_m13 *) G_open_channel_m13((CHANNEL_m13 *) ti->MED_struct, ti->slice, ti->MED_dir, NULL, ti->flags, ti->password);
 	
-	G_free_thread_local_storage_m13();
+	G_free_thread_local_storage_m13((LEVEL_HEADER_m13 *) ti->MED_struct);
 	
 	return_m13((pthread_rval_m13) 0);
 }
@@ -7880,6 +8058,8 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 	free_segment = FALSE_m13;
 	if (seg == NULL) {
 		seg = (SEGMENT_m13 *) calloc_m13((size_t) 1, sizeof(SEGMENT_m13));
+		if (seg == NULL)
+			return_m13(NULL);
 		free_segment = TRUE_m13;
 	} else if (seg->flags & LH_OPEN_m13) {
 		return_m13(seg);
@@ -7890,17 +8070,17 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 		seg->type_code = G_generate_MED_path_components_m13(seg_path, seg->path, seg->name);
 	} else {
 		if (G_file_exists_m13(seg_path) == DOES_NOT_EXIST_m13) {
+			G_set_error_m13(E_UNSPECIFIED_m13, "segment does not exist");
 			if (free_segment == TRUE_m13)
 				G_free_segment_m13(seg, TRUE_m13);
-			G_warning_message_m13("%s(): segment does not exist\n");
 			return_m13(NULL);
 		}
 		seg->type_code = G_generate_MED_path_components_m13(seg->path, NULL, seg->name);
 	}
 	if (seg->type_code != LH_TIME_SERIES_SEGMENT_m13 && seg->type_code != LH_VIDEO_SEGMENT_m13) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "invalid segment type");
 		if (free_segment == TRUE_m13)
 			G_free_segment_m13(seg, TRUE_m13);
-		G_error_message_m13("%s(): indeterminate segment type\n");
 		return_m13(NULL);
 	}
 	if (flags == LH_NO_FLAGS_m13)
@@ -7938,8 +8118,14 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
 		else // seg->type_code == LH_VIDEO_SEGMENT_m13
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
-		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13)
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			seg->metadata_fps = G_read_file_m13(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) seg, NULL);
+			if (seg->metadata_fps == NULL) {
+				if (free_segment == TRUE_m13)
+					G_free_segment_m13(seg, TRUE_m13);
+				return_m13(NULL);
+			}
+		}
 	}
 	
 	// segment data
@@ -7950,8 +8136,14 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
 		else // seg->type_code == LH_VIDEO_SEGMENT_m13
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
-		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13)  // note seg->video_indices_fps is the same pointer, so works for either
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {  // note seg->video_indices_fps is the same pointer, so works for either
 			seg->time_series_indices_fps = G_read_file_m13(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) seg, NULL);
+			if (seg->time_series_indices_fps == NULL) {
+				if (free_segment == TRUE_m13)
+					G_free_segment_m13(seg, TRUE_m13);
+				return_m13(NULL);
+			}
+		}
 		
 		// data (time series data only)
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m13) {
@@ -7961,6 +8153,11 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 					seg->time_series_data_fps = G_read_file_m13(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) seg, NULL);
 				else
 					seg->time_series_data_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) seg, NULL);
+				if (seg->time_series_data_fps == NULL) {
+					if (free_segment == TRUE_m13)
+						G_free_segment_m13(seg, TRUE_m13);
+					return_m13(NULL);
+				}
 			}
 		}
 	}
@@ -7968,14 +8165,25 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 	// segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m13) {
 		sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13)
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			seg->record_indices_fps = G_read_file_m13(seg->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) seg, NULL);
+			if (seg->record_indices_fps == NULL) {
+				if (free_segment == TRUE_m13)
+					G_free_segment_m13(seg, TRUE_m13);
+				return_m13(NULL);
+			}
+		}
 		sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			if (seg->flags & LH_READ_FULL_SEGMENT_RECORDS_m13)
 				seg->record_data_fps = G_read_file_m13(seg->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) seg, NULL);
 			else  // just read in data universal header & leave open
 				seg->record_data_fps = G_read_file_m13(seg->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) seg, NULL);
+			if (seg->record_data_fps == NULL) {
+				if (free_segment == TRUE_m13)
+					G_free_segment_m13(seg, TRUE_m13);
+				return_m13(NULL);
+			}
 		}
 	}
 	
@@ -7997,7 +8205,7 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 	ti = (READ_MED_THREAD_INFO_m13 *) ptr;
 	ti->MED_struct = (LEVEL_HEADER_m13 *) G_open_segment_m13((SEGMENT_m13 *) ti->MED_struct, ti->slice, ti->MED_dir, NULL, ti->flags, ti->password);
 	
-	G_free_thread_local_storage_m13();
+	G_free_thread_local_storage_m13((LEVEL_HEADER_m13 *) ti->MED_struct);
 
 	return_m13((pthread_rval_m13) 0);
 }
@@ -8028,6 +8236,8 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	free_session = FALSE_m13;
 	if (sess == NULL) {
 		sess = (SESSION_m13 *) calloc_m13((size_t) 1, sizeof(SESSION_m13));
+		if (sess == NULL)
+			return(NULL);
 		free_session = TRUE_m13;
 	} else if (sess->flags & LH_OPEN_m13) {
 		return_m13(sess);
@@ -8072,9 +8282,9 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 					n_chans = 1;
 					break;
 				default:
+					G_set_error_m13(E_UNSPECIFIED_m13, "invalid file type");
 					if (free_session == TRUE_m13)
 						G_free_session_m13(sess, TRUE_m13);
-					G_error_message_m13("%s(): invalid file list\n");
 					return_m13(NULL);
 			}
 		}
@@ -8088,12 +8298,17 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 #ifdef WINDOWS_m13
 	regex_str = "?icd";  // less specific (than MacOS or Linux)
 #endif
-	chan_list = G_generate_file_list_m13(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m13);  // more specific (than Windows)
-
-	if (n_chans == 0) {
+	chan_list = G_generate_file_list_m13(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m13);
+	if (chan_list == NULL) {
 		if (free_session == TRUE_m13)
 			G_free_session_m13(sess, TRUE_m13);
-		G_error_message_m13("%s(): no channels found\n");
+		return_m13(NULL);
+	}
+
+	if (n_chans == 0) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "no channels in file list");
+		if (free_session == TRUE_m13)
+			G_free_session_m13(sess, TRUE_m13);
 		return_m13(NULL);
 	}
 
@@ -8101,9 +8316,9 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	type_code = G_generate_MED_path_components_m13(sess->path, NULL, sess->fs_name);
 	sess->name = sess->fs_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m13) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "channels must be in a MED session directory");
 		if (free_session == TRUE_m13)
 			G_free_session_m13(sess, TRUE_m13);
-		G_error_message_m13("%s(): channels must be in a MED session directory\n");
 		return_m13(NULL);
 	}
 	
@@ -8115,7 +8330,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 		if (strcmp(sess->path, tmp_str)) {
 			if (free_session == TRUE_m13)
 				G_free_session_m13(sess, TRUE_m13);
-			G_error_message_m13("%s(): channels must all be in the same session directory\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "channels must all be in the same session directory");
 			return_m13(NULL);
 		}
 		type_code = G_MED_type_code_from_string_m13(chan_list[i]);
@@ -8129,7 +8344,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			default:
 				if (free_session == TRUE_m13)
 					G_free_session_m13(sess, TRUE_m13);
-				G_error_message_m13("%s(): channels must be MED channel directories\n");
+				G_set_error_m13(E_UNSPECIFIED_m13, "channels must be MED channel directories");
 				return_m13(NULL);
 		}
 	}
@@ -8139,10 +8354,22 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 		n_ts_chans = 0;
 	if (!(sess->flags & LH_INCLUDE_VIDEO_CHANNELS_m13))
 		n_vid_chans = 0;
-	if (n_ts_chans)
+	if (n_ts_chans) {
 		ts_chan_list = (si1 **) calloc_2D_m13((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m13, sizeof(si1));
-	if (n_vid_chans)
+		if (ts_chan_list == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
+	}
+	if (n_vid_chans) {
 		vid_chan_list = (si1 **) calloc_2D_m13((size_t) n_vid_chans, FULL_FILE_NAME_BYTES_m13, sizeof(si1));
+		if (vid_chan_list == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
+	}
 	for (i = j = k = 0; i < n_chans; ++i) {
 		type_code = G_MED_type_code_from_string_m13(chan_list[i]);
 		switch (type_code) {
@@ -8169,8 +8396,18 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			sess_dir = tmp_str;
 		}
 		full_ts_chan_list = G_generate_file_list_m13(NULL, &all_ts_chans, sess_dir, NULL, "ticd", GFL_FULL_PATH_m13);
+		if (full_ts_chan_list == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
 		if (n_ts_chans) {
 			sess->time_series_channels = (CHANNEL_m13 **) calloc_2D_m13((size_t) all_ts_chans, (size_t) 1, sizeof(CHANNEL_m13));
+			if (sess->time_series_channels == NULL) {
+				if (free_session == TRUE_m13)
+					G_free_session_m13(sess, TRUE_m13);
+				return_m13(NULL);
+			}
 			for (i = 0; i < all_ts_chans; ++i) {
 				chan = sess->time_series_channels[i];
 				chan->type_code = LH_TIME_SERIES_CHANNEL_m13;
@@ -8197,6 +8434,11 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 		}
 	} else if (n_ts_chans) {
 		sess->time_series_channels = (CHANNEL_m13 **) calloc_2D_m13((size_t) n_ts_chans, (size_t) 1, sizeof(CHANNEL_m13));
+		if (sess->time_series_channels == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
 		for (i = 0; i < n_ts_chans; ++i) {
 			chan = sess->time_series_channels[i];
 			chan->type_code = LH_TIME_SERIES_CHANNEL_m13;
@@ -8219,8 +8461,18 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			sess_dir = tmp_str;
 		}
 		full_vid_chan_list = G_generate_file_list_m13(NULL, &all_vid_chans, sess_dir, NULL, "vicd", GFL_FULL_PATH_m13);
+		if (full_vid_chan_list == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
 		if (n_vid_chans) {
 			sess->video_channels = (CHANNEL_m13 **) calloc_2D_m13((size_t) all_vid_chans, (size_t) 1, sizeof(CHANNEL_m13));
+			if (sess->video_channels == NULL) {
+				if (free_session == TRUE_m13)
+					G_free_session_m13(sess, TRUE_m13);
+				return_m13(NULL);
+			}
 			for (i = 0; i < all_vid_chans; ++i) {
 				chan = sess->video_channels[i];
 				chan->type_code = LH_VIDEO_CHANNEL_m13;
@@ -8247,6 +8499,11 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 		}
 	} else if (n_vid_chans) {
 		sess->video_channels = (CHANNEL_m13 **) calloc_2D_m13((size_t) n_vid_chans, (size_t) 1, sizeof(CHANNEL_m13));
+		if (sess->video_channels == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
 		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->video_channels[i];
 			chan->type_code = LH_VIDEO_CHANNEL_m13;
@@ -8303,7 +8560,12 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			if (sess->time_series_channels[i]->flags & LH_CHANNEL_ACTIVE_m13)
 				++active_ts_chans;
 		if (active_ts_chans) {
-			ts_chan_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m13));
+			ts_chan_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc_m13((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m13));
+			if (ts_chan_thread_infos == NULL) {
+				if (free_session == TRUE_m13)
+					G_free_session_m13(sess, TRUE_m13);
+				return_m13(NULL);
+			}
 			for (i = j = 0; i < sess->number_of_time_series_channels; ++i) {
 				chan = sess->time_series_channels[i];
 				if (chan->flags & LH_CHANNEL_ACTIVE_m13) {
@@ -8323,7 +8585,12 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			if (sess->video_channels[i]->flags & LH_CHANNEL_ACTIVE_m13)
 				++active_vid_chans;
 		if (active_vid_chans) {
-			vid_chan_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) active_vid_chans, sizeof(READ_MED_THREAD_INFO_m13));
+			vid_chan_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc_m13((size_t) active_vid_chans, sizeof(READ_MED_THREAD_INFO_m13));
+			if (vid_chan_thread_infos == NULL) {
+				if (free_session == TRUE_m13)
+					G_free_session_m13(sess, TRUE_m13);
+				return_m13(NULL);
+			}
 			for (i = j = 0; i < sess->number_of_video_channels; ++i) {
 				chan = sess->video_channels[i];
 				if (chan->flags & LH_CHANNEL_ACTIVE_m13) {
@@ -8388,8 +8655,14 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 
 	// update session slice
 	chan = proc_globals->reference_channel;
-	if ((chan->flags & LH_CHANNEL_ACTIVE_m13) == 0)
+	if ((chan->flags & LH_CHANNEL_ACTIVE_m13) == 0) {
 		chan = G_get_active_channel_m13(sess, DEFAULT_CHANNEL_m13);
+		if (chan == NULL) {
+			if (free_session == TRUE_m13)
+				G_free_session_m13(sess, TRUE_m13);
+			return_m13(NULL);
+		}
+	}
 	slice->start_time = chan->time_slice.start_time;
 	slice->end_time = chan->time_slice.end_time;
 	slice->start_segment_number = chan->time_slice.start_segment_number;
@@ -8418,14 +8691,25 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m13) {
 		sprintf_m13(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13)
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			sess->record_indices_fps = G_read_file_m13(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) sess, NULL);
+			if (sess->record_indices_fps == NULL) {
+				if (free_session == TRUE_m13)
+					G_free_session_m13(sess, TRUE_m13);
+				return_m13(NULL);
+			}
+		}
 		sprintf_m13(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
 			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m13)
 				sess->record_data_fps = G_read_file_m13(sess->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) sess, NULL);
 			else  // just read in data universal header & leave open
 				sess->record_data_fps = G_read_file_m13(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) sess, NULL);
+			if (sess->record_data_fps == NULL) {
+				if (free_session == TRUE_m13)
+					G_free_session_m13(sess, TRUE_m13);
+				return_m13(NULL);
+			}
 		}
 	}
 
@@ -9592,7 +9876,7 @@ inline
 #endif
 void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior)
 {
-	BEHAVIOR_m13		*behavior_struct;
+	BEHAVIOR_m13		*behavior_struct, *new_stack;
 	BEHAVIOR_STACK_m13	*stack_info;
 	
 	
@@ -9603,7 +9887,10 @@ void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior)
 	// realloc
 	if (stack_info->entries == stack_info->size) {
 		stack_info->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		stack_info->stack = (BEHAVIOR_m13 *) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(BEHAVIOR_m13));
+		new_stack = (BEHAVIOR_m13 *) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(BEHAVIOR_m13));
+		if (new_stack == NULL)
+			return;
+		stack_info->stack = new_stack;
 	}
 	
 	// add to stack
@@ -9625,6 +9912,7 @@ inline
 #endif
 void	G_push_function_exec_m13(const si1 *function)
 {
+	const si1		**new_stack
 	FUNCTION_STACK_m13	*stack_info;
 	
 
@@ -9636,7 +9924,10 @@ void	G_push_function_exec_m13(const si1 *function)
 	// realloc
 	if (stack_info->entries == stack_info->size) {
 		stack_info->size += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
-		stack_info->stack = (const si1 **) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(const si1 *));
+		new_stack = (const si1 **) realloc((void *) stack_info->stack, (size_t) stack_info->size * sizeof(const si1 *));
+		if (new_stack == NULL)
+			return;
+		stack_info->stack = new_stack;
 	}
 	
 	// add to stack
@@ -10008,7 +10299,7 @@ pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
 	ti = (READ_MED_THREAD_INFO_m13 *) ptr;
 	ti->MED_struct = (LEVEL_HEADER_m13 *) G_read_channel_m13((CHANNEL_m13 *) ti->MED_struct, ti->slice, ti->MED_dir, ti->flags, ti->password);
 
-	G_free_thread_local_storage_m13();
+	G_free_thread_local_storage_m13((LEVEL_HEADER_m13 *) ti->MED_struct);
 
 	return_m13((pthread_rval_m13) 0);
 }
@@ -10151,7 +10442,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 		lh_flags = lh->flags;
 	
 	if (bytes_to_read == 0 && number_of_items == 0 && lh_flags == LH_NO_FLAGS_m13) {
-		G_set_error_m13(lh, E_READ_ERR_m13, "mst specify either bytes_to_read, number_of_items, or lh_flags");
+		G_set_error_m13(E_READ_ERR_m13, "must specify either bytes_to_read, number_of_items, or lh_flags");
 		return_m13(NULL);
 	}
 	file_offset = REMOVE_DISCONTINUITY_m13(file_offset);
@@ -10160,7 +10451,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	allocated_flag = FALSE_m13;
 	if (fps == NULL) {
 		if (full_file_name == NULL) {
-			G_set_error_m13(lh, E_NO_FILE_m13, "FILE_PROCESSING_STRUCT_m13 and full_file_name are both NULL");
+			G_set_error_m13(E_NO_FILE_m13, "FILE_PROCESSING_STRUCT_m13 and full_file_name are both NULL");
 			return_m13(NULL);
 		}
 		close_flag = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m13;
@@ -10265,7 +10556,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	if (bytes_read != bytes_to_read) {
 		if (allocated_flag == TRUE_m13)
 			FPS_free_processing_struct_m13(fps, TRUE_m13);
-		G_set_error_m13((LEVEL_HEADER_m13 *) fps, E_READ_ERR_m13, NULL);
+		G_set_error_m13(E_READ_ERR_m13, NULL);
 		return_m13(NULL);
 	}
 
@@ -10330,7 +10621,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	if (readable == FALSE_m13) {
 		if (allocated_flag == TRUE_m13)
 			FPS_free_processing_struct_m13(fps, TRUE_m13);
-		G_set_error_m13((LEVEL_HEADER_m13 *) fps, E_READ_ERR_m13, NULL);
+		G_set_error_m13(E_READ_ERR_m13, NULL);
 		return_m13(NULL);
 	}
 	
@@ -10585,7 +10876,7 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 	ti = (READ_MED_THREAD_INFO_m13 *) ptr;
 	ti->MED_struct = (LEVEL_HEADER_m13 *) G_read_segment_m13((SEGMENT_m13 *) ti->MED_struct, ti->slice, ti->MED_dir, ti->flags, ti->password);
 	
-	G_free_thread_local_storage_m13();
+	G_free_thread_local_storage_m13((LEVEL_HEADER_m13 *) ti->MED_struct);
 
 	return_m13((pthread_rval_m13) 0);
 }
@@ -12118,15 +12409,16 @@ TERN_m13    G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email
 }
 
 
-void	G_set_error_exec_m13(const si1 *function, si4 line, LEVEL_HEADER_m13 *level_header, si4 code, si1 *message, ...)
+void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...)
 {
 	ui4			behavior;
-	PROC_GLOBALS_m13	*proc_globals;
 	ERROR_m13		*err;
 	
 	
-	proc_globals = G_proc_globals_m13(level_header);
-	err = &proc_globals->error;
+	// General pattern in library: call set_error for causal errors only.
+	// Return error local error condition for errors returned from functions, no messages necssary
+	
+	err = &globals_m13->error;
 	if (err->code != E_NO_ERR_m13)  // already set (only keep causal error)
 		return;
 		
@@ -12156,18 +12448,20 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, LEVEL_HEADER_m13 *level
 		
 	// print error message
 	behavior = G_current_behavior_m13();
-	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
-		G_show_error_m13(level_header);
+	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
+		G_show_error_m13();
+		if (!(behavior & RETURN_ON_FAIL_m13)) {
+			#ifdef MATLAB_m13
+			mexPrintf("Exiting.\n\n");
+			#else
+			fprintf(stderr, "Exiting.\n\n");
+			#endif
+		}
+	}
 	
 	// exit
-	if (!(behavior & RETURN_ON_FAIL_m13)) {
-		#ifdef MATLAB_m13
-		mexPrintf("Exiting.\n\n");
-		#else
-		fprintf(stderr, "Exiting.\n\n");
-		#endif
+	if (!(behavior & RETURN_ON_FAIL_m13))
 		exit_m13(-1);
-	}
 	
 	return;
 }
@@ -12545,17 +12839,15 @@ TERN_m13    G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code,
 }
 
 
-TERN_m13	G_show_error_m13(LEVEL_HEADER_m13 *level_header)
+TERN_m13	G_show_error_m13(void)
 {
-	PROC_GLOBALS_m13	*proc_globals;
 	ERROR_m13		*err;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	proc_globals = G_proc_globals_m13(level_header);
-	err = &proc_globals->error;
+	err = &globals_m13->error;
 	if (err->code == E_NO_ERR_m13) {
 		G_message_m13("%s(): no error\n", __FUNCTION__);
 		return_m13(TRUE_m13);
@@ -12661,8 +12953,8 @@ void    G_show_globals_m13(void)
 		printf_m13("\n");
 	}
 
-	printf_m13("\nGlobal Error\n--------------\n");
-	G_show_error_m13(NULL);
+	printf_m13("\nError\n--------------\n");
+	G_show_error_m13();
 
 	printf_m13("\nMiscellaneous\n-------------\n");
 	if (*globals_m13->temp_dir)
@@ -12822,9 +13114,6 @@ TERN_m13    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 	STR_hex_m13((ui1 *) &proc_globals->daylight_time_end_code.value, 8, hex_str);
 	printf_m13("daylight_time_end_code: %s\n", hex_str);
 		
-	printf_m13("\nError\n-------------\n");
-	G_show_error_m13(level_header);
-
 	printf_m13("\nMiscellaneous\n-------------\n");
 	printf_m13("time_series_data_encryption_level: %hhd\n", proc_globals->time_series_data_encryption_level);
 	printf_m13("mmap_block_bytes: ");
@@ -12988,6 +13277,7 @@ TERN_m13    G_show_location_info_m13(LOCATION_INFO_m13 *li)
 
 TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, ui4 type_code)
 {
+	ui1					MED_version_major, MED_version_minor;
 	si1                                     hex_str[HEX_STRING_BYTES_m13(8)];
 	METADATA_SECTION_1_m13			*md1;
 	TIME_SERIES_METADATA_SECTION_2_m13	*tmd2, *gmd2;
@@ -13002,8 +13292,12 @@ TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, 
 	
 	// assign
 	if (fps != NULL) {
+		MED_version_major = fps->universal_header->MED_version_major;
+		MED_version_minor = fps->universal_header->MED_version_minor;
 		md = (METADATA_m13 *) fps->data_pointers;
 		type_code = fps->universal_header->type_code;
+	} else {
+		MED_version_major = MED_version_minor = 0;
 	}
 	
 	if (md != NULL) {
@@ -13023,6 +13317,7 @@ TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, 
 	
 	// show
 	printf_m13("------------------- Metadata - START -------------------\n");
+	
 	printf_m13("------------------ Section 1 - START -------------------\n");
 	if (*md1->level_1_password_hint)
 		UTF8_printf_m13("Level 1 Password Hint: %s\n", md1->level_1_password_hint);
@@ -13067,9 +13362,28 @@ TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, 
 		printf_m13("(level 2, currently decrypted)\n");
 	else
 		printf_m13("(unrecognized code)\n");
+	if (MED_version_major > 1 || MED_version_minor > 0) {  // MED 1.1 & above
+		printf_m13("Video Data Encryption Level: %d ", md1->video_data_encryption_level);
+		if (md1->video_data_encryption_level == NO_ENCRYPTION_m13)
+			printf_m13("(none)\n");
+		else if (md1->video_data_encryption_level == LEVEL_1_ENCRYPTION_m13)
+			printf_m13("(level 1, currently encrypted)\n");
+		else if (md1->video_data_encryption_level == LEVEL_2_ENCRYPTION_m13)
+			printf_m13("(level 2, currently encrypted)\n");
+		else if (md1->video_data_encryption_level == -LEVEL_1_ENCRYPTION_m13)
+			printf_m13("(level 1, currently decrypted)\n");
+		else if (md1->video_data_encryption_level == -LEVEL_2_ENCRYPTION_m13)
+			printf_m13("(level 2, currently decrypted)\n");
+		else
+			printf_m13("(unrecognized code)\n");
+		if (*md1->anonymized_subject_ID)
+			UTF8_printf_m13("Anonymized Subject ID: %s\n", md1->anonymized_subject_ID);
+		else
+			printf_m13("Anonymized Subject ID: no entry\n");
+	}
 	printf_m13("------------------- Section 1 - END --------------------\n");
-	printf_m13("------------------ Section 2 - START -------------------\n");
 	
+	printf_m13("------------------ Section 2 - START -------------------\n");
 	// decrypt if needed
 	if (md1->section_2_encryption_level > NO_ENCRYPTION_m13 || md1->section_3_encryption_level > NO_ENCRYPTION_m13)
 		if (fps != NULL)
@@ -13266,6 +13580,7 @@ TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, 
 		printf_m13("No access to section 2\n");
 	}
 	printf_m13("------------------- Section 2 - END --------------------\n");
+	
 	printf_m13("------------------ Section 3 - START -------------------\n");
 	if (md1->section_3_encryption_level <= NO_ENCRYPTION_m13) {
 		if (md3->recording_time_offset == UUTC_NO_ENTRY_m13)
@@ -13348,6 +13663,7 @@ TERN_m13	G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, 
 		printf_m13("No access to section 3\n");
 	}
 	printf_m13("------------------- Section 3 - END --------------------\n");
+	
 	printf_m13("-------------------- Metadata - END --------------------\n\n");
 	
 	return_m13(TRUE_m13);
@@ -13646,7 +13962,7 @@ TERN_m13    G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, TERN_m13
 TERN_m13	G_show_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 {
 	TERN_m13        ephemeral_flag;
-	si1             hex_str[HEX_STRING_BYTES_m13(PASSWORD_VALIDATION_FIELD_BYTES_m13)], time_str[TIME_STRING_BYTES_m13];
+	si1             hex_str[HEX_STRING_BYTES_m13(PASSWORD_VALIDATION_FIELD_BYTES_m13)], time_str[TIME_STRING_BYTES_m13], *anonymized_subject_ID;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -13810,10 +14126,24 @@ TERN_m13	G_show_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, UNIVERSAL_
 		UTF8_printf_m13("Channel Name: %s\n", uh->channel_name);
 	else
 		printf_m13("Channel Name: no entry\n");
-	if (*uh->anonymized_subject_ID)
-		UTF8_printf_m13("Anonymized Subject ID: %s\n", uh->anonymized_subject_ID);
-	else
-		printf_m13("Anonymized Subject ID: no entry\n");
+	if (uh->MED_version_major == 1 && uh->MED_version_minor == 0) {
+		anonymized_subject_ID = (si1 *) &uh->ordered;  // ordered replaced subject_ID in MED 1.1 & above
+		if (*anonymized_subject_ID)
+			UTF8_printf_m13("Anonymized Subject ID: %s\n", anonymized_subject_ID);
+		else
+			printf_m13("Anonymized Subject ID: no entry\n");
+	} else {   // all versions above MED 1.0
+		if (uh->type_code == RECORD_INDICES_FILE_TYPE_CODE_m13 || uh->type_code == RECORD_DATA_FILE_TYPE_CODE_m13) {
+			if (uh->ordered == TRUE_m13)
+				printf_m13("Ordered: true\n");
+			else if (uh->ordered == FALSE_m13)
+				printf_m13("Ordered: false\n");
+			else if (uh->ordered == UNKNOWN_m13)
+				printf_m13("Ordered: unknown\n");
+			else
+				printf_m13("Ordered: invalid value (%hhd)\n", uh->ordered);
+		}
+	}
 	if (uh->session_UID == UID_NO_ENTRY_m13)
 		printf_m13("Session UID: no entry\n");
 	else {
@@ -13865,18 +14195,6 @@ TERN_m13	G_show_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, UNIVERSAL_
 	else {
 		STR_hex_m13(uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, hex_str);
 		printf_m13("Level 3 Password Validation_Field: %s\n", hex_str);
-	}
-	if (uh->MED_version_major > 1 || uh->MED_version_minor >= 1) {  // all versions above MED 1.0
-		if (uh->type_code == RECORD_INDICES_FILE_TYPE_CODE_m13 || uh->type_code == RECORD_DATA_FILE_TYPE_CODE_m13) {
-			if (uh->ordered == TRUE_m13)
-				printf_m13("Ordered: true\n");
-			else if (uh->ordered == FALSE_m13)
-				printf_m13("Ordered: false\n");
-			else if (uh->ordered == UNKNOWN_m13)
-				printf_m13("Ordered: unknown\n");
-			else
-				printf_m13("Ordered: invalid value (%hhd)\n", uh->ordered);
-		}
 	}
 	printf_m13("---------------- Universal Header - END ----------------\n\n");
 	
@@ -15488,6 +15806,10 @@ TERN_m13	ALCK_metadata_section_1_m13(ui1 *bytes)
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (&md1->time_series_data_encryption_level != (si1 *) (bytes + METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
+	if (&md1->video_data_encryption_level != (si1 *) (bytes + METADATA_VIDEO_DATA_ENCRYPTION_LEVEL_OFFSET_m13))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
+	if (md1->anonymized_subject_ID != (si1 *) (bytes + METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13))
+		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (md1->protected_region != (ui1 *) (bytes + METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (md1->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m13))
@@ -15872,9 +16194,7 @@ TERN_m13	ALCK_universal_header_m13(ui1 *bytes)
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (uh->channel_name != (si1 *)  (bytes + UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (uh->anonymized_subject_ID != (si1 *) (bytes + UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_OFFSET_m13))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->session_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_SESSION_UID_OFFSET_m13))
+	if (&uh->ordered != (si1 *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->channel_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
@@ -28613,6 +28933,8 @@ si8	FPS_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns FALSE_m13 for error
 
 	// lock
 	if (globals_m13->FPS_locking == TRUE_m13)
@@ -30446,8 +30768,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 			#endif
 		}
 	} else {
-		G_set_error_m13(NULL, E_NO_INET_m13, "error %d", ret_val);
-		// G_set_error_m13(NULL, E_NO_INET_m13, NULL);
+		G_warning_message_m13("%s(): no default interface (error %d)\n", __FUNCTION__, ret_val);
 		*np->LAN_IPv4_address_string = 0;
 		np->LAN_IPv4_address_num = 0;
 		if (free_np == TRUE_m13)
@@ -31343,8 +31664,10 @@ PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ..
 	G_push_function_m13();
 #endif
 
-	if (STR_empty_m13(function) == TRUE_m13)
-		G_warning_message_m13("%s() function must be passed => returning\n");
+	if (STR_empty_m13(function) == TRUE_m13) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "no function passed");
+		return_m13(NULL);
+	}
 
 	if (par_info == NULL)
 		par_info = (PAR_INFO_m13 *) calloc_m13((size_t) 1, sizeof(PAR_INFO_m13));
@@ -31367,11 +31690,10 @@ PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ..
 		va_end(args);
 	}
 
-	if (label == NULL)
-		label = "unlabeled thread";
-	else if (*label == 0)
-		label = "unlabeled thread";
-	strcpy(par_info->label, label);
+	if (STR_empty_m13(label) == TRUE_m13)
+		strcpy(par_info->label, "unlabeled thread");
+	else
+		strcpy(par_info->label, label);
 	
 	if (priority == 0)
 		priority = PROC_DEFAULT_PRIORITY_m13;
@@ -31475,15 +31797,14 @@ TERN_m13	PAR_show_info_m13(PAR_INFO_m13 *par_info)
 
 pthread_rval_m13	PAR_thread_m13(void *arg)
 {
-	extern GLOBALS_m13		**globals_list_m13;
-	extern volatile si4		globals_list_len_m13;
-	extern pthread_mutex_t_m13	globals_list_mutex_m13;
 	si1				*function, *path, *password;
-	si4				fn, list_len, varargs;
+	si4				i, fn, list_len, varargs, entries;
 	ui8				flags;
 	si8 				sample_count;
 	sf8 				sampling_frequency, scale, fc1, fc2;
 	void				*file_list;
+	pid_t_m13			_id;
+	PROC_GLOBALS_m13		**list, *proc_globals;
 	PAR_THREAD_INFO_m13		*par_t_info;
 	PAR_INFO_m13 			*par_info;
 	SESSION_m13			*sess;
@@ -31499,7 +31820,27 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	par_t_info = (PAR_THREAD_INFO_m13 *) arg;
 	par_info = par_t_info->par_info;
 	function = par_info->function;
-	par_info->tid = PROC_gettid_m13();
+	
+	// find proc_globals by previous thread id
+	PROC_pthread_mutex_lock_m13(&globals_m13->proc_globals_info.mutex);  // get mutex
+	_id = par_info->tid;
+	list = globals_m13->proc_globals_info.list;
+	entries = globals_m13->proc_globals_info.entries;
+	for (i = 0; i < entries; ++i) {
+		proc_globals = list[i];
+		if (proc_globals->_id == _id)
+			break;
+	}
+	
+	// set proc_globals to current tid
+	if (i < entries) {
+		proc_globals->_id = PROC_gettid_m13();  // set to current thread id
+		PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_info.mutex);  // relase mutex
+	} else {  // proc_globals not found, create new
+		PROC_pthread_mutex_unlock_m13(&globals_m13->proc_globals_info.mutex);  // relase mutex for G_proc_globals_init_m13()
+		proc_globals = G_proc_globals_init_m13(NULL);
+	}
+	par_info->tid = proc_globals->_id;
 
 	// get function
 	if (strcmp(function, "G_open_session_m13") == 0)
@@ -31603,8 +31944,6 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 			}
 			break;
 	}
-	
-	G_free_thread_local_storage_m13();
 
 	par_info->status = PAR_FINISHED_m13;
 
@@ -36441,7 +36780,7 @@ si8	WN_filetime_to_uutc_m13(ui1 *win_filetime)  // pass pointer to beginning of 
 	*ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++;
 	*ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p = *win_filetime;
 	leftovers = uutc % (si8) WIN_TICKS_PER_USEC_m13;
-	leftovers = ((2 * leftovers) + WIN_TICKS_PER_USEC_m13) / (2 * WIN_TICKS_PER_USEC_m13);
+	leftovers = ((leftovers << 1) + WIN_TICKS_PER_USEC_m13) / (WIN_TICKS_PER_USEC_m13 << 1);
 	uutc /= (si8) WIN_TICKS_PER_USEC_m13;
 	uutc -= (WIN_USECS_TO_EPOCH_m13 - leftovers);
 	

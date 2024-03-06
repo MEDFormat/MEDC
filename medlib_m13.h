@@ -744,8 +744,9 @@ typedef struct {
 #define UNIVERSAL_HEADER_FILE_START_TIME_OFFSET_m13			48      // si8
 #define UNIVERSAL_HEADER_SESSION_NAME_OFFSET_m13                        56      // utf8[63]
 #define UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m13                        312     // utf8[63]
-#define UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_OFFSET_m13             	568     // utf8[63]
-#define UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_BYTES_m13              	BASE_FILE_NAME_BYTES_m13
+#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				568	// si1 (TERN_m13), MED 1.1 & above
+#define UNIVERSAL_HEADER_RESERVED_OFFSET_m13				569	// si1 (TERN_m13), MED 1.1 & above
+#define UNIVERSAL_HEADER_RESERVED_BYTES_m13				255
 #define UNIVERSAL_HEADER_SESSION_UID_OFFSET_m13                         824     // ui8
 #define UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m13                         832     // ui8
 #define UNIVERSAL_HEADER_SEGMENT_UID_OFFSET_m13                         840     // ui8
@@ -754,9 +755,8 @@ typedef struct {
 #define UNIVERSAL_HEADER_LEVEL_1_PASSWORD_VALIDATION_FIELD_OFFSET_m13	864     // ui1
 #define UNIVERSAL_HEADER_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13	880     // ui1
 #define UNIVERSAL_HEADER_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13   896     // ui1
-#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				912	// si1 (TERN_m13), MED 1.1 & above
-#define UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13			913
-#define UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13			55
+#define UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13			912
+#define UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13			56
 #define UNIVERSAL_HEADER_DISCRETIONARY_REGION_OFFSET_m13		968
 #define UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13			56
 
@@ -780,10 +780,14 @@ typedef struct {
 #define METADATA_SECTION_3_ENCRYPTION_LEVEL_DEFAULT_m13		LEVEL_2_ENCRYPTION_m13
 #define METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_OFFSET_m13	1538
 #define METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_DEFAULT_m13	NO_ENCRYPTION_m13
-#define METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13		1539
-#define METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13		253
-#define METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m13	1792
-#define METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m13	256
+#define METADATA_VIDEO_DATA_ENCRYPTION_LEVEL_OFFSET_m13		1539	// MED 1.1 & above
+#define METADATA_VIDEO_DATA_ENCRYPTION_LEVEL_DEFAULT_m13	NO_ENCRYPTION_m13
+#define METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13		1540	// MED 1.1 & above
+#define METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13		256	// utf8[63]
+#define METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13		1796
+#define METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13		124
+#define METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m13	1920
+#define METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m13	128
 
 // Metadata: File Format Constants - Section 2 Channel Type Independent Fields
 #define METADATA_SESSION_DESCRIPTION_OFFSET_m13                 2048    // utf8[511]
@@ -1285,10 +1289,11 @@ TERN_m13	NET_trim_address_m13(si1 *addr_str);
 #define E_READ_ERR_m13			3
 #define E_WRITE_ERR_m13			4
 #define E_NOT_MED_m13			5
-#define E_BAD_PASSWORD_m13		6
-#define E_NO_METADATA_m13		7
-#define	E_NO_INET_m13			8
-#define E_ALLOC_FAILED_m13		9
+#define E_NO_ACCESS_m13			6
+#define E_BAD_PASSWORD_m13		7
+#define E_NO_METADATA_m13		8
+#define	E_NO_INET_m13			9
+#define E_ALLOC_FAILED_m13		10
 
 // error string table
 #define	E_MAX_STR_LEN_m13		128  // ascii[127]
@@ -1314,7 +1319,7 @@ typedef struct {
 	si1		message[E_MAX_STR_LEN_m13];
 } ERROR_m13;
 
-#define G_set_error_m13(level_header, code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, level_header, code, message, ##__VA_ARGS__)
+#define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
 
 
 //**********************************************************************************//
@@ -1554,6 +1559,7 @@ typedef struct {
 	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_time_start_code;  // si1[8] / si8
 	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_time_end_code;  // si1[8] / si8
 	// Miscellaneous
+	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
 	si1				time_series_data_encryption_level;
 } PROC_GLOBALS_m13;
 #else  // __cplusplus
@@ -1609,7 +1615,6 @@ typedef struct {
 	// Miscellaneous
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
 	si1				time_series_data_encryption_level;
-	ERROR_m13			error;  // thread-local error
 } PROC_GLOBALS_m13;
 #endif  // standard C
 
@@ -1680,8 +1685,8 @@ typedef struct {
 typedef struct {
 	pthread_mutex_t_m13	mutex;
 	PROC_GLOBALS_m13	**list;
-	si4			size;
-	si4			entries;
+	volatile si4		size;
+	volatile si4		entries;
 } PROC_GLOBALS_INFO_m13;
 
 #ifdef AT_DEBUG_m13
@@ -1715,6 +1720,7 @@ typedef struct {
 	// Tables
 	GLOBAL_TABLES_m13		*tables;
 	// Behaviors (thread specific)
+	ui4				default_behavior;  // set by initialize_medlib_m13() or initialize_globals_m13()
 	BEHAVIOR_STACK_m13		*behavior_stacks;
 	si4				n_behavior_stacks;  // number of stacks
 	pthread_mutex_t_m13		behavior_stacks_mutex;
@@ -1724,7 +1730,7 @@ typedef struct {
 	si4				n_function_stacks;  // number of stacks
 	pthread_mutex_t_m13		function_stacks_mutex;
 #endif  // FN_DEBUG_m13
-	// Process Globals (stack used when LEVEL_HEADER_m13 unknown - searched by process/thread id)
+	// Process Globals (list used when LEVEL_HEADER_m13 unknown - searched by process/thread id)
 	PROC_GLOBALS_INFO_m13		proc_globals_info;
 	// Record Filters
 	si4 				*record_filters;	// signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
@@ -1747,6 +1753,7 @@ typedef struct {
 	TERN_m13			FPS_locking;
 	TERN_m13			access_times;  // record time of each structure access
 	ui4				CRC_mode;
+	ERROR_m13			error;  // causal error
 } GLOBALS_m13;
 
 
@@ -1788,16 +1795,16 @@ typedef struct {
 	};
 	si1		session_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	si1     	channel_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
-	si1		anonymized_subject_ID[UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_BYTES_m13]; // utf8[63]
+	TERN_m13	ordered;  // MED 1.1 and above (currently applies only record index & data files)
+	ui1		reserved[UNIVERSAL_HEADER_RESERVED_BYTES_m13];
 	ui8		session_UID;
 	ui8     	channel_UID;
-	ui8     	segment_UID;
-	ui8		file_UID;
-	ui8		provenance_UID;
+	ui8     	segment_UID;  // used when segments deleted & renumbered
+	ui8		file_UID;  // used when file system name changed in copy
+	ui8		provenance_UID;  // session, channel, segment, or file UID from which this file was derived (typically session UID)
 	ui1		level_1_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1     	level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1		level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
-	TERN_m13	ordered;  // MED 1.1 and above (for record index & data files)
 	ui1		protected_region[UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13];
 	ui1		discretionary_region[UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13];
 } UNIVERSAL_HEADER_m13;
@@ -1809,6 +1816,8 @@ typedef struct {
 	si1     section_2_encryption_level;
 	si1     section_3_encryption_level;
 	si1     time_series_data_encryption_level;
+	si1     video_data_encryption_level; // MED 1.1 & above
+	si1	anonymized_subject_ID[METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13]; // utf8[63], MED 1.1 & above (moved from universal header)
 	ui1     protected_region[METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13];
 	ui1     discretionary_region[METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m13];
 } METADATA_SECTION_1_m13;
@@ -2442,7 +2451,7 @@ si8     	G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_
 TERN_m13	G_free_channel_m13(CHANNEL_m13* channel, TERN_m13 free_channel_structure);
 void		G_free_global_tables_m13(void);
 void            G_free_globals_m13(TERN_m13 cleanup_for_exit);
-void		G_free_thread_local_storage_m13(void);
+void		G_free_thread_local_storage_m13(LEVEL_HEADER_m13 *level_header);
 TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structure);
 TERN_m13	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, TERN_m13 free_segmented_sess_rec_structure);
 TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structure);
@@ -2469,8 +2478,8 @@ si1		*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FI
 TERN_m13	G_get_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, TERN_m13 required, TERN_m13 validate);
 TERN_m13	G_include_record_m13(ui4 type_code, si4 *record_filters);
 TERN_m13	G_initialize_global_tables_m13(TERN_m13 initialize_all_tables);
-TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor);
-TERN_m13	G_initialize_medlib_m13(TERN_m13 check_structure_alignments, TERN_m13 initialize_all_tables, si1 *app_path, ui1 version_major, ui1 version_minor);
+TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, ui4 default_behavior, si1 *app_path, ...);  // varargs (app_path != NULL) ui4 version_major, ui4 version_minor
+TERN_m13	G_initialize_medlib_m13(TERN_m13 initialize_all_tables, ui4 default_behavior, si1 *app_path, ... ); // varargs (app_path != NULL) ui4 version_major, ui4 version_minor;
 TERN_m13	G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 initialize_for_update);
 TIME_SLICE_m13	*G_initialize_time_slice_m13(TIME_SLICE_m13 *slice);
 TERN_m13	G_initialize_timezone_tables_m13(void);
@@ -2527,12 +2536,12 @@ si4		G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_s
 si4		G_segment_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
 si4		G_segment_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_time);
 TERN_m13	G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
-void		G_set_error_exec_m13(const si1 *function, si4 line, LEVEL_HEADER_m13 *level_header, si4 code, si1 *message, ...);
+void		G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
 TERN_m13	G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, TERN_m13 prompt);
 TERN_m13	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
 TERN_m13	G_show_behavior_m13(ui4 mode);
 TERN_m13	G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
-TERN_m13	G_show_error_m13(LEVEL_HEADER_m13 *level_header);
+TERN_m13	G_show_error_m13(void);
 TERN_m13	G_show_file_times_m13(FILE_TIMES_m13 *ft);
 #ifdef FN_DEBUG_m13
 void		G_show_function_stack_m13(void);
