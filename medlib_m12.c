@@ -10437,7 +10437,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 		password = va_arg(args, si1 *);
 		va_end(args);
 		// open session
-		sess = G_open_session_m12(sess, slice, file_list, list_len, flags, password);
+		sess = G_open_session_nt_m12(sess, slice, file_list, list_len, flags, password);
 		if (sess == NULL) {
 			G_error_message_m12("%s(): error opening session\n", __FUNCTION__);
 			return(NULL);
