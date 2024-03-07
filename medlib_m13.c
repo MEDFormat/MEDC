@@ -169,7 +169,7 @@ BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void)
 	stack_info->stack = behavior;
 	behavior->function = __FUNCTION__;
 	behavior->line = __LINE__;
-	behavior->code = GLOBALS_BEHAVIOR_DEFAULT_m13;
+	behavior->code = globals_m13->default_behavior;
 	
 	stack_info->entries = 1;
 	++globals_m13->n_behavior_stacks;
@@ -2332,7 +2332,7 @@ void	G_delete_function_stack_m13(void)
 		global_stacks[i] = global_stacks[i + 1];
 	--globals_m13->n_function_stacks;
 	
-	// release behavior stacks mutex
+	// release function stacks mutex
 	PROC_pthread_mutex_unlock_m13(&globals_m13->function_stacks_mutex);
 
 	return;
@@ -3984,7 +3984,7 @@ void	G_function_stack_trap_m13(si4 sig_num)
 	fprintf(stderr, "%c%s%s%s\n\n", 7, TC_RED_m13, error_type, TC_RESET_m13);
 #endif
 		
-	exit_m13(-1);
+	exit_m13(-1);  // exit() shows function stack
 
 	return;
 }
@@ -32107,10 +32107,10 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *passe
 			end_num = start_num;
 		}
 	}
-	if (start_num > (n_cpus - 1))
-		start_num = (n_cpus - 1);
-	if (end_num > (n_cpus - 1))
-		end_num = (n_cpus - 1);
+	if (start_num >= n_cpus)
+		start_num = end_num = n_cpus - 1;
+	else if (end_num >= n_cpus)
+		end_num = n_cpus - 1;
 
 	// build affinity set
 #ifdef LINUX_m13
@@ -32662,7 +32662,7 @@ TERN_m13    PROC_set_thread_affinity_m13(pthread_t_m13 *thread_handle_p, pthread
 	// no correlate of attributes in Windows (argument ignored)
 	
 	thread_h = *((HANDLE *) thread_handle_p);
-	err = SetThreadAffinityMask(thread_h, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - not used as pointer to ui4
+	err = SetThreadAffinityMask(thread_h, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - it is not used as pointer to ui4
 	
 	if (wait_for_lauch == TRUE_m13) {
 		for (attempts = MAX_ATTEMPTS; err == 0 && attempts--;) {  // zero == unspecified error => can take a bit to launch
