@@ -3987,7 +3987,7 @@ TERN_m12	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structur
 		free_m12(channel->contigua, __FUNCTION__);
 
 	if (free_channel_structure == TRUE_m12) {
-		if (G_allocated_en_bloc_m12((LEVEL_HEADER_m12 *) channel) == FALSE_m12)
+		if (channel->en_bloc_allocation == FALSE_m12)
 			free_m12((void *) channel, __FUNCTION__);
 		return(FALSE_m12);
 	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
@@ -4238,7 +4238,7 @@ TERN_m12	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structur
 		free_m12(segment->contigua, __FUNCTION__);
 
 	if (free_segment_structure == TRUE_m12) {
-		if (G_allocated_en_bloc_m12((LEVEL_HEADER_m12 *) segment) == FALSE_m12)
+		if (segment->en_bloc_allocation == FALSE_m12)
 			free_m12((void *) segment, __FUNCTION__);  // not allocated en bloc
 		return(FALSE_m12);
 	} else {
