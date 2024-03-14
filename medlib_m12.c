@@ -182,8 +182,11 @@ CHANNEL_m12	*G_allocate_channel_m12(CHANNEL_m12 *chan, FILE_PROCESSING_STRUCT_m1
 		chan->segments = (SEGMENT_m12 **) calloc_2D_m12((size_t) n_segs, 1, sizeof(SEGMENT_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		for (i = 0; i < n_segs; ++i) {
 			seg = chan->segments[i];
+			seg = G_allocate_segment_m12(seg, proto_fps, chan->path, chan->name, type_code, (si4) i + 1, seg_recs);
+			if (seg == NULL)
+				return(NULL);
 			seg->parent = (void *) chan;
-			G_allocate_segment_m12(seg, proto_fps, chan->path, chan->name, type_code, (si4) i + 1, seg_recs);
+			seg->en_bloc_allocation = TRUE_m12;
 		}
 	}
 
@@ -314,8 +317,11 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 		sess->time_series_channels = (CHANNEL_m12 **) calloc_2D_m12((size_t) n_ts_chans, 1, sizeof(CHANNEL_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		for (i = 0; i < n_ts_chans; ++i) {
 			chan = sess->time_series_channels[i];
+			chan = G_allocate_channel_m12(chan, proto_fps, sess->path, ts_chan_names[i], TIME_SERIES_CHANNEL_TYPE_m12, n_segs, chan_recs, seg_recs);
+			if (chan == NULL)
+				return(NULL);
 			chan->parent = (void *) sess;
-			G_allocate_channel_m12(chan, proto_fps, sess->path, ts_chan_names[i], TIME_SERIES_CHANNEL_TYPE_m12, n_segs, chan_recs, seg_recs);
+			chan->en_bloc_allocation = TRUE_m12;
 		}
 		if (free_names == TRUE_m12)
 			free_m12((void *) ts_chan_names, __FUNCTION__);
@@ -331,7 +337,10 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->video_channels[i];
 			G_allocate_channel_m12(sess->video_channels[i], proto_fps, sess->path, vid_chan_names[i], VIDEO_CHANNEL_TYPE_m12, n_segs, chan_recs, seg_recs);
+			if (chan == NULL)
+				return(NULL);
 			chan->parent = (void *) sess;
+			chan->en_bloc_allocation = TRUE_m12;
 		}
 		if (free_names == TRUE_m12)
 			free((void *) vid_chan_names);
@@ -367,12 +376,16 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 			G_numerical_fixed_width_string_m12(number_str, FILE_NUMBERING_DIGITS_m12, (si4) i + 1); // segments numbered from 1
 			snprintf_m12(ssr->record_indices_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m12, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
 			gen_fps = FPS_allocate_processing_struct_m12(ssr->record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m12, RECORD_INDEX_BYTES_m12, (LEVEL_HEADER_m12 *) ssr, proto_fps, 0);
+			if (gen_fps == NULL)
+				return(NULL);
 			uh = gen_fps->universal_header;
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m12);
 			uh->channel_UID = UID_NO_ENTRY_m12;
 			// record data fps
 			snprintf_m12(ssr->record_data_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m12, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m12);
 			gen_fps = FPS_allocate_processing_struct_m12(ssr->record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m12, REC_LARGEST_RECORD_BYTES_m12, (LEVEL_HEADER_m12 *) ssr, proto_fps, 0);
+			if (gen_fps == NULL)
+				return(NULL);
 			uh = gen_fps->universal_header;
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m12);
 			uh->channel_UID = UID_NO_ENTRY_m12;
@@ -8065,6 +8078,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 				chan->flags = flags;
 				chan->last_access_time = curr_time;
 				chan->parent = (void *) sess;
+				chan->en_bloc_allocation = TRUE_m12;
 				G_generate_MED_path_components_m12(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8092,6 +8106,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;
 			chan->last_access_time = curr_time;
 			chan->parent = (void *) sess;
+			chan->en_bloc_allocation = TRUE_m12;
 			G_generate_MED_path_components_m12(ts_chan_list[i], chan->path, chan->name);
 		}
 		free_m12((void *) ts_chan_list, __FUNCTION__);
@@ -8117,6 +8132,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 				chan->flags = flags;
 				chan->last_access_time = curr_time;
 				chan->parent = (void *) sess;
+				chan->en_bloc_allocation = TRUE_m12;
 				G_generate_MED_path_components_m12(full_vid_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8144,6 +8160,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;
 			chan->last_access_time = curr_time;
 			chan->parent = (void *) sess;
+			chan->en_bloc_allocation = TRUE_m12;
 			G_generate_MED_path_components_m12(vid_chan_list[i], chan->path, chan->name);
 		}
 		free_m12((void *) vid_chan_list, __FUNCTION__);
@@ -8596,6 +8613,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 				chan->type_code = LH_TIME_SERIES_CHANNEL_m12;
 				chan->flags = flags;
 				chan->last_access_time = curr_time;
+				chan->parent = (void *) sess;
+				chan->en_bloc_allocation = TRUE_m12;
 				G_generate_MED_path_components_m12(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8621,6 +8640,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			chan = sess->time_series_channels[i];
 			chan->type_code = LH_TIME_SERIES_CHANNEL_m12;
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;
+			chan->parent = (void *) sess;
+			chan->en_bloc_allocation = TRUE_m12;
 			chan->last_access_time = curr_time;
 			G_generate_MED_path_components_m12(ts_chan_list[i], chan->path, chan->name);
 		}
@@ -8645,6 +8666,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 				chan = sess->video_channels[i];
 				chan->type_code = LH_VIDEO_CHANNEL_m12;
 				chan->flags = flags;
+				chan->parent = (void *) sess;
+				chan->en_bloc_allocation = TRUE_m12;
 				chan->last_access_time = curr_time;
 				G_generate_MED_path_components_m12(full_vid_chan_list[i], chan->path, chan->name);
 			}
@@ -8671,6 +8694,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			chan = sess->video_channels[i];
 			chan->type_code = LH_VIDEO_CHANNEL_m12;
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;
+			chan->parent = (void *) sess;
+			chan->en_bloc_allocation = TRUE_m12;
 			chan->last_access_time = curr_time;
 			G_generate_MED_path_components_m12(vid_chan_list[i], chan->path, chan->name);
 		}
@@ -37291,7 +37316,7 @@ TERN_m12	freeable_m12(void *address)
 	// heap starts at heap base & grows upward
 	// MacOS & Linux stack base > heap_max_address & grows downward
 	// Windows stack base < heap base & generally grows toward heap base (per internet this may not always be true, but I have never seen it happen)
-	// if getting unexpected results, consider compiling with AT_DEBUG_m13 to track down where errors occur
+	// if getting unexpected results, consider compiling with AT_DEBUG_m12 to track down where errors occur
 	// NOTE: not tested under 32-bit hardware or compilation
 	       
 #ifdef AT_DEBUG_m12
