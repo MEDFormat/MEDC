@@ -388,6 +388,63 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
+TERN_m12	G_allocated_en_bloc_m12(LEVEL_HEADER_m12 *level_header)
+{
+	typedef void (*sig_handler_ptr)(int);
+	
+	sig_handler_ptr		current_handler;
+	TERN_m12		en_bloc;
+	size_t			struct_bytes;
+	LEVEL_HEADER_m12	*test_ptr, **test_ptr_ptr;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_CHANNEL_m12:
+		case LH_VIDEO_CHANNEL_m12:
+			struct_bytes = sizeof(CHANNEL_m12);
+			break;
+		case LH_TIME_SERIES_SEGMENT_m12:
+		case LH_VIDEO_SEGMENT_m12:
+			struct_bytes = sizeof(SEGMENT_m12);
+			break;
+		default:
+			return(FALSE_m12);
+	}
+	
+	// save current signal handler for SIGSEGV & set to ignore
+	// NOTE: this is not thread-safe
+	current_handler = signal(SIGSEGV, SIG_IGN);
+
+	// check for structure before (will fail if first element)
+	en_bloc = FALSE_m12;
+	test_ptr = (LEVEL_HEADER_m12 *) ((ui1 *) level_header - struct_bytes);
+	if (test_ptr->type_code == level_header->type_code) {
+		en_bloc = TRUE_m12;
+	} else {  // check for structure after (will fail if last element)
+		test_ptr = (LEVEL_HEADER_m12 *) ((ui1 *) level_header + struct_bytes);
+		if (test_ptr->type_code == level_header->type_code) {
+			en_bloc = TRUE_m12;
+		} else {  // check for pointer to structure before (i.e. one structure array - pointer must point to it, even if sorted)
+			test_ptr_ptr = (LEVEL_HEADER_m12 **) ((ui1 *) level_header - sizeof(void *));
+			if (*test_ptr_ptr == level_header)
+				en_bloc = TRUE_m12;
+			// else not allocated en bloc
+		}
+	}
+	
+	// restore previous signal handler
+	signal(SIGSEGV, current_handler);
+
+	return(en_bloc);
+}
+
+
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
 void	G_apply_recording_time_offset_m12(si8 *time)
 {
 	
@@ -2191,6 +2248,65 @@ TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m12	G_en_bloc_allocation_m12(LEVEL_HEADER_m12 *level_header)
+{
+	TERN_m12		en_bloc;
+	size_t			struct_bytes;
+	LEVEL_HEADER_m12	*test_ptr, **test_ptr_ptr;
+	sig_handler_t_m12	current_handler;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	if (level_header->en_bloc_allocation != UNKNOWN_m12)
+		return(level_header->en_bloc_allocation);
+	
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_CHANNEL_m12:
+		case LH_VIDEO_CHANNEL_m12:
+			struct_bytes = sizeof(CHANNEL_m12);
+			break;
+		case LH_TIME_SERIES_SEGMENT_m12:
+		case LH_VIDEO_SEGMENT_m12:
+			struct_bytes = sizeof(SEGMENT_m12);
+			break;
+		default:
+			return(FALSE_m12);
+	}
+	
+	// save current signal handler for SIGSEGV & set to ignore
+	current_handler = signal(SIGSEGV, SIG_IGN);
+
+	// check for structure before (will fail if first element)
+	en_bloc = FALSE_m12;
+	test_ptr = (LEVEL_HEADER_m12 *) ((ui1 *) level_header - struct_bytes);
+	if (test_ptr->type_code == level_header->type_code) {
+		en_bloc = TRUE_m12;
+	} else {  // check for structure after (will fail if last element)
+		test_ptr = (LEVEL_HEADER_m12 *) ((ui1 *) level_header + struct_bytes);
+		if (test_ptr->type_code == level_header->type_code) {
+			en_bloc = TRUE_m12;
+		} else {  // check for pointer to structure before (i.e. one structure array - pointer must point to it, even if sorted)
+			test_ptr_ptr = (LEVEL_HEADER_m12 **) ((ui1 *) level_header - sizeof(void *));
+			if (*test_ptr_ptr == level_header)
+				en_bloc = TRUE_m12;
+			// else not allocated en bloc
+		}
+	}
+	
+	// restore previous signal handler
+	signal(SIGSEGV, current_handler);
+
+	level_header->en_bloc_allocation = en_bloc;
+	
+	return(en_bloc);
+}
+
+
 TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 {
 	ui1			*encryption_key;
@@ -3858,8 +3974,8 @@ TERN_m12	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structur
 		free_m12(channel->contigua, __FUNCTION__);
 
 	if (free_channel_structure == TRUE_m12) {
-		if (malloc_size_m12((void *) channel))
-			free_m12((void *) channel, __FUNCTION__);  // allocated en bloc
+		if (G_allocated_en_bloc_m12((LEVEL_HEADER_m12 *) channel) == FALSE_m12)
+			free_m12((void *) channel, __FUNCTION__);
 		return(FALSE_m12);
 	} else {  // leave name, path, flags, & slice intact (i.e. clear everything with allocated memory)
 		channel->flags &= ~(LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
@@ -4109,9 +4225,9 @@ TERN_m12	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structur
 		free_m12(segment->contigua, __FUNCTION__);
 
 	if (free_segment_structure == TRUE_m12) {
-		if (malloc_size_m12((void *) segment))
-			free_m12((void *) segment, __FUNCTION__);
-		return(FALSE_m12);  // allocated en bloc
+		if (G_allocated_en_bloc_m12((LEVEL_HEADER_m12 *) segment) == FALSE_m12)
+			free_m12((void *) segment, __FUNCTION__);  // not allocated en bloc
+		return(FALSE_m12);
 	} else {
 		// leave name, path, & slice intact (i.e. clear everything with allocated memory)
 		segment->flags &= ~(LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
@@ -37163,35 +37279,84 @@ inline
 #endif
 TERN_m12	freeable_m12(void *address)
 {
-	ui8		address_val;
-	HW_PARAMS_m12	*hw_params;
+	ui8			address_val;
+	LEVEL_HEADER_m12	*level_header;
+	HW_PARAMS_m12		*hw_params;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	// returns whether address is freeable
+	// heap starts at heap base & grows upward
+	// MacOS & Linux stack base > heap_max_address & grows downward
+	// Windows stack base < heap base & generally grows toward heap base (per internet this may not always be true, but I have never seen it happen)
+	// if getting unexpected results, consider compiling with AT_DEBUG_m13 to track down where errors occur
+	// NOTE: not tested under 32-bit hardware or compilation
+	       
 #ifdef AT_DEBUG_m12
 	return(AT_freeable_m12(address));
 #endif
 
-	// returns whether address is freeable
-	// heap starts at heap base & grows upward
-	// MacOS & Linux stack base > heap_max_address & grows downward
-	// Windows stack base < heap base & grows upward
-	// consider compiling with AT_DEBUG_m12 to track down where errors occur
-	// NOTE: not tested under 32-bit hardware or compilation
-	       
-	hw_params = &global_tables_m12->HW_params;
+	// all allocated heap addresses are at least divisible by 8
 	address_val = (ui8) address;
+	if (address_val & (ui8) 7)
+		return(FALSE_m12);
 
+	hw_params = &global_tables_m12->HW_params;
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m12);
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
-	if (malloc_size_m12(address))  // in heap, so check if in allocation table
-		return(TRUE_m12);
 	
+#ifdef MACOS_m12
+	// check if address in allocation table
+	if (malloc_size_m12(address))
+		return(TRUE_m12);
 	return(FALSE_m12);
+#endif
+	
+	// Can't use malloc_size_m12() if address not allocated
+	// LINUX_m12: malloc_usable_size() generates unrecoverable segmentation fault
+	// WINDOWS_m12: _msize() terminates process without signal
+	level_header = (LEVEL_HEADER_m12 *) address;
+
+#ifdef LINUX_m12
+	// check that level_header->type_code can be dereferenced
+	ui4			type_code = NO_TYPE_CODE_m12;
+	sig_handler_t_m12	current_handler;
+	
+	current_handler = signal(SIGSEGV, SIG_IGN);
+	type_code = *((ui4 *) &level_header->type_code);
+	signal(SIGSEGV, current_handler);
+	
+	if (type_code == NO_TYPE_CODE_m12)
+		return(FALSE_m12);
+#endif
+	
+#ifdef WINDOWS_m12
+	// check that level_header->type_code can be dereferenced
+	DWORD	protection_err, curr_protection;
+
+	protection_err = VirtualProtect((void *) &level_header->type_code, (size_t) 4, (DWORD) PAGE_READONLY, &curr_protection);
+	if (protection_err)  // errno set: probably ERROR_INVALID_ADDRESS
+		return(FALSE_m12);
+	VirtualProtect((void *) &level_header->type_code, (size_t) 4, curr_protection, NULL);  // reset protection
+#endif
+
+	// if address is a LEVEL_HEADER structure, check if address allocated en bloc
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_CHANNEL_m12:
+		case LH_VIDEO_CHANNEL_m12:
+		case LH_TIME_SERIES_SEGMENT_m12:
+		case LH_VIDEO_SEGMENT_m12:
+			if (G_en_bloc_allocation_m12(level_header) == TRUE_m12)
+				return(FALSE_m12);
+			return(TRUE_m12);
+		default:
+			// not a LEVEL_HEADER - checked all we can check => default to TRUE_m12 (assume caller passed a non-random heap address)
+			return(TRUE_m12);
+	}
 }
 
 
@@ -37509,6 +37674,9 @@ size_t	malloc_size_m12(void *address)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	if (address == NULL)
+		return((size_t) 0);
+	
 #ifdef AT_DEBUG_m12
 	si8		i;
 	AT_NODE		*atn;
@@ -37519,26 +37687,79 @@ size_t	malloc_size_m12(void *address)
 			return(atn->actual_bytes);
 	}
 	return((size_t) 0);
-#else
+#endif
 	
 #ifdef MACOS_m12
 	return(malloc_size(address));
 #endif
-#ifdef LINUX_m12
-	size_t	sz = 0;
-
-	signal(SIGSEGV, SIG_IGN);
-	sz = malloc_usable_size(address);  // seg faults if not allocated (unless NULL)
-	signal(SIGSEGV, SIG_DFL);
 	
-	return(sz);
+#ifdef LINUX_m12
+	// seg faults if address not allocated (no way around it)
+	return(malloc_usable_size(address));
 #endif
+	
 #ifdef WINDOWS_m12
+	// process terminates without signal on non-allocated pointer (no way around it without using Windows DEBUG functions)
 	return(_msize(address));
 #endif
-	
-#endif
 }
+
+void	G_show_signum_m12(si4 sig_num)
+{
+	const si1	*error_type;
+	
+	
+	switch(sig_num) {
+		case SIGINT:
+			error_type = "Interrupt (SIGINT)";
+			break;
+		case SIGILL:
+			error_type = "Illegal instruction (SIGILL)";
+			break;
+		case SIGABRT:
+			error_type = "Abnormal termination (SIGABRT)";
+			break;
+		case SIGFPE:
+			error_type = "Floating point exception (SIGFPE)";
+			break;
+		case SIGSEGV:
+			error_type = "Segmentation violation (SIGSEGV)";
+			break;
+		case SIGTERM:
+			error_type = "Terminate (SIGTERM)";
+			break;
+		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
+		case SIGQUIT:
+			error_type = "Quit (SIGQUIT)";
+			break;
+		case SIGKILL:
+			error_type = "Kill (SIGKILL)";
+			break;
+		case SIGBUS:
+			error_type = "Bus error (SIGBUS)";
+			break;
+		case SIGXCPU:
+			error_type = "CPU time limit exceeded (SIGXCPU)";
+			break;
+		case SIGXFSZ:
+			error_type = "File size limit exceeded (SIGXFSZ)";
+			break;
+		#endif
+		default:
+			return;
+	}
+
+#ifdef MATLAB_m13
+	mexPrintf("%s\n\n", error_type);
+#else
+	fprintf(stderr, "%c%s%s%s\n\n", 7, TC_RED_m12, error_type, TC_RESET_m12);
+#endif
+		
+//	exit_m12(-1);  // exit() shows function stack
+
+	return;
+}
+
 
 
 void	memset_m12(void *ptr, const void *pattern, size_t pat_len, size_t n_members)

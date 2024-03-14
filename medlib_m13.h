@@ -984,11 +984,13 @@ typedef struct {
 
 // Level Header (LH) Type Codes:
 #define LH_SESSION_m13			SESSION_DIRECTORY_TYPE_CODE_m13
-#define LH_SEGMENTED_SESS_RECS_m13	RECORD_DIRECTORY_TYPE_CODE_m13   // technically a session level element, but handy for distinguishing session records from segmented sess recs
+#define LH_SEGMENTED_SESS_RECS_m13	RECORD_DIRECTORY_TYPE_CODE_m13
 #define LH_TIME_SERIES_CHANNEL_m13	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13
 #define LH_VIDEO_CHANNEL_m13		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13
 #define LH_TIME_SERIES_SEGMENT_m13	TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13
 #define LH_VIDEO_SEGMENT_m13		VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13
+#define LH_FILE_m13			GENERIC_FILE_TYPE_CODE_m13
+#define LH_PROC_GLOBALS_m13		PROC_GLOBALS_TYPE_CODE_m13
 
 // Level Header (LH) Flags Definitions:
 
@@ -1089,6 +1091,8 @@ typedef struct {
 typedef ui8	pid_t_m13;	// big enough for all OSs, none use signed values
 				// (pid_t_m13 is used for both process and thread IDs throughout the library)
 
+typedef void 	(*sig_handler_t_m13)(si4);  // signal handler function pointer
+
 #if defined MACOS_m13 || defined LINUX_m13
 	#ifdef MACOS_m13
 		typedef	ui4			cpu_set_t_m13;  // max 32 logical cores
@@ -1123,6 +1127,7 @@ si4		PROC_pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr);
 si4		PROC_pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
 si4		PROC_pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr);
 si4		PROC_pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
+si4		PROC_pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex);
 si4		PROC_pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
 pthread_t_m13	PROC_pthread_self_m13(void);
 TERN_m13	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, TERN_m13 wait_for_lauch);
@@ -1480,12 +1485,13 @@ typedef struct {  // fields from ipinfo.io
 typedef struct LEVEL_HEADER_m13 {
 	union {  // anonymous union
 		struct {
-			si1     type_string[TYPE_BYTES_m13];
-			ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+			si1     	type_string[TYPE_BYTES_m13];
+			TERN_m13	en_bloc_allocation;
+			ui1     	pad[2];  // force to 8-byte alignment
 		};
 		struct {
-			ui4     type_code;
-			si1	type_string_terminal_zero;  // not used - there for clarity
+			ui4     	type_code;
+			si1		type_string_terminal_zero;  // not used - here for clarity
 		};
 	};
 	struct LEVEL_HEADER_m13	*parent;  // parent structure, NULL for session or if created alone
@@ -1501,12 +1507,13 @@ typedef struct {
 		struct {  // this struct replaces anonymous LEVEL_HEADER_m13 in C++
 			union {  // anonymous union
 				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+					si1     	type_string[TYPE_BYTES_m13];
+					TERN_m13	en_bloc_allocation;
+					ui1     	pad[2];  // force to 8-byte alignment
 				};
 				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;  // not used - there for clarity
+					ui4     	type_code;
+					si1		type_string_terminal_zero;  // not used - here for clarity
 				};
 			};
 			LEVEL_HEADER_m13	*parent;  // NULL in PROC_GLOBALS_m13
@@ -1616,7 +1623,7 @@ typedef struct {
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
 	si1				time_series_data_encryption_level;
 } PROC_GLOBALS_m13;
-#endif  // standard C
+#endif  // __cplusplus
 
 // NOTE: placement of LEVEL_HEADER_m13 in structures allows passing of LEVEL_HEADER_m13 pointer to functions,
 // and based on its content, functions can cast pointer to specific level structures.
@@ -1700,8 +1707,8 @@ typedef struct {
 
 typedef struct {
 	AT_NODE_m13		*nodes;
-	si8			node_count;  // total allocated nodes
-	si8			used_node_count;  // nodes in use
+	volatile si8		node_count;  // total allocated nodes
+	volatile si8		used_node_count;  // nodes in use
 	pthread_mutex_t_m13	mutex;
 } AT_INFO_m13;
 #endif  // AT_DEBUG_m13
@@ -2034,12 +2041,13 @@ typedef struct LEVEL_HEADER_m13 {
 		struct {  // this struct replaces anonymous LEVEL_HEADER_m13 for C++
 			union {  // anonymous union
 				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+					si1     	type_string[TYPE_BYTES_m13];
+					TERN_m13	en_bloc_allocation;
+					ui1     	pad[2];  // force 8-byte alignment
 				};
 				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;  // not used - there for clarity
+					ui4     	type_code;
+					si1		type_string_terminal_zero;  // not used - here for clarity
 				};
 			};
 			LEVEL_HEADER_m13	*parent;  // parent structure, or PROC_GLOBALS_m13 if created alone
@@ -2159,12 +2167,13 @@ typedef struct {
 		struct {  // this struct replaces anonymous LEVEL_HEADER_m13 for C++
 			union {  // anonymous union
 				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+					si1     	type_string[TYPE_BYTES_m13];
+					TERN_m13	en_bloc_allocation;
+					ui1     	pad[2];  // force 8-byte alignment
 				};
 				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;  // not used - there for clarity
+					ui4     	type_code;
+					si1		type_string_terminal_zero;  // not used - here for clarity
 				};
 			};
 			LEVEL_HEADER_m13	*parent;  // parent structure, channel or PROC_GLOBALS_m13 if created alone
@@ -2221,12 +2230,13 @@ typedef struct CHANNEL_m13 {
 		struct {  // this struct replaces anonymous LEVEL_HEADER_m13 for C++
 			union {  // anonymous union
 				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+					si1     	type_string[TYPE_BYTES_m13];
+					TERN_m13	en_bloc_allocation;
+					ui1     	pad[2];  // force 8-byte alignment
 				};
 				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;  // not used - there for clarity
+					ui4     	type_code;
+					si1		type_string_terminal_zero;  // not used - here for clarity
 				};
 			};
 			LEVEL_HEADER_m13	*parent;  // parent structure, session or PROC_GLOBALS_m13 if created alone
@@ -2271,12 +2281,13 @@ typedef struct {
 		struct {  // this struct replaces anonymous LEVEL_HEADER_m13 in C++
 			union {  // anonymous union
 				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+					si1     	type_string[TYPE_BYTES_m13];
+					TERN_m13	en_bloc_allocation;
+					ui1     	pad[3];  // force 8-byte alignment
 				};
 				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;  // not used - there for clarity
+					ui4		type_code;
+					si1		type_string_terminal_zero;  // not used - here for clarity
 				};
 			};
 			LEVEL_HEADER_m13	*parent;  // parent structure, session or PROC_GLOBALS_m13 if created alone
@@ -2311,12 +2322,13 @@ typedef struct {
 		struct {  // this struct replaces anonymous LEVEL_HEADER_m13 in C++
 			union {  // anonymous union
 				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+					si1     	type_string[TYPE_BYTES_m13];
+					TERN_m13	en_bloc_allocation;
+					ui1     	pad[2];  // force 8-byte alignment
 				};
 				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;  // not used - there for clarity
+					ui4     	type_code;
+					si1		type_string_terminal_zero;  // not used - here for clarity
 				};
 			};
 			LEVEL_HEADER_m13	*parent;  // parent structure, PROC_GLOBALS_m13 for session or if created alone
@@ -2431,6 +2443,7 @@ TERN_m13        G_decrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 void		G_delete_behavior_stack_m13(void);
 void		G_delete_function_stack_m13(void);
 si4             G_DST_offset_m13(si8 uutc);
+TERN_m13	G_en_bloc_allocation_m13(LEVEL_HEADER_m13 *level_header);
 TERN_m13        G_encrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13	G_encrypt_record_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 TERN_m13        G_encrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);

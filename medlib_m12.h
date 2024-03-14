@@ -152,7 +152,6 @@
 	#include <sys/param.h>
 	#include <sys/mount.h>
 	#include <termios.h>
-	#include <signal.h>
 	#include <sys/wait.h>
 	#include <poll.h>
 #endif
@@ -170,6 +169,7 @@
 	#include <malloc.h>
 #endif
 #include <stdlib.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
@@ -1098,6 +1098,8 @@ typedef struct {
 typedef ui8	pid_t_m12;	// big enough for all OSs, none use signed values
 				// (pid_t_m12 is used for both process and thread IDs throughout the library)
 
+typedef void 	(*sig_handler_t_m12)(si4);  // signal handler function pointer
+
 #if defined MACOS_m12 || defined LINUX_m12
 	#ifdef MACOS_m12
 		typedef	ui4			cpu_set_t_m12;  // max 32 logical cores
@@ -1936,12 +1938,13 @@ typedef struct {  // struct name for CMP functions interdependency
 typedef struct {
 	union {  // anonymous union
 		struct {
-			si1     type_string[TYPE_BYTES_m12];
-			ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+			si1     	type_string[TYPE_BYTES_m12];
+			TERN_m12	en_bloc_allocation;
+			ui1     	pad[2];  // force to 8-byte alignment
 		};
 		struct {
-			ui4     type_code;
-			si1	type_string_terminal_zero;  // not used - there for clarity
+			ui4    		type_code;
+			si1		type_string_terminal_zero;  // not used - there for clarity
 		};
 	};
 	void	*parent;  // parent structure, NULL for session or if created alone
@@ -2014,12 +2017,13 @@ typedef struct {
 	struct {  // this struct replaces LEVEL_HEADER_m12 for C++
 		union {  // anonymous union
 			struct {
-				si1     type_string[TYPE_BYTES_m12];
-				ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+				si1     	type_string[TYPE_BYTES_m12];
+				TERN_m12	en_bloc_allocation;
+				ui1     	pad[2];  // force to 8-byte alignment
 			};
 			struct {
-				ui4     type_code;
-				si1	type_string_terminal_zero;  // not used - there for clarity
+				ui4     	type_code;
+				si1		type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
 		void	*parent;  // parent structure, NULL for session or if created alone
@@ -2073,12 +2077,13 @@ typedef struct CHANNEL_m12 {
 	struct {  // this struct replaces LEVEL_HEADER_m12 for C++
 		union {  // anonymous union
 			struct {
-				si1     type_string[TYPE_BYTES_m12];
-				ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+				si1     	type_string[TYPE_BYTES_m12];
+				TERN_m12	en_bloc_allocation;
+				ui1     	pad[2];  // force to 8-byte alignment
 			};
 			struct {
-				ui4     type_code;
-				si1	type_string_terminal_zero;  // not used - there for clarity
+				ui4     	type_code;
+				si1		type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
 		void	*parent;  // parent structure, NULL for session or if created alone
@@ -2120,12 +2125,13 @@ typedef struct {
 	struct LEVEL_HEADER_m12 {  // this struct replaces LEVEL_HEADER_m12 in C++
 		union {  // anonymous union
 			struct {
-				si1     type_string[TYPE_BYTES_m12];
-				ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+				si1     	type_string[TYPE_BYTES_m12];
+				TERN_m12	en_bloc_allocation;
+				ui1     	pad[3];  // force to 8-byte alignment
 			};
 			struct {
-				ui4     type_code;
-				si1	type_string_terminal_zero;  // not used - there for clarity
+				ui4     	type_code;
+				si1		type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
 		void	*parent;  // parent structure, NULL for session or if created alone
@@ -2157,12 +2163,13 @@ typedef struct {
 	struct {  // this struct replaces LEVEL_HEADER_m12 in C++
 		union {  // anonymous union
 			struct {
-				si1     type_string[TYPE_BYTES_m12];
-				ui1     pad[3];  // force to 8-byte alignment to avoid alignment issues in potential future uses (in current usage, type_code without string would be sufficient)
+				si1		type_string[TYPE_BYTES_m12];
+				TERN_m12	en_bloc_allocation;
+				ui1     	pad[2];  // force to 8-byte alignment
 			};
 			struct {
-				ui4     type_code;
-				si1	type_string_terminal_zero;  // not used - there for clarity
+				ui4     	type_code;
+				si1		type_string_terminal_zero;  // not used - there for clarity
 			};
 		};
 		void	*parent;  // parent structure, NULL for session or if created alone
@@ -2238,6 +2245,7 @@ typedef struct {
 //**********************************************************************************//
 //****************************  GENERAL (G) MED Functions  *****************************//
 //**********************************************************************************//
+void	G_show_signum_m12(si4 sig_num);
 
 
 // Prototypes
@@ -2245,6 +2253,7 @@ TERN_m12	G_all_zeros_m12(ui1 *bytes, si4 field_length);
 CHANNEL_m12	*G_allocate_channel_m12(CHANNEL_m12 *chan, FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m12 chan_recs, TERN_m12 seg_recs);
 SEGMENT_m12	*G_allocate_segment_m12(SEGMENT_m12 *seg, FILE_PROCESSING_STRUCT_m12 *proto_fps, si1* enclosing_path, si1 *chan_name, ui4 type_code, si4 seg_num, TERN_m12 seg_recs);
 SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, TERN_m12 sess_recs, TERN_m12 segmented_sess_recs, TERN_m12 chan_recs, TERN_m12 seg_recs);
+TERN_m12	G_allocated_en_bloc_m12(LEVEL_HEADER_m12 *level_header);
 void     	G_apply_recording_time_offset_m12(si8 *time);
 si1		*G_behavior_string_m12(ui4 behavior, si1 *behavior_string);
 si8		G_build_contigua_m12(LEVEL_HEADER_m12 *level_header);
@@ -2273,6 +2282,7 @@ TERN_m12        G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...);
 TERN_m12        G_decrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 si4             G_DST_offset_m12(si8 uutc);
 TERN_m12	G_empty_string_m12(si1 *string);
+TERN_m12	G_en_bloc_allocation_m12(LEVEL_HEADER_m12 *level_header);
 TERN_m12        G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12	G_encrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12        G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);

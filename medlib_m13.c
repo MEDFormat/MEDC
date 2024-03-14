@@ -312,6 +312,7 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 			seg = G_allocate_segment_m13(seg, proto_fps, chan->path, chan->name, chan, type_code, (si4) i + 1, seg_recs);
 			if (seg == NULL)
 				return_m13(NULL);
+			seg->en_bloc_allocation = TRUE_m13;
 		}
 	}
 
@@ -477,6 +478,7 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 					free_m13((void *) ts_chan_names);
 				return_m13(NULL);
 			}
+			chan->en_bloc_allocation = TRUE_m13;
 		}
 		if (free_names == TRUE_m13)
 			free_m13((void *) ts_chan_names);
@@ -504,6 +506,7 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 					free_m13((void *) vid_chan_names);
 				return_m13(NULL);
 			}
+			chan->en_bloc_allocation = TRUE_m13;
 		}
 		if (free_names == TRUE_m13)
 			free((void *) vid_chan_names);
@@ -553,6 +556,7 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 			gen_fps = FPS_allocate_processing_struct_m13(ssr->record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) ssr, proto_fps, 0);
 			if (gen_fps == NULL)
 				return_m13(NULL);
+			gen_fps->en_bloc_allocation = TRUE_m13;
 			uh = gen_fps->universal_header;
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13);
 			uh->channel_UID = UID_NO_ENTRY_m13;
@@ -561,6 +565,7 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 			gen_fps = FPS_allocate_processing_struct_m13(ssr->record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) ssr, proto_fps, 0);
 			if (gen_fps == NULL)
 				return_m13(NULL);
+			gen_fps->en_bloc_allocation = TRUE_m13;
 			uh = gen_fps->universal_header;
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13);
 			uh->channel_UID = UID_NO_ENTRY_m13;
@@ -2474,6 +2479,71 @@ si4     G_DST_offset_m13(si8 uutc)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m13	G_en_bloc_allocation_m13(LEVEL_HEADER_m13 *level_header)
+{
+	TERN_m13		en_bloc;
+	size_t			struct_bytes;
+	LEVEL_HEADER_m13	*test_ptr, **test_ptr_ptr;
+	sig_handler_t_m13	current_handler;
+
+#ifdef FN_DEBUG_m12
+	G_push_function_m13();
+#endif
+	
+	if (level_header->en_bloc_allocation != UNKNOWN_m13)
+		return_m13(level_header->en_bloc_allocation);
+	
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_CHANNEL_m13:
+		case LH_VIDEO_CHANNEL_m13:
+			struct_bytes = sizeof(CHANNEL_m13);
+			break;
+		case LH_TIME_SERIES_SEGMENT_m13:
+		case LH_VIDEO_SEGMENT_m13:
+			struct_bytes = sizeof(SEGMENT_m13);
+			break;
+		case LH_FILE_m13:
+			struct_bytes = sizeof(FILE_PROCESSING_STRUCT_m13);
+			break;
+		case LH_PROC_GLOBALS_m13:
+			struct_bytes = sizeof(PROC_GLOBALS_m13);  // not typically allocated en bloc
+			break;
+		default:
+			return(FALSE_m13);
+	}
+	
+	// save current signal handler for SIGSEGV & set to ignore
+	current_handler = signal(SIGSEGV, SIG_IGN);
+
+	// check for structure before (will fail if first element)
+	en_bloc = FALSE_m13;
+	test_ptr = (LEVEL_HEADER_m13 *) ((ui1 *) level_header - struct_bytes);
+	if (test_ptr->type_code == level_header->type_code) {
+		en_bloc = TRUE_m13;
+	} else {  // check for structure after (will fail if last element)
+		test_ptr = (LEVEL_HEADER_m13 *) ((ui1 *) level_header + struct_bytes);
+		if (test_ptr->type_code == level_header->type_code) {
+			en_bloc = TRUE_m13;
+		} else {  // check for pointer to structure before (i.e. one structure array - pointer must point to it, even if sorted)
+			test_ptr_ptr = (LEVEL_HEADER_m13 **) ((ui1 *) level_header - sizeof(void *));
+			if (*test_ptr_ptr == level_header)
+				en_bloc = TRUE_m13;
+			// else not allocated en bloc
+		}
+	}
+	
+	// restore previous signal handler
+	signal(SIGSEGV, current_handler);
+
+	level_header->en_bloc_allocation = en_bloc;
+	
+	return_m13(en_bloc);
+}
+
+
 TERN_m13	G_encrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 {
 	ui1			*encryption_key;
@@ -4151,7 +4221,7 @@ TERN_m13	G_free_channel_m13(CHANNEL_m13 *channel, TERN_m13 free_channel_structur
 	G_push_function_m13();
 #endif
 
-	// returns FALSE_m13 if  does not free channel structure
+	// returns FALSE_m13 if does not free channel structure
 	
 	if (channel == NULL) {
 		G_set_error_m13(E_UNSPECIFIED_m13, "CHANNEL_m13 structure is NULL");
@@ -4183,10 +4253,11 @@ TERN_m13	G_free_channel_m13(CHANNEL_m13 *channel, TERN_m13 free_channel_structur
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) channel);
 	
 	if (free_channel_structure == TRUE_m13) {
-		if (freeable_m13((void *) channel) == TRUE_m13) {
+		if (channel->en_bloc_allocation == FALSE_m13) {
 			free_m13((void *) channel);
 			return_m13(TRUE_m13);
 		}
+		return_m13(FALSE_m13);
 	} else {  // clear everything with allocated memory
 		channel->parent = NULL;
 		channel->flags &= ~(LH_OPEN_m13 | LH_CHANNEL_ACTIVE_m13);
@@ -4467,10 +4538,11 @@ TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structur
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) segment);
 	
 	if (free_segment_structure == TRUE_m13) {
-		if (freeable_m13((void *) segment) == TRUE_m13) {
+		if (segment->en_bloc_allocation == FALSE_m13) {
 			free_m13((void *) segment);
 			return_m13(TRUE_m13);
 		}
+		return_m13(FALSE_m13);
 	} else {
 		// clear everything with allocated memory
 		segment->parent = NULL;
@@ -8413,6 +8485,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 				chan->type_code = LH_TIME_SERIES_CHANNEL_m13;
 				chan->flags = flags;
 				chan->parent = (LEVEL_HEADER_m13 *) sess;
+				chan->en_bloc_allocation = TRUE_m13;
 				G_generate_MED_path_components_m13(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8444,6 +8517,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			chan->type_code = LH_TIME_SERIES_CHANNEL_m13;
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m13;
 			chan->parent = (LEVEL_HEADER_m13 *) sess;
+			chan->en_bloc_allocation = TRUE_m13;
 			G_generate_MED_path_components_m13(ts_chan_list[i], chan->path, chan->name);
 		}
 		free_m13((void *) ts_chan_list);
@@ -8478,6 +8552,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 				chan->type_code = LH_VIDEO_CHANNEL_m13;
 				chan->flags = flags;
 				chan->parent = (LEVEL_HEADER_m13 *) sess;
+				chan->en_bloc_allocation = TRUE_m13;
 				G_generate_MED_path_components_m13(full_vid_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8509,6 +8584,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			chan->type_code = LH_VIDEO_CHANNEL_m13;
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m13;
 			chan->parent = (LEVEL_HEADER_m13 *) sess;
+			chan->en_bloc_allocation = TRUE_m13;
 			G_generate_MED_path_components_m13(vid_chan_list[i], chan->path, chan->name);
 		}
 		free_m13((void *) vid_chan_list);
@@ -8985,6 +9061,8 @@ SESSION_m13	*G_open_session_nt_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, voi
 				chan = sess->time_series_channels[i];
 				chan->type_code = LH_TIME_SERIES_CHANNEL_m13;
 				chan->flags = flags;
+				chan->parent = (LEVEL_HEADER_m13 *) sess;
+				chan->en_bloc_allocation = TRUE_m13;
 				G_generate_MED_path_components_m13(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -9010,6 +9088,8 @@ SESSION_m13	*G_open_session_nt_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, voi
 			chan = sess->time_series_channels[i];
 			chan->type_code = LH_TIME_SERIES_CHANNEL_m13;
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m13;
+			chan->parent = (LEVEL_HEADER_m13 *) sess;
+			chan->en_bloc_allocation = TRUE_m13;
 			G_generate_MED_path_components_m13(ts_chan_list[i], chan->path, chan->name);
 		}
 		free_m13((void *) ts_chan_list);
@@ -9034,6 +9114,7 @@ SESSION_m13	*G_open_session_nt_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, voi
 				chan->type_code = LH_VIDEO_CHANNEL_m13;
 				chan->flags = flags;
 				chan->parent = (LEVEL_HEADER_m13 *) sess;
+				chan->en_bloc_allocation = TRUE_m13;
 				G_generate_MED_path_components_m13(full_vid_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -9060,6 +9141,7 @@ SESSION_m13	*G_open_session_nt_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, voi
 			chan->type_code = LH_VIDEO_CHANNEL_m13;
 			chan->flags = flags | LH_CHANNEL_ACTIVE_m13;
 			chan->parent = (LEVEL_HEADER_m13 *) sess;
+			chan->en_bloc_allocation = TRUE_m13;
 			G_generate_MED_path_components_m13(vid_chan_list[i], chan->path, chan->name);
 		}
 		free_m13((void *) vid_chan_list);
@@ -28468,7 +28550,7 @@ FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_S
 	if (full_file_name != NULL)
 		if (*full_file_name)
 			strncpy_m13(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m13);
-	fps->type_code = GENERIC_FILE_TYPE_CODE_m13;  // level type code, not specific file type
+	fps->type_code = LH_FILE_m13;  // level type code, not specific file type
 	if (*fps->full_file_name && type_code == UNKNOWN_TYPE_CODE_m13)
 		type_code = G_MED_type_code_from_string_m13(fps->full_file_name);
 
@@ -29605,7 +29687,7 @@ TERN_m13	HW_get_memory_info_m13(void)
 	
 	status.dwLength = sizeof(status);
 	if (GlobalMemoryStatusEx(&status) == 0) {
-		fprintf_m13(stderr, "%s(): GlobalMemoryStatusEx() error\n");
+		fprintf_m13(stderr, "%s(): GlobalMemoryStatusEx() error\n", __FUNCTION__);
 		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->HW_mutex);
 		return_m13(FALSE_m13);
 	}
@@ -29617,7 +29699,6 @@ TERN_m13	HW_get_memory_info_m13(void)
 	
 	hw_params->heap_base_address = (ui8) globals_m13;  // first thing allocated by initialize_medlib_m13()
 	hw_params->heap_max_address = (hw_params->heap_base_address + hw_params->system_memory_size) - 1;
-	// in all 64-bit OSs tested, stack addresses are > heap_max_address (even for child processes)
 	
 	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->HW_mutex);
 	
@@ -32548,6 +32629,45 @@ si4	PROC_pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex)
 		ret_val = 0;
 	else
 		ret_val = -1;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	PROC_pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex)
+{
+	si4	ret_val;
+	
+	// Non-blocking version of PROC_pthread_mutex_lock_m13()
+	// If the mutex is valid & unlocked: locks the mutex & will returns zero
+	// If the mutex is valid & locked: returns EBUSY
+	// If the mutex is invalid: returns EINVAL
+
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_mutex_trylock(mutex);
+#endif
+	       
+#ifdef WINDOWS_m13
+	DWORD	win_ret_val;
+	
+	win_ret_val = WaitForSingleObject(mutex, (DWORD) 0);
+	switch (win_ret_val) {
+		case WAIT_ABANDONED:  // owning thread terminated - mutex given to calling thread
+		case WAIT_OBJECT_0:  // mutex not owned - given to calling thread
+			ret_val = 0;
+			break;
+		case WAIT_TIMEOUT:
+			ret_val = EBUSY;
+			break;
+		case WAIT_FAILED:
+		default:
+			ret_val = EINVAL;
+			break;
+	}
 #endif
 	
 	return(ret_val);
@@ -37718,32 +37838,84 @@ inline
 #endif
 TERN_m13	freeable_m13(void *address)
 {
-	ui8		address_val;
-	HW_PARAMS_m13	*hw_params;
+	ui8			address_val;
+	LEVEL_HEADER_m13	*level_header;
+	HW_PARAMS_m13		*hw_params;
+
 	
-	
+	// returns whether address is freeable
+	// heap starts at heap base & grows upward
+	// MacOS & Linux stack base > heap_max_address & grows downward
+	// Windows stack base < heap base & generally grows toward heap base (per internet this may not always be true, but I have never seen it happen)
+	// if getting unexpected results, consider compiling with AT_DEBUG_m13 to track down where errors occur
+	// NOTE: not tested under 32-bit hardware or compilation
+	       
 #ifdef AT_DEBUG_m13
 	return(AT_freeable_m13(address));
 #endif
 
-	// returns whether address is freeable
-	// heap starts at heap base & grows upward
-	// MacOS & Linux stack base > heap_max_address & grows downward
-	// Windows stack base < heap base & grows upward
-	// if getting unexpected results, consider compiling with AT_DEBUG_m13 to track down where errors occur
-	// NOTE: not tested under 32-bit hardware or compilation
-	       
-	hw_params = &globals_m13->tables->HW_params;
+	// all allocated heap addresses are at least divisible by 8
 	address_val = (ui8) address;
+	if (address_val & (ui8) 7)
+		return(FALSE_m13);
 
+	// check if address in heap
+	hw_params = &globals_m13->tables->HW_params;
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m13);
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m13);
-	if (malloc_size_m13(address))  // in heap, so check if in allocation table
-		return(TRUE_m13);
 	
+#ifdef MACOS_m13
+	// check if address in allocation table
+	if (malloc_size_m13(address))
+		return(TRUE_m13);
 	return(FALSE_m13);
+#endif
+	
+	// Can't use malloc_size_m13() if address not allocated
+	// LINUX_m13: malloc_usable_size() generates unrecoverable segmentation fault
+	// WINDOWS_m13: _msize() terminates process without signal
+	level_header = (LEVEL_HEADER_m13 *) address;
+
+#ifdef LINUX_m13
+	// check that level_header->type_code can be dereferenced
+	ui4			type_code = NO_TYPE_CODE_m13;
+	sig_handler_t_m13	current_handler;
+	
+	current_handler = signal(SIGSEGV, SIG_IGN);
+	type_code = *((ui4 *) &level_header->type_code);
+	signal(SIGSEGV, current_handler);
+	
+	if (type_code == NO_TYPE_CODE_m13)
+		return(FALSE_m13);
+#endif
+
+#ifdef WINDOWS_m12
+	// check that level_header->type_code can be dereferenced
+	DWORD	protection_err, curr_protection;
+
+	protection_err = VirtualProtect((void *) &level_header->type_code, (size_t) 4, (DWORD) PAGE_READONLY, &curr_protection);
+	if (protection_err)  // errno set: probably ERROR_INVALID_ADDRESS
+		return(FALSE_m13);
+	VirtualProtect((void *) &level_header->type_code, (size_t) 4, curr_protection, NULL);  // reset protection
+#endif
+
+	// if address is a LEVEL_HEADER structure, check if address allocated en bloc
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_CHANNEL_m13:
+		case LH_VIDEO_CHANNEL_m13:
+		case LH_TIME_SERIES_SEGMENT_m13:
+		case LH_VIDEO_SEGMENT_m13:
+		case LH_FILE_m13:
+		case LH_PROC_GLOBALS_m13:
+			if (G_en_bloc_allocation_m13(level_header) == TRUE_m13)
+				return(FALSE_m13);
+			return(TRUE_m13);
+		default:
+			// not a LEVEL_HEADER - checked all we can check => default to TRUE_m13 (assume caller passed a non-random heap address)
+			return(TRUE_m13);
+	}
 }
 
 
@@ -38017,6 +38189,8 @@ inline
 #endif
 size_t	malloc_size_m13(void *address)
 {
+	if (address == NULL)
+		return(0);
 	
 #ifdef AT_DEBUG_m13
 	si8		i;
@@ -38028,27 +38202,20 @@ size_t	malloc_size_m13(void *address)
 			return(atn->actual_bytes);
 	}
 	return((size_t) 0);
-#else
-	#ifdef MACOS_m13
-		return(malloc_size(address));
-	#endif
-	#ifdef LINUX_m13
-		size_t	sz = 0;
+#endif
+	
+#ifdef MACOS_m13
+	return(malloc_size(address));
+#endif
 
-		// using sigaction() to get current action & restore it would be more general here, but this code is simpler for now
-		signal(SIGSEGV, SIG_IGN);
-		sz = malloc_usable_size(address);  // seg faults if address not allocated (unless NULL)
-		#ifdef FN_DEBUG_m13
-		signal(SIGSEGV, G_function_stack_trap_m13);
-		#else
-		signal(SIGSEGV, SIG_DFL);
-		#endif
-		
-		return(sz);
-	#endif
-	#ifdef WINDOWS_m13
-		return(_msize(address));
-	#endif
+#ifdef LINUX_m13
+	// seg faults if address not allocated (no way around it)
+	return(malloc_usable_size(address));
+#endif
+	
+#ifdef WINDOWS_m13
+	// process terminates without signal on non-allocated pointer (no way around it without using Windows DEBUG functions)
+	return(_msize(address));
 #endif
 }
 
