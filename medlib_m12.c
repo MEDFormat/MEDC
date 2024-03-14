@@ -37704,63 +37704,6 @@ size_t	malloc_size_m12(void *address)
 #endif
 }
 
-void	G_show_signum_m12(si4 sig_num)
-{
-	const si1	*error_type;
-	
-	
-	switch(sig_num) {
-		case SIGINT:
-			error_type = "Interrupt (SIGINT)";
-			break;
-		case SIGILL:
-			error_type = "Illegal instruction (SIGILL)";
-			break;
-		case SIGABRT:
-			error_type = "Abnormal termination (SIGABRT)";
-			break;
-		case SIGFPE:
-			error_type = "Floating point exception (SIGFPE)";
-			break;
-		case SIGSEGV:
-			error_type = "Segmentation violation (SIGSEGV)";
-			break;
-		case SIGTERM:
-			error_type = "Terminate (SIGTERM)";
-			break;
-		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
-		case SIGQUIT:
-			error_type = "Quit (SIGQUIT)";
-			break;
-		case SIGKILL:
-			error_type = "Kill (SIGKILL)";
-			break;
-		case SIGBUS:
-			error_type = "Bus error (SIGBUS)";
-			break;
-		case SIGXCPU:
-			error_type = "CPU time limit exceeded (SIGXCPU)";
-			break;
-		case SIGXFSZ:
-			error_type = "File size limit exceeded (SIGXFSZ)";
-			break;
-		#endif
-		default:
-			return;
-	}
-
-#ifdef MATLAB_m13
-	mexPrintf("%s\n\n", error_type);
-#else
-	fprintf(stderr, "%c%s%s%s\n\n", 7, TC_RED_m12, error_type, TC_RESET_m12);
-#endif
-		
-//	exit_m12(-1);  // exit() shows function stack
-
-	return;
-}
-
-
 
 void	memset_m12(void *ptr, const void *pattern, size_t pat_len, size_t n_members)
 {
