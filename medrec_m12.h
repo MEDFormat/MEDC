@@ -186,6 +186,28 @@ TERN_m12        REC_check_structure_alignments_m12(ui1 *bytes);
 // Structures
 // REC_Sgmt_v10_m12 defined in medlib_m12.h due to codependency
 
+// Version 1.1
+#define REC_Sgmt_v11_BYTES_m12                                          32
+#define REC_Sgmt_v11_END_TIME_OFFSET_m12                                0							// si8
+#define REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m12			8							// si8
+#define REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m12			SAMPLE_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_START_FRAME_NUMBER_OFFSET_m12			REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m12		// si8
+#define REC_Sgmt_v11_START_FRAME_NUMBER_NO_ENTRY_m12			FRAME_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m12			16							// si8
+#define REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m12			SAMPLE_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_END_FRAME_NUMBER_OFFSET_m12			REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m12		// si8
+#define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m12			FRAME_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m12                          24							// si4
+#define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m12                        SEGMENT_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_PAD_OFFSET_m12                     		28							// ui1
+#define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m12                     REC_Sgmt_v11_PAD_OFFSET_m12
+#define REC_Sgmt_v11_PAD_BYTES_m12                     			4
+#define REC_Sgmt_v11_SAMPLING_FREQUENCY_VARIABLE_m12		        SAMPLE_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m12		        	FRAME_NUMBER_NO_ENTRY_m12
+
+// Structures
+// REC_Sgmt_v11_m12 defined in medlib_m12.h due to codependency
+
 // Prototypes
 void            REC_show_Sgmt_type_m12(RECORD_HEADER_m12 *record_header);
 TERN_m12        REC_check_Sgmt_type_alignment_m12(ui1 *bytes);
@@ -268,6 +290,23 @@ TERN_m12        REC_check_EDFA_type_alignment_m12(ui1 *bytes);
 // Structures
 // (none)
 // Annotation follows header - aribitrary length array of si1s padded to 16 byte alignment
+
+// Version 1.1
+#define REC_Note_v11_BYTES_m12			16
+#define REC_Note_v11_END_TIME_OFFSET_m12	0
+#define REC_Note_v11_TEXT_OFFSET_m12		8  // beginning of pad
+#define REC_Note_v11_PAD_BYTES_m12		8
+
+// Structures
+typedef struct {
+	si8     end_time;  // time when note entered into record (header start time is time when note initiated)
+	union {
+		si1     pad[REC_Note_v11_PAD_BYTES_m12];
+		si1     text[REC_Note_v11_PAD_BYTES_m12];  // first 8 bytes of note, can extend beyondend of structure
+	};
+} REC_Note_v11_m12;
+
+// Annotation begins in structure, but may extend beyond it - aribitrary length array of si1s padded to 16 byte alignment (struct plus excess text)
 
 
 // Prototypes

@@ -268,25 +268,22 @@ typedef struct {
 	};
 } REC_Sgmt_v10_m12;
 
-// need to switch to this in next version
-//typedef struct {
-//	si8     start_time;
-//	union {
-//		si8     start_sample_number;	// session-relative (global indexing)
-//		si8     start_frame_number;	// session-relative (global indexing)
-//	};
-//	union {
-//		si8     end_sample_number;	// session-relative (global indexing)
-//		si8     end_frame_number;	// session-relative (global indexing)
-//	};
-//	ui8     segment_UID;
-//	si4     segment_number;
-//	si4     acquisition_channel_number;  // REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m12 in session level records
-//	union {
-//		sf8     sampling_frequency;  // channel sampling frequency (REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m12 in session level records, if sampling frequencies vary across time series channels)
-//		sf8     frame_rate;  	     // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m12 in session level records, if frame rates vary across video channels)
-//	};
-//} REC_Sgmt_v11_m12;
+typedef struct {
+	si8     	end_time;
+	union {
+		si8     start_sample_number;	// session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
+		si8     start_frame_number;	// session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
+	};
+	union {
+		si8     end_sample_number;	// session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
+		si8     end_frame_number;	// session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
+	};
+	si4     	segment_number;
+	union {
+		ui1     pad[4];  // 16 byte alignment for encryption
+		si1	description[4];  // beginning of segment description, if present
+	};
+} REC_Sgmt_v11_m12;
 
 // Description follows sampling_frequency / frame_rate in structure.
 // The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).

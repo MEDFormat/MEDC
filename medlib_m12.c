@@ -1648,8 +1648,11 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 	
 	// called if universal_header->number_of_entries == 0 in live recording or improperly closed file
 	
+	if (fps->parameters.flen == UNIVERSAL_HEADER_BYTES_m12)  // no actual entries, zero is correct
+		return(TRUE_m12);
+	
 	if (warning_given == FALSE_m12) {  // don't give this warning for every file
-		G_warning_message_m12("%s(): file header not complete.\nThis can occur if the file is still being recorded, or was not closed properly.\n");
+		G_warning_message_m12("%s(): file header not complete.\nThis can occur if the file is still being recorded, or was not closed properly.\n", __FUNCTION__);
 		warning_given = TRUE_m12;
 	}
 	
@@ -9912,9 +9915,11 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12 || number_of_items == FPS_FULL_FILE_m12 || opened_flag == TRUE_m12) {
 		
 		FPS_read_m12(fps, 0, UNIVERSAL_HEADER_BYTES_m12, __FUNCTION__, behavior_on_fail);
-		if (uh->number_of_entries == 0)
-			if (G_correct_universal_header_m12(fps) == FALSE_m12)  // live or abnormally terminated file
+		if (uh->number_of_entries == 0) {
+			if (G_correct_universal_header_m12(fps) == FALSE_m12) { // live or abnormally terminated file
 				return(NULL);
+			}
+		}
 		if (uh->session_UID != globals_m12->session_UID)  // set current session directory globals
 			G_get_session_directory_m12(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12) {
@@ -37364,7 +37369,7 @@ TERN_m12	freeable_m12(void *address)
 	DWORD	protection_err, curr_protection;
 
 	protection_err = VirtualProtect((void *) &level_header->type_code, (size_t) 4, (DWORD) PAGE_READONLY, &curr_protection);
-	if (protection_err)  // errno set: probably ERROR_INVALID_ADDRESS
+	if (protection_err == 0)  // errno set: probably ERROR_INVALID_ADDRESS
 		return(FALSE_m12);
 	VirtualProtect((void *) &level_header->type_code, (size_t) 4, curr_protection, NULL);  // reset protection
 #endif

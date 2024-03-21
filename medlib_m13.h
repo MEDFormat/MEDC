@@ -2497,6 +2497,7 @@ TERN_m13	G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 ini
 TIME_SLICE_m13	*G_initialize_time_slice_m13(TIME_SLICE_m13 *slice);
 TERN_m13	G_initialize_timezone_tables_m13(void);
 TERN_m13		G_initialize_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 type_code, TERN_m13 generate_file_UID, TERN_m13 originating_file);
+TERN_m13	G_is_level_header_m13(void *ptr);
 si8		G_items_for_bytes_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_bytes);
 TERN_m13		G_lh_set_directives_m13(si1 *full_file_name, ui8 lh_flags, TERN_m13 *mmap_flag, TERN_m13 *close_flag, si8 *number_of_items);
 si1		*G_MED_type_string_from_code_m13(ui4 code);
@@ -2663,13 +2664,13 @@ void		*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, s
 
 // preprocessor directives to replace standard alloc functions with AT versions
 #define calloc_m13(a, b)			AT_calloc_m13(__FUNCTION__, a, b)
-#define calloc_2D_m13(a, b, c)			AT_calloc_2D_m13(__FUNCTION__, a, b, c)
+#define calloc_2D_m13(a, b, c, d)		AT_calloc_2D_m13(__FUNCTION__, a, b, c, d)
 #define free_m13(a)				AT_free_m13(__FUNCTION__, a)
 #define free_2D_m13(a, b)			AT_free_2D_m13(__FUNCTION__, a, b)
 #define malloc_m13(a)				AT_malloc_m13(__FUNCTION__, a)
-#define malloc_2D_m13(a, b, c)			AT_malloc_2D_m13(__FUNCTION__, a, b, c)
+#define malloc_2D_m13(a, b, c, d)		AT_malloc_2D_m13(__FUNCTION__, a, b, c, d)
 #define realloc_m13(a, b)			AT_realloc_m13(__FUNCTION__, a, b)
-#define realloc_2D_m13(a, b, c, d, e, f)	AT_realloc_2D_m13(__FUNCTION__, a, b, c, d, e, f)
+#define realloc_2D_m13(a, b, c, d, e, f, g)	AT_realloc_2D_m13(__FUNCTION__, a, b, c, d, e, f, g)
 #define recalloc_m13(a, b, c)			AT_recalloc_m13(__FUNCTION__, a, b, c)
 
 #endif  // AT_DEBUG_m13
@@ -4654,6 +4655,7 @@ char		*getcwd_m13(char *buf, size_t size);
 size_t		malloc_size_m13(void *address);
 void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
 TERN_m13	mlock_m13(void *addr, size_t len, TERN_m13 zero_data);
+si4		mprotect_m13(void *address, size_t len, si4 protection);
 TERN_m13	munlock_m13(void *addr, size_t len);
 si4     	printf_m13(si1 *fmt, ...);
 si4		putc_m13(si4 c, FILE *stream);
@@ -4678,13 +4680,13 @@ si4    		vsprintf_m13(si1 *target, si1 *fmt, va_list args);
 // standard functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13  // use these protoypes in all cases, defines will convert if needed
 	void	*calloc_m13(size_t n_members, size_t el_size);
-	void	**calloc_2D_m13(size_t dim1, size_t dim2, size_t el_size);
+	void	**calloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, TERN_m13 is_level_header);
 	void	free_m13(void *ptr);
 	void	free_2D_m13(void **ptr, size_t dim1);
 	void	*malloc_m13(size_t n_bytes);
-	void	**malloc_2D_m13(size_t dim1, size_t dim2, size_t el_size);
+	void	**malloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, TERN_m13 is_level_header);
 	void	*realloc_m13(void *ptr, size_t n_bytes);
-	void	**realloc_2D_m13(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size);
+	void	**realloc_2D_m13(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, TERN_m13 is_level_header);
 	void	*recalloc_m13(void *curr_ptr, size_t curr_bytes, size_t new_bytes);
 #endif  // AT_DEBUG_m13
 
