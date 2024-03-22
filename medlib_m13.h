@@ -1174,7 +1174,7 @@ typedef struct {
 
 // Protoypes
 TERN_m13		PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
-PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...); // varagrgs(label == PAR_DEFAULTS_m13): si4 priority, si1 *affinity, si4 detached
+PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...); // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, si1 *affinity, si4 detached
 PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...);	// varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, si4 detached, <function arguments>
 									// varargs (par_info != NULL): <function arguments>
 TERN_m13		PAR_show_info_m13(PAR_INFO_m13 *par_info);
@@ -1188,7 +1188,8 @@ TERN_m13		PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
 //**********************************************************************************//
 
 // Constants
-#define RC_NO_ENTRY_m13    		-1
+#define RC_NO_ENTRY_m13    		-2
+#define RC_ERROR_m13    		-1
 #define RC_NO_OPTION_m13   		0
 #define RC_STRING_TYPE_m13      	1
 #define RC_FLOAT_TYPE_m13       	2

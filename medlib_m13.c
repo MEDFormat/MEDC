@@ -391,7 +391,7 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 			snprintf_m13(seg->video_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
 			break;
 		default:
-			G_error_message_m13("%s(): unrecognized type code \"0x%x\"\n", __FUNCTION__, type_code);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
 			return_m13(NULL);
 	}
 	
@@ -3932,7 +3932,7 @@ si8	G_find_record_index_m13(FILE_PROCESSING_STRUCT_m13 *record_indices_fps, si8 
 			case FIND_LAST_BEFORE_m13:
 				return_m13(NO_INDEX_m13);
 			default:
-				G_set_error_m13(E_UNSPECIFIED_m13, "unsupported mode (%u)\n", mode);
+				G_set_error_m13(E_UNSPECIFIED_m13, "unsupported mode (%u)", mode);
 				return_m13(NO_INDEX_m13);
 		}
 	}
@@ -4222,10 +4222,9 @@ TERN_m13	G_free_channel_m13(CHANNEL_m13 *channel, TERN_m13 free_channel_structur
 
 	// returns FALSE_m13 if does not free channel structure
 	
-	if (channel == NULL) {
-		G_set_error_m13(E_UNSPECIFIED_m13, "CHANNEL_m13 structure is NULL");
+	if (channel == NULL)
 		return_m13(FALSE_m13);
-	}
+
 	if (channel->segments != NULL) {
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) channel);
 		for (i = 0; i < proc_globals->number_of_mapped_segments; ++i) {
@@ -4516,10 +4515,9 @@ TERN_m13	G_free_segment_m13(SEGMENT_m13 *segment, TERN_m13 free_segment_structur
 
 	// returns FALSE_m13 if did not free segment structure
 	
-	if (segment == NULL) {
-		G_set_error_m13(E_UNSPECIFIED_m13, "SEGMENT_m13 structure is NULL");
+	if (segment == NULL)
 		return_m13(FALSE_m13);
-	}
+
 	if (segment->metadata_fps != NULL)
 		FPS_free_processing_struct_m13(segment->metadata_fps, TRUE_m13);
 	if (segment->time_series_data_fps != NULL)  // also does video data fps (when it exists), due to union
@@ -4576,10 +4574,8 @@ TERN_m13	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, TERN_m13 f
 
 	// returns FALSE_m13 if did not free ssr structure
 
-	if (ssr == NULL) {
-		G_set_error_m13(E_UNSPECIFIED_m13, "SEGMENTED_SESS_RECS_m13 structure is NULL");
+	if (ssr == NULL)
 		return_m13(FALSE_m13);
-	}
 	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) ssr);
 	n_segs = proc_globals->number_of_mapped_segments;
@@ -4624,10 +4620,9 @@ TERN_m13	G_free_session_m13(SESSION_m13 *session, TERN_m13 free_session_structur
 
 	// returns FALSE_m13 if did not free session structure
 
-	if (session == NULL) {
-		G_set_error_m13(E_UNSPECIFIED_m13, "SESSION_m13 structure is NULL");
+	if (session == NULL)
 		return_m13(FALSE_m13);
-	}
+
 	if (session->time_series_metadata_fps != NULL)
 		FPS_free_processing_struct_m13(session->time_series_metadata_fps, TRUE_m13);
 	if (session->video_metadata_fps != NULL)
@@ -4993,7 +4988,7 @@ GFL_CONDITION_RETURN_DATA_m13:
 				strcpy(file_list[j], tmp_name);
 				break;
 			default:
-				G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized path component combination (path_parts == %hhu)\n", path_parts);
+				G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized path component combination (path_parts == %hhu)", path_parts);
 				return_m13(NULL);
 		}
 		++j;
@@ -5630,7 +5625,7 @@ si4	G_get_search_mode_m13(TIME_SLICE_m13 *slice)
 	if (slice->start_sample_number != SAMPLE_NUMBER_NO_ENTRY_m13 && slice->end_sample_number != SAMPLE_NUMBER_NO_ENTRY_m13)
 		return_m13(SAMPLE_SEARCH_m13);
 	
-	G_set_error_m13(E_UNSPECIFIED_m13, "no valid limit pair\n");
+	G_set_error_m13(E_UNSPECIFIED_m13, "no valid limit pair");
 	
 	return_m13(FALSE_m13);
 }
@@ -5658,14 +5653,14 @@ si4	G_get_segment_index_m13(si4 segment_number)
 
 	mapped_segs = proc_globals->number_of_mapped_segments;
 	if (mapped_segs == 0) {
-		G_set_error_m13(E_UNSPECIFIED_m13, "no mapped segments\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "no mapped segments");
 		return_m13((si4) FALSE_m13);
 	}
 
 	if (segment_number == FIRST_OPEN_SEGMENT_m13 || segment_number == SEGMENT_NUMBER_NO_ENTRY_m13) {
 		chan = proc_globals->reference_channel;
 		if (chan == NULL) {
-			G_set_error_m13(E_UNSPECIFIED_m13, "cannot find open segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "cannot find open segment");
 			return_m13((si4) FALSE_m13);
 		}
 		for (i = 0; i < mapped_segs; ++i) {
@@ -5676,7 +5671,7 @@ si4	G_get_segment_index_m13(si4 segment_number)
 					
 		}
 		if (i == mapped_segs) {
-			G_set_error_m13(E_UNSPECIFIED_m13, "cannot find open segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "cannot find open segment");
 			return_m13((si4) FALSE_m13);
 		}
 		if (segment_number == SEGMENT_NUMBER_NO_ENTRY_m13)
@@ -5689,10 +5684,10 @@ si4	G_get_segment_index_m13(si4 segment_number)
 		if (segment_number >= 1 && segment_number <= mapped_segs) {
 			return_m13(segment_number - 1);
 		} else if (segment_number < 1) {
-			G_set_error_m13(E_UNSPECIFIED_m13, "invalid segment number\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "invalid segment number");
 			return_m13((si4) FALSE_m13);
 		} else {
-			G_set_error_m13(E_UNSPECIFIED_m13, "unmapped segment\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "unmapped segment");
 			return_m13((si4) FALSE_m13);
 		}
 	}
@@ -5700,7 +5695,7 @@ si4	G_get_segment_index_m13(si4 segment_number)
 	first_seg = proc_globals->first_mapped_segment_number;
 	seg_idx = segment_number - first_seg;
 	if (seg_idx < 0 || seg_idx >= mapped_segs) {
-		G_set_error_m13(E_UNSPECIFIED_m13, "unmapped segment\n");
+		G_set_error_m13(E_UNSPECIFIED_m13, "unmapped segment");
 		return_m13((si4) FALSE_m13);
 	}
 	
@@ -5750,7 +5745,7 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 			Sgmt_records = chan->Sgmt_records;
 			break;
 		default:
-			G_set_error_m13(E_UNSPECIFIED_m13, "invalid level\n");
+			G_set_error_m13(E_UNSPECIFIED_m13, "invalid level");
 			return_m13(0);
 	}
 
@@ -31767,7 +31762,7 @@ TERN_m13	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)  // frees thread globals & pa
 }
 
 
-PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...) // varagrgs(label == PAR_DEFAULTS_m13): si4 priority, si1 *affinity, si4 detached
+PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...) // varargs(label != "PAR_DEFAULTS_m13" or NULL): si4 priority, si1 *affinity, si4 detached
 {
 	TERN_m13	defaults;
 	si1 		*affinity;
@@ -31794,8 +31789,8 @@ PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ..
 			defaults = TRUE_m13;
 	
 	if (defaults == TRUE_m13) {
-			label = affinity = NULL;
-			priority = detached = 0;
+		label = affinity = NULL;
+		priority = detached = 0;
 	} else {
 		va_start(args, label);
 		priority = va_arg(args, si4);
@@ -32774,7 +32769,7 @@ TERN_m13    PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_att
 	
 	if (wait_for_lauch == TRUE_m13) {
 		for (attempts = MAX_ATTEMPTS; err == ESRCH && attempts--;) {  // ESRCH == "thread not found" => threads can take a beat to launch
-			G_nap_m13("10 ms");
+			G_nap_m13("1 ms");
 			if (use_attributes == TRUE_m13)
 				err = pthread_attr_setaffinity_np((pthread_attr_t *) attributes, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
 			else
@@ -32818,8 +32813,8 @@ TERN_m13    PROC_set_thread_affinity_m13(pthread_t_m13 *thread_handle_p, pthread
 	err = SetThreadAffinityMask(thread_h, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - it is not used as pointer to ui4
 	
 	if (wait_for_lauch == TRUE_m13) {
-		for (attempts = MAX_ATTEMPTS; err == 0 && attempts--;) {  // zero == unspecified error => can take a bit to launch
-			G_nap_m13("10 ms");
+		for (attempts = MAX_ATTEMPTS; err == 0 && attempts--;) {  // zero == unspecified error => can take a beat to launch
+			G_nap_m13("1 ms");
 			err = SetThreadAffinityMask(thread_h, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - not used as pointer to ui4
 		}
 	}
@@ -33008,13 +33003,17 @@ si4     RC_read_field_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffer_
 	// find requested field entry
 	c = *buffer;
 	sprintf_m13(temp_str, "%%%% FIELD: %s", field_name);
-	if ((field_title_ptr = STR_match_end_m13(temp_str, c)) == NULL)
-		G_error_message_m13("%s(): Could not match field label \"%s\" in rc file\n", __FUNCTION__, temp_str);
+	if ((field_title_ptr = STR_match_end_m13(temp_str, c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match field label \"%s\" in rc file", temp_str);
+		return_m13(RC_ERROR_m13);
+	}
 	
 	// get type
 	c = field_title_ptr;
-	if ((type_ptr = STR_match_end_m13("%% TYPE:", c)) == NULL)
-		G_error_message_m13("%s(): Could not match TYPE subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if ((type_ptr = STR_match_end_m13("%% TYPE:", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match TYPE subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	while (*type_ptr == (si1) 32)  // space
 		++type_ptr;
 	item = sscanf(type_ptr, "%[^\r\n]", type_str);
@@ -33023,33 +33022,39 @@ si4     RC_read_field_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffer_
 		while (*--temp_si1_ptr == (si1) 32);
 		*++temp_si1_ptr = 0;
 	} else {
-		G_error_message_m13("%s(): No TYPE subfield specified in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+		G_set_error_m13(E_UNSPECIFIED_m13, "No TYPE subfield specified in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
 	}
 
 	type = 0;
-	if (strcmp(type_str, "string") == 0)
+	if (strcmp(type_str, "string") == 0) {
 		type = RC_STRING_TYPE_m13;
-	else if (strcmp(type_str, "float") == 0)
+	} else if (strcmp(type_str, "float") == 0) {
 		type = RC_FLOAT_TYPE_m13;
-	else if (strcmp(type_str, "integer") == 0)
+	} else if (strcmp(type_str, "integer") == 0) {
 		type = RC_INTEGER_TYPE_m13;
-	else if (strcmp(type_str, "ternary") == 0)
+	} else if (strcmp(type_str, "ternary") == 0) {
 		type = RC_TERNARY_TYPE_m13;
-	else
-	       G_error_message_m13("%s(): Could not match TYPE subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	} else {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match TYPE subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 
 	// get options pointer
 	c = type_ptr;
 	options_only = FALSE_m13;
-	if ((options_ptr = STR_match_end_m13("%% OPTIONS", c)) == NULL)
-		G_error_message_m13("%s(): Could not match OPTIONS subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if ((options_ptr = STR_match_end_m13("%% OPTIONS", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match OPTIONS subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	if (*options_ptr == ':') {
 		++options_ptr;
 	} else if (strncmp(options_ptr, " ONLY:", 6) == 0) {
 		options_ptr += 6;
 		options_only = TRUE_m13;
 	} else {
-		G_error_message_m13("%s(): Could not match OPTIONS subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match OPTIONS subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
 	}
 	while (*options_ptr == (si1) 32)  // space
 		++options_ptr;
@@ -33062,8 +33067,10 @@ si4     RC_read_field_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffer_
 
 	// get default value pointer
 	c = options_ptr;
-	if ((default_value_ptr = STR_match_end_m13("%% DEFAULT:", c)) == NULL)
-		G_error_message_m13("%s(): Could not match DEFAULT subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if ((default_value_ptr = STR_match_end_m13("%% DEFAULT:", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match DEFAULT subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	while (*default_value_ptr == (si1) 32)  // space
 		++default_value_ptr;
 	
@@ -33076,8 +33083,10 @@ si4     RC_read_field_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffer_
 
 	// get field value as string
 	c = default_value_ptr;
-	if ((field_value_ptr = STR_match_end_m13("%% VALUE:", c)) == NULL)
-		G_error_message_m13("%s(): Could not match value field label \"%s\" in rc file\n", __FUNCTION__, temp_str);
+	if ((field_value_ptr = STR_match_end_m13("%% VALUE:", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match VALUE field label \"%s\" in rc file", temp_str);
+		return_m13(RC_ERROR_m13);
+	}
 	while (*field_value_ptr == (si1) 32)  // space
 		++field_value_ptr;
 	item = sscanf(field_value_ptr, "%[^\r\n]", field_value_str);
@@ -33095,10 +33104,12 @@ READ_RC_HANDLE_DEFAULT_m13:
 	
 	// VALUE field is "DEFAULT", and default may be "PROMPT"
 	if (strcmp(field_value_str, "DEFAULT") == 0) {
-		if (default_item)
+		if (default_item) {
 			strcpy(field_value_str, default_value_str);
-		else
-			G_error_message_m13("%s(): No DEFAULT value to enter in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+		} else {
+			G_set_error_m13(E_UNSPECIFIED_m13, "no DEFAULT value to enter in field \"%s\" of rc file", field_name);
+		 	return_m13(RC_ERROR_m13);
+	 	}
 	}
 
 	// PROMPT (Note: user can enter "DEFAULT", "NO ENTRY", or any of the recognized OPTIONS here if desired)
@@ -33119,7 +33130,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 	option_selected = RC_NO_OPTION_m13;
 	if ((strcmp(field_value_str, "NO ENTRY") == 0)) {
 		if (options_only == TRUE_m13) {
-			G_error_message_m13("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
+			G_warning_message_m13("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
 			strcpy(field_value_str, "DEFAULT");
 			goto READ_RC_HANDLE_DEFAULT_m13;
 		} else
@@ -33150,7 +33161,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 		}
 		if (option_selected == RC_NO_OPTION_m13) {
 			if (options_only == TRUE_m13) {
-				G_error_message_m13("%s(): String \"%s\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_value_str, field_name);
+				G_warning_message_m13("%s(): String \"%s\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_value_str, field_name);
 				strcpy(field_value_str, "DEFAULT");
 				goto READ_RC_HANDLE_DEFAULT_m13;
 			}
@@ -33164,22 +33175,25 @@ READ_RC_HANDLE_DEFAULT_m13:
 				field_value_str[0] = 0;  // function default
 			break;
 		case RC_FLOAT_TYPE_m13:
-			if (option_selected == RC_NO_ENTRY_m13)
+			if (option_selected == RC_NO_ENTRY_m13) {
 				*float_val = 0.0;  // function default
-			else {
+			} else {
 				item = sscanf(field_value_str, "%lf", float_val);
-				if (item != 1 && option_selected == RC_NO_OPTION_m13)
-					G_error_message_m13("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, field_value_str, type_str, field_name);
+				if (item != 1 && option_selected == RC_NO_OPTION_m13) {
+					G_set_error_m13(E_UNSPECIFIED_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", field_value_str, type_str, field_name);
+			  		return_m13(RC_ERROR_m13);
+		  		}
 			}
 			break;
 		case RC_INTEGER_TYPE_m13:
-			if (option_selected == RC_NO_ENTRY_m13)
+			if (option_selected == RC_NO_ENTRY_m13) {
 				*int_val = 0;  // function default
-			else {
-				// I have no idea why, but the Visual Studio linker can't find sscanf_m13() - just this function
+			} else {
 				item = sscanf_m13(field_value_str, "%ld", int_val);
-				if (item != 1 && option_selected == RC_NO_OPTION_m13)
-					G_error_message_m13("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, field_value_str, type_str, field_name);
+				if (item != 1 && option_selected == RC_NO_OPTION_m13) {
+					G_set_error_m13(E_UNSPECIFIED_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", field_value_str, type_str, field_name);
+					return_m13(RC_ERROR_m13);
+				}
 			}
 			break;
 		case RC_TERNARY_TYPE_m13:
@@ -33190,11 +33204,13 @@ READ_RC_HANDLE_DEFAULT_m13:
 			if (option_selected == RC_NO_OPTION_m13) {  // user entered value
 				item = sscanf(field_value_str, "%hhd", TERN_val);
 				if (item != 1) {
-					G_error_message_m13("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, field_value_str, type_str, field_name);
-					break;
+					G_set_error_m13(E_UNSPECIFIED_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", field_value_str, type_str, field_name);
+					return_m13(RC_ERROR_m13);
 				}
-				if (*TERN_val < FALSE_m13 || *TERN_val > TRUE_m13)
-					G_error_message_m13("%s(): Invalid value for type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, type_str, field_name);
+				if (*TERN_val < FALSE_m13 || *TERN_val > TRUE_m13) {
+					G_set_error_m13(E_UNSPECIFIED_m13, "invalid value for type \"%s\" in field \"%s\" of rc file", type_str, field_name);
+					return_m13(RC_ERROR_m13);
+				}
 			} else {  // user entered option
 				if (strcmp(field_value_str, "YES") == 0 || strcmp(field_value_str, "TRUE") == 0) {
 					*TERN_val = TRUE_m13;
@@ -33241,8 +33257,8 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 	// All strings are presumed to be < RC_STRING_BYTES_m13 bytes
 
 	if (val == NULL) {
-		G_error_message_m13("%s(): NULL value pointer passed \"%s\" in rc file\n", __FUNCTION__);
-		return_m13(-1);
+		G_set_error_m13(E_UNSPECIFIED_m13, "NULL value pointer passed");
+		return_m13(RC_ERROR_m13);
 	}
 
 	// setup
@@ -33268,8 +33284,8 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 			va_end(arg_p);
 			break;
 		default:
-			G_error_message_m13("%s(): unrecognized type (%d) passed\n", __FUNCTION__, val_type);
-			return_m13(-1);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized type (%d) passed", val_type);
+			return_m13(RC_ERROR_m13);
 	}
 	// zero strings
 	*str_val = *type_str = *options_str = *default_value_str = 0;
@@ -33277,13 +33293,17 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 	// find requested field entry
 	c = *buffer;
 	sprintf_m13(temp_str, "%%%% FIELD: %s", field_name);
-	if ((field_title_ptr = STR_match_end_m13(temp_str, c)) == NULL)
-		G_error_message_m13("%s(): Could not match field label \"%s\" in rc file\n", __FUNCTION__, temp_str);
+	if ((field_title_ptr = STR_match_end_m13(temp_str, c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match field label \"%s\" in rc file", temp_str);
+		return_m13(RC_ERROR_m13);
+	}
 	
 	// get type
 	c = field_title_ptr;
-	if ((type_ptr = STR_match_end_m13("%% TYPE:", c)) == NULL)
-		G_error_message_m13("%s(): Could not match TYPE subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if ((type_ptr = STR_match_end_m13("%% TYPE:", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match TYPE subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	while (*type_ptr == (si1) 32)  // space
 		++type_ptr;
 	item = sscanf(type_ptr, "%[^\r\n]", type_str);
@@ -33292,20 +33312,23 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 		while (*--temp_si1_ptr == (si1) 32);
 		*++temp_si1_ptr = 0;
 	} else {
-		G_error_message_m13("%s(): No TYPE subfield specified in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+		G_set_error_m13(E_UNSPECIFIED_m13, "no TYPE subfield specified in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
 	}
 
 	type = 0;
-	if (strcmp(type_str, "string") == 0)
+	if (strcmp(type_str, "string") == 0) {
 		type = RC_STRING_TYPE_m13;
-	else if (strcmp(type_str, "float") == 0)
+	} else if (strcmp(type_str, "float") == 0) {
 		type = RC_FLOAT_TYPE_m13;
-	else if (strcmp(type_str, "integer") == 0)
+	} else if (strcmp(type_str, "integer") == 0) {
 		type = RC_INTEGER_TYPE_m13;
-	else if (strcmp(type_str, "ternary") == 0)
+	} else if (strcmp(type_str, "ternary") == 0) {
 		type = RC_TERNARY_TYPE_m13;
-	else
-	       G_error_message_m13("%s(): Could not match TYPE subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	} else {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match TYPE subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	
 	if (type != val_type) {
 		if (val_type == RC_UNKNOWN_TYPE_m13) {
@@ -33325,22 +33348,26 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 					break;
 			}
 		} else {
-			G_error_message_m13("%s(): field type (%d) != passed type (%d) in field \"%s\" of rc file\n", __FUNCTION__, type, val_type, field_name);
+			G_set_error_m13(E_UNSPECIFIED_m13, "field type (%d) != passed type (%d) in field \"%s\" of rc file", type, val_type, field_name);
+			return_m13(RC_ERROR_m13);
 		}
 	}
 
 	// get options pointer
 	c = type_ptr;
 	options_only = FALSE_m13;
-	if ((options_ptr = STR_match_end_m13("%% OPTIONS", c)) == NULL)
-		G_error_message_m13("%s(): Could not match OPTIONS subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if ((options_ptr = STR_match_end_m13("%% OPTIONS", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match OPTIONS subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	if (*options_ptr == ':') {
 		++options_ptr;
 	} else if (strncmp(options_ptr, " ONLY:", 6) == 0) {
 		options_ptr += 6;
 		options_only = TRUE_m13;
 	} else {
-		G_error_message_m13("%s(): Could not match OPTIONS subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match OPTIONS subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
 	}
 	while (*options_ptr == (si1) 32)  // space
 		++options_ptr;
@@ -33353,8 +33380,10 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 
 	// get default value pointer
 	c = options_ptr;
-	if ((default_value_ptr = STR_match_end_m13("%% DEFAULT:", c)) == NULL)
-		G_error_message_m13("%s(): Could not match DEFAULT subfield in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+	if ((default_value_ptr = STR_match_end_m13("%% DEFAULT:", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match DEFAULT subfield in field \"%s\" of rc file", field_name);
+		return_m13(RC_ERROR_m13);
+	}
 	while (*default_value_ptr == (si1) 32)  // space
 		++default_value_ptr;
 	
@@ -33367,8 +33396,10 @@ si4     RC_read_field_2_m13(si1 *field_name, si1 **buffer, TERN_m13 update_buffe
 
 	// get field value as string
 	c = default_value_ptr;
-	if ((field_value_ptr = STR_match_end_m13("%% VALUE:", c)) == NULL)
-		G_error_message_m13("%s(): Could not match value field label \"%s\" in rc file\n", __FUNCTION__, temp_str);
+	if ((field_value_ptr = STR_match_end_m13("%% VALUE:", c)) == NULL) {
+		G_set_error_m13(E_UNSPECIFIED_m13, "could not match value field label \"%s\" in rc file", temp_str);
+		return_m13(RC_ERROR_m13);
+	}
 	while (*field_value_ptr == (si1) 32)  // space
 		++field_value_ptr;
 	item = sscanf(field_value_ptr, "%[^\r\n]", str_val);
@@ -33386,10 +33417,12 @@ READ_RC_HANDLE_DEFAULT_m13:
 	
 	// VALUE field is "DEFAULT", and default may be "PROMPT"
 	if (strcmp(str_val, "DEFAULT") == 0) {
-		if (default_item)
+		if (default_item) {
 			strcpy(str_val, default_value_str);
-		else
-			G_error_message_m13("%s(): No DEFAULT value to enter in field \"%s\" of rc file\n", __FUNCTION__, field_name);
+		} else {
+			G_set_error_m13(E_UNSPECIFIED_m13, "no DEFAULT value to enter in field \"%s\" of rc file", field_name);
+			return_m13(RC_ERROR_m13);
+		}
 	}
 
 	// PROMPT (Note: user can enter "DEFAULT", "NO ENTRY", or any of the recognized OPTIONS here if desired)
@@ -33410,7 +33443,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 	option_selected = RC_NO_OPTION_m13;
 	if ((strcmp(str_val, "NO ENTRY") == 0)) {
 		if (options_only == TRUE_m13) {
-			G_error_message_m13("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
+			G_warning_message_m13("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
 			strcpy(str_val, "DEFAULT");
 			goto READ_RC_HANDLE_DEFAULT_m13;
 		} else
@@ -33441,7 +33474,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 		}
 		if (option_selected == RC_NO_OPTION_m13) {
 			if (options_only == TRUE_m13) {
-				G_error_message_m13("%s(): String \"%s\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, str_val, field_name);
+				G_warning_message_m13("%s(): string \"%s\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, str_val, field_name);
 				strcpy(str_val, "DEFAULT");
 				goto READ_RC_HANDLE_DEFAULT_m13;
 			}
@@ -33455,22 +33488,25 @@ READ_RC_HANDLE_DEFAULT_m13:
 				str_val[0] = 0;  // function default
 			break;
 		case RC_FLOAT_TYPE_m13:
-			if (option_selected == RC_NO_ENTRY_m13)
+			if (option_selected == RC_NO_ENTRY_m13) {
 				*float_val = 0.0;  // function default
-			else {
+			} else {
 				item = sscanf(str_val, "%lf", float_val);
-				if (item != 1 && option_selected == RC_NO_OPTION_m13)
-					G_error_message_m13("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, str_val, type_str, field_name);
+				if (item != 1 && option_selected == RC_NO_OPTION_m13) {
+					G_set_error_m13(E_UNSPECIFIED_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", str_val, type_str, field_name);
+					return_m13(RC_ERROR_m13);
+				}
 			}
 			break;
 		case RC_INTEGER_TYPE_m13:
-			if (option_selected == RC_NO_ENTRY_m13)
+			if (option_selected == RC_NO_ENTRY_m13) {
 				*int_val = 0;  // function default
-			else {
-				// I have no idea why, but the Visual Studio linker can't find sscanf_m13() - just this function
+			} else {
 				item = sscanf_m13(str_val, "%ld", int_val);
-				if (item != 1 && option_selected == RC_NO_OPTION_m13)
-					G_error_message_m13("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, str_val, type_str, field_name);
+				if (item != 1 && option_selected == RC_NO_OPTION_m13) {
+					G_set_error_m13(E_UNSPECIFIED_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", str_val, type_str, field_name);
+					return_m13(RC_ERROR_m13);
+				}
 			}
 			break;
 		case RC_TERNARY_TYPE_m13:
@@ -33481,11 +33517,13 @@ READ_RC_HANDLE_DEFAULT_m13:
 			if (option_selected == RC_NO_OPTION_m13) {  // user entered value
 				item = sscanf(str_val, "%hhd", tern_val);
 				if (item != 1) {
-					G_error_message_m13("%s(): Could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, str_val, type_str, field_name);
-					break;
+					G_set_error_m13(E_UNSPECIFIED_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", str_val, type_str, field_name);
+					return_m13(RC_ERROR_m13);
 				}
-				if (*tern_val < FALSE_m13 || *tern_val > TRUE_m13)
-					G_error_message_m13("%s(): Invalid value for type \"%s\" in field \"%s\" of rc file\n", __FUNCTION__, type_str, field_name);
+				if (*tern_val < FALSE_m13 || *tern_val > TRUE_m13) {
+					G_set_error_m13(E_UNSPECIFIED_m13, "invalid value for type \"%s\" in field \"%s\" of rc file", type_str, field_name);
+					return_m13(RC_ERROR_m13);
+				}
 			} else {  // user entered option
 				if (strcmp(str_val, "YES") == 0 || strcmp(str_val, "TRUE") == 0) {
 					*tern_val = TRUE_m13;
@@ -34075,7 +34113,7 @@ TERN_m13    STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len)
 	len = (c1 - string) + n_target_chars;
 	if (buffer_len != 0) {  // if zero, proceed at caller's peril
 		if (buffer_len < len) {
-			G_error_message_m13("%s(): string buffer too small\n", __FUNCTION__);
+			G_set_error_m13(E_UNSPECIFIED_m13, "string buffer too small");
 			return_m13(FALSE_m13);
 		}
 	}
@@ -34109,8 +34147,11 @@ si1	*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string)
 	G_push_function_m13();
 #endif
 
-	if (string == NULL)  // up to caller to free
+	if (string == NULL) {  // up to caller to free
 		string = (si1 *) calloc_m13((size_t)((num_bytes + 1) * 3), sizeof(si1));
+		if (string == NULL)
+			return_m13(NULL);
+	}
 	
 	s = string;
 	*s++ = '0';
@@ -34527,8 +34568,11 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, TERN_
 	// PASS NULL for level_header to use thread-local globals
 	
 	// if time_str is NULL, caller is responsible for freeing
-	if (time_str == NULL)
+	if (time_str == NULL) {
 		time_str = (si1 *) malloc_m13((size_t) TIME_STRING_BYTES_m13);
+		if (time_str == NULL)
+			return_m13(NULL);
+	}
 	
 	proc_globals = G_proc_globals_m13(level_header);
 	switch (uutc) {
@@ -34602,8 +34646,7 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, TERN_
 				sprintf_m13(time_str, "%s %s (UTC +%0.2lf)%s", time_str, proc_globals->daylight_timezone_acronym, UTC_offset_hours, color_reset);
 			else
 				sprintf_m13(time_str, "%s %s (UTC %0.2lf)%s", time_str, proc_globals->daylight_timezone_acronym, UTC_offset_hours, color_reset);
-		}
-		else {
+		} else {
 			if (offset == TRUE_m13)  // no UTC offset displayed
 				sprintf_m13(time_str, "%s %s%s", time_str, standard_timezone_acronym, color_reset);
 			else if (UTC_offset_hours >= 0.0)
@@ -34611,8 +34654,7 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, TERN_
 			else
 				sprintf_m13(time_str, "%s %s (UTC %0.2lf)%s", time_str, standard_timezone_acronym, UTC_offset_hours, color_reset);
 		}
-	}
-	else {
+	} else {
 		ti.tm_sec += ((microseconds + 5e5) / 1e6);  // round to nearest second
 		if (ti.tm_hour < 12) {
 			meridian = "AM";
@@ -35865,10 +35907,10 @@ TERN_m13	TR_show_message_m13(TR_HEADER_m13 *header)
 	
 	switch (type) {
 		case TR_TYPE_OPERATION_SUCCEEDED_m13:
-			G_message_m13("%s(): operation succeeded", __FUNCTION__);
+			G_message_m13("operation succeeded\n");
 			return_m13(TRUE_m13);
 		case TR_TYPE_OPERATION_FAILED_m13:
-			G_warning_message_m13("%s(): operation failed", __FUNCTION__);
+			G_warning_message_m13("operation failed\n", __FUNCTION__);
 			return_m13(TRUE_m13);
 		case TR_TYPE_OPERATION_SUCCEEDED_WITH_MESSAGE_m13:
 		case TR_TYPE_MESSAGE_m13:
@@ -37200,13 +37242,13 @@ TERN_m13	WN_socket_startup_m13(void)
 	wVersionRequested = MAKEWORD(2, 2);
 	err = WSAStartup(wVersionRequested, &wsaData);
 	if (err) {
-		G_error_message_m13("%s(): WSAStartup failed with error: %d\n", __FUNCTION__, err);
+		G_set_error_m13(E_UNSPECIFIED_m13, "WSAStartup() failed with error: %d", err);
 		return_m13(FALSE_m13);
 	}
 	
 	// Confirm that the WinSock DLL supports 2.2.
 	if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
-		G_error_message_m13("%s(): Could not find a usable version of Winsock.dll\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "Could not find a usable version of Winsock.dll");
 		WSACleanup();
 		return_m13(FALSE_m13);
 	}
@@ -37490,7 +37532,7 @@ void	*calloc_m13(size_t n_members, size_t el_size)
 	
 	
 	if (n_members == 0 || el_size == 0) {
-		G_error_message_m13("%s(): members or element size is zero\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "members or element size is zero");
 		return(NULL);
 	}
 	
@@ -37500,7 +37542,7 @@ void	*calloc_m13(size_t n_members, size_t el_size)
 	ptr = calloc(n_members, el_size);
 #endif
 	if (ptr == NULL) {
-		G_error_message_m13("%s(): allocation failed\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "allocation failed");
 		return(NULL);
 	}
 	
@@ -37536,7 +37578,7 @@ void	**calloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, TERN_m13 is_level
 	// if is_level_header == TRUE_m13, sets en_bloc_allocation in level header
 	
 	if (dim1 == 0 || dim2 == 0 || el_size == 0) {
-		G_error_message_m13("%s(): dimension 1, dimension 2, or element size is zero\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "dimension 1, dimension 2, or element size is zero");
 		return(NULL);
 	}
 	
@@ -37552,7 +37594,7 @@ void	**calloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, TERN_m13 is_level
 #endif
 	G_pop_behavior_m13();
 	if (ptr == NULL) {
-		G_error_message_m13("%s(): allocation failed\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "allocation failed");
 		return(NULL);
 	}
 	
@@ -37702,7 +37744,7 @@ FILE	*fopen_m13(si1 *path, si1 *mode)
 	if (fp == NULL) {
 		behavior = G_current_behavior_m13();
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			UTF8_fprintf_m13(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, path);
+			UTF8_fprintf_m13(stderr, "\n\t%s() failed to open file \"%s\"\n", __FUNCTION__, path);
 			err = errno_m13();
 			fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
@@ -37781,7 +37823,7 @@ size_t	fread_m13(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 	if ((nr = fread(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
 			err = errno_m13();
-			UTF8_fprintf_m13(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, path);
+			UTF8_fprintf_m13(stderr, "\n\t%s() failed to read file \"%s\"\n", __FUNCTION__, path);
 			fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
 				fprintf_m13(stderr, "\t=> returning number of items read\n\n");
@@ -38026,7 +38068,7 @@ si4	fseek_m13(FILE *stream, si8 offset, si4 whence)
 				position_str = "from file end";
 				break;
 		}
-		(void) fprintf_m13(stderr, "%c\n\t%s() failed to move the file pointer to requested location: %ld bytes %s\n", 7, offset, position_str);
+		(void) fprintf_m13(stderr, "\n\t%s() failed to move the file pointer to requested location: %ld bytes %s\n", __FUNCTION__, offset, position_str);
 		(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 		if (behavior & RETURN_ON_FAIL_m13)
 			(void) fprintf_m13(stderr, "\t=> returning -1\n\n");
@@ -38055,7 +38097,7 @@ si8	ftell_m13(FILE *stream)
 #if defined MACOS_m13 || defined LINUX_m13
 	if ((pos = ftell(stream)) == -1) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			(void) fprintf_m13(stderr, "%c\n\t%s() failed obtain the current location\n", 7);
+			(void) fprintf_m13(stderr, "\n\t%s() failed obtain the current location\n", __FUNCTION__);
 			err = errno_m13();
 			(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
@@ -38073,7 +38115,7 @@ si8	ftell_m13(FILE *stream)
 #ifdef WINDOWS_m13
 	if ((pos = _ftelli64(stream)) == -1) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			(void) fprintf_m13(stderr, "%c\n\t%s() failed obtain the current location\n", 7);
+			(void) fprintf_m13(stderr, "\n\t%s() failed obtain the current location\n", __FUNCTION__);
 			err = errno_m13();
 			(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
@@ -38105,7 +38147,7 @@ size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 	
 	if ((nw = fwrite(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			(void) UTF8_fprintf_m13(stderr, "%c\n\t%s() failed to write file \"%s\"\n", 7, path);
+			(void) UTF8_fprintf_m13(stderr, "\n\t%s() failed to write file \"%s\"\n", __FUNCTION__, path);
 			err = errno_m13();
 			(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
@@ -38131,7 +38173,7 @@ char	*getcwd_m13(char *buf, size_t size)
 {
 	
 #ifdef MATLAB_m13
-	G_error_message_m13("%s(): the current working directory is not defined for Matlab mex files => pass full path\n", __FUNCTION__);
+	G_set_error_m13(E_UNSPECIFIED_m13, "the current working directory is not defined for Matlab mex files => pass full path");
 	return(NULL);
 #endif
 
@@ -38154,7 +38196,7 @@ void	*malloc_m13(size_t n_bytes)
 	
 	
 	if (n_bytes == 0) {
-		G_error_message_m13("%s(): requested bytes is zero\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "requested bytes is zero");
 		return(NULL);
 	}
 	
@@ -38164,7 +38206,7 @@ void	*malloc_m13(size_t n_bytes)
 	ptr = malloc(n_bytes);
 #endif
 	if (ptr == NULL) {
-		G_error_message_m13("%s(): allocation failed\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "allocation failed");
 		return(NULL);
 	}
 	
@@ -38200,7 +38242,7 @@ void	**malloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, TERN_m13 is_level
 	// if is_level_header == TRUE_m13, sets en_bloc_allocation in level header
 
 	if (dim1 == 0 || dim2 == 0 || el_size == 0) {
-		G_error_message_m13("%s(): dimension 1, dimension 2, or element size is zero\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "dimension 1, dimension 2, or element size is zero");
 		return(NULL);
 	}
 	
@@ -38216,7 +38258,7 @@ void	**malloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, TERN_m13 is_level
 #endif
 	G_pop_behavior_m13();
 	if (ptr == NULL) {
-		G_error_message_m13("%s(): allocation failed\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "allocation failed");
 		return(NULL);
 	}
 
@@ -38323,7 +38365,7 @@ void	*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_member
 			return(ptr);
 		// case 16:  removed because some OSs silently implement sf16 as sf8, which would be quite bad with this usage
 		default:
-			G_error_message_m13("%s(): unsupported pattern length\n", __FUNCTION__);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unsupported pattern length (%ld)", pat_len);
 			return(NULL);
 	}
 }
@@ -38370,7 +38412,7 @@ TERN_m13	mlock_m13(void *addr, size_t len, TERN_m13 zero_data)
 		else
 			err_str = "unknown error";
 		#endif
-		fprintf_m13(stderr, "%c\n\t%s() failed to lock the requested array (%ld bytes)\n", 7, len);
+		fprintf_m13(stderr, "\n\t%s() failed to lock the requested array (%ld bytes)\n", __FUNCTION__, len);
 		fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, err_str);
 		if (behavior & RETURN_ON_FAIL_m13)
 			fprintf_m13(stderr, "\t=> returning FALSE\n\n");
@@ -38409,7 +38451,7 @@ TERN_m13	munlock_m13(void *addr, size_t len)
 	behavior = G_current_behavior_m13();
 	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
 		err = errno_m13();
-		fprintf_m13(stderr, "%c\n\t%s() failed to unlock the requested array (%ld bytes)\n", 7, len);
+		fprintf_m13(stderr, "\n\t%s() failed to unlock the requested array (%ld bytes)\n", __FUNCTION__, len);
 		fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 		if (behavior & RETURN_ON_FAIL_m13)
 			fprintf_m13(stderr, "\t=> returning FALSE\n\n");
@@ -38577,7 +38619,7 @@ void	*realloc_m13(void *curr_ptr, size_t n_bytes)
 	
 	
 	if (n_bytes == 0 || curr_ptr == NULL) {
-		G_error_message_m13("%s(): requested bytes is zero or current pointer is NULL\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "requested bytes is zero or current pointer is NULL");
 		return(NULL);
 	}
 	
@@ -38601,7 +38643,7 @@ void	*realloc_m13(void *curr_ptr, size_t n_bytes)
 	ptr = realloc(curr_ptr, n_bytes);
 #endif
 	if (ptr == NULL) {
-		G_error_message_m13("%s(): reallocation failed\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "reallocation failed");
 		return(NULL);
 	}
 	
@@ -38636,7 +38678,7 @@ void	**realloc_2D_m13(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t
 	// if is_level_header == TRUE_m13, sets en_bloc_allocation in level header
 
 	if (new_dim1 == 0 || new_dim2 == 0 || el_size == 0 || curr_ptr == NULL) {
-		G_error_message_m13("%s(): new dimension 1, new dimension 2, or element size is zero, or current pointer is NULL\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "new dimension 1, new dimension 2, or element size is zero, or current pointer is NULL");
 		return(NULL);
 	}
 
@@ -38671,7 +38713,7 @@ void	*recalloc_m13(void *curr_ptr, size_t curr_bytes, size_t new_bytes)
 	
 	
 	if (new_bytes == 0 || curr_ptr == NULL) {
-		G_error_message_m13("%s(): new bytes is zero, or current pointer is NULL\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "new bytes is zero, or current pointer is NULL");
 		return(NULL);
 	}
 		
@@ -38683,7 +38725,7 @@ void	*recalloc_m13(void *curr_ptr, size_t curr_bytes, size_t new_bytes)
 #endif
 	G_pop_behavior_m13();
 	if (ptr == NULL) {
-		G_error_message_m13("%s(): reallocation failed\n", __FUNCTION__);
+		G_set_error_m13(E_UNSPECIFIED_m13, "reallocation failed");
 		return(NULL);
 	}
 	
@@ -38977,7 +39019,7 @@ si4     system_m13(si1 *command, TERN_m13 null_std_streams, ui4 behavior)
 		}
 		err = errno_m13();
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			fprintf_m13(stderr, "%c\n%s() failed\n", 7);
+			fprintf_m13(stderr, "\n%s() failed\n", __FUNCTION__);
 			fprintf_m13(stderr, "\tcommand: \"%s\"\n", command);
 			fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			fprintf_m13(stderr, "\tshell return value %d\n", ret_val);
@@ -39278,7 +39320,7 @@ SYSTEM_PIPE_FAIL_m13:
 
 	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
 		err = (err < 0) ? -err : err;  // make error positive for strerror()
-		fprintf_m13(stderr, "%c\n%s() failed\n", 7);
+		fprintf_m13(stderr, "\n%s() failed\n", __FUNCTION__);
 		fprintf_m13(stderr, "\tcommand: \"%s\"\n", command);
 		fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 		if (tee_to_terminal == TRUE_m13)
@@ -39515,7 +39557,7 @@ SYSTEM_PIPE_FAIL_m13:
 
 	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
 		err = (err < 0) ? -err : err;  // make error positive for strerror()
-		fprintf_m13(stderr, "%c\n%s() failed\n", 7);
+		fprintf_m13(stderr, "\n%s() failed\n", __FUNCTION__);
 		fprintf_m13(stderr, "\tcommand: \"%s\"\n", command);
 		fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 		if (tee_to_terminal == TRUE_m13)
