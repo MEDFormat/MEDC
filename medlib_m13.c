@@ -15504,8 +15504,10 @@ si4	AES_get_sbox_value_m13(si4 num)
 
 TERN_m13	AES_initialize_tables_m13(void)
 {
+	size_t			len;
 	GLOBAL_TABLES_m13	*tables;
 
+	
 	tables = globals_m13->tables;
 	if (tables->AES_rcon_table != NULL)
 		return(TRUE_m13);
@@ -15528,7 +15530,10 @@ TERN_m13	AES_initialize_tables_m13(void)
 	}
 	{
 		si4 temp[AES_RCON_ENTRIES_m13] = AES_RCON_m13;
-		memcpy((void *) tables->AES_rcon_table, (void *) temp, AES_RCON_ENTRIES_m13 * sizeof(si4));
+		
+		len = (size_t) AES_RCON_ENTRIES_m13 * sizeof(si4);
+		memcpy((void *) tables->AES_rcon_table, (void *) temp, len);
+		mprotect_m13((void *) tables->AES_rcon_table, len, PROT_READ);  // set table memory to read only
 	}
 	
 	// rsbox table
@@ -15543,7 +15548,10 @@ TERN_m13	AES_initialize_tables_m13(void)
 	}
 	{
 		si4 temp[AES_RSBOX_ENTRIES_m13] = AES_RSBOX_m13;
-		memcpy((void *) tables->AES_rsbox_table, (void *) temp, AES_RSBOX_ENTRIES_m13 * sizeof(si4));
+		
+		len = (size_t) AES_RSBOX_ENTRIES_m13 * sizeof(si4);
+		memcpy((void *) tables->AES_rsbox_table, (void *) temp, len);
+		mprotect_m13((void *) tables->AES_rsbox_table, len, PROT_READ);  // set table memory to read only
 	}
 
 	// sbox table
@@ -15558,7 +15566,10 @@ TERN_m13	AES_initialize_tables_m13(void)
 	}
 	{
 		si4 temp[AES_SBOX_ENTRIES_m13] = AES_SBOX_m13;
-		memcpy((void *) tables->AES_sbox_table, (void *) temp, AES_SBOX_ENTRIES_m13 * sizeof(si4));
+		
+		len = (size_t) AES_SBOX_ENTRIES_m13 * sizeof(si4);
+		memcpy((void *) tables->AES_sbox_table, (void *) temp, len);
+		mprotect_m13((void *) tables->AES_sbox_table, len, PROT_READ);  // set table memory to read only
 	}
 
 	PROC_pthread_mutex_unlock_m13(&tables->AES_mutex);
@@ -19325,9 +19336,8 @@ TERN_m13	CMP_initialize_parameters_m13(CMP_PARAMETERS_m13 *parameters)
 
 TERN_m13	CMP_initialize_tables_m13(void)
 {
-	sf8					*cdf_table;
-	CMP_VDS_THRESHOLD_MAP_ENTRY_m13		*threshold_map;
-	GLOBAL_TABLES_m13			*tables;
+	size_t			len;
+	GLOBAL_TABLES_m13	*tables;
 	
 
 	tables = globals_m13->tables;
@@ -19341,34 +19351,38 @@ TERN_m13	CMP_initialize_tables_m13(void)
 	}
 
 	#ifdef MATLAB_PERSISTENT_m13
-	cdf_table = (sf8 *) mxCalloc((mwSize) CMP_NORMAL_CDF_TABLE_ENTRIES_m13, (mwSize) sizeof(sf8));
+	tables->CMP_normal_CDF_table = (sf8 *) mxCalloc((mwSize) CMP_NORMAL_CDF_TABLE_ENTRIES_m13, (mwSize) sizeof(sf8));
 	#else
-	cdf_table = (sf8 *) calloc((size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13, sizeof(sf8));
+	tables->CMP_normal_CDF_table = (sf8 *) calloc((size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13, sizeof(sf8));
 	#endif
-	if (cdf_table == NULL) {
+	if (tables->CMP_normal_CDF_table == NULL) {
 		PROC_pthread_mutex_unlock_m13(&tables->CMP_mutex);
 		return(FALSE_m13);
 	}
 	{
 		sf8 temp[CMP_NORMAL_CDF_TABLE_ENTRIES_m13] = CMP_NORMAL_CDF_TABLE_m13;
-		memcpy(cdf_table, temp, CMP_NORMAL_CDF_TABLE_ENTRIES_m13 * sizeof(sf8));
+		
+		len = (size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13 * sizeof(sf8);
+		memcpy(tables->CMP_normal_CDF_table, temp, len);
+		mprotect_m13((void *) tables->CMP_normal_CDF_table, len, PROT_READ);  // set table memory to read only
 	}
-	tables->CMP_normal_CDF_table = cdf_table;
 	
 	#ifdef MATLAB_PERSISTENT_m13
-	threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) mxCalloc((mwSize) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13, (mwSize) sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
+	tables->CMP_VDS_threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) mxCalloc((mwSize) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13, (mwSize) sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
 	#else
-	threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) calloc((size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13, sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
+	tables->CMP_VDS_threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) calloc((size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13, sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
 	#endif
-	if (threshold_map == NULL) {
+	if (tables->CMP_VDS_threshold_map == NULL) {
 		PROC_pthread_mutex_unlock_m13(&tables->CMP_mutex);
 		return(FALSE_m13);
 	}
 	{
-		CMP_VDS_THRESHOLD_MAP_ENTRY_m13 temp[CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13] = CMP_VDS_THRESHOLD_MAP_TABLE_m13;
-		memcpy(threshold_map, temp, CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 * sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
+		CMP_VDS_THRESHOLD_MAP_ENTRY_m13	temp[CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13] = CMP_VDS_THRESHOLD_MAP_TABLE_m13;
+
+		len = (size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 * sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13);
+		memcpy(tables->CMP_VDS_threshold_map, temp, len);
+		mprotect_m13((void *) tables->CMP_VDS_threshold_map, len, PROT_READ);  // set table memory to read only
 	}
-	tables->CMP_VDS_threshold_map = threshold_map;
 		
 	PROC_pthread_mutex_unlock_m13(&tables->CMP_mutex);
 
@@ -24291,30 +24305,32 @@ ui4     CRC_combine_m13(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes)
 
 TERN_m13	CRC_initialize_tables_m13(void)
 {
-	ui4	**crc_table, c, n, k;
-	si8	dim1_bytes, dim2_bytes, content_bytes, total_bytes;
+	ui4			**crc_table, c, n, k;
+	size_t			len, dim1_bytes, dim2_bytes, content_bytes;
+	GLOBAL_TABLES_m13	*tables;
+	
 
-
-	if (globals_m13->tables->CRC_table != NULL)
+	tables = globals_m13->tables;
+	if (tables->CRC_table != NULL)
 		return(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->CRC_mutex);
-	if (globals_m13->tables->CRC_table != NULL) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->CRC_mutex);
+	PROC_pthread_mutex_lock_m13(&tables->CRC_mutex);
+	if (tables->CRC_table != NULL) {  // may have been done by another thread while waiting
+		PROC_pthread_mutex_unlock_m13(&tables->CRC_mutex);
 		return(TRUE_m13);
 	}
 
-	if (globals_m13->tables->CRC_table == NULL) {
+	if (tables->CRC_table == NULL) {
 		
 		// allocate (2D but not AT)
 		dim1_bytes = CRC_TABLES_m13 * sizeof(ui4 *) ;
 		dim2_bytes = CRC_TABLE_ENTRIES_m13 * sizeof(ui4);
 		content_bytes = CRC_TABLES_m13 * dim2_bytes;
-		total_bytes = dim1_bytes + content_bytes;
+		len = dim1_bytes + content_bytes;
 	#ifdef MATLAB_PERSISTENT_m13
-		crc_table = (ui4 **) mxCalloc((mwSize) total_bytes, (mwSize) sizeof(ui1));
+		crc_table = (ui4 **) mxCalloc((mwSize) len, (mwSize) sizeof(ui1));
 	#else
-		crc_table = (ui4 **) calloc((size_t) total_bytes, sizeof(ui1));
+		crc_table = (ui4 **) calloc(len, sizeof(ui1));
 	#endif
 		crc_table[0] = (ui4 *) (crc_table + CRC_TABLES_m13);
 		for (k = 1; k < CRC_TABLES_m13; ++k)
@@ -24338,10 +24354,11 @@ TERN_m13	CRC_initialize_tables_m13(void)
 			}
 		}
 		
-		globals_m13->tables->CRC_table = crc_table;
+		mprotect_m13((void *) crc_table, len, PROT_READ);  // set table memory to read only
+		tables->CRC_table = crc_table;
 	}
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->CRC_mutex);
+	PROC_pthread_mutex_unlock_m13(&tables->CRC_mutex);
 
 	return(TRUE_m13);
 }
@@ -33655,7 +33672,9 @@ void	SHA_initialize_m13(SHA_CTX_m13 *ctx)
 
 TERN_m13	SHA_initialize_tables_m13(void)
 {
+	size_t			len;
 	GLOBAL_TABLES_m13	*tables;
+	
 	
 	tables = globals_m13->tables;
 	if (tables->SHA_h0_table != NULL)
@@ -33678,8 +33697,11 @@ TERN_m13	SHA_initialize_tables_m13(void)
 		return(FALSE_m13);
 	}
 	{
-		ui4 temp[SHA_H0_ENTRIES_m13] = SHA_H0_m13;
-		memcpy((void *) tables->SHA_h0_table, (void *) temp, SHA_H0_ENTRIES_m13 * sizeof(ui4));
+		ui4	temp[SHA_H0_ENTRIES_m13] = SHA_H0_m13;
+		
+		len = (size_t) SHA_H0_ENTRIES_m13 * sizeof(ui4);
+		memcpy((void *) tables->SHA_h0_table, (void *) temp, len);
+		mprotect_m13((void *) tables->SHA_h0_table, len, PROT_READ);  // set table memory to read only
 	}
 
 	// k table
@@ -33694,7 +33716,10 @@ TERN_m13	SHA_initialize_tables_m13(void)
 	}
 	{
 		ui4 temp[SHA_K_ENTRIES_m13] = SHA_K_m13;
-		memcpy((void *) tables->SHA_k_table, (void *) temp, SHA_K_ENTRIES_m13 * sizeof(ui4));
+		
+		len = (size_t) SHA_K_ENTRIES_m13 * sizeof(ui4);
+		memcpy((void *) tables->SHA_k_table, (void *) temp, len);
+		mprotect_m13((void *) tables->SHA_k_table, len, PROT_READ);  // set table memory to read only
 	}
 
 	PROC_pthread_mutex_unlock_m13(&tables->SHA_mutex);
@@ -36288,42 +36313,53 @@ void	UTF8_inc_m13(si1 *s, si4 *i)
 
 TERN_m13	UTF8_initialize_tables_m13(void)
 {
-	if (globals_m13->tables->UTF8_offsets_table != NULL)
-		return(TRUE_m13);
+	size_t			len;
+	GLOBAL_TABLES_m13	*tables;
+	
+	
+	tables = globals_m13->tables;
+	if (tables->UTF8_offsets_table != NULL)
+		return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->UTF8_mutex);
-	if (globals_m13->tables->UTF8_offsets_table != NULL) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->UTF8_mutex);
+	PROC_pthread_mutex_lock_m13(&tables->UTF8_mutex);
+	if (tables->UTF8_offsets_table != NULL) {  // may have been done by another thread while waiting
+		PROC_pthread_mutex_unlock_m13(&tables->UTF8_mutex);
 		return(TRUE_m13);
 	}
 
 	// offsets table
-	if (globals_m13->tables->UTF8_offsets_table == NULL) {
+	if (tables->UTF8_offsets_table == NULL) {
+		len = (size_t) UTF8_OFFSETS_TABLE_ENTRIES_m13 << 2;
 	#ifdef MATLAB_PERSISTENT_m13
-		globals_m13->tables->UTF8_offsets_table = (ui4 *) mxMalloc((mwSize) (UTF8_OFFSETS_TABLE_ENTRIES_m13 << 2));
+		tables->UTF8_offsets_table = (ui4 *) mxMalloc((mwSize) len);
 	#else
-		globals_m13->tables->UTF8_offsets_table = (ui4 *) malloc((size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m13 << 2));
+		tables->UTF8_offsets_table = (ui4 *) malloc(len);
 	#endif
 		{
-			ui4 temp[UTF8_OFFSETS_TABLE_ENTRIES_m13] = UTF8_OFFSETS_TABLE_m13;
-			memcpy((void *) globals_m13->tables->UTF8_offsets_table, (void *) temp, (size_t) (UTF8_OFFSETS_TABLE_ENTRIES_m13 << 2));
+			ui4	temp[UTF8_OFFSETS_TABLE_ENTRIES_m13] = UTF8_OFFSETS_TABLE_m13;
+
+			memcpy((void *) tables->UTF8_offsets_table, (void *) temp, len);
+			mprotect_m13((void *) tables->UTF8_offsets_table, len, PROT_READ);  // set table memory to read only
 		}
 	}
 
 	// trailing bytes table
 	if (globals_m13->tables->UTF8_trailing_bytes_table == NULL) {
+		len = (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13;
 #ifdef MATLAB_PERSISTENT_m13
-		globals_m13->tables->UTF8_trailing_bytes_table = (si1 *) mxMalloc((mwSize) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13);
+		tables->UTF8_trailing_bytes_table = (si1 *) mxMalloc((mwSize) len);
 #else
-		globals_m13->tables->UTF8_trailing_bytes_table = (si1 *) malloc((size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13);
+		tables->UTF8_trailing_bytes_table = (si1 *) malloc(len);
 #endif
 		{
 			si1 temp[UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13] = UTF8_TRAILING_BYTES_TABLE_m13;
-			memcpy((void *) globals_m13->tables->UTF8_trailing_bytes_table, (void *) temp, (size_t) UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13);
+			
+			memcpy((void *) tables->UTF8_trailing_bytes_table, (void *) temp, len);
+			mprotect_m13((void *) tables->UTF8_trailing_bytes_table, len, PROT_READ);  // set table memory to read only
 		}
 	}
 
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->UTF8_mutex);
+	PROC_pthread_mutex_unlock_m13(&tables->UTF8_mutex);
 
 	return(TRUE_m13);
 }
@@ -38478,6 +38514,8 @@ si4	mprotect_m13(void *address, size_t len, si4 protection)
 	// PROT_READ: allow block to be read
 	// PROT_WRITE: allow block to be written
 	// PROT_EXEC: allow block to be executed
+	// The passed protection mode can be ored: e.g read/write access == (PROT_READ | PROT_WRITE)
+	// This function will replace the existing protection on the block with the passed value; it will or the passed value with the existing value
 	
 	// returns zero on success or:
 	// EACCES: requested protection conflicts with the access permissions of the process on the specified address range
