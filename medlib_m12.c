@@ -15708,7 +15708,6 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
 //******************************************//
 
 
-#ifdef AT_DEBUG_m12
 void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function)
 {
 	ui8		actual_bytes;
@@ -16141,7 +16140,6 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, size_t reque
 
 	return(TRUE_m12);
 }
-#endif // AT_DEBUG_m12
 
 
 
