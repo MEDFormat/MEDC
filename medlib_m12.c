@@ -15868,7 +15868,7 @@ void	AT_free_all_m12(void)
 		#ifdef MATLAB_m12
 		mexPrintf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
 		#else
-		printf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
+		printf_m12("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
 		#endif
 	}
 
@@ -36305,7 +36305,7 @@ void WN_clear_m12(void)
 	
 	// Scroll it upwards off the top of the buffer with a magnitude of the entire height.
 	scrollTarget.X = 0;
-	scrollTarget.Y = (SHORT)(0 - csbi.dwSize.Y);
+	scrollTarget.Y = (SHORT) (0 - csbi.dwSize.Y);
 	
 	// Fill with empty spaces with the buffer's default text attribute.
 	fill.Char.UnicodeChar = TEXT(' ');

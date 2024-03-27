@@ -1457,7 +1457,6 @@ typedef struct {  // fields from ipinfo.io
 	sf8			longitude;
 } LOCATION_INFO_m12;
 
-#ifdef AT_DEBUG_m12
 typedef struct {
 	void 		*address;
 	ui8		requested_bytes;
@@ -1465,7 +1464,6 @@ typedef struct {
 	const si1	*alloc_function;
 	const si1	*free_function;
 } AT_NODE;
-#endif
 
 typedef struct {
 	// Identifier
@@ -1539,13 +1537,13 @@ typedef struct {
 	TERN_m12			transmission_header_aligned;
 	// CRC
 	ui4                             CRC_mode;
-#ifdef AT_DEBUG_m12
+
 	// allocation tracking (AT)
 	AT_NODE				*AT_nodes;
 	si8				AT_node_count;  // total allocated nodes
 	si8				AT_used_node_count;  // nodes in use
 	pthread_mutex_t_m12		AT_mutex;
-#endif
+
 	// Errors
 	si4				err_code;
 	const si1			*err_func;
