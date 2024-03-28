@@ -218,6 +218,7 @@ typedef long double	sf16;
 typedef si1				TERN_m13;
 #define TRUE_m13			1
 #define UNKNOWN_m13			0
+#define NOT_SET_m13			UNKNOWN_m13
 #define FALSE_m13			-1
 
 // Reserved si4 Sample Values

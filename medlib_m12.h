@@ -2328,6 +2328,7 @@ TIME_SLICE_m12	*G_initialize_time_slice_m12(TIME_SLICE_m12 *slice);
 TERN_m12	G_initialize_timezone_tables_m12(void);
 void		G_initialize_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, ui4 type_code, TERN_m12 generate_file_UID, TERN_m12 originating_file);
 si8		G_items_for_bytes_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 *number_of_bytes);
+ui4		G_level_from_base_name_m12(si1 *path, si1 *level_path);
 void		G_lh_set_directives_m12(si1 *full_file_name, ui8 lh_flags, TERN_m12 *mmap_flag, TERN_m12 *close_flag, si8 *number_of_items);
 si1		*G_MED_type_string_from_code_m12(ui4 code);
 ui4             G_MED_type_code_from_string_m12(si1 *string);

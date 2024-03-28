@@ -6754,7 +6754,10 @@ TERN_m13	G_is_level_header_m13(void *ptr)
 	LEVEL_HEADER_m13	*level_header;
 	sig_handler_t_m13	current_handler;
 
-		
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
 	// returns FALSE_m13 if NULL or level_header->type_code not set
 	
 	if (ptr == NULL)
@@ -6835,6 +6838,91 @@ si8	G_items_for_bytes_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_bytes)
 	*number_of_bytes = bytes;
 	
 	return_m13(items);
+}
+
+
+ui4	G_level_from_base_name_m13(si1 *path, si1 *level_path)
+{
+	si1		tmp_path[FULL_FILE_NAME_BYTES_m13], tmp_path2[FULL_FILE_NAME_BYTES_m13];
+	ui4		level;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// useful to allow users to pass just base names into apps
+	
+	// returns level type code, or NO_TYPE_CODE_m12 if can't find match
+	
+	// assumes level_path has adequate space for new path
+	// if level_path == NULL : return type code on level_path, does not modify path
+	// if level_path == path : return type code on level_path, does modify path
+	// if level_path != path && level_path != NULL : return type code on level_path, return modified path in level_path, path unmodified
+	
+	if (path == NULL)
+		return(NO_TYPE_CODE_m13);
+	
+	// don't handle regex strings
+	if (STR_contains_regex_m13(path) == TRUE_m13)
+		return(NO_TYPE_CODE_m13);
+	
+	// get path from root
+	G_path_from_root_m13(path, tmp_path);
+	
+	// see if it already has a level
+	level = G_get_level_m13(tmp_path, NULL);
+	if (level != NO_TYPE_CODE_m13) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path);
+		return(level);
+	}
+	
+	// try session level
+	sprintf_m13(tmp_path2, "%s.%s", tmp_path, SESSION_DIRECTORY_TYPE_STRING_m13);
+	if (G_file_exists_m13(tmp_path2) == DIR_EXISTS_m13) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_SESSION_m13);
+	}
+	
+	// try time series channel level
+	sprintf_m13(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13);
+	if (G_file_exists_m13(tmp_path2) == DIR_EXISTS_m13) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_TIME_SERIES_CHANNEL_m13);
+	}
+
+	// try video channel level
+	sprintf_m13(tmp_path2, "%s.%s", tmp_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13);
+	if (G_file_exists_m13(tmp_path2) == DIR_EXISTS_m13) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_VIDEO_CHANNEL_m13);
+	}
+
+	// try time series segment level
+	sprintf_m13(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13);
+	if (G_file_exists_m13(tmp_path2) == DIR_EXISTS_m13) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_TIME_SERIES_SEGMENT_m13);
+	}
+
+	// try video segment level
+	sprintf_m13(tmp_path2, "%s.%s", tmp_path, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13);
+	if (G_file_exists_m13(tmp_path2) == DIR_EXISTS_m13) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_VIDEO_SEGMENT_m13);
+	}
+	
+	// doesn't exist
+	if (level_path != NULL)
+		if (level_path != path)
+			*level_path = 0;
+
+	return(NO_TYPE_CODE_m13);
 }
 
 
@@ -36958,7 +37046,7 @@ TERN_m13	WN_clear_m13(void)
 	
 	// Scroll it upwards off the top of the buffer with a magnitude of the entire height.
 	scrollTarget.X = 0;
-	scrollTarget.Y = (SHORT)(0 - csbi.dwSize.Y);
+	scrollTarget.Y = (SHORT) (0 - csbi.dwSize.Y);
 	
 	// Fill with empty spaces with the buffer's default text attribute.
 	fill.Char.UnicodeChar = TEXT(' ');
@@ -37042,10 +37130,10 @@ TERN_m13	WN_initialize_terminal_m13(void)
 	dwRequestedOutModes = ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
 
 	dwOutMode = dwOriginalOutMode | dwRequestedOutModes;
-	if (!SetConsoleMode(hOut, dwOutMode)) {  // failed to set both modes, try to step down mode gracefully.
+	if (!SetConsoleMode(hOut, dwOutMode)) {  // failed to set both modes, try to step down mode gracefully
 	    dwRequestedOutModes = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
 	    dwOutMode = dwOriginalOutMode | dwRequestedOutModes;
-	    if (!SetConsoleMode(hOut, dwOutMode))  // Failed to set any VT mode, can't do anything here.
+	    if (!SetConsoleMode(hOut, dwOutMode))  // failed to set any VT mode, can't do anything here
 		    return_m13(FALSE_m13);
 	}
 #endif
@@ -37911,7 +37999,7 @@ void    free_2D_m13(void **ptr, size_t dim1)
 	void	*base_address;
 	
 		
-	// dim1 == 0 indicates allocated en block per caller (caller could just use free_m13() in this case, as here)
+	// dim1 == 0 indicates allocated en bloc per caller (caller could just use free_m13() in this case, as here)
 	if (dim1 == 0) {
 		#ifdef AT_DEBUG_m13
 		AT_free_m13(function, (void *) ptr);
@@ -37921,7 +38009,7 @@ void    free_2D_m13(void **ptr, size_t dim1)
 		return;
 	}
 		
-	// allocated en block  (check all addresses because pointers may have been sorted)
+	// allocated en bloc  (check all addresses because pointers may have been sorted)
 	base_address = (void *) ((ui1 *) ptr + (dim1 * sizeof(void *)));
 	for (i = 0; i < dim1; ++i) {
 		if (ptr[i] == base_address) {
@@ -38133,8 +38221,8 @@ si8	ftell_m13(FILE *stream)
 #if defined MACOS_m13 || defined LINUX_m13
 	if ((pos = ftell(stream)) == -1) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			(void) fprintf_m13(stderr, "\n\t%s() failed obtain the current location\n", __FUNCTION__);
 			err = errno_m13();
+			(void) fprintf_m13(stderr, "\n\t%s() failed obtain the current location\n", __FUNCTION__);
 			(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
 				(void)fprintf_m13(stderr, "\t=> returning -1\n\n");
@@ -38151,8 +38239,8 @@ si8	ftell_m13(FILE *stream)
 #ifdef WINDOWS_m13
 	if ((pos = _ftelli64(stream)) == -1) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			(void) fprintf_m13(stderr, "\n\t%s() failed obtain the current location\n", __FUNCTION__);
 			err = errno_m13();
+			(void) fprintf_m13(stderr, "\n\t%s() failed obtain the current location\n", __FUNCTION__);
 			(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
 				(void) fprintf_m13(stderr, "\t=> returning -1\n\n");
@@ -38183,8 +38271,8 @@ size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 	
 	if ((nw = fwrite(ptr, el_size, n_members, stream)) != n_members) {
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-			(void) UTF8_fprintf_m13(stderr, "\n\t%s() failed to write file \"%s\"\n", __FUNCTION__, path);
 			err = errno_m13();
+			(void) UTF8_fprintf_m13(stderr, "\n\t%s() failed to write file \"%s\"\n", __FUNCTION__, path);
 			(void) fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			if (behavior & RETURN_ON_FAIL_m13)
 				(void) fprintf_m13(stderr, "\t=> returning number of items written\n\n");

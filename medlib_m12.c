@@ -472,6 +472,7 @@ void	G_apply_recording_time_offset_m12(si8 *time)
 }
 
 
+
 si1	*G_behavior_string_m12(ui4 behavior, si1 *behavior_string)
 {
 	si8	len;
@@ -5103,7 +5104,7 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 #endif
 	
 	code = G_MED_type_code_from_string_m12(full_file_name);
-	if (input_type_code != NULL)
+	if (input_type_code != NULL)  // e.g. file type - function returns level
 		*input_type_code = code;
 	
 	// Note: if code == RECORD_DIRECTORY_TYPE_CODE_m12, this is session level, but from segmented session records; return this code so caller knows it was not global session records
@@ -6480,6 +6481,90 @@ si8	G_items_for_bytes_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 *number_of_bytes)
 	*number_of_bytes = bytes;
 	
 	return(items);
+}
+
+
+ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
+{
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m12], tmp_path2[FULL_FILE_NAME_BYTES_m12];
+	ui4	level;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns level type code, or NO_TYPE_CODE_m12 on error
+	
+	// assumes level_path has adequate space for new path
+	
+	// if level_path == NULL : return type code on level_path, do not modify path
+	// if level_path == path : return type code on level_path, do modify path
+	// if level_path != path && level_path != NULL : return type code on level_path, return modified path in level_path, leaving path unmodified
+	
+	if (path == NULL)
+		return(NO_TYPE_CODE_m12);
+	
+	// don't handle regex strings
+	if (STR_contains_regex_m12(path) == TRUE_m12)
+		return(NO_TYPE_CODE_m12);
+	
+	// get path from root
+	G_path_from_root_m12(path, tmp_path);
+	
+	// see if it already has a level
+	level = G_get_level_m12(tmp_path, NULL);
+	if (level != NO_TYPE_CODE_m12) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path);
+		return(level);
+	}
+	
+	// try session level
+	sprintf_m12(tmp_path2, "%s.%s", tmp_path, SESSION_DIRECTORY_TYPE_STRING_m12);
+	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_SESSION_m12);
+	}
+	
+	// try time series channel level
+	sprintf_m12(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12);
+	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_TIME_SERIES_CHANNEL_m12);
+	}
+
+	// try video channel level
+	sprintf_m12(tmp_path2, "%s.%s", tmp_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12);
+	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_VIDEO_CHANNEL_m12);
+	}
+
+	// try time series segment level
+	sprintf_m12(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
+	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_TIME_SERIES_SEGMENT_m12);
+	}
+
+	// try video segment level
+	sprintf_m12(tmp_path2, "%s.%s", tmp_path, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
+	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+		if (level_path != NULL)
+			strcpy(level_path, tmp_path2);
+		return(LH_VIDEO_SEGMENT_m12);
+	}
+	
+	// doesn't exist
+	if (level_path != NULL)
+		if (level_path != path)
+			*level_path = 0;
+
+	return(NO_TYPE_CODE_m12);
 }
 
 
@@ -15814,8 +15899,8 @@ ui8	AT_alloc_size_m12(void *address)
 #endif
 	
 #ifndef AT_DEBUG_m12
-	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
-	return;
+	G_warning_message_m12("%s(): the allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n", __FUNCTION__);
+	return(0);
 #endif
 
 	if (address == NULL) {
@@ -15855,7 +15940,7 @@ void	AT_free_all_m12(void)
 #endif
 	
 #ifndef AT_DEBUG_m12
-	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	G_warning_message_m12("%s(): the allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n", __FUNCTION__);
 	return;
 #endif
 
@@ -15903,7 +15988,7 @@ TERN_m12	AT_freeable_m12(void *address)
 #endif
 	
 #ifndef AT_DEBUG_m12
-	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	G_warning_message_m12("%s(): the allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n", __FUNCTION__);
 	return(UNKNOWN_m12);
 #endif
 
@@ -15974,7 +16059,7 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	
 #ifndef AT_DEBUG_m12
 	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
-	return;
+	return(FALSE_m12);
 #endif
 
 	// Note this function does not free the accociated memory, just removes it from AT list
@@ -16029,7 +16114,7 @@ void	AT_show_entries_m12(ui4	entry_type)
 #endif
 	
 #ifndef AT_DEBUG_m12
-	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	G_warning_message_m12("%s(): the allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12\n", __FUNCTION__);
 	return;
 #endif
 	AT_mutex_on();
@@ -16077,7 +16162,7 @@ void	AT_show_entry_m12(void *address)
 #endif
 
 #ifndef AT_DEBUG_m12
-	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	G_warning_message_m12("%s(): the allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n", __FUNCTION__);
 	return;
 #endif
 
@@ -16122,7 +16207,7 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, size_t reque
 	
 #ifndef AT_DEBUG_m12
 	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
-	return;
+	return(FALSE_m12);
 #endif
 
 	if (orig_address == NULL) {
