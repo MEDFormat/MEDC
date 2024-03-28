@@ -15718,6 +15718,11 @@ void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
+	
 	if (address == NULL) {
 		G_warning_message_m12("%s(): attempting to add NULL object, called from function %s()\n", __FUNCTION__, function);
 		return;
@@ -15808,6 +15813,11 @@ ui8	AT_alloc_size_m12(void *address)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
+
 	if (address == NULL) {
 		G_warning_message_m12("%s(): attempting find a NULL object\n", __FUNCTION__);
 		return(0);
@@ -15843,7 +15853,12 @@ void	AT_free_all_m12(void)
 	printf("%s()\n", __FUNCTION__);
 	#endif
 #endif
-		
+	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
+
 	AT_mutex_on();
 
 	atn = globals_m12->AT_nodes;
@@ -15887,6 +15902,11 @@ TERN_m12	AT_freeable_m12(void *address)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return(UNKNOWN_m12);
+#endif
+
 	// silent function - just to tell whether an address is in the AT list
 	
 	if (address == NULL)
@@ -15952,7 +15972,11 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
+
 	// Note this function does not free the accociated memory, just removes it from AT list
 	
 	if (address == NULL) {
@@ -16004,6 +16028,10 @@ void	AT_show_entries_m12(ui4	entry_type)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
 	AT_mutex_on();
 	
 	atn = globals_m12->AT_nodes;
@@ -16047,7 +16075,12 @@ void	AT_show_entry_m12(void *address)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
+
 	if (address == NULL) {
 		#ifdef AT_DEBUG_m12
 		G_warning_message_m12("%s(): attempting to show a NULL object\n", __FUNCTION__);
@@ -16087,6 +16120,11 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, size_t reque
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+#ifndef AT_DEBUG_m12
+	G_warning_message_m12("The allocation tracking (AT) system was not initialized: compile with AT_DEBUG_m12.\n%s() called from %s()\n", __FUNCTION__, function);
+	return;
+#endif
+
 	if (orig_address == NULL) {
 		if (new_address != NULL) {
 			AT_add_entry_m12(new_address, requested_bytes, function);
