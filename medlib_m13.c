@@ -2707,7 +2707,7 @@ TERN_m13	G_enter_ascii_password_m13(si1 *password, si1 *prompt, TERN_m13 confirm
 	tcgetattr(STDIN_FILENO, &term);
 	saved_term = term;
 	
-	// set the approriate bit in the termios struct (displays "key" character)
+	// unset the echo bit in the termios struct (displays "key" character)
 	term.c_lflag &= ~(ECHO);
 	
 	// set the new bits
@@ -4927,6 +4927,20 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		if (ret_val < 0)
 			return_m13(NULL);
 				
+		// system_pipe_m13() does not distinguish between stderr & stdout
+		// this is a bad solution, but it'll have to do for now
+		#ifdef LINUX_m13
+		c = STR_match_end_m13("No such", buffer);  // "No such file or directory"
+		#endif
+		#ifdef MACOS_m13
+		c = STR_match_end_m13("no matches", buffer);  // "no matches found"
+		#endif
+		if (c != NULL) {
+			*n_out_files = 0;
+			free_m13((void *) buffer);
+			return(NULL);
+		}
+				
 		// count expanded file list
 		c = buffer;
 		*n_out_files = 0;
@@ -4934,8 +4948,10 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			if (*c == '\n')
 				++(*n_out_files);
 		}
-		if (*n_out_files == 0)
+		if (*n_out_files == 0) {
+			free_m13((void *) buffer);
 			return_m13(NULL);
+		}
 	#endif  // MACOS_m13 || LINUX_m13
 		
 	#ifdef WINDOWS_m13
@@ -4962,7 +4978,7 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 				++c;
 			++c;
 		}
-		free((void *) buffer);
+		free_m13((void *) buffer);
 	}
 
 GFL_CONDITION_RETURN_DATA_m13:

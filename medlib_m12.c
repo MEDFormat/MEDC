@@ -1226,12 +1226,12 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 CHANGE_REF_MATCH_m12:
 	globals_m12->reference_channel = channel;
 	strcpy(globals_m12->reference_channel_name, channel->name);
-	
+
 	// reset session Sgmt records
 	if (sess->Sgmt_records != NULL)
 		free_m12((void *) sess->Sgmt_records, __FUNCTION__);
 	sess->Sgmt_records = G_build_Sgmt_records_array_m12(NULL, NULL, NULL);  // defaults to use current reference channel
-	
+
 	return;
 }
 
@@ -2446,7 +2446,7 @@ TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 confirm
 	tcgetattr(STDIN_FILENO, &term);
 	saved_term = term;
 	
-	// set the approriate bit in the termios struct (displays "key" character)
+	// unset the echo bit in the termios struct (displays "key" character)
 	term.c_lflag &= ~(ECHO);
 	
 	// set the new bits
@@ -4649,6 +4649,20 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		ret_val = system_pipe_m12(&buffer, 0, command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		if (ret_val < 0)
 			return(NULL);
+		
+		// system_pipe_m12() does not distinguish between stderr & stdout
+		// this is a bad solution, but will have to do for now
+		#ifdef LINUX_m12
+		c = STR_match_end_m12("No such", buffer);  // "No such file or directory"
+		#endif
+		#ifdef MACOS_m12
+		c = STR_match_end_m12("no matches", buffer);  // "no matches found"
+		#endif
+		if (c != NULL) {
+			*n_out_files = 0;
+			free_m12((void *) buffer, __FUNCTION__);
+			return(NULL);
+		}
 				
 		// count expanded file list
 		c = buffer;
@@ -4657,8 +4671,10 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			if (*c == '\n')
 				++(*n_out_files);
 		}
-		if (*n_out_files == 0)
+		if (*n_out_files == 0) {
+			free_m12((void *) buffer, __FUNCTION__);
 			return(NULL);
+		}
 	#endif  // MACOS_m12 || LINUX_m12
 		
 	#ifdef WINDOWS_m12
@@ -4685,7 +4701,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 				++c;
 			++c;
 		}
-		free((void *) buffer);
+		free_m12((void *) buffer, __FUNCTION__);
 	}
 
 GFL_CONDITION_RETURN_DATA_m12:
@@ -5379,13 +5395,13 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 			G_error_message_m12("%s(): invalid level\n", __FUNCTION__);
 			return(0);
 	}
-
+	
 	// check for valid limit pair (time takes priority)
 	if ((search_mode = G_get_search_mode_m12(slice)) == FALSE_m12)
 		return(0);
 
 	if (Sgmt_records == NULL) {
-		
+
 		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
 		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
 		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
@@ -8605,6 +8621,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 		chan_list = (si1 **) file_list;
 		n_chans = list_len;
 	}
+	
 #if defined MACOS_m12 || defined LINUX_m12
 	regex_str = "[tv]icd";  // more specific (than Windows)
 #endif
@@ -20422,7 +20439,6 @@ void    CMP_PRED1_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 			return;
 		}
 	}
-	printf_m12("block_header->total_block_bytes = %u\n", block_header->total_block_bytes);
 
 	return;
 }
@@ -29543,6 +29559,7 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	free((void *) buffer);
+	
 	return(TRUE_m12);
 
 HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12:
@@ -38643,7 +38660,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to
 			case 39:  // single quote / apostrophe
 			case 96:  // grave accent
 				command_needs_shell = TRUE_m12;
-				goto SYSTEM_PIPE_NEEDS_SHELL_m12;
+				goto SYSTEM_PIPE_NEEDS_SHELL_m12;  // break out of while loop
 		}
 	} SYSTEM_PIPE_NEEDS_SHELL_m12:
 
