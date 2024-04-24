@@ -578,6 +578,7 @@ typedef struct {
 #define GLOBALS_FPS_LOCKING_DEFAULT_m13			FALSE_m13
 #define GLOBALS_ACCESS_TIMES_DEFAULT_m13		FALSE_m13
 #define GLOBALS_CRC_MODE_DEFAULT_m13			CRC_CALCULATE_m13
+#define GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13	TRUE_m13
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13	32
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13	32
 #define GLOBALS_PROC_GLOBALS_LIST_SIZE_INCREMENT_m13	32
@@ -1762,6 +1763,7 @@ typedef struct {
 	TERN_m13			FPS_locking;
 	TERN_m13			access_times;  // record time of each structure access
 	ui4				CRC_mode;
+	TERN_m13			write_sorted_records;
 	ERROR_m13			error;  // causal error
 } GLOBALS_m13;
 

@@ -4895,9 +4895,10 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	if (regex == TRUE_m13) {
 		
 	#if defined MACOS_m13 || defined LINUX_m13
-		si1	*command;
-		si4	ret_val;
-		si8	len;
+		TERN_m13	no_match;
+		si1		*command;
+		si4		ret_val;
+		si8		len;
 
 		len = n_in_files * FULL_FILE_NAME_BYTES_m13;
 		if (flags & GFL_INCLUDE_INVISIBLE_FILES_m13)
@@ -4924,18 +4925,29 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		
 		buffer = NULL;
 		ret_val = system_pipe_m13(&buffer, 0, command, FALSE_m13, CURRENT_BEHAVIOR_m13);
-		if (ret_val < 0)
+		if (ret_val < 0) {
+			// system_pipe_m13() error return frees buffer
+			*n_out_files = 0;
 			return_m13(NULL);
-				
+		}
+		if (STR_empty_m13(buffer) == TRUE_m13) {
+			*n_out_files = 0;
+			free_m13((void *) buffer);
+			return(NULL);
+		}
+
 		// system_pipe_m13() does not distinguish between stderr & stdout
 		// this is a bad solution, but it'll have to do for now
+		no_match = FALSE_m13;
 		#ifdef LINUX_m13
-		c = STR_match_end_m13("No such", buffer);  // "No such file or directory"
+		if (strncmp(buffer, "/usr/bin/ls: ", 13) == 0)
+			no_match = TRUE_m13;
 		#endif
 		#ifdef MACOS_m13
-		c = STR_match_end_m13("no matches", buffer);  // "no matches found"
+		if (strncmp(buffer, "ls: ", 4) == 0)
+			no_match = TRUE_m13;
 		#endif
-		if (c != NULL) {
+		if (no_match == TRUE_m13) {
 			*n_out_files = 0;
 			free_m13((void *) buffer);
 			return(NULL);
@@ -6397,6 +6409,7 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, ui4 default_be
 	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
 	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
 	globals_m13->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
+	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
 	#if defined MACOS_m13 || defined LINUX_m13
 	strcpy(globals_m13->temp_dir, "/tmp");
 	strcpy(globals_m13->temp_file, "/tmp/junk");
@@ -10896,13 +10909,15 @@ si8     G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *s
 	// sort records, if necessary
 	uh = ri_fps->universal_header;
 	sort_records = FALSE_m13;
-	if (uh->MED_version_major == 1 && uh->MED_version_minor == 0)  // upgrade record files (MED 1.0)
-		sort_records = TRUE_m13;
-	else if (uh->ordered != TRUE_m13)
-		sort_records = TRUE_m13;
+	if (globals_m13->write_sorted_records == TRUE_m13) {
+		if (uh->MED_version_major == 1 && uh->MED_version_minor == 0)  // upgrade record files (MED 1.0)
+			sort_records = TRUE_m13;
+		else if (uh->ordered != TRUE_m13)
+			sort_records = TRUE_m13;
+	}
 	if (sort_records == TRUE_m13) {
 		FILE_PROCESSING_STRUCT_m13	**ri_fps_addr, **rd_fps_addr;
-
+		
 		switch (level_header->type_code) {
 			case LH_SESSION_m13:
 				ri_fps_addr = &sess->record_indices_fps;

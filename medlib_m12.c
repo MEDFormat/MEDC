@@ -4618,9 +4618,10 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	if (regex == TRUE_m12) {
 		
 	#if defined MACOS_m12 || defined LINUX_m12
-		si1	*command;
-		si4	ret_val;
-		si8	len;
+		TERN_m12	no_match;
+		si1		*command;
+		si4		ret_val;
+		si8		len;
 
 		len = n_in_files * FULL_FILE_NAME_BYTES_m12;
 		if (flags & GFL_INCLUDE_INVISIBLE_FILES_m12)
@@ -4647,18 +4648,28 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		
 		buffer = NULL;
 		ret_val = system_pipe_m12(&buffer, 0, command, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		if (ret_val < 0)
+		if (ret_val < 0) {
+			// system_pipe_m12() error return frees buffer
+			*n_out_files = 0;
 			return(NULL);
-		
+		}
+		if (G_empty_string_m12(buffer) == TRUE_m12) {
+			*n_out_files = 0;
+			free_m12((void *) buffer, __FUNCTION__);
+			return(NULL);
+		}
 		// system_pipe_m12() does not distinguish between stderr & stdout
 		// this is a bad solution, but will have to do for now
+		no_match = FALSE_m12;
 		#ifdef LINUX_m12
-		c = STR_match_end_m12("No such", buffer);  // "No such file or directory"
+		if (strncmp(buffer, "/usr/bin/ls: ", 13) == 0)
+			no_match = TRUE_m12;
 		#endif
 		#ifdef MACOS_m12
-		c = STR_match_end_m12("no matches", buffer);  // "no matches found"
+		if (strncmp(buffer, "ls: ", 4) == 0)
+			no_match = TRUE_m12;
 		#endif
-		if (c != NULL) {
+		if (no_match == TRUE_m12) {
 			*n_out_files = 0;
 			free_m12((void *) buffer, __FUNCTION__);
 			return(NULL);
@@ -9718,14 +9729,16 @@ CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 			seg = chan->segments[j] = G_read_segment_m12(NULL, slice, tmp_str, (chan->flags & ~LH_OPEN_m12), NULL);
 		} else {
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			seg = G_read_segment_m12(seg, slice);
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		}
 		if (seg == NULL)
 			++null_segment_cnt;
 		else
 			seg->parent = (void *) chan;
 	}
-
+	
 	// empty slice
 	if (null_segment_cnt == n_segs) {
 		slice->number_of_segments = EMPTY_SLICE_m12;
@@ -10314,17 +10327,21 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 	slice->start_segment_number = slice->end_segment_number = seg->metadata_fps->universal_header->segment_number;
 	slice->number_of_segments = 1;
 
+	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	// read segment data
 	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m12) {
 		switch (seg->type_code) {
 			case LH_TIME_SERIES_SEGMENT_m12:
+				printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 				G_read_time_series_data_m12(seg, slice);
+				printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 				break;
 			case LH_VIDEO_SEGMENT_m12:
 				// nothing for now - video segment data are native video files
 				break;
 		}
 	}
+	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	
 	// read segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m12)
@@ -10745,7 +10762,9 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 		chan = sess->time_series_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			if (G_read_channel_nt_m12(chan, slice) == NULL) {
+				printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
 				} else if (chan != NULL) {
@@ -10754,6 +10773,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 				}
 				return(NULL);
 			}
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		}
 	}
 
@@ -11076,7 +11096,9 @@ si8     G_read_time_series_data_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice)
 		// set limit on last block
 		if (j == end_block)
 			cps->parameters.block_end_index = local_end_idx - tsi[j].start_sample_number;
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		CMP_decode_m12(tsd_fps);
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 
 		if (cps_caching == TRUE_m12) {
 			cached_blocks[i].cache_offset = cache_offset;
@@ -11094,10 +11116,12 @@ si8     G_read_time_series_data_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice)
 		}
 		CMP_update_CPS_pointers_m12(tsd_fps, CMP_UPDATE_BLOCK_HEADER_PTR_m12 | CMP_UPDATE_DECOMPRESSED_PTR_m12);
 	}
+	
 	if (cps_caching == TRUE_m12)
 		cps->parameters.cached_block_cnt = n_blocks;  // all blocks now cached
 		
 	n_samps = (local_end_idx - local_start_idx) + 1;  // trim (it did contain total samps in blocks)
+	
 	return(n_samps);
 }
 
