@@ -4533,14 +4533,16 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	path_parts = flags & GFL_PATH_PARTS_MASK_m12;
 	
 	// quick bailout for nothing to do (file_list passed, paths are from root, & contain no regex)
-	if (G_check_file_list_m12(file_list, n_in_files) == TRUE_m12) {
-		if ((flags & GFL_FREE_INPUT_FILE_LIST_m12) == 0) {  // caller expects a copy to be returned
-			tmp_ptr_ptr = (si1 **) calloc_2D_m12((size_t) n_in_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			for (i = 0; i < n_in_files; ++i)
-				strcpy(tmp_ptr_ptr[i], file_list[i]);
-			file_list = tmp_ptr_ptr;
+	if (file_list != NULL && n_in_files > 0) {
+		if (G_check_file_list_m12(file_list, n_in_files) == TRUE_m12) {
+			if ((flags & GFL_FREE_INPUT_FILE_LIST_m12) == 0) {  // caller expects a copy to be returned
+				tmp_ptr_ptr = (si1 **) calloc_2D_m12((size_t) n_in_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				for (i = 0; i < n_in_files; ++i)
+					strcpy(tmp_ptr_ptr[i], file_list[i]);
+				file_list = tmp_ptr_ptr;
+			}
+			goto GFL_CONDITION_RETURN_DATA_m12;
 		}
-		goto GFL_CONDITION_RETURN_DATA_m12;
 	}
 	
 	// copy incoming arguments so as not to modify, and in case they are const type
@@ -9729,9 +9731,7 @@ CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 			seg = chan->segments[j] = G_read_segment_m12(NULL, slice, tmp_str, (chan->flags & ~LH_OPEN_m12), NULL);
 		} else {
-			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			seg = G_read_segment_m12(seg, slice);
-			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		}
 		if (seg == NULL)
 			++null_segment_cnt;
@@ -10327,21 +10327,17 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 	slice->start_segment_number = slice->end_segment_number = seg->metadata_fps->universal_header->segment_number;
 	slice->number_of_segments = 1;
 
-	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	// read segment data
 	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m12) {
 		switch (seg->type_code) {
 			case LH_TIME_SERIES_SEGMENT_m12:
-				printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 				G_read_time_series_data_m12(seg, slice);
-				printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 				break;
 			case LH_VIDEO_SEGMENT_m12:
 				// nothing for now - video segment data are native video files
 				break;
 		}
 	}
-	printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 	
 	// read segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m12)
@@ -10762,9 +10758,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 		chan = sess->time_series_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			if (G_read_channel_nt_m12(chan, slice) == NULL) {
-				printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
 				} else if (chan != NULL) {
@@ -10773,7 +10767,6 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 				}
 				return(NULL);
 			}
-			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		}
 	}
 
@@ -11096,9 +11089,7 @@ si8     G_read_time_series_data_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice)
 		// set limit on last block
 		if (j == end_block)
 			cps->parameters.block_end_index = local_end_idx - tsi[j].start_sample_number;
-		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		CMP_decode_m12(tsd_fps);
-		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 
 		if (cps_caching == TRUE_m12) {
 			cached_blocks[i].cache_offset = cache_offset;
@@ -11370,7 +11361,7 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 				G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
 				return(SAMPLE_NUMBER_NO_ENTRY_m12);
 		}
-		// return(SAMPLE_NUMBER_NO_ENTRY_m12);
+		
 		if (seg == NULL) {  // channel or session
 			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, seg_num);
 			sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);

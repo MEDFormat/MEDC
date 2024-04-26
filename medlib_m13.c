@@ -4810,14 +4810,16 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	path_parts = flags & GFL_PATH_PARTS_MASK_m13;
 	
 	// quick bailout for nothing to do (file_list passed, paths are from root, & contain no regex)
-	if (G_check_file_list_m13(file_list, n_in_files) == TRUE_m13) {
-		if ((flags & GFL_FREE_INPUT_FILE_LIST_m13) == 0) {  // caller expects a copy to be returned
-			tmp_ptr_ptr = (si1 **) calloc_2D_m13((size_t) n_in_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
-			for (i = 0; i < n_in_files; ++i)
-				strcpy(tmp_ptr_ptr[i], file_list[i]);
-			file_list = tmp_ptr_ptr;
+	if (file_list != NULL && n_in_files > 0) {
+		if (G_check_file_list_m13(file_list, n_in_files) == TRUE_m13) {
+			if ((flags & GFL_FREE_INPUT_FILE_LIST_m13) == 0) {  // caller expects a copy to be returned
+				tmp_ptr_ptr = (si1 **) calloc_2D_m13((size_t) n_in_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+				for (i = 0; i < n_in_files; ++i)
+					strcpy(tmp_ptr_ptr[i], file_list[i]);
+				file_list = tmp_ptr_ptr;
+			}
+			goto GFL_CONDITION_RETURN_DATA_m13;
 		}
-		goto GFL_CONDITION_RETURN_DATA_m13;
 	}
 	
 	// copy incoming arguments so as not to modify, and in case they are const type
