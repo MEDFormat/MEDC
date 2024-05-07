@@ -164,6 +164,7 @@
 	#include <sys/statfs.h>
 	#include <sys/sysinfo.h>
 	#include <pty.h>
+	#include <utmp.h>
 #endif  // LINUX_m13
 #if defined LINUX_m13 || defined WINDOWS_m13
 	#include <malloc.h>
@@ -680,6 +681,11 @@ typedef struct {
 #define GFL_FREE_INPUT_FILE_LIST_m13		((ui4) 16)
 #define GFL_INCLUDE_INVISIBLE_FILES_m13		((ui4) 32)
 
+// System Pipe flags
+#define SP_DEFAULT_m13			0  // no flags set (default)
+#define SP_TEE_TO_TERMINAL_m13		1  // print buffer(s) to terminal in addition to returning
+#define SP_SEPERATE_STREAMS_m13		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
+
 // Spaces Constants
 #define NO_SPACES_m13                           ((ui4) 0)
 #define ESCAPED_SPACES_m13                      ((ui4) 1)
@@ -746,9 +752,13 @@ typedef struct {
 #define UNIVERSAL_HEADER_FILE_START_TIME_OFFSET_m13			48      // si8
 #define UNIVERSAL_HEADER_SESSION_NAME_OFFSET_m13                        56      // utf8[63]
 #define UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m13                        312     // utf8[63]
-#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				568	// si1 (TERN_m13), MED 1.1 & above
-#define UNIVERSAL_HEADER_RESERVED_OFFSET_m13				569	// si1 (TERN_m13), MED 1.1 & above
-#define UNIVERSAL_HEADER_RESERVED_BYTES_m13				255
+#define UNIVERSAL_HEADER_SAMPLING_FREQUENCY_OFFSET_m13			568	// sf8, MED 1.1 & above
+#define UNIVERSAL_HEADER_SAMPLING_FREQUENCY_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13	// sf8, MED 1.1 & above
+#define UNIVERSAL_HEADER_FRAME_RATE_OFFSET_m13				UNIVERSAL_HEADER_SAMPLING_FREQUENCY_OFFSET_m13	// sf8, MED 1.1 & above
+#define UNIVERSAL_HEADER_FRAME_RATE_NO_ENTRY_m13			FREQUENCY_NO_ENTRY_m13	// sf8, MED 1.1 & above
+#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				576	// si1 (TERN_m13), MED 1.1 & above
+#define UNIVERSAL_HEADER_RESERVED_OFFSET_m13				577	// si1 (TERN_m13), MED 1.1 & above
+#define UNIVERSAL_HEADER_RESERVED_BYTES_m13				247	// MED 1.1 & above
 #define UNIVERSAL_HEADER_SESSION_UID_OFFSET_m13                         824     // ui8
 #define UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m13                         832     // ui8
 #define UNIVERSAL_HEADER_SEGMENT_UID_OFFSET_m13                         840     // ui8
@@ -1484,6 +1494,15 @@ typedef struct {  // fields from ipinfo.io
 	sf8			longitude;
 } LOCATION_INFO_m13;
 
+typedef struct {
+	union {
+		sf8	sampling_frequency;
+		sf8	frame_rate;
+	};
+	Sgmt_RECORD	*Sgmt_records;
+	ui4		type_code;  // TIME_SERIES_CHANNEL_TYPE_m13 or VIDEO_CHANNEL_TYPE_m13
+} Sgmt_RECORD_INFO_m13;
+
 // All MED File Structures begin with this structure
 typedef struct LEVEL_HEADER_m13 {
 	union {  // anonymous union
@@ -1543,6 +1562,8 @@ typedef struct {
 	si4				number_of_session_segments;  // number of segments in the session, regardless of whether they are mapped
 	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
 	si4				first_mapped_segment_number;
+	Sgmt_RECORD_INFO_m13		*Sgmt_record_infos;  // one for each unique sampling frequency and channel type
+	si4				number_of_Sgmt_record_infos;
 	// Active Channels
 	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
 	struct CHANNEL_m13		*reference_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
@@ -1597,6 +1618,8 @@ typedef struct {
 	si4				number_of_session_segments;  // number of segments in the session, regardless of whether they are mapped
 	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
 	si4				first_mapped_segment_number;
+	Sgmt_RECORD_INFO_m13		*Sgmt_record_infos;  // one for each unique sampling frequency and channel type
+	si4				number_of_Sgmt_record_infos;
 	// Active Channels
 	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
 	struct CHANNEL_m13		*reference_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
@@ -1806,6 +1829,10 @@ typedef struct {
 	};
 	si1		session_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	si1     	channel_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
+	union {
+		sf8	sampling_frequency;
+		sf8	frame_rate;
+	};
 	TERN_m13	ordered;  // MED 1.1 and above (currently applies only record index & data files)
 	ui1		reserved[UNIVERSAL_HEADER_RESERVED_BYTES_m13];
 	ui8		session_UID;
@@ -2059,7 +2086,7 @@ typedef struct LEVEL_HEADER_m13 {
 			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
-	si1					full_file_name[FULL_FILE_NAME_BYTES_m13];  // full path from root including extension
+	si1					path[FULL_FILE_NAME_BYTES_m13];  // full path from root including extension
 	UNIVERSAL_HEADER_m13			*universal_header;  // points to base of raw_data array
 	FPS_DIRECTIVES_m13	        	directives;
 	FPS_PARAMETERS_m13	        	parameters;
@@ -2082,7 +2109,7 @@ typedef struct {
 		LEVEL_HEADER_m13	header;  // in case just want the level header  (type == GENERIC_FILE_TYPE_CODE_m13 => use universal header to get specific type)
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
-	si1					full_file_name[FULL_FILE_NAME_BYTES_m13];  // full path from root including extension
+	si1					path[FULL_FILE_NAME_BYTES_m13];  // full path from root including extension
 	UNIVERSAL_HEADER_m13			*universal_header;  // points to base of raw_data array
 	FPS_DIRECTIVES_m13	        	directives;
 	FPS_PARAMETERS_m13	        	parameters;
@@ -2252,7 +2279,6 @@ typedef struct CHANNEL_m13 {
 	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
 	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
 	SEGMENT_m13			**segments;
-	Sgmt_RECORD_m13			*Sgmt_records;
 	si1			        path[FULL_FILE_NAME_BYTES_m13]; // full path to channel directory (including channel directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m13];
 	TIME_SLICE_m13			time_slice;
@@ -2269,7 +2295,6 @@ typedef struct CHANNEL_m13 {
 	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
 	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
 	SEGMENT_m13			**segments;
-	Sgmt_RECORD_m13			*Sgmt_records;
 	si1			        path[FULL_FILE_NAME_BYTES_m13]; // full path to channel directory (including channel directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m13];
 	TIME_SLICE_m13			time_slice;
@@ -2342,7 +2367,6 @@ typedef struct {
 	};
 	FILE_PROCESSING_STRUCT_m13	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	FILE_PROCESSING_STRUCT_m13	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-	Sgmt_RECORD_m13			*Sgmt_records;
 	si4			        number_of_time_series_channels;
 	CHANNEL_m13			**time_series_channels;
 	si4			        number_of_video_channels;
@@ -2366,7 +2390,6 @@ typedef struct {
 	};
 	FILE_PROCESSING_STRUCT_m13	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	FILE_PROCESSING_STRUCT_m13	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-	Sgmt_RECORD_m13			*Sgmt_records;
 	si4			        number_of_time_series_channels;
 	CHANNEL_m13			**time_series_channels;
 	si4			        number_of_video_channels;
@@ -2536,7 +2559,7 @@ CHANNEL_m13	*G_read_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, ...); 
 CHANNEL_m13	*G_read_channel_nt_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, ...);  // varargs: si1 *chan_path, SESSION_m13 *parent, ui8 flags, si1 *password  ("nt" == not threaded)
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
 LEVEL_HEADER_m13	*G_read_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
-FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m13 *lh, si1 *password);
+FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *path, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m13 *lh, si1 *password);
 si8     	G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs: si4 seg_num
 SEGMENT_m13	*G_read_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, ...);  // varargs: si1 *seg_path, SESSION_m13 *parent, ui8 flags, si1 *password
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
@@ -2684,7 +2707,7 @@ void		*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, s
 //**********************************************************************************//
 
 // Prototypes
-FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FILE_PROCESSING_STRUCT_m13 *proto_fps, si8 bytes_to_copy);
+FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FILE_PROCESSING_STRUCT_m13 *proto_fps, si8 bytes_to_copy);
 TERN_m13	FPS_close_m13(FILE_PROCESSING_STRUCT_m13 *fps);
 si4		FPS_compare_start_times_m13(const void *a, const void *b);
 TERN_m13	FPS_free_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 free_fps_structure);
@@ -4674,7 +4697,7 @@ si8		strcpy_m13(si1 *target, si1 *source);
 si8		strncat_m13(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m13(si1 *command, TERN_m13 null_std_streams, ui4 behavior);  // behavior parameter included because this is frequently customized for this function
-si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to_terminal, ui4 behavior);  // behavior parameter included because this is frequently customized for this function
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		vasprintf_m13(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m13(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m13(si1 *fmt, va_list args);

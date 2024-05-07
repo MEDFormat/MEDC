@@ -293,11 +293,11 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m1
 		chan->record_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) chan, proto_fps, 0);
 		if (chan->record_data_fps == NULL)
 			return_m13(NULL);
-		snprintf_m13(chan->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
+		snprintf_m13(chan->record_data_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		chan->record_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) chan, proto_fps, 0);
 		if (chan->record_indices_fps == NULL)
 			return_m13(NULL);
-		snprintf_m13(chan->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		snprintf_m13(chan->record_indices_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 	} else {
 		chan->record_data_fps = chan->record_indices_fps = NULL;
 	}
@@ -360,17 +360,17 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 				G_generate_UID_m13(&uh->segment_UID);
 			uh->segment_number = seg_num;
 			snprintf_m13(seg->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", enclosing_path, seg->name, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13);
-			snprintf_m13(seg->metadata_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
+			snprintf_m13(seg->metadata_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
 			// time series data
 			seg->time_series_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, TIME_SERIES_DATA_FILE_TYPE_CODE_m13, 0, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
 			if (seg->time_series_data_fps == NULL)
 				return_m13(NULL);
-			snprintf_m13(seg->time_series_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
+			snprintf_m13(seg->time_series_data_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
 			// time series indices
 			seg->time_series_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, TIME_SERIES_INDICES_FILE_TYPE_CODE_m13, TIME_SERIES_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
 			if (seg->time_series_indices_fps == NULL)
 				return_m13(NULL);
-			snprintf_m13(seg->time_series_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+			snprintf_m13(seg->time_series_indices_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
 			break;
 		case VIDEO_CHANNEL_TYPE_m13:
 			seg->type_code = LH_VIDEO_SEGMENT_m13;
@@ -383,12 +383,12 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 				G_generate_UID_m13(&uh->segment_UID);
 			uh->segment_number = seg_num;
 			snprintf_m13(seg->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", enclosing_path, seg->name, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13);
-			snprintf_m13(seg->metadata_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
+			snprintf_m13(seg->metadata_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
 			// video indices
 			seg->video_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, VIDEO_INDICES_FILE_TYPE_CODE_m13, VIDEO_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
 			if (seg->video_indices_fps == NULL)
 				return_m13(NULL);
-			snprintf_m13(seg->video_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
+			snprintf_m13(seg->video_indices_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
 			break;
 		default:
 			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
@@ -400,11 +400,11 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13
 		seg->record_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
 		if (seg->record_data_fps == NULL)
 			return_m13(NULL);
-		snprintf_m13(seg->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m13);
+		snprintf_m13(seg->record_data_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		seg->record_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) seg, seg->metadata_fps, 0);
 		if (seg->record_indices_fps == NULL)
 			return_m13(NULL);
-		snprintf_m13(seg->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		snprintf_m13(seg->record_indices_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 	} else {
 		seg->record_data_fps = seg->record_indices_fps = NULL;
 	}
@@ -515,11 +515,11 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 		sess->record_data_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) sess, proto_fps, 0);
 		if (sess->record_data_fps == NULL)
 			return_m13(NULL);
-		snprintf_m13(sess->record_data_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m13);
+		snprintf_m13(sess->record_data_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m13);
 		sess->record_indices_fps = FPS_allocate_processing_struct_m13(NULL, NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) sess, proto_fps, 0);
 		if (sess->record_indices_fps == NULL)
 			return_m13(NULL);
-		snprintf_m13(sess->record_indices_fps->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		snprintf_m13(sess->record_indices_fps->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 	} else {
 		sess->record_data_fps = sess->record_indices_fps = NULL;
 	}
@@ -550,7 +550,7 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 				proto_fps = sess->video_channels[0]->segments[i]->metadata_fps;
 			// record indices fps
 			G_numerical_fixed_width_string_m13(number_str, FILE_NUMBERING_DIGITS_m13, (si4) i + 1); // segments numbered from 1
-			snprintf_m13(ssr->record_indices_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			snprintf_m13(ssr->record_indices_fps[i]->path, FULL_FILE_NAME_BYTES_m13, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
 			gen_fps = FPS_allocate_processing_struct_m13(ssr->record_indices_fps[i], NULL, RECORD_INDICES_FILE_TYPE_CODE_m13, RECORD_INDEX_BYTES_m13, (LEVEL_HEADER_m13 *) ssr, proto_fps, 0);
 			if (gen_fps == NULL)
 				return_m13(NULL);
@@ -558,7 +558,7 @@ SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *
 			memset((void *) uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13);
 			uh->channel_UID = UID_NO_ENTRY_m13;
 			// record data fps
-			snprintf_m13(ssr->record_data_fps[i]->full_file_name, FULL_FILE_NAME_BYTES_m13, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m13);
+			snprintf_m13(ssr->record_data_fps[i]->path, FULL_FILE_NAME_BYTES_m13, "%s/%s_s%s.%s", ssr->path, ssr->name, number_str, RECORD_DATA_FILE_TYPE_STRING_m13);
 			gen_fps = FPS_allocate_processing_struct_m13(ssr->record_data_fps[i], NULL, RECORD_DATA_FILE_TYPE_CODE_m13, REC_LARGEST_RECORD_BYTES_m13, (LEVEL_HEADER_m13 *) ssr, proto_fps, 0);
 			if (gen_fps == NULL)
 				return_m13(NULL);
@@ -939,12 +939,25 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_f
 	
 	if (ri_fps == NULL && rd_fps == NULL) {
 		if (chan == NULL ) {
-			G_set_error_m13(E_UNSPECIFIED_m13, "no records or channel passed or found");
-			return_m13(NULL);
+			proc_globals = G_proc_globals_m13(NULL);
+			if (proc_globals->reference_channel == NULL) {
+				G_set_error_m13(E_UNSPECIFIED_m13, "no records or channel passed or found");
+				return_m13(NULL);
+			} else {
+				chan = proc_globals->reference_channel;
+			}
 		}
-		// use channel records
-		ri_fps = chan->record_indices_fps;
-		rd_fps = chan->record_data_fps;
+		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+			chan->record_indices_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, NULL, NULL, USE_GLOBAL_BEHAVIOR_m13);
+			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_file_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+				// read full file - this bypasses test below, needs to be fixed
+				chan->record_data_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, NULL, NULL, USE_GLOBAL_BEHAVIOR_m13);
+				ri_fps = chan->record_indices_fps;
+				rd_fps = chan->record_data_fps;
+			}
+		}
 	}
 	
 	// use Sgmt records
@@ -1266,7 +1279,7 @@ TERN_m13    G_calculate_time_series_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fp
 
 TERN_m13	G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si1 *chan_name, si1 chan_type)
 {
-	TERN_m13		use_default_channel, use_global_name;
+	TERN_m13		use_default_channel;
 	si8			i, n_chans;
 	CHANNEL_m13		*tmp_chan;
 	PROC_GLOBALS_m13	*proc_globals;
@@ -1297,12 +1310,7 @@ TERN_m13	G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si
 
 	use_default_channel = FALSE_m13;
 	if (chan == NULL) {
-		use_global_name = FALSE_m13;
-		if (chan_name == NULL)
-			use_global_name = TRUE_m13;
-		else if (*chan_name == 0)
-			use_global_name = TRUE_m13;
-		if (use_global_name == TRUE_m13) {
+		if (STR_empty_m13(channel_name) == TRUE_m13) {
 			if (*proc_globals->reference_channel_name)
 				chan_name = proc_globals->reference_channel_name;
 			else
@@ -1829,7 +1837,7 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 			if (seg != NULL) {  // try using parent
 				fps2 = seg->time_series_indices_fps;
 			} else {  // try using file name
-				G_extract_path_parts_m13(fps->full_file_name, path, name, NULL);
+				G_extract_path_parts_m13(fps->path, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
 				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 				fps2 = G_read_file_m13(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
@@ -1855,7 +1863,7 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 					G_pop_behavior_m13();
 					break;
 				}
-				if (fread_m13((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m13), (size_t) 1, fps->parameters.fp, fps->full_file_name) == -1) {
+				if (fread_m13((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m13), (size_t) 1, fps->parameters.fp, fps->path) == -1) {
 					G_pop_behavior_m13();
 					break;
 				}
@@ -1865,7 +1873,7 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 					G_pop_behavior_m13();
 					break;
 				}
-				if (fread_m13((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m13), (size_t) 1, fps->parameters.fp, fps->full_file_name) == -1) {
+				if (fread_m13((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m13), (size_t) 1, fps->parameters.fp, fps->path) == -1) {
 					G_pop_behavior_m13();
 					break;
 				}
@@ -1902,7 +1910,7 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 				}
 			}
 			if (fps2 == NULL) {  // try using file name
-				G_extract_path_parts_m13(fps->full_file_name, path, name, NULL);
+				G_extract_path_parts_m13(fps->path, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 				fps2 = G_read_file_m13(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
@@ -2488,7 +2496,7 @@ TERN_m13	G_en_bloc_allocation_m13(LEVEL_HEADER_m13 *level_header)
 	LEVEL_HEADER_m13	*test_ptr, **test_ptr_ptr;
 	sig_handler_t_m13	current_handler;
 
-#ifdef FN_DEBUG_m12
+#ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
@@ -4924,9 +4932,10 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 					sprintf_m13(command, "%s.%s", command, extension);
 			}
 		}
-		
+		free_2D_m13((void **) file_list, n_in_files);
+
 		buffer = NULL;
-		ret_val = system_pipe_m13(&buffer, 0, command, FALSE_m13, CURRENT_BEHAVIOR_m13);
+		ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 		if (ret_val < 0) {
 			// system_pipe_m13() error return frees buffer
 			*n_out_files = 0;
@@ -4938,8 +4947,8 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			return(NULL);
 		}
 
-		// system_pipe_m13() does not distinguish between stderr & stdout
-		// this is a bad solution, but it'll have to do for now
+		// system_pipe_m13() can distinguish between stderr & stdout, but not well tested yet
+		// this is a terrible solution, but works for now
 		no_match = FALSE_m13;
 		#ifdef LINUX_m13
 		if (strncmp(buffer, "/usr/bin/ls: ", 13) == 0)
@@ -5553,7 +5562,7 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, TERN_m13
 	command = "curl.exe --connect-timeout 5.0 .exe -s ipinfo.io";
 #endif
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, command, FALSE_m13, CURRENT_BEHAVIOR_m13);
+	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (ret_val < 0)
 		return_m13(NULL);
 	
@@ -5828,8 +5837,8 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 			}
 			if (ri_fps == NULL)
 				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-			else if (*ri_fps->full_file_name)
-				strcpy(tmp_str, ri_fps->full_file_name);
+			else if (*ri_fps->path)
+				strcpy(tmp_str, ri_fps->path);
 			else
 				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 			file_exists = G_file_exists_m13(tmp_str);
@@ -5970,8 +5979,8 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FIL
 	if (MED_file_name == NULL) {
 		if (MED_fps == NULL)
 			return_m13(NULL);
-		if (*MED_fps->full_file_name)
-			MED_file_name = MED_fps->full_file_name;
+		if (*MED_fps->path)
+			MED_file_name = MED_fps->path;
 		else
 			return_m13(NULL);
 	}
@@ -6414,13 +6423,13 @@ TERN_m13	G_initialize_globals_m13(TERN_m13 initialize_all_tables, ui4 default_be
 	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
 	#if defined MACOS_m13 || defined LINUX_m13
 	strcpy(globals_m13->temp_dir, "/tmp");
-	strcpy(globals_m13->temp_file, "/tmp/junk");
+	strcpy(globals_m13->temp_file, "/tmp/MED_junk");
 	#endif
 	#ifdef WINDOWS_m13
 	si8	len;
 	
 	GetTempPathA(FULL_FILE_NAME_BYTES_m13, globals_m13->temp_dir);
-	sprintf(globals_m13->temp_file, "%sjunk", globals_m13->temp_dir);
+	sprintf(globals_m13->temp_file, "%sMED_junk", globals_m13->temp_dir);
 	len = strlen(globals_m13->temp_dir);
 	globals_m13->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
@@ -6626,7 +6635,7 @@ TERN_m13	G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m13 ini
 			}
 			break;
 		default:
-			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized metadata section 2 type in file \"%s\"", fps->full_file_name);
+			G_set_error_m13(E_UNSPECIFIED_m13, "unrecognized metadata section 2 type in file \"%s\"", fps->path);
 			break;
 	}
 	
@@ -6883,7 +6892,7 @@ ui4	G_level_from_base_name_m13(si1 *path, si1 *level_path)
 
 	// useful to allow users to pass just base names into apps
 	
-	// returns level type code, or NO_TYPE_CODE_m12 if can't find match
+	// returns level type code, or NO_TYPE_CODE_m13 if can't find match
 	
 	// assumes level_path has adequate space for new path
 	// if level_path == NULL : return type code on level_path, does not modify path
@@ -7876,6 +7885,8 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 			}
 			if (seg == NULL)
 				++null_segment_cnt;
+			else
+				seg->parent = (LEVEL_HEADER_m13 *) chan;
 		}
 	} else {  // thread  out multiple segments
 		#ifdef MATLAB_m13
@@ -7897,6 +7908,8 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 						if (free_channel == TRUE_m13)
 							G_free_channel_m13(chan, TRUE_m13);
 						return_m13(NULL);
+					} else {
+						seg->parent = (LEVEL_HEADER_m13 *) chan;
 					}
 				} else {
 					++null_segment_cnt;
@@ -10801,7 +10814,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 	if (globals_m13->CRC_mode & CRC_VALIDATE_m13) {
 		CRC_valid = CRC_validate_m13(fps->parameters.raw_data + UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m13, UNIVERSAL_HEADER_BYTES_m13 - UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m13, uh->header_CRC);
 		if (CRC_valid == FALSE_m13)
-			G_warning_message_m13("%s(): universal header CRC invalid for \"%s\"\n", __FUNCTION__, fps->full_file_name);
+			G_warning_message_m13("%s(): universal header CRC invalid for \"%s\"\n", __FUNCTION__, fps->path);
 		CRC_valid = UNKNOWN_m13;
 		switch (fps->universal_header->type_code) {
 			case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
@@ -10825,7 +10838,7 @@ FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1
 				break;
 		}
 		if (CRC_valid == FALSE_m13)
-			G_warning_message_m13("%s(): body CRC invalid for \"%s\"\n", __FUNCTION__, fps->full_file_name);
+			G_warning_message_m13("%s(): body CRC invalid for \"%s\"\n", __FUNCTION__, fps->path);
 	}
 
 	// decrypt
@@ -11133,9 +11146,9 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 
 	// open session
 	open_session = free_session = FALSE_m13;
-	if (sess == NULL)
+	if (sess == NULL) {
 		open_session = free_session = TRUE_m13;
-	else if (!(sess->flags & LH_OPEN_m13)) {
+	} else if (!(sess->flags & LH_OPEN_m13)) {
 		G_free_session_m13(sess, FALSE_m13);
 		open_session = TRUE_m13;
 	}
@@ -11418,9 +11431,9 @@ SESSION_m13	*G_read_session_nt_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...
 
 	// open session
 	open_session = free_session = FALSE_m13;
-	if (sess == NULL)
+	if (sess == NULL) {
 		open_session = free_session = TRUE_m13;
-	else if (!(sess->flags & LH_OPEN_m13)) {
+	} else if (!(sess->flags & LH_OPEN_m13)) {
 		G_free_session_m13(sess, FALSE_m13);
 		open_session = TRUE_m13;
 	}
@@ -12036,7 +12049,7 @@ TERN_m13    G_reset_metadata_for_update_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 			vmd2->maximum_contiguous_frames = 0;
 			break;
 		default:
-			G_error_message_m13("%s(): Unrecognized metadata type in file \"%s\"\n", __FUNCTION__, fps->full_file_name);
+			G_error_message_m13("%s(): Unrecognized metadata type in file \"%s\"\n", __FUNCTION__, fps->path);
 			break;
 	}
 	
@@ -14776,7 +14789,7 @@ si1	*G_unique_temp_file_m13(si1 *temp_file)
 	rand_val |= (ui8) rand();
 #endif
 
-	sprintf_m13(temp_file, "%s/junk_%016lx", globals_m13->temp_dir, rand_val);
+	sprintf_m13(temp_file, "%s/MED_junk_%016lx", globals_m13->temp_dir, rand_val);
 	
 	return_m13(temp_file);
 }
@@ -16435,7 +16448,9 @@ TERN_m13	ALCK_universal_header_m13(ui1 *bytes)
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (uh->channel_name != (si1 *)  (bytes + UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->ordered != (si1 *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
+	if (&uh->sampling_frequency != (sf8 *) (bytes + UNIVERSAL_HEADER_SAMPLING_FREQUENCY_OFFSET_m13))  // frame_rate unioned
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->ordered != (TERN_m13 *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->channel_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
@@ -16725,36 +16740,49 @@ void	AT_add_entry_m13(void *address, size_t requested_bytes, const si1 *function
 
 void	AT_free_all_m13(void)
 {
-	si8		i, alloced_entries = 0;
+	si8		i, alloced_entries;
 	AT_NODE_m13	*atn;
 	
 		
 	AT_mutex_on();
 
+	alloced_entries = 0;
 	atn = globals_m13->AT_info.nodes;
 	for (i =  globals_m13->AT_info.node_count; i--; ++atn) {
 		if (atn->address == NULL)
 			continue;
-		if (atn->free_function == NULL) {
+		if (atn->free_function == NULL)
 			++alloced_entries;
-			atn->free_function = __FUNCTION__;
-			AT_mutex_off();  // release mutex for AT_show_entry_m13()
-			AT_show_entry_m13(atn->address);
-			AT_mutex_on();  // reclaim mutex
-			#ifdef MATLAB_PERSISTENT_m13
-			mxFree(atn->address);
-			#else
-			free(atn->address);
-			#endif
-		}
 	}
 
 	if (alloced_entries) {
 		#ifdef MATLAB_m13
-		mexPrintf("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
+		if (alloced_entries > 1)
+			mexPrintf("\n%s(): freeing %ld entries:\n", __FUNCTION__, alloced_entries);
+		else
+			mexPrintf("\n%s(): freeing one entry:\n", __FUNCTION__);
 		#else
-		printf_m13("%s(): freed %ld AT entries:\n", __FUNCTION__, alloced_entries);
+		if (alloced_entries > 1)
+			printf_m13("\n%s(): freeing %ld entries:\n", __FUNCTION__, alloced_entries);
+		else
+			printf_m13("\n%s(): freeing one entry:\n", __FUNCTION__);
 		#endif
+
+		atn = globals_m13->AT_nodes;
+		for (i = globals_m13->AT_node_count; i--; ++atn) {
+			if (atn->address == NULL)
+				continue;
+			if (atn->free_function == NULL) {
+				AT_mutex_off();  // release mutex for AT_show_entry_m13()
+				AT_show_entry_m13(atn->address);
+				AT_mutex_on();  // reclaim mutex
+				#ifdef MATLAB_PERSISTENT_m13
+				mxFree(atn->address);
+				#else
+				free(atn->address);
+				#endif
+			}
+		}
 	}
 
 	AT_mutex_off();
@@ -28692,7 +28720,7 @@ TERN_m13	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs)
 // MARK: FILE PROCESSING FUNCTIONS  (FPS)
 //***************************************//
 
-FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *full_file_name, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FILE_PROCESSING_STRUCT_m13 *proto_fps, si8 bytes_to_copy)
+FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FILE_PROCESSING_STRUCT_m13 *proto_fps, si8 bytes_to_copy)
 {
 	TERN_m13			free_fps;
 	UNIVERSAL_HEADER_m13		*uh;
@@ -28713,17 +28741,17 @@ FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_S
 	}
 	if (parent != NULL)
 		fps->parent = parent;
-	if (full_file_name != NULL)
-		if (*full_file_name)
-			strncpy_m13(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m13);
+	if (path != NULL)
+		if (*path)
+			strncpy_m13(fps->path, path, FULL_FILE_NAME_BYTES_m13);
 	fps->type_code = LH_FILE_m13;  // level type code, not specific file type
-	if (*fps->full_file_name && type_code == UNKNOWN_TYPE_CODE_m13)
-		type_code = G_MED_type_code_from_string_m13(fps->full_file_name);
+	if (*fps->path && type_code == UNKNOWN_TYPE_CODE_m13)
+		type_code = G_MED_type_code_from_string_m13(fps->path);
 
 	// allocate raw_data
 	(void) FPS_initialize_parameters_m13(&fps->parameters);
 	if (raw_data_bytes == FPS_FULL_FILE_m13) {  // use this to allocate a memory mapped file also
-		fps->parameters.raw_data_bytes = raw_data_bytes = G_file_length_m13(NULL, fps->full_file_name);
+		fps->parameters.raw_data_bytes = raw_data_bytes = G_file_length_m13(NULL, fps->path);
 	} else {  // all files start with universal header
 		if (raw_data_bytes == FPS_UNIVERSAL_HEADER_ONLY_m13)
 			fps->parameters.raw_data_bytes = raw_data_bytes = UNIVERSAL_HEADER_BYTES_m13;
@@ -28802,19 +28830,23 @@ TERN_m13	FPS_close_m13(FILE_PROCESSING_STRUCT_m13 *fps) {
 
 	if (fps != NULL) {
 		if (fps->parameters.fp != NULL) {
-			if (fps->parameters.fd > 2)  { // fclose() can crash under some circumstances (e.g. if file is already closed)  (fd < 0 == closed, 0-2 == standard streams)
-				fflush(fps->parameters.fp);  // close() alone doesn't flush internal file buffers
-#if defined MACOS_m13 || defined LINUX_m13
-				close(fps->parameters.fd);
-#endif
-#ifdef WINDOWS_m13
-				_close(fps->parameters.fd);
-#endif
+			if (fps->parameters.fd > 2) { // fclose() can crash under some circumstances (e.g. if file is already closed)  (fd < 0 == closed, 0-2 == standard streams)
+				fclose(fps->parameters.fp);
+				
+				// below was from some Linux fclose/flushing issue - but not sure it's needed anymore - close() alone causes problem with Matlab
+				// fflush(fps->parameters.fp);  // close() alone doesn't flush internal file buffers
+				// #if defined MACOS_m13 || defined LINUX_m13
+				// close(fps->parameters.fd);
+				// #endif
+				// #ifdef WINDOWS_m13
+				// _close(fps->parameters.fd);
+				// #endif
+				
+				fps->parameters.fp = NULL;
+				fps->parameters.fd = FPS_FD_CLOSED_m13;
+				fps->parameters.fpos = 0;
+				// leave fps->flen intact
 			}
-			fps->parameters.fp = NULL;
-			fps->parameters.fd = FPS_FD_CLOSED_m13;
-			fps->parameters.fpos = 0;
-			// leave fps->flen intact
 		}
 	}
 
@@ -28878,7 +28910,7 @@ TERN_m13	FPS_free_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, TERN_m1
 			PROC_pthread_mutex_destroy_m13(&fps->parameters.mutex);
 		free_m13((void *) fps);
 	} else {
-		// leave full_file_name intact
+		// leave path intact
 		fps->parent = NULL;
 		fps->access_time = UUTC_NO_ENTRY_m13;
 		fps->parameters.cps = NULL;
@@ -29000,7 +29032,7 @@ si8	FPS_memory_map_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si
 			if (mode) {  // switch READ_MODE to SKIP_MODE: read unread blocks up to here
 				read_bytes = file_offset - read_start;
 				FPS_seek_m13(fps, read_start);
-				fread_m13((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->full_file_name);
+				fread_m13((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->path);
 				mode = SKIP_MODE;
 			}
 		} else {  // block not yet read
@@ -29034,7 +29066,7 @@ si8	FPS_memory_map_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si
 	}
 	if (read_bytes) {
 		FPS_seek_m13(fps, read_start);
-		fread_m13((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->full_file_name);
+		fread_m13((void *) (fps->parameters.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fps->parameters.fp, fps->path);
 	}
 	fps->parameters.fpos = read_start + read_bytes;
 
@@ -29101,7 +29133,7 @@ TERN_m13	FPS_open_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 	
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
 	errno_reset_m13();
-	fps->parameters.fp = fopen_m13(fps->full_file_name, mode);
+	fps->parameters.fp = fopen_m13(fps->path, mode);
 	G_pop_behavior_m13();
 	if (fps->parameters.fp == NULL) {
 		if (create_file == TRUE_m13) {
@@ -29113,7 +29145,7 @@ TERN_m13	FPS_open_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 				create_path = TRUE_m13;
 #endif
 			if (create_path == TRUE_m13) {
-				G_extract_path_parts_m13(fps->full_file_name, path, NULL, NULL);
+				G_extract_path_parts_m13(fps->path, path, NULL, NULL);
 				if (G_file_exists_m13(path) != DIR_EXISTS_m13) {  // a component of the required directory tree does not exist - build it & try again
 					
 #if defined MACOS_m13 || defined LINUX_m13
@@ -29123,12 +29155,12 @@ TERN_m13	FPS_open_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 					sprintf_m13(command, "mkdir \"%s\"", path);
 #endif
 					system_m13(command, TRUE_m13, CURRENT_BEHAVIOR_m13);
-					fps->parameters.fp = fopen_m13(fps->full_file_name, mode);
+					fps->parameters.fp = fopen_m13(fps->path, mode);
 				}
 			}
 		}
 		if (fps->parameters.fp == NULL) {
-			G_error_message_m13("%s(): failed to open file \"%s\"\n", __FUNCTION__, fps->full_file_name);
+			G_error_message_m13("%s(): failed to open file \"%s\"\n", __FUNCTION__, fps->path);
 			return_m13(-1);
 		}
 	}
@@ -29207,7 +29239,7 @@ si8	FPS_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_
 		bytes_read = FPS_memory_map_read_m13(fps, file_offset, bytes_to_read);
 	} else {
 		FPS_seek_m13(fps, file_offset);
-		bytes_read = fread_m13(data_ptr, sizeof(ui1), (size_t) bytes_to_read, fps->parameters.fp, fps->full_file_name);
+		bytes_read = fread_m13(data_ptr, sizeof(ui1), (size_t) bytes_to_read, fps->parameters.fp, fps->path);
 	}
 
 	// unlock
@@ -29301,7 +29333,7 @@ TERN_m13	FPS_show_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 #endif
 
 	printf_m13("----------- File Processing Structure - START ----------\n");
-	UTF8_printf_m13("Full File Name: %s\n", fps->full_file_name);
+	UTF8_printf_m13("Path (full file fame): %s\n", fps->path);
 	printf_m13("Full File Read: ");
 	if (fps->parameters.full_file_read == TRUE_m13)
 		printf_m13("true\n");
@@ -29438,7 +29470,7 @@ si8	FPS_write_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to
 		
 		// write universal header
 		FPS_seek_m13(fps, 0);
-		bytes_written = fwrite_m13((void *) uh, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m13, fps->parameters.fp, fps->full_file_name);
+		bytes_written = fwrite_m13((void *) uh, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m13, fps->parameters.fp, fps->path);
 		if (bytes_written != (size_t) UNIVERSAL_HEADER_BYTES_m13)
 			G_warning_message_m13("%s(): write error\n", __FUNCTION__);
 
@@ -29460,7 +29492,7 @@ si8	FPS_write_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to
 	}
 
 	FPS_seek_m13(fps, file_offset);
-	bytes_written = fwrite_m13((void *) data_ptr, sizeof(ui1), (size_t) bytes_to_write, fps->parameters.fp, fps->full_file_name);
+	bytes_written = fwrite_m13((void *) data_ptr, sizeof(ui1), (size_t) bytes_to_write, fps->parameters.fp, fps->path);
 	if (bytes_written != bytes_to_write)
 		G_warning_message_m13("%s(): write error\n", __FUNCTION__);
 	
@@ -29517,7 +29549,7 @@ TERN_m13	HW_get_core_info_m13()
 	si1	*buf = NULL, *c;;
 	si8	buf_len;
 
-	buf_len = system_pipe_m13(&buf, 0, "lscpu", FALSE_m13, CURRENT_BEHAVIOR_m13);
+	buf_len = system_pipe_m13(&buf, 0, "lscpu", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (buf_len < 0) {
 		hw_params->logical_cores = (si4) get_nprocs_conf();
 	} else {
@@ -29784,7 +29816,7 @@ TERN_m13	HW_get_machine_serial_m13(void)
 	#endif
 	
 	buf = NULL;
-	buf_len = system_pipe_m13(&buf, 0, command, FALSE_m13, CURRENT_BEHAVIOR_m13);
+	buf_len = system_pipe_m13(&buf, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (buf_len < 0)
 		return_m13(FALSE_m13);
 	
@@ -30557,7 +30589,7 @@ TERN_m13	NET_get_config_m13(NET_PARAMS_m13 *np, TERN_m13 copy_global)
 	// get ifconfig() output
 	sprintf_m13(temp_str, "/usr/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, temp_str, FALSE_m13, CURRENT_BEHAVIOR_m13);
+	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (ret_val < 0) {
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->NET_mutex);
@@ -30676,7 +30708,7 @@ TERN_m13	NET_get_config_m13(NET_PARAMS_m13 *np, TERN_m13 copy_global)
 	// get ifconfig() output
 	sprintf_m13(temp_str, "/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, temp_str, FALSE_m13, CURRENT_BEHAVIOR_m13);
+	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (ret_val < 0) {
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->NET_mutex);
@@ -30810,7 +30842,7 @@ TERN_m13	NET_get_config_m13(NET_PARAMS_m13 *np, TERN_m13 copy_global)
 		
 	// get ipconfig() output
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, "ipconfig /all", FALSE_m13, CURRENT_BEHAVIOR_m13);
+	ret_val = system_pipe_m13(&buffer, 0, "ipconfig /all", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (ret_val < 0) {
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->NET_mutex);
@@ -30967,7 +30999,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	command = "route PRINT -4 0.0.0.0";
 	#endif
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, command, FALSE_m13, RETURN_ON_FAIL_m13);
+	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
 	if (ret_val < 0) {  // probably no internet connection, otherwise route() error
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->NET_mutex);
@@ -31107,7 +31139,7 @@ TERN_m13	NET_get_ethtool_m13(NET_PARAMS_m13 *np, TERN_m13 copy_global)
 	// Note: ethtool() doesn't seem to work on WiFi networks
 	buffer = NULL;
 	sprintf_m13(temp_str, "/usr/sbin/ethtool %s", np->interface_name);
-	ret_val = system_pipe_m13(&buffer, 0, temp_str, FALSE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 	if (ret_val < 0) {  // don't return false => this is typically superfluous info
 		G_warning_message_m13("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__);
 	} else {
@@ -31470,7 +31502,7 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 #endif
 	
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, command, FALSE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 | RETRY_ONCE_m13);
+	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 | RETRY_ONCE_m13);
 	if (ret_val < 0) {
 		if (NET_get_lan_ipv4_address_m13(NULL, np) == NULL)
 			G_warning_message_m13("%s(): no internet connection\n", __FUNCTION__);
@@ -31582,7 +31614,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 
 	// get interface name (aka connection name in Windows)
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, "ipconfig", FALSE_m13, RETURN_ON_FAIL_m13);
+	ret_val = system_pipe_m13(&buffer, 0, "ipconfig", SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
 	*iface_name = 0;
 	if (ret_val > 0) {  // parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m13(iface_addr, buffer)) != NULL) {
@@ -38132,7 +38164,7 @@ TERN_m13	freeable_m13(void *address)
 		return(FALSE_m13);
 #endif
 
-#ifdef WINDOWS_m12
+#ifdef WINDOWS_m13
 	// check that level_header->type_code can be dereferenced
 	DWORD	protection_err, curr_protection;
 
@@ -38653,7 +38685,7 @@ si4	mprotect_m13(void *address, size_t len, si4 protection)
 		ret_val = errno_m13();
 #endif
 
-#ifdef WINDOWS_m12
+#ifdef WINDOWS_m13
 	switch(protection) {
 		case PROT_NONE:
 			protection = (si4) PAGE_NOACCESS;
@@ -38807,7 +38839,7 @@ void	*realloc_m13(void *curr_ptr, size_t n_bytes)
 	}
 	
 	// alloc tracking
-#ifdef AT_DEBUG
+#ifdef AT_DEBUG_m13
 	AT_update_entry_m13(curr_ptr, ptr, n_bytes, function);
 #endif
 #ifdef MATLAB_PERSISTENT_m13
@@ -38893,7 +38925,7 @@ void	*recalloc_m13(void *curr_ptr, size_t curr_bytes, size_t new_bytes)
 		memset((ui1 *) ptr + curr_bytes, 0, new_bytes - curr_bytes);
 	
 	// alloc tracking
-#ifdef AT_DEBUG
+#ifdef AT_DEBUG_m13
 	AT_update_entry_m13(curr_ptr, ptr, new_bytes, function);
 #endif
 	
@@ -39208,12 +39240,13 @@ si4     system_m13(si1 *command, TERN_m13 null_std_streams, ui4 behavior)
 
 // not a standard function, but closely related
 #if defined MACOS_m13 || defined LINUX_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to_terminal, ui4 behavior)
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
-	TERN_m13	no_command, command_needs_shell, assign_buffer, free_buffer, retried;
-	si1		*buffer, *c;
-	si4		ret_val, master_fd, status, err, BUFFER_SIZE_INC;
-	si8		bytes_in_buffer, bytes_avail;
+	TERN_m13	no_command, command_needs_shell, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
+	si1		**e_buffer_ptr, *buffer, *e_buffer, *c;
+	si4		ret_val, status, err, BUFFER_SIZE_INC;
+	si4		master_fd, stdout_master_fd, stdout_slave_fd, stderr_master_fd, stderr_slave_fd;
+	si8		bytes_in_buffer, bytes_in_e_buffer, bytes_avail, *e_buf_len;
 	pid_t		child_pid;
 
 #ifdef FN_DEBUG_m13
@@ -39226,7 +39259,8 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
 	// *buffer_ptr contains a NULL terminated string from the system command, if passed
 	// returns negative system error number or buffer string length on success (zero if no buffer returned)
-	
+	// if SP_SEPERATE_STREAMS_m13 flag is set, returns error buffer string length on success in e_buf_len (zero if no buffer returned)
+
 	if (behavior == CURRENT_BEHAVIOR_m13)
 		behavior = G_current_behavior_m13();
 	
@@ -39279,7 +39313,8 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to
 			buf_len = 0;
 		} else {
 			assign_buffer = freeable_m13((void *) buffer);
-			buf_len = malloc_size_m13((void *) buffer);
+			if (assign_buffer == TRUE_m13)
+				buf_len = malloc_size_m13((void *) buffer);
 		}
 	}
 	
@@ -39289,20 +39324,90 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to
 		buffer = (si1 *) malloc_m13((size_t) buf_len);
 	}
 
+	// get varargs & set up error buffer
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		va_list		v_args;
+		
+		va_start(v_args, behavior);
+		e_buffer_ptr = va_arg(v_args, si1 **);
+		e_buf_len = va_arg(v_args, si8 *);
+		va_end(v_args);
+
+		if (e_buffer_ptr == NULL) {
+			free_e_buffer = TRUE_m13;
+			assign_e_buffer = FALSE_m13;
+			e_buffer = NULL;
+			*e_buf_len = 0;
+		} else {
+			free_e_buffer = FALSE_m13;
+			e_buffer = *buffer_ptr;
+			if (e_buffer == NULL) {
+				assign_e_buffer = TRUE_m13;
+				*e_buf_len = 0;
+			} else {
+				assign_e_buffer = freeable_m13((void *) e_buffer);
+				if (assign_e_buffer == TRUE_m13)
+					*e_buf_len = malloc_size_m13((void *) e_buffer);
+			}
+		}
+		
+		if (*e_buf_len == 0) {
+			*e_buf_len = BUFFER_SIZE_INC;
+			e_buffer = (si1 *) malloc_m13((size_t) *e_buf_len);
+		}
+	} else {
+		free_e_buffer = assign_e_buffer = FALSE_m13;
+	}
+	
 	retried = FALSE_m13;
+	
 SYSTEM_PIPE_RETRY_m13:
 	
-	*buffer = 0;
-	master_fd = 0;
-	err = 0;
-	
 	// spawn child and connect to a pseudoterminal
-	child_pid = forkpty(&master_fd, NULL, NULL, NULL);
-	if (child_pid == -1) {
-		if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-			G_warning_message_m13("%s(): forkpty() error\n", __FUNCTION__);
-		goto SYSTEM_PIPE_FAIL_m13;
-	} else if (child_pid == 0) {  // child process
+	*buffer = 0;
+	err = 0;
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		stdout_master_fd = stdout_slave_fd = stderr_master_fd = stderr_slave_fd = 0;
+		*e_buffer = 0;
+		// create master & slave ends of pseudoterminal
+		if (openpty(&stdout_master_fd, &stdout_slave_fd, NULL, NULL, NULL) == -1) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+		if (openpty(&stderr_master_fd, &stderr_slave_fd, NULL, NULL, NULL) == -1) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+		// set close on exec on master ends of pseudoterminal
+		if ((fcntl(stdout_master_fd, F_SETFD, FD_CLOEXEC)) == -1) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+		if ((fcntl(stderr_master_fd, F_SETFD, FD_CLOEXEC)) == -1) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+		child_pid = fork();
+		if (child_pid == -1) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): fork() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+	} else {
+		master_fd = 0;
+		child_pid = forkpty(&master_fd, NULL, NULL, NULL);
+		if (child_pid == -1) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): forkpty() error\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+	}
+
+	if (child_pid == 0) {  // child process
 		
 		si1		*tmp_command, **args, *c2, *c3;
 		si4		arg_cnt, alloced_args, ALLOCED_ARGS_INC;
@@ -39369,6 +39474,21 @@ SYSTEM_PIPE_RETRY_m13:
 			args[arg_cnt] = (si1 *) NULL;  // terminal NULL argument
 		}
 
+		if (flags & SP_SEPERATE_STREAMS_m13) {
+			// assign child stdout & stderr to slave file descriptors
+			if (login_tty(stdout_slave_fd)) {
+				if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+					G_warning_message_m13("%s(): login_tty() error\n", __FUNCTION__);
+				exit(-1);
+			}
+			// make slave end of stderr file descriptor equal stderr
+			if ((dup2(stderr_slave_fd, STDERR_FILENO)) == -1) {
+				if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+					G_warning_message_m13("%s(): dup2() error\n", __FUNCTION__);
+				exit(-1);
+			}
+		}
+		
 		// convert child to command
 		// if execvp() is successful, it does not return
 		// "p" version uses environment path if no "/" in args[0]
@@ -39386,6 +39506,15 @@ SYSTEM_PIPE_RETRY_m13:
 	}  // rest is parent
 			
 	// read child output
+	
+	// close slave ends of pseudoterminal
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		close(stdout_slave_fd);
+		close(stderr_slave_fd);
+		master_fd = stdout_master_fd;  // use master_fd to read stdout
+	}
+
+	// read combined output, or stdout
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
@@ -39394,7 +39523,7 @@ SYSTEM_PIPE_RETRY_m13:
 			break;
 		bytes_in_buffer += ret_val;
 		bytes_avail -= ret_val;
-		if (assign_buffer == 1) {
+		if (assign_buffer == TRUE_m13) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
 				buffer = (si1 *) realloc((void *) buffer, (size_t) buf_len);
@@ -39403,6 +39532,27 @@ SYSTEM_PIPE_RETRY_m13:
 		}
 	}
 	buffer[bytes_in_buffer] = 0;  // set terminal zero
+	
+	// read stderr
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		bytes_in_e_buffer = 0;
+		bytes_avail = *e_buf_len;
+		while (bytes_avail > 1) {
+			ret_val = read(stderr_master_fd, e_buffer + bytes_in_e_buffer, bytes_avail - 1);  // leave room for terminal zero
+			if (ret_val <= 0)
+				break;
+			bytes_in_e_buffer += ret_val;
+			bytes_avail -= ret_val;
+			if (assign_e_buffer == TRUE_m13) {
+				if (bytes_avail < 2) {
+					*e_buf_len += BUFFER_SIZE_INC;
+					e_buffer = (si1 *) realloc((void *) e_buffer, (size_t) *e_buf_len);
+					bytes_avail += BUFFER_SIZE_INC;
+				}
+			}
+		}
+		e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
+	}
 
 	// wait for child
 	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
@@ -39410,26 +39560,52 @@ SYSTEM_PIPE_RETRY_m13:
 	if (err)
 		goto SYSTEM_PIPE_FAIL_m13;
 
-	close(master_fd);
+	// close master ends of pseudoterminal
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		close(stdout_master_fd);
+		close(stderr_master_fd);
+	} else {
+		close(master_fd);
+	}
 	
-	if (tee_to_terminal == TRUE_m13)
-		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13))
-			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
+			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+			if (flags & SP_SEPERATE_STREAMS_m13)
+				printf_m13("%s\n", e_buffer);
+		}
+	}
 
+	if (free_e_buffer == TRUE_m13) {
+		free((void *) e_buffer);
+		*e_buf_len = 0;
+	}
 	if (free_buffer == TRUE_m13) {
 		free((void *) buffer);
 		return_m13(0);
 	}
-	
+		
 	if (assign_buffer == TRUE_m13)
 		*buffer_ptr = buffer;
+	if (assign_e_buffer == TRUE_m13)
+		*e_buffer_ptr = e_buffer;
+	
+	if (flags & SP_SEPERATE_STREAMS_m13)
+		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
 
 	return_m13(bytes_in_buffer);
 	
 SYSTEM_PIPE_FAIL_m13:
 	
-	if (master_fd)
-		close(master_fd);
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		if (stdout_master_fd)
+			close(stdout_master_fd);
+		if (stderr_master_fd)
+			close(stderr_master_fd);
+	} else {
+		if (master_fd)
+			close(master_fd);
+	}
 	
 	if (behavior & RETRY_ONCE_m13) {
 		if (retried == FALSE_m13) {
@@ -39440,85 +39616,131 @@ SYSTEM_PIPE_FAIL_m13:
 	}
 
 	// try with system_m13() redirected to temp file
-	si1	*tmp_command, tmp_file[FULL_FILE_NAME_BYTES_m13];
+	si1	*tmp_command, tmp_file[FULL_FILE_NAME_BYTES_m13], *e_tmp_file;
 	si8	len;
 	FILE	*fp;
+	
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		e_tmp_file = (si1 *) malloc_m13((size_t) FULL_FILE_NAME_BYTES_m13);
+		G_unique_temp_file_m13(e_tmp_file);
+	} else {
+		e_tmp_file = tmp_file;
+	}
 	
 	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m13) + 9;
 	tmp_command = (si1 *) malloc(len);
 	G_unique_temp_file_m13(tmp_file);
-	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, NULL_DEVICE_m13);
+	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
 	err = system_m13(tmp_command, FALSE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
 	free((void *) tmp_command);
-	if (err == 0) {
-		fp = fopen(tmp_file, "r");
-		bytes_in_buffer = G_file_length_m13(fp, NULL);
+	
+	fp = fopen(tmp_file, "r");
+	bytes_in_buffer = G_file_length_m13(fp, NULL);
+	if (assign_buffer == TRUE_m13) {
 		if (bytes_in_buffer >= buf_len) {
 			buf_len = bytes_in_buffer;
-			buffer = (si1 *) realloc((void *) buffer, (size_t) (buf_len + 1));  // allow for terminal zero
+			buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_buffer + 1));  // allow for terminal zero
 		}
-		fread((void *) buffer, sizeof(si1), (size_t) (buf_len), fp);
+	}
+	fread((void *) buffer, sizeof(si1), (size_t) buf_len, fp);
+	fclose(fp);
+	buffer[buf_len] = 0;  // terminal zero
+	G_remove_path_m13(tmp_file);  // delete temp file
+	
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		fp = fopen_m13(e_tmp_file, "r");
+		free_m13((void *) e_tmp_file);
+		bytes_in_e_buffer = G_file_length_m13(fp, NULL);
+		if (assign_e_buffer == TRUE_m13) {
+			if (bytes_in_e_buffer >= *e_buf_len) {
+				*e_buf_len = bytes_in_e_buffer;
+				e_buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_e_buffer + 1));  // allow for terminal zero
+			}
+		}
+		fread((void *) e_buffer, sizeof(si1), (size_t) *e_buf_len, fp);
 		fclose(fp);
-		buffer[bytes_in_buffer] = 0;  // terminal zero
-		G_remove_path_m13(tmp_file);  // delete temp file
+		e_buffer[*e_buf_len] = 0;  // terminal zero
+		G_remove_path_m13(e_tmp_file);  // delete temp file
 	}
 
-	if (err == 0) {
-		if (tee_to_terminal == TRUE_m13) {
-			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13))
-				printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+	if (err) {
+		err = (err < 0) ? -err : err;  // make positive for strerror() below
+	} else {
+		if (flags & SP_TEE_TO_TERMINAL_m13) {
+			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
+				printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+				if (flags & SP_SEPERATE_STREAMS_m13)
+					printf_m13("%s\n", e_buffer);
+			}
+		}
+		if (free_e_buffer == TRUE_m13) {
+			free((void *) e_buffer);
+			*e_buf_len = 0;
 		}
 		if (free_buffer == TRUE_m13) {
 			free((void *) buffer);
-			return_m13(0);
+			return(0);
 		}
 		if (assign_buffer == TRUE_m13)
 			*buffer_ptr = buffer;
+		if (assign_e_buffer == TRUE_m13)
+			*e_buffer_ptr = e_buffer;
+		
 		return_m13(bytes_in_buffer);
 	}
 
 	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-		err = (err < 0) ? -err : err;  // make error positive for strerror()
-		fprintf_m13(stderr, "\n%s() failed\n", __FUNCTION__);
+		fprintf_m13(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
 		fprintf_m13(stderr, "\tcommand: \"%s\"\n", command);
 		fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-		if (tee_to_terminal == TRUE_m13)
-			if (*buffer)
-				printf_m13("captured output: \"%s\"\n", buffer);
-		if (behavior & RETURN_ON_FAIL_m13)
-			fprintf_m13(stderr, "\t=> returning\n\n");
-		else
+		if (flags & SP_TEE_TO_TERMINAL_m13) {
+			if (flags & SP_SEPERATE_STREAMS_m13) {
+				if (*buffer)
+					printf_m13("\tstandard out: \"%s\"\n", buffer);
+				if (*e_buffer)
+					printf_m13("\n\tstandard error: \"%s\"\n", e_buffer);
+			} else if (*buffer) {
+					printf_m13("\tcaptured output: \"%s\"\n", buffer);
+			}
+		}
+		if (behavior & EXIT_ON_FAIL_m13)
 			fprintf_m13(stderr, "\t=> exiting\n\n");
+		else
+			fprintf_m13(stderr, "\t=> returning\n\n");
 		fflush(stderr);
 	}
 
-	if (free_buffer == TRUE_m13)
-		free_m13((void *) buffer);
-
-	if (!(behavior & RETURN_ON_FAIL_m13))
+	if (behavior & EXIT_ON_FAIL_m13)
 		exit_m13(-1);
 
-	// make error negative, if not
-	err = (err > 0) ? -err : err;
-	
+	if (free_buffer == TRUE_m13)
+		free_m13((void *) buffer);
+	if (free_e_buffer == TRUE_m13) {
+		free_m13((void *) e_buffer);
+		*e_buf_len = 0;
+	}
+
+	// make negative, for return
+	err = -err;
+
 	return_m13(err);
 }
-#endif
+#endif  // MACOS_m13 || LINUX_m13
 
 
 // not a standard function, but closely related
 #ifdef WINDOWS_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to_terminal, ui4 behavior)
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
-	TERN_m13		no_command, assign_buffer, assign_buf_len, free_buffer, retried;
-	si1			*buffer, cmd_exe_path[MAX_PATH], *tmp_command;
+	TERN_m13		no_command, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
+	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command;
 	si4			BUFFER_SIZE_INC, err;
-	si8			len;
+	si8			len, *e_buf_len;
 	PROCESS_INFORMATION	process_info;
 	STARTUPINFOA		startup_info;
 	SECURITY_ATTRIBUTES 	sec_attr;
-	HANDLE 			read_h, write_h;
-	DWORD 			n_bytes_read, bytes_in_buffer, bytes_avail, exit_code;
+	HANDLE 			read_h, e_read_h, write_h, e_write_h;
+	DWORD 			n_bytes_read, bytes_in_buffer, bytes_in_e_buffer, bytes_avail, exit_code;
 	BOOL 			success;
 
 #ifdef FN_DEBUG_m13
@@ -39531,10 +39753,11 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
 	// *buffer_ptr contains a NULL terminated string from the system command, if passed
 	// returns negative system error number or buffer string length on success (zero if no buffer returned)
+	// if SP_SEPERATE_STREAMS_m13 flag is set, returns error buffer string length on success in e_buf_len (zero if no buffer returned)
 
 	if (behavior == CURRENT_BEHAVIOR_m13)
 		behavior = G_current_behavior_m13();
-	
+
 	no_command = FALSE_m13;
 	if (command == NULL)
 		no_command = TRUE_m13;
@@ -39543,7 +39766,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to
 	if (no_command == TRUE_m13) {
 		if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
 			G_warning_message_m13("%s(): no command\n", __FUNCTION__);
-		return_m13(-1);
+		return(-1);
 	}
 
 	if (buffer_ptr == NULL) {
@@ -39559,21 +39782,58 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m13 tee_to
 			buf_len = 0;
 		} else {
 			assign_buffer = freeable_m13((void *) buffer);
-			buf_len = malloc_size_m13((void *) buffer);
+			if (assign_buffer == TRUE_m13)
+				buf_len = malloc_size_m13((void *) buffer);
 		}
 	}
 	
-	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
+	BUFFER_SIZE_INC = global_tables_m13->HW_params.system_page_size;
 	if (buf_len == 0) {
 		buf_len = BUFFER_SIZE_INC;
-		buffer = (si1 *) malloc_m13((size_t) buf_len);
+		buffer = (si1 *) malloc_m13((size_t) buf_len, __FUNCTION__, behavior);
 	}
 
+	// get varargs & set up error buffer
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		va_list		v_args;
+		
+		va_start(v_args, behavior);
+		e_buffer_ptr = va_arg(v_args, si1 **);
+		e_buf_len = va_arg(v_args, si8 *);
+		va_end(v_args);
+
+		if (e_buffer_ptr == NULL) {
+			free_e_buffer = TRUE_m13;
+			assign_e_buffer = FALSE_m13;
+			e_buffer = NULL;
+			*e_buf_len = 0;
+		} else {
+			free_e_buffer = FALSE_m13;
+			e_buffer = *buffer_ptr;
+			if (e_buffer == NULL) {
+				assign_e_buffer = TRUE_m13;
+				*e_buf_len = 0;
+			} else {
+				assign_e_buffer = freeable_m13((void *) e_buffer);
+				if (assign_e_buffer == TRUE_m13)
+					*e_buf_len = malloc_size_m13((void *) e_buffer);
+			}
+		}
+		
+		if (*e_buf_len == 0) {
+			*e_buf_len = BUFFER_SIZE_INC;
+			e_buffer = (si1 *) malloc_m13((size_t) *e_buf_len);
+		}
+	} else {
+		free_e_buffer = assign_e_buffer = FALSE_m13;
+	}
+	
 	retried = FALSE_m13;
+	
 SYSTEM_PIPE_RETRY_m13:
 	tmp_command = NULL;
-	read_h = NULL;
-	write_h = NULL;
+	read_h = e_read_h =NULL;
+	write_h = e_write_h = NULL;
 	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
 	ZeroMemory(&startup_info, sizeof(STARTUPINFO));
 
@@ -39591,6 +39851,18 @@ SYSTEM_PIPE_RETRY_m13:
 			G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		if (CreatePipe(&e_read_h, &e_write_h, &sec_attr, 0) == FALSE) {
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+		if (SetHandleInformation(e_read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
+			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
+				G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+			goto SYSTEM_PIPE_FAIL_m13;
+		}
+	}
 	
 	// set up process
 	GetEnvironmentVariableA("COMSPEC", cmd_exe_path, MAX_PATH);
@@ -39602,7 +39874,11 @@ SYSTEM_PIPE_RETRY_m13:
 
 	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;  // make nShowWindow member valid
 	startup_info.wShowWindow = SW_HIDE;
-	startup_info.hStdOutput = startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
+	startup_info.hStdOutput = write_h;
+	if (flags & SP_SEPERATE_STREAMS_m13)
+		startup_info.hStdError = e_write_h;
+	else
+		startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
 	
 	// start process
 	errno_reset_m13();
@@ -39612,10 +39888,12 @@ SYSTEM_PIPE_RETRY_m13:
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	
-	// close unused pipe end
+	// close unused pipe ends
 	CloseHandle(write_h);
+	if (flags & SP_SEPERATE_STREAMS_m13)
+		CloseHandle(e_write_h);
 
-	// read pipe
+	// read combined or stdout pipe
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
@@ -39633,25 +39911,59 @@ SYSTEM_PIPE_RETRY_m13:
 		bytes_avail -= n_bytes_read;
 	}
 	buffer[bytes_in_buffer] = 0;  // set terminal zero
+	CloseHandle(read_h);
+
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		bytes_in_e_buffer = 0;
+		bytes_avail = *e_buf_len;
+		while (bytes_avail > 1) {
+			if (assign_e_buffer == TRUE_m13) {
+				if (bytes_avail < BUFFER_SIZE_INC) {
+					*e_buf_len += BUFFER_SIZE_INC;
+					buffer = (si1 *) realloc_m13((void *) buffer, (size_t) *e_buf_len);
+					bytes_avail += BUFFER_SIZE_INC;
+				}
+			}
+			success = ReadFile(read_h, buffer + bytes_in_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
+			if (success == FALSE || n_bytes_read == 0)
+				break;
+			bytes_in_e_buffer += n_bytes_read;
+			bytes_avail -= n_bytes_read;
+		}
+		buffer[bytes_in_e_buffer] = 0;  // set terminal zero
+		CloseHandle(e_read_h);
+	}
 
 	free((void *) tmp_command);
-	CloseHandle(read_h);
 	CloseHandle(process_info.hProcess);  // process handle
 	CloseHandle(process_info.hThread);  // process' primary thread handle
 
-	if (tee_to_terminal == TRUE_m13)
-		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13))
-			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
+			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+			if (flags & SP_SEPERATE_STREAMS_m13)
+				printf_m13("%s\n", e_buffer);
+		}
+	}
 
+	if (free_e_buffer == TRUE_m13) {
+		free_m13((void *) e_buffer);
+		*e_buf_len = 0;
+	}
 	if (free_buffer == TRUE_m13) {
-		free((void *) buffer);
+		free_m13((void *) buffer);
 		return_m13(0);
 	}
 	
 	if (assign_buffer == TRUE_m13)
 		*buffer_ptr = buffer;
+	if (assign_e_buffer == TRUE_m13)
+		*e_buffer_ptr = e_buffer;
+	
+	if (flags & SP_SEPERATE_STREAMS_m13)
+		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
 
-	return_m13(bytes_in_buffer);
+	return(bytes_in_buffer);
 
 SYSTEM_PIPE_FAIL_m13:
 	
@@ -39679,68 +39991,117 @@ SYSTEM_PIPE_FAIL_m13:
 	}
 
 	// try with system_m13() redirected to temp file
-	si1	tmp_file[FULL_FILE_NAME_BYTES_m13];
+	si1	tmp_file[FULL_FILE_NAME_BYTES_m13], *e_tmp_file;
 	FILE	*fp;
 	
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		e_tmp_file = (si1 *) malloc_m13((size_t) FULL_FILE_NAME_BYTES_m13);
+		G_unique_temp_file_m13(e_tmp_file);
+	} else {
+		e_tmp_file = tmp_file;
+	}
+	
 	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m13) + 9;
-	tmp_command = G_unique_temp_file_m13(NULL);
-	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, NULL_DEVICE_m13);
-	err = system_m13(tmp_command, FALSE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
+	tmp_command = (si1 *) malloc((size_t) len);
+	G_unique_temp_file_m13(tmp_file);
+	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
+	err = system_m13(tmp_command, FALSE_m13, __FUNCTION__, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
 	free((void *) tmp_command);
-	if (err == 0) {
-		fp = fopen(tmp_file, "r");
-		bytes_in_buffer = G_file_length_m13(fp, NULL);
+	fp = fopen_m13(tmp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
+	bytes_in_buffer = G_file_length_m13(fp, NULL);
+	if (assign_buffer == TRUE_m13) {
 		if (bytes_in_buffer >= buf_len) {
 			buf_len = bytes_in_buffer;
-			buffer = (si1 *) realloc((void *) buffer, (size_t) (buf_len + 1));  // allow for terminal zero
+			buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_buffer + 1));  // allow for terminal zero
 		}
-		fread((void *) buffer, sizeof(si1), (size_t) (buf_len), fp);
-		fclose(fp);
-		buffer[bytes_in_buffer] = 0;  // terminal zero
-		G_remove_path_m13(tmp_file);  // delete temp file
 	}
+	fread((void *) buffer, sizeof(si1), (size_t) buf_len, fp);
+	fclose(fp);
+	buffer[buf_len] = 0;  // terminal zero
+	G_remove_path_m13(tmp_file);  // delete temp file
 		
-	if (err == 0) {
-		if (tee_to_terminal == TRUE_m13) {
-			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13))
-				printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+	if (flags & SP_SEPERATE_STREAMS_m13) {
+		fp = fopen_m13(e_tmp_file, "r");
+		free_m13((void *) e_tmp_file);
+		bytes_in_e_buffer = G_file_length_m13(fp, NULL);
+		if (assign_e_buffer == TRUE_m13) {
+			if (bytes_in_e_buffer >= *e_buf_len) {
+				*e_buf_len = bytes_in_e_buffer;
+				e_buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_e_buffer + 1));  // allow for terminal zero
+			}
+		}
+		fread((void *) e_buffer, sizeof(si1), (size_t) *e_buf_len, fp);
+		fclose(fp);
+		e_buffer[*e_buf_len] = 0;  // terminal zero
+		G_remove_path_m13(e_tmp_file);  // delete temp file
+	}
+	
+	if (err) {
+		err = (err < 0) ? -err : err;  // make positive for strerror() below
+	} else {
+		if (flags & SP_TEE_TO_TERMINAL_m13) {
+			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
+				printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+				if (flags & SP_SEPERATE_STREAMS_m13)
+					printf_m13("%s\n", e_buffer);
+			}
+		}
+		if (free_e_buffer == TRUE_m13) {
+			free_m13((void *) e_buffer);
+			*e_buf_len = 0;
 		}
 		if (free_buffer == TRUE_m13) {
-			free((void *) buffer);
-			return_m13(0);
+			free_m13((void *) buffer);
+			return(0);
 		}
 		if (assign_buffer == TRUE_m13)
 			*buffer_ptr = buffer;
-		return_m13(bytes_in_buffer);
+		if (assign_e_buffer == TRUE_m13)
+			*e_buffer_ptr = e_buffer;
+
+		return(bytes_in_buffer);
 	}
 
 	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
-		err = (err < 0) ? -err : err;  // make error positive for strerror()
-		fprintf_m13(stderr, "\n%s() failed\n", __FUNCTION__);
+		fprintf_m13(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
 		fprintf_m13(stderr, "\tcommand: \"%s\"\n", command);
 		fprintf_m13(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-		if (tee_to_terminal == TRUE_m13)
-			if (*buffer)
-				printf_m13("captured output: \"%s\"\n", buffer);
-		if (behavior & RETURN_ON_FAIL_m13)
-			fprintf_m13(stderr, "\t=> returning\n\n");
-		else
+		if (flags & SP_TEE_TO_TERMINAL_m13) {
+			if (flags & SP_SEPERATE_STREAMS_m13) {
+				if (*buffer)
+					printf_m13("\tstandard out: \"%s\"\n", buffer);
+				if (*e_buffer)
+					printf_m13("\n\tstandard error: \"%s\"\n", e_buffer);
+			} else if (*buffer) {
+					printf_m13("\tcaptured output: \"%s\"\n", buffer);
+			}
+		}
+		if (function != NULL)
+			fprintf_m13(stderr, "\tcalled from function %s()\n", function);
+		if (behavior & EXIT_ON_FAIL_m13)
 			fprintf_m13(stderr, "\t=> exiting\n\n");
+		else
+			fprintf_m13(stderr, "\t=> returning\n\n");
 		fflush(stderr);
 	}
 
-	if (free_buffer == TRUE_m13)
-		free_m13((void *) buffer);
-
-	if (!(behavior & RETURN_ON_FAIL_m13))
+	if (behavior & EXIT_ON_FAIL_m13)
 		exit_m13(-1);
 	
-	// make error negative, if not
-	err = (err > 0) ? -err : err;
+	if (free_buffer == TRUE_m13)
+		free_m13((void *) buffer);
+	if (free_e_buffer == TRUE_m13) {
+		free_m13((void *) e_buffer);
+		*e_buf_len = 0;
+	}
+
+	// make negative for return
+	err = -err;
 	
-	return_m13(err);
+	return(err);
 }
-#endif
+
+#endif  // WINDOWS_m13
 		    
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows

@@ -164,6 +164,7 @@
 	#include <sys/statfs.h>
 	#include <sys/sysinfo.h>
 	#include <pty.h>
+	#include <utmp.h>
 #endif
 #if defined LINUX_m12 || defined WINDOWS_m12
 	#include <malloc.h>
@@ -678,6 +679,11 @@ typedef struct {
 	// Other Options
 #define GFL_FREE_INPUT_FILE_LIST_m12		((ui4) 16)
 #define GFL_INCLUDE_INVISIBLE_FILES_m12		((ui4) 32)
+
+// System Pipe flags
+#define SP_DEFAULT_m12			0  // no flags set (default)
+#define SP_TEE_TO_TERMINAL_m12		1  // print buffer(s) to terminal in addition to returning
+#define SP_SEPERATE_STREAMS_m12		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
 
 // Spaces Constants
 #define NO_SPACES_m12                           0
@@ -1823,27 +1829,6 @@ typedef struct {
 		};
 	};
 } RECORD_INDEX_m12;
-
-// need to switch to this in next version
-//typedef struct {
-//	si8	file_offset;  // never negative: the record indices are not used to indicate discontinuities
-//	union {  // anonymous union
-//		si8     time;
-//		si8     end_time;  // for record types with a start_time (records written when all info known)
-//	};
-//	union {  // anonymous union
-//		struct {
-//			si1     type_string[TYPE_BYTES_m12];
-//			ui1     version_major;
-//			ui1     version_minor;
-//			si1     encryption_level;
-//		};
-//		struct {
-//			ui4     type_code;
-//			si1	type_string_terminal_zero;  // not used - there for clarity
-//		};
-//	};
-//} RECORD_INDEX_m12;
 
 // Time Series Indices Structures
 typedef struct {
@@ -4471,7 +4456,7 @@ si8		strcpy_m12(si1 *target, si1 *source);
 si8		strncat_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail);
-si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, TERN_m12 tee_to_terminal, const si1 *function, ui4 behavior_on_fail);
+si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...);  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		vasprintf_m12(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m12(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m12(si1 *fmt, va_list args);
