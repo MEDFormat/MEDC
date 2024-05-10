@@ -35684,10 +35684,9 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HEADER_m13 **caller_hea
 	// decrypt
 	if (pkt_header->flags & TR_FLAGS_ENCRYPT_m13) {
 		if (trans_info->expanded_key == NULL) {
-			password_passed = FALSE_m13;
-			if (trans_info->password != NULL)
-				if (*trans_info->password)
-					password_passed = TRUE_m13;
+			G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
+			password_passed = G_check_password_m13(trans_info->password);
+			G_pop_behavior_m13();
 			if (password_passed == FALSE_m13) {
 				G_warning_message_m13("%s(): no password or expanded key => cannot decrypt transmission\n", __FUNCTION__);
 				return_m13(TR_E_UNSPEC_m13);
@@ -35810,10 +35809,9 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	// encryption
 	if (header->flags & TR_FLAGS_ENCRYPT_m13) {
 		if (trans_info->expanded_key == NULL) {
-			password_passed = FALSE_m13;
-			if (trans_info->password != NULL)
-				if (*trans_info->password)
-					password_passed = TRUE_m13;
+			G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
+			password_passed = G_check_password_m13(trans_info->password);
+			G_pop_behavior_m13();
 			if (password_passed == FALSE_m13) {
 				G_warning_message_m13("%s(): no password or expanded key => cannot encrypt transmission\n", __FUNCTION__);
 				return_m13(TR_E_UNSPEC_m13);
