@@ -174,7 +174,6 @@ BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void)
 	stack_info->entries = 1;
 	++globals_m13->n_behavior_stacks;
 	
-	
 	return(stack_info);
 }
 
@@ -215,6 +214,9 @@ FUNCTION_STACK_m13	*G_add_function_stack_m13(void)
 #endif  // FN_DEBUG_m13
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 TERN_m13	G_all_zeros_m13(ui1 *bytes, si4 field_length)
 {
 #ifdef FN_DEBUG_m13
@@ -1928,7 +1930,7 @@ TERN_m13	G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 				if (free_fps2 == TRUE_m13)
 					FPS_free_processing_struct_m13(fps2, TRUE_m13);
 			}
-			if (number_of_entries > 0)  // the only option to get true maximum record size be to read full record data (or index) file
+			if (number_of_entries > 0)  // the only option to get true maximum record size would be to read full record data (or index) file
 				maximum_entry_size = REC_LARGEST_RECORD_BYTES_m13;
 			// the only other option would be to read full record data file counting records - will add this if need arises, but for now, just fail
 			break;
@@ -16652,7 +16654,7 @@ ui8	AT_actual_size_m13(void *address)
 void	AT_add_entry_m13(void *address, size_t requested_bytes, const si1 *function)
 {
 	ui8		actual_bytes;
-	si8		i, prev_node_count;
+	si8		prev_node_count;
 	AT_INFO_m13	*AT_info;
 	AT_NODE_m13	*atn;
 
@@ -16664,38 +16666,7 @@ void	AT_add_entry_m13(void *address, size_t requested_bytes, const si1 *function
 	
 	// get mutex
 	AT_mutex_on();
-	
-	// check if address exists in list and was previously freed
-	AT_info = &globals_m13->AT_info;
-	atn = AT_info->nodes;
-	for (i = AT_info->node_count; i--; ++atn)
-		if (atn->address == address)
-			break;
-	if (i >= 0) {
-		if (atn->free_function != NULL) {
-			// replace existing entry (keeps addresses in list unique)
-			atn->alloc_function = function;
-			atn->free_function = NULL;
-			atn->requested_bytes = requested_bytes;
-			#ifdef MACOS_m13
-			atn->actual_bytes = (ui8) malloc_size(address);
-			#endif
-			#ifdef LINUX_m13
-			atn->actual_bytes = (ui8) malloc_usable_size(address);
-			#endif
-			#ifdef WINDOWS_m13
-			atn->actual_bytes = (ui8) _msize(address);
-			#endif
-			AT_mutex_off();
-			return;
-		} else {
-			AT_mutex_off();
-			G_warning_message_m13("%s(): address is already allocated, called from function %s()\n", __FUNCTION__, function);
-			AT_show_entry_m13(address);
-			return;
-		}
-	}
-	
+		
 	// expand list if needed
 	if (AT_info->used_node_count == AT_info->node_count) {
 		prev_node_count = AT_info->node_count;
@@ -16729,6 +16700,8 @@ void	AT_add_entry_m13(void *address, size_t requested_bytes, const si1 *function
 	atn->address = address;
 	atn->actual_bytes = actual_bytes;
 	atn->alloc_function = function;
+	
+	// update
 	++AT_info->used_node_count;
 
 	// return mutex
@@ -16855,11 +16828,11 @@ void	AT_mutex_on(void)
 TERN_m13	AT_remove_entry_m13(void *address, const si1 *function)
 {
 	si8		i;
-	AT_NODE_m13	*atn;
+	AT_NODE_m13	*atn, *freed_atn;
 	
 	
-	// Note this function does not free the accociated memory, just removes it from AT list
-	
+	// Note this function does not free the accociated memory, just marks it as freed in the AT list
+
 	if (address == NULL) {
 		G_warning_message_m13("%s(): attempting to free NULL object, called from function %s()\n", __FUNCTION__, function);
 		return(FALSE_m13);
@@ -16870,25 +16843,28 @@ TERN_m13	AT_remove_entry_m13(void *address, const si1 *function)
 	
 	// look for match entry
 	atn = globals_m13->AT_info.nodes;
-	for (i = globals_m13->AT_info.node_count; i--; ++atn)
-		if (atn->address == address)
-			break;
+	for (i = globals_m13->AT_info.node_count; i--; ++atn) {
+		if (atn->address == address) {
+			if (atn->free_function != NULL)  // keep looking at rest of entries: same address may have been allocated subsequently
+				freed_atn = atn;
+			else
+				break;
+		}
+	}
 
 	// no entry
 	if (i < 0) {
 		AT_mutex_off();
-		G_warning_message_m13("%s(): address %lu is not allocated, called from function %s()\n", __FUNCTION__, (ui8) address, function);
+		if (freed_atn != NULL) {
+			G_warning_message_m13("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
+			AT_show_entry_m13(address);  // show where previously freed
+		} else {
+			G_warning_message_m13("%s(): address is not allocated, called from function %s()\n", __FUNCTION__, function);
+		}
 		return(FALSE_m13);
 	}
 
-	if (atn->free_function != NULL) {
-		AT_mutex_off();
-		G_warning_message_m13("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
-		AT_show_entry_m13(address);
-		return(FALSE_m13);
-	}
-
-	// remove
+	// mark as freed
 	atn->free_function = function;
 
 	// return mutex
@@ -20418,7 +20394,7 @@ ui1     CMP_normality_score_m13(si4 *data, ui4 n_samps)
 	si4_p = data;
 	sx = sx2 = (sf8) 0.0;
 	for (i = n_samps; i--;) {
-		val = (sf8)*si4_p++;
+		val = (sf8) *si4_p++;
 		sx += val;
 		sx2 += val * val;
 	}
@@ -20429,7 +20405,7 @@ ui1     CMP_normality_score_m13(si4 *data, ui4 n_samps)
 	// bin the samples
 	si4_p = data;
 	for (i = n_samps; i--;) {
-		val = (sf8)*si4_p++;
+		val = (sf8) *si4_p++;
 		z = (val - mx) / sd;
 		if (isnan(z))
 			continue;
@@ -20444,12 +20420,12 @@ ui1     CMP_normality_score_m13(si4 *data, ui4 n_samps)
 	// generate data CDF
 	cdf[0] = (sf8) count[0];
 	for (i = 1; i < CMP_NORMAL_CDF_TABLE_ENTRIES_m13; ++i)
-		cdf[i] = (sf8)count[i] + cdf[i - 1];
+		cdf[i] = (sf8) count[i] + cdf[i - 1];
 	
 	// calculate correlation between data CDF and normal CDF
 	sx = sx2 = sxy = (sf8) 0.0;
-	sy = (sf8 )CMP_SUM_NORMAL_CDF_m13;
-	sy2 = (sf8) CMP_SUM_SQ_NORMAL_CDF_m13;
+	sy = CMP_SUM_NORMAL_CDF_m13;
+	sy2 = CMP_SUM_SQ_NORMAL_CDF_m13;
 	for (i = 0; i < CMP_NORMAL_CDF_TABLE_ENTRIES_m13; ++i) {
 		sx += cdf[i];
 		sx2 += cdf[i] * cdf[i];
@@ -20474,7 +20450,7 @@ ui1     CMP_normality_score_m13(si4 *data, ui4 n_samps)
 		r = (sf8) 1.0;
 	
 	// return KS score (negative values set to zero, positive scaled to 0-254, 255 reserved for no entry)
-	ks = (ui1) CMP_round_si4_m13(r * 254);     // ks = (ui1) CMP_round_si4_m13(sqrt(1.0 - (r * r)) * 254);  => I had this before, but I don't know why
+	ks = (ui1) CMP_round_si4_m13(r * (sf8) 254.0);     // ks = (ui1) CMP_round_si4_m13(sqrt(1.0 - (r * r)) * 254);  => I had this before, but I don't know why
 	
 	return_m13(ks);
 }

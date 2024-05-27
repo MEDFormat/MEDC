@@ -2661,6 +2661,9 @@ TERN_m13	ALCK_video_metadata_section_2_m13(ui1 *bytes);
 
 #ifdef AT_DEBUG_m13
 
+// NOTE: The AT system keeps track all allocated & freed memory blocks, so the list can grow continuously & may appear like a a very slow memory leak
+// Previously freed memory blocks are not replaced in the list so in the case of an attempted double free, it can inform where the block was previously freed.
+
 #define AT_CURRENTLY_ALLOCATED_m13	((ui4) 1)
 #define AT_PREVIOUSLY_FREED_m13		((ui4) 2)
 #define AT_ALL_m13			(AT_CURRENTLY_ALLOCATED_m13 | AT_PREVIOUSLY_FREED_m13)
@@ -3058,8 +3061,8 @@ si1		*STR_wchar2char_m13(si1 *target, wchar_t *source);
 						0.99533881197628100, 0.99653302619695900, 0.99744486966957200, 0.99813418669961600, \
 						0.99865010196837000 }
 
-#define CMP_SUM_NORMAL_CDF_m13                  30.5
-#define CMP_SUM_SQ_NORMAL_CDF_m13               24.864467406647070
+#define CMP_SUM_NORMAL_CDF_m13                  ((sf8) 30.5)
+#define CMP_SUM_SQ_NORMAL_CDF_m13               ((sf8) 24.864467406647070)
 #define CMP_KS_CORRECTION_m13                   ((sf8) 0.0001526091333688973)
 
 #define CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13	101

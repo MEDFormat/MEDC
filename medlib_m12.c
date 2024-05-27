@@ -10006,6 +10006,7 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 		allocated_flag = TRUE_m12;
 	}
 	
+	printf_m12("%s(%d): %s\n", __FUNCTION__, __LINE__, fps->full_file_name);
 	// full file already read
 	if (fps->parameters.full_file_read == TRUE_m12) {
 		G_file_times_m12(NULL, fps->full_file_name, &ft, FALSE_m12);
@@ -10090,7 +10091,9 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 	if (fps->directives.close_file == TRUE_m12)
 		FPS_close_m12(fps);
 	if (bytes_read != bytes_to_read) {
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		G_error_message_m12("%s(): file read error\n", __FUNCTION__);
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		if (allocated_flag == TRUE_m12)
 			FPS_free_processing_struct_m12(fps, TRUE_m12);
 		G_set_error_m12(E_READ_ERR_m12, __FUNCTION__, __LINE__);
@@ -15837,7 +15840,7 @@ VIDEO_METADATA_SECTION_2_NOT_ALIGNED_m12:
 void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function)
 {
 	ui8		actual_bytes;
-	si8		i, prev_node_count;
+	si8		prev_node_count;
 	AT_NODE		*atn;
 
 #ifdef FN_DEBUG_m12
@@ -15856,37 +15859,7 @@ void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function
 	
 	// get mutex
 	AT_mutex_on();
-	
-	// check if address exists in list and was previously freed
-	atn = globals_m12->AT_nodes;
-	for (i = globals_m12->AT_node_count; i--; ++atn)
-		if (atn->address == address)
-			break;
-	if (i >= 0) {
-		if (atn->free_function != NULL) {
-			// replace existing entry (keeps addresses in list unique)
-			atn->alloc_function = function;
-			atn->free_function = NULL;
-			atn->requested_bytes = requested_bytes;
-			#ifdef MACOS_m12
-			atn->actual_bytes = (ui8) malloc_size(address);
-			#endif
-			#ifdef LINUX_m12
-			atn->actual_bytes = (ui8) malloc_usable_size(address);
-			#endif
-			#ifdef WINDOWS_m12
-			atn->actual_bytes = (ui8) _msize(address);
-			#endif
-			AT_mutex_off();
-			return;
-		} else {
-			AT_mutex_off();
-			G_warning_message_m12("%s(): address is already allocated, called from function %s()\n", __FUNCTION__, function);
-			AT_show_entry_m12(address);
-			return;
-		}
-	}
-	
+		
 	// expand list if needed
 	if (globals_m12->AT_used_node_count == globals_m12->AT_node_count) {
 		prev_node_count = globals_m12->AT_node_count;
@@ -15916,10 +15889,12 @@ void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function
 #endif
 			
 	// fill in
-	atn->requested_bytes = requested_bytes;
 	atn->address = address;
+	atn->requested_bytes = requested_bytes;
 	atn->actual_bytes = actual_bytes;
 	atn->alloc_function = function;
+	
+	// update
 	++globals_m12->AT_used_node_count;
 
 	// return mutex
@@ -16105,7 +16080,7 @@ void	AT_mutex_on(void)
 TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 {
 	si8		i;
-	AT_NODE		*atn;
+	AT_NODE		*atn, *freed_atn;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -16116,7 +16091,7 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	return(FALSE_m12);
 #endif
 
-	// Note this function does not free the accociated memory, just removes it from AT list
+	// Note this function does not free the accociated memory, just marks it as freed in the AT list
 	
 	if (address == NULL) {
 		G_warning_message_m12("%s(): attempting to free NULL object, called from function %s()\n", __FUNCTION__, function);
@@ -16128,25 +16103,30 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	
 	// look for match entry
 	atn = globals_m12->AT_nodes;
-	for (i = globals_m12->AT_node_count; i--; ++atn)
-		if (atn->address == address)
-			break;
+	freed_atn = NULL;
+	for (i = globals_m12->AT_node_count; i--; ++atn) {
+		if (atn->address == address) {
+			if (atn->free_function != NULL)  // keep looking at rest of entries: same address may have been allocated subsequently
+				freed_atn = atn;
+			else
+				break;
+		}
+	}
 
 	// no entry
 	if (i < 0) {
 		AT_mutex_off();
-		G_warning_message_m12("%s(): address %lu is not allocated, called from function %s()\n", __FUNCTION__, (ui8) address, function);
+		if (freed_atn != NULL) {
+			G_warning_message_m12("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
+			AT_show_entry_m12(address);  // show where previously freed
+
+		} else {
+			G_warning_message_m12("%s(): address is not allocated, called from function %s()\n", __FUNCTION__, function);
+		}
 		return(FALSE_m12);
 	}
 
-	if (atn->free_function != NULL) {
-		AT_mutex_off();
-		G_warning_message_m12("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
-		AT_show_entry_m12(address);
-		return(FALSE_m12);
-	}
-
-	// remove
+	// mark as freed
 	atn->free_function = function;
 
 	// return mutex

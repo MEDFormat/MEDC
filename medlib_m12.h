@@ -2435,6 +2435,9 @@ TERN_m12	ALCK_video_metadata_section_2_m12(ui1 *bytes);
 //*********************  MED Allocation Tracking (AT) Functions  *******************//
 //**********************************************************************************//
 
+// NOTE: The AT system keeps track all allocated & freed blocks of memory, so the list can grow continuously & may appear like a a very slow memory leak
+// Previously freed memory blocks are not replaced in the list so in the case of an attempted double free, it can inform where the block was previously freed.
+
 #define AT_CURRENTLY_ALLOCATED_m12	((ui4) 1)
 #define AT_PREVIOUSLY_FREED_m12		((ui4) 2)
 #define AT_ALL_m12			(AT_CURRENTLY_ALLOCATED_m12 | AT_PREVIOUSLY_FREED_m12)
