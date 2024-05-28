@@ -10006,7 +10006,6 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 		allocated_flag = TRUE_m12;
 	}
 	
-	printf_m12("%s(%d): %s\n", __FUNCTION__, __LINE__, fps->full_file_name);
 	// full file already read
 	if (fps->parameters.full_file_read == TRUE_m12) {
 		G_file_times_m12(NULL, fps->full_file_name, &ft, FALSE_m12);
@@ -10091,9 +10090,7 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 	if (fps->directives.close_file == TRUE_m12)
 		FPS_close_m12(fps);
 	if (bytes_read != bytes_to_read) {
-		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		G_error_message_m12("%s(): file read error\n", __FUNCTION__);
-		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		if (allocated_flag == TRUE_m12)
 			FPS_free_processing_struct_m12(fps, TRUE_m12);
 		G_set_error_m12(E_READ_ERR_m12, __FUNCTION__, __LINE__);
@@ -15972,7 +15969,7 @@ void	AT_free_all_m12(void)
 	}
 
 	if (alloced_entries) {
-		#ifdef MATLAB_m13
+		#ifdef MATLAB_m12
 		if (alloced_entries > 1)
 			mexPrintf("\n%s(): freeing %ld entries:\n", __FUNCTION__, alloced_entries);
 		else
@@ -16348,7 +16345,7 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 		if (buffers->buffer != NULL) {
 			if (buffers->locked == TRUE_m12)
 				buffers->locked = munlock_m12((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			free_m12((void *) buffers->buffer, __FUNCTION__);
+			free_m12((void *) buffers->buffer, __FUNCTION__);  // usually faster to free & alloc than realloc because of potential memory move
 		}
 		if (zero_data == TRUE_m12)
 			buffers->buffer = (void **) calloc_m12((size_t) total_requested_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -38630,7 +38627,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 
 // not a standard function, but closely related
 #if defined MACOS_m12 || defined LINUX_m12
-si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	TERN_m12	no_command, command_needs_shell, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
 	si1		**e_buffer_ptr, *buffer, *e_buffer, *c;
@@ -39121,7 +39118,7 @@ SYSTEM_PIPE_FAIL_m12:
 
 // not a standard function, but closely related
 #ifdef WINDOWS_m12
-si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	TERN_m12		no_command, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
 	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command;
@@ -39342,7 +39339,7 @@ SYSTEM_PIPE_RETRY_m12:
 		*e_buf_len = 0;
 	}
 	if (free_buffer == TRUE_m12) {
-		free_m13((void *) buffer, __FUNCTION__);
+		free_m12((void *) buffer, __FUNCTION__);
 		return(0);
 	}
 	
