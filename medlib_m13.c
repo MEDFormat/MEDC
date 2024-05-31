@@ -17057,7 +17057,8 @@ CMP_BUFFERS_m13    *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buf
 {
 	TERN_m13	free_structure;
 	ui1		*array_base;
-	ui8		i, pointer_bytes, array_bytes, total_requested_bytes, mod;
+	ui8		pointer_bytes, array_bytes, total_requested_bytes, mod;
+	si8		i;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -17094,7 +17095,7 @@ CMP_BUFFERS_m13    *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buf
 		if (buffers->buffer != NULL) {
 			if (buffers->locked == TRUE_m13)
 				buffers->locked = munlock_m13((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes);
-			free_m13((void *) buffers->buffer);
+			free_m13((void *) buffers->buffer);  // usually faster to free & alloc than realloc because of potential memory move
 		}
 		if (zero_data == TRUE_m13)
 			buffers->buffer = (void **) calloc_m13((size_t) total_requested_bytes, sizeof(ui1));

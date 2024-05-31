@@ -1701,13 +1701,13 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				file_offset = UNIVERSAL_HEADER_BYTES_m12;
 				if (fseek_m12(fps->parameters.fp, file_offset, SEEK_SET, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
 					break;
-				if (fread_m12((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m12), (size_t) 1, fps->parameters.fp, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
+				if (fread_m12((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m12), (size_t) 1, fps->parameters.fp, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == (size_t) -1)
 					break;
 				// read second block header
 				file_offset += block_header.total_block_bytes;
 				if (fseek_m12(fps->parameters.fp, file_offset, SEEK_SET, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
 					break;
-				if (fread_m12((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m12), (size_t) 1, fps->parameters.fp, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == -1)
+				if (fread_m12((void *) &block_header, sizeof(CMP_BLOCK_FIXED_HEADER_m12), (size_t) 1, fps->parameters.fp, fps->full_file_name, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12) == (size_t) -1)
 					break;
 				maximum_entry_size = block_header.total_block_bytes;
 			}  // the only other option would be to read full data file counting blocks - will add this if need arises, but for now, just fail
@@ -5907,13 +5907,13 @@ TERN_m12     G_include_record_m12(ui4 type_code, si4 *record_filters)
 
 	for (mode = 0; *record_filters; ++record_filters) {
 		if (*record_filters > 0) {
-			if (type_code == (si4) *record_filters)
+			if (type_code == (ui4) *record_filters)
 				return(TRUE_m12);
 			if (mode)
 				continue;
 			mode = INCLUDE_POSITIVE;
 		} else {
-			if (type_code == -(*record_filters))
+			if (type_code == (ui4) -(*record_filters))
 				return(FALSE_m12);
 			mode = EXCLUDE_NEGATIVE;
 		}
@@ -7368,9 +7368,9 @@ void     G_nap_m12(si1 *nap_str)
 	}
 	
 	// overflow
-	if (nap.tv_nsec >= (ui8) 1e9) {
-		nap.tv_sec = nap.tv_nsec / (ui8) 1e9;
-		nap.tv_nsec -= (nap.tv_sec * (ui8) 1e9);
+	if (nap.tv_nsec >= (si8) 1e9) {
+		nap.tv_sec = nap.tv_nsec / (si8) 1e9;
+		nap.tv_nsec -= (nap.tv_sec * (si8) 1e9);
 	}
 	
 	// sleep
@@ -12218,7 +12218,7 @@ TERN_m12	G_set_time_and_password_data_m12(si1 *unspecified_password, si1 *MED_di
 void	G_show_behavior_m12(void)
 {
 	si1	behavior_string[256];
-	si4	i, j;
+	si4	i, j, bse;
 	
 	
 	// get mutex
@@ -12228,9 +12228,10 @@ void	G_show_behavior_m12(void)
 	G_behavior_string_m12(globals_m12->behavior_on_fail, behavior_string);
 	printf_m12("%s\n\n", behavior_string);
 	
-	if (globals_m12->behavior_stack_entries) {
+	bse = (si4) globals_m12->behavior_stack_entries;
+	if (bse) {
 		printf_m12("Current Behavior Stack:\n-----------------------\n");
-		for (i = 0, j = (si4) globals_m12->behavior_stack_entries - 1; i < globals_m12->behavior_stack_entries; ++i, --j) {
+		for (i = 0, j = bse - 1; i < bse; ++i, --j) {
 			G_behavior_string_m12(globals_m12->behavior_stack[j], behavior_string);
 			printf_m12("%d)\t%s\n", i, behavior_string);
 		}
@@ -16308,7 +16309,8 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 {
 	TERN_m12	free_structure;
 	ui1		*array_base;
-	ui8		i, pointer_bytes, array_bytes, total_requested_bytes, mod;
+	ui8		pointer_bytes, array_bytes, total_requested_bytes, mod;
+	si8		i;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -24473,8 +24475,8 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everthing must match
 			matrix->data_bytes = 0;  // force failure below
 	}
-	if (matrix->data_bytes < new_data_bytes) {
-		matrix->data_bytes = new_data_bytes;
+	if (matrix->data_bytes < (si8) new_data_bytes) {
+		matrix->data_bytes = (si8) new_data_bytes;
 		if (matrix->data != NULL) {
 			free_m12((void *) matrix->data, __FUNCTION__);
 			if (matrix->range_minima != NULL) {  // always paired
@@ -35944,9 +35946,9 @@ TERN_m12 UTF8_is_valid_m12(si1 *string, TERN_m12 zero_invalid, si1 *field_name)
 }
 
 
-si1	*UTF8_memchr_m12(si1 *s, ui4 ch, size_t sz, si4 *char_num)
+si1	*UTF8_memchr_m12(si1 *s, ui4 ch, si4 sz, si4 *char_num)
 {
-	si4	i = 0, last_i = 0;
+	si8	i = 0, last_i = 0;
 	ui4	c, *offsets_table;
 	si4	csz;
 	
@@ -37128,9 +37130,8 @@ void	*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 // not a standard function, but closely related
 void	**calloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
-	si8     i;
 	ui1	**ptr;
-	size_t  dim1_bytes, dim2_bytes, content_bytes, total_bytes;
+	size_t  i, dim1_bytes, dim2_bytes, content_bytes, total_bytes;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -37426,7 +37427,7 @@ void    free_m12(void *ptr, const si1 *function)
 // not a standard function, but closely related
 void    free_2D_m12(void **ptr, size_t dim1, const si1 *function)
 {
-	si8     i;
+	size_t	i;
 	void	*base_address;
 	
 #ifdef FN_DEBUG_m12
@@ -37817,9 +37818,8 @@ void	*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 // not a standard function, but closely related
 void	**malloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
-	si8     i;
 	ui1	**ptr;
-	size_t  dim1_bytes, dim2_bytes, content_bytes, total_bytes;
+	size_t  i, dim1_bytes, dim2_bytes, content_bytes, total_bytes;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -38194,9 +38194,8 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 // not a standard function, but closely related
 void	**realloc_2D_m12(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail)
 {
-	si8	i;
 	void	**new_ptr;
-	size_t	least_dim1, least_dim2;
+	size_t	i, least_dim1, least_dim2;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
