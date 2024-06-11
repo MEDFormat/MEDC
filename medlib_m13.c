@@ -4908,15 +4908,18 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		
 	#if defined MACOS_m13 || defined LINUX_m13
 		TERN_m13	no_match;
-		si1		*command;
+		si1		*command, *tmp_command;
 		si4		ret_val;
 		si8		len;
+
+		// alternating with tmp_command here because of a quirk in sprintf_m13(), that needs to be looked at
 
 		len = n_in_files * FULL_FILE_NAME_BYTES_m13;
 		if (flags & GFL_INCLUDE_INVISIBLE_FILES_m13)
 			len <<= 1;
-		len += 8;
+		len += 16;
 		command = (si1 *) malloc((size_t) len);
+		tmp_command = (si1 *) malloc((size_t) len);
 		#ifdef MACOS_m13
 		strcpy(command, "/bin/ls -1d");
 		#endif
@@ -4926,14 +4929,22 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		for (i = 0; i < n_in_files; ++i) {
 			STR_escape_chars_m13(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m13);  // escape spaces
 			STR_escape_chars_m13(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m13);  // escape apostrophes
-			sprintf_m13(command, "%s %s", command, file_list[i]);
+			sprintf(tmp_command, "%s %s", command, file_list[i]);
+			strcpy(command, tmp_command);
+//			sprintf_m13(command, "%s %s", command, file_list[i]);
 			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m13) {
 				G_extract_path_parts_m13(file_list[i], NULL, name, extension);
-				sprintf_m13(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
-				if (*extension)
-					sprintf_m13(command, "%s.%s", command, extension);
+				sprintf(tmp_command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
+				strcpy(command, tmp_command);
+//				sprintf_m13(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
+				if (*extension) {
+					sprintf(tmp_command, "%s.%s", command, extension);
+					strcpy(command, tmp_command);
+//					sprintf_m13(command, "%s.%s", command, extension);
+				}
 			}
 		}
+		free((void *) tmp_command);
 		free_2D_m13((void **) file_list, n_in_files);
 
 		buffer = NULL;

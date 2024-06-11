@@ -261,12 +261,16 @@ typedef struct {
 		si8     end_sample_number;	// session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 		si8     end_frame_number;	// session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 	};
-	si4     	segment_number;
 	union {
-		ui1     pad[4];  // 16 byte alignment for encryption
-		si1	description[4];  // beginning of segment description, if present
+		sf8     sampling_frequency;  // channel sampling frequency (REC_Sgmt_v11_SAMPLING_FREQUENCY_VARIABLE_m13 in session level records, if sampling frequencies vary across time series channels)
+		sf8     frame_rate;  	     // channel frame rate (REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13 in session level records, if frame rates vary across video channels)
 	};
+	si4     segment_number;
+	si4     acquisition_channel_number;  // REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13 in session level records
 } REC_Sgmt_v11_m13;
+
+// Description follows sampling_frequency / frame_rate in structure.
+// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
 typedef struct {
 	si8     end_time;
@@ -584,7 +588,7 @@ typedef struct {
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13	32
 #define GLOBALS_PROC_GLOBALS_LIST_SIZE_INCREMENT_m13	32
 #define GLOBALS_REFERENCE_CHANNEL_INDEX_NO_ENTRY_m13	-1
-#define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13		-1
+#define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13		((ui4) 0)
 #define GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13		4096  // 4 KiB
 #define GLOBALS_AT_LIST_SIZE_INCREMENT_m13		8096
 
@@ -1548,7 +1552,7 @@ typedef struct {
 	// Password
 	PASSWORD_DATA_m13               password_data;
 	// Current Session
-	si8				session_UID;
+	ui8				session_UID;
 	si1				session_directory[FULL_FILE_NAME_BYTES_m13];	// path including file system session directory name
 	si1				*session_name;  				// points to: uh_session_name if known, else fs_session_name if known, else NULL
 	si1				uh_session_name[BASE_FILE_NAME_BYTES_m13];	// from MED universal header - original name
