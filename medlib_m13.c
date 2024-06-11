@@ -4910,7 +4910,7 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		TERN_m13	no_match;
 		si1		*command, *tmp_command;
 		si4		ret_val;
-		si8		len;
+		size_t		len;
 
 		// alternating with tmp_command here because of a quirk in sprintf_m13(), that needs to be looked at
 
@@ -4929,17 +4929,17 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		for (i = 0; i < n_in_files; ++i) {
 			STR_escape_chars_m13(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m13);  // escape spaces
 			STR_escape_chars_m13(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m13);  // escape apostrophes
-			sprintf(tmp_command, "%s %s", command, file_list[i]);
-			strcpy(command, tmp_command);
+			len = sprintf(tmp_command, "%s %s", command, file_list[i]);
+			memcpy((void *) command, (void *) tmp_command, ++len);
 //			sprintf_m13(command, "%s %s", command, file_list[i]);
 			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m13) {
 				G_extract_path_parts_m13(file_list[i], NULL, name, extension);
-				sprintf(tmp_command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
-				strcpy(command, tmp_command);
+				len = sprintf(tmp_command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
+				memcpy((void *) command, (void *) tmp_command, ++len);
 //				sprintf_m13(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
 				if (*extension) {
-					sprintf(tmp_command, "%s.%s", command, extension);
-					strcpy(command, tmp_command);
+					len = sprintf(tmp_command, "%s.%s", command, extension);
+					memcpy((void *) command, (void *) tmp_command, ++len);
 //					sprintf_m13(command, "%s.%s", command, extension);
 				}
 			}
