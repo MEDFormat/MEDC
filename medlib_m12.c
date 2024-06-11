@@ -1652,7 +1652,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 	LEVEL_HEADER_m12		*level_header;
 	CMP_BLOCK_FIXED_HEADER_m12	block_header;
 	
-	
+    	
 	// called if universal_header->number_of_entries == 0 in live recording or improperly closed file
 	
 	if (fps->parameters.flen == UNIVERSAL_HEADER_BYTES_m12)  // no actual entries, zero is correct
@@ -4627,15 +4627,18 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		
 	#if defined MACOS_m12 || defined LINUX_m12
 		TERN_m12	no_match;
-		si1		*command;
+		si1		*command, *tmp_command;
 		si4		ret_val;
 		si8		len;
 
+		// alternating with tmp_command here because of a quirk in sprintf_m12(), that needs to be looked at
+		
 		len = n_in_files * FULL_FILE_NAME_BYTES_m12;
 		if (flags & GFL_INCLUDE_INVISIBLE_FILES_m12)
 			len <<= 1;
-		len += 8;
+		len += 16;
 		command = (si1 *) malloc((size_t) len);
+		tmp_command = (si1 *) malloc((size_t) len);
 		#ifdef MACOS_m12
 		strcpy(command, "/bin/ls -1d");
 		#endif
@@ -4645,18 +4648,24 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		for (i = 0; i < n_in_files; ++i) {
 			STR_escape_chars_m12(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m12);  // escape spaces
 			STR_escape_chars_m12(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m12);  // escape apostrophes
-			sprintf_m12(command, "%s %s", command, file_list[i]);
+			sprintf(tmp_command, "%s %s", command, file_list[i]);
+			strcpy(command, tmp_command);
 			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m12) {
 				G_extract_path_parts_m12(file_list[i], NULL, name, extension);
-				sprintf_m12(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
-				if (*extension)
-					sprintf_m12(command, "%s.%s", command, extension);
+				sprintf(tmp_command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
+				strcpy(command, tmp_command);
+				if (*extension) {
+					sprintf(tmp_command, "%s.%s", command, extension);
+					strcpy(command, tmp_command);
+				}
 			}
 		}
+		free((void *) tmp_command);
 		free_2D_m12((void *) file_list, n_in_files, __FUNCTION__);
-
+		
 		buffer = NULL;
 		ret_val = system_pipe_m12(&buffer, 0, command, SP_DEFAULT_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free((void *) command);
 		if (ret_val < 0) {
 			// system_pipe_m12() error return frees buffer
 			*n_out_files = 0;
@@ -4667,7 +4676,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			free_m12((void *) buffer, __FUNCTION__);
 			return(NULL);
 		}
-		// system_pipe_m12() can distinguish between stderr & stdout, but not well tested yet
+		// system_pipe_m12() can distinguish between stderr & stdout, but this is not well tested yet
 		// this is a terrible solution, but works for now
 		no_match = FALSE_m12;
 		#ifdef LINUX_m12
@@ -8432,22 +8441,6 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	slice->end_segment_number = chan->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
 	
-	// update for variable frequencies on active channel set
-	G_frequencies_vary_m12(sess);
-	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == SAMPLE_SEARCH_m12) {
-			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
-		}
-	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == FRAME_SEARCH_m12) {
-			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m12;
-		}
-	}
-
 	// sort channels
 	G_sort_channels_by_acq_num_m12(sess);
 	
@@ -8909,22 +8902,6 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	slice->start_segment_number = chan->time_slice.start_segment_number;
 	slice->end_segment_number = chan->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
-
-	// update for variable frequencies on active channel set
-	G_frequencies_vary_m12(sess);
-	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == SAMPLE_SEARCH_m12) {
-			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
-		}
-	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == FRAME_SEARCH_m12) {
-			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m12;
-		}
-	}
 	
 	// sort channels
 	G_sort_channels_by_acq_num_m12(sess);
@@ -10377,11 +10354,12 @@ pthread_rval_m12	G_read_segment_thread_m12(void *ptr)
 
 SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  // varargs: void *file_list, si4 list_len, ui4 flags, si1 *password
 {
-	TERN_m12			open_session, free_session;
+	TERN_m12			open_session, free_session, calculate_channel_indices;
 	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12];
+	si4                             i, j, list_len, seg_idx, search_mode, active_ts_chans, active_vid_chans;
 	ui8                             flags;
-	si4                             i, j, list_len, seg_idx, active_ts_chans, active_vid_chans;
+	sf8				ref_sf, sf_ratio;
 	void				*file_list;
 	va_list				args;
 	CHANNEL_m12			*chan;
@@ -10452,17 +10430,16 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 
 	// update for variable frequencies on active channel set
 	G_frequencies_vary_m12(sess);
+	search_mode = G_get_search_mode_m12(slice);
 	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
 		if (G_get_search_mode_m12(slice) == SAMPLE_SEARCH_m12) {
 			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
 			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
 		}
 	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
 		if (G_get_search_mode_m12(slice) == FRAME_SEARCH_m12) {
 			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
 			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m12;
 		}
 	}
 
@@ -10476,14 +10453,31 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			if (sess->time_series_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
 				++active_ts_chans;
 		if (active_ts_chans) {
+			calculate_channel_indices = FALSE_m12;
+			if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
+				if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
+					if (search_mode == SAMPLE_SEARCH_m12) {
+						calculate_channel_indices = TRUE_m12;
+						ref_sf = globals_m12->reference_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+					}
+				}
+			}
 			ts_chan_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m12));
 			for (i = j = 0; i < sess->number_of_time_series_channels; ++i) {
 				chan = sess->time_series_channels[i];
 				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+					if (calculate_channel_indices == TRUE_m12) {
+						sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
+						chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
+						chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
+						chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+					} else {
+						chan->time_slice = *slice;
+					}
 					*ts_chan_thread_infos[j].MED_dir = 0;  // use existing channel path
 					ts_chan_thread_infos[j].flags = LH_NO_FLAGS_m12;  // use existing channel flags
 					ts_chan_thread_infos[j].MED_struct = (LEVEL_HEADER_m12 *) chan;
-					ts_chan_thread_infos[j].slice = slice;
+					ts_chan_thread_infos[j].slice = NULL;
 					ts_chan_thread_infos[j].password = NULL;
 					PROC_launch_thread_m12(&ts_chan_thread_infos[j].thread_id, G_read_channel_thread_m12, (void *) (ts_chan_thread_infos + j), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_channel_thread");
 					++j;
@@ -10496,14 +10490,31 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			if (sess->video_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
 				++active_vid_chans;
 		if (active_vid_chans) {
+			calculate_channel_indices = FALSE_m12;
+			if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
+				if (globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
+					if (search_mode == SAMPLE_SEARCH_m12) {
+						calculate_channel_indices = TRUE_m12;
+						ref_sf = globals_m12->reference_channel->metadata_fps->metadata->video_section_2.frame_rate;
+					}
+				}
+			}
 			vid_chan_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_vid_chans, sizeof(READ_MED_THREAD_INFO_m12));
 			for (i = j = 0; i < sess->number_of_video_channels; ++i) {
 				chan = sess->video_channels[i];
 				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+					if (calculate_channel_indices == TRUE_m12) {
+						sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
+						chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
+						chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
+						chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+					} else {
+						chan->time_slice = *slice;
+					}
 					*vid_chan_thread_infos[j].MED_dir = 0;  // use existing channel path
 					vid_chan_thread_infos[j].flags = LH_NO_FLAGS_m12;  // use existing channel flags
 					vid_chan_thread_infos[j].MED_struct = (LEVEL_HEADER_m12 *) chan;
-					vid_chan_thread_infos[j].slice = slice;
+					vid_chan_thread_infos[j].slice = NULL;
 					vid_chan_thread_infos[j].password = NULL;
 					PROC_launch_thread_m12(&vid_chan_thread_infos[j].thread_id, G_read_channel_thread_m12, (void *) (vid_chan_thread_infos + j), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_channel_thread");
 					++j;
@@ -10572,22 +10583,6 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 	} else if (globals_m12->video_frame_rates_vary == FALSE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
 		slice->start_frame_number = chan->time_slice.start_frame_number;
 		slice->end_frame_number = chan->time_slice.end_frame_number;
-	}
-
-	// update for variable frequencies on active channel set
-	G_frequencies_vary_m12(sess);
-	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == SAMPLE_SEARCH_m12) {
-			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
-		}
-	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == FRAME_SEARCH_m12) {
-			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m12;
-		}
 	}
 
 	// read session record data
@@ -10676,11 +10671,12 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 
 SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  // varargs: void *file_list, si4 list_len, ui8 flags, si1 *password
 {
-	TERN_m12			open_session, free_session;
+	TERN_m12			open_session, free_session, calculate_channel_indices;
 	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12];
-	si4                             i, j, list_len, seg_idx;
+	si4                             i, j, list_len, seg_idx, search_mode;
 	ui8                             flags;
+	sf8				ref_sf, sf_ratio;
 	void				*file_list;
 	va_list				args;
 	CHANNEL_m12			*chan;
@@ -10750,25 +10746,41 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 
 	// update for variable frequencies on active channel set
 	G_frequencies_vary_m12(sess);
+	search_mode = G_get_search_mode_m12(slice);
 	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == SAMPLE_SEARCH_m12) {
+		if (search_mode == SAMPLE_SEARCH_m12) {
 			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
 			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
 		}
 	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == FRAME_SEARCH_m12) {
+		if (search_mode == FRAME_SEARCH_m12) {
 			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
 			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m12;
 		}
 	}
 
 	// read time series channels
+	calculate_channel_indices = FALSE_m12;
+	if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
+		if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
+			if (search_mode == SAMPLE_SEARCH_m12) {
+				calculate_channel_indices = TRUE_m12;
+				ref_sf = globals_m12->reference_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+			}
+		}
+	}
 	for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 		chan = sess->time_series_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-			if (G_read_channel_nt_m12(chan, slice) == NULL) {
+			if (calculate_channel_indices == TRUE_m12) {
+				sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
+				chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
+				chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
+				chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+			} else {
+				chan->time_slice = *slice;
+			}
+			if (G_read_channel_nt_m12(chan, NULL) == NULL) {
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
 				} else if (chan != NULL) {
@@ -10781,10 +10793,27 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	}
 
 	// read video channels
+	calculate_channel_indices = FALSE_m12;
+	if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
+		if (globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
+			if (search_mode == FRAME_SEARCH_m12) {
+				calculate_channel_indices = TRUE_m12;
+				ref_sf = globals_m12->reference_channel->metadata_fps->metadata->video_section_2.frame_rate;
+			}
+		}
+	}
 	for (i = 0; i < sess->number_of_video_channels; ++i) {
 		chan = sess->video_channels[i];
 		if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-			if (G_read_channel_nt_m12(chan, slice) == NULL) {
+			if (calculate_channel_indices == TRUE_m12) {
+				sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
+				chan->time_slice.start_frame_number = (si8) round((sf8) slice->start_frame_number * sf_ratio);
+				chan->time_slice.end_frame_number = (si8) round((sf8) slice->end_frame_number * sf_ratio);
+				chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+			} else {
+				chan->time_slice = *slice;
+			}
+			if (G_read_channel_nt_m12(chan, NULL) == NULL) {
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
 				} else if (chan != NULL) {
@@ -13389,7 +13418,7 @@ void	G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEAD
 		printf_m12("Body CRC: %s\n", hex_str);
 	}
 	if (uh->segment_end_time == UUTC_NO_ENTRY_m12)
-		printf_m12("Segement End Time: no entry\n");
+		printf_m12("Segment End Time: no entry\n");
 	else {
 		STR_time_string_m12(uh->segment_end_time, time_str, TRUE_m12, FALSE_m12, FALSE_m12);
 		printf_m12("Segment End Time: %ld (oUTC), %s\n", uh->segment_end_time, time_str);
