@@ -846,7 +846,7 @@ Sgmt_RECORD_m12	*G_build_Sgmt_records_array_m12(FILE_PROCESSING_STRUCT_m12 *ri_f
 				
 		// allocate Sgmt_records array
 		Sgmt_records = (Sgmt_RECORD_m12 *) calloc_m12((size_t) n_segs, sizeof(Sgmt_RECORD_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		
+
 		// decide if more efficient to read full file, or seek to specific records
 		seek_mode = FALSE_m12;
 		if (rd_fps->parameters.full_file_read == FALSE_m12) {  // full file not already read in
@@ -1122,11 +1122,12 @@ void    G_calculate_time_series_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 }
 
 
-void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type)
+CHANNEL_m12	*G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type)
 {
 	TERN_m12	use_default_channel;
 	si8		i, n_chans;
-	CHANNEL_m12	*chan;
+	CHANNEL_m12	*tmp_chan;
+	size_t		bytes;
 
 	
 #ifdef FN_DEBUG_m12
@@ -1141,7 +1142,7 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 		if (channel == globals_m12->reference_channel) {
 			if (*globals_m12->reference_channel_name == 0)
 				strcpy(globals_m12->reference_channel_name, channel->name);
-			return;
+			return(channel);
 		}
 	}
 
@@ -1191,17 +1192,17 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 		if (use_default_channel == TRUE_m12) {
 			if ((channel = G_get_active_channel_m12(sess, channel_type)) == NULL) {
 				G_error_message_m12("%s(): no matching active channels\n", __FUNCTION__);
-				exit_m12(-1);
+				return(NULL);
 			}
 			goto CHANGE_REF_MATCH_m12;
 		}
 		if (channel_type == DEFAULT_CHANNEL_m12 || channel_type == DEFAULT_TIME_SERIES_CHANNEL_m12) {
 			n_chans = sess->number_of_time_series_channels;  // check for match in time_series_channels
 			for (i = 0; i < n_chans; ++i) {
-				chan = sess->time_series_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-					if (strcmp(chan->name, channel_name) == 0) {
-						channel = chan;
+				tmp_chan = sess->time_series_channels[i];
+				if (tmp_chan->flags & LH_CHANNEL_ACTIVE_m12) {
+					if (strcmp(tmp_chan->name, channel_name) == 0) {
+						channel = tmp_chan;
 						goto CHANGE_REF_MATCH_m12;
 					}
 				}
@@ -1210,10 +1211,10 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 		if (channel_type == DEFAULT_CHANNEL_m12 || channel_type == DEFAULT_VIDEO_CHANNEL_m12) {
 			n_chans = sess->number_of_video_channels;
 			for (i = 0; i < n_chans; ++i) {
-				chan = sess->video_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-					if (strcmp(chan->name, channel_name) == 0) {
-						channel = chan;
+				tmp_chan = sess->video_channels[i];
+				if (tmp_chan->flags & LH_CHANNEL_ACTIVE_m12) {
+					if (strcmp(tmp_chan->name, channel_name) == 0) {
+						channel = tmp_chan;
 						goto CHANGE_REF_MATCH_m12;
 					}
 				}
@@ -1227,18 +1228,22 @@ void	G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1
 	}
 
 	G_error_message_m12("%s(): no matching active channels\n", __FUNCTION__);
-	exit_m12(-1);
+	return(NULL);
 	
 CHANGE_REF_MATCH_m12:
 	globals_m12->reference_channel = channel;
 	strcpy(globals_m12->reference_channel_name, channel->name);
 
-	// reset session Sgmt records
-	if (sess->Sgmt_records != NULL)
-		free_m12((void *) sess->Sgmt_records, __FUNCTION__);
-	sess->Sgmt_records = G_build_Sgmt_records_array_m12(NULL, NULL, channel);
+	if (channel->Sgmt_records == NULL)
+		channel->Sgmt_records = G_build_Sgmt_records_array_m12(NULL, NULL, channel);
+	// copy to session Sgmt records
+	if (sess->Sgmt_records == NULL) {
+		bytes = (size_t) globals_m12->number_of_session_segments * sizeof(Sgmt_RECORD_m12);
+		sess->Sgmt_records = (Sgmt_RECORD_m12 *) malloc_m12(bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		memcpy((void *) sess->Sgmt_records, (void *) channel->Sgmt_records, (size_t) bytes);
+	}
 
-	return;
+	return(channel);
 }
 
 
@@ -1447,6 +1452,80 @@ TERN_m12	G_check_password_m12(si1 *password)
 	
 	// return TRUE_m12 for valid password
 	return(TRUE_m12);
+}
+
+
+si4	G_check_segment_map_m12(TIME_SLICE_m12 *slice, SESSION_m12 *sess)
+{
+	si4 		start_seg, end_seg, seg_idx, first_mapped_seg, last_mapped_seg;
+	si4		remapped_start_seg, remapped_end_seg, remapped_seg_cnt;
+	si4		i, j, offset, mapped_segs, sess_segs;
+	CHANNEL_m12	*chan;
+	SEGMENT_m12	**remapped_segs;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// returns offset of start_segment_number into segments array
+	// if segment range needs to be remapped, this is done before return
+	// call from read_session_m12() before any channel reading to avoid any conflicts with threads if remapping required
+	// returns FALSE_m12 on error
+
+	start_seg = slice->start_segment_number;
+	end_seg = slice->end_segment_number;
+	if (start_seg == SEGMENT_NUMBER_NO_ENTRY_m12 || end_seg == SEGMENT_NUMBER_NO_ENTRY_m12) {
+		G_warning_message_m12("%s(): segment range not fully specified => returning false\n", __FUNCTION__);
+		return((si4) FALSE_m12);
+	}
+	
+	sess_segs = globals_m12->number_of_session_segments;
+	if (start_seg < 1 || end_seg > sess_segs) {
+		G_warning_message_m12("%s(): segment range not valid => returning false\n", __FUNCTION__);
+		return((si4) FALSE_m12);
+	}
+
+	// all segments mapped
+	mapped_segs = globals_m12->number_of_mapped_segments;
+	if (mapped_segs == sess_segs) {
+		if (start_seg >= 1 && end_seg <= sess_segs) {
+			return(start_seg - 1);
+		}
+	}
+	
+	first_mapped_seg = globals_m12->first_mapped_segment_number;
+	last_mapped_seg = (first_mapped_seg + mapped_segs) - 1;
+	if (start_seg >= first_mapped_seg && end_seg <= last_mapped_seg)
+		return(start_seg - first_mapped_seg);
+	
+	// remapping required
+	remapped_start_seg = (start_seg < first_mapped_seg) ? start_seg : first_mapped_seg;
+	remapped_end_seg = (end_seg > last_mapped_seg) ? end_seg : last_mapped_seg;
+	remapped_seg_cnt = (remapped_end_seg - remapped_start_seg) + 1;
+	for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+		chan = sess->time_series_channels[i];
+		remapped_segs = (SEGMENT_m12 **) calloc_m12((size_t) remapped_seg_cnt, sizeof(SEGMENT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		offset = first_mapped_seg - remapped_start_seg;
+		for (j = 0; j < mapped_segs; ++j, ++offset)
+			remapped_segs[offset] = chan->segments[j];
+		free_m12((void *) chan->segments, __FUNCTION__);
+		chan->segments = remapped_segs;
+	}
+	for (i = 0; i < sess->number_of_video_channels; ++i) {
+		chan = sess->video_channels[i];
+		remapped_segs = (SEGMENT_m12 **) calloc_m12((size_t) remapped_seg_cnt, sizeof(SEGMENT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		offset = first_mapped_seg - remapped_start_seg;
+		for (j = 0; j < mapped_segs; ++j, ++offset)
+			remapped_segs[offset] = chan->segments[j];
+		free_m12((void *) chan->segments, __FUNCTION__);
+		chan->segments = remapped_segs;
+	}
+
+	globals_m12->first_mapped_segment_number = remapped_start_seg;
+	globals_m12->number_of_mapped_segments = remapped_seg_cnt;
+	seg_idx = first_mapped_seg - remapped_start_seg;
+
+	return(seg_idx);
 }
 
 
@@ -4124,6 +4203,11 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 
+	#ifdef WINDOWS_m12
+	if (global_tables_m12->hNTdll != NULL)
+		FreeLibrary(global_tables_m12->hNTdll);
+	#endif
+	
 	// destroy muticies
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->TZ_mutex);
 	PROC_pthread_mutex_destroy_m12(&global_tables_m12->CRC_mutex);
@@ -5348,7 +5432,6 @@ si4	G_get_segment_index_m12(si4 segment_number)
 			if (seg != NULL)
 				if (seg->flags & LH_OPEN_m12)
 					break;
-					
 		}
 		if (i == mapped_segs) {
 			G_warning_message_m12("%s(): cannot find open segment\n", __FUNCTION__);
@@ -5385,7 +5468,7 @@ si4	G_get_segment_index_m12(si4 segment_number)
 
 si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *slice)
 {
-	TERN_m12			Sgmts_adequate, free_fps;
+	TERN_m12			Sgmts_adequate;
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12], sess_path[FULL_FILE_NAME_BYTES_m12], *sess_name;
 	ui4				file_exists;
 	si4				search_mode, n_segs;
@@ -5409,10 +5492,9 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 	switch (level_header->type_code) {
 		case LH_SESSION_m12:
 			sess = (SESSION_m12 *) level_header;
-			if (globals_m12->reference_channel == NULL) {
-				G_change_reference_channel_m12(sess, NULL, globals_m12->reference_channel_name, DEFAULT_CHANNEL_m12);
-			}
 			chan = globals_m12->reference_channel;
+			if (chan == NULL)
+				chan = G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_CHANNEL_m12);
 			Sgmt_records = sess->Sgmt_records;
 			break;
 		case LH_TIME_SERIES_CHANNEL_m12:
@@ -5433,7 +5515,8 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 	if (Sgmt_records == NULL) {
 		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
 		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+		file_exists = G_file_exists_m12(tmp_str);
+		if (file_exists == FILE_EXISTS_m12) {
 			ri_fps = chan->record_indices_fps = G_read_file_m12(chan->record_indices_fps, tmp_str, 0, 0, FPS_FULL_FILE_m12, level_header, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			chan->record_indices_fps->parent = (void *) chan;
 			n_recs = ri_fps->universal_header->number_of_entries;
@@ -5467,12 +5550,10 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 				strcpy(sess_path, sess->path);
 				ri_fps = sess->record_indices_fps;
 				rd_fps = sess->record_data_fps;
-				free_fps = FALSE_m12;
 			} else {
 				G_extract_path_parts_m12(chan->path, sess_path, NULL, NULL);
 				ri_fps = NULL;
 				rd_fps = NULL;
-				free_fps = TRUE_m12;
 			}
 			if (ri_fps == NULL)
 				sprintf_m12(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
@@ -5503,19 +5584,14 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 					if (search_mode == SAMPLE_SEARCH_m12) {
 						G_read_file_m12(rd_fps, NULL, ri->file_offset, 0, 1, 0, NULL, USE_GLOBAL_BEHAVIOR_m12);
 						Sgmt_rec = (Sgmt_RECORD_m12 *) rd_fps->record_data;
-						if (Sgmt_rec->sampling_frequency == FREQUENCY_VARIABLE_m12 || Sgmt_rec->sampling_frequency == FREQUENCY_NO_ENTRY_m12)
+						if (Sgmt_rec->end_sample_number == SAMPLE_NUMBER_NO_ENTRY_m12 || Sgmt_rec->end_sample_number == 0)
 							Sgmts_adequate = FALSE_m12;
 					}
 				} else {
 					Sgmts_adequate = FALSE_m12;
 				}
-				if (Sgmts_adequate == TRUE_m12) {
+				if (Sgmts_adequate == TRUE_m12)
 					Sgmt_records = G_build_Sgmt_records_array_m12(ri_fps, rd_fps, NULL);
-				} else if (free_fps == TRUE_m12) {
-					FPS_free_processing_struct_m12(ri_fps, TRUE_m12);
-					if (rd_fps != NULL)
-						FPS_free_processing_struct_m12(rd_fps, TRUE_m12);
-				}
 			}
 		}
 
@@ -5992,6 +6068,11 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 		HW_get_memory_info_m12();  // this is needed for alloc operations, so always done
 	}
 
+	// NT dylib loaded by WN_nap_m12() if used
+	#ifdef WINDOWS_m12
+	global_tables_m12->hNTdll = NULL;
+	#endif
+
 	return(ret_val);
 }
 
@@ -6146,8 +6227,7 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 	#endif
 	globals->level_header_flags = LH_NO_FLAGS_m12;
 	globals->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12;
-
-
+	
 	// tables
 	if (global_tables_m12 == NULL)
 		G_initialize_global_tables_m12(initialize_all_tables);
@@ -7386,20 +7466,10 @@ void     G_nap_m12(si1 *nap_str)
 #if defined MACOS_m12 || defined LINUX_m12
 	nanosleep(&nap, NULL);
 #endif
-#ifdef WINDOWS_m12  // limited to millisecond resolution (can do better, but requires much more code)
-	ui8	ms;
-
-	ms = (ui8) nap.tv_sec * (ui8) 1000;
-	ms += (ui8) round((sf8) nap.tv_nsec / (sf8) 1e6);
-	if (ms == 0) {
-		ms = 1;  // Windows limited to 1 ms rseolution
-	} else if (ms > 0x7FFFFFFF) {
-		G_warning_message_m12("%s(): millisecond overflow\n", __FUNCTION__);
-		ms = 0x7FFFFFFF;
-	}
-	Sleep((si4) ms);
+#ifdef WINDOWS_m12
+	WN_nap_m12(&nap);
 #endif
-
+	
 	return;
 }
 
@@ -7442,12 +7512,13 @@ si1	*G_numerical_fixed_width_string_m12(si1 *string, si4 string_bytes, si4 numbe
 
 CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *chan_path, ui8 flags, si1 *password)
 {
-	TERN_m12			free_channel;
+	TERN_m12			free_channel, ret_val;
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
-	si4				i, j, k, seg_idx, n_segs, mapped_segs, null_segment_cnt;
+	si4				i, j, k, seg_idx, n_segs, mapped_segs, null_segment_cnt, thread_idx;
 	SEGMENT_m12			*seg;
 	UNIVERSAL_HEADER_m12		*uh;
-	READ_MED_THREAD_INFO_m12	*seg_thread_infos;
+	PROC_THREAD_INFO_m12		*proc_thread_infos;
+	READ_MED_THREAD_INFO_m12	*read_MED_thread_infos;
 
 	
 #ifdef FN_DEBUG_m12
@@ -7462,7 +7533,7 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	} else if (chan->flags & LH_OPEN_m12) {
 		return(chan);
 	}
-
+	
 	// set basic info (path, name, type, flags)
 	if (chan_path != NULL)
 		if (*chan_path)
@@ -7485,7 +7556,8 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 		if (flags == LH_NO_FLAGS_m12)
 			flags = globals_m12->level_header_flags;  // use global flags, if no channel flags
 	}
-	chan->flags = flags | (LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
+	// set closed & inactive until successful opening
+	chan->flags = (flags &= ~(LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12));
 	
 	// set up time & generate password data (note do this before slice is conditioned)
 	if (globals_m12->password_data.processed == 0 || globals_m12->time_constants_set != TRUE_m12) {
@@ -7516,7 +7588,7 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 		}
 	}
 	
-	// open segments
+	// allocate segments
 	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
 	if (seg_idx == FALSE_m12) {
 		if (free_channel == TRUE_m12)
@@ -7528,8 +7600,9 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 
 	if (chan->segments == NULL)
 		chan->segments = (SEGMENT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(SEGMENT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	
 	null_segment_cnt = 0;
-	if (n_segs == 1 || (chan->flags & LH_THREAD_SEGMENT_READS_m12) == 0) {  // this is most common scenario - no need for extra thread overhead
+	if (n_segs == 1 || (flags & LH_THREAD_SEGMENT_READS_m12) == 0) {  // this is most common scenario - no need for extra thread overhead
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 			seg = chan->segments[j];
 			if (seg == NULL) {
@@ -7539,9 +7612,9 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 				else  // LH_VIDEO_CHANNEL_m12
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				if (G_file_exists_m12(tmp_str) == DIR_EXISTS_m12)  // not every segment may be present
-					seg = chan->segments[j] = G_open_segment_m12(NULL, slice, tmp_str, (flags & ~LH_OPEN_m12), NULL);
+					seg = chan->segments[j] = G_open_segment_m12(NULL, slice, tmp_str, flags, NULL);
 			} else {
-				seg = G_open_segment_m12(seg, slice, NULL, (flags & ~LH_OPEN_m12), NULL);
+				seg = G_open_segment_m12(seg, slice, NULL, flags, NULL);
 			}
 			if (seg == NULL)
 				++null_segment_cnt;
@@ -7549,70 +7622,56 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 				seg->parent = (void *) chan;
 		}
 	} else {  // thread  out multiple segments
-		#ifdef MATLAB_m12
-		G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);  // no printf output from threads in mex functions
-		#endif
-		// start open_segment threads
-		seg_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m12));
+		// set up thread infos
+		proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) n_segs, sizeof(PROC_THREAD_INFO_m12));
+		read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m12));
+		// start read_segment threads
+		
+		thread_idx = 0;
 		for (i = slice->start_segment_number, j = seg_idx, k = 0; i <= slice->end_segment_number; ++i, ++j, ++k) {
 			seg = chan->segments[j];
 			if (seg == NULL) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
-					sprintf_m12(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
+					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				else  // LH_VIDEO_CHANNEL_m12
-					sprintf_m12(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-				if (G_file_exists_m12(seg_thread_infos[k].MED_dir) == DIR_EXISTS_m12) {  // not every segment may be present
-					seg = chan->segments[j] = G_open_segment_m12(NULL, slice, tmp_str, (flags & ~LH_OPEN_m12), NULL);
-				} else {
+					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
+				if (G_file_exists_m12(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m12) {
+					// not every segment may be present
 					++null_segment_cnt;
 					continue;
 				}
-				seg_thread_infos[k].flags = (flags & ~LH_OPEN_m12);
 			} else {
-				*seg_thread_infos[k].MED_dir = 0;  // use existing segment path
-				seg_thread_infos[k].flags = LH_NO_FLAGS_m12;  // use existing segment flags
-				seg_thread_infos[k].MED_struct = (LEVEL_HEADER_m12 *) seg;
+				read_MED_thread_infos[k].MED_struct = (LEVEL_HEADER_m12 *) seg;
 			}
-			seg_thread_infos[k].slice = slice;
-			seg_thread_infos[k].password = NULL;
-			PROC_launch_thread_m12(&seg_thread_infos[k].thread_id, G_open_segment_thread_m12, (void *) (seg_thread_infos + k), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_segment_thread");
+			seg->time_slice = *slice;
+			proc_thread_infos[thread_idx].thread_f = G_open_segment_thread_m12;
+			proc_thread_infos[thread_idx].thread_label = "G_open_segment_thread_m12";
+			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+			++thread_idx;
 		}
 
-		// wait for threads
+		// thread out segment opens
+		ret_val = PROC_distribute_jobs_m12(proc_thread_infos, n_segs, 0, TRUE_m12);  // no reserved cores, wait for completion
+		
+		// check results
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (seg_thread_infos[i].thread_id == (pthread_t_m12) 0)  // non-existent segment
-				continue;
-			PROC_pthread_join_m12(seg_thread_infos[i].thread_id, NULL);
-			if (seg_thread_infos[i].MED_struct == NULL) {
-				++null_segment_cnt;
-				continue;
-			}
-			if (chan->segments[j] == NULL) {
-				seg = chan->segments[j] = (SEGMENT_m12 *) seg_thread_infos[i].MED_struct;
-				seg->parent = (void *) chan;
-			}
+			seg = (SEGMENT_m12 *) read_MED_thread_infos[i].MED_struct;
+			if (seg == NULL)
+				ret_val = FALSE_m12;
+			else
+				chan->segments[j] = seg;
 		}
-		free((void *) seg_thread_infos);
-		#ifdef MATLAB_m12
-		G_pop_behavior_m12();
-		#endif
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+		if (ret_val == FALSE_m12) {
+			if (free_channel == TRUE_m12)
+				G_free_channel_m12(chan, TRUE_m12);
+			return(NULL);
+		}
 	}
 
-	// channel records
-	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m12) {
-		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
-			chan->record_indices_fps = G_read_file_m12(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
-		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
-			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m12)
-				chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
-			else  // just read in data universal header & leave open
-				chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
-		}
-	}
-	
 	// empty slice
 	if (null_segment_cnt == n_segs) {
 		slice->number_of_segments = EMPTY_SLICE_m12;
@@ -7639,8 +7698,28 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	slice->end_segment_number = seg->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
 
+	// channel records
+	if (flags & LH_READ_CHANNEL_RECORDS_MASK_m12) {
+		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12 && chan->record_indices_fps == NULL)
+			chan->record_indices_fps = G_read_file_m12(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
+		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m12);
+		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+			if (flags & LH_READ_FULL_CHANNEL_RECORDS_m12) {  // read in full records data
+				if (chan->record_data_fps == NULL) {
+					chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
+				} else if (chan->record_data_fps->parameters.full_file_read != TRUE_m12) {
+					FPS_free_processing_struct_m12(chan->record_data_fps, TRUE_m12);
+					chan->record_data_fps = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
+				}
+			} else {  // just read in data universal header & leave open
+				chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
+			}
+		}
+	}
+	
 	// ephemeral data
-	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
+	if (flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
 		if (chan->metadata_fps != NULL)
 			FPS_free_processing_struct_m12(chan->metadata_fps, TRUE_m12);
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
@@ -7684,6 +7763,8 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	}
 	
 	chan->last_access_time = G_current_uutc_m12();
+	
+	chan->flags |= (LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
 
 	return(chan);
 }
@@ -7691,203 +7772,28 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 
 CHANNEL_m12	*G_open_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *chan_path, ui8 flags, si1 *password)
 {
-	TERN_m12		free_channel;
-	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
-	si4			i, j, mapped_segs, seg_idx, n_segs, null_segment_cnt;
-	SEGMENT_m12		*seg;
-	UNIVERSAL_HEADER_m12	*uh;
-	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// allocate channel
-	free_channel = FALSE_m12;
-	if (chan == NULL) {
-		chan = (CHANNEL_m12 *) calloc_m12((size_t) 1, sizeof(CHANNEL_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		free_channel = TRUE_m12;
-	} else if (chan->flags & LH_OPEN_m12) {
-		return(chan);
-	}
-
-	// set basic info (path, name, type, flags)
-	if (chan_path != NULL)
-		if (*chan_path)
-			chan->type_code = G_generate_MED_path_components_m12(chan_path, chan->path, chan->name);
-	if (chan->type_code == NO_TYPE_CODE_m12 && *chan->path)
-		chan->type_code = G_generate_MED_path_components_m12(chan->path, NULL, chan->name);
-	if (chan->type_code != LH_TIME_SERIES_CHANNEL_m12 && chan->type_code != LH_VIDEO_CHANNEL_m12) {
-		if (chan->type_code == LH_TIME_SERIES_SEGMENT_m12 || chan->type_code == LH_VIDEO_SEGMENT_m12) {  // segment passed: don't think it will be used this way, but never know
-			G_extract_path_parts_m12(chan->path, chan->path, NULL, NULL);
-			chan->type_code = G_generate_MED_path_components_m12(chan->path, NULL, chan->name);
-		} else {
-			if (free_channel == TRUE_m12)
-				G_free_channel_m12(chan, TRUE_m12);
-			G_error_message_m12("%s(): indeterminate channel type\n", __FUNCTION__);
-			return(NULL);
-		}
-	}
 	if (flags == LH_NO_FLAGS_m12) {
-		flags = chan->flags;  // use existing channel flags, if none passed
+		if (chan != NULL)
+			flags = chan->flags;
 		if (flags == LH_NO_FLAGS_m12)
 			flags = globals_m12->level_header_flags;  // use global flags, if no channel flags
 	}
-	chan->flags = flags | (LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
+	chan->flags = (flags &= ~LH_THREAD_SEGMENT_READS_m12);
 	
-	// set up time & generate password data (note do this before slice is conditioned)
-	if (globals_m12->password_data.processed == 0 || globals_m12->time_constants_set != TRUE_m12) {
-		if (G_set_time_and_password_data_m12(password, chan->path, NULL, NULL) == FALSE_m12) {
-			if (free_channel == TRUE_m12)
-				G_free_channel_m12(chan, TRUE_m12);
-			return(NULL);
-		}
-	}
+	chan = G_open_channel_m12(chan, slice,chan_path, flags, password);
 	
-	// process time slice (passed slice is not modified)
-	if (slice == NULL) {
-		if (G_all_zeros_m12((ui1 *) &chan->time_slice, (si4) sizeof(TIME_SLICE_m12)) == TRUE_m12)
-			G_initialize_time_slice_m12(&chan->time_slice);  // read whole channel
-	} else {  // passed slice supersedes structure slice
-		chan->time_slice = *slice;
-	}
-	slice = &chan->time_slice;
-	if (slice->conditioned == FALSE_m12)
-		G_condition_time_slice_m12(slice);
-			
-	// get segment range
-	if (slice->number_of_segments == UNKNOWN_m12) {
-		if (G_get_segment_range_m12((LEVEL_HEADER_m12 *) chan, slice) == 0) {
-			if (free_channel == TRUE_m12)
-				G_free_channel_m12(chan, TRUE_m12);
-			return(NULL);
-		}
-	}
-	
-	// open segments
-	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
-	if (seg_idx == FALSE_m12) {
-		if (free_channel == TRUE_m12)
-			G_free_channel_m12(chan, TRUE_m12);
-		return(NULL);
-	}
-	n_segs = slice->number_of_segments;
-	mapped_segs = globals_m12->number_of_mapped_segments;
-
-	if (chan->segments == NULL)
-		chan->segments = (SEGMENT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(SEGMENT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	null_segment_cnt = 0;
-	for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
-		seg = chan->segments[j];
-		if (seg == NULL) {
-			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
-			if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-			else if (chan->type_code == LH_VIDEO_CHANNEL_m12)
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-			if (G_file_exists_m12(tmp_str) == DIR_EXISTS_m12)  // not every segment may be present
-				seg = chan->segments[j] = G_open_segment_m12(NULL, slice, tmp_str, (flags & ~LH_OPEN_m12), password);
-		} else {
-			seg = G_open_segment_m12(seg, slice, NULL, LH_NO_FLAGS_m12, NULL);  // use existing segment flags
-		}
-		if (seg == NULL)
-			++null_segment_cnt;
-		else
-			seg->parent = (void *) chan;
-	}
-
-	// channel records
-	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m12) {
-		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
-			chan->record_indices_fps = G_read_file_m12(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
-		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
-			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m12)
-				chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
-			else  // just read in data universal header & leave open
-				chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
-		}
-	}
-	
-	// empty slice
-	if (null_segment_cnt == n_segs) {
-		slice->number_of_segments = EMPTY_SLICE_m12;
-		if (free_channel == TRUE_m12)
-			G_free_channel_m12(chan, TRUE_m12);
-		return(NULL);
-	}
-
-	// update slice
-	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		seg = chan->segments[j];
-		if (seg != NULL)
-			break;
-	}
-	slice->start_time = seg->time_slice.start_time;
-	slice->start_sample_number = seg->time_slice.start_sample_number;
-	slice->start_segment_number = seg->time_slice.start_segment_number;
-	for (++i, ++j; i < n_segs; ++i, ++j) {
-		if (chan->segments[j] != NULL)
-			seg = chan->segments[j];
-	}
-	slice->end_time = seg->time_slice.end_time;
-	slice->end_sample_number = seg->time_slice.end_sample_number;
-	slice->end_segment_number = seg->time_slice.end_segment_number;
-	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
-
-	// ephemeral data
-	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
-		if (chan->metadata_fps != NULL)
-			FPS_free_processing_struct_m12(chan->metadata_fps, TRUE_m12);
-		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			seg = chan->segments[j];
-			if (seg != NULL)
-				break;
-		}
-		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12) {
-			sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
-			chan->metadata_fps = FPS_allocate_processing_struct_m12(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m12, METADATA_BYTES_m12, (LEVEL_HEADER_m12 *) chan, seg->metadata_fps, METADATA_BYTES_m12);
-		} else if (chan->type_code == LH_VIDEO_CHANNEL_m12) {
-			sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, VIDEO_METADATA_FILE_TYPE_STRING_m12);
-			chan->metadata_fps = FPS_allocate_processing_struct_m12(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m12, METADATA_BYTES_m12, (LEVEL_HEADER_m12 *) chan, seg->metadata_fps, METADATA_BYTES_m12);
-		}
-		// merge segments
-		for (i++, j++; i < n_segs; ++i, ++j) {
-			if (chan->segments[j] == NULL)
-				continue;
-			seg = chan->segments[j];
-			G_merge_universal_headers_m12(chan->metadata_fps, seg->metadata_fps, NULL);
-			G_merge_metadata_m12(chan->metadata_fps, seg->metadata_fps, NULL);
-			if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
-				G_merge_universal_headers_m12(chan->metadata_fps, seg->record_data_fps, NULL);
-			seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m12;  // clear segment flag
-		}
-		// merge channel records
-		if (chan->record_indices_fps != NULL && chan->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
-			G_merge_universal_headers_m12(chan->metadata_fps, chan->record_data_fps, NULL);
-		// fix channel ephemeral universal headers (from merge functions)
-		uh = chan->metadata_fps->universal_header;
-		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
-			uh->type_code = TIME_SERIES_METADATA_FILE_TYPE_CODE_m12;
-		else if (chan->type_code == LH_VIDEO_CHANNEL_m12)
-			uh->type_code = VIDEO_METADATA_FILE_TYPE_CODE_m12;
-		uh->segment_number = UNIVERSAL_HEADER_CHANNEL_LEVEL_CODE_m12;
-		uh->session_UID = globals_m12->session_UID;
-		uh->channel_UID = seg->metadata_fps->universal_header->channel_UID;;
-		uh->segment_UID = UID_NO_ENTRY_m12;
-		chan->metadata_fps->parameters.fd = FPS_FD_EPHEMERAL_m12;
-		chan->flags |= LH_UPDATE_EPHEMERAL_DATA_m12;
-	}
-	
-	chan->last_access_time = G_current_uutc_m12();
-
 	return(chan);
 }
 
 
 pthread_rval_m12	G_open_channel_thread_m12(void *ptr)
 {
-	READ_MED_THREAD_INFO_m12	*ti;
+	PROC_THREAD_INFO_m12 		*pi;
+	READ_MED_THREAD_INFO_m12 	*rmi;
 
 #ifdef FN_DEBUG_m12
 #ifndef MATLAB_m12
@@ -7895,8 +7801,13 @@ pthread_rval_m12	G_open_channel_thread_m12(void *ptr)
 #endif
 #endif
 	
-	ti = (READ_MED_THREAD_INFO_m12 *) ptr;
-	ti->MED_struct = (LEVEL_HEADER_m12 *) G_open_channel_m12((CHANNEL_m12 *) ti->MED_struct, ti->slice, ti->MED_dir, ti->flags, ti->password);
+	pi = (PROC_THREAD_INFO_m12 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m12;  // volatile
+
+	rmi = (READ_MED_THREAD_INFO_m12 *) (pi->arg);
+	rmi->MED_struct = (LEVEL_HEADER_m12 *) G_open_channel_m12((CHANNEL_m12 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->flags, rmi->password);
+	
+	pi->status = PROC_THREAD_FINISHED_m12;  // volatile
 	
 	return((pthread_rval_m12) 0);
 }
@@ -7944,7 +7855,7 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 		if (flags == LH_NO_FLAGS_m12)
 			flags = globals_m12->level_header_flags;  // use global flags, if no segment flags
 	}
-	seg->flags = flags | LH_OPEN_m12;
+	seg->flags = (flags &= ~LH_OPEN_m12);
 
 	// set up time & generate password data (note do this before slice is conditioned)
 	if (globals_m12->password_data.processed == 0 || globals_m12->time_constants_set != TRUE_m12) {
@@ -8018,6 +7929,8 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 	if (seg->flags & LH_GENERATE_EPHEMERAL_DATA_m12)
 		seg->flags |= LH_UPDATE_EPHEMERAL_DATA_m12;
 	seg->last_access_time = G_current_uutc_m12();
+	
+	seg->flags |= LH_OPEN_m12;
 
 	return(seg);
 }
@@ -8025,34 +7938,41 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 
 pthread_rval_m12	G_open_segment_thread_m12(void *ptr)
 {
-	READ_MED_THREAD_INFO_m12 	*ti;
-	
+	PROC_THREAD_INFO_m12 		*pi;
+	READ_MED_THREAD_INFO_m12 	*rmi;
+
 #ifdef FN_DEBUG_m12
 #ifndef MATLAB_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 #endif
-
-	ti = (READ_MED_THREAD_INFO_m12 *) ptr;
-	ti->MED_struct = (LEVEL_HEADER_m12 *) G_open_segment_m12((SEGMENT_m12 *) ti->MED_struct, ti->slice, ti->MED_dir, ti->flags, ti->password);
 	
+	pi = (PROC_THREAD_INFO_m12 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m12;  // volatile
+
+	rmi = (READ_MED_THREAD_INFO_m12 *) (pi->arg);
+	rmi->MED_struct = (LEVEL_HEADER_m12 *) G_open_segment_m12((SEGMENT_m12 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->flags, rmi->password);
+	
+	pi->status = PROC_THREAD_FINISHED_m12;  // volatile
+
 	return((pthread_rval_m12) 0);
 }
 
 
 SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password)
 {
-	TERN_m12			free_session, all_channels_selected;
+	TERN_m12			free_session, all_channels_selected, ret_val;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
 	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1], *regex_str;
 	ui4				type_code;
-	si4				i, j, k, n_chans, mapped_segs, n_segs, seg_idx;
-	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, active_ts_chans, active_vid_chans;
+	si4				i, j, k, n_chans, mapped_segs, n_segs, seg_idx, thread_idx;
+	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
 	si8				curr_time;
 	CHANNEL_m12			*chan;
 	UNIVERSAL_HEADER_m12		*uh;
 	SEGMENTED_SESS_RECS_m12		*ssr;
-	READ_MED_THREAD_INFO_m12	*ts_chan_thread_infos, *vid_chan_thread_infos;
+	PROC_THREAD_INFO_m12		*proc_thread_infos;
+	READ_MED_THREAD_INFO_m12	*read_MED_thread_infos;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -8076,7 +7996,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		if (flags == LH_NO_FLAGS_m12)
 			flags = globals_m12->level_header_flags;  // use global flags, if no session flags
 	}
-	sess->flags = flags | LH_OPEN_m12;
+	sess->flags = (flags &= ~LH_OPEN_m12);
 		
 	// generate channel list
 	all_channels_selected = FALSE_m12;
@@ -8171,9 +8091,9 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 	
 	// divide channel lists
-	if (!(sess->flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12))
+	if (!(flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12))
 		n_ts_chans = 0;
-	if (!(sess->flags & LH_INCLUDE_VIDEO_CHANNELS_m12))
+	if (!(flags & LH_INCLUDE_VIDEO_CHANNELS_m12))
 		n_vid_chans = 0;
 	if (n_ts_chans)
 		ts_chan_list = (si1 **) calloc_2D_m12((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -8183,11 +8103,11 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				if (sess->flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12)
+				if (flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12)
 					strcpy(ts_chan_list[j++], chan_list[i]);
 				break;
 			case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				if (sess->flags & LH_INCLUDE_VIDEO_CHANNELS_m12)
+				if (flags & LH_INCLUDE_VIDEO_CHANNELS_m12)
 					strcpy(vid_chan_list[k++], chan_list[i]);
 				break;
 		}
@@ -8196,7 +8116,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 
 	// set up time series channels
 	curr_time = G_current_uutc_m12();
-	if (sess->flags & LH_MAP_ALL_TIME_SERIES_CHANNELS_m12 && all_channels_selected == FALSE_m12) {
+	if ((flags & LH_MAP_ALL_TIME_SERIES_CHANNELS_m12) && (all_channels_selected == FALSE_m12)) {
 		// get lists of all channels, regardless of what was passed in the list
 		if (sess_dir == NULL) {
 			if (n_ts_chans)
@@ -8221,13 +8141,13 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			if (all_ts_chans == n_ts_chans) {
 				for (i = 0; i < all_ts_chans; ++i) {
 					chan = sess->time_series_channels[i];
-					chan->flags |= LH_CHANNEL_ACTIVE_m12;
+					chan->flags |= LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 				}
 			} else {  // lists are in alphabetical order
 				for (i = j = 0; i < n_ts_chans; ++i) {
 					for (; strcmp(ts_chan_list[i], full_ts_chan_list[j]); ++j);
 					chan = sess->time_series_channels[j];
-					chan->flags |= LH_CHANNEL_ACTIVE_m12;
+					chan->flags |= LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 				}
 			}
 			free_m12((void *) full_ts_chan_list, __FUNCTION__);
@@ -8239,7 +8159,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		for (i = 0; i < n_ts_chans; ++i) {
 			chan = sess->time_series_channels[i];
 			chan->type_code = LH_TIME_SERIES_CHANNEL_m12;
-			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;
+			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 			chan->last_access_time = curr_time;
 			chan->parent = (void *) sess;
 			chan->en_bloc_allocation = TRUE_m12;
@@ -8275,13 +8195,13 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			if (all_vid_chans == n_vid_chans) {
 				for (i = 0; i < all_vid_chans; ++i) {
 					chan = sess->video_channels[i];
-					chan->flags |= LH_CHANNEL_ACTIVE_m12;
+					chan->flags |= LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 				}
 			} else {  // lists are in alphbetical order
 				for (i = j = 0; i < n_vid_chans; ++i) {
 					for (; strcmp(vid_chan_list[i], full_vid_chan_list[j]); ++j);
 					chan = sess->video_channels[j];
-					chan->flags |= LH_CHANNEL_ACTIVE_m12;
+					chan->flags |= LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 				}
 			}
 			free_m12((void *) full_vid_chan_list, __FUNCTION__);
@@ -8293,7 +8213,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->video_channels[i];
 			chan->type_code = LH_VIDEO_CHANNEL_m12;
-			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;
+			chan->flags = flags | LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 			chan->last_access_time = curr_time;
 			chan->parent = (void *) sess;
 			chan->en_bloc_allocation = TRUE_m12;
@@ -8311,6 +8231,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			return(NULL);
 		}
 	}
+	
 	// user generated channel subsets (setting password also sets global session names)
 	if (*globals_m12->uh_session_name) {
 		strcpy(sess->uh_name, globals_m12->uh_session_name);
@@ -8328,6 +8249,9 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	if (slice->conditioned == FALSE_m12)
 		G_condition_time_slice_m12(slice);
 	
+	// set reference channel (before get segment range)
+	G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_CHANNEL_m12);
+
 	// get segment range (& set global sample/frame number reference channel)
 	n_segs = slice->number_of_segments;
 	if (n_segs == UNKNOWN_m12) {
@@ -8338,112 +8262,54 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		}
 	}
 
+	// set up thread infos
+	n_chans = n_ts_chans + n_vid_chans;
+	proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m12));
+	read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m12));
+	thread_idx = 0;
+	for (i = 0; i < n_ts_chans; ++i) {
+		chan = sess->time_series_channels[i];
+		chan->time_slice = *slice;
+		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m12;
+		proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m12";
+		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+		++thread_idx;
+	}
+	for (i = 0; i < n_vid_chans; ++i) {
+		chan = sess->video_channels[i];
+		chan->time_slice = *slice;
+		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m12;
+		proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m12";
+		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+		++thread_idx;
+	}
+	
 	// thread out channel opens
-	#ifdef MATLAB_m12
-	G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);  // no printf output from threads in mex functions
-	#endif
-	active_ts_chans = active_vid_chans = 0;
-	if (sess->number_of_time_series_channels) {
-		for (i = 0; i < sess->number_of_time_series_channels; ++i)
-			if (sess->time_series_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
-				++active_ts_chans;
-		if (active_ts_chans) {
-			ts_chan_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m12));
-			for (i = j = 0; i < sess->number_of_time_series_channels; ++i) {
-				chan = sess->time_series_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-					*ts_chan_thread_infos[j].MED_dir = 0;  // use existing channel path
-					ts_chan_thread_infos[j].flags = LH_NO_FLAGS_m12;  // use existing channel flags
-					ts_chan_thread_infos[j].MED_struct = (LEVEL_HEADER_m12 *) chan;
-					ts_chan_thread_infos[j].slice = slice;
-					ts_chan_thread_infos[j].password = NULL;
-					PROC_launch_thread_m12(&ts_chan_thread_infos[j].thread_id, G_open_channel_thread_m12, (void *) (ts_chan_thread_infos + j), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_channel_thread");
-					++j;
-				}
-			}
-		}
-	}
-	if (sess->number_of_video_channels) {
-		for (i = 0; i < sess->number_of_video_channels; ++i)
-			if (sess->video_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
-				++active_vid_chans;
-		if (active_vid_chans) {
-			vid_chan_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_vid_chans, sizeof(READ_MED_THREAD_INFO_m12));
-			for (i = j = 0; i < sess->number_of_video_channels; ++i) {
-				chan = sess->video_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-					*vid_chan_thread_infos[j].MED_dir = 0;  // use existing channel path
-					vid_chan_thread_infos[j].flags = LH_NO_FLAGS_m12;  // use existing channel flags
-					vid_chan_thread_infos[j].MED_struct = (LEVEL_HEADER_m12 *) chan;
-					vid_chan_thread_infos[j].slice = slice;
-					vid_chan_thread_infos[j].password = NULL;
-					PROC_launch_thread_m12(&vid_chan_thread_infos[j].thread_id, G_open_channel_thread_m12, (void *) (vid_chan_thread_infos + j), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_channel_thread");
-					++j;
-				}
-			}
-		}
-	}
+	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, n_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
 
-	// wait for threads
-	if (active_ts_chans) {
-		for (i = j = 0; i < sess->number_of_time_series_channels; ++i) {
-			chan = sess->time_series_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-				PROC_pthread_join_m12(ts_chan_thread_infos[j].thread_id, NULL);
-				if (ts_chan_thread_infos[j++].MED_struct == NULL) {
-					if (free_session == TRUE_m12) {
-						G_free_session_m12(sess, TRUE_m12);
-					} else if (chan != NULL) {
-						if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
-							sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
-					}
-					if (active_vid_chans)
-						free((void *) vid_chan_thread_infos);
-					free((void *) ts_chan_thread_infos);
-					return(NULL);
-				}
-				chan->parent = (void *) sess;
-			}
-		}
-		free((void *) ts_chan_thread_infos);
+	// check results
+	for (i = 0; i < n_chans; ++i)
+		if (read_MED_thread_infos[i].MED_struct == NULL)
+			ret_val = FALSE_m12;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+	if (ret_val == FALSE_m12) {
+		if (free_session == TRUE_m12)
+			G_free_session_m12(sess, TRUE_m12);
+		G_warning_message_m12("%s(): error reading session\n", __FUNCTION__);
+		return(NULL);
 	}
-	if (active_vid_chans) {
-		for (i = j = 0; i < sess->number_of_video_channels; ++i) {
-			chan = sess->video_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-				PROC_pthread_join_m12(vid_chan_thread_infos[j].thread_id, NULL);
-				if (vid_chan_thread_infos[j++].MED_struct == NULL) {
-					if (free_session == TRUE_m12) {
-						G_free_session_m12(sess, TRUE_m12);
-					} else if (chan != NULL) {
-						if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
-							sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
-					}
-					free((void *) vid_chan_thread_infos);
-					return(NULL);
-				}
-				chan->parent = (void *) sess;
-			}
-		}
-		free((void *) vid_chan_thread_infos);
-	}
-	#ifdef MATLAB_m12
-	G_pop_behavior_m12();
-	#endif
 
 	// update session slice
-	chan = globals_m12->reference_channel;
-	if ((chan->flags & LH_CHANNEL_ACTIVE_m12) == 0)
-		chan = G_get_active_channel_m12(sess, DEFAULT_CHANNEL_m12);
-	slice->start_time = chan->time_slice.start_time;
-	slice->end_time = chan->time_slice.end_time;
-	slice->start_segment_number = chan->time_slice.start_segment_number;
-	slice->end_segment_number = chan->time_slice.end_segment_number;
-	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
+	*slice = chan->time_slice;
 	
 	// sort channels
 	G_sort_channels_by_acq_num_m12(sess);
-	
+
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
@@ -8557,6 +8423,8 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	if (sess->segmented_sess_recs != NULL)
 		sess->segmented_sess_recs->last_access_time = curr_time;
 	
+	sess->flags |= LH_OPEN_m12;
+
 	return(sess);
 }
 
@@ -9439,14 +9307,15 @@ void	G_push_behavior_m12(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - 
 
 CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  // varargs: si1 *chan_path, ui4 flags, si1 *password
 {
-	TERN_m12			open_channel, free_channel;
+	TERN_m12			open_channel, free_channel, ret_val;
 	si1                             tmp_str[FULL_FILE_NAME_BYTES_m12], *chan_path, *password;
 	si1                             num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	ui8                             flags;
-	si4                             i, j, k, n_segs, seg_idx, null_segment_cnt;
+	si4                             i, j, k, n_segs, seg_idx, thread_idx, null_segment_cnt;
 	va_list				args;
 	SEGMENT_m12			*seg;
-	READ_MED_THREAD_INFO_m12	*seg_thread_infos;
+	PROC_THREAD_INFO_m12		*proc_thread_infos;
+	READ_MED_THREAD_INFO_m12	*read_MED_thread_infos;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -9524,53 +9393,57 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 				seg->parent = (void *) chan;
 		}
 	} else {  // thread out multiple segments
-		#ifdef MATLAB_m12
-		G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);  // no printf output from threads in mex functions
-		#endif
+		// set up thread infos
+		proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) n_segs, sizeof(PROC_THREAD_INFO_m12));
+		read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m12));
 		// start read_segment threads
-		seg_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m12));
+		
+		thread_idx = 0;
 		for (i = slice->start_segment_number, j = seg_idx, k = 0; i <= slice->end_segment_number; ++i, ++j, ++k) {
 			seg = chan->segments[j];
 			if (seg == NULL) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
-					sprintf_m12(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
+					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				else  // LH_VIDEO_CHANNEL_m12
-					sprintf_m12(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-				if (G_file_exists_m12(seg_thread_infos[k].MED_dir) == DIR_EXISTS_m12) {  // not every segment may be present
-					seg_thread_infos[k].flags = chan->flags;
-				} else {
+					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
+				if (G_file_exists_m12(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m12) {
+					// not every segment may be present
 					++null_segment_cnt;
 					continue;
 				}
 			} else {
-				*seg_thread_infos[k].MED_dir = 0;  // use existing segment path
-				seg_thread_infos[k].flags = LH_NO_FLAGS_m12;  // use existing segment flags
-				seg_thread_infos[k].MED_struct = (LEVEL_HEADER_m12 *) seg;
+				read_MED_thread_infos[k].MED_struct = (LEVEL_HEADER_m12 *) seg;
 			}
-			seg_thread_infos[k].slice = slice;
-			seg_thread_infos[k].password = NULL;
-			PROC_launch_thread_m12(&seg_thread_infos[k].thread_id, G_read_segment_thread_m12, (void *) (seg_thread_infos + k), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_segment_thread");
+			seg->time_slice = *slice;
+			proc_thread_infos[thread_idx].thread_f = G_read_segment_thread_m12;
+			proc_thread_infos[thread_idx].thread_label = "G_read_segment_thread_m12";
+			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+			++thread_idx;
 		}
 		
-		// wait for threads
+		// thread out segment reads
+		ret_val = PROC_distribute_jobs_m12(proc_thread_infos, n_segs, 0, TRUE_m12);  // no reserved cores, wait for completion
+		
+		// check results
+		if (null_segment_cnt == n_segs)
+			ret_val = FALSE_m12;
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (seg_thread_infos[i].thread_id == (pthread_t_m12) 0)  // non-existent segment
-				continue;
-			PROC_pthread_join_m12(seg_thread_infos[i].thread_id, NULL);
-			if (seg_thread_infos[i].MED_struct == NULL) {
-				++null_segment_cnt;
-				continue;
-			}
-			if (chan->segments[j] == NULL) {
-				seg = chan->segments[j] = (SEGMENT_m12 *) seg_thread_infos[i].MED_struct;
-				seg->parent = (void *) chan;
-			}
+			seg = (SEGMENT_m12 *) read_MED_thread_infos[i].MED_struct;
+			if (seg == NULL)
+				ret_val = FALSE_m12;
+			else
+				chan->segments[j] = seg;
 		}
-		free((void *) seg_thread_infos);
-		#ifdef MATLAB_m12
-		G_pop_behavior_m12();
-		#endif
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+		if (ret_val == FALSE_m12) {
+			if (free_channel == TRUE_m12)
+				G_free_channel_m12(chan, TRUE_m12);
+			G_warning_message_m12("%s(): error reading channel\n", __FUNCTION__);
+			return(NULL);
+		}
 	}
 
 	// empty slice
@@ -9599,7 +9472,7 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 	slice->end_segment_number = seg->time_slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
 
-	// records
+	// channel records
 	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m12)
 		G_read_record_data_m12((LEVEL_HEADER_m12 *) chan, slice, 0);
 	
@@ -9642,24 +9515,25 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 }
 
 
-CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  // varargs: si1 *chan_path, ui8 flags, si1 *password
+CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  // varargs: si1 *chan_path, ui4 flags, si1 *password
 {
-	TERN_m12			open_channel, free_channel;
-	si1                             tmp_str[FULL_FILE_NAME_BYTES_m12], *chan_path, *password;
-	si1                             num_str[FILE_NUMBERING_DIGITS_m12 + 1];
-	si4                             i, j, seg_idx, n_segs, null_segment_cnt;
-	ui8                             flags;
-	va_list				args;
-	SEGMENT_m12			*seg;
+	TERN_m12		open_channel;
+	si1			*chan_path, *password;
+	ui8			flags;
+	va_list			args;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+
+	chan_path = NULL;
+	flags = LH_NO_FLAGS_m12;
+	password = NULL;
+
 	// open channel
-	open_channel = free_channel = FALSE_m12;
+	open_channel = FALSE_m12;
 	if (chan == NULL)
-		open_channel = free_channel = TRUE_m12;
+		open_channel = TRUE_m12;
 	else if (!(chan->flags & LH_OPEN_m12))
 		open_channel = TRUE_m12;
 	if (open_channel == TRUE_m12) {
@@ -9669,128 +9543,17 @@ CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...
 		flags = va_arg(args, ui8);
 		password = va_arg(args, si1 *);
 		va_end(args);
-		// open channel
-		chan = G_open_channel_m12(chan, slice, chan_path, (flags & ~LH_OPEN_m12), password);
-		if (chan == NULL) {
-			G_error_message_m12("%s(): error opening channel\n", __FUNCTION__);
-			return(NULL);
-		}
 	}
 
-	// process time slice (passed slice is not modified)
-	if (slice == NULL) {
-		if (G_all_zeros_m12((ui1 *) &chan->time_slice, (si4) sizeof(TIME_SLICE_m12)) == TRUE_m12)
-			G_initialize_time_slice_m12(&chan->time_slice);  // read whole channel
-	} else {  // passed slice supersedes structure slice
-		chan->time_slice = *slice;  // passed slice is not modified
+	if (flags == LH_NO_FLAGS_m12) {
+		if (chan != NULL)
+			flags = chan->flags;
+		if (flags == LH_NO_FLAGS_m12)
+			flags = globals_m12->level_header_flags;  // use global flags, if no channel flags
 	}
-	slice = &chan->time_slice;
-	if (slice->conditioned == FALSE_m12)
-		G_condition_time_slice_m12(slice);
-		
-	// get segment range
-	if (slice->number_of_segments == UNKNOWN_m12) {
-		n_segs = G_get_segment_range_m12((LEVEL_HEADER_m12 *) chan, slice);
-		if (n_segs == 0) {
-			if (free_channel == TRUE_m12)
-				G_free_channel_m12(chan, TRUE_m12);
-			return(NULL);
-		}
-	} else {
-		n_segs = slice->number_of_segments;
-	}
-	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
-	if (seg_idx == FALSE_m12) {
-		if (free_channel == TRUE_m12)
-			G_free_channel_m12(chan, TRUE_m12);
-		return(NULL);
-	}
+	chan->flags = (flags &= ~LH_THREAD_SEGMENT_READS_m12);
 
-	// read segments
-	null_segment_cnt = 0;
-	for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
-		seg = chan->segments[j];
-		if (seg == NULL) {
-			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
-			if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-			else  // LH_VIDEO_CHANNEL_m12
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-			seg = chan->segments[j] = G_read_segment_m12(NULL, slice, tmp_str, (chan->flags & ~LH_OPEN_m12), NULL);
-		} else {
-			seg = G_read_segment_m12(seg, slice);
-		}
-		if (seg == NULL)
-			++null_segment_cnt;
-		else
-			seg->parent = (void *) chan;
-	}
-	
-	// empty slice
-	if (null_segment_cnt == n_segs) {
-		slice->number_of_segments = EMPTY_SLICE_m12;
-		if (free_channel == TRUE_m12)
-			G_free_channel_m12(chan, TRUE_m12);
-		return(NULL);
-	}
-	
-	// update slice
-	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		seg = chan->segments[j];
-		if (seg != NULL)
-			break;
-	}
-	slice->start_time = seg->time_slice.start_time;
-	slice->start_sample_number = seg->time_slice.start_sample_number;
-	slice->start_segment_number = seg->time_slice.start_segment_number;
-	for (++i, ++j; i < n_segs; ++i, ++j) {
-		if (chan->segments[j] != NULL)
-			seg = chan->segments[j];
-	}
-	slice->end_time = seg->time_slice.end_time;
-	slice->end_sample_number = seg->time_slice.end_sample_number;
-	slice->end_segment_number = seg->time_slice.end_segment_number;
-	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
-
-	// records
-	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m12)
-		if (chan->record_indices_fps != NULL && chan->record_data_fps != NULL)
-			G_read_record_data_m12((LEVEL_HEADER_m12 *) chan, slice);
-	
-	// update ephemeral data
-	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
-		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			seg = chan->segments[j];
-			if (seg == NULL)
-				continue;
-			if (seg->flags & LH_UPDATE_EPHEMERAL_DATA_m12) {
-				G_merge_universal_headers_m12(chan->metadata_fps, seg->metadata_fps, NULL);
-				G_merge_metadata_m12(chan->metadata_fps, seg->metadata_fps, NULL);
-				if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
-					G_merge_universal_headers_m12(chan->metadata_fps, seg->record_data_fps, NULL);
-				seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m12;  // clear segment flag
-				chan->flags |= LH_UPDATE_EPHEMERAL_DATA_m12;  // set channel flag (for session)
-			}
-		}
-	
-		// fix session ephemeral FPS (from merge functions)
-		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
-			chan->metadata_fps->universal_header->type_code = TIME_SERIES_METADATA_FILE_TYPE_CODE_m12;
-		else if (chan->type_code == LH_VIDEO_CHANNEL_m12)
-			chan->metadata_fps->universal_header->type_code = VIDEO_METADATA_FILE_TYPE_CODE_m12;
-		chan->metadata_fps->universal_header->segment_number = UNIVERSAL_HEADER_CHANNEL_LEVEL_CODE_m12;
-		chan->metadata_fps->universal_header->segment_UID = UID_NO_ENTRY_m12;
-	}
-	
-	// verbose
-	if (globals_m12->verbose == TRUE_m12) {
-		printf_m12("--------- Channel Universal Header ---------\n");
-		G_show_universal_header_m12(chan->metadata_fps, NULL);
-		printf_m12("------------ Channel Metadata --------------\n");
-		G_show_metadata_m12(chan->metadata_fps, NULL, 0);
-	}
-
-	chan->last_access_time = G_current_uutc_m12();
+	chan = G_read_channel_m12(chan, slice, chan_path, flags, password);
 	
 	return(chan);
 }
@@ -9798,7 +9561,8 @@ CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...
 
 pthread_rval_m12	G_read_channel_thread_m12(void *ptr)
 {
-	READ_MED_THREAD_INFO_m12 	*ti;
+	PROC_THREAD_INFO_m12 		*pi;
+	READ_MED_THREAD_INFO_m12 	*rmi;
 
 #ifdef FN_DEBUG_m12
 #ifndef MATLAB_m12
@@ -9806,8 +9570,13 @@ pthread_rval_m12	G_read_channel_thread_m12(void *ptr)
 #endif
 #endif
 	
-	ti = (READ_MED_THREAD_INFO_m12 *) ptr;
-	ti->MED_struct = (LEVEL_HEADER_m12 *) G_read_channel_m12((CHANNEL_m12 *) ti->MED_struct, ti->slice, ti->MED_dir, ti->flags, ti->password);
+	pi = (PROC_THREAD_INFO_m12 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m12;  // volatile
+
+	rmi = (READ_MED_THREAD_INFO_m12 *) (pi->arg);
+	rmi->MED_struct = (LEVEL_HEADER_m12 *) G_read_channel_m12((CHANNEL_m12 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->flags, rmi->password);
+	
+	pi->status = PROC_THREAD_FINISHED_m12;  // volatile
 
 	return((pthread_rval_m12) 0);
 }
@@ -10337,16 +10106,22 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 
 pthread_rval_m12	G_read_segment_thread_m12(void *ptr)
 {
-	READ_MED_THREAD_INFO_m12 	*ti;
-	
+	PROC_THREAD_INFO_m12 		*pi;
+	READ_MED_THREAD_INFO_m12 	*rmi;
+
 #ifdef FN_DEBUG_m12
 #ifndef MATLAB_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 #endif
-
-	ti = (READ_MED_THREAD_INFO_m12 *) ptr;
-	ti->MED_struct = (LEVEL_HEADER_m12 *) G_read_segment_m12((SEGMENT_m12 *) ti->MED_struct, ti->slice, ti->MED_dir, ti->flags, ti->password);
+	
+	pi = (PROC_THREAD_INFO_m12 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m12;  // volatile
+	
+	rmi = (READ_MED_THREAD_INFO_m12 *) (pi->arg);
+	rmi->MED_struct = (LEVEL_HEADER_m12 *) G_read_segment_m12((SEGMENT_m12 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->flags, rmi->password);
+	
+	pi->status = PROC_THREAD_FINISHED_m12;  // volatile
 	
 	return((pthread_rval_m12) 0);
 }
@@ -10354,19 +10129,21 @@ pthread_rval_m12	G_read_segment_thread_m12(void *ptr)
 
 SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  // varargs: void *file_list, si4 list_len, ui4 flags, si1 *password
 {
-	TERN_m12			open_session, free_session, calculate_channel_indices;
+	TERN_m12			open_session, free_session, calculate_channel_indices, ret_val;
 	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12];
-	si4                             i, j, list_len, seg_idx, search_mode, active_ts_chans, active_vid_chans;
+	si4                             i, j, list_len, seg_idx, search_mode, thread_idx;
+	si4				active_chans, active_ts_chans, active_vid_chans;
 	ui8                             flags;
 	sf8				ref_sf, sf_ratio;
 	void				*file_list;
 	va_list				args;
-	CHANNEL_m12			*chan;
 	UNIVERSAL_HEADER_m12		*uh;
-	READ_MED_THREAD_INFO_m12	*ts_chan_thread_infos, *vid_chan_thread_infos;
+	CHANNEL_m12			*chan;
+	PROC_THREAD_INFO_m12		*proc_thread_infos;
+	READ_MED_THREAD_INFO_m12	*read_MED_thread_infos;
 	SEGMENTED_SESS_RECS_m12		*ssr;
-	
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -10421,7 +10198,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			return(NULL);
 		}
 	}
-	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
+	seg_idx = G_check_segment_map_m12(slice, sess);
 	if (seg_idx == FALSE_m12) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
@@ -10430,159 +10207,108 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 
 	// update for variable frequencies on active channel set
 	G_frequencies_vary_m12(sess);
-	search_mode = G_get_search_mode_m12(slice);
-	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == SAMPLE_SEARCH_m12) {
-			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-		}
-	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		if (G_get_search_mode_m12(slice) == FRAME_SEARCH_m12) {
-			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-		}
-	}
 
-	// thread out channel reads
-	#ifdef MATLAB_m12
-	G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);  // no output from threads in mex functions
-	#endif
+	// count active channels
 	active_ts_chans = active_vid_chans = 0;
-	if (sess->number_of_time_series_channels) {
-		for (i = 0; i < sess->number_of_time_series_channels; ++i)
-			if (sess->time_series_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
-				++active_ts_chans;
-		if (active_ts_chans) {
-			calculate_channel_indices = FALSE_m12;
-			if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
-				if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-					if (search_mode == SAMPLE_SEARCH_m12) {
-						calculate_channel_indices = TRUE_m12;
-						ref_sf = globals_m12->reference_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-					}
-				}
-			}
-			ts_chan_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m12));
-			for (i = j = 0; i < sess->number_of_time_series_channels; ++i) {
-				chan = sess->time_series_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-					if (calculate_channel_indices == TRUE_m12) {
-						sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
-						chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
-						chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
-						chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
-					} else {
-						chan->time_slice = *slice;
-					}
-					*ts_chan_thread_infos[j].MED_dir = 0;  // use existing channel path
-					ts_chan_thread_infos[j].flags = LH_NO_FLAGS_m12;  // use existing channel flags
-					ts_chan_thread_infos[j].MED_struct = (LEVEL_HEADER_m12 *) chan;
-					ts_chan_thread_infos[j].slice = NULL;
-					ts_chan_thread_infos[j].password = NULL;
-					PROC_launch_thread_m12(&ts_chan_thread_infos[j].thread_id, G_read_channel_thread_m12, (void *) (ts_chan_thread_infos + j), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_channel_thread");
-					++j;
-				}
-			}
-		}
-	}
-	if (sess->number_of_video_channels) {
-		for (i = 0; i < sess->number_of_video_channels; ++i)
-			if (sess->video_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
-				++active_vid_chans;
-		if (active_vid_chans) {
-			calculate_channel_indices = FALSE_m12;
-			if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
-				if (globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-					if (search_mode == SAMPLE_SEARCH_m12) {
-						calculate_channel_indices = TRUE_m12;
-						ref_sf = globals_m12->reference_channel->metadata_fps->metadata->video_section_2.frame_rate;
-					}
-				}
-			}
-			vid_chan_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_vid_chans, sizeof(READ_MED_THREAD_INFO_m12));
-			for (i = j = 0; i < sess->number_of_video_channels; ++i) {
-				chan = sess->video_channels[i];
-				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-					if (calculate_channel_indices == TRUE_m12) {
-						sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
-						chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
-						chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
-						chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
-					} else {
-						chan->time_slice = *slice;
-					}
-					*vid_chan_thread_infos[j].MED_dir = 0;  // use existing channel path
-					vid_chan_thread_infos[j].flags = LH_NO_FLAGS_m12;  // use existing channel flags
-					vid_chan_thread_infos[j].MED_struct = (LEVEL_HEADER_m12 *) chan;
-					vid_chan_thread_infos[j].slice = NULL;
-					vid_chan_thread_infos[j].password = NULL;
-					PROC_launch_thread_m12(&vid_chan_thread_infos[j].thread_id, G_read_channel_thread_m12, (void *) (vid_chan_thread_infos + j), PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "read_channel_thread");
-					++j;
-				}
-			}
-		}
-	}
+	for (i = 0; i < sess->number_of_time_series_channels; ++i)
+		if (sess->time_series_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
+			++active_ts_chans;
+	for (i = 0; i < sess->number_of_video_channels; ++i)
+		if (sess->video_channels[i]->flags & LH_CHANNEL_ACTIVE_m12)
+			++active_vid_chans;
+	active_chans = active_ts_chans + active_vid_chans;
 
-	// wait for threads
+	// set up thread infos
+	proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) active_chans, sizeof(PROC_THREAD_INFO_m12));
+	read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m12));
+	search_mode = G_get_search_mode_m12(slice);
+	thread_idx = 0;
 	if (active_ts_chans) {
-		for (i = j = 0; i < sess->number_of_time_series_channels; ++i) {
+		calculate_channel_indices = FALSE_m12;
+		if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
+			if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
+				if (search_mode == SAMPLE_SEARCH_m12) {
+					calculate_channel_indices = TRUE_m12;
+					ref_sf = globals_m12->reference_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+				}
+			}
+		}
+		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
 			chan = sess->time_series_channels[i];
 			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-				PROC_pthread_join_m12(ts_chan_thread_infos[j].thread_id, NULL);
-				if (ts_chan_thread_infos[j++].MED_struct == NULL) {
-					if (free_session == TRUE_m12) {
-						G_free_session_m12(sess, TRUE_m12);
-					} else if (chan != NULL) {
-						if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
-							sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
-					}
-					if (active_vid_chans)
-						free((void *) vid_chan_thread_infos);
-					free((void *) ts_chan_thread_infos);
-					return(NULL);
+				if (calculate_channel_indices == TRUE_m12) {
+					sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
+					chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
+					chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
+					chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+				} else {
+					chan->time_slice = *slice;
 				}
+				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m12;
+				proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m12";
+				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+				read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+				++thread_idx;
 			}
 		}
-		free((void *) ts_chan_thread_infos);
 	}
 	if (active_vid_chans) {
-		for (i = j = 0; i < sess->number_of_video_channels; ++i) {
-			chan = sess->video_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-				PROC_pthread_join_m12(vid_chan_thread_infos[j].thread_id, NULL);
-				if (vid_chan_thread_infos[j++].MED_struct == NULL) {
-					if (free_session == TRUE_m12) {
-						G_free_session_m12(sess, TRUE_m12);
-					} else if (chan != NULL) {
-						if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
-							sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
-					}
-					free((void *) vid_chan_thread_infos);
-					return(NULL);
+		calculate_channel_indices = FALSE_m12;
+		if (globals_m12->video_frame_rates_vary == TRUE_m12) {
+			if (globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
+				if (search_mode == SAMPLE_SEARCH_m12) {
+					calculate_channel_indices = TRUE_m12;
+					ref_sf = globals_m12->reference_channel->metadata_fps->metadata->video_section_2.frame_rate;
 				}
 			}
 		}
-		free((void *) vid_chan_thread_infos);
+		for (i = 0; i < sess->number_of_video_channels; ++i) {
+			chan = sess->video_channels[i];
+			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+				if (calculate_channel_indices == TRUE_m12) {
+					sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
+					chan->time_slice.start_frame_number = (si8) round((sf8) slice->start_frame_number * sf_ratio);
+					chan->time_slice.end_frame_number = (si8) round((sf8) slice->end_frame_number * sf_ratio);
+					chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+				} else {
+					chan->time_slice = *slice;
+				}
+				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m12;
+				proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m12";
+				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+				read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+				++thread_idx;
+			}
+		}
 	}
-	#ifdef MATLAB_m12
-	G_pop_behavior_m12();
-	#endif
 	
+	// thread out channel reads
+	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, active_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
+	
+	// check results
+	for (i = 0; i < active_chans; ++i)
+		if (read_MED_thread_infos[i].MED_struct == NULL)
+			ret_val = FALSE_m12;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+	if (ret_val == FALSE_m12) {
+		if (free_session == TRUE_m12)
+			G_free_session_m12(sess, TRUE_m12);
+		G_warning_message_m12("%s(): error reading session\n", __FUNCTION__);
+		return(NULL);
+	}
+
 	// update session slice
 	chan = globals_m12->reference_channel;
-	if ((chan->flags & LH_CHANNEL_ACTIVE_m12) == 0)
-		chan = G_get_active_channel_m12(sess, DEFAULT_CHANNEL_m12);
-	slice->start_time = chan->time_slice.start_time;
-	slice->end_time = chan->time_slice.end_time;
-	slice->start_segment_number = chan->time_slice.start_segment_number;
-	slice->end_segment_number = chan->time_slice.end_segment_number;
-	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
-	if (globals_m12->time_series_frequencies_vary == FALSE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		slice->start_sample_number = chan->time_slice.start_sample_number;
-		slice->end_sample_number = chan->time_slice.end_sample_number;
-	} else if (globals_m12->video_frame_rates_vary == FALSE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		slice->start_frame_number = chan->time_slice.start_frame_number;
-		slice->end_frame_number = chan->time_slice.end_frame_number;
+	*slice = chan->time_slice;
+	if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12) {
+		if (globals_m12->time_series_frequencies_vary == TRUE_m12)
+			slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
+	} else if (chan->type_code == LH_VIDEO_CHANNEL_m12) {
+		if (globals_m12->video_frame_rates_vary == TRUE_m12)
+			slice->start_frame_number = slice->end_frame_number = FRAME_NUMBER_NO_ENTRY_m12;
 	}
 
 	// read session record data
@@ -10747,17 +10473,6 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	// update for variable frequencies on active channel set
 	G_frequencies_vary_m12(sess);
 	search_mode = G_get_search_mode_m12(slice);
-	if (globals_m12->time_series_frequencies_vary == TRUE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		if (search_mode == SAMPLE_SEARCH_m12) {
-			slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_sample_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_sample_number, FIND_END_m12);
-		}
-	} else if (globals_m12->video_frame_rates_vary == TRUE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		if (search_mode == FRAME_SEARCH_m12) {
-			slice->start_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->start_frame_number, FIND_START_m12);
-			slice->end_time = G_uutc_for_frame_number_m12((LEVEL_HEADER_m12 *) sess, slice->end_frame_number, FIND_END_m12);
-		}
-	}
 
 	// read time series channels
 	calculate_channel_indices = FALSE_m12;
@@ -10826,21 +10541,9 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	}
 
 	// update session slice
-	chan = globals_m12->reference_channel;
-	if ((chan->flags & LH_CHANNEL_ACTIVE_m12) == 0)
-		chan = G_get_active_channel_m12(sess, DEFAULT_CHANNEL_m12);
-	slice->start_time = chan->time_slice.start_time;
-	slice->end_time = chan->time_slice.end_time;
-	slice->start_segment_number = chan->time_slice.start_segment_number;
-	slice->end_segment_number = chan->time_slice.end_segment_number;
-	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m12(slice);
-	if (globals_m12->time_series_frequencies_vary == FALSE_m12 && globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-		slice->start_sample_number = chan->time_slice.start_sample_number;
-		slice->end_sample_number = chan->time_slice.end_sample_number;
-	} else if (globals_m12->video_frame_rates_vary == FALSE_m12 && globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-		slice->start_frame_number = chan->time_slice.start_frame_number;
-		slice->end_frame_number = chan->time_slice.end_frame_number;
-	}
+	*slice = globals_m12->reference_channel->time_slice;
+	if (globals_m12->time_series_frequencies_vary == TRUE_m12)
+		slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
 
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
@@ -11803,15 +11506,17 @@ si4	G_segment_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_time)
 			if (Sgmt_records == NULL && chan->parent != NULL)
 				Sgmt_records = ((SESSION_m12 *) chan->parent)->Sgmt_records;
 			else
-				Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
+				Sgmt_records = chan->Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
 			break;
 		case LH_SESSION_m12:
 			sess = (SESSION_m12 *) level_header;
 			Sgmt_records = sess->Sgmt_records;
-			if (Sgmt_records == NULL && globals_m12->reference_channel->Sgmt_records != NULL)
-				Sgmt_records = globals_m12->reference_channel->Sgmt_records;
-			else
-				Sgmt_records = G_build_Sgmt_records_array_m12(sess->record_indices_fps, sess->record_data_fps, NULL);
+			if (Sgmt_records == NULL) {
+				if (globals_m12->reference_channel->Sgmt_records == NULL)
+					Sgmt_records = sess->Sgmt_records = G_build_Sgmt_records_array_m12(sess->record_indices_fps, sess->record_data_fps, NULL);
+				else
+					Sgmt_records = globals_m12->reference_channel->Sgmt_records;
+			}
 			break;
 		default:
 			G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
@@ -12642,6 +12347,10 @@ void	G_show_level_header_flags_m12(ui8 flags)
 		printf_m12("LH_MAP_ALL_SEGMENTS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
 	else
 		printf_m12("LH_MAP_ALL_SEGMENTS_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
+	if (flags & LH_THREAD_SEGMENT_READS_m12)
+		printf_m12("LH_THREAD_SEGMENT_READS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
+	else
+		printf_m12("LH_THREAD_SEGMENT_READS_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
 	if (flags & LH_READ_SLICE_CHANNEL_RECORDS_m12)
 		printf_m12("LH_READ_SLICE_CHANNEL_RECORDS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
 	else
@@ -12690,10 +12399,6 @@ void	G_show_level_header_flags_m12(ui8 flags)
 		printf_m12("LH_NO_CPS_CACHING_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
 	else
 		printf_m12("LH_NO_CPS_CACHING_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
-	if (flags & LH_THREAD_SEGMENT_READS_m12)
-		printf_m12("LH_THREAD_SEGMENT_READS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
-	else
-		printf_m12("LH_THREAD_SEGMENT_READS_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
 	printf_m12("\n");
 	
 	return;
@@ -12846,14 +12551,20 @@ void	G_show_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps, METADATA_m12 *md, ui4 
 				printf_m12("Sampling Frequency: %lf\n", tmd2->sampling_frequency);
 			if (tmd2->low_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m12)
 				printf_m12("Low Frequency Filter Setting: no entry\n");
+			else if (tmd2->low_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m12)
+				printf_m12("Low Frequency Filter Setting: variable\n");
 			else
 				printf_m12("Low Frequency Filter Setting (Hz): %lf\n", tmd2->low_frequency_filter_setting);
 			if (tmd2->high_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m12)
 				printf_m12("High Frequency Filter Setting: no entry\n");
+			else if (tmd2->high_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m12)
+				printf_m12("High Frequency Filter Setting: variable\n");
 			else
 				printf_m12("High Frequency Filter Setting (Hz): %lf\n", tmd2->high_frequency_filter_setting);
 			if (tmd2->notch_filter_frequency_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m12)
 				printf_m12("Notch Filter Frequency Setting: no entry\n");
+			else if (tmd2->notch_filter_frequency_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m12)
+				printf_m12("Notch Filter Frequency Setting: variable\n");
 			else
 				printf_m12("Notch Filter Frequency Setting (Hz): %lf\n", tmd2->notch_filter_frequency_setting);
 			if (tmd2->AC_line_frequency == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m12)
@@ -13625,7 +13336,7 @@ TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess)
 
 	// Currently function only sort time series channels
 	// Returns TRUE if sorted, FALSE if duplicate numbers exist, or other error condition
-	
+
 	n_chans = sess->number_of_time_series_channels;
 	if (n_chans == 0) {
 		G_warning_message_m12("%s(): no time series channels allocated\n", __FUNCTION__);
@@ -13673,7 +13384,7 @@ TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess)
 		}
 		acq_idxs[i].chan = chan;
 	}
-		
+
 	// sort it
 	qsort((void *) acq_idxs, (size_t) n_chans, sizeof(ACQ_NUM_SORT_m12), G_compare_acq_nums_m12);
 	
@@ -16146,9 +15857,9 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 		if (freed_atn != NULL) {
 			G_warning_message_m12("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
 			AT_show_entry_m12(address);  // show where previously freed
-
 		} else {
 			G_warning_message_m12("%s(): address is not allocated, called from function %s()\n", __FUNCTION__, function);
+			AT_show_entry_m12(address);  // show where previously freed
 		}
 		return(FALSE_m12);
 	}
@@ -24084,643 +23795,7 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 // MARK: DATA MATRIX FUNCTIONS  (DM)
 //**********************************//
 
-void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
-{
-	si8	i;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-
-	if (matrix == NULL) {
-		G_warning_message_m12("%s(): attempting to free NULL structure\n", __FUNCTION__);
-		return;
-	}
-	
-	if (matrix->data != NULL)
-		free_m12(matrix->data, __FUNCTION__);
-	
-	if (matrix->range_minima != NULL)
-		free_m12(matrix->range_minima, __FUNCTION__);
-	
-	if (matrix->range_maxima != NULL)
-		free_m12(matrix->range_maxima, __FUNCTION__);
-	
-	if (matrix->contigua != NULL)
-		free_m12((void *) matrix->contigua, __FUNCTION__);
-
-	if (matrix->in_bufs != NULL) {
-		for (i = 0; i < matrix->n_proc_bufs; ++i) {
-			CMP_free_buffers_m12(matrix->in_bufs[i], TRUE_m12);
-			CMP_free_buffers_m12(matrix->out_bufs[i], TRUE_m12);
-		}
-		free_m12((void *) matrix->in_bufs, __FUNCTION__);
-		free_m12((void *) matrix->out_bufs, __FUNCTION__);
-	}
-	
-	if (matrix->mak_in_bufs != NULL) {
-		for (i = 0; i < matrix->n_proc_bufs; ++i) {
-			CMP_free_buffers_m12(matrix->mak_in_bufs[i], TRUE_m12);
-			CMP_free_buffers_m12(matrix->mak_out_bufs[i], TRUE_m12);
-		}
-		free_m12((void *) matrix->mak_in_bufs, __FUNCTION__);
-		free_m12((void *) matrix->mak_out_bufs, __FUNCTION__);
-	}
-
-	if (matrix->spline_bufs != NULL) {
-		for (i = 0; i < matrix->n_proc_bufs; ++i)
-			CMP_free_buffers_m12(matrix->spline_bufs[i], TRUE_m12);
-		free_m12((void *) matrix->spline_bufs, __FUNCTION__);
-	}
-
-	if (free_structure == TRUE_m12) {
-		free_m12((void *) matrix, __FUNCTION__);
-	} else {
-		matrix->data = NULL;
-		matrix->range_minima = NULL;
-		matrix->range_maxima = NULL;
-		matrix->range_maxima = NULL;
-		matrix->contigua = NULL;
-		matrix->number_of_contigua = 0;
-		matrix->in_bufs = NULL;
-		matrix->out_bufs = NULL;
-		matrix->spline_bufs = NULL;
-		matrix->n_proc_bufs = 0;
-	}
-	
-	return;
-}
-
-
-DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, TIME_SLICE_m12 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
-{
-	TERN_m12			changed_to_relative;
-	ui1				*data_base, *minima_base, *maxima_base;
-	si2				si2_pad;
-	si4				search_mode, seg_idx, si4_pad;
-	sf4				sf4_pad;
-	ui8				tmp_ui8;
-	si8				i, j, old_maj_dim, old_min_dim, old_el_size, old_offset, new_offset, samp_offset;
-	si8				req_num_samps, ref_num_samps, bytes_per_sample, bytes_per_channel, data_end, contig_samples;
-	si8				gap_start, gap_end, gap_len, common_offset, gap_offset, tmp_si8;
-	sf8 				ratio, duration, fc1, fc2, req_samp_secs, ref_samp_secs, ref_samp_freq, sf8_pad, tmp_sf8;
-	void				*pattern;
-	size_t				new_data_bytes, curr_bytes, new_bytes, trace_extrema_bytes, n_elements, pattern_sz, bytes_to_move;
-	va_list				args;
-	CHANNEL_m12			*chan, *ref_chan;
-	TIME_SLICE_m12			passed_slice_copy, *req_slice, *sess_slice;
-	DM_GET_MATRIX_THREAD_INFO_m12	*gm_thread_infos, *ti;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-
-	// USAGE:
-	// Session must have been opened by caller (so mapping mechanism, active channels, etc. are set), but session is not read.
-	// The desired extents are specified in the session TIME_SLICE by the caller.
-	// DM_get_matrix_m12() may need to change the time extents of the slice depending on the DM flags and discontinuities.
-	// DM_get_matrix_m12() will call G_read_session_m12() once the required times have been determined.
-
-	// NOTE:
-	// DM_EXTMD_COUNT_AND_FREQ_m12: If the caller wants a fixed number of valid output samples, at a specific output frequency, they should set this flag,
-	// and fill in both of these values. DM_get_matrix_m12() will use the slice start time, or start sample number, but adjust the end time if there are
-	// discontinuities. The session time slice will reflect what actually occured upon return.
-	// DM_EXTMD_COUNT_AND_FREQ_m12 is not compatible with DM_DSCNT_NAN_m12 or DM_DSCNT_ZERO_m12. If these are set the function will return.
-	// If discontinuity information is desired with DM_EXTMD_COUNT_AND_FREQ_m12, set DM_DSCNT_CONTIG_m12. This is because DM_EXTMD_COUNT_AND_FREQ_m12
-	// implies the caller wants only valid sample values & also, if padding were requested, the number of output samples could be enormous.
-	
-	// NOTE: This function handles a lot of options. I don't like creating subfunctions with pieces that won't be used anywhere else.
-	// As a result, it is behemoth, and somewhat difficult to follow.  Apologies to my fellow coders that need to dig into it.
-	
-	// DM_get_matrix_m12() varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
-	//
-	// IMPORTANT: pass correct types for varargs - compiler cannot promote / convert to proper type because it doesn't know what they should be
-	//
-	// varargs DM_FILT_LOWPASS_m12 set: fc1 == high_cutoff
-	// varargs DM_FILT_HIGHPASS_m12 set: fc1 == low_cutoff
-	// varargs DM_FILT_BANDPASS_m12 set: fc1 == low_cutoff, fc2 == high_cutoff
-	// varargs DM_FILT_BANDSTOP_m12 set: fc1 == low_cutoff, fc2 == high_cutoff
-	// varargs matrix == NULL: flags, out_samp_count, out_samp_freq are passed (fc1 & fc2 must be filled in, but if not used, 0.0 should be passed as place holders)
-
-	if (sess == NULL) {
-		G_warning_message_m12("%s(): invalid session => returning\n", __FUNCTION__);
-		return(NULL);
-	}
-	if (!(sess->flags & LH_OPEN_m12)) {
-		G_warning_message_m12("%s(): session closed => returning\n", __FUNCTION__);
-		return(NULL);
-	}
-	if (slice == NULL)  // if no slice passed, session slice is used, but may be modified
-		slice = &sess->time_slice;
-	if ((search_mode = G_get_search_mode_m12(slice)) == FALSE_m12)  // ensure there's a valid limit pair
-		return(NULL);
-
-	// allocate matrix structure
-	if (matrix == NULL)
-		matrix = (DATA_MATRIX_m12 *) calloc_m12((size_t) 1, sizeof(DATA_MATRIX_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	if (varargs == TRUE_m12) {  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
-		// pass zero for anything you don't want to change
-		va_start(args, varargs);
-		tmp_si8 = va_arg(args, si8);
-		if (tmp_si8)
-			matrix->sample_count = tmp_si8;
-		tmp_sf8 = va_arg(args, sf8);
-		if (tmp_sf8 > 0.0)
-			matrix->sampling_frequency = tmp_sf8;
-		tmp_ui8 = va_arg(args, ui8);
-		if (tmp_ui8)
-			matrix->flags = tmp_ui8;
-		tmp_sf8 = va_arg(args, sf8);
-		if (tmp_sf8 != 0.0)  // to change from scaling to non-scaling, you must pass 1.0 for the scale factor, otherwise it is interpreted as a skip
-			matrix->scale_factor = tmp_sf8;
-		fc1 = va_arg(args, sf8);
-		fc2 = va_arg(args, sf8);
-		va_end(args);
-	}
-	old_maj_dim = matrix->maj_dim;
-	old_min_dim = matrix->min_dim;
-	old_el_size = matrix->el_size;
-	
-	// check maximum input defaults
-	if (matrix->sample_count == DM_MAXIMUM_INPUT_COUNT_m12 || matrix->sampling_frequency == DM_MAXIMUM_INPUT_FREQUENCY_m12) {
-		if (matrix->sample_count == DM_MAXIMUM_INPUT_COUNT_m12) {  // change count to frequency mode
-			matrix->flags &= ~DM_EXTMD_SAMP_COUNT_m12;
-			matrix->flags |= DM_EXTMD_SAMP_FREQ_m12;
-			matrix->sample_count = 0;
-		}
-		matrix->sampling_frequency = globals_m12->maximum_time_series_frequency;
-	}
-
-	// check session extents modes
-	if ((sess->flags & LH_MAP_ALL_SEGMENTS_m12) == 0)
-		if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12)
-			G_warning_message_m12("%s(): DM_EXTMD_RELATIVE_LIMITS_m12 may cause data to extend beyond mappable segments\n", __FUNCTION__);
-		
-	switch (matrix->flags & DM_EXTMD_MASK_m12) {
-		case DM_EXTMD_SAMP_COUNT_m12:
-			if (matrix->sample_count <= 0) {
-				G_warning_message_m12("%s(): DM_EXTMD_SAMP_COUNT_m12 must specify matrix sample count => returning\n", __FUNCTION__);
-				return(NULL);
-			}
-			break;
-		case DM_EXTMD_SAMP_FREQ_m12:
-			if (matrix->sampling_frequency <= (sf8) 0.0) {
-				G_warning_message_m12("%s(): DM_EXTMD_SAMP_FREQ_m12 must specify matrix sampling frequency => returning\n", __FUNCTION__);
-				return(NULL);
-			}
-			break;
-		default:
-			G_warning_message_m12("%s(): invalid extents mode (DM_EXTMD_SAMP_COUNT_m12 or DM_EXTMD_SAMP_FREQ_m12) => returning\n", __FUNCTION__);
-			return(NULL);
-	}
-	if ((matrix->flags & (DM_EXTMD_ABSOLUTE_LIMITS_m12 | DM_EXTMD_RELATIVE_LIMITS_m12)) == 0) {
-		G_warning_message_m12("%s(): either DM_EXTMD_ABSOLUTE_LIMITS_m12 or DM_EXTMD_RELATIVE_LIMITS_m12 extents mode must be selected => returning\n", __FUNCTION__);
-		return(NULL);
-
-	}
-	if ((matrix->flags & DM_EXTMD_ABSOLUTE_LIMITS_m12) && (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12)) {
-		G_warning_message_m12("%s(): DM_EXTMD_ABSOLUTE_LIMITS_m12 and DM_EXTMD_RELATIVE_LIMITS_m12 extents modes are mutually exclusive => returning\n", __FUNCTION__);
-		return(NULL);
-
-	}
-	
-	// set slice parameters by extents limits
-	passed_slice_copy = *slice;  // passed slice not modified
-	req_slice = &passed_slice_copy;  // this slice may be modified
-	if (req_slice->conditioned == FALSE_m12)
-		G_condition_time_slice_m12(req_slice);
-	if (search_mode == TIME_SEARCH_m12)
-		req_samp_secs = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1000000.0;  // requested time in seconds
-	else  // search_mode == SAMPLE_SEARCH_m12
-		req_num_samps = TIME_SLICE_SAMPLE_COUNT_m12(req_slice);  // requested samples read (on reference channel)
-	ref_chan = globals_m12->reference_channel;
-	seg_idx = G_get_segment_index_m12(FIRST_OPEN_SEGMENT_m12);
-	ref_samp_freq = ref_chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
-	changed_to_relative = FALSE_m12;
-	switch (matrix->flags & DM_EXTMD_LIMIT_MASK_m12) {
-		case DM_EXTMD_ABSOLUTE_LIMITS_m12:
-			if (search_mode == SAMPLE_SEARCH_m12) {
-				req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
-					duration = round((sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq);
-					req_slice->end_time = (req_slice->start_time + (si8) duration) - 1;
-					changed_to_relative = TRUE_m12;
-				} else {  // no padding
-					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-				}
-			}
-			break;
-		case DM_EXTMD_RELATIVE_LIMITS_m12:
-			if (search_mode == TIME_SEARCH_m12) {
-				if ((matrix->flags & DM_PAD_MASK_m12) == 0) {  // no padding
-					req_slice->start_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_time, FIND_CURRENT_m12);
-					duration = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1000000.0;  // in seconds
-					req_slice->end_sample_number = req_slice->start_sample_number;
-					req_slice->end_sample_number += (si8) round(ref_samp_freq * duration) - 1;  // relative samples
-					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-
-				}
-			} else {  // search_mode == SAMPLE_SEARCH_m12
-				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
-					duration = round((sf8) ((req_slice->end_sample_number - req_slice->start_sample_number) + 1) / ref_samp_freq);
-					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-					req_slice->end_time = (req_slice->start_time + (si8) duration) - 1;
-				} else {  // no padding
-					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-				}
-			}
-			break;
-		default:
-			G_warning_message_m12("%s(): invalid extents limits (DM_EXTMD_ABSOLUTE_LIMITS_m12 or DM_EXTMD_RELATIVE_LIMITS_m12) => returning\n", __FUNCTION__);
-			return(NULL);
-	}
-
-	req_slice->start_sample_number = req_slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;  // all extents now changed to time (for variable frequency channels)
-	if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12 || changed_to_relative == TRUE_m12)  // force re-evaluation of segment range for relative modes
-		req_slice->number_of_segments = UNKNOWN_m12;
-
-	// read session
-	G_read_session_m12(sess, req_slice);
-	sess_slice = &sess->time_slice;  // filled in with actual values
-
-	// return a NULL matrix if there is no data found
-	if (sess_slice->number_of_segments == UNKNOWN_m12)
-		return(NULL);
-	
-	// get output sample count & sampling frequency
-	ref_num_samps = TIME_SLICE_SAMPLE_COUNT_S_m12(ref_chan->time_slice);  // actual samples read (on reference channel)
-	ref_samp_secs = (sf8) ref_num_samps / ref_samp_freq;  // elapsed sample time, ignoring discontinuities
-	switch (matrix->flags & DM_EXTMD_MASK_m12) {
-		case DM_EXTMD_SAMP_COUNT_m12:
-			if (search_mode == TIME_SEARCH_m12)
-				ratio = ref_samp_secs / req_samp_secs;
-			else  // search_mode == SAMPLE_SEARCH_m12
-				ratio = (sf8) ref_num_samps / (sf8) req_num_samps;
-			matrix->valid_sample_count = (si8) round((sf8) matrix->sample_count * ratio);
-			if (matrix->valid_sample_count > matrix->sample_count)
-				matrix->valid_sample_count = matrix->sample_count;  // rounding error - valid count can only be less than or equal to requested count
-			if ((matrix->flags & DM_PAD_MASK_m12) == 0)  // sample count doesn't change if padded
-				matrix->sample_count = matrix->valid_sample_count;
-			matrix->sampling_frequency = (sf8) matrix->valid_sample_count / ref_samp_secs;
-			break;
-		case DM_EXTMD_SAMP_FREQ_m12:
-			matrix->valid_sample_count = (si8) round(matrix->sampling_frequency * ref_samp_secs);
-			if (matrix->flags & DM_PAD_MASK_m12) {
-				if (search_mode == SAMPLE_SEARCH_m12)
-					req_samp_secs = (sf8) req_num_samps / ref_samp_freq;
-				matrix->sample_count = (si8) round(matrix->sampling_frequency * req_samp_secs);
-			} else {
-				matrix->sample_count = matrix->valid_sample_count;
-			}
-			break;
-	}
-
-	// set scaling
-	if (matrix->scale_factor == 0.0)  // calloc value
-		matrix->scale_factor = 1.0;  // no scaling
-
-	// set filter cutoffs
-	if (matrix->flags & DM_FILT_MASK_m12) {
-		if (varargs == TRUE_m12) {  // caller passed cutoffs as varargs
-			switch (matrix->flags & DM_FILT_MASK_m12) {
-				case DM_FILT_LOWPASS_m12:
-					if (fc1 > 0.0)
-						matrix->filter_high_fc = fc1;
-					break;
-				case DM_FILT_HIGHPASS_m12:
-					if (fc1 > 0.0)
-						matrix->filter_low_fc = fc1;
-					break;
-				case DM_FILT_BANDPASS_m12:
-				case DM_FILT_BANDSTOP_m12:
-					if (fc1 > 0.0)
-						matrix->filter_low_fc = fc1;
-					if (fc2 > 0.0)
-						matrix->filter_high_fc = fc2;
-					break;
-			}
-		}
-		switch (matrix->flags & DM_FILT_MASK_m12) {
-			case DM_FILT_ANTIALIAS_m12:
-				matrix->filter_high_fc = matrix->sampling_frequency / FILT_ANTIALIAS_FREQ_DIVISOR_DEFAULT_m12;
-			case DM_FILT_LOWPASS_m12:
-				matrix->filter_low_fc = NAN;  // nan("");
-				break;
-			case DM_FILT_HIGHPASS_m12:
-				matrix->filter_high_fc = NAN;  // nan("");
-				break;
-			case DM_FILT_BANDPASS_m12:
-			case DM_FILT_BANDSTOP_m12:
-				break;
-		}
-	}
-
-	// get active channel count
-	for (matrix->channel_count = i = 0; i < sess->number_of_time_series_channels; ++i) {
-		chan = sess->time_series_channels[i];
-		if (chan->flags & LH_CHANNEL_ACTIVE_m12)
-			++matrix->channel_count;
-	}
-	if (matrix->channel_count == 0) {
-		G_warning_message_m12("%s(): invalid channel count => returning\n", __FUNCTION__);
-		return(NULL);
-	}
-
-	// get matrix dimensions
-	if ((matrix->flags & DM_FMT_MASK_m12) == 0) {  // does not check if multiple flags set
-		G_warning_message_m12("%s(): invalid format => returning\n", __FUNCTION__);
-		return(NULL);
-	}
-	if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
-		matrix->maj_dim = matrix->sample_count;
-		matrix->min_dim = matrix->channel_count;
-	} else {  // DM_FMT_CHANNEL_MAJOR_m12
-		matrix->maj_dim = matrix->channel_count;
-		matrix->min_dim = matrix->sample_count;
-	}
-	
-	// get element size
-	switch (matrix->flags & DM_TYPE_MASK_m12) {
-		case DM_TYPE_SI2_m12:
-			matrix->el_size = 2;
-			break;
-		case DM_TYPE_SI4_m12:
-		case DM_TYPE_SF4_m12:
-			matrix->el_size = 4;
-			break;
-		case DM_TYPE_SF8_m12:
-			matrix->el_size = 8;
-			break;
-		default:
-			G_warning_message_m12("%s(): invalid element size => returning\n", __FUNCTION__);
-			return(NULL);
-	}
-	
-	// allocate channel processing buffer pointers
-	if (matrix->n_proc_bufs < matrix->channel_count) {
-		if (matrix->in_bufs == NULL) {
-			matrix->in_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			matrix->out_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			if (matrix->flags & (DM_INTRP_MAKIMA_m12 | DM_INTRP_UP_MAKIMA_DN_LINEAR_m12)) {
-				matrix->mak_in_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-				matrix->mak_out_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			}
-			if (matrix->flags & (DM_INTRP_SPLINE_m12 | DM_INTRP_UP_SPLINE_DN_LINEAR_m12))
-				matrix->spline_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		} else {
-			curr_bytes = matrix->n_proc_bufs * sizeof(CMP_BUFFERS_m12 *);
-			new_bytes = matrix->channel_count * sizeof(CMP_BUFFERS_m12 *);
-			matrix->in_bufs = (CMP_BUFFERS_m12 **) recalloc_m12(matrix->in_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			matrix->out_bufs = (CMP_BUFFERS_m12 **) recalloc_m12(matrix->out_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			if (matrix->flags & (DM_INTRP_MAKIMA_m12 | DM_INTRP_UP_MAKIMA_DN_LINEAR_m12)) {
-				matrix->mak_in_bufs = (CMP_BUFFERS_m12 **) recalloc_m12((void *) matrix->mak_in_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-				matrix->mak_in_bufs = (CMP_BUFFERS_m12 **) recalloc_m12((void *) matrix->mak_out_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			}
-			if (matrix->flags & (DM_INTRP_SPLINE_m12 | DM_INTRP_UP_SPLINE_DN_LINEAR_m12))
-				matrix->spline_bufs = (CMP_BUFFERS_m12 **) recalloc_m12(matrix->spline_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		}
-		matrix->n_proc_bufs = matrix->channel_count;
-	}
-	if (matrix->flags & DM_TRACE_EXTREMA_m12) {
-		if (matrix->n_proc_bufs < matrix->channel_count || matrix->el_size > old_el_size) {
-			if (matrix->trace_minima != NULL) {
-				free_m12(matrix->trace_minima, __FUNCTION__);
-				free_m12(matrix->trace_maxima, __FUNCTION__);
-				matrix->trace_minima = matrix->trace_maxima = NULL;
-			}
-		}
-		if (matrix->trace_minima == NULL) {
-			trace_extrema_bytes = matrix->channel_count * matrix->el_size;
-			matrix->trace_minima = malloc_m12(trace_extrema_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			matrix->trace_maxima = malloc_m12(trace_extrema_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		}
-	}
-
-	// allocate matrix return contents
-	new_data_bytes = matrix->maj_dim * matrix->min_dim * matrix->el_size;
-	if (matrix->flags & DM_2D_INDEXING_m12) {
-		new_data_bytes += matrix->maj_dim * sizeof(void *);
-		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everthing must match
-			matrix->data_bytes = 0;  // force failure below
-	}
-	if (matrix->data_bytes < (si8) new_data_bytes) {
-		matrix->data_bytes = (si8) new_data_bytes;
-		if (matrix->data != NULL) {
-			free_m12((void *) matrix->data, __FUNCTION__);
-			if (matrix->range_minima != NULL) {  // always paired
-				free_m12((void *) matrix->range_minima, __FUNCTION__);
-				free_m12((void *) matrix->range_maxima, __FUNCTION__);
-				matrix->range_minima = matrix->range_maxima = NULL;
-			}
-		}
-		if (matrix->flags & DM_2D_INDEXING_m12)
-			matrix->data = (void *) malloc_2D_m12(matrix->maj_dim, matrix->min_dim, matrix->el_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		else
-			matrix->data = malloc_m12(new_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		if (matrix->flags & DM_TRACE_RANGES_m12) {
-			if (matrix->flags & DM_2D_INDEXING_m12) {
-				matrix->range_minima = (void *) malloc_2D_m12(matrix->maj_dim, matrix->min_dim, matrix->el_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-				matrix->range_maxima = (void *) malloc_2D_m12(matrix->maj_dim, matrix->min_dim, matrix->el_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			} else {
-				matrix->range_minima = malloc_m12(new_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-				matrix->range_maxima = malloc_m12(new_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			}
-		}
-	}
-
-	// launch channel threads
-	#ifdef MATLAB_m12
-	G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);  // no printf output from threads in mex functions
-	#endif
-	ti = gm_thread_infos = (DM_GET_MATRIX_THREAD_INFO_m12 *) calloc((size_t) matrix->channel_count, sizeof(DM_GET_MATRIX_THREAD_INFO_m12));
-	for (i = j = 0; i < matrix->channel_count; ++j) {
-		chan = sess->time_series_channels[j];
-		if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-			ti->dm = matrix;
-			ti->chan = chan;
-			ti->chan_idx = i++;
-			PROC_launch_thread_m12(&ti->thread_id, DM_gm_thread_f_m12, (void *) ti, PROC_HIGH_PRIORITY_m12, "~0", NULL, FALSE_m12, "DM_gm_thread_f_m12");
-			++ti;
-		}
-	}
-	
-	// get contigua
-	if (matrix->flags & DM_DSCNT_MASK_m12) {
-		if (matrix->contigua != NULL) {
-			free_m12((void *) matrix->contigua, __FUNCTION__);
-			matrix->contigua = NULL;
-			matrix->number_of_contigua = 0;
-		}
-		matrix->number_of_contigua = G_build_contigua_m12((LEVEL_HEADER_m12 *) sess);
-		// make contigua indices matrix relative
-		if (matrix->number_of_contigua) {
-			matrix->contigua = (CONTIGUON_m12 *) calloc_m12((size_t) matrix->number_of_contigua, sizeof(CONTIGUON_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			memcpy(matrix->contigua, sess->contigua, matrix->number_of_contigua * sizeof(CONTIGUON_m12));
-			tmp_sf8 = matrix->sampling_frequency / (sf8) 1e6;
-			if (matrix->flags & DM_PAD_MASK_m12) {
-				// sf = (sf8) matrix->sampling_frequency / (sf8) 1e6;
-				for (i = 0; i < matrix->number_of_contigua; ++i) {
-					matrix->contigua[i].start_sample_number = (si8) round((matrix->contigua[i].start_time - sess_slice->start_time) * tmp_sf8);
-					matrix->contigua[i].end_sample_number = (si8) round((matrix->contigua[i].end_time - sess_slice->start_time) * tmp_sf8);
-				}
-			} else {  // not padded
-				for (samp_offset = i = 0; i < matrix->number_of_contigua; ++i) {
-					matrix->contigua[i].start_sample_number = samp_offset;
-					duration = (sf8) ((matrix->contigua[i].end_time - matrix->contigua[i].start_time) + 1);
-					samp_offset += (si8) round(duration * tmp_sf8);
-					matrix->contigua[i].end_sample_number = samp_offset;
-					if (matrix->contigua[i].end_sample_number > matrix->contigua[i].start_sample_number)
-						--matrix->contigua[i].end_sample_number;
-				}
-			}
-			matrix->contigua[matrix->number_of_contigua - 1].end_sample_number = matrix->sample_count - 1;
-		}
-	}
-
-	// wait for channel threads
-	ti = gm_thread_infos;
-	for (i = matrix->channel_count; i--; ++ti)
-		PROC_pthread_join_m12(ti->thread_id, NULL);
-	free((void *) gm_thread_infos);
-	#ifdef MATLAB_m12
-	G_pop_behavior_m12();
-	#endif
-		
-	// padding options (big pain in the ass)
-	if ((matrix->flags & DM_PAD_MASK_m12) && (matrix->number_of_contigua > 1)) {
-		// changed extents mode warning
-		if (changed_to_relative == TRUE_m12)
-			G_warning_message_m12("%s(): discontinuity => extents mode temporarily changed from absolute to relative\n", __FUNCTION__);
-		// set patterns up for padding
-		switch (matrix->flags & DM_TYPE_MASK_m12) {
-			case DM_TYPE_SI2_m12:
-				si2_pad = (si2) 0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					si2_pad = NAN_SI2_m12;
-				pattern = (void *) &si2_pad;
-				pattern_sz = 2;
-				break;
-			case DM_TYPE_SI4_m12:
-				si4_pad = (si4) 0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					si4_pad = NAN_SI4_m12;
-				pattern = (void *) &si4_pad;
-				pattern_sz = 4;
-				break;
-			case DM_TYPE_SF4_m12:
-				sf4_pad = (sf4) 0.0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					sf4_pad = NAN;
-				pattern = (void *) &sf4_pad;
-				pattern_sz = 4;
-				break;
-			case DM_TYPE_SF8_m12:
-				sf8_pad = (sf8) 0.0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					sf8_pad = NAN;
-				pattern = (void *) &sf8_pad;
-				pattern_sz = 8;
-				break;
-
-		}
-		// set up for indexing
-		data_base = (ui1 *) matrix->data;
-		if (matrix->flags & DM_2D_INDEXING_m12) {
-			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
-				data_base += matrix->sample_count * sizeof(void *);
-			else  // DM_FMT_CHANNEL_MAJOR_m12
-				data_base += matrix->channel_count * sizeof(void *);
-		}
-		if (matrix->flags & DM_TRACE_RANGES_m12) {
-			minima_base = (ui1 *) matrix->range_minima;
-			if (matrix->flags & DM_2D_INDEXING_m12) {
-				if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
-					minima_base += matrix->sample_count * sizeof(void *);
-				else  // DM_FMT_CHANNEL_MAJOR_m12
-					minima_base += matrix->channel_count * sizeof(void *);
-			}
-			maxima_base = (ui1 *) matrix->range_maxima;
-			if (matrix->flags & DM_2D_INDEXING_m12) {
-				if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
-					maxima_base += matrix->sample_count * sizeof(void *);
-				else  // DM_FMT_CHANNEL_MAJOR_m12
-					maxima_base += matrix->channel_count * sizeof(void *);
-			}
-		}
-
-		// loop backwards over contigua
-		data_end = matrix->valid_sample_count;
-		gap_end = matrix->sample_count;
-		for (i = matrix->number_of_contigua; i--;) {
-			contig_samples = (matrix->contigua[i].start_sample_number - matrix->contigua[i].start_sample_number) + 1;
-			gap_start = matrix->contigua[i].end_sample_number + 1;
-			gap_len = gap_end - gap_start;
-			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
-				// move block
-				bytes_per_sample = matrix->channel_count * matrix->el_size;
-				old_offset = (data_end - contig_samples) * bytes_per_sample;
-				new_offset = bytes_per_sample * matrix->contigua[i].start_sample_number;
-				bytes_to_move = bytes_per_sample * contig_samples;
-				memmove((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
-				if (matrix->flags & DM_TRACE_RANGES_m12) {
-					memmove((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
-					memmove((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
-				}
-				// fill gap
-				if (gap_len > 0) {
-					n_elements = gap_len * matrix->channel_count;
-					gap_offset = gap_len * bytes_per_sample;
-					memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
-					if (matrix->flags & DM_TRACE_RANGES_m12) {
-						memset_m12(minima_base + gap_offset, pattern, pattern_sz, n_elements);
-						memset_m12(maxima_base + gap_offset, pattern, pattern_sz, n_elements);
-					}
-				}
-			} else {  // DM_FMT_CHANNEL_MAJOR_m12
-				// move blocks
-				bytes_per_sample = matrix->el_size;
-				bytes_per_channel = bytes_per_sample * matrix->sample_count;
-				common_offset = bytes_per_channel * matrix->channel_count;
-				old_offset = common_offset + ((data_end - contig_samples) * bytes_per_sample);
-				new_offset = common_offset + (bytes_per_sample * matrix->contigua[i].start_sample_number);
-				bytes_to_move = bytes_per_sample * contig_samples;
-				for (j = matrix->channel_count; j--;) {
-					old_offset -= bytes_per_channel;
-					new_offset -= bytes_per_channel;
-					memmove((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
-					if (matrix->flags & DM_TRACE_RANGES_m12) {
-						memmove((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
-						memmove((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
-					}
-					// fill gap
-					if (gap_len > 0) {
-						gap_offset = new_offset + (gap_start * bytes_per_sample);
-						memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
-						if (matrix->flags & DM_TRACE_RANGES_m12) {
-							memset_m12(minima_base + gap_offset, pattern, pattern_sz, gap_len);
-							memset_m12(maxima_base + gap_offset, pattern, pattern_sz, gap_len);
-						}
-					}
-				}
-			}
-			gap_end = matrix->contigua[i].start_sample_number;
-			data_end -= contig_samples;
-		}
-	}
-
-	// free contigua, if just used for padding
-	if (!(matrix->flags & DM_DSCNT_CONTIG_m12) && matrix->number_of_contigua) {
-		free_m12((void *) matrix->contigua, __FUNCTION__);
-		matrix->contigua = NULL;
-		matrix->number_of_contigua = 0;
-	}
-	
-	return(matrix);
-}
-
-
-pthread_rval_m12	DM_gm_thread_f_m12(void *ptr)
+pthread_rval_m12	DM_channel_thread_m12(void *ptr)
 {
 	TERN_m12			filter, trace_ranges;
 	ui1				*data_base, *min_base, *max_base;
@@ -24740,18 +23815,22 @@ pthread_rval_m12	DM_gm_thread_f_m12(void *ptr)
 	CMP_PROCESSING_STRUCT_m12	*cps;
 	FILT_PROCESSING_STRUCT_m12      *filtps;
 	DATA_MATRIX_m12			*dm;
-	DM_GET_MATRIX_THREAD_INFO_m12	*ti;
+	PROC_THREAD_INFO_m12		*pi;
+	DM_CHANNEL_THREAD_INFO_m12	*ci;
 
 #ifdef FN_DEBUG_m12
 #ifndef MATLAB_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 #endif
-
-	ti = (DM_GET_MATRIX_THREAD_INFO_m12 *) ptr;
-	dm = ti->dm;
-	chan = ti->chan;
-	chan_idx = ti->chan_idx;
+	
+	pi = (PROC_THREAD_INFO_m12 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m12;
+	
+	ci = (DM_CHANNEL_THREAD_INFO_m12 *) (pi->arg);
+	dm = ci->dm;
+	chan = ci->chan;
+	chan_idx = ci->chan_idx;
 	slice = &chan->time_slice;
 	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
 	raw_samp_freq = chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
@@ -25043,6 +24122,7 @@ pthread_rval_m12	DM_gm_thread_f_m12(void *ptr)
 				break;
 			default:
 				G_warning_message_m12("%s(): invalid element size => returning\n");
+				pi->status = PROC_THREAD_FINISHED_m12;
 				return((pthread_rval_m12) 0);
 		}
 	}
@@ -25206,7 +24286,651 @@ pthread_rval_m12	DM_gm_thread_f_m12(void *ptr)
 			break;
 	}
 
+	pi->status = PROC_THREAD_FINISHED_m12;
+
 	return((pthread_rval_m12) 0);
+}
+
+
+void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
+{
+	si8	i;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	if (matrix == NULL) {
+		G_warning_message_m12("%s(): attempting to free NULL structure\n", __FUNCTION__);
+		return;
+	}
+	
+	if (matrix->data != NULL)
+		free_m12(matrix->data, __FUNCTION__);
+	
+	if (matrix->range_minima != NULL)
+		free_m12(matrix->range_minima, __FUNCTION__);
+	
+	if (matrix->range_maxima != NULL)
+		free_m12(matrix->range_maxima, __FUNCTION__);
+	
+	if (matrix->contigua != NULL)
+		free_m12((void *) matrix->contigua, __FUNCTION__);
+
+	if (matrix->in_bufs != NULL) {
+		for (i = 0; i < matrix->n_proc_bufs; ++i) {
+			CMP_free_buffers_m12(matrix->in_bufs[i], TRUE_m12);
+			CMP_free_buffers_m12(matrix->out_bufs[i], TRUE_m12);
+		}
+		free_m12((void *) matrix->in_bufs, __FUNCTION__);
+		free_m12((void *) matrix->out_bufs, __FUNCTION__);
+	}
+	
+	if (matrix->mak_in_bufs != NULL) {
+		for (i = 0; i < matrix->n_proc_bufs; ++i) {
+			CMP_free_buffers_m12(matrix->mak_in_bufs[i], TRUE_m12);
+			CMP_free_buffers_m12(matrix->mak_out_bufs[i], TRUE_m12);
+		}
+		free_m12((void *) matrix->mak_in_bufs, __FUNCTION__);
+		free_m12((void *) matrix->mak_out_bufs, __FUNCTION__);
+	}
+
+	if (matrix->spline_bufs != NULL) {
+		for (i = 0; i < matrix->n_proc_bufs; ++i)
+			CMP_free_buffers_m12(matrix->spline_bufs[i], TRUE_m12);
+		free_m12((void *) matrix->spline_bufs, __FUNCTION__);
+	}
+
+	if (free_structure == TRUE_m12) {
+		free_m12((void *) matrix, __FUNCTION__);
+	} else {
+		matrix->data = NULL;
+		matrix->range_minima = NULL;
+		matrix->range_maxima = NULL;
+		matrix->range_maxima = NULL;
+		matrix->contigua = NULL;
+		matrix->number_of_contigua = 0;
+		matrix->in_bufs = NULL;
+		matrix->out_bufs = NULL;
+		matrix->spline_bufs = NULL;
+		matrix->n_proc_bufs = 0;
+	}
+
+	return;
+}
+
+
+DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, TIME_SLICE_m12 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
+{
+	TERN_m12			changed_to_relative, ret_val;
+	ui1				*data_base, *minima_base, *maxima_base;
+	si2				si2_pad;
+	si4				search_mode, seg_idx, si4_pad;
+	sf4				sf4_pad;
+	ui8				tmp_ui8;
+	si8				i, j, old_maj_dim, old_min_dim, old_el_size, old_offset, new_offset, samp_offset;
+	si8				req_num_samps, ref_num_samps, bytes_per_sample, bytes_per_channel, data_end, contig_samples;
+	si8				gap_start, gap_end, gap_len, common_offset, gap_offset, tmp_si8;
+	sf8 				ratio, duration, fc1, fc2, req_samp_secs, ref_samp_secs, ref_samp_freq, sf8_pad, tmp_sf8;
+	void				*pattern;
+	size_t				new_data_bytes, curr_bytes, new_bytes, trace_extrema_bytes, n_elements, pattern_sz, bytes_to_move;
+	va_list				args;
+	CHANNEL_m12			*chan, *ref_chan;
+	TIME_SLICE_m12			passed_slice_copy, *req_slice, *sess_slice;
+	PROC_THREAD_INFO_m12		*proc_thread_infos, *pi;
+	DM_CHANNEL_THREAD_INFO_m12	*chan_thread_infos, *ci;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// USAGE:
+	// Session must have been opened by caller (so mapping mechanism, active channels, etc. are set), but session is not read.
+	// The desired extents are specified in the session TIME_SLICE by the caller.
+	// DM_get_matrix_m12() may need to change the time extents of the slice depending on the DM flags and discontinuities.
+	// DM_get_matrix_m12() will call G_read_session_m12() once the required times have been determined.
+
+	// NOTE:
+	// DM_EXTMD_COUNT_AND_FREQ_m12: If the caller wants a fixed number of valid output samples, at a specific output frequency, they should set this flag,
+	// and fill in both of these values. DM_get_matrix_m12() will use the slice start time, or start sample number, but adjust the end time if there are
+	// discontinuities. The session time slice will reflect what actually occured upon return.
+	// DM_EXTMD_COUNT_AND_FREQ_m12 is not compatible with DM_DSCNT_NAN_m12 or DM_DSCNT_ZERO_m12. If these are set the function will return.
+	// If discontinuity information is desired with DM_EXTMD_COUNT_AND_FREQ_m12, set DM_DSCNT_CONTIG_m12. This is because DM_EXTMD_COUNT_AND_FREQ_m12
+	// implies the caller wants only valid sample values & also, if padding were requested, the number of output samples could be enormous.
+	
+	// NOTE: This function handles a lot of options. I don't like creating subfunctions with pieces that won't be used anywhere else.
+	// As a result, it is behemoth, and somewhat difficult to follow.  Apologies to my fellow coders that need to dig into it.
+	
+	// DM_get_matrix_m12() varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
+	//
+	// IMPORTANT: pass correct types for varargs - compiler cannot promote / convert to proper type because it doesn't know what they should be
+	//
+	// varargs DM_FILT_LOWPASS_m12 set: fc1 == high_cutoff
+	// varargs DM_FILT_HIGHPASS_m12 set: fc1 == low_cutoff
+	// varargs DM_FILT_BANDPASS_m12 set: fc1 == low_cutoff, fc2 == high_cutoff
+	// varargs DM_FILT_BANDSTOP_m12 set: fc1 == low_cutoff, fc2 == high_cutoff
+	// varargs matrix == NULL: flags, out_samp_count, out_samp_freq are passed (fc1 & fc2 must be filled in, but if not used, 0.0 should be passed as place holders)
+
+	if (sess == NULL) {
+		G_warning_message_m12("%s(): invalid session => returning\n", __FUNCTION__);
+		return(NULL);
+	}
+	if (!(sess->flags & LH_OPEN_m12)) {
+		G_warning_message_m12("%s(): session closed => returning\n", __FUNCTION__);
+		return(NULL);
+	}
+	if (slice == NULL)  // if no slice passed, session slice is used, but may be modified
+		slice = &sess->time_slice;
+	if ((search_mode = G_get_search_mode_m12(slice)) == FALSE_m12)  // ensure there's a valid limit pair
+		return(NULL);
+
+	// allocate matrix structure
+	if (matrix == NULL)
+		matrix = (DATA_MATRIX_m12 *) calloc_m12((size_t) 1, sizeof(DATA_MATRIX_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (varargs == TRUE_m12) {  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
+		// pass zero for anything you don't want to change
+		va_start(args, varargs);
+		tmp_si8 = va_arg(args, si8);
+		if (tmp_si8)
+			matrix->sample_count = tmp_si8;
+		tmp_sf8 = va_arg(args, sf8);
+		if (tmp_sf8 > 0.0)
+			matrix->sampling_frequency = tmp_sf8;
+		tmp_ui8 = va_arg(args, ui8);
+		if (tmp_ui8)
+			matrix->flags = tmp_ui8;
+		tmp_sf8 = va_arg(args, sf8);
+		if (tmp_sf8 != 0.0)  // to change from scaling to non-scaling, you must pass 1.0 for the scale factor, otherwise it is interpreted as a skip
+			matrix->scale_factor = tmp_sf8;
+		fc1 = va_arg(args, sf8);
+		fc2 = va_arg(args, sf8);
+		va_end(args);
+	}
+	old_maj_dim = matrix->maj_dim;
+	old_min_dim = matrix->min_dim;
+	old_el_size = matrix->el_size;
+	
+	// check maximum input defaults
+	if (matrix->sample_count == DM_MAXIMUM_INPUT_COUNT_m12 || matrix->sampling_frequency == DM_MAXIMUM_INPUT_FREQUENCY_m12) {
+		if (matrix->sample_count == DM_MAXIMUM_INPUT_COUNT_m12) {  // change count to frequency mode
+			matrix->flags &= ~DM_EXTMD_SAMP_COUNT_m12;
+			matrix->flags |= DM_EXTMD_SAMP_FREQ_m12;
+			matrix->sample_count = 0;
+		}
+		matrix->sampling_frequency = globals_m12->maximum_time_series_frequency;
+	}
+		
+	switch (matrix->flags & DM_EXTMD_MASK_m12) {
+		case DM_EXTMD_SAMP_COUNT_m12:
+			if (matrix->sample_count <= 0) {
+				G_warning_message_m12("%s(): DM_EXTMD_SAMP_COUNT_m12 must specify matrix sample count => returning\n", __FUNCTION__);
+				return(NULL);
+			}
+			break;
+		case DM_EXTMD_SAMP_FREQ_m12:
+			if (matrix->sampling_frequency <= (sf8) 0.0) {
+				G_warning_message_m12("%s(): DM_EXTMD_SAMP_FREQ_m12 must specify matrix sampling frequency => returning\n", __FUNCTION__);
+				return(NULL);
+			}
+			break;
+		default:
+			G_warning_message_m12("%s(): invalid extents mode (DM_EXTMD_SAMP_COUNT_m12 or DM_EXTMD_SAMP_FREQ_m12) => returning\n", __FUNCTION__);
+			return(NULL);
+	}
+	if ((matrix->flags & (DM_EXTMD_ABSOLUTE_LIMITS_m12 | DM_EXTMD_RELATIVE_LIMITS_m12)) == 0) {
+		G_warning_message_m12("%s(): either DM_EXTMD_ABSOLUTE_LIMITS_m12 or DM_EXTMD_RELATIVE_LIMITS_m12 extents mode must be selected => returning\n", __FUNCTION__);
+		return(NULL);
+
+	}
+	if ((matrix->flags & DM_EXTMD_ABSOLUTE_LIMITS_m12) && (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12)) {
+		G_warning_message_m12("%s(): DM_EXTMD_ABSOLUTE_LIMITS_m12 and DM_EXTMD_RELATIVE_LIMITS_m12 extents modes are mutually exclusive => returning\n", __FUNCTION__);
+		return(NULL);
+
+	}
+	
+	// set slice parameters by extents limits
+	passed_slice_copy = *slice;  // passed slice not modified
+	req_slice = &passed_slice_copy;  // this slice may be modified
+	if (req_slice->conditioned == FALSE_m12)
+		G_condition_time_slice_m12(req_slice);
+	if (search_mode == TIME_SEARCH_m12)
+		req_samp_secs = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1000000.0;  // requested time in seconds
+	else  // search_mode == SAMPLE_SEARCH_m12
+		req_num_samps = TIME_SLICE_SAMPLE_COUNT_m12(req_slice);  // requested samples read (on reference channel)
+	ref_chan = globals_m12->reference_channel;
+	seg_idx = G_get_segment_index_m12(FIRST_OPEN_SEGMENT_m12);
+	ref_samp_freq = ref_chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
+	changed_to_relative = FALSE_m12;
+	switch (matrix->flags & DM_EXTMD_LIMIT_MASK_m12) {
+		case DM_EXTMD_ABSOLUTE_LIMITS_m12:
+			if (search_mode == SAMPLE_SEARCH_m12) {
+				req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
+				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
+					duration = round((sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq);
+					req_slice->end_time = (req_slice->start_time + (si8) duration) - 1;
+					changed_to_relative = TRUE_m12;
+				} else {  // no padding
+					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
+				}
+			}
+			break;
+		case DM_EXTMD_RELATIVE_LIMITS_m12:
+			if (search_mode == TIME_SEARCH_m12) {
+				if ((matrix->flags & DM_PAD_MASK_m12) == 0) {  // no padding
+					req_slice->start_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_time, FIND_CURRENT_m12);
+					duration = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1000000.0;  // in seconds
+					req_slice->end_sample_number = req_slice->start_sample_number;
+					req_slice->end_sample_number += (si8) round(ref_samp_freq * duration) - 1;  // relative samples
+					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
+
+				}
+			} else {  // search_mode == SAMPLE_SEARCH_m12
+				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
+					duration = round((sf8) ((req_slice->end_sample_number - req_slice->start_sample_number) + 1) / ref_samp_freq);
+					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
+					req_slice->end_time = (req_slice->start_time + (si8) duration) - 1;
+				} else {  // no padding
+					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
+					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
+				}
+			}
+			break;
+		default:
+			G_warning_message_m12("%s(): invalid extents limits (DM_EXTMD_ABSOLUTE_LIMITS_m12 or DM_EXTMD_RELATIVE_LIMITS_m12) => returning\n", __FUNCTION__);
+			return(NULL);
+	}
+
+	req_slice->start_sample_number = req_slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;  // all extents now changed to time (for variable frequency channels)
+	if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12 || changed_to_relative == TRUE_m12)  // force re-evaluation of segment range for relative modes
+		req_slice->number_of_segments = UNKNOWN_m12;
+
+	// read session
+	G_read_session_m12(sess, req_slice);
+	sess_slice = &sess->time_slice;  // filled in with actual values
+
+	// return a NULL matrix if there is no data found
+	if (sess_slice->number_of_segments == UNKNOWN_m12)
+		return(NULL);
+	
+	// get output sample count & sampling frequency
+	ref_num_samps = TIME_SLICE_SAMPLE_COUNT_S_m12(ref_chan->time_slice);  // actual samples read (on reference channel)
+	ref_samp_secs = (sf8) ref_num_samps / ref_samp_freq;  // elapsed sample time, ignoring discontinuities
+	switch (matrix->flags & DM_EXTMD_MASK_m12) {
+		case DM_EXTMD_SAMP_COUNT_m12:
+			if (search_mode == TIME_SEARCH_m12)
+				ratio = ref_samp_secs / req_samp_secs;
+			else  // search_mode == SAMPLE_SEARCH_m12
+				ratio = (sf8) ref_num_samps / (sf8) req_num_samps;
+			matrix->valid_sample_count = (si8) round((sf8) matrix->sample_count * ratio);
+			if (matrix->valid_sample_count > matrix->sample_count)
+				matrix->valid_sample_count = matrix->sample_count;  // rounding error - valid count can only be less than or equal to requested count
+			if ((matrix->flags & DM_PAD_MASK_m12) == 0)  // sample count doesn't change if padded
+				matrix->sample_count = matrix->valid_sample_count;
+			matrix->sampling_frequency = (sf8) matrix->valid_sample_count / ref_samp_secs;
+			break;
+		case DM_EXTMD_SAMP_FREQ_m12:
+			matrix->valid_sample_count = (si8) round(matrix->sampling_frequency * ref_samp_secs);
+			if (matrix->flags & DM_PAD_MASK_m12) {
+				if (search_mode == SAMPLE_SEARCH_m12)
+					req_samp_secs = (sf8) req_num_samps / ref_samp_freq;
+				matrix->sample_count = (si8) round(matrix->sampling_frequency * req_samp_secs);
+			} else {
+				matrix->sample_count = matrix->valid_sample_count;
+			}
+			break;
+	}
+
+	// set scaling
+	if (matrix->scale_factor == 0.0)  // calloc value
+		matrix->scale_factor = 1.0;  // no scaling
+
+	// set filter cutoffs
+	if (matrix->flags & DM_FILT_MASK_m12) {
+		if (varargs == TRUE_m12) {  // caller passed cutoffs as varargs
+			switch (matrix->flags & DM_FILT_MASK_m12) {
+				case DM_FILT_LOWPASS_m12:
+					if (fc1 > 0.0)
+						matrix->filter_high_fc = fc1;
+					break;
+				case DM_FILT_HIGHPASS_m12:
+					if (fc1 > 0.0)
+						matrix->filter_low_fc = fc1;
+					break;
+				case DM_FILT_BANDPASS_m12:
+				case DM_FILT_BANDSTOP_m12:
+					if (fc1 > 0.0)
+						matrix->filter_low_fc = fc1;
+					if (fc2 > 0.0)
+						matrix->filter_high_fc = fc2;
+					break;
+			}
+		}
+		switch (matrix->flags & DM_FILT_MASK_m12) {
+			case DM_FILT_ANTIALIAS_m12:
+				matrix->filter_high_fc = matrix->sampling_frequency / FILT_ANTIALIAS_FREQ_DIVISOR_DEFAULT_m12;
+			case DM_FILT_LOWPASS_m12:
+				matrix->filter_low_fc = NAN;  // nan("");
+				break;
+			case DM_FILT_HIGHPASS_m12:
+				matrix->filter_high_fc = NAN;  // nan("");
+				break;
+			case DM_FILT_BANDPASS_m12:
+			case DM_FILT_BANDSTOP_m12:
+				break;
+		}
+	}
+
+	// get active channel count
+	for (matrix->channel_count = i = 0; i < sess->number_of_time_series_channels; ++i) {
+		chan = sess->time_series_channels[i];
+		if (chan->flags & LH_CHANNEL_ACTIVE_m12)
+			++matrix->channel_count;
+	}
+	if (matrix->channel_count == 0) {
+		G_warning_message_m12("%s(): invalid channel count => returning\n", __FUNCTION__);
+		return(NULL);
+	}
+
+	// get matrix dimensions
+	if ((matrix->flags & DM_FMT_MASK_m12) == 0) {  // does not check if multiple flags set
+		G_warning_message_m12("%s(): invalid format => returning\n", __FUNCTION__);
+		return(NULL);
+	}
+	if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
+		matrix->maj_dim = matrix->sample_count;
+		matrix->min_dim = matrix->channel_count;
+	} else {  // DM_FMT_CHANNEL_MAJOR_m12
+		matrix->maj_dim = matrix->channel_count;
+		matrix->min_dim = matrix->sample_count;
+	}
+	
+	// get element size
+	switch (matrix->flags & DM_TYPE_MASK_m12) {
+		case DM_TYPE_SI2_m12:
+			matrix->el_size = 2;
+			break;
+		case DM_TYPE_SI4_m12:
+		case DM_TYPE_SF4_m12:
+			matrix->el_size = 4;
+			break;
+		case DM_TYPE_SF8_m12:
+			matrix->el_size = 8;
+			break;
+		default:
+			G_warning_message_m12("%s(): invalid element size => returning\n", __FUNCTION__);
+			return(NULL);
+	}
+	
+	// allocate channel processing buffer pointers
+	if (matrix->n_proc_bufs < matrix->channel_count) {
+		if (matrix->in_bufs == NULL) {
+			matrix->in_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			matrix->out_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			if (matrix->flags & (DM_INTRP_MAKIMA_m12 | DM_INTRP_UP_MAKIMA_DN_LINEAR_m12)) {
+				matrix->mak_in_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				matrix->mak_out_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			}
+			if (matrix->flags & (DM_INTRP_SPLINE_m12 | DM_INTRP_UP_SPLINE_DN_LINEAR_m12))
+				matrix->spline_bufs = (CMP_BUFFERS_m12 **) calloc_m12((size_t) matrix->channel_count, sizeof(CMP_BUFFERS_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		} else {
+			curr_bytes = matrix->n_proc_bufs * sizeof(CMP_BUFFERS_m12 *);
+			new_bytes = matrix->channel_count * sizeof(CMP_BUFFERS_m12 *);
+			matrix->in_bufs = (CMP_BUFFERS_m12 **) recalloc_m12(matrix->in_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			matrix->out_bufs = (CMP_BUFFERS_m12 **) recalloc_m12(matrix->out_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			if (matrix->flags & (DM_INTRP_MAKIMA_m12 | DM_INTRP_UP_MAKIMA_DN_LINEAR_m12)) {
+				matrix->mak_in_bufs = (CMP_BUFFERS_m12 **) recalloc_m12((void *) matrix->mak_in_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				matrix->mak_in_bufs = (CMP_BUFFERS_m12 **) recalloc_m12((void *) matrix->mak_out_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			}
+			if (matrix->flags & (DM_INTRP_SPLINE_m12 | DM_INTRP_UP_SPLINE_DN_LINEAR_m12))
+				matrix->spline_bufs = (CMP_BUFFERS_m12 **) recalloc_m12(matrix->spline_bufs, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		}
+		matrix->n_proc_bufs = matrix->channel_count;
+	}
+	if (matrix->flags & DM_TRACE_EXTREMA_m12) {
+		if (matrix->n_proc_bufs < matrix->channel_count || matrix->el_size > old_el_size) {
+			if (matrix->trace_minima != NULL) {
+				free_m12(matrix->trace_minima, __FUNCTION__);
+				free_m12(matrix->trace_maxima, __FUNCTION__);
+				matrix->trace_minima = matrix->trace_maxima = NULL;
+			}
+		}
+		if (matrix->trace_minima == NULL) {
+			trace_extrema_bytes = matrix->channel_count * matrix->el_size;
+			matrix->trace_minima = malloc_m12(trace_extrema_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			matrix->trace_maxima = malloc_m12(trace_extrema_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		}
+	}
+
+	// allocate matrix return contents
+	new_data_bytes = matrix->maj_dim * matrix->min_dim * matrix->el_size;
+	if (matrix->flags & DM_2D_INDEXING_m12) {
+		new_data_bytes += matrix->maj_dim * sizeof(void *);
+		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everthing must match
+			matrix->data_bytes = 0;  // force failure below
+	}
+	if (matrix->data_bytes < (si8) new_data_bytes) {
+		matrix->data_bytes = (si8) new_data_bytes;
+		if (matrix->data != NULL) {
+			free_m12((void *) matrix->data, __FUNCTION__);
+			if (matrix->range_minima != NULL) {  // always paired
+				free_m12((void *) matrix->range_minima, __FUNCTION__);
+				free_m12((void *) matrix->range_maxima, __FUNCTION__);
+				matrix->range_minima = matrix->range_maxima = NULL;
+			}
+		}
+		if (matrix->flags & DM_2D_INDEXING_m12)
+			matrix->data = (void *) malloc_2D_m12(matrix->maj_dim, matrix->min_dim, matrix->el_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		else
+			matrix->data = malloc_m12(new_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (matrix->flags & DM_TRACE_RANGES_m12) {
+			if (matrix->flags & DM_2D_INDEXING_m12) {
+				matrix->range_minima = (void *) malloc_2D_m12(matrix->maj_dim, matrix->min_dim, matrix->el_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				matrix->range_maxima = (void *) malloc_2D_m12(matrix->maj_dim, matrix->min_dim, matrix->el_size, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			} else {
+				matrix->range_minima = malloc_m12(new_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+				matrix->range_maxima = malloc_m12(new_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			}
+		}
+	}
+
+	// set up thread infos
+	pi = proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) matrix->channel_count, sizeof(PROC_THREAD_INFO_m12));
+	ci = chan_thread_infos = (DM_CHANNEL_THREAD_INFO_m12 *) calloc((size_t) matrix->channel_count, sizeof(DM_CHANNEL_THREAD_INFO_m12));
+	for (i = j = 0; i < matrix->channel_count; ++j) {
+		chan = sess->time_series_channels[j];
+		if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+			pi->thread_f = DM_channel_thread_m12;
+			pi->thread_label = "DM_channel_thread_m12";
+			pi->priority = PROC_HIGH_PRIORITY_m12;
+			pi->arg = (void *) ci;
+			ci->dm = matrix;
+			ci->chan = chan;
+			ci->chan_idx = i++;
+			++pi; ++ci;
+		}
+	}
+	
+	// launch channel threads; don't wait for completion
+	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, matrix->channel_count, 0, FALSE_m12);  // default reserved cores
+	if (ret_val == FALSE_m12) {
+		G_warning_message_m12("%s(): channel thread error => returning\n", __FUNCTION__);
+		return(NULL);
+	}
+
+	// get contigua
+	if (matrix->flags & DM_DSCNT_MASK_m12) {
+		if (matrix->contigua != NULL) {
+			free_m12((void *) matrix->contigua, __FUNCTION__);
+			matrix->contigua = NULL;
+			matrix->number_of_contigua = 0;
+		}
+		matrix->number_of_contigua = G_build_contigua_m12((LEVEL_HEADER_m12 *) sess);
+		// make contigua indices matrix relative
+		if (matrix->number_of_contigua) {
+			matrix->contigua = (CONTIGUON_m12 *) calloc_m12((size_t) matrix->number_of_contigua, sizeof(CONTIGUON_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			memcpy(matrix->contigua, sess->contigua, matrix->number_of_contigua * sizeof(CONTIGUON_m12));
+			tmp_sf8 = matrix->sampling_frequency / (sf8) 1e6;
+			if (matrix->flags & DM_PAD_MASK_m12) {
+				// sf = (sf8) matrix->sampling_frequency / (sf8) 1e6;
+				for (i = 0; i < matrix->number_of_contigua; ++i) {
+					matrix->contigua[i].start_sample_number = (si8) round((matrix->contigua[i].start_time - sess_slice->start_time) * tmp_sf8);
+					matrix->contigua[i].end_sample_number = (si8) round((matrix->contigua[i].end_time - sess_slice->start_time) * tmp_sf8);
+				}
+			} else {  // not padded
+				for (samp_offset = i = 0; i < matrix->number_of_contigua; ++i) {
+					matrix->contigua[i].start_sample_number = samp_offset;
+					duration = (sf8) ((matrix->contigua[i].end_time - matrix->contigua[i].start_time) + 1);
+					samp_offset += (si8) round(duration * tmp_sf8);
+					matrix->contigua[i].end_sample_number = samp_offset;
+					if (matrix->contigua[i].end_sample_number > matrix->contigua[i].start_sample_number)
+						--matrix->contigua[i].end_sample_number;
+				}
+			}
+			matrix->contigua[matrix->number_of_contigua - 1].end_sample_number = matrix->sample_count - 1;
+		}
+	}
+
+	// wait for channel threads
+	ret_val = PROC_wait_jobs_m12(proc_thread_infos, matrix->channel_count);
+	free((void *) proc_thread_infos);
+	free((void *) chan_thread_infos);
+
+	// check results
+	if (ret_val == FALSE_m12) {
+		G_warning_message_m12("%s(): channel thread error => returning\n", __FUNCTION__);
+		return(NULL);
+	}
+
+	// padding options (big pain in the ass)
+	if ((matrix->flags & DM_PAD_MASK_m12) && (matrix->number_of_contigua > 1)) {
+		// changed extents mode warning
+		if (changed_to_relative == TRUE_m12)
+			G_warning_message_m12("%s(): discontinuity => extents mode temporarily changed from absolute to relative\n", __FUNCTION__);
+		// set patterns up for padding
+		switch (matrix->flags & DM_TYPE_MASK_m12) {
+			case DM_TYPE_SI2_m12:
+				si2_pad = (si2) 0;
+				if (matrix->flags & DM_DSCNT_NAN_m12)
+					si2_pad = NAN_SI2_m12;
+				pattern = (void *) &si2_pad;
+				pattern_sz = 2;
+				break;
+			case DM_TYPE_SI4_m12:
+				si4_pad = (si4) 0;
+				if (matrix->flags & DM_DSCNT_NAN_m12)
+					si4_pad = NAN_SI4_m12;
+				pattern = (void *) &si4_pad;
+				pattern_sz = 4;
+				break;
+			case DM_TYPE_SF4_m12:
+				sf4_pad = (sf4) 0.0;
+				if (matrix->flags & DM_DSCNT_NAN_m12)
+					sf4_pad = NAN;
+				pattern = (void *) &sf4_pad;
+				pattern_sz = 4;
+				break;
+			case DM_TYPE_SF8_m12:
+				sf8_pad = (sf8) 0.0;
+				if (matrix->flags & DM_DSCNT_NAN_m12)
+					sf8_pad = NAN;
+				pattern = (void *) &sf8_pad;
+				pattern_sz = 8;
+				break;
+
+		}
+		// set up for indexing
+		data_base = (ui1 *) matrix->data;
+		if (matrix->flags & DM_2D_INDEXING_m12) {
+			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
+				data_base += matrix->sample_count * sizeof(void *);
+			else  // DM_FMT_CHANNEL_MAJOR_m12
+				data_base += matrix->channel_count * sizeof(void *);
+		}
+		if (matrix->flags & DM_TRACE_RANGES_m12) {
+			minima_base = (ui1 *) matrix->range_minima;
+			if (matrix->flags & DM_2D_INDEXING_m12) {
+				if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
+					minima_base += matrix->sample_count * sizeof(void *);
+				else  // DM_FMT_CHANNEL_MAJOR_m12
+					minima_base += matrix->channel_count * sizeof(void *);
+			}
+			maxima_base = (ui1 *) matrix->range_maxima;
+			if (matrix->flags & DM_2D_INDEXING_m12) {
+				if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
+					maxima_base += matrix->sample_count * sizeof(void *);
+				else  // DM_FMT_CHANNEL_MAJOR_m12
+					maxima_base += matrix->channel_count * sizeof(void *);
+			}
+		}
+
+		// loop backwards over contigua
+		data_end = matrix->valid_sample_count;
+		gap_end = matrix->sample_count;
+		for (i = matrix->number_of_contigua; i--;) {
+			contig_samples = (matrix->contigua[i].start_sample_number - matrix->contigua[i].start_sample_number) + 1;
+			gap_start = matrix->contigua[i].end_sample_number + 1;
+			gap_len = gap_end - gap_start;
+			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
+				// move block
+				bytes_per_sample = matrix->channel_count * matrix->el_size;
+				old_offset = (data_end - contig_samples) * bytes_per_sample;
+				new_offset = bytes_per_sample * matrix->contigua[i].start_sample_number;
+				bytes_to_move = bytes_per_sample * contig_samples;
+				memmove((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
+				if (matrix->flags & DM_TRACE_RANGES_m12) {
+					memmove((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
+					memmove((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
+				}
+				// fill gap
+				if (gap_len > 0) {
+					n_elements = gap_len * matrix->channel_count;
+					gap_offset = gap_len * bytes_per_sample;
+					memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
+					if (matrix->flags & DM_TRACE_RANGES_m12) {
+						memset_m12(minima_base + gap_offset, pattern, pattern_sz, n_elements);
+						memset_m12(maxima_base + gap_offset, pattern, pattern_sz, n_elements);
+					}
+				}
+			} else {  // DM_FMT_CHANNEL_MAJOR_m12
+				// move blocks
+				bytes_per_sample = matrix->el_size;
+				bytes_per_channel = bytes_per_sample * matrix->sample_count;
+				common_offset = bytes_per_channel * matrix->channel_count;
+				old_offset = common_offset + ((data_end - contig_samples) * bytes_per_sample);
+				new_offset = common_offset + (bytes_per_sample * matrix->contigua[i].start_sample_number);
+				bytes_to_move = bytes_per_sample * contig_samples;
+				for (j = matrix->channel_count; j--;) {
+					old_offset -= bytes_per_channel;
+					new_offset -= bytes_per_channel;
+					memmove((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
+					if (matrix->flags & DM_TRACE_RANGES_m12) {
+						memmove((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
+						memmove((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
+					}
+					// fill gap
+					if (gap_len > 0) {
+						gap_offset = new_offset + (gap_start * bytes_per_sample);
+						memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
+						if (matrix->flags & DM_TRACE_RANGES_m12) {
+							memset_m12(minima_base + gap_offset, pattern, pattern_sz, gap_len);
+							memset_m12(maxima_base + gap_offset, pattern, pattern_sz, gap_len);
+						}
+					}
+				}
+			}
+			gap_end = matrix->contigua[i].start_sample_number;
+			data_end -= contig_samples;
+		}
+	}
+
+	// free contigua, if just used for padding
+	if (!(matrix->flags & DM_DSCNT_CONTIG_m12) && matrix->number_of_contigua) {
+		free_m12((void *) matrix->contigua, __FUNCTION__);
+		matrix->contigua = NULL;
+		matrix->number_of_contigua = 0;
+	}
+	
+	return(matrix);
 }
 
 
@@ -26333,6 +26057,8 @@ si4	FILT_filtfilt_m12(FILT_PROCESSING_STRUCT_m12 *filtps)
 	// if filtps->orig_data == filtps->filt_data, filtering done in place, but the target array must have room for the pads
 	// if orig_data == (filt_data + pad_len) caller put data directly into the filt_data array with room for pad - skip initial copy
 	// pad_len == (order * n_cutoffs * 3) => see FILT_OFFSET_ORIG_DATA_m12() macro.
+	
+	// todo: save states of zc for recurrent calls => skip padding & initial conditions
 	
 	// error check
 	if (filtps->orig_data == NULL) {
@@ -29798,7 +29524,7 @@ TERN_m12	NET_check_internet_connection_m12(void)
 #endif
 	
 	// if want to know if machine can reach internet, check == TRUE_m12
-	// if want to know if network connected locally != FALSE_m12
+	// if want to know if network connected locally check != FALSE_m12
 
 	np = &global_tables_m12->NET_params;
 	
@@ -31612,19 +31338,19 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 
 	// get function
 	if (strcmp(function, "G_open_session_m12") == 0)
-		fn = PAR_OPEN_SESSION_M12;
+		fn = PAR_OPEN_SESSION_m12;
 	else if (strcmp(function, "G_read_session_m12") == 0)
-		fn = PAR_READ_SESSION_M12;
+		fn = PAR_READ_SESSION_m12;
 	else if (strcmp(function, "G_open_channel_m12") == 0)
-		fn = PAR_OPEN_CHANNEL_M12;
+		fn = PAR_OPEN_CHANNEL_m12;
 	else if (strcmp(function, "G_read_channel_m12") == 0)
-		fn = PAR_READ_CHANNEL_M12;
+		fn = PAR_READ_CHANNEL_m12;
 	else if (strcmp(function, "G_open_segment_m12") == 0)
-		fn = PAR_OPEN_SEGMENT_M12;
+		fn = PAR_OPEN_SEGMENT_m12;
 	else if (strcmp(function, "G_read_segment_m12") == 0)
-		fn = PAR_READ_SEGMENT_M12;
+		fn = PAR_READ_SEGMENT_m12;
 	else if (strcmp(function, "DM_get_matrix_m12") == 0)
-		fn = PAR_DM_GET_MATRIX_M12;
+		fn = PAR_GET_MATRIX_m12;
 	else {
 		G_warning_message_m12("%s() can't match function => returning\n", __FUNCTION__);
 		par_info->status = PAR_FINISHED_m12;
@@ -31633,11 +31359,11 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 
 	// launch function
 	switch (fn) {
-		case PAR_OPEN_SESSION_M12:
-		case PAR_READ_SESSION_M12:
+		case PAR_OPEN_SESSION_m12:
+		case PAR_READ_SESSION_m12:
 			sess = va_arg(par_t_info->args, SESSION_m12 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m12 *);
-			if (fn == PAR_READ_SESSION_M12 && sess != NULL) {
+			if (fn == PAR_READ_SESSION_m12 && sess != NULL) {
 				par_info->status = PAR_RUNNING_m12;
 				par_info->ret_val = (void *) G_read_session_m12(sess, slice);
 			} else {
@@ -31647,28 +31373,28 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 				password = va_arg(par_t_info->args, si1 *);
 				par_info->status = PAR_RUNNING_m12;
 				switch (fn) {
-					case PAR_OPEN_SESSION_M12:
+					case PAR_OPEN_SESSION_m12:
 						par_info->ret_val = (void *) G_open_session_m12(sess, slice, file_list, list_len, flags, password);
 						break;
-					case PAR_READ_SESSION_M12:
+					case PAR_READ_SESSION_m12:
 						par_info->ret_val = (void *) G_read_session_m12(sess, slice, file_list, list_len, flags, password);
 						break;
 				}
 			}
 			break;
-		case PAR_OPEN_CHANNEL_M12:
-		case PAR_READ_CHANNEL_M12:
-		case PAR_OPEN_SEGMENT_M12:
-		case PAR_READ_SEGMENT_M12:
-			if (fn == PAR_OPEN_SEGMENT_M12 || fn == PAR_READ_SEGMENT_M12)
+		case PAR_OPEN_CHANNEL_m12:
+		case PAR_READ_CHANNEL_m12:
+		case PAR_OPEN_SEGMENT_m12:
+		case PAR_READ_SEGMENT_m12:
+			if (fn == PAR_OPEN_SEGMENT_m12 || fn == PAR_READ_SEGMENT_m12)
 				seg = va_arg(par_t_info->args, SEGMENT_m12 *);
 			else
 				chan = va_arg(par_t_info->args, CHANNEL_m12 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m12 *);
-			if (fn == PAR_READ_CHANNEL_M12 && chan != NULL) {
+			if (fn == PAR_READ_CHANNEL_m12 && chan != NULL) {
 				par_info->status = PAR_RUNNING_m12;
 				par_info->ret_val = (void *) G_read_channel_m12(chan, slice);
-			} else if (fn == PAR_READ_SEGMENT_M12 && seg != NULL) {
+			} else if (fn == PAR_READ_SEGMENT_m12 && seg != NULL) {
 				par_info->status = PAR_RUNNING_m12;
 				par_info->ret_val = (void *) G_read_segment_m12(seg, slice);
 			} else {
@@ -31677,22 +31403,22 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 				password = va_arg(par_t_info->args, si1 *);
 				par_info->status = PAR_RUNNING_m12;
 				switch (fn) {
-					case PAR_OPEN_CHANNEL_M12:
+					case PAR_OPEN_CHANNEL_m12:
 						par_info->ret_val = (void *) G_open_channel_m12(chan, slice, path, flags, password);
 						break;
-					case PAR_READ_CHANNEL_M12:
+					case PAR_READ_CHANNEL_m12:
 						par_info->ret_val = (void *) G_read_channel_m12(chan, slice, path, flags, password);
 						break;
-					case PAR_OPEN_SEGMENT_M12:
+					case PAR_OPEN_SEGMENT_m12:
 						par_info->ret_val = (void *) G_open_segment_m12(seg, slice, path, flags, password);
 						break;
-					case PAR_READ_SEGMENT_M12:
+					case PAR_READ_SEGMENT_m12:
 						par_info->ret_val = (void *) G_read_segment_m12(seg, slice, path, flags, password);
 						break;
 				}
 			}
 			break;
-		case PAR_DM_GET_MATRIX_M12:
+		case PAR_GET_MATRIX_m12:
 			mat = va_arg(par_t_info->args, DATA_MATRIX_m12 *);
 			sess = va_arg(par_t_info->args, SESSION_m12 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m12 *);
@@ -31726,9 +31452,7 @@ void	PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval)
 		return;
 	}
 	
-	if (interval == NULL)
-		interval = "1 ms";
-	else if (*interval == 0)
+	if (G_empty_string_m12(interval) == TRUE_m12)
 		interval = "1 ms";
 	
 	// poll detached thread at interval
@@ -31788,6 +31512,113 @@ TERN_m12	PROC_adjust_open_file_limit_m12(si4 new_limit, TERN_m12 verbose_flag)
 }
 
 
+TERN_m12	PROC_distribute_jobs_m12(PROC_THREAD_INFO_m12 *jobs, si4 n_jobs, si4 n_reserved_cores, TERN_m12 wait_jobs)
+{
+	si4			i, n_logical_cores, n_concurrent_jobs, new_job_idx;
+	cpu_set_t_m12		cpu_set;
+	HW_PARAMS_m12		*hw_params;
+	PROC_THREAD_INFO_m12	*job, *new_job;
+	#if defined LINUX_m12 || defined WINDOWS_m12
+	si1			affinity[8];
+	si4			start_core, end_core;
+	#endif
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// calling function sets up thread_info structures
+	// n_reserved_cores = number of cores to leave unassigned (typically zero). When needed this will be adjusted for the task & OS
+	// if reserving cores for system n_reserved_cores typically == 1-2
+	// if wait_jobs == TRUE_m12 wait for jobs in this function
+	// returns FALSE_m12 on error, UNKNOWN_m12 if jobs still running, TRUE_m12 if all jobs finished
+	
+	// get logical cores
+	hw_params = &global_tables_m12->HW_params;
+	if (hw_params->logical_cores == 0)
+		HW_get_core_info_m12();
+	n_logical_cores = hw_params->logical_cores;
+	
+	// set reserved cores & concurrent jobs
+	#ifdef WINDOWS_m12
+	// Windows performs better with at least 1 reserved core (if possible)
+	if (n_logical_cores <= 3)
+		n_reserved_cores = n_logical_cores - 1;
+	else if (n_reserved_cores < 3)
+		n_reserved_cores = 3;
+	#endif
+	
+	if (n_reserved_cores >= n_logical_cores)
+		n_reserved_cores = n_logical_cores - 1;
+	n_concurrent_jobs = n_logical_cores - n_reserved_cores;
+	if (n_concurrent_jobs > n_jobs)
+		n_concurrent_jobs = n_jobs;
+
+	// build cpu set
+#if defined LINUX_m12 || defined WINDOWS_m12  // MacOS does not allow affinity assignment
+	
+
+	#ifdef LINUX_m12
+	start_core = n_reserved_cores;
+	#endif
+	#ifdef WINDOWS_m12  // Windows prefers first and terminal cores
+	start_core = 1;
+	#endif
+	end_core = start_core + (n_concurrent_jobs - 1);
+	
+	sprintf(affinity, "%d-%d", start_core, end_core);
+	PROC_generate_cpu_set_m12(affinity, &cpu_set);
+#endif  // LINUX_m12 || WINDOWS_m12
+#ifdef MACOS_m12
+	cpu_set = ~((cpu_set_t_m12) 0);  // not used at current time
+#endif
+	
+	// set all jobs to waiting state
+	for (i = 0; i < n_jobs; ++i)
+		jobs[i].status = PROC_THREAD_WAITING_m12;
+
+	#ifdef MATLAB_m12
+	G_push_behavior_m12(SUPPRESS_OUTPUT_m12);  // can't have output from threads in mex functions
+	#endif
+
+	// launch initial job set (all jobs detached)
+	for (i = 0, job = jobs; i < n_concurrent_jobs; ++i, ++job)
+		PROC_launch_thread_m12(&job->thread_id, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m12, job->thread_label);
+
+	// make sure status set in threads (volatile)
+	for (i = 0, job = jobs; i < n_concurrent_jobs; ++i, ++job)
+		while (job->status == PROC_THREAD_WAITING_m12);
+	
+	// launch rest of jobs as others finish
+	new_job_idx = n_concurrent_jobs;
+	while (new_job_idx < n_jobs) {
+		for (i = 0, job = jobs; i < n_jobs; ++i, ++job) {
+			if (job->status == PROC_THREAD_FINISHED_m12) {
+				
+				new_job = jobs + new_job_idx;
+
+				// launch new job
+				PROC_launch_thread_m12(&new_job->thread_id, new_job->thread_f, (void *) new_job, new_job->priority, NULL, &cpu_set, TRUE_m12, new_job->thread_label);
+				
+				// check if done
+				if (++new_job_idx == n_jobs)
+					break;
+				
+				// make sure status set in thread (volatile)
+				while (new_job->status == PROC_THREAD_WAITING_m12);
+			}
+		}
+		// don't peg this cpu
+		G_nap_m12("100 us");
+	}
+	
+	if (wait_jobs == TRUE_m12)
+		return(PROC_wait_jobs_m12(jobs, n_jobs));
+	else
+		return(UNKNOWN_m12);
+}
+
+
 cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passed_cpu_set_p)
 {
 	TERN_m12        	not_flag, lessthan_flag, greaterthan_flag;
@@ -31811,12 +31642,6 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 	"~2-5" set to any cpu except 2 through 5  (read: "not 2 through 5")
 	*/
 	
-	// set default
-	if (affinity_str == NULL)
-		affinity_str = "~0";
-	else if (*affinity_str == 0)
-		affinity_str = "~0";
-
 	if (passed_cpu_set_p == NULL)  // up to caller to receive & free
 		cpu_set_p = (cpu_set_t_m12 *) malloc(sizeof(cpu_set_t_m12));
 	else
@@ -31836,7 +31661,20 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 	#endif
 		return(cpu_set_p);
 	}
-	
+
+	// set default
+	if (G_empty_string_m12(affinity_str) == TRUE_m12)
+		affinity_str = "~0";  // reserve first cpu for os
+#ifdef WINDOWS_m12
+	si1	tmp_aff_str[16];
+
+	// NOTE: in Windows, if all cpus are made available, OS will put all threads on CPU 0
+	if (strcmp(affinity_str, "~0") == 0) {
+		affinity_str = tmp_aff_str;
+		sprintf(affinity_str, "~%d", n_cpus - 1);  // switch to last cpu for Windows
+	}
+#endif
+
 	// parse affinity string
 	aff_str = affinity_str;
 	not_flag = FALSE_m12;
@@ -31883,6 +31721,12 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 		start_num = (n_cpus - 1);
 	if (end_num > (n_cpus - 1))
 		end_num = (n_cpus - 1);
+#ifdef WINDOWS_m12
+	// NOTE: in Windows, if all cpus are made available, OS will put all threads on CPU zero
+	if (start_num == 0 && end_num == (n_cpus - 1))
+		if (--end_num < start_num)
+			end_num = start_num;
+#endif
 
 	// build affinity set
 #ifdef LINUX_m12
@@ -31914,13 +31758,17 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 	if (cpus_set == 0) {
 		G_warning_message_m12("%s(): no cpus specified => setting to ~0\n");
 #ifdef LINUX_m12
-		CPU_CLR(0, cpu_set_p);
+		CPU_CLR(0, cpu_set_p);  // leave first cpu open for Linux
 		for (i = 1; i < n_cpus; ++i)  // set all remaining bits
 			CPU_SET(i, cpu_set_p);
 #endif
-#if defined MACOS_m12 || defined WINDOWS_m12
-		*cpu_set_p = ~((cpu_set_t_m12) 1);
+#ifdef MACOS_m12
+		*cpu_set_p = ~((cpu_set_t_m12) 1);  // leave first cpu open for MacOS
 #endif
+#ifdef WINDOWS_m12
+		*cpu_set_p = (cpu_set_t_m12) (((ui8) 1 << (n_cpus - 1)) - 1);  // leave last cpu open for Windows
+#endif
+
 	}
 
 	return(cpu_set_p);
@@ -32137,12 +31985,10 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 	TERN_m12	free_cpu_set = FALSE_m12;
 	
 	// generate affinity
-	if (affinity_str != NULL) {
-		if (*affinity_str) {
-			if (cpu_set_p == NULL)  // PROC_generate_cpu_set_m12() will allocate
-				free_cpu_set = TRUE_m12;
-			cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
-		}
+	if (G_empty_string_m12(affinity_str) == FALSE_m12) {
+		if (cpu_set_p == NULL)  // PROC_generate_cpu_set_m12() will allocate
+			free_cpu_set = TRUE_m12;
+		cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 	}
 	// set affinity
 	if (cpu_set_p != NULL) {
@@ -32160,9 +32006,8 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 
 	// set thread name
 # ifdef LINUX_m12
-	if (thread_name != NULL)
-		if (*thread_name)
-			pthread_setname_np(*thread_id_p, thread_name);  // _np is for "not portable"
+	if (G_empty_string_m12(thread_name) == FALSE_m12)
+		pthread_setname_np(*thread_id_p, thread_name);  // _np is for "not portable"
 # endif  // LINUX_m12
 	
 	return(1);  // zero indicates failure (for compatibility with Windows version)
@@ -32177,7 +32022,6 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	HANDLE		*thread_hp, local_thread_h;
 	ui4		thread_id;
 	wchar_t		w_thread_name[THREAD_NAME_BYTES_m12];
-	cpu_set_t_m12 	local_cpu_set_p;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -32220,12 +32064,10 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	
 	// Set Affinity
 	free_cpu_set = FALSE_m12;
-	if (affinity_str != NULL) {
-		if (*affinity_str) {
-			if (cpu_set_p == NULL)
-				free_cpu_set = TRUE_m12;  // PROC_generate_cpu_set_m12() will allocate
-			cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
-		}
+	if (G_empty_string_m12(affinity_str) == FALSE_m12) {
+		if (cpu_set_p == NULL)
+			free_cpu_set = TRUE_m12;  // PROC_generate_cpu_set_m12() will allocate
+		cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 	}
 	if (cpu_set_p != NULL) {
 		PROC_set_thread_affinity_m12(thread_hp, NULL, cpu_set_p, TRUE_m12);
@@ -32234,11 +32076,9 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 	}
 	
 	// set thread name
-	if (thread_name != NULL) {
-		if (*thread_name) {
-			STR_char2wchar_m12(w_thread_name, thread_name);
-			SetThreadDescription(*thread_hp, w_thread_name);
-		}
+	if (G_empty_string_m12(thread_name) == FALSE_m12) {
+		STR_char2wchar_m12(w_thread_name, thread_name);
+		SetThreadDescription(*thread_hp, w_thread_name);
 	}
 	
 	// start thread
@@ -32541,7 +32381,7 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id_p)
 
 
 #ifdef WINDOWS_m12
-void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
+void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id_p)
 {
 	si1		thread_name[THREAD_NAME_BYTES_m12];
 	wchar_t		*w_thread_name;
@@ -32554,7 +32394,7 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	thread_h = *thread_handle_p;
+	thread_h = *thread_id_p;
 
 	SuspendThread(thread_h);  // suspend thread to get current cpu set
 	tmp_cpu_set = ~((cpu_set_t_m12) 0);
@@ -32593,6 +32433,31 @@ void    PROC_show_thread_affinity_m12(pthread_t_m12 *thread_handle_p)
 	return;
 }
 #endif  // WINDOWS
+
+
+TERN_m12	PROC_wait_jobs_m12(PROC_THREAD_INFO_m12 *jobs, si4 n_jobs)
+{
+	si4	i, finished_jobs;
+	
+	
+	while (1) {
+		for (i = finished_jobs = 0; i < n_jobs; ++i) {
+			if (jobs[i].status == PROC_THREAD_FINISHED_m12)
+				++finished_jobs;
+		}
+		if (finished_jobs == n_jobs)
+			break;
+		
+		// don't peg this cpu
+		G_nap_m12("100 us");
+	}
+	
+	#ifdef MATLAB_m12
+	G_pop_behavior_m12();  // set in PROC_distribute_jobs_m12()
+	#endif
+	
+	return(TRUE_m12);
+}
 
 
 
@@ -34113,6 +33978,28 @@ void    STR_strip_character_m12(si1 *s, si1 character)
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+const si1	*STR_tern_m12(TERN_m12 val)
+{
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	switch(val) {
+		case -1:
+			return("false");
+		case 1:
+			return("true");
+		case 0:
+			return("unknown");
+		default:
+			return("invalid");
+	}
+}
+
+
 si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m12
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
@@ -34457,6 +34344,7 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	trans_info->mss = TR_INET_MSS_BYTES_m12;  // change to TR_LO_MSS_BYTES_m12 for backplane
 	trans_info->sock_fd = -1;
 	trans_info->timeout = timeout;
+	trans_info->mode = TR_MODE_NONE_m12;
 	header = trans_info->header;
 	header->flags = header_flags;
 	header->ID_code = ID_code;
@@ -34631,7 +34519,7 @@ TERN_m12	TR_check_transmission_header_alignment_m12(ui1 *bytes)
 		goto TRANSMISSION_HEADER_NOT_ALIGNED_m12;
 	if (&th->type != (ui1 *) (bytes + TR_TYPE_OFFSET_m12))
 		goto TRANSMISSION_HEADER_NOT_ALIGNED_m12;
-	if (&th->type_2 != (ui1 *) (bytes + TR_TYPE_2_OFFSET_m12))
+	if (&th->subtype != (ui1 *) (bytes + TR_SUBTYPE_OFFSET_m12))
 		goto TRANSMISSION_HEADER_NOT_ALIGNED_m12;
 	if (&th->version != (ui1 *) (bytes + TR_VERSION_OFFSET_m12))
 		goto TRANSMISSION_HEADER_NOT_ALIGNED_m12;
@@ -34666,10 +34554,21 @@ TRANSMISSION_HEADER_NOT_ALIGNED_m12:
 
 void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 {
+	ui1	buffer[8];
+
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	// TCP: receiver should initiate closure, send should wait for it
+	if ((trans_info->header->flags & TR_FLAGS_UDP_m12) == 0) {  // TCP bit == zero
+		if (trans_info->mode == TR_MODE_SEND_m12) {
+			TR_set_socket_blocking_m12(trans_info, TRUE_m12);  // in case socket is non-blocking
+			// not expecting any further transmissions, so should block until socket closes
+			recv(trans_info->sock_fd, (void *) buffer, 8, 0);
+		}
+	}
+
 #if defined MACOS_m12 || defined LINUX_m12
 	shutdown(trans_info->sock_fd, SHUT_RDWR);
 	close(trans_info->sock_fd);
@@ -34679,6 +34578,7 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 	closesocket(trans_info->sock_fd);
 #endif
 	trans_info->sock_fd = -1;
+	trans_info->mode = TR_MODE_NONE_m12;
 	
 	return;
 }
@@ -34780,7 +34680,6 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 			connected = FALSE_m12;
 			G_warning_message_m12("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
 			TR_close_transmission_m12(trans_info);
-			return(FALSE_m12);
 		}
 	}
 
@@ -34806,7 +34705,7 @@ TERN_m12	TR_connect_to_server_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 d
 	// bind to default interface, any port
 	if (TR_bind_m12(trans_info, TR_IFACE_DFLT_m12, TR_PORT_ANY_m12) == FALSE_m12)
 		return(FALSE_m12);
-
+	
 	return(TR_connect_m12(trans_info, dest_addr, dest_port));
 }
 
@@ -34921,6 +34820,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		G_warning_message_m12("%s(): transmission info is NULL\n", __FUNCTION__);
 		return((si8) FALSE_m12);
 	}
+	trans_info->mode = TR_MODE_NONE_m12;  // zero until transmission successful (not set for acknowlegements)
 	if (trans_info->sock_fd == -1) {  // try to reopen socket
 		if (TR_create_socket_m12(trans_info) == FALSE_m12)
 			return((si8) FALSE_m12);
@@ -34934,7 +34834,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 	sock_fd = trans_info->sock_fd;
 	ID_code = header->ID_code;
 	max_pkt_bytes = trans_info->mss + TR_HEADER_BYTES_m12;
-	
+
 	// receive
 	attempts = 0;
 	data_bytes_received = 0;
@@ -34975,7 +34875,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		// keep alive
 		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12) {  // keep alive check
 			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)  // 1st check
-				if (pkt_header->type_2 == TR_TYPE_KEEP_ALIVE_m12)  // 2nd check
+				if (pkt_header->subtype == TR_TYPE_KEEP_ALIVE_m12)  // 2nd check
 					if (pkt_header->version == TR_VERSION_DEFAULT_m12)  // 3rd check
 						continue;  // discard packet
 		}
@@ -35101,6 +35001,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		AES_decrypt_m12(trans_info->data, data_bytes_received, NULL, trans_info->expanded_key);
 	}
 
+	trans_info->mode = TR_MODE_RECV_m12;  // set only if transmission successful
+
 TR_RECV_FAIL_m12:
 	
 	// update & clean header
@@ -35191,6 +35093,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		G_warning_message_m12("%s(): transmission info is NULL\n", __FUNCTION__);
 		return((si8) FALSE_m12);
 	}
+	trans_info->mode = TR_MODE_NONE_m12;  // zero until transmission successful (not set for acknowlegements)
 	if (trans_info->sock_fd == -1) {  // try to reopen socket
 		if (TR_create_socket_m12(trans_info) == FALSE_m12)
 			return((si8) FALSE_m12);
@@ -35334,6 +35237,8 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		data_bytes_remaining -= (si8) data_bytes;
 		
 	} while (data_bytes_remaining);
+	
+	trans_info->mode = TR_MODE_SEND_m12;  // set only if transmission successful
 	
 TR_SEND_FAIL:
 	
@@ -35548,6 +35453,16 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("Expanded Key Allocated: false\n");
 	else
 		printf_m12("Expanded Key Allocated: not set\n");
+	if (trans_info->mode == TR_MODE_SEND_m12)
+		printf_m12("Mode: send\n");
+	else if (trans_info->mode == TR_MODE_RECV_m12)
+		printf_m12("Mode: receive\n");
+	else if (trans_info->mode == TR_MODE_NONE_m12)
+		printf_m12("Mode: not set\n");
+	else if (trans_info->mode == TR_MODE_CLOSE_m12)
+		printf_m12("Mode: force close\n");
+	else
+		printf_m12("Mode: invalid value (%hhu)\n", trans_info->mode);
 	printf_m12("Socket File Descriptor: %d\n", trans_info->sock_fd);
 	if (*trans_info->dest_addr == 0)
 		printf_m12("Destination Address: any\n");
@@ -35630,10 +35545,10 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("Type: %hhu (no entry)\n", header->type);
 	else
 		printf_m12("Type: %hhu\n", header->type);
-	if (header->type_2 == TR_TYPE_NO_ENTRY_m12)
-		printf_m12("Type 2: %hhu (no entry)\n", header->type_2);
+	if (header->subtype == TR_TYPE_NO_ENTRY_m12)
+		printf_m12("Subtype: %hhu (no entry)\n", header->subtype);
 	else
-		printf_m12("Type 2: %hhu\n", header->type_2);
+		printf_m12("Subtype: %hhu\n", header->subtype);
 	if (header->version == TR_VERSION_NO_ENTRY_m12)
 		printf_m12("Version: %hhu (no entry)\n", header->version);
 	else
@@ -35643,15 +35558,61 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 	printf_m12("--------------- Transmission Header - END -------------\n");
 
 	// body
-	// most of these not coded yet
-	switch (header->type) {
-		case TR_TYPE_KEEP_ALIVE_m12:
-			printf_m12("Type: TR_TYPE_KEEP_ALIVE_m12\n");
-			break;
-		default:
-			break;
+	printf_m12("--------------- Transmission Body - START -------------\n");
+	if (header->type <= TR_TYPE_GENERIC_MAX_m12) {  // generic type codes
+		switch (header->type) {
+			case TR_TYPE_NO_ENTRY_m12:
+				printf_m12("Type: TR_TYPE_NO_ENTRY_m12\nBody: none\n");
+				break;
+			case TR_TYPE_KEEP_ALIVE_m12:
+				printf_m12("Type: TR_TYPE_KEEP_ALIVE_m12\nBody: none\n");
+				break;
+			case TR_TYPE_ACK_OK_m12:
+				printf_m12("Type: TR_TYPE_ACK_OK_m12\nBody: none\n");
+				break;
+			case TR_TYPE_MESSAGE_m12:
+				printf_m12("Type: TR_TYPE_MESSAGE_m12\nBody: none\n");
+				break;
+			case TR_TYPE_OPERATION_SUCCEEDED_m12:
+				printf_m12("Type: TR_TYPE_OPERATION_SUCCEEDED_m12\nBody: none\n");
+				break;
+			case TR_TYPE_OPERATION_SUCCEEDED_WITH_MESSAGE_m12:
+				printf_m12("Type: TR_TYPE_OPERATION_SUCCEEDED_WITH_MESSAGE_m12\nBody: ");
+				TR_show_message_m12(header);
+				putchar_m12('\n');
+				break;
+			case TR_TYPE_OPERATION_FAILED_m12:
+				printf_m12("Type: TR_TYPE_OPERATION_FAILED_m12\nBody: none\n");
+				break;
+			case TR_TYPE_OPERATION_FAILED_WITH_WARNING_MESSAGE_m12:
+				printf_m12("Type: TR_TYPE_OPERATION_FAILED_m12\nBody: ");
+				TR_show_message_m12(header);
+				putchar_m12('\n');
+				break;
+			case TR_TYPE_OPERATION_FAILED_WITH_ERROR_MESSAGE_m12:
+				printf_m12("Type: TR_TYPE_OPERATION_FAILED_WITH_ERROR_MESSAGE_m12\nBody: ");
+				TR_show_message_m12(header);
+				putchar_m12('\n');
+				break;
+			default:
+				break;
+		}
+	} else {  // app-specific type codes (not done)
+//		switch (header->ID_code) {
+//			case XXXX:
+//				switch (header->type) {
+//					case YYYY:
+//						break;
+//					default:
+//						break;
+//				}
+//				break;
+//			default:
+//				break;
+//		}
 	}
-	
+	printf_m12("---------------- Transmission Body - END --------------\n\n");
+
 	return;
 }
 
@@ -35807,7 +35768,7 @@ si4     UTF8_fprintf_m12(FILE *stream, si1 *fmt, ...)
 	va_end(args);
 	
 #ifdef MATLAB_m12
-	if (stream == stderr || stream == stdout)
+if (stream == stderr || stream == stdout)
 		mexPrintf("%s", src);
 	else
 		fprintf(stream, "%s", src);
@@ -36773,6 +36734,87 @@ si4    WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 }
 
 
+void	WN_nap_m12(struct timespec *nap)
+{
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+#ifdef WINDOWS_m12
+	static TERN_m12		use_ms = FALSE_m12;
+	si8			hns, ms;
+	LARGE_INTEGER		interval;
+	static NTDELAYEXECTYPE	NtDelayExecution;  // pointer higher resolution sleep function
+
+		
+	// circumvent Windows' Sleep() 1 millisecond resolution
+		
+	if (use_ms == TRUE_m12)
+		goto G_WN_SLEEP_USE_MS;
+	
+	if (!(nap->tv_nsec % (si8) 10000))  // duration can be expressed in ms
+		goto G_WN_SLEEP_USE_MS;
+
+	// load the needed NT dylib functions
+	if (global_tables_m12->hNTdll == NULL) {
+		ULONG			actual_resolution;
+		ZWSETTIMERRESTYPE 	ZwSetTimerResolution;  // pointer to set timer resolution function
+		
+		global_tables_m12->hNTdll = LoadLibraryA("ntdll");
+		if (global_tables_m12->hNTdll == NULL) {
+			G_warning_message_m12("%s(): error loading NTdll library => using millisecond resolution\n", __FUNCTION__);
+			use_ms = TRUE_m12;
+			goto G_WN_SLEEP_USE_MS;
+		} else {
+			ZwSetTimerResolution = (ZWSETTIMERRESTYPE) GetProcAddress(global_tables_m12->hNTdll, "ZwSetTimerResolution");
+			if (ZwSetTimerResolution != NULL) {
+				ZwSetTimerResolution(1, 1, &actual_resolution);  // call the set timer resolution function (only done once)
+			} else {
+				G_warning_message_m12("%s(): error loading ZwSetTimerResolution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
+				use_ms = TRUE_m12;
+				FreeLibrary(global_tables_m12->hNTdll);
+				global_tables_m12->hNTdll = NULL;
+				goto G_WN_SLEEP_USE_MS;
+			}
+			// load the sleep function (static)
+			NtDelayExecution = (NTDELAYEXECTYPE) GetProcAddress(global_tables_m12->hNTdll, "NtDelayExecution");
+			if (NtDelayExecution == NULL) {
+				G_warning_message_m12("%s(): error loading NtDelayExecution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
+				use_ms = TRUE_m12;
+				FreeLibrary(global_tables_m12->hNTdll);
+				global_tables_m12->hNTdll = NULL;
+				goto G_WN_SLEEP_USE_MS;
+			}
+		}
+	}
+	
+	// convert to 100 ns resolution
+	hns = (si8) nap->tv_sec * (si8) 10000000;
+	hns += (si8) round((sf8) nap->tv_nsec / (sf8) 100.0);
+	interval.QuadPart = (LONGLONG) -hns;  // compiler complains without this cast & assignment
+	NtDelayExecution(0, &interval);
+
+	return;
+
+	G_WN_SLEEP_USE_MS:
+	
+	ms = nap->tv_sec * (si8) 1000;
+	ms += (si8) round((sf8) nap->tv_nsec / (sf8) 1e6);
+	if (ms == (si8) 0) {
+		ms = (si8) 1;  // limited to 1 ms rseolution
+	} else if (ms > (si8) 0x7FFFFFFF) {
+		G_warning_message_m12("%s(): millisecond overflow\n", __FUNCTION__);
+		ms = (si8) 0x7FFFFFFF;
+	}
+	Sleep((si4) ms);  // standard Windows sleep function
+	
+	return;
+#endif
+	
+	return;
+}
+
+
 TERN_m12	WN_reset_terminal_m12(void)
 {
 #ifdef FN_DEBUG_m12
@@ -36828,9 +36870,6 @@ TERN_m12	WN_socket_startup_m12(void)
 }
 
 
-#ifndef WINDOWS_m12  // inline causes linking problem in Windows
-inline
-#endif
 si4	WN_system_m12(si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
 {
 #ifdef FN_DEBUG_m12
@@ -38103,6 +38142,10 @@ si4     printf_m12(si1 *fmt, ...)
 	if (ret_val >= 0) {
 #ifdef MATLAB_m12
 		ret_val = mexPrintf("%s", temp_str);
+		// mexEvalString("drawnow;");  // flush output to Matlab console => does not work
+		// Note flush can be done more efficiently by calling [int ioFlush(void)] from ${MATLABROOT}/bin/<platform>/libmwservices.dll,
+		// but involves loading a dynamic library; mechanism for this differs across platforms => not worth the effort
+		// stackoverflow: "how can I make a mex function printf while its running" contains some guidance on this, but needs adjustment
 #else
 		ret_val = printf("%s", temp_str);
 #endif

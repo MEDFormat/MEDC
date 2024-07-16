@@ -159,12 +159,14 @@
 	#include <malloc/malloc.h>
 	#include <sys/sysctl.h>
 	#include <util.h>
+//	#include <netinet/tcp.h>  // for tcp_connection_info
 #endif
 #ifdef LINUX_m12
 	#include <sys/statfs.h>
 	#include <sys/sysinfo.h>
 	#include <pty.h>
 	#include <utmp.h>
+//	#include <linux/tcp.h>  // for tcp_info
 #endif
 #if defined LINUX_m12 || defined WINDOWS_m12
 	#include <malloc.h>
@@ -185,12 +187,12 @@
 #ifdef MATLAB_m12
 	#include "mex.h"
 	#include "matrix.h"
+//	#pragma comment(lib, "libmwservices.lib")  // link with libmwservices & libmwbuiltins
+//	extern bool ioFlush(void);  // fflush for mexPrintf() buffer
 #endif
 #ifdef DATABASE_m12
 	#include <libpq-fe.h>  //  postgres header
 #endif
-
-
 
 //**********************************************************************************//
 //******************************  Elemental Typedefs  ******************************//
@@ -1024,11 +1026,12 @@ typedef struct {
 // all levels
 #define LH_NO_FLAGS_m12					((ui8) 0)
 #define LH_USE_GLOBAL_FLAGS_m12				LH_NO_FLAGS_m12
-#define LH_OPEN_m12					((ui8) 1 << 0)	// all level & sublevel flags have been operated on
+#define LH_OPEN_m12					((ui8) 1 << 0)	// level is open
 #define LH_GENERATE_EPHEMERAL_DATA_m12			((ui8) 1 << 1)	// implies all level involvement
 #define LH_UPDATE_EPHEMERAL_DATA_m12			((ui8) 1 << 2)	// signal to higher level from lower level (reset by higher level after update)
 
 // session level
+#define LH_SESSION_OPEN_m12				((ui8) 1 << 8)
 #define LH_INCLUDE_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 8)
 #define LH_INCLUDE_VIDEO_CHANNELS_m12			((ui8) 1 << 9)
 #define LH_MAP_ALL_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 12)
@@ -1093,13 +1096,17 @@ typedef struct {
 //**********************************************************************************//
 
 // Thread Management Constants
-#define PROC_DEFAULT_PRIORITY_m12    	0x7FFFFFFF
-#define PROC_MIN_PRIORITY_m12        	0x7FFFFFFE
-#define PROC_LOW_PRIORITY_m12		0x7FFFFFFD
-#define PROC_MEDIUM_PRIORITY_m12	0x7FFFFFFC
-#define PROC_HIGH_PRIORITY_m12		0x7FFFFFFB
-#define PROC_MAX_PRIORITY_m12		0x7FFFFFFA
-#define PROC_UNDEFINED_PRIORITY_m12	0x7FFFFFF9
+#define PROC_DEFAULT_PRIORITY_m12    	((si4) 0x7FFFFFFF)
+#define PROC_MIN_PRIORITY_m12        	((si4) 0x7FFFFFFE)
+#define PROC_LOW_PRIORITY_m12		((si4) 0x7FFFFFFD)
+#define PROC_MEDIUM_PRIORITY_m12	((si4) 0x7FFFFFFC)
+#define PROC_HIGH_PRIORITY_m12		((si4) 0x7FFFFFFB)
+#define PROC_MAX_PRIORITY_m12		((si4) 0x7FFFFFFA)
+#define PROC_UNDEFINED_PRIORITY_m12	((si4) 0x7FFFFFF9)
+
+#define PROC_THREAD_WAITING_m12		((si4) 0)
+#define PROC_THREAD_RUNNING_m12		((si4) 1)
+#define PROC_THREAD_FINISHED_m12	((si4) 2)
 
 
 typedef ui8	pid_t_m12;	// big enough for all OSs, none use signed values
@@ -1131,7 +1138,18 @@ typedef void 	(*sig_handler_t_m12)(si4);  // signal handler function pointer
 	typedef	SECURITY_ATTRIBUTES	pthread_mutexattr_t_m12;
 #endif
 
+typedef struct {
+	pthread_fn_m12		thread_f;  // the thread function pointer
+	si1			*thread_label;
+	void			*arg;  // function-specific info structure, set by calling function
+	si4			priority;  // typically PROC_HIGH_PRIORITY_m12
+	volatile si4		status;
+	pthread_t_m12		thread_id;
+} PROC_THREAD_INFO_m12;
+
+
 TERN_m12	PROC_adjust_open_file_limit_m12(si4 new_limit, TERN_m12 verbose_flag);
+TERN_m12	PROC_distribute_jobs_m12(PROC_THREAD_INFO_m12 *thread_infos, si4 n_jobs, si4 n_reserved_cores, TERN_m12 wait_jobs);
 cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *cpu_set_p);
 pid_t_m12	PROC_getpid_m12(void);  // calling process id
 pid_t_m12	PROC_gettid_m12(void);  // calling thread id
@@ -1145,6 +1163,7 @@ si4		PROC_pthread_mutex_unlock_m12(pthread_mutex_t_m12 *mutex);
 pthread_t_m12	PROC_pthread_self_m12(void);
 TERN_m12	PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_attr_t_m12 *attributes, cpu_set_t_m12 *cpu_set_p, TERN_m12 wait_for_lauch);
 void		PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id);
+TERN_m12	PROC_wait_jobs_m12(PROC_THREAD_INFO_m12 *thread_infos, si4 n_jobs);
 
 
 
@@ -1159,13 +1178,14 @@ void		PROC_show_thread_affinity_m12(pthread_t_m12 *thread_id);
 #define PAR_DEFAULTS_m12		"defaults"
 #define PAR_UNTHREADED_m12		0
 
-#define PAR_OPEN_SESSION_M12		1
-#define PAR_READ_SESSION_M12		2
-#define PAR_OPEN_CHANNEL_M12		3
-#define PAR_READ_CHANNEL_M12		4
-#define PAR_OPEN_SEGMENT_M12		5
-#define PAR_READ_SEGMENT_M12		6
-#define PAR_DM_GET_MATRIX_M12		7
+// PAR function IDs (use PROC function IDs)
+#define PAR_OPEN_SESSION_m12		1
+#define PAR_READ_SESSION_m12		2
+#define PAR_OPEN_CHANNEL_m12		3
+#define PAR_READ_CHANNEL_m12		4
+#define PAR_OPEN_SEGMENT_m12		5
+#define PAR_READ_SEGMENT_m12		6
+#define PAR_GET_MATRIX_m12		7
 
 // Structures
 typedef struct {
@@ -1598,6 +1618,10 @@ typedef struct {
 	pthread_mutex_t_m12		CMP_mutex;
 	pthread_mutex_t_m12		NET_mutex;
 	pthread_mutex_t_m12		HW_mutex;
+	
+	#ifdef WINDOWS_m12
+	HINSTANCE			hNTdll;  // handle to ntdll dylib (used by WN_nap(), only loaded if used)
+	#endif
 } GLOBAL_TABLES_m12;
 
 // Globals List (thread local storage)
@@ -1876,7 +1900,7 @@ typedef struct {
 	ui8			*mmap_block_bitmap;  // each bit represents block_bytes bytes;  NULL if not memory mapping
 } FPS_PARAMETERS_m12;
 
-typedef struct {  // struct name for CMP functions interdependency
+typedef struct {
 	void					*parent;  // parent structure, NULL if created alone
 	si1					full_file_name[FULL_FILE_NAME_BYTES_m12];  // full path from root including extension
 	UNIVERSAL_HEADER_m12			*universal_header;  // points to base of raw_data array
@@ -2189,7 +2213,6 @@ typedef struct {
 
 // Miscellaneous structures that depend on above
 typedef struct {
-	pthread_t_m12		thread_id;
 	si1			MED_dir[FULL_FILE_NAME_BYTES_m12];
 	ui8			flags;
 	LEVEL_HEADER_m12	*MED_struct;  // CHANNEL_m12 or SEGMENT_m12 pointer (used to pass & return)
@@ -2224,12 +2247,13 @@ void    	G_calculate_indices_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 void            G_calculate_metadata_CRC_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 void            G_calculate_record_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 void            G_calculate_time_series_data_CRCs_m12(FILE_PROCESSING_STRUCT_m12 *fps);
-void		G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type);
+CHANNEL_m12	*G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *channel, si1 *channel_name, si1 channel_type);
 ui4             G_channel_type_from_path_m12(si1 *path);
 TERN_m12	G_check_char_type_m12(void);
 TERN_m12	G_check_file_list_m12(si1 **file_list, si4 n_files);
 TERN_m12	G_check_file_system_m12(si1 *file_system_path, si4 is_cloud, ...);  // varargs: si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
 TERN_m12        G_check_password_m12(si1 *password);
+si4		G_check_segment_map_m12(TIME_SLICE_m12 *m12, SESSION_m12 *sess);
 void		G_clear_terminal_m12(void);
 si4		G_compare_acq_nums_m12(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
@@ -2375,13 +2399,20 @@ si8     	G_write_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 
 //**********************************************************************************//
 
 #ifdef WINDOWS_m12
+
+// function typedefs for WN_sleep_m12()
+typedef HRESULT (CALLBACK* ZWSETTIMERRESTYPE)(ULONG, BOOLEAN, ULONG *);
+typedef HRESULT (CALLBACK* NTDELAYEXECTYPE)(BOOLEAN, LARGE_INTEGER *);
+
+
 FILETIME	WN_uutc_to_win_time_m12(si8 uutc);
 void		WN_cleanup_m12(void);
 void		WN_clear_m12(void);
 si8		WN_date_to_uutc_m12(sf8 date);
+TERN_m12	WN_initialize_terminal_m12(void);
 si4    		WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 **buffer);
 si4		WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *temp_file);
-TERN_m12	WN_initialize_terminal_m12(void);
+void		WN_nap_m12(struct timespec *nap);
 TERN_m12	WN_reset_terminal_m12(void);
 TERN_m12	WN_socket_startup_m12(void);
 inline si4	WN_system_m12(si1 *command);
@@ -2488,6 +2519,7 @@ si1		*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_
 si1		*STR_size_string_m12(si1 *size_str, si8 n_bytes);
 void		STR_sort_m12(si1 **string_array, si8 n_strings);
 void		STR_strip_character_m12(si1 *s, si1 character);
+const si1	*STR_tern_m12(TERN_m12 val);
 si1		*STR_time_string_m12(si8 uutc_time, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...);
 void		STR_to_lower_m12(si1 *s);
 void		STR_to_title_m12(si1 *s);
@@ -3491,7 +3523,7 @@ void		SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len);
 // Some of the filter code was adapted from Matlab functions (MathWorks, Inc).
 // www.mathworks.com
 //
-// The c code was written entirely from scratch.
+// The c code herein was written entirely from scratch.
 
 
 // Constants
@@ -3728,14 +3760,14 @@ typedef struct {
 } DATA_MATRIX_m12;
 
 typedef struct {
-	pthread_t_m12	thread_id;
 	DATA_MATRIX_m12	*dm;
 	CHANNEL_m12	*chan;
 	si8		chan_idx;
-} DM_GET_MATRIX_THREAD_INFO_m12;
+} DM_CHANNEL_THREAD_INFO_m12;
 
 
 // Prototypes
+pthread_rval_m12	DM_channel_thread_m12(void *ptr);
 void			DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure);
 DATA_MATRIX_m12 	*DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, TIME_SLICE_m12 *slice, si4 varargs, ...);  // can't use TERN_m12 to flag varargs (undefined behavior)
 // DM_get_matrix_m12() varargs: si8 sample_count, sf8 sampling_frequency, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
@@ -3746,7 +3778,6 @@ DATA_MATRIX_m12 	*DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, 
 // varargs DM_FILT_HIGHPASS_m12 set: fc1 == low_cutoff
 // varargs DM_FILT_BANDPASS_m12 set: fc1 == low_cutoff, fc2 == high_cutoff
 // varargs DM_FILT_BANDSTOP_m12 set: fc1 == low_cutoff, fc2 == high_cutoff
-pthread_rval_m12	DM_gm_thread_f_m12(void *ptr);
 void			DM_show_flags_m12(ui8 flags);
 DATA_MATRIX_m12		*DM_transpose_m12(DATA_MATRIX_m12 **in_matrix, DATA_MATRIX_m12 **out_matrix);  // if *in_matrix == *out_matrix, done in place; if *out_matrix == NULL, allocated and returned
 void			DM_transpose_in_place_m12(DATA_MATRIX_m12 *matrix, void *base);
@@ -3761,6 +3792,11 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 // Transmission Header Types
 // • Type numbers 0-63 reserved for generic transmission types
 // • Type numbers 64-255 used for application specific transmission types
+
+#define TR_TYPE_GENERIC_MIN_m12					0
+#define TR_TYPE_GENERIC_MAX_m12					63
+#define TR_TYPE_APPLICATION_MIN_m12				64
+#define TR_TYPE_APPLICATION_MAX_m12				255
 
 // Generic Transmission Header (TH) Types
 #define TR_TYPE_NO_ENTRY_m12					((ui1) 0)
@@ -3811,7 +3847,7 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_FLAGS_BIG_ENDIAN_m12			((ui2) 1)       // Bit 0  (LITTLE_ENDIAN == 0, BIG_ENDIAN == 1)
 #define TR_FLAGS_UDP_m12			((ui2) 1 << 1)	// Bit 1  (TCP == 0, UDP == 1)
 #define TR_FLAGS_ENCRYPT_m12			((ui2) 1 << 2)	// Bit 2  (body only - header is not encrypted)
-#define TR_FLAGS_INCLUDE_KEY_m12		((ui2) 1 << 3)  // Bit 3  (expanded encryrtion key included in data - less secure than bilateral prescience of key)
+#define TR_FLAGS_INCLUDE_KEY_m12		((ui2) 1 << 3)  // Bit 3  (expanded encryption key included in data - less secure than bilateral prescience of key)
 #define TR_FLAGS_CLOSE_m12			((ui2) 1 << 4)	// Bit 4  (close socket after send/recv)
 #define TR_FLAGS_ACKNOWLEDGE_m12		((ui2) 1 << 5)	// Bit 5  (acknowledge receipt with OK or retransmit)
 #define TR_FLAGS_CRC_m12			((ui2) 1 << 6)	// Bit 6  (calculate/check transmission CRC - last 4 bytes of transmission)
@@ -3841,12 +3877,18 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_ID_CODE_OFFSET_m12				TR_ID_STRING_OFFSET_m12		// ui4
 // TR_ID_CODE_NO_ENTRY_m12 defined above
 #define TR_TYPE_OFFSET_m12				13	                	// ui1
-#define TR_TYPE_2_OFFSET_m12				14	                	// ui1
+#define TR_SUBTYPE_OFFSET_m12				14	                	// ui1
 #define TR_VERSION_OFFSET_m12				15	                	// ui1
 #define TR_VERSION_NO_ENTRY_m12				0
 #define TR_TRANSMISSION_BYTES_OFFSET_m12		16				// ui8
 #define TR_TRANSMISSION_BYTES_NO_ENTRY_m12		0
 #define TR_OFFSET_OFFSET_m12				24				// ui8
+
+// Transmission Info Modes  [set by TR_send_transmission_m12() & TR_recv_transmission_m12(), used by TR_close_transmission_m12()]
+#define TR_MODE_NONE_m12	0
+#define TR_MODE_SEND_m12	1
+#define TR_MODE_RECV_m12	2
+#define TR_MODE_CLOSE_m12	3
 
 // Miscellaneous
 #define TR_INET_MSS_BYTES_m12				1376  // highest multiple of 16, that stays below internet standard frame size (1500) minus [32 (TR header) + 40 (TCP/IP header)
@@ -3869,7 +3911,7 @@ typedef struct {
 		struct {
 			si1     ID_string[TYPE_BYTES_m12];  // transmission ID is typically application specific
 			ui1     type;  // transmission type (general [0-63] or transmission ID specific [64-255])
-			ui1	type_2;  // used as 2nd confirmation in keep alive messages
+			ui1	subtype;  // rarely used (2nd confirmation in keep alive messages)
 			ui1     version;  // transmission header version (also 3rd confirmation in keep alive messages)
 		};
 		struct {
@@ -3892,6 +3934,7 @@ typedef struct {
 	si1			*password;   // for encryption (NOT freed by TR_free_transmission_info_m12)
 	ui1			*expanded_key;   // for encryption
 	TERN_m12		expanded_key_allocated;  // determines whether to free expanded key
+	ui1			mode;  // TR_MODE_SEND_m12, TR_MODE_RECV_m12, TR_MODE_NONE_m12 (needed to properly close TCP sockets)
 	si4			sock_fd;
 	si1			dest_addr[INET6_ADDRSTRLEN];  // INET6_ADDRSTRLEN == 46 (this can be an IP address string or or a domain name [< 46 characters])
 	ui2			dest_port;
