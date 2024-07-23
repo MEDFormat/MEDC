@@ -38959,11 +38959,10 @@ SYSTEM_PIPE_RETRY_m12:
 		// convert child to command
 		// if execvp() is successful, it does not return
 		// "p" version uses environment path if no "/" in args[0]
+		// child-allocated memory will be freed by kernel on exit
 		errno_reset_m12();
-		execvp(args[0], args);
 		if (execvp(args[0], args) == -1) {
 			err = errno_m12();  // capture errno to send back to parent
-			// since child is it's own process, allocated memory will be freed on exit
 			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m12))
 				if (!(behavior & RETRY_ONCE_m12) || retried == TRUE_m12)
 					printf("%s(): execvp() error\n", __FUNCTION__);  // goes to pipe
