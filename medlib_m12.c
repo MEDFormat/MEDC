@@ -6028,7 +6028,7 @@ TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables)
 	
 	if (global_tables_m12 == NULL) {
 	#ifdef MATLAB_PERSISTENT_m12
-		global_tables_m12 = (GLOBAL_TABLES_m12 *) calloc((mwSize) 1, (mwSize) sizeof(GLOBAL_TABLES_m12));
+		global_tables_m12 = (GLOBAL_TABLES_m12 *) mxCalloc((mwSize) 1, (mwSize) sizeof(GLOBAL_TABLES_m12));
 	#else
 		global_tables_m12 = (GLOBAL_TABLES_m12 *) calloc((size_t) 1, sizeof(GLOBAL_TABLES_m12));
 	#endif
@@ -6508,7 +6508,7 @@ TERN_m12	G_initialize_timezone_tables_m12(void)
 #ifdef MATLAB_PERSISTENT_m12
 		global_tables_m12->country_acronym_aliases_table = (TIMEZONE_ALIAS_m12 *) mxCalloc((mwSize) TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m12, (mwSize) sizeof(TIMEZONE_ALIAS_m12));
 #else
-		global_tables_m12->country_acronym_aliases_table = (TIMEZONE_ALIAS_m12 *) calloc((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m12, sizeof(TIMEZONE_ALIAS_m12));
+		global_tables_m12->country_acronym_aliases_table = (TIMEZONE_ALIAS_m12 *) calloc((size_t) TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m12, sizeof(TIMEZONE_ALIAS_m12));
 #endif
 		{
 			TIMEZONE_ALIAS_m12 temp[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m12] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m12;
@@ -9292,7 +9292,11 @@ void	G_push_behavior_m12(ui4 behavior)  //*** THIS ROUTINE IS NOT THREAD SAFE - 
 	
 	if (globals_m12->behavior_stack_entries == globals_m12->behavior_stack_size) {
 		globals_m12->behavior_stack_size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m12;
+#ifdef MATLAB_PERSISTENT_m12
+		globals_m12->behavior_stack = (ui4 *) mxRealloc((void *) globals_m12->behavior_stack, (mwSize) globals_m12->behavior_stack_size * sizeof(ui4));
+#else
 		globals_m12->behavior_stack = (ui4 *) realloc((void *) globals_m12->behavior_stack, (size_t) globals_m12->behavior_stack_size * sizeof(ui4));
+#endif
 	}
 	
 	globals_m12->behavior_stack[globals_m12->behavior_stack_entries++] = globals_m12->behavior_on_fail;
@@ -15602,7 +15606,11 @@ void	AT_add_entry_m12(void *address, size_t requested_bytes, const si1 *function
 	if (globals_m12->AT_used_node_count == globals_m12->AT_node_count) {
 		prev_node_count = globals_m12->AT_node_count;
 		globals_m12->AT_node_count += GLOBALS_AT_LIST_SIZE_INCREMENT_m12;
+#ifdef MATLAB_PERSISTENT_m12
+		globals_m12->AT_nodes = (AT_NODE *) mxRealloc((void *) globals_m12->AT_nodes, (mwSize) (globals_m12->AT_node_count * sizeof(AT_NODE)));
+#else
 		globals_m12->AT_nodes = (AT_NODE *) realloc((void *) globals_m12->AT_nodes, globals_m12->AT_node_count * sizeof(AT_NODE));
+#endif
 		if (globals_m12->AT_nodes == NULL) {
 			AT_mutex_off();
 			G_error_message_m12("%s(): error expanding AT list => exiting\n", __FUNCTION__);
@@ -17860,7 +17868,7 @@ si8    *CMP_find_crits_m12(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 	}
 
 	if (crit_xs == NULL)
-		crit_xs = (si8 *) malloc((size_t) (data_len << 3));
+		crit_xs = (si8 *) malloc_m12((size_t) (data_len << 3), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	// skip leading nans
 	for (n = 0; isnan(data[n]) && n < data_len; ++n);
@@ -23186,7 +23194,7 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 	if (cps->parameters.n_filtps < (FILT_VDS_TEMPLATE_MIN_PS_m12 + 1) || cps->parameters.filtps == NULL) {
 		realloc_flag = TRUE_m12;
 		cps->parameters.n_filtps = FILT_VDS_TEMPLATE_MIN_PS_m12 + 1;
-		cps->parameters.filtps = (void **) realloc((void *) cps->parameters.filtps, sizeof(void *) * cps->parameters.n_filtps);
+		cps->parameters.filtps = (void **) realloc_m12((void *) cps->parameters.filtps, sizeof(void *) * cps->parameters.n_filtps, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		min_filtps = (FILT_PROCESSING_STRUCT_m12 *) (cps->parameters.filtps[FILT_VDS_TEMPLATE_MIN_PS_m12] = NULL);
 	} else {
 		min_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_MIN_PS_m12];
@@ -23214,7 +23222,7 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 		if (cps->parameters.n_filtps < (FILT_VDS_TEMPLATE_LFP_PS_m12 + 1)) {
 			realloc_flag = TRUE_m12;
 			cps->parameters.n_filtps = FILT_VDS_TEMPLATE_LFP_PS_m12 + 1;
-			cps->parameters.filtps = (void **) realloc((void *) cps->parameters.filtps, sizeof(void *) * cps->parameters.n_filtps);
+			cps->parameters.filtps = (void **) realloc_m12((void *) cps->parameters.filtps, sizeof(void *) * cps->parameters.n_filtps, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12] = NULL;
 			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12];
 		} else {
@@ -25386,7 +25394,7 @@ QUANTFILT_DATA_m12	*FILT_alloc_quantfilt_data_m12(si8 len, si8 span)
 
 	qd->qx = (sf8 *) calloc_m12((size_t) len, sizeof(sf8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
-	qd->nodes = (FILT_NODE_m12 *) calloc((size_t) (span + 1), sizeof(FILT_NODE_m12));
+	qd->nodes = (FILT_NODE_m12 *) calloc_m12((size_t) (span + 1), sizeof(FILT_NODE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	return(qd);
 }
@@ -26830,7 +26838,7 @@ sf8	*FILT_moving_average_m12(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option
 #endif
 
 	if (ax == NULL)
-		ax = malloc((size_t) (len << 3));
+		ax = malloc_m12((size_t) (len << 3), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		
 	// make span odd
 	if (!(span & 1))
@@ -26919,7 +26927,7 @@ sf8    *FILT_noise_floor_filter_m12(sf8 *data, sf8 *filt_data, si8 data_len, sf8
 #endif
 
 	if (filt_data == NULL)
-		filt_data = (sf8 *) malloc((size_t) (data_len << 3));
+		filt_data = (sf8 *) malloc_m12((size_t) (data_len << 3), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 
 	free_buffers = FALSE_m12;
 	if (nff_buffers == NULL)
@@ -27326,7 +27334,7 @@ QUANTFILT_DATA_m12	*FILT_quantfilt_head_m12(QUANTFILT_DATA_m12 *qd, ...)  // var
 	if (qd->qx == NULL)
 		qd->qx = (sf8 *) calloc_m12((size_t) qd->len, sizeof(sf8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (qd->nodes == NULL)
-		qd->nodes = (FILT_NODE_m12 *) calloc((size_t) (qd->span + 1), sizeof(FILT_NODE_m12));
+		qd->nodes = (FILT_NODE_m12 *) calloc_m12((size_t) (qd->span + 1), sizeof(FILT_NODE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 
 	// get temp variables
 	len = qd->len;
@@ -31643,7 +31651,7 @@ cpu_set_t_m12	*PROC_generate_cpu_set_m12(si1 *affinity_str, cpu_set_t_m12 *passe
 	*/
 	
 	if (passed_cpu_set_p == NULL)  // up to caller to receive & free
-		cpu_set_p = (cpu_set_t_m12 *) malloc(sizeof(cpu_set_t_m12));
+		cpu_set_p = (cpu_set_t_m12 *) malloc_m12(sizeof(cpu_set_t_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	else
 		cpu_set_p = passed_cpu_set_p;
 
@@ -33805,7 +33813,7 @@ si1     *STR_re_escape_m12(si1 *str, si1 *esc_str)
 	while (*c1++);
 	len = c1 - str;
 	if (esc_str == NULL)  // up to caller to free
-		esc_str = (si1 *) calloc((size_t) (len * 2), sizeof(si1));
+		esc_str = (si1 *) calloc_m12((size_t) (len * 2), sizeof(si1), __FUNCTION__, __LINE__);
 	strcpy(esc_str, str);
 	c1 = esc_str;
 	c2 = str - 1;
@@ -37076,7 +37084,7 @@ si1	*WN_windify_format_string_m12(si1 *fmt)
 		return(fmt);
 	
 	len = (si8) (c - fmt) + matches + 1;  // extra byte for terminal zero
-	new_fmt = (si1 *) calloc((size_t) len, sizeof(ui1));
+	new_fmt = (si1 *) calloc((size_t) len, sizeof(ui1));  // freed by printf functions
 	
 	c = fmt;
 	new_c = new_fmt;
@@ -38824,6 +38832,7 @@ SYSTEM_PIPE_RETRY_m12:
 	// spawn child and connect to a pseudoterminal
 	*buffer = 0;
 	err = 0;
+	
 	if (flags & SP_SEPERATE_STREAMS_m12) {
 		stdout_master_fd = stdout_slave_fd = stderr_master_fd = stderr_slave_fd = 0;
 		*e_buffer = 0;
@@ -38878,10 +38887,9 @@ SYSTEM_PIPE_RETRY_m12:
 		else
 			ALLOCED_ARGS_INC = 10;
 		alloced_args = ALLOCED_ARGS_INC;
-		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
+		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));  // exec_arge_ptr allow parent process to free args after execvp() has copied
 		
 		// use shell to expand regex (less efficient, but simplest)
-		tmp_command = NULL;
 		if (command_needs_shell == TRUE_m12) {
 			#ifdef MACOS_m12
 			args[0] = "/bin/sh";
@@ -38892,6 +38900,7 @@ SYSTEM_PIPE_RETRY_m12:
 			args[1] = "-c";
 			args[2] = command;
 			args[3] = (char *) NULL;
+			tmp_command = NULL;
 		} else {  // parse args
 			
 			// copy command so not modified
@@ -38951,11 +38960,10 @@ SYSTEM_PIPE_RETRY_m12:
 		// if execvp() is successful, it does not return
 		// "p" version uses environment path if no "/" in args[0]
 		errno_reset_m12();
+		execvp(args[0], args);
 		if (execvp(args[0], args) == -1) {
 			err = errno_m12();  // capture errno to send back to parent
-			free((void *) args);
-			if (tmp_command != NULL)
-				free((void *) tmp_command);
+			// since child is it's own process, allocated memory will be freed on exit
 			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m12))
 				if (!(behavior & RETRY_ONCE_m12) || retried == TRUE_m12)
 					printf("%s(): execvp() error\n", __FUNCTION__);  // goes to pipe
@@ -38984,7 +38992,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (assign_buffer == TRUE_m12) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
-				buffer = (si1 *) realloc((void *) buffer, (size_t) buf_len);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -39004,7 +39012,7 @@ SYSTEM_PIPE_RETRY_m12:
 			if (assign_e_buffer == TRUE_m12) {
 				if (bytes_avail < 2) {
 					*e_buf_len += BUFFER_SIZE_INC;
-					e_buffer = (si1 *) realloc((void *) e_buffer, (size_t) *e_buf_len);
+					e_buffer = (si1 *) realloc_m12((void *) e_buffer, (size_t) *e_buf_len, __FUNCTION__, __LINE__);
 					bytes_avail += BUFFER_SIZE_INC;
 				}
 			}
@@ -39014,15 +39022,17 @@ SYSTEM_PIPE_RETRY_m12:
 
 	// wait for child
 	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
-	err = WEXITSTATUS(status);
+	err = WEXITSTATUS(status);  // save any error code
 	if (err)
 		goto SYSTEM_PIPE_FAIL_m12;
 
 	// close master ends of pseudoterminal
 	if (flags & SP_SEPERATE_STREAMS_m12) {
-		close(stdout_master_fd);
-		close(stderr_master_fd);
-	} else {
+		if (stdout_master_fd)
+			close(stdout_master_fd);
+		if (stderr_master_fd)
+			close(stderr_master_fd);
+	} else if (master_fd) {
 		close(master_fd);
 	}
 	
@@ -39055,16 +39065,16 @@ SYSTEM_PIPE_RETRY_m12:
 	
 SYSTEM_PIPE_FAIL_m12:
 	
+	// close master ends of pseudoterminal
 	if (flags & SP_SEPERATE_STREAMS_m12) {
 		if (stdout_master_fd)
 			close(stdout_master_fd);
 		if (stderr_master_fd)
 			close(stderr_master_fd);
-	} else {
-		if (master_fd)
-			close(master_fd);
+	} else if (master_fd) {
+		close(master_fd);
 	}
-	
+
 	if (behavior & RETRY_ONCE_m12) {
 		if (retried == FALSE_m12) {
 			G_nap_m12("1 ms");  // wait 1 ms
@@ -39096,7 +39106,7 @@ SYSTEM_PIPE_FAIL_m12:
 	if (assign_buffer == TRUE_m12) {
 		if (bytes_in_buffer >= buf_len) {
 			buf_len = bytes_in_buffer;
-			buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_buffer + 1));  // allow for terminal zero
+			buffer = (si1 *) realloc_m12((void *) buffer, (size_t) (bytes_in_buffer + 1), __FUNCTION__, __LINE__);  // allow for terminal zero
 		}
 	}
 	fread((void *) buffer, sizeof(si1), (size_t) buf_len, fp);
@@ -39111,7 +39121,7 @@ SYSTEM_PIPE_FAIL_m12:
 		if (assign_e_buffer == TRUE_m12) {
 			if (bytes_in_e_buffer >= *e_buf_len) {
 				*e_buf_len = bytes_in_e_buffer;
-				e_buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_e_buffer + 1));  // allow for terminal zero
+				e_buffer = (si1 *) realloc_m12((void *) buffer, (size_t) (bytes_in_e_buffer + 1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);  // allow for terminal zero
 			}
 		}
 		fread((void *) e_buffer, sizeof(si1), (size_t) *e_buf_len, fp);
@@ -39471,7 +39481,7 @@ SYSTEM_PIPE_FAIL_m12:
 	if (assign_buffer == TRUE_m12) {
 		if (bytes_in_buffer >= buf_len) {
 			buf_len = bytes_in_buffer;
-			buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_buffer + 1));  // allow for terminal zero
+			buffer = (si1 *) realloc_m12((void *) buffer, (size_t) (bytes_in_buffer + 1), __FUNCTION__, __LINE__);  // allow for terminal zero
 		}
 	}
 	fread((void *) buffer, sizeof(si1), (size_t) buf_len, fp);
@@ -39486,7 +39496,7 @@ SYSTEM_PIPE_FAIL_m12:
 		if (assign_e_buffer == TRUE_m12) {
 			if (bytes_in_e_buffer >= *e_buf_len) {
 				*e_buf_len = bytes_in_e_buffer;
-				e_buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_e_buffer + 1));  // allow for terminal zero
+				e_buffer = (si1 *) realloc_m12((void *) buffer, (size_t) (bytes_in_e_buffer + 1), __FUNCTION__, __LINE__);  // allow for terminal zero
 			}
 		}
 		fread((void *) e_buffer, sizeof(si1), (size_t) *e_buf_len, fp);
@@ -39676,7 +39686,7 @@ si4    vsnprintf_m12(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 		free_fmt = TRUE_m12;
 	}
 #endif
-	// Guarantee zeros in unused bytes per MED requirements
+	// guarantee zeros in unused bytes per MED requirements
 	temp_str = (si1 *) calloc((size_t) target_field_bytes, sizeof(si1));
 	ret_val = vsnprintf(temp_str, target_field_bytes, fmt, args);
 	

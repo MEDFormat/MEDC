@@ -38497,11 +38497,11 @@ si4     system_m13(si1 *command, tern null_std_streams, ui4 behavior)
 si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	tern	no_command, command_needs_shell, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
-	si1		**e_buffer_ptr, *buffer, *e_buffer, *c;
-	si4		ret_val, status, err, BUFFER_SIZE_INC;
-	si4		master_fd, stdout_master_fd, stdout_slave_fd, stderr_master_fd, stderr_slave_fd;
-	si8		bytes_in_buffer, bytes_in_e_buffer, bytes_avail, *e_buf_len;
-	pid_t		child_pid;
+	si1	**e_buffer_ptr, *buffer, *e_buffer, *c;
+	si4	ret_val, status, err, BUFFER_SIZE_INC;
+	si4	master_fd, stdout_master_fd, stdout_slave_fd, stderr_master_fd, stderr_slave_fd;
+	si8	bytes_in_buffer, bytes_in_e_buffer, bytes_avail, *e_buf_len;
+	pid_t	child_pid;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -38620,6 +38620,11 @@ SYSTEM_PIPE_RETRY_m13:
 	// spawn child and connect to a pseudoterminal
 	*buffer = 0;
 	err = 0;
+	child_args = NULL;
+	child_args_ptr = &child_args;  // mechanism to free child allocated memory lost in successful call to execvp()
+	child_tmp_command = NULL;
+	child_tmp_command_ptr = &child_tmp_command;  // mechanism to free child allocated memory lost in successful call to execvp()
+	
 	if (flags & SP_SEPERATE_STREAMS_m13) {
 		stdout_master_fd = stdout_slave_fd = stderr_master_fd = stderr_slave_fd = 0;
 		*e_buffer = 0;
@@ -38677,7 +38682,6 @@ SYSTEM_PIPE_RETRY_m13:
 		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
 		
 		// use shell to expand regex (less efficient, but simplest)
-		tmp_command = NULL;
 		if (command_needs_shell == TRUE_m13) {
 			#ifdef MACOS_m13
 			args[0] = "/bin/sh";
@@ -38688,6 +38692,7 @@ SYSTEM_PIPE_RETRY_m13:
 			args[1] = "-c";
 			args[2] = command;
 			args[3] = (char *) NULL;
+			tmp_command = NULL;
 		} else {  // parse args
 			
 			// copy command so not modified
@@ -38749,9 +38754,7 @@ SYSTEM_PIPE_RETRY_m13:
 		errno_reset_m13();
 		if (execvp(args[0], args) == -1) {
 			err = errno_m13();  // capture errno to send back to parent
-			free((void *) args);
-			if (tmp_command != NULL)
-				free((void *) tmp_command);
+			// since child is it's own process, allocated memory will be freed on exit
 			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
 				if (!(behavior & RETRY_ONCE_m13) || retried == TRUE_m13)
 					printf("%s(): execvp() error\n", __FUNCTION__);  // goes to pipe
@@ -38810,18 +38813,20 @@ SYSTEM_PIPE_RETRY_m13:
 
 	// wait for child
 	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
-	err = WEXITSTATUS(status);
+	err = WEXITSTATUS(status);  // save any error code
 	if (err)
 		goto SYSTEM_PIPE_FAIL_m13;
 
 	// close master ends of pseudoterminal
 	if (flags & SP_SEPERATE_STREAMS_m13) {
-		close(stdout_master_fd);
-		close(stderr_master_fd);
-	} else {
-		close(master_fd);
+		if (stdout_master_fd)
+			close(stdout_master_fd);
+		if (stderr_master_fd)
+			close(stderr_master_fd);
+	} else if (master_fd) {
+			close(master_fd);
 	}
-	
+
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
@@ -38851,14 +38856,14 @@ SYSTEM_PIPE_RETRY_m13:
 	
 SYSTEM_PIPE_FAIL_m13:
 	
+	// close master ends of pseudoterminal
 	if (flags & SP_SEPERATE_STREAMS_m13) {
 		if (stdout_master_fd)
 			close(stdout_master_fd);
 		if (stderr_master_fd)
 			close(stderr_master_fd);
-	} else {
-		if (master_fd)
-			close(master_fd);
+	} else if (master_fd) {
+		close(master_fd);
 	}
 	
 	if (behavior & RETRY_ONCE_m13) {
