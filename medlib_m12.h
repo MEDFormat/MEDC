@@ -2173,9 +2173,7 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m12	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m12		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m12];		// full path to session directory (including directory itself)
-	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
-	si1                             uh_name[BASE_FILE_NAME_BYTES_m12];
-	si1                             fs_name[BASE_FILE_NAME_BYTES_m12];
+	si1                             *name;					// points to global uh_name (universal header), if known otherwise to fs_name (from file system)
 	TIME_SLICE_m12			time_slice;
 	si8				number_of_contigua;
 	CONTIGUON_m12			*contigua;
@@ -2197,9 +2195,7 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m12	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m12		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m12];		// full path to session directory (including session directory itself)
-	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
-	si1                             uh_name[BASE_FILE_NAME_BYTES_m12];
-	si1                             fs_name[BASE_FILE_NAME_BYTES_m12];
+	si1                             *name;					// points to global uh_name (universal header), if known otherwise to fs_name (from file system)
 	TIME_SLICE_m12			time_slice;
 	si8				number_of_contigua;
 	CONTIGUON_m12			*contigua;
@@ -2233,6 +2229,7 @@ typedef struct {
 
 
 // Prototypes
+ui4 		G_add_level_extension_m12(si1 *directory_name);
 TERN_m12	G_all_zeros_m12(ui1 *bytes, si4 field_length);
 CHANNEL_m12	*G_allocate_channel_m12(CHANNEL_m12 *chan, FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *enclosing_path, si1 *chan_name, ui4 type_code, si4 n_segs, TERN_m12 chan_recs, TERN_m12 seg_recs);
 SEGMENT_m12	*G_allocate_segment_m12(SEGMENT_m12 *seg, FILE_PROCESSING_STRUCT_m12 *proto_fps, si1* enclosing_path, si1 *chan_name, ui4 type_code, si4 seg_num, TERN_m12 seg_recs);
@@ -3885,10 +3882,11 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_OFFSET_OFFSET_m12				24				// ui8
 
 // Transmission Info Modes  [set by TR_send_transmission_m12() & TR_recv_transmission_m12(), used by TR_close_transmission_m12()]
-#define TR_MODE_NONE_m12	0
-#define TR_MODE_SEND_m12	1
-#define TR_MODE_RECV_m12	2
-#define TR_MODE_CLOSE_m12	3
+// indicages whether last transmission was a send or receive
+#define TR_MODE_NONE_m12		0
+#define TR_MODE_SEND_m12		1
+#define TR_MODE_RECV_m12		2
+#define TR_MODE_FORCE_CLOSE_m12		3
 
 // Miscellaneous
 #define TR_INET_MSS_BYTES_m12				1376  // highest multiple of 16, that stays below internet standard frame size (1500) minus [32 (TR header) + 40 (TCP/IP header)

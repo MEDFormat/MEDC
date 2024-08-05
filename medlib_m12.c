@@ -97,16 +97,121 @@
 #include "medlib_m12.h"
 
 // Globals
+#ifdef MATLAB_m12
+// "static" qualifier necessary for Matlab to maintain values between mex calls
+// limits scope to current file
+static GLOBALS_m12		**globals_list_m12 = NULL;
+static volatile si4		globals_list_len_m12 = 0;
+static pthread_mutex_t_m12	globals_list_mutex_m12;
+static GLOBAL_TABLES_m12	*global_tables_m12;
+#else
+// "static" qualifier prevents linking across compiled libraries
 GLOBALS_m12		**globals_list_m12 = NULL;
 volatile si4		globals_list_len_m12 = 0;
 pthread_mutex_t_m12	globals_list_mutex_m12;
 GLOBAL_TABLES_m12	*global_tables_m12;
+#endif
 
 
 
 //*********************************//
 // MARK: GENERAL MED FUNCTIONS  (G)
 //*********************************//
+
+
+ui4 	G_add_level_extension_m12(si1 *directory_name)
+{
+	TERN_m12	from_root;
+	si1		full_path[FULL_FILE_NAME_BYTES_m12], enclosing_dir[FULL_FILE_NAME_BYTES_m12];
+	si1		base_name[SEGMENT_BASE_FILE_NAME_BYTES_m12], *extension;
+	ui4		type_code;
+	size_t		available_bytes, required_bytes;
+	
+	
+	// returns type code of existing level
+	// appends extension to passed directory_name (if possible)
+	
+	G_path_from_root_m12(directory_name, full_path);
+	G_extract_path_parts_m12(full_path, enclosing_dir, base_name, NULL);
+	
+	from_root = FALSE_m12;
+	if (*directory_name == *full_path) {
+		#ifdef WINDOWS_m12
+		// first character not necessarily enough in Windows: e.g. "Channel_1" & "C:\"
+		if (*(directory_name + 1) == *(full_path + 1))
+			from_root = TRUE_m12;
+		#else
+		from_root = TRUE_m12;
+		#endif
+	}
+		
+	// try session
+	extension = SESSION_DIRECTORY_TYPE_STRING_m12;
+	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+		type_code = SESSION_DIRECTORY_TYPE_CODE_m12;
+		goto ADD_LEVEL_EXTENSION_MATCH_m12;
+	}
+
+	// try time series channel
+	extension = TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12;
+	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+		type_code = TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12;
+		goto ADD_LEVEL_EXTENSION_MATCH_m12;
+	}
+
+	// try video series channel
+	extension = VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12;
+	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+		type_code = VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12;
+		goto ADD_LEVEL_EXTENSION_MATCH_m12;
+	}
+
+	// try time series segment
+	extension = TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12;
+	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+		type_code = TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12;
+		goto ADD_LEVEL_EXTENSION_MATCH_m12;
+	}
+
+	// try video series segment
+	extension = VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12;
+	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+		type_code = VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12;
+		goto ADD_LEVEL_EXTENSION_MATCH_m12;
+	}
+
+	// try segmented session records
+	extension = RECORD_DIRECTORY_TYPE_STRING_m12;
+	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+		type_code = RECORD_DIRECTORY_TYPE_CODE_m12;
+		goto ADD_LEVEL_EXTENSION_MATCH_m12;
+	}
+
+	return(NO_TYPE_CODE_m12);
+	
+ADD_LEVEL_EXTENSION_MATCH_m12:
+	
+	if (freeable_m12(directory_name) == FALSE_m12) {
+		G_warning_message_m12("%s(): cannot modify statically allocated string => returning type code\n", __FUNCTION__);
+	} else {
+		available_bytes = malloc_size_m12((void *) directory_name);
+		required_bytes = strlen(directory_name) + TYPE_BYTES_m12;
+		if (available_bytes < required_bytes)
+			G_warning_message_m12("%s(): not enough space to modify input string => returning type code\n", __FUNCTION__);
+		else if (from_root == TRUE_m12)
+			sprintf_m12(directory_name, "%s/%s.%s", enclosing_dir, base_name, extension);
+		else
+			sprintf_m12(directory_name, "%s.%s", base_name, extension);
+	}
+	
+	return(type_code);
+}
 
 
 TERN_m12	G_all_zeros_m12(ui1 *bytes, si4 field_length)
@@ -303,8 +408,8 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 		G_generate_UID_m12(&uh->session_UID);
 	uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m12;;
 	strncpy_m12(uh->session_name, sess_name, BASE_FILE_NAME_BYTES_m12);
-	strncpy_m12(sess->uh_name, sess_name, BASE_FILE_NAME_BYTES_m12);
-	sess->name = sess->uh_name;
+	strncpy_m12(globals_m12->uh_session_name, sess_name, BASE_FILE_NAME_BYTES_m12);
+	sess->name = globals_m12->session_name = globals_m12->uh_session_name;
 	snprintf_m12(sess->path, FULL_FILE_NAME_BYTES_m12, "%s/%s.%s", enclosing_path, sess->name, SESSION_DIRECTORY_TYPE_STRING_m12);
 		
 	// allocate channels
@@ -4255,14 +4360,22 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 		system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 	}
 	
+	// often statically allocated, so can't just free()
+	// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m12, REC_Note_TYPE_CODE_m12, NO_TYPE_CODE_m12 };
+	// globals_m12->record_filters = rec_filts;
 	if (globals->record_filters != NULL)
-		free_m12((void *) globals->record_filters, __FUNCTION__);
-		// often statically allocated, so can't use regular free()
-		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m12, REC_Note_TYPE_CODE_m12, NO_TYPE_CODE_m12 };
-		// globals_m12->record_filters = rec_filts;
+		if (freeable_m12((void *) globals->record_filters) == TRUE_m12)
+			free_m12((void *) globals->record_filters, __FUNCTION__);
 			
-	if (globals->behavior_stack != NULL)
+	if (globals->behavior_stack != NULL) {
+#ifdef MATLAB_PERSISTENT_m12
+		mxFree((void *) globals->behavior_stack);
+#else
 		free((void *) globals->behavior_stack);
+#endif
+	}
+	PROC_pthread_mutex_destroy_m12(&globals->behavior_mutex);
+
 #ifdef AT_DEBUG_m12
 	if (globals->AT_nodes != NULL) {
 		AT_free_all_m12();  // display memory still allocated & free it
@@ -4275,13 +4388,6 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 	PROC_pthread_mutex_destroy_m12(&globals->AT_mutex);
 #endif
 	
-	PROC_pthread_mutex_destroy_m12(&globals->behavior_mutex);
-#ifdef MATLAB_PERSISTENT_m12
-	mxFree((void *) globals);
-#else
-	free((void *) globals);
-#endif
-
 	// remove current globals from global list
 	PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
 	for (i = 0; i < globals_list_len_m12; ++i)
@@ -4290,11 +4396,11 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 	for (++i; i < globals_list_len_m12; ++i)
 		globals_list_m12[i - 1] = globals_list_m12[i];
 	if (--globals_list_len_m12 == 0) {
-	#ifdef MATLAB_PERSISTENT_m12
+		#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) globals_list_m12);
-	#else
+		#else
 		free((void *) globals_list_m12);
-	#endif
+		#endif
 		globals_list_m12 = NULL;
 		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
 		PROC_pthread_mutex_destroy_m12(&globals_list_mutex_m12);
@@ -4302,7 +4408,14 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 	} else {
 		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
 	}
-
+	
+	// free current globals structure
+#ifdef MATLAB_PERSISTENT_m12
+	mxFree((void *) globals);
+#else
+	free((void *) globals);
+#endif
+	
 	return;
 }
 
@@ -4370,18 +4483,18 @@ void	G_free_segmented_sess_recs_m12(SEGMENTED_SESS_RECS_m12 *ssr, TERN_m12 free_
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->record_indices_fps[i];
 		if (gen_fps != NULL)
-			if (malloc_size_m12((void *) gen_fps))
-				FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
+			FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
 		gen_fps = ssr->record_data_fps[i];
 		if (gen_fps != NULL)
-			if (malloc_size_m12((void *) gen_fps))
-				FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
+			FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
 	}
-	free_m12((void *) ssr->record_indices_fps, __FUNCTION__);  // ok whether allocated en bloc or not
-	free_m12((void *) ssr->record_data_fps, __FUNCTION__);  // ok whether allocated en bloc or not
+	free_m12((void *) ssr->record_indices_fps, __FUNCTION__);
+	free_m12((void *) ssr->record_data_fps, __FUNCTION__);
 
 	if (free_segmented_sess_rec_structure == TRUE_m12)
 		free_m12((void *) ssr, __FUNCTION__);
+	else
+		ssr->record_indices_fps = ssr->record_data_fps = NULL;
 	
 	return;
 }
@@ -4433,52 +4546,56 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 		free_m12(session->contigua, __FUNCTION__);
 
 	if (free_session_structure == TRUE_m12) {
+		GLOBALS_m12	*globals;
+		
+		
 		free_m12((void *) session, __FUNCTION__);
 		
 		// current session constants
-		globals_m12->session_UID = UID_NO_ENTRY_m12;
-		*globals_m12->session_directory = 0;
-		globals_m12->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m12;
-		globals_m12->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m12;
-		globals_m12->session_name = NULL;
-		*globals_m12->uh_session_name = 0;
-		*globals_m12->fs_session_name = 0;
-		globals_m12->session_start_time = UUTC_NO_ENTRY_m12;
-		globals_m12->session_end_time = UUTC_NO_ENTRY_m12;
-		globals_m12->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m12;  // == number_of_session_frames
-		globals_m12->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m12;
-		globals_m12->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m12;
-		globals_m12->reference_channel = NULL;
-		*globals_m12->reference_channel_name = 0;
+		globals = globals_m12;
+		globals->session_UID = UID_NO_ENTRY_m12;
+		*globals->session_directory = 0;
+		globals->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m12;
+		globals->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m12;
+		globals->session_name = NULL;
+		*globals->uh_session_name = 0;
+		*globals->fs_session_name = 0;
+		globals->session_start_time = UUTC_NO_ENTRY_m12;
+		globals->session_end_time = UUTC_NO_ENTRY_m12;
+		globals->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m12;  // == number_of_session_frames
+		globals->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m12;
+		globals->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m12;
+		globals->reference_channel = NULL;
+		*globals->reference_channel_name = 0;
 
 		// active channel constants
-		globals_m12->time_series_frequencies_vary = UNKNOWN_m12;
-		globals_m12->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m12;
-		globals_m12->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m12;
-		globals_m12->minimum_time_series_frequency_channel = NULL;
-		globals_m12->maximum_time_series_frequency_channel = NULL;
-		globals_m12->video_frame_rates_vary = UNKNOWN_m12;;
-		globals_m12->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m12;
-		globals_m12->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m12;
-		globals_m12->minimum_video_frame_rate_channel = NULL;
-		globals_m12->maximum_video_frame_rate_channel = NULL;
+		globals->time_series_frequencies_vary = UNKNOWN_m12;
+		globals->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m12;
+		globals->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m12;
+		globals->minimum_time_series_frequency_channel = NULL;
+		globals->maximum_time_series_frequency_channel = NULL;
+		globals->video_frame_rates_vary = UNKNOWN_m12;;
+		globals->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m12;
+		globals->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m12;
+		globals->minimum_video_frame_rate_channel = NULL;
+		globals->maximum_video_frame_rate_channel = NULL;
 		
 		// Time Constants
-		globals_m12->time_constants_set = FALSE_m12;
-		globals_m12->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m12;
-		globals_m12->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m12;
-		globals_m12->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m12;
-		globals_m12->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m12;
-		globals_m12->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m12;
-		globals_m12->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m12;
-		strcpy(globals_m12->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m12);
-		strcpy(globals_m12->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m12);
-		strcpy(globals_m12->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m12);
-		strcpy(globals_m12->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m12);
+		globals->time_constants_set = FALSE_m12;
+		globals->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m12;
+		globals->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m12;
+		globals->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m12;
+		globals->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m12;
+		globals->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m12;
+		globals->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m12;
+		strcpy(globals->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m12);
+		strcpy(globals->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m12);
+		strcpy(globals->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m12);
+		strcpy(globals->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m12);
 
 		// reset miscellaneous globals
-		globals_m12->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12;
-		globals_m12->password_data.processed = 0;  // don't zero password hints can be shown, if they exist
+		globals->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12;
+		globals->password_data.processed = 0;  // don't zero password hints can be shown, if they exist
 
 	} else {  // leave name, path, slice, & globals intact (i.e. clear everything with allocated memory)
 		session->flags &= ~LH_OPEN_m12;
@@ -6868,7 +6985,17 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 		return(NO_FILE_TYPE_CODE_m12);
 	}
 	
+	// remove quotes if present
+	if (*string == '"') {
+		si1	tmp_str[FULL_FILE_NAME_BYTES_m12];
+		
+		strcpy(tmp_str, string);
+		STR_strip_character_m12(tmp_str, '"');
+		string = tmp_str;
+	}
+
 	len = (si4) strlen(string);
+	
 #if defined MACOS_m12 || defined LINUX_m12
 	if (string[len - 1] == '/')
 		--len;
@@ -7535,9 +7662,8 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	}
 	
 	// set basic info (path, name, type, flags)
-	if (chan_path != NULL)
-		if (*chan_path)
-			chan->type_code = G_generate_MED_path_components_m12(chan_path, chan->path, chan->name);
+	if (G_empty_string_m12(chan_path) == FALSE_m12)
+		chan->type_code = G_generate_MED_path_components_m12(chan_path, chan->path, chan->name);
 	if (chan->type_code == NO_TYPE_CODE_m12 && *chan->path)
 		chan->type_code = G_generate_MED_path_components_m12(chan->path, NULL, chan->name);
 	if (chan->type_code != LH_TIME_SERIES_CHANNEL_m12 && chan->type_code != LH_VIDEO_CHANNEL_m12) {
@@ -7836,7 +7962,7 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 	if (seg_path != NULL) {
 		seg->type_code = G_generate_MED_path_components_m12(seg_path, seg->path, seg->name);
 	} else {
-		if (G_file_exists_m12(seg_path) == DOES_NOT_EXIST_m12) {
+		if (G_file_exists_m12(seg->path) == DOES_NOT_EXIST_m12) {
 			if (free_segment == TRUE_m12)
 				G_free_segment_m12(seg, TRUE_m12);
 			G_warning_message_m12("%s(): segment does not exist\n", __FUNCTION__);
@@ -7961,19 +8087,19 @@ pthread_rval_m12	G_open_segment_thread_m12(void *ptr)
 
 SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password)
 {
-	TERN_m12			free_session, all_channels_selected, ret_val;
+	TERN_m12			free_session, all_channels_selected, fs_name_differs, ret_val;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
 	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1], *regex_str;
 	ui4				type_code;
 	si4				i, j, k, n_chans, mapped_segs, n_segs, seg_idx, thread_idx;
-	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
+	si4				fe, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
 	si8				curr_time;
 	CHANNEL_m12			*chan;
 	UNIVERSAL_HEADER_m12		*uh;
 	SEGMENTED_SESS_RECS_m12		*ssr;
 	PROC_THREAD_INFO_m12		*proc_thread_infos;
 	READ_MED_THREAD_INFO_m12	*read_MED_thread_infos;
-
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -7997,7 +8123,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			flags = globals_m12->level_header_flags;  // use global flags, if no session flags
 	}
 	sess->flags = (flags &= ~LH_OPEN_m12);
-		
+	
 	// generate channel list
 	all_channels_selected = FALSE_m12;
 	sess_dir = NULL;
@@ -8008,6 +8134,8 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			n_chans = 1;
 		} else {  // directory passed: NULL channel list
 			type_code = G_MED_type_code_from_string_m12((si1 *) file_list);
+			if (type_code == NO_TYPE_CODE_m12)
+				type_code = G_add_level_extension_m12((si1 *) file_list);
 			switch (type_code) {
 				case SESSION_DIRECTORY_TYPE_CODE_m12:  // session directory passed: NULL channel list
 					all_channels_selected = TRUE_m12;
@@ -8045,17 +8173,17 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	regex_str = "?icd";  // less specific (than MacOS or Linux)
 #endif
 	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m12);  // more specific (than Windows)
-
+	
 	if (n_chans == 0) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
 		G_error_message_m12("%s(): no channels found\n", __FUNCTION__);
 		return(NULL);
 	}
-
+	
 	G_extract_path_parts_m12(chan_list[0], sess->path, NULL, NULL);
-	type_code = G_generate_MED_path_components_m12(sess->path, NULL, sess->fs_name);
-	sess->name = sess->fs_name;  // only name known at this point
+	type_code = G_generate_MED_path_components_m12(sess->path, NULL, globals_m12->fs_session_name);
+	sess->name = globals_m12->fs_session_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m12) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
@@ -8113,7 +8241,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		}
 	}
 	free_m12((void *) chan_list, __FUNCTION__);
-
+	
 	// set up time series channels
 	curr_time = G_current_uutc_m12();
 	if ((flags & LH_MAP_ALL_TIME_SERIES_CHANNELS_m12) && (all_channels_selected == FALSE_m12)) {
@@ -8168,7 +8296,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		free_m12((void *) ts_chan_list, __FUNCTION__);
 		sess->number_of_time_series_channels = n_ts_chans;
 	}
-
+	
 	// set up video channels
 	if (sess->flags & LH_MAP_ALL_VIDEO_CHANNELS_m12 && all_channels_selected == FALSE_m12) {
 		// get lists of all channels, regardless of what was passed in the list
@@ -8222,7 +8350,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		free_m12((void *) vid_chan_list, __FUNCTION__);
 		sess->number_of_video_channels = n_vid_chans;
 	}
-
+	
 	// set up time & generate password data (note do this before slice is conditioned)
 	if (globals_m12->password_data.processed == 0 || globals_m12->time_constants_set != TRUE_m12) {
 		if (G_set_time_and_password_data_m12(password, sess->path, NULL, NULL) == FALSE_m12) {
@@ -8233,9 +8361,21 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 	
 	// user generated channel subsets (setting password also sets global session names)
-	if (*globals_m12->uh_session_name) {
-		strcpy(sess->uh_name, globals_m12->uh_session_name);
-		sess->name = sess->uh_name;  // change name to the more generally useful version
+	fs_name_differs = UNKNOWN_m12;
+	if (*globals_m12->uh_session_name || *globals_m12->fs_session_name) {
+		if (*globals_m12->uh_session_name && *globals_m12->fs_session_name) {
+			if (strcmp(globals_m12->uh_session_name, globals_m12->fs_session_name))
+				fs_name_differs = TRUE_m12;
+			else
+				fs_name_differs = FALSE_m12;
+			sess->name = globals_m12->uh_session_name;  // default to the more generally useful version
+		} else if (*globals_m12->uh_session_name) {
+			fs_name_differs = FALSE_m12;
+			sess->name = globals_m12->uh_session_name;  // only available version
+		} else {
+			fs_name_differs = FALSE_m12;
+			sess->name = globals_m12->fs_session_name;  // only available version
+		}
 	}
 
 	// process time slice (passed slice is not modified)
@@ -8313,10 +8453,20 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+		fe = G_file_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			fe = G_file_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12)
 			sess->record_indices_fps = G_read_file_m12(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+		fe = G_file_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
+			fe = G_file_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12) {
 			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m12)
 				sess->record_data_fps = G_read_file_m12(sess->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			else  // just read in data universal header & leave open
@@ -8328,13 +8478,19 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	ssr = NULL;
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == DIR_EXISTS_m12) {
+		fe = G_file_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
+			fe = G_file_exists_m12(tmp_str);
+		}
+		if (fe == DIR_EXISTS_m12) {
 			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m12 *) calloc_m12((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			strcpy_m12(ssr->path, tmp_str);
 			strcpy_m12(ssr->name, sess->name);
 			ssr->type_code = LH_SEGMENTED_SESS_RECS_m12;
 			ssr->flags = sess->flags;
 			ssr->parent = (void *) sess;
+			ssr->en_bloc_allocation = FALSE_m12;
 			mapped_segs = globals_m12->number_of_mapped_segments;
 			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -8342,10 +8498,20 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+				fe = G_file_exists_m12(tmp_str);
+				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+					fe = G_file_exists_m12(tmp_str);
+				}
+				if (fe == FILE_EXISTS_m12)
 					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				fe = G_file_exists_m12(tmp_str);
+				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+					fe = G_file_exists_m12(tmp_str);
+				}
+				if (fe == FILE_EXISTS_m12) {
 					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m12)
 						ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 					else  // just read in data universal header & leave open
@@ -8431,11 +8597,11 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 
 SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password)
 {
-	TERN_m12			free_session, all_channels_selected;
+	TERN_m12			free_session, all_channels_selected, fs_name_differs;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
 	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1], *regex_str;
 	ui4				type_code;
-	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, n_segs, seg_idx;
+	si4				i, j, k, n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans, mapped_segs, n_segs, seg_idx, fe;
 	si8				curr_time;
 	CHANNEL_m12			*chan;
 	UNIVERSAL_HEADER_m12		*uh;
@@ -8523,8 +8689,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	}
 
 	G_extract_path_parts_m12(chan_list[0], sess->path, NULL, NULL);
-	type_code = G_generate_MED_path_components_m12(sess->path, NULL, sess->fs_name);
-	sess->name = sess->fs_name;  // only name known at this point
+	type_code = G_generate_MED_path_components_m12(sess->path, NULL, globals_m12->fs_session_name);
+	sess->name = globals_m12->fs_session_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m12) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
@@ -8700,10 +8866,23 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			return(NULL);
 		}
 	}
+
 	// user generated channel subsets (setting password also sets global session names)
-	if (*globals_m12->uh_session_name) {
-		strcpy(sess->uh_name, globals_m12->uh_session_name);
-		sess->name = sess->uh_name;  // change name to the more generally useful version
+	fs_name_differs = UNKNOWN_m12;
+	if (*globals_m12->uh_session_name || *globals_m12->fs_session_name) {
+		if (*globals_m12->uh_session_name && *globals_m12->fs_session_name) {
+			if (strcmp(globals_m12->uh_session_name, globals_m12->fs_session_name))
+				fs_name_differs = TRUE_m12;
+			else
+				fs_name_differs = FALSE_m12;
+			sess->name = globals_m12->uh_session_name;  // default to the more generally useful version
+		} else if (*globals_m12->uh_session_name) {
+			fs_name_differs = FALSE_m12;
+			sess->name = globals_m12->uh_session_name;  // only available version
+		} else {
+			fs_name_differs = FALSE_m12;
+			sess->name = globals_m12->fs_session_name;  // only available version
+		}
 	}
 
 	// process time slice (passed slice is not modified)
@@ -8777,10 +8956,20 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+		fe = G_file_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			fe = G_file_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12)
 			sess->record_indices_fps = G_read_file_m12(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+		fe = G_file_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
+			fe = G_file_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12) {
 			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m12)
 				sess->record_data_fps = G_read_file_m12(sess->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			else  // just read in data universal header & leave open
@@ -8792,13 +8981,19 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	ssr = NULL;
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == DIR_EXISTS_m12) {
+		fe = G_file_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
+			fe = G_file_exists_m12(tmp_str);
+		}
+		if (fe == DIR_EXISTS_m12) {
 			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m12 *) calloc_m12((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			strcpy_m12(ssr->path, tmp_str);
 			strcpy_m12(ssr->name, sess->name);
 			ssr->type_code = LH_SEGMENTED_SESS_RECS_m12;
 			ssr->flags = sess->flags;
 			ssr->parent = (void *) sess;
+			ssr->en_bloc_allocation = FALSE_m12;
 			mapped_segs = globals_m12->number_of_mapped_segments;
 			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -8806,10 +9001,20 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+				fe = G_file_exists_m12(tmp_str);
+				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+					fe = G_file_exists_m12(tmp_str);
+				}
+				if (fe == FILE_EXISTS_m12)
 					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				fe = G_file_exists_m12(tmp_str);
+				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
+					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+					fe = G_file_exists_m12(tmp_str);
+				}
+				if (fe == FILE_EXISTS_m12) {
 					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m12)
 						ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 					else  // just read in data universal header & leave open
@@ -8818,7 +9023,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			}
 		}
 	}
-	
+
 	// ephemeral data
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
 		if (sess->number_of_time_series_channels) {
@@ -8926,6 +9131,7 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 	// if root_path == NULL : return T/F on path, do not modify path
 	// if root_path == path : return T/F on path, do modify path
 	// if root_path != path && root_path != NULL : return T/F on path, return path from root in root_path, leaving path unmodified
+	// quotes removed in returned string if present
 	
 	if (path == NULL) {
 		if (root_path != NULL)
@@ -8935,6 +9141,10 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 	
 	// remove formatting
 	contains_formatting = STR_contains_formatting_m12(path, tmp_path);
+	
+	// remove quotes
+	if (*tmp_path == '"')
+		STR_strip_character_m12(tmp_path, '"');
 
 #if defined MACOS_m12 || defined LINUX_m12
 	si1	*c, *c2, base_dir[FULL_FILE_NAME_BYTES_m12];
@@ -12093,186 +12303,193 @@ void	G_show_file_times_m12(FILE_TIMES_m12 *ft)
 
 void    G_show_globals_m12(void)
 {
-	si1     hex_str[HEX_STRING_BYTES_m12(sizeof(si8))];
-	si4	i;
+	si1     	hex_str[HEX_STRING_BYTES_m12(sizeof(si8))];
+	si4		i;
+	GLOBALS_m12	*globals;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	printf_m12("\nMED Globals\n-----------\n-----------\n");
-	printf_m12("\n_id: 0x%ld: ");
-	if (globals_m12->_id == 0)
-		printf_m12("no entry\n");
+	globals = globals_m12;
+	printf_m12("\nMED Globals\n-----------\n");
+	if (globals->_id == 0)
+		printf_m12("_id: no entry\n");
 	else
-		printf_m12("%ld\n");
+		printf_m12("_id: 0x%016lx\n", globals->_id);
 
 	printf_m12("\nRecord Filters\n--------------\n");
-	if (globals_m12->record_filters == NULL) {
+	if (globals->record_filters == NULL) {
 		printf_m12("no entry\n");
-	} else if (globals_m12->record_filters[0] == NO_TYPE_CODE_m12) {
+	} else if (globals->record_filters[0] == NO_TYPE_CODE_m12) {
 		printf_m12("no entry\n");
 	} else {
-		printf_m12("0x%08x\n", globals_m12->record_filters[0]);
-		for (i = 1; globals_m12->record_filters[i] != NO_TYPE_CODE_m12; ++i)
-			printf_m12(", 0x%08x", globals_m12->record_filters[i]);
+		printf_m12("0x%08x\n", globals->record_filters[0]);
+		for (i = 1; globals->record_filters[i] != NO_TYPE_CODE_m12; ++i)
+			printf_m12(", 0x%08x", globals->record_filters[i]);
 		printf_m12("\n");
 	}
 
 	printf_m12("\nCurrent Session\n---------------\n");
-	printf_m12("Session UID: 0x%lx\n", globals_m12->session_UID);
-	printf_m12("Session Directory: %s\n", globals_m12->session_directory);  // path including file system session directory name
+	if (globals->session_UID == 0)
+		printf_m12("Session UID: no_entry\n", globals->session_UID);
+	else
+		printf_m12("Session UID: 0x%016lx\n", globals->session_UID);
+	if (*globals->session_directory == 0)
+		printf_m12("Session Directory: no entry\n", globals->session_directory);
+	else
+		printf_m12("Session Directory: %s\n", globals->session_directory);  // path including file system session directory name
 	printf_m12("Session Start Time: ");
-	if (globals_m12->session_start_time == UUTC_NO_ENTRY_m12)
+	if (globals->session_start_time == UUTC_NO_ENTRY_m12)
 		printf_m12("no entry\n");
-	else if (globals_m12->session_start_time == BEGINNING_OF_TIME_m12)
+	else if (globals->session_start_time == BEGINNING_OF_TIME_m12)
 		printf_m12("beginning of time\n");
-	else if (globals_m12->session_start_time == END_OF_TIME_m12)
+	else if (globals->session_start_time == END_OF_TIME_m12)
 		printf_m12("end of time\n");
 	else
-		printf_m12("%ld\n", globals_m12->session_start_time);
+		printf_m12("%ld\n", globals->session_start_time);
 	printf_m12("Session End Time: ");
-	if (globals_m12->session_end_time == UUTC_NO_ENTRY_m12)
+	if (globals->session_end_time == UUTC_NO_ENTRY_m12)
 		printf_m12("no entry\n");
-	else if (globals_m12->session_end_time == BEGINNING_OF_TIME_m12)
+	else if (globals->session_end_time == BEGINNING_OF_TIME_m12)
 		printf_m12("beginning of time\n");
-	else if (globals_m12->session_end_time == END_OF_TIME_m12)
+	else if (globals->session_end_time == END_OF_TIME_m12)
 		printf_m12("end of time\n");
 	else
-		printf_m12("%ld\n", globals_m12->session_end_time);
-	if (globals_m12->session_name == NULL)
+		printf_m12("%ld\n", globals->session_end_time);
+	if (globals->session_name == NULL)
 		printf_m12("Session Name: NULL\n");
 	else
-		printf_m12("Session Name: %s\n", globals_m12->session_name);
-	printf_m12("\tuh_session_name: %s\n", globals_m12->uh_session_name);  // from session universal headers
-	printf_m12("\tfs_session_name: %s\n", globals_m12->fs_session_name);  // from file system (different if user created channel subset with different name)
-	printf_m12("Number of Session Samples / Frames: ");
-	if (globals_m12->number_of_session_samples == SAMPLE_NUMBER_NO_ENTRY_m12)
+		printf_m12("Session Name: %s\n", globals->session_name);
+	printf_m12("\tuh_session_name: %s\n", globals->uh_session_name);  // from session universal headers
+	printf_m12("\tfs_session_name: %s\n", globals->fs_session_name);  // from file system (different if user created channel subset with different name)
+	printf_m12("Number of Session Samples \\/ Frames: ");
+	if (globals->number_of_session_samples == SAMPLE_NUMBER_NO_ENTRY_m12)
 		printf_m12("no entry\n");
 	else
-		printf_m12("%ld\n", globals_m12->number_of_session_samples);
+		printf_m12("%ld\n", globals->number_of_session_samples);
 	printf_m12("Number of Session Segments: ");
-	if (globals_m12->number_of_session_segments == SEGMENT_NUMBER_NO_ENTRY_m12)
+	if (globals->number_of_session_segments == SEGMENT_NUMBER_NO_ENTRY_m12)
 		printf_m12("no entry\n");
 	else
-		printf_m12("%d\n", globals_m12->number_of_session_segments);
+		printf_m12("%d\n", globals->number_of_session_segments);
 	printf_m12("Number of Mapped Segments: ");
-	if (globals_m12->number_of_mapped_segments == SEGMENT_NUMBER_NO_ENTRY_m12)
+	if (globals->number_of_mapped_segments == SEGMENT_NUMBER_NO_ENTRY_m12)
 		printf_m12("no entry\n");
 	else
-		printf_m12("%d\n", globals_m12->number_of_mapped_segments);
+		printf_m12("%d\n", globals->number_of_mapped_segments);
 	printf_m12("Reference Channel Name: ");
-	if (*globals_m12->reference_channel_name == 0)
+	if (*globals->reference_channel_name == 0)
 		printf_m12("no entry\n");
 	else
-		printf_m12("%s\n", globals_m12->reference_channel_name);
+		printf_m12("%s\n", globals->reference_channel_name);
 	printf_m12("Reference Channel: ");
-	if (globals_m12->reference_channel == NULL)
+	if (globals->reference_channel == NULL)
 		printf_m12("not set\n");
 	else
 		printf_m12("set\n");
 
 	printf_m12("\nActive Channels\n---------------\n");
 	printf_m12("Time Series Frequencies Vary: ");
-	if (globals_m12->time_series_frequencies_vary == UNKNOWN_m12)
+	if (globals->time_series_frequencies_vary == UNKNOWN_m12)
 		printf_m12("unknown\n");
-	else if (globals_m12->time_series_frequencies_vary == TRUE_m12)
+	else if (globals->time_series_frequencies_vary == TRUE_m12)
 		printf_m12("true\n");
-	else if (globals_m12->time_series_frequencies_vary == FALSE_m12)
+	else if (globals->time_series_frequencies_vary == FALSE_m12)
 		printf_m12("false\n");
 	else
-		printf_m12("%hhd\n", globals_m12->time_series_frequencies_vary);
-	if (globals_m12->minimum_time_series_frequency == FREQUENCY_NO_ENTRY_m12)
+		printf_m12("%hhd\n", globals->time_series_frequencies_vary);
+	if (globals->minimum_time_series_frequency == FREQUENCY_NO_ENTRY_m12)
 		printf_m12("Minimum Time Series Frequency: no entry\n");
 	else
-		printf_m12("Minimum Time Series Frequency: %lf\n", globals_m12->minimum_time_series_frequency);
-	if (globals_m12->maximum_time_series_frequency == FREQUENCY_NO_ENTRY_m12)
+		printf_m12("Minimum Time Series Frequency: %lf\n", globals->minimum_time_series_frequency);
+	if (globals->maximum_time_series_frequency == FREQUENCY_NO_ENTRY_m12)
 		printf_m12("Maximum Time Series Frequency: no entry\n");
 	else
-		printf_m12("Maximum Time Series Frequency: %lf\n", globals_m12->maximum_time_series_frequency);
-	if (globals_m12->minimum_time_series_frequency_channel == NULL)
+		printf_m12("Maximum Time Series Frequency: %lf\n", globals->maximum_time_series_frequency);
+	if (globals->minimum_time_series_frequency_channel == NULL)
 		printf_m12("Minimum Time Series Frequency Channel: no entry\n");
 	else
-		printf_m12("Minimum Time Series Frequency Channel Name: %s\n", globals_m12->minimum_time_series_frequency_channel->name);
-	if (globals_m12->maximum_time_series_frequency_channel == NULL)
+		printf_m12("Minimum Time Series Frequency Channel Name: %s\n", globals->minimum_time_series_frequency_channel->name);
+	if (globals->maximum_time_series_frequency_channel == NULL)
 		printf_m12("Maximum Time Series Frequency Channel: no entry\n");
 	else
-		printf_m12("Maximum Time Series Frequency Channel Name: %s\n", globals_m12->maximum_time_series_frequency_channel->name);
+		printf_m12("Maximum Time Series Frequency Channel Name: %s\n", globals->maximum_time_series_frequency_channel->name);
 	printf_m12("Video Frame Rates Vary: ");
-	if (globals_m12->video_frame_rates_vary == UNKNOWN_m12)
+	if (globals->video_frame_rates_vary == UNKNOWN_m12)
 		printf_m12("unknown\n");
-	else if (globals_m12->video_frame_rates_vary == TRUE_m12)
+	else if (globals->video_frame_rates_vary == TRUE_m12)
 		printf_m12("true\n");
-	else if (globals_m12->video_frame_rates_vary == FALSE_m12)
+	else if (globals->video_frame_rates_vary == FALSE_m12)
 		printf_m12("false\n");
 	else
-		printf_m12("%hhd\n", globals_m12->video_frame_rates_vary);
-	if (globals_m12->minimum_video_frame_rate == FREQUENCY_NO_ENTRY_m12)
+		printf_m12("%hhd\n", globals->video_frame_rates_vary);
+	if (globals->minimum_video_frame_rate == FREQUENCY_NO_ENTRY_m12)
 		printf_m12("Minimum Video Frame Rate: no entry\n");
 	else
-		printf_m12("Minimum Video Frame Rate: %lf\n", globals_m12->minimum_video_frame_rate);
+		printf_m12("Minimum Video Frame Rate: %lf\n", globals->minimum_video_frame_rate);
 	if (globals_m12->maximum_video_frame_rate == FREQUENCY_NO_ENTRY_m12)
 		printf_m12("Maximum Video Frame Rate: no entry\n");
 	else
-		printf_m12("Minimum Video Frame Rate: %lf\n", globals_m12->maximum_video_frame_rate);
-	if (globals_m12->minimum_video_frame_rate_channel == NULL)
+		printf_m12("Minimum Video Frame Rate: %lf\n", globals->maximum_video_frame_rate);
+	if (globals->minimum_video_frame_rate_channel == NULL)
 		printf_m12("Minimum Video Frame Rate Channel: no entry\n");
 	else
-		printf_m12("Minimum Video Frame Rate Channel Name: %s\n", globals_m12->minimum_video_frame_rate_channel->name);
-	if (globals_m12->maximum_video_frame_rate_channel == NULL)
+		printf_m12("Minimum Video Frame Rate Channel Name: %s\n", globals->minimum_video_frame_rate_channel->name);
+	if (globals->maximum_video_frame_rate_channel == NULL)
 		printf_m12("Maximum Video Frame Rate Channel: no entry\n");
 	else
-		printf_m12("Maximum Video Frame Rate Channel Name: %s\n", globals_m12->maximum_video_frame_rate_channel->name);
+		printf_m12("Maximum Video Frame Rate Channel Name: %s\n", globals->maximum_video_frame_rate_channel->name);
 
 	printf_m12("\nTime Constants\n--------------\n");
-	printf_m12("time_constants_set: %hhd\n", globals_m12->time_constants_set);
-	printf_m12("RTO_known: %hhd\n", globals_m12->RTO_known);
-	printf_m12("observe_DST: %hhd\n", globals_m12->observe_DST);
-	printf_m12("recording_time_offset: %ld\n", globals_m12->recording_time_offset);
-	printf_m12("standard_UTC_offset: %d\n", globals_m12->standard_UTC_offset);
-	printf_m12("standard_timezone_acronym: %s\n", globals_m12->standard_timezone_acronym);
-	printf_m12("standard_timezone_string: %s\n", globals_m12->standard_timezone_string);
-	printf_m12("daylight_timezone_acronym: %s\n", globals_m12->daylight_timezone_acronym);
-	printf_m12("daylight_timezone_string: %s\n", globals_m12->daylight_timezone_string);
-	STR_generate_hex_string_m12((ui1 *) &globals_m12->daylight_time_start_code.value, 8, hex_str);
+	printf_m12("time_constants_set: %hhd\n", globals->time_constants_set);
+	printf_m12("RTO_known: %hhd\n", globals->RTO_known);
+	printf_m12("observe_DST: %hhd\n", globals->observe_DST);
+	printf_m12("recording_time_offset: %ld\n", globals->recording_time_offset);
+	printf_m12("standard_UTC_offset: %d\n", globals->standard_UTC_offset);
+	printf_m12("standard_timezone_acronym: %s\n", globals->standard_timezone_acronym);
+	printf_m12("standard_timezone_string: %s\n", globals->standard_timezone_string);
+	printf_m12("daylight_timezone_acronym: %s\n", globals->daylight_timezone_acronym);
+	printf_m12("daylight_timezone_string: %s\n", globals->daylight_timezone_string);
+	STR_generate_hex_string_m12((ui1 *) &globals->daylight_time_start_code.value, 8, hex_str);
 	printf_m12("daylight_time_start_code: %s\n", hex_str);
-	STR_generate_hex_string_m12((ui1 *) &globals_m12->daylight_time_end_code.value, 8, hex_str);
+	STR_generate_hex_string_m12((ui1 *) &globals->daylight_time_end_code.value, 8, hex_str);
 	printf_m12("daylight_time_end_code: %s\n", hex_str);
 	
 	printf_m12("\nAlignment Fields\n----------------\n");
-	printf_m12("universal_header_aligned: %hhd\n", globals_m12->universal_header_aligned);
-	printf_m12("metadata_section_1_aligned: %hhd\n", globals_m12->metadata_section_1_aligned);
-	printf_m12("time_series_metadata_section_2_aligned: %hhd\n", globals_m12->time_series_metadata_section_2_aligned);
-	printf_m12("video_metadata_section_2_aligned: %hhd\n", globals_m12->video_metadata_section_2_aligned);
-	printf_m12("metadata_section_3_aligned: %hhd\n", globals_m12->metadata_section_3_aligned);
-	printf_m12("all_metadata_structures_aligned: %hhd\n", globals_m12->all_metadata_structures_aligned);
-	printf_m12("time_series_indices_aligned: %hhd\n", globals_m12->time_series_indices_aligned);
-	printf_m12("video_indices_aligned: %hhd\n", globals_m12->video_indices_aligned);
-	printf_m12("CMP_block_header_aligned: %hhd\n", globals_m12->CMP_block_header_aligned);
-	printf_m12("record_header_aligned: %hhd\n", globals_m12->record_header_aligned);
-	printf_m12("record_indices_aligned: %hhd\n", globals_m12->record_indices_aligned);
-	printf_m12("all_record_structures_aligned: %hhd\n", globals_m12->all_record_structures_aligned);
-	printf_m12("all_structures_aligned: %hhd\n", globals_m12->all_structures_aligned);
+	printf_m12("universal_header_aligned: %hhd\n", globals->universal_header_aligned);
+	printf_m12("metadata_section_1_aligned: %hhd\n", globals->metadata_section_1_aligned);
+	printf_m12("time_series_metadata_section_2_aligned: %hhd\n", globals->time_series_metadata_section_2_aligned);
+	printf_m12("video_metadata_section_2_aligned: %hhd\n", globals->video_metadata_section_2_aligned);
+	printf_m12("metadata_section_3_aligned: %hhd\n", globals->metadata_section_3_aligned);
+	printf_m12("all_metadata_structures_aligned: %hhd\n", globals->all_metadata_structures_aligned);
+	printf_m12("time_series_indices_aligned: %hhd\n", globals->time_series_indices_aligned);
+	printf_m12("video_indices_aligned: %hhd\n", globals->video_indices_aligned);
+	printf_m12("CMP_block_header_aligned: %hhd\n", globals->CMP_block_header_aligned);
+	printf_m12("record_header_aligned: %hhd\n", globals->record_header_aligned);
+	printf_m12("record_indices_aligned: %hhd\n", globals->record_indices_aligned);
+	printf_m12("all_record_structures_aligned: %hhd\n", globals->all_record_structures_aligned);
+	printf_m12("all_structures_aligned: %hhd\n", globals->all_structures_aligned);
 	
 	printf_m12("\nError\n-------------\n");
-	printf_m12("err_code: %d\n", globals_m12->err_code);
-	if (globals_m12->err_code) {
-		printf_m12("err_func: %s\n", globals_m12->err_func);
-		printf_m12("err_line: %s\n", globals_m12->err_line);
+	printf_m12("err_code: %d\n", globals->err_code);
+	if (globals->err_code) {
+		printf_m12("err_func: %s\n", globals->err_func);
+		printf_m12("err_line: %s\n", globals->err_line);
 	}
 
 	printf_m12("\nMiscellaneous\n-------------\n");
-	printf_m12("file_creation_umask: %u\n", globals_m12->file_creation_umask);
-	printf_m12("time_series_data_encryption_level: %hhd\n", globals_m12->time_series_data_encryption_level);
-	printf_m12("CRC_mode: %u\n", globals_m12->CRC_mode);
-	printf_m12("verbose: %hhd\n", globals_m12->verbose);
-	printf_m12("behavior_on_fail: %u\n", globals_m12->behavior_on_fail);
-	printf_m12("level_header_flags: %lu\n", globals_m12->level_header_flags);
+	printf_m12("file_creation_umask: %u\n", globals->file_creation_umask);
+	printf_m12("time_series_data_encryption_level: %hhd\n", globals->time_series_data_encryption_level);
+	printf_m12("CRC_mode: %u\n", globals->CRC_mode);
+	printf_m12("verbose: %hhd\n", globals->verbose);
+	printf_m12("behavior_on_fail: %u\n", globals->behavior_on_fail);
+	printf_m12("level_header_flags: %lu\n", globals->level_header_flags);
 	printf_m12("mmap_block_bytes: ");
-	if (globals_m12->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12)
+	if (globals->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12)
 		printf_m12("no entry\n");
 	else
-		printf_m12("%d\n", globals_m12->mmap_block_bytes);
+		printf_m12("%d\n", globals->mmap_block_bytes);
 	
 	printf_m12("\n");
 	
@@ -31494,7 +31711,7 @@ TERN_m12	PROC_adjust_open_file_limit_m12(si4 new_limit, TERN_m12 verbose_flag)
 	#endif
 	
 	#ifdef WINDOWS_m12
-	if (_setmaxstdio((int) new_limit) == -1)  // change open file limit
+	if (_setmaxstdio(new_limit) == -1)  // change open file limit
 		ret_val = FALSE_m12;
 	#endif
 
@@ -34562,27 +34779,30 @@ TRANSMISSION_HEADER_NOT_ALIGNED_m12:
 
 void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 {
-	ui1	buffer[8];
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+// ??? shutdown screwing up TCP close, shutdown necessary?
 	// TCP: receiver should initiate closure, send should wait for it
-	if ((trans_info->header->flags & TR_FLAGS_UDP_m12) == 0) {  // TCP bit == zero
-		if (trans_info->mode == TR_MODE_SEND_m12) {
-			TR_set_socket_blocking_m12(trans_info, TRUE_m12);  // in case socket is non-blocking
-			// not expecting any further transmissions, so should block until socket closes
-			recv(trans_info->sock_fd, (void *) buffer, 8, 0);
-		}
-	}
+//	if ((trans_info->header->flags & TR_FLAGS_UDP_m12) == 0) {  // TCP bit == zero
+//		if (trans_info->mode == TR_MODE_SEND_m12) {
+//			ui1	buffer[8];
+//			TR_set_socket_blocking_m12(trans_info, TRUE_m12);  // in case socket is non-blocking
+//			// not expecting any further transmissions, so should block until socket closes
+//			recv(trans_info->sock_fd, (void *) buffer, 8, 0);
+//		}
+//	}
 
 #if defined MACOS_m12 || defined LINUX_m12
-	shutdown(trans_info->sock_fd, SHUT_RDWR);
+	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m12)
+		shutdown(trans_info->sock_fd, SHUT_RDWR);
 	close(trans_info->sock_fd);
 #endif
 #ifdef WINDOWS_m12
-	shutdown(trans_info->sock_fd, SD_BOTH);
+	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m12)
+		shutdown(trans_info->sock_fd, SD_BOTH);
 	closesocket(trans_info->sock_fd);
 #endif
 	trans_info->sock_fd = -1;
@@ -35467,7 +35687,7 @@ void	TR_show_transmission_m12(TR_INFO_m12 *trans_info)
 		printf_m12("Mode: receive\n");
 	else if (trans_info->mode == TR_MODE_NONE_m12)
 		printf_m12("Mode: not set\n");
-	else if (trans_info->mode == TR_MODE_CLOSE_m12)
+	else if (trans_info->mode == TR_MODE_FORCE_CLOSE_m12)
 		printf_m12("Mode: force close\n");
 	else
 		printf_m12("Mode: invalid value (%hhu)\n", trans_info->mode);
@@ -37554,7 +37774,10 @@ TERN_m12	freeable_m12(void *address)
 	// Windows stack base < heap base & generally grows toward heap base (per internet this may not always be true, but I have never seen it happen)
 	// if getting unexpected results, consider compiling with AT_DEBUG_m12 to track down where errors occur
 	// NOTE: not tested under 32-bit hardware or compilation
-	       
+
+	if (address == NULL)
+		return(FALSE_m12);
+
 #ifdef AT_DEBUG_m12
 	return(AT_freeable_m12(address));
 #endif
@@ -37567,9 +37790,14 @@ TERN_m12	freeable_m12(void *address)
 	hw_params = &global_tables_m12->HW_params;
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m12);
+#ifdef MATLAB_m12  // true heap base in Matlab is from Matlab itself and so far below first allocated medlib variable
+	if (address_val == 0)
+		return(FALSE_m12);
+#else
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
-	
+#endif
+
 #ifdef MACOS_m12
 	// check if address in allocation table
 	if (malloc_size_m12(address))
@@ -37583,15 +37811,15 @@ TERN_m12	freeable_m12(void *address)
 	level_header = (LEVEL_HEADER_m12 *) address;
 
 #ifdef LINUX_m12
-	// check that level_header->type_code can be dereferenced
-	ui4			type_code = NO_TYPE_CODE_m12;
+	// check that level_header->type_code can be dereferenced (type_code first element - so doesn't have to be a level header)
+	ui4			type_code = 0xFFFFFFFF;
 	sig_handler_t_m12	current_handler;
 	
 	current_handler = signal(SIGSEGV, SIG_IGN);
 	type_code = *((ui4 *) &level_header->type_code);
 	signal(SIGSEGV, current_handler);
 	
-	if (type_code == NO_TYPE_CODE_m12)
+	if (type_code == 0xFFFFFFFF)
 		return(FALSE_m12);
 #endif
 	
@@ -37611,6 +37839,7 @@ TERN_m12	freeable_m12(void *address)
 		case LH_VIDEO_CHANNEL_m12:
 		case LH_TIME_SERIES_SEGMENT_m12:
 		case LH_VIDEO_SEGMENT_m12:
+		case LH_SEGMENTED_SESS_RECS_m12:
 			if (G_en_bloc_allocation_m12(level_header) == TRUE_m12)
 				return(FALSE_m12);
 			return(TRUE_m12);
