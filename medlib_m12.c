@@ -8203,6 +8203,8 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			return(NULL);
 		}
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
+		if (type_code == NO_TYPE_CODE_m12)
+			type_code = G_add_level_extension_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 				++n_ts_chans;
@@ -8641,6 +8643,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			n_chans = 1;
 		} else {  // directory passed: NULL channel list
 			type_code = G_MED_type_code_from_string_m12((si1 *) file_list);
+			if (type_code == NO_TYPE_CODE_m12)
+				type_code = G_add_level_extension_m12((si1 *) file_list);
 			switch (type_code) {
 				case SESSION_DIRECTORY_TYPE_CODE_m12:  // session directory passed: NULL channel list
 					all_channels_selected = TRUE_m12;
@@ -8710,6 +8714,8 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			return(NULL);
 		}
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
+		if (type_code == NO_TYPE_CODE_m12)
+			type_code = G_add_level_extension_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 				++n_ts_chans;
