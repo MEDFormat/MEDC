@@ -125,11 +125,10 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	si1		full_path[FULL_FILE_NAME_BYTES_m12], enclosing_dir[FULL_FILE_NAME_BYTES_m12];
 	si1		base_name[SEGMENT_BASE_FILE_NAME_BYTES_m12], *extension;
 	ui4		type_code;
-	size_t		available_bytes, required_bytes;
 	
 	
 	// returns type code of existing level
-	// appends extension to passed directory_name (if possible)
+	// appends extension to passed directory_name (enough space assumed to be available)
 	
 	G_path_from_root_m12(directory_name, full_path);
 	G_extract_path_parts_m12(full_path, enclosing_dir, base_name, NULL);
@@ -197,18 +196,11 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	
 ADD_LEVEL_EXTENSION_MATCH_m12:
 	
-	if (freeable_m12(directory_name) == FALSE_m12) {
-		G_warning_message_m12("%s(): cannot modify statically allocated string => returning type code\n", __FUNCTION__);
-	} else {
-		available_bytes = malloc_size_m12((void *) directory_name);
-		required_bytes = strlen(directory_name) + TYPE_BYTES_m12;
-		if (available_bytes < required_bytes)
-			G_warning_message_m12("%s(): not enough space to modify input string => returning type code\n", __FUNCTION__);
-		else if (from_root == TRUE_m12)
-			sprintf_m12(directory_name, "%s/%s.%s", enclosing_dir, base_name, extension);
-		else
-			sprintf_m12(directory_name, "%s.%s", base_name, extension);
-	}
+	// attempt to append extension (may cause seg fault or memory corruption)
+	if (from_root == TRUE_m12)
+		sprintf_m12(directory_name, "%s/%s.%s", enclosing_dir, base_name, extension);
+	else
+		sprintf_m12(directory_name, "%s.%s", base_name, extension);
 	
 	return(type_code);
 }
@@ -8165,6 +8157,11 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	} else {  // channel list passed: NULL session directory
 		chan_list = (si1 **) file_list;
 		n_chans = list_len;
+		for (i = 0; i < list_len; ++i) {
+			type_code = G_MED_type_code_from_string_m12(chan_list[i]);
+			if (type_code == NO_TYPE_CODE_m12)
+				type_code = G_add_level_extension_m12(chan_list[i]);
+		}
 	}
 #if defined MACOS_m12 || defined LINUX_m12
 	regex_str = "[tv]icd";  // more specific (than Windows)
@@ -8203,8 +8200,6 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			return(NULL);
 		}
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
-		if (type_code == NO_TYPE_CODE_m12)
-			type_code = G_add_level_extension_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 				++n_ts_chans;
@@ -8674,6 +8669,11 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	} else {  // channel list passed: NULL session directory
 		chan_list = (si1 **) file_list;
 		n_chans = list_len;
+		for (i = 0; i < list_len; ++i) {
+			type_code = G_MED_type_code_from_string_m12(chan_list[i]);
+			if (type_code == NO_TYPE_CODE_m12)
+				type_code = G_add_level_extension_m12(chan_list[i]);
+		}
 	}
 	
 #if defined MACOS_m12 || defined LINUX_m12
@@ -8714,8 +8714,6 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			return(NULL);
 		}
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
-		if (type_code == NO_TYPE_CODE_m12)
-			type_code = G_add_level_extension_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 				++n_ts_chans;
