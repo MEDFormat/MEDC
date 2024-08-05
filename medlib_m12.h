@@ -112,7 +112,7 @@
 			#define WIN32
 		#endif
 		#include <winsock2.h>
-		// #pragma comment(lib, "ws2_32.lib") // link with Ws2_32.lib (required, but repeated below for other libs)
+		// #pragma comment(lib, "ws2_32.lib")  // link with Ws2_32.lib (required, but repeated below for other libs)
 	#endif
 	#include <windows.h>
 	#include <io.h>
@@ -187,8 +187,6 @@
 #ifdef MATLAB_m12
 	#include "mex.h"
 	#include "matrix.h"
-//	#pragma comment(lib, "libmwservices.lib")  // link with libmwservices & libmwbuiltins
-//	extern bool ioFlush(void);  // fflush for mexPrintf() buffer
 #endif
 #ifdef DATABASE_m12
 	#include <libpq-fe.h>  //  postgres header
