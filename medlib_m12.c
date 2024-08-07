@@ -4841,6 +4841,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		for (i = 0; i < n_in_files; ++i) {
 			STR_escape_chars_m12(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m12);  // escape spaces
 			STR_escape_chars_m12(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m12);  // escape apostrophes
+			STR_escape_chars_m12(file_list[i], (si1) 0x60, FULL_FILE_NAME_BYTES_m12);  // escape graves
 			len = sprintf(tmp_command, "%s %s", command, file_list[i]);
 			memcpy((void *) command, (void *) tmp_command, ++len);
 			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m12) {
@@ -4984,6 +4985,7 @@ ui4    G_generate_MED_path_components_m12(si1 *path, si1 *MED_dir, si1 *MED_name
 	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
 	STR_unescape_chars_m12(local_MED_dir, (si1) 0x20);  // spaces
 	STR_unescape_chars_m12(local_MED_dir, (si1) 0x27);  // apostrophes
+	STR_unescape_chars_m12(local_MED_dir, (si1) 0x60);  // graves
 	G_path_from_root_m12(local_MED_dir, local_MED_dir);
 
 	// check path: if file passed, get enclosing directory
