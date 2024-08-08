@@ -1029,7 +1029,7 @@ typedef struct {
 #define LH_UPDATE_EPHEMERAL_DATA_m12			((ui8) 1 << 2)	// signal to higher level from lower level (reset by higher level after update)
 
 // session level
-#define LH_SESSION_OPEN_m12				((ui8) 1 << 8)
+#define LH_SESSION_OPEN_m12				((ui8) 1 << 7)
 #define LH_INCLUDE_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 8)
 #define LH_INCLUDE_VIDEO_CHANNELS_m12			((ui8) 1 << 9)
 #define LH_MAP_ALL_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 12)
@@ -3707,7 +3707,7 @@ void    FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs);
 #define DM_INTRP_BINTRP_MASK_d1		      ( DM_INTRP_BINTRP_MDPT_m12 | DM_INTRP_BINTRP_MEAN_m12 | DM_INTRP_BINTRP_MEDN_m12 | DM_INTRP_BINTRP_FAST_m12 )
 #define DM_INTRP_MASK_m12	              (	DM_INTRP_LINEAR_m12 | DM_INTRP_MAKIMA_m12 | DM_INTRP_SPLINE_m12 | DM_INTRP_UP_MAKIMA_DN_LINEAR_m12 | DM_INTRP_UP_SPLINE_DN_LINEAR_m12 | DM_INTRP_BINTRP_MASK_d1 )
 #define DM_TRACE_RANGES_m12			((ui8) 1 << 40)		// return bin minima & maxima (equal in size, type, & format to data matrix)
-#define DM_TRACE_EXTREMA_m12			((ui8) 1 << 41)		// return minima & maxima values also (minimum & maximum per channel, same type as data matrix)
+#define DM_TRACE_EXTREMA_m12			((ui8) 1 << 41)		// return minima & maxima values in put traces as two arrays (minimum & maximum per channel, same type as data matrix)
 #define DM_DETREND_m12				((ui8) 1 << 42)		// detrend traces (and trace range matrices if DM_TRACE_RANGES_m12 is set)
 #define DM_DSCNT_CONTIG_m12			((ui8) 1 << 48)		// return contiguons
 #define DM_DSCNT_NAN_m12			((ui8) 1 << 49)		// fill absent samples with NaNs (locations specified in returned arrays)
