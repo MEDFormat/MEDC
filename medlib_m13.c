@@ -96,13 +96,111 @@
 #include "medlib_m13.h"
 
 // Globals (tagged in case using with other versions of the library)
+#ifdef MATLAB_m13
+// "static" qualifier necessary for Matlab to maintain values between mex calls
+// limits scope to current file - prevents linking across compiled libraries
 GLOBALS_m13		*globals_m13 = NULL;
 pthread_mutex_t_m13	globals_mutex_m13;  // tagged in case using with other versions of the library
+#else
+GLOBALS_m13		*globals_m13 = NULL;
+pthread_mutex_t_m13	globals_mutex_m13;  // tagged in case using with other versions of the library
+#endif
 
 
 //*********************************//
 // MARK: GENERAL MED FUNCTIONS  (G)
 //*********************************//
+
+
+ui4 	G_add_level_extension_m13(si1 *directory_name)
+{
+	TERN_m13	from_root;
+	si1		full_path[FULL_FILE_NAME_BYTES_m13], enclosing_dir[FULL_FILE_NAME_BYTES_m13];
+	si1		base_name[SEGMENT_BASE_FILE_NAME_BYTES_m13], *extension;
+	ui4		type_code;
+	size_t		available_bytes, required_bytes;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// returns type code of existing level
+	// appends extension to passed directory_name (enough space assumed to be available)
+
+	G_path_from_root_m13(directory_name, full_path);
+	G_extract_path_parts_m13(full_path, enclosing_dir, base_name, NULL);
+	
+	from_root = FALSE_m13;
+	if (*directory_name == *full_path) {
+		#ifdef WINDOWS_m13
+		// first character not necessarily enough in Windows: e.g. "Channel_1" & "C:\"
+		if (*(directory_name + 1) == *(full_path + 1))
+			from_root = TRUE_m13;
+		#else
+		from_root = TRUE_m13;
+		#endif
+	}
+		
+	// try session
+	extension = SESSION_DIRECTORY_TYPE_STRING_m13;
+	sprintf_m13(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m13(full_path) == DIR_EXISTS_m13) {
+		type_code = SESSION_DIRECTORY_TYPE_CODE_m13;
+		goto ADD_LEVEL_EXTENSION_MATCH_m13;
+	}
+
+	// try time series channel
+	extension = TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13;
+	sprintf_m13(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m13(full_path) == DIR_EXISTS_m13) {
+		type_code = TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13;
+		goto ADD_LEVEL_EXTENSION_MATCH_m13;
+	}
+
+	// try video series channel
+	extension = VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13;
+	sprintf_m13(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m13(full_path) == DIR_EXISTS_m13) {
+		type_code = VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13;
+		goto ADD_LEVEL_EXTENSION_MATCH_m13;
+	}
+
+	// try time series segment
+	extension = TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13;
+	sprintf_m13(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m13(full_path) == DIR_EXISTS_m13) {
+		type_code = TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13;
+		goto ADD_LEVEL_EXTENSION_MATCH_m13;
+	}
+
+	// try video series segment
+	extension = VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13;
+	sprintf_m13(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m13(full_path) == DIR_EXISTS_m13) {
+		type_code = VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13;
+		goto ADD_LEVEL_EXTENSION_MATCH_m13;
+	}
+
+	// try segmented session records
+	extension = RECORD_DIRECTORY_TYPE_STRING_m13;
+	sprintf_m13(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
+	if (G_file_exists_m13(full_path) == DIR_EXISTS_m13) {
+		type_code = RECORD_DIRECTORY_TYPE_CODE_m13;
+		goto ADD_LEVEL_EXTENSION_MATCH_m13;
+	}
+
+	return_m13(NO_TYPE_CODE_m13);
+	
+ADD_LEVEL_EXTENSION_MATCH_m13:
+	
+	// attempt to append extension (may cause seg fault or memory corruption)
+	if (from_root == TRUE_m13)
+		sprintf_m13(directory_name, "%s/%s.%s", enclosing_dir, base_name, extension);
+	else
+		sprintf_m13(directory_name, "%s.%s", base_name, extension);
+	
+	return_m13(type_code);
+}
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
@@ -1281,8 +1379,9 @@ tern    G_calculate_time_series_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps)
 
 CHANNEL_m13	*G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si1 *chan_name, si1 chan_type)
 {
-	tern		use_default_channel;
+	tern			use_default_channel;
 	si8			i, n_chans;
+	size_t			bytes;
 	CHANNEL_m13		*tmp_chan;
 	PROC_GLOBALS_m13	*proc_globals;
 	
@@ -1301,13 +1400,12 @@ CHANNEL_m13	*G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan
 		return_m13(NULL);
 	}
 
-	// reference channel already set
+	// reference channel passed
 	if (chan != NULL) {
-		if (chan == proc_globals->reference_channel) {
-			if (*proc_globals->reference_channel_name == 0)
-				strcpy(proc_globals->reference_channel_name, chan->name);
-			return_m13(NULL);
-		}
+		proc_globals->reference_channel = chan;
+		if (*proc_globals->reference_channel_name == 0)
+			strcpy(proc_globals->reference_channel_name, chan->name);
+		return_m13(chan);
 	}
 
 	use_default_channel = FALSE_m13;
@@ -1398,13 +1496,14 @@ CHANGE_REF_MATCH_m13:
 	proc_globals->reference_channel = chan;
 	strcpy(proc_globals->reference_channel_name, chan->name);
 	
-	// reset session Sgmt records
-	if (sess->Sgmt_records != NULL)
-		free_m13((void *) sess->Sgmt_records);
-	sess->Sgmt_records = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
+	if (chan->Sgmt_records == NULL)
+		chan->Sgmt_records = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
+	// copy to session Sgmt records
+	bytes = (size_t) proc_globals->number_of_session_segments * sizeof(Sgmt_RECORD_m13);
 	if (sess->Sgmt_records == NULL)
-		return_m13(NULL);
-	
+		sess->Sgmt_records = (Sgmt_RECORD_m13 *) malloc_m12(bytes);
+	memcpy((void *) sess->Sgmt_records, (void *) channel->Sgmt_records, bytes);
+
 	return_m13(chan);
 }
 
@@ -1603,6 +1702,80 @@ tern	G_check_password_m13(si1 *password)
 		
 	// return TRUE_m13 for valid password
 	return_m13(TRUE_m13);
+}
+
+
+si4	G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess)
+{
+	si4 			start_seg, end_seg, seg_idx, first_mapped_seg, last_mapped_seg;
+	si4			remapped_start_seg, remapped_end_seg, remapped_seg_cnt;
+	si4			i, j, offset, mapped_segs, sess_segs;
+	CHANNEL_m13		*chan;
+	SEGMENT_m13		**remapped_segs;
+	PROC_GLOBALS_m13	*proc_globals;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns offset of start_segment_number into segments array
+	// if segment range needs to be remapped, this is done before return
+	// call from read_session_m13() before any channel reading to avoid any conflicts with threads if remapping required
+	// returns (si4) FALSE_m13 on error
+
+	start_seg = slice->start_segment_number;
+	end_seg = slice->end_segment_number;
+	if (start_seg == SEGMENT_NUMBER_NO_ENTRY_m13 || end_seg == SEGMENT_NUMBER_NO_ENTRY_m13) {
+		G_warning_message_m13("%s(): segment range not fully specified => returning false\n", __FUNCTION__);
+		return_m13((si4) FALSE_m13);
+	}
+	
+	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) sess);
+	sess_segs = proc_globals->number_of_session_segments;
+	if (start_seg < 1 || end_seg > sess_segs) {
+		G_warning_message_m13("%s(): segment range not valid => returning false\n", __FUNCTION__);
+		return_m13((si4) FALSE_m13);
+	}
+
+	// all segments mapped
+	mapped_segs = proc_globals->number_of_mapped_segments;
+	if (mapped_segs == sess_segs)
+		if (start_seg >= 1 && end_seg <= sess_segs)
+			return_m13(start_seg - 1);
+	
+	first_mapped_seg = proc_globals->first_mapped_segment_number;
+	last_mapped_seg = (first_mapped_seg + mapped_segs) - 1;
+	if (start_seg >= first_mapped_seg && end_seg <= last_mapped_seg)
+		return_m13(start_seg - first_mapped_seg);
+	
+	// remapping required
+	remapped_start_seg = (start_seg < first_mapped_seg) ? start_seg : first_mapped_seg;
+	remapped_end_seg = (end_seg > last_mapped_seg) ? end_seg : last_mapped_seg;
+	remapped_seg_cnt = (remapped_end_seg - remapped_start_seg) + 1;
+	for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+		chan = sess->time_series_channels[i];
+		remapped_segs = (SEGMENT_m13 **) calloc_m13((size_t) remapped_seg_cnt, sizeof(SEGMENT_m13 *));
+		offset = first_mapped_seg - remapped_start_seg;
+		for (j = 0; j < mapped_segs; ++j, ++offset)
+			remapped_segs[offset] = chan->segments[j];
+		free_m13((void *) chan->segments);
+		chan->segments = remapped_segs;
+	}
+	for (i = 0; i < sess->number_of_video_channels; ++i) {
+		chan = sess->video_channels[i];
+		remapped_segs = (SEGMENT_m13 **) calloc_m13((size_t) remapped_seg_cnt, sizeof(SEGMENT_m13 *));
+		offset = first_mapped_seg - remapped_start_seg;
+		for (j = 0; j < mapped_segs; ++j, ++offset)
+			remapped_segs[offset] = chan->segments[j];
+		free_m13((void *) chan->segments);
+		chan->segments = remapped_segs;
+	}
+
+	proc_globals->first_mapped_segment_number = remapped_start_seg;
+	proc_globals->number_of_mapped_segments = remapped_seg_cnt;
+	seg_idx = first_mapped_seg - remapped_start_seg;
+
+	return_m13(seg_idx);
 }
 
 
@@ -3575,7 +3748,7 @@ si8	G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode)  // returns index c
 				while (tsi[--i].start_sample_number > target);
 			}
 		}
-	} else {  // LEVEL_VIDEO_SEGMENT_m13
+	} else {  // LH_VIDEO_SEGMENT_m13
 		vi = seg->video_indices_fps->video_indices;
 		if (mode == TIME_SEARCH_m13) {
 			seg_start_time = seg->video_indices_fps->universal_header->segment_start_time;
@@ -4459,23 +4632,40 @@ void    G_free_globals_m13(tern cleanup_for_exit)
 	}
 			
 	if (globals_m13->behavior_stacks != NULL) {
+	#ifdef MATLAB_PERSISTENT_m12
+		for (i = 0; i < globals_m13->n_behavior_stacks; ++i)
+			mxFree((void *) globals_m13->behavior_stacks[i].stack);
+		mxFree((void *) globals_m13->behavior_stacks);
+	#else
 		for (i = 0; i < globals_m13->n_behavior_stacks; ++i)
 			free((void *) globals_m13->behavior_stacks[i].stack);
 		free((void *) globals_m13->behavior_stacks);
+	#endif
 	}
 	PROC_pthread_mutex_destroy_m13(&globals_m13->behavior_stacks_mutex);
 
 #ifdef FN_DEBUG_m13
 	if (globals_m13->function_stacks != NULL) {
+	#ifdef MATLAB_PERSISTENT_m12
+		for (i = 0; i < globals_m13->n_function_stacks; ++i)
+			mxFree((void *) globals_m13->function_stacks[i].stack);
+		mxFree((void *) globals_m13->function_stacks);
+	#else
 		for (i = 0; i < globals_m13->n_function_stacks; ++i)
 			free((void *) globals_m13->function_stacks[i].stack);
 		free((void *) globals_m13->function_stacks);
+	#endif
 	}
 	PROC_pthread_mutex_destroy_m13(&globals_m13->function_stacks_mutex);
 #endif
 
-	if (globals_m13->proc_globals_info.list != NULL)
+	if (globals_m13->proc_globals_info.list != NULL) {
+	#ifdef MATLAB_PERSISTENT_m12
+		mxFree((void *) globals_m13->proc_globals_info.list);
+	#else
 		free((void *) globals_m13->proc_globals_info.list);
+	#endif
+	}
 	PROC_pthread_mutex_destroy_m13(&globals_m13->proc_globals_info.mutex);
 	
 #ifdef AT_DEBUG_m13
@@ -4837,7 +5027,7 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		}
 	}
 	
-	// copy incoming arguments so as not to modify, and in case they are const type
+	// copy incoming arguments so as not to modify, and in case they are statically allocated
 	if (enclosing_directory == NULL)
 		*tmp_enclosing_directory = 0;
 	else
@@ -4934,18 +5124,16 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		for (i = 0; i < n_in_files; ++i) {
 			STR_escape_chars_m13(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m13);  // escape spaces
 			STR_escape_chars_m13(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m13);  // escape apostrophes
+			STR_escape_chars_m13(file_list[i], (si1) 0x60, FULL_FILE_NAME_BYTES_m13);  // escape grave accent
 			len = sprintf(tmp_command, "%s %s", command, file_list[i]);
 			memcpy((void *) command, (void *) tmp_command, ++len);
-//			sprintf_m13(command, "%s %s", command, file_list[i]);
 			if (flags & GFL_INCLUDE_INVISIBLE_FILES_m13) {
 				G_extract_path_parts_m13(file_list[i], NULL, name, extension);
 				len = sprintf(tmp_command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
 				memcpy((void *) command, (void *) tmp_command, ++len);
-//				sprintf_m13(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
 				if (*extension) {
 					len = sprintf(tmp_command, "%s.%s", command, extension);
 					memcpy((void *) command, (void *) tmp_command, ++len);
-//					sprintf_m13(command, "%s.%s", command, extension);
 				}
 			}
 		}
@@ -5080,6 +5268,7 @@ ui4    G_generate_MED_path_components_m13(si1 *path, si1 *MED_dir, si1 *MED_name
 	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x20);  // spaces
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x27);  // apostrophes
+	STR_unescape_chars_m13(local_MED_dir, (si1) 0x60);  // graves
 	G_path_from_root_m13(local_MED_dir, local_MED_dir);
 
 	// check path: if file passed, get enclosing directory
@@ -8263,7 +8452,7 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 
 SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password)
 {
-	tern				free_session, all_channels_selected, threading, ret_val;
+	tern				free_session, all_channels_selected, fs_name_differs, threading, ret_val;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m13], *tmp_str_ptr;
 	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m13 + 1], *regex_str;
 	ui4				type_code;
@@ -8313,6 +8502,8 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			n_chans = 1;
 		} else {  // directory passed: NULL channel list
 			type_code = G_MED_type_code_from_string_m13((si1 *) file_list);
+			if (type_code == NO_TYPE_CODE_m13)
+				type_code = G_add_level_extension_m13((si1 *) file_list);
 			switch (type_code) {
 				case SESSION_DIRECTORY_TYPE_CODE_m13:  // session directory passed: NULL channel list
 					all_channels_selected = TRUE_m13;
@@ -8364,8 +8555,8 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 
 	G_extract_path_parts_m13(chan_list[0], sess->path, NULL, NULL);
-	type_code = G_generate_MED_path_components_m13(sess->path, NULL, sess->fs_name);
-	sess->name = sess->fs_name;  // only name known at this point
+	type_code = G_generate_MED_path_components_m13(sess->path, NULL, proc_globals->fs_session_name);
+	sess->name = proc_globals->fs_session_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m13) {
 		G_set_error_m13(E_UNSPECIFIED_m13, "channels must be in a MED session directory");
 		if (free_session == TRUE_m13)
@@ -8576,9 +8767,21 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 	
 	// user generated channel subsets (setting password also sets global session names)
-	if (*proc_globals->uh_session_name) {
-		strcpy(sess->uh_name, proc_globals->uh_session_name);
-		sess->name = sess->uh_name;  // change name to the more generally useful version
+	fs_name_differs = UNKNOWN_m13;
+	if (*proc_globals->uh_session_name || *proc_globals->fs_session_name) {
+		if (*proc_globals->uh_session_name && *proc_globals->fs_session_name) {
+			if (strcmp(proc_globals->uh_session_name, proc_globals->fs_session_name))
+				fs_name_differs = TRUE_m13;
+			else
+				fs_name_differs = FALSE_m13;
+			sess->name = proc_globals->uh_session_name;  // default to the more generally useful version
+		} else if (*proc_globals->uh_session_name) {
+			fs_name_differs = FALSE_m13;
+			sess->name = globals_m13->uh_session_name;  // only available version
+		} else {
+			fs_name_differs = FALSE_m13;
+			sess->name = proc_globals->fs_session_name;  // only available version
+		}
 	}
 
 	// process time slice (passed slice is not modified)
@@ -8592,6 +8795,9 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	if (slice->conditioned == FALSE_m13)
 		G_condition_time_slice_m13(slice, (LEVEL_HEADER_m13 *) sess);
 	
+	// set reference channel (before get segment range)
+	G_change_reference_channel_m13(sess, NULL, NULL, DEFAULT_CHANNEL_m13);
+
 	// get segment range (& set global sample/frame number reference channel)
 	n_segs = slice->number_of_segments;
 	if (n_segs == UNKNOWN_m13) {
@@ -10372,7 +10578,7 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 			return_m13(NULL);
 		}
 	}
-	seg_idx = G_get_segment_index_m13(slice->start_segment_number);
+	seg_idx = G_check_segment_map_m12(slice, sess);
 	if (seg_idx == FALSE_m13) {
 		if (free_session == TRUE_m13)
 			G_free_session_m13(sess, TRUE_m13);
@@ -33799,7 +34005,7 @@ tern    STR_strip_character_m13(si1 *s, si1 character)
 }
 
 
-#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
 const si1	*STR_tern_m13(tern val)
@@ -34365,27 +34571,18 @@ TRANSMISSION_HEADER_NOT_ALIGNED_m13:
 
 tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)
 {
-	ui1	buffer[8];
-
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// TCP: receiver should initiate closure, send should wait for it
-	if ((trans_info->header->flags & TR_FLAGS_UDP_m13) == 0) {  // TCP bit == zero
-		if (trans_info->mode == TR_MODE_SEND_m13) {
-			TR_set_socket_blocking_m13(trans_info, TRUE_m13);  // in case socket is non-blocking
-			// not expecting any further transmissions, so should block until socket closes
-			recv(trans_info->sock_fd, (void *) buffer, 8, 0);
-		}
-	}
-
 #if defined MACOS_m13 || defined LINUX_m13
-	shutdown(trans_info->sock_fd, SHUT_RDWR);
+	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m13)
+		shutdown(trans_info->sock_fd, SHUT_RDWR);
 	close(trans_info->sock_fd);
 #endif
 #ifdef WINDOWS_m13
-	shutdown(trans_info->sock_fd, SD_BOTH);
+	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m13)
+		shutdown(trans_info->sock_fd, SD_BOTH);
 	closesocket(trans_info->sock_fd);
 #endif
 	trans_info->sock_fd = -1;
@@ -35278,7 +35475,7 @@ tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 		printf_m13("Mode: receive\n");
 	else if (trans_info->mode == TR_MODE_NONE_m13)
 		printf_m13("Mode: not set\n");
-	else if (trans_info->mode == TR_MODE_CLOSE_m13)
+	else if (trans_info->mode == TR_MODE_FORCE_CLOSE_m13)
 		printf_m13("Mode: force close\n");
 	else
 		printf_m13("Mode: invalid value (%hhu)\n", trans_info->mode);
@@ -37376,7 +37573,10 @@ tern	freeable_m13(void *address)
 	// Windows stack base < heap base & generally grows toward heap base (per internet this may not always be true, but I have never seen it happen)
 	// if getting unexpected results, consider compiling with AT_DEBUG_m13 to track down where errors occur
 	// NOTE: not tested under 32-bit hardware or compilation
-	       
+
+	if (address == NULL)
+		return(FALSE_m12);
+
 #ifdef AT_DEBUG_m13
 	return(AT_freeable_m13(address));
 #endif
@@ -37384,19 +37584,21 @@ tern	freeable_m13(void *address)
 	// all allocated heap addresses are at least divisible by 8
 	address_val = (ui8) address;
 	if (address_val & (ui8) 7)
-		return(FALSE_m13);
+		return_m12(FALSE_m13);
 
 	// check if address in heap
 	hw_params = &globals_m13->tables->HW_params;
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m13);
+#ifndef MATLAB_m13  // true heap base in Matlab is from Matlab itself and so far below first allocated medlib variable
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
-		return(FALSE_m13);
-	
+		return(FALSE_m12);
+#endif
+
 #ifdef MACOS_m13
 	// check if address in allocation table
 	if (malloc_size_m13(address))
-		return(TRUE_m13);
+		return_m13(TRUE_m13);
 	return(FALSE_m13);
 #endif
 	
@@ -37406,7 +37608,7 @@ tern	freeable_m13(void *address)
 	level_header = (LEVEL_HEADER_m13 *) address;
 
 #ifdef LINUX_m13
-	// check that level_header->type_code can be dereferenced
+	// check that level_header->type_code can be dereferenced (type_code first element - so doesn't have to be a level header)
 	ui4			type_code = NO_TYPE_CODE_m13;
 	sig_handler_t_m13	current_handler;
 	
@@ -38818,15 +39020,12 @@ SYSTEM_PIPE_RETRY_m13:
 		goto SYSTEM_PIPE_FAIL_m13;
 
 	// close master ends of pseudoterminal
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		if (stdout_master_fd)
-			close(stdout_master_fd);
+	if (master_fd)
+		close(master_fd);
+	if (flags & SP_SEPERATE_STREAMS_m13)
 		if (stderr_master_fd)
 			close(stderr_master_fd);
-	} else if (master_fd) {
-			close(master_fd);
-	}
-
+	
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);

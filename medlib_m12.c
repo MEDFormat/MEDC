@@ -2404,49 +2404,6 @@ TERN_m12	G_empty_string_m12(si1 *string)
 }
 
 
-TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
-{
-	ui1			*encryption_key;
-	PASSWORD_DATA_m12	*pwd;
-	METADATA_m12		*md;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	pwd = fps->parameters.password_data;
-	if (pwd == NULL)
-		pwd = &globals_m12->password_data;
-	md = (METADATA_m12 *) fps->data_pointers;
-
-	// section 2 encrypt
-	if (md->section_1.section_2_encryption_level < NO_ENCRYPTION_m12) {  // natively encrypted and currently decrypted
-		if (pwd->access_level >= -md->section_1.section_2_encryption_level) {
-			md->section_1.section_2_encryption_level = -md->section_1.section_2_encryption_level;  // mark as currently encrypted
-			if (md->section_1.section_2_encryption_level == LEVEL_1_ENCRYPTION_m12)
-				encryption_key = pwd->level_1_encryption_key;
-			else
-				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m12((ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m12, NULL, encryption_key);
-		}
-	}
-	
-	// section 3 encrypt
-	if (md->section_1.section_3_encryption_level < NO_ENCRYPTION_m12) {  // natively encrypted and currently decrypted
-		if (pwd->access_level >= -md->section_1.section_3_encryption_level) {
-			md->section_1.section_3_encryption_level = -md->section_1.section_3_encryption_level;  // mark as currently encrypted
-			if (fps->metadata->section_1.section_3_encryption_level == LEVEL_1_ENCRYPTION_m12)
-				encryption_key = pwd->level_1_encryption_key;
-			else
-				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m12((ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m12, NULL, encryption_key);
-		}
-	}
-	
-	return(TRUE_m12);
-}
-
-
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
@@ -2503,6 +2460,49 @@ TERN_m12	G_en_bloc_allocation_m12(LEVEL_HEADER_m12 *level_header)
 	level_header->en_bloc_allocation = en_bloc;
 	
 	return(en_bloc);
+}
+
+
+TERN_m12	G_encrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
+{
+	ui1			*encryption_key;
+	PASSWORD_DATA_m12	*pwd;
+	METADATA_m12		*md;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	pwd = fps->parameters.password_data;
+	if (pwd == NULL)
+		pwd = &globals_m12->password_data;
+	md = (METADATA_m12 *) fps->data_pointers;
+
+	// section 2 encrypt
+	if (md->section_1.section_2_encryption_level < NO_ENCRYPTION_m12) {  // natively encrypted and currently decrypted
+		if (pwd->access_level >= -md->section_1.section_2_encryption_level) {
+			md->section_1.section_2_encryption_level = -md->section_1.section_2_encryption_level;  // mark as currently encrypted
+			if (md->section_1.section_2_encryption_level == LEVEL_1_ENCRYPTION_m12)
+				encryption_key = pwd->level_1_encryption_key;
+			else
+				encryption_key = pwd->level_2_encryption_key;
+			AES_encrypt_m12((ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m12, NULL, encryption_key);
+		}
+	}
+	
+	// section 3 encrypt
+	if (md->section_1.section_3_encryption_level < NO_ENCRYPTION_m12) {  // natively encrypted and currently decrypted
+		if (pwd->access_level >= -md->section_1.section_3_encryption_level) {
+			md->section_1.section_3_encryption_level = -md->section_1.section_3_encryption_level;  // mark as currently encrypted
+			if (fps->metadata->section_1.section_3_encryption_level == LEVEL_1_ENCRYPTION_m12)
+				encryption_key = pwd->level_1_encryption_key;
+			else
+				encryption_key = pwd->level_2_encryption_key;
+			AES_encrypt_m12((ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m12, NULL, encryption_key);
+		}
+	}
+	
+	return(TRUE_m12);
 }
 
 
@@ -2993,11 +2993,7 @@ void	G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *ex
 #endif
 	
 	// handle bad calls
-	if (full_file_name == NULL) {
-		G_warning_message_m12("%s(): full_file_name is NULL => returning\n", __FUNCTION__);
-		return;
-	}
-	if (*full_file_name == 0) {
+	if (G_empty_string_m12 == TRUE_m12) {
 		G_warning_message_m12("%s(): full_file_name is empty => returning\n", __FUNCTION__);
 		return;
 	}
@@ -37796,10 +37792,7 @@ TERN_m12	freeable_m12(void *address)
 	hw_params = &global_tables_m12->HW_params;
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m12);
-#ifdef MATLAB_m12  // true heap base in Matlab is from Matlab itself and so far below first allocated medlib variable
-	if (address_val == 0)
-		return(FALSE_m12);
-#else
+#ifndef MATLAB_m12  // true heap base in Matlab is from Matlab itself and so far below first allocated medlib variable
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
 #endif

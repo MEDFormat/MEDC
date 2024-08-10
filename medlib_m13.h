@@ -2426,9 +2426,7 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m13		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to session directory (including session directory itself)
-	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
-	si1                             uh_name[BASE_FILE_NAME_BYTES_m13];
-	si1                             fs_name[BASE_FILE_NAME_BYTES_m13];
+	si1                             *name;					// points to proc_globals uh_session_name or fs_session_name
 	TIME_SLICE_m13			time_slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
@@ -2462,6 +2460,7 @@ BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void);
 #ifdef FN_DEBUG_m13
 FUNCTION_STACK_m13	*G_add_function_stack_m13(void);
 #endif
+ui4 		G_add_level_extension_m13(si1 *directory_name);
 tern		G_all_zeros_m13(ui1 *bytes, si4 field_length);
 CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *enclosing_path, si1 *chan_name, SESSION_m13 *parent, ui4 type_code, si4 n_segs, tern chan_recs, tern seg_recs);
 SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *enclosing_path, si1 *chan_name, CHANNEL_m13 *parent, ui4 type_code, si4 seg_num, tern seg_recs);
@@ -2481,6 +2480,7 @@ tern		G_check_char_type_m13(void);
 tern		G_check_file_list_m13(si1 **file_list, si4 n_files);
 tern		G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...);  // varargs: si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
 tern        	G_check_password_m13(si1 *password);
+si4		G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess);
 tern		G_clear_terminal_m13(void);
 si4		G_compare_acq_nums_m13(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
@@ -4151,10 +4151,10 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_OFFSET_OFFSET_m13				24				// ui8
 
 // Transmission Info Modes  [set by TR_send_transmission_m13() & TR_recv_transmission_m13(), used by TR_close_transmission_m13()]
-#define TR_MODE_NONE_m13	0
-#define TR_MODE_SEND_m13	1
-#define TR_MODE_RECV_m13	2
-#define TR_MODE_CLOSE_m13	3  // set to force close a (TCP) socket
+#define TR_MODE_NONE_m13		0
+#define TR_MODE_SEND_m13		1
+#define TR_MODE_RECV_m13		2
+#define TR_MODE_FORCE_CLOSE_m13		3  // set to force close a (TCP) socket
 
 // Miscellaneous
 #define TR_INET_MSS_BYTES_m13				1376  // highest multiple of 16, that stays below internet standard frame size (1500) minus [32 (TR header) + 40 (TCP/IP header)
