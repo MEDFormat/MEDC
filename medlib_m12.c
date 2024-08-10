@@ -2993,7 +2993,7 @@ void	G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *ex
 #endif
 	
 	// handle bad calls
-	if (G_empty_string_m12 == TRUE_m12) {
+	if (G_empty_string_m12(full_file_name) == TRUE_m12) {
 		G_warning_message_m12("%s(): full_file_name is empty => returning\n", __FUNCTION__);
 		return;
 	}
@@ -24126,7 +24126,14 @@ pthread_rval_m12	DM_channel_thread_m12(void *ptr)
 	n_out_bufs = 1;
 	if (trace_ranges == TRUE_m12)
 		n_out_bufs = 3;
-	dm->out_bufs[chan_idx] = CMP_allocate_buffers_m12(dm->out_bufs[chan_idx], n_out_bufs, dm->valid_sample_count, sizeof(sf8), FALSE_m12, FALSE_m12);
+	if ((dm->flags & DM_FMT_CHANNEL_MAJOR_m12) && (dm->flags & DM_TYPE_SF8_m12)) {  // special case - put results directly in output array(s)
+		if (dm->out_bufs[chan_idx] != NULL) {
+			CMP_free_buffers_m12(dm->out_bufs[chan_idx], TRUE_m12);
+			dm->out_bufs[chan_idx] = NULL;
+		}
+	} else {
+		dm->out_bufs[chan_idx] = CMP_allocate_buffers_m12(dm->out_bufs[chan_idx], n_out_bufs, dm->valid_sample_count, sizeof(sf8), FALSE_m12, FALSE_m12);
+	}
 
 	// initialize filter
 	if (filter == TRUE_m12) {
@@ -24168,7 +24175,7 @@ pthread_rval_m12	DM_channel_thread_m12(void *ptr)
 
 	// set up output buffers
 	if ((dm->flags & DM_FMT_CHANNEL_MAJOR_m12) && (dm->flags & DM_TYPE_SF8_m12)) {
-		// special case - put results directly in output array
+		// special case - put results directly in output array(s)
 		chan_offset = chan_idx * dm->sample_count;
 		if (dm->flags & DM_2D_INDEXING_m12) {
 			out_buf = *((sf8 **) dm->data) + chan_offset;
@@ -24976,6 +24983,10 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 			++pi; ++ci;
 		}
 	}
+	
+	// debug threads
+//	for (i = 0; i < matrix->channel_count; ++i)
+//		DM_channel_thread_m12((void *) (proc_thread_infos + i));
 	
 	// launch channel threads; don't wait for completion
 	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, matrix->channel_count, 0, FALSE_m12);  // default reserved cores
