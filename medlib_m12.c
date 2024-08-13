@@ -8387,7 +8387,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	// set reference channel (before get segment range)
 	G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_CHANNEL_m12);
 
-	// get segment range (& set global sample/frame number reference channel)
+	// get segment range
 	n_segs = slice->number_of_segments;
 	if (n_segs == UNKNOWN_m12) {
 		if (G_get_segment_range_m12((LEVEL_HEADER_m12 *) sess, slice) == 0) {
@@ -10445,7 +10445,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
 				if (search_mode == SAMPLE_SEARCH_m12) {
 					calculate_channel_indices = TRUE_m12;
-					ref_sf = globals_m12->reference_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+					ref_sf = globals_m12->reference_channel->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 				}
 			}
 		}
@@ -10453,7 +10453,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			chan = sess->time_series_channels[i];
 			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
 				if (calculate_channel_indices == TRUE_m12) {
-					sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
+					sf_ratio = chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
 					chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
 					chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
 					chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
