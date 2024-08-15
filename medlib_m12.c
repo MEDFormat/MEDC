@@ -5531,7 +5531,7 @@ si4	G_get_segment_index_m12(si4 segment_number)
 	if (segment_number == FIRST_OPEN_SEGMENT_m12 || segment_number == SEGMENT_NUMBER_NO_ENTRY_m12) {
 		chan = globals_m12->reference_channel;
 		if (chan == NULL) {
-			G_warning_message_m12("%s(): cannot find open segment\n", __FUNCTION__);
+			G_warning_message_m12("%s(): reference channel not set\n", __FUNCTION__);
 			return((si4) FALSE_m12);
 		}
 		for (i = 0; i < mapped_segs; ++i) {
@@ -5541,7 +5541,7 @@ si4	G_get_segment_index_m12(si4 segment_number)
 					break;
 		}
 		if (i == mapped_segs) {
-			G_warning_message_m12("%s(): cannot find open segment\n", __FUNCTION__);
+			G_warning_message_m12("%s(): no open segments\n", __FUNCTION__);
 			return((si4) FALSE_m12);
 		}
 		if (segment_number == SEGMENT_NUMBER_NO_ENTRY_m12)
@@ -5550,18 +5550,18 @@ si4	G_get_segment_index_m12(si4 segment_number)
 	}
 	
 	sess_segs = globals_m12->number_of_session_segments;
-	if (mapped_segs == sess_segs) {  // all segments mapped
+	
+	// all segments mapped
+	if (mapped_segs == sess_segs) {
 		if (segment_number >= 1 && segment_number <= mapped_segs) {
 			return(segment_number - 1);
-		} else if (segment_number < 1) {
-			G_warning_message_m12("%s(): invalid segment number\n", __FUNCTION__);
-			return((si4) FALSE_m12);
 		} else {
-			G_warning_message_m12("%s(): unmapped segment\n", __FUNCTION__);
+			G_warning_message_m12("%s(): invalid segment number\n", __FUNCTION__);
 			return((si4) FALSE_m12);
 		}
 	}
 	
+	// slice segments mapped
 	first_seg = globals_m12->first_mapped_segment_number;
 	seg_idx = segment_number - first_seg;
 	if (seg_idx < 0 || seg_idx >= mapped_segs) {
