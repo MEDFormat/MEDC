@@ -1014,7 +1014,7 @@ typedef struct {
 //         on read: set FPS pointer to section specified by time slice (decrpyting if necessary)
 // READ_FULL == on open: read full file (no memory mapping required, & closing)
 // MMAP == allocate memory for full file, but only read on demand, (no re-reading occurs, but potentially memory expensive, good paired with VDS)
-// ACTIVE ==  applies only to channels. Mark a CHANNEL as active to return data. Marking a channel as inactive does not free or close it.
+// ACTIVE == applies only to channels. Mark a CHANNEL as active to return data. Marking a channel as inactive does not free or close it.
 // EPHEMERAL DATA == if GENERATE_EPHEMERAL_DATA_m12 is set, ephemeral data is created if it does not exist.
 //	If UPDATE_EPHEMERAL_DATA is set, the data is updated whenever the channel or segment open set changes (opening of new elements, not the active status)
 //	The UPDATE_EPHEMERAL_DATA bit is set by the lower levels and reset by the higher level once the data has been updated.
@@ -1029,11 +1029,10 @@ typedef struct {
 #define LH_UPDATE_EPHEMERAL_DATA_m12			((ui8) 1 << 2)	// signal to higher level from lower level (reset by higher level after update)
 
 // session level
-#define LH_SESSION_OPEN_m12				((ui8) 1 << 7)
-#define LH_INCLUDE_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 8)
-#define LH_INCLUDE_VIDEO_CHANNELS_m12			((ui8) 1 << 9)
-#define LH_MAP_ALL_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 12)
-#define LH_MAP_ALL_VIDEO_CHANNELS_m12			((ui8) 1 << 13)
+#define LH_EXCLUDE_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 10)  // useful when session directory passed, but don't want time series channels
+#define LH_EXCLUDE_VIDEO_CHANNELS_m12			((ui8) 1 << 11)  // useful when session directory passed, but don't want video channels
+#define LH_MAP_ALL_TIME_SERIES_CHANNELS_m12		((ui8) 1 << 12)  // useful when time series channels may be added to open session
+#define LH_MAP_ALL_VIDEO_CHANNELS_m12			((ui8) 1 << 13)  // useful when video channels may be added to open session
 
 #define LH_READ_SLICE_SESSION_RECORDS_m12		((ui8) 1 << 16)	// read full indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_SESSION_RECORDS_m12		((ui8) 1 << 17)	// read full indices file & data files, close all files
@@ -2377,6 +2376,7 @@ void            G_show_timezone_info_m12(TIMEZONE_INFO_m12 *timezone_entry, TERN
 void            G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEADER_m12 *uh);
 TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess);
 void		G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number);
+TERN_m12	G_ternary_entry_m12(si1 *entry);
 void		G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key);
 si1		*G_unique_temp_file_m12(si1 *temp_file);
 void		G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
@@ -3907,13 +3907,18 @@ typedef struct {
 		struct {
 			si1     ID_string[TYPE_BYTES_m12];  // transmission ID is typically application specific
 			ui1     type;  // transmission type (general [0-63] or transmission ID specific [64-255])
-			ui1	subtype;  // rarely used (2nd confirmation in keep alive messages)
-			ui1     version;  // transmission header version (also 3rd confirmation in keep alive messages)
+			ui1	subtype;  // rarely used
+			ui1     version;  // transmission header version
 		};
 		struct {
 			ui4     ID_code;  // transmission ID is typically application specific
-			si1	ID_string_terminal_zero;  // here for clarity
-			ui1	pad_bytes[3];  // not available for use (type, type_2, & version above)
+			union {
+				ui4	combined_check;  // use to to check [zero, type, subtype, version] as a ui4
+				struct {
+					si1	ID_string_terminal_zero;  // here for clarity
+					ui1	pad_bytes[3];  // not available for use (type, type_2, & version above)
+				};
+			};
 		};
 	};
 	si8	transmission_bytes;  // full size of tramsmitted data in bytes (*** does not include header ***)

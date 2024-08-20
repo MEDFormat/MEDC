@@ -607,12 +607,12 @@ si1	*G_behavior_string_m12(ui4 behavior, si1 *behavior_string)
 
 si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 {
-	TERN_m12				force_discont;
+	TERN_m12				force_discont, null_sample_numbers;
 	si1					tmp_str[FULL_FILE_NAME_BYTES_m12];
 	ui4					type_code;
 	si4					n_segs, seg_idx, search_mode;
-	si8					i, j, k, *n_contigua, start_idx, end_idx, last_block_samples, last_block_frames;
-	si8					last_block_usecs, curr_bytes, new_bytes, absolute_numbering_offset;
+	si8					i, j, k, n_contigua, start_idx, end_idx, last_block_samples, last_block_frames;
+	si8					last_block_usecs, new_bytes, absolute_numbering_offset;
 	si8					last_segment_end_sample_number, last_segment_end_frame_number, last_segment_end_time, last_segment_number;
 	sf8					samp_freq, frame_rate;
 	SEGMENT_m12				*seg;
@@ -621,7 +621,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 	TIME_SLICE_m12				*slice;
 	TIME_SERIES_METADATA_SECTION_2_m12	*tmd2;
 	VIDEO_METADATA_SECTION_2_m12		*vmd2;
-	CONTIGUON_m12				**contigua, *contiguon;
+	CONTIGUON_m12				*contigua, *contiguon;
 	TIME_SERIES_INDEX_m12			*tsi;
 	VIDEO_INDEX_m12				*vi;
 	
@@ -633,41 +633,22 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 	
 	switch (level_header->type_code) {
 		case LH_TIME_SERIES_SEGMENT_m12:
-			seg = (SEGMENT_m12 *) level_header;
-			slice = &seg->time_slice;
-			contigua = &seg->contigua;
-			n_contigua = &seg->number_of_contigua;
-			chan = NULL;
-			type_code = LH_TIME_SERIES_CHANNEL_m12;
-			break;
 		case LH_VIDEO_SEGMENT_m12:
 			seg = (SEGMENT_m12 *) level_header;
 			slice = &seg->time_slice;
-			contigua = &seg->contigua;
-			n_contigua = &seg->number_of_contigua;
 			chan = NULL;
-			type_code = LH_VIDEO_CHANNEL_m12;
+			type_code = level_header->type_code;
 			break;
 		case LH_TIME_SERIES_CHANNEL_m12:
-			chan = (CHANNEL_m12 *) level_header;
-			slice = &chan->time_slice;
-			contigua = &chan->contigua;
-			n_contigua = &chan->number_of_contigua;
-			type_code = LH_TIME_SERIES_CHANNEL_m12;
-			break;
 		case LH_VIDEO_CHANNEL_m12:
 			chan = (CHANNEL_m12 *) level_header;
 			slice = &chan->time_slice;
-			contigua = &chan->contigua;
-			n_contigua = &chan->number_of_contigua;
-			type_code = LH_VIDEO_CHANNEL_m12;
+			type_code = level_header->type_code;
 			break;
 		case LH_SESSION_m12:
 			sess = (SESSION_m12 *) level_header;
-			slice = &sess->time_slice;
-			contigua = &sess->contigua;
-			n_contigua = &sess->number_of_contigua;
 			chan = globals_m12->reference_channel;
+			slice = &sess->time_slice;
 			type_code = chan->type_code;
 			break;
 		default:
@@ -681,16 +662,14 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 	n_segs = TIME_SLICE_SEGMENT_COUNT_m12(slice);
 	if ((search_mode = G_get_search_mode_m12(slice)) == FALSE_m12)
 		return(FALSE_m12);
-	if (*contigua != NULL) {
-		free_m12((void *) *contigua, __FUNCTION__);
-		*contigua = NULL;
-	}
-	*n_contigua = 0;
 	
+	contigua = NULL;
+	n_contigua = 0;
 	force_discont = TRUE_m12;
+	new_bytes = 0;
 	if (type_code == LH_TIME_SERIES_CHANNEL_m12) {
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (chan != NULL)
+			if (chan != NULL)  // segment level passed
 				seg = chan->segments[j];
 			if (seg == NULL) {  // segment missing
 				force_discont = TRUE_m12;
@@ -727,17 +706,16 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			if (search_mode == TIME_SEARCH_m12) {
 				start_idx = G_find_index_m12(seg, slice->start_time, TIME_SEARCH_m12 | NO_OVERFLOWS_m12);
 				end_idx = G_find_index_m12(seg, slice->end_time, TIME_SEARCH_m12 | NO_OVERFLOWS_m12);
-			} else {
-				start_idx = G_find_index_m12(seg, slice->start_sample_number, SAMPLE_SEARCH_m12 | NO_OVERFLOWS_m12);
-				end_idx = G_find_index_m12(seg, slice->end_sample_number, SAMPLE_SEARCH_m12 | NO_OVERFLOWS_m12);
+			} else {  // SAMPLE_SEARCH_m12
+				start_idx = G_find_index_m12(seg, slice->start_sample_number - absolute_numbering_offset, SAMPLE_SEARCH_m12 | NO_OVERFLOWS_m12);
+				end_idx = G_find_index_m12(seg, slice->end_sample_number - absolute_numbering_offset, SAMPLE_SEARCH_m12 | NO_OVERFLOWS_m12);
 			}
-			
+
 			for (k = start_idx; k <= end_idx; ++k) {
 				if (tsi[k].file_offset < 0 || force_discont == TRUE_m12) {
 					// close last contiguon
-					if (*n_contigua) {
-						contiguon = *contigua + *n_contigua - 1;
-						contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;
+					if (n_contigua) {
+						contiguon = contigua + (n_contigua - 1);
 						contiguon->end_segment_number = (si4) j + 1;
 						if (k) {
 							contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;
@@ -751,11 +729,9 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 						}
 					}
 					// open new contiguon
-					curr_bytes = (size_t) *n_contigua * sizeof(CONTIGUON_m12);
-					new_bytes = curr_bytes + sizeof(CONTIGUON_m12);
-					*contigua = (CONTIGUON_m12 *) recalloc_m12((void *) *contigua, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-					contiguon = *contigua + *n_contigua;
-					++(*n_contigua);
+					new_bytes += sizeof(CONTIGUON_m12);
+					contigua = (CONTIGUON_m12 *) realloc_m12((void *) contigua, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+					contiguon = contigua + n_contigua++;
 					contiguon->start_sample_number = tsi[k].start_sample_number + absolute_numbering_offset;
 					contiguon->start_time = tsi[k].start_time;
 					contiguon->start_segment_number = (si4) j + 1;
@@ -772,10 +748,9 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 		contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;  // k == next index of last set of indices
 		contiguon->end_time = tsi[k].start_time - 1;  // next index start time
 		contiguon->end_segment_number = (si4) j;
-
 	} else {  // LH_VIDEO_CHANNEL_m12
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (chan != NULL)
+			if (chan != NULL)  // segment level passed
 				seg = chan->segments[j];
 			if (seg == NULL) {  // segment missing
 				force_discont = TRUE_m12;
@@ -818,12 +793,12 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			for (k = start_idx; k <= end_idx; ++k) {
 				if (vi[k].file_offset < 0 || force_discont == TRUE_m12) {
 					// close last contiguon
-					if (*n_contigua) {
-						contiguon = *contigua + *n_contigua - 1;
-						contiguon->end_frame_number = ((si8) vi[k].start_frame_number + absolute_numbering_offset) - 1;
+					if (n_contigua) {
+						contiguon = contigua + (n_contigua - 1);
 						contiguon->end_segment_number = (si4) j + 1;
 						// end time
 						if (k) {
+							contiguon->end_frame_number = ((si8) vi[k].start_frame_number + absolute_numbering_offset) - 1;
 							last_block_frames = vi[k].start_frame_number - vi[k - 1].start_frame_number;
 							last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1e6);
 							contiguon->end_time = (vi[k - 1].start_time + last_block_usecs) - 1;
@@ -834,11 +809,9 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 						}
 					}
 					// open new contiguon
-					curr_bytes = (size_t) *n_contigua * sizeof(CONTIGUON_m12);
-					new_bytes = curr_bytes + sizeof(CONTIGUON_m12);
-					*contigua = (CONTIGUON_m12 *) recalloc_m12((void *) *contigua, curr_bytes, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-					contiguon = *contigua + *n_contigua;
-					++(*n_contigua);
+					new_bytes = (size_t) (n_contigua + 1) * sizeof(CONTIGUON_m12);
+					contigua = (CONTIGUON_m12 *) realloc_m12((void *) contigua, new_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+					contiguon = contigua + n_contigua++;
 					contiguon->start_frame_number = vi[k].start_frame_number + absolute_numbering_offset;
 					contiguon->start_time = vi[k].start_time;
 					contiguon->start_segment_number = (si4) j + 1;
@@ -857,31 +830,57 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 		contiguon->end_segment_number = (si4) j;
 	}
 	
-	if (*n_contigua == 0) {
-		free_m12((void *) *contigua, __FUNCTION__);
-		*contigua = NULL;
-		return(FALSE_m12);
-	}
+	if (n_contigua == 0)
+		return((si4) FALSE_m12);
 	
 	// trim contigua ends to slice (sample_number == frame_number)
-	if ((*contigua)[0].start_time < slice->start_time)
-		(*contigua)[0].start_time = slice->start_time;
-	if ((*contigua)[*n_contigua - 1].end_time > slice->end_time)
-		(*contigua)[*n_contigua - 1].end_time = slice->end_time;
-	if ((*contigua)[0].start_sample_number < slice->start_sample_number)
-		(*contigua)[0].start_sample_number = slice->start_sample_number;
-	if ((*contigua)[*n_contigua - 1].end_sample_number > slice->end_sample_number)
-		(*contigua)[*n_contigua - 1].end_sample_number = slice->end_sample_number;
+	if (contigua[0].start_time < slice->start_time)
+		contigua[0].start_time = slice->start_time;
+	if (contigua[n_contigua - 1].end_time > slice->end_time)
+		contigua[n_contigua - 1].end_time = slice->end_time;
+	if (contigua[0].start_sample_number < slice->start_sample_number)
+		contigua[0].start_sample_number = slice->start_sample_number;
+	if (contigua[n_contigua - 1].end_sample_number > slice->end_sample_number)
+		contigua[n_contigua - 1].end_sample_number = slice->end_sample_number;
 	
 	// set sample/frame numbers to NO ENTRY for variable frequency sessions
 	if (level_header->type_code == LH_SESSION_m12) {
-		if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
-			for (i = 0; i < *n_contigua; ++i)
-				(*contigua)[i].start_sample_number = (*contigua)[i].end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;  // sample_number == frame_number
+		null_sample_numbers = FALSE_m12;
+		if (type_code == LH_TIME_SERIES_CHANNEL_m12 && globals_m12->time_series_frequencies_vary == TRUE_m12)
+			null_sample_numbers = TRUE_m12;
+		else if (type_code == LH_VIDEO_CHANNEL_m12 && globals_m12->video_frame_rates_vary == TRUE_m12)
+			null_sample_numbers = TRUE_m12;
+		if (null_sample_numbers == TRUE_m12) {
+			for (i = 0; i < n_contigua; ++i)
+				contigua[i].start_sample_number = contigua[i].end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;  // sample_number == frame_number
 		}
 	}
-	
-	return(*n_contigua);
+
+	// assign to level
+	switch (level_header->type_code) {  // type_code for session is ref channel type, so use original value
+		case LH_TIME_SERIES_SEGMENT_m12:
+		case LH_VIDEO_SEGMENT_m12:
+			if (seg->contigua != NULL)
+				free_m12((void *) seg->contigua, __FUNCTION__);
+			seg->contigua = contigua;
+			seg->number_of_contigua = n_contigua;
+			break;
+		case LH_TIME_SERIES_CHANNEL_m12:
+		case LH_VIDEO_CHANNEL_m12:
+			if (chan->contigua != NULL)
+				free_m12((void *) chan->contigua, __FUNCTION__);
+			chan->contigua = contigua;
+			chan->number_of_contigua = n_contigua;
+			break;
+		case LH_SESSION_m12:
+			if (sess->contigua != NULL)
+				free_m12((void *) sess->contigua, __FUNCTION__);
+			sess->contigua = contigua;
+			sess->number_of_contigua = n_contigua;
+			break;
+	}
+		
+	return(n_contigua);
 }
 
 
@@ -1773,7 +1772,7 @@ void	G_condition_time_slice_m12(TIME_SLICE_m12 *slice)
 		G_warning_message_m12("%s(): passed time slice is NULL\n");
 		return;
 	}
-	
+		
 	if (globals_m12->recording_time_offset == FALSE_m12) {
 		if (globals_m12->verbose == TRUE_m12)
 			G_warning_message_m12("%s(): recording time offset is not known => assuming no offset\n", __FUNCTION__);
@@ -1800,16 +1799,16 @@ void	G_condition_time_slice_m12(TIME_SLICE_m12 *slice)
 			if (slice->end_sample_number == SAMPLE_NUMBER_NO_ENTRY_m12)
 				slice->end_time = END_OF_TIME_m12;
 		} else {  // relative time
-			slice->end_time = globals_m12->session_start_time - slice->end_time;
+			slice->end_time = (globals_m12->session_start_time - slice->end_time) - 1;  // slice end times are inclusive
 		}
 	} else {  // ? unoffset time
 		test_time = slice->end_time - globals_m12->recording_time_offset;
-		if (test_time > 0 && slice->end_time != END_OF_TIME_m12)  // end time is not offset
+		if (test_time > 0 && slice->end_time != END_OF_TIME_m12)  // END_OF_TIME_m12 is not offset
 			slice->end_time = test_time;
 	}
 	
 	slice->conditioned = TRUE_m12;
-		
+	
 	return;
 }
 
@@ -3462,134 +3461,149 @@ CONTIGUON_m12	*G_find_discontinuities_m12(LEVEL_HEADER_m12 *level_header, si8 *n
 }
 	
 		
-si8	G_find_index_m12(SEGMENT_m12 *seg, si8 target, ui4 mode)  // returns index containing requested time/sample
+si8	G_find_index_m12(SEGMENT_m12 *seg, si8 target, ui4 mode)
 {
-	TERN_m12		no_overflows = FALSE_m12;
 	ui4			target_frame_number;
 	si8			i, n_inds, seg_start_time, seg_end_time;
 	si8			block_samples, block_duration, seg_samples, clip_frames, clip_duration, seg_frames;
-	TIME_SERIES_INDEX_m12	*tsi;
-	VIDEO_INDEX_m12		*vi;
+	TIME_SERIES_INDEX_m12	*tsi_base, *tsi;
+	VIDEO_INDEX_m12		*vi_base, *vi;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	// returns index containing requested time/sample
 	// returns -1 if before first index
 	// returns n_inds - 1 (terminal index index) if after last index
 	// NO_OVERFLOWS_m12: restrict returned index to valid segment values (ORed with search type)
-	// SAMPLE_SEARCH_m12 indices must be session-relative (global indexing)
-	
+	// SAMPLE_SEARCH_m12: indices must be session-relative (global indexing)
+	// TIME_SEARCH_m12: times must be offset uutc
+
 	n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
-
-	if (mode & NO_OVERFLOWS_m12) {
-		mode &= ~NO_OVERFLOWS_m12;
-		no_overflows = TRUE_m12;
-	}
-
+	
 	if (seg->type_code == LH_TIME_SERIES_SEGMENT_m12) {
-		tsi = seg->time_series_indices_fps->time_series_indices;
-		if (mode == TIME_SEARCH_m12) {
+		tsi_base = seg->time_series_indices_fps->time_series_indices;
+		if (mode & TIME_SEARCH_m12) {
 			seg_start_time = seg->time_series_indices_fps->universal_header->segment_start_time;
 			if (target < seg_start_time) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(0);
 				return(-1);
 			}
 			seg_end_time = seg->time_series_indices_fps->universal_header->segment_end_time;
 			if (target > seg_end_time) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(n_inds - 1);
 				return(n_inds);
 			}
+			// estimate index
 			block_duration = (si8) (seg->metadata_fps->metadata->time_series_section_2.maximum_block_duration + (sf8) 0.5);
-			i = ((target - seg_start_time) / block_duration) + 1;  // more efficient to serch backward
+			i = (target - seg_start_time) / block_duration;
 			if (i > n_inds)
 				i = n_inds;
-			if (tsi[i].start_time <= target) {  // forward linear search
-				while (tsi[++i].start_time <= target);
-				--i;
+			// search: exit at first index <= target
+			tsi = tsi_base + i;
+			if (tsi->start_time <= target) {  // forward linear search
+				while (tsi->start_time <= target)
+					++tsi;
+				--tsi;
 			} else {  // backward linear search
-				while (tsi[--i].start_time > target);
+				while (tsi->start_time > target)
+					--tsi;
 			}
 		} else {  //  SAMPLE_SEARCH_m12
 			target -= seg->metadata_fps->metadata->time_series_section_2.absolute_start_sample_number;  // convert target to local indexing
 			if (target < 0) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(0);
 				return(-1);
 			}
 			seg_samples = seg->metadata_fps->metadata->time_series_section_2.number_of_samples;
 			if (target >= seg_samples) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(n_inds - 1);
 				return(n_inds);
 			}
+			// estimate index
 			block_samples = (si8) seg->metadata_fps->metadata->time_series_section_2.maximum_block_samples;
-			i = (target / block_samples) + 1;  // more efficient to search backward
+			i = target / block_samples;
 			if (i > n_inds)
 				i = n_inds;
-			if (tsi[i].start_sample_number <= target) {  // forward linear search
-				while (tsi[++i].start_sample_number <= target);
-				--i;
+			// search: exit at first index <= target
+			tsi = tsi_base + i;
+			if (tsi->start_sample_number <= target) {  // forward linear search
+				while (tsi->start_sample_number <= target)
+					++tsi;
+				--tsi;
 			} else {  // backward linear search
-				while (tsi[--i].start_sample_number > target);
+				while (tsi->start_sample_number > target)
+					--tsi;
 			}
 		}
+		i = tsi - tsi_base;
 	} else {  // LEVEL_VIDEO_SEGMENT_m12
-		vi = seg->video_indices_fps->video_indices;
-		if (mode == TIME_SEARCH_m12) {
+		vi_base = seg->video_indices_fps->video_indices;
+		if (mode & TIME_SEARCH_m12) {
 			seg_start_time = seg->video_indices_fps->universal_header->segment_start_time;
 			if (target < seg_start_time) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(0);
 				return(-1);
 			}
 			seg_end_time = seg->video_indices_fps->universal_header->segment_end_time;
 			if (target > seg_end_time) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(n_inds - 1);
 				return(n_inds);
 			}
-
+			// estimate index
 			clip_duration = (si8) (seg->metadata_fps->metadata->video_section_2.maximum_clip_duration + (sf8) 0.5);
-			i = ((target - seg_start_time) / clip_duration) + 1;  // more efficient to serch backward
+			i = (target - seg_start_time) / clip_duration;
 			if (i > n_inds)
 				i = n_inds;
-			if (vi[i].start_time <= target) {  // forward linear search
-				while (vi[++i].start_time <= target);
-				--i;
+			// search: exit at first index <= target
+			vi = vi_base + i;
+			if (vi->start_time <= target) {  // forward linear search
+				while (vi->start_time <= target)
+					++vi;
+				--vi;
 			} else {  // backward linear search
-				while (vi[--i].start_time > target);
+				while (vi->start_time > target)
+					--vi;
 			}
 		} else {  //  SAMPLE_SEARCH_m12  (target frame numbers must be in absolute frame)
 			target -= seg->metadata_fps->metadata->video_section_2.absolute_start_frame_number;  // convert target to local indexing
 			if (target < 0) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(0);
 				return(-1);
 			}
 			seg_frames = seg->metadata_fps->metadata->video_section_2.number_of_frames;
 			if (target >= seg_frames) {
-				if (no_overflows == TRUE_m12)
+				if (mode & NO_OVERFLOWS_m12)
 					return(n_inds - 1);
 				return(n_inds);
 			}
+			// estimate index
 			clip_frames = (si8) seg->metadata_fps->metadata->video_section_2.maximum_clip_frames;
-			i = (target / clip_frames) + 1;  // more efficient to serch backward
-			if (i > n_inds)
-				i = n_inds;
+			i = target / clip_frames;
+			// search: exit at first index <= target
+			vi = vi_base + i;
 			target_frame_number = (ui4) target;
-			if (vi[i].start_frame_number <= target_frame_number) {  // forward linear search
-				while (vi[++i].start_frame_number <= target_frame_number);
-				--i;
+			if (vi->start_frame_number <= target_frame_number) {  // forward linear search
+				while (vi->start_frame_number <= target_frame_number)
+					++vi;
+				--vi;
 			} else {  // backward linear search
-				while (vi[--i].start_frame_number > target_frame_number);
+				while (vi->start_frame_number > target_frame_number)
+					--vi;
 			}
 		}
+		i = vi - vi_base;
 	}
 	
-	if (no_overflows == TRUE_m12) {
+	if (mode & NO_OVERFLOWS_m12) {
 		if (i == -1)
 			return(0);
 		else if (i == n_inds)
@@ -3989,8 +4003,8 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
-	si8                     frame_number, n_inds, i, absolute_numbering_offset;
-	si8			ref_frame_number, ref_uutc;
+	si8                     n_inds, i, absolute_numbering_offset;
+	si8			ref_frame_number, ref_uutc, test_time;
 	sf8                     tmp_sf8, frame_rate, rounded_frame_num, frame_num_eps;
 	ui4			mask;
 	va_list			args;
@@ -4076,24 +4090,24 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 		else  // FIND_ABSOLUTE_m12 (default)
 			absolute_numbering_offset = seg->metadata_fps->metadata->video_section_2.absolute_start_frame_number;
 
+		// condition target
+		if (target_uutc < 0)  // relative time
+			target_uutc = globals_m12->session_start_time - target_uutc;
+		test_time = target_uutc - globals_m12->recording_time_offset;
+		if (test_time > 0 && target_uutc != END_OF_TIME_m12)  // end time is not offset
+			target_uutc = test_time;
+
+		// get index
 		i = G_find_index_m12(seg, target_uutc, TIME_SEARCH_m12);
-		if (i == -1)  // target time earlier than segment start => return segment start frame
+		if (i == -1)  // target time earlier than segment start => return segment start sample
 			return(absolute_numbering_offset);
-		
-		vi += i;
-		if (i == n_inds) {  // target time later than segment end => return segment end frame number
-			i = (vi->start_frame_number - 1) + absolute_numbering_offset;
-			return(i);
-		}
+
+		ref_frame_number = (vi += i)->start_frame_number;
+		if (i == n_inds)  // target time later than segment end => return segment end sample number
+			return((ref_frame_number - 1) + absolute_numbering_offset);
 		ref_uutc = vi->start_time;
-		ref_frame_number = vi->start_frame_number;
-		++vi;  // advance to next index
-		if (vi->file_offset > 0) {  // get local frame rate, unless discontinuity
-			frame_rate = (sf8) (vi->start_frame_number - ref_frame_number);
-			frame_rate /= ((sf8) (vi->start_time - ref_uutc) / (sf8) 1e6);
-		} else {
-			frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
-		}
+
+		frame_rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 	}
 	
 	// round up if very close to next frame
@@ -4113,24 +4127,15 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 			tmp_sf8 += (sf8) 1.0;
 			break;
 		case FIND_PREVIOUS_m12:
-			if ((tmp_sf8 -= (sf8) 1.0) < (sf8) 0.0)
-				tmp_sf8 = (sf8) 0.0;
+			if (tmp_sf8 >= (sf8) 1.0)
+				tmp_sf8 -= (sf8) 1.0;
 			break;
 		case FIND_CURRENT_m12:
 		default:
 			break;
 	}
-	frame_number = ref_frame_number + (si8) tmp_sf8;
-	if (vi != NULL) {
-		if (frame_number >= vi->start_frame_number) {
-			frame_number = vi->start_frame_number;
-			if (mode & (FIND_CURRENT_m12 | FIND_PREVIOUS_m12))
-				--frame_number;  // these should not go into next index
-		}
-	}
-	frame_number += absolute_numbering_offset;
 	
-	return(frame_number);
+	return(ref_frame_number + (si8) tmp_sf8 + absolute_numbering_offset);
 }
 
 
@@ -5735,14 +5740,14 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 		globals_m12->first_mapped_segment_number = 0;
 	}
 
-	if (slice->start_time == BEGINNING_OF_TIME_m12) {
+	if (slice->start_time == BEGINNING_OF_TIME_m12)
 		slice->start_time = Sgmt_records[0].start_time;
+	if (slice->start_time == Sgmt_records[0].start_time)
 		slice->start_sample_number = Sgmt_records[0].start_sample_number;
-	}
-	if (slice->end_time == END_OF_TIME_m12) {
+	if (slice->end_time == END_OF_TIME_m12)
 		slice->end_time = Sgmt_records[n_segs - 1].end_time;
+	if (slice->end_time == Sgmt_records[n_segs - 1].end_time)
 		slice->end_sample_number = Sgmt_records[n_segs - 1].end_sample_number;
-	}
 
 	return(n_segs);
 }
@@ -7641,7 +7646,7 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+		
 	// allocate channel
 	free_channel = FALSE_m12;
 	if (chan == NULL) {
@@ -7703,7 +7708,7 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 			return(NULL);
 		}
 	}
-	
+
 	// allocate segments
 	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
 	if (seg_idx == FALSE_m12) {
@@ -7760,7 +7765,8 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 			} else {
 				read_MED_thread_infos[k].MED_struct = (LEVEL_HEADER_m12 *) seg;
 			}
-			seg->time_slice = *slice;
+			read_MED_thread_infos[thread_idx].slice = slice;
+			read_MED_thread_infos[thread_idx].flags = flags;
 			proc_thread_infos[thread_idx].thread_f = G_open_segment_thread_m12;
 			proc_thread_infos[thread_idx].thread_label = "G_open_segment_thread_m12";
 			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
@@ -7877,9 +7883,8 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 		chan->metadata_fps->parameters.fd = FPS_FD_EPHEMERAL_m12;
 		chan->flags |= LH_UPDATE_EPHEMERAL_DATA_m12;
 	}
-	
+
 	chan->last_access_time = G_current_uutc_m12();
-	
 	chan->flags |= (LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
 
 	return(chan);
@@ -8172,7 +8177,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	if (n_chans == 0) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
-		G_error_message_m12("%s(): no channels found\n", __FUNCTION__);
+		G_warning_message_m12("%s(): no channels found\n", __FUNCTION__);
 		return(NULL);
 	}
 	
@@ -8182,7 +8187,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m12) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
-		G_error_message_m12("%s(): channels must be in a MED session directory\n", __FUNCTION__);
+		G_warning_message_m12("%s(): channels must be in a MED session directory\n", __FUNCTION__);
 		return(NULL);
 	}
 	
@@ -8194,7 +8199,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		if (strcmp(sess->path, tmp_str)) {
 			if (free_session == TRUE_m12)
 				G_free_session_m12(sess, TRUE_m12);
-			G_error_message_m12("%s(): channels must all be in the same session directory\n", __FUNCTION__);
+			G_warning_message_m12("%s(): channels must all be in the same session directory\n", __FUNCTION__);
 			return(NULL);
 		}
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
@@ -8208,30 +8213,28 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			default:
 				if (free_session == TRUE_m12)
 					G_free_session_m12(sess, TRUE_m12);
-				G_error_message_m12("%s(): channels must be MED channel directories\n", __FUNCTION__);
+				G_warning_message_m12("%s(): channels must be MED channel directories\n", __FUNCTION__);
 				return(NULL);
 		}
 	}
 	
 	// divide channel lists
-	if (!(flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12))
+	if (flags & LH_EXCLUDE_TIME_SERIES_CHANNELS_m12)
 		n_ts_chans = 0;
-	if (!(flags & LH_INCLUDE_VIDEO_CHANNELS_m12))
-		n_vid_chans = 0;
-	if (n_ts_chans)
+	else if (n_ts_chans)
 		ts_chan_list = (si1 **) calloc_2D_m12((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	if (n_vid_chans)
+	if (flags & LH_EXCLUDE_VIDEO_CHANNELS_m12)
+		n_vid_chans = 0;
+	else if (n_vid_chans)
 		vid_chan_list = (si1 **) calloc_2D_m12((size_t) n_vid_chans, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	for (i = j = k = 0; i < n_chans; ++i) {
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				if (flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12)
-					strcpy(ts_chan_list[j++], chan_list[i]);
+				strcpy(ts_chan_list[j++], chan_list[i]);
 				break;
 			case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				if (flags & LH_INCLUDE_VIDEO_CHANNELS_m12)
-					strcpy(vid_chan_list[k++], chan_list[i]);
+				strcpy(vid_chan_list[k++], chan_list[i]);
 				break;
 		}
 	}
@@ -8397,41 +8400,54 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		}
 	}
 
-	// set up thread infos
 	n_chans = n_ts_chans + n_vid_chans;
-	proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m12));
-	read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m12));
-	thread_idx = 0;
-	for (i = 0; i < n_ts_chans; ++i) {
-		chan = sess->time_series_channels[i];
-		chan->time_slice = *slice;
-		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m12;
-		proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m12";
-		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
-		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-		read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
-		++thread_idx;
-	}
-	for (i = 0; i < n_vid_chans; ++i) {
-		chan = sess->video_channels[i];
-		chan->time_slice = *slice;
-		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m12;
-		proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m12";
-		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
-		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-		read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
-		++thread_idx;
-	}
-	
-	// thread out channel opens
-	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, n_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
-
-	// check results
-	for (i = 0; i < n_chans; ++i)
-		if (read_MED_thread_infos[i].MED_struct == NULL)
+	if (n_chans > 1) {
+		// set up thread infos
+		proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m12));
+		read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m12));
+		thread_idx = 0;
+		for (i = 0; i < n_ts_chans; ++i) {
+			chan = sess->time_series_channels[i];
+			chan->time_slice = *slice;
+			proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m12;
+			proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m12";
+			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+			read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+			++thread_idx;
+		}
+		for (i = 0; i < n_vid_chans; ++i) {
+			chan = sess->video_channels[i];
+			chan->time_slice = *slice;
+			proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m12;
+			proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m12";
+			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+			read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+			++thread_idx;
+		}
+		
+		// thread out channel opens
+		ret_val = PROC_distribute_jobs_m12(proc_thread_infos, n_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
+		
+		// check results
+		for (i = 0; i < n_chans; ++i) {
+			if (read_MED_thread_infos[i].MED_struct == NULL) {
+				ret_val = FALSE_m12;
+				break;
+			}
+		}
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+	} else {  // one channel not worth thread overhead (fairly common scenario)
+		if (n_ts_chans)  // time series channel
+			chan = G_open_channel_m12(sess->time_series_channels[0], slice, NULL, flags, NULL);
+		else  // video channel
+			chan = G_open_channel_m12(sess->video_channels[0], slice, NULL, flags, NULL);
+		ret_val = TRUE_m12;
+		if (chan == NULL)
 			ret_val = FALSE_m12;
-	free((void *) proc_thread_infos);
-	free((void *) read_MED_thread_infos);
+	}
 	if (ret_val == FALSE_m12) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
@@ -8440,8 +8456,8 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 
 	// update session slice
-	*slice = chan->time_slice;
-	
+	*slice = globals_m12->reference_channel->time_slice;
+
 	// sort channels
 	G_sort_channels_by_acq_num_m12(sess);
 
@@ -8583,7 +8599,6 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	sess->last_access_time = curr_time;
 	if (sess->segmented_sess_recs != NULL)
 		sess->segmented_sess_recs->last_access_time = curr_time;
-	
 	sess->flags |= LH_OPEN_m12;
 
 	return(sess);
@@ -8728,10 +8743,6 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	}
 	
 	// divide channel lists
-	if (!(sess->flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12))
-		n_ts_chans = 0;
-	if (!(sess->flags & LH_INCLUDE_VIDEO_CHANNELS_m12))
-		n_vid_chans = 0;
 	if (n_ts_chans)
 		ts_chan_list = (si1 **) calloc_2D_m12((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (n_vid_chans)
@@ -8740,12 +8751,10 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				if (sess->flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12)
-					strcpy(ts_chan_list[j++], chan_list[i]);
+				strcpy(ts_chan_list[j++], chan_list[i]);
 				break;
 			case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				if (sess->flags & LH_INCLUDE_VIDEO_CHANNELS_m12)
-					strcpy(vid_chan_list[k++], chan_list[i]);
+				strcpy(vid_chan_list[k++], chan_list[i]);
 				break;
 		}
 	}
@@ -10383,7 +10392,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 		// open session
 		sess = G_open_session_m12(sess, slice, file_list, list_len, flags, password);
 		if (sess == NULL) {
-			G_error_message_m12("%s(): error opening session\n", __FUNCTION__);
+			G_warning_message_m12("%s(): error opening session\n", __FUNCTION__);
 			return(NULL);
 		}
 	} else {  // process time slice (passed slice is not modified)
@@ -11255,8 +11264,8 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
-	si8                     sample_number, n_inds, i, absolute_numbering_offset;
-	si8			ref_sample_number, ref_uutc;
+	si8                     n_inds, i, absolute_numbering_offset;
+	si8			ref_sample_number, ref_uutc, test_time;
 	sf8                     tmp_sf8, sampling_frequency, rounded_samp_num, samp_num_eps;
 	ui4			mask;
 	va_list			args;
@@ -11343,26 +11352,24 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 		else  // FIND_ABSOLUTE_m12 (default)
 			absolute_numbering_offset = seg->metadata_fps->metadata->time_series_section_2.absolute_start_sample_number;
 		
+		// condition target
+		if (target_uutc < 0)  // relative time
+			target_uutc = globals_m12->session_start_time - target_uutc;
+		test_time = target_uutc - globals_m12->recording_time_offset;
+		if (test_time > 0 && target_uutc != END_OF_TIME_m12)  // END_OF_TIME_m12 is not offset
+			target_uutc = test_time;
+
+		// get index
 		i = G_find_index_m12(seg, target_uutc, TIME_SEARCH_m12);
 		if (i == -1)  // target time earlier than segment start => return segment start sample
 			return(absolute_numbering_offset);
 
-		tsi += i;
-		if (i == n_inds) {  // target time later than segment end => return segment end sample number
-			i = (tsi->start_sample_number - 1) + absolute_numbering_offset;
-			return(i);
-		}
-
+		ref_sample_number = (tsi += i)->start_sample_number;
+		if (i == n_inds)  // target time later than segment end => return segment end sample number
+			return((ref_sample_number - 1) + absolute_numbering_offset);
 		ref_uutc = tsi->start_time;
-		ref_sample_number = tsi->start_sample_number;
 
-		++tsi;  // advance to next index
-		if (tsi->file_offset > 0) {  // get local sampling frequency, unless discontinuity
-			sampling_frequency = (sf8) (tsi->start_sample_number - ref_sample_number);
-			sampling_frequency /= ((sf8) (tsi->start_time - ref_uutc) / (sf8) 1e6);
-		} else {
-			sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-		}
+		sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 	}
 	
 	// round up if very close to next sample
@@ -11382,25 +11389,15 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 			tmp_sf8 += (sf8) 1.0;
 			break;
 		case FIND_PREVIOUS_m12:
-			if ((tmp_sf8 -= (sf8) 1.0) < (sf8) 0.0)
-				tmp_sf8 = (sf8) 0.0;
+			if (tmp_sf8 >= (sf8) 1.0)
+				tmp_sf8 -= (sf8) 1.0;
 			break;
 		case FIND_CURRENT_m12:
 		default:
 			break;
 	}
-	sample_number = ref_sample_number + (si8) tmp_sf8;
 
-	if (tsi != NULL) {
-		if (sample_number >= tsi->start_sample_number) {
-			sample_number = tsi->start_sample_number;
-			if (mode & (FIND_CURRENT_m12 | FIND_PREVIOUS_m12))
-				--sample_number;  // these should not go into next index
-		}
-	}
-	sample_number += absolute_numbering_offset;
-	
-	return(sample_number);
+	return(ref_sample_number + (si8) tmp_sf8 + absolute_numbering_offset);
 }
 
 
@@ -12522,14 +12519,6 @@ void	G_show_level_header_flags_m12(ui8 flags)
 		printf_m12("LH_UPDATE_EPHEMERAL_DATA_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
 	else
 		printf_m12("LH_UPDATE_EPHEMERAL_DATA_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
-	if (flags & LH_INCLUDE_TIME_SERIES_CHANNELS_m12)
-		printf_m12("LH_INCLUDE_TIME_SERIES_CHANNELS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
-	else
-		printf_m12("LH_INCLUDE_TIME_SERIES_CHANNELS_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
-	if (flags & LH_INCLUDE_VIDEO_CHANNELS_m12)
-		printf_m12("LH_INCLUDE_VIDEO_CHANNELS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
-	else
-		printf_m12("LH_INCLUDE_VIDEO_CHANNELS_m12: %sfalse%s\n", TC_BLUE_m12, TC_RESET_m12);
 	if (flags & LH_MAP_ALL_TIME_SERIES_CHANNELS_m12)
 		printf_m12("LH_MAP_ALL_TIME_SERIES_CHANNELS_m12: %strue%s\n", TC_RED_m12, TC_RESET_m12);
 	else
@@ -13756,6 +13745,51 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 }
 
 
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+TERN_m12 G_ternary_entry_m12(si1 *entry)
+{
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	if (G_empty_string_m12(entry) == TRUE_m12) {
+		G_warning_message_m12("%s(): empty string => returning UNKNOWN\n", __FUNCTION__);
+		return(UNKNOWN_m12);
+	}
+	    	    
+	switch (*entry) {
+		case 't':  // "true" case
+		case 'T':  // "True / TRUE" case
+		case 'y':  // "yes" case
+		case 'Y':  // "Yes / YES" case
+		case '1':  // ternary case
+			return(TRUE_m12);
+			break;
+		case 'f':  // "false" case
+		case 'F':  // "False / FALSE" case
+		case 'n':  // "no" case
+		case 'N':  // "No / NO" case
+			return(FALSE_m12);
+			break;
+		case '-':  // possibly ternary case
+			if (*(entry + 1) == '1')
+				return(FALSE_m12);
+			break;
+		case 'u':  // "unknown" case
+		case 'U':  // "Unknown / UNKNOWN" case
+		case '0':  // ternary case
+			return(UNKNOWN_m12);
+			break;
+	}
+	    	    
+	G_warning_message_m12("%s(): unrecognized pattern => returning UNKNOWN\n", __FUNCTION__);
+	    
+	return(UNKNOWN_m12);
+}
+
+
 void    G_textbelt_text_m12(si1 *phone_number, si1 *content, si1 *textbelt_key)
 {
 	si1     command[1024];
@@ -13894,7 +13928,7 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
-	si8                     uutc, absolute_numbering_offset, ref_frame_number;
+	si8                     absolute_numbering_offset, ref_frame_number;
 	si8			ref_uutc, i, n_inds, tmp_si8;
 	sf8                     tmp_sf8, frame_rate;
 	ui4			mask;
@@ -13977,15 +14011,11 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		
 		i = G_find_index_m12(seg, target_frame_number, SAMPLE_SEARCH_m12);
-		if (i == -1) {  // target frame earlier than segment start => return segment start time
-			i = vi->start_time;
-			return(i);
-		}
+		if (i == -1)  // target frame earlier than segment start => return segment start time
+			return(vi->start_time);
 		vi += i;
-		if (i == n_inds) {  // target frame later than segment end => return segment end uutc
-			i = vi->start_time - 1;
-			return(i);
-		}
+		if (i == n_inds)  // target frame later than segment end => return segment end uutc
+			return(vi->start_time - 1);
 		
 		// make target_frame_number relative
 		absolute_numbering_offset = seg->metadata_fps->metadata->video_section_2.absolute_start_frame_number;
@@ -13993,13 +14023,7 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 
 		ref_uutc = vi->start_time;
 		ref_frame_number = vi->start_frame_number;
-		++vi;  // advance to next index
-		if (vi->file_offset > 0) {  // get local frame rate, unless discontinuity
-			frame_rate = (sf8) (vi->start_frame_number - ref_frame_number);
-			frame_rate /= ((sf8) (vi->start_time - ref_uutc) / (sf8) 1e6);
-		} else {
-			frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
-		}
+		frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
 	}
 	
 	tmp_sf8 = (sf8) (target_frame_number - ref_frame_number) * (sf8) 1e6;
@@ -14023,12 +14047,7 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 			break;
 	}
 	
-	uutc = ref_uutc + tmp_si8;
-	if (vi != NULL)
-		if (uutc >= vi->start_time)
-			uutc = vi->start_time - 1;
-
-	return(uutc);
+	return(ref_uutc + tmp_si8);
 }
 
 
@@ -14036,7 +14055,7 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
-	si8                     uutc, absolute_numbering_offset, ref_sample_number;
+	si8                     absolute_numbering_offset, ref_sample_number;
 	si8			ref_uutc, n_inds, i, tmp_si8;
 	sf8                     tmp_sf8, sampling_frequency;
 	ui4			mask;
@@ -14119,15 +14138,11 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
 		
 		i = G_find_index_m12(seg, target_sample_number, SAMPLE_SEARCH_m12);
-		if (i == -1) {  // target sample earlier than segment start => return segment start time
-			i = tsi->start_time;
-			return(i);
-		}
+		if (i == -1)  // target sample earlier than segment start => return segment start time
+			return(tsi->start_time);
 		tsi += i;
-		if (i == n_inds) {  // target sample later than segment end => return segment end uutc
-			i = tsi->start_time - 1;
-			return(i);
-		}
+		if (i == n_inds)  // target sample later than segment end => return segment end uutc
+			return(tsi->start_time - 1);
 		
 		// make target_sample_number relative
 		absolute_numbering_offset = seg->metadata_fps->metadata->time_series_section_2.absolute_start_sample_number;
@@ -14135,13 +14150,7 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 
 		ref_uutc = tsi->start_time;
 		ref_sample_number = tsi->start_sample_number;
-		++tsi;  // advance to next index
-		if (tsi->file_offset > 0) {  // get local sampling frequency, unless discontinuity
-			sampling_frequency = (sf8) (tsi->start_sample_number - ref_sample_number);
-			sampling_frequency /= ((sf8) (tsi->start_time - ref_uutc) / (sf8) 1e6);
-		} else {
-			sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-		}
+		sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 	}
 	
 	tmp_sf8 = (sf8) (target_sample_number - ref_sample_number) * (sf8) 1e6;
@@ -14164,13 +14173,8 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 				++tmp_si8;
 			break;
 	}
-	
-	uutc = ref_uutc + tmp_si8;
-	if (tsi != NULL)
-		if (uutc >= tsi->start_time)
-			uutc = tsi->start_time - 1;
-	
-	return(uutc);
+		
+	return(ref_uutc + tmp_si8);
 }
 
 
@@ -24646,11 +24650,11 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	// varargs matrix == NULL: flags, out_samp_count, out_samp_freq are passed (fc1 & fc2 must be filled in, but if not used, 0.0 should be passed as place holders)
 
 	if (sess == NULL) {
-		G_warning_message_m12("%s(): invalid session => returning\n", __FUNCTION__);
+		G_warning_message_m12("%s(): NULL session => returning\n", __FUNCTION__);
 		return(NULL);
 	}
 	if (!(sess->flags & LH_OPEN_m12)) {
-		G_warning_message_m12("%s(): session closed => returning\n", __FUNCTION__);
+		G_warning_message_m12("%s(): session not open => returning\n", __FUNCTION__);
 		return(NULL);
 	}
 	if (slice == NULL)  // if no slice passed, session slice is used, but may be modified
@@ -24725,6 +24729,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	// set slice parameters by extents limits
 	passed_slice_copy = *slice;  // passed slice not modified
 	req_slice = &passed_slice_copy;  // this slice may be modified
+	
 	if (req_slice->conditioned == FALSE_m12)
 		G_condition_time_slice_m12(req_slice);
 	if (search_mode == TIME_SEARCH_m12)
@@ -24740,8 +24745,8 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 			if (search_mode == SAMPLE_SEARCH_m12) {
 				req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
 				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
-					duration = round((sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq);
-					req_slice->end_time = (req_slice->start_time + (si8) duration) - 1;
+					duration = (sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq;
+					req_slice->end_time = req_slice->start_time + (si8) (duration + (sf8) 0.5) - (si8) 1;
 					changed_to_relative = TRUE_m12;
 				} else {  // no padding
 					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
@@ -24752,17 +24757,15 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 			if (search_mode == TIME_SEARCH_m12) {
 				if ((matrix->flags & DM_PAD_MASK_m12) == 0) {  // no padding
 					req_slice->start_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_time, FIND_CURRENT_m12);
-					duration = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1000000.0;  // in seconds
-					req_slice->end_sample_number = req_slice->start_sample_number;
-					req_slice->end_sample_number += (si8) round(ref_samp_freq * duration) - 1;  // relative samples
+					duration = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1e6;  // convert to seconds
+					req_slice->end_sample_number = req_slice->start_sample_number + (si8) ((ref_samp_freq * duration) + (sf8) 0.5) - (si8) 1;  // relative samples
 					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-
 				}
 			} else {  // search_mode == SAMPLE_SEARCH_m12
 				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
-					duration = round((sf8) ((req_slice->end_sample_number - req_slice->start_sample_number) + 1) / ref_samp_freq);
+					duration = (sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq;
 					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-					req_slice->end_time = (req_slice->start_time + (si8) duration) - 1;
+					req_slice->end_time = req_slice->start_time + (si8) (duration + (sf8) 0.5) - (si8) 1;
 				} else {  // no padding
 					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
 					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
@@ -24779,9 +24782,10 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		req_slice->number_of_segments = UNKNOWN_m12;
 
 	// read session
-	G_read_session_m12(sess, req_slice);
+	if (G_read_session_m12(sess, req_slice) == NULL)
+		return(NULL);
 	sess_slice = &sess->time_slice;  // filled in with actual values
-
+	
 	// return a NULL matrix if there is no data found
 	if (sess_slice->number_of_segments == UNKNOWN_m12)
 		return(NULL);
@@ -24987,6 +24991,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	// debug threads
 //	for (i = 0; i < matrix->channel_count; ++i)
 //		DM_channel_thread_m12((void *) (proc_thread_infos + i));
+//	ret_val = TRUE_m12;
 	
 	// launch channel threads; don't wait for completion
 	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, matrix->channel_count, 0, FALSE_m12);  // default reserved cores
@@ -35090,7 +35095,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		ret_val = recv(sock_fd, (void *) pkt_header, max_pkt_bytes, 0);
 				
 		// receive checks
-		if (ret_val < TR_HEADER_BYTES_m12 && data_bytes_received == 0) {
+		if (ret_val < TR_HEADER_BYTES_m12) {
 			if (ret_val == 0) {
 				data_bytes_received = TR_E_SOCK_CLOSED_m12;
 				G_warning_message_m12("%s(%s:%hu <- %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_received));
@@ -35113,13 +35118,16 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			goto TR_RECV_FAIL_m12;
 		}
 
-		// keep alive
-		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12) {  // keep alive check
-			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)  // 1st check
-				if (pkt_header->subtype == TR_TYPE_KEEP_ALIVE_m12)  // 2nd check
-					if (pkt_header->version == TR_VERSION_DEFAULT_m12)  // 3rd check
-						continue;  // discard packet
+		// check ID code
+		if (pkt_header->ID_code != ID_code) {
+			data_bytes_received = TR_E_ID_MISMATCH_m12;
+			goto TR_RECV_FAIL_m12;
 		}
+				
+		// keep alive
+		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12)
+			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)
+				break;
 		
 		// sender requested acknowledgment
 		if (acknowledge == UNKNOWN_m12) {
@@ -35130,20 +35138,12 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 					ack_trans_info = (TR_INFO_m12 *) calloc((size_t) 1, sizeof(TR_INFO_m12));
 					ack_header = ack_trans_info->header;
 					ack_header->ID_code = ID_code;
+					ack_header->type = TR_TYPE_ACK_OK_m12;
 					ack_trans_info->sock_fd = sock_fd;
 				}
 			}
 		}
 
-		if (ID_code) {  // ID check (allow any ID code if receiver didn't specify)
-			if (pkt_header->ID_code != ID_code) {
-				if (attempts++ < TR_RETRANSMIT_ATTEMPTS_m12)
-					continue;
-				data_bytes_received = TR_E_ID_MISMATCH_m12;
-				goto TR_RECV_FAIL_m12;
-			}
-		}
-				
 		if (ret_val < (si8) pkt_header->packet_bytes) {
 			// first try to receive rest of packet (shouldn't happen often: inet mss chosen to avoid this)
 			partial_pkt = (ui1 *) pkt_header;
@@ -35193,10 +35193,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 			}
 		}
 		
-		if (acknowledge == TRUE_m12) {
-			ack_header->type = TR_TYPE_ACK_OK_m12;
+		if (acknowledge == TRUE_m12)
 			TR_send_transmission_m12(ack_trans_info);
-		}
 		
 		// realloc
 		if (pkt_header->transmission_bytes > trans_info->buffer_bytes)
@@ -35321,6 +35319,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 	TERN_m12	password_passed, acknowledge, no_destruct_flag;
 	ui1		*buffer, *data;
 	ui2		data_bytes, packet_bytes;
+	ui4		ID_code;
 	si4		sock_fd, attempts, err;
 	si8		ret_val, data_bytes_sent, data_bytes_remaining, bytes_received, actual_data_bytes;
 	TR_HEADER_m12	*header, *pkt_header, *ack_header, saved_data;
@@ -35344,10 +35343,11 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 			return((si8) FALSE_m12);
 	}
 	header = trans_info->header;
+	ID_code = header->ID_code;
 	buffer = trans_info->buffer;
 	data = trans_info->data;
 	sock_fd = trans_info->sock_fd;
-	
+
 	if (header->transmission_bytes > trans_info->buffer_bytes) {
 		G_warning_message_m12("%s(): buffer too small for transmission\n", __FUNCTION__);
 		return(TR_E_UNSPEC_m12);
@@ -35456,9 +35456,12 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 				bytes_received = TR_recv_transmission_m12(ack_trans_info, NULL);
 				if (bytes_received != 0)
 					continue;
+				if (pkt_header->ID_code != ID_code)  // check ID code
+					continue;
 				if (ack_header->type == TR_TYPE_ACK_RETRANSMIT_m12)
 					goto TR_SEND_RETRANSMIT_m12;
 			} while (header->type != TR_TYPE_ACK_OK_m12 && attempts++ < TR_RETRANSMIT_ATTEMPTS_m12);
+			TR_set_socket_timeout_m12(trans_info);  // reset timeout
 			
 			if (ack_header->type != TR_TYPE_ACK_OK_m12) {
 				data_bytes_sent = TR_E_NO_ACK_m12;
@@ -35466,11 +35469,10 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 				header->flags |= TR_FLAGS_CLOSE_m12;
 				goto TR_SEND_FAIL;
 			}
-			TR_set_socket_timeout_m12(trans_info);  // reset timeout
 		}
 		
 		// restore data in header region
-		if (TR_FLAGS_NO_DESTRUCT_m12 == TRUE_m12)
+		if (no_destruct_flag == TRUE_m12)
 			if (data_bytes_sent)
 				*pkt_header = saved_data;
 				
