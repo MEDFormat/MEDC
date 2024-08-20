@@ -8219,22 +8219,38 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 	
 	// divide channel lists
-	if (flags & LH_EXCLUDE_TIME_SERIES_CHANNELS_m12)
+	if (flags & LH_EXCLUDE_TIME_SERIES_CHANNELS_m12) {
 		n_ts_chans = 0;
-	else if (n_ts_chans)
+		flags &= ~LH_MAP_ALL_TIME_SERIES_CHANNELS_m12;  // exclude flag supersedes map all flag
+	} else if (n_ts_chans) {
 		ts_chan_list = (si1 **) calloc_2D_m12((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	if (flags & LH_EXCLUDE_VIDEO_CHANNELS_m12)
+		if (ts_chan_list == NULL) {
+			if (free_session == TRUE_m12)
+				G_free_session_m12(sess, TRUE_m12);
+			return(NULL);
+		}
+	}
+	if (flags & LH_EXCLUDE_VIDEO_CHANNELS_m12) {
 		n_vid_chans = 0;
-	else if (n_vid_chans)
+		flags &= ~LH_MAP_ALL_VIDEO_CHANNELS_m12;  // exclude flag supersedes map all flag
+	} else if (n_vid_chans) {
 		vid_chan_list = (si1 **) calloc_2D_m12((size_t) n_vid_chans, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (vid_chan_list == NULL) {
+			if (free_session == TRUE_m12)
+				G_free_session_m12(sess, TRUE_m12);
+			return(NULL);
+		}
+	}
 	for (i = j = k = 0; i < n_chans; ++i) {
 		type_code = G_MED_type_code_from_string_m12(chan_list[i]);
 		switch (type_code) {
 			case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				strcpy(ts_chan_list[j++], chan_list[i]);
+				if (n_ts_chans)
+					strcpy(ts_chan_list[j++], chan_list[i]);
 				break;
 			case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-				strcpy(vid_chan_list[k++], chan_list[i]);
+				if (n_vid_chans)
+					strcpy(vid_chan_list[k++], chan_list[i]);
 				break;
 		}
 	}
