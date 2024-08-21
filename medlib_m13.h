@@ -1026,46 +1026,50 @@ typedef struct {
 
 // all levels
 #define LH_NO_FLAGS_m13					((ui8) 0)
-#define LH_OPEN_m13					((ui8) 1 << 0)	// all level & sublevel flags have been operated on
+#define LH_NO_THREADING_m13				((ui8) 1 << 0)	// no library threading, typically set for debugging
+
 #define LH_GENERATE_EPHEMERAL_DATA_m13			((ui8) 1 << 1)	// implies all level involvement
 #define LH_UPDATE_EPHEMERAL_DATA_m13			((ui8) 1 << 2)	// signal to higher level from lower level (reset by higher level after update)
-#define LH_NO_THREADING_m13				((ui8) 1 << 3)	// no library threading, typically set for debugging
 
 // session level
-#define LH_INCLUDE_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 8)
-#define LH_INCLUDE_VIDEO_CHANNELS_m13			((ui8) 1 << 9)
-#define LH_MAP_ALL_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 12)
-#define LH_MAP_ALL_VIDEO_CHANNELS_m13			((ui8) 1 << 13)
+#define LH_SESSION_OPEN_m13				((ui8) 1 << 8)  // all mapped channels & segmented session records are open
+#define LH_EXCLUDE_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 9)  // useful when session directory passed, but don't want time series channels
+#define LH_EXCLUDE_VIDEO_CHANNELS_m13			((ui8) 1 << 10) // useful when session directory passed, but don't want video channels
+#define LH_MAP_ALL_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 11) // useful when time series channels may be added to open session
+#define LH_MAP_ALL_VIDEO_CHANNELS_m13			((ui8) 1 << 12) // useful when video channels may be added to open session
 
 #define LH_READ_SLICE_SESSION_RECORDS_m13		((ui8) 1 << 16)	// read full indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_SESSION_RECORDS_m13		((ui8) 1 << 17)	// read full indices file & data files, close all files
 #define LH_MEM_MAP_SESSION_RECORDS_m13			((ui8) 1 << 18)	// allocate, but don't read full file
 
 // segmented session records level
-#define LH_READ_SLICE_SEGMENTED_SESS_RECS_m13		((ui8) 1 << 19)	// read full indices file (close file); open data, read universal header, leave open
-#define LH_READ_FULL_SEGMENTED_SESS_RECS_m13		((ui8) 1 << 20)	// read full indices file & data files, close all files
-#define LH_MEM_MAP_SEGMENTED_SESS_RECS_m13		((ui8) 1 << 21)	// allocate, but don't read full data file
+#define LH_SEGMENTED_SESS_RECS_OPEN_m13			((ui8) 1 << 24) // all mapped segmented session records files are open or in memory
+#define LH_READ_SLICE_SEGMENTED_SESS_RECS_m13		((ui8) 1 << 25)	// read full indices file (close file); open data, read universal header, leave open
+#define LH_READ_FULL_SEGMENTED_SESS_RECS_m13		((ui8) 1 << 26)	// read full indices file & data files, close all files
+#define LH_MEM_MAP_SEGMENTED_SESS_RECS_m13		((ui8) 1 << 27)	// allocate, but don't read full data file
 
 // channel level
-#define LH_CHANNEL_ACTIVE_m13				((ui8) 1 << 32)
-#define LH_MAP_ALL_SEGMENTS_m13				((ui8) 1 << 33)
+#define LH_CHANNEL_OPEN_m13				((ui8) 1 << 32)  // all mapped segments are open
+#define LH_CHANNEL_ACTIVE_m13				((ui8) 1 << 33)  // include channel in current read set
+#define LH_MAP_ALL_SEGMENTS_m13				((ui8) 1 << 34)  // allocate slots for every segment, regardless of whether required for current read
 // (active channels only)
 #define LH_READ_SLICE_CHANNEL_RECORDS_m13		((ui8) 1 << 40)	// read full indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_CHANNEL_RECORDS_m13		((ui8) 1 << 41)	// read full indices file & data files, close all files
 #define LH_MEM_MAP_CHANNEL_RECORDS_m13			((ui8) 1 << 42)	// allocate, but don't read full file
 #define LH_THREAD_SEGMENT_READS_m13			((ui8) 1 << 43)	// set if likely to cross many segment boundaries in read (e.g. one channel, long reads or short segments)
 
-// segment level (active channels only)
-#define LH_READ_SLICE_SEGMENT_DATA_m13			((ui8) 1 << 48)	// read full metadata & indices files, close files; open data, read universal header, leave open
-#define LH_READ_FULL_SEGMENT_DATA_m13			((ui8) 1 << 49)	// read full metadata, indices, & data files, close all files
-#define LH_MEM_MAP_SEGMENT_DATA_m13			((ui8) 1 << 50)	// allocate, but don't read full file
-#define LH_READ_SLICE_SEGMENT_RECORDS_m13		((ui8) 1 << 51)	// read full indices file (close file); open data, read universal header, leave open
-#define LH_READ_FULL_SEGMENT_RECORDS_m13		((ui8) 1 << 52)	// read full indices file & data files, close all files
-#define LH_MEM_MAP_SEGMENT_RECORDS_m13			((ui8) 1 << 53)	// allocate, but don't read full file
-#define LH_READ_SEGMENT_METADATA_m13			((ui8) 1 << 54)	// read segment metadata
-#define LH_NO_CPS_PTR_RESET_m13				((ui8) 1 << 60) // caller will update pointers
-#define LH_NO_CPS_CACHING_m13				((ui8) 1 << 61) // set cps_caching parameter to FALSE
-
+// segment level
+#define LH_SEGMENT_OPEN_m13				((ui8) 1 << 48) // all mapped records & data files are open or in memory
+#define LH_NO_CPS_PTR_RESET_m13				((ui8) 1 << 49) // caller will update pointers
+#define LH_NO_CPS_CACHING_m13				((ui8) 1 << 50) // set cps_caching parameter to FALSE
+// (active channels only)
+#define LH_READ_SLICE_SEGMENT_DATA_m13			((ui8) 1 << 56)	// read full metadata & indices files, close files; open data, read universal header, leave open
+#define LH_READ_FULL_SEGMENT_DATA_m13			((ui8) 1 << 57)	// read full metadata, indices, & data files, close all files
+#define LH_MEM_MAP_SEGMENT_DATA_m13			((ui8) 1 << 58)	// allocate, but don't read full file
+#define LH_READ_SLICE_SEGMENT_RECORDS_m13		((ui8) 1 << 59)	// read full indices file (close file); open data, read universal header, leave open
+#define LH_READ_FULL_SEGMENT_RECORDS_m13		((ui8) 1 << 60)	// read full indices file & data files, close all files
+#define LH_MEM_MAP_SEGMENT_RECORDS_m13			((ui8) 1 << 61)	// allocate, but don't read full file
+#define LH_READ_SEGMENT_METADATA_m13			((ui8) 1 << 62)	// read segment metadata
 
 // flag groups
 #define LH_MAP_ALL_CHANNELS_m13       	      (	LH_MAP_ALL_TIME_SERIES_CHANNELS_m13 | LH_MAP_ALL_VIDEO_CHANNELS_m13 )
@@ -4177,13 +4181,18 @@ typedef struct {
 		struct {
 			si1     ID_string[TYPE_BYTES_m13];  // transmission ID is typically application specific
 			ui1     type;  // transmission type (general [0-63] or transmission ID specific [64-255])
-			ui1	subtype;  // rarely used (2nd confirmation in keep alive messages)
-			ui1     version;  // transmission header version (also 3rd confirmation in keep alive messages)
+			ui1	subtype;  // rarely used
+			ui1     version;  // transmission header version
 		};
 		struct {
 			ui4     ID_code;  // transmission ID is typically application specific
-			si1	ID_string_terminal_zero;  // here for clarity
-			ui1	pad_bytes[3];  // not available for use (type, type_2, & version above)
+			union {
+				ui4	combined_check;  // use to to check [zero, type, subtype, version] as a ui4
+				struct {
+					si1	ID_string_terminal_zero;  // here for clarity
+					ui1	pad_bytes[3];  // not available for use (type, type_2, & version above)
+				};
+			};
 		};
 	};
 	si8	transmission_bytes;  // full size of tramsmitted data in bytes (*** does not include header ***)

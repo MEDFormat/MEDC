@@ -8447,10 +8447,12 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		ret_val = PROC_distribute_jobs_m12(proc_thread_infos, n_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
 		
 		// check results
-		for (i = 0; i < n_chans; ++i) {
-			if (read_MED_thread_infos[i].MED_struct == NULL) {
-				ret_val = FALSE_m12;
-				break;
+		if (ret_val == TRUE_m12) {
+			for (i = 0; i < n_chans; ++i) {
+				if (read_MED_thread_infos[i].MED_struct == NULL) {
+					ret_val = FALSE_m12;
+					break;
+				}
 			}
 		}
 		free((void *) proc_thread_infos);
@@ -10302,7 +10304,7 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 		seg_abs_start_samp_num = vmd2->absolute_start_frame_number;
 		seg_abs_end_samp_num = seg_abs_start_samp_num + (vmd2->number_of_frames - (si8) 1);
 	}
-	
+
 	// get local indices (sample number == frame number == idx)
 	if (search_mode == SAMPLE_SEARCH_m12) {
 		if (slice->start_sample_number < seg_abs_start_samp_num)
@@ -10459,81 +10461,106 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			++active_vid_chans;
 	active_chans = active_ts_chans + active_vid_chans;
 
-	// set up thread infos
-	proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) active_chans, sizeof(PROC_THREAD_INFO_m12));
-	read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m12));
-	search_mode = G_get_search_mode_m12(slice);
-	thread_idx = 0;
-	if (active_ts_chans) {
-		calculate_channel_indices = FALSE_m12;
-		if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
-			if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
-				if (search_mode == SAMPLE_SEARCH_m12) {
-					calculate_channel_indices = TRUE_m12;
-					ref_sf = globals_m12->reference_channel->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+	if (active_chans > 1) {
+		// set up thread infos
+		proc_thread_infos = (PROC_THREAD_INFO_m12 *) calloc((size_t) active_chans, sizeof(PROC_THREAD_INFO_m12));
+		read_MED_thread_infos = (READ_MED_THREAD_INFO_m12 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m12));
+		search_mode = G_get_search_mode_m12(slice);
+		thread_idx = 0;
+		if (active_ts_chans) {
+			calculate_channel_indices = FALSE_m12;
+			if (globals_m12->time_series_frequencies_vary == TRUE_m12) {
+				if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12) {
+					if (search_mode == SAMPLE_SEARCH_m12) {
+						calculate_channel_indices = TRUE_m12;
+						ref_sf = globals_m12->reference_channel->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+					}
+				}
+			}
+			for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+				chan = sess->time_series_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+					if (calculate_channel_indices == TRUE_m12) {
+						sf_ratio = chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
+						chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
+						chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
+						chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+					} else {
+						chan->time_slice = *slice;
+					}
+					proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m12;
+					proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m12";
+					proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+					proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+					read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+					++thread_idx;
 				}
 			}
 		}
-		for (i = 0; i < sess->number_of_time_series_channels; ++i) {
-			chan = sess->time_series_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-				if (calculate_channel_indices == TRUE_m12) {
-					sf_ratio = chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
-					chan->time_slice.start_sample_number = (si8) round((sf8) slice->start_sample_number * sf_ratio);
-					chan->time_slice.end_sample_number = (si8) round((sf8) slice->end_sample_number * sf_ratio);
-					chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
-				} else {
-					chan->time_slice = *slice;
-				}
-				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m12;
-				proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m12";
-				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
-				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-				read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
-				++thread_idx;
-			}
-		}
-	}
-	if (active_vid_chans) {
-		calculate_channel_indices = FALSE_m12;
-		if (globals_m12->video_frame_rates_vary == TRUE_m12) {
-			if (globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
-				if (search_mode == SAMPLE_SEARCH_m12) {
-					calculate_channel_indices = TRUE_m12;
-					ref_sf = globals_m12->reference_channel->metadata_fps->metadata->video_section_2.frame_rate;
+		if (active_vid_chans) {
+			calculate_channel_indices = FALSE_m12;
+			if (globals_m12->video_frame_rates_vary == TRUE_m12) {
+				if (globals_m12->reference_channel->type_code == VIDEO_CHANNEL_TYPE_m12) {
+					if (search_mode == SAMPLE_SEARCH_m12) {
+						calculate_channel_indices = TRUE_m12;
+						ref_sf = globals_m12->reference_channel->metadata_fps->metadata->video_section_2.frame_rate;
+					}
 				}
 			}
-		}
-		for (i = 0; i < sess->number_of_video_channels; ++i) {
-			chan = sess->video_channels[i];
-			if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
-				if (calculate_channel_indices == TRUE_m12) {
-					sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
-					chan->time_slice.start_frame_number = (si8) round((sf8) slice->start_frame_number * sf_ratio);
-					chan->time_slice.end_frame_number = (si8) round((sf8) slice->end_frame_number * sf_ratio);
-					chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
-				} else {
-					chan->time_slice = *slice;
+			for (i = 0; i < sess->number_of_video_channels; ++i) {
+				chan = sess->video_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m12) {
+					if (calculate_channel_indices == TRUE_m12) {
+						sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
+						chan->time_slice.start_frame_number = (si8) round((sf8) slice->start_frame_number * sf_ratio);
+						chan->time_slice.end_frame_number = (si8) round((sf8) slice->end_frame_number * sf_ratio);
+						chan->time_slice.start_time = chan->time_slice.end_time = UUTC_NO_ENTRY_m12;
+					} else {
+						chan->time_slice = *slice;
+					}
+					proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m12;
+					proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m12";
+					proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
+					proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+					read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
+					++thread_idx;
 				}
-				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m12;
-				proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m12";
-				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m12;
-				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-				read_MED_thread_infos[thread_idx].MED_struct = (LEVEL_HEADER_m12 *) chan;
-				++thread_idx;
 			}
 		}
-	}
-	
-	// thread out channel reads
-	ret_val = PROC_distribute_jobs_m12(proc_thread_infos, active_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
-	
-	// check results
-	for (i = 0; i < active_chans; ++i)
-		if (read_MED_thread_infos[i].MED_struct == NULL)
+		
+		// thread out channel reads
+		ret_val = PROC_distribute_jobs_m12(proc_thread_infos, active_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
+		
+		// check results
+		if (ret_val == TRUE_m12) {
+			for (i = 0; i < active_chans; ++i)
+				if (read_MED_thread_infos[i].MED_struct == NULL) {
+					ret_val = FALSE_m12;
+					break;
+				}
+		}
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+	} else {  // only one channel - not worth thread overhead (fairly common scenario)
+		if (active_ts_chans) {
+			for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+				chan = sess->time_series_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m12)
+					break;
+			}
+		} else {  // video channel
+			for (i = 0; i < sess->number_of_video_channels; ++i) {
+				chan = sess->video_channels[i];
+				if (chan->flags & LH_CHANNEL_ACTIVE_m12)
+					break;
+			}
+		}
+		ret_val = TRUE_m12;
+		chan = G_read_channel_m12(chan, slice, NULL, flags, NULL);
+		if (chan == NULL)
 			ret_val = FALSE_m12;
-	free((void *) proc_thread_infos);
-	free((void *) read_MED_thread_infos);
+	}
+	
 	if (ret_val == FALSE_m12) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
