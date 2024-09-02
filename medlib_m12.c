@@ -5204,8 +5204,8 @@ si8	G_generate_recording_time_offset_m12(si8 recording_start_time_uutc)
 	
 	recording_start_time_utc = recording_start_time_uutc / (si8) 1000000;
 	
-	// convert to same time of day in GMT
-	// (can't just use localtime() because might system may not be in timezone of recording, as in conversions)
+	// convert to same time of day in GMT (ignoring DST)
+	// (prefer not to use localtime() because might system may not be in timezone of recording, as in conversions)
 	if (globals_m12->time_constants_set == TRUE_m12) {
 		UTC_offset = globals_m12->standard_UTC_offset;
 	} else {
@@ -5237,12 +5237,10 @@ si8	G_generate_recording_time_offset_m12(si8 recording_start_time_uutc)
 
 	// set global offset
 	globals_m12->recording_time_offset = (recording_start_time_utc - secs_since_midnight) * (si8) 1000000;
-		
-	if (globals_m12->verbose == TRUE_m12)
-		G_message_m12("Recording Time Offset = %ld", globals_m12->recording_time_offset);
 	
 	if (recording_start_time_uutc == globals_m12->recording_time_offset)	// recording started at exactly midnight local standard time
 		--globals_m12->recording_time_offset;				// this can cause problems with oUTC and BEGINNING_OF_TIME_m12 (== 0)
+	
 	globals_m12->RTO_known = TRUE_m12;
 
 	return(recording_start_time_uutc - globals_m12->recording_time_offset);
@@ -29751,14 +29749,14 @@ void	HW_show_info_m12(void)
 	if (hw_params->system_memory_size == 0) {
 		printf_m12("system_memory_size = unknown\n");
 	} else {
-		STR_size_string_m12(size_str, hw_params->system_memory_size);
+		STR_size_string_m12(size_str, hw_params->system_memory_size, TRUE_m12);
 		printf_m12("system_memory_size = %s\n", size_str);
 	}
 	
 	if (hw_params->system_page_size == 0) {
 		printf_m12("system_page_size = unknown\n");
 	} else {
-		STR_size_string_m12(size_str, hw_params->system_page_size);
+		STR_size_string_m12(size_str, hw_params->system_page_size, TRUE_m12);
 		printf_m12("system_page_size = %s\n", size_str);
 	}
 	
@@ -33758,7 +33756,7 @@ TERN_m12	STR_contains_regex_m12(si1 *string)
 }
 
 
-si1     *STR_duration_string_m12(si1 *dur_str, si8 i_usecs)
+si1     *STR_duration_string_m12(si1 *dur_str, si8 i_usecs, TERN_m12 two_level)
 {
 	static si1      private_dur_str[TIME_STRING_BYTES_m12];
 	sf8             years, months, weeks, days, hours, mins, secs, msecs, usecs;
@@ -33775,37 +33773,84 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 i_usecs)
 	
 	years = usecs / (sf8) 31556926000000.0;
 	if (years >= (sf8) 1.0) {
-		sprintf_m12(dur_str, "%0.2lf years", years);
+		if (two_level == TRUE_m12) {
+			usecs = (years - floor(years)) * (sf8) 31556926000000.0;
+			months = usecs / (sf8) 2629744000000.0;
+			sprintf_m12(dur_str, "%d years 0.2lf months", (si4) years, months);
+		} else {
+			sprintf_m12(dur_str, "%0.2lf years", years);
+		}
 	} else {
 		months = usecs / (sf8) 2629744000000.0;
 		if (months >= (sf8) 1.0) {
-			sprintf_m12(dur_str, "%0.2lf months", months);
+			if (two_level == TRUE_m12) {
+				usecs = (months - floor(months)) * (sf8) 2629744000000.0;
+				weeks = usecs / (sf8) 604800000000.0;
+				sprintf_m12(dur_str, "%d months %0.2lf weeks", (si4) months, weeks);
+			} else {
+				sprintf_m12(dur_str, "%0.2lf months", months);
+			}
 		} else {
 			weeks = usecs / (sf8) 604800000000.0;
 			if (weeks >= (sf8) 1.0) {
-				sprintf_m12(dur_str, "%0.2lf weeks", weeks);
+				if (two_level == TRUE_m12) {
+					usecs = (weeks - floor(weeks)) * (sf8) 604800000000.0;
+					days = usecs / (sf8) 86400000000.0;
+					sprintf_m12(dur_str, "%d weeks %0.2lf days", (si4) weeks, days);
+				} else {
+					sprintf_m12(dur_str, "%0.2lf weeks", weeks);
+				}
 			} else {
 				days = usecs / (sf8) 86400000000.0;
 				if (days >= (sf8) 1.0) {
-					sprintf_m12(dur_str, "%0.2lf days", days);
+					if (two_level == TRUE_m12) {
+						usecs = (days - floor(days)) * (sf8) 86400000000.0;
+						hours = usecs / (sf8) 3600000000.0;
+						sprintf_m12(dur_str, "%d days %0.2lf hours", (si4) days, hours);
+					} else {
+						sprintf_m12(dur_str, "%0.2lf days", days);
+					}
 				} else {
 					hours = usecs / (sf8) 3600000000.0;
 					if (hours >= (sf8) 1.0) {
-						sprintf_m12(dur_str, "%0.2lf hours", hours);
+						if (two_level == TRUE_m12) {
+							usecs = (hours - floor(hours)) * (sf8) 3600000000.0;
+							mins = usecs / (sf8) 60000000.0;
+							sprintf_m12(dur_str, "%d hours %0.2lf minutes", (si4) hours, mins);
+						} else {
+							sprintf_m12(dur_str, "%0.2lf hours", hours);
+						}
 					} else {
 						mins = usecs / (sf8) 60000000.0;
 						if (mins >= (sf8) 1.0) {
-							sprintf_m12(dur_str, "%0.2lf minutes", mins);
+							if (two_level == TRUE_m12) {
+								usecs = (mins - floor(mins)) * (sf8) 60000000.0;
+								secs = usecs / (sf8) 1000000.0;
+								sprintf_m12(dur_str, "%d minutes %0.2lf seconds", (si4) mins, secs);
+							} else {
+								sprintf_m12(dur_str, "%0.2lf minutes", mins);
+							}
 						} else {
 							secs = usecs / (sf8) 1000000.0;
 							if (secs >= (sf8) 1.0) {
-								sprintf_m12(dur_str, "%0.2lf seconds", secs);
+								if (two_level == TRUE_m12) {
+									usecs = (secs - floor(secs)) * (sf8) 1000000.0;
+									msecs = usecs / (sf8) 1000.0;
+									sprintf_m12(dur_str, "%d seconds %0.2lf milliseconds", (si4) secs, msecs);
+								} else {
+									sprintf_m12(dur_str, "%0.2lf seconds", secs);
+								}
 							} else {
-							       msecs = usecs / (sf8) 1000.0;
-							       if (msecs >= (sf8) 1.0) {
-								       sprintf_m12(dur_str, "%0.2lf milliseconds", msecs);
+								msecs = usecs / (sf8) 1000.0;
+								if (msecs >= (sf8) 1.0) {
+									if (two_level == TRUE_m12) {
+										usecs = (msecs - floor(msecs)) * (sf8) 1000.0;
+										sprintf_m12(dur_str, "%d milliseconds %0.2lf microseconds", (si4) msecs, usecs);
+									} else {
+										sprintf_m12(dur_str, "%0.2lf milliseconds", msecs);
+									}
 							       } else {
-								       sprintf_m12(dur_str, "%0.2lf microseconds", usecs);
+									sprintf_m12(dur_str, "%0.2lf microseconds", usecs);
 							       }
 							}
 						}
@@ -34200,10 +34245,11 @@ si1	*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 }
 
 
-si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes)
+si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes, TERN_m12 i_size)
 {
 	static si1              private_size_str[SIZE_STRING_BYTES_m12];
 	static const si1        units[6][8] = {"bytes", "KiB", "MiB", "GiB", "TiB", "PiB"};
+	static const si1        i_units[6][8] = {"bytes", "KB", "MB", "GB", "TB", "PB"};
 	ui8                     i, j, t;
 	sf8                     size;
 	
@@ -34215,11 +34261,16 @@ si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes)
 	if (size_str == NULL)
 		size_str = private_size_str;
 	
-	for (i = 0, j = 1, t = n_bytes; t >>= 10; ++i, j <<= 10);
-	size = (sf8) n_bytes / (sf8) j;
+	if (i_size == TRUE_m12) {
+		for (i = 0, j = 1, t = n_bytes; t >>= 10; ++i, j <<= 10);
+		size = (sf8) n_bytes / (sf8) j;
+		sprintf_m12(size_str, "%0.2lf %s", size, i_units[i]);
+	} else {
+		for (i = 0, j = 1, t = n_bytes; t /= 1000; ++i, j *= 1000);
+		size = (sf8) n_bytes / (sf8) j;
+		sprintf_m12(size_str, "%0.2lf %s", size, units[i]);
+	}
 
-	sprintf_m12(size_str, "%0.2lf %s", size, units[i]);
-	
 	return(size_str);
 }
 
@@ -35168,9 +35219,8 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		}
 				
 		// keep alive
-		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12)
-			if (pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)
-				break;
+		if (pkt_header->packet_bytes == TR_HEADER_BYTES_m12 && pkt_header->type == TR_TYPE_KEEP_ALIVE_m12)
+			break;
 		
 		// sender requested acknowledgment
 		if (acknowledge == UNKNOWN_m12) {
@@ -36787,8 +36837,8 @@ si8	WN_filetime_to_uutc_m12(ui1 *win_filetime)  // pass pointer to beginning of 
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// A Windows time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
-	ui1_p = (ui1 *) &uutc;  // can't guarantee alignment so copy bytewise to uutc variable
+	// A Windows file time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
+	ui1_p = (ui1 *) &uutc;  // can't guarantee alignment so copy bytewise to uutc variable (not worth memcpy function call overhead for 8 bytes)
 	*ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++;
 	*ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p++ = *win_filetime++; *ui1_p = *win_filetime;
 	leftovers = uutc % (si8) WIN_TICKS_PER_USEC_m12;

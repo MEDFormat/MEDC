@@ -1524,11 +1524,12 @@ typedef struct {  // fields from ipinfo.io
 
 typedef struct {
 	union {
-		sf8	sampling_frequency;
-		sf8	frame_rate;
+		sf8		sampling_frequency;
+		sf8		frame_rate;
+		sf8		rate;
 	};
-	Sgmt_RECORD	*Sgmt_records;
-	ui4		type_code;  // TIME_SERIES_CHANNEL_TYPE_m13 or VIDEO_CHANNEL_TYPE_m13
+	REC_Sgmt_v11_m13	*Sgmt_records;
+	ui4			type_code;  // TIME_SERIES_CHANNEL_TYPE_m13 or VIDEO_CHANNEL_TYPE_m13
 } Sgmt_RECORD_INFO_m13;
 
 // All MED File Structures begin with this structure
@@ -2115,7 +2116,7 @@ typedef struct LEVEL_HEADER_m13 {
 			};
 			LEVEL_HEADER_m13	*parent;  // parent structure, or PROC_GLOBALS_m13 if created alone
 			ui8			flags;
-			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read, open, & write functions)
 		};
 	};
 	si1					path[FULL_FILE_NAME_BYTES_m13];  // full path from root including extension
@@ -2408,8 +2409,6 @@ typedef struct {
 	SEGMENTED_SESS_RECS_m13		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to session directory (including directory itself)
 	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
-	si1                             uh_name[BASE_FILE_NAME_BYTES_m13];
-	si1                             fs_name[BASE_FILE_NAME_BYTES_m13];
 	TIME_SLICE_m13			time_slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
@@ -2542,7 +2541,7 @@ FUNCTION_STACK_m13	*G_get_function_stack_m13(void);
 ui4		G_get_level_m13(si1 *full_file_name, ui4 *input_type_code);
 LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, tern set_timezone_globals, tern prompt);
 si4		G_get_search_mode_m13(TIME_SLICE_m13 *slice);
-si4		G_get_segment_index_m13(si4 segment_number);
+si4		G_get_segment_index_m13(si4 segment_number, LEVEL_HEADER_m13 *level_header);
 si4             G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice);
 ui4		*G_get_segment_video_start_frames_m13(FILE_PROCESSING_STRUCT_m13 *video_indices_fps, ui4 *number_of_video_files);
 si1		*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m13 *MED_fps);
@@ -2607,6 +2606,7 @@ tern		G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 
 void		G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
 tern		G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 tern		G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
+Sgmt_RECORD_m13	*G_Sgmt_records(LEVEL_HEADER_m13 *level_header);
 tern		G_show_behavior_m13(ui4 mode);
 tern		G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
 tern		G_show_error_m13(void);
@@ -2774,7 +2774,7 @@ ui4             STR_check_spaces_m13(si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
 tern    	STR_contains_formatting_m13(si1 *string, si1 *plain_string);
 tern		STR_contains_regex_m13(si1 *string);
-si1		*STR_duration_m13(si1 *dur_str, si8 i_usecs);
+si1		*STR_duration_m13(si1 *dur_str, si8 i_usecs, tern two_level);
 tern		STR_empty_m13(si1 *string);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string);
@@ -2787,7 +2787,7 @@ si1		*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1     	*STR_re_escape_m13(si1 *str, si1 *esc_str);
 tern    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
 si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, tern free_input_buffer);
-si1		*STR_size_m13(si1 *size_str, si8 n_bytes);
+si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern i_size);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);
 const si1	*STR_tern_m13(tern val);
@@ -4190,7 +4190,7 @@ typedef struct {
 				ui4	combined_check;  // use to to check [zero, type, subtype, version] as a ui4
 				struct {
 					si1	ID_string_terminal_zero;  // here for clarity
-					ui1	pad_bytes[3];  // not available for use (type, type_2, & version above)
+					ui1	pad_bytes[3];  // not available for use (type, subtype, & version above)
 				};
 			};
 		};
@@ -4750,7 +4750,7 @@ si8	strcpy_m13(si1 *target, si1 *source);
 si8	strncat_m13(si1 *target, si1 *source, si4 target_field_bytes);
 si8	strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes);
 si4	system_m13(si1 *command, tern null_std_streams, ui4 behavior);  // behavior parameter included because this is frequently customized for this function
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...);  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4	vasprintf_m13(si1 **target, si1 *fmt, va_list args);
 si4	vfprintf_m13(FILE *stream, si1 *fmt, va_list args);
 si4	vprintf_m13(si1 *fmt, va_list args);
