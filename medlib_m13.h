@@ -1528,7 +1528,7 @@ typedef struct {
 		sf8		frame_rate;
 		sf8		rate;
 	};
-	REC_Sgmt_v11_m13	*Sgmt_records;
+	struct Sgmt_RECORD_m13	*Sgmt_records;  // structure defined below
 	ui4			type_code;  // TIME_SERIES_CHANNEL_TYPE_m13 or VIDEO_CHANNEL_TYPE_m13
 } Sgmt_RECORD_INFO_m13;
 
@@ -1550,7 +1550,9 @@ typedef struct LEVEL_HEADER_m13 {
 	si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 } LEVEL_HEADER_m13;
 
-
+// non-standard structure
+// required compiler option (gcc, clang):  -fms-extensions
+// suppress warnings:  -Wno-microsoft-anon-tag
 #ifdef __cplusplus
 typedef struct {
 	union {
@@ -1593,6 +1595,7 @@ typedef struct {
 	si4				first_mapped_segment_number;
 	Sgmt_RECORD_INFO_m13		*Sgmt_record_infos;  // one for each unique sampling frequency and channel type
 	si4				number_of_Sgmt_record_infos;
+	pthread_mutex_t_m13		Sgmt_record_infos_mutex;
 	// Active Channels
 	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
 	struct CHANNEL_m13		*reference_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
@@ -1649,6 +1652,7 @@ typedef struct {
 	si4				first_mapped_segment_number;
 	Sgmt_RECORD_INFO_m13		*Sgmt_record_infos;  // one for each unique sampling frequency and channel type
 	si4				number_of_Sgmt_record_infos;
+	pthread_mutex_t_m13		Sgmt_record_infos_mutex;
 	// Active Channels
 	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
 	struct CHANNEL_m13		*reference_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
@@ -2441,6 +2445,7 @@ typedef struct {
 	si1			MED_dir[FULL_FILE_NAME_BYTES_m13];
 	ui8			flags;
 	LEVEL_HEADER_m13	*MED_struct;  // SESSION_m13, CHANNEL_m13, or SEGMENT_m13 pointer (used to pass & return)
+	LEVEL_HEADER_m13	*parent;  // SESSION_m13 or CHANNEL_m13 pointer
 	TIME_SLICE_m13		*slice;
 	si1			*password;
 } READ_MED_THREAD_INFO_m13;
@@ -2787,7 +2792,7 @@ si1		*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1     	*STR_re_escape_m13(si1 *str, si1 *esc_str);
 tern    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
 si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, tern free_input_buffer);
-si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern i_size);
+si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);
 const si1	*STR_tern_m13(tern val);
@@ -3706,6 +3711,8 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key);
 void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_keyy);
 void	AES_key_expansion_m13(ui1 *round_key, si1 *key);
+void	AES_keyless_decrypt_m13(si4 n_leftovers, ui1 *data);
+void	AES_keyless_encrypt_m13(si4 n_leftovers, ui1 *data);
 si4	AES_get_sbox_invert_m13(si4 num);
 si4	AES_get_sbox_value_m13(si4 num);
 tern	AES_initialize_tables_m13(void);
@@ -3713,8 +3720,6 @@ void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_inv_mix_columns_m13(ui1 state[][4]);
 void	AES_inv_shift_rows_m13(ui1 state[][4]);
 void	AES_inv_sub_bytes_m13(ui1 state[][4]);
-void	AES_leftover_decrypt_m13(si4 n_leftovers, ui1 *data);
-void	AES_leftover_encrypt_m13(si4 n_leftovers, ui1 *data);
 void	AES_mix_columns_m13(ui1 state[][4]);
 void	AES_shift_rows_m13(ui1 state[][4]);
 void	AES_sub_bytes_m13(ui1 state[][4]);
