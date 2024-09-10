@@ -115,9 +115,9 @@ pthread_mutex_t_m13	globals_mutex_m13;  // tagged in case using with other versi
 ui4 	G_add_level_extension_m13(si1 *directory_name)
 {
 	tern	from_root;
-	si1		full_path[FULL_FILE_NAME_BYTES_m13], enclosing_dir[FULL_FILE_NAME_BYTES_m13];
-	si1		base_name[SEGMENT_BASE_FILE_NAME_BYTES_m13], *extension;
-	ui4		type_code;
+	si1	full_path[FULL_FILE_NAME_BYTES_m13], enclosing_dir[FULL_FILE_NAME_BYTES_m13];
+	si1	base_name[SEGMENT_BASE_FILE_NAME_BYTES_m13], *extension;
+	ui4	type_code;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -126,19 +126,8 @@ ui4 	G_add_level_extension_m13(si1 *directory_name)
 	// returns type code of existing level
 	// appends extension to passed directory_name (enough space assumed to be available)
 
-	G_path_from_root_m13(directory_name, full_path);
+	from_root = G_path_from_root_m13(directory_name, full_path);  // returns T/F on whether full_path path wsa from root
 	G_extract_path_parts_m13(full_path, enclosing_dir, base_name, NULL);
-	
-	from_root = FALSE_m13;
-	if (*directory_name == *full_path) {
-		#ifdef WINDOWS_m13
-		// first character not necessarily enough in Windows: e.g. "Channel_1" & "C:\"
-		if (*(directory_name + 1) == *(full_path + 1))
-			from_root = TRUE_m13;
-		#else
-		from_root = TRUE_m13;
-		#endif
-	}
 		
 	// try session
 	extension = SESSION_DIRECTORY_TYPE_STRING_m13;
@@ -211,7 +200,7 @@ void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 behavior)
 	BEHAVIOR_STACK_m13	*stack_info;
 	
 	
-	// ors to current behavior & pushes to stack as new entry
+	// ORs to current behavior & pushes to stack as new entry
 	
 	stack_info = G_get_behavior_stack_m13();  // gets mutex
 	if (stack_info == NULL)
@@ -9075,8 +9064,8 @@ si8     G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment)
 
 tern	G_path_from_root_m13(si1 *path, si1 *root_path)
 {
-	tern	contains_formatting;
-	si1		tmp_path[FULL_FILE_NAME_BYTES_m13];
+	tern	contains_formatting, from_root, modify_path;
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m13];
 	si8	len;
 
 #ifdef FN_DEBUG_m13
@@ -9095,23 +9084,21 @@ tern	G_path_from_root_m13(si1 *path, si1 *root_path)
 		return_m13(FALSE_m13);
 	}
 	
-	// remove formatting
-	contains_formatting = STR_contains_formatting_m13(path, tmp_path);
-
+	from_root = contains_formatting = modify_path = FALSE_m13;
+	contains_formatting = STR_contains_formatting_m13(path, tmp_path);  // also remove formatting
+	if (root_path != NULL)
+		modify_path = TRUE_m13;
+	
 #if defined MACOS_m13 || defined LINUX_m13
 	si1	*c, *c2, base_dir[FULL_FILE_NAME_BYTES_m13];
-	
 
-	// don't modify path, just return T/F
-	if (root_path == NULL) {
-		if (*tmp_path == '/') {
-			if (contains_formatting == TRUE_m13)
-				G_warning_message_m13("%s(): path contains formatting\n", __FUNCTION__);   // only message if from root & can't modify path
-			return_m13(TRUE_m13);
-		}
-		return_m13(FALSE_m13);
-	}
-	
+	// already from root
+	if (*tmp_path == '/')
+		from_root = TRUE_m13;
+
+	if (modify_path == FALSE_m13)
+		goto PATH_FROM_ROOT_EXIT_m13;
+
 	strcpy(root_path, tmp_path);
 
 	// remove terminal '/' from passed path if present
@@ -9173,24 +9160,26 @@ tern	G_path_from_root_m13(si1 *path, si1 *root_path)
 	if (len == 0) {  // can't resolve path
 		if (root_path != path)  // if in place, leave path intact
 			*root_path = 0;
-		return_m13(FALSE_m13);
+		from_root = FALSE_m13;
+		goto PATH_FROM_ROOT_EXIT_m13;
 	}
 	
+	if (strncmp(tmp_path, tmp_path2, len) == 0)
+		from_root = TRUE_m13;
+	
 	// don't modify path, just return T/F
-	if (root_path == NULL) {
-		if (strncmp(tmp_path, tmp_path2, len)) {
-			return_m13(FALSE_m13);
-		} else {
-			if (contains_formatting == TRUE_m13)
-				G_warning_message_m13("%s(): path contains formatting\n", __FUNCTION__);  // only message if from root & can't modify path
-			return_m13(TRUE_m13);
-		}
-	}
+	if (modify_path == FALSE_m13)
+		goto PATH_FROM_ROOT_EXIT_m13;
 	
 	strcpy(root_path, tmp_path2);
 #endif
+	
+PATH_FROM_ROOT_EXIT_m13:
+	
+	if (contains_formatting == TRUE_m13 && modify_path == FALSE_m13)  // only give message if not modifying path
+		G_warning_message_m13("%s(): path contains formatting\n", __FUNCTION__);  // only message if from root & can't modify path
 
-	return_m13(TRUE_m13);
+	return_m13(from_root);
 }
 
 
@@ -9487,7 +9476,7 @@ tern	G_process_password_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *unspecifi
 		// get terminal bytes
 		G_extract_terminal_password_bytes_m13(unspecified_pw, unspecified_pw_bytes);
 
-		// check if password protected (no need to check level 2, since for level 2 to exist, level 1 must exist)
+		// check if data is encrypted (no need to check level 2, since for level 2 to exist, level 1 must exist)
 		if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
 			return_m13(TRUE_m13);
 		
@@ -12432,7 +12421,8 @@ void    G_show_globals_m13(void)
 	printf_m13("file_creation_umask: %u\n", globals_m13->file_creation_umask);
 	printf_m13("FPS_locking: %hhd\n", globals_m13->FPS_locking);
 	printf_m13("CRC_mode: %u\n", globals_m13->CRC_mode);
-	
+	printf_m13("write_sorted_records: %hhd\n", globals_m13->write_sorted_records);
+
 	printf_m13("\n");
 	
 	return;
@@ -15731,11 +15721,9 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (uh->channel_name != (si1 *)  (bytes + UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->sampling_frequency != (sf8 *) (bytes + UNIVERSAL_HEADER_SAMPLING_FREQUENCY_OFFSET_m13))  // frame_rate unioned
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->ordered != (tern *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->channel_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (uh->supplementary_protected_region != (ui1 *) (bytes + UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->segment_UID != (ui8 *) (bytes + UNIVERSAL_HEADER_SEGMENT_UID_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
@@ -15748,6 +15736,8 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 	if (uh->level_2_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (uh->level_3_password_validation_field != (ui1 *) (bytes + UNIVERSAL_HEADER_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->ordered != (tern *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (uh->protected_region != (ui1 *) (bytes + UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;

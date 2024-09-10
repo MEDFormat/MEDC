@@ -758,13 +758,8 @@ typedef struct {
 #define UNIVERSAL_HEADER_FILE_START_TIME_OFFSET_m13			48      // si8
 #define UNIVERSAL_HEADER_SESSION_NAME_OFFSET_m13                        56      // utf8[63]
 #define UNIVERSAL_HEADER_CHANNEL_NAME_OFFSET_m13                        312     // utf8[63]
-#define UNIVERSAL_HEADER_SAMPLING_FREQUENCY_OFFSET_m13			568	// sf8, MED 1.1 & above
-#define UNIVERSAL_HEADER_SAMPLING_FREQUENCY_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13	// sf8, MED 1.1 & above
-#define UNIVERSAL_HEADER_FRAME_RATE_OFFSET_m13				UNIVERSAL_HEADER_SAMPLING_FREQUENCY_OFFSET_m13	// sf8, MED 1.1 & above
-#define UNIVERSAL_HEADER_FRAME_RATE_NO_ENTRY_m13			FREQUENCY_NO_ENTRY_m13	// sf8, MED 1.1 & above
-#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				576	// si1 (tern), MED 1.1 & above
-#define UNIVERSAL_HEADER_RESERVED_OFFSET_m13				577	// si1 (tern), MED 1.1 & above
-#define UNIVERSAL_HEADER_RESERVED_BYTES_m13				247	// MED 1.1 & above
+#define UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13	568	// Anonymized Subjcet ID in MED 1.0
+#define UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13	256
 #define UNIVERSAL_HEADER_SESSION_UID_OFFSET_m13                         824     // ui8
 #define UNIVERSAL_HEADER_CHANNEL_UID_OFFSET_m13                         832     // ui8
 #define UNIVERSAL_HEADER_SEGMENT_UID_OFFSET_m13                         840     // ui8
@@ -773,8 +768,9 @@ typedef struct {
 #define UNIVERSAL_HEADER_LEVEL_1_PASSWORD_VALIDATION_FIELD_OFFSET_m13	864     // ui1
 #define UNIVERSAL_HEADER_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13	880     // ui1
 #define UNIVERSAL_HEADER_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13   896     // ui1
-#define UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13			912
-#define UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13			56
+#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				912	// si1 (tern), MED 1.1 & above
+#define UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13			913
+#define UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13			55
 #define UNIVERSAL_HEADER_DISCRETIONARY_REGION_OFFSET_m13		968
 #define UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13			56
 
@@ -1866,20 +1862,17 @@ typedef struct {
 	};
 	si1		session_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	si1     	channel_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
-	union {
-		sf8	sampling_frequency;
-		sf8	frame_rate;
-	};
-	tern		ordered;  // MED 1.1 and above (currently applies only record index & data files)
+	ui1		supplementary_protected_region[UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13];
 	ui1		reserved[UNIVERSAL_HEADER_RESERVED_BYTES_m13];
-	ui8		session_UID;
-	ui8     	channel_UID;
-	ui8     	segment_UID;  // used when segments deleted & renumbered
-	ui8		file_UID;  // used when file system name changed in copy
-	ui8		provenance_UID;  // session, channel, segment, or file UID from which this file was derived (typically session UID)
+	ui8		session_UID;  // session UID of originating data set
+	ui8     	channel_UID;  // channel UID of originating data set
+	ui8     	segment_UID;  // segment UID of originating data set
+	ui8		file_UID;  // unique to current file
+	ui8		provenance_UID;  // file UID of originating file
 	ui1		level_1_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1     	level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1		level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
+	tern		ordered;  // MED 1.1 and above
 	ui1		protected_region[UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13];
 	ui1		discretionary_region[UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13];
 } UNIVERSAL_HEADER_m13;
