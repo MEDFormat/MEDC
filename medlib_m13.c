@@ -33588,111 +33588,126 @@ tern	STR_contains_regex_m13(si1 *string)
 }
 
 
-si1     *STR_duration_m13(si1 *dur_str, si8 i_usecs, tern two_level)
+si1     *STR_duration_m13(si1 *dur_str, si8 i_usecs, TERN_m13 abbreviated, tern two_level)
 {
-	static si1      private_dur_str[TIME_STRING_BYTES_m13];
+	const si1	*full[9] = {"years", "months", "weeks", "days", "hours", "minutes", "seconds", "milliseconds", "microseconds"};
+	const si1	*abbr[9] = {"yrs", "mos", "wks", "days", "hrs", "mins", "secs", "ms", "us"};
+	const si1	**label;
 	sf8             years, months, weeks, days, hours, mins, secs, msecs, usecs;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// Note: if dur_str == NULL, this function is not thread safe
+	// Note: if dur_str == NULL, it will be allocated & calling functio is responsible for freeing
 	if (dur_str == NULL)
-		dur_str = private_dur_str;
+		dur_str = calloc_m13((size_t) TIME_STRING_BYTES_m13, sizeof(si1);)
 	
 	usecs = (sf8) i_usecs;
+	
+	if (abbrevated == TRUE_m13)
+		label = abbr;
+	else
+		label = full;
 	
 	years = usecs / (sf8) 31556926000000.0;
 	if (years >= (sf8) 1.0) {
 		if (two_level == TRUE_m13) {
 			usecs = (years - floor(years)) * (sf8) 31556926000000.0;
 			months = usecs / (sf8) 2629744000000.0;
-			sprintf_m13(dur_str, "%d years 0.2lf months", (si4) years, months);
+			sprintf_m13(dur_str, "%d %s 0.2lf %s", (si4) years, label[0], months, label[1]);
 		} else {
-			sprintf_m13(dur_str, "%0.2lf years", years);
+			sprintf_m13(dur_str, "%0.2lf %s", years, label[0]);
 		}
-	} else {
-		months = usecs / (sf8) 2629744000000.0;
-		if (months >= (sf8) 1.0) {
-			if (two_level == TRUE_m13) {
-				usecs = (months - floor(months)) * (sf8) 2629744000000.0;
-				weeks = usecs / (sf8) 604800000000.0;
-				sprintf_m13(dur_str, "%d months %0.2lf weeks", (si4) months, weeks);
-			} else {
-				sprintf_m13(dur_str, "%0.2lf months", months);
-			}
-		} else {
-			weeks = usecs / (sf8) 604800000000.0;
-			if (weeks >= (sf8) 1.0) {
-				if (two_level == TRUE_m13) {
-					usecs = (weeks - floor(weeks)) * (sf8) 604800000000.0;
-					days = usecs / (sf8) 86400000000.0;
-					sprintf_m13(dur_str, "%d weeks %0.2lf days", (si4) weeks, days);
-				} else {
-					sprintf_m13(dur_str, "%0.2lf weeks", weeks);
-				}
-			} else {
-				days = usecs / (sf8) 86400000000.0;
-				if (days >= (sf8) 1.0) {
-					if (two_level == TRUE_m13) {
-						usecs = (days - floor(days)) * (sf8) 86400000000.0;
-						hours = usecs / (sf8) 3600000000.0;
-						sprintf_m13(dur_str, "%d days %0.2lf hours", (si4) days, hours);
-					} else {
-						sprintf_m13(dur_str, "%0.2lf days", days);
-					}
-				} else {
-					hours = usecs / (sf8) 3600000000.0;
-					if (hours >= (sf8) 1.0) {
-						if (two_level == TRUE_m13) {
-							usecs = (hours - floor(hours)) * (sf8) 3600000000.0;
-							mins = usecs / (sf8) 60000000.0;
-							sprintf_m13(dur_str, "%d hours %0.2lf minutes", (si4) hours, mins);
-						} else {
-							sprintf_m13(dur_str, "%0.2lf hours", hours);
-						}
-					} else {
-						mins = usecs / (sf8) 60000000.0;
-						if (mins >= (sf8) 1.0) {
-							if (two_level == TRUE_m13) {
-								usecs = (mins - floor(mins)) * (sf8) 60000000.0;
-								secs = usecs / (sf8) 1000000.0;
-								sprintf_m13(dur_str, "%d minutes %0.2lf seconds", (si4) mins, secs);
-							} else {
-								sprintf_m13(dur_str, "%0.2lf minutes", mins);
-							}
-						} else {
-							secs = usecs / (sf8) 1000000.0;
-							if (secs >= (sf8) 1.0) {
-								if (two_level == TRUE_m13) {
-									usecs = (secs - floor(secs)) * (sf8) 1000000.0;
-									msecs = usecs / (sf8) 1000.0;
-									sprintf_m13(dur_str, "%d seconds %0.2lf milliseconds", (si4) secs, msecs);
-								} else {
-									sprintf_m13(dur_str, "%0.2lf seconds", secs);
-								}
-							} else {
-								msecs = usecs / (sf8) 1000.0;
-								if (msecs >= (sf8) 1.0) {
-									if (two_level == TRUE_m13) {
-										usecs = (msecs - floor(msecs)) * (sf8) 1000.0;
-										sprintf_m13(dur_str, "%d milliseconds %0.2lf microseconds", (si4) msecs, usecs);
-									} else {
-										sprintf_m13(dur_str, "%0.2lf milliseconds", msecs);
-									}
-							       } else {
-									sprintf_m13(dur_str, "%0.2lf microseconds", usecs);
-							       }
-							}
-						}
-					}
-				}
-			}
-		}
+		return(dur_str);
 	}
+	
+	months = usecs / (sf8) 2629744000000.0;
+	if (months >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (months - floor(months)) * (sf8) 2629744000000.0;
+			weeks = usecs / (sf8) 604800000000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) months, label[1], weeks, label[2]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", months, label[1]);
+		}
+		return(dur_str);
+	}
+	
+	weeks = usecs / (sf8) 604800000000.0;
+	if (weeks >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (weeks - floor(weeks)) * (sf8) 604800000000.0;
+			days = usecs / (sf8) 86400000000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) weeks, label[2], days, label[3]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", weeks, label[2]);
+		}
+		return(dur_str);
+	}
+	
+	days = usecs / (sf8) 86400000000.0;
+	if (days >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (days - floor(days)) * (sf8) 86400000000.0;
+			hours = usecs / (sf8) 3600000000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) days, label[3], hours, label[4]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", days, label[3]);
+		}
+		return(dur_str);
+	}
+	
+	hours = usecs / (sf8) 3600000000.0;
+	if (hours >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (hours - floor(hours)) * (sf8) 3600000000.0;
+			mins = usecs / (sf8) 60000000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) hours, label[4], mins, label[5]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", hours, label[4]);
+		}
+		return(dur_str);
+	}
+	
+	mins = usecs / (sf8) 60000000.0;
+	if (mins >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (mins - floor(mins)) * (sf8) 60000000.0;
+			secs = usecs / (sf8) 1000000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) mins, label[5], secs, label[6]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", mins, label[5]);
+		}
+		return(dur_str);
+	}
+	
+	secs = usecs / (sf8) 1000000.0;
+	if (secs >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (secs - floor(secs)) * (sf8) 1000000.0;
+			msecs = usecs / (sf8) 1000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) secs, label[6], msecs, label[7]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", secs, label[6]);
+		}
+		return(dur_str);
+	}
+	
+	msecs = usecs / (sf8) 1000.0;
+	if (msecs >= (sf8) 1.0) {
+		if (two_level == TRUE_m13) {
+			usecs = (msecs - floor(msecs)) * (sf8) 1000.0;
+			sprintf_m13(dur_str, "%d %s %0.2lf %s", (si4) msecs, label[7], usecs, label[8]);
+		} else {
+			sprintf_m13(dur_str, "%0.2lf %s", msecs, label[7]);
+		}
+		return(dur_str);
+       }
+	
+	sprintf_m13(dur_str, "%0.2lf %s", usecs, label[8]);
 
-	return_m13(dur_str);
+	return(dur_str);
 }
 
 
