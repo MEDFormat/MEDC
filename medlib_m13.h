@@ -2772,7 +2772,7 @@ ui4             STR_check_spaces_m13(si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
 tern    	STR_contains_formatting_m13(si1 *string, si1 *plain_string);
 tern		STR_contains_regex_m13(si1 *string);
-si1		*STR_duration_m13(si1 *dur_str, si8 i_usecs, tern two_level);
+si1     	*STR_duration_m13(si1 *dur_str, si8 i_usecs, TERN_m13 abbreviated, tern two_level);
 tern		STR_empty_m13(si1 *string);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string);
