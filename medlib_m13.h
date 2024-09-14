@@ -202,8 +202,8 @@
 #include <stdint.h>
 
 typedef uint8_t		ui1;
-typedef int8_t		tern; // ternary type
 typedef char		si1;  // Note: the "char" type is not guaranteed to be a signed one-byte integer.  If it is not, library will exit during initialization
+typedef int8_t		tern;  // ternary type
 typedef uint16_t	ui2;
 typedef int16_t		si2;
 typedef uint32_t	ui4;
@@ -1168,6 +1168,7 @@ si4		PROC_pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
 pthread_t_m13	PROC_pthread_self_m13(void);
 tern		PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
 tern		PROC_show_thread_affinity_m13(pthread_t_m13 *thread_id);
+tern		PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
 
 
@@ -1368,6 +1369,7 @@ typedef struct {
 //**********************************  MED Macros  **********************************//
 //**********************************************************************************//
 
+#define PLURAL_m13(x) 			( ((x) == 1) ? "" : "s" )
 #define ABS_m13(x)			( ((x) >= 0) ? (x) : -(x) )	// do not increment/decrement in call to ABS (as x occurs thrice)
 #define HEX_STRING_BYTES_m13(x)         ( ((x) + 1) * 3 )
 #define REMOVE_DISCONTINUITY_m13(x)     ( ((x) >= 0) ? (x) : -(x) )	// do not increment/decrement in call to REMOVE_DISCONTINUITY (as x occurs thrice)
@@ -1863,7 +1865,6 @@ typedef struct {
 	si1		session_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	si1     	channel_name[BASE_FILE_NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	ui1		supplementary_protected_region[UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13];
-	ui1		reserved[UNIVERSAL_HEADER_RESERVED_BYTES_m13];
 	ui8		session_UID;  // session UID of originating data set
 	ui8     	channel_UID;  // channel UID of originating data set
 	ui8     	segment_UID;  // segment UID of originating data set
@@ -2772,7 +2773,7 @@ ui4             STR_check_spaces_m13(si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
 tern    	STR_contains_formatting_m13(si1 *string, si1 *plain_string);
 tern		STR_contains_regex_m13(si1 *string);
-si1     	*STR_duration_m13(si1 *dur_str, si8 i_usecs, TERN_m13 abbreviated, tern two_level);
+si1     	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_level);
 tern		STR_empty_m13(si1 *string);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string);
@@ -3468,7 +3469,7 @@ si4	CMP_round_si4_m13(sf8 val);
 tern	CMP_scale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
 tern	CMP_scale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
 tern	CMP_set_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len);
+tern	CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, tern round);
 tern	CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
 tern	CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXED_HEADER_m13 *block_header);
 tern	CMP_show_block_model_m13(CMP_PROCESSING_STRUCT_m13 *cps, tern recursed_call);
@@ -4152,7 +4153,8 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_TRANSMISSION_BYTES_NO_ENTRY_m13		0
 #define TR_OFFSET_OFFSET_m13				24				// ui8
 
-// Transmission Info Modes  [set by TR_send_transmission_m13() & TR_recv_transmission_m13(), used by TR_close_transmission_m13()]
+// Transmission Info Modes  [set by TR_send_transmission_m12() & TR_recv_transmission_m12(), used by TR_close_transmission_m12()]
+// indicates whether last transmission was a send or receive
 #define TR_MODE_NONE_m13		0
 #define TR_MODE_SEND_m13		1
 #define TR_MODE_RECV_m13		2
@@ -4207,6 +4209,7 @@ typedef struct {
 	si1	*password;   // for encryption (NOT freed by TR_free_transmission_info_m13)
 	ui1	*expanded_key;   // for encryption
 	tern	expanded_key_allocated;  // determines whether to free expanded key
+	ui1	mode;  // TR_MODE_SEND_m13, TR_MODE_RECV_m13, TR_MODE_NONE_m13 (needed to properly close TCP sockets)
 	si4	sock_fd;
 	si1	dest_addr[INET6_ADDRSTRLEN];  // INET6_ADDRSTRLEN == 46 (this can be an IP address string or or a domain name [< 46 characters])
 	ui2	dest_port;

@@ -109,8 +109,8 @@
 #define REC_NO_RECORD_NUMBER_m13		-1
 
 // Prototypes
-TERN_m13	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
-TERN_m13        REC_check_structure_alignments_m13(ui1 *bytes);
+tern	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
+tern	REC_check_structure_alignments_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
@@ -214,8 +214,8 @@ TERN_m13        REC_check_structure_alignments_m13(ui1 *bytes);
 // REC_Sgmt_v11_m13 defined in medlib_m13.h due to codependency
 
 // Prototypes
-TERN_m13	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
+tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
@@ -250,8 +250,8 @@ TERN_m13        REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
 // REC_Stat_v10_m13 defined in medlib_m13.h due to codependency
 
 // Prototypes
-TERN_m13	REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_Stat_type_alignment_m13(ui1 *bytes);
+tern	REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_Stat_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -275,8 +275,8 @@ typedef struct {
 // Annotation follows structure - aribitrary length array of si1s padded to 16 byte alignment (for structure + string)
 
 // Prototypes
-TERN_m13	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_EDFA_type_alignment_m13(ui1 *bytes);
+tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -315,8 +315,8 @@ typedef struct {
 
 
 // Prototypes
-TERN_m13	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13	REC_check_Note_type_alignment_m13(ui1 *bytes);
+tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_Note_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -378,8 +378,8 @@ typedef struct {
 } REC_Seiz_v10_CHANNEL_m13;
 
 // Prototypes
-TERN_m13	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
+tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -400,8 +400,8 @@ TERN_m13	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 // Log text follows header - aribitrary length array of si1s padded to 16 byte alignment
 
 // Prototype
-TERN_m13	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13	REC_check_SyLg_type_alignment_m13(ui1 *bytes);
+tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -441,8 +441,8 @@ typedef struct {
 } REC_NlxP_v10_m13;
 
 // Prototypes
-TERN_m13	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_NlxP_type_alignment_m13(ui1 *bytes);
+tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_NlxP_type_alignment_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
@@ -471,8 +471,8 @@ typedef struct {
 } REC_Curs_v10_m13;
 
 // Prototypes
-TERN_m13	REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_Curs_type_alignment_m13(ui1 *bytes);
+tern	REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_Curs_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -525,8 +525,8 @@ typedef struct {
 } REC_Epoc_v20_m13;
 
 // Prototypes
-TERN_m13	REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_Epoc_type_alignment_m13(ui1 *bytes);
+tern	REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_Epoc_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -578,8 +578,8 @@ typedef struct {
 } REC_ESti_v10_m13;
 
 // Prototypes
-TERN_m13	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_ESti_type_alignment_m13(ui1 *bytes);
+tern	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_ESti_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -614,8 +614,8 @@ typedef struct {
 } REC_CSti_v10_m13;
 
 // Prototypes
-TERN_m13	REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header);
-TERN_m13        REC_check_CSti_type_alignment_m13(ui1 *bytes);
+tern	REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_check_CSti_type_alignment_m13(ui1 *bytes);
 
 
 

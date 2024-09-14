@@ -1334,6 +1334,7 @@ void		NET_trim_address_m12(si1 *addr_str);
 //**********************************  MED Macros  **********************************//
 //**********************************************************************************//
 
+#define PLURAL_m12(x) 			( ((x) == 1) ? "" : "s" )
 #define ABS_m12(x)			( ((x) >= 0) ? (x) : -(x) )	// do not increment/decrement in call to ABS (as x occurs thrice)
 #define HEX_STRING_BYTES_m12(x)         ( ((x) + 1) * 3 )
 #define REMOVE_DISCONTINUITY_m12(x)     ( ((x) >= 0) ? (x) : -(x) )	// do not increment/decrement in call to REMOVE_DISCONTINUITY (as x occurs thrice)
@@ -2500,7 +2501,7 @@ ui4             STR_check_spaces_m12(si1 *string);
 si4		STR_compare_m12(const void *a, const void *b);
 TERN_m12    	STR_contains_formatting_m12(si1 *string, si1 *plain_string);
 TERN_m12	STR_contains_regex_m12(si1 *string);
-si1		*STR_duration_string_m12(si1 *dur_str, si8 i_usecs, TERN_m12 abbreviated, TERN_m12 two_level);
+si1		*STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviated, TERN_m12 two_level);
 void            STR_escape_chars_m12(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_generate_hex_string_m12(ui1 *bytes, si4 num_bytes, si1 *string);
 si1		*STR_match_end_m12(si1 *pattern, si1 *buffer);
@@ -3192,7 +3193,7 @@ si4     	CMP_round_si4_m12(sf8 val);
 void    	CMP_scale_amplitude_si4_m12(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_scale_frequency_si4_m12(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_set_variable_region_m12(CMP_PROCESSING_STRUCT_m12 *cps);
-void      	CMP_sf8_to_si4_m12(sf8 *sf8_arr, si4 *si4_arr, si8 len);
+void      	CMP_sf8_to_si4_m12(sf8 *sf8_arr, si4 *si4_arr, si8 len, TERN_m12 round);
 void      	CMP_sf8_to_si4_and_scale_m12(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
 void    	CMP_show_block_header_m12(CMP_BLOCK_FIXED_HEADER_m12 *block_header);
 void    	CMP_show_block_model_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 recursed_call);
@@ -3880,11 +3881,11 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_OFFSET_OFFSET_m12				24				// ui8
 
 // Transmission Info Modes  [set by TR_send_transmission_m12() & TR_recv_transmission_m12(), used by TR_close_transmission_m12()]
-// indicages whether last transmission was a send or receive
+// indicates whether last transmission was a send or receive
 #define TR_MODE_NONE_m12		0
 #define TR_MODE_SEND_m12		1
 #define TR_MODE_RECV_m12		2
-#define TR_MODE_FORCE_CLOSE_m12		3
+#define TR_MODE_FORCE_CLOSE_m12		3  // set to force close a (TCP) socket
 
 // Miscellaneous
 #define TR_INET_MSS_BYTES_m12				1376  // highest multiple of 16, that stays below internet standard frame size (1500) minus [32 (TR header) + 40 (TCP/IP header)

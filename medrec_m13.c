@@ -101,10 +101,10 @@
 //**********************************   show_record()   ********************************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
+tern	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
 {
-	ui4                     type_code;
-	si1	                time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(CRC_BYTES_m13)];
+	ui4	type_code;
+	si1	time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(CRC_BYTES_m13)];
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -226,9 +226,9 @@ TERN_m13	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 
 //*********************   check_record_structure_alignments()   ***********************//
 //*************************************************************************************//
 
-TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
+tern	REC_check_structure_alignments_m13(ui1 *bytes)
 {
-	TERN_m13	return_value, free_flag = FALSE_m13;
+	tern	return_value, free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -278,7 +278,7 @@ TERN_m13	REC_check_structure_alignments_m13(ui1 *bytes)
 //*******************************   Sgmt: Segment Record   ****************************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Sgmt_v10_m13	*Sgmt_v10;
 	REC_Sgmt_v11_m13	*Sgmt_v11;
@@ -346,12 +346,6 @@ TERN_m13	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 			printf_m13("End Sample Number: no entry\n");
 		else
 			printf_m13("End Sample Number: %ld\n", Sgmt_v11->end_sample_number);
-		if (Sgmt_v10->sampling_frequency == REC_Sgmt_v11_SAMPLING_FREQUENCY_NO_ENTRY_m13)
-			printf_m13("Sampling Frequency: no entry\n");
-		else if (Sgmt_v10->sampling_frequency == REC_Sgmt_v11_SAMPLING_FREQUENCY_VARIABLE_m13)
-			printf_m13("Sampling Frequency: variable\n");
-		else
-			printf_m13("Sampling Frequency: %lf\n", Sgmt_v11->sampling_frequency);
 		if (Sgmt_v11->segment_number == REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
@@ -381,12 +375,12 @@ TERN_m13	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
+tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 {
 	si1			*version_string;
 	REC_Sgmt_v10_m13	*Sgmt_v10;
 	REC_Sgmt_v11_m13	*Sgmt_v11;
-	TERN_m13                free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -429,8 +423,6 @@ TERN_m13     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->end_sample_number != (si8 *) (bytes + REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->sampling_frequency != (sf8 *) (bytes + REC_Sgmt_v11_SAMPLING_FREQUENCY_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->segment_number != (si4 *) (bytes + REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->acquisition_channel_number != (si4 *) (bytes + REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
@@ -459,7 +451,7 @@ REC_Sgmt_NOT_ALIGNED_m13:
 //*******************************   Stat: Segment Record   ****************************//
 //*************************************************************************************//
 
-TERN_m13    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Stat_v10_m13	*Stat;
 
@@ -513,10 +505,10 @@ TERN_m13    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_Stat_type_alignment_m13(ui1 *bytes)
+tern     REC_check_Stat_type_alignment_m13(ui1 *bytes)
 {
 	REC_Stat_v10_m13	*Stat;
-	TERN_m13                free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -571,7 +563,7 @@ REC_Stat_NOT_ALIGNED_m13:
 //********************************   Note: Note Record   ******************************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si1			*note_text;
 	REC_Note_v11_m13	*note;
@@ -614,11 +606,11 @@ TERN_m13	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13        REC_check_Note_type_alignment_m13(ui1 *bytes)
+tern        REC_check_Note_type_alignment_m13(ui1 *bytes)
 {
 	REC_Note_v11_m13	*note;
 	const si1		*vers_str;
-	TERN_m13		free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -667,7 +659,7 @@ REC_NOTE_NOT_ALIGNED_m13:
 //******************   EDFA: European Data Format Annotation Record   *****************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_EDFA_v10_m13	*edfa;
 	si1			*annotation;
@@ -695,10 +687,10 @@ TERN_m13	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
+tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
 {
 	REC_EDFA_v10_m13	*edfa;
-	TERN_m13		free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -740,10 +732,10 @@ REC_EDFA_NOT_ALIGNED_m13:
 //*******************************   Seiz: Seizure Record   ****************************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 {
+	tern				mn1 = FALSE_m13, mn2 = FALSE_m13;
 	si4			        i;
-	TERN_m13                        mn1 = FALSE_m13, mn2 = FALSE_m13;
 	REC_Seiz_v10_m13		*Seiz;
 	REC_Seiz_v10_CHANNEL_m13	*chans;
 	si1			        time_str[TIME_STRING_BYTES_m13];
@@ -825,11 +817,11 @@ TERN_m13	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
+tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
 {
 	REC_Seiz_v10_m13		*Seiz;
 	REC_Seiz_v10_CHANNEL_m13	*chan;
-	TERN_m13			free_flag = FALSE_m13;
+	tern				free_flag = FALSE_m13;
 	ui1				*chan_bytes;
 
 #ifdef FN_DEBUG_m13
@@ -896,7 +888,7 @@ REC_Seiz_NOT_ALIGNED_m13:
 //*****************************   SyLg: System Log Record   ***************************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si1	*log_entry;
 
@@ -921,7 +913,7 @@ TERN_m13	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
+tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 {
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -937,7 +929,7 @@ TERN_m13	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 //*********************   NlxP: NeuraLynx Parallel Port Record   **********************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	si1                     hex_str[HEX_STRING_BYTES_m13(4)];
 	REC_NlxP_v10_m13	*nlxp;
@@ -980,10 +972,10 @@ TERN_m13	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
+tern     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
 {
 	REC_NlxP_v10_m13	*nlxp;
-	TERN_m13                free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -1036,7 +1028,7 @@ REC_NlxP_NOT_ALIGNED_m13:
 //***********************   Curs: Cadwell EMG Cursor Annotation   *********************//
 //*************************************************************************************//
 
-TERN_m13    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Curs_v10_m13	*curs;
 
@@ -1061,10 +1053,10 @@ TERN_m13    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_Curs_type_alignment_m13(ui1 *bytes)
+tern     REC_check_Curs_type_alignment_m13(ui1 *bytes)
 {
 	REC_Curs_v10_m13	*curs;
-	TERN_m13                free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -1112,7 +1104,7 @@ REC_Curs_NOT_ALIGNED_m13:
 //****************************   Epoc: Sleep Stage Record   ***************************//
 //*************************************************************************************//
 
-TERN_m13    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_Epoc_v10_m13	*epoc1;
 	REC_Epoc_v20_m13	*epoc2;
@@ -1171,12 +1163,12 @@ TERN_m13    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
+tern     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 {
 	si1			*version_string;
 	REC_Epoc_v10_m13	*epoc1;
 	REC_Epoc_v20_m13	*epoc2;
-	TERN_m13                free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -1241,7 +1233,7 @@ REC_Epoc_NOT_ALIGNED_m13:
 //**************************   ESti: Electrical Stimulation   *************************//
 //*************************************************************************************//
 
-TERN_m13	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_ESti_v10_m13	*esti;
 
@@ -1304,10 +1296,10 @@ TERN_m13	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_ESti_type_alignment_m13(ui1 *bytes)
+tern     REC_check_ESti_type_alignment_m13(ui1 *bytes)
 {
 	REC_ESti_v10_m13	*esti;
-	TERN_m13                free_flag = FALSE_m13;
+	tern			free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -1364,7 +1356,7 @@ REC_ESti_NOT_ALIGNED_m13:
 //**************************   CSti: Cognitive Stimulation   **************************//
 //*************************************************************************************//
 
-TERN_m13    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
 {
 	REC_CSti_v10_m13	*csti;
 
@@ -1389,10 +1381,10 @@ TERN_m13    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
 }
 
 
-TERN_m13     REC_check_CSti_type_alignment_m13(ui1 *bytes)
+tern     REC_check_CSti_type_alignment_m13(ui1 *bytes)
 {
+	tern			free_flag = FALSE_m13;
 	REC_CSti_v10_m13	*csti;
-	TERN_m13                free_flag = FALSE_m13;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
