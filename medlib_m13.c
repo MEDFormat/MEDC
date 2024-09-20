@@ -4602,8 +4602,8 @@ void	G_free_global_tables_m13(void)
 	}
 
 	#ifdef WINDOWS_m13
-	if (global_tables_m13->hNTdll != NULL)
-		FreeLibrary(global_tables_m13->hNTdll);
+	if (globals_m13->tables->hNTdll != NULL)
+		FreeLibrary(globals_m13->tables->hNTdll);
 	#endif
 
 	// destroy muticies
@@ -6506,7 +6506,7 @@ tern	G_initialize_error_tables_m13(void)
 
 tern	G_initialize_global_tables_m13(tern initialize_all_tables)
 {
-	tern		ret_val;
+	tern			ret_val;
 	GLOBAL_TABLES_m13	*tables;
 	
 
@@ -6561,7 +6561,7 @@ tern	G_initialize_global_tables_m13(tern initialize_all_tables)
 
 	// NT dylib loaded by WN_nap_m13() if used
 	#ifdef WINDOWS_m13
-	global_tables_m13->hNTdll = NULL;
+	tables->hNTdll = NULL;
 	#endif
 
 	return(ret_val);
@@ -14902,7 +14902,8 @@ tern	AES_initialize_tables_m13(void)
 		
 		len = (size_t) AES_RCON_ENTRIES_m13 * sizeof(si4);
 		memcpy((void *) tables->AES_rcon_table, (void *) temp, len);
-		mprotect_m13((void *) tables->AES_rcon_table, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->AES_rcon_table, len, PROT_READ);
 	}
 	
 	// rsbox table
@@ -14920,7 +14921,8 @@ tern	AES_initialize_tables_m13(void)
 		
 		len = (size_t) AES_RSBOX_ENTRIES_m13 * sizeof(si4);
 		memcpy((void *) tables->AES_rsbox_table, (void *) temp, len);
-		mprotect_m13((void *) tables->AES_rsbox_table, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->AES_rsbox_table, len, PROT_READ);
 	}
 
 	// sbox table
@@ -14938,7 +14940,8 @@ tern	AES_initialize_tables_m13(void)
 		
 		len = (size_t) AES_SBOX_ENTRIES_m13 * sizeof(si4);
 		memcpy((void *) tables->AES_sbox_table, (void *) temp, len);
-		mprotect_m13((void *) tables->AES_sbox_table, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->AES_sbox_table, len, PROT_READ);
 	}
 
 	PROC_pthread_mutex_unlock_m13(&tables->AES_mutex);
@@ -15864,22 +15867,42 @@ void	AT_add_entry_m13(void *address, size_t requested_bytes, const si1 *function
 	
 	// get mutex
 	AT_mutex_on();
-		
-	// expand list if needed
-	if (AT_info->used_node_count == AT_info->node_count) {
-		prev_node_count = AT_info->node_count;
-		AT_info->node_count += GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
-		AT_info->nodes = (AT_NODE_m13 *) realloc((void *) AT_info->nodes, AT_info->node_count * sizeof(AT_NODE_m13));
-		if (AT_info->nodes == NULL) {
-			AT_mutex_off();
-			G_error_message_m13("%s(): error expanding AT list => exiting\n", __FUNCTION__);
-			exit_m13(-1);
+	
+	// see if address exists
+	atn = globals_m13->AT_info.nodes;
+	for (i = globals_m13->AT_info.node_count; i--; ++atn)
+		if (atn->address == address)
+			break;
+
+	if (i < 0) {  // new address
+		if (AT_info->used_node_count == AT_info->node_count) {  // expand list
+			prev_node_count = AT_info->node_count;
+			AT_info->node_count += GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
+			AT_info->nodes = (AT_NODE_m13 *) realloc((void *) AT_info->nodes, AT_info->node_count * sizeof(AT_NODE_m13));
+			if (AT_info->nodes == NULL) {
+				AT_mutex_off();
+				G_error_message_m13("%s(): error expanding AT list => exiting\n", __FUNCTION__);
+				exit_m13(-1);
+			}
+			// zero new memory
+			memset((void *) (AT_info->nodes + prev_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13 * sizeof(AT_NODE_m13));
+			atn = AT_info->nodes + prev_node_count;
+		} else {  // place at end of list
+			atn = AT_info->nodes + AT_info->used_node_count;
 		}
-		// zero new memory
-		memset((void *) (AT_info->nodes + prev_node_count), 0, (size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13 * sizeof(AT_NODE_m13));
-		atn = AT_info->nodes + prev_node_count;
-	} else {
-		atn = AT_info->nodes + AT_info->used_node_count;
+	} else {  // address exists
+		if (atn->free_function == NULL) {  // still allocated
+			G_warning_message_m13("%s(): memory currently allocated, ", __FUNCTION__);
+			if (requested_bytes > atn->actual_bytes) {
+				AT_mutex_off();
+				G_error_message_m13("allocation inadequate => exiting\n");
+				exit_m13(-1);
+			}
+			G_warning_message_m13("allocation adequate => updating entry\n", __FUNCTION__);
+		} else {
+			atn->free_function = NULL;  // overwrite: reset to allocated
+		}
+		--AT_info->used_node_count;  // overwrite: incremented below, keep count same
 	}
 	
 	// get true allocated bytes
@@ -18687,7 +18710,8 @@ tern	CMP_initialize_tables_m13(void)
 		
 		len = (size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13 * sizeof(sf8);
 		memcpy(tables->CMP_normal_CDF_table, temp, len);
-		mprotect_m13((void *) tables->CMP_normal_CDF_table, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->CMP_normal_CDF_table, len, PROT_READ);
 	}
 	
 	#ifdef MATLAB_PERSISTENT_m13
@@ -18704,7 +18728,8 @@ tern	CMP_initialize_tables_m13(void)
 
 		len = (size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 * sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13);
 		memcpy(tables->CMP_VDS_threshold_map, temp, len);
-		mprotect_m13((void *) tables->CMP_VDS_threshold_map, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->CMP_VDS_threshold_map, len, PROT_READ);
 	}
 		
 	PROC_pthread_mutex_unlock_m13(&tables->CMP_mutex);
@@ -23638,7 +23663,7 @@ tern	CRC_initialize_tables_m13(void)
 	ui4			**crc_table, c, n, k;
 	size_t			len, dim1_bytes, dim2_bytes, content_bytes;
 	GLOBAL_TABLES_m13	*tables;
-	
+
 
 	tables = globals_m13->tables;
 	if (tables->CRC_table != NULL)
@@ -23684,8 +23709,8 @@ tern	CRC_initialize_tables_m13(void)
 			}
 		}
 		
-		mprotect_m13((void *) crc_table, len, PROT_READ);  // set table memory to read only
-		tables->CRC_table = crc_table;
+		// set table memory to read only
+		mprotect_m13((void *) crc_table, len, PROT_READ);
 	}
 	
 	PROC_pthread_mutex_unlock_m13(&tables->CRC_mutex);
@@ -26749,7 +26774,7 @@ tern	FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order)  // done in place i
 
 
 // Special thanks to Tej Stead for his work on this algorithm
-ui1	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers)
+sf8	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers)
 {
 	tern			free_buffers;
 	ui1				score;
@@ -26765,7 +26790,8 @@ ui1	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 #endif
 
 	// if zero passed for cycles_per_template, it is set to line frequency cycles in 1 second
-	
+	// returns score == proportion of line noise in unfiltered data (range 0 - 1; -1 indicates errpr, nan indicates no score)
+
 	filt_order = 4;  // degenerate above 4 for these settings
 	free_buffers = FALSE_m13;
 	if (lnf_buffers == NULL)
@@ -26784,7 +26810,7 @@ ui1	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 	n_templates = len / int_samps_per_cycle;
 	if (n_templates < cycles_per_template) {
 		memcpy((void *) fy, (void *) y, (size_t) (len << 3));
-		return_m13(255);  // no score
+		return_m13((sf8) -1.0);  // no score
 	}
 	
 	// get min & max of input trace
@@ -26877,11 +26903,9 @@ ui1	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 		// get amplitude of template trace
 		amp_n = CMP_trace_amplitude_m13(template_trace, (sf8 *) lnf_buffers->buffer[1], len, FALSE_m13);
 		
-		score = (ui1) round((amp_n / amp_y) * (sf8) 254.0);
-		if (score > (ui1) 254)
-		    score = (ui1) 254;
+		score = amp_n / (amp_n + amp_y);
 	} else {
-		score = (ui1) 255;
+		score = NAN;
 	}
 			
 	// subtract template, restore low frequencies, & correct overflows (from filtering)
@@ -33157,7 +33181,7 @@ tern	SHA_initialize_tables_m13(void)
 {
 	size_t			len;
 	GLOBAL_TABLES_m13	*tables;
-	
+
 	
 	tables = globals_m13->tables;
 	if (tables->SHA_h0_table != NULL)
@@ -33184,7 +33208,8 @@ tern	SHA_initialize_tables_m13(void)
 		
 		len = (size_t) SHA_H0_ENTRIES_m13 * sizeof(ui4);
 		memcpy((void *) tables->SHA_h0_table, (void *) temp, len);
-		mprotect_m13((void *) tables->SHA_h0_table, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->SHA_h0_table, len, PROT_READ);
 	}
 
 	// k table
@@ -33202,7 +33227,8 @@ tern	SHA_initialize_tables_m13(void)
 		
 		len = (size_t) SHA_K_ENTRIES_m13 * sizeof(ui4);
 		memcpy((void *) tables->SHA_k_table, (void *) temp, len);
-		mprotect_m13((void *) tables->SHA_k_table, len, PROT_READ);  // set table memory to read only
+		// set table memory to read only
+		mprotect_m13((void *) tables->SHA_h0_table, len, PROT_READ);
 	}
 
 	PROC_pthread_mutex_unlock_m13(&tables->SHA_mutex);
@@ -33526,6 +33552,7 @@ si1     *STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern tw
 {
 	const si1	*full[9] = {"year", "month", "week", "day", "hour", "minute", "second", "millisecond", "microsecond"};
 	const si1	*abbr[9] = {"yr", "mo", "wk", "day", "hr", "min", "sec", "ms", "us"};
+	si1		*offset_dur_str;
 	si4		level_idx, int_level_1, int_level_2;
 	const sf8	divisors[9] = {31556926000000.0, 2629744000000.0, 604800000000.0, 86400000000.0, 3600000000.0, 60000000.0, 1000000.0, 1000.0, -1.0};
 	sf8             usecs, level_1, level_2;
@@ -33539,31 +33566,40 @@ si1     *STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern tw
 		dur_str = malloc_m13((size_t) TIME_STRING_BYTES_m13);
 		
 	if (int_usecs < 0) {
-		sprintf_m13(dur_str, "negative duration");
-		return_m13(dur_str);
+		if (abbreviated == TRUE_m13) {
+			strcpy(dur_str, "neg ");
+			offset_dur_str = dur_str + 4;
+		} else {
+			strcpy(dur_str, "negative ");
+			offset_dur_str = dur_str + 9;
+		}
+		int_usecs = -int_usecs;
+	} else {
+		offset_dur_str = dur_str;
 	}
-	
-	usecs = (sf8) int_usecs;
+
+	level_1 = usecs = (sf8) int_usecs;
 	for (level_idx = 0; usecs >= divisors[level_idx]; ++level_idx);
 
-	if (level_idx == 8)
+	if (level_idx == 8)  // usecs
 		two_level = FALSE_m13;
-		
-	level_1 = usecs / divisors[level_idx];
+	else
+		level_1 /= divisors[level_idx];
+
 	if (two_level == TRUE_m13) {
-		int_level_1 = (si4) level_1;
+		int_level_1 = (si4) level_1;  // rounnd down
 		usecs = (level_1 - (sf8) int_level_1) * divisors[level_idx];
 		level_2 = usecs / divisors[level_idx + 1];
-		int_level_2 = (si4) level_2;
+		int_level_2 = (si4) level_2;  // rounnd down
 		if (abbreviated == TRUE_m13)
-			sprintf_m13(dur_str, "%d %s, %d %s", int_level_1, abbr[level_idx], int_level_2, abbr[level_idx + 1]);
+			sprintf_m13(offset_dur_str, "%d %s, %d %s", int_level_1, abbr[level_idx], int_level_2, abbr[level_idx + 1]);
 		else
-			sprintf_m13(dur_str, "%d %s%s, %d %s%s", int_level_1, full[level_idx], PLURAL_m13(int_level_1), int_level_2, full[level_idx + 1], PLURAL_m13(int_level_2));
+			sprintf_m13(offset_dur_str, "%d %s%s, %d %s%s", int_level_1, full[level_idx], PLURAL_m13(int_level_1), int_level_2, full[level_idx + 1], PLURAL_m13(int_level_2));
 	} else {
 		if (abbreviated == TRUE_m13)
-			sprintf_m13(dur_str, "%0.2lf %s", level_1, abbr[level_idx]);
+			sprintf_m13(offset_dur_str, "%0.2lf %s", level_1, abbr[level_idx]);
 		else
-			sprintf_m13(dur_str, "%0.2lf %ss", level_1, full[level_idx]);
+			sprintf_m13(offset_dur_str, "%0.2lf %ss", level_1, full[level_idx]);
 	}
 
 	return_m13(dur_str);
@@ -35873,7 +35909,7 @@ tern	UTF8_initialize_tables_m13(void)
 {
 	size_t			len;
 	GLOBAL_TABLES_m13	*tables;
-	
+
 	
 	tables = globals_m13->tables;
 	if (tables->UTF8_offsets_table != NULL)
@@ -35897,7 +35933,8 @@ tern	UTF8_initialize_tables_m13(void)
 			ui4	temp[UTF8_OFFSETS_TABLE_ENTRIES_m13] = UTF8_OFFSETS_TABLE_m13;
 
 			memcpy((void *) tables->UTF8_offsets_table, (void *) temp, len);
-			mprotect_m13((void *) tables->UTF8_offsets_table, len, PROT_READ);  // set table memory to read only
+			// set table memory to read only
+			mprotect_m13((void *) tables->UTF8_offsets_table, len, PROT_READ);
 		}
 	}
 
@@ -35913,7 +35950,8 @@ tern	UTF8_initialize_tables_m13(void)
 			si1 temp[UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13] = UTF8_TRAILING_BYTES_TABLE_m13;
 			
 			memcpy((void *) tables->UTF8_trailing_bytes_table, (void *) temp, len);
-			mprotect_m13((void *) tables->UTF8_trailing_bytes_table, len, PROT_READ);  // set table memory to read only
+			// set table memory to read only
+			mprotect_m13((void *) tables->UTF8_trailing_bytes_table, len, PROT_READ);
 		}
 	}
 
@@ -36819,33 +36857,33 @@ void	WN_nap_m13(struct timespec *nap)
 		goto G_WN_SLEEP_USE_MS;
 
 	// load the required NT dylib functions
-	if (global_tables_m13->hNTdll == NULL) {
+	if (globals_m13->tables->hNTdll == NULL) {
 		ULONG			actual_resolution;
 		ZWSETTIMERRESTYPE 	ZwSetTimerResolution;  // pointer to set timer resolution function
 		
-		global_tables_m13->hNTdll = LoadLibraryA("ntdll");
-		if (global_tables_m13->hNTdll == NULL) {
+		globals_m13->tables->hNTdll = LoadLibraryA("ntdll");
+		if (globals_m13->tables->hNTdll == NULL) {
 			G_warning_message_m13("%s(): error loading NTdll library => using millisecond resolution\n", __FUNCTION__);
 			use_ms = TRUE_m13;
 			goto G_WN_SLEEP_USE_MS;
 		} else {
-			ZwSetTimerResolution = (ZWSETTIMERRESTYPE) GetProcAddress(global_tables_m13->hNTdll, "ZwSetTimerResolution");
+			ZwSetTimerResolution = (ZWSETTIMERRESTYPE) GetProcAddress(globals_m13->tables->hNTdll, "ZwSetTimerResolution");
 			if (ZwSetTimerResolution != NULL) {
 				ZwSetTimerResolution(1, 1, &actual_resolution);  // call the set timer resolution function (only done once)
 			} else {
 				G_warning_message_m13("%s(): error loading ZwSetTimerResolution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
 				use_ms = TRUE_m13;
-				FreeLibrary(global_tables_m13->hNTdll);
-				global_tables_m13->hNTdll = NULL;
+				FreeLibrary(globals_m13->tables->hNTdll);
+				globals_m13->tables->hNTdll = NULL;
 				goto G_WN_SLEEP_USE_MS;
 			}
 			// load the higher resolution sleep function (static)
-			NtDelayExecution = (NTDELAYEXECTYPE) GetProcAddress(global_tables_m13->hNTdll, "NtDelayExecution");
+			NtDelayExecution = (NTDELAYEXECTYPE) GetProcAddress(globals_m13->tables->hNTdll, "NtDelayExecution");
 			if (NtDelayExecution == NULL) {
 				G_warning_message_m13("%s(): error loading NtDelayExecution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
 				use_ms = TRUE_m13;
-				FreeLibrary(global_tables_m13->hNTdll);
-				global_tables_m13->hNTdll = NULL;
+				FreeLibrary(globals_m13->tables->hNTdll);
+				globals_m13->tables->hNTdll = NULL;
 				goto G_WN_SLEEP_USE_MS;
 			}
 		}
@@ -37598,14 +37636,13 @@ inline
 tern	freeable_m13(void *address)
 {
 	ui8			address_val;
-	LEVEL_HEADER_m13	*level_header;
 	HW_PARAMS_m13		*hw_params;
 
 	
 	// returns whether address is freeable
 	// heap starts at heap base & grows upward
 	// MacOS & Linux stack base > heap_max_address & grows downward
-	// Windows stack base < heap base & generally grows toward heap base (per internet this may not always be true, but I have never seen it happen)
+	// Windows stack base < heap base & generally grows toward heap base (this may not always be true, but I have never seen it happen)
 	// if getting unexpected results, consider compiling with AT_DEBUG_m13 to track down where errors occur
 	// NOTE: not tested under 32-bit hardware or compilation
 
@@ -37613,7 +37650,7 @@ tern	freeable_m13(void *address)
 		return(FALSE_m13);
 
 #ifdef AT_DEBUG_m13
-	return(AT_freeable_m13(address));
+	return(AT_freeable_m13(address));  // this will always work
 #endif
 
 	// all allocated heap addresses are at least divisible by 8
@@ -37632,54 +37669,38 @@ tern	freeable_m13(void *address)
 
 #ifdef MACOS_m13
 	// check if address in allocation table
-	if (malloc_size_m13(address))
+	if (malloc_size(address))
 		return_m13(TRUE_m13);
 	return(FALSE_m13);
 #endif
 	
-	// Can't use malloc_size_m13() if address not allocated
+	// Can't use malloc_size_m13() if address not allocated:
 	// LINUX_m13: malloc_usable_size() generates unrecoverable segmentation fault
 	// WINDOWS_m13: _msize() terminates process without signal
-	level_header = (LEVEL_HEADER_m13 *) address;
 
 #ifdef LINUX_m13
-	// check that level_header->type_code can be dereferenced (type_code first element - so doesn't have to be a level header)
-	ui4			type_code = NO_TYPE_CODE_m13;
-	sig_handler_t_m13	current_handler;
+	si4	err;
 	
-	current_handler = signal(SIGSEGV, SIG_IGN);
-	type_code = *((ui4 *) &level_header->type_code);
-	signal(SIGSEGV, current_handler);
-	
-	if (type_code == NO_TYPE_CODE_m13)
+	// check that current protection can be changed
+	err = mprotect(address, (size_t) 1, PROT_READ | PROT_WRITE);
+	if (err)  // errno set: EACCES (not permitted), EINVAL (not page aligned), or ENOMEM (outside process address range)
 		return(FALSE_m13);
 #endif
 
 #ifdef WINDOWS_m13
-	// check that level_header->type_code can be dereferenced
-	DWORD	protection_err, curr_protection;
+	DWORD	err, curr_protection;
 
-	protection_err = VirtualProtect((void *) &level_header->type_code, (size_t) 4, (DWORD) PAGE_READONLY, &curr_protection);
-	if (protection_err == 0)  // errno set: probably ERROR_INVALID_ADDRESS
+	// check that current protection can be changed
+	err = VirtualProtect(address, (size_t) 1, (DWORD) PAGE_READONLY, &curr_protection);
+	if (err == 0)  // errno set: probably ERROR_INVALID_ADDRESS
 		return(FALSE_m13);
-	VirtualProtect((void *) &level_header->type_code, (size_t) 4, curr_protection, NULL);  // reset protection
+	
+	// reset protection if successful
+	VirtualProtect(address, (size_t) 1, curr_protection, NULL);
 #endif
 
-	// if address is a LEVEL_HEADER structure, check if address allocated en bloc
-	switch (level_header->type_code) {
-		case LH_TIME_SERIES_CHANNEL_m13:
-		case LH_VIDEO_CHANNEL_m13:
-		case LH_TIME_SERIES_SEGMENT_m13:
-		case LH_VIDEO_SEGMENT_m13:
-		case LH_FILE_m13:
-		case LH_PROC_GLOBALS_m13:
-			if (G_en_bloc_allocation_m13(level_header) == TRUE_m13)
-				return(FALSE_m13);
-			return(TRUE_m13);
-		default:
-			// not a LEVEL_HEADER - checked all we can check => default to TRUE_m13 (assume caller passed a non-random heap address)
-			return(TRUE_m13);
-	}
+	// checked all that we can check, possibly still false though
+	return(TRUE_m13);
 }
 
 
@@ -39276,10 +39297,10 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 
 		}
 	}
 	
-	BUFFER_SIZE_INC = global_tables_m13->HW_params.system_page_size;
+	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
 	if (buf_len == 0) {
 		buf_len = BUFFER_SIZE_INC;
-		buffer = (si1 *) malloc_m13((size_t) buf_len, __FUNCTION__, behavior);
+		buffer = (si1 *) malloc_m13((size_t) buf_len);
 	}
 
 	// get varargs & set up error buffer
@@ -39494,9 +39515,9 @@ SYSTEM_PIPE_FAIL_m13:
 	tmp_command = (si1 *) malloc((size_t) len);
 	G_unique_temp_file_m13(tmp_file);
 	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
-	err = system_m13(tmp_command, FALSE_m13, __FUNCTION__, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
+	err = system_m13(tmp_command, FALSE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
 	free((void *) tmp_command);
-	fp = fopen_m13(tmp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m13);
+	fp = fopen_m13(tmp_file, "r");
 	bytes_in_buffer = G_file_length_m13(fp, NULL);
 	if (assign_buffer == TRUE_m13) {
 		if (bytes_in_buffer >= buf_len) {
@@ -39565,16 +39586,14 @@ SYSTEM_PIPE_FAIL_m13:
 					printf_m13("\tcaptured output: \"%s\"\n", buffer);
 			}
 		}
-		if (function != NULL)
-			fprintf_m13(stderr, "\tcalled from function %s()\n", function);
-		if (behavior & EXIT_ON_FAIL_m13)
-			fprintf_m13(stderr, "\t=> exiting\n\n");
-		else
+		if (behavior & RETURN_ON_FAIL_m13)
 			fprintf_m13(stderr, "\t=> returning\n\n");
+		else
+			fprintf_m13(stderr, "\t=> exiting\n\n");
 		fflush(stderr);
 	}
 
-	if (behavior & EXIT_ON_FAIL_m13)
+	if (!(behavior & RETURN_ON_FAIL_m13))
 		exit_m13(-1);
 	
 	if (free_buffer == TRUE_m13)

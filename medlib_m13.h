@@ -216,7 +216,7 @@ typedef long double	sf16;
 
 #endif  // MED_PRIMITIVES_IN_m13
 
-// MED Library Ternary Boolean Schema
+// MED Library Ternary Schema
 #define TRUE_m13			((tern) 1)
 #define UNKNOWN_m13			((tern) 0)
 #define NOT_SET_m13			UNKNOWN_m13
@@ -449,6 +449,13 @@ typedef struct {
 #endif  // WINDOWS_m13
 #define SHOW_CURRENT_BEHAVIOR_m13		1
 #define SHOW_BEHAVIOR_STACK_m13			2
+
+#ifdef WINDOWS_m13  // use MacOS / Linux constants for mprotect_m13()
+	#define PROT_NONE	0  // page can not be accessed
+	#define PROT_READ	1  // age can be read
+	#define PROT_WRITE	2  // page can be written
+	#define PROT_EXEC	4  // page can be executed
+#endif
 
 // Target Value Constants (ui4)
 #define NO_INDEX_m13			-1  // assigned to signed values (si4 or si8)
@@ -3882,7 +3889,7 @@ FILT_PROCESSING_STRUCT_m13  *FILT_initialize_processing_struct_m13(si4 order, si
 tern	FILT_generate_initial_conditions_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
 tern	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 tern	FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order);
-ui1	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers);
+sf8	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers);
 void	FILT_mat_mult_m13(void *a, void *b, void *product, si4 outer_dim1, si4 inner_dim, si4 outer_dim2);
 sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option_code);
 sf8	*FILT_noise_floor_filter_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers);

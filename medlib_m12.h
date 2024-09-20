@@ -3609,7 +3609,7 @@ FILT_PROCESSING_STRUCT_m12  *FILT_initialize_processing_struct_m12(si4 order, si
 void    FILT_generate_initial_conditions_m12(FILT_PROCESSING_STRUCT_m12 *filtps);
 void    FILT_hqr_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs);
 void    FILT_invert_matrix_m12(sf8 **a, sf8 **inv_a, si4 order);
-ui1	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, TERN_m12 calculate_score, TERN_m12 fast_mode, CMP_BUFFERS_m12 *lnf_buffers);
+sf8	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, TERN_m12 calculate_score, TERN_m12 fast_mode, CMP_BUFFERS_m12 *lnf_buffers);
 void    FILT_mat_mult_m12(void *a, void *b, void *product, si4 outer_dim1, si4 inner_dim, si4 outer_dim2);
 sf8	*FILT_moving_average_m12(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option_code);
 sf8    	*FILT_noise_floor_filter_m12(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m12 *nff_buffers);

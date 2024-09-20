@@ -16544,11 +16544,10 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 	// decompressed_data - caller specified array size
 	if (need_decompressed_data == TRUE_m12) {
 		if (cps->directives.mode == CMP_DECOMPRESSION_MODE_m12) {
-			if (data_samples > 0) {
+			if (data_samples > 0)
 				cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m12((size_t) data_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			} else {
+			else
 				cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = NULL;
-			}
 			cps->parameters.allocated_decompressed_samples = data_samples;
 		} else { // cps->directives.mode == CMP_COMPRESSION_MODE_m12  (decompressed_ptr used to calculate mean residual ratio for each block)
 			cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m12((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -20851,7 +20850,8 @@ CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_
 	if (new_decompressed_samples) {
 		if (cps->decompressed_data != NULL)
 			free_m12((void * ) cps->parameters.cache, __FUNCTION__);
-		if ((cps->decompressed_data = cps->decompressed_ptr = cps->parameters.cache = (si4 *) calloc_m12((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) == NULL)
+		cps->decompressed_data = cps->decompressed_ptr = cps->parameters.cache = (si4 *) calloc_m12((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (cps->decompressed_data == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m12;
 		cps->parameters.allocated_decompressed_samples = new_decompressed_samples;
 	}
@@ -26898,22 +26898,22 @@ void	FILT_invert_matrix_m12(sf8 **a, sf8 **inv_a, si4 order)  // done in place i
 
 
 // Special thanks to Tej Stead for his work on this algorithm
-ui1	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, TERN_m12 calculate_score, TERN_m12 fast_mode, CMP_BUFFERS_m12 *lnf_buffers)
+sf8	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, TERN_m12 calculate_score, TERN_m12 fast_mode, CMP_BUFFERS_m12 *lnf_buffers)
 {
 	TERN_m12			free_buffers;
-	ui1				score;
 	si4				filt_order, n_harmonics;
 	FILT_PROCESSING_STRUCT_m12	*filtps;
 	si8				i, j, k, int_samps_per_cycle, n_templates, template_trace_len, last_template_start;
 	sf8				samps_per_cycle, min_y, max_y, *sf8_p1, *sf8_p2, *sf8_p3;
 	sf8				*low_y, *high_y, **template_mtx, *template_trace, *template_buf;
-	sf8				amp_y, amp_n, high_f, max_high_f, sum, offset;
+	sf8				amp_y, amp_n, high_f, max_high_f, sum, offset, score;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
 	// if zero passed for cycles_per_template, it is set to line frequency cycles in 1 second
+	// returns score == proportion of line noise in unfiltered data (range 0 - 1; -1 indicates errpr, nan indicates no score)
 	
 	filt_order = 4;  // degenerate above 4 for these settings
 	free_buffers = FALSE_m12;
@@ -26933,7 +26933,7 @@ ui1	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 	n_templates = len / int_samps_per_cycle;
 	if (n_templates < cycles_per_template) {
 		memcpy((void *) fy, (void *) y, (size_t) (len << 3));
-		return(255);  // no score
+		return((sf8) -1.0);  // error
 	}
 	
 	// get min & max of input trace
@@ -27026,11 +27026,9 @@ ui1	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 		// get amplitude of template trace
 		amp_n = CMP_trace_amplitude_m12(template_trace, (sf8 *) lnf_buffers->buffer[1], len, FALSE_m12);
 		
-		score = (ui1) round((amp_n / amp_y) * (sf8) 254.0);
-		if (score > (ui1) 254)
-		    score = (ui1) 254;
+		score = amp_n / (amp_n + amp_y);
 	} else {
-		score = (ui1) 255;
+		score = NAN;
 	}
 			
 	// subtract template, restore low frequencies, & correct overflows (from filtering)
@@ -30969,7 +30967,6 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 		}
 	}
 
-
 	// get WAN IPV4 address (this server can take some time)
 #if defined MACOS_m12 || defined LINUX_m12
 	command = "/usr/bin/curl --connect-timeout 7.0 -s checkip.dyndns.org";
@@ -33767,6 +33764,7 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviat
 {
 	const si1	*full[9] = {"year", "month", "week", "day", "hour", "minute", "second", "millisecond", "microsecond"};
 	const si1	*abbr[9] = {"yr", "mo", "wk", "day", "hr", "min", "sec", "ms", "us"};
+	si1		*offset_dur_str;
 	si4		level_idx, int_level_1, int_level_2;
 	const sf8	divisors[9] = {31556926000000.0, 2629744000000.0, 604800000000.0, 86400000000.0, 3600000000.0, 60000000.0, 1000000.0, 1000.0, -1.0};
 	sf8             usecs, level_1, level_2;
@@ -33780,191 +33778,44 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviat
 		dur_str = calloc_m12((size_t) TIME_STRING_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	if (int_usecs < 0) {
-		sprintf_m12(dur_str, "negative duration");
-		return(dur_str);
+		if (abbreviated == TRUE_m12) {
+			strcpy(dur_str, "neg ");
+			offset_dur_str = dur_str + 4;
+		} else {
+			strcpy(dur_str, "negative ");
+			offset_dur_str = dur_str + 9;
+		}
+		int_usecs = -int_usecs;
+	} else {
+		offset_dur_str = dur_str;
 	}
 	
-	usecs = (sf8) int_usecs;
+	level_1 = usecs = (sf8) int_usecs;
 	for (level_idx = 0; usecs < divisors[level_idx]; ++level_idx);
 	
-	if (level_idx == 8)
+	if (level_idx == 8)  // usecs
 		two_level = FALSE_m12;
+	else
+		level_1 /= divisors[level_idx];
 	
-	level_1 = usecs / divisors[level_idx];
 	if (two_level == TRUE_m12) {
-		int_level_1 = (si4) level_1;
+		int_level_1 = (si4) level_1;  // rounnd down
 		usecs = (level_1 - (sf8) int_level_1) * divisors[level_idx];
 		level_2 = usecs / divisors[level_idx + 1];
-		int_level_2 = (si4) level_2;
+		int_level_2 = (si4) level_2;  // rounnd down
 		if (abbreviated == TRUE_m12)
-			sprintf_m12(dur_str, "%d %s, %d %s", int_level_1, abbr[level_idx], int_level_2, abbr[level_idx + 1]);
+			sprintf_m12(offset_dur_str, "%d %s, %d %s", int_level_1, abbr[level_idx], int_level_2, abbr[level_idx + 1]);
 		else
-			sprintf_m12(dur_str, "%d %s%s, %d %s%s", int_level_1, full[level_idx], PLURAL_m12(int_level_1), int_level_2, full[level_idx + 1], PLURAL_m12(int_level_2));
+			sprintf_m12(offset_dur_str, "%d %s%s, %d %s%s", int_level_1, full[level_idx], PLURAL_m12(int_level_1), int_level_2, full[level_idx + 1], PLURAL_m12(int_level_2));
 	} else {
 		if (abbreviated == TRUE_m12)
-			sprintf_m12(dur_str, "%0.2lf %s", level_1, abbr[level_idx]);
+			sprintf_m12(offset_dur_str, "%0.2lf %s", level_1, abbr[level_idx]);
 		else
-			sprintf_m12(dur_str, "%0.2lf %ss", level_1, full[level_idx]);
+			sprintf_m12(offset_dur_str, "%0.2lf %ss", level_1, full[level_idx]);
 	}
 	
 	return(dur_str);
 }
-
-//	// Note: if dur_str == NULL, this function is not thread safe
-//	if (dur_str == NULL)
-//		dur_str = private_dur_str;
-//	
-//	usecs = (sf8) i_usecs;
-//	
-//	years = usecs / (sf8) 31556926000000.0;
-//	if (years >= (sf8) 1.0) {
-//		if (two_level == TRUE_m12) {
-//			usecs = (years - floor(years)) * (sf8) 31556926000000.0;
-//			months = usecs / (sf8) 2629744000000.0;
-//			if (abbreviated == TRUE_m12)
-//				sprintf_m12(dur_str, "%d %s, 0.1lf %s", (si4) years, abbr[0], months, abbr[1]);
-//			else
-//				sprintf_m12(dur_str, "%d %s%s, 0.1lf %ss", (si4) years, full[0], PLURAL_m12((si4) years), months, full[1]);
-//		} else {
-//			if (abbreviated == TRUE_m12)
-//				sprintf_m12(dur_str, "%0.3lf %s", years, abbr[0]);
-//			else
-//				sprintf_m12(dur_str, "%0.3lf %ss", years, full[0]);
-//		}
-//	} else {
-//		months = usecs / (sf8) 2629744000000.0;
-//		if (months >= (sf8) 1.0) {
-//			if (two_level == TRUE_m12) {
-//				usecs = (months - floor(months)) * (sf8) 2629744000000.0;
-//				weeks = usecs / (sf8) 604800000000.0;
-//				if (abbreviated == TRUE_m12)
-//					sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) months, abbr[1], weeks, abbr[2]);
-//				else
-//					sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) months, full[1], PLURAL_m12((si4) months), weeks, full[2]);
-//			} else {
-//				if (abbreviated == TRUE_m12)
-//					sprintf_m12(dur_str, "%0.3lf %s", months, abbr[1]);
-//				else
-//					sprintf_m12(dur_str, "%0.3lf %ss", months, full[1]);
-//			}
-//		} else {
-//			weeks = usecs / (sf8) 604800000000.0;
-//			if (weeks >= (sf8) 1.0) {
-//				if (two_level == TRUE_m12) {
-//					usecs = (weeks - floor(weeks)) * (sf8) 604800000000.0;
-//					days = usecs / (sf8) 86400000000.0;
-//					if (abbreviated == TRUE_m12)
-//						sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) weeks, abbr[2], days, abbr[3]);
-//					else
-//						sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) weeks, full[2], PLURAL_m12((si4) weeks), days, full[3]);
-//				} else {
-//					if (abbreviated == TRUE_m12)
-//						sprintf_m12(dur_str, "%0.3lf %s", weeks, abbr[2]);
-//					else
-//						sprintf_m12(dur_str, "%0.3lf %ss", weeks, full[2]);
-//				}
-//			} else {
-//				days = usecs / (sf8) 86400000000.0;
-//				if (days >= (sf8) 1.0) {
-//					if (two_level == TRUE_m12) {
-//						usecs = (days - floor(days)) * (sf8) 86400000000.0;
-//						hours = usecs / (sf8) 3600000000.0;
-//						if (abbreviated == TRUE_m12)
-//							sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) days, abbr[3], hours, abbr[4]);
-//						else
-//							sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) days, full[3], PLURAL_m12((si4) days), hours, full[4]);
-//					} else {
-//						if (abbreviated == TRUE_m12)
-//							sprintf_m12(dur_str, "%0.3lf %s", days, abbr[3]);
-//						else
-//							sprintf_m12(dur_str, "%0.3lf %ss", days, full[3]);
-//					}
-//				} else {
-//					hours = usecs / (sf8) 3600000000.0;
-//					if (hours >= (sf8) 1.0) {
-//						if (two_level == TRUE_m12) {
-//							usecs = (hours - floor(hours)) * (sf8) 3600000000.0;
-//							mins = usecs / (sf8) 60000000.0;
-//							if (abbreviated == TRUE_m12)
-//								sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) hours, abbr[4], mins, abbr[5]);
-//							else
-//								sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) hours, full[4], PLURAL_m12((si4) hours), mins, full[5]);
-//						} else {
-//							if (abbreviated == TRUE_m12)
-//								sprintf_m12(dur_str, "%0.3lf %s", hours, abbr[4]);
-//							else
-//								sprintf_m12(dur_str, "%0.3lf %ss", hours, full[4]);
-//						}
-//					} else {
-//						mins = usecs / (sf8) 60000000.0;
-//						if (mins >= (sf8) 1.0) {
-//							if (two_level == TRUE_m12) {
-//								usecs = (mins - floor(mins)) * (sf8) 60000000.0;
-//								secs = usecs / (sf8) 1000000.0;
-//								if (abbreviated == TRUE_m12)
-//									sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) mins, abbr[5], secs, abbr[6]);
-//								else
-//									sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) mins, full[5], PLURAL_m12((si4) mins), secs, full[6]);
-//							} else {
-//								if (abbreviated == TRUE_m12)
-//									sprintf_m12(dur_str, "%0.3lf %s", mins, abbr[5]);
-//								else
-//									sprintf_m12(dur_str, "%0.3lf %ss", mins, full[5]);
-//							}
-//						} else {
-//							secs = usecs / (sf8) 1000000.0;
-//							if (secs >= (sf8) 1.0) {
-//								if (two_level == TRUE_m12) {
-//									usecs = (secs - floor(secs)) * (sf8) 1000000.0;
-//									msecs = usecs / (sf8) 1000.0;
-//									if (abbreviated == TRUE_m12)
-//										sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) secs, abbr[6], msecs, abbr[7]);
-//									else
-//										sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) secs, full[6], PLURAL_m12((si4) secs), msecs, full[7]);
-//								} else {
-//									if (abbreviated == TRUE_m12)
-//										sprintf_m12(dur_str, "%0.3lf %s", secs, abbr[6]);
-//									else
-//										sprintf_m12(dur_str, "%0.3lf %ss", secs, full[6]);
-//								}
-//							} else {
-//								msecs = usecs / (sf8) 1000.0;
-//								if (msecs >= (sf8) 1.0) {
-//									if (two_level == TRUE_m12) {
-//										usecs = (msecs - floor(msecs)) * (sf8) 1000.0;
-//										if (abbreviated == TRUE_m12)
-//											sprintf_m12(dur_str, "%d %s, %0.1lf %s", (si4) msecs, abbr[7], usecs, abbr[8]);
-//										else
-//											sprintf_m12(dur_str, "%d %s%s, %0.1lf %ss", (si4) msecs, full[7], PLURAL_m12((si4) msecs), usecs, full[8]);
-//									} else {
-//										if (abbreviated == TRUE_m12)
-//											sprintf_m12(dur_str, "%0.3lf %s", msecs, abbr[7]);
-//										else
-//											sprintf_m12(dur_str, "%0.3lf %ss", msecs, full[7]);
-//									}
-//								} else {
-//									if (two_level == TRUE_m12) {
-//										if (abbreviated == TRUE_m12)
-//											sprintf_m12(dur_str, "%0.1lf %s", usecs, abbr[8]);
-//										else
-//											sprintf_m12(dur_str, "%0.1lf %ss", usecs, full[8]);
-//									} else {
-//										if (abbreviated == TRUE_m12)
-//											sprintf_m12(dur_str, "%0.3lf %s", usecs, abbr[8]);
-//										else
-//											sprintf_m12(dur_str, "%0.3lf %ss", usecs, full[8]);
-//									}
-//								}
-//							}
-//						}
-//					}
-//				}
-//			}
-//		}
-//	}
-//	
-//	return(dur_str);
-//}
 
 
 void    STR_escape_chars_m12(si1 *string, si1 target_char, si8 buffer_len)
@@ -34351,8 +34202,8 @@ si1	*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m
 si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes, TERN_m12 base_2)
 {
 	static si1              private_size_str[SIZE_STRING_BYTES_m12];
-	static const si1        units[6][8] = {"bytes", "KiB", "MiB", "GiB", "TiB", "PiB"};
-	static const si1        i_units[6][8] = {"bytes", "KB", "MB", "GB", "TB", "PB"};
+	static const si1        units[6][8] = {"bytes", "KB", "MB", "GB", "TB", "PB"};
+	static const si1        i_units[6][8] = {"bytes", "KiB", "MiB", "GiB", "TiB", "PiB"};
 	ui8                     i, j, t;
 	sf8                     size;
 	
@@ -37972,7 +37823,6 @@ inline
 TERN_m12	freeable_m12(void *address)
 {
 	ui8			address_val;
-	LEVEL_HEADER_m12	*level_header;
 	HW_PARAMS_m12		*hw_params;
 	
 #ifdef FN_DEBUG_m12
@@ -38008,53 +37858,38 @@ TERN_m12	freeable_m12(void *address)
 
 #ifdef MACOS_m12
 	// check if address in allocation table
-	if (malloc_size_m12(address))
+	if (malloc_size(address))
 		return(TRUE_m12);
 	return(FALSE_m12);
 #endif
 	
-	// Can't use malloc_size_m12() if address not allocated
-	// LINUX_m12: malloc_usable_size() generates unrecoverable segmentation fault
-	// WINDOWS_m12: _msize() terminates process without signal
-	level_header = (LEVEL_HEADER_m12 *) address;
+	// Can't use malloc_size_m13() if address not allocated:
+	// LINUX_m13: malloc_usable_size() generates unrecoverable segmentation fault
+	// WINDOWS_m13: _msize() terminates process without signal
 
-#ifdef LINUX_m12
-	// check that level_header->type_code can be dereferenced (type_code first element - so doesn't have to be a level header)
-	ui4			type_code = 0xFFFFFFFF;
-	sig_handler_t_m12	current_handler;
+#ifdef LINUX_m13
+	si4	err;
 	
-	current_handler = signal(SIGSEGV, SIG_IGN);
-	type_code = *((ui4 *) &level_header->type_code);
-	signal(SIGSEGV, current_handler);
-	
-	if (type_code == 0xFFFFFFFF)
+	// check that current protection can be changed
+	err = mprotect(address, (size_t) 1, PROT_READ | PROT_WRITE);
+	if (err)  // errno set: EACCES (not permitted), EINVAL (not page aligned), or ENOMEM (outside process address range)
 		return(FALSE_m12);
 #endif
-	
-#ifdef WINDOWS_m12
-	// check that level_header->type_code can be dereferenced
-	DWORD	protection_err, curr_protection;
 
-	protection_err = VirtualProtect((void *) &level_header->type_code, (size_t) 4, (DWORD) PAGE_READONLY, &curr_protection);
-	if (protection_err == 0)  // errno set: probably ERROR_INVALID_ADDRESS
+#ifdef WINDOWS_m13
+	DWORD	err, curr_protection;
+
+	// check that current protection can be changed
+	err = VirtualProtect(address, (size_t) 1, (DWORD) PAGE_READONLY, &curr_protection);
+	if (err == 0)  // errno set: probably ERROR_INVALID_ADDRESS
 		return(FALSE_m12);
-	VirtualProtect((void *) &level_header->type_code, (size_t) 4, curr_protection, NULL);  // reset protection
+	
+	// reset protection if successful
+	VirtualProtect(address, (size_t) 1, curr_protection, NULL);
 #endif
 
-	// if address is a LEVEL_HEADER structure, check if address allocated en bloc
-	switch (level_header->type_code) {
-		case LH_TIME_SERIES_CHANNEL_m12:
-		case LH_VIDEO_CHANNEL_m12:
-		case LH_TIME_SERIES_SEGMENT_m12:
-		case LH_VIDEO_SEGMENT_m12:
-		case LH_SEGMENTED_SESS_RECS_m12:
-			if (G_en_bloc_allocation_m12(level_header) == TRUE_m12)
-				return(FALSE_m12);
-			return(TRUE_m12);
-		default:
-			// not a LEVEL_HEADER - checked all we can check => default to TRUE_m12 (assume caller passed a non-random heap address)
-			return(TRUE_m12);
-	}
+	// checked all that we can check, possibly still false though
+	return(TRUE_m12);
 }
 
 
