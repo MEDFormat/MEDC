@@ -37885,7 +37885,7 @@ TERN_m12	freeable_m12(void *address)
 		return(FALSE_m12);
 	
 	// reset protection if successful
-	VirtualProtect(address, (size_t) 1, curr_protection, NULL);
+	VirtualProtect(address, (size_t) 1, curr_protection, &err);  // second protection parameter cannot be NULL
 #endif
 
 	// checked all that we can check, possibly still false though
