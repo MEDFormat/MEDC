@@ -101,7 +101,7 @@
 //**********************************   show_record()   ********************************//
 //*************************************************************************************//
 
-tern	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
+tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
 {
 	ui4	type_code;
 	si1	time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(CRC_BYTES_m13)];
@@ -350,12 +350,6 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 			printf_m13("Segment Number: no entry\n");
 		else
 			printf_m13("Segment Number: %d\n", Sgmt_v11->segment_number);
-		if (Sgmt_v11->acquisition_channel_number == REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13)
-			printf_m13("Acquisition Channel Number: all channels\n");
-		else if (Sgmt_v10->acquisition_channel_number == REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13)
-			printf_m13("Acquisition Channel Number: no entry\n");
-		else
-			printf_m13("Acquisition Channel Number: %d\n", Sgmt_v11->acquisition_channel_number);
 		if (record_header->total_record_bytes > (RECORD_HEADER_BYTES_m13 + REC_Sgmt_v11_BYTES_m13)) {
 			segment_description = (si1 *) Sgmt_v11 + REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13;
 			if (*segment_description)
@@ -398,7 +392,7 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	
 	// Version 1.0
 	Sgmt_v10 = (REC_Sgmt_v10_m13 *) bytes;
-	version_string = "REC_Sgmt_v10_m13";
+	version_string = "version 1.0";
 	if (&Sgmt_v10->end_time != (si8 *) (bytes + REC_Sgmt_v10_END_TIME_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->start_sample_number != (si8 *) (bytes + REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13))
@@ -416,7 +410,7 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 
 	// Version 1.1
 	Sgmt_v11 = (REC_Sgmt_v11_m13 *) bytes;
-	version_string = "REC_Sgmt_v11_m13";
+	version_string = "version 1.1";
 	if (&Sgmt_v11->end_time != (si8 *) (bytes + REC_Sgmt_v11_END_TIME_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->start_sample_number != (si8 *) (bytes + REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13))
@@ -425,7 +419,7 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->segment_number != (si4 *) (bytes + REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->acquisition_channel_number != (si4 *) (bytes + REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
+	if (Sgmt_v11->pad != bytes + REC_Sgmt_v11_PAD_OFFSET_m13)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	
 	// aligned
@@ -1175,7 +1169,7 @@ tern     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 #endif
 
 	// Version 1.0
-	version_string = "REC_Epoc_v10_m13";
+	version_string = "version 1.0";
 	
 	// check overall size
 	if (sizeof(REC_Epoc_v10_m13) != REC_Epoc_v10_BYTES_m13)
@@ -1198,7 +1192,7 @@ tern     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 		goto REC_Epoc_NOT_ALIGNED_m13;
 
 	// Version 2.0
-	version_string = "REC_Epoc_v20_m13";
+	version_string = "version 2.0";
 	
 	// check overall size
 	if (sizeof(REC_Epoc_v20_m13) != REC_Epoc_v20_BYTES_m13)

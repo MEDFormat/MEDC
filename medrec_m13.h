@@ -109,7 +109,7 @@
 #define REC_NO_RECORD_NUMBER_m13		-1
 
 // Prototypes
-tern	REC_show_record_m13(FILE_PROCESSING_STRUCT_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
+tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
 tern	REC_check_structure_alignments_m13(ui1 *bytes);
 
 
@@ -133,7 +133,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // Constants
 #define REC_Term_TYPE_STRING_m13        "Term"                  // ascii[4]
 #define REC_Term_TYPE_CODE_m13          (ui4) 0x6d726554        // ui4 (little endian)
-// #define REC_Tern_TYPE_CODE_m13       (ui4) 0x5465726d        // ui4 (big endian)
+// #define REC_Term_TYPE_CODE_m13       (ui4) 0x5465726d        // ui4 (big endian)
 
 // If there are any records, there is also a terminal record index
 // in record indices files
@@ -197,18 +197,10 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m13			SAMPLE_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_END_FRAME_NUMBER_OFFSET_m13			REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13		// si8
 #define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_SAMPLING_FREQUENCY_OFFSET_m13                      24							// sf8
-#define REC_Sgmt_v11_SAMPLING_FREQUENCY_NO_ENTRY_m13                    FREQUENCY_NO_ENTRY_m13
-#define REC_Sgmt_v11_SAMPLING_FREQUENCY_VARIABLE_m13		        FREQUENCY_VARIABLE_m13
-#define REC_Sgmt_v11_FRAME_RATE_OFFSET_m13                      	REC_Sgmt_v11_SAMPLING_FREQUENCY_OFFSET_m13		// sf8
-#define REC_Sgmt_v11_FRAME_RATE_NO_ENTRY_m13                    	FREQUENCY_NO_ENTRY_m13
-#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13		        	FREQUENCY_VARIABLE_m13
-#define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13                          32							// si4
+#define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13                          24							// si4
 #define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13                        SEGMENT_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13              36							// si4
-#define REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13            CHANNEL_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13        CHANNEL_NUMBER_ALL_CHANNELS_m13
-#define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13                     REC_Sgmt_v11_BYTES_m13
+#define REC_Sgmt_v11_PAD_m13              				28
+#define REC_Sgmt_v11_PAD_BYTES_m13                                      4
 
 // Structures
 // REC_Sgmt_v11_m13 defined in medlib_m13.h due to codependency

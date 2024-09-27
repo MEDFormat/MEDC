@@ -268,10 +268,10 @@ typedef struct {
 		si8     end_frame_number;	// session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 	};
 	si4     segment_number;
-	si4     acquisition_channel_number;  // REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13 in session level records
+	ui1     pad[4];
 } REC_Sgmt_v11_m13;
 
-// Description follows sampling_frequency / frame_rate in structure.
+// Description follows acquisition_channel_number in structure.
 // The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
 typedef struct {
@@ -589,12 +589,14 @@ typedef struct {
 
 // Global Defaults
 #define GLOBALS_BEHAVIOR_DEFAULT_m13		        DEFAULT_BEHAVIOR_m13
-#define GLOBALS_FPS_LOCKING_DEFAULT_m13			FALSE_m13
+#define GLOBALS_FILE_LOCK_MODE_DEFAULT_m13		FLOCK_MODE_MED_m13
 #define GLOBALS_ACCESS_TIMES_DEFAULT_m13		FALSE_m13
 #define GLOBALS_CRC_MODE_DEFAULT_m13			CRC_CALCULATE_m13
 #define GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13	TRUE_m13
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13	32
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13	32
+#define GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13		1024
+#define GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13		8
 #define GLOBALS_PROC_GLOBALS_LIST_SIZE_INCREMENT_m13	32
 #define GLOBALS_REFERENCE_CHANNEL_INDEX_NO_ENTRY_m13	-1
 #define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13		((ui4) 0)
@@ -674,7 +676,7 @@ typedef struct {
 #define TIME_SERIES_CHANNEL_TYPE_m13	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13
 #define VIDEO_CHANNEL_TYPE_m13		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13
 
-// Reference Channel Types (used in change_reference_channel_m13())
+// Reference Channel Types (used in change_index_ref_chan_m13())
 #define DEFAULT_CHANNEL_m13			0
 #define DEFAULT_TIME_SERIES_CHANNEL_m13		1
 #define DEFAULT_VIDEO_CHANNEL_m13		2
@@ -721,9 +723,9 @@ typedef struct {
 #define FPS_GENERIC_READ_OPEN_MODE_m13		(FPS_R_OPEN_MODE_m13 | FPS_R_PLUS_OPEN_MODE_m13 | FPS_W_PLUS_OPEN_MODE_m13 | FPS_A_PLUS_OPEN_MODE_m13)
 #define FPS_GENERIC_WRITE_OPEN_MODE_m13		(FPS_R_PLUS_OPEN_MODE_m13 | FPS_W_OPEN_MODE_m13 | FPS_W_PLUS_OPEN_MODE_m13 | FPS_A_OPEN_MODE_m13 | FPS_A_PLUS_OPEN_MODE_m13)
 #define FPS_PROTOTYPE_FILE_TYPE_CODE_m13        TIME_SERIES_METADATA_FILE_TYPE_CODE_m13  // any metadata type would do
-#define FPS_FD_CLOSED_m13                     	-1
-#define FPS_FD_NO_ENTRY_m13                     -2
-#define FPS_FD_EPHEMERAL_m13                    -3
+#define FPS_FD_CLOSED_m13                     	FILE_FD_CLOSED_m13
+#define FPS_FD_NO_ENTRY_m13                     FILE_FD_NO_ENTRY_m13
+#define FPS_FD_EPHEMERAL_m13                    FILE_FD_EPHEMERAL_m13
 
 // File Processing Directives Defaults
 #define FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m13		        TRUE_m13
@@ -1003,16 +1005,6 @@ typedef struct {
 #define VIDEO_INDEX_VIDEO_FILE_NUMBER_NO_ENTRY_m13              0
 #define VIDEO_INDEX_TERMINAL_VIDEO_FILE_NUMBER_m13              0xFFFFFFFF
 
-// Level Header (LH) Type Codes:
-#define LH_SESSION_m13			SESSION_DIRECTORY_TYPE_CODE_m13
-#define LH_SEGMENTED_SESS_RECS_m13	RECORD_DIRECTORY_TYPE_CODE_m13
-#define LH_TIME_SERIES_CHANNEL_m13	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13
-#define LH_VIDEO_CHANNEL_m13		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13
-#define LH_TIME_SERIES_SEGMENT_m13	TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13
-#define LH_VIDEO_SEGMENT_m13		VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13
-#define LH_FILE_m13			GENERIC_FILE_TYPE_CODE_m13
-#define LH_PROC_GLOBALS_m13		PROC_GLOBALS_TYPE_CODE_m13
-
 // Level Header (LH) Flags Definitions:
 
 // level header flags
@@ -1026,6 +1018,16 @@ typedef struct {
 //	The UPDATE_EPHEMERAL_DATA bit is set by the lower levels and reset by the higher level once the data has been updated.
 //	i.e  read_channel_m13() checks the segment bits (e.g. read_segment_m13() opened a new segment) & if update required, it does the channel level update & clears the segment bit.
 //	It then sets it's bit to trigger update at the session level. After updating, the session will clear the channel level bit.
+
+// Level Header (LH) Type Codes:
+#define LH_SESSION_m13			SESSION_DIRECTORY_TYPE_CODE_m13
+#define LH_SEGMENTED_SESS_RECS_m13	RECORD_DIRECTORY_TYPE_CODE_m13
+#define LH_TIME_SERIES_CHANNEL_m13	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13
+#define LH_VIDEO_CHANNEL_m13		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13
+#define LH_TIME_SERIES_SEGMENT_m13	TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13
+#define LH_VIDEO_SEGMENT_m13		VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13
+#define LH_FILE_m13			GENERIC_FILE_TYPE_CODE_m13
+#define LH_PROC_GLOBALS_m13		PROC_GLOBALS_TYPE_CODE_m13
 
 // all levels
 #define LH_NO_FLAGS_m13					((ui8) 0)
@@ -1041,8 +1043,8 @@ typedef struct {
 #define LH_MAP_ALL_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 11) // useful when time series channels may be added to open session
 #define LH_MAP_ALL_VIDEO_CHANNELS_m13			((ui8) 1 << 12) // useful when video channels may be added to open session
 
-#define LH_READ_SLICE_SESSION_RECORDS_m13		((ui8) 1 << 16)	// read full indices file (close file); open data, read universal header, leave open
-#define LH_READ_FULL_SESSION_RECORDS_m13		((ui8) 1 << 17)	// read full indices file & data files, close all files
+#define LH_READ_SLICE_SESSION_RECORDS_m13		((ui8) 1 << 16)	// read full record indices file (close file); open data, read universal header, leave open
+#define LH_READ_FULL_SESSION_RECORDS_m13		((ui8) 1 << 17)	// read full recordindices & data files, close all files
 #define LH_MEM_MAP_SESSION_RECORDS_m13			((ui8) 1 << 18)	// allocate, but don't read full file
 
 // segmented session records level
@@ -1054,15 +1056,16 @@ typedef struct {
 // channel level
 #define LH_CHANNEL_OPEN_m13				((ui8) 1 << 32)  // all mapped segments are open
 #define LH_CHANNEL_ACTIVE_m13				((ui8) 1 << 33)  // include channel in current read set
-#define LH_MAP_ALL_SEGMENTS_m13				((ui8) 1 << 34)  // allocate slots for every segment, regardless of whether required for current read
+#define LH_REFERENCE_INACTIVE_m13			((ui8) 1 << 34)
+#define LH_MAP_ALL_SEGMENTS_m13				((ui8) 1 << 35)  // allocate slots for every segment, regardless of whether required for current read
 // (active channels only)
-#define LH_READ_SLICE_CHANNEL_RECORDS_m13		((ui8) 1 << 40)	// read full indices file (close file); open data, read universal header, leave open
-#define LH_READ_FULL_CHANNEL_RECORDS_m13		((ui8) 1 << 41)	// read full indices file & data files, close all files
+#define LH_READ_SLICE_CHANNEL_RECORDS_m13		((ui8) 1 << 40)	// read full record indices file (close file); open record data, read universal header, leave open
+#define LH_READ_FULL_CHANNEL_RECORDS_m13		((ui8) 1 << 41)	// read full record indices & data files, close all files
 #define LH_MEM_MAP_CHANNEL_RECORDS_m13			((ui8) 1 << 42)	// allocate, but don't read full file
 #define LH_THREAD_SEGMENT_READS_m13			((ui8) 1 << 43)	// set if likely to cross many segment boundaries in read (e.g. one channel, long reads or short segments)
 
 // segment level
-#define LH_SEGMENT_OPEN_m13				((ui8) 1 << 48) // all mapped records & data files are open or in memory
+#define LH_SEGMENT_OPEN_m13				((ui8) 1 << 48) // all records & data files are open or in memory
 #define LH_NO_CPS_PTR_RESET_m13				((ui8) 1 << 49) // caller will update pointers
 #define LH_NO_CPS_CACHING_m13				((ui8) 1 << 50) // set cps_caching parameter to FALSE
 // (active channels only)
@@ -1099,6 +1102,109 @@ typedef struct {
 
 // channel type groups
 #define LH_INCLUDE_ALL_CHAN_TYPES_m13	      (	LH_INCLUDE_TIME_SERIES_CHANNELS_m13 | LH_INCLUDE_VIDEO_CHANNELS_m13 )
+
+
+
+//**********************************************************************************//
+//**************************  File Functions (FILE, FLOCK)  ************************//
+//**********************************************************************************//
+
+// Replaces standard FILE pointer in medlib functions
+
+// Defines
+#define FILE_START_ID_m13		((ui4) 0x87654321)      // ui4   (decimal 2,271,560,481)
+
+#define FILE_PERM_OTH_EXEC_m13		((ui2) 1 << 0)  // == S_IXOTH
+#define FILE_PERM_OTH_WRITE_m13		((ui2) 1 << 1)  // == S_IWOTH
+#define FILE_PERM_OTH_READ_m13		((ui2) 1 << 2)  // == S_IROTH
+#define FILE_PERM_GRP_EXEC_m13		((ui2) 1 << 3)  // == S_IXGRP
+#define FILE_PERM_GRP_WRITE_m13		((ui2) 1 << 4)  // == S_IWGRP
+#define FILE_PERM_GRP_READ_m13		((ui2) 1 << 5)  // == S_IRGRP
+#define FILE_PERM_USR_EXEC_m13		((ui2) 1 << 6)  // == S_IXUSR
+#define FILE_PERM_USR_WRITE_m13		((ui2) 1 << 7)  // == S_IWUSR
+#define FILE_PERM_USR_READ_m13		((ui2) 1 << 8)  // == S_IRUSR
+#define FILE_PERM_STAT_MASK_m13		((ui2) 0x1FF)  // lower 9 bits of stat member st_mode (ui2)
+
+// Convenience
+#define FILE_PERM_NONE_m13		0
+#define FILE_PERM_UG_R_m13		(FILE_PERM_USR_READ_m13 | FILE_PERM_GRP_READ_m13)
+#define FILE_PERM_UG_W_m13		(FILE_PERM_USR_WRITE_m13 | FILE_PERM_GRP_WRITE_m13)
+#define FILE_PERM_UG_RW_m13		(FILE_PERM_UG_R_m13 | FILE_PERM_UG_W_m13)
+#define FILE_PERM_UGO_R_m13		(FILE_PERM_UG_R_m13 | FILE_PERM_OTH_READ_m13)
+#define FILE_PERM_UGO_W_m13		(FILE_PERM_UG_W_m13 | FILE_PERM_OTH_WRITE_m13)
+#define FILE_PERM_UGO_RW_m13		(FILE_PERM_UGO_R_m13 | FILE_PERM_UGO_W_m13)
+#define FILE_PERM_DEFAULT_m13		FILE_PERM_UG_RW_m13
+
+#define FILE_FLAGS_NONE_m13		((ui2) 0)
+#define FILE_FLAGS_ALLOCED_m13		((ui2) 1 << 0)  // file structure was allocated
+#define FILE_FLAGS_LOCK_m13		((ui2) 1 << 1)  // file is subject to locking
+#define FILE_FLAGS_STD_STREAM_m13	((ui2) 1 << 2)  // file is a standard stream (stdin, stdout, stderr converted to FILE_m13)
+#define FILE_FLAGS_MED_m13		((ui2) 1 << 3)  // file is a MED file
+#define FILE_FLAGS_READ_m13		((ui2) 1 << 4)	// file is open for reading
+#define FILE_FLAGS_WRITE_m13		((ui2) 1 << 5)	// file is open for writing
+#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 5)	// file is open in append mode (all writes will append regarless of fp)
+#define FILE_FLAGS_LEN_m13		((ui2) 1 << 6)	// update len with each operation
+#define FILE_FLAGS_POS_m13		((ui2) 1 << 7)	// update pos with each operation
+#define FILE_FLAGS_TIME_m13		((ui2) 1 << 8)	// update access time with each operation (global sets flag here, but flag supersedes global in exectution)
+#define FILE_FLAGS_DEFAULT_m13		(FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13)
+
+#define FILE_FD_EPHEMERAL_m13           ((si4) -3)
+#define FILE_FD_NO_ENTRY_m13            ((si4) -2)
+#define FILE_FD_CLOSED_m13		((si4) -1)
+#define FILE_FD_STDIN_m13		((si4) 0)
+#define FILE_FD_STDOUT_m13		((si4) 1)
+#define FILE_FD_STDERR_m13		((si4) 2)
+
+// Locking operations (si4 to match standard flock)
+#define FLOCK_OPEN_m13			((si4) 1 << 0)  // increment open count +/- create lock
+#define FLOCK_CLOSE_m13			((si4) 1 << 1)  // decrement open count +/- destroy lock
+#define FLOCK_LOCK_m13			((si4) 1 << 2)  // lock (with mode)
+#define FLOCK_UNLOCK_m13		((si4) 1 << 3)	// unlock (with mode)
+#define FLOCK_READ_m13			((si4) 1 << 4)	// read lock mode
+#define FLOCK_WRITE_m13			((si4) 1 << 5)  // write lock mode
+#define FLOCK_NON_BLOCKING_m13		((si4) 1 << 6)	// do not block for lock, return FLOCK_LOCKED_m13 immediately
+#define FLOCK_FORCE_m13			((si4) 1 << 7)	// unlock or lock regardless of lock status
+
+// Return values
+#define FLOCK_SUCCESS_m13		((si4) 0)  // operation succeeded
+#define FLOCK_ERROR_m13			((si4) -1)  // operation generated error
+#define FLOCK_LOCKED_m13		((si4) -2)  // can't unlock due to ownership, or still locked in non-blocking mode
+
+// Convenience
+#define FLOCK_READ_LOCK_m13		(FLOCK_LOCK_m13 | FLOCK_READ_m13)
+#define FLOCK_WRITE_LOCK_m13		(FLOCK_LOCK_m13 | FLOCK_WRITE_m13)
+#define FLOCK_READ_LOCK_NB_m13		(FLOCK_LOCK_m13 | FLOCK_READ_m13 | FLOCK_NON_BLOCKING_m13)
+#define FLOCK_WRITE_LOCK_NB_m13		(FLOCK_LOCK_m13 | FLOCK_WRITE_m13 | FLOCK_NON_BLOCKING_m13)
+#define FLOCK_READ_UNLOCK_m13		(FLOCK_UNLOCK_m13 | FLOCK_READ_m13)
+#define FLOCK_WRITE_UNLOCK_m13		(FLOCK_UNLOCK_m13 | FLOCK_WRITE_m13)
+
+#define FLOCK_MODE_NONE_m13		((si1) 0)  // do not lock any files
+#define FLOCK_MODE_MED_m13		((si1) 1)  // lock MED files only
+#define FLOCK_MODE_ALL_m13		((si1) 2)  // lock all files
+
+
+#define stdin_m13	((FILE_m13 *) stdin)
+#define stdout_m13	((FILE_m13 *) stdout)
+#define stderr_m13	((FILE_m13 *) stderr)
+
+// Typedefs
+typedef struct {
+	ui4	start_id;  // == FILE_START_ID_m13 (marker for FILE_m13 vs FILE)
+	ui4	file_id;  // CRC of file path (file descriptors are unique to file open (unless dup'd)
+	si1	path[FULL_FILE_NAME_BYTES_m13];
+	ui2	flags;
+	ui2	permissions;  // lower 9 bits of "st_mode" element of stat structure
+	si4	fd;	// file descriptor
+	FILE	*fp;	// file pointer
+	si8	len;	// file length
+	si8	pos;	// file pointer position (relative to start)
+	si8	acc;	// uutc of last file access (open, seek, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
+} FILE_m13;
+
+// Prototypes
+FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...);  // varargs(fp == stream): si1 *path
+tern		FILE_show_m13(FILE_m13 *fp);
+tern		FILE_stream_m13(FILE_m13 *fp);
 
 
 
@@ -1310,7 +1416,7 @@ NET_PARAMS_m13	*NET_get_parameters_m13(si1 *iface, NET_PARAMS_m13 *np);
 NET_PARAMS_m13	*NET_get_plugged_in_m13(si1 *iface, NET_PARAMS_m13 *np);
 NET_PARAMS_m13	*NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np);
 si1		*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr);
-tern		NET_initialize_tables_m13(void);  // set global NET_PARAMS for default internet interface
+tern		NET_init_tables_m13(void);  // set global NET_PARAMS for default internet interface
 tern		NET_reset_parameters_m13(NET_PARAMS_m13 *np);
 tern		NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *free_params);
 tern		NET_show_parameters_m13(NET_PARAMS_m13 *np);
@@ -1334,28 +1440,33 @@ tern		NET_trim_address_m13(si1 *addr_str);
 
 // error codes
 #define	E_NO_ERR_m13			0
-#define	E_UNSPECIFIED_m13		1
+#define	E_UNSPEC_m13			1
 #define E_NO_FILE_m13			2
-#define E_READ_ERR_m13			3
-#define E_WRITE_ERR_m13			4
-#define E_NOT_MED_m13			5
-#define E_NO_ACCESS_m13			6
-#define E_BAD_PASSWORD_m13		7
-#define E_NO_METADATA_m13		8
-#define	E_NO_INET_m13			9
-#define E_ALLOC_FAILED_m13		10
+#define E_OPEN_ERR_m13			3
+#define E_READ_ERR_m13			4
+#define E_WRITE_ERR_m13			5
+#define E_LOCK_ERR_m13			6
+#define E_NOT_MED_m13			7
+#define E_NO_ACCESS_m13			8
+#define E_BAD_PASSWORD_m13		9
+#define E_NO_METADATA_m13		10
+#define	E_NO_INET_m13			11
+#define E_ALLOC_ERR_m13			12
 
 // error string table
 #define	E_MAX_STR_LEN_m13		128  // ascii[127]
 #define E_MESSAGE_LEN_m13		E_MAX_STR_LEN_m13
-#define E_STR_TABLE_ENTRIES_m13		10
+#define E_STR_TABLE_ENTRIES_m13		13
 #define E_STR_TABLE_m13 { \
 	"no errors", \
 	"unspecified error", \
 	"file not found", \
+	"file open error", \
 	"file read error", \
 	"file write error", \
+	"file lock error", \
 	"not a MED file or directory", \
+	"access denied", \
 	"invalid password", \
 	"metadata file not found", \
 	"no internet connection found", \
@@ -1434,7 +1545,7 @@ tern	HW_get_performance_specs_m13(tern get_current);
 si1	*HW_get_performance_specs_file_m13(si1 *file);
 tern	HW_get_performance_specs_from_file_m13(void);
 tern	HW_get_memory_info_m13(void);
-tern	HW_initialize_tables_m13(void);
+tern	HW_init_tables_m13(void);
 tern	HW_show_info_m13(void);
 
 
@@ -1533,9 +1644,17 @@ typedef struct {
 		sf8		frame_rate;
 		sf8		rate;
 	};
-	struct Sgmt_RECORD_m13	*Sgmt_records;  // structure defined below
+	struct Sgmt_RECORD_m13	*Sgmt_records;  // defined below == record header + REC_Sgmt_v11_m13 body (session number of segments in length)
 	ui4			type_code;  // TIME_SERIES_CHANNEL_TYPE_m13 or VIDEO_CHANNEL_TYPE_m13
-} Sgmt_RECORD_INFO_m13;
+} Sgmt_RECORDS_ENTRY_m13;
+
+typedef struct {
+	pthread_mutex_t_m13	mutex;
+	Sgmt_RECORDS_ENTRY_m13	*entries;
+	volatile si4		size;  // total allocated Sgmt_RECORD_ENTRYs
+	volatile si4		top_idx;  // last non-empty Sgmt_RECORD_ENTRY in list
+} Sgmt_RECORDS_LIST_m13;
+
 
 // All MED File Structures begin with this structure
 typedef struct LEVEL_HEADER_m13 {
@@ -1598,12 +1717,10 @@ typedef struct {
 	si4				number_of_session_segments;  // number of segments in the session, regardless of whether they are mapped
 	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
 	si4				first_mapped_segment_number;
-	Sgmt_RECORD_INFO_m13		*Sgmt_record_infos;  // one for each unique sampling frequency and channel type
-	si4				number_of_Sgmt_record_infos;
-	pthread_mutex_t_m13		Sgmt_record_infos_mutex;
+	Sgmt_RECORD_LIST_m13		*Sgmt_records_list;  // list with one entry for each unique sampling frequency and channel type
 	// Active Channels
-	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
-	struct CHANNEL_m13		*reference_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
+	si1				index_ref_chan_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
+	struct CHANNEL_m13		*index_ref_chan;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
 	sf8				minimum_time_series_frequency;
 	sf8				maximum_time_series_frequency;
 	sf8				minimum_video_frame_rate;
@@ -1655,12 +1772,10 @@ typedef struct {
 	si4				number_of_session_segments;  // number of segments in the session, regardless of whether they are mapped
 	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
 	si4				first_mapped_segment_number;
-	Sgmt_RECORD_INFO_m13		*Sgmt_record_infos;  // one for each unique sampling frequency and channel type
-	si4				number_of_Sgmt_record_infos;
-	pthread_mutex_t_m13		Sgmt_record_infos_mutex;
+	Sgmt_RECORDS_LIST_m13		*Sgmt_records_list;  // one for each unique sampling frequency and channel type
 	// Active Channels
-	si1				reference_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
-	struct CHANNEL_m13		*reference_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
+	si1				index_ref_chan_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
+	struct CHANNEL_m13		*index_ref_chan;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
 	sf8				minimum_time_series_frequency;
 	sf8				maximum_time_series_frequency;
 	sf8				minimum_video_frame_rate;
@@ -1736,33 +1851,62 @@ typedef struct {
 
 typedef struct {
 	pid_t_m13	_id;  // thread or process id
-	BEHAVIOR_m13	*stack;  // current behavior at top of stack (last entry)
-	volatile ui4	entries;
-	volatile ui4	size;
+	BEHAVIOR_m13	*behaviors;  // current behavior at top of stack (last entry)
+	volatile si4	size;  // total allocated behaviors
+	volatile si4	top_idx;  // top of behavior stack
 } BEHAVIOR_STACK_m13;
 
+typedef struct {
+	pthread_mutex_t_m13	mutex;
+	BEHAVIOR_STACK_m13	*stacks;
+	ui4			default_behavior;
+	volatile si4		size;  // total allocated behavior_stacks
+	volatile si4		top_idx;  // last non-empty behavior_stack in list
+} BEHAVIOR_STACK_LIST_m13;
+
 // call with "G_push_function_m13(ui4 behavior)" prototype
-#define G_add_behavior_m13(behavior)		G_add_behavior_exec_m13(__FUNCTION__, __LINE__, behavior)	// call with "G_add_behavior_m13(ui4 behavior)" prototype
-#define G_push_behavior_m13(behavior)		G_push_behavior_exec_m13(__FUNCTION__, __LINE__, behavior)	// call with "G_push_behavior_m13(ui4 behavior)" prototype
-#define G_remove_behavior_m13(behavior)		G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, behavior)	// call with "G_remove_behavior_m13(ui4 behavior)" prototype
+#define G_add_behavior_m13(behavior_code)	G_add_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code)	// call with "G_add_behavior_m13(ui4 behavior)" prototype
+#define G_push_behavior_m13(behavior_code)	G_push_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code)	// call with "G_push_behavior_m13(ui4 behavior)" prototype
+#define G_remove_behavior_m13(behavior_code)	G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code)  // call with "G_remove_behavior_m13(ui4 behavior)" prototype
 
 #ifdef FN_DEBUG_m13
+#define G_push_function_m13() 	G_push_function_exec_m13(__FUNCTION__)  // call with "G_push_function_m13(void)" prototype
+
 typedef struct {
 	pid_t_m13	_id;  // thread or process id
-	const si1	**stack;  // current function at top of stack (last entry)
-	volatile ui4	entries;
-	volatile ui4	size;
+	const si1	**functions;  // current function at top of stack (last entry)
+	volatile si4	size;  // total allocated functions
+	volatile si4	top_idx;  // top of function stack
 } FUNCTION_STACK_m13;
 
-#define G_push_function_m13() 	G_push_function_exec_m13(__FUNCTION__)  // call with "G_push_function_m13(void)" prototype
+typedef struct {
+	pthread_mutex_t_m13	mutex;
+	FUNCTION_STACK_m13	*stacks;
+	volatile si4		size;  // total allocated function_stacks
+	volatile si4		top_idx;  // last non-empty function_stack in list
+} FUNCTION_STACK_LIST_m13;
 #endif  // FN_DEBUG_m13
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
-	PROC_GLOBALS_m13	**list;
-	volatile si4		size;
-	volatile si4		entries;
-} PROC_GLOBALS_INFO_m13;
+	PROC_GLOBALS_m13	**proc_globals_ptrs;  // pointer list so list can be manipulated without affect process's access to it's globals
+	volatile si4		size;  // total allocated proc_globals
+	volatile si4		top_idx;  // last non-empty function_stack in list
+} PROC_GLOBALS_LIST_m13;
+
+typedef struct {
+	pid_t_m13	write_id;  // thread id when writing, zero otherwisw (only current owner can unlock write)
+	ui4		file_id;  // CRC of full path
+	ui2		opens;  // number of processes that have file open
+	ui2		reads;  // number of processes currently reading file (writes locked)
+} FLOCK_ENTRY_m13;
+
+typedef struct {
+	pthread_mutex_t_m13	mutex;
+	FLOCK_ENTRY_m13		*locks;
+	volatile si4		size;  // total allocated locks
+	volatile si4		top_idx;  // last non-empty lock in list
+} FLOCK_LIST_m13;
 
 #ifdef AT_DEBUG_m13
 typedef struct {
@@ -1771,14 +1915,14 @@ typedef struct {
 	ui8		actual_bytes;  // actual bytes allocated => may be more than were requested
 	const si1	*alloc_function;
 	const si1	*free_function;
-} AT_NODE_m13;
+} AT_ENTRY_m13;
 
 typedef struct {
-	AT_NODE_m13		*nodes;
-	volatile si8		node_count;  // total allocated nodes
-	volatile si8		used_node_count;  // nodes in use
 	pthread_mutex_t_m13	mutex;
-} AT_INFO_m13;
+	AT_ENTRY_m13		*entries;
+	volatile si8		size;  // total allocated entries
+	volatile si4		top_idx;  // last non-empty entry in list
+} AT_LIST_m13;
 #endif  // AT_DEBUG_m13
 
 typedef struct {
@@ -1790,24 +1934,22 @@ typedef struct {
 } APP_INFO_m13;
 
 typedef struct {
+	pthread_mutex_t_m13		mutex;
 	// Application Info
-	APP_INFO_m13			app_info;
+	APP_INFO_m13			*app_info;
 	// Tables
 	GLOBAL_TABLES_m13		*tables;
-	// Behaviors (thread specific)
-	ui4				default_behavior;  // set by initialize_medlib_m13() or initialize_globals_m13()
-	BEHAVIOR_STACK_m13		*behavior_stacks;
-	si4				n_behavior_stacks;  // number of stacks
-	pthread_mutex_t_m13		behavior_stacks_mutex;
+	// Behavior Stacks (thread local)
+	BEHAVIOR_STACK_LIST_m13		*behavior_stack_list;
 #ifdef FN_DEBUG_m13
-	// Functions (thread specific)
-	FUNCTION_STACK_m13		*function_stacks;
-	si4				n_function_stacks;  // number of stacks
-	pthread_mutex_t_m13		function_stacks_mutex;
+	// Function Stacks (thread local)
+	FUNCTION_STACK_LIST_m13		*function_stack_list;
 #endif  // FN_DEBUG_m13
-	// Process Globals (list used when LEVEL_HEADER_m13 unknown - searched by process/thread id)
-	PROC_GLOBALS_INFO_m13		proc_globals_info;
-	// Record Filters
+	// Process Globals (thread local)
+	PROC_GLOBALS_LIST_m13		*proc_globals_list;
+	// File Locking (global)
+	FLOCK_LIST_m13		*file_lock_list;
+	// Record Filters (global default)
 	si4 				*record_filters;	// signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
 								// The terminal entry is NO_TYPE_CODE_m13 (== zero). NULL or no filter codes includes all records (== no filters).
 								// filter modes: match positive: include
@@ -1817,16 +1959,15 @@ typedef struct {
 								//			else: include
 								// Note: as type codes are composed of ascii bytes values (< 0x80), it is always possible to make them negative without promotion.
 #ifdef AT_DEBUG_m13
-	// Allocation Tracking
-	AT_INFO_m13			AT_info;
+	// Allocation Tracking (global)
+	AT_LIST_m13			*AT_list;
 #endif  // AT_DEBUG_m13
 	// Miscellaneous
-	ui4				file_creation_umask;
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m13];	// system temp directory (periodically auto-cleared)
 	si1				temp_file[FULL_FILE_NAME_BYTES_m13];	// full path to temp file (i.e. incudes temp_dir)
 										// not thread safe => use G_unique_temp_file_m13() in threaded applications
-	tern				FPS_locking;
-	tern				access_times;  // record time of each structure access
+	si1				file_lock_mode;  // enable global file locking
+	tern				access_times;  // record times of each structure & file access
 	ui4				CRC_mode;
 	tern				write_sorted_records;
 	ERROR_m13			error;  // causal error
@@ -2075,6 +2216,63 @@ typedef struct {
 	};
 } INDEX_m13;
 
+#ifdef __cplusplus
+typedef struct {
+	union {
+		RECORD_HEADER_m13	header;  // in case just want the record header
+		struct {  // this replaces anonymous RECORD_HEADER_m13 for C++
+			ui4	record_CRC;
+			ui4     total_record_bytes;  // header + body bytes
+			union {  // anonymous union
+				si8	time;
+				si8	end_time;
+			};
+			union {  // anonymous union
+				struct {
+					si1     type_string[TYPE_BYTES_m13];
+					ui1     version_major;
+					ui1     version_minor;
+					si1     encryption_level;
+				};
+				struct {
+					ui4     type_code;
+					si1	type_string_terminal_zero;
+				};
+			};
+		};
+	};
+	union {
+		REC_Sgmt_v11_m13	body;  // in case just want the record body
+		struct {  // this replaces anonymous REC_Sgmt_v11_m13 for C++
+			si8     end_time;
+			union {
+				si8     start_sample_number;
+				si8     start_frame_number;
+			};
+			union {
+				si8     end_sample_number;
+				si8     end_frame_number;
+			};
+			si4     segment_number;
+			ui1     pad[4];
+		};
+	};
+} Sgmt_RECORD_m13;
+#else  // __cplusplus
+typedef struct {
+	union {
+		RECORD_HEADER_m13	header;  // in case just want the record header
+		RECORD_HEADER_m13;	// anonymous RECORD_HEADER_m13
+	};
+	union {
+		REC_Sgmt_v11_m13	body;  // in case just want the record body
+		REC_Sgmt_v11_m13;	// anonymous REC_Sgmt_v11_m13
+	};
+} Sgmt_RECORD_m13;
+#endif  // standard C
+// NOTE: construction of Sgmt_RECORD_m13 in this way allows direct reading of Sgmt
+// record headers & bodies into this structure (excluding the segment description)
+
 // File Processing Structures
 typedef struct {
 	tern	close_file;
@@ -2082,21 +2280,17 @@ typedef struct {
 	tern	update_universal_header;	// when writing
 	tern	leave_decrypted;		// if encrypted during write, return from write function decrypted
 	ui4	open_mode;
-	tern	memory_map;  // full file allocated; read regions stored in bitmap; no re-reads; efficient, but memory expensive
+	tern	memory_map;  			// full file allocated; read regions stored in bitmap; no re-reads; efficient, but memory expensive
 } FPS_DIRECTIVES_m13;
 
 // Parameters contain "mechanics" of FPS (mostly used internally by library functions)
 typedef struct {
-	pthread_mutex_t_m13	mutex;
 	tern			full_file_read;		// full file has been read in / decrypted
 	si8			raw_data_bytes;		// bytes in raw data array,
 	ui1			*raw_data;		// universal header followed by data (in standard read - just region requested, in full file & mem map - matches media)
-	struct CMP_PROCESSING_STRUCT_m13	*cps;			// for time series data FPSs
-	// file status
-	si4			fd;	// file descriptor
-	FILE			*fp;	// file pointer
-	si8			fpos;	// current file pointer position (from file start)
-	si8			flen;	// file length
+	struct CPS_m13		*cps;			// for time series data FPSs
+	// file pointer
+	FILE_m13		*fp;
 	// memory mapping
 	ui4			mmap_block_bytes;  // read size for memory mapped files (size data may be on different volumes, or even files within the same volume)
 	ui4			mmap_number_of_blocks;  // file system block in file == number of bits in bitmap
@@ -2140,7 +2334,7 @@ typedef struct LEVEL_HEADER_m13 {
 		ui1				*data_pointers;  // generic name for all of the above (dissociable from raw data array / universal header, if needed)
 	};
 	si8					number_of_items;  // items in current read/write, not necessarily the whole file
-} FILE_PROCESSING_STRUCT_m13;
+} FPS_m13;
 #else  // __cplusplus
 typedef struct {
 	union {
@@ -2163,71 +2357,9 @@ typedef struct {
 		ui1				*data_pointers;  // generic name for all of the above (dissociable from raw data array / universal header, if needed)
 	};
 	si8					number_of_items;  // items in current read/write, not necessarily the whole file
-} FILE_PROCESSING_STRUCT_m13;
+} FPS_m13;
 #endif  // standard C
 
-//**********************************************************************************//
-//****************************  Non-standard Structures  ***************************//
-//**********************************************************************************//
-
-// required compiler option (gcc, clang):  -fms-extensions
-// suppress warnings:  -Wno-microsoft-anon-tag
-#ifdef __cplusplus
-typedef struct {
-	union {
-		RECORD_HEADER_m13	header;  // in case just want the record header
-		struct {  // this replaces anonymous RECORD_HEADER_m13 for C++
-			ui4	record_CRC;
-			ui4     total_record_bytes;  // header + body bytes
-			union {  // anonymous union
-				si8	time;
-				si8	end_time;
-			};
-			union {  // anonymous union
-				struct {
-					si1     type_string[TYPE_BYTES_m13];
-					ui1     version_major;
-					ui1     version_minor;
-					si1     encryption_level;
-				};
-				struct {
-					ui4     type_code;
-					si1	type_string_terminal_zero;
-				};
-			};
-		};
-	};
-	union {
-		REC_Sgmt_v11_m13	body;  // in case just want the record body
-		struct {  // this replaces anonymous REC_Sgmt_v11_m13 for C++
-			si8     end_time;
-			union {
-				si8     start_sample_number;
-				si8     start_frame_number;
-			};
-			union {
-				si8     end_sample_number;
-				si8     end_frame_number;
-			};
-			si4     segment_number;
-			si1     pad[4];
-		};
-	};
-} Sgmt_RECORD_m13;
-#else  // __cplusplus
-typedef struct {
-	union {
-		RECORD_HEADER_m13	header;  // in case just want the record header
-		RECORD_HEADER_m13;	// anonymous RECORD_HEADER_m13
-	};
-	union {
-		REC_Sgmt_v11_m13	body;  // in case just want the record body
-		REC_Sgmt_v11_m13;	// anonymous REC_Sgmt_v11_m13
-	};
-} Sgmt_RECORD_m13;
-#endif  // standard C
-// NOTE: construction of Sgmt_RECORD_m13 in this way allows direct reading of Sgmt record headers
-// & bodies into this structure (excluding the segment description).
 
 #ifdef __cplusplus
 typedef struct {
@@ -2250,20 +2382,20 @@ typedef struct {
 			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
-	FILE_PROCESSING_STRUCT_m13	*metadata_fps;  // also used as prototype
+	FPS_m13	*metadata_fps;  // also used as prototype
 	union {
-		FILE_PROCESSING_STRUCT_m13	*time_series_data_fps;
-		FILE_PROCESSING_STRUCT_m13	*video_data_fps;
+		FPS_m13	*time_series_data_fps;
+		FPS_m13	*video_data_fps;
 	};
 	union {
-		FILE_PROCESSING_STRUCT_m13	*time_series_indices_fps;
-		FILE_PROCESSING_STRUCT_m13	*video_indices_fps;
+		FPS_m13	*time_series_indices_fps;
+		FPS_m13	*video_indices_fps;
 	};
-	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
+	FPS_m13	*record_data_fps;
+	FPS_m13	*record_indices_fps;
 	si1                             path[FULL_FILE_NAME_BYTES_m13]; // full path to segment directory (including segment directory itself)
 	si1                             name[SEGMENT_BASE_FILE_NAME_BYTES_m13];  // stored here, no segment_name field in universal header
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
 } SEGMENT_m13;
@@ -2273,20 +2405,20 @@ typedef struct {
 		LEVEL_HEADER_m13	header;  // in case just want the level header
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
-	FILE_PROCESSING_STRUCT_m13	*metadata_fps;  // also used as prototype
+	FPS_m13	*metadata_fps;  // also used as prototype
 	union {
-		FILE_PROCESSING_STRUCT_m13	*time_series_data_fps;
-		FILE_PROCESSING_STRUCT_m13	*video_data_fps;
+		FPS_m13	*time_series_data_fps;
+		FPS_m13	*video_data_fps;
 	};
 	union  {
-		FILE_PROCESSING_STRUCT_m13	*time_series_indices_fps;
-		FILE_PROCESSING_STRUCT_m13	*video_indices_fps;
+		FPS_m13	*time_series_indices_fps;
+		FPS_m13	*video_indices_fps;
 	};
-	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
+	FPS_m13	*record_data_fps;
+	FPS_m13	*record_indices_fps;
 	si1                             path[FULL_FILE_NAME_BYTES_m13]; // full path to segment directory (including segment directory itself)
 	si1                             name[SEGMENT_BASE_FILE_NAME_BYTES_m13];  // stored here, no segment_name field in universal header
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
 } SEGMENT_m13;
@@ -2313,13 +2445,13 @@ typedef struct CHANNEL_m13 {
 			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
-	FILE_PROCESSING_STRUCT_m13	*metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
+	FPS_m13	*metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FPS_m13	*record_data_fps;
+	FPS_m13	*record_indices_fps;
 	SEGMENT_m13			**segments;
 	si1			        path[FULL_FILE_NAME_BYTES_m13]; // full path to channel directory (including channel directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m13];
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
 } CHANNEL_m13;
@@ -2329,13 +2461,13 @@ typedef struct CHANNEL_m13 {
 		LEVEL_HEADER_m13	header;  // in case just want the level header
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
-	FILE_PROCESSING_STRUCT_m13	*metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
+	FPS_m13	*metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FPS_m13	*record_data_fps;
+	FPS_m13	*record_indices_fps;
 	SEGMENT_m13			**segments;
 	si1			        path[FULL_FILE_NAME_BYTES_m13]; // full path to channel directory (including channel directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m13];
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
 } CHANNEL_m13;
@@ -2362,11 +2494,11 @@ typedef struct {
 			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
-	FILE_PROCESSING_STRUCT_m13	**record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	**record_indices_fps;
+	FPS_m13	**record_data_fps;
+	FPS_m13	**record_indices_fps;
 	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to segmented session records directory (including directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m13];		// session name, duplcated in globals
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 } SEGMENTED_SESS_RECS_m13;
 #else  // __cplusplus
 typedef struct {
@@ -2374,11 +2506,11 @@ typedef struct {
 		LEVEL_HEADER_m13	header;  // in case just want the level header
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
-	FILE_PROCESSING_STRUCT_m13	**record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	**record_indices_fps;
+	FPS_m13	**record_data_fps;
+	FPS_m13	**record_indices_fps;
 	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to segmented session records directory (including directory itself)
 	si1                             name[BASE_FILE_NAME_BYTES_m13];		// session name, duplicated in globals
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 } SEGMENTED_SESS_RECS_m13;
 #endif  // standard C
 
@@ -2403,18 +2535,18 @@ typedef struct {
 			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
-	FILE_PROCESSING_STRUCT_m13	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-	FILE_PROCESSING_STRUCT_m13	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FPS_m13	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FPS_m13	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	si4			        number_of_time_series_channels;
 	CHANNEL_m13			**time_series_channels;
 	si4			        number_of_video_channels;
 	CHANNEL_m13			**video_channels;
-	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
+	FPS_m13	*record_data_fps;
+	FPS_m13	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m13		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to session directory (including directory itself)
 	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
 } SESSION_m13;
@@ -2424,18 +2556,18 @@ typedef struct {
 		LEVEL_HEADER_m13	header;  // in case just want the level header
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
-	FILE_PROCESSING_STRUCT_m13	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
-	FILE_PROCESSING_STRUCT_m13	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FPS_m13	*time_series_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
+	FPS_m13	*video_metadata_fps;  // used as prototype or ephemeral file, does not correspond to stored data
 	si4			        number_of_time_series_channels;
 	CHANNEL_m13			**time_series_channels;
 	si4			        number_of_video_channels;
 	CHANNEL_m13			**video_channels;
-	FILE_PROCESSING_STRUCT_m13	*record_data_fps;
-	FILE_PROCESSING_STRUCT_m13	*record_indices_fps;
+	FPS_m13	*record_data_fps;
+	FPS_m13	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m13		*segmented_sess_recs;
 	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to session directory (including session directory itself)
 	si1                             *name;					// points to proc_globals uh_session_name or fs_session_name
-	TIME_SLICE_m13			time_slice;
+	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
 } SESSION_m13;
@@ -2471,19 +2603,19 @@ FUNCTION_STACK_m13	*G_add_function_stack_m13(void);
 #endif
 ui4 		G_add_level_extension_m13(si1 *directory_name);
 tern		G_all_zeros_m13(ui1 *bytes, si4 field_length);
-CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *enclosing_path, si1 *chan_name, SESSION_m13 *parent, ui4 type_code, si4 n_segs, tern chan_recs, tern seg_recs);
-SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *enclosing_path, si1 *chan_name, CHANNEL_m13 *parent, ui4 type_code, si4 seg_num, tern seg_recs);
-SESSION_m13	*G_allocate_session_m13(FILE_PROCESSING_STRUCT_m13 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, tern sess_recs, tern segmented_sess_recs, tern chan_recs, tern seg_recs);
+CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FPS_m13 *proto_fps, si1 *enclosing_path, si1 *chan_name, SESSION_m13 *parent, ui4 type_code, si4 n_segs, tern chan_recs, tern seg_recs);
+SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FPS_m13 *proto_fps, si1 *enclosing_path, si1 *chan_name, CHANNEL_m13 *parent, ui4 type_code, si4 seg_num, tern seg_recs);
+SESSION_m13	*G_allocate_session_m13(FPS_m13 *proto_fps, si1 *enclosing_path, si1 *sess_name, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **chan_names, si1 **vid_chan_names, tern sess_recs, tern segmented_sess_recs, tern chan_recs, tern seg_recs);
 void     	G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 si1		*G_behavior_string_m13(ui4 behavior, si1 *behavior_string);
 si8		G_build_contigua_m13(LEVEL_HEADER_m13 *level_header);
-Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FILE_PROCESSING_STRUCT_m13 *ri_fps, FILE_PROCESSING_STRUCT_m13 *rd_fps, CHANNEL_m13 *chan);
-si8		G_bytes_for_items_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_items, si8 read_file_offset);
-tern    	G_calculate_indices_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern		G_calculate_metadata_CRC_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern		G_calculate_record_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern		G_calculate_time_series_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-CHANNEL_m13	*G_change_reference_channel_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si1 *chan_name, si1 chan_type);
+Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, CHANNEL_m13 *chan);
+si8		G_bytes_for_items_m13(FPS_m13 *fps, si8 *number_of_items, si8 read_file_offset);
+tern    	G_calculate_indices_CRCs_m13(FPS_m13 *fps);
+tern		G_calculate_metadata_CRC_m13(FPS_m13 *fps);
+tern		G_calculate_record_data_CRCs_m13(FPS_m13 *fps);
+tern		G_calculate_time_series_data_CRCs_m13(FPS_m13 *fps);
+CHANNEL_m13	*G_change_index_ref_chan_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, si1 *chan_name, si1 chan_type);
 ui4             G_channel_type_from_path_m13(si1 *path);
 tern		G_check_char_type_m13(void);
 tern		G_check_file_list_m13(si1 **file_list, si4 n_files);
@@ -2494,35 +2626,35 @@ tern		G_clear_terminal_m13(void);
 si4		G_compare_acq_nums_m13(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
 tern		G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
-tern		G_condition_time_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header);
-tern		G_correct_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+tern		G_condition_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header);
+tern		G_correct_universal_header_m13(FPS_m13 *fps);
 ui4		G_current_behavior_m13(void);  // returns behavior code
 BEHAVIOR_m13	*G_current_behavior_entry_m13(void);  // returns pointer to BEHAVIOR_m13 struct (useful for debugging)
 si8		G_current_uutc_m13(void);
 si4		G_days_in_month_m13(si4 month, si4 year);
-tern        	G_decrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern        	G_decrypt_record_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, ...);  // varargs (fps == NULL): RECORD_HEADER_m13 *rh, si8 number_of_records  (used to decrypt Sgmt_records arrays)
-tern        	G_decrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+tern        	G_decrypt_metadata_m13(FPS_m13 *fps);
+tern        	G_decrypt_record_data_m13(FPS_m13 *fps, ...);  // varargs (fps == NULL): RECORD_HEADER_m13 *rh, si8 number_of_records  (used to decrypt Sgmt_records arrays)
+tern        	G_decrypt_time_series_data_m13(FPS_m13 *fps);
 void		G_delete_behavior_stack_m13(void);
 void		G_delete_function_stack_m13(void);
 si4             G_DST_offset_m13(si8 uutc);
 tern		G_en_bloc_allocation_m13(LEVEL_HEADER_m13 *level_header);
-tern        	G_encrypt_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern		G_encrypt_record_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern       	G_encrypt_time_series_data_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+tern        	G_encrypt_metadata_m13(FPS_m13 *fps);
+tern		G_encrypt_record_data_m13(FPS_m13 *fps);
+tern       	G_encrypt_time_series_data_m13(FPS_m13 *fps);
 tern		G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
 void            G_error_message_m13(si1 *fmt, ...);
 tern		G_extract_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 tern		G_extract_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
 ui4             G_file_exists_m13(si1 *path);
-si8		G_file_length_m13(FILE *fp, si1 *path);
-FILE_TIMES_m13	*G_file_times_m13(FILE *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
+si8		G_file_length_m13(FILE_m13 *fp, si1 *path);
+FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
 tern            G_fill_empty_password_bytes_m13(si1 *password_bytes);
 CONTIGUON_m13	*G_find_discontinuities_m13(LEVEL_HEADER_m13 *level_header, si8 *num_contigua);
 si8		G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode);
 si1		*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
 si1		*G_find_metadata_file_m13(si1 *path, si1 *md_path);
-si8		G_find_record_index_m13(FILE_PROCESSING_STRUCT_m13 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
+si8		G_find_record_index_m13(FPS_m13 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8     	G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 tern		G_free_channel_m13(CHANNEL_m13* channel, tern free_channel_structure);
 void		G_free_global_tables_m13(void);
@@ -2535,9 +2667,9 @@ tern		G_frequencies_vary_m13(SESSION_m13 *sess);
 si1		**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 ui4             G_generate_MED_path_components_m13(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 number_of_names);
-tern		G_generate_password_data_m13(FILE_PROCESSING_STRUCT_m13* fps, si1* L1_pw, si1* L2_pw, si1* L3_pw, si1* L1_pw_hint, si1* L2_pw_hint);
+tern		G_generate_password_data_m13(FPS_m13* fps, si1* L1_pw, si1* L2_pw, si1* L3_pw, si1* L1_pw_hint, si1* L2_pw_hint);
 si8             G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
-si1		*G_generate_segment_name_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *segment_name);
+si1		*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name);
 ui8             G_generate_UID_m13(ui8 *uid);
 CHANNEL_m13	*G_get_active_channel_m13(SESSION_m13 *sess, si1 channel_type);
 BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
@@ -2549,24 +2681,24 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, tern set
 si4		G_get_search_mode_m13(TIME_SLICE_m13 *slice);
 si4		G_get_segment_index_m13(si4 segment_number, LEVEL_HEADER_m13 *level_header);
 si4             G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice);
-ui4		*G_get_segment_video_start_frames_m13(FILE_PROCESSING_STRUCT_m13 *video_indices_fps, ui4 *number_of_video_files);
-si1		*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m13 *MED_fps);
+ui4		*G_get_segment_video_start_frames_m13(FPS_m13 *video_indices_fps, ui4 *number_of_video_files);
+si1		*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS_m13 *MED_fps);
 tern		G_get_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern		G_include_record_m13(ui4 type_code, si4 *record_filters);
-tern		G_initialize_global_tables_m13(tern initialize_all_tables);
-tern		G_initialize_globals_m13(tern initialize_all_tables, ui4 default_behavior, si1 *app_path, ...);  // varargs (app_path != NULL) ui4 version_major, ui4 version_minor
-tern		G_initialize_medlib_m13(tern initialize_all_tables, ui4 default_behavior, si1 *app_path, ... ); // varargs (app_path != NULL) ui4 version_major, ui4 version_minor;
-tern		G_initialize_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, tern initialize_for_update);
-TIME_SLICE_m13	*G_initialize_time_slice_m13(TIME_SLICE_m13 *slice);
-tern		G_initialize_timezone_tables_m13(void);
-tern		G_initialize_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
+tern		G_init_global_tables_m13(tern init_all_tables);
+tern		G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ...);  // varargs (app_path != NULL) ui4 version_major, ui4 version_minor
+tern		G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ... ); // varargs (app_path != NULL) ui4 version_major, ui4 version_minor;
+tern		G_init_metadata_m13(FPS_m13 *fps, tern init_for_update);
+TIME_SLICE_m13	*G_init_slice_m13(TIME_SLICE_m13 *slice);
+tern		G_init_timezone_tables_m13(void);
+tern		G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
 tern		G_is_level_header_m13(void *ptr);
-si8		G_items_for_bytes_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 *number_of_bytes);
+si8		G_items_for_bytes_m13(FPS_m13 *fps, si8 *number_of_bytes);
 tern		G_lh_set_directives_m13(si1 *full_file_name, ui8 lh_flags, tern *mmap_flag, tern *close_flag, si8 *number_of_items);
 si1		*G_MED_type_string_from_code_m13(ui4 code);
 ui4             G_MED_type_code_from_string_m13(si1 *string);
-tern		G_merge_metadata_m13(FILE_PROCESSING_STRUCT_m13 *md_fps_1, FILE_PROCESSING_STRUCT_m13 *md_fps_2, FILE_PROCESSING_STRUCT_m13 *merged_md_fps);
-tern		G_merge_universal_headers_m13(FILE_PROCESSING_STRUCT_m13 *fps_1, FILE_PROCESSING_STRUCT_m13 *fps_2, FILE_PROCESSING_STRUCT_m13 *merged_fps);
+tern		G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
+tern		G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void    	G_message_m13(si1 *fmt, ...);
 void     	G_nap_m13(si1 *nap_str);
 si1		*G_numerical_fixed_width_string_m13(si1 *string, si4 string_bytes, si4 number);
@@ -2582,8 +2714,7 @@ void            G_pop_function_m13(void);
 PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header);  // top of process heirarchy
 void		G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header);
 PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header);
-void		G_proc_globals_reset_m13(PROC_GLOBALS_m13 *);
-tern		G_process_password_data_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *unspecified_pw);
+tern		G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
 tern		G_propogate_flags_m13(LEVEL_HEADER_m13 *level_header, ui8 new_flags);
 void            G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 #ifdef FN_DEBUG_m13
@@ -2592,7 +2723,7 @@ void		G_push_function_exec_m13(const si1 *function);
 CHANNEL_m13	*G_read_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, ...);  // varargs: si1 *chan_path, SESSION_m13 *parent, ui4 flags, si1 *password
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
 LEVEL_HEADER_m13	*G_read_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
-FILE_PROCESSING_STRUCT_m13	*G_read_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *path, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m13 *lh, si1 *password);
+FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *path, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m13 *lh, si1 *password);
 si8     	G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs: si4 seg_num
 SEGMENT_m13	*G_read_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, ...);  // varargs: si1 *seg_path, SESSION_m13 *parent, ui8 flags, si1 *password
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
@@ -2602,7 +2733,7 @@ tern		G_recover_passwords_m13(si1 *L3_password, UNIVERSAL_HEADER_m13* universal_
 void		G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 tern		G_remove_path_m13(si1 *path);
 void     	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
-tern		G_reset_metadata_for_update_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+tern		G_reset_metadata_for_update_m13(FPS_m13 *fps);
 si8		G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4		G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *slice, ui4 search_mode);
 si4		G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
@@ -2623,25 +2754,25 @@ void		G_show_function_stack_m13(void);
 void		G_show_globals_m13(void);
 tern		G_show_level_header_flags_m13(ui8 flags);
 tern		G_show_location_info_m13(LOCATION_INFO_m13 *li);
-tern		G_show_metadata_m13(FILE_PROCESSING_STRUCT_m13 *fps, METADATA_m13 *md, ui4 type_code);
+tern		G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code);
 tern		G_show_password_data_m13(PASSWORD_DATA_m13 *pwd);
 tern		G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd);
-tern		G_show_records_m13(FILE_PROCESSING_STRUCT_m13 *record_data_fps, si4 *record_filters);
+tern		G_show_records_m13(FPS_m13 *record_data_fps, si4 *record_filters);
 tern		G_show_Sgmt_records_array_m13(LEVEL_HEADER_m13 *level_header, Sgmt_RECORD_m13 *Sgmt);
-tern    	G_show_time_slice_m13(TIME_SLICE_m13 *slice);
+tern    	G_show_slice_m13(TIME_SLICE_m13 *slice);
 tern		G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail);
-tern		G_show_universal_header_m13(FILE_PROCESSING_STRUCT_m13 *fps, UNIVERSAL_HEADER_m13 *uh);
+tern		G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh);
 tern		G_sort_channels_by_acq_num_m13(SESSION_m13 *sess);
 tern		G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number);
 tern		G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 si1		*G_unique_temp_file_m13(si1 *temp_file);
-tern		G_update_maximum_entry_size_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
+tern		G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
 si8		G_uutc_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8		G_uutc_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
-tern		G_validate_record_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern		G_validate_time_series_data_CRCs_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+tern		G_validate_record_data_CRCs_m13(FPS_m13 *fps);
+tern		G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 void            G_warning_message_m13(si1 *fmt, ...);
-si8     	G_write_file_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 number_of_items, void *external_data);
+si8     	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 number_of_items, void *external_data);
 
 
 
@@ -2662,7 +2793,7 @@ tern		WN_clear_m13(void);
 si8		WN_date_to_uutc_m13(sf8 date);
 si4    		WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer);
 si4		WN_ls_1d_to_tmp_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file);
-tern		WN_initialize_terminal_m13(void);
+tern		WN_init_terminal_m13(void);
 void		WN_nap_m13(struct timespec *nap);
 tern		WN_reset_terminal_m13(void);
 tern		WN_socket_startup_m13(void);
@@ -2750,23 +2881,21 @@ void		*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, s
 //**********************************************************************************//
 
 // Prototypes
-FILE_PROCESSING_STRUCT_m13	*FPS_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FILE_PROCESSING_STRUCT_m13 *proto_fps, si8 bytes_to_copy);
-tern	FPS_close_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-si4	FPS_compare_start_times_m13(const void *a, const void *b);
-tern	FPS_free_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, tern free_fps_structure);
-FPS_DIRECTIVES_m13	*FPS_initialize_directives_m13(FPS_DIRECTIVES_m13 *directives);
-FPS_PARAMETERS_m13	*FPS_initialize_parameters_m13(FPS_PARAMETERS_m13 *parameters);
-void	FPS_lock_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-si8	FPS_memory_map_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_read);
-tern	FPS_open_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-si8	FPS_read_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_read);
-tern	FPS_reallocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 raw_data_bytes);
-tern	FPS_seek_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset);
-tern	FPS_set_pointers_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset);
-tern	FPS_show_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern	FPS_sort_m13(FILE_PROCESSING_STRUCT_m13 **fps_array, si4 n_fps);
-void	FPS_unlock_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-si8	FPS_write_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 file_offset, si8 bytes_to_write);
+FPS_m13		*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FPS_m13 *proto_fps, si8 bytes_to_copy);
+tern		FPS_close_m13(FPS_m13 *fps);
+si4		FPS_compare_start_times_m13(const void *a, const void *b);
+tern		FPS_free_ps_m13(FPS_m13 *fps, tern free_fps_structure);
+FPS_DIRECTIVES_m13	*FPS_init_directives_m13(FPS_DIRECTIVES_m13 *directives);
+FPS_PARAMETERS_m13	*FPS_init_parameters_m13(FPS_PARAMETERS_m13 *parameters);
+si8		FPS_memory_map_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read);
+tern		FPS_open_m13(FPS_m13 *fps);
+si8		FPS_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read);
+tern		FPS_reallocate_m13(FPS_m13 *fps, si8 raw_data_bytes);
+tern		FPS_seek_m13(FPS_m13 *fps, si8 file_offset);
+tern		FPS_set_pointers_m13(FPS_m13 *fps, si8 file_offset);
+tern		FPS_show_ps_m13(FPS_m13 *fps);
+tern		FPS_sort_m13(FPS_m13 **fps_array, si4 n_fps);
+si8		FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write);
 
 
 
@@ -3318,7 +3447,7 @@ typedef struct {
 	tern	set_frequency_scale;  // value passed in "frequency_scale" parameter
 	tern	find_frequency_scale;  // mutually exclusive with "set_frequency_scale"
 	tern	VDS_scale_by_baseline;  // in VDS compression: scale data by baseline amplitude
-} CMP_DIRECTIVES_m13;
+} CPS_DIRECTIVES_m13;
 
 // Parameters contain "mechanics" of CPS
 typedef struct {
@@ -3379,7 +3508,7 @@ typedef struct {
 	CMP_BUFFERS_m13		*scrap_buffers;  // multipurpose
 	CMP_BUFFERS_m13		*VDS_input_buffers;
 	CMP_BUFFERS_m13		*VDS_output_buffers;
-	struct FILT_PROCESSING_STRUCT_m13	**filtps;
+	struct FILTPS_m13	**filtps;
 	si4	n_filtps;
 	ui1	*model_region;
 	void	*count;  // used by RED/PRED encode & decode (ui4 * or ui4 **)
@@ -3387,11 +3516,11 @@ typedef struct {
 	void	*cumulative_count;  // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void	*minimum_range;  // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void	*symbol_map;  // used by RED/PRED encode & decode (ui1 * or ui1 **)
-} CMP_PARAMETERS_m13;
+} CPS_PARAMETERS_m13;
 
-typedef struct CMP_PROCESSING_STRUCT_m13 {
-	CMP_DIRECTIVES_m13	directives;
-	CMP_PARAMETERS_m13	parameters;
+typedef struct CPS_m13 {
+	CPS_DIRECTIVES_m13	directives;
+	CPS_PARAMETERS_m13	parameters;
 	si4	*input_buffer;  // pointer that is updated depending on processing options (e.g. points to detrended data, scaled daata, etc.)
 	ui1	*compressed_data;  // points to base of FPS time_series_data array, NOT an allocated pointer => do not free; should not be updated
 	CMP_BLOCK_FIXED_HEADER_m13	*block_header; // == FPS time_series_data; points to beginning of current block within compressed_data array, updatable
@@ -3402,45 +3531,46 @@ typedef struct CMP_PROCESSING_STRUCT_m13 {
 	ui1	*block_records;  // pointer beginning of records region of block header
 	ui4	*block_parameters;  // pointer beginning of parameter region of block header
 	ui1	*discretionary_region;
-} CMP_PROCESSING_STRUCT_m13;
+} CPS_m13;
 
 // Function Prototypes
 CMP_BUFFERS_m13	*CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, tern zero_data, tern lock_memory);
-CMP_PROCESSING_STRUCT_m13	*CMP_allocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CMP_DIRECTIVES_m13 *directives, CMP_PARAMETERS_m13 *parameters);
+CPS_m13	*CMP_allocate_processing_struct_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMETERS_m13 *parameters);
 tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, tern extrema, sf8 *minima, sf8 *maxima);
 tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
 sf8	CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps);
 tern	CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats_ptr, si4 *data, si8 len, CMP_NODE_m13 *nodes);
 tern	CMP_check_block_header_alignment_m13(ui1 *bytes);
-tern	CMP_check_CPS_allocation_m13(FILE_PROCESSING_STRUCT_m13 *fps);
+tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps);
 tern	CMP_check_record_header_alignment_m13(ui1 *bytes);
 si4	CMP_compare_sf8_m13(const void *a, const void * b);
 si4	CMP_compare_si4_m13(const void *a, const void * b);
 si4	CMP_compare_si8_m13(const void *a, const void * b);
-si4	CMP_count_bins_m13(CMP_PROCESSING_STRUCT_m13 *cps, si4 *deriv_buffer, ui1 n_derivs);
-tern	CMP_decode_m13(FILE_PROCESSING_STRUCT_m13 *fps);
-tern	CMP_decrypt_m13(FILE_PROCESSING_STRUCT_m13 *fps);  // single block decrypt (see also decrypt_time_series_data_m13)
-tern	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CMP_PROCESSING_STRUCT_m13 *cps);
+si4	CMP_count_bins_m13(CPS_m13 *cps, si4 *deriv_buffer, ui1 n_derivs);
+tern	CMP_decode_m13(FPS_m13 *fps);
+tern	CMP_decrypt_m13(FPS_m13 *fps);  // single block decrypt (see also decrypt_time_series_data_m13)
+tern	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CPS_m13 *cps);
 tern	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len);
-ui1	CMP_differentiate_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_encode_m13(FILE_PROCESSING_STRUCT_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples);
-tern	CMP_encrypt_m13(FILE_PROCESSING_STRUCT_m13 *fps);  // single block encrypt (see also encrypt_time_series_data_m13)
-tern	CMP_find_amplitude_scale_m13(CMP_PROCESSING_STRUCT_m13 *cps, tern (*compression_f)(CMP_PROCESSING_STRUCT_m13 *cps));
+ui1	CMP_differentiate_m13(CPS_m13 *cps);
+tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples);
+tern	CMP_encrypt_m13(FPS_m13 *fps);  // single block encrypt (see also encrypt_time_series_data_m13)
+tern	CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
 si8	*CMP_find_crits_m13(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs);
 tern	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, si8 *n_troughs, si8 *trough_xs);
-tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_find_frequency_scale_m13(CMP_PROCESSING_STRUCT_m13 *cps, tern (*compression_f)(CMP_PROCESSING_STRUCT_m13 *cps));
+tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CPS_m13 *cps);
+tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
 tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, tern free_structure);
-tern	CMP_free_processing_struct_m13(CMP_PROCESSING_STRUCT_m13 *cps, tern free_cps_structure);
-tern	CMP_generate_lossy_data_m13(CMP_PROCESSING_STRUCT_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
-tern	CMP_generate_parameter_map_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-ui1	CMP_get_overflow_bytes_m13(CMP_PROCESSING_STRUCT_m13 *cps, ui4 mode, ui4 algorithm);
-tern	CMP_get_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+tern    CMP_free_cps_cache_m12(CPS_m13 *cps);
+tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_cps_structure);
+tern	CMP_generate_lossy_data_m13(CPS_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
+tern	CMP_generate_parameter_map_m13(CPS_m13 *cps);
+ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm);
+tern	CMP_get_variable_region_m13(CPS_m13 *cps);
 tern	CMP_hex_to_int_m13(ui1 *in, ui1 *out, si4 len);
-tern	CMP_initialize_directives_m13(CMP_DIRECTIVES_m13 *directives, ui1 compression_mode);
-tern	CMP_initialize_parameters_m13(CMP_PARAMETERS_m13 *parameters);
-tern	CMP_initialize_tables_m13(void);
-tern	CMP_integrate_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+tern	CMP_init_directives_m13(CPS_DIRECTIVES_m13 *directives, ui1 compression_mode);
+tern	CMP_init_parameters_m13(CPS_PARAMETERS_m13 *parameters);
+tern	CMP_init_tables_m13(void);
+tern	CMP_integrate_m13(CPS_m13 *cps);
 tern	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 tern	CMP_lad_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 tern	CMP_lad_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
@@ -3452,34 +3582,34 @@ tern	CMP_lin_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf
 tern	CMP_lin_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 tern	CMP_lin_reg_si4_m13(si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 tern	CMP_lock_buffers_m13(CMP_BUFFERS_m13 *buffers);
-tern	CMP_MBE_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_MBE_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+tern	CMP_MBE_decode_m13(CPS_m13 *cps);
+tern	CMP_MBE_encode_m13(CPS_m13 *cps);
 sf8	*CMP_mak_interp_sf8_m13(CMP_BUFFERS_m13 *in_bufs, si8 in_len, CMP_BUFFERS_m13 *out_bufs, si8 out_len);
 ui1	CMP_normality_score_m13(si4 *data, ui4 n_samps);
 sf8	CMP_p2z_m13(sf8 p);
-tern	CMP_PRED1_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_PRED2_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_PRED1_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_PRED2_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-CMP_PROCESSING_STRUCT_m13	*CMP_reallocate_processing_struct_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
+tern	CMP_PRED1_decode_m13(CPS_m13 *cps);
+tern	CMP_PRED2_decode_m13(CPS_m13 *cps);
+tern	CMP_PRED1_encode_m13(CPS_m13 *cps);
+tern	CMP_PRED2_encode_m13(CPS_m13 *cps);
+CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buff);
 ui1	CMP_random_byte_m13(ui4 *m_w, ui4 *m_z);
 tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
-tern	CMP_RED1_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_RED2_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_RED1_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_RED2_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+tern	CMP_RED1_decode_m13(CPS_m13 *cps);
+tern	CMP_RED2_decode_m13(CPS_m13 *cps);
+tern	CMP_RED1_encode_m13(CPS_m13 *cps);
+tern	CMP_RED2_encode_m13(CPS_m13 *cps);
 tern	CMP_retrend_si4_m13(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b);
 tern	CMP_retrend_2_sf8_m13(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b);
 si2	CMP_round_si2_m13(sf8 val);
 si4	CMP_round_si4_m13(sf8 val);
-tern	CMP_scale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_scale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_set_variable_region_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+tern	CMP_scale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CPS_m13 *cps);
+tern	CMP_scale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CPS_m13 *cps);
+tern	CMP_set_variable_region_m13(CPS_m13 *cps);
 tern	CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, tern round);
 tern	CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
 tern	CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXED_HEADER_m13 *block_header);
-tern	CMP_show_block_model_m13(CMP_PROCESSING_STRUCT_m13 *cps, tern recursed_call);
+tern	CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call);
 tern	CMP_si4_to_sf8_m13(si4 *si4_arr, sf8 *sf8_arr, si8 len);
 sf8	*CMP_spline_interp_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, CMP_BUFFERS_m13 *spline_bufs);
 si4	*CMP_spline_interp_si4_m13(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len, CMP_BUFFERS_m13 *spline_bufs);
@@ -3490,11 +3620,11 @@ tern	CMP_unlock_buffers_m13(CMP_BUFFERS_m13 *buffers);
 tern	CMP_unscale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
 tern	CMP_unscale_amplitude_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len, sf8 scale_factor);
 tern	CMP_unscale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor);
-CMP_BLOCK_FIXED_HEADER_m13 *CMP_update_CPS_pointers_m13(FILE_PROCESSING_STRUCT_m13 *fps, ui1 flags);
-tern	CMP_VDS_decode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_VDS_encode_m13(CMP_PROCESSING_STRUCT_m13 *cps);
-tern	CMP_VDS_generate_template_m13(CMP_PROCESSING_STRUCT_m13 *cps, si8 data_len);
-sf8	CMP_VDS_get_theshold_m13(CMP_PROCESSING_STRUCT_m13 *cps);
+CMP_BLOCK_FIXED_HEADER_m13 *CMP_update_CPS_pointers_m13(FPS_m13 *fps, ui1 flags);
+tern	CMP_VDS_decode_m13(CPS_m13 *cps);
+tern	CMP_VDS_encode_m13(CPS_m13 *cps);
+tern	CMP_VDS_generate_template_m13(CPS_m13 *cps, si8 data_len);
+sf8	CMP_VDS_get_theshold_m13(CPS_m13 *cps);
 sf8	CMP_z2p_m13(sf8 z);
 tern	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
 
@@ -3539,7 +3669,7 @@ tern	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
 // Function Prototypes
 ui4	CRC_calculate_m13(const ui1 *block_ptr, si8 block_bytes);
 ui4	CRC_combine_m13(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes);
-tern	CRC_initialize_tables_m13(void);
+tern	CRC_init_tables_m13(void);
 void	CRC_matrix_square_m13(ui4 *square, const ui4 *mat);
 ui4	CRC_matrix_times_m13(const ui4 *mat, ui4 vec);
 ui4	CRC_update_m13(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc);
@@ -3593,10 +3723,10 @@ si4	UTF8_char_num_m13(si1 *s, si4 offset);  // byte offset to character number
 void	UTF8_dec_m13(si1 *s, si4 *i);  // move to previous character
 si4	UTF8_escape_m13(si1 *buf, si4 sz, si1 *src, si4 escape_quotes);  // convert UTF-8 "src" to ASCII with escape sequences.
 si4	UTF8_escape_wchar_m13(si1 *buf, si4 sz, ui4 ch);  // given a wide character, convert it to an ASCII escape sequence stored in buf, where buf is "sz" bytes. returns the number of characters output
-si4	UTF8_fprintf_m13(FILE *stream, si1 *fmt, ...);  // fprintf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary fprintf() if the current locale is UTF-8.
+si4	UTF8_fprintf_m13(FILE_m13 *fp, si1 *fmt, ...);  // fprintf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary fprintf() if the current locale is UTF-8.
 si4	UTF8_hex_digit_m13(si1 c);  // utility predicates used by the above
 void	UTF8_inc_m13(si1 *s, si4 *i);  // move to next character
-tern	UTF8_initialize_tables_m13(void);
+tern	UTF8_init_tables_m13(void);
 si4	UTF8_is_locale_utf8_m13(si1 *locale);  // boolean function returns if locale is UTF-8, 0 otherwise
 tern	UTF8_is_valid_m13(si1 *string, tern zero_invalid, si1 *field_name);
 si1	*UTF8_memchr_m13(si1 *s, ui4 ch, size_t sz, si4 *char_num);  // same as the above, but searches a buffer of a given size instead of a NUL-terminated string.
@@ -3611,7 +3741,7 @@ si4	UTF8_strlen_m13(si1 *s);  // count the number of characters in a UTF-8 strin
 si4	UTF8_to_ucs_m13(ui4 *dest, si4 sz, si1 *src, si4 srcsz);  // convert UTF-8 data to wide character
 si4	UTF8_to_utf8_m13(si1 *dest, si4 sz, ui4 *src, si4 srcsz);  // convert wide character to UTF-8 data
 si4	UTF8_unescape_m13(si1 *buf, si4 sz, si1 *src);  // convert a string "src" containing escape sequences to UTF-8 if escape_quotes is nonzero, quote characters will be preceded by  backslashes as well.
-si4	UTF8_vfprintf_m13(FILE *stream, si1 *fmt, va_list ap);    // called by UTF8_fprintf()
+si4	UTF8_vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list ap);    // called by UTF8_fprintf()
 si4	UTF8_vprintf_m13(si1 *fmt, va_list ap);  // called by UTF8_printf()
 si4	UTF8_wc_to_utf8_m13(si1 *dest, ui4 ch);  // single character to UTF-8
 
@@ -3716,7 +3846,7 @@ void	AES_keyless_decrypt_m13(si4 n_leftovers, ui1 *data);
 void	AES_keyless_encrypt_m13(si4 n_leftovers, ui1 *data);
 si4	AES_get_sbox_invert_m13(si4 num);
 si4	AES_get_sbox_value_m13(si4 num);
-tern	AES_initialize_tables_m13(void);
+tern	AES_init_tables_m13(void);
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_inv_mix_columns_m13(ui1 state[][4]);
 void	AES_inv_shift_rows_m13(ui1 state[][4]);
@@ -3783,8 +3913,8 @@ typedef struct {
 // Function Prototypes
 void	SHA_finalize_m13(SHA_CTX_m13 *ctx, ui1 *hash);
 ui1	*SHA_hash_m13(const ui1 *data, si8 len, ui1 *hash);
-void	SHA_initialize_m13(SHA_CTX_m13 *ctx);
-tern	SHA_initialize_tables_m13(void);
+void	SHA_init_m13(SHA_CTX_m13 *ctx);
+tern	SHA_init_tables_m13(void);
 void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data);
 void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 
@@ -3838,7 +3968,7 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 #define FILT_OFFSET_ORIG_DATA_m13(filtps)	(filtps->filt_data + (filtps->n_poles * FILT_PAD_SAMPLES_PER_POLE_m13))
 
 // Typedefs & Structs
-typedef struct FILT_PROCESSING_STRUCT_m13 {
+typedef struct FILTPS_m13 {
 	ui4	behavior;
 	si4	order;
 	si4	n_poles;  // n_poles == order * n_cutoffs
@@ -3852,7 +3982,7 @@ typedef struct FILT_PROCESSING_STRUCT_m13 {
 	sf8	*orig_data;
 	sf8	*filt_data;
 	sf8	*buffer;
-} FILT_PROCESSING_STRUCT_m13;
+} FILTPS_m13;
 
 typedef struct {
 	sf8	real;
@@ -3875,18 +4005,18 @@ typedef struct {
 // Prototypes
 QUANTFILT_DATA_m13	*FILT_alloc_quantfilt_data_m13(si8 len, si8 span);
 tern	FILT_balance_m13(sf8 **a, si4 poles);
-si4	FILT_butter_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
+si4	FILT_butter_m13(FILTPS_m13 *filtps);
 void	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *quotient);
 void	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans);
 void	FILT_complex_mult_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *product);
 tern	FILT_elmhes_m13(sf8 **a, si4 poles);
-tern	FILT_excise_transients_m13(CMP_PROCESSING_STRUCT_m13 *cps, si8 data_len, si8 *n_extrema);
-si4	FILT_filtfilt_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
-tern	FILT_free_CPS_filtps_m13(CMP_PROCESSING_STRUCT_m13 *cps, tern free_orig_data, tern free_filt_data, tern free_buffer);
-tern	FILT_free_processing_struct_m13(FILT_PROCESSING_STRUCT_m13 *filtps, tern free_orig_data, tern free_filt_data, tern free_buffer, tern free_structure);
+tern	FILT_excise_transients_m13(CPS_m13 *cps, si8 data_len, si8 *n_extrema);
+si4	FILT_filtfilt_m13(FILTPS_m13 *filtps);
+tern	FILT_free_CPS_m13(CPS_m13 *cps, tern free_orig_data, tern free_filt_data, tern free_buffer);
+tern	FILT_free_m13(FILTPS_m13 *filtps, tern free_orig_data, tern free_filt_data, tern free_buffer, tern free_structure);
 tern	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 *qd, tern free_structure);
-FILT_PROCESSING_STRUCT_m13  *FILT_initialize_processing_struct_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, tern alloc_orig_data, tern alloc_filt_data, tern alloc_buffer, ui4 behavior_on_fail, sf8 cutoff_1, ...);
-tern	FILT_generate_initial_conditions_m13(FILT_PROCESSING_STRUCT_m13 *filtps);
+FILTPS_m13  *FILT_init_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, tern alloc_orig_data, tern alloc_filt_data, tern alloc_buffer, ui4 behavior_on_fail, sf8 cutoff_1, ...);
+tern	FILT_generate_initial_conditions_m13(FILTPS_m13 *filtps);
 tern	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 tern	FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order);
 sf8	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers);
@@ -3898,7 +4028,7 @@ QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, ...);  // va
 tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd);
 tern	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd);
 si4	FILT_sf8_sort_m13(const void *n1, const void *n2);
-tern	FILT_show_processing_struct_m13(FILT_PROCESSING_STRUCT_m13 *filt_ps);
+tern	FILT_show_processing_struct_m13(FILTPS_m13 *filt_ps);
 tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 
 
@@ -4725,45 +4855,49 @@ si1	*TR_strerror(si4 err_num);
 //***********************************************************************//
 
 
-si4	asprintf_m13(si1 **target, si1 *fmt, ...);
-size_t	calloc_size_m13(void *address, size_t element_size);
-si4	errno_m13(void);
-void	errno_reset_m13(void);  // zero errno before calling functions that may set it
-void	exit_m13(si4 status);
-FILE	*fopen_m13(si1 *path, si1 *mode);
-si4	fprintf_m13(FILE *stream, si1 *fmt, ...);
-si4	fputc_m13(si4 c, FILE *stream);
-size_t	fread_m13(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path);  // path parameter included for error messages
-tern	freeable_m13(void *address);
-si4	fscanf_m13(FILE *stream, si1 *fmt, ...);
-si4	fseek_m13(FILE *stream, si8 offset, si4 whence);
-si8	ftell_m13(FILE *stream);
-size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 *path);  // path parameter included for error messages
-char	*getcwd_m13(char *buf, size_t size);
-size_t	malloc_size_m13(void *address);
-void	*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
-tern	mlock_m13(void *addr, size_t len, tern zero_data);
-si4	mprotect_m13(void *address, size_t len, si4 protection);
-tern	munlock_m13(void *addr, size_t len);
-si4	printf_m13(si1 *fmt, ...);
-si4	putc_m13(si4 c, FILE *stream);
-si4	putch_m13(si4 c);
-si4	putchar_m13(si4 c);
-si4	scanf_m13(si1 *fmt, ...);
-si4	sprintf_m13(si1 *target, si1 *fmt, ...);
-si4	snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
-si4	sscanf_m13(si1 *target, si1 *fmt, ...);
-si8	strcat_m13(si1 *target, si1 *source);
-si8	strcpy_m13(si1 *target, si1 *source);
-si8	strncat_m13(si1 *target, si1 *source, si4 target_field_bytes);
-si8	strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes);
-si4	system_m13(si1 *command, tern null_std_streams, ui4 behavior);  // behavior parameter included because this is frequently customized for this function
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ui4 behavior, ...);  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
-si4	vasprintf_m13(si1 **target, si1 *fmt, va_list args);
-si4	vfprintf_m13(FILE *stream, si1 *fmt, va_list args);
-si4	vprintf_m13(si1 *fmt, va_list args);
-si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args);
-si4	vsprintf_m13(si1 *target, si1 *fmt, va_list args);
+si4		asprintf_m13(si1 **target, si1 *fmt, ...);
+size_t		calloc_size_m13(void *address, size_t element_size);
+si4		errno_m13(void);
+void		errno_reset_m13(void);  // zero errno before calling functions that may set it
+void		exit_m13(si4 status);
+tern		fclose_m13(FILE_m13 *fp);
+size_t		flen_m13(FILE_m13 *fp);
+si4		flock_m13(FILE_m13 *fp, si4 operation, ...);  // varargs(operation == 0): si4 operation, si1 *nap_str (string to pass to G_nap_m13() if locked & blocking)
+FLOCK_ENTRY_m13	*flock_add_m13(void);
+FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...);  // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
+si4		fprintf_m13(FILE_m13 *fp, si1 *fmt, ...);
+si4		fputc_m13(si4 c, FILE_m13 *fp);
+size_t		fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...);  // varargs(n_members negative): tern (as si4) non_blocking
+tern		freeable_m13(void *address);
+si4		fscanf_m13(FILE_m13 *fp, si1 *fmt, ...);
+si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence, ...);  // vararg(whence negative): tern (as si4) non_blocking
+si8		ftell_m13(FILE_m13 *fp);
+size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...);  // varargs(n_members negative): tern (as si4) non_blocking
+char		*getcwd_m13(char *buf, size_t size);
+size_t		malloc_size_m13(void *address);
+void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
+tern		mlock_m13(void *addr, size_t len, tern zero_data);
+si4		mprotect_m13(void *address, size_t len, si4 protection);
+tern		munlock_m13(void *addr, size_t len);
+si4		printf_m13(si1 *fmt, ...);
+si4		putc_m13(si4 c, FILE_m13 *fp);
+si4		putch_m13(si4 c);
+si4		putchar_m13(si4 c);
+si4		scanf_m13(si1 *fmt, ...);
+si4		sprintf_m13(si1 *target, si1 *fmt, ...);
+si4		snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
+si4		sscanf_m13(si1 *target, si1 *fmt, ...);
+si8		strcat_m13(si1 *target, si1 *source);
+si8		strcpy_m13(si1 *target, si1 *source);
+si8		strncat_m13(si1 *target, si1 *source, si4 target_field_bytes);
+si8		strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes);
+si4		system_m13(si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...);  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		vasprintf_m13(si1 **target, si1 *fmt, va_list args);
+si4		vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list args);
+si4		vprintf_m13(si1 *fmt, va_list args);
+si4		vsnprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args);
+si4		vsprintf_m13(si1 *target, si1 *fmt, va_list args);
 
 // standard functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13  // use these protoypes in all cases, defines will convert if needed
@@ -4783,7 +4917,7 @@ void	*recalloc_m13(void *curr_ptr, size_t curr_bytes, size_t new_bytes);
 #define return_void_m13 	do { G_pop_function_m13(); return; } while(0)   // "loop" to deal with terminal semicolon (optimized out on compile)
 #else
 #define return_m13(arg) 	return(arg)
-#define return_void_m13 	return
+#define return_void_m13 	return  // not used in library => the only void library functions are low level & not added to function stacks (they use standard returns)
 #endif  // FN_DEBUG_m13
 
 
