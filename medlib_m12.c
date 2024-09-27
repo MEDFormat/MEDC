@@ -10232,12 +10232,13 @@ si8     G_read_record_data_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *s
 
 SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  // varargs: si1 *seg_path, ui8 flags, si1 *password
 {
-	TERN_m12	open_segment, free_segment;
+	TERN_m12	open_segment, free_segment, inactive_ref;
 	si1		*seg_path, *password;
 	si4		search_mode;
 	ui8		flags;
 	si8		seg_abs_start_samp_num, seg_abs_end_samp_num;
 	va_list		args;
+	CHANNEL_m12				*chan;
 	UNIVERSAL_HEADER_m12			*uh;
 	TIME_SERIES_METADATA_SECTION_2_m12	*tmd2;
 	VIDEO_METADATA_SECTION_2_m12		*vmd2;
@@ -10316,7 +10317,7 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 			slice->start_time = uh->segment_start_time;
 		if (slice->end_time > uh->segment_end_time)
 			slice->end_time = uh->segment_end_time;
-		if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m12) {  // may only be reading records
+		if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m12) {  // may only be reading records - only need times
 			slice->start_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) seg, slice->start_time, FIND_CURRENT_m12);
 			slice->end_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) seg, slice->end_time, FIND_CURRENT_m12);
 		}
@@ -10325,10 +10326,19 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 	slice->number_of_segments = 1;
 
 	// read segment data
+	inactive_ref = FALSE_m12;  // check for inactive reference
 	if (seg->flags & LH_READ_SEGMENT_DATA_MASK_m12) {
 		switch (seg->type_code) {
 			case LH_TIME_SERIES_SEGMENT_m12:
-				G_read_time_series_data_m12(seg, slice);
+				if (seg->parent) {
+					chan = (CHANNEL_m12 *) seg->parent;
+					if (chan->flags & LH_REFERENCE_INACTIVE_m12)
+						inactive_ref = TRUE_m12;
+				}
+				if (inactive_ref == TRUE_m12)
+					seg->flags &= ~LH_REFERENCE_INACTIVE_m12;  // reset segment level flag in case propogated in call
+				else  // read data
+					G_read_time_series_data_m12(seg, slice);
 				break;
 			case LH_VIDEO_SEGMENT_m12:
 				// nothing for now - video segment data are native video files
@@ -10339,7 +10349,8 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 	// read segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m12)
 		if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
-			G_read_record_data_m12((LEVEL_HEADER_m12 *) seg, slice);
+			if (inactive_ref == FALSE_m12)  // don't read records either
+				G_read_record_data_m12((LEVEL_HEADER_m12 *) seg, slice);
 
 	return(seg);
 }
@@ -10422,14 +10433,6 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			G_condition_time_slice_m12(slice);
 	}
 	slice = &sess->time_slice;
-	
-	// set global sample/frame number reference channel (before get segment range)
-	if ((globals_m12->reference_channel->flags & LH_CHANNEL_ACTIVE_m12) == 0) {
-		if (globals_m12->reference_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m12)
-			G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_TIME_SERIES_CHANNEL_m12);
-		else
-			G_change_reference_channel_m12(sess, NULL, NULL, DEFAULT_VIDEO_CHANNEL_m12);
-	}
 
 	// get segment range
 	if (slice->number_of_segments == UNKNOWN_m12) {
@@ -10445,7 +10448,17 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			G_free_session_m12(sess, TRUE_m12);
 		return(NULL);
 	}
-
+	
+	// set inactive reference flags
+	chan = globals_m12->reference_channel;
+	if ((chan->flags & LH_CHANNEL_ACTIVE_m12) == 0) {
+		if (chan->flags & LH_READ_SEGMENT_DATA_MASK_m12) {
+			chan->flags |= LH_REFERENCE_INACTIVE_m12;
+			chan = G_read_channel_m12(chan, slice);  // just slice read metadata & time series indices (probably already read)
+			chan->flags &= ~LH_REFERENCE_INACTIVE_m12;
+		}
+	}
+	
 	// update for variable frequencies on active channel set
 	G_frequencies_vary_m12(sess);
 
@@ -10525,10 +10538,10 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 				}
 			}
 		}
-		
+
 		// thread out channel reads
 		ret_val = PROC_distribute_jobs_m12(proc_thread_infos, active_chans, 0, TRUE_m12);  // no reserved cores, wait for completion
-		
+
 		// check results
 		if (ret_val == TRUE_m12) {
 			for (i = 0; i < active_chans; ++i)
@@ -10554,7 +10567,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			}
 		}
 		ret_val = TRUE_m12;
-		chan = G_read_channel_m12(chan, slice, NULL, flags, NULL);
+		chan = G_read_channel_m12(chan, slice);
 		if (chan == NULL)
 			ret_val = FALSE_m12;
 	}
@@ -10656,7 +10669,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 	}
 
 	sess->last_access_time = G_current_uutc_m12();
-	
+
 	return(sess);
 }
 
@@ -18382,6 +18395,32 @@ void    CMP_free_buffers_m12(CMP_BUFFERS_m12 *buffers, TERN_m12 free_structure)
 }
 
 
+TERN_m12    CMP_free_cache_m12(CMP_PROCESSING_STRUCT_m12 *cps)
+{
+	TERN_m12	freed = FALSE_m12;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	if (cps->parameters.cache != NULL) {
+		free_m12((void * ) cps->parameters.cache, __FUNCTION__);
+		freed = TRUE_m12;
+		cps->parameters.allocated_decompressed_samples = 0;
+		cps->decompressed_data = cps->decompressed_ptr = cps->parameters.cache = NULL;
+	}
+
+	if (cps->parameters.cached_blocks) {
+		free_m12((void *) cps->parameters.cached_blocks, __FUNCTION__);
+		cps->parameters.cached_blocks = NULL;
+		cps->parameters.cached_block_list_len = cps->parameters.cached_block_cnt = 0;
+		freed = TRUE_m12;
+	}
+	
+	return(freed);
+}
+
+
 void    CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 free_cps_structure)
 {
 	CMP_DIRECTIVES_m12	saved_directives;
@@ -20760,10 +20799,13 @@ void    CMP_PRED2_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 
 CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, ui4 mode, si8 data_samples, ui4 block_samples)
 {
-	TERN_m12			realloc_flag;
+	TERN_m12			realloc_flag, freed;
 	ui4				new_val;
+	si4				i;
 	si8				new_compressed_bytes, new_keysample_bytes, new_decompressed_samples;
 	si8				mem_units_used, mem_units_avail, pad_samples;
+	CHANNEL_m12			*chan;
+	SESSION_m12			*sess;
 	CMP_PROCESSING_STRUCT_m12 	*cps;
 	
 #ifdef FN_DEBUG_m12
@@ -20895,7 +20937,30 @@ CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_
 	
 CMP_REALLOC_CPS_FAIL_m12:
 	
+	// try freeing caches on inactive channels
+	chan = globals_m12->reference_channel;
+	freed = FALSE_m12;
+	if (chan) {
+		sess = (SESSION_m12 *) chan;
+		if (sess->type_code == LH_SESSION_m12) {
+			for (i = 0; i < sess->number_of_time_series_channels; ++i) {
+				chan = sess->time_series_channels[i];
+				if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12)
+					if ((chan->flags & LH_CHANNEL_ACTIVE_m12) == 0)
+						if (CMP_free_cache_m12(cps) == TRUE_m12)
+							freed = TRUE_m12;
+			}
+		}
+	}
+
 	CMP_cps_mutex_off_m12(cps);
+
+	if (freed == TRUE_m12) {
+		cps = CMP_reallocate_processing_struct_m12(fps, mode, data_samples, block_samples);
+		if (cps)
+			return(cps);
+	}
+	
 	return(NULL);
 }
 

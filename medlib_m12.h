@@ -269,6 +269,9 @@ typedef struct {
 	};
 } REC_Sgmt_v10_m12;
 
+// Description follows sampling_frequency / frame_rate in structure.
+// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
+
 typedef struct {
 	si8     	end_time;
 	union {
@@ -279,14 +282,11 @@ typedef struct {
 		si8     end_sample_number;	// session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m12 for variable frequency, session level entries)
 		si8     end_frame_number;	// session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m12 for variable frequency, session level entries)
 	};
-	si4     	segment_number;
-	union {
-		ui1     pad[4];  // 16 byte alignment for encryption
-		si1	description[4];  // beginning of segment description, if present
-	};
+	si4     segment_number;
+	si4     acquisition_channel_number;  // REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13 in session level records
 } REC_Sgmt_v11_m12;
 
-// Description follows sampling_frequency / frame_rate in structure.
+// Description follows acquisition_channel_number in structure.
 // The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
 
@@ -1044,7 +1044,8 @@ typedef struct {
 
 // channel level
 #define LH_CHANNEL_ACTIVE_m12				((ui8) 1 << 32)
-#define LH_MAP_ALL_SEGMENTS_m12				((ui8) 1 << 33)
+#define LH_REFERENCE_INACTIVE_m12			((ui8) 1 << 33)
+#define LH_MAP_ALL_SEGMENTS_m12				((ui8) 1 << 34)
 // (active channels only)
 #define LH_READ_SLICE_CHANNEL_RECORDS_m12		((ui8) 1 << 40)	// read full indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_CHANNEL_RECORDS_m12		((ui8) 1 << 41)	// read full indices file & data files, close all files
@@ -3148,6 +3149,7 @@ void    	CMP_find_crits_2_m12(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_x
 void    	CMP_find_extrema_m12(si4 *input_buffer, si8 len, si4 *min, si4 *max, CMP_PROCESSING_STRUCT_m12 *cps);
 TERN_m12	CMP_find_frequency_scale_m12(CMP_PROCESSING_STRUCT_m12 *cps, void (*compression_f)(CMP_PROCESSING_STRUCT_m12 *cps));
 void    	CMP_free_buffers_m12(CMP_BUFFERS_m12 *buffers, TERN_m12 free_structure);
+TERN_m12    	CMP_free_cache_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 free_cps_structure);
 void    	CMP_generate_lossy_data_m12(CMP_PROCESSING_STRUCT_m12 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 void		CMP_generate_parameter_map_m12(CMP_PROCESSING_STRUCT_m12 *cps);
