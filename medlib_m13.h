@@ -391,8 +391,8 @@ typedef struct {
 
 // Versioning Constants
 #define MED_FORMAT_VERSION_MAJOR_m13		1  // restricted to single digits 1 through 9
-#define MED_FORMAT_VERSION_MINOR_m13		0  // restricted to 0 through 254, minor version resets to zero with new major format version
-#define MED_LIBRARY_VERSION_m13                 1  // restricted to 1 through 254, library version resets to one with new major format version
+#define MED_FORMAT_VERSION_MINOR_m13		1  // restricted to 0 through 254, minor version resets to zero with new major format version
+#define MED_LIBRARY_VERSION_m13                 3  // restricted to 1 through 254, library version resets to one with new major format version
 #define MED_VERSION_NO_ENTRY_m13                0xFF
 #define MED_FULL_FORMAT_NAME_m13             	"\"" ## MED_VERSION_MAJOR_m13 ## "." ## MED_VERSION_MINOR_m13 ## "\""
 #define MED_FULL_LIBRARY_NAME_m13             	"\"" ## MED_FULL_FORMAT_NAME_m13 ## "." ## MED_LIBRARY_VERSION_m13 ## "\""
