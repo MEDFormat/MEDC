@@ -1439,38 +1439,46 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define RETRY_ONCE_m13                  ((ui4) 16)
 
 // error codes
-#define	E_NO_ERR_m13			0
+#define	E_NONE_m13			0
 #define	E_UNSPEC_m13			1
-#define E_NO_FILE_m13			2
-#define E_OPEN_ERR_m13			3
-#define E_READ_ERR_m13			4
-#define E_WRITE_ERR_m13			5
-#define E_LOCK_ERR_m13			6
-#define E_NOT_MED_m13			7
-#define E_NO_ACCESS_m13			8
-#define E_BAD_PASSWORD_m13		9
-#define E_NO_METADATA_m13		10
-#define	E_NO_INET_m13			11
-#define E_ALLOC_ERR_m13			12
+#define E_ALLOC_m13			2
+#define E_OPEN_m13			3
+#define E_READ_m13			4
+#define E_WRITE_m13			5
+#define E_LOCK_m13			6
+#define E_NO_FILE_m13			7
+#define E_NOT_MED_m13			8
+#define E_NO_ACCESS_m13			9
+#define E_ENCRYPT_m13			10
+#define E_NO_METADATA_m13		11
+#define	E_REC_m13			12
+#define	E_NET_m13			13
+#define E_CMP_m13			14
+#define E_FILT_m13			15
+#define E_DB_m13			16
 
 // error string table
 #define	E_MAX_STR_LEN_m13		128  // ascii[127]
 #define E_MESSAGE_LEN_m13		E_MAX_STR_LEN_m13
-#define E_STR_TABLE_ENTRIES_m13		13
+#define E_STR_TABLE_ENTRIES_m13		17
 #define E_STR_TABLE_m13 { \
 	"no errors", \
 	"unspecified error", \
-	"file not found", \
+	"memory allocation error" \
 	"file open error", \
 	"file read error", \
 	"file write error", \
 	"file lock error", \
+	"file not found", \
 	"not a MED file or directory", \
 	"access denied", \
-	"invalid password", \
-	"metadata file not found", \
-	"no internet connection found", \
-	"memory allocation failed" \
+	"encryption error", \
+	"metadata not found", \
+	"record error", \
+	"network error", \
+	"compression error", \
+	"filter error", \
+	"database error", \
 }
 
 typedef struct {
@@ -1948,7 +1956,7 @@ typedef struct {
 	// Process Globals (thread local)
 	PROC_GLOBALS_LIST_m13		*proc_globals_list;
 	// File Locking (global)
-	FLOCK_LIST_m13		*file_lock_list;
+	FLOCK_LIST_m13			*file_lock_list;
 	// Record Filters (global default)
 	si4 				*record_filters;	// signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
 								// The terminal entry is NO_TYPE_CODE_m13 (== zero). NULL or no filter codes includes all records (== no filters).
@@ -2854,14 +2862,15 @@ tern		AT_update_entry_m13(void *orig_address, void *new_address, size_t requeste
 
 // AT replacement functions for alloc standard functions (these need not to be called directly)
 void		*AT_calloc_m13(const si1 *function, size_t n_members, size_t el_size);
-void		**AT_calloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el_size);
+void		**AT_calloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el_size, tern is_level_header);
 void		AT_free_m13(const si1 *function, void *ptr);
 void		AT_free_2D_m13(const si1 *function, void **ptr, size_t dim1);
 void		*AT_malloc_m13(const si1 *function, size_t n_bytes);
-void		**AT_malloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el_size);
+void		**AT_malloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el_size, tern is_level_header);
 void		*AT_realloc_m13(const si1 *function, void *curr_ptr, size_t n_bytes);
-void		**AT_realloc_2D_m13(const si1 *function, void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size);
+void		**AT_realloc_2D_m13(const si1 *function, void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, tern is_level_header);
 void		*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, size_t new_bytes);
+void		**AT_recalloc_2D_m13(const si1 *function, void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, tern is_level_header);
 
 // preprocessor directives to replace standard alloc functions with AT versions
 #define calloc_m13(a, b)			AT_calloc_m13(__FUNCTION__, a, b)
@@ -2873,6 +2882,7 @@ void		*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, s
 #define realloc_m13(a, b)			AT_realloc_m13(__FUNCTION__, a, b)
 #define realloc_2D_m13(a, b, c, d, e, f, g)	AT_realloc_2D_m13(__FUNCTION__, a, b, c, d, e, f, g)
 #define recalloc_m13(a, b, c)			AT_recalloc_m13(__FUNCTION__, a, b, c)
+#define recalloc_2D_m13(a, b, c, d, e, f, g)	AT_recalloc_2D_m13(__FUNCTION__, a, b, c, d, e, f, g)
 
 #endif  // AT_DEBUG_m13
 
@@ -4223,7 +4233,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_MESSAGE_TYPE_m13	TR_TYPE_MESSAGE_m13
 
 // Transmission Error Codes
-#define TR_E_NO_ERR_m13			((si8) E_NO_ERR_m13)  // 0
+#define TR_E_NONE_m13			((si8) E_NONE_m13)  // 0
 #define TR_E_UNSPEC_m13			((si8) FALSE_m13)
 #define TR_E_SOCK_FAILED_m13		((si8) -2)
 #define TR_E_SOCK_NO_OPEN_m13		((si8) -3)
@@ -4236,7 +4246,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_E_NO_ACK_m13			((si8) -10)
 
 // Transmission Error Strings
-#define	TR_E_NO_ERR_STR_m13		"no error"
+#define	TR_E_NONE_STR_m13		"no error"
 #define	TR_E_UNSPEC_STR_m13		"unspecified transmission error"
 #define TR_E_SOCK_FAILED_STR_m13	"socket failed"
 #define TR_E_SOCK_NO_OPEN_STR_m13	"could not open socket"
@@ -4910,6 +4920,7 @@ void	**malloc_2D_m13(size_t dim1, size_t dim2, size_t el_size, tern is_level_hea
 void	*realloc_m13(void *ptr, size_t n_bytes);
 void	**realloc_2D_m13(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, tern is_level_header);
 void	*recalloc_m13(void *curr_ptr, size_t curr_bytes, size_t new_bytes);
+void	**recalloc_2D_m13(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size, tern is_level_header);
 #endif  // AT_DEBUG_m13
 
 #ifdef FN_DEBUG_m13

@@ -187,7 +187,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // REC_Sgmt_v10_m13 defined in medlib_m13.h due to codependency
 
 // Version 1.1
-#define REC_Sgmt_v11_BYTES_m13                                          40
+#define REC_Sgmt_v11_BYTES_m13                                          32
 #define REC_Sgmt_v11_END_TIME_OFFSET_m13                                0							// si8
 #define REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13			8							// si8
 #define REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13			SAMPLE_NUMBER_NO_ENTRY_m13
@@ -199,8 +199,9 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13                          24							// si4
 #define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13                        SEGMENT_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_PAD_m13              				28
+#define REC_Sgmt_v11_PAD_OFFSET_m13              			28
 #define REC_Sgmt_v11_PAD_BYTES_m13                                      4
+#define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13                     REC_Sgmt_v11_BYTES_m13					// si1 (arbitrary length, padded to 16-byte alignment for encryption)
 
 // Structures
 // REC_Sgmt_v11_m13 defined in medlib_m13.h due to codependency

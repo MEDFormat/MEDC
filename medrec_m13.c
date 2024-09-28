@@ -268,7 +268,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes)
 		free((void *) bytes);
 
 	if (return_value == FALSE_m13)
-		G_error_message_m13("%s(): One or more Record structures are NOT aligned\n", __FUNCTION__);
+		G_set_error_m13(E_REC_m13, "one or more record structures are NOT aligned");
 
 	return_m13(return_value);
 }
@@ -362,7 +362,7 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized Sgmt Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized Sgmt Record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -434,7 +434,7 @@ REC_Sgmt_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): %s structure is NOT aligned", __FUNCTION__, version_string);
+	G_set_error_m13(E_REC_m13, "Sgmt %s structure is NOT aligned", version_string);
 
 	return_m13(FALSE_m13);
 
@@ -491,7 +491,7 @@ tern    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized Stat Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized Stat record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -547,7 +547,7 @@ REC_Stat_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_Stat_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "Stat structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 }
@@ -593,7 +593,7 @@ tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized Note Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized Note record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -643,7 +643,7 @@ REC_NOTE_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): %s structure is NOT aligned\n", __FUNCTION__, vers_str);
+	G_set_error_m13(E_REC_m13, "Note %s structure is NOT aligned\n", vers_str);
 
 	return_m13(FALSE_m13);
 }
@@ -674,7 +674,7 @@ tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized EDFA Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized EDFA record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -715,7 +715,7 @@ REC_EDFA_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_EDFA_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "EDFA structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 }
@@ -804,7 +804,7 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized Seiz Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized Seiz record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -872,7 +872,7 @@ REC_Seiz_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_Seiz_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "Seiz structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 }
@@ -900,7 +900,7 @@ tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized SyLg Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized SyLg Record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -959,7 +959,7 @@ tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized NlxP Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized NlxP record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -1011,7 +1011,7 @@ REC_NlxP_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_NlxP_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "NlxP structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 
@@ -1040,7 +1040,7 @@ tern    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized Curs Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized Curs record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -1088,7 +1088,7 @@ REC_Curs_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_Curs_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "Curs structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 }
@@ -1217,7 +1217,7 @@ REC_Epoc_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): %s structure is NOT aligned\n", __FUNCTION__, version_string);
+	G_set_error_m13(E_REC_m13, "Epoc %s structure is NOT aligned", version_string);
 
 	return_m13(FALSE_m13);
 }
@@ -1283,7 +1283,7 @@ tern	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized ESti Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized ESti Record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -1339,7 +1339,7 @@ REC_ESti_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_ESti_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "ESti structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 
@@ -1368,7 +1368,7 @@ tern    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Unrecognized record version
 	else {
-		G_error_message_m13("%s(): Unrecognized CSti Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
+		G_set_error_m13(E_REC_m13, "unrecognized CSti record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
 	}
 
 	return_m13(TRUE_m13);
@@ -1416,7 +1416,7 @@ REC_CSti_NOT_ALIGNED_m13:
 	if (free_flag == TRUE_m13)
 		free((void *) bytes);
 
-	G_error_message_m13("%s(): REC_CSti_v10_m13 structure is NOT aligned\n", __FUNCTION__);
+	G_set_error_m13(E_REC_m13, "CSti structure is NOT aligned");
 
 	return_m13(FALSE_m13);
 
