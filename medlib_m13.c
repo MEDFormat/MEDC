@@ -1538,9 +1538,6 @@ CHANGE_REF_MATCH_m13:
 	proc_globals->index_ref_chan = chan;
 	strcpy(proc_globals->index_ref_chan_name, chan->name);
 	
-//	if (proc_globals->Sgmt_record_infos == NULL)
-//		proc_globals->Sgmt_record_infos = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
-
 	return_m13(chan);
 }
 
