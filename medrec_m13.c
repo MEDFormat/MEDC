@@ -744,7 +744,7 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 		proc_globals = G_proc_globals_m13(NULL);
 		Seiz = (REC_Seiz_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
 		STR_time_m13(NULL, Seiz->latest_offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globals->recording_time_offset, time_str);
+		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globals->time.recording_time_offset, time_str);
 		printf_m13("Number of Channels: %d\n", Seiz->number_of_channels);
 		printf_m13("Onset Code: %d ", Seiz->onset_code);
 		switch (Seiz->onset_code) {
@@ -793,9 +793,9 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 			else
 				printf_m13("Channel Name: no entry\n");
 			STR_time_m13(NULL, chans[i].onset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globals->recording_time_offset, time_str);
+			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globals->time.recording_time_offset, time_str);
 			STR_time_m13(NULL, chans[i].offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globals->recording_time_offset, time_str);
+			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globals->time.recording_time_offset, time_str);
 			if (chans[i].segment_number == REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13)
 				printf_m13("Segment Number: no entry\n");
 			else

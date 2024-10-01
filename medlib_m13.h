@@ -1663,6 +1663,52 @@ typedef struct {
 	volatile si4		top_idx;  // last non-empty Sgmt_RECORD_ENTRY in list
 } Sgmt_RECORDS_LIST_m13;
 
+typedef struct {
+	ui8				UID;
+	si1				directory[FULL_FILE_NAME_BYTES_m13];	// path including file system session directory name
+	si1				*name;  				// points to: uh_session_name if known, else fs_session_name if known, else NULL
+	si1				uh_name[BASE_FILE_NAME_BYTES_m13];	// from MED universal header - original name
+	si1				fs_name[BASE_FILE_NAME_BYTES_m13];	// from file system - may be renamed by user (e.g. channel subset)
+	si8				start_time;
+	si8				end_time;
+	union {
+		si8			number_of_samples;
+		si8			number_of_frames;
+	};
+	si4				number_of_segments;  // number of segments in the session, regardless of whether they are mapped
+	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
+	si4				first_mapped_segment_number;
+	Sgmt_RECORDS_LIST_m13		*Sgmt_records_list;  // list with one entry for each unique sampling frequency and channel type
+} CURRENT_SESSION_m13;  // PROC_GLOBALS_m13 element
+
+typedef struct {
+	si1				index_channel_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
+	struct CHANNEL_m13		*index_channel;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
+	sf8				minimum_sampling_frequency;
+	sf8				maximum_sampling_frequency;
+	sf8				minimum_frame_rate;
+	sf8				maximum_frame_rate;
+	tern 				sampling_frequencies_vary;
+	tern 				frame_rates_vary;
+	struct CHANNEL_m13		*minimum_sampling_frequency_channel;
+	struct CHANNEL_m13		*maximum_sampling_frequency_channel;
+	struct CHANNEL_m13		*minimum_frame_rate_channel;
+	struct CHANNEL_m13		*maximum_frame_rate_channel;
+} ACTIVE_CHANNELS_m13;  // PROC_GLOBALS_m13 element
+
+typedef struct {
+	tern				constants_set;
+	tern				RTO_known;  // recording time offset
+	tern                        	observe_DST;
+	si8                             recording_time_offset;
+	si4                             standard_UTC_offset;
+	si1                             standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m13];
+	si1                             standard_timezone_string[TIMEZONE_STRING_BYTES_m13];
+	si1                             daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m13];
+	si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m13];
+	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_start_code;  // si1[8] / si8
+	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_end_code;  // si1[8] / si8
+} TIME_CONSTANTS_m13;  // PROC_GLOBALS_m13 element
 
 // All MED File Structures begin with this structure
 typedef struct LEVEL_HEADER_m13 {
@@ -1706,54 +1752,18 @@ typedef struct {
 			si8			access_time;  // uutc of last use of this structure by the calling program (updated by read, open, & write functions)
 		};
 	};
-	// Process Identifier
-	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	// Password
-	PASSWORD_DATA_m13               password_data;
+	PASSWORD_DATA_m13               password;
 	// Current Session
-	ui8				session_UID;
-	si1				session_directory[FULL_FILE_NAME_BYTES_m13];	// path including file system session directory name
-	si1				*session_name;  				// points to: uh_session_name if known, else fs_session_name if known, else NULL
-	si1				uh_session_name[BASE_FILE_NAME_BYTES_m13];	// from MED universal header - original name
-	si1				fs_session_name[BASE_FILE_NAME_BYTES_m13];	// from file system - may be renamed by user (e.g. channel subset)
-	si8				session_start_time;
-	si8				session_end_time;
-	union {
-		si8			number_of_session_samples;
-		si8			number_of_session_frames;
-	};
-	si4				number_of_session_segments;  // number of segments in the session, regardless of whether they are mapped
-	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
-	si4				first_mapped_segment_number;
-	Sgmt_RECORD_LIST_m13		*Sgmt_records_list;  // list with one entry for each unique sampling frequency and channel type
+	CURRENT_SESSION_m13		session;
 	// Active Channels
-	si1				index_ref_chan_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
-	struct CHANNEL_m13		*index_ref_chan;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
-	sf8				minimum_time_series_frequency;
-	sf8				maximum_time_series_frequency;
-	sf8				minimum_video_frame_rate;
-	sf8				maximum_video_frame_rate;
-	tern 				time_series_frequencies_vary;
-	tern 				video_frame_rates_vary;
-	struct CHANNEL_m13		*minimum_time_series_frequency_channel;
-	struct CHANNEL_m13		*maximum_time_series_frequency_channel;
-	struct CHANNEL_m13		*minimum_video_frame_rate_channel;
-	struct CHANNEL_m13		*maximum_video_frame_rate_channel;
+	ACTIVE_CHANNELS_m13		active_channels;
 	// Time Constants
-	tern				time_constants_set;
-	tern				RTO_known;  // recording time offset
-	tern                        	observe_DST;
-	si8                             recording_time_offset;
-	si4                             standard_UTC_offset;
-	si1                             standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m13];
-	si1                             standard_timezone_string[TIMEZONE_STRING_BYTES_m13];
-	si1                             daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m13];
-	si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m13];
-	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_time_start_code;  // si1[8] / si8
-	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_time_end_code;  // si1[8] / si8
+	TIME_CONSTANTS_m13		time;
 	// Miscellaneous
+	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
-	si1				time_series_data_encryption_level;
+	si1				time_series_data_encryption_level;  // from metadata
 } PROC_GLOBALS_m13;
 #else  // __cplusplus
 typedef struct {
@@ -1761,54 +1771,18 @@ typedef struct {
 		LEVEL_HEADER_m13	header;  // in case just want the level header (parent NULL in PROC_GLOBALS_m13)
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
-	// Process Identifier
-	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	// Password
-	PASSWORD_DATA_m13               password_data;
+	PASSWORD_DATA_m13		password;
 	// Current Session
-	si8				session_UID;
-	si1				session_directory[FULL_FILE_NAME_BYTES_m13];	// path including file system session directory name
-	si1				*session_name;  				// points to: uh_session_name if known, else fs_session_name if known, else NULL
-	si1				uh_session_name[BASE_FILE_NAME_BYTES_m13];	// from MED universal header - original name
-	si1				fs_session_name[BASE_FILE_NAME_BYTES_m13];	// from file system - may be renamed by user (e.g. channel subset)
-	si8				session_start_time;
-	si8				session_end_time;
-	union {
-		si8			number_of_session_samples;
-		si8			number_of_session_frames;
-	};
-	si4				number_of_session_segments;  // number of segments in the session, regardless of whether they are mapped
-	si4				number_of_mapped_segments;  // may be less than number_of_session_segments
-	si4				first_mapped_segment_number;
-	Sgmt_RECORDS_LIST_m13		*Sgmt_records_list;  // one for each unique sampling frequency and channel type
+	CURRENT_SESSION_m13		session;
 	// Active Channels
-	si1				index_ref_chan_name[BASE_FILE_NAME_BYTES_m13];  // contains user specified value if needed, open_session_m13() matches to session channel
-	struct CHANNEL_m13		*index_ref_chan;  // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
-	sf8				minimum_time_series_frequency;
-	sf8				maximum_time_series_frequency;
-	sf8				minimum_video_frame_rate;
-	sf8				maximum_video_frame_rate;
-	tern 				time_series_frequencies_vary;
-	tern 				video_frame_rates_vary;
-	struct CHANNEL_m13		*minimum_time_series_frequency_channel;
-	struct CHANNEL_m13		*maximum_time_series_frequency_channel;
-	struct CHANNEL_m13		*minimum_video_frame_rate_channel;
-	struct CHANNEL_m13		*maximum_video_frame_rate_channel;
+	ACTIVE_CHANNELS_m13		active_channels;
 	// Time Constants
-	tern				time_constants_set;
-	tern				RTO_known;  // recording time offset
-	tern                        	observe_DST;
-	si8                             recording_time_offset;
-	si4                             standard_UTC_offset;
-	si1                             standard_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m13];
-	si1                             standard_timezone_string[TIMEZONE_STRING_BYTES_m13];
-	si1                             daylight_timezone_acronym[TIMEZONE_ACRONYM_BYTES_m13];
-	si1                             daylight_timezone_string[TIMEZONE_STRING_BYTES_m13];
-	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_time_start_code;  // si1[8] / si8
-	DAYLIGHT_TIME_CHANGE_CODE_m13   daylight_time_end_code;  // si1[8] / si8
+	TIME_CONSTANTS_m13		time;
 	// Miscellaneous
+	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
-	si1				time_series_data_encryption_level;
+	si1				time_series_data_encryption_level;  // from metadata
 } PROC_GLOBALS_m13;
 #endif  // __cplusplus
 
@@ -2664,13 +2638,13 @@ si1		*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset
 si1		*G_find_metadata_file_m13(si1 *path, si1 *md_path);
 si8		G_find_record_index_m13(FPS_m13 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8     	G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
-tern		G_free_channel_m13(CHANNEL_m13* channel, tern free_channel_structure);
+tern		G_free_channel_m13(CHANNEL_m13* channel, tern free_structure);
 void		G_free_global_tables_m13(void);
 void            G_free_globals_m13(tern cleanup_for_exit);
 void		G_free_thread_local_storage_m13(LEVEL_HEADER_m13 *level_header);
-tern		G_free_segment_m13(SEGMENT_m13 *segment, tern free_segment_structure);
-tern		G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_segmented_sess_rec_structure);
-tern		G_free_session_m13(SESSION_m13 *session, tern free_session_structure);
+tern		G_free_segment_m13(SEGMENT_m13 *segment, tern free_structure);
+tern		G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_structure);
+tern		G_free_session_m13(SESSION_m13 *session, tern free_structure);
 tern		G_frequencies_vary_m13(SESSION_m13 *sess);
 si1		**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 ui4             G_generate_MED_path_components_m13(si1 *path, si1 *MED_dir, si1* MED_name);
@@ -2894,7 +2868,7 @@ void		**AT_recalloc_2D_m13(const si1 *function, void **curr_ptr, size_t curr_dim
 FPS_m13		*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FPS_m13 *proto_fps, si8 bytes_to_copy);
 tern		FPS_close_m13(FPS_m13 *fps);
 si4		FPS_compare_start_times_m13(const void *a, const void *b);
-tern		FPS_free_ps_m13(FPS_m13 *fps, tern free_fps_structure);
+tern		FPS_free_m13(FPS_m13 *fps, tern free_structure);
 FPS_DIRECTIVES_m13	*FPS_init_directives_m13(FPS_DIRECTIVES_m13 *directives);
 FPS_PARAMETERS_m13	*FPS_init_parameters_m13(FPS_PARAMETERS_m13 *parameters);
 si8		FPS_memory_map_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read);
@@ -2903,7 +2877,7 @@ si8		FPS_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read);
 tern		FPS_reallocate_m13(FPS_m13 *fps, si8 raw_data_bytes);
 tern		FPS_seek_m13(FPS_m13 *fps, si8 file_offset);
 tern		FPS_set_pointers_m13(FPS_m13 *fps, si8 file_offset);
-tern		FPS_show_ps_m13(FPS_m13 *fps);
+tern		FPS_show_m13(FPS_m13 *fps);
 tern		FPS_sort_m13(FPS_m13 **fps_array, si4 n_fps);
 si8		FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write);
 
@@ -2931,7 +2905,7 @@ si1		*STR_match_start_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1     	*STR_re_escape_m13(si1 *str, si1 *esc_str);
 tern    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
-si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, tern free_input_buffer);
+si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, tern free_buffer);
 si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);
@@ -3571,7 +3545,7 @@ tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CPS_m1
 tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
 tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, tern free_structure);
 tern    CMP_free_cps_cache_m12(CPS_m13 *cps);
-tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_cps_structure);
+tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure);
 tern	CMP_generate_lossy_data_m13(CPS_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 tern	CMP_generate_parameter_map_m13(CPS_m13 *cps);
 ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm);

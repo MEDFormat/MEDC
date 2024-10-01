@@ -398,7 +398,7 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FPS_m13 *proto_fps, si1 *
 	}
 	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) chan);
-	proc_globals->number_of_mapped_segments = n_segs;
+	proc_globals->session.number_of_mapped_segments = n_segs;
 	
 	// make new prototype fps (don't modify original)
 	if (type_code == TIME_SERIES_CHANNEL_TYPE_m13)
@@ -447,7 +447,7 @@ CHANNEL_m13	*G_allocate_channel_m13(CHANNEL_m13 *chan, FPS_m13 *proto_fps, si1 *
 	}
 
 	// clean up
-	if (FPS_free_ps_m13(proto_fps, TRUE_m13) == FALSE_m13)
+	if (FPS_free_m13(proto_fps, TRUE_m13) == FALSE_m13)
 		return_m13(NULL);
 	
 	return_m13(chan);
@@ -570,7 +570,7 @@ SESSION_m13	*G_allocate_session_m13(FPS_m13 *proto_fps, si1 *enclosing_path, si1
 	sess->number_of_video_channels = n_vid_chans;
 	sess->type_code = LH_SESSION_m13;
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) sess);
-	proc_globals->number_of_mapped_segments = n_segs;
+	proc_globals->session.number_of_mapped_segments = n_segs;
 
 	// create a prototype fps
 	proto_fps = FPS_allocate_m13(NULL, NULL, FPS_PROTOTYPE_FILE_TYPE_CODE_m13, FPS_PROTOTYPE_BYTES_m13, NULL, proto_fps, FPS_PROTOTYPE_BYTES_m13);
@@ -581,8 +581,8 @@ SESSION_m13	*G_allocate_session_m13(FPS_m13 *proto_fps, si1 *enclosing_path, si1
 		G_generate_UID_m13(&uh->session_UID);
 	uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m13;;
 	strncpy_m13(uh->session_name, sess_name, BASE_FILE_NAME_BYTES_m13);
-	strncpy_m13(proc_globals->uh_session_name, sess_name, BASE_FILE_NAME_BYTES_m13);
-	sess->name = proc_globals->session_name = proc_globals->uh_session_name;
+	strncpy_m13(proc_globals->session.uh_name, sess_name, BASE_FILE_NAME_BYTES_m13);
+	sess->name = proc_globals->session.name = proc_globals->session.uh_name;
 	snprintf_m13(sess->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", enclosing_path, sess->name, SESSION_DIRECTORY_TYPE_STRING_m13);
 		
 	// allocate channels
@@ -653,7 +653,7 @@ SESSION_m13	*G_allocate_session_m13(FPS_m13 *proto_fps, si1 *enclosing_path, si1
 	} else {
 		sess->record_data_fps = sess->record_indices_fps = NULL;
 	}
-	if (FPS_free_ps_m13(proto_fps, TRUE_m13) == FALSE_m13)  // done with session prototype
+	if (FPS_free_m13(proto_fps, TRUE_m13) == FALSE_m13)  // done with session prototype
 		return_m13(NULL);
 	
 	// allocate segmented session records
@@ -804,7 +804,7 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 			break;
 		case LH_SESSION_m13:
 			sess = (SESSION_m13 *) level_header;
-			chan = proc_globals->index_ref_chan;
+			chan = proc_globals->active_channels.index_channel;
 			slice = &sess->slice;
 			type_code = chan->type_code;
 			break;
@@ -1003,9 +1003,9 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 	// set sample/frame numbers to NO ENTRY for variable frequency sessions
 	if (level_header->type_code == LH_SESSION_m13) {
 		null_sample_numbers = FALSE_m13;
-		if (type_code == LH_TIME_SERIES_CHANNEL_m13 && proc_globals->time_series_frequencies_vary == TRUE_m13)
+		if (type_code == LH_TIME_SERIES_CHANNEL_m13 && proc_globals->active_channels.sampling_frequencies_vary == TRUE_m13)
 			null_sample_numbers = TRUE_m13;
-		else if (type_code == LH_VIDEO_CHANNEL_m13 && proc_globals->video_frame_rates_vary == TRUE_m13)
+		else if (type_code == LH_VIDEO_CHANNEL_m13 && proc_globals->active_channels.frame_rates_vary == TRUE_m13)
 			null_sample_numbers = TRUE_m13;
 		if (null_sample_numbers == TRUE_m13) {
 			for (i = 0; i < n_contigua; ++i)
@@ -1071,11 +1071,11 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps
 	if (ri_fps == NULL && rd_fps == NULL) {
 		if (chan == NULL ) {
 			proc_globals = G_proc_globals_m13(NULL);
-			if (proc_globals->index_ref_chan == NULL) {
+			if (proc_globals->active_channels.index_channel == NULL) {
 				G_set_error_m13(E_UNSPEC_m13, "no records or channel passed or found");
 				return_m13(NULL);
 			} else {
-				chan = proc_globals->index_ref_chan;
+				chan = proc_globals->active_channels.index_channel;
 			}
 		}
 		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
@@ -1100,14 +1100,14 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps
 		// full record index file already read in
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) ri_fps);
 		n_recs = ri_fps->universal_header->number_of_entries;
-		if (proc_globals->number_of_session_segments == SEGMENT_NUMBER_NO_ENTRY_m13) {
+		if (proc_globals->session.number_of_segments == SEGMENT_NUMBER_NO_ENTRY_m13) {
 			ri = ri_fps->record_indices;
 			for (n_segs = 0, i = n_recs; i--; ++ri)
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m13)
 					++n_segs;
-			proc_globals->number_of_session_segments = n_segs;
+			proc_globals->session.number_of_segments = n_segs;
 		} else {
-			n_segs = proc_globals->number_of_session_segments;
+			n_segs = proc_globals->session.number_of_segments;
 		}
 				
 		// allocate Sgmt_records array
@@ -1163,7 +1163,7 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps
 		if (seg_list == NULL)
 			return_m13(NULL);
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) chan);
-		proc_globals->number_of_session_segments = n_segs;
+		proc_globals->session.number_of_segments = n_segs;
 		
 		// allocate Sgmt_records array
 		Sgmt_records = (Sgmt_RECORD_m13 *) calloc((size_t) n_segs, sizeof(Sgmt_RECORD_m13));
@@ -1209,7 +1209,7 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps
 					Sgmt_rec->end_frame_number = Sgmt_rec->start_frame_number + md_fps->metadata->video_section_2.number_of_frames - 1;
 					break;
 			}
-			if (FPS_free_ps_m13(md_fps, TRUE_m13) == FALSE_m13) {
+			if (FPS_free_m13(md_fps, TRUE_m13) == FALSE_m13) {
 				free((void *) Sgmt_records);
 				return_m13(NULL);
 			}
@@ -1218,9 +1218,9 @@ Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps
 	}
 
 	// fill in global end fields
-	proc_globals->session_end_time = Sgmt_records[n_segs - 1].end_time;
+	proc_globals->session.end_time = Sgmt_records[n_segs - 1].end_time;
 	if (Sgmt_records[n_segs - 1].end_sample_number != SAMPLE_NUMBER_NO_ENTRY_m13)
-		proc_globals->number_of_session_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
+		proc_globals->session.number_of_samples = Sgmt_records[n_segs - 1].end_sample_number + 1;  // frame numbers are unioned
 
 	return_m13(Sgmt_records);
 }
@@ -1444,17 +1444,17 @@ CHANNEL_m13	*G_change_index_ref_chan_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, s
 
 	// reference channel passed
 	if (chan) {
-		proc_globals->index_ref_chan = chan;
-		if (*proc_globals->index_ref_chan_name == 0)
-			strcpy(proc_globals->index_ref_chan_name, chan->name);
+		proc_globals->active_channels.index_channel = chan;
+		if (*proc_globals->active_channels.index_channel_name == 0)
+			strcpy(proc_globals->active_channels.index_channel_name, chan->name);
 		return_m13(chan);
 	}
 
 	use_default_channel = FALSE_m13;
 	if (chan == NULL) {
 		if (STR_empty_m13(chan_name) == TRUE_m13) {
-			if (*proc_globals->index_ref_chan_name)
-				chan_name = proc_globals->index_ref_chan_name;
+			if (*proc_globals->active_channels.index_channel_name)
+				chan_name = proc_globals->active_channels.index_channel_name;
 			else
 				use_default_channel = TRUE_m13;
 		}
@@ -1469,19 +1469,19 @@ CHANNEL_m13	*G_change_index_ref_chan_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, s
 			case DEFAULT_VIDEO_CHANNEL_m13:
 				break;
 			case HIGHEST_RATE_TIME_SERIES_CHANNEL_m13:
-				chan = proc_globals->maximum_time_series_frequency_channel;
+				chan = proc_globals->active_channels.maximum_sampling_frequency_channel;
 				chan_type = DEFAULT_TIME_SERIES_CHANNEL_m13;
 				break;
 			case LOWEST_RATE_TIME_SERIES_CHANNEL_m13:
-				chan = proc_globals->minimum_time_series_frequency_channel;
+				chan = proc_globals->active_channels.minimum_sampling_frequency_channel;
 				chan_type = DEFAULT_TIME_SERIES_CHANNEL_m13;
 				break;
 			case HIGHEST_RATE_VIDEO_CHANNEL_m13:
-				chan = proc_globals->maximum_video_frame_rate_channel;
+				chan = proc_globals->active_channels.maximum_frame_rate_channel;
 				chan_type = DEFAULT_VIDEO_CHANNEL_m13;
 				break;
 			case LOWEST_RATE_VIDEO_CHANNEL_m13:
-				chan = proc_globals->minimum_video_frame_rate_channel;
+				chan = proc_globals->active_channels.minimum_frame_rate_channel;
 				chan_type = DEFAULT_VIDEO_CHANNEL_m13;
 				break;
 			default:
@@ -1491,7 +1491,7 @@ CHANNEL_m13	*G_change_index_ref_chan_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, s
 	}
 	
 	// find channel from name
-	proc_globals->index_ref_chan = NULL;
+	proc_globals->active_channels.index_channel = NULL;
 	if (chan == NULL) {
 		if (use_default_channel == TRUE_m13) {
 			chan = G_get_active_channel_m13(sess, chan_type);
@@ -1535,8 +1535,8 @@ CHANNEL_m13	*G_change_index_ref_chan_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, s
 	return_m13(NULL);
 	
 CHANGE_REF_MATCH_m13:
-	proc_globals->index_ref_chan = chan;
-	strcpy(proc_globals->index_ref_chan_name, chan->name);
+	proc_globals->active_channels.index_channel = chan;
+	strcpy(proc_globals->active_channels.index_channel_name, chan->name);
 	
 	return_m13(chan);
 }
@@ -1765,19 +1765,19 @@ si4	G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess)
 	}
 	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) sess);
-	sess_segs = proc_globals->number_of_session_segments;
+	sess_segs = proc_globals->session.number_of_segments;
 	if (start_seg < 1 || end_seg > sess_segs) {
 		G_warning_message_m13("%s(): segment range not valid => returning false\n", __FUNCTION__);
 		return_m13((si4) FALSE_m13);
 	}
 
 	// all segments mapped
-	mapped_segs = proc_globals->number_of_mapped_segments;
+	mapped_segs = proc_globals->session.number_of_mapped_segments;
 	if (mapped_segs == sess_segs)
 		if (start_seg >= 1 && end_seg <= sess_segs)
 			return_m13(start_seg - 1);
 	
-	first_mapped_seg = proc_globals->first_mapped_segment_number;
+	first_mapped_seg = proc_globals->session.first_mapped_segment_number;
 	last_mapped_seg = (first_mapped_seg + mapped_segs) - 1;
 	if (start_seg >= first_mapped_seg && end_seg <= last_mapped_seg)
 		return_m13(start_seg - first_mapped_seg);
@@ -1805,8 +1805,8 @@ si4	G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess)
 		chan->segments = remapped_segs;
 	}
 
-	proc_globals->first_mapped_segment_number = remapped_start_seg;
-	proc_globals->number_of_mapped_segments = remapped_seg_cnt;
+	proc_globals->session.first_mapped_segment_number = remapped_start_seg;
+	proc_globals->session.number_of_mapped_segments = remapped_seg_cnt;
 	seg_idx = first_mapped_seg - remapped_start_seg;
 
 	return_m13(seg_idx);
@@ -1962,10 +1962,10 @@ tern	G_condition_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header
 	
 	proc_globals = G_proc_globals_m13(level_header);
 	
-	if (proc_globals->recording_time_offset == FALSE_m13) {
-		proc_globals->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;  // == 0
-		if (proc_globals->session_start_time == UUTC_NO_ENTRY_m13)
-			proc_globals->session_start_time = BEGINNING_OF_TIME_m13;
+	if (proc_globals->time.recording_time_offset == FALSE_m13) {
+		proc_globals->time.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;  // == 0
+		if (proc_globals->session.start_time == UUTC_NO_ENTRY_m13)
+			proc_globals->session.start_time = BEGINNING_OF_TIME_m13;
 	}
 	
 	if (slice->start_time <= 0) {
@@ -1973,10 +1973,10 @@ tern	G_condition_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header
 			if (slice->start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m13)
 				slice->start_time = BEGINNING_OF_TIME_m13;
 		} else {  // relative time
-			slice->start_time = proc_globals->session_start_time - slice->start_time;
+			slice->start_time = proc_globals->session.start_time - slice->start_time;
 		}
 	} else {  // ? unoffset time
-		test_time = slice->start_time - proc_globals->recording_time_offset;
+		test_time = slice->start_time - proc_globals->time.recording_time_offset;
 		if (test_time > 0)  // start time is not offset
 			slice->start_time = test_time;
 	}
@@ -1986,10 +1986,10 @@ tern	G_condition_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header
 			if (slice->end_sample_number == SAMPLE_NUMBER_NO_ENTRY_m13)
 				slice->end_time = END_OF_TIME_m13;
 		} else {  // relative time
-			slice->end_time = proc_globals->session_start_time - slice->end_time;
+			slice->end_time = proc_globals->session.start_time - slice->end_time;
 		}
 	} else {  // ? unoffset time
-		test_time = slice->end_time - proc_globals->recording_time_offset;
+		test_time = slice->end_time - proc_globals->time.recording_time_offset;
 		if (test_time > 0 && slice->end_time != END_OF_TIME_m13)  // end time is not offset
 			slice->end_time = test_time;
 	}
@@ -2062,7 +2062,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 					number_of_entries = (fps2->parameters.fp->len - (si8) UNIVERSAL_HEADER_BYTES_m13) / (si8) INDEX_BYTES_m13;
 				--number_of_entries;  // don't include last index
 				if (free_fps2 == TRUE_m13)
-					FPS_free_ps_m13(fps2, TRUE_m13);
+					FPS_free_m13(fps2, TRUE_m13);
 			}
 			if (number_of_entries > 0) {  // read second block header for maximum entry size (CPS will reallocate if needed, but first block often truncated)
 				// read first block header
@@ -2135,7 +2135,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 					number_of_entries = (fps2->parameters.fp->len - (si8) UNIVERSAL_HEADER_BYTES_m13) / (si8) INDEX_BYTES_m13;
 				--number_of_entries;  // don't include last index
 				if (free_fps2 == TRUE_m13)
-					FPS_free_ps_m13(fps2, TRUE_m13);
+					FPS_free_m13(fps2, TRUE_m13);
 			}
 			if (number_of_entries > 0)  // the only option to get true maximum record size would be to read full record data (or index) file
 				maximum_entry_size = REC_LARGEST_RECORD_BYTES_m13;
@@ -2298,7 +2298,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 		return_m13(FALSE_m13);
 	}
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 
 	// time series encryption global
 	proc_globals->time_series_data_encryption_level = fps->metadata->section_1.time_series_data_encryption_level;
@@ -2333,28 +2333,28 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, NULL, decryption_key);
 			fps->metadata->section_1.section_3_encryption_level = -fps->metadata->section_1.section_3_encryption_level;  // mark as currently decrypted
 		} else {
-			proc_globals->RTO_known = FALSE_m13;
-			proc_globals->time_constants_set = TRUE_m13;  // set to defaults
+			proc_globals->time.RTO_known = FALSE_m13;
+			proc_globals->time.constants_set = TRUE_m13;  // set to defaults
 			return_m13(TRUE_m13);  // can function without section 3, so return TRUE_m13
 		}
 	}
 	
 	// set global time data
-	if (proc_globals->RTO_known != TRUE_m13) {  // UNKNOWN || FALSE
+	if (proc_globals->time.RTO_known != TRUE_m13) {  // UNKNOWN || FALSE
 		section_3 = &fps->metadata->section_3;
-		proc_globals->recording_time_offset = section_3->recording_time_offset;
-		proc_globals->standard_UTC_offset = section_3->standard_UTC_offset;
-		strncpy_m13(proc_globals->standard_timezone_acronym, section_3->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-		strncpy_m13(proc_globals->standard_timezone_string, section_3->standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
-		strncpy_m13(proc_globals->daylight_timezone_acronym, section_3->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-		strncpy_m13(proc_globals->daylight_timezone_string, section_3->daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
-		if ((proc_globals->daylight_time_start_code.value = section_3->daylight_time_start_code.value) == DTCC_VALUE_NOT_OBSERVED_m13)
-			proc_globals->observe_DST = FALSE_m13;
+		proc_globals->time.recording_time_offset = section_3->recording_time_offset;
+		proc_globals->time.standard_UTC_offset = section_3->standard_UTC_offset;
+		strncpy_m13(proc_globals->time.standard_timezone_acronym, section_3->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+		strncpy_m13(proc_globals->time.standard_timezone_string, section_3->standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
+		strncpy_m13(proc_globals->time.daylight_timezone_acronym, section_3->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+		strncpy_m13(proc_globals->time.daylight_timezone_string, section_3->daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
+		if ((proc_globals->time.daylight_start_code.value = section_3->daylight_time_start_code.value) == DTCC_VALUE_NOT_OBSERVED_m13)
+			proc_globals->time.observe_DST = FALSE_m13;
 		else
-			proc_globals->observe_DST = TRUE_m13;
-		proc_globals->RTO_known = TRUE_m13;
-		proc_globals->daylight_time_end_code.value = section_3->daylight_time_end_code.value;
-		proc_globals->time_constants_set = TRUE_m13;
+			proc_globals->time.observe_DST = TRUE_m13;
+		proc_globals->time.RTO_known = TRUE_m13;
+		proc_globals->time.daylight_end_code.value = section_3->daylight_time_end_code.value;
+		proc_globals->time.constants_set = TRUE_m13;
 	}
 
 	return_m13(TRUE_m13);
@@ -2386,7 +2386,7 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 	if (number_of_records == 0)  // failure == all records unreadable, not no records
 		return_m13(TRUE_m13);
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 
 	for (i = failed_decryption_count = 0; i < number_of_records; ++i) {
 		if (rh->encryption_level > NO_ENCRYPTION_m13) {
@@ -2428,7 +2428,7 @@ tern     G_decrypt_time_series_data_m13(FPS_m13 *fps)
 	
 	// get decryption key - assume all blocks encrypted at same level
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	bh = fps->parameters.cps->block_header;
 	
 	number_of_items = fps->number_of_items;	// looks like big loop but breaks out as soon as encrypted block encountered
@@ -2574,13 +2574,13 @@ si4     G_DST_offset_m13(si8 uutc)
 
 	// returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
 	proc_globals = G_proc_globals_m13(NULL);  // find proc globals by process id
-	if (proc_globals->time_constants_set == FALSE_m13) {
+	if (proc_globals->time.constants_set == FALSE_m13) {
 		G_warning_message_m13("%s(): library time constants not set\n", __FUNCTION__);
 		return_m13(0);
 	}
-	if (proc_globals->observe_DST < TRUE_m13)
+	if (proc_globals->time.observe_DST < TRUE_m13)
 		return_m13(0);
-	if (proc_globals->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
+	if (proc_globals->time.daylight_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 		G_warning_message_m13("%s(): daylight change data not available\n", __FUNCTION__);
 		return_m13(0);
 	}
@@ -2589,8 +2589,8 @@ si4     G_DST_offset_m13(si8 uutc)
 	
 	// get broken out time info
 #if defined MACOS_m13 || defined LINUX_m13
-	if (proc_globals->daylight_time_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
-		local_utc = utc + (si8) proc_globals->standard_UTC_offset;
+	if (proc_globals->time.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
+		local_utc = utc + (si8) proc_globals->time.standard_UTC_offset;
 		gmtime_r(&local_utc, &time_info);
 	}
 	else {
@@ -2598,8 +2598,8 @@ si4     G_DST_offset_m13(si8 uutc)
 	}
 #endif
 #ifdef WINDOWS_m13
-	if (proc_globals->daylight_time_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
-		local_utc = utc + (si8) proc_globals->standard_UTC_offset;
+	if (proc_globals->time.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
+		local_utc = utc + (si8) proc_globals->time.standard_UTC_offset;
 		time_info = *(gmtime(&local_utc));
 	}
 	else {
@@ -2608,15 +2608,15 @@ si4     G_DST_offset_m13(si8 uutc)
 #endif
 	
 	month = time_info.tm_mon;
-	DST_start_month = proc_globals->daylight_time_start_code.month;
-	DST_end_month = proc_globals->daylight_time_end_code.month;
+	DST_start_month = proc_globals->time.daylight_start_code.month;
+	DST_end_month = proc_globals->time.daylight_end_code.month;
 	if (DST_start_month < DST_end_month) {
-		first_DTCC = &proc_globals->daylight_time_start_code;
-		last_DTCC = &proc_globals->daylight_time_end_code;
+		first_DTCC = &proc_globals->time.daylight_start_code;
+		last_DTCC = &proc_globals->time.daylight_end_code;
 	}
 	else {
-		first_DTCC = &proc_globals->daylight_time_end_code;
-		last_DTCC = &proc_globals->daylight_time_start_code;
+		first_DTCC = &proc_globals->time.daylight_end_code;
+		last_DTCC = &proc_globals->time.daylight_start_code;
 	}
 	
 	// take care of dates not in change months
@@ -2674,8 +2674,8 @@ si4     G_DST_offset_m13(si8 uutc)
 #ifdef WINDOWS_m13
 	change_utc = _mkgmtime(&change_time_info);
 #endif
-	if (proc_globals->daylight_time_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME)
-		change_utc -= proc_globals->standard_UTC_offset;
+	if (proc_globals->time.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME)
+		change_utc -= proc_globals->time.standard_UTC_offset;
 	
 	if (change_DTCC->month == DST_start_month) {
 		if (utc >= change_utc)
@@ -2770,7 +2770,7 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 #endif
 
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	md = fps->metadata;
 
 	// section 2 encrypt
@@ -2814,7 +2814,7 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 #endif
 
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	rh = (RECORD_HEADER_m13 *) fps->record_data;
 		
 	for (i = fps->number_of_items; i--;) {
@@ -2852,7 +2852,7 @@ tern     G_encrypt_time_series_data_m13(FPS_m13 *fps)
 		return_m13(TRUE_m13);
 	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	if (pwd->access_level >= encryption_level) {
 		if (encryption_level == LEVEL_1_ENCRYPTION_m13) {
 			key = pwd->level_1_encryption_key;
@@ -3633,14 +3633,14 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LEVEL_HEADER_m13 *level_header, si8 *n
 			if (level_header->type_code == LH_TIME_SERIES_CHANNEL_m13) {
 				chan = (CHANNEL_m13 *) level_header;
 			} else {
-				chan = proc_globals->index_ref_chan;
+				chan = proc_globals->active_channels.index_channel;
 				if (chan->type_code != LH_TIME_SERIES_CHANNEL_m13) {
 					sess = (SESSION_m13 *) level_header;
 					chan = sess->time_series_channels[0];
 				}
 			}
 			start_seg_num = 1;
-			end_seg_num = proc_globals->number_of_session_segments;
+			end_seg_num = proc_globals->session.number_of_segments;
 			break;
 		case LH_VIDEO_CHANNEL_m13:
 		case LH_VIDEO_SEGMENT_m13:
@@ -3665,7 +3665,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LEVEL_HEADER_m13 *level_header, si8 *n
 			md_fps = G_read_file_m13(NULL, temp_str, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
 			sample_offsets[j] = md_fps->metadata->time_series_section_2.absolute_start_sample_number;
 			samp_period = (sf8)1e6 / md_fps->metadata->time_series_section_2.sampling_frequency;
-			FPS_free_ps_m13(md_fps, TRUE_m13);
+			FPS_free_m13(md_fps, TRUE_m13);
 		} else {
 			tsi_fps[j] = seg->time_series_indices_fps;
 			sample_offsets[j] = seg->metadata_fps->metadata->time_series_section_2.absolute_start_sample_number;
@@ -3730,7 +3730,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LEVEL_HEADER_m13 *level_header, si8 *n
 	// clean up
 	if (level_header->type_code == LH_TIME_SERIES_SEGMENT_m13)
 		for (i = 0; i < n_segs; ++i)
-			FPS_free_ps_m13(tsi_fps[i], TRUE_m13);
+			FPS_free_m13(tsi_fps[i], TRUE_m13);
 	free((void *) tsi_fps);
 	free((void *) sample_offsets);
 	
@@ -4378,7 +4378,7 @@ si8     G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_u
 				if (level_header->type_code == LH_VIDEO_CHANNEL_m13) {
 					chan = (CHANNEL_m13 *) level_header;
 				} else {
-					chan = proc_globals->index_ref_chan;
+					chan = proc_globals->active_channels.index_channel;
 					if (chan->type_code != LH_VIDEO_CHANNEL_m13) {
 						sess = (SESSION_m13 *) level_header;
 						chan = sess->video_channels[0];
@@ -4418,8 +4418,8 @@ si8     G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_u
 
 		// condition target
 		if (target_uutc < 0)  // relative time
-			target_uutc = proc_globals->session_start_time - target_uutc;
-		test_time = target_uutc - proc_globals->recording_time_offset;
+			target_uutc = proc_globals->session.start_time - target_uutc;
+		test_time = target_uutc - proc_globals->time.recording_time_offset;
 		if (test_time > 0 && target_uutc != END_OF_TIME_m13)  // end time is not offset
 			target_uutc = test_time;
 
@@ -4465,7 +4465,7 @@ si8     G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_u
 }
 
 
-tern	G_free_channel_m13(CHANNEL_m13 *channel, tern free_channel_structure)
+tern	G_free_channel_m13(CHANNEL_m13 *channel, tern free_structure)
 {
 	si4			i;
 	PROC_GLOBALS_m13	*proc_globals;
@@ -4482,7 +4482,7 @@ tern	G_free_channel_m13(CHANNEL_m13 *channel, tern free_channel_structure)
 
 	if (channel->segments) {
 		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) channel);
-		for (i = 0; i < proc_globals->number_of_mapped_segments; ++i) {
+		for (i = 0; i < proc_globals->session.number_of_mapped_segments; ++i) {
 			seg = channel->segments[i];
 			if (seg)
 				G_free_segment_m13(seg, TRUE_m13);
@@ -4490,11 +4490,11 @@ tern	G_free_channel_m13(CHANNEL_m13 *channel, tern free_channel_structure)
 		free_m13((void *) channel->segments);  // ok whether allocated en bloc or not
 	}
 	if (channel->metadata_fps)
-		FPS_free_ps_m13(channel->metadata_fps, TRUE_m13);
+		FPS_free_m13(channel->metadata_fps, TRUE_m13);
 	if (channel->record_data_fps)
-		FPS_free_ps_m13(channel->record_data_fps, TRUE_m13);
+		FPS_free_m13(channel->record_data_fps, TRUE_m13);
 	if (channel->record_indices_fps)
-		FPS_free_ps_m13(channel->record_indices_fps, TRUE_m13);
+		FPS_free_m13(channel->record_indices_fps, TRUE_m13);
 	if (channel->contigua)
 		free_m13(channel->contigua);
 	
@@ -4503,7 +4503,7 @@ tern	G_free_channel_m13(CHANNEL_m13 *channel, tern free_channel_structure)
 		if (channel->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) channel);
 	
-	if (free_channel_structure == TRUE_m13) {
+	if (free_structure == TRUE_m13) {
 		if (channel->en_bloc_allocation == UNKNOWN_m13)
 			G_en_bloc_allocation_m13((LEVEL_HEADER_m13 *) channel);
 		if (channel->en_bloc_allocation == FALSE_m13) {
@@ -4698,7 +4698,7 @@ void	G_free_thread_local_storage_m13(LEVEL_HEADER_m13 *level_header)
 }
 
 
-tern	G_free_segment_m13(SEGMENT_m13 *segment, tern free_segment_structure)
+tern	G_free_segment_m13(SEGMENT_m13 *segment, tern free_structure)
 {
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -4710,15 +4710,15 @@ tern	G_free_segment_m13(SEGMENT_m13 *segment, tern free_segment_structure)
 		return_m13(FALSE_m13);
 
 	if (segment->metadata_fps)
-		FPS_free_ps_m13(segment->metadata_fps, TRUE_m13);
+		FPS_free_m13(segment->metadata_fps, TRUE_m13);
 	if (segment->time_series_data_fps)  // also does video data fps (when it exists), due to union
-		FPS_free_ps_m13(segment->time_series_data_fps, TRUE_m13);
+		FPS_free_m13(segment->time_series_data_fps, TRUE_m13);
 	if (segment->time_series_indices_fps)  // also does video indices, due to union
-		FPS_free_ps_m13(segment->time_series_indices_fps, TRUE_m13);
+		FPS_free_m13(segment->time_series_indices_fps, TRUE_m13);
 	if (segment->record_data_fps)
-		FPS_free_ps_m13(segment->record_data_fps, TRUE_m13);
+		FPS_free_m13(segment->record_data_fps, TRUE_m13);
 	if (segment->record_indices_fps)
-		FPS_free_ps_m13(segment->record_indices_fps, TRUE_m13);
+		FPS_free_m13(segment->record_indices_fps, TRUE_m13);
 	if (segment->contigua)
 		free_m13(segment->contigua);
 	
@@ -4727,7 +4727,7 @@ tern	G_free_segment_m13(SEGMENT_m13 *segment, tern free_segment_structure)
 		if (segment->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) segment);
 	
-	if (free_segment_structure == TRUE_m13) {
+	if (free_structure == TRUE_m13) {
 		if (segment->en_bloc_allocation == UNKNOWN_m13)
 			G_en_bloc_allocation_m13((LEVEL_HEADER_m13 *) segment);
 		if (segment->en_bloc_allocation == FALSE_m13) {
@@ -4753,7 +4753,7 @@ tern	G_free_segment_m13(SEGMENT_m13 *segment, tern free_segment_structure)
 }
 
 
-tern	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_segmented_sess_rec_structure)
+tern	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_structure)
 {
 	si4				i, n_segs;
 	FPS_m13	*gen_fps;
@@ -4769,16 +4769,16 @@ tern	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_segm
 		return_m13(FALSE_m13);
 	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) ssr);
-	n_segs = proc_globals->number_of_mapped_segments;
+	n_segs = proc_globals->session.number_of_mapped_segments;
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->record_indices_fps[i];
 		if (gen_fps)
 			if (freeable_m13((void *) gen_fps) == TRUE_m13)
-				FPS_free_ps_m13(gen_fps, TRUE_m13);
+				FPS_free_m13(gen_fps, TRUE_m13);
 		gen_fps = ssr->record_data_fps[i];
 		if (gen_fps)
 			if (freeable_m13((void *) gen_fps) == TRUE_m13)
-				FPS_free_ps_m13(gen_fps, TRUE_m13);
+				FPS_free_m13(gen_fps, TRUE_m13);
 	}
 	free_m13((void *) ssr->record_indices_fps);
 	free_m13((void *) ssr->record_data_fps);
@@ -4787,7 +4787,7 @@ tern	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_segm
 		if (ssr->parent->type_code == PROC_GLOBALS_TYPE_CODE_m13)
 			G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) ssr);
 
-	if (free_segmented_sess_rec_structure == TRUE_m13) {
+	if (free_structure == TRUE_m13) {
 		free_m13((void *) ssr);
 		return_m13(TRUE_m13);
 	} else {
@@ -4800,7 +4800,7 @@ tern	G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_segm
 }
 
 
-tern	G_free_session_m13(SESSION_m13 *session, tern free_session_structure)
+tern	G_free_session_m13(SESSION_m13 *session, tern free_structure)
 {
 	si4			i;
 	CHANNEL_m13		*chan;
@@ -4815,13 +4815,13 @@ tern	G_free_session_m13(SESSION_m13 *session, tern free_session_structure)
 		return_m13(FALSE_m13);
 
 	if (session->time_series_metadata_fps)
-		FPS_free_ps_m13(session->time_series_metadata_fps, TRUE_m13);
+		FPS_free_m13(session->time_series_metadata_fps, TRUE_m13);
 	if (session->video_metadata_fps)
-		FPS_free_ps_m13(session->video_metadata_fps, TRUE_m13);
+		FPS_free_m13(session->video_metadata_fps, TRUE_m13);
 	if (session->record_data_fps)
-		FPS_free_ps_m13(session->record_data_fps, TRUE_m13);
+		FPS_free_m13(session->record_data_fps, TRUE_m13);
 	if (session->record_indices_fps)
-		FPS_free_ps_m13(session->record_indices_fps, TRUE_m13);
+		FPS_free_m13(session->record_indices_fps, TRUE_m13);
 	if (session->time_series_channels) {
 		for (i = 0; i < session->number_of_time_series_channels; ++i) {
 			chan = session->time_series_channels[i];
@@ -4847,7 +4847,7 @@ tern	G_free_session_m13(SESSION_m13 *session, tern free_session_structure)
 	// session is always top of hierarchy, so always delete proc_globals
 	G_proc_globals_delete_m13((LEVEL_HEADER_m13 *) session);
 
-	if (free_session_structure == TRUE_m13) {
+	if (free_structure == TRUE_m13) {
 		free((void *) session);
 			return_m13(TRUE_m13);
 	} else {
@@ -4892,9 +4892,9 @@ tern	G_frequencies_vary_m13(SESSION_m13 *sess)
 	// check time series channels
 	seg_idx = G_get_segment_index_m13(FIRST_OPEN_SEGMENT_m13, (LEVEL_HEADER_m13 *) sess);
 	n_chans = sess->number_of_time_series_channels;
-	proc_globals->time_series_frequencies_vary = UNKNOWN_m13;
-	proc_globals->minimum_time_series_frequency = proc_globals->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m13;
-	proc_globals->minimum_time_series_frequency_channel = proc_globals->maximum_time_series_frequency_channel = NULL;
+	proc_globals->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
+	proc_globals->active_channels.minimum_sampling_frequency = proc_globals->active_channels.maximum_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
+	proc_globals->active_channels.minimum_sampling_frequency_channel = proc_globals->active_channels.maximum_sampling_frequency_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->time_series_channels[i];
@@ -4920,21 +4920,21 @@ tern	G_frequencies_vary_m13(SESSION_m13 *sess)
 				}
 			}
 			if (min_rate == max_rate)
-				proc_globals->time_series_frequencies_vary = FALSE_m13;
+				proc_globals->active_channels.sampling_frequencies_vary = FALSE_m13;
 			else
-				proc_globals->time_series_frequencies_vary = TRUE_m13;
-			proc_globals->minimum_time_series_frequency = min_rate;
-			proc_globals->maximum_time_series_frequency = max_rate;
-			proc_globals->minimum_time_series_frequency_channel = min_chan;
-			proc_globals->maximum_time_series_frequency_channel = max_chan;
+				proc_globals->active_channels.sampling_frequencies_vary = TRUE_m13;
+			proc_globals->active_channels.minimum_sampling_frequency = min_rate;
+			proc_globals->active_channels.maximum_sampling_frequency = max_rate;
+			proc_globals->active_channels.minimum_sampling_frequency_channel = min_chan;
+			proc_globals->active_channels.maximum_sampling_frequency_channel = max_chan;
 		}
 	}
 
 	// check video channels
 	n_chans = sess->number_of_video_channels;
-	proc_globals->video_frame_rates_vary = UNKNOWN_m13;
-	proc_globals->minimum_video_frame_rate = proc_globals->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m13;
-	proc_globals->minimum_video_frame_rate_channel = proc_globals->maximum_video_frame_rate_channel = NULL;
+	proc_globals->active_channels.frame_rates_vary = UNKNOWN_m13;
+	proc_globals->active_channels.minimum_frame_rate = proc_globals->active_channels.maximum_frame_rate = FREQUENCY_NO_ENTRY_m13;
+	proc_globals->active_channels.minimum_frame_rate_channel = proc_globals->active_channels.maximum_frame_rate_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->video_channels[i];
@@ -4959,18 +4959,18 @@ tern	G_frequencies_vary_m13(SESSION_m13 *sess)
 					}
 				}
 				if (min_rate == max_rate)
-					proc_globals->video_frame_rates_vary = FALSE_m13;
+					proc_globals->active_channels.frame_rates_vary = FALSE_m13;
 				else
-					proc_globals->video_frame_rates_vary = TRUE_m13;
-				proc_globals->minimum_video_frame_rate = min_rate;
-				proc_globals->maximum_video_frame_rate = max_rate;
-				proc_globals->minimum_video_frame_rate_channel = min_chan;
-				proc_globals->maximum_video_frame_rate_channel = max_chan;
+					proc_globals->active_channels.frame_rates_vary = TRUE_m13;
+				proc_globals->active_channels.minimum_frame_rate = min_rate;
+				proc_globals->active_channels.maximum_frame_rate = max_rate;
+				proc_globals->active_channels.minimum_frame_rate_channel = min_chan;
+				proc_globals->active_channels.maximum_frame_rate_channel = max_chan;
 			}
 		}
 	}
 	
-	if (proc_globals->time_series_frequencies_vary == TRUE_m13 || proc_globals->video_frame_rates_vary == TRUE_m13)
+	if (proc_globals->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globals->active_channels.frame_rates_vary == TRUE_m13)
 		return_m13(TRUE_m13);
 
 	return_m13(FALSE_m13);
@@ -5353,7 +5353,7 @@ tern	G_generate_password_data_m13(FPS_m13* fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_
 			L2_pw_hint = NULL;
 
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	memset((void *) pwd, 0, sizeof(PASSWORD_DATA_m13));
 	pwd->processed = TRUE_m13;
 
@@ -5466,8 +5466,8 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 	
 	// convert to same time of day in GMT
 	// (can't just use localtime() because might system may not be in timezone of recording, as in conversions)
-	if (proc_globals->time_constants_set == TRUE_m13) {
-		UTC_offset = proc_globals->standard_UTC_offset;
+	if (proc_globals->time.constants_set == TRUE_m13) {
+		UTC_offset = proc_globals->time.standard_UTC_offset;
 	} else {
 		G_warning_message_m13("%s(): global time constants not set, using local UTC offset\n", __FUNCTION__);
 #if defined MACOS_m13 || defined LINUX_m13
@@ -5496,13 +5496,13 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 	secs_since_midnight = (time_info.tm_hour * 3600) + (time_info.tm_min * 60) + time_info.tm_sec;
 
 	// set global offset
-	proc_globals->recording_time_offset = (recording_start_time_utc - secs_since_midnight) * (si8) 1000000;
+	proc_globals->time.recording_time_offset = (recording_start_time_utc - secs_since_midnight) * (si8) 1000000;
 		
-	if (recording_start_time_uutc == proc_globals->recording_time_offset)	// recording started at exactly midnight local standard time
-		--proc_globals->recording_time_offset;				// this can cause problems with oUTC and BEGINNING_OF_TIME_m13 (== 0)
-	proc_globals->RTO_known = TRUE_m13;
+	if (recording_start_time_uutc == proc_globals->time.recording_time_offset)	// recording started at exactly midnight local standard time
+		--proc_globals->time.recording_time_offset;				// this can cause problems with oUTC and BEGINNING_OF_TIME_m13 (== 0)
+	proc_globals->time.RTO_known = TRUE_m13;
 
-	return_m13(recording_start_time_uutc - proc_globals->recording_time_offset);
+	return_m13(recording_start_time_uutc - proc_globals->time.recording_time_offset);
 }
 
 
@@ -5886,14 +5886,14 @@ si4	G_get_segment_index_m13(si4 segment_number, LEVEL_HEADER_m13 *level_header)
 	
 	proc_globals = G_proc_globals_m13(level_header);
 
-	mapped_segs = proc_globals->number_of_mapped_segments;
+	mapped_segs = proc_globals->session.number_of_mapped_segments;
 	if (mapped_segs == 0) {
 		G_set_error_m13(E_UNSPEC_m13, "no mapped segments");
 		return_m13((si4) FALSE_m13);
 	}
 
 	if (segment_number == FIRST_OPEN_SEGMENT_m13 || segment_number == SEGMENT_NUMBER_NO_ENTRY_m13) {
-		chan = proc_globals->index_ref_chan;
+		chan = proc_globals->active_channels.index_channel;
 		if (chan == NULL) {
 			G_set_error_m13(E_UNSPEC_m13, "reference channel not set");
 			return_m13((si4) FALSE_m13);
@@ -5914,7 +5914,7 @@ si4	G_get_segment_index_m13(si4 segment_number, LEVEL_HEADER_m13 *level_header)
 		return_m13(i);
 	}
 	
-	sess_segs = proc_globals->number_of_session_segments;
+	sess_segs = proc_globals->session.number_of_segments;
 	
 	// all segments mapped
 	if (mapped_segs == sess_segs) {
@@ -5927,7 +5927,7 @@ si4	G_get_segment_index_m13(si4 segment_number, LEVEL_HEADER_m13 *level_header)
 	}
 	
 	// slice segments mapped
-	first_seg = proc_globals->first_mapped_segment_number;
+	first_seg = proc_globals->session.first_mapped_segment_number;
 	seg_idx = segment_number - first_seg;
 	if (seg_idx < 0 || seg_idx >= mapped_segs) {
 		G_set_error_m13(E_UNSPEC_m13, "unmapped segment");
@@ -5967,9 +5967,9 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 	switch (level_header->type_code) {
 		case LH_SESSION_m13:
 			sess = (SESSION_m13 *) level_header;
-			if (proc_globals->index_ref_chan == NULL)
-				G_change_index_ref_chan_m13(sess, NULL, proc_globals->index_ref_chan_name, DEFAULT_CHANNEL_m13);
-			chan = proc_globals->index_ref_chan;
+			if (proc_globals->active_channels.index_channel == NULL)
+				G_change_index_ref_chan_m13(sess, NULL, proc_globals->active_channels.index_channel_name, DEFAULT_CHANNEL_m13);
+			chan = proc_globals->active_channels.index_channel;
 			break;
 		case LH_TIME_SERIES_CHANNEL_m13:
 		case LH_VIDEO_CHANNEL_m13:
@@ -6007,12 +6007,12 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 		// no channel level Sgmt records => check session level (may not contain sample numbers, but may not need them)
 		if (Sgmt_records == NULL) {
 			// get global session name(s)
-			if (proc_globals->session_UID == UID_NO_ENTRY_m13) {
+			if (proc_globals->session.UID == UID_NO_ENTRY_m13) {
 				G_find_metadata_file_m13(chan->path, tmp_str);
 				md_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
-				FPS_free_ps_m13(md_fps, TRUE_m13);
+				FPS_free_m13(md_fps, TRUE_m13);
 			}
-			sess_name = proc_globals->session_name;
+			sess_name = proc_globals->session.name;
 			if (sess) {
 				strcpy(sess_path, sess->path);
 				ri_fps = sess->record_indices_fps;
@@ -6032,9 +6032,9 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 			file_exists = G_file_exists_m13(tmp_str);
 			if (file_exists == DOES_NOT_EXIST_m13) {  // uh session name is default, try fs session name (e.g. a channel subset)
-				if (proc_globals->session_name == proc_globals->uh_session_name) {
+				if (proc_globals->session.name == proc_globals->session.uh_name) {
 					G_extract_path_parts_m13(sess_path, tmp_str, NULL, NULL);
-					sprintf_m13(sess_path, "%s/%s", tmp_str, proc_globals->fs_session_name);
+					sprintf_m13(sess_path, "%s/%s", tmp_str, proc_globals->session.fs_name);
 					sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 					file_exists = G_file_exists_m13(tmp_str);
 				}
@@ -6062,9 +6062,9 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 				if (Sgmts_adequate == TRUE_m13) {
 					Sgmt_records = G_build_Sgmt_records_array_m13(ri_fps, rd_fps, NULL);
 				} else if (free_fps == TRUE_m13) {
-					FPS_free_ps_m13(ri_fps, TRUE_m13);
+					FPS_free_m13(ri_fps, TRUE_m13);
 					if (rd_fps)
-						FPS_free_ps_m13(rd_fps, TRUE_m13);
+						FPS_free_m13(rd_fps, TRUE_m13);
 				}
 			}
 		}
@@ -6082,16 +6082,16 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *
 	if (n_segs) {
 		slice->number_of_segments = n_segs;
 		if (level_header->flags & LH_MAP_ALL_SEGMENTS_m13) {
-			proc_globals->number_of_mapped_segments = proc_globals->number_of_session_segments;
-			proc_globals->first_mapped_segment_number = 1;
+			proc_globals->session.number_of_mapped_segments = proc_globals->session.number_of_segments;
+			proc_globals->session.first_mapped_segment_number = 1;
 		} else {
-			proc_globals->number_of_mapped_segments = n_segs;
-			proc_globals->first_mapped_segment_number = slice->start_segment_number;
+			proc_globals->session.number_of_mapped_segments = n_segs;
+			proc_globals->session.first_mapped_segment_number = slice->start_segment_number;
 		}
 	} else {
 		slice->number_of_segments = UNKNOWN_m13;
-		proc_globals->number_of_mapped_segments = 0;
-		proc_globals->first_mapped_segment_number = 0;
+		proc_globals->session.number_of_mapped_segments = 0;
+		proc_globals->session.first_mapped_segment_number = 0;
 	}
 
 	start_time = Sgmt_records[0].start_time;
@@ -6167,9 +6167,9 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 	}
 	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) MED_fps);
-	if (session_directory == NULL || session_directory == proc_globals->session_directory) {
+	if (session_directory == NULL || session_directory == proc_globals->session.directory) {
 		set_global_session_name = TRUE_m13;
-		session_directory = proc_globals->session_directory;
+		session_directory = proc_globals->session.directory;
 	} else {
 		set_global_session_name = FALSE_m13;
 	}
@@ -6219,13 +6219,13 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 	}
 	
 	if (set_global_session_name == TRUE_m13) {
-		G_extract_path_parts_m13(session_directory, NULL, proc_globals->fs_session_name, NULL);
+		G_extract_path_parts_m13(session_directory, NULL, proc_globals->session.fs_name, NULL);
 		if (MED_fps) {
-			proc_globals->session_UID = MED_fps->universal_header->session_UID;
-			strcpy(proc_globals->uh_session_name, MED_fps->universal_header->session_name);
-			proc_globals->session_name = proc_globals->uh_session_name;
+			proc_globals->session.UID = MED_fps->universal_header->session_UID;
+			strcpy(proc_globals->session.uh_name, MED_fps->universal_header->session_name);
+			proc_globals->session.name = proc_globals->session.uh_name;
 		} else {
-			proc_globals->session_name = proc_globals->fs_session_name;
+			proc_globals->session.name = proc_globals->session.fs_name;
 		}
 	}
 
@@ -6838,13 +6838,13 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	
 	// section 3 fields
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	md3->recording_time_offset = proc_globals->recording_time_offset;
-	md3->daylight_time_start_code = proc_globals->daylight_time_start_code;
-	md3->daylight_time_end_code = proc_globals->daylight_time_end_code;
-	strncpy_m13(md3->standard_timezone_acronym, proc_globals->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-	strncpy_m13(md3->standard_timezone_string, proc_globals->standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
-	strncpy_m13(md3->daylight_timezone_acronym, proc_globals->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-	strncpy_m13(md3->daylight_timezone_string, proc_globals->daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
+	md3->recording_time_offset = proc_globals->time.recording_time_offset;
+	md3->daylight_time_start_code = proc_globals->time.daylight_start_code;
+	md3->daylight_time_end_code = proc_globals->time.daylight_end_code;
+	strncpy_m13(md3->standard_timezone_acronym, proc_globals->time.standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+	strncpy_m13(md3->standard_timezone_string, proc_globals->time.standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
+	strncpy_m13(md3->daylight_timezone_acronym, proc_globals->time.daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+	strncpy_m13(md3->daylight_timezone_string, proc_globals->time.daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
 	memset(md3->subject_name_1, 0, METADATA_SUBJECT_NAME_BYTES_m13);
 	memset(md3->subject_name_2, 0, METADATA_SUBJECT_NAME_BYTES_m13);
 	memset(md3->subject_name_3, 0, METADATA_SUBJECT_NAME_BYTES_m13);
@@ -6855,7 +6855,7 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	memset(md3->recording_institution, 0, METADATA_RECORDING_LOCATION_BYTES_m13);
 	memset(md3->geotag_format, 0, METADATA_GEOTAG_FORMAT_BYTES_m13);
 	memset(md3->geotag_data, 0, METADATA_GEOTAG_DATA_BYTES_m13);
-	md3->standard_UTC_offset = proc_globals->standard_UTC_offset;
+	md3->standard_UTC_offset = proc_globals->time.standard_UTC_offset;
 	
 	return_m13(TRUE_m13);
 }
@@ -7996,7 +7996,7 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) chan);
 
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (proc_globals->password_data.processed == 0 || proc_globals->time_constants_set != TRUE_m13) {
+	if (proc_globals->password.processed == 0 || proc_globals->time.constants_set != TRUE_m13) {
 		if (G_set_time_and_password_data_m13(password, chan->path, NULL, NULL) == FALSE_m13) {
 			if (free_channel == TRUE_m13)
 				G_free_channel_m13(chan, TRUE_m13);
@@ -8032,7 +8032,7 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 		return_m13(NULL);
 	}
 	n_segs = slice->number_of_segments;
-	mapped_segs = proc_globals->number_of_mapped_segments;
+	mapped_segs = proc_globals->session.number_of_mapped_segments;
 
 	if (chan->segments == NULL) {
 		chan->segments = (SEGMENT_m13 **) calloc_m13((size_t) mapped_segs, sizeof(SEGMENT_m13 *));  // map segments
@@ -8177,7 +8177,7 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	// ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		if (chan->metadata_fps)
-			FPS_free_ps_m13(chan->metadata_fps, TRUE_m13);
+			FPS_free_m13(chan->metadata_fps, TRUE_m13);
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 			seg = chan->segments[j];
 			if (seg)
@@ -8216,7 +8216,7 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 		else if (chan->type_code == LH_VIDEO_CHANNEL_m13)
 			uh->type_code = VIDEO_METADATA_FILE_TYPE_CODE_m13;
 		uh->segment_number = UNIVERSAL_HEADER_CHANNEL_LEVEL_CODE_m13;
-		uh->session_UID = proc_globals->session_UID;
+		uh->session_UID = proc_globals->session.UID;
 		uh->channel_UID = seg->metadata_fps->universal_header->channel_UID;;
 		uh->segment_UID = UID_NO_ENTRY_m13;
 		chan->metadata_fps->parameters.fp->fd = FPS_FD_EPHEMERAL_m13;
@@ -8297,7 +8297,7 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) seg);
 	
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (proc_globals->password_data.processed == 0 || proc_globals->time_constants_set != TRUE_m13) {
+	if (proc_globals->password.processed == 0 || proc_globals->time.constants_set != TRUE_m13) {
 		if (G_set_time_and_password_data_m13(password, seg->path, NULL, NULL) == FALSE_m13) {
 			if (free_segment == TRUE_m13)
 				G_free_segment_m13(seg, TRUE_m13);
@@ -8453,8 +8453,8 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			return(NULL);
 		free_session = TRUE_m13;
 		proc_globals = G_proc_globals_m13(NULL);  // main process globals
-		if (*proc_globals->index_ref_chan_name)  // if caller specified ref chan, it would be here
-			strcpy(index_ref_chan_name, proc_globals->index_ref_chan_name);
+		if (*proc_globals->active_channels.index_channel_name)  // if caller specified ref chan, it would be here
+			strcpy(index_ref_chan_name, proc_globals->active_channels.index_channel_name);
 	} else if (sess->flags & LH_SEGMENT_OPEN_m13) {
 		return_m13(sess);
 	}
@@ -8466,7 +8466,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) sess);
 	sess->parent = (LEVEL_HEADER_m13 *) proc_globals;
 	if (*index_ref_chan_name)  // set ref chan if specified in main process globals
-		strcpy(index_ref_chan_name, proc_globals->index_ref_chan_name);
+		strcpy(index_ref_chan_name, proc_globals->active_channels.index_channel_name);
 
 	// generate channel list
 	all_channels_selected = FALSE_m13;
@@ -8531,8 +8531,8 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 
 	G_extract_path_parts_m13(chan_list[0], sess->path, NULL, NULL);
-	type_code = G_generate_MED_path_components_m13(sess->path, NULL, proc_globals->fs_session_name);
-	sess->name = proc_globals->fs_session_name;  // only name known at this point
+	type_code = G_generate_MED_path_components_m13(sess->path, NULL, proc_globals->session.fs_name);
+	sess->name = proc_globals->session.fs_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "channels must be in a MED session directory");
 		if (free_session == TRUE_m13)
@@ -8736,7 +8736,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (proc_globals->password_data.processed == 0 || proc_globals->time_constants_set != TRUE_m13) {
+	if (proc_globals->password.processed == 0 || proc_globals->time.constants_set != TRUE_m13) {
 		if (G_set_time_and_password_data_m13(password, sess->path, NULL, NULL) == FALSE_m13) {
 			if (free_session == TRUE_m13)
 				G_free_session_m13(sess, TRUE_m13);
@@ -8745,12 +8745,12 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 	
 	// user generated channel subsets (setting password also sets global session names)
-	if (*proc_globals->uh_session_name)
-		sess->name = proc_globals->uh_session_name;  // preferred & known
-	else if (*proc_globals->fs_session_name)
-		sess->name = proc_globals->fs_session_name;  // 2nd choice & known
+	if (*proc_globals->session.uh_name)
+		sess->name = proc_globals->session.uh_name;  // preferred & known
+	else if (*proc_globals->session.fs_name)
+		sess->name = proc_globals->session.fs_name;  // 2nd choice & known
 	else
-		sess->name = proc_globals->uh_session_name;  // unknown, may get filled in
+		sess->name = proc_globals->session.uh_name;  // unknown, may get filled in
 
 	// process time slice (passed slice is not modified)
 	if (slice == NULL) {
@@ -8861,7 +8861,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 
 	// update session slice
-	chan = proc_globals->index_ref_chan;
+	chan = proc_globals->active_channels.index_channel;
 	if ((chan->flags & LH_CHANNEL_ACTIVE_m13) == 0)
 		chan = G_get_active_channel_m13(sess, DEFAULT_CHANNEL_m13);
 	slice->start_time = chan->slice.start_time;
@@ -8909,7 +8909,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			ssr->type_code = LH_SEGMENTED_SESS_RECS_m13;
 			ssr->flags = sess->flags;
 			ssr->parent = (LEVEL_HEADER_m13 *) sess;
-			mapped_segs = proc_globals->number_of_mapped_segments;
+			mapped_segs = proc_globals->session.number_of_mapped_segments;
 			ssr->record_data_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
 			ssr->record_indices_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
 			seg_idx = G_get_segment_index_m13(slice->start_segment_number, (LEVEL_HEADER_m13 *) sess);
@@ -8933,7 +8933,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		if (sess->number_of_time_series_channels) {
 			if (sess->time_series_metadata_fps)
-				FPS_free_ps_m13(sess->time_series_metadata_fps, TRUE_m13);
+				FPS_free_m13(sess->time_series_metadata_fps, TRUE_m13);
 			sprintf_m13(tmp_str, "%s/%s_time_series.%s", sess->path, sess->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
 			chan = sess->time_series_channels[0];
 			sess->time_series_metadata_fps = FPS_allocate_m13(NULL, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_CODE_m13, METADATA_BYTES_m13, (LEVEL_HEADER_m13 *)  sess, chan->metadata_fps, METADATA_BYTES_m13);
@@ -8958,12 +8958,12 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			uh = sess->time_series_metadata_fps->universal_header;
 			uh->type_code = TIME_SERIES_METADATA_FILE_TYPE_CODE_m13;
 			uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globals->session_UID;
+			uh->session_UID = proc_globals->session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 		if (sess->number_of_video_channels) {
 			if (sess->video_metadata_fps)
-				FPS_free_ps_m13(sess->video_metadata_fps, TRUE_m13);
+				FPS_free_m13(sess->video_metadata_fps, TRUE_m13);
 			sprintf_m13(tmp_str, "%s/%s_video.%s", sess->path, sess->name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
 			chan = sess->video_channels[0];
 			sess->video_metadata_fps = FPS_allocate_m13(NULL, tmp_str, VIDEO_METADATA_FILE_TYPE_CODE_m13, METADATA_BYTES_m13, (LEVEL_HEADER_m13 *) sess, chan->metadata_fps, METADATA_BYTES_m13);
@@ -8988,7 +8988,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 			uh = sess->video_metadata_fps->universal_header;
 			uh->type_code = VIDEO_METADATA_FILE_TYPE_CODE_m13;
 			uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globals->session_UID;
+			uh->session_UID = proc_globals->session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 	}
@@ -9285,12 +9285,12 @@ void	G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header)
 	proc_globals = (PROC_GLOBALS_m13 *) level_header;
 	
 	// delete proc globals Sgmt_records_list
-	Sgmt_records_list = proc_globals->Sgmt_records_list;
+	Sgmt_records_list = proc_globals->session.Sgmt_records_list;
 	Sgmt_records_entry = Sgmt_records_list->entries;
 	for (i = Sgmt_records_list->top_idx + 1; i--; ++Sgmt_records_entry)
 		free((void *) Sgmt_records_entry->Sgmt_records);
 	free((void *) Sgmt_records_list->entries);
-	PROC_pthread_mutex_destroy_m13(&proc_globals->Sgmt_records_list->mutex);
+	PROC_pthread_mutex_destroy_m13(&proc_globals->session.Sgmt_records_list->mutex);
 	free((void *) Sgmt_records_list);
 
 	// get mutex
@@ -9350,59 +9350,59 @@ PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 	proc_globals->_id = PROC_gettid_m13();  // use current thread id
 	
 	// current session constants
-	proc_globals->session_UID = UID_NO_ENTRY_m13;
-	*proc_globals->session_directory = 0;
-	proc_globals->session_start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m13;
-	proc_globals->session_end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m13;
-	proc_globals->session_name = NULL;
-	*proc_globals->uh_session_name = 0;
-	*proc_globals->fs_session_name = 0;
-	proc_globals->session_start_time = UUTC_NO_ENTRY_m13;
-	proc_globals->session_end_time = UUTC_NO_ENTRY_m13;
-	proc_globals->number_of_session_samples = SAMPLE_NUMBER_NO_ENTRY_m13;  // == number_of_session_frames
-	proc_globals->number_of_session_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	proc_globals->number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	proc_globals->index_ref_chan = NULL;
-	*proc_globals->index_ref_chan_name = 0;
+	proc_globals->session.UID = UID_NO_ENTRY_m13;
+	*proc_globals->session.directory = 0;
+	proc_globals->session.start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m13;
+	proc_globals->session.end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m13;
+	proc_globals->session.name = NULL;
+	*proc_globals->session.uh_name = 0;
+	*proc_globals->session.fs_name = 0;
+	proc_globals->session.start_time = UUTC_NO_ENTRY_m13;
+	proc_globals->session.end_time = UUTC_NO_ENTRY_m13;
+	proc_globals->session.number_of_samples = SAMPLE_NUMBER_NO_ENTRY_m13;  // == number_of_session_frames
+	proc_globals->session.number_of_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
+	proc_globals->session.number_of_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
+	proc_globals->active_channels.index_channel = NULL;
+	*proc_globals->active_channels.index_channel_name = 0;
 	
 	// active channel constants
-	proc_globals->time_series_frequencies_vary = UNKNOWN_m13;
-	proc_globals->minimum_time_series_frequency = FREQUENCY_NO_ENTRY_m13;
-	proc_globals->maximum_time_series_frequency = FREQUENCY_NO_ENTRY_m13;
-	proc_globals->minimum_time_series_frequency_channel = NULL;
-	proc_globals->maximum_time_series_frequency_channel = NULL;
-	proc_globals->video_frame_rates_vary = UNKNOWN_m13;;
-	proc_globals->minimum_video_frame_rate = FREQUENCY_NO_ENTRY_m13;
-	proc_globals->maximum_video_frame_rate = FREQUENCY_NO_ENTRY_m13;
-	proc_globals->minimum_video_frame_rate_channel = NULL;
-	proc_globals->maximum_video_frame_rate_channel = NULL;
+	proc_globals->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
+	proc_globals->active_channels.minimum_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
+	proc_globals->active_channels.maximum_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
+	proc_globals->active_channels.minimum_sampling_frequency_channel = NULL;
+	proc_globals->active_channels.maximum_sampling_frequency_channel = NULL;
+	proc_globals->active_channels.frame_rates_vary = UNKNOWN_m13;;
+	proc_globals->active_channels.minimum_frame_rate = FREQUENCY_NO_ENTRY_m13;
+	proc_globals->active_channels.maximum_frame_rate = FREQUENCY_NO_ENTRY_m13;
+	proc_globals->active_channels.minimum_frame_rate_channel = NULL;
+	proc_globals->active_channels.maximum_frame_rate_channel = NULL;
 	
 	// time Constants
-	proc_globals->time_constants_set = FALSE_m13;
-	proc_globals->RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m13;
-	proc_globals->observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m13;
-	proc_globals->recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;
-	proc_globals->standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13;
-	proc_globals->daylight_time_start_code.value = DTCC_VALUE_NO_ENTRY_m13;
-	proc_globals->daylight_time_end_code.value = DTCC_VALUE_NO_ENTRY_m13;
-	strcpy(proc_globals->standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m13);
-	strcpy(proc_globals->standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13);
-	strcpy(proc_globals->daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13);
-	strcpy(proc_globals->daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13);
+	proc_globals->time.constants_set = FALSE_m13;
+	proc_globals->time.RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m13;
+	proc_globals->time.observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m13;
+	proc_globals->time.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;
+	proc_globals->time.standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13;
+	proc_globals->time.daylight_start_code.value = DTCC_VALUE_NO_ENTRY_m13;
+	proc_globals->time.daylight_end_code.value = DTCC_VALUE_NO_ENTRY_m13;
+	strcpy(proc_globals->time.standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m13);
+	strcpy(proc_globals->time.standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13);
+	strcpy(proc_globals->time.daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13);
+	strcpy(proc_globals->time.daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13);
 	
 	// set up Sgmt_record_list
-	proc_globals->Sgmt_records_list = (Sgmt_RECORDS_LIST_m13 *) calloc((size_t) 1, sizeof(Sgmt_RECORDS_LIST_m13));
-	if (proc_globals->Sgmt_records_list == NULL) {
+	proc_globals->session.Sgmt_records_list = (Sgmt_RECORDS_LIST_m13 *) calloc((size_t) 1, sizeof(Sgmt_RECORDS_LIST_m13));
+	if (proc_globals->session.Sgmt_records_list == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
 	}
-	proc_globals->Sgmt_records_list->entries = (Sgmt_RECORDS_ENTRY_m13 *) calloc((size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13, sizeof(Sgmt_RECORDS_ENTRY_m13));
-	if (proc_globals->Sgmt_records_list->entries == NULL) {
+	proc_globals->session.Sgmt_records_list->entries = (Sgmt_RECORDS_ENTRY_m13 *) calloc((size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13, sizeof(Sgmt_RECORDS_ENTRY_m13));
+	if (proc_globals->session.Sgmt_records_list->entries == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
 	}
-	proc_globals->Sgmt_records_list->size = GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-	PROC_pthread_mutex_init_m13(&proc_globals->Sgmt_records_list->mutex, NULL);
+	proc_globals->session.Sgmt_records_list->size = GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
+	PROC_pthread_mutex_init_m13(&proc_globals->session.Sgmt_records_list->mutex, NULL);
 	
 	// reset miscellaneous globals
 	proc_globals->time_series_data_encryption_level = 0;  // don't zero password data, password hints can be shown, if they exist
@@ -9440,7 +9440,7 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 		return_m13(FALSE_m13);
 	}
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	memset((void *) pwd, 0, sizeof(PASSWORD_DATA_m13));
 	pwd->processed = TRUE_m13;
 	
@@ -9551,14 +9551,14 @@ tern	G_propogate_flags_m13(LEVEL_HEADER_m13 *level_header, ui8 new_flags)
 			ts_chans =  &chan;
 			n_ts_chans = 1;
 			n_vid_chans = 0;
-			n_segs = proc_globals->number_of_mapped_segments;
+			n_segs = proc_globals->session.number_of_mapped_segments;
 			break;
 		case LH_VIDEO_CHANNEL_m13:
 			chan = (CHANNEL_m13 *) level_header;
 			vid_chans = &chan;
 			n_ts_chans = 0;
 			n_vid_chans = 1;
-			n_segs = proc_globals->number_of_mapped_segments;
+			n_segs = proc_globals->session.number_of_mapped_segments;
 			break;
 		case LH_SESSION_m13:
 			sess = (SESSION_m13 *) level_header;
@@ -9566,12 +9566,12 @@ tern	G_propogate_flags_m13(LEVEL_HEADER_m13 *level_header, ui8 new_flags)
 			n_ts_chans = sess->number_of_time_series_channels;
 			vid_chans = sess->video_channels;
 			n_vid_chans = sess->number_of_video_channels;
-			n_segs = proc_globals->number_of_mapped_segments;
+			n_segs = proc_globals->session.number_of_mapped_segments;
 			break;
 		case LH_SEGMENTED_SESS_RECS_m13:
 			ssr = (SEGMENTED_SESS_RECS_m13 *) level_header;
 			n_ts_chans = n_vid_chans = 0;
-			n_segs = proc_globals->number_of_mapped_segments;
+			n_segs = proc_globals->session.number_of_mapped_segments;
 			break;
 		default:
 			G_warning_message_m13("%s(): invalid level type\n", __FUNCTION__);
@@ -10136,10 +10136,10 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 		if (uh->number_of_entries == 0)
 			if (G_correct_universal_header_m13(fps) == FALSE_m13)  // live or abnormally terminated file
 				return_m13(NULL);
-		if (uh->session_UID != proc_globals->session_UID)  // set current session directory globals
+		if (uh->session_UID != proc_globals->session.UID)  // set current session directory globals
 			G_get_session_directory_m13(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13) {
-			if (proc_globals->password_data.processed == 0)	// better if done with a metadata file read (for password hints) below
+			if (proc_globals->password.processed == 0)	// better if done with a metadata file read (for password hints) below
 				G_process_password_data_m13(fps, password);	// done here to satify rule that any read of any MED file will process password
 			FPS_set_pointers_m13(fps, UNIVERSAL_HEADER_BYTES_m13);
 			fps->number_of_items = 0;
@@ -10182,13 +10182,13 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 		FPS_close_m13(fps);
 	if (bytes_read != bytes_to_read) {
 		if (allocated_flag == TRUE_m13)
-			FPS_free_ps_m13(fps, TRUE_m13);
+			FPS_free_m13(fps, TRUE_m13);
 		G_set_error_m13(E_READ_m13, NULL);
 		return_m13(NULL);
 	}
 
 	// process password (better done here than above because may be reading a metadata file)
-	if (proc_globals->password_data.processed == 0)	// if metadata file, hints from section 1 will be added to password
+	if (proc_globals->password.processed == 0)	// if metadata file, hints from section 1 will be added to password
 		G_process_password_data_m13(fps, password);	// data structure, and displayed if the password is invalid
 	
 	// get number_of_items (preferably this is passed)
@@ -10247,7 +10247,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	}
 	if (readable == FALSE_m13) {
 		if (allocated_flag == TRUE_m13)
-			FPS_free_ps_m13(fps, TRUE_m13);
+			FPS_free_m13(fps, TRUE_m13);
 		G_set_error_m13(E_READ_m13, NULL);
 		return_m13(NULL);
 	}
@@ -10599,7 +10599,7 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 	}
 
 	// set inactive reference flags
-	chan = proc_globals->index_ref_chan;
+	chan = proc_globals->active_channels.index_channel;
 	if ((chan->flags & LH_CHANNEL_ACTIVE_m13) == 0) {
 		if (chan->flags & LH_READ_SEGMENT_DATA_MASK_m13) {
 			chan->flags |= LH_REFERENCE_INACTIVE_m13;
@@ -10634,11 +10634,11 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 		thread_idx = 0;
 		if (active_ts_chans) {
 			calculate_channel_indices = FALSE_m13;
-			if (proc_globals->time_series_frequencies_vary == TRUE_m13) {
-				if (proc_globals->index_ref_chan->type_code == TIME_SERIES_CHANNEL_TYPE_m13) {
+			if (proc_globals->active_channels.sampling_frequencies_vary == TRUE_m13) {
+				if (proc_globals->active_channels.index_channel->type_code == TIME_SERIES_CHANNEL_TYPE_m13) {
 					if (search_mode == SAMPLE_SEARCH_m13) {
 						calculate_channel_indices = TRUE_m13;
-						ref_sf = proc_globals->index_ref_chan->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+						ref_sf = proc_globals->active_channels.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 					}
 				}
 			}
@@ -10664,11 +10664,11 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 		}
 		if (active_vid_chans) {
 			calculate_channel_indices = FALSE_m13;
-			if (proc_globals->video_frame_rates_vary == TRUE_m13) {
-				if (proc_globals->index_ref_chan->type_code == VIDEO_CHANNEL_TYPE_m13) {
+			if (proc_globals->active_channels.frame_rates_vary == TRUE_m13) {
+				if (proc_globals->active_channels.index_channel->type_code == VIDEO_CHANNEL_TYPE_m13) {
 					if (search_mode == SAMPLE_SEARCH_m13) {
 						calculate_channel_indices = TRUE_m13;
-						ref_sf = proc_globals->index_ref_chan->metadata_fps->metadata->video_section_2.frame_rate;
+						ref_sf = proc_globals->active_channels.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
 					}
 				}
 			}
@@ -10730,8 +10730,8 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 	}
  
 	// update session slice
-	*slice = proc_globals->index_ref_chan->slice;
-	if (proc_globals->time_series_frequencies_vary == TRUE_m13 || proc_globals->video_frame_rates_vary == TRUE_m13)
+	*slice = proc_globals->active_channels.index_channel->slice;
+	if (proc_globals->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globals->active_channels.frame_rates_vary == TRUE_m13)
 		slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m13;  // unioned with video fields
 
 	// read session record data
@@ -10784,14 +10784,14 @@ SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...)  
 			uh = sess->time_series_metadata_fps->universal_header;
 			uh->type_code = TIME_SERIES_METADATA_FILE_TYPE_CODE_m13;
 			uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globals->session_UID;
+			uh->session_UID = proc_globals->session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 		if (sess->number_of_video_channels) {
 			uh = sess->video_metadata_fps->universal_header;
 			uh->type_code = VIDEO_METADATA_FILE_TYPE_CODE_m13;
 			uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globals->session_UID;
+			uh->session_UID = proc_globals->session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 	}
@@ -11297,7 +11297,7 @@ si8     G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_
 				if (level_header->type_code == LH_TIME_SERIES_CHANNEL_m13) {
 					chan = (CHANNEL_m13 *) level_header;
 				} else {  // SESSION_m13
-					chan = proc_globals->index_ref_chan;
+					chan = proc_globals->active_channels.index_channel;
 					if (chan->type_code != LH_TIME_SERIES_CHANNEL_m13) {
 						sess = (SESSION_m13 *) level_header;
 						chan = sess->time_series_channels[0];
@@ -11338,8 +11338,8 @@ si8     G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_
 		
 		// condition target
 		if (target_uutc < 0)  // relative time
-			target_uutc = proc_globals->session_start_time - target_uutc;
-		test_time = target_uutc - proc_globals->recording_time_offset;
+			target_uutc = proc_globals->session.start_time - target_uutc;
+		test_time = target_uutc - proc_globals->time.recording_time_offset;
 		if (test_time > 0 && target_uutc != END_OF_TIME_m13)  // END_OF_TIME_m13 is not offset
 			target_uutc = test_time;
 
@@ -11407,7 +11407,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *sli
 		// start segment
 		target = slice->start_time;
 		low_idx = 0;
-		high_idx = proc_globals->number_of_session_segments - 1;
+		high_idx = proc_globals->session.number_of_segments - 1;
 		if (target > Sgmt_records[high_idx].end_time) {
 			slice->start_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested start time is after session end\n", __FUNCTION__);
@@ -11434,7 +11434,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *sli
 		// end segment
 		target = slice->end_time;
 		low_idx = idx;
-		high_idx = proc_globals->number_of_session_segments - 1;
+		high_idx = proc_globals->session.number_of_segments - 1;
 		if (target < Sgmt_records[low_idx].start_time) {
 			slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested end time precedes requested start time\n", __FUNCTION__);
@@ -11461,8 +11461,8 @@ si4	G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *sli
 		
 		// sample search required, but no sample data in Sgmt_records => fill it in (e.g from session records in variable frequency session)
 		if (Sgmt_records[0].start_sample_number == SAMPLE_NUMBER_NO_ENTRY_m13) {
-			chan = proc_globals->index_ref_chan;
-			for (i = 0; i < proc_globals->number_of_session_segments; ++i) {
+			chan = proc_globals->active_channels.index_channel;
+			for (i = 0; i < proc_globals->session.number_of_segments; ++i) {
 				G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, Sgmt_records[i].segment_number);
 				sprintf_m13(seg_name, "%s_s%s", chan->name, num_str);
 				sprintf_m13(md_file, "%s/%s.%s/%s.%s", chan->path, seg_name, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, seg_name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
@@ -11471,14 +11471,14 @@ si4	G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *sli
 					continue;
 				Sgmt_records[i].end_sample_number = Sgmt_records[i].start_sample_number = md_fps->metadata->time_series_section_2.absolute_start_sample_number;
 				Sgmt_records[i].end_sample_number += (md_fps->metadata->time_series_section_2.number_of_samples - 1);
-				FPS_free_ps_m13(md_fps, TRUE_m13);
+				FPS_free_m13(md_fps, TRUE_m13);
 			}
 		}
 
 		// start segment
 		target = slice->start_sample_number;
 		low_idx = 0;
-		high_idx = proc_globals->number_of_session_segments - 1;
+		high_idx = proc_globals->session.number_of_segments - 1;
 		if (target > Sgmt_records[high_idx].end_sample_number) {
 			slice->start_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested start sample is after session end\n", __FUNCTION__);
@@ -11505,7 +11505,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *sli
 		// end segment
 		target = slice->end_sample_number;
 		low_idx = idx;
-		high_idx = proc_globals->number_of_session_segments - 1;
+		high_idx = proc_globals->session.number_of_segments - 1;
 		if (target < Sgmt_records[low_idx].start_sample_number) {
 			slice->end_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested end sample precedes requested start sample\n", __FUNCTION__);
@@ -11566,7 +11566,7 @@ si4	G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_fr
 	}
 
 	low_idx = 0;
-	high_idx = proc_globals->number_of_session_segments - 1;
+	high_idx = proc_globals->session.number_of_segments - 1;
 	if (target_frame <= Sgmt_records[0].start_frame_number)
 		return_m13(1);  // return first segment if requested frame number <= session start
 	if (target_frame >= Sgmt_records[high_idx].end_frame_number)
@@ -11618,7 +11618,7 @@ si4	G_segment_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_s
 	}
 	
 	low_idx = 0;
-	high_idx = proc_globals->number_of_session_segments - 1;
+	high_idx = proc_globals->session.number_of_segments - 1;
 	if (target_sample <= Sgmt_records[0].start_sample_number)
 		return_m13(1);  // return first segment if requested sample number <= session start
 	if (target_sample >= Sgmt_records[high_idx].end_sample_number)
@@ -11668,7 +11668,7 @@ si4	G_segment_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_time)
 	}
 	
 	low_idx = 0;
-	high_idx = proc_globals->number_of_session_segments - 1;
+	high_idx = proc_globals->session.number_of_segments - 1;
 	if (target_time <= Sgmt_records[0].start_time)
 		return_m13(1);  // return first segment if requested time <= session start
 	if (target_time >= Sgmt_records[high_idx].end_time)
@@ -11828,7 +11828,7 @@ tern    G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 se
 	proc_globals = G_proc_globals_m13(NULL);
 	
 	// reset
-	proc_globals->time_constants_set = FALSE_m13;
+	proc_globals->time.constants_set = FALSE_m13;
 	
 	// capitalize & check aliases
 	G_condition_timezone_info_m13(timezone_info);  // modified if alias found
@@ -12004,25 +12004,25 @@ tern    G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 se
 	
 SET_GTC_TIMEZONE_MATCH_m13:
 	*timezone_info = tz_table[potential_timezone_entries[0]];
-	proc_globals->standard_UTC_offset = timezone_info->standard_UTC_offset;
-	strncpy_m13(proc_globals->standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-	strncpy_m13(proc_globals->standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m13);
-	STR_to_title_m13(proc_globals->standard_timezone_string);  // beautify
+	proc_globals->time.standard_UTC_offset = timezone_info->standard_UTC_offset;
+	strncpy_m13(proc_globals->time.standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+	strncpy_m13(proc_globals->time.standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m13);
+	STR_to_title_m13(proc_globals->time.standard_timezone_string);  // beautify
 	if (timezone_info->daylight_time_start_code) {
 		if (timezone_info->daylight_time_start_code == DTCC_VALUE_NO_ENTRY_m13) {
-			proc_globals->observe_DST = UNKNOWN_m13;
+			proc_globals->time.observe_DST = UNKNOWN_m13;
 		} else {
-			proc_globals->observe_DST = TRUE_m13;
-			strncpy_m13(proc_globals->daylight_timezone_acronym, timezone_info->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-			strncpy_m13(proc_globals->daylight_timezone_string, timezone_info->daylight_timezone, TIMEZONE_STRING_BYTES_m13);
-			STR_to_title_m13(proc_globals->daylight_timezone_string);  // beautify
-			proc_globals->daylight_time_start_code.value = timezone_info->daylight_time_start_code;
-			proc_globals->daylight_time_end_code.value = timezone_info->daylight_time_end_code;
+			proc_globals->time.observe_DST = TRUE_m13;
+			strncpy_m13(proc_globals->time.daylight_timezone_acronym, timezone_info->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+			strncpy_m13(proc_globals->time.daylight_timezone_string, timezone_info->daylight_timezone, TIMEZONE_STRING_BYTES_m13);
+			STR_to_title_m13(proc_globals->time.daylight_timezone_string);  // beautify
+			proc_globals->time.daylight_start_code.value = timezone_info->daylight_time_start_code;
+			proc_globals->time.daylight_end_code.value = timezone_info->daylight_time_end_code;
 		}
 	} else {
-		proc_globals->observe_DST = FALSE_m13;
+		proc_globals->time.observe_DST = FALSE_m13;
 	}
-	proc_globals->time_constants_set = TRUE_m13;
+	proc_globals->time.constants_set = TRUE_m13;
 
 	if (session_start_time)  // pass CURRENT_TIME_m13 for session starting now; pass zero if just need to get timezone_info for a locale
 		G_generate_recording_time_offset_m13(session_start_time);
@@ -12051,11 +12051,11 @@ tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_direct
 	// G_read_file_m13() will process password and set current session directory globals
 	// G_decrypt_metadata_m13() will set global time constants, from section 3
 	proc_globals = G_proc_globals_m13(NULL);
-	proc_globals->password_data.processed = 0;  // not ternary FALSE_m13 (so when structure is zeroed it is marked as not processed)
+	proc_globals->password.processed = 0;  // not ternary FALSE_m13 (so when structure is zeroed it is marked as not processed)
 	metadata_fps = G_read_file_m13(NULL, metadata_file, 0, 0, FPS_FULL_FILE_m13, NULL, unspecified_password);
 	if (metadata_fps == NULL)
 		return_m13(FALSE_m13);
-	proc_globals->session_start_time = metadata_fps->universal_header->session_start_time;
+	proc_globals->session.start_time = metadata_fps->universal_header->session_start_time;
 
 	// return metadata encryption level info
 	md1 = &metadata_fps->metadata->section_1;
@@ -12065,7 +12065,7 @@ tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_direct
 		*metadata_section_3_encryption_level = md1->section_3_encryption_level;
 
 	// clean up
-	FPS_free_ps_m13(metadata_fps, TRUE_m13);
+	FPS_free_m13(metadata_fps, TRUE_m13);
 
 	return_m13(TRUE_m13);
 }
@@ -12092,7 +12092,7 @@ Sgmt_RECORD_m13	*G_Sgmt_records(LEVEL_HEADER_m13 *level_header)
 	switch (type_code) {
 		case LH_SESSION_m13:
 		case LH_SEGMENTED_SESS_RECS_m13:
-			chan = proc_globals->index_ref_chan;
+			chan = proc_globals->active_channels.index_channel;
 			break;
 		case LH_TIME_SERIES_CHANNEL_m13:
 		case LH_VIDEO_CHANNEL_m13:
@@ -12115,7 +12115,7 @@ Sgmt_RECORD_m13	*G_Sgmt_records(LEVEL_HEADER_m13 *level_header)
 		rate = chan->segments[seg_idx]->metadata_fps->metadata->video_section_2.frame_rate;
 		
 	// search for matching entery
-	list = proc_globals->Sgmt_records_list;
+	list = proc_globals->session.Sgmt_records_list;
 	PROC_pthread_mutex_lock_m13(&list->mutex);
 	rec_entry = list->entries;
 	for (i = list->top_idx + 1; i--; ++rec_entry) {
@@ -12430,123 +12430,107 @@ tern    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 		printf_m13("%ld\n", proc_globals->_id);
 
 	printf_m13("\nCurrent Session\n---------------\n");
-	printf_m13("Session UID: 0x%lx\n", proc_globals->session_UID);
-	printf_m13("Session Directory: %s\n", proc_globals->session_directory);  // path including file system session directory name
+	printf_m13("Session UID: 0x%lx\n", proc_globals->session.UID);
+	printf_m13("Session Directory: %s\n", proc_globals->session.directory);  // path including file system session directory name
 	printf_m13("Session Start Time: ");
-	if (proc_globals->session_start_time == UUTC_NO_ENTRY_m13)
+	if (proc_globals->session.start_time == UUTC_NO_ENTRY_m13)
 		printf_m13("no entry\n");
-	else if (proc_globals->session_start_time == BEGINNING_OF_TIME_m13)
+	else if (proc_globals->session.start_time == BEGINNING_OF_TIME_m13)
 		printf_m13("beginning of time\n");
-	else if (proc_globals->session_start_time == END_OF_TIME_m13)
+	else if (proc_globals->session.start_time == END_OF_TIME_m13)
 		printf_m13("end of time\n");
 	else
-		printf_m13("%ld\n", proc_globals->session_start_time);
+		printf_m13("%ld\n", proc_globals->session.start_time);
 	printf_m13("Session End Time: ");
-	if (proc_globals->session_end_time == UUTC_NO_ENTRY_m13)
+	if (proc_globals->session.end_time == UUTC_NO_ENTRY_m13)
 		printf_m13("no entry\n");
-	else if (proc_globals->session_end_time == BEGINNING_OF_TIME_m13)
+	else if (proc_globals->session.end_time == BEGINNING_OF_TIME_m13)
 		printf_m13("beginning of time\n");
-	else if (proc_globals->session_end_time == END_OF_TIME_m13)
+	else if (proc_globals->session.end_time == END_OF_TIME_m13)
 		printf_m13("end of time\n");
 	else
-		printf_m13("%ld\n", proc_globals->session_end_time);
-	if (proc_globals->session_name == NULL)
+		printf_m13("%ld\n", proc_globals->session.end_time);
+	if (proc_globals->session.name == NULL)
 		printf_m13("Session Name: NULL\n");
 	else
-		printf_m13("Session Name: %s\n", proc_globals->session_name);
-	printf_m13("\tuh_session_name: %s\n", proc_globals->uh_session_name);  // from session universal headers
-	printf_m13("\tfs_session_name: %s\n", proc_globals->fs_session_name);  // from file system (different if user created channel subset with different name)
+		printf_m13("Session Name: %s\n", proc_globals->session.name);
+	printf_m13("\tuh_session_name: %s\n", proc_globals->session.uh_name);  // from session universal headers
+	printf_m13("\tfs_session_name: %s\n", proc_globals->session.fs_name);  // from file system (different if user created channel subset with different name)
 	printf_m13("Number of Session Samples / Frames: ");
-	if (proc_globals->number_of_session_samples == SAMPLE_NUMBER_NO_ENTRY_m13)
+	if (proc_globals->session.number_of_samples == SAMPLE_NUMBER_NO_ENTRY_m13)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%ld\n", proc_globals->number_of_session_samples);
+		printf_m13("%ld\n", proc_globals->session.number_of_samples);
 	printf_m13("Number of Session Segments: ");
-	if (proc_globals->number_of_session_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
+	if (proc_globals->session.number_of_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%d\n", proc_globals->number_of_session_segments);
+		printf_m13("%d\n", proc_globals->session.number_of_segments);
 	printf_m13("Number of Mapped Segments: ");
-	if (proc_globals->number_of_mapped_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
+	if (proc_globals->session.number_of_mapped_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%d\n", proc_globals->number_of_mapped_segments);
+		printf_m13("%d\n", proc_globals->session.number_of_mapped_segments);
 	printf_m13("Reference Channel Name: ");
-	if (*proc_globals->index_ref_chan_name == 0)
+	if (*proc_globals->active_channels.index_channel_name == 0)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%s\n", proc_globals->index_ref_chan_name);
+		printf_m13("%s\n", proc_globals->active_channels.index_channel_name);
 	printf_m13("Reference Channel: ");
-	if (proc_globals->index_ref_chan == NULL)
+	if (proc_globals->active_channels.index_channel == NULL)
 		printf_m13("not set\n");
 	else
 		printf_m13("set\n");
 
 	printf_m13("\nActive Channels\n---------------\n");
-	printf_m13("Time Series Frequencies Vary: ");
-	if (proc_globals->time_series_frequencies_vary == UNKNOWN_m13)
-		printf_m13("unknown\n");
-	else if (proc_globals->time_series_frequencies_vary == TRUE_m13)
-		printf_m13("true\n");
-	else if (proc_globals->time_series_frequencies_vary == FALSE_m13)
-		printf_m13("false\n");
+	printf_m13("Sampling Frequencies Vary: %s\n", STR_tern_m13(proc_globals->active_channels.sampling_frequencies_vary));
+	if (proc_globals->active_channels.minimum_sampling_frequency == FREQUENCY_NO_ENTRY_m13)
+		printf_m13("Minimum Sampling Frequency: no entry\n");
 	else
-		printf_m13("%hhd\n", proc_globals->time_series_frequencies_vary);
-	if (proc_globals->minimum_time_series_frequency == FREQUENCY_NO_ENTRY_m13)
-		printf_m13("Minimum Time Series Frequency: no entry\n");
+		printf_m13("Minimum Sampling Frequency: %lf\n", proc_globals->active_channels.minimum_sampling_frequency);
+	if (proc_globals->active_channels.maximum_sampling_frequency == FREQUENCY_NO_ENTRY_m13)
+		printf_m13("Maximum Sampling Frequency: no entry\n");
 	else
-		printf_m13("Minimum Time Series Frequency: %lf\n", proc_globals->minimum_time_series_frequency);
-	if (proc_globals->maximum_time_series_frequency == FREQUENCY_NO_ENTRY_m13)
-		printf_m13("Maximum Time Series Frequency: no entry\n");
+		printf_m13("Maximum Sampling Frequency: %lf\n", proc_globals->active_channels.maximum_sampling_frequency);
+	if (proc_globals->active_channels.minimum_sampling_frequency_channel == NULL)
+		printf_m13("Minimum Sampling Frequency Channel: no entry\n");
 	else
-		printf_m13("Maximum Time Series Frequency: %lf\n", proc_globals->maximum_time_series_frequency);
-	if (proc_globals->minimum_time_series_frequency_channel == NULL)
-		printf_m13("Minimum Time Series Frequency Channel: no entry\n");
+		printf_m13("Minimum Sampling Frequency Channel Name: %s\n", proc_globals->active_channels.minimum_sampling_frequency_channel->name);
+	if (proc_globals->active_channels.maximum_sampling_frequency_channel == NULL)
+		printf_m13("Maximum Sampling Frequency Channel: no entry\n");
 	else
-		printf_m13("Minimum Time Series Frequency Channel Name: %s\n", proc_globals->minimum_time_series_frequency_channel->name);
-	if (proc_globals->maximum_time_series_frequency_channel == NULL)
-		printf_m13("Maximum Time Series Frequency Channel: no entry\n");
+		printf_m13("Maximum Sampling Frequency Channel Name: %s\n", proc_globals->active_channels.maximum_sampling_frequency_channel->name);
+	printf_m13("Frame Rates Vary: %s\n", STR_tern_m13(proc_globals->active_channels.frame_rates_vary));
+	if (proc_globals->active_channels.minimum_frame_rate == FREQUENCY_NO_ENTRY_m13)
+		printf_m13("Minimum Frame Rate: no entry\n");
 	else
-		printf_m13("Maximum Time Series Frequency Channel Name: %s\n", proc_globals->maximum_time_series_frequency_channel->name);
-	printf_m13("Video Frame Rates Vary: ");
-	if (proc_globals->video_frame_rates_vary == UNKNOWN_m13)
-		printf_m13("unknown\n");
-	else if (proc_globals->video_frame_rates_vary == TRUE_m13)
-		printf_m13("true\n");
-	else if (proc_globals->video_frame_rates_vary == FALSE_m13)
-		printf_m13("false\n");
+		printf_m13("Minimum Frame Rate: %lf\n", proc_globals->active_channels.minimum_frame_rate);
+	if (proc_globals->active_channels.maximum_frame_rate == FREQUENCY_NO_ENTRY_m13)
+		printf_m13("Maximum Frame Rate: no entry\n");
 	else
-		printf_m13("%hhd\n", proc_globals->video_frame_rates_vary);
-	if (proc_globals->minimum_video_frame_rate == FREQUENCY_NO_ENTRY_m13)
-		printf_m13("Minimum Video Frame Rate: no entry\n");
+		printf_m13("Minimum Frame Rate: %lf\n", proc_globals->active_channels.maximum_frame_rate);
+	if (proc_globals->active_channels.minimum_frame_rate_channel == NULL)
+		printf_m13("Minimum Frame Rate Channel: no entry\n");
 	else
-		printf_m13("Minimum Video Frame Rate: %lf\n", proc_globals->minimum_video_frame_rate);
-	if (proc_globals->maximum_video_frame_rate == FREQUENCY_NO_ENTRY_m13)
-		printf_m13("Maximum Video Frame Rate: no entry\n");
+		printf_m13("Minimum Frame Rate Channel Name: %s\n", proc_globals->active_channels.minimum_frame_rate_channel->name);
+	if (proc_globals->active_channels.maximum_frame_rate_channel == NULL)
+		printf_m13("Maximum Frame Rate Channel: no entry\n");
 	else
-		printf_m13("Minimum Video Frame Rate: %lf\n", proc_globals->maximum_video_frame_rate);
-	if (proc_globals->minimum_video_frame_rate_channel == NULL)
-		printf_m13("Minimum Video Frame Rate Channel: no entry\n");
-	else
-		printf_m13("Minimum Video Frame Rate Channel Name: %s\n", proc_globals->minimum_video_frame_rate_channel->name);
-	if (proc_globals->maximum_video_frame_rate_channel == NULL)
-		printf_m13("Maximum Video Frame Rate Channel: no entry\n");
-	else
-		printf_m13("Maximum Video Frame Rate Channel Name: %s\n", proc_globals->maximum_video_frame_rate_channel->name);
+		printf_m13("Maximum Frame Rate Channel Name: %s\n", proc_globals->active_channels.maximum_frame_rate_channel->name);
 
 	printf_m13("\nTime Constants\n--------------\n");
-	printf_m13("time_constants_set: %hhd\n", proc_globals->time_constants_set);
-	printf_m13("RTO_known: %hhd\n", proc_globals->RTO_known);
-	printf_m13("observe_DST: %hhd\n", proc_globals->observe_DST);
-	printf_m13("recording_time_offset: %ld\n", proc_globals->recording_time_offset);
-	printf_m13("standard_UTC_offset: %d\n", proc_globals->standard_UTC_offset);
-	printf_m13("standard_timezone_acronym: %s\n", proc_globals->standard_timezone_acronym);
-	printf_m13("standard_timezone_string: %s\n", proc_globals->standard_timezone_string);
-	printf_m13("daylight_timezone_acronym: %s\n", proc_globals->daylight_timezone_acronym);
-	printf_m13("daylight_timezone_string: %s\n", proc_globals->daylight_timezone_string);
-	STR_hex_m13((ui1 *) &proc_globals->daylight_time_start_code.value, 8, hex_str);
+	printf_m13("time_constants_set: %hhd\n", proc_globals->time.constants_set);
+	printf_m13("RTO_known: %hhd\n", proc_globals->time.RTO_known);
+	printf_m13("observe_DST: %hhd\n", proc_globals->time.observe_DST);
+	printf_m13("recording_time_offset: %ld\n", proc_globals->time.recording_time_offset);
+	printf_m13("standard_UTC_offset: %d\n", proc_globals->time.standard_UTC_offset);
+	printf_m13("standard_timezone_acronym: %s\n", proc_globals->time.standard_timezone_acronym);
+	printf_m13("standard_timezone_string: %s\n", proc_globals->time.standard_timezone_string);
+	printf_m13("daylight_timezone_acronym: %s\n", proc_globals->time.daylight_timezone_acronym);
+	printf_m13("daylight_timezone_string: %s\n", proc_globals->time.daylight_timezone_string);
+	STR_hex_m13((ui1 *) &proc_globals->time.daylight_start_code.value, 8, hex_str);
 	printf_m13("daylight_time_start_code: %s\n", hex_str);
-	STR_hex_m13((ui1 *) &proc_globals->daylight_time_end_code.value, 8, hex_str);
+	STR_hex_m13((ui1 *) &proc_globals->time.daylight_end_code.value, 8, hex_str);
 	printf_m13("daylight_time_end_code: %s\n", hex_str);
 		
 	printf_m13("\nMiscellaneous\n-------------\n");
@@ -13143,7 +13127,7 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd)
 	// use G_message_m13() because show_password_data_m13() is used in normal (no programming) functions => so allow output to be suppressed easily
 	if (pwd == NULL) {
 		proc_globals = G_proc_globals_m13(NULL);
-		pwd = &proc_globals->password_data;
+		pwd = &proc_globals->password;
 	}
 	
 	G_message_m13("\n------------------ Password Data - START -----------------\n");
@@ -13176,7 +13160,7 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd)
 	
 	if (pwd == NULL) {
 		proc_globals = G_proc_globals_m13(NULL);
-		pwd = &proc_globals->password_data;
+		pwd = &proc_globals->password;
 	}
 	if (*pwd->level_1_password_hint)
 		G_message_m13("Level 1 Password Hint: %s\n", pwd->level_1_password_hint);
@@ -13255,7 +13239,7 @@ tern	G_show_Sgmt_records_array_m13(LEVEL_HEADER_m13 *level_header, Sgmt_RECORD_m
 	}
 	
 	proc_globals = G_proc_globals_m13(level_header);
-	n_segs = proc_globals->number_of_session_segments;
+	n_segs = proc_globals->session.number_of_segments;
 	if (n_segs == 0) {
 		G_warning_message_m13("%s(): empty Sgmt records array\n", __FUNCTION__);
 		return_m13(FALSE_m13);
@@ -13295,15 +13279,7 @@ tern    G_show_slice_m13(TIME_SLICE_m13 *slice)
 	G_push_function_m13();
 #endif
 
-	printf_m13("Conditioned: ");
-	if (slice->conditioned == TRUE_m13)
-		printf_m13("true\n");
-	else if (slice->conditioned == FALSE_m13)
-		printf_m13("false\n");
-	else if (slice->conditioned == UNKNOWN_m13)
-		printf_m13("unknown\n");
-	else
-		printf_m13("invalid value (%hhd)\n", slice->conditioned);
+	printf_m13("Conditioned: %s\n", STR_tern_m13(slice->conditioned));
 	
 	if (slice->number_of_segments == UNKNOWN_m13)
 		printf_m13("Number of Segments: unknown\n");
@@ -13702,7 +13678,7 @@ tern	G_sort_channels_by_acq_num_m13(SESSION_m13 *sess)
 				return_m13(FALSE_m13);
 			}
 			acq_idxs[i].acq_num = md_fps->metadata->time_series_section_2.acquisition_channel_number;
-			FPS_free_ps_m13(md_fps, TRUE_m13);
+			FPS_free_m13(md_fps, TRUE_m13);
 		} else {
 			seg = chan->segments[seg_idx];
 			acq_idxs[i].acq_num = seg->metadata_fps->metadata->time_series_section_2.acquisition_channel_number;
@@ -13793,7 +13769,7 @@ tern	G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number)
 			sprintf_m13(ri_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
 			sprintf_m13(rd_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m13);
 			proc_globals = G_proc_globals_m13(level_header);
-			if (proc_globals->number_of_mapped_segments == 1) {  // most commonly just allocate one ssr & overwrite with new segments, but not required to do it that way
+			if (proc_globals->session.number_of_mapped_segments == 1) {  // most commonly just allocate one ssr & overwrite with new segments, but not required to do it that way
 				seg_idx = 0;
 			} else {
 				G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
@@ -13904,8 +13880,8 @@ tern	G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number)
 	G_write_file_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri);
 
 	// clean up (free will close files)
-	FPS_free_ps_m13(ri_fps, TRUE_m13);
-	FPS_free_ps_m13(rd_fps, TRUE_m13);
+	FPS_free_m13(ri_fps, TRUE_m13);
+	FPS_free_m13(rd_fps, TRUE_m13);
 	free((void *) tmp_rec_data);
 	
 	return_m13(TRUE_m13);
@@ -14148,7 +14124,7 @@ si8     G_uutc_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_f
 					chan = (CHANNEL_m13 *) level_header;
 				} else {
 					proc_globals = G_proc_globals_m13(level_header);
-					chan = proc_globals->index_ref_chan;
+					chan = proc_globals->active_channels.index_channel;
 					if (chan->type_code != LH_VIDEO_CHANNEL_m13) {
 						sess = (SESSION_m13 *) level_header;
 						chan = sess->video_channels[0];
@@ -14292,7 +14268,7 @@ si8     G_uutc_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_
 					chan = (CHANNEL_m13 *) level_header;
 				} else {
 					proc_globals = G_proc_globals_m13(level_header);
-					chan = proc_globals->index_ref_chan;
+					chan = proc_globals->active_channels.index_channel;
 					if (chan->type_code != LH_TIME_SERIES_CHANNEL_m13) {
 						sess = (SESSION_m13 *) level_header;
 						chan = sess->time_series_channels[0];
@@ -16325,9 +16301,9 @@ inline
 CMP_BUFFERS_m13    *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, tern zero_data, tern lock_memory)
 {
 	tern	free_structure;
-	ui1		*array_base;
-	ui8		pointer_bytes, array_bytes, total_requested_bytes, mod;
-	si8		i;
+	ui1	*array_base;
+	ui8	pointer_bytes, array_bytes, total_requested_bytes, mod;
+	si8	i;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -17505,7 +17481,7 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 
 	// get decryption key
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	if (block_header->block_flags & CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13) {
 		if (block_header->block_flags & CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13) {
 			G_set_error_m13(E_ENCRYPT_m13, "cannot decrypt data: flags indicate both level 1 & level 2 encryption\n");
@@ -17907,7 +17883,7 @@ tern     CMP_encrypt_m13(FPS_m13 *fps)
 		return_m13(FALSE_m13);
 	}
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
+	pwd = &proc_globals->password;
 	cps = fps->parameters.cps;
 
 	encryption_level = cps->directives.encryption_level;
@@ -18356,7 +18332,7 @@ tern    CMP_free_cps_cache_m13(CPS_m13 *cps)
 }
 
 
-tern    CMP_free_cps_m13(CPS_m13 *cps, tern free_cps_structure)
+tern    CMP_free_cps_m13(CPS_m13 *cps, tern free_structure)
 {
 	CPS_DIRECTIVES_m13	saved_directives;
 	CPS_PARAMETERS_m13	saved_parameters;
@@ -18411,7 +18387,7 @@ tern    CMP_free_cps_m13(CPS_m13 *cps, tern free_cps_structure)
 	if (cps->parameters.VDS_output_buffers)
 		CMP_free_buffers_m13(cps->parameters.VDS_output_buffers, TRUE_m13);
 	
-	if (free_cps_structure == TRUE_m13) {
+	if (free_structure == TRUE_m13) {
 		free_m13((void *) cps);
 	} else {
 		saved_directives = cps->directives;
@@ -20865,7 +20841,7 @@ CMP_REALLOC_CPS_FAIL_m13:
 
 	// try freeing caches on inactive channels
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	chan = proc_globals->index_ref_chan;
+	chan = proc_globals->active_channels.index_channel;
 	freed = FALSE_m13;
 	if (chan) {
 		sess = (SESSION_m13 *) chan;
@@ -24689,7 +24665,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, T
 			matrix->flags |= DM_EXTMD_SAMP_FREQ_m13;
 			matrix->sample_count = 0;
 		}
-		matrix->sampling_frequency = proc_globals->maximum_time_series_frequency;
+		matrix->sampling_frequency = proc_globals->active_channels.maximum_sampling_frequency;
 	}
 		
 	switch (matrix->flags & DM_EXTMD_MASK_m13) {
@@ -24729,7 +24705,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, T
 		req_samp_secs = (sf8) TIME_SLICE_DURATION_m13(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == SAMPLE_SEARCH_m13
 		req_num_samps = TIME_SLICE_SAMPLE_COUNT_m13(req_slice);  // requested samples read (on reference channel)
-	ref_chan = proc_globals->index_ref_chan;
+	ref_chan = proc_globals->active_channels.index_channel;
 	seg_idx = G_get_segment_index_m13(FIRST_OPEN_SEGMENT_m13, (LEVEL_HEADER_m13 *) ref_chan);
 	ref_samp_freq = ref_chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
 	changed_to_relative = FALSE_m13;
@@ -28433,7 +28409,7 @@ FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_b
 			break;
 		default:
 			if (free_fps == TRUE_m13)
-				FPS_free_ps_m13(fps, TRUE_m13);
+				FPS_free_m13(fps, TRUE_m13);
 			G_set_error_m13(E_NOT_MED_m13, "unrecognized type code (code = 0x%08x)", type_code);
 			return_m13(NULL);
 	}
@@ -28493,7 +28469,7 @@ si4	FPS_compare_start_times_m13(const void *a, const void *b)
 }
 
 
-tern	FPS_free_m13(FPS_m13 *fps, tern free_fps_structure)
+tern	FPS_free_m13(FPS_m13 *fps, tern free_structure)
 {
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -28523,7 +28499,7 @@ tern	FPS_free_m13(FPS_m13 *fps, tern free_fps_structure)
 	// Note: always close when freeing; close_file directives used in reading / writing functions
 	FPS_close_m13(fps);  // if already closed, this fails silently
 	
-	if (free_fps_structure == TRUE_m13) {
+	if (free_structure == TRUE_m13) {
 		free_m13((void *) fps);
 	} else {
 		// leave path intact
@@ -28926,7 +28902,7 @@ tern	FPS_set_pointers_m13(FPS_m13 *fps, si8 file_offset)
 }
 
 
-tern	FPS_show_processing_struct_m13(FPS_m13 *fps)
+tern	FPS_show_m13(FPS_m13 *fps)
 {
 	si1	hex_str[HEX_STRING_BYTES_m13(TYPE_STRLEN_m13)], *s;
 	si4	i;
@@ -28937,13 +28913,7 @@ tern	FPS_show_processing_struct_m13(FPS_m13 *fps)
 
 	printf_m13("----------- File Processing Structure - START ----------\n");
 	UTF8_printf_m13("Path (full file fame): %s\n", fps->path);
-	printf_m13("Full File Read: ");
-	if (fps->parameters.full_file_read == TRUE_m13)
-		printf_m13("true\n");
-	else if (fps->parameters.full_file_read == FALSE_m13)
-		printf_m13("false\n");
-	else
-		printf_m13("unknown\n");
+	printf_m13("Full File Read: %s\n", STR_tern_m13(fps->parameters.full_file_read));
 	if (fps->parameters.fp->fd >= 3)
 		printf_m13("File Descriptor: %d (open)\n", fps->parameters.fp->fd);
 	else if (fps->parameters.fp->fd == -1)
@@ -29800,21 +29770,7 @@ tern	HW_show_info_m13(void)
 	else
 		printf_m13("physical_cores = %d\n", hw_params->physical_cores);
 	
-	printf_m13("hyperthreading = ");
-	switch (hw_params->hyperthreading) {
-		case FALSE_m13:
-			printf_m13("false\n");
-			break;
-		case TRUE_m13:
-			printf_m13("true\n");
-			break;
-		case UNKNOWN_m13:
-			printf_m13("unknown\n");
-			break;
-		default:
-			printf_m13("invalid value (%hhd)\n", hw_params->hyperthreading);
-			break;
-	}
+	printf_m13("hyperthreading = %s\n", STR_tern_m13(hw_params->hyperthreading));
 	
 	if (hw_params->minimum_speed == 0.0)
 		printf_m13("minimum_speed = unknown\n");
@@ -34445,7 +34401,7 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern 
 	const si1		*mday_num_sufs[32] = {	"", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", "th", \
 							"th", "th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th", "th", "st" };
 	const si1		*weekdays[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-	tern		offset;
+	tern			offset;
 	si4             	microseconds, DST_offset, day_num;
 	time_t             	local_time, test_time;
 	sf8             	UTC_offset_hours;
@@ -34480,31 +34436,31 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern 
 			return_m13(time_str);
 		case CURRENT_TIME_m13:
 			uutc = G_current_uutc_m13();
-			if (proc_globals->time_constants_set == FALSE_m13)  // set global time constants to location of machine
+			if (proc_globals->time.constants_set == FALSE_m13)  // set global time constants to location of machine
 				if (G_get_location_info_m13(&loc_info, TRUE_m13, FALSE_m13) == NULL)
 					G_warning_message_m13("%s(): daylight change data not available\n", __FUNCTION__);
 			break;
 	}
 	
-	if (proc_globals->RTO_known == FALSE_m13) {  // FALSE_m13 used to mean unknown and relevant.
+	if (proc_globals->time.RTO_known == FALSE_m13) {  // FALSE_m13 used to mean unknown and relevant.
 		relative_days = offset = TRUE_m13;  // force relative days if using oUTC - nobody needs to know the 1970 date
 	} else {  // use UNKNOWN_m13 (0) for cases in which recording time offset is irrelevant (e.g. times not associated with MED files)
-		test_time = uutc - proc_globals->recording_time_offset;
+		test_time = uutc - proc_globals->time.recording_time_offset;
 		if (test_time < 0)  // time is offset
-			uutc += proc_globals->recording_time_offset;
+			uutc += proc_globals->time.recording_time_offset;
 		offset = FALSE_m13;
 	}
 	DST_offset = G_DST_offset_m13(uutc);
 	
-	standard_timezone_acronym = proc_globals->standard_timezone_acronym;
-	standard_timezone_string = proc_globals->standard_timezone_string;
+	standard_timezone_acronym = proc_globals->time.standard_timezone_acronym;
+	standard_timezone_string = proc_globals->time.standard_timezone_string;
 	if (offset == FALSE_m13) {
 		if (strncmp(standard_timezone_string, "offset", 6) == 0) {
 			standard_timezone_acronym = "UTC";
 			standard_timezone_string = "Coordinated Universal Time";
 		}
 	}
-	local_time = (si8) (uutc / (si8) 1000000) + (si8) (proc_globals->standard_UTC_offset + DST_offset);
+	local_time = (si8) (uutc / (si8) 1000000) + (si8) (proc_globals->time.standard_UTC_offset + DST_offset);
 	microseconds = (si4) (uutc % (si8) 1000000);
 #if defined MACOS_m13 || defined LINUX_m13
 	gmtime_r(&local_time, &ti);
@@ -34524,21 +34480,21 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern 
 		date_color = time_color = color_reset = "";
 	}
 	if (relative_days == TRUE_m13) {
-		uutc -= proc_globals->recording_time_offset;
+		uutc -= proc_globals->time.recording_time_offset;
 		day_num = (si4)(uutc / TWENTY_FOURS_HOURS_m13) + 1;
 	}
 	
 	if (fixed_width == TRUE_m13) {
-		UTC_offset_hours = (sf8)(DST_offset + proc_globals->standard_UTC_offset) / (sf8)3600.0;
+		UTC_offset_hours = (sf8)(DST_offset + proc_globals->time.standard_UTC_offset) / (sf8)3600.0;
 		if (relative_days == TRUE_m13)
 			sprintf_m13(time_str, "%sDay %04d  %s%02d:%02d:%02d.%06d", date_color, day_num, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
 		else
 			sprintf_m13(time_str, "%s%s %02d %s %d  %s%02d:%02d:%02d.%06d", date_color, wdays[ti.tm_wday], ti.tm_mday, mos[ti.tm_mon], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
 		if (DST_offset) {
 			if (UTC_offset_hours >= 0.0)
-				sprintf_m13(time_str, "%s %s (UTC +%0.2lf)%s", time_str, proc_globals->daylight_timezone_acronym, UTC_offset_hours, color_reset);
+				sprintf_m13(time_str, "%s %s (UTC +%0.2lf)%s", time_str, proc_globals->time.daylight_timezone_acronym, UTC_offset_hours, color_reset);
 			else
-				sprintf_m13(time_str, "%s %s (UTC %0.2lf)%s", time_str, proc_globals->daylight_timezone_acronym, UTC_offset_hours, color_reset);
+				sprintf_m13(time_str, "%s %s (UTC %0.2lf)%s", time_str, proc_globals->time.daylight_timezone_acronym, UTC_offset_hours, color_reset);
 		} else {
 			if (offset == TRUE_m13)  // no UTC offset displayed
 				sprintf_m13(time_str, "%s %s%s", time_str, standard_timezone_acronym, color_reset);
@@ -34564,7 +34520,7 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern 
 		else
 			sprintf_m13(time_str, "%s%s, %s %d%s, %d  %s%d:%02d:%02d %s,", date_color, weekdays[ti.tm_wday], months[ti.tm_mon], ti.tm_mday, mday_num_sufs[ti.tm_mday], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, meridian);
 		if (DST_offset)
-			sprintf_m13(time_str, "%s %s%s", time_str, proc_globals->daylight_timezone_string, color_reset);
+			sprintf_m13(time_str, "%s %s%s", time_str, proc_globals->time.daylight_timezone_string, color_reset);
 		else
 				sprintf_m13(time_str, "%s %s%s", time_str, standard_timezone_string, color_reset);
 	}
@@ -39069,7 +39025,7 @@ tern	mlock_m13(void *addr, size_t len, tern zero_data)
 	
 	if (ret_val == 0) {
 		if (zero_data == TRUE_m13)
-			memset(addr, 0, len);  // forces OS to give real memory before return (otherwise there may be a lag)
+			memset(addr, 0, len);  // force OS to give real memory before return (otherwise there can be a lag)
 		return(TRUE_m13);
 	}
 	
@@ -39100,7 +39056,7 @@ tern	munlock_m13(void *addr, size_t len)
 		return(TRUE_m13);
 	#endif
 		
-	G_set_error_m13(E_UNSPEC_m13, "failed to lock the requested array (%ld bytes)", len);
+	G_set_error_m13(E_UNSPEC_m13, "failed to unlock the requested array (%ld bytes)", len);
 
 	return(FALSE_m13);
 }
