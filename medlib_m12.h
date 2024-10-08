@@ -660,7 +660,7 @@ typedef struct {
 #define TIME_SERIES_CHANNEL_TYPE_m12	TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12
 #define VIDEO_CHANNEL_TYPE_m12		VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12
 
-// Reference Channel Types (used in change_reference_channel_m12())
+// Reference Channel Types (used in G_change_reference_channel_m12())
 #define DEFAULT_CHANNEL_m12			0
 #define DEFAULT_TIME_SERIES_CHANNEL_m12		1
 #define DEFAULT_VIDEO_CHANNEL_m12		2
@@ -677,8 +677,9 @@ typedef struct {
 #define GFL_FULL_PATH_m12        		(GFL_PATH_m12 | GFL_NAME_m12 | GFL_EXTENSION_m12)
 #define GFL_PATH_PARTS_MASK_m12        		GFL_FULL_PATH_m12
 	// Other Options
-#define GFL_FREE_INPUT_FILE_LIST_m12		((ui4) 16)
-#define GFL_INCLUDE_INVISIBLE_FILES_m12		((ui4) 32)
+#define GFL_FREE_INPUT_LIST_m12			((ui4) 16)
+#define GFL_INCLUDE_PARITY_m12			((ui4) 32)  // files or directrories
+#define GFL_INCLUDE_INVISIBLE_m12		((ui4) 64)  // files or directrories
 
 // System Pipe flags
 #define SP_DEFAULT_m12			0  // no flags set (default)
@@ -733,7 +734,7 @@ typedef struct {
 
 // Universal Header: File Format Constants
 #define UNIVERSAL_HEADER_OFFSET_m12					0
-#define UNIVERSAL_HEADER_BYTES_m12					1024    // 1 kB
+#define UNIVERSAL_HEADER_BYTES_m12					1024    // 1 KiB
 #define UNIVERSAL_HEADER_HEADER_CRC_OFFSET_m12				0       // ui4
 #define UNIVERSAL_HEADER_BODY_CRC_OFFSET_m12				4       // ui4
 #define UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m12			UNIVERSAL_HEADER_BODY_CRC_OFFSET_m12
@@ -947,7 +948,7 @@ typedef struct {
 #define RECORD_HEADER_RECORD_CRC_NO_ENTRY_m12	                        CRC_NO_ENTRY_m12
 #define RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m12                     4                       // ui4
 #define RECORD_HEADER_TOTAL_RECORD_BYTES_NO_ENTRY_m12			0
-#define RECORD_HEADER_RECORD_CRC_START_OFFSET_m12			RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m12
+#define RECORD_HEADER_CRC_START_OFFSET_m12				RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m12
 #define RECORD_HEADER_START_TIME_OFFSET_m12                             8                       // si8
 #define RECORD_HEADER_START_TIME_NO_ENTRY_m12                           UUTC_NO_ENTRY_m12       // si8
 #define RECORD_HEADER_TYPE_STRING_OFFSET_m12                            16	                // ascii[4]
@@ -1211,6 +1212,123 @@ PAR_INFO_m12		*PAR_launch_m12(PAR_INFO_m12 *par_info, ...);	// varargs (par_info
 void			PAR_show_info_m12(PAR_INFO_m12 *par_info);
 pthread_rval_m12	PAR_thread_m12(void *arg);
 void			PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval);
+
+
+
+//**********************************************************************************//
+//***************************  Parity (PRTY) Functions  ****************************//
+//**********************************************************************************//
+
+// Universal Header fields not xor'ed with channels:
+// (these fields are common to all files in level - not be difficult to repair from those, if damaged)
+//	type_string
+//	MED_version_major
+//	MED_version_minor
+//	byte_order_code
+//	segment_number
+//	session_name
+//	channel_name
+//	session_UID
+//	channel_UID
+//	segment_UID
+
+// Flags
+#define PRTY_GLB_SESS_REC_DATA_m12	((ui4) 1 << 0)
+#define PRTY_GLB_SESS_REC_IDX_m12	((ui4) 1 << 1)
+#define PRTY_SEG_SESS_REC_DATA_m12	((ui4) 1 << 2)
+#define PRTY_SEG_SESS_REC_IDX_m12	((ui4) 1 << 3)
+#define PRTY_TS_CHAN_REC_DATA_m12	((ui4) 1 << 4)
+#define PRTY_TS_CHAN_REC_IDX_m12	((ui4) 1 << 5)
+#define PRTY_TS_SEG_REC_DATA_m12	((ui4) 1 << 6)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_TS_SEG_REC_IDX_m12		((ui4) 1 << 7)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_TS_SEG_DAT_DATA_m12	((ui4) 1 << 8)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_TS_SEG_DAT_IDX_m12		((ui4) 1 << 9)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_TS_SEG_META_m12		((ui4) 1 << 10)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_VID_CHAN_REC_DATA_m12	((ui4) 1 << 11)
+#define PRTY_VID_CHAN_REC_IDX_m12	((ui4) 1 << 12)
+#define PRTY_VID_SEG_REC_DATA_m12	((ui4) 1 << 13)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_VID_SEG_REC_IDX_m12	((ui4) 1 << 14)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_VID_SEG_DAT_DATA_m12	((ui4) 1 << 15)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_VID_SEG_DAT_IDX_m12	((ui4) 1 << 16)		// requires segment number (or PRTY_ALL_SEGS_m12)
+#define PRTY_VID_SEG_META_m12		((ui4) 1 << 17)		// requires segment number (or PRTY_ALL_SEGS_m12)
+
+#define PRTY_GLB_SESS_RECS_m12		(PRTY_GLB_SESS_REC_DATA_m12 | PRTY_GLB_SESS_REC_IDX_m12)
+#define PRTY_SEG_SESS_RECS_m12		(PRTY_SEG_SESS_REC_DATA_m12 | PRTY_SEG_SESS_REC_IDX_m12)
+#define PRTY_TS_CHAN_RECS_m12		(PRTY_TS_CHAN_REC_DATA_m12 | PRTY_TS_CHAN_REC_IDX_m12)
+#define PRTY_VID_CHAN_RECS_m12		(PRTY_VID_CHAN_REC_DATA_m12 | PRTY_VID_CHAN_REC_IDX_m12)
+#define PRTY_TS_SEG_RECS_m12		(PRTY_TS_SEG_REC_DATA_m12 | PRTY_TS_SEG_REC_IDX_m12)
+#define PRTY_VID_SEG_RECS_m12		(PRTY_VID_SEG_REC_DATA_m12 | PRTY_VID_SEG_REC_IDX_m12)
+#define PRTY_TS_SEG_DATA_m12		(PRTY_TS_SEG_DAT_DATA_m12 | PRTY_TS_SEG_DAT_IDX_m12)
+#define PRTY_VID_SEG_DATA_m12		(PRTY_VID_SEG_DAT_DATA_m12 | PRTY_VID_SEG_DAT_IDX_m12)
+
+#define PRTY_SESS_RECS_m12		(PRTY_GLB_SESS_RECS_m12 | PRTY_SEG_SESS_RECS_m12)
+#define PRTY_CHAN_RECS_m12		(PRTY_TS_CHAN_RECS_m12 | PRTY_VID_CHAN_RECS_m12)
+#define PRTY_SEG_RECS_m12		(PRTY_TS_SEG_RECS_m12 | PRTY_VID_SEG_RECS_m12)
+#define PRTY_SEG_DATA_m12		(PRTY_TS_SEG_DATA_m12 | PRTY_VID_SEG_DATA_m12)
+
+#define PRTY_TS_CHAN_m12		PRTY_TS_CHAN_RECS_m12
+#define PRTY_TS_SEG_m12			(PRTY_TS_SEG_RECS_m12 | PRTY_TS_SEG_DATA_m12 | PRTY_TS_SEG_META_m12)
+#define PRTY_VID_CHAN_m12		PRTY_VID_CHAN_RECS_m12
+#define PRTY_VID_SEG_m12		(PRTY_VID_SEG_RECS_m12 | PRTY_VID_SEG_DATA_m12 | PRTY_VID_SEG_META_m12)
+
+#define PRTY_SESS_m12			(PRTY_SESS_RECS_m12 | PRTY_SEG_SESS_RECS_m12)
+#define PRTY_CHAN_m12			(PRTY_TS_CHAN_m12 | PRTY_VID_CHAN_m12)
+#define PRTY_SEG_m12			(PRTY_TS_SEG_m12 | PRTY_VID_SEG_m12)
+
+#define PRTY_ALL_TS_m12			(PRTY_SESS_m12 | PRTY_TS_CHAN_m12 | PRTY_TS_SEG_m12)
+#define PRTY_ALL_VID_m12		(PRTY_SESS_m12 | PRTY_VID_CHAN_m12 | PRTY_VID_SEG_m12)
+#define PRTY_ALL_FILES_m12		(PRTY_ALL_TS_m12 | PRTY_ALL_VID_m12)
+#define PRTY_ALL_SEGS_m12		((si4) -1)  // pass as "segment_number" argument to PRTY_write_m12()
+
+// Masks
+#define PRTY_TS_MASK_m12		(PRTY_TS_CHAN_m12 | PRTY_TS_SEG_m12)
+#define PRTY_VID_MASK_m12		(PRTY_VID_CHAN_m12 | PRTY_VID_SEG_m12)
+
+// Validate CRC Constants (used in PRTY_validate_m12())
+#define	PRTY_VALID_m12		((ui1) 0)	// valid file
+#define	PRTY_BLOCKS_m12		((ui1) 1 << 0)	// bad blocks returned
+#define	PRTY_E_UNSPEC_m12	((ui1) 1 << 1)	// unspecified error (file, memory, etc.)
+#define	PRTY_E_HEADER_m12	((ui1) 1 << 2)	// error in universal header
+#define	PRTY_E_BODY_m12		((ui1) 1 << 3)	// error in body
+
+// rebuild array positions
+#define PRTY_FILE_PARITY_IDX_m12	0
+#define PRTY_FILE_DAMAGED_IDX_m12	1
+
+// Structures
+typedef struct {
+	si1		path[FULL_FILE_NAME_BYTES_m12];
+	si8		len;
+	FILE		*fp;
+	TERN_m12	finished;  // data incorporated into parity
+} PRTY_FILE_m12;
+
+typedef struct {
+	ui4	index;
+	ui4	length;
+	si8	offset;
+} PRTY_BLOCK_m12;  // bad block location returned from PRTY_validate_m12()
+
+typedef struct {
+	ui1		*parity;
+	ui1		*data;
+	si8		mem_block_bytes;
+	si1		path[FULL_FILE_NAME_BYTES_m12];  // path to parity file
+	PRTY_FILE_m12	*files;
+	si4		n_files;
+	si4		n_bad_blocks;
+	PRTY_BLOCK_m12	*bad_blocks;
+	ui1		validity_code;
+} PRTY_m12;
+
+// Prototypes
+TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps);
+si4		PRTY_file_compare_m12(const void *a, const void *b);
+si1		**PRTY_file_list_m12(si1 *MED_path, si4 *n_files);
+TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps);
+TERN_m12	PRTY_restore_m12(si1 *MED_path);
+ui1        	PRTY_validate_m12(si1 *MED_file, ...);  // varargs(MED_file == NULL): si1 *MED_file, BAD_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
+TERN_m12	PRTY_write_m12(si1 *sess_path, ui4 flags, si4 segment_number);
 
 
 
@@ -1632,6 +1750,12 @@ typedef struct {
 //********************************  MED Structures  ********************************//
 //**********************************************************************************//
 
+
+// Generally Useful Structures
+typedef union {
+	si1	ext[TYPE_BYTES_m12];
+	ui4	code;
+} EXT_CODE_m12;
 
 // Universal Header Structure
 typedef struct {
@@ -2512,7 +2636,7 @@ si1		*STR_match_line_start_m12(si1 *pattern, si1 *buffer);
 si1		*STR_match_start_m12(si1 *pattern, si1 *buffer);
 si1     	*STR_re_escape_m12(si1 *str, si1 *esc_str);
 void    	STR_replace_char_m12(si1 c, si1 new_c, si1 *buffer);
-si1		*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, TERN_m12 free_input_buffer);
+si1		*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *new_buffer);
 si1		*STR_size_string_m12(si1 *size_str, si8 n_bytes, TERN_m12 base_2);
 void		STR_sort_m12(si1 **string_array, si8 n_strings);
 void		STR_strip_character_m12(si1 *s, si1 character);
@@ -3180,8 +3304,8 @@ void    	CMP_PRED1_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_PRED2_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_PRED1_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_PRED2_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
-CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, ui4 mode, si8 data_samples, ui4 block_samples);
 sf8     	CMP_quantval_m12(sf8 *data, si8 len, sf8 quantile, TERN_m12 preserve_input, sf8 *buff);
+CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, ui4 mode, si8 data_samples, ui4 block_samples);
 ui1             CMP_random_byte_m12(ui4 *m_w, ui4 *m_z);
 void    	CMP_rectify_m12(si4 *input_buffer, si4 *output_buffer, si8 len);
 void    	CMP_RED1_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
