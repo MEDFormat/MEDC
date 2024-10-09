@@ -1292,8 +1292,7 @@ void			PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval);
 #define	PRTY_E_BODY_m12		((ui1) 1 << 3)	// error in body
 
 // rebuild array positions
-#define PRTY_FILE_PARITY_IDX_m12	0
-#define PRTY_FILE_DAMAGED_IDX_m12	1
+#define PRTY_FILE_DAMAGED_IDX_m12	0  // damaged file in first slot
 
 // Structures
 typedef struct {
@@ -1327,7 +1326,8 @@ si4		PRTY_file_compare_m12(const void *a, const void *b);
 si1		**PRTY_file_list_m12(si1 *MED_path, si4 *n_files);
 TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps);
 TERN_m12	PRTY_restore_m12(si1 *MED_path);
-ui1        	PRTY_validate_m12(si1 *MED_file, ...);  // varargs(MED_file == NULL): si1 *MED_file, BAD_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
+ui1        	PRTY_validate_m12(si1 *MED_file, ...);  // varargs(MED_file == NULL): si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
+ui1		PRTY_validate_video_m12(si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks);
 TERN_m12	PRTY_write_m12(si1 *sess_path, ui4 flags, si4 segment_number);
 
 
