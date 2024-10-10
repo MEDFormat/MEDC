@@ -414,10 +414,10 @@ typedef struct {
 #define FIRST_OPEN_SEGMENT_m12			-2
 #define CHANNEL_NUMBER_NO_ENTRY_m12             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m12         -2
-#define FILE_EXISTS_ERROR_m12                   1
-#define DOES_NOT_EXIST_m12                      2
-#define FILE_EXISTS_m12                         4
-#define DIR_EXISTS_m12                          8
+#define DOES_NOT_EXIST_m12                      FALSE_m12  // -1
+#define FILE_EXISTS_ERROR_m12                   UNKNOWN_m12  // 0
+#define FILE_EXISTS_m12				TRUE_m12  // 1
+#define DIR_EXISTS_m12                          ((si1) 2)
 #define SIZE_STRING_BYTES_m12                   32
 #define UNKNOWN_SEARCH_m12                      0
 #define TIME_SEARCH_m12                         1
@@ -432,12 +432,14 @@ typedef struct {
 #define FRAME_NUMBER_EPS_m12			((sf8) 0.01)
 #define UNMAPPED_CHANNEL_m12			((si4) -1)
 #if defined MACOS_m12 || defined LINUX_m12
-	#define NULL_DEVICE_m12			"/dev/null"
+	#define NULL_DEVICE_m12					"/dev/null"
+	#define DIR_BREAK_m12					'/'
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m12		S_IWOTH  // removes write permission for "other" (defined in <sys/stat.h>)
 #endif
 #ifdef WINDOWS_m12
-	#define PRINTF_BUF_LEN_m12		1024
-	#define NULL_DEVICE_m12			"NUL"
+	#define PRINTF_BUF_LEN_m12				1024
+	#define NULL_DEVICE_m12					"NUL"
+	#define DIR_BREAK_m12					'\\'
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m12		0  // full permissions for everyone (Windows does not support "other" category)
 #endif
 
@@ -642,6 +644,9 @@ typedef struct {
 #define VIDEO_METADATA_FILE_TYPE_STRING_m12                     "vmet"                  // ascii[4]
 #define VIDEO_METADATA_FILE_TYPE_CODE_m12                       (ui4) 0x74656D76        // ui4 (little endian)
 // #define VIDEO_METADATA_FILE_TYPE_CODE_m12                    (ui4) 0x766D6574        // ui4 (big endian)
+#define VIDEO_DATA_FILE_TYPE_STRING_m12                   	"vdat"                  // ascii[4]			// NOT a file type extension
+#define VIDEO_DATA_FILE_TYPE_CODE_m12                     	(ui4) 0x74616476        // ui4 (little endian)		// NOT a file type extension
+// #define VIDEO_DATA_FILE_TYPE_CODE_m12                  	(ui4) 0x76646174        // ui4 (big endian)		// NOT a file type extension
 #define VIDEO_INDICES_FILE_TYPE_STRING_m12                      "vidx"                  // ascii[4]
 #define VIDEO_INDICES_FILE_TYPE_CODE_m12                        (ui4) 0x78646976        // ui4 (little endian)
 // #define VIDEO_INDICES_FILE_TYPE_CODE_m12                     (ui4) 0x76696478        // ui4 (big endian)
@@ -654,6 +659,9 @@ typedef struct {
 #define RECORD_INDICES_FILE_TYPE_STRING_m12                     "ridx"			// ascii[4]
 #define RECORD_INDICES_FILE_TYPE_CODE_m12                       (ui4) 0x78646972	// ui4 (little endian)
 // #define RECORD_INDICES_FILE_TYPE_CODE_m12                    (ui4) 0x72696478	// ui4 (big endian)
+#define PARITY_CRC_FILE_TYPE_STRING_m12                   	"pcrc"                  // ascii[4]
+#define PARITY_CRC_FILE_TYPE_CODE_m12                     	(ui4) 0x63726370        // ui4 (little endian)
+// #define PARITY_CRC_FILE_TYPE_CODE_m12                  	(ui4) 0x70637263        // ui4 (big endian)
 
 // Channel Types
 #define UNKNOWN_CHANNEL_TYPE_m12	NO_FILE_TYPE_CODE_m12
@@ -1291,8 +1299,9 @@ void			PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval);
 #define	PRTY_E_HEADER_m12	((ui1) 1 << 2)	// error in universal header
 #define	PRTY_E_BODY_m12		((ui1) 1 << 3)	// error in body
 
-// rebuild array positions
-#define PRTY_FILE_DAMAGED_IDX_m12	0  // damaged file in first slot
+// parity file array fixed positions
+#define PRTY_FILE_CHECK_IDX_m12		0  				// file to check in first slot
+#define PRTY_FILE_DAMAGED_IDX_m12	PRTY_FILE_CHECK_IDX_m12		// damaged file in first slot
 
 // Structures
 typedef struct {
@@ -1301,6 +1310,14 @@ typedef struct {
 	FILE		*fp;
 	TERN_m12	finished;  // data incorporated into parity
 } PRTY_FILE_m12;
+
+typedef struct {
+	ui4		self_crc;  // crc of folowing fields
+	ui4		file_crc_1;  // crc of file (copy 1 - mitigate against damage to this file)
+	ui4		file_crc_2;  // crc of file (copy 2 - mitigate against damage to this file)
+	ui4		file_crc_3;  // crc of file (copy 3 - mitigate against damage to this file)
+	si1		path[FULL_FILE_NAME_BYTES_m12];  // path to file at time of crc
+} PRTY_CRC_FILE_m12;
 
 typedef struct {
 	ui4	index;
@@ -1322,13 +1339,17 @@ typedef struct {
 
 // Prototypes
 TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps);
+TERN_m12	PRTY_check_pcrc_m12(si1 *file_path);
 si4		PRTY_file_compare_m12(const void *a, const void *b);
 si1		**PRTY_file_list_m12(si1 *MED_path, si4 *n_files);
+TERN_m12	PRTY_recover_segment_header_fields_m12(si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps);
 TERN_m12	PRTY_restore_m12(si1 *MED_path);
+TERN_m12	PRTY_show_header_m12(si1 *parity_path);
+TERN_m12	PRTY_show_pcrc_m12(si1 *file_path);
 ui1        	PRTY_validate_m12(si1 *MED_file, ...);  // varargs(MED_file == NULL): si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
-ui1		PRTY_validate_video_m12(si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks);
 TERN_m12	PRTY_write_m12(si1 *sess_path, ui4 flags, si4 segment_number);
+TERN_m12	PRTY_write_pcrc_m12(si1 *file_path);
 
 
 
@@ -1753,7 +1774,7 @@ typedef struct {
 
 // Generally Useful Structures
 typedef union {
-	si1	ext[TYPE_BYTES_m12];
+	si1	ext[8];
 	ui4	code;
 } EXT_CODE_m12;
 
@@ -2394,9 +2415,9 @@ TERN_m12        G_encrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps);
 TERN_m12	G_enter_ascii_password_m12(si1 *password, si1 *prompt, TERN_m12 confirm_no_entry, sf8 timeout_secs, TERN_m12 create_password);
 void            G_error_message_m12(si1 *fmt, ...);
 void		G_error_string_m12(void);
+si1             G_exists_m12(si1 *path);
 void            G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void            G_extract_terminal_password_bytes_m12(si1 *password, si1 *password_bytes);
-ui4             G_file_exists_m12(si1 *path);
 si8		G_file_length_m12(FILE *fp, si1 *path);
 FILE_TIMES_m12	*G_file_times_m12(FILE *fp, si1 *path, FILE_TIMES_m12 *ft, TERN_m12 set_time);
 void            G_fill_empty_password_bytes_m12(si1 *password_bytes);
@@ -2414,7 +2435,6 @@ void		G_free_segmented_sess_recs_m12(SEGMENTED_SESS_RECS_m12 *ssr, TERN_m12 free
 void            G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure);
 TERN_m12	G_frequencies_vary_m12(SESSION_m12 *sess);
 si1		**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
-ui4             G_generate_MED_path_components_m12(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		**G_generate_numbered_names_m12(si1 **names, si1 *prefix, si4 number_of_names);
 TERN_m12	G_generate_password_data_m12(FILE_PROCESSING_STRUCT_m12* fps, si1* L1_pw, si1* L2_pw, si1* L3_pw, si1* L1_pw_hint, si1* L2_pw_hint);
 si8             G_generate_recording_time_offset_m12(si8 recording_start_time_uutc);
@@ -2441,6 +2461,7 @@ void		G_initialize_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, ui4 typ
 si8		G_items_for_bytes_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 *number_of_bytes);
 ui4		G_level_from_base_name_m12(si1 *path, si1 *level_path);
 void		G_lh_set_directives_m12(si1 *full_file_name, ui8 lh_flags, TERN_m12 *mmap_flag, TERN_m12 *close_flag, si8 *number_of_items);
+ui4             G_MED_path_components_m12(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		*G_MED_type_string_from_code_m12(ui4 code);
 ui4             G_MED_type_code_from_string_m12(si1 *string);
 TERN_m12        G_merge_metadata_m12(FILE_PROCESSING_STRUCT_m12 *md_fps_1, FILE_PROCESSING_STRUCT_m12 *md_fps_2, FILE_PROCESSING_STRUCT_m12 *merged_md_fps);

@@ -118,7 +118,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 rec
 	if (record_number != REC_NO_RECORD_NUMBER_m13)
 		printf_m13("Record Number: %ld\n", record_number);
 	printf_m13("---------------- Record Header - START ----------------\n");
-	if (record_header->record_CRC == RECORD_HEADER_RECORD_CRC_NO_ENTRY_m13) {
+	if (record_header->record_CRC == RECORD_HEADER_CRC_NO_ENTRY_m13) {
 		printf_m13("Record CRC: no entry\n");
 	} else {
 		STR_hex_m13((ui1 *) &record_header->record_CRC, CRC_BYTES_m13, hex_str);

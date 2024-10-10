@@ -421,10 +421,10 @@ typedef struct {
 #define FIRST_OPEN_SEGMENT_m13			-2
 #define CHANNEL_NUMBER_NO_ENTRY_m13             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m13         -2
-#define FILE_EXISTS_ERROR_m13                   1
-#define DOES_NOT_EXIST_m13                      2
-#define FILE_EXISTS_m13                         4
-#define DIR_EXISTS_m13                          8
+#define DOES_NOT_EXIST_m13                      FALSE_m13	// -1
+#define FILE_EXISTS_ERROR_m13                   UNKNOWN_m13	// 0
+#define FILE_EXISTS_m13				TRUE_m13	// 1
+#define DIR_EXISTS_m13                          ((si1) 2)
 #define SIZE_STRING_BYTES_m13                   32
 #define UNKNOWN_SEARCH_m13                      0
 #define TIME_SEARCH_m13                         1
@@ -439,12 +439,14 @@ typedef struct {
 #define FRAME_NUMBER_EPS_m13			((sf8) 0.01)
 #define UNMAPPED_CHANNEL_m13			((si4) -1)
 #if defined MACOS_m13 || defined LINUX_m13
-	#define NULL_DEVICE_m13			"/dev/null"
+	#define NULL_DEVICE_m13				"/dev/null"
+	#define DIR_BREAK_m13					'/'
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13		S_IWOTH  // removes write permission for "other" (defined in <sys/stat.h>)
 #endif  // MACOS_m13 || LINUX_m13
 #ifdef WINDOWS_m13
-	#define PRINTF_BUF_LEN_m13		1024
-	#define NULL_DEVICE_m13			"NUL"
+	#define PRINTF_BUF_LEN_m13				1024
+	#define NULL_DEVICE_m13					"NUL"
+	#define DIR_BREAK_m13					'\\'
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13		0  // full permissions for everyone (Windows does not support "other" category)
 #endif  // WINDOWS_m13
 #define SHOW_CURRENT_BEHAVIOR_m13		1
@@ -658,6 +660,9 @@ typedef struct {
 #define VIDEO_METADATA_FILE_TYPE_STRING_m13                     "vmet"                  // ascii[4]
 #define VIDEO_METADATA_FILE_TYPE_CODE_m13                       (ui4) 0x74656D76        // ui4 (little endian)
 // #define VIDEO_METADATA_FILE_TYPE_CODE_m13                    (ui4) 0x766D6574        // ui4 (big endian)
+#define VIDEO_DATA_FILE_TYPE_STRING_m13                   	"vdat"                  // ascii[4]			// NOT a file type extension
+#define VIDEO_DATA_FILE_TYPE_CODE_m13                     	(ui4) 0x74616476        // ui4 (little endian)		// NOT a file type extension
+// #define VIDEO_DATA_FILE_TYPE_CODE_m13                  	(ui4) 0x76646174        // ui4 (big endian)		// NOT a file type extension
 #define VIDEO_INDICES_FILE_TYPE_STRING_m13                      "vidx"                  // ascii[4]
 #define VIDEO_INDICES_FILE_TYPE_CODE_m13                        (ui4) 0x78646976        // ui4 (little endian)
 // #define VIDEO_INDICES_FILE_TYPE_CODE_m13                     (ui4) 0x76696478        // ui4 (big endian)
@@ -693,8 +698,9 @@ typedef struct {
 #define GFL_FULL_PATH_m13        		(GFL_PATH_m13 | GFL_NAME_m13 | GFL_EXTENSION_m13)
 #define GFL_PATH_PARTS_MASK_m13        		GFL_FULL_PATH_m13
 	// Other Options
-#define GFL_FREE_INPUT_FILE_LIST_m13		((ui4) 16)
-#define GFL_INCLUDE_INVISIBLE_FILES_m13		((ui4) 32)
+#define GFL_FREE_INPUT_LIST_m13			((ui4) 16)
+#define GFL_INCLUDE_PARITY_m13			((ui4) 32)  // files or directrories
+#define GFL_INCLUDE_INVISIBLE_m13		((ui4) 64)  // files or directrories
 
 // System Pipe flags
 #define SP_DEFAULT_m13			0  // no flags set (default)
@@ -738,7 +744,7 @@ typedef struct {
 
 // Universal Header: File Format Constants
 #define UNIVERSAL_HEADER_OFFSET_m13					0
-#define UNIVERSAL_HEADER_BYTES_m13					1024    // 1 kB
+#define UNIVERSAL_HEADER_BYTES_m13					1024    // 1 KiB
 #define UNIVERSAL_HEADER_HEADER_CRC_OFFSET_m13				0       // ui4
 #define UNIVERSAL_HEADER_BODY_CRC_OFFSET_m13				4       // ui4
 #define UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m13			UNIVERSAL_HEADER_BODY_CRC_OFFSET_m13
@@ -784,15 +790,15 @@ typedef struct {
 #define UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13			56
 
 // Metadata: File Format Constants
-#define METADATA_BYTES_m13			15360   // 15 kB
+#define METADATA_BYTES_m13			15360   // 15 KiB
 #define FPS_PROTOTYPE_BYTES_m13			METADATA_BYTES_m13
-#define METADATA_FILE_BYTES_m13			(METADATA_BYTES_m13 + UNIVERSAL_HEADER_BYTES_m13)	// 16 kB
+#define METADATA_FILE_BYTES_m13			(METADATA_BYTES_m13 + UNIVERSAL_HEADER_BYTES_m13)	// 16 KiB
 #define METADATA_SECTION_1_OFFSET_m13		1024
-#define METADATA_SECTION_1_BYTES_m13		1024	// 1 kB
+#define METADATA_SECTION_1_BYTES_m13		1024	// 1 KiB
 #define METADATA_SECTION_2_OFFSET_m13		2048
-#define METADATA_SECTION_2_BYTES_m13		10240   // 10 kB
+#define METADATA_SECTION_2_BYTES_m13		10240   // 10 KiB
 #define METADATA_SECTION_3_OFFSET_m13		12288
-#define METADATA_SECTION_3_BYTES_m13		4096    // 4 kB
+#define METADATA_SECTION_3_BYTES_m13		4096    // 4 KiB
 
 // Metadata: File Format Constants - Section 1 Fields
 #define METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m13		1024	// utf8[63]
@@ -949,11 +955,11 @@ typedef struct {
 
 // Records: Header Format Constants
 #define RECORD_HEADER_BYTES_m13			                        24
-#define RECORD_HEADER_RECORD_CRC_OFFSET_m13		                0                       // ui4
-#define RECORD_HEADER_RECORD_CRC_NO_ENTRY_m13	                        CRC_NO_ENTRY_m13
+#define RECORD_HEADER_CRC_OFFSET_m13					0                       // ui4
+#define RECORD_HEADER_CRC_NO_ENTRY_m13					CRC_NO_ENTRY_m13
 #define RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m13                     4                       // ui4
 #define RECORD_HEADER_TOTAL_RECORD_BYTES_NO_ENTRY_m13			0
-#define RECORD_HEADER_RECORD_CRC_START_OFFSET_m13			RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m13
+#define RECORD_HEADER_CRC_START_OFFSET_m13				RECORD_HEADER_TOTAL_RECORD_BYTES_OFFSET_m13
 #define RECORD_HEADER_START_TIME_OFFSET_m13                             8                       // si8
 #define RECORD_HEADER_START_TIME_NO_ENTRY_m13                           UUTC_NO_ENTRY_m13       // si8
 #define RECORD_HEADER_TYPE_STRING_OFFSET_m13                            16	                // ascii[4]
@@ -1961,6 +1967,11 @@ typedef struct {
 //********************************  MED Structures  ********************************//
 //**********************************************************************************//
 
+// Generally Useful Structures
+typedef union {
+	si1	ext[8];
+	ui4	code;
+} EXT_CODE_m13;
 
 // Universal Header Structure
 typedef struct {
@@ -2609,6 +2620,7 @@ si4		G_compare_acq_nums_m13(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
 tern		G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
 tern		G_condition_slice_m13(TIME_SLICE_m13 *slice, LEVEL_HEADER_m13 *level_header);
+tern		G_copy_path_m13(si1 *path, si1 *new_path);
 tern		G_correct_universal_header_m13(FPS_m13 *fps);
 ui4		G_current_behavior_m13(void);  // returns behavior code
 BEHAVIOR_m13	*G_current_behavior_entry_m13(void);  // returns pointer to BEHAVIOR_m13 struct (useful for debugging)
@@ -2626,9 +2638,9 @@ tern		G_encrypt_record_data_m13(FPS_m13 *fps);
 tern       	G_encrypt_time_series_data_m13(FPS_m13 *fps);
 tern		G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
 void            G_error_message_m13(si1 *fmt, ...);
+si1             G_exists_m13(si1 *path);
 tern		G_extract_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 tern		G_extract_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
-ui4             G_file_exists_m13(si1 *path);
 si8		G_file_length_m13(FILE_m13 *fp, si1 *path);
 FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
 tern            G_fill_empty_password_bytes_m13(si1 *password_bytes);
@@ -2647,7 +2659,6 @@ tern		G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_str
 tern		G_free_session_m13(SESSION_m13 *session, tern free_structure);
 tern		G_frequencies_vary_m13(SESSION_m13 *sess);
 si1		**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
-ui4             G_generate_MED_path_components_m13(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 number_of_names);
 tern		G_generate_password_data_m13(FPS_m13* fps, si1* L1_pw, si1* L2_pw, si1* L3_pw, si1* L1_pw_hint, si1* L2_pw_hint);
 si8             G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
@@ -2677,6 +2688,7 @@ tern		G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_fil
 tern		G_is_level_header_m13(void *ptr);
 si8		G_items_for_bytes_m13(FPS_m13 *fps, si8 *number_of_bytes);
 tern		G_lh_set_directives_m13(si1 *full_file_name, ui8 lh_flags, tern *mmap_flag, tern *close_flag, si8 *number_of_items);
+ui4             G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1* MED_name);
 si1		*G_MED_type_string_from_code_m13(ui4 code);
 ui4             G_MED_type_code_from_string_m13(si1 *string);
 tern		G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
@@ -2905,7 +2917,7 @@ si1		*STR_match_start_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1     	*STR_re_escape_m13(si1 *str, si1 *esc_str);
 tern    	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
-si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, tern free_buffer);
+si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *new_buffer);
 si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);

@@ -147,7 +147,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	// try session
 	extension = SESSION_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
-	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
 		type_code = SESSION_DIRECTORY_TYPE_CODE_m12;
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
@@ -155,7 +155,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	// try time series channel
 	extension = TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
-	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
 		type_code = TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12;
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
@@ -163,7 +163,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	// try video series channel
 	extension = VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
-	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
 		type_code = VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12;
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
@@ -171,7 +171,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	// try time series segment
 	extension = TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
-	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
 		type_code = TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12;
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
@@ -179,7 +179,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	// try video series segment
 	extension = VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
-	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
 		type_code = VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12;
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
@@ -187,7 +187,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	// try segmented session records
 	extension = RECORD_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
-	if (G_file_exists_m12(full_path) == DIR_EXISTS_m12) {
+	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
 		type_code = RECORD_DIRECTORY_TYPE_CODE_m12;
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
@@ -679,7 +679,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			// get metadata
 			if (seg->metadata_fps == NULL) {
 				sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 					seg->metadata_fps = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m12, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				} else {
 					force_discont = TRUE_m12;
@@ -693,7 +693,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			// get indices
 			if (seg->time_series_indices_fps == NULL) {
 				sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 					seg->time_series_indices_fps = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m12, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				} else {
 					force_discont = TRUE_m12;
@@ -759,7 +759,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			// get metadata
 			if (seg->metadata_fps == NULL) {
 				sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 					seg->metadata_fps = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m12, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				} else {
 					force_discont = TRUE_m12;
@@ -773,7 +773,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			// get indices
 			if (seg->time_series_indices_fps == NULL) {
 				sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 					seg->video_indices_fps = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m12, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				} else {
 					force_discont = TRUE_m12;
@@ -912,10 +912,10 @@ Sgmt_RECORD_m12	*G_build_Sgmt_records_array_m12(FILE_PROCESSING_STRUCT_m12 *ri_f
 		if (chan != NULL) {
 			if (ri_fps == NULL && rd_fps == NULL) {
 				sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 					chan->record_indices_fps = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
 					sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+					if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 						// read full file - this bypasses test below, needs to be fixed
 						chan->record_data_fps = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
 						ri_fps = chan->record_indices_fps;
@@ -2983,91 +2983,7 @@ void	G_error_string_m12(void)
 }
 		
 		
-void	G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *extension)
-{
-	si1	*c, *cc, temp_full_file_name[FULL_FILE_NAME_BYTES_m12], dir_break;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	// handle bad calls
-	if (G_empty_string_m12(full_file_name) == TRUE_m12) {
-		G_warning_message_m12("%s(): full_file_name is empty => returning\n", __FUNCTION__);
-		return;
-	}
-		
-	// get path from root
-	G_path_from_root_m12(full_file_name, temp_full_file_name);
-
-	// move pointer to end of string
-	c = temp_full_file_name + strlen(temp_full_file_name) - 1;
-	
-#ifdef WINDOWS_m12
-	dir_break = '\\';
-#endif
-#if defined MACOS_m12 || defined LINUX_m12
-	dir_break = '/';
-#endif
-	// step back to first extension
-	cc = c;
-	while (*--c != '.') {
-		if (*c == dir_break) {
-			c = cc;
-			break;
-		}
-	}
-
-	// copy extension if allocated
-	if (extension != NULL) {
-		if (*c == '.') {
-			strcpy(extension, c + 1);
-			*c-- = 0;
-		} else {
-			*extension = 0;
-		}
-	} else if (*c == '.') {
-		*c-- = 0;
-	}
-
-	// step back to next directory break
-	while (*--c != dir_break);
-	
-	// copy name if allocated
-	if (name != NULL)
-		strncpy_m12(name, c + 1, BASE_FILE_NAME_BYTES_m12);
-	*c = 0;
-	
-	// copy path if allocated
-	if (path != NULL)
-		strncpy_m12(path, temp_full_file_name, FULL_FILE_NAME_BYTES_m12);
-	
-	return;
-}
-		
-		
-void	G_extract_terminal_password_bytes_m12(si1 *password, si1 *password_bytes)
-{
-	si1	*s;     // terminal (most unique) bytes of UTF-8 password
-	si4     i, j;
-	ui4     ch;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	s = password;
-	for (i = j = 0; (ch = UTF8_next_char_m12(s, &i)); ++j)  // "i" modified in UTF8_next_char_m12()
-		password_bytes[j] = (ui1) (ch & 0x000000FF);
-	
-	for (; j < PASSWORD_BYTES_m12; ++j)
-		password_bytes[j] = 0;
-	
-	return;
-}
-		
-		
-ui4     G_file_exists_m12(si1 *path)  // can be used for directories also
+si1     G_exists_m12(si1 *path)  // can be used for directories also
 {
 	si1			tmp_path[FULL_FILE_NAME_BYTES_m12];
 	si4             	err;
@@ -3119,6 +3035,84 @@ ui4     G_file_exists_m12(si1 *path)  // can be used for directories also
 }
 
 
+void	G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *extension)
+{
+	si1	*c, *cc, temp_full_file_name[FULL_FILE_NAME_BYTES_m12];
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// handle bad calls
+	if (G_empty_string_m12(full_file_name) == TRUE_m12) {
+		G_warning_message_m12("%s(): full_file_name is empty => returning\n", __FUNCTION__);
+		return;
+	}
+		
+	// get path from root
+	G_path_from_root_m12(full_file_name, temp_full_file_name);
+
+	// move pointer to end of string
+	c = temp_full_file_name + strlen(temp_full_file_name) - 1;
+	
+	// step back to first extension
+	cc = c;
+	while (*--c != '.') {
+		if (*c == DIR_BREAK_m12) {
+			c = cc;
+			break;
+		}
+	}
+
+	// copy extension if allocated
+	if (extension != NULL) {
+		if (*c == '.') {
+			strcpy(extension, c + 1);
+			*c-- = 0;
+		} else {
+			*extension = 0;
+		}
+	} else if (*c == '.') {
+		*c-- = 0;
+	}
+
+	// step back to next directory break
+	while (*--c != DIR_BREAK_m12);
+	
+	// copy name if allocated
+	if (name != NULL)
+		strncpy_m12(name, c + 1, BASE_FILE_NAME_BYTES_m12);
+	*c = 0;
+	
+	// copy path if allocated
+	if (path != NULL)
+		strncpy_m12(path, temp_full_file_name, FULL_FILE_NAME_BYTES_m12);
+	
+	return;
+}
+		
+		
+void	G_extract_terminal_password_bytes_m12(si1 *password, si1 *password_bytes)
+{
+	si1	*s;     // terminal (most unique) bytes of UTF-8 password
+	si4     i, j;
+	ui4     ch;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	s = password;
+	for (i = j = 0; (ch = UTF8_next_char_m12(s, &i)); ++j)  // "i" modified in UTF8_next_char_m12()
+		password_bytes[j] = (ui1) (ch & 0x000000FF);
+	
+	for (; j < PASSWORD_BYTES_m12; ++j)
+		password_bytes[j] = 0;
+	
+	return;
+}
+		
+		
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
@@ -4968,72 +4962,6 @@ GFL_CONDITION_RETURN_DATA_m12:
 }
 
 
-ui4    G_generate_MED_path_components_m12(si1 *path, si1 *MED_dir, si1 *MED_name)
-{
-	si1     extension[TYPE_BYTES_m12], local_MED_name[SEGMENT_BASE_FILE_NAME_BYTES_m12];
-	si1     local_MED_dir[FULL_FILE_NAME_BYTES_m12];;
-	si4     fe, name_bytes;
-	ui4     code;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-	
-	if (MED_dir == NULL)
-		*(MED_dir = local_MED_dir) = 0;
-	if (MED_name == NULL)
-		*(MED_name = local_MED_name) = 0;
-	
-	// copy & condition path
-	strcpy(local_MED_dir, path);
-	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
-	STR_unescape_chars_m12(local_MED_dir, (si1) 0x20);  // spaces
-	STR_unescape_chars_m12(local_MED_dir, (si1) 0x27);  // apostrophes
-	STR_unescape_chars_m12(local_MED_dir, (si1) 0x60);  // graves
-	G_path_from_root_m12(local_MED_dir, local_MED_dir);
-
-	// check path: if file passed, get enclosing directory
-	fe = G_file_exists_m12(local_MED_dir);
-	if (fe == FILE_EXISTS_m12) {
-		G_extract_path_parts_m12(local_MED_dir, local_MED_dir, NULL, NULL);
-	} else if (fe == DOES_NOT_EXIST_m12) {
-		G_error_message_m12("%s(): passed path \"%s\" does not exist => returning\n", __FUNCTION__, local_MED_dir);
-		return(NO_TYPE_CODE_m12);
-	} else if (fe == FILE_EXISTS_ERROR_m12) {
-		G_error_message_m12("%s(): G_file_exists_m12 error() => returning\n", __FUNCTION__);
-		return(NO_TYPE_CODE_m12);
-	}
-
-	// get name & extension
-	G_extract_path_parts_m12(local_MED_dir, NULL, local_MED_name, extension);
-
-	code = G_MED_type_code_from_string_m12(extension);
-	switch (code) {
-		case SESSION_DIRECTORY_TYPE_CODE_m12:
-		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-		case RECORD_DIRECTORY_TYPE_CODE_m12:
-			name_bytes = BASE_FILE_NAME_BYTES_m12;
-			break;
-		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12:
-		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12:
-			name_bytes = SEGMENT_BASE_FILE_NAME_BYTES_m12;
-			break;
-		default:
-			G_error_message_m12("%s(): passed path \"%s\" is not a MED directory\n", __FUNCTION__, local_MED_dir);
-			return(NO_TYPE_CODE_m12);
-	}
-
-	// copy to outputs, if provided
-	if (MED_dir != NULL)
-		snprintf_m12(MED_dir, FULL_FILE_NAME_BYTES_m12, "%s", local_MED_dir);
-	if (MED_name != NULL)
-		snprintf_m12(MED_name, name_bytes, "%s", local_MED_name);
-
-	return(code);
-}
-
-
 si1	**G_generate_numbered_names_m12(si1 **names, si1 *prefix, si4 number_of_names)
 {
 	si8     i;
@@ -5349,7 +5277,6 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 	if (input_type_code != NULL)  // e.g. file type - function returns level
 		*input_type_code = code;
 	
-	// Note: if code == RECORD_DIRECTORY_TYPE_CODE_m12, this is session level, but from segmented session records; return this code so caller knows it was not global session records
 	switch (code) {
 		case NO_FILE_TYPE_CODE_m12:
 		case SESSION_DIRECTORY_TYPE_CODE_m12:
@@ -5357,14 +5284,14 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12:
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12:
+		case RECORD_DIRECTORY_TYPE_CODE_m12:  // segmented sess recs
 			return(code);
-		case RECORD_DIRECTORY_TYPE_CODE_m12:
-			return(LH_SESSION_m12);
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
 			return(LH_TIME_SERIES_SEGMENT_m12);
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
 		case VIDEO_INDICES_FILE_TYPE_CODE_m12:
 			return(LH_VIDEO_SEGMENT_m12);
 	}
@@ -5628,7 +5555,7 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 	if (Sgmt_records == NULL) {
 		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
 		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		file_exists = G_file_exists_m12(tmp_str);
+		file_exists = G_exists_m12(tmp_str);
 		if (file_exists == FILE_EXISTS_m12) {
 			ri_fps = chan->record_indices_fps = G_read_file_m12(chan->record_indices_fps, tmp_str, 0, 0, FPS_FULL_FILE_m12, level_header, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			chan->record_indices_fps->parent = (void *) chan;
@@ -5674,13 +5601,13 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 				strcpy(tmp_str, ri_fps->full_file_name);
 			else
 				sprintf_m12(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			file_exists = G_file_exists_m12(tmp_str);
+			file_exists = G_exists_m12(tmp_str);
 			if (file_exists == DOES_NOT_EXIST_m12) {  // uh session name is default, try fs session name (e.g. a channel subset)
 				if (globals_m12->session_name == globals_m12->uh_session_name) {
 					G_extract_path_parts_m12(sess_path, tmp_str, NULL, NULL);
 					sprintf_m12(sess_path, "%s/%s", tmp_str, globals_m12->fs_session_name);
 					sprintf_m12(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-					file_exists = G_file_exists_m12(tmp_str);
+					file_exists = G_exists_m12(tmp_str);
 				}
 			}
 			if (file_exists == FILE_EXISTS_m12) {
@@ -6760,7 +6687,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	
 	// try session level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, SESSION_DIRECTORY_TYPE_STRING_m12);
-	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
 		if (level_path != NULL)
 			strcpy(level_path, tmp_path2);
 		return(LH_SESSION_m12);
@@ -6768,7 +6695,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	
 	// try time series channel level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12);
-	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
 		if (level_path != NULL)
 			strcpy(level_path, tmp_path2);
 		return(LH_TIME_SERIES_CHANNEL_m12);
@@ -6776,7 +6703,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 
 	// try video channel level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12);
-	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
 		if (level_path != NULL)
 			strcpy(level_path, tmp_path2);
 		return(LH_VIDEO_CHANNEL_m12);
@@ -6784,7 +6711,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 
 	// try time series segment level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
 		if (level_path != NULL)
 			strcpy(level_path, tmp_path2);
 		return(LH_TIME_SERIES_SEGMENT_m12);
@@ -6792,7 +6719,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 
 	// try video segment level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-	if (G_file_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
+	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
 		if (level_path != NULL)
 			strcpy(level_path, tmp_path2);
 		return(LH_VIDEO_SEGMENT_m12);
@@ -6922,6 +6849,72 @@ void	G_lh_set_directives_m12(si1 *full_file_name, ui8 lh_flags, TERN_m12 *mmap_f
 }
 		    
 		    
+ui4    G_MED_path_components_m12(si1 *path, si1 *MED_dir, si1 *MED_name)
+{
+	si1     extension[TYPE_BYTES_m12], local_MED_name[SEGMENT_BASE_FILE_NAME_BYTES_m12];
+	si1     local_MED_dir[FULL_FILE_NAME_BYTES_m12];;
+	si4     fe, name_bytes;
+	ui4     code;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	if (MED_dir == NULL)
+		*(MED_dir = local_MED_dir) = 0;
+	if (MED_name == NULL)
+		*(MED_name = local_MED_name) = 0;
+	
+	// copy & condition path
+	strcpy(local_MED_dir, path);
+	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
+	STR_unescape_chars_m12(local_MED_dir, (si1) 0x20);  // spaces
+	STR_unescape_chars_m12(local_MED_dir, (si1) 0x27);  // apostrophes
+	STR_unescape_chars_m12(local_MED_dir, (si1) 0x60);  // graves
+	G_path_from_root_m12(local_MED_dir, local_MED_dir);
+
+	// check path: if file passed, get enclosing directory
+	fe = G_exists_m12(local_MED_dir);
+	if (fe == FILE_EXISTS_m12) {
+		G_extract_path_parts_m12(local_MED_dir, local_MED_dir, NULL, NULL);
+	} else if (fe == DOES_NOT_EXIST_m12) {
+		G_error_message_m12("%s(): passed path \"%s\" does not exist => returning\n", __FUNCTION__, local_MED_dir);
+		return(NO_TYPE_CODE_m12);
+	} else if (fe == FILE_EXISTS_ERROR_m12) {
+		G_error_message_m12("%s(): G_exists_m12 error() => returning\n", __FUNCTION__);
+		return(NO_TYPE_CODE_m12);
+	}
+
+	// get name & extension
+	G_extract_path_parts_m12(local_MED_dir, NULL, local_MED_name, extension);
+
+	code = G_MED_type_code_from_string_m12(extension);
+	switch (code) {
+		case SESSION_DIRECTORY_TYPE_CODE_m12:
+		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
+		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
+		case RECORD_DIRECTORY_TYPE_CODE_m12:
+			name_bytes = BASE_FILE_NAME_BYTES_m12;
+			break;
+		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12:
+		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12:
+			name_bytes = SEGMENT_BASE_FILE_NAME_BYTES_m12;
+			break;
+		default:
+			G_error_message_m12("%s(): passed path \"%s\" is not a MED directory\n", __FUNCTION__, local_MED_dir);
+			return(NO_TYPE_CODE_m12);
+	}
+
+	// copy to outputs, if provided
+	if (MED_dir != NULL)
+		snprintf_m12(MED_dir, FULL_FILE_NAME_BYTES_m12, "%s", local_MED_dir);
+	if (MED_name != NULL)
+		snprintf_m12(MED_name, name_bytes, "%s", local_MED_name);
+
+	return(code);
+}
+
+
 si1	*G_MED_type_string_from_code_m12(ui4 code)
 {
 #ifdef FN_DEBUG_m12
@@ -6933,33 +6926,35 @@ si1	*G_MED_type_string_from_code_m12(ui4 code)
 	
 	switch (code) {
 		case NO_FILE_TYPE_CODE_m12:
-			return NO_FILE_TYPE_STRING_m12;
+			return(NO_FILE_TYPE_STRING_m12);
 		case SESSION_DIRECTORY_TYPE_CODE_m12:
-			return SESSION_DIRECTORY_TYPE_STRING_m12;
+			return(SESSION_DIRECTORY_TYPE_STRING_m12);
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12:
-			return TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12;
+			return(TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12:
-			return VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12;
+			return(VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 		case RECORD_DIRECTORY_TYPE_CODE_m12:
-			return RECORD_DIRECTORY_TYPE_STRING_m12;
+			return(RECORD_DIRECTORY_TYPE_STRING_m12);
 		case RECORD_DATA_FILE_TYPE_CODE_m12:
-			return RECORD_DATA_FILE_TYPE_STRING_m12;
+			return(RECORD_DATA_FILE_TYPE_STRING_m12);
 		case RECORD_INDICES_FILE_TYPE_CODE_m12:
-			return RECORD_INDICES_FILE_TYPE_STRING_m12;
+			return(RECORD_INDICES_FILE_TYPE_STRING_m12);
 		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-			return VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12;
+			return(VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12);
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
-			return VIDEO_METADATA_FILE_TYPE_STRING_m12;
+			return(VIDEO_METADATA_FILE_TYPE_STRING_m12);
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
+			return(VIDEO_DATA_FILE_TYPE_STRING_m12);
 		case VIDEO_INDICES_FILE_TYPE_CODE_m12:
-			return VIDEO_INDICES_FILE_TYPE_STRING_m12;
+			return(VIDEO_INDICES_FILE_TYPE_STRING_m12);
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-			return TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12;
+			return(TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12);
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
-			return TIME_SERIES_METADATA_FILE_TYPE_STRING_m12;
+			return(TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
-			return TIME_SERIES_DATA_FILE_TYPE_STRING_m12;
+			return(TIME_SERIES_DATA_FILE_TYPE_STRING_m12);
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
-			return TIME_SERIES_INDICES_FILE_TYPE_STRING_m12;
+			return(TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
 	}
 	
 	G_warning_message_m12("%s(): 0x%08x is not a recognized MED file type code\n", __FUNCTION__, code);
@@ -6970,8 +6965,9 @@ si1	*G_MED_type_string_from_code_m12(ui4 code)
 
 ui4     G_MED_type_code_from_string_m12(si1 *string)
 {
-	ui4     code;
-	si4     len;
+	si1		*c, path[FULL_FILE_NAME_BYTES_m12], name[SEGMENT_BASE_FILE_NAME_BYTES_m12];
+	si8     	i, len;
+	EXT_CODE_m12	type;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -6984,35 +6980,16 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 	
 	// remove quotes if present
 	if (*string == '"') {
-		si1	tmp_str[FULL_FILE_NAME_BYTES_m12];
-		
-		strcpy(tmp_str, string);
-		STR_strip_character_m12(tmp_str, '"');
-		string = tmp_str;
+		strcpy(path, string);
+		STR_strip_character_m12(path, '"');
+		string = path;
 	}
+	type.code = NO_TYPE_CODE_m12;
+	G_extract_path_parts_m12(string, path, name, type.ext);
+	if (type.code == NO_TYPE_CODE_m12)  // possible that just extension was passed
+		strncpy_m12(type.ext, string, 8);
 
-	len = (si4) strlen(string);
-	
-#if defined MACOS_m12 || defined LINUX_m12
-	if (string[len - 1] == '/')
-		--len;
-#endif
-#ifdef WINDOWS_m12
-	if (string[len - 1] == '\\')
-		--len;
-#endif
-	if (len < 5) {
-		if (len != 4)
-			return(NO_FILE_TYPE_CODE_m12);
-	} else {
-		string += (len - 5);
-		if (*string++ != '.')
-			return(NO_FILE_TYPE_CODE_m12);
-	}
-	
-	memcpy((void *) &code, (void *) string, sizeof(ui4));
-	
-	switch (code) {
+	switch (type.code) {
 		case NO_FILE_TYPE_CODE_m12:
 		case SESSION_DIRECTORY_TYPE_CODE_m12:
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12:
@@ -7022,19 +6999,42 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 		case RECORD_INDICES_FILE_TYPE_CODE_m12:
 		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
 		case VIDEO_INDICES_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
-			return code;
+			return(type.code);
+		default:  // check tag to determine if this is a MED video data file
+			len = strlen(name);
+			if (len <= 12)
+				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+			c = name + (len - 12);
+			if (*c++ != '-')
+				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+			if (*c++ != 's')
+				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+			for (i = FILE_NUMBERING_DIGITS_m12; i--; ++c)
+				if (*c < '0' || *c > '9')
+					goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+			if (*c++ != '-')
+				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+			if (*c++ != 'n')
+				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+			for (i = FILE_NUMBERING_DIGITS_m12; i--; ++c)
+				if (*c < '0' || *c > '9')
+					goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
+
+			return(VIDEO_DATA_FILE_TYPE_CODE_m12);
 	}
+	
+MED_TYPE_CODE_FOR_STRING_NOT_MED_m12:
 	
 	G_warning_message_m12("%s(): \"%s\" is not a recognized MED file type\n", __FUNCTION__, string);
 	
 	return(NO_FILE_TYPE_CODE_m12);
 }
-
 
 
 TERN_m12	G_merge_metadata_m12(FILE_PROCESSING_STRUCT_m12 *md_fps_1, FILE_PROCESSING_STRUCT_m12 *md_fps_2, FILE_PROCESSING_STRUCT_m12 *merged_md_fps)
@@ -7660,13 +7660,13 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	
 	// set basic info (path, name, type, flags)
 	if (G_empty_string_m12(chan_path) == FALSE_m12)
-		chan->type_code = G_generate_MED_path_components_m12(chan_path, chan->path, chan->name);
+		chan->type_code = G_MED_path_components_m12(chan_path, chan->path, chan->name);
 	if (chan->type_code == NO_TYPE_CODE_m12 && *chan->path)
-		chan->type_code = G_generate_MED_path_components_m12(chan->path, NULL, chan->name);
+		chan->type_code = G_MED_path_components_m12(chan->path, NULL, chan->name);
 	if (chan->type_code != LH_TIME_SERIES_CHANNEL_m12 && chan->type_code != LH_VIDEO_CHANNEL_m12) {
 		if (chan->type_code == LH_TIME_SERIES_SEGMENT_m12 || chan->type_code == LH_VIDEO_SEGMENT_m12) {  // segment passed: don't think it will be used this way, but never know
 			G_extract_path_parts_m12(chan->path, chan->path, NULL, NULL);
-			chan->type_code = G_generate_MED_path_components_m12(chan->path, NULL, chan->name);
+			chan->type_code = G_MED_path_components_m12(chan->path, NULL, chan->name);
 		} else {
 			if (free_channel == TRUE_m12)
 				G_free_channel_m12(chan, TRUE_m12);
@@ -7734,7 +7734,7 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				else  // LH_VIDEO_CHANNEL_m12
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == DIR_EXISTS_m12)  // not every segment may be present
+				if (G_exists_m12(tmp_str) == DIR_EXISTS_m12)  // not every segment may be present
 					seg = chan->segments[j] = G_open_segment_m12(NULL, slice, tmp_str, flags, NULL);
 			} else {
 				seg = G_open_segment_m12(seg, slice, NULL, flags, NULL);
@@ -7759,7 +7759,7 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				else  // LH_VIDEO_CHANNEL_m12
 					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-				if (G_file_exists_m12(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m12) {
+				if (G_exists_m12(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m12) {
 					// not every segment may be present
 					++null_segment_cnt;
 					continue;
@@ -7825,10 +7825,10 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	// channel records
 	if (flags & LH_READ_CHANNEL_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12 && chan->record_indices_fps == NULL)
+		if (G_exists_m12(tmp_str) == FILE_EXISTS_m12 && chan->record_indices_fps == NULL)
 			chan->record_indices_fps = G_read_file_m12(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
 		sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+		if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 			if (flags & LH_READ_FULL_CHANNEL_RECORDS_m12) {  // read in full records data
 				if (chan->record_data_fps == NULL) {
 					chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) chan, NULL, USE_GLOBAL_BEHAVIOR_m12);
@@ -7957,15 +7957,15 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 	
 	// set basic info (path, name, type, flags)
 	if (seg_path != NULL) {
-		seg->type_code = G_generate_MED_path_components_m12(seg_path, seg->path, seg->name);
+		seg->type_code = G_MED_path_components_m12(seg_path, seg->path, seg->name);
 	} else {
-		if (G_file_exists_m12(seg->path) == DOES_NOT_EXIST_m12) {
+		if (G_exists_m12(seg->path) == DOES_NOT_EXIST_m12) {
 			if (free_segment == TRUE_m12)
 				G_free_segment_m12(seg, TRUE_m12);
 			G_warning_message_m12("%s(): segment does not exist\n", __FUNCTION__);
 			return(NULL);
 		}
-		seg->type_code = G_generate_MED_path_components_m12(seg->path, NULL, seg->name);
+		seg->type_code = G_MED_path_components_m12(seg->path, NULL, seg->name);
 	}
 	if (seg->type_code != LH_TIME_SERIES_SEGMENT_m12 && seg->type_code != LH_VIDEO_SEGMENT_m12) {
 		if (free_segment == TRUE_m12)
@@ -8006,7 +8006,7 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 			sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
 		else // seg->type_code == LH_VIDEO_SEGMENT_m12
 			sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_METADATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+		if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 			seg->metadata_fps = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 	}
 	
@@ -8018,13 +8018,13 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 			sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
 		else // seg->type_code == LH_VIDEO_SEGMENT_m12
 			sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, VIDEO_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)  // note seg->video_indices_fps is the same pointer, so works for either
+		if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)  // note seg->video_indices_fps is the same pointer, so works for either
 			seg->time_series_indices_fps = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 		
 		// data (time series data only)
 		if (seg->type_code == LH_TIME_SERIES_SEGMENT_m12) {
 			sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, TIME_SERIES_DATA_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+			if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 				if (seg->flags & LH_READ_FULL_SEGMENT_DATA_m12)
 					seg->time_series_data_fps = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				else
@@ -8036,12 +8036,12 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 	// segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+		if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 			seg->record_indices_fps = G_read_file_m12(seg->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			seg->record_indices_fps->parent = (void *) seg;
 		}
 		sprintf_m12(tmp_str, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12) {
+		if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
 			if (seg->flags & LH_READ_FULL_SEGMENT_RECORDS_m12)
 				seg->record_data_fps = G_read_file_m12(seg->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) seg, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			else  // just read in data universal header & leave open
@@ -8184,7 +8184,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 
 	G_extract_path_parts_m12(chan_list[0], sess->path, NULL, NULL);
-	type_code = G_generate_MED_path_components_m12(sess->path, NULL, globals_m12->fs_session_name);
+	type_code = G_MED_path_components_m12(sess->path, NULL, globals_m12->fs_session_name);
 	sess->name = globals_m12->fs_session_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m12) {
 		if (free_session == TRUE_m12)
@@ -8279,7 +8279,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 				chan->last_access_time = curr_time;
 				chan->parent = (void *) sess;
 				chan->en_bloc_allocation = TRUE_m12;
-				G_generate_MED_path_components_m12(full_ts_chan_list[i], chan->path, chan->name);
+				G_MED_path_components_m12(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
 			if (all_ts_chans == n_ts_chans) {
@@ -8307,7 +8307,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			chan->last_access_time = curr_time;
 			chan->parent = (void *) sess;
 			chan->en_bloc_allocation = TRUE_m12;
-			G_generate_MED_path_components_m12(ts_chan_list[i], chan->path, chan->name);
+			G_MED_path_components_m12(ts_chan_list[i], chan->path, chan->name);
 		}
 		free_m12((void *) ts_chan_list, __FUNCTION__);
 		sess->number_of_time_series_channels = n_ts_chans;
@@ -8333,7 +8333,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 				chan->last_access_time = curr_time;
 				chan->parent = (void *) sess;
 				chan->en_bloc_allocation = TRUE_m12;
-				G_generate_MED_path_components_m12(full_vid_chan_list[i], chan->path, chan->name);
+				G_MED_path_components_m12(full_vid_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
 			if (all_vid_chans == n_vid_chans) {
@@ -8361,7 +8361,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			chan->last_access_time = curr_time;
 			chan->parent = (void *) sess;
 			chan->en_bloc_allocation = TRUE_m12;
-			G_generate_MED_path_components_m12(vid_chan_list[i], chan->path, chan->name);
+			G_MED_path_components_m12(vid_chan_list[i], chan->path, chan->name);
 		}
 		free_m12((void *) vid_chan_list, __FUNCTION__);
 		sess->number_of_video_channels = n_vid_chans;
@@ -8484,18 +8484,18 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		fe = G_file_exists_m12(tmp_str);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			fe = G_file_exists_m12(tmp_str);
+			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12)
 			sess->record_indices_fps = G_read_file_m12(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		fe = G_file_exists_m12(tmp_str);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
-			fe = G_file_exists_m12(tmp_str);
+			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12) {
 			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m12)
@@ -8509,10 +8509,10 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	ssr = NULL;
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
-		fe = G_file_exists_m12(tmp_str);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
-			fe = G_file_exists_m12(tmp_str);
+			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == DIR_EXISTS_m12) {
 			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m12 *) calloc_m12((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -8529,18 +8529,18 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				fe = G_file_exists_m12(tmp_str);
+				fe = G_exists_m12(tmp_str);
 				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-					fe = G_file_exists_m12(tmp_str);
+					fe = G_exists_m12(tmp_str);
 				}
 				if (fe == FILE_EXISTS_m12)
 					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				fe = G_file_exists_m12(tmp_str);
+				fe = G_exists_m12(tmp_str);
 				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-					fe = G_file_exists_m12(tmp_str);
+					fe = G_exists_m12(tmp_str);
 				}
 				if (fe == FILE_EXISTS_m12) {
 					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m12)
@@ -8726,7 +8726,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	}
 
 	G_extract_path_parts_m12(chan_list[0], sess->path, NULL, NULL);
-	type_code = G_generate_MED_path_components_m12(sess->path, NULL, globals_m12->fs_session_name);
+	type_code = G_MED_path_components_m12(sess->path, NULL, globals_m12->fs_session_name);
 	sess->name = globals_m12->fs_session_name;  // only name known at this point
 	if (type_code != SESSION_DIRECTORY_TYPE_CODE_m12) {
 		if (free_session == TRUE_m12)
@@ -8801,7 +8801,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 				chan->last_access_time = curr_time;
 				chan->parent = (void *) sess;
 				chan->en_bloc_allocation = TRUE_m12;
-				G_generate_MED_path_components_m12(full_ts_chan_list[i], chan->path, chan->name);
+				G_MED_path_components_m12(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
 			if (all_ts_chans == n_ts_chans) {
@@ -8829,7 +8829,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			chan->parent = (void *) sess;
 			chan->en_bloc_allocation = TRUE_m12;
 			chan->last_access_time = curr_time;
-			G_generate_MED_path_components_m12(ts_chan_list[i], chan->path, chan->name);
+			G_MED_path_components_m12(ts_chan_list[i], chan->path, chan->name);
 		}
 		free_m12((void *) ts_chan_list, __FUNCTION__);
 		sess->number_of_time_series_channels = n_ts_chans;
@@ -8855,7 +8855,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 				chan->parent = (void *) sess;
 				chan->en_bloc_allocation = TRUE_m12;
 				chan->last_access_time = curr_time;
-				G_generate_MED_path_components_m12(full_vid_chan_list[i], chan->path, chan->name);
+				G_MED_path_components_m12(full_vid_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
 			if (all_vid_chans == n_vid_chans) {
@@ -8883,7 +8883,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			chan->parent = (void *) sess;
 			chan->en_bloc_allocation = TRUE_m12;
 			chan->last_access_time = curr_time;
-			G_generate_MED_path_components_m12(vid_chan_list[i], chan->path, chan->name);
+			G_MED_path_components_m12(vid_chan_list[i], chan->path, chan->name);
 		}
 		free_m12((void *) vid_chan_list, __FUNCTION__);
 		sess->number_of_video_channels = n_vid_chans;
@@ -8987,18 +8987,18 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		fe = G_file_exists_m12(tmp_str);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			fe = G_file_exists_m12(tmp_str);
+			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12)
 			sess->record_indices_fps = G_read_file_m12(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		fe = G_file_exists_m12(tmp_str);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
-			fe = G_file_exists_m12(tmp_str);
+			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12) {
 			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m12)
@@ -9012,10 +9012,10 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	ssr = NULL;
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
-		fe = G_file_exists_m12(tmp_str);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
-			fe = G_file_exists_m12(tmp_str);
+			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == DIR_EXISTS_m12) {
 			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m12 *) calloc_m12((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -9032,18 +9032,18 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				fe = G_file_exists_m12(tmp_str);
+				fe = G_exists_m12(tmp_str);
 				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-					fe = G_file_exists_m12(tmp_str);
+					fe = G_exists_m12(tmp_str);
 				}
 				if (fe == FILE_EXISTS_m12)
 					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				fe = G_file_exists_m12(tmp_str);
+				fe = G_exists_m12(tmp_str);
 				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-					fe = G_file_exists_m12(tmp_str);
+					fe = G_exists_m12(tmp_str);
 				}
 				if (fe == FILE_EXISTS_m12) {
 					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m12)
@@ -9627,7 +9627,7 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				else  // LH_VIDEO_CHANNEL_m12
 					sprintf_m12(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == DIR_EXISTS_m12)  // not every segment may be present
+				if (G_exists_m12(tmp_str) == DIR_EXISTS_m12)  // not every segment may be present
 					seg = chan->segments[j] = G_read_segment_m12(NULL, slice, tmp_str, chan->flags, NULL);
 			} else {
 				seg = G_read_segment_m12(seg, slice);
@@ -9652,7 +9652,7 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 				else  // LH_VIDEO_CHANNEL_m12
 					sprintf_m12(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
-				if (G_file_exists_m12(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m12) {
+				if (G_exists_m12(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m12) {
 					// not every segment may be present
 					++null_segment_cnt;
 					continue;
@@ -10608,10 +10608,10 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 					ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			}
 			if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
@@ -10841,10 +10841,10 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_str) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 					ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			}
 			if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
@@ -11219,7 +11219,7 @@ TERN_m12	G_remove_path_m12(si1 *path)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	fe = G_file_exists_m12(path);
+	fe = G_exists_m12(path);
 	
 	if (fe == FILE_EXISTS_m12) {
 		
@@ -13634,7 +13634,7 @@ TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess)
 				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, seg_idx + 1);
 			sprintf_m12(seg_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 			sprintf_m12(md_file, "%s/%s_s%s.%s", seg_dir, chan->name, num_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(md_file) == FILE_EXISTS_m12) {
+			if (G_exists_m12(md_file) == FILE_EXISTS_m12) {
 				md_fps = G_read_file_m12(NULL, md_file, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				if (md_fps == NULL) {
 					G_warning_message_m12("%s(): error reading metadata file \"%s\"\n", __FUNCTION__, md_file);
@@ -13749,9 +13749,9 @@ void	G_sort_records_m12(LEVEL_HEADER_m12 *level_header, si4 segment_number)
 			G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
 			return;
 	}
-	if (G_file_exists_m12(ri_path) != FILE_EXISTS_m12)
+	if (G_exists_m12(ri_path) != FILE_EXISTS_m12)
 		return;
-	if (G_file_exists_m12(rd_path) != FILE_EXISTS_m12)
+	if (G_exists_m12(rd_path) != FILE_EXISTS_m12)
 		return;
 
 	// read data (full file read will automatically close files)
@@ -28612,7 +28612,7 @@ TERN_m12	FPS_open_m12(FILE_PROCESSING_STRUCT_m12 *fps, const si1 *function, ui4 
 #endif
 			if (create_path == TRUE_m12) {
 				G_extract_path_parts_m12(fps->full_file_name, path, NULL, NULL);
-				if (G_file_exists_m12(path) != DIR_EXISTS_m12) {  // a component of the required directory tree does not exist - build it & try again
+				if (G_exists_m12(path) != DIR_EXISTS_m12) {  // a component of the required directory tree does not exist - build it & try again
 					
 #if defined MACOS_m12 || defined LINUX_m12
 					sprintf_m12(command, "mkdir -p \"%s\"", path);
@@ -29628,7 +29628,7 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 	if (HW_get_performance_specs_file_m12(file) == NULL)
 		return(FALSE_m12);
 		
-	if (G_file_exists_m12(file) == DOES_NOT_EXIST_m12)
+	if (G_exists_m12(file) == DOES_NOT_EXIST_m12)
 		return(FALSE_m12);
 	
 	hw_params = &global_tables_m12->HW_params;
@@ -32823,11 +32823,11 @@ TERN_m12	PROC_wait_jobs_m12(PROC_THREAD_INFO_m12 *jobs, si4 n_jobs)
 
 TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 {
-	TERN_m12		video_data;
-	ui1			*parity, *data, MED_version_major, MED_version_minor, byte_order_code;
+	TERN_m12		video_data, across_segments;
+	ui1			*parity, *data, MED_version_major, MED_version_minor;
 	si1			*parity_path, session_name[BASE_FILE_NAME_BYTES_m12], channel_name[BASE_FILE_NAME_BYTES_m12];
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], command[FULL_FILE_NAME_BYTES_m12 + 32], type_string[TYPE_BYTES_m12];
-	ui4			type_code;
+	ui4			type_code, level_code;
 	si4			i, j, n_files, segment_number;
 	ui8			session_UID, channel_UID, segment_UID, *target_ptr, *source_ptr;
 	si8			nr, nw, mem_block_bytes, bytes_read, bytes_written, bytes_remaining, bytes_to_read, bytes_to_write, target_len;
@@ -32849,7 +32849,7 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 	
 	// copy single files (they're their own parity)
 	if (n_files == 1) {
-		if (G_file_exists_m12(files[0].path) == FILE_EXISTS_m12) {
+		if (G_exists_m12(files[0].path) == FILE_EXISTS_m12) {
 			#if defined MACOS_m12 || defined LINUX_m12
 			sprintf_m12(command, "cp \"%s\" \"%s\"", files[0].path, parity_path);
 			#endif
@@ -32867,7 +32867,7 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 
 	// open files
 	for (i = 0; i < n_files; ++i) {
-		if (G_file_exists_m12(files[i].path) == FILE_EXISTS_m12) {
+		if (G_exists_m12(files[i].path) == FILE_EXISTS_m12) {
 			files[i].fp = fopen_m12(files[i].path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			files[i].len = G_file_length_m12(files[i].fp, NULL);
 		}
@@ -32881,7 +32881,7 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 	
 	// make path
 	G_extract_path_parts_m12(parity_path, tmp_str, NULL, NULL);
-	if (G_file_exists_m12(tmp_str) != DIR_EXISTS_m12) {
+	if (G_exists_m12(tmp_str) != DIR_EXISTS_m12) {
 		#if defined MACOS_m12 || defined LINUX_m12
 		sprintf_m12(command, "mkdir -p \"%s\"", tmp_str);
 		#endif
@@ -32892,14 +32892,20 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 	}
 	parity_fp = fopen_m12(parity_path, "w+", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
-	// check if video_data
-	G_extract_path_parts_m12(files[0].path, NULL, tmp_str, NULL);
-	type_code = G_MED_type_code_from_string_m12(tmp_str);
-	video_data = FALSE_m12;
-	if (type_code == VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12) {
-		type_code = G_MED_type_code_from_string_m12(files[0].path);
-		if (type_code == NO_TYPE_CODE_m12)  //  non-MED extension
+	// check if video data or segmented sess record
+	across_segments = video_data = FALSE_m12;
+	type_code = G_MED_type_code_from_string_m12(files[0].path);
+	switch (type_code) {
+		case RECORD_DATA_FILE_TYPE_CODE_m12:
+		case RECORD_INDICES_FILE_TYPE_CODE_m12:
+			level_code = G_get_level_m12(files[0].path, NULL);
+			if (level_code == LH_SEGMENTED_SESS_RECS_m12)
+				across_segments = TRUE_m12;
+			break;
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
 			video_data = TRUE_m12;
+			break;
+
 	}
 
 	// build parity
@@ -32925,7 +32931,6 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 			strncpy_m12(type_string, uh->type_string, TYPE_BYTES_m12);
 			MED_version_major = uh->MED_version_major;
 			MED_version_minor = uh->MED_version_minor;
-			byte_order_code = uh->byte_order_code;
 			segment_number = uh->segment_number;
 			strncpy_m12(session_name, uh->session_name, BASE_FILE_NAME_BYTES_m12);
 			strncpy_m12(channel_name, uh->channel_name, BASE_FILE_NAME_BYTES_m12);
@@ -32965,10 +32970,18 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 		}
 		bytes_written += nw;
 	}
+	++n_files;  // include all files (n_files decremented above)
 	for (i = 0; i < n_files; ++i)
 		fclose(files[i].fp);
 	
-	if (video_data == FALSE_m12) {
+	if (video_data == TRUE_m12) {  // no universal header for video data files => generate parity crc files
+		for (i = 0; i < n_files; ++i) {
+			if (PRTY_write_pcrc_m12(files[i].path) != TRUE_m12) {
+				G_error_message_m12("%s(): error writing parity crc file for \"%s\" => exiting\n", __FUNCTION__, files[i].path);
+				exit(-1);
+			}
+		}
+	} else {
 		// read in parity universal header region
 		fseek_m12(parity_fp, (si8) 0, SEEK_SET, parity_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		nr = fread((void *) parity, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m12, parity_fp);
@@ -32981,13 +32994,14 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 		strncpy_m12(uh->type_string, type_string, TYPE_BYTES_m12);
 		uh->MED_version_major = MED_version_major;
 		uh->MED_version_minor = MED_version_minor;
-		uh->byte_order_code = byte_order_code;
-		uh->segment_number = segment_number;
+		if (across_segments == FALSE_m12)
+			uh->segment_number = segment_number;
 		strncpy_m12(uh->session_name, session_name, BASE_FILE_NAME_BYTES_m12);
 		strncpy_m12(uh->channel_name, channel_name, BASE_FILE_NAME_BYTES_m12);
 		uh->session_UID = session_UID;
 		uh->channel_UID = channel_UID;
-		uh->segment_UID = segment_UID;
+		if (across_segments == FALSE_m12)
+			uh->segment_UID = segment_UID;
 		
 		// write out modified universal header
 		fseek_m12(parity_fp, (si8) 0, SEEK_SET, parity_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -32999,8 +33013,124 @@ TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 		fseek_m12(parity_fp, (si8) 0, SEEK_END, parity_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);  // paranoia
 	}
 	fclose(parity_fp);
+	
+	// write parity crc file for parity file (so can detect if parity file itself is damaged)
+	if (PRTY_write_pcrc_m12(parity_path) != TRUE_m12) {
+		G_error_message_m12("%s(): error writing parity crc file for \"%s\" => exiting\n", __FUNCTION__, parity_path);
+		exit(-1);
+	}
 
 	return(TRUE_m12);
+}
+
+
+TERN_m12	PRTY_check_pcrc_m12(si1 *file_path)
+{
+	TERN_m12		write_pcrc;
+	ui1			*bytes;
+	si1			pcrc_path[FULL_FILE_NAME_BYTES_m12], path[FULL_FILE_NAME_BYTES_m12], name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m12], ext[TYPE_BYTES_m12];
+	ui4			crc, file_crc;
+	si8			len;
+	PRTY_CRC_FILE_m12	pcrc;
+	FILE			*fp;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	if (G_exists_m12(file_path) != FILE_EXISTS_m12) {
+		G_warning_message_m12("%s(): file \"%s\" does not exist => returning\n", __FUNCTION__, file_path);
+		return(PRTY_E_UNSPEC_m12);
+	}
+	
+	G_extract_path_parts_m12(file_path, path, name, ext);
+	snprintf_m12(pcrc_path, FULL_FILE_NAME_BYTES_m12, "%s.%s", file_path, PARITY_CRC_FILE_TYPE_CODE_m12);
+	
+	if (G_exists_m12(pcrc_path) != FILE_EXISTS_m12) {
+		G_warning_message_m12("%s(): file \"%s\" does not exist => returning\n", __FUNCTION__, pcrc_path);
+		return(PRTY_E_UNSPEC_m12);
+	}
+	
+	// read in pcrc file
+	fp = fopen_m12(pcrc_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	len = G_file_length_m12(fp, NULL);
+	if (len != sizeof(PRTY_CRC_FILE_m12)) {
+		G_warning_message_m12("%s(): file \"%s\" is damaged (wrong length) => returning\n", __FUNCTION__, file_path);
+		fclose(fp);
+		return(PRTY_E_UNSPEC_m12);
+	}
+	fread_m12((void *) &pcrc, sizeof(PRTY_CRC_FILE_m12), (size_t) 1, fp, file_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+	
+	// calculate pcrc crc
+	write_pcrc = FALSE_m12;
+	crc = CRC_calculate_m12((ui1 *) &pcrc + sizeof(ui4), sizeof(PRTY_CRC_FILE_m12) - sizeof(ui4));
+	if (crc != pcrc.self_crc) {
+		G_warning_message_m12("%s(): file \"%s\" is damaged (self crc mismatch)\n", __FUNCTION__, pcrc_path);
+		if (pcrc.file_crc_1 == pcrc.file_crc_2 && pcrc.file_crc_2 == pcrc.file_crc_3) {  // crcs match
+			if (strcmp(file_path, pcrc.path) == 0) {  // paths match
+				G_warning_message_m12("%s(): error in self crc itself\n", __FUNCTION__);
+				write_pcrc = TRUE_m12;
+			} else {
+				G_warning_message_m12("%s(): error in stored file path  (\"%s\")\n", __FUNCTION__, pcrc.path);
+				G_warning_message_m12("%s(): substituting passed file path (\"%s\")\n", __FUNCTION__, pcrc_path);
+				strncpy(pcrc.path, file_path, FULL_FILE_NAME_BYTES_m12);
+				write_pcrc = TRUE_m12;
+			}
+		} else {
+			G_warning_message_m12("%s(): file crc mismatch:\n\tfile_crc_1 = 0x%08x\n\tfile_crc_2 = 0x%08x\n\tfile_crc_3 = 0x%08x\n", __FUNCTION__, pcrc.file_crc_1, pcrc.file_crc_2, pcrc.file_crc_3);
+			if (pcrc.file_crc_1 == pcrc.file_crc_2 || pcrc.file_crc_1 == pcrc.file_crc_3) {
+				file_crc = pcrc.file_crc_1;
+			} else if (pcrc.file_crc_2 == pcrc.file_crc_3) {
+				file_crc = pcrc.file_crc_2;
+			} else {
+				G_warning_message_m12("%s(): no matches: can't verify against file => returning\n", __FUNCTION__);
+				return(PRTY_E_UNSPEC_m12);
+			}
+			G_warning_message_m12("%s(): using 0x%08x\n", __FUNCTION__, file_crc);
+			pcrc.file_crc_1 = pcrc.file_crc_2 = pcrc.file_crc_3 = file_crc;
+			write_pcrc = TRUE_m12;
+		}
+	}
+	
+	if (strcmp(file_path, pcrc.path)) {
+		G_warning_message_m12("%s(): stored file path \"%s\" does not match passed path \"%s\"\n", __FUNCTION__, pcrc.path, file_path);
+		if (G_exists_m12(pcrc.path) == FILE_EXISTS_m12) {
+			G_warning_message_m12("%s(): both paths exist, unclear what to do => returning\n", __FUNCTION__);
+			return(FALSE_m12);
+		}
+		strncpy(pcrc.path, file_path, FULL_FILE_NAME_BYTES_m12);
+		G_warning_message_m12("%s(): substituting passed file path (\"%s\")\n", __FUNCTION__, pcrc_path);
+		write_pcrc = TRUE_m12;
+	}
+		
+	fp = fopen_m12(pcrc.path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	len = G_file_length_m12(fp, NULL);
+	bytes = (ui1 *) malloc_m12((size_t) len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fread_m12((void *) bytes, sizeof(ui1), (size_t) len, fp, pcrc.path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+	
+	// calculate crc
+	crc = CRC_calculate_m12(bytes, len);
+	free_m12((void *) bytes, __FUNCTION__);
+	
+	if (crc != pcrc.file_crc_1) {
+		G_warning_message_m12("%s(): crc mismatch in file (\"%s\")\n", __FUNCTION__, file_path);
+		return(PRTY_E_BODY_m12);
+	}
+
+	// write out corrected parity crc file
+	if (write_pcrc == TRUE_m12) {
+		// calculate self crc
+		pcrc.self_crc = CRC_calculate_m12((ui1 *) &pcrc + sizeof(ui4), sizeof(PRTY_CRC_FILE_m12) - sizeof(ui4));
+	
+		// write out
+		fp = fopen_m12(pcrc_path, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fwrite_m12((void *) &pcrc, sizeof(PRTY_CRC_FILE_m12), (size_t) 1, fp, path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		fclose(fp);
+	}
+
+	return(PRTY_VALID_m12);
 }
 
 
@@ -33056,7 +33186,7 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 			strcpy(sess_path, tmp_path);
 			G_extract_path_parts_m12(sess_path, NULL, sess_name, NULL);
 			sprintf_m12(ssr_path, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12);
-			if (G_file_exists_m12(ssr_path) == DIR_EXISTS_m12)
+			if (G_exists_m12(ssr_path) == DIR_EXISTS_m12)
 				ssr_list = G_generate_file_list_m12(NULL, &n_ssrs, ssr_path, NULL, "r*", GFL_FULL_PATH_m12);
 			chan_list = G_generate_file_list_m12(NULL, &n_chans, sess_path, NULL, "?icd", GFL_FULL_PATH_m12);
 			sess_files = ssr_files = chan_files = all_segs = TRUE_m12;
@@ -33093,11 +33223,12 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 		case RECORD_DATA_FILE_TYPE_CODE_m12:
 		case RECORD_INDICES_FILE_TYPE_CODE_m12:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
 		case VIDEO_INDICES_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
-			if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12) {
+			if (G_exists_m12(tmp_path) == FILE_EXISTS_m12) {
 				file_list = (si1 **) calloc_2D_m12((size_t) 1, (size_t) FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 				strcpy(file_list[0], tmp_path);
 				*n_files = 1;
@@ -33114,17 +33245,17 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 	// session records
 	if (sess_files == TRUE_m12) {
 		sprintf_m12(tmp_path, "%s/%s.%s", sess_path, sess_name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+		if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 			strcpy(tmp_list[tmp_files++], tmp_path);
 		sprintf_m12(tmp_path, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+		if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 			strcpy(tmp_list[tmp_files++], tmp_path);
 	}
 
 	if (ssr_files == TRUE_m12) {
 		ssr_list = G_generate_file_list_m12(NULL, &n_ssrs, ssr_path, NULL, "r*", GFL_FULL_PATH_m12);
 		for (i = 0; i < n_ssrs; ++i) {
-			if (G_file_exists_m12(ssr_list[i]) == FILE_EXISTS_m12)
+			if (G_exists_m12(ssr_list[i]) == FILE_EXISTS_m12)
 				strcpy(tmp_list[tmp_files++], ssr_list[i]);
 		}
 		free_m12((void *) ssr_list, __FUNCTION__);
@@ -33134,10 +33265,10 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 		if (chan_files == TRUE_m12) {
 			G_extract_path_parts_m12(chan_list[i], NULL, tmp_str, NULL);
 			sprintf_m12(tmp_path, "%s/%s.%s", chan_list[i], tmp_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+			if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 				strcpy(tmp_list[tmp_files++], tmp_path);
 			sprintf_m12(tmp_path, "%s/%s.%s", chan_list[i], tmp_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+			if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 				strcpy(tmp_list[tmp_files++], tmp_path);
 		}
 		if (all_segs == TRUE_m12)
@@ -33149,13 +33280,13 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 
 			if (type_code == TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12) {
 				sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, TIME_SERIES_DATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 					strcpy(tmp_list[tmp_files++], tmp_path);
 				sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 					strcpy(tmp_list[tmp_files++], tmp_path);
 				sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 					strcpy(tmp_list[tmp_files++], tmp_path);
 			} else if (type_code == VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12) {
 				vid_list = G_generate_file_list_m12(NULL, &n_vids, chan_list[i], "*_s????_n????", NULL, GFL_FULL_PATH_m12);
@@ -33163,17 +33294,17 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 					strcpy(tmp_list[tmp_files++], vid_list[k]);
 				free_m12((void *) vid_list, __FUNCTION__);
 				sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, VIDEO_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 					strcpy(tmp_list[tmp_files++], tmp_path);
 				sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, VIDEO_METADATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+				if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 					strcpy(tmp_list[tmp_files++], tmp_path);
 			}
 			sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+			if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 				strcpy(tmp_list[tmp_files], tmp_path);
 			sprintf_m12(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(tmp_path) == FILE_EXISTS_m12)
+			if (G_exists_m12(tmp_path) == FILE_EXISTS_m12)
 				strcpy(tmp_list[tmp_files++], tmp_path);
 		}
 		free_m12((void *) seg_list, __FUNCTION__);  // free for next channel
@@ -33191,16 +33322,61 @@ si1	**PRTY_file_list_m12(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 }
 
 
+TERN_m12	PRTY_recover_segment_header_fields_m12(si1 *MED_file, ui8 *segment_uid, si4 *segment_number)
+{
+	si1			path[FULL_FILE_NAME_BYTES_m12], name[BASE_FILE_NAME_BYTES_m12];
+	ui4			type_code;
+	EXT_CODE_m12		type;
+	FILE			*fp;
+	UNIVERSAL_HEADER_m12	uh;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// get segment header from other of record pair
+	
+	if (G_exists_m12(MED_file) == DOES_NOT_EXIST_m12) {
+		G_warning_message_m12("%s(): file \"%s\" does not exist\n", __FUNCTION__, MED_file);
+		return(UNKNOWN_m12);
+	}
+	
+	type_code = G_MED_type_code_from_string_m12(MED_file);
+	if (type_code != RECORD_INDICES_FILE_TYPE_CODE_m12 && type_code != RECORD_DATA_FILE_TYPE_CODE_m12)
+		return(UNKNOWN_m12);
+	if (G_get_level_m12(MED_file, NULL) != LH_SEGMENTED_SESS_RECS_m12)
+		return(UNKNOWN_m12);
+
+	G_extract_path_parts_m12(MED_file, path, name, type.ext);
+	if (type.code == RECORD_DATA_FILE_TYPE_CODE_m12)
+		type.code = RECORD_INDICES_FILE_TYPE_CODE_m12;
+	else
+		type.code = RECORD_DATA_FILE_TYPE_CODE_m12;
+	
+	sprintf_m12(path, "%s/%s.%s", path, name, type.ext);
+	fp = fopen_m12(path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fread_m12((void *) &uh, sizeof(UNIVERSAL_HEADER_m12), (size_t) 1, fp, path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+
+	*segment_uid = uh.segment_UID;
+	*segment_number = uh.segment_number;
+	
+	return(TRUE_m12);
+}
+
+
 TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps)
 {
-	ui1			validity_code, *parity, *data, MED_version_major, MED_version_minor, byte_order_code;
+	TERN_m12		across_segments, ret_val;
+	ui1			validity_code, *parity, *data, MED_version_major, MED_version_minor;
 	si1			*parity_path, session_name[BASE_FILE_NAME_BYTES_m12], channel_name[BASE_FILE_NAME_BYTES_m12];
 	si1			type_string[TYPE_BYTES_m12];
-	si4			i, n_files, segment_number;
-	ui8			session_UID, channel_UID, segment_UID;
-	si8			nr, mem_block_bytes;
-	si8			parity_modification;
-	PRTY_FILE_m12		*files;
+	ui4			type_code;
+	si4			i, j, n_files, segment_number;
+	ui8			*target_ptr, *source_ptr, session_UID, channel_UID, segment_UID;
+	si8			nr, nw, bytes_read, bytes_written, mem_block_bytes;
+	si8			target_len, bytes_to_read, bytes_to_write, bytes_remaining, parity_modification;
+	PRTY_FILE_m12		*files, *source_file;
 	FILE_TIMES_m12		ft;
 	FILE			*parity_fp;
 	UNIVERSAL_HEADER_m12	*uh;
@@ -33225,15 +33401,16 @@ TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps)
 	parity_fp = NULL;
 	for (i = 0; i < n_files; ++i)
 		files[i].fp = NULL;
+	ret_val = UNKNOWN_m12;
 	
 	// open files
-	if (G_file_exists_m12(files[i].path) == FILE_EXISTS_m12) {
+	if (G_exists_m12(files[i].path) == FILE_EXISTS_m12) {
 		parity_fp = fopen_m12(parity_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		if (parity_fp == NULL)
 			return(FALSE_m12);
 	}
-	for (i = 0; i < n_files; ++i) {
-		if (G_file_exists_m12(files[i].path) == FILE_EXISTS_m12) {
+	for (i = PRTY_FILE_DAMAGED_IDX_m12 + 1; i < n_files; ++i) {
+		if (G_exists_m12(files[i].path) == FILE_EXISTS_m12) {
 			files[i].fp = fopen_m12(files[i].path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			if (files[i].fp == NULL)
 				goto PRTY_REPAIR_EXIT_m12;
@@ -33244,7 +33421,7 @@ TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps)
 	// check that parity is at least as recent as rest of files
 	G_file_times_m12(parity_fp, NULL, &ft, FALSE_m12);  // get parity modification time
 	parity_modification = ft.modification;
-	for (i = 0; i < n_files; ++i) {
+	for (i = PRTY_FILE_DAMAGED_IDX_m12 + 1; i < n_files; ++i) {  // skip damaged file
 		G_file_times_m12(files[i].fp, NULL, &ft, FALSE_m12);  // get parity modification time
 		if (ft.modification > parity_modification && i != PRTY_FILE_DAMAGED_IDX_m12) {
 			G_warning_message_m12("File \"%s\" was modified after the parity file => returning\n", files[i].path);
@@ -33256,45 +33433,160 @@ TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps)
 	memset((void *) parity, (si4) 0, (size_t) mem_block_bytes);
 	memset((void *) data, (si4) 0, (size_t) mem_block_bytes);
 
+	type_code = G_MED_type_code_from_string_m12(files[PRTY_FILE_DAMAGED_IDX_m12].path);
+
 	// repair universal header
-	if (validity_code & PRTY_E_HEADER_m12) {  // (video data will be flagged as body)
+	if (validity_code & PRTY_E_HEADER_m12) {
+		
+		across_segments = FALSE_m12;
+		if (type_code == RECORD_INDICES_FILE_TYPE_CODE_m12 || type_code == RECORD_DATA_FILE_TYPE_CODE_m12)
+			if (G_get_level_m12(files[PRTY_FILE_DAMAGED_IDX_m12].path, NULL) == LH_SEGMENTED_SESS_RECS_m12)
+				across_segments = TRUE_m12;
+
 		// read in parity universal header region
 		nr = fread((void *) parity, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m12, parity_fp);
 		if (nr != UNIVERSAL_HEADER_BYTES_m12) {
-			G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, parity_path);
-			exit(-1);
+			G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, files[i].path);
+			goto PRTY_REPAIR_EXIT_m12;
 		}
 		
-		// copy preserved fields from parity universal header
+		// copy parity universal header (for preserved fields)
 		uh = (UNIVERSAL_HEADER_m12 *) parity;
 		strncpy_m12(type_string, uh->type_string, TYPE_BYTES_m12);
 		MED_version_major = uh->MED_version_major;
 		MED_version_minor = uh->MED_version_minor;
-		byte_order_code = uh->byte_order_code;
-		segment_number = uh->segment_number;
+		segment_number  = uh->segment_number;
 		strncpy_m12(session_name, uh->session_name, BASE_FILE_NAME_BYTES_m12);
 		strncpy_m12(channel_name, uh->channel_name, BASE_FILE_NAME_BYTES_m12);
 		session_UID = uh->session_UID;
 		channel_UID = uh->channel_UID;
 		segment_UID = uh->segment_UID;
+
+		// rebuild from non-damaged files
+		for (i = PRTY_FILE_DAMAGED_IDX_m12 + 1; i < n_files; ++i) {
+			
+			nr = fread((void *) data, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m12, files[i].fp);
+			if (nr != UNIVERSAL_HEADER_BYTES_m12) {
+				G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, parity_path);
+				exit(-1);
+			}
+			
+			// add to parity array
+			target_ptr = (ui8 *) parity;
+			source_ptr = (ui8 *) data;
+			for (j = UNIVERSAL_HEADER_BYTES_m12 >> 3; j--;)
+				*target_ptr++ ^= *source_ptr++;
+		}
+
+		// restore preserved parity universal header fields
+		if (across_segments == TRUE_m12)
+			PRTY_recover_segment_header_fields_m12(files[PRTY_FILE_DAMAGED_IDX_m12].path, &segment_UID, &segment_number);
+		uh = (UNIVERSAL_HEADER_m12 *) parity;
+		strncpy_m12(uh->type_string, type_string, TYPE_BYTES_m12);
+		uh->MED_version_major = MED_version_major;
+		uh->MED_version_minor = MED_version_minor;
+		uh->segment_number = segment_number;
+		strncpy_m12(uh->session_name, session_name, BASE_FILE_NAME_BYTES_m12);
+		strncpy_m12(uh->channel_name, channel_name, BASE_FILE_NAME_BYTES_m12);
+		uh->session_UID = session_UID;
+		uh->channel_UID = channel_UID;
+		uh->segment_UID = segment_UID;
 		
+		// write out repaired file
+		i = PRTY_FILE_DAMAGED_IDX_m12;
+		files[i].fp = fopen_m12(files[i].path, "r+", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (files[i].fp == NULL)
+			goto PRTY_REPAIR_EXIT_m12;
+
+		nw = fwrite((void *) data, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m12, files[i].fp);
+		if (nw != UNIVERSAL_HEADER_BYTES_m12) {
+			G_error_message_m12("%s(): error writing file \"%s\" => exiting\n", __FUNCTION__, parity_path);
+			exit(-1);
+		}
 		
-		goto PRTY_REPAIR_EXIT_m12;
-	}
+		ret_val = TRUE_m12;
+	}  // end universal header repair
 	
 	// repair body
 	if (validity_code & PRTY_E_BODY_m12) {
 
+		i = PRTY_FILE_DAMAGED_IDX_m12;
+		files[i].len = G_file_length_m12(NULL, files[i].path);
+		files[i].fp = fopen_m12(files[i].path, "r+", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (files[i].fp == NULL)
+			goto PRTY_REPAIR_EXIT_m12;
+		
+		if (type_code == VIDEO_DATA_FILE_TYPE_CODE_m12) {
+			fseek(parity_fp, 0, SEEK_SET);
+			for (i = 0; i < n_files; ++i)
+				fseek(files[i].fp, 0, SEEK_SET);
+		} else {
+			fseek(parity_fp, UNIVERSAL_HEADER_BYTES_m12, SEEK_SET);
+			for (i = 0; i < n_files; ++i)
+				fseek(files[i].fp, UNIVERSAL_HEADER_BYTES_m12, SEEK_SET);
+		}
 
-		goto PRTY_REPAIR_EXIT_m12;
+		bytes_read = bytes_written = UNIVERSAL_HEADER_BYTES_m12;
+		target_len = files[PRTY_FILE_DAMAGED_IDX_m12].len;
+		while (bytes_read < target_len) {
+			// read parity file
+			bytes_remaining = target_len - bytes_read;
+			bytes_to_read = mem_block_bytes;
+			if (bytes_remaining < mem_block_bytes)
+				bytes_to_read = bytes_remaining;
+			bytes_to_write = bytes_to_read;
+			nr = fread((void *) parity, sizeof(ui1), (size_t) bytes_to_read, parity_fp);
+			if (nr != bytes_to_read) {
+				G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, parity_path);
+				exit(-1);
+			}
+			bytes_read += nr;
+			
+			for (i = PRTY_FILE_DAMAGED_IDX_m12 + 1; i < n_files; ++i) {
+				// read source file
+				source_file = files + i;
+				if (source_file->finished == TRUE_m12)
+					continue;
+				bytes_to_read = source_file->len - bytes_written;
+				if (bytes_to_read > mem_block_bytes)
+					bytes_to_read = mem_block_bytes;
+				else
+					source_file->finished = TRUE_m12;
+				nr = fread((void *) data, sizeof(ui1), (size_t) bytes_to_read, source_file->fp);
+				if (nr != bytes_to_read) {
+					G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, source_file->path);
+					exit(-1);
+				}
+
+				// add to parity array
+				target_ptr = (ui8 *) parity;
+				source_ptr = (ui8 *) data;
+				for (j = bytes_to_read >> 3; j--;)
+					*target_ptr++ ^= *source_ptr++;
+			}
+
+			// write out new parity
+			i = PRTY_FILE_DAMAGED_IDX_m12;
+			nw = fwrite((void *) parity, sizeof(ui1), (size_t) bytes_to_write, files[i].fp);
+			if (nw != bytes_to_write) {
+				G_error_message_m12("%s(): error writing file \"%s\" => exiting\n", __FUNCTION__, files[i].path);
+				exit(-1);
+			}
+			bytes_written += nw;
+		}
+
+		ret_val = TRUE_m12;
+	} // end body repair
+	
+	if (ret_val == UNKNOWN_m12) {
+		G_warning_message_m12("%s(): neither header nor body are flagged as damaged\n", __FUNCTION__);
+		return(ret_val);
 	}
 	
-	G_warning_message_m12("%s(): neither header nor body are flagged as damaged\n", __FUNCTION__);
-
-	return(UNKNOWN_m12);
-	
 PRTY_REPAIR_EXIT_m12:
-	
+	if (ret_val == UNKNOWN_m12)
+		ret_val = FALSE_m12;
+
 	if (parity_fp)
 		fclose(parity_fp);
 	for (i = 0; i < n_files; ++i) {
@@ -33302,7 +33594,7 @@ PRTY_REPAIR_EXIT_m12:
 			fclose(files[i].fp);
 	}
 	
-	return(FALSE_m12);
+	return(ret_val);
 }
 
 
@@ -33440,7 +33732,7 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 		}
 				
 		// build parity path
-		video_data = TRUE_m12;
+		video_data = UNKNOWN_m12;
 		G_extract_path_parts_m12(input_file_list[i], NULL, base_name, type.ext);
 		switch (type.code) {
 			case RECORD_DATA_FILE_TYPE_CODE_m12:
@@ -33469,6 +33761,9 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 			case VIDEO_INDICES_FILE_TYPE_CODE_m12:
 				video_data = FALSE_m12;
 			default:
+				if (video_data == UNKNOWN_m12)
+					if (G_MED_type_code_from_string_m12(input_file_list[i]) == VIDEO_DATA_FILE_TYPE_CODE_m12)
+						video_data = TRUE_m12;
 				len = strlen(base_name);
 				if (video_data == TRUE_m12)
 					base_name[len - 12] = 0;
@@ -33477,7 +33772,7 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 				STR_replace_pattern_m12(base_name, "parity", input_file_list[i], parity_path);
 				break;
 		}
-		if (G_file_exists_m12(parity_path) == DOES_NOT_EXIST_m12) {
+		if (G_exists_m12(parity_path) == DOES_NOT_EXIST_m12) {
 			++n_skipped;
 			G_warning_message_m12("%s(): no parity data for file \"%s\" => skipping\n", __FUNCTION__, input_file_list[i]);
 			continue;
@@ -33555,6 +33850,102 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 }
 
 
+TERN_m12	PRTY_show_header_m12(si1 *parity_path)
+{
+	TERN_m12		across_segments;
+	ui4			type_code;
+	FILE			*fp;
+	UNIVERSAL_HEADER_m12	uh;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// Parity file names are likely to be duplicated across sessions.
+	// Thus some of the universal header fields are excepted from parity.
+	// This function takes a parity file & shows those fields.
+	// Segmented session record parity is calculated across segments, and so segment header fields are not excepted from parity.
+	
+	if (G_exists_m12(parity_path) == DOES_NOT_EXIST_m12) {
+		G_warning_message_m12("%s(): file \"%s\" does not exist\n", __FUNCTION__, parity_path);
+		return(FALSE_m12);
+	}
+	
+	across_segments = FALSE_m12;
+	type_code = G_MED_type_code_from_string_m12(parity_path);
+	switch (type_code) {
+		case RECORD_INDICES_FILE_TYPE_CODE_m12:
+		case RECORD_DATA_FILE_TYPE_CODE_m12:
+			if (G_get_level_m12(parity_path, NULL) == LH_SEGMENTED_SESS_RECS_m12)
+				across_segments = TRUE_m12;
+			break;
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
+			return(PRTY_show_pcrc_m12(parity_path));
+		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m12:
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
+			break;
+		default:
+			G_warning_message_m12("%s(): not a MED file type\n", __FUNCTION__);
+			return(FALSE_m12);
+	}
+	
+	fp = fopen_m12(parity_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fread_m12((void *) &uh, sizeof(UNIVERSAL_HEADER_m12), (size_t) 1, fp, parity_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+
+	// copy preserved fields into parity universal header
+	printf_m12("type_string: \"%s\"  (0x%08x)\n", uh.type_string, uh.type_code);
+	printf_m12("MED_version_major: %hhu\n", uh.MED_version_major);
+	printf_m12("MED_version_minor: %hhu\n", uh.MED_version_minor);
+	printf_m12("byte_order_code: %hhu\n", uh.byte_order_code);
+	if (across_segments == FALSE_m12)
+		printf_m12("segment_number: %d\n", uh.segment_number);
+	printf_m12("session_name: %s\n", uh.session_name);
+	printf_m12("channel_name: %s\n", uh.channel_name);
+	printf_m12("session_UID: %lu\n", uh.session_UID);
+	printf_m12("channel_UID: %lu\n", uh.channel_UID);
+	if (across_segments == FALSE_m12)
+		printf_m12("segment_UID: %lu\n", uh.segment_UID);
+
+	return(TRUE_m12);
+}
+
+
+TERN_m12	PRTY_show_pcrc_m12(si1 *file_path)
+{
+	si1			pcrc_path[FULL_FILE_NAME_BYTES_m12];
+	FILE			*fp;
+	PRTY_CRC_FILE_m12	pcrc;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// pass path to file that pcrc is for, not pcrc path itself
+	
+	sprintf_m12(pcrc_path, "%s.%s", file_path, PARITY_CRC_FILE_TYPE_STRING_m12);
+	if (G_exists_m12(pcrc_path) == DOES_NOT_EXIST_m12) {
+		G_warning_message_m12("%s(): file \"%s\" does not exist\n", __FUNCTION__, pcrc_path);
+		return(FALSE_m12);
+	}
+	
+	fp = fopen_m12(pcrc_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fread_m12((void *) &pcrc, sizeof(PRTY_CRC_FILE_m12), (size_t) 1, fp, pcrc_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+
+	printf_m12("self_crc: 0x%08x\n", pcrc.self_crc);
+	printf_m12("file_crc_1: 0x%08x\n", pcrc.file_crc_1);
+	printf_m12("file_crc_2: 0x%08x\n", pcrc.file_crc_2);
+	printf_m12("file_crc_3: 0x%08x\n", pcrc.file_crc_3);
+	printf_m12("path: \"%s\"\n", pcrc.path);
+
+	return(TRUE_m12);
+}
+
+
 ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
 {
 	TERN_m12			valid, return_bb;
@@ -33576,6 +33967,7 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 #endif
 	
 	// validates MED file CRCs
+	// passes video files to
 	
 	// get varargs
 	return_bb = FALSE_m12;
@@ -33596,7 +33988,7 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 	
 	G_message_m12("Validating \"%s\" ... ", MED_file);
 
-	if (G_file_exists_m12(MED_file) == DOES_NOT_EXIST_m12) {
+	if (G_exists_m12(MED_file) == DOES_NOT_EXIST_m12) {
 		G_warning_message_m12("\n%s(): file \"%s\" does not exist\n", __FUNCTION__, MED_file);
 		return(PRTY_E_UNSPEC_m12);
 	}
@@ -33610,7 +34002,7 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m12:
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12:
 			G_warning_message_m12("\n%s(): \"%s\" is a MED directory, not file\n", __FUNCTION__, MED_file);
-			return(UNKNOWN_m12);
+			return(PRTY_E_UNSPEC_m12);
 		case RECORD_DATA_FILE_TYPE_CODE_m12:
 		case RECORD_INDICES_FILE_TYPE_CODE_m12:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
@@ -33619,9 +34011,12 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
 			break;
-		default:  // video data
-			validity_code = PRTY_validate_video_m12(MED_file, bad_blocks, n_bad_blocks);  // no CRCs or MED header in video data files - have to use parity
-			return(validity_code);
+		case VIDEO_DATA_FILE_TYPE_CODE_m12:
+			return(PRTY_check_pcrc_m12(MED_file));
+		case NO_TYPE_CODE_m12:
+		default:
+			G_warning_message_m12("\n%s(): file \"%s\" is not a MED type\n", __FUNCTION__, MED_file);
+			return(PRTY_E_UNSPEC_m12);
 	}
 	
 	fp = fopen_m12(MED_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -33775,53 +34170,6 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 }
 
 
-ui1	PRTY_validate_video_m12(si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
-{
-	TERN_m12	video_data;
-	ui1		validity_code;
-	si1		parity_file[FULL_FILE_NAME_BYTES_m12], path[FULL_FILE_NAME_BYTES_m12], base_name[SEGMENT_BASE_FILE_NAME_BYTES_m12], ext[8];
-	ui4		type_code;
-	si8		len;
-	
-#ifdef FN_DEBUG_m12
-	G_message_m12("%s()\n", __FUNCTION__);
-#endif
-
-	// no CRCs or MED header in video data files - have to use parity
-	
-	// check that file is video data
-	G_extract_path_parts_m12(MED_file, path, base_name, NULL);
-	type_code = G_MED_type_code_from_string_m12(path);
-	if (type_code != VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m12)
-		return(PRTY_E_UNSPEC_m12);
-	len = strlen(base_name);
-	video_data = FALSE_m12;
-	if (len > 12) {
-		if (base_name[len - 6] == '_' && base_name[len - 5] == 'n')
-			if (base_name[len - 12] == '_' && base_name[len - 11] == 's')
-				video_data = TRUE_m12;
-	}
-	if (video_data == FALSE_m12)
-		return(PRTY_E_UNSPEC_m12);
-
-	// check that parity data exists
-	base_name[len - 12] = 0;
-	STR_replace_pattern_m12(base_name, "parity", MED_file, parity_file);
-	G_extract_path_parts_m12(MED_file, path, base_name, ext);
-	base_name[len - 4] = base_name[len - 3] = base_name[len - 2] = base_name[len - 1] = '0';
-	sprintf_m12(parity_file, "%s/%s.%s", path, base_name, ext);
-	if (G_file_exists_m12(parity_file) == DOES_NOT_EXIST_m12) {
-		G_warning_message_m12("\n%s(): parity data for \"%s\" does not exist\n", __FUNCTION__, MED_file);
-		return(PRTY_E_UNSPEC_m12);
-	}
-	
-	// check file vs parity (todo)
-	
-	return(PRTY_VALID_m12);
-}
-
-
-
 TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 {
 	si1		sess_path[FULL_FILE_NAME_BYTES_m12], md_path[FULL_FILE_NAME_BYTES_m12];
@@ -33926,7 +34274,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_SEG_DAT_DATA_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], TIME_SERIES_DATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -33942,7 +34290,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_SEG_DAT_IDX_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -33958,7 +34306,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_SEG_META_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -33974,7 +34322,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_SEG_REC_DATA_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], RECORD_DATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -33990,7 +34338,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_SEG_REC_IDX_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], RECORD_INDICES_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -34012,7 +34360,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_CHAN_REC_DATA_m12) {
 				for (i = j = 0; i < n_chans; ++i) {
 					sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[j].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
 						++j;
 				}
 				if (j) {
@@ -34027,7 +34375,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_TS_CHAN_REC_IDX_m12) {
 				for (i = j = 0; i < n_chans; ++i) {
 					sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[j].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
 						++j;
 				}
 				if (j) {
@@ -34080,7 +34428,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			
 			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 			
-			// video data (these are done across video data files within a segment)
+			// video segment data (these are done across video data files within a segment)
 			if (flags & PRTY_VID_SEG_DAT_DATA_m12) {
 				sprintf_m12(tmp_str, "%s_s%s", chan_names[j], num_str);
 				sprintf_m12(base_paths[0], "%s/%s.%s/%s.%s", sess_path, chan_names[j], VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
@@ -34093,9 +34441,11 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 					G_message_m12("Building segment %d video data parity ...\n", i);
 					for (j = 0; j < n_vids; ++j)
 						strcpy_m12(files[j].path, vid_paths[j]);
+					free_m12((void *) vid_paths, __FUNCTION__);
 					parity_ps.n_files = n_vids;
 					PRTY_build_m12(&parity_ps);
-					free_m12((void *) vid_paths, __FUNCTION__);
+					for (j = 0; j < n_vids; ++j)  // create parity crc filess for video data files
+						PRTY_write_pcrc_m12(files[j].path);
 				}
 			}
 			
@@ -34109,7 +34459,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_VID_SEG_DAT_IDX_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], VIDEO_INDICES_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -34125,7 +34475,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_VID_SEG_META_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], VIDEO_METADATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -34141,7 +34491,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_VID_SEG_REC_DATA_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], RECORD_DATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -34157,7 +34507,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_VID_SEG_REC_IDX_m12) {
 				for (j = k = 0; j < n_chans; ++j) {
 					sprintf_m12(files[k].path, "%s.%s", base_paths[j], RECORD_INDICES_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[k].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[k].path) == FILE_EXISTS_m12)
 						++k;
 				}
 				if (k) {
@@ -34179,7 +34529,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_VID_CHAN_REC_DATA_m12) {
 				for (i = j = 0; i < n_chans; ++i) {
 					sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[j].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
 						++j;
 				}
 				if (j) {
@@ -34194,7 +34544,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			if (flags & PRTY_VID_CHAN_REC_IDX_m12) {
 				for (i = j = 0; i < n_chans; ++i) {
 					sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
-					if (G_file_exists_m12(files[j].path) == FILE_EXISTS_m12)
+					if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
 						++j;
 				}
 				if (j) {
@@ -34220,7 +34570,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		if (flags & PRTY_SEG_SESS_REC_DATA_m12) {
 			for (i = j = 0; i < n_segs; ++i) {
 				sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(files[j].path) == FILE_EXISTS_m12)
+				if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
 					++j;
 			}
 			if (j) {
@@ -34235,7 +34585,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		if (flags & PRTY_SEG_SESS_REC_IDX_m12) {
 			for (i = j = 0; i < n_segs; ++i) {
 				sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_file_exists_m12(files[j].path) == FILE_EXISTS_m12)
+				if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
 					++j;
 			}
 			if (j) {
@@ -34252,7 +34602,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		// session records data
 		if (flags & PRTY_GLB_SESS_REC_DATA_m12) {
 			sprintf_m12(files[0].path, "%s/%s.%s", sess_path, sess_name, RECORD_DATA_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(files[0].path) == FILE_EXISTS_m12) {
+			if (G_exists_m12(files[0].path) == FILE_EXISTS_m12) {
 				sprintf_m12(parity_ps.path, "%s/parity.%s", sess_path, RECORD_DATA_FILE_TYPE_STRING_m12);
 				parity_ps.n_files = 1;
 				G_message_m12("Building session record data parity ...\n");
@@ -34263,7 +34613,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		// session records indices
 		if (flags & PRTY_GLB_SESS_REC_IDX_m12) {
 			sprintf_m12(files[0].path, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			if (G_file_exists_m12(files[0].path) == FILE_EXISTS_m12) {
+			if (G_exists_m12(files[0].path) == FILE_EXISTS_m12) {
 				sprintf_m12(parity_ps.path, "%s/parity.%s", sess_path, RECORD_INDICES_FILE_TYPE_STRING_m12);
 				parity_ps.n_files = 1;
 				G_message_m12("Building session record indices parity ...\n");
@@ -34283,6 +34633,50 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	G_message_m12("Parity data built\n\n");
 
 	return(0);
+}
+
+
+TERN_m12	PRTY_write_pcrc_m12(si1 *file_path)
+{
+	ui1			*bytes;
+	si1			path[FULL_FILE_NAME_BYTES_m12];
+	ui4			crc;
+	si8			len;
+	PRTY_CRC_FILE_m12	pcrc;
+	FILE			*fp;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	if (G_exists_m12(file_path) != FILE_EXISTS_m12) {
+		G_warning_message_m12("%s(): file \"%s\" does not exist\n", __FUNCTION__, file_path);
+		return(FALSE_m12);
+	}
+
+	// read in file
+	fp = fopen_m12(file_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	len = G_file_length_m12(fp, NULL);
+	bytes = (ui1 *) malloc_m12((size_t) len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fread_m12((void *) bytes, sizeof(ui1), (size_t) len, fp, file_path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+	
+	// calculate crc
+	crc = CRC_calculate_m12(bytes, len);
+	free_m12((void *) bytes, __FUNCTION__);
+	
+	// build parity crc file
+	pcrc.file_crc_1 = pcrc.file_crc_2 = pcrc.file_crc_3 = crc;
+	strncpy_m12(pcrc.path, file_path, FULL_FILE_NAME_BYTES_m12);
+	pcrc.self_crc = CRC_calculate_m12((ui1 *) &pcrc + sizeof(ui4), sizeof(PRTY_CRC_FILE_m12) - sizeof(ui4));
+	
+	// write out
+	sprintf_m12(path, "%s.%s", file_path, PARITY_CRC_FILE_TYPE_CODE_m12);
+	fp = fopen_m12(path, "w", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fwrite_m12((void *) &pcrc, sizeof(PRTY_CRC_FILE_m12), (size_t) 1, fp, path, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	fclose(fp);
+
+	return(TRUE_m12);
 }
 
 
@@ -38440,7 +38834,7 @@ si4    WN_ls_1d_to_buf_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 	for (i = 0; i < n_dirs; ++i) {
 		dir_name = dir_strs[i];
 		if (STR_contains_regex_m12(dir_name) == FALSE_m12) {
-			fe = G_file_exists_m12(dir_name);
+			fe = G_exists_m12(dir_name);
 			// a plain directory name will not list it's contents => must append "\*"
 			if (fe == DIR_EXISTS_m12) {
 				sprintf(tmp_dir, "%s\\*", dir_name);
@@ -38529,7 +38923,7 @@ si4    WN_ls_1d_to_tmp_m12(si1 **dir_strs, si4 n_dirs, TERN_m12 full_path, si1 *
 	for (i = 0; i < n_dirs; ++i) {
 		dir_name = dir_strs[i];
 		if (STR_contains_regex_m12(dir_name) == FALSE_m12) {
-			fe = G_file_exists_m12(dir_name);
+			fe = G_exists_m12(dir_name);
 			// a plain directory name will not list it's contents => must append "\*"
 			if (fe == DIR_EXISTS_m12) {
 				sprintf(tmp_dir, "%s\\*", dir_name);
@@ -39415,11 +39809,11 @@ TERN_m12	freeable_m12(void *address)
 	return(FALSE_m12);
 #endif
 	
-	// Can't use malloc_size_m13() if address not allocated:
-	// LINUX_m13: malloc_usable_size() generates unrecoverable segmentation fault
-	// WINDOWS_m13: _msize() terminates process without signal
+	// Can't use malloc_size_m12() if address not allocated:
+	// LINUX_m12: malloc_usable_size() generates unrecoverable segmentation fault
+	// WINDOWS_m12: _msize() terminates process without signal
 
-#ifdef LINUX_m13
+#ifdef LINUX_m12
 	si4	err;
 	
 	// check that current protection can be changed
@@ -39428,7 +39822,7 @@ TERN_m12	freeable_m12(void *address)
 		return(FALSE_m12);
 #endif
 
-#ifdef WINDOWS_m13
+#ifdef WINDOWS_m12
 	DWORD	err, curr_protection;
 
 	// check that current protection can be changed

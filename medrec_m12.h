@@ -133,7 +133,7 @@ TERN_m12        REC_check_structure_alignments_m12(ui1 *bytes);
 // Constants
 #define REC_Term_TYPE_STRING_m12        "Term"                  // ascii[4]
 #define REC_Term_TYPE_CODE_m12          (ui4) 0x6d726554        // ui4 (little endian)
-// #define REC_Tern_TYPE_CODE_m12       (ui4) 0x5465726d        // ui4 (big endian)
+// #define REC_Term_TYPE_CODE_m12       (ui4) 0x5465726d        // ui4 (big endian)
 
 // If there are any records, there is also a terminal record index
 // in record indices files
@@ -199,11 +199,10 @@ TERN_m12        REC_check_structure_alignments_m12(ui1 *bytes);
 #define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m12			FRAME_NUMBER_NO_ENTRY_m12
 #define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m12                          24							// si4
 #define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m12                        SEGMENT_NUMBER_NO_ENTRY_m12
-#define REC_Sgmt_v11_PAD_OFFSET_m12                     		28							// ui1
-#define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m12                     REC_Sgmt_v11_PAD_OFFSET_m12
-#define REC_Sgmt_v11_PAD_BYTES_m12                     			4
-#define REC_Sgmt_v11_SAMPLING_FREQUENCY_VARIABLE_m12		        SAMPLE_NUMBER_NO_ENTRY_m12
-#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m12		        	FRAME_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_OFFSET_m12              28							// si4
+#define REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m12            CHANNEL_NUMBER_NO_ENTRY_m12
+#define REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m12        CHANNEL_NUMBER_ALL_CHANNELS_m12
+#define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m12                     REC_Sgmt_v11_BYTES_m12
 
 // Structures
 // REC_Sgmt_v11_m12 defined in medlib_m12.h due to codependency
