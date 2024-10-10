@@ -1320,8 +1320,7 @@ typedef struct {
 } PRTY_CRC_FILE_m12;
 
 typedef struct {
-	ui4	index;
-	ui4	length;
+	si8	length;
 	si8	offset;
 } PRTY_BLOCK_m12;  // bad block location returned from PRTY_validate_m12()
 

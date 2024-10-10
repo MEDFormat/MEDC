@@ -33374,7 +33374,7 @@ TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps)
 	ui4			type_code;
 	si4			i, j, n_files, segment_number;
 	ui8			*target_ptr, *source_ptr, session_UID, channel_UID, segment_UID;
-	si8			nr, nw, bytes_read, bytes_written, mem_block_bytes;
+	si8			nr, nw, bytes_read, bytes_written, mem_block_bytes, offset, length;
 	si8			target_len, bytes_to_read, bytes_to_write, bytes_remaining, parity_modification;
 	PRTY_FILE_m12		*files, *source_file;
 	FILE_TIMES_m12		ft;
@@ -33516,64 +33516,115 @@ TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps)
 		if (files[i].fp == NULL)
 			goto PRTY_REPAIR_EXIT_m12;
 		
-		if (type_code == VIDEO_DATA_FILE_TYPE_CODE_m12) {
-			fseek(parity_fp, 0, SEEK_SET);
-			for (i = 0; i < n_files; ++i)
-				fseek(files[i].fp, 0, SEEK_SET);
-		} else {
-			fseek(parity_fp, UNIVERSAL_HEADER_BYTES_m12, SEEK_SET);
-			for (i = 0; i < n_files; ++i)
-				fseek(files[i].fp, UNIVERSAL_HEADER_BYTES_m12, SEEK_SET);
-		}
-
-		bytes_read = bytes_written = UNIVERSAL_HEADER_BYTES_m12;
-		target_len = files[PRTY_FILE_DAMAGED_IDX_m12].len;
-		while (bytes_read < target_len) {
-			// read parity file
-			bytes_remaining = target_len - bytes_read;
-			bytes_to_read = mem_block_bytes;
-			if (bytes_remaining < mem_block_bytes)
-				bytes_to_read = bytes_remaining;
-			bytes_to_write = bytes_to_read;
-			nr = fread((void *) parity, sizeof(ui1), (size_t) bytes_to_read, parity_fp);
-			if (nr != bytes_to_read) {
-				G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, parity_path);
-				exit(-1);
-			}
-			bytes_read += nr;
-			
-			for (i = PRTY_FILE_DAMAGED_IDX_m12 + 1; i < n_files; ++i) {
-				// read source file
-				source_file = files + i;
-				if (source_file->finished == TRUE_m12)
-					continue;
-				bytes_to_read = source_file->len - bytes_written;
-				if (bytes_to_read > mem_block_bytes)
-					bytes_to_read = mem_block_bytes;
-				else
-					source_file->finished = TRUE_m12;
-				nr = fread((void *) data, sizeof(ui1), (size_t) bytes_to_read, source_file->fp);
-				if (nr != bytes_to_read) {
-					G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, source_file->path);
-					exit(-1);
+		// specific blocks returned
+		if (validity_code & PRTY_BLOCKS_m12) {
+			for (i = 0; i < parity_ps->n_bad_blocks; ++i) {
+				offset = parity_ps->bad_blocks[i].offset;
+				fseek(parity_fp, offset, SEEK_SET);
+				for (j = 0; j < n_files; ++j)
+					if (files[j].finished == FALSE_m12)
+						fseek(files[j].fp, 0, SEEK_SET);
+				// read parity file
+				length = parity_ps->bad_blocks[i].length;
+				nr = fread((void *) parity, sizeof(ui1), (size_t) length, parity_fp);
+				if (nr != length) {
+					G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, parity_path);
+					goto PRTY_REPAIR_EXIT_m12;
 				}
-
-				// add to parity array
-				target_ptr = (ui8 *) parity;
-				source_ptr = (ui8 *) data;
-				for (j = bytes_to_read >> 3; j--;)
-					*target_ptr++ ^= *source_ptr++;
+				
+				for (j = PRTY_FILE_DAMAGED_IDX_m12 + 1; j < n_files; ++j) {
+					// read source file
+					source_file = files + i;
+					if (source_file->finished == TRUE_m12)
+						continue;
+					bytes_to_write = bytes_to_read = length;
+					if ((offset + bytes_to_read) < source_file->len)
+						bytes_to_read = source_file->len - offset;
+					else
+						source_file->finished = TRUE_m12;
+					nr = fread((void *) data, sizeof(ui1), (size_t) bytes_to_read, source_file->fp);
+					if (nr != bytes_to_read) {
+						G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, source_file->path);
+						goto PRTY_REPAIR_EXIT_m12;
+					}
+					
+					// add to parity array
+					target_ptr = (ui8 *) parity;
+					source_ptr = (ui8 *) data;
+					for (j = bytes_to_read >> 3; j--;)
+						*target_ptr++ ^= *source_ptr++;
+				}
+				
+				// write out new parity
+				j = PRTY_FILE_DAMAGED_IDX_m12;
+				nw = fwrite((void *) parity, sizeof(ui1), (size_t) bytes_to_write, files[j].fp);
+				if (nw != bytes_to_write) {
+					G_error_message_m12("%s(): error writing file \"%s\" => exiting\n", __FUNCTION__, files[j].path);
+					goto PRTY_REPAIR_EXIT_m12;
+				}
+			}  // end bad blocks loop
+		} else {
+			// rebuild whole file
+			if (type_code == VIDEO_DATA_FILE_TYPE_CODE_m12) {
+				fseek(parity_fp, 0, SEEK_SET);
+				for (i = 0; i < n_files; ++i)
+					fseek(files[i].fp, 0, SEEK_SET);
+				bytes_read = bytes_written = 0;  // no universal header
+			} else {
+				fseek(parity_fp, UNIVERSAL_HEADER_BYTES_m12, SEEK_SET);
+				for (i = 0; i < n_files; ++i)
+					fseek(files[i].fp, UNIVERSAL_HEADER_BYTES_m12, SEEK_SET);
+				bytes_read = bytes_written = UNIVERSAL_HEADER_BYTES_m12;  // start at end of universal header
 			}
-
-			// write out new parity
-			i = PRTY_FILE_DAMAGED_IDX_m12;
-			nw = fwrite((void *) parity, sizeof(ui1), (size_t) bytes_to_write, files[i].fp);
-			if (nw != bytes_to_write) {
-				G_error_message_m12("%s(): error writing file \"%s\" => exiting\n", __FUNCTION__, files[i].path);
-				exit(-1);
+			
+			target_len = files[PRTY_FILE_DAMAGED_IDX_m12].len;  // not sure it's is possible, but this will fail if damage resulted in file length change
+			while (bytes_read < target_len) {
+				// read parity file
+				bytes_remaining = target_len - bytes_read;
+				bytes_to_read = mem_block_bytes;
+				if (bytes_remaining < mem_block_bytes)
+					bytes_to_read = bytes_remaining;
+				bytes_to_write = bytes_to_read;
+				nr = fread((void *) parity, sizeof(ui1), (size_t) bytes_to_read, parity_fp);
+				if (nr != bytes_to_read) {
+					G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, parity_path);
+					goto PRTY_REPAIR_EXIT_m12;
+				}
+				bytes_read += nr;
+				
+				for (i = PRTY_FILE_DAMAGED_IDX_m12 + 1; i < n_files; ++i) {
+					// read source file
+					source_file = files + i;
+					if (source_file->finished == TRUE_m12)
+						continue;
+					bytes_to_read = source_file->len - bytes_written;
+					if (bytes_to_read > mem_block_bytes)
+						bytes_to_read = mem_block_bytes;
+					else
+						source_file->finished = TRUE_m12;
+					nr = fread((void *) data, sizeof(ui1), (size_t) bytes_to_read, source_file->fp);
+					if (nr != bytes_to_read) {
+						G_error_message_m12("%s(): error reading file \"%s\" => exiting\n", __FUNCTION__, source_file->path);
+						goto PRTY_REPAIR_EXIT_m12;
+					}
+					
+					// add to parity array
+					target_ptr = (ui8 *) parity;
+					source_ptr = (ui8 *) data;
+					for (j = bytes_to_read >> 3; j--;)
+						*target_ptr++ ^= *source_ptr++;
+				}
+				
+				// write out new parity
+				i = PRTY_FILE_DAMAGED_IDX_m12;
+				nw = fwrite((void *) parity, sizeof(ui1), (size_t) bytes_to_write, files[i].fp);
+				if (nw != bytes_to_write) {
+					G_error_message_m12("%s(): error writing file \"%s\" => exiting\n", __FUNCTION__, files[i].path);
+					goto PRTY_REPAIR_EXIT_m12;
+				}
+				bytes_written += nw;
 			}
-			bytes_written += nw;
-		}
+		}  // end rebuild whole file
 
 		ret_val = TRUE_m12;
 	} // end body repair
@@ -34082,8 +34133,7 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 							bb_size += BAD_BLOCK_INCREMENT;
 							bb = (PRTY_BLOCK_m12 *) realloc((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m12));
 						}
-						bb[n_bb].index = (ui4) i;
-						bb[n_bb].length = rh->total_record_bytes;
+						bb[n_bb].length = (si8) rh->total_record_bytes;
 						bb[n_bb].offset = offset;
 						++n_bb;
 					}
@@ -34130,8 +34180,7 @@ ui1        PRTY_validate_m12(si1 *MED_file, ...)  // varargs(MED_file == NULL): 
 							bb_size += BAD_BLOCK_INCREMENT;
 							bb = (PRTY_BLOCK_m12 *) realloc((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m12));
 						}
-						bb[n_bb].index = (ui4) i;
-						bb[n_bb].length = bh->total_block_bytes;
+						bb[n_bb].length = (si8) bh->total_block_bytes;
 						bb[n_bb].offset = offset;
 						++n_bb;
 					}
