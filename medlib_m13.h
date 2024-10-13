@@ -422,7 +422,7 @@ typedef struct {
 #define CHANNEL_NUMBER_NO_ENTRY_m13             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m13         -2
 #define DOES_NOT_EXIST_m13                      FALSE_m13	// -1
-#define FILE_EXISTS_ERROR_m13                   UNKNOWN_m13	// 0
+#define EXISTS_ERROR_m13                   UNKNOWN_m13	// 0
 #define FILE_EXISTS_m13				TRUE_m13	// 1
 #define DIR_EXISTS_m13                          ((si1) 2)
 #define SIZE_STRING_BYTES_m13                   32
@@ -438,6 +438,8 @@ typedef struct {
 #define SAMPLE_NUMBER_EPS_m13			((sf8) 0.001)
 #define FRAME_NUMBER_EPS_m13			((sf8) 0.01)
 #define UNMAPPED_CHANNEL_m13			((si4) -1)
+#define SHOW_CURRENT_BEHAVIOR_m13		1
+#define SHOW_BEHAVIOR_STACK_m13			2
 #if defined MACOS_m13 || defined LINUX_m13
 	#define NULL_DEVICE_m13				"/dev/null"
 	#define DIR_BREAK_m13					'/'
@@ -448,11 +450,8 @@ typedef struct {
 	#define NULL_DEVICE_m13					"NUL"
 	#define DIR_BREAK_m13					'\\'
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13		0  // full permissions for everyone (Windows does not support "other" category)
-#endif  // WINDOWS_m13
-#define SHOW_CURRENT_BEHAVIOR_m13		1
-#define SHOW_BEHAVIOR_STACK_m13			2
 
-#ifdef WINDOWS_m13  // use MacOS / Linux constants for mprotect_m13()
+	// MacOS / Linux constants for mprotect_m13()
 	#define PROT_NONE	0  // page can not be accessed
 	#define PROT_READ	1  // age can be read
 	#define PROT_WRITE	2  // page can be written
@@ -675,6 +674,9 @@ typedef struct {
 #define RECORD_INDICES_FILE_TYPE_STRING_m13                     "ridx"			// ascii[4]
 #define RECORD_INDICES_FILE_TYPE_CODE_m13                       (ui4) 0x78646972	// ui4 (little endian)
 // #define RECORD_INDICES_FILE_TYPE_CODE_m13                    (ui4) 0x72696478	// ui4 (big endian)
+#define PARITY_CRC_FILE_TYPE_STRING_m13                   	"pcrc"                  // ascii[4]
+#define PARITY_CRC_FILE_TYPE_CODE_m13                     	(ui4) 0x63726370        // ui4 (little endian)
+// #define PARITY_CRC_FILE_TYPE_CODE_m13                  	(ui4) 0x70637263        // ui4 (big endian)
 
 // Channel Types
 #define UNKNOWN_CHANNEL_TYPE_m13	NO_FILE_TYPE_CODE_m13
@@ -1856,6 +1858,7 @@ typedef struct {
 #define G_add_behavior_m13(behavior_code)	G_add_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code)	// call with "G_add_behavior_m13(ui4 behavior)" prototype
 #define G_push_behavior_m13(behavior_code)	G_push_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code)	// call with "G_push_behavior_m13(ui4 behavior)" prototype
 #define G_remove_behavior_m13(behavior_code)	G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code)  // call with "G_remove_behavior_m13(ui4 behavior)" prototype
+#define G_reset_behavior_stack_m13(behavior_code)	G_reset_behavior_stack_exec_m13(__FUNCTION__, __LINE__, behavior_code)  // call with "G_reset_behavior_stack_m13(ui4 behavior)" prototype
 
 #ifdef FN_DEBUG_m13
 #define G_push_function_m13() 	G_push_function_exec_m13(__FUNCTION__)  // call with "G_push_function_m13(void)" prototype
@@ -2727,6 +2730,7 @@ tern		G_recover_passwords_m13(si1 *L3_password, UNIVERSAL_HEADER_m13* universal_
 void		G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 tern		G_remove_path_m13(si1 *path);
 void     	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
+tern		G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 behavior_code);
 tern		G_reset_metadata_for_update_m13(FPS_m13 *fps);
 si8		G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4		G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *slice, ui4 search_mode);
@@ -4888,7 +4892,7 @@ si8		strcpy_m13(si1 *target, si1 *source);
 si8		strncat_m13(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes);
 si4		system_m13(si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
-si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...);  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...);  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		vasprintf_m13(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list args);
 si4		vprintf_m13(si1 *fmt, va_list args);

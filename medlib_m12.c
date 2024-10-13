@@ -4857,7 +4857,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		ret_val = system_pipe_m12(&buffer, 0, command, SP_SEPERATE_STREAMS_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12, &e_buffer, &e_buf_len);
 		free((void *) command);
 		if (ret_val < 0) {
-			if (e_buffer)
+			if (buffer)
 				free_m12((void *) buffer, __FUNCTION__);
 			if (e_buffer)
 				free_m12((void *) e_buffer, __FUNCTION__);
@@ -41390,14 +41390,11 @@ SYSTEM_PIPE_RETRY_m12:
 SYSTEM_PIPE_FAIL_m12:
 
 	// close master ends of pseudoterminal
-	if (flags & SP_SEPERATE_STREAMS_m12) {
-		if (stdout_master_fd)
-			close(stdout_master_fd);
+	if (master_fd)
+		close(master_fd);
+	if (flags & SP_SEPERATE_STREAMS_m12)
 		if (stderr_master_fd)
 			close(stderr_master_fd);
-	} else if (master_fd) {
-		close(master_fd);
-	}
 	
 	if (behavior & RETRY_ONCE_m12) {
 		if (retried == FALSE_m12) {
@@ -41425,6 +41422,7 @@ SYSTEM_PIPE_FAIL_m12:
 	sprintf_m12(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
 	err = system_m12(tmp_command, FALSE_m12, __FUNCTION__, SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
 	free((void *) tmp_command);
+	
 	fp = fopen_m12(tmp_file, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	bytes_in_buffer = G_file_length_m12(fp, NULL);
 	if (assign_buffer == TRUE_m12) {
@@ -41843,7 +41841,6 @@ SYSTEM_PIPE_FAIL_m12:
 				fprintf_m12(stderr, "\t=> exiting\n\n");
 			else
 				fprintf_m12(stderr, "\t=> returning\n\n");
-			fflush(stderr);
 		}
 	}
 	

@@ -1813,6 +1813,9 @@ si4	G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 tern	G_clear_terminal_m13(void)
 {
 #ifdef FN_DEBUG_m13
@@ -3304,7 +3307,7 @@ si1     G_exists_m13(si1 *path)
 		if (err == ENOENT)
 			return_m13(DOES_NOT_EXIST_m13);
 		G_set_error_m13(E_UNSPEC_m13, "passed path \"%s\" resulted in error", path);
-		return_m13(FILE_EXISTS_ERROR_m13);
+		return_m13(EXISTS_ERROR_m13);
 	} else if (S_ISDIR(sb.st_mode)) {
 		return_m13(DIR_EXISTS_m13);
 	}
@@ -3315,7 +3318,7 @@ si1     G_exists_m13(si1 *path)
 		err = errno_m13();
 		if (err == ENOENT)
 			return_m13(DOES_NOT_EXIST_m13);
-		return_m13(FILE_EXISTS_ERROR_m13);
+		return_m13(EXISTS_ERROR_m13);
 	} else if ((sb.st_mode & S_IFMT) == S_IFDIR) {
 		return_m13(DIR_EXISTS_m13);
 	}
@@ -5026,11 +5029,12 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 {
 	tern	regex;
 	si1		tmp_enclosing_directory[FULL_FILE_NAME_BYTES_m13], tmp_path[FULL_FILE_NAME_BYTES_m13];
-	si1		tmp_name[FULL_FILE_NAME_BYTES_m13], tmp_extension[16], tmp_ext[16], *buffer, *c, *c2;
+	si1		tmp_name[FULL_FILE_NAME_BYTES_m13], tmp_extension[16], tmp_ext[16], *buffer, *e_buffer, *c, *c2;
 	si1		**tmp_ptr_ptr;
 	ui4		path_parts;
 	si4		i, j, n_in_files, *n_out_files;
-	
+	si8		e_buf_len;
+
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -5131,19 +5135,15 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	if (regex == TRUE_m13) {
 		
 	#if defined MACOS_m13 || defined LINUX_m13
-		tern	no_match;
-		si1		*command, *tmp_command;
+		si1		*command;
 		si4		ret_val;
 		size_t		len;
-
-		// alternating with tmp_command here because of a quirk in sprintf_m13(), that needs to be looked at
 
 		len = n_in_files * FULL_FILE_NAME_BYTES_m13;
 		if (flags & GFL_INCLUDE_INVISIBLE_m13)
 			len <<= 1;
 		len += 16;
 		command = (si1 *) malloc((size_t) len);
-		tmp_command = (si1 *) malloc((size_t) len);
 		#ifdef MACOS_m13
 		strcpy(command, "/bin/ls -1d");
 		#endif
@@ -5154,51 +5154,33 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			STR_escape_chars_m13(file_list[i], (si1) 0x20, FULL_FILE_NAME_BYTES_m13);  // escape spaces
 			STR_escape_chars_m13(file_list[i], (si1) 0x27, FULL_FILE_NAME_BYTES_m13);  // escape apostrophes
 			STR_escape_chars_m13(file_list[i], (si1) 0x60, FULL_FILE_NAME_BYTES_m13);  // escape grave accent
-			len = sprintf(tmp_command, "%s %s", command, file_list[i]);
-			memcpy((void *) command, (void *) tmp_command, ++len);
+			len = sprintf_m13(command, "%s %s", command, file_list[i]);
 			if (flags & GFL_INCLUDE_INVISIBLE_m13) {
 				G_extract_path_parts_m13(file_list[i], NULL, name, extension);
-				len = sprintf(tmp_command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
-				memcpy((void *) command, (void *) tmp_command, ++len);
-				if (*extension) {
-					len = sprintf(tmp_command, "%s.%s", command, extension);
-					memcpy((void *) command, (void *) tmp_command, ++len);
-				}
+				len = sprintf_m13(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
+				if (*extension)
+					len = sprintf_m13(command, "%s.%s", command, extension);
 			}
 		}
-		free((void *) tmp_command);
 		free_2D_m13((void **) file_list, n_in_files);
 
-		buffer = NULL;
-		ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+		buffer = e_buffer = NULL;
+		e_buf_len = 0;
+		ret_val = system_pipe_m13(&buffer, 0, command, SP_SEPERATE_STREAMS_m13, &e_buffer, &e_buf_len);
+		if (e_buffer)
+			free_m13((void *) e_buffer);
 		if (ret_val < 0) {
-			// system_pipe_m13() error return frees buffer
+			if (buffer)
+				free_m13((void *) buffer);
 			*n_out_files = 0;
 			return_m13(NULL);
 		}
 		if (STR_empty_m13(buffer) == TRUE_m13) {
 			*n_out_files = 0;
 			free_m13((void *) buffer);
-			return(NULL);
+			return_m13(NULL);
 		}
 
-		// system_pipe_m13() can distinguish between stderr & stdout, but not well tested yet
-		// this is a terrible solution, but works for now
-		no_match = FALSE_m13;
-		#ifdef LINUX_m13
-		if (strncmp(buffer, "/usr/bin/ls: ", 13) == 0)
-			no_match = TRUE_m13;
-		#endif
-		#ifdef MACOS_m13
-		if (strncmp(buffer, "ls: ", 4) == 0)
-			no_match = TRUE_m13;
-		#endif
-		if (no_match == TRUE_m13) {
-			*n_out_files = 0;
-			free_m13((void *) buffer);
-			return(NULL);
-		}
-				
 		// count expanded file list
 		c = buffer;
 		*n_out_files = 0;
@@ -5210,6 +5192,20 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			free_m13((void *) buffer);
 			return_m13(NULL);
 		}
+
+		// re-allocate
+		file_list = (si1 **) calloc_2D_m13((size_t) *n_out_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+		
+		// build file list
+		c = buffer;
+		for (i = 0; i < *n_out_files; ++i) {
+			c2 = file_list[i];
+			while (*c != '\n')
+				*c2++ = *c++;
+			*c2 = 0;
+			++c;
+		}
+		free_m13((void *) buffer);
 	#endif  // MACOS_m13 || LINUX_m13
 		
 	#ifdef WINDOWS_m13
@@ -5220,7 +5216,6 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 			*n_out_files = 0;
 			return_m13(NULL);
 		}
-	#endif  // WINDOWS_m13
 
 		// re-allocate
 		file_list = (si1 **) calloc_2D_m13((size_t) *n_out_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
@@ -5236,6 +5231,8 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 				++c;
 			++c;
 		}
+	#endif  // WINDOWS_m13
+		
 		free_m13((void *) buffer);
 	}
 
@@ -7281,7 +7278,7 @@ ui4    G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1 *MED_name)
 	} else if (fe == DOES_NOT_EXIST_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "passed path \"%s\" does not exist", local_MED_dir);
 		return_m13(NO_TYPE_CODE_m13);
-	} else if (fe == FILE_EXISTS_ERROR_m13) {  // G_exists_m13() sets error
+	} else if (fe == EXISTS_ERROR_m13) {  // G_exists_m13() sets error
 		return_m13(NO_TYPE_CODE_m13);
 	}
 
@@ -7355,6 +7352,8 @@ si1	*G_MED_type_string_from_code_m13(ui4 code)
 			return_m13(TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
 			return_m13(TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+		case PARITY_CRC_FILE_TYPE_CODE_m13:
+			return_m13(PARITY_CRC_FILE_TYPE_STRING_m13);
 		default:
 			G_set_error_m13(E_NOT_MED_m13, "unrecognized MED file type code (0x%08x)", code);
 			return_m13(NULL);
@@ -7364,7 +7363,8 @@ si1	*G_MED_type_string_from_code_m13(ui4 code)
 
 ui4     G_MED_type_code_from_string_m13(si1 *string)
 {
-	si1		*c, path[FULL_FILE_NAME_BYTES_m13], name[SEGMENT_BASE_FILE_NAME_BYTES_m13];
+	tern		ext_only = FALSE_m13;
+	si1		*c, *c2;
 	si8     	i, len;
 	EXT_CODE_m13	type;
 
@@ -7374,20 +7374,29 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 
 	if (string == NULL) {
 		G_warning_message_m13("%s(): string is NULL\n", __FUNCTION__);
-		return(NO_FILE_TYPE_CODE_m13);
+		return_m13(NO_FILE_TYPE_CODE_m13);
 	}
 	
-	// remove quotes if present
-	if (*string == '"') {
-		strcpy(path, string);
-		STR_strip_character_m13(path, '"');
-		string = path;
-	}
-	type.code = NO_TYPE_CODE_m13;
-	G_extract_path_parts_m13(string, path, name, type.ext);
-	if (type.code == NO_TYPE_CODE_m13)  // possible that just extension was passed
-		strncpy_m13(type.ext, string, 8);
-
+		
+	// move to end of string
+	c = string - 1;
+	while (*++c);
+	
+	// find last period period
+	while (--c != string)
+		if (*c == '.')
+			break;
+	
+	if (*c == '.')  // has extension,
+		++c;
+	else
+		ext_only = TRUE_m13;  // possible string is an extension
+	
+	c2 = type.ext;
+	for (i = sizeof(EXT_CODE_m13) - 1; i-- && *c;)
+		*c2++ = *c++;
+	*c2 = 0;
+	
 	switch (type.code) {
 		case NO_FILE_TYPE_CODE_m13:
 		case SESSION_DIRECTORY_TYPE_CODE_m13:
@@ -7404,8 +7413,15 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
-			return_m13(type.code);
+		case PARITY_CRC_FILE_TYPE_CODE_m13:
+			return(type.code);
 		default:  // check tag to determine if this is a MED video data file
+			si1	name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m13];
+			
+			if (ext_only == TRUE_m13)  // need path to do following check
+				break;
+			
+			G_extract_path_parts_m13(string, NULL, name, NULL);
 			len = strlen(name);
 			if (len <= 12)
 				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
@@ -7424,12 +7440,12 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 			for (i = FILE_NUMBERING_DIGITS_m13; i--; ++c)
 				if (*c < '0' || *c > '9')
 					goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
-
+			
 			return_m13(VIDEO_DATA_FILE_TYPE_CODE_m13);
 	}
-	
+		
 MED_TYPE_CODE_FOR_STRING_NOT_MED_m13:
-	
+		
 	G_warning_message_m13("%s(): \"%s\" is not a recognized MED file type\n", __FUNCTION__, string);
 	
 	return_m13(NO_FILE_TYPE_CODE_m13);
@@ -11261,6 +11277,40 @@ void	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset)
 		*time += recording_time_offset;
 	
 	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+tern	G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 behavior_code)
+{
+	BEHAVIOR_m13		*behavior;
+	BEHAVIOR_STACK_m13	*stack;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// pass DEFAULT_BEHAVIOR_m13 to set default behavior
+	
+	stack = G_get_behavior_stack_m13();  // gets mutex
+	if (stack == NULL)
+		return_m13(FALSE_m13);
+
+	if (behavior_code == DEFAULT_BEHAVIOR_m13)
+		behavior_code = globals_m13->behavior_stack_list->default_behavior;
+
+	stack->top_idx = 0;
+	behavior = stack->behaviors;
+	behavior->function = __FUNCTION__;
+	behavior->line = __LINE__;
+	behavior->code = behavior_code;
+
+	// release behavior stacks mutex
+	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -18382,7 +18432,7 @@ tern    CMP_free_cps_cache_m13(CPS_m13 *cps)
 	G_push_function_m13();
 #endif
 
-	if (cps->parameters.cache != NULL) {
+	if (cps->parameters.cache) {
 		free_m13((void * ) cps->parameters.cache);
 		cps->parameters.allocated_decompressed_samples = 0;
 		cps->decompressed_data = cps->decompressed_ptr = cps->parameters.cache = NULL;
@@ -28733,6 +28783,7 @@ tern	FPS_open_m13(FPS_m13 *fps)
 	struct stat	sb;
 #endif
 #ifdef WINDOWS_m13
+	struct _stat64	sb;
 	HANDLE		file_h;
 	DISK_GEOMETRY	disk_geom = { 0 };
 	ui4		dg_result;
@@ -39111,7 +39162,7 @@ tern	mlock_m13(void *addr, size_t len, tern zero_data)
 	}
 	
 	#ifdef WINDOWS_m13
-	if (errno_m13() = 1453)
+	if (errno_m13() == 1453)
 		G_set_error_m13(E_UNSPEC_m13, "insufficient quota to complete the requested service");
 	else
 	#endif
@@ -39777,7 +39828,7 @@ si4		system_m13(si1 *command, ...) // varargs(command = NULL): si1 *command, ter
 
 // not a standard function, but closely related
 #if defined MACOS_m13 || defined LINUX_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	tern	no_command, command_needs_shell, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
 	si1	**e_buffer_ptr, *buffer, *e_buffer, *c;
@@ -39871,6 +39922,11 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 		e_buf_len = va_arg(v_args, si8 *);
 		va_end(v_args);
 
+		if (e_buf_len == NULL) {
+			G_set_error_m13(E_UNSPEC_m13, "e_buf_len is NULL");
+			return_m13(-1);
+		}
+		
 		if (e_buffer_ptr == NULL) {
 			free_e_buffer = TRUE_m13;
 			assign_e_buffer = FALSE_m13;
@@ -39910,38 +39966,32 @@ SYSTEM_PIPE_RETRY_m13:
 		*e_buffer = 0;
 		// create master & slave ends of pseudoterminal
 		if (openpty(&stdout_master_fd, &stdout_slave_fd, NULL, NULL, NULL) == -1) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
+			G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 		if (openpty(&stderr_master_fd, &stderr_slave_fd, NULL, NULL, NULL) == -1) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
+			G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 		// set close on exec on master ends of pseudoterminal
 		if ((fcntl(stdout_master_fd, F_SETFD, FD_CLOEXEC)) == -1) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
+			G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 		if ((fcntl(stderr_master_fd, F_SETFD, FD_CLOEXEC)) == -1) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
+			G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 		child_pid = fork();
 		if (child_pid == -1) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): fork() error\n", __FUNCTION__);
+			G_warning_message_m13("%s(): fork() error\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 	} else {
 		master_fd = 0;
 		child_pid = forkpty(&master_fd, NULL, NULL, NULL);
 		if (child_pid == -1) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): forkpty() error\n", __FUNCTION__);
+			G_warning_message_m13("%s(): forkpty() error\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 	}
@@ -40019,15 +40069,17 @@ SYSTEM_PIPE_RETRY_m13:
 		if (flags & SP_SEPERATE_STREAMS_m13) {
 			// assign child stdout & stderr to slave file descriptors
 			if (login_tty(stdout_slave_fd)) {
-				if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-					G_warning_message_m13("%s(): login_tty() error\n", __FUNCTION__);
-				exit(-1);
+				G_set_error_m13(E_UNSPEC_m13, "child login_tty() error");
+				err = errno_m13();  // capture errno to send back to parent
+				err = (err < 0) ? err : -err;  // make negative, for return
+				return_m13(err);
 			}
 			// make slave end of stderr file descriptor equal stderr
 			if ((dup2(stderr_slave_fd, STDERR_FILENO)) == -1) {
-				if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-					G_warning_message_m13("%s(): dup2() error\n", __FUNCTION__);
-				exit(-1);
+				G_set_error_m13(E_UNSPEC_m13, "child dup2() error");
+				err = errno_m13();  // capture errno to send back to parent
+				err = (err < 0) ? err : -err;  // make negative, for return
+				return_m13(err);
 			}
 		}
 		
@@ -40037,7 +40089,8 @@ SYSTEM_PIPE_RETRY_m13:
 		if (execvp(args[0], args) == -1) {
 			G_set_error_m13(E_UNSPEC_m13, "child execvp() error");
 			err = errno_m13();  // capture errno to send back to parent
-			return(err);  // exit child to allow parent to continue
+			err = (err < 0) ? err : -err;  // make negative, for return
+			return_m13(err);  // exit child to allow parent to continue
 		}
 	}  // rest is parent
 			
@@ -40094,6 +40147,10 @@ SYSTEM_PIPE_RETRY_m13:
 	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
 	err = WEXITSTATUS(status);  // save any error code
 	if (err) {
+		if (flags & SP_SEPERATE_STREAMS_m13) {
+			if (*e_buffer == 0 && *buffer)  // output in stdout, nothing in stderr => set no no error
+				err = 0;
+		}
 		if (command_needs_shell == TRUE_m13) {
 			err = errno_m13();
 			if (err == EIO)  // input/output error: not important
@@ -40110,12 +40167,11 @@ SYSTEM_PIPE_RETRY_m13:
 		if (stderr_master_fd)
 			close(stderr_master_fd);
 	
+	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
-		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
-			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-			if (flags & SP_SEPERATE_STREAMS_m13)
-				printf_m13("%s\n", e_buffer);
-		}
+		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+		if (flags & SP_SEPERATE_STREAMS_m13)
+			G_message_m13("%s\n", e_buffer);
 	}
 
 	if (free_e_buffer == TRUE_m13) {
@@ -40140,15 +40196,12 @@ SYSTEM_PIPE_RETRY_m13:
 SYSTEM_PIPE_FAIL_m13:
 	
 	// close master ends of pseudoterminal
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		if (stdout_master_fd)
-			close(stdout_master_fd);
+	if (master_fd)
+		close(master_fd);
+	if (flags & SP_SEPERATE_STREAMS_m13)
 		if (stderr_master_fd)
 			close(stderr_master_fd);
-	} else if (master_fd) {
-		close(master_fd);
-	}
-	
+
 	if (behavior & RETRY_ONCE_m13) {
 		if (retried == FALSE_m13) {
 			G_nap_m13("1 ms");  // wait 1 ms
@@ -40205,49 +40258,62 @@ SYSTEM_PIPE_FAIL_m13:
 		G_remove_path_m13(e_tmp_file);  // delete temp file
 	}
 
-	if (err == 0) {
+	if (err) {
+		G_warning_message_m13("%s(): command \"%s\" failed\n",  __FUNCTION__, command);
 		if (flags & SP_TEE_TO_TERMINAL_m13) {
-			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
-				printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-				if (flags & SP_SEPERATE_STREAMS_m13)
-					printf_m13("%s\n", e_buffer);
+			if (flags & SP_SEPERATE_STREAMS_m13) {
+				G_warning_message_m13("\tstandard out: \"%s\"\n", buffer);
+				G_warning_message_m13("\tstandard error: \"%s\"\n", e_buffer);
+			} else if (buffer) {
+				G_warning_message_m13("\tcaptured output: \"%s\"\n", buffer);
 			}
 		}
-		if (free_e_buffer == TRUE_m13) {
-			free((void *) e_buffer);
-			*e_buf_len = 0;
-		}
-		if (free_buffer == TRUE_m13) {
-			free((void *) buffer);
-			return(0);
-		}
-		if (assign_buffer == TRUE_m13)
-			*buffer_ptr = buffer;
-		if (assign_e_buffer == TRUE_m13)
-			*e_buffer_ptr = e_buffer;
-		
-		return_m13(bytes_in_buffer);
+		if (behavior & RETURN_ON_FAIL_m13)
+			G_warning_message_m13("\t=> returning\n\n");
+		else
+			G_warning_message_m13("\t=> exiting\n\n");
+		fflush(stderr);
+	}
+	
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+		if (flags & SP_SEPERATE_STREAMS_m13)
+			G_message_m13("%s\n", e_buffer);
 	}
 
-	if (free_buffer == TRUE_m13)
-		free_m13((void *) buffer);
+	if (err) {
+		// make negative for return
+		bytes_in_buffer = err = (err > 0) ? -err : err;
+		
+		// free any allocated buffer unless seperate strems were requested
+		if ((flags & SP_SEPERATE_STREAMS_m13) == 0 && assign_buffer == TRUE_m13)
+			free_buffer = TRUE_m13;
+	}
+
 	if (free_e_buffer == TRUE_m13) {
-		free_m13((void *) e_buffer);
+		free((void *) e_buffer);
 		*e_buf_len = 0;
 	}
+	if (free_buffer == TRUE_m13) {
+		free((void *) buffer);
+		return_m13(err);  // zero if no error, otherwise error code
+	}
+		
+	if (assign_buffer == TRUE_m13)
+		*buffer_ptr = buffer;
+	if (assign_e_buffer == TRUE_m13) {
+		*e_buffer_ptr = e_buffer;
+		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	}
 
-	G_set_error_m13(E_UNSPEC_m13, "command: \"%s\" failed", command);
-	
-	err = (err < 0) ? err : -err;  // make negative, for return
-	
-	return_m13(err);
+	return_m13(bytes_in_buffer);  // bytes in buffer if no error, otherwise error code
 }
 #endif  // MACOS_m13 || LINUX_m13
 
 
 // not a standard function, but closely related
 #ifdef WINDOWS_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SPF_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	tern		no_command, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
 	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command;
@@ -40282,7 +40348,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 		no_command = TRUE_m13;
 	if (no_command == TRUE_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "no command");
-		return(-1);
+		return_m13(-1);
 	}
 
 	if (buffer_ptr == NULL) {
@@ -40347,6 +40413,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 	retried = FALSE_m13;
 	
 SYSTEM_PIPE_RETRY_m13:
+	
 	tmp_command = NULL;
 	read_h = e_read_h =NULL;
 	write_h = e_write_h = NULL;
@@ -40358,24 +40425,20 @@ SYSTEM_PIPE_RETRY_m13:
 	sec_attr.lpSecurityDescriptor = NULL;
 	sec_attr.bInheritHandle = TRUE;
 	if (CreatePipe(&read_h, &write_h, &sec_attr, 0) == FALSE) {
-		if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-			G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
+		G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	if (SetHandleInformation(read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
-		if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-			G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+		G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	if (flags & SP_SEPERATE_STREAMS_m13) {
 		if (CreatePipe(&e_read_h, &e_write_h, &sec_attr, 0) == FALSE) {
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
+			G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 		if (SetHandleInformation(e_read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
-			if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-				G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+			G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
 			goto SYSTEM_PIPE_FAIL_m13;
 		}
 	}
@@ -40399,8 +40462,7 @@ SYSTEM_PIPE_RETRY_m13:
 	// start process
 	errno_reset_m13();
 	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
-		if (!(behavior & SUPPRESS_WARNING_OUTPUT_m13))
-			G_warning_message_m13("%s(): CreateProcess() failed\n", __FUNCTION__);
+		G_warning_message_m13("%s(): CreateProcess() failed\n", __FUNCTION__);
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	
@@ -40455,11 +40517,9 @@ SYSTEM_PIPE_RETRY_m13:
 	CloseHandle(process_info.hThread);  // process' primary thread handle
 
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
-		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
-			printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-			if (flags & SP_SEPERATE_STREAMS_m13)
-				printf_m13("%s\n", e_buffer);
-		}
+		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+		if (flags & SP_SEPERATE_STREAMS_m13)
+			G_message_m13("%s\n", e_buffer);
 	}
 
 	if (free_e_buffer == TRUE_m13) {
@@ -40552,42 +40612,54 @@ SYSTEM_PIPE_FAIL_m13:
 		G_remove_path_m13(e_tmp_file);  // delete temp file
 	}
 	
-	if (err == 0) {
+	if (err) {
+		G_warning_message_m13("%s(): command \"%s\" failed\n",  __FUNCTION__, command);
 		if (flags & SP_TEE_TO_TERMINAL_m13) {
-			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m13)) {
-				printf_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-				if (flags & SP_SEPERATE_STREAMS_m13)
-					printf_m13("%s\n", e_buffer);
+			if (flags & SP_SEPERATE_STREAMS_m13) {
+				G_warning_message_m13("\tstandard out: \"%s\"\n", buffer);
+				G_warning_message_m13("\n\tstandard error: \"%s\"\n", e_buffer);
+			} else if (buffer) {
+				G_warning_message_m13("\tcaptured output: \"%s\"\n", buffer);
 			}
 		}
-		if (free_e_buffer == TRUE_m13) {
-			free_m13((void *) e_buffer);
-			*e_buf_len = 0;
-		}
-		if (free_buffer == TRUE_m13) {
-			free_m13((void *) buffer);
-			return(0);
-		}
-		if (assign_buffer == TRUE_m13)
-			*buffer_ptr = buffer;
-		if (assign_e_buffer == TRUE_m13)
-			*e_buffer_ptr = e_buffer;
-
-		return(bytes_in_buffer);
+		if (behavior & RETURN_ON_FAIL_m13)
+			G_warning_message_m13("\t=> returning\n\n");
+		else
+			G_warning_message_m13("\t=> exiting\n\n");
+	}
+	
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
+		if (flags & SP_SEPERATE_STREAMS_m13)
+			G_message_m13("%s\n", e_buffer);
 	}
 
-	if (free_buffer == TRUE_m13)
-		free_m13((void *) buffer);
+	if (err) {
+		// make negative for return
+		bytes_in_buffer = err = (err > 0) ? -err : err;
+		
+		// free any allocated buffer unless seperate strems were requested
+		if ((flags & SP_SEPERATE_STREAMS_m13) == 0 && assign_buffer == TRUE_m13)
+			free_buffer = TRUE_m13;
+	}
+
 	if (free_e_buffer == TRUE_m13) {
-		free_m13((void *) e_buffer);
+		free((void *) e_buffer);
 		*e_buf_len = 0;
 	}
+	if (free_buffer == TRUE_m13) {
+		free((void *) buffer);
+		return_m13(err);  // zero if no error, otherwise error code
+	}
+		
+	if (assign_buffer == TRUE_m13)
+		*buffer_ptr = buffer;
+	if (assign_e_buffer == TRUE_m13) {
+		*e_buffer_ptr = e_buffer;
+		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	}
 
-	G_set_error_m13(E_UNSPEC_m13, "command: \"%s\" failed", command);
-
-	err = (err < 0) ? -err : err;  // make negative for return
-	
-	return(err);
+	return_m13(bytes_in_buffer);  // bytes in buffer if no error, otherwise error code
 }
 
 #endif  // WINDOWS_m13
