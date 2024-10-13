@@ -415,7 +415,7 @@ typedef struct {
 #define CHANNEL_NUMBER_NO_ENTRY_m12             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m12         -2
 #define DOES_NOT_EXIST_m12                      FALSE_m12  // -1
-#define FILE_EXISTS_ERROR_m12                   UNKNOWN_m12  // 0
+#define EXISTS_ERROR_m12                   	UNKNOWN_m12  // 0
 #define FILE_EXISTS_m12				TRUE_m12  // 1
 #define DIR_EXISTS_m12                          ((si1) 2)
 #define SIZE_STRING_BYTES_m12                   32
@@ -1116,8 +1116,8 @@ typedef struct {
 #define PROC_THREAD_FINISHED_m12	((si4) 2)
 
 
-typedef ui8	pid_t_m12;	// big enough for all OSs, none use signed values
-				// (pid_t_m12 is used for both process and thread IDs throughout the library)
+typedef ui8		pid_t_m12;	// big enough for all OSs, none use signed values
+					// (pid_t_m12 is used for both process and thread IDs throughout the library)
 
 typedef void 	(*sig_handler_t_m12)(si4);  // signal handler function pointer
 
@@ -2448,6 +2448,7 @@ si4             G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLI
 ui4		*G_get_segment_video_start_frames_m12(FILE_PROCESSING_STRUCT_m12 *video_indices_fps, ui4 *number_of_video_files);
 si1		*G_get_session_directory_m12(si1 *session_directory, si1 *MED_file_name, FILE_PROCESSING_STRUCT_m12 *MED_fps);
 TERN_m12	G_get_terminal_entry_m12(si1 *prompt, si1 type, void *buffer, void *default_input, TERN_m12 required, TERN_m12 validate);
+pid_t_m12	G_globals_ID_m12(pid_t_m12 old_id);
 GLOBALS_m12	*G_globals_pointer_m12(void);
 TERN_m12	G_include_record_m12(ui4 type_code, si4 *record_filters);
 TERN_m12	G_initialize_global_tables_m12(TERN_m12 initialize_all_tables);
@@ -4632,7 +4633,7 @@ si8		strcpy_m12(si1 *target, si1 *source);
 si8		strncat_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail);
-si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...);  // varargs(SPF_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...);  // varargs(SP_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		vasprintf_m12(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m12(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m12(si1 *fmt, va_list args);

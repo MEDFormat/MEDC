@@ -669,7 +669,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 	new_bytes = 0;
 	if (type_code == LH_TIME_SERIES_CHANNEL_m12) {
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (chan != NULL)  // segment level passed
+			if (chan)  // segment level passed
 				seg = chan->segments[j];
 			if (seg == NULL) {  // segment missing
 				force_discont = TRUE_m12;
@@ -750,7 +750,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 		contiguon->end_segment_number = (si4) j;
 	} else {  // LH_VIDEO_CHANNEL_m12
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (chan != NULL)  // segment level passed
+			if (chan)  // segment level passed
 				seg = chan->segments[j];
 			if (seg == NULL) {  // segment missing
 				force_discont = TRUE_m12;
@@ -860,20 +860,20 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 	switch (level_header->type_code) {  // type_code for session is ref channel type, so use original value
 		case LH_TIME_SERIES_SEGMENT_m12:
 		case LH_VIDEO_SEGMENT_m12:
-			if (seg->contigua != NULL)
+			if (seg->contigua)
 				free_m12((void *) seg->contigua, __FUNCTION__);
 			seg->contigua = contigua;
 			seg->number_of_contigua = n_contigua;
 			break;
 		case LH_TIME_SERIES_CHANNEL_m12:
 		case LH_VIDEO_CHANNEL_m12:
-			if (chan->contigua != NULL)
+			if (chan->contigua)
 				free_m12((void *) chan->contigua, __FUNCTION__);
 			chan->contigua = contigua;
 			chan->number_of_contigua = n_contigua;
 			break;
 		case LH_SESSION_m12:
-			if (sess->contigua != NULL)
+			if (sess->contigua)
 				free_m12((void *) sess->contigua, __FUNCTION__);
 			sess->contigua = contigua;
 			sess->number_of_contigua = n_contigua;
@@ -909,7 +909,7 @@ Sgmt_RECORD_m12	*G_build_Sgmt_records_array_m12(FILE_PROCESSING_STRUCT_m12 *ri_f
 			}
 		}
 		// use channel records
-		if (chan != NULL) {
+		if (chan) {
 			if (ri_fps == NULL && rd_fps == NULL) {
 				sprintf_m12(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
 				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12) {
@@ -927,7 +927,7 @@ Sgmt_RECORD_m12	*G_build_Sgmt_records_array_m12(FILE_PROCESSING_STRUCT_m12 *ri_f
 	}
 
 	// use Sgmt records
-	if (ri_fps != NULL) {  // assume rd_fps != NULL
+	if (ri_fps) {  // assume rd_fps
 		// full record index file already read in
 		n_recs = ri_fps->universal_header->number_of_entries;
 		if (globals_m12->number_of_session_segments == SEGMENT_NUMBER_NO_ENTRY_m12) {
@@ -1234,7 +1234,7 @@ CHANNEL_m12	*G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *chan
 	// if both NULL, use channel_type
 	
 	// reference channel already set
-	if (channel != NULL) {
+	if (channel) {
 		if (channel == globals_m12->reference_channel) {
 			if (*globals_m12->reference_channel_name == 0)
 				strcpy(globals_m12->reference_channel_name, channel->name);
@@ -1319,7 +1319,7 @@ CHANNEL_m12	*G_change_reference_channel_m12(SESSION_m12 *sess, CHANNEL_m12 *chan
 	} else {  // channel known
 		if (channel->flags & LH_CHANNEL_ACTIVE_m12)
 			goto CHANGE_REF_MATCH_m12;
-		if ((channel = G_get_active_channel_m12(sess, channel_type)) != NULL)
+		if ((channel = G_get_active_channel_m12(sess, channel_type)))
 			goto CHANGE_REF_MATCH_m12;
 	}
 
@@ -1853,7 +1853,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 			// see if indices known
 			fps2 = NULL;
 			seg = (SEGMENT_m12 *) fps->parent;
-			if (seg != NULL) {  // try using parent
+			if (seg) {  // try using parent
 				fps2 = seg->record_indices_fps;
 			} else {  // try using file name
 				G_extract_path_parts_m12(fps->full_file_name, path, name, NULL);
@@ -1861,7 +1861,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				fps2 = G_read_file_m12(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m12, FPS_UNIVERSAL_HEADER_ONLY_m12, NULL, NULL, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 				free_fps2 = TRUE_m12;
 			}
-			if (fps2 != NULL) {
+			if (fps2) {
 				uh2 = fps2->universal_header;
 				if (uh2->number_of_entries != 0)
 					number_of_entries = uh2->number_of_entries;
@@ -1894,7 +1894,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 			// see if indices known
 			level_header = (LEVEL_HEADER_m12 *) fps->parent;  // try using parent
 			fps2 = NULL;
-			if (level_header != NULL) {
+			if (level_header) {
 				switch (level_header->type_code) {
 					case LH_TIME_SERIES_SEGMENT_m12:
 					case LH_VIDEO_SEGMENT_m12:
@@ -1909,7 +1909,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 						break;
 					case LH_SEGMENTED_SESS_RECS_m12:
 						ssr = (SEGMENTED_SESS_RECS_m12 *) level_header;
-						if (ssr->record_indices_fps != NULL) {
+						if (ssr->record_indices_fps) {
 							idx = fps - ssr->record_data_fps[0];
 							fps2 = ssr->record_indices_fps[idx];
 						}
@@ -1922,7 +1922,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				fps2 = G_read_file_m12(NULL, path, 0, UNIVERSAL_HEADER_BYTES_m12, FPS_UNIVERSAL_HEADER_ONLY_m12, NULL, NULL, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
 				free_fps2 = TRUE_m12;
 			}
-			if (fps2 != NULL) {
+			if (fps2) {
 				uh2 = fps2->universal_header;
 				if (uh2->number_of_entries != 0)
 					number_of_entries = uh2->number_of_entries;
@@ -2965,7 +2965,7 @@ void	G_error_string_m12(void)
 			break;
 	}
 	
-	if (globals_m12->err_func != NULL) {
+	if (globals_m12->err_func) {
 		#ifdef MATLAB_m12
 		mexPrintf("%s  (code %d, func %s, line %d)\n\n", str, globals_m12->err_code, globals_m12->err_func, globals_m12->err_line);
 		#else
@@ -3014,7 +3014,7 @@ si1     G_exists_m12(si1 *path)  // can be used for directories also
 		err = errno_m12();
 		if (err == ENOENT)
 			return(DOES_NOT_EXIST_m12);
-		return(FILE_EXISTS_ERROR_m12);
+		return(EXISTS_ERROR_m12);
 	} else if (S_ISDIR(sb.st_mode)) {
 		return(DIR_EXISTS_m12);
 	}
@@ -3025,7 +3025,7 @@ si1     G_exists_m12(si1 *path)  // can be used for directories also
 		err = errno_m12();
 		if (err == ENOENT)
 			return(DOES_NOT_EXIST_m12);
-		return(FILE_EXISTS_ERROR_m12);
+		return(EXISTS_ERROR_m12);
 	} else if ((sb.st_mode & S_IFMT) == S_IFDIR) {
 		return(DIR_EXISTS_m12);
 	}
@@ -3065,7 +3065,7 @@ void	G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *ex
 	}
 
 	// copy extension if allocated
-	if (extension != NULL) {
+	if (extension) {
 		if (*c == '.') {
 			strcpy(extension, c + 1);
 			*c-- = 0;
@@ -3080,12 +3080,12 @@ void	G_extract_path_parts_m12(si1 *full_file_name, si1 *path, si1 *name, si1 *ex
 	while (*--c != DIR_BREAK_m12);
 	
 	// copy name if allocated
-	if (name != NULL)
+	if (name)
 		strncpy_m12(name, c + 1, BASE_FILE_NAME_BYTES_m12);
 	*c = 0;
 	
 	// copy path if allocated
-	if (path != NULL)
+	if (path)
 		strncpy_m12(path, temp_full_file_name, FULL_FILE_NAME_BYTES_m12);
 	
 	return;
@@ -3372,7 +3372,7 @@ CONTIGUON_m12	*G_find_discontinuities_m12(LEVEL_HEADER_m12 *level_header, si8 *n
 	
 	// get time series indices & sample offsets
 	for (i = start_seg_num, j = 0; i <= end_seg_num; ++i, ++j) {
-		if (chan != NULL) {
+		if (chan) {
 			G_numerical_fixed_width_string_m12(seg_num_str, FILE_NUMBERING_DIGITS_m12, i);
 			sprintf_m12(temp_str, "%s/%s_s%s.tisd/%s_s%s.tidx", chan->path, chan->name, seg_num_str, chan->name, seg_num_str);
 			tsi_fps[j] = G_read_file_m12(NULL, temp_str, 0, 0, FPS_FULL_FILE_m12, NULL, NULL, USE_GLOBAL_BEHAVIOR_m12);
@@ -3652,7 +3652,7 @@ si1	*G_find_metadata_file_m12(si1 *path, si1 *md_path)
 	if (dir == NULL)
 		return(NULL);
 	match = FALSE_m12;
-	while ((entry = readdir(dir)) != NULL) {
+	while ((entry = readdir(dir))) {
 		if (entry->d_type != DT_DIR)
 			continue;
 		name = entry->d_name;
@@ -3692,7 +3692,7 @@ FIND_MDF_CHAN_LEVEL_m12:
 	if (dir == NULL)
 		return(NULL);
 	match = FALSE_m12;
-	while ((entry = readdir(dir)) != NULL) {
+	while ((entry = readdir(dir))) {
 		if (entry->d_type != DT_DIR)
 			continue;
 		name = entry->d_name;
@@ -3734,7 +3734,7 @@ FIND_MDF_SEG_LEVEL_m12:
 		return(NULL); // if was not able, return
 	}
 	match = FALSE_m12;
-	while ((entry = readdir(dir)) != NULL) {  // if we were able to read something from the directory
+	while ((entry = readdir(dir))) {  // if we were able to read something from the directory
 		if (entry->d_type != DT_REG && entry->d_type != DT_LNK)
 			continue;
 		name = entry->d_name;
@@ -4148,23 +4148,23 @@ TERN_m12	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structur
 		G_warning_message_m12("%s(): trying to free a NULL CHANNEL_m12 structure => returning with no action\n", __FUNCTION__);
 		return(FALSE_m12);
 	}
-	if (channel->segments != NULL) {
+	if (channel->segments) {
 		for (i = 0; i < globals_m12->number_of_mapped_segments; ++i) {
 			seg = channel->segments[i];
-			if (seg != NULL)
+			if (seg)
 				G_free_segment_m12(seg, TRUE_m12);
 		}
 		free_m12((void *) channel->segments, __FUNCTION__);  // ok whether allocated en bloc or not
 	}
-	if (channel->metadata_fps != NULL)
+	if (channel->metadata_fps)
 		FPS_free_processing_struct_m12(channel->metadata_fps, TRUE_m12);
-	if (channel->Sgmt_records != NULL)
+	if (channel->Sgmt_records)
 		free_m12((void *) channel->Sgmt_records, __FUNCTION__);
-	if (channel->record_data_fps != NULL)
+	if (channel->record_data_fps)
 		FPS_free_processing_struct_m12(channel->record_data_fps, TRUE_m12);
-	if (channel->record_indices_fps != NULL)
+	if (channel->record_indices_fps)
 		FPS_free_processing_struct_m12(channel->record_indices_fps, TRUE_m12);
-	if (channel->contigua != NULL)
+	if (channel->contigua)
 		free_m12(channel->contigua, __FUNCTION__);
 
 	if (free_channel_structure == TRUE_m12) {
@@ -4191,7 +4191,7 @@ void	G_free_global_tables_m12(void)
 	if (global_tables_m12 == NULL)
 		return;
 	
-	if (global_tables_m12->timezone_table != NULL) {
+	if (global_tables_m12->timezone_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->timezone_table);
 	#else
@@ -4199,7 +4199,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->country_aliases_table != NULL) {
+	if (global_tables_m12->country_aliases_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->country_aliases_table);
 	#else
@@ -4207,7 +4207,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->country_acronym_aliases_table != NULL) {
+	if (global_tables_m12->country_acronym_aliases_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->country_acronym_aliases_table);
 	#else
@@ -4215,7 +4215,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->CRC_table != NULL) {
+	if (global_tables_m12->CRC_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->CRC_table);
 	#else
@@ -4223,7 +4223,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->AES_sbox_table != NULL) {
+	if (global_tables_m12->AES_sbox_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->AES_sbox_table);
 	#else
@@ -4231,7 +4231,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->AES_rsbox_table != NULL) {
+	if (global_tables_m12->AES_rsbox_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->AES_rsbox_table);
 	#else
@@ -4239,7 +4239,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->AES_rcon_table != NULL) {
+	if (global_tables_m12->AES_rcon_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->AES_rcon_table);
 	#else
@@ -4247,7 +4247,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->SHA_h0_table != NULL) {
+	if (global_tables_m12->SHA_h0_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->SHA_h0_table);
 	#else
@@ -4255,7 +4255,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 	
-	if (global_tables_m12->SHA_k_table != NULL) {
+	if (global_tables_m12->SHA_k_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->SHA_k_table);
 	#else
@@ -4263,7 +4263,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 
-	if (global_tables_m12->UTF8_offsets_table != NULL) {
+	if (global_tables_m12->UTF8_offsets_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->UTF8_offsets_table);
 	#else
@@ -4271,7 +4271,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 
-	if (global_tables_m12->UTF8_trailing_bytes_table != NULL) {
+	if (global_tables_m12->UTF8_trailing_bytes_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->UTF8_trailing_bytes_table);
 	#else
@@ -4279,7 +4279,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 
-	if (global_tables_m12->CMP_normal_CDF_table != NULL) {
+	if (global_tables_m12->CMP_normal_CDF_table) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->CMP_normal_CDF_table);
 	#else
@@ -4287,7 +4287,7 @@ void	G_free_global_tables_m12(void)
 	#endif
 	}
 
-	if (global_tables_m12->CMP_VDS_threshold_map != NULL) {
+	if (global_tables_m12->CMP_VDS_threshold_map) {
 	#ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) global_tables_m12->CMP_VDS_threshold_map);
 	#else
@@ -4296,7 +4296,7 @@ void	G_free_global_tables_m12(void)
 	}
 
 	#ifdef WINDOWS_m12
-	if (global_tables_m12->hNTdll != NULL)
+	if (global_tables_m12->hNTdll)
 		FreeLibrary(global_tables_m12->hNTdll);
 	#endif
 	
@@ -4350,11 +4350,11 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 	// often statically allocated, so can't just free()
 	// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m12, REC_Note_TYPE_CODE_m12, NO_TYPE_CODE_m12 };
 	// globals_m12->record_filters = rec_filts;
-	if (globals->record_filters != NULL)
+	if (globals->record_filters)
 		if (freeable_m12((void *) globals->record_filters) == TRUE_m12)
 			free_m12((void *) globals->record_filters, __FUNCTION__);
 			
-	if (globals->behavior_stack != NULL) {
+	if (globals->behavior_stack) {
 #ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) globals->behavior_stack);
 #else
@@ -4364,7 +4364,7 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 	PROC_pthread_mutex_destroy_m12(&globals->behavior_mutex);
 
 #ifdef AT_DEBUG_m12
-	if (globals->AT_nodes != NULL) {
+	if (globals->AT_nodes) {
 		AT_free_all_m12();  // display memory still allocated & free it
 #ifdef MATLAB_PERSISTENT_m12
 		mxFree((void *) globals->AT_nodes);  // AT nodes are not allocted with AT functions
@@ -4418,17 +4418,17 @@ TERN_m12	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structur
 		G_warning_message_m12("$s(): trying to free a NULL SEGMENT_m12 structure => returning with no action\n", __FUNCTION__);
 		return(FALSE_m12);
 	}
-	if (segment->metadata_fps != NULL)
+	if (segment->metadata_fps)
 		FPS_free_processing_struct_m12(segment->metadata_fps, TRUE_m12);
-	if (segment->time_series_data_fps != NULL)  // also does video data fps (when it exists), due to union
+	if (segment->time_series_data_fps)  // also does video data fps (when it exists), due to union
 		FPS_free_processing_struct_m12(segment->time_series_data_fps, TRUE_m12);
-	if (segment->time_series_indices_fps != NULL)  // also does video indices, due to union
+	if (segment->time_series_indices_fps)  // also does video indices, due to union
 		FPS_free_processing_struct_m12(segment->time_series_indices_fps, TRUE_m12);
-	if (segment->record_data_fps != NULL)
+	if (segment->record_data_fps)
 		FPS_free_processing_struct_m12(segment->record_data_fps, TRUE_m12);
-	if (segment->record_indices_fps != NULL)
+	if (segment->record_indices_fps)
 		FPS_free_processing_struct_m12(segment->record_indices_fps, TRUE_m12);
-	if (segment->contigua != NULL)
+	if (segment->contigua)
 		free_m12(segment->contigua, __FUNCTION__);
 
 	if (free_segment_structure == TRUE_m12) {
@@ -4469,10 +4469,10 @@ void	G_free_segmented_sess_recs_m12(SEGMENTED_SESS_RECS_m12 *ssr, TERN_m12 free_
 	n_segs = globals_m12->number_of_mapped_segments;
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->record_indices_fps[i];
-		if (gen_fps != NULL)
+		if (gen_fps)
 			FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
 		gen_fps = ssr->record_data_fps[i];
-		if (gen_fps != NULL)
+		if (gen_fps)
 			FPS_free_processing_struct_m12(gen_fps, TRUE_m12);
 	}
 	free_m12((void *) ssr->record_indices_fps, __FUNCTION__);
@@ -4500,36 +4500,36 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 		G_warning_message_m12("%s(): trying to free a NULL SESSION_m12 structure => returning with no action\n", __FUNCTION__);
 		return;
 	}
-	if (session->time_series_metadata_fps != NULL)
+	if (session->time_series_metadata_fps)
 		FPS_free_processing_struct_m12(session->time_series_metadata_fps, TRUE_m12);
-	if (session->video_metadata_fps != NULL)
+	if (session->video_metadata_fps)
 		FPS_free_processing_struct_m12(session->video_metadata_fps, TRUE_m12);
-	if (session->Sgmt_records != NULL)
+	if (session->Sgmt_records)
 		free_m12((void *) session->Sgmt_records, __FUNCTION__);
-	if (session->record_data_fps != NULL)
+	if (session->record_data_fps)
 		FPS_free_processing_struct_m12(session->record_data_fps, TRUE_m12);
-	if (session->record_indices_fps != NULL)
+	if (session->record_indices_fps)
 		FPS_free_processing_struct_m12(session->record_indices_fps, TRUE_m12);
-	if (session->time_series_channels != NULL) {
+	if (session->time_series_channels) {
 		for (i = 0; i < session->number_of_time_series_channels; ++i) {
 			chan = session->time_series_channels[i];
-			if (chan != NULL)
+			if (chan)
 				G_free_channel_m12(chan, TRUE_m12);
 		}
 		free_m12((void *) session->time_series_channels, __FUNCTION__);  // ok whether allocated en bloc or not
 	}
-	if (session->video_channels != NULL) {
+	if (session->video_channels) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
 			chan = session->video_channels[i];
-			if (chan != NULL)
+			if (chan)
 				G_free_channel_m12(chan, TRUE_m12);
 		}
 		free_m12((void *) session->video_channels, __FUNCTION__);
 	}
-	if (session->segmented_sess_recs != NULL)
+	if (session->segmented_sess_recs)
 		G_free_segmented_sess_recs_m12(session->segmented_sess_recs, TRUE_m12);
 
-	if (session->contigua != NULL)
+	if (session->contigua)
 		free_m12(session->contigua, __FUNCTION__);
 
 	if (free_session_structure == TRUE_m12) {
@@ -4709,10 +4709,11 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 {
 	TERN_m12	regex;
 	si1		tmp_enclosing_directory[FULL_FILE_NAME_BYTES_m12], tmp_path[FULL_FILE_NAME_BYTES_m12];
-	si1		tmp_name[FULL_FILE_NAME_BYTES_m12], tmp_extension[16], tmp_ext[16], *buffer, *c, *c2;
+	si1		tmp_name[FULL_FILE_NAME_BYTES_m12], tmp_extension[16], tmp_ext[16], *buffer, *e_buffer, *c, *c2;
 	si1		**tmp_ptr_ptr;
 	ui4		path_parts;
 	si4		i, j, n_in_files, *n_out_files;
+	si8		e_buf_len;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -4727,7 +4728,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	path_parts = flags & GFL_PATH_PARTS_MASK_m12;
 	
 	// quick bailout for nothing to do (file_list passed, paths are from root, & contain no regex)
-	if (file_list != NULL && n_in_files > 0) {
+	if (file_list && n_in_files > 0) {
 		if (G_check_file_list_m12(file_list, n_in_files) == TRUE_m12) {
 			if ((flags & GFL_FREE_INPUT_LIST_m12) == 0) {  // caller expects a copy to be returned
 				tmp_ptr_ptr = (si1 **) calloc_2D_m12((size_t) n_in_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -4766,7 +4767,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	// If list components do not have an extension, and one is passed, it is used.
 	// If list components do not have an extension, and none is passed, none is used.
 	regex = FALSE_m12;
-	if (file_list != NULL) {
+	if (file_list) {
 		tmp_ptr_ptr = (si1 **) calloc_2D_m12((size_t) n_in_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		// copy file_list
 		for (i = 0; i < n_in_files; ++i) {
@@ -4797,7 +4798,7 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	// If no name is passed, "*" is used.
 	// If no extension is passed, none is used.
 	else {  // file_list == NULL
-		file_list = (si1 **) calloc_2D_m12((size_t) 1, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		file_list = (si1 **) calloc_2D_m12((size_t) 1, (size_t) FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		G_path_from_root_m12(enclosing_directory, enclosing_directory);
 		if (*name)
 			sprintf_m12(file_list[0], "%s/%s", enclosing_directory, name);
@@ -4812,9 +4813,8 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 
 	// expand regex (use system shell to expand regex)
 	if (regex == TRUE_m12) {
-		
+
 	#if defined MACOS_m12 || defined LINUX_m12
-		TERN_m12	no_match;
 		si1		*command, *tmp_command;
 		si4		ret_val;
 		size_t		len;
@@ -4852,31 +4852,19 @@ si1	**G_generate_file_list_m12(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		free((void *) tmp_command);
 		free_2D_m12((void *) file_list, n_in_files, __FUNCTION__);
 		
-		buffer = NULL;
-		ret_val = system_pipe_m12(&buffer, 0, command, SP_DEFAULT_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		buffer = e_buffer = NULL;
+		e_buf_len = 0;
+		ret_val = system_pipe_m12(&buffer, 0, command, SP_SEPERATE_STREAMS_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12, &e_buffer, &e_buf_len);
 		free((void *) command);
 		if (ret_val < 0) {
-			// system_pipe_m12() error return frees buffer
+			if (e_buffer)
+				free_m12((void *) buffer, __FUNCTION__);
+			if (e_buffer)
+				free_m12((void *) e_buffer, __FUNCTION__);
 			*n_out_files = 0;
 			return(NULL);
 		}
 		if (G_empty_string_m12(buffer) == TRUE_m12) {
-			*n_out_files = 0;
-			free_m12((void *) buffer, __FUNCTION__);
-			return(NULL);
-		}
-		// system_pipe_m12() can distinguish between stderr & stdout, but this is not well tested yet
-		// this is a terrible solution, but works for now
-		no_match = FALSE_m12;
-		#ifdef LINUX_m12
-		if (strncmp(buffer, "/usr/bin/ls: ", 13) == 0)
-			no_match = TRUE_m12;
-		#endif
-		#ifdef MACOS_m12
-		if (strncmp(buffer, "ls: ", 4) == 0)
-			no_match = TRUE_m12;
-		#endif
-		if (no_match == TRUE_m12) {
 			*n_out_files = 0;
 			free_m12((void *) buffer, __FUNCTION__);
 			return(NULL);
@@ -4957,7 +4945,7 @@ GFL_CONDITION_RETURN_DATA_m12:
 		
 	// sort file list (so results are consistent across operating systems)
 	STR_sort_m12(file_list, *n_out_files);
-
+	
 	return(file_list);
 }
 
@@ -4996,21 +4984,21 @@ TERN_m12	G_generate_password_data_m12(FILE_PROCESSING_STRUCT_m12* fps, si1 *L1_p
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (L1_pw != NULL)
+	if (L1_pw)
 		if (*L1_pw == 0)
 			L1_pw = NULL;
 	if (L1_pw == NULL)  // need at least a level 1 password to generate any password data fields
 		return(FALSE_m12);
-	if (L2_pw != NULL)
+	if (L2_pw)
 		if (*L2_pw == 0)
 			L2_pw = NULL;
-	if (L3_pw != NULL)
+	if (L3_pw)
 		if (*L3_pw == 0)
 			L3_pw = NULL;
-	if (L1_pw_hint != NULL)
+	if (L1_pw_hint)
 		if (*L1_pw_hint == 0)
 			L1_pw_hint = NULL;
-	if (L2_pw_hint != NULL)
+	if (L2_pw_hint)
 		if (*L2_pw_hint == 0)
 			L2_pw_hint = NULL;
 
@@ -5022,19 +5010,19 @@ TERN_m12	G_generate_password_data_m12(FILE_PROCESSING_STRUCT_m12* fps, si1 *L1_p
 	pwd->processed = TRUE_m12;
 
 	// copy password hints to password data
-	if (L1_pw_hint != NULL)
+	if (L1_pw_hint)
 		strncpy_m12(pwd->level_1_password_hint, L1_pw_hint, PASSWORD_HINT_BYTES_m12);
-	if (L2_pw_hint != NULL)
+	if (L2_pw_hint)
 		strncpy_m12(pwd->level_2_password_hint, L2_pw_hint, PASSWORD_HINT_BYTES_m12);
 
 	// copy password hints to metadata if possible
-	if (fps != NULL) {
+	if (fps) {
 		uh = fps->universal_header;
 		if (uh->type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m12 || uh->type_code == VIDEO_METADATA_FILE_TYPE_CODE_m12) {
 			md1 = &fps->metadata->section_1;
-			if (L1_pw_hint != NULL)
+			if (L1_pw_hint)
 				strncpy_m12(md1->level_1_password_hint, L1_pw_hint, PASSWORD_HINT_BYTES_m12);
-			if (L2_pw_hint != NULL)
+			if (L2_pw_hint)
 				strncpy_m12(md1->level_2_password_hint, L2_pw_hint, PASSWORD_HINT_BYTES_m12);
 		}
 	}
@@ -5062,7 +5050,7 @@ TERN_m12	G_generate_password_data_m12(FILE_PROCESSING_STRUCT_m12* fps, si1 *L1_p
 	
 	// user also passed level 2 password: generate validation field and encryption key
 	// level 2 encryption requires a level 1 password, even if level 1 encryption is not used
-	if (L2_pw != NULL) {
+	if (L2_pw) {
 		if (G_check_password_m12(L2_pw) == TRUE_m12) {
 			
 			// passed a level 2 password - level 2 access
@@ -5091,7 +5079,7 @@ TERN_m12	G_generate_password_data_m12(FILE_PROCESSING_STRUCT_m12* fps, si1 *L1_p
 	}
 	
 	// user also passed level 3 password for recovery: generate validation field
-	if (L3_pw != NULL) {
+	if (L3_pw) {
 		if (G_check_password_m12(L3_pw) == TRUE_m12) {
 			
 			// get terminal bytes
@@ -5274,7 +5262,7 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 #endif
 	
 	code = G_MED_type_code_from_string_m12(full_file_name);
-	if (input_type_code != NULL)  // e.g. file type - function returns level
+	if (input_type_code)  // e.g. file type - function returns level
 		*input_type_code = code;
 	
 	switch (code) {
@@ -5469,7 +5457,7 @@ si4	G_get_segment_index_m12(si4 segment_number)
 		}
 		for (i = 0; i < mapped_segs; ++i) {
 			seg = chan->segments[i];
-			if (seg != NULL)
+			if (seg)
 				if (seg->flags & LH_OPEN_m12)
 					break;
 		}
@@ -5569,7 +5557,7 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 				rd_fps = chan->record_data_fps = G_read_file_m12(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, level_header, NULL, USE_GLOBAL_BEHAVIOR_m12);
 				chan->record_data_fps->parent = (void *) chan;
 				Sgmt_records = G_build_Sgmt_records_array_m12(ri_fps, rd_fps, NULL);
-				if (Sgmt_records != NULL && level_header->type_code == LH_SESSION_m12) {  // copy ref chan Sgmt records into ref chan, if used for session
+				if (Sgmt_records && level_header->type_code == LH_SESSION_m12) {  // copy ref chan Sgmt records into ref chan, if used for session
 					n_bytes = (size_t) globals_m12->number_of_session_segments * sizeof(Sgmt_RECORD_m12);
 					chan->Sgmt_records = (Sgmt_RECORD_m12 *) malloc_m12(n_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 					memcpy((void *) chan->Sgmt_records, (void *) Sgmt_records, n_bytes);
@@ -5586,7 +5574,7 @@ si4     G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *
 				FPS_free_processing_struct_m12(md_fps, TRUE_m12);
 			}
 			sess_name = globals_m12->session_name;
-			if (sess != NULL) {
+			if (sess) {
 				strcpy(sess_path, sess->path);
 				ri_fps = sess->record_indices_fps;
 				rd_fps = sess->record_data_fps;
@@ -5790,7 +5778,7 @@ si1	*G_get_session_directory_m12(si1 *session_directory, si1 *MED_file_name, FIL
 	
 	if (set_global_session_name == TRUE_m12) {
 		G_extract_path_parts_m12(session_directory, NULL, globals_m12->fs_session_name, NULL);
-		if (MED_fps != NULL) {
+		if (MED_fps) {
 			globals_m12->session_UID = MED_fps->universal_header->session_UID;
 			strcpy(globals_m12->uh_session_name, MED_fps->universal_header->session_name);
 			globals_m12->session_name = globals_m12->uh_session_name;
@@ -5812,7 +5800,7 @@ TERN_m12	G_get_terminal_entry_m12(si1 *prompt, si1 type, void *buffer, void *def
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (default_input != NULL) {
+	if (default_input) {
 		if (type == RC_STRING_TYPE_m12)
 			if (*((si1 *) default_input) == 0)
 				default_input = NULL;
@@ -5846,7 +5834,7 @@ GET_TERMINAL_ENTRY_RETRY_m12:
 		}
 	}
 
-	if (default_input != NULL) {
+	if (default_input) {
 		switch (type) {
 			case RC_STRING_TYPE_m12:
 				sprintf_m12(local_prompt, "%s [%s]", local_prompt, (si1 *) default_input);
@@ -5884,7 +5872,7 @@ GET_TERMINAL_ENTRY_RETRY_m12:
 	}
 	getchar();  // clear '\n' from stdin
 	
-	if (items == 0 && default_input != NULL && buffer != default_input) {
+	if (items == 0 && default_input && buffer != default_input) {
 		switch (type) {
 			case RC_STRING_TYPE_m12:
 				strcpy((si1 *) buffer, (si1 *) default_input);
@@ -5902,7 +5890,7 @@ GET_TERMINAL_ENTRY_RETRY_m12:
 	}
 
 	if (validate == TRUE_m12) {
-		if (items == 1 || default_input != NULL) {
+		if (items == 1 || default_input) {
 			switch (type) {
 				case RC_STRING_TYPE_m12:
 					printf_m12("\tIs %s\"%s\"%s correct (y/n): ", TC_RED_m12, (si1 *) buffer, TC_RESET_m12);
@@ -5941,6 +5929,38 @@ GET_TERMINAL_ENTRY_RETRY_m12:
 	putchar('\n');
 
 	return(TRUE_m12);
+}
+
+
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+pid_t_m12	G_globals_ID_m12(pid_t_m12 old_id)
+{
+	si4		i;
+	pid_t_m12	curr_id;
+	
+	
+	// pass zero to initialize, non-zero to restore
+	
+	curr_id = PROC_gettid_m12();
+	
+	// find prior thread globals and change to this id
+	if (old_id && globals_list_m12 && globals_list_len_m12 && globals_list_m12) {
+		PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
+		for (i = 0; i < globals_list_len_m12; ++i)
+			if (globals_list_m12[i]->_id == old_id)
+				break;
+		if (i < globals_list_len_m12)
+			globals_list_m12[i]->_id = curr_id;
+		else
+			G_warning_message_m12("%s(): can't match preexisting globals => returning current ID\n", __FUNCTION__);
+		PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
+	} else {  // initialize globals and change to this id
+		G_initialize_medlib_m12(FALSE_m12, TRUE_m12);
+	}
+
+	return(curr_id);
 }
 
 
@@ -6249,7 +6269,7 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 	globals->verbose = GLOBALS_VERBOSE_DEFAULT_m12;
 	globals->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m12;
 	globals->behavior_on_fail = GLOBALS_BEHAVIOR_ON_FAIL_DEFAULT_m12;
-	if (globals->behavior_stack != NULL) {
+	if (globals->behavior_stack) {
 		free_m12((void *) globals->behavior_stack, __FUNCTION__);
 		globals->behavior_stack = NULL;
 	}
@@ -6509,11 +6529,11 @@ TERN_m12	G_initialize_timezone_tables_m12(void)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (global_tables_m12->timezone_table != NULL)
+	if (global_tables_m12->timezone_table)
 		return(TRUE_m12);
 
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->TZ_mutex);
-	if (global_tables_m12->timezone_table != NULL) {  // may have been done by another thread while waiting
+	if (global_tables_m12->timezone_table) {  // may have been done by another thread while waiting
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->TZ_mutex);
 		return(TRUE_m12);
 	}
@@ -6665,7 +6685,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	
 	// if level_path == NULL : return type code on level_path, do not modify path
 	// if level_path == path : return type code on level_path, do modify path
-	// if level_path != path && level_path != NULL : return type code on level_path, return modified path in level_path, leaving path unmodified
+	// if level_path != path && level_path : return type code on level_path, return modified path in level_path, leaving path unmodified
 	
 	if (path == NULL)
 		return(NO_TYPE_CODE_m12);
@@ -6680,7 +6700,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	// see if it already has a level
 	level = G_get_level_m12(tmp_path, NULL);
 	if (level != NO_TYPE_CODE_m12) {
-		if (level_path != NULL)
+		if (level_path)
 			strcpy(level_path, tmp_path);
 		return(level);
 	}
@@ -6688,7 +6708,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	// try session level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, SESSION_DIRECTORY_TYPE_STRING_m12);
 	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
-		if (level_path != NULL)
+		if (level_path)
 			strcpy(level_path, tmp_path2);
 		return(LH_SESSION_m12);
 	}
@@ -6696,7 +6716,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	// try time series channel level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12);
 	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
-		if (level_path != NULL)
+		if (level_path)
 			strcpy(level_path, tmp_path2);
 		return(LH_TIME_SERIES_CHANNEL_m12);
 	}
@@ -6704,7 +6724,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	// try video channel level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12);
 	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
-		if (level_path != NULL)
+		if (level_path)
 			strcpy(level_path, tmp_path2);
 		return(LH_VIDEO_CHANNEL_m12);
 	}
@@ -6712,7 +6732,7 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	// try time series segment level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
-		if (level_path != NULL)
+		if (level_path)
 			strcpy(level_path, tmp_path2);
 		return(LH_TIME_SERIES_SEGMENT_m12);
 	}
@@ -6720,13 +6740,13 @@ ui4	G_level_from_base_name_m12(si1 *path, si1 *level_path)
 	// try video segment level
 	sprintf_m12(tmp_path2, "%s.%s", tmp_path, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12);
 	if (G_exists_m12(tmp_path2) == DIR_EXISTS_m12) {
-		if (level_path != NULL)
+		if (level_path)
 			strcpy(level_path, tmp_path2);
 		return(LH_VIDEO_SEGMENT_m12);
 	}
 	
 	// doesn't exist
-	if (level_path != NULL)
+	if (level_path)
 		if (level_path != path)
 			*level_path = 0;
 
@@ -6880,7 +6900,7 @@ ui4    G_MED_path_components_m12(si1 *path, si1 *MED_dir, si1 *MED_name)
 	} else if (fe == DOES_NOT_EXIST_m12) {
 		G_error_message_m12("%s(): passed path \"%s\" does not exist => returning\n", __FUNCTION__, local_MED_dir);
 		return(NO_TYPE_CODE_m12);
-	} else if (fe == FILE_EXISTS_ERROR_m12) {
+	} else if (fe == EXISTS_ERROR_m12) {
 		G_error_message_m12("%s(): G_exists_m12 error() => returning\n", __FUNCTION__);
 		return(NO_TYPE_CODE_m12);
 	}
@@ -6906,9 +6926,9 @@ ui4    G_MED_path_components_m12(si1 *path, si1 *MED_dir, si1 *MED_name)
 	}
 
 	// copy to outputs, if provided
-	if (MED_dir != NULL)
+	if (MED_dir)
 		snprintf_m12(MED_dir, FULL_FILE_NAME_BYTES_m12, "%s", local_MED_dir);
-	if (MED_name != NULL)
+	if (MED_name)
 		snprintf_m12(MED_name, name_bytes, "%s", local_MED_name);
 
 	return(code);
@@ -6955,6 +6975,8 @@ si1	*G_MED_type_string_from_code_m12(ui4 code)
 			return(TIME_SERIES_DATA_FILE_TYPE_STRING_m12);
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
 			return(TIME_SERIES_INDICES_FILE_TYPE_STRING_m12);
+		case PARITY_CRC_FILE_TYPE_CODE_m12:
+			return(PARITY_CRC_FILE_TYPE_STRING_m12);
 	}
 	
 	G_warning_message_m12("%s(): 0x%08x is not a recognized MED file type code\n", __FUNCTION__, code);
@@ -6965,7 +6987,8 @@ si1	*G_MED_type_string_from_code_m12(ui4 code)
 
 ui4     G_MED_type_code_from_string_m12(si1 *string)
 {
-	si1		*c, path[FULL_FILE_NAME_BYTES_m12], name[SEGMENT_BASE_FILE_NAME_BYTES_m12];
+	TERN_m12	ext_only = FALSE_m12;
+	si1		*c, *c2;
 	si8     	i, len;
 	EXT_CODE_m12	type;
 	
@@ -6978,16 +7001,24 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 		return(NO_FILE_TYPE_CODE_m12);
 	}
 	
-	// remove quotes if present
-	if (*string == '"') {
-		strcpy(path, string);
-		STR_strip_character_m12(path, '"');
-		string = path;
-	}
-	type.code = NO_TYPE_CODE_m12;
-	G_extract_path_parts_m12(string, path, name, type.ext);
-	if (type.code == NO_TYPE_CODE_m12)  // possible that just extension was passed
-		strncpy_m12(type.ext, string, 8);
+	// move to end of string
+	c = string - 1;
+	while (*++c);
+	
+	// find last period period
+	while (--c != string)
+		if (*c == '.')
+			break;
+	
+	if (*c == '.')  // has extension,
+		++c;
+	else
+		ext_only = TRUE_m12;  // possible string is an extension
+
+	c2 = type.ext;
+	for (i = sizeof(EXT_CODE_m12) - 1; i-- && *c;)
+		*c2++ = *c++;
+	*c2 = 0;
 
 	switch (type.code) {
 		case NO_FILE_TYPE_CODE_m12:
@@ -7005,8 +7036,15 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
+		case PARITY_CRC_FILE_TYPE_CODE_m12:
 			return(type.code);
 		default:  // check tag to determine if this is a MED video data file
+			si1	name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m12];
+			
+			if (ext_only == TRUE_m12)  // need path to do following check
+				break;
+			
+			G_extract_path_parts_m12(string, NULL, name, NULL);
 			len = strlen(name);
 			if (len <= 12)
 				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m12;
@@ -7807,14 +7845,14 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	// update slice
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 		seg = chan->segments[j];
-		if (seg != NULL)
+		if (seg)
 			break;
 	}
 	slice->start_time = seg->time_slice.start_time;
 	slice->start_sample_number = seg->time_slice.start_sample_number;
 	slice->start_segment_number = seg->time_slice.start_segment_number;
 	for (++i, ++j; i < n_segs; ++i, ++j) {
-		if (chan->segments[j] != NULL)
+		if (chan->segments[j])
 			seg = chan->segments[j];
 	}
 	slice->end_time = seg->time_slice.end_time;
@@ -7844,11 +7882,11 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 	
 	// ephemeral data
 	if (flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
-		if (chan->metadata_fps != NULL)
+		if (chan->metadata_fps)
 			FPS_free_processing_struct_m12(chan->metadata_fps, TRUE_m12);
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 			seg = chan->segments[j];
-			if (seg != NULL)
+			if (seg)
 				break;
 		}
 		if (chan->type_code == LH_TIME_SERIES_CHANNEL_m12) {
@@ -7865,12 +7903,12 @@ CHANNEL_m12	*G_open_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1 *c
 				continue;
 			G_merge_universal_headers_m12(chan->metadata_fps, seg->metadata_fps, NULL);
 			G_merge_metadata_m12(chan->metadata_fps, seg->metadata_fps, NULL);
-			if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
+			if (seg->record_indices_fps && seg->record_data_fps)  // record data, not record indices universal header is merged in ephemeral data
 				G_merge_universal_headers_m12(chan->metadata_fps, seg->record_data_fps, NULL);
 			seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m12;  // clear segment flag
 		}
 		// merge channel records
-		if (chan->record_indices_fps != NULL && chan->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
+		if (chan->record_indices_fps && chan->record_data_fps)  // record data, not record indices universal header is merged in ephemeral data
 			G_merge_universal_headers_m12(chan->metadata_fps, chan->record_data_fps, NULL);
 		// fix channel ephemeral universl headers (from merge functions)
 		uh = chan->metadata_fps->universal_header;
@@ -7900,7 +7938,7 @@ CHANNEL_m12	*G_open_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1
 #endif
 	
 	if (flags == LH_NO_FLAGS_m12) {
-		if (chan != NULL)
+		if (chan)
 			flags = chan->flags;
 		if (flags == LH_NO_FLAGS_m12)
 			flags = globals_m12->level_header_flags;  // use global flags, if no channel flags
@@ -7956,7 +7994,7 @@ SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *se
 	}
 	
 	// set basic info (path, name, type, flags)
-	if (seg_path != NULL) {
+	if (seg_path) {
 		seg->type_code = G_MED_path_components_m12(seg_path, seg->path, seg->name);
 	} else {
 		if (G_exists_m12(seg->path) == DOES_NOT_EXIST_m12) {
@@ -8175,7 +8213,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	regex_str = "?icd";  // less specific (than MacOS or Linux)
 #endif
 	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m12);  // more specific (than Windows)
-	
+
 	if (n_chans == 0) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
@@ -8192,7 +8230,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		G_warning_message_m12("%s(): channels must be in a MED session directory\n", __FUNCTION__);
 		return(NULL);
 	}
-	
+
 	// check that all files are MED channels in the same MED session directory
 	// TO DO: check that they have the same session UIDs, & not require they be in the same directory
 	n_ts_chans = n_vid_chans = 0;
@@ -8555,7 +8593,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	// ephemeral data
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
 		if (sess->number_of_time_series_channels) {
-			if (sess->time_series_metadata_fps != NULL)
+			if (sess->time_series_metadata_fps)
 				FPS_free_processing_struct_m12(sess->time_series_metadata_fps, TRUE_m12);
 			sprintf_m12(tmp_str, "%s/%s_time_series.%s", sess->path, sess->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
 			chan = sess->time_series_channels[0];
@@ -8569,11 +8607,11 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 				}
 			}
 			// merge session records
-			if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)   // record data, not record indices universal header is merged in ephemeral data
+			if (sess->record_indices_fps && sess->record_data_fps)   // record data, not record indices universal header is merged in ephemeral data
 				G_merge_universal_headers_m12(sess->time_series_metadata_fps, sess->record_data_fps, NULL);
-			if (ssr != NULL) {
+			if (ssr) {
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-					if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
+					if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 						G_merge_universal_headers_m12(sess->time_series_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
 			}
@@ -8585,7 +8623,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m12;
 		}
 		if (sess->number_of_video_channels) {
-			if (sess->video_metadata_fps != NULL)
+			if (sess->video_metadata_fps)
 				FPS_free_processing_struct_m12(sess->video_metadata_fps, TRUE_m12);
 			sprintf_m12(tmp_str, "%s/%s_video.%s", sess->path, sess->name, VIDEO_METADATA_FILE_TYPE_STRING_m12);
 			chan = sess->video_channels[0];
@@ -8599,11 +8637,11 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 				}
 			}
 			// merge session records
-			if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)  // record data, not record indices universal header is merged in ephemeral data
+			if (sess->record_indices_fps && sess->record_data_fps)  // record data, not record indices universal header is merged in ephemeral data
 				G_merge_universal_headers_m12(sess->video_metadata_fps, sess->record_data_fps, NULL);
-			if (ssr != NULL) {
+			if (ssr) {
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-					if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
+					if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 						G_merge_universal_headers_m12(sess->video_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
 			}
@@ -8617,10 +8655,10 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 
 	sess->last_access_time = curr_time;
-	if (sess->segmented_sess_recs != NULL)
+	if (sess->segmented_sess_recs)
 		sess->segmented_sess_recs->last_access_time = curr_time;
 	sess->flags |= LH_OPEN_m12;
-
+	
 	return(sess);
 }
 
@@ -8944,7 +8982,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			if (G_open_channel_nt_m12(chan, slice, NULL, (flags & ~LH_OPEN_m12), password) == NULL) {
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
-				} else if (chan != NULL) {
+				} else if (chan) {
 					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
 						sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
 				}
@@ -8961,7 +8999,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			if (G_open_channel_nt_m12(chan, slice, NULL, (flags & ~LH_OPEN_m12), password) == NULL) {
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
-				} else if (chan != NULL) {
+				} else if (chan) {
 					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
 						sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
 				}
@@ -9058,7 +9096,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	// ephemeral data
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
 		if (sess->number_of_time_series_channels) {
-			if (sess->time_series_metadata_fps != NULL)
+			if (sess->time_series_metadata_fps)
 				FPS_free_processing_struct_m12(sess->time_series_metadata_fps, TRUE_m12);
 			sprintf_m12(tmp_str, "%s/%s_time_series.%s", sess->path, sess->name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m12);
 			chan = sess->time_series_channels[0];
@@ -9072,11 +9110,11 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 				}
 			}
 			// merge session records
-			if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
+			if (sess->record_indices_fps && sess->record_data_fps)    // record data, not record indices universal header is merged in ephemeral data
 				G_merge_universal_headers_m12(sess->time_series_metadata_fps, sess->record_data_fps, NULL);
-			if (ssr != NULL) {
+			if (ssr) {
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-					if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
+					if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 						G_merge_universal_headers_m12(sess->time_series_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
 			}
@@ -9088,7 +9126,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m12;
 		}
 		if (sess->number_of_video_channels) {
-			if (sess->video_metadata_fps != NULL)
+			if (sess->video_metadata_fps)
 				FPS_free_processing_struct_m12(sess->video_metadata_fps, TRUE_m12);
 			sprintf_m12(tmp_str, "%s/%s_video.%s", sess->path, sess->name, VIDEO_METADATA_FILE_TYPE_STRING_m12);
 			chan = sess->video_channels[0];
@@ -9102,11 +9140,11 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 				}
 			}
 			// merge session records
-			if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)    // record data, not record indices universal header is merged in ephemeral data
+			if (sess->record_indices_fps && sess->record_data_fps)    // record data, not record indices universal header is merged in ephemeral data
 				G_merge_universal_headers_m12(sess->video_metadata_fps, sess->record_data_fps, NULL);
-			if (ssr != NULL) {
+			if (ssr) {
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-					if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
+					if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 						G_merge_universal_headers_m12(sess->video_metadata_fps, ssr->record_data_fps[j], NULL);
 				}
 			}
@@ -9120,7 +9158,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	}
 
 	sess->last_access_time = curr_time;
-	if (sess->segmented_sess_recs != NULL)
+	if (sess->segmented_sess_recs)
 		sess->segmented_sess_recs->last_access_time = curr_time;
 	
 	return(sess);
@@ -9156,16 +9194,16 @@ TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path)
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-	
+		
 	// assumes root_path has adequate space for new path
 	
 	// if root_path == NULL : return T/F on path, do not modify path
 	// if root_path == path : return T/F on path, do modify path
-	// if root_path != path && root_path != NULL : return T/F on path, return path from root in root_path, leaving path unmodified
+	// if root_path != path && root_path : return T/F on path, return path from root in root_path, leaving path unmodified
 	// quotes removed in returned string if present
 	
 	if (path == NULL) {
-		if (root_path != NULL)
+		if (root_path)
 			*root_path = 0;
 		return(FALSE_m12);
 	}
@@ -9465,12 +9503,12 @@ void	G_propogate_flags_m12(LEVEL_HEADER_m12 *level_header, ui8 new_flags)
 	new_flags &= ~(LH_OPEN_m12 | LH_CHANNEL_ACTIVE_m12);
 	
 	// session
-	if (sess != NULL) {
+	if (sess) {
 		open_status = sess->flags & LH_OPEN_m12;
 		sess->flags = new_flags | open_status;
 		// segmented session records
 		ssr = sess->segmented_sess_recs;
-		if (ssr != NULL) {
+		if (ssr) {
 			open_status = ssr->flags & LH_OPEN_m12;
 			ssr->flags = new_flags | open_status;
 		}
@@ -9479,14 +9517,14 @@ void	G_propogate_flags_m12(LEVEL_HEADER_m12 *level_header, ui8 new_flags)
 	// time series channels
 	for (i = 0; i < n_ts_chans; ++i) {
 		for (j = 0; j < n_segs; ++j) {
-			if (ts_chans[i] != NULL)
+			if (ts_chans[i])
 				seg = ts_chans[i]->segments[j];
-			if (seg != NULL) {
+			if (seg) {
 				open_status = seg->flags & LH_OPEN_m12;
 				seg->flags = new_flags | open_status;
 			}
 		}
-		if (ts_chans[i] != NULL) {
+		if (ts_chans[i]) {
 			open_status = ts_chans[i]->flags & LH_OPEN_m12;
 			active_status = ts_chans[i]->flags & LH_CHANNEL_ACTIVE_m12;
 			ts_chans[i]->flags = new_flags | open_status | active_status;
@@ -9496,14 +9534,14 @@ void	G_propogate_flags_m12(LEVEL_HEADER_m12 *level_header, ui8 new_flags)
 	// video channels
 	for (i = 0; i < n_vid_chans; ++i) {
 		for (j = 0; j < n_segs; ++j) {
-			if (vid_chans[i] != NULL)
+			if (vid_chans[i])
 				seg = vid_chans[i]->segments[j];
-			if (seg != NULL) {
+			if (seg) {
 				open_status = seg->flags & LH_OPEN_m12;
 				seg->flags = new_flags | open_status;
 			}
 		}
-		if (vid_chans[i] != NULL) {
+		if (vid_chans[i]) {
 			open_status = vid_chans[i]->flags & LH_OPEN_m12;
 			active_status = vid_chans[i]->flags & LH_CHANNEL_ACTIVE_m12;
 			vid_chans[i]->flags = new_flags | open_status | active_status;
@@ -9702,14 +9740,14 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 	// update slice
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 		seg = chan->segments[j];
-		if (seg != NULL)
+		if (seg)
 			break;
 	}
 	slice->start_time = seg->time_slice.start_time;
 	slice->start_sample_number = seg->time_slice.start_sample_number;
 	slice->start_segment_number = seg->time_slice.start_segment_number;
 	for (++i, ++j; i < n_segs; ++i, ++j) {
-		if (chan->segments[j] != NULL)
+		if (chan->segments[j])
 			seg = chan->segments[j];
 	}
 	slice->end_time = seg->time_slice.end_time;
@@ -9730,7 +9768,7 @@ CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...)  
 			if (seg->flags & LH_UPDATE_EPHEMERAL_DATA_m12) {
 				G_merge_universal_headers_m12(chan->metadata_fps, seg->metadata_fps, NULL);
 				G_merge_metadata_m12(chan->metadata_fps, seg->metadata_fps, NULL);
-				if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
+				if (seg->record_indices_fps && seg->record_data_fps)
 					G_merge_universal_headers_m12(chan->metadata_fps, seg->record_data_fps, NULL);
 				seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m12;  // clear segment flag
 				chan->flags |= LH_UPDATE_EPHEMERAL_DATA_m12;  // set channel flag (for session)
@@ -9791,7 +9829,7 @@ CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...
 	}
 
 	if (flags == LH_NO_FLAGS_m12) {
-		if (chan != NULL)
+		if (chan)
 			flags = chan->flags;
 		if (flags == LH_NO_FLAGS_m12)
 			flags = globals_m12->level_header_flags;  // use global flags, if no channel flags
@@ -10210,13 +10248,13 @@ si8     G_read_record_data_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *s
 
 	start_idx = G_find_record_index_m12(ri_fps, slice->start_time, FIND_FIRST_ON_OR_AFTER_m12, 0);
 	if (start_idx == NO_INDEX_m12) {  // no records "on or after" slice beginning
-		if (rd_fps != NULL)
+		if (rd_fps)
 			rd_fps->number_of_items = 0;;
 		return(0);
 	}
 	ri = ri_fps->record_indices;
 	if (ri[start_idx].start_time > slice->end_time) {  // no records "on or before" slice end
-		if (rd_fps != NULL)
+		if (rd_fps)
 			rd_fps->number_of_items = 0;
 		return(0);
 	}
@@ -10352,7 +10390,7 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 	
 	// read segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m12)
-		if (seg->record_indices_fps != NULL && seg->record_data_fps != NULL)
+		if (seg->record_indices_fps && seg->record_data_fps)
 			if (inactive_ref == FALSE_m12)  // don't read records either
 				G_read_record_data_m12((LEVEL_HEADER_m12 *) seg, slice);
 
@@ -10596,13 +10634,13 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
-		if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)
+		if (sess->record_indices_fps && sess->record_data_fps)
 			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice, 0);
 		
 	// read segmented session record data
 	ssr = sess->segmented_sess_recs;
 	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12 && ssr != NULL) {
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12 && ssr) {
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 			// allocate new segment records
 			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
@@ -10614,7 +10652,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 					ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			}
-			if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
+			if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 				G_read_record_data_m12((LEVEL_HEADER_m12 *) ssr, slice, i);
 		}
 	}
@@ -10658,13 +10696,13 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 
 	// verbose
 	if (globals_m12->verbose == TRUE_m12) {
-		if (sess->time_series_metadata_fps != NULL) {
+		if (sess->time_series_metadata_fps) {
 			printf_m12("--------- Session Time Series Universal Header ---------\n");
 			G_show_universal_header_m12(sess->time_series_metadata_fps, NULL);
 			printf_m12("------------ Session Time Series Metadata --------------\n");
 			G_show_metadata_m12(sess->time_series_metadata_fps, NULL, 0);
 		}
-		if (sess->video_metadata_fps != NULL) {
+		if (sess->video_metadata_fps) {
 			printf_m12("------------ Session Video Universal Header ------------\n");
 			G_show_universal_header_m12(sess->video_metadata_fps, NULL);
 			printf_m12("--------------- Session Video Metadata -----------------\n");
@@ -10781,7 +10819,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 			if (G_read_channel_nt_m12(chan, NULL) == NULL) {
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
-				} else if (chan != NULL) {
+				} else if (chan) {
 					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
 						sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
 				}
@@ -10814,7 +10852,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 			if (G_read_channel_nt_m12(chan, NULL) == NULL) {
 				if (free_session == TRUE_m12) {
 					G_free_session_m12(sess, TRUE_m12);
-				} else if (chan != NULL) {
+				} else if (chan) {
 					if (chan->time_slice.number_of_segments == EMPTY_SLICE_m12)
 						sess->time_slice.number_of_segments = EMPTY_SLICE_m12;
 				}
@@ -10830,12 +10868,12 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
-		if (sess->record_indices_fps != NULL && sess->record_data_fps != NULL)
+		if (sess->record_indices_fps && sess->record_data_fps)
 			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice);
 
 	// read segmented session record data
 	ssr = sess->segmented_sess_recs;
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12 && ssr != NULL) {
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12 && ssr) {
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 			// allocate new segment records
 			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
@@ -10847,7 +10885,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
 					ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 			}
-			if (ssr->record_indices_fps[j] != NULL && ssr->record_data_fps[j] != NULL)
+			if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 				G_read_record_data_m12((LEVEL_HEADER_m12 *) ssr, slice, i);
 		}
 	}
@@ -10891,13 +10929,13 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	
 	// verbose
 	if (globals_m12->verbose == TRUE_m12) {
-		if (sess->time_series_metadata_fps != NULL) {
+		if (sess->time_series_metadata_fps) {
 			printf_m12("--------- Session Time Series Universal Header ---------\n");
 			G_show_universal_header_m12(sess->time_series_metadata_fps, NULL);
 			printf_m12("------------ Session Time Series Metadata --------------\n");
 			G_show_metadata_m12(sess->time_series_metadata_fps, NULL, 0);
 		}
-		if (sess->video_metadata_fps != NULL) {
+		if (sess->video_metadata_fps) {
 			printf_m12("------------ Session Video Universal Header ------------\n");
 			G_show_universal_header_m12(sess->video_metadata_fps, NULL);
 			printf_m12("--------------- Session Video Metadata -----------------\n");
@@ -11627,7 +11665,7 @@ si4	G_segment_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_fr
 		case LH_VIDEO_CHANNEL_m12:
 			chan = (CHANNEL_m12 *) level_header;
 			Sgmt_records = chan->Sgmt_records;
-			if (Sgmt_records == NULL && chan->parent != NULL)
+			if (Sgmt_records == NULL && chan->parent)
 				Sgmt_records = ((SESSION_m12 *) chan->parent)->Sgmt_records;
 			else
 				Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
@@ -11644,7 +11682,7 @@ si4	G_segment_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_fr
 				chan = globals_m12->reference_channel;
 				if (chan->type_code != LH_VIDEO_CHANNEL_m12)
 					chan = sess->video_channels[0];
-				if (chan->Sgmt_records != NULL)
+				if (chan->Sgmt_records)
 					Sgmt_records = chan->Sgmt_records;
 				else
 					Sgmt_records = chan->Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
@@ -11703,7 +11741,7 @@ si4	G_segment_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_s
 		case LH_TIME_SERIES_CHANNEL_m12:
 			chan = (CHANNEL_m12 *) level_header;
 			Sgmt_records = chan->Sgmt_records;
-			if (Sgmt_records == NULL && chan->parent != NULL)
+			if (Sgmt_records == NULL && chan->parent)
 				Sgmt_records = ((SESSION_m12 *) chan->parent)->Sgmt_records;
 			else
 				Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
@@ -11720,7 +11758,7 @@ si4	G_segment_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_s
 				chan = globals_m12->reference_channel;
 				if (chan->type_code != LH_TIME_SERIES_CHANNEL_m12)
 					chan = sess->time_series_channels[0];
-				if (chan->Sgmt_records != NULL)
+				if (chan->Sgmt_records)
 					Sgmt_records = chan->Sgmt_records;
 				else
 					Sgmt_records = chan->Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
@@ -11774,7 +11812,7 @@ si4	G_segment_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_time)
 		case LH_TIME_SERIES_CHANNEL_m12:
 			chan = (CHANNEL_m12 *) level_header;
 			Sgmt_records = chan->Sgmt_records;
-			if (Sgmt_records == NULL && chan->parent != NULL)
+			if (Sgmt_records == NULL && chan->parent)
 				Sgmt_records = ((SESSION_m12 *) chan->parent)->Sgmt_records;
 			else
 				Sgmt_records = chan->Sgmt_records = G_build_Sgmt_records_array_m12(chan->record_indices_fps, chan->record_data_fps, chan);
@@ -12208,9 +12246,9 @@ TERN_m12	G_set_time_and_password_data_m12(si1 *unspecified_password, si1 *MED_di
 
 	// return metadata encryption level info
 	md1 = &metadata_fps->metadata->section_1;
-	if (metadata_section_2_encryption_level != NULL)
+	if (metadata_section_2_encryption_level)
 		*metadata_section_2_encryption_level = md1->section_2_encryption_level;
-	if (metadata_section_3_encryption_level != NULL)
+	if (metadata_section_3_encryption_level)
 		*metadata_section_3_encryption_level = md1->section_3_encryption_level;
 
 	// clean up
@@ -12708,12 +12746,12 @@ void	G_show_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps, METADATA_m12 *md, ui4 
 	// if passing metadata pointer, also pass type code
 	
 	// assign
-	if (fps != NULL) {
+	if (fps) {
 		md = (METADATA_m12 *) fps->data_pointers;
 		type_code = fps->universal_header->type_code;
 	}
 	
-	if (md != NULL) {
+	if (md) {
 		md1 = &md->section_1;
 		if (type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m12) {
 			tmd2 = &md->time_series_section_2;
@@ -12779,7 +12817,7 @@ void	G_show_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps, METADATA_m12 *md, ui4 
 	
 	// decrypt if needed
 	if (md1->section_2_encryption_level > NO_ENCRYPTION_m12 || md1->section_3_encryption_level > NO_ENCRYPTION_m12)
-		if (fps != NULL)
+		if (fps)
 			G_decrypt_metadata_m12(fps);
 	
 	if (md1->section_2_encryption_level <= NO_ENCRYPTION_m12) {
@@ -12808,7 +12846,7 @@ void	G_show_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps, METADATA_m12 *md, ui4 
 			printf_m12("Acquisition Channel Number: %d\n", gmd2->acquisition_channel_number);
 		
 		// type-specific fields
-		if (tmd2 != NULL) {
+		if (tmd2) {
 			if (*tmd2->reference_description)
 				UTF8_printf_m12("Reference Description: %s\n", tmd2->reference_description);
 			else
@@ -12901,7 +12939,7 @@ void	G_show_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps, METADATA_m12 *md, ui4 
 				printf_m12("Maximum Contiguous Samples: no entry\n");
 			else
 				printf_m12("Maximum Contiguous Samples: %ld\n", tmd2->maximum_contiguous_samples);
-		} else if (vmd2 != NULL) {
+		} else if (vmd2) {
 			if (vmd2->time_base_units_conversion_factor == VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m12)
 				printf_m12("Time Base Units Conversion Factor: no entry\n");
 			else
@@ -13174,7 +13212,7 @@ void	G_show_Sgmt_records_array_m12(LEVEL_HEADER_m12 *level_header, Sgmt_RECORD_m
 	SESSION_m12		*sess;
 	
 	
-	if (level_header != NULL) {
+	if (level_header) {
 		switch (level_header->type_code) {
 			case LH_TIME_SERIES_CHANNEL_m12:
 			case LH_VIDEO_CHANNEL_m12:
@@ -13371,7 +13409,7 @@ void	G_show_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps, UNIVERSAL_HEAD
 #endif
 	
 	// assign
-	if (fps != NULL) {
+	if (fps) {
 		uh = fps->universal_header;
 		if (fps->parameters.fd == FPS_FD_EPHEMERAL_m12)
 			ephemeral_flag = TRUE_m12;
@@ -14340,7 +14378,7 @@ si8	G_write_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes
 		return(0);  // nothing new written
 	}
 	
-	if (external_data != NULL) {
+	if (external_data) {
 		saved_data_pointers = fps->data_pointers;
 		fps->data_pointers = external_data;
 	}
@@ -14444,13 +14482,13 @@ si8	G_write_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes
 		FPS_close_m12(fps);
 	
 	// leave decrypted directive
-	if (encrypted_data != NULL) {
+	if (encrypted_data) {
 		free_m12(encrypted_data, __FUNCTION__);
 		fps->data_pointers = unencrypted_data;
 	}
 
 	// restore data pointers if writing from external memory
-	if (external_data != NULL)
+	if (external_data)
 		fps->data_pointers = saved_data_pointers;
 		
 	return(bytes_written);
@@ -14560,7 +14598,7 @@ void	AES_decrypt_m12(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 		AES_initialize_tables_m12();
 	
 	if (expanded_key == NULL) {
-		if (password != NULL) {
+		if (password) {
 			if (*password) {
 				// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
 				strncpy_m12(key, password, 16);
@@ -14613,7 +14651,7 @@ void	AES_encrypt_m12(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 		AES_initialize_tables_m12();
 	
 	if (expanded_key == NULL) {
-		if (password != NULL) {
+		if (password) {
 			if (*password) {
 				// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
 				strncpy_m12(key, password, 16);
@@ -14748,11 +14786,11 @@ TERN_m12	AES_initialize_tables_m12(void)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (global_tables_m12->AES_rcon_table != NULL)
+	if (global_tables_m12->AES_rcon_table)
 		return(TRUE_m12);
 
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->AES_mutex);
-	if (global_tables_m12->AES_rcon_table != NULL) {  // may have been done by another thread while waiting
+	if (global_tables_m12->AES_rcon_table) {  // may have been done by another thread while waiting
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->AES_mutex);
 		return(TRUE_m12);
 	}
@@ -16067,7 +16105,7 @@ TERN_m12	AT_freeable_m12(void *address)
 	}
 
 	// already freed
-	if (atn->free_function != NULL) {
+	if (atn->free_function) {
 		AT_mutex_off();
 		return(FALSE_m12);
 	}
@@ -16131,7 +16169,7 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	freed_atn = NULL;
 	for (i = globals_m12->AT_node_count; i--; ++atn) {
 		if (atn->address == address) {
-			if (atn->free_function != NULL)  // keep looking at rest of entries: same address may have been allocated subsequently
+			if (atn->free_function)  // keep looking at rest of entries: same address may have been allocated subsequently
 				freed_atn = atn;
 			else
 				break;
@@ -16141,7 +16179,7 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	// no entry
 	if (i < 0) {
 		AT_mutex_off();
-		if (freed_atn != NULL) {
+		if (freed_atn) {
 			G_warning_message_m12("%s(): address was already freed, called from function %s():", __FUNCTION__, function);
 			AT_show_entry_m12(address);  // show where previously freed
 		} else {
@@ -16241,7 +16279,7 @@ void	AT_show_entry_m12(void *address)
 			G_message_m12("requested bytes: %lu\n", atn->requested_bytes);
 			G_message_m12("actual bytes: %lu\n", atn->actual_bytes);
 			G_message_m12("allocated by: %s()\n", atn->alloc_function);
-			if (atn->free_function != NULL)
+			if (atn->free_function)
 				G_message_m12("freed by: %s()\n", atn->free_function);
 			AT_mutex_off();
 			return;
@@ -16270,7 +16308,7 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, size_t reque
 #endif
 
 	if (orig_address == NULL) {
-		if (new_address != NULL) {
+		if (new_address) {
 			AT_add_entry_m12(new_address, requested_bytes, function);
 			return(TRUE_m12);
 		}
@@ -16296,7 +16334,7 @@ TERN_m12	AT_update_entry_m12(void *orig_address, void *new_address, size_t reque
 		return(FALSE_m12);
 	}
 	
-	if (atn->free_function != NULL) {
+	if (atn->free_function) {
 		G_warning_message_m12("%s(): original address was already freed, called from function %s():", __FUNCTION__, function);
 		AT_show_entry_m12(orig_address);
 		G_warning_message_m12("=> replacing with new data\n");
@@ -16371,7 +16409,7 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 	// allocate
 	total_requested_bytes = pointer_bytes + (n_buffers * array_bytes);
 	if (total_requested_bytes > buffers->total_allocated_bytes) {
-		if (buffers->buffer != NULL) {
+		if (buffers->buffer) {
 			if (buffers->locked == TRUE_m12)
 				buffers->locked = munlock_m12((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			free_m12((void *) buffers->buffer, __FUNCTION__);  // usually faster to free & alloc than realloc because of potential memory move
@@ -16441,11 +16479,11 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 	PROC_pthread_mutex_init_m12(&cps->parameters.mutex,  NULL);
 	
 	// set up directives
-	if (directives != NULL)
+	if (directives)
 		cps->directives = *directives;
 	else // set defaults
 		CMP_initialize_directives_m12(&cps->directives, (ui1) mode);
-	if (fps->parent != NULL) {  // set level header directives
+	if (fps->parent) {  // set level header directives
 		if (((LEVEL_HEADER_m12 *) fps->parent)->flags & LH_NO_CPS_PTR_RESET_m12)
 			cps->directives.cps_pointer_reset = FALSE_m12;  // default is TRUE_m12
 		if (((LEVEL_HEADER_m12 *) fps->parent)->flags & LH_NO_CPS_CACHING_m12)
@@ -16453,7 +16491,7 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 	}
 	
 	// set up parameters
-	if (parameters != NULL)
+	if (parameters)
 		cps->parameters = *parameters;
 	else  // set defaults
 		CMP_initialize_parameters_m12(&cps->parameters);
@@ -17178,7 +17216,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"original_data\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_original_data == FALSE_m12 && cps->original_data != NULL) {
+	if (need_original_data == FALSE_m12 && cps->original_data) {
 		G_warning_message_m12("%s(): \"original_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m12((void *) cps->original_data, __FUNCTION__);
 		cps->original_ptr = cps->original_data = NULL;
@@ -17190,7 +17228,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"decompressed_data\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_decompressed_data == FALSE_m12 && cps->decompressed_data != NULL) {
+	if (need_decompressed_data == FALSE_m12 && cps->decompressed_data) {
 		G_warning_message_m12("%s(): \"decompressed_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m12((void *) cps->decompressed_data, __FUNCTION__);
 		cps->decompressed_ptr = cps->decompressed_data = NULL;
@@ -17202,7 +17240,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"detrended_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_detrended_buffer == FALSE_m12 && cps->parameters.detrended_buffer != NULL) {
+	if (need_detrended_buffer == FALSE_m12 && cps->parameters.detrended_buffer) {
 		G_warning_message_m12("%s(): \"detrended_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m12((void *) cps->parameters.detrended_buffer, __FUNCTION__);
 		cps->parameters.detrended_buffer = NULL;
@@ -17214,7 +17252,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"derivative_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_derivative_buffer == FALSE_m12 && cps->parameters.derivative_buffer != NULL) {
+	if (need_derivative_buffer == FALSE_m12 && cps->parameters.derivative_buffer) {
 		G_warning_message_m12("%s(): \"derivative_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m12((void *) cps->parameters.derivative_buffer, __FUNCTION__);
 		cps->parameters.derivative_buffer = NULL;
@@ -17226,7 +17264,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"scaled_amplitude_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_scaled_amplitude_buffer == FALSE_m12 && cps->parameters.scaled_amplitude_buffer != NULL) {
+	if (need_scaled_amplitude_buffer == FALSE_m12 && cps->parameters.scaled_amplitude_buffer) {
 		G_warning_message_m12("%s(): \"scaled_amplitude_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m12((void *) cps->parameters.scaled_amplitude_buffer, __FUNCTION__);
 		cps->parameters.scaled_amplitude_buffer = NULL;
@@ -17238,7 +17276,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"scaled_frequency_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_scaled_frequency_buffer == FALSE_m12 && cps->parameters.scaled_frequency_buffer != NULL) {
+	if (need_scaled_frequency_buffer == FALSE_m12 && cps->parameters.scaled_frequency_buffer) {
 		G_warning_message_m12("%s(): \"scaled_frequency_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m12((void *) cps->parameters.scaled_frequency_buffer, __FUNCTION__);
 		cps->parameters.scaled_frequency_buffer = NULL;
@@ -17250,7 +17288,7 @@ TERN_m12     CMP_check_CPS_allocation_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		G_error_message_m12("%s(): \"VDS_buffers\" are not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
 		ret_val = FALSE_m12;
 	}
-	if (need_VDS_buffers == FALSE_m12 && (cps->parameters.VDS_input_buffers != NULL || cps->parameters.VDS_output_buffers != NULL)) {
+	if (need_VDS_buffers == FALSE_m12 && (cps->parameters.VDS_input_buffers || cps->parameters.VDS_output_buffers)) {
 		G_warning_message_m12("%s(): \"VDS_buffers\" are needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		CMP_free_buffers_m12(cps->parameters.VDS_input_buffers, TRUE_m12);
 		cps->parameters.VDS_input_buffers = NULL;
@@ -17622,13 +17660,13 @@ void    CMP_detrend_m12(si4 *input_buffer, si4 *output_buffer, si8 len, CMP_PROC
 	// detrend from input_buffer to output_buffer
 	// slope and intercept values entered into block_header
 	// if input_buffer == output_buffer detrending will be done in place
-	// if cps != NULL store coefficients in block parameters
+	// if cps store coefficients in block parameters
 	
 	CMP_lad_reg_si4_m12(input_buffer, len, &m, &b);
 	
 	// store m & b in block parameter region
 	// NOTE: block parameter region must be setup first
-	if (cps != NULL) {
+	if (cps) {
 		// demote precision
 		sf4_m = (sf4) m;
 		si4_b = CMP_round_si4_m12(b);  // this is an integer because sf4 can only precisely encode offsets up to 24 bits, but MED guarantees 32-bit lossless detrending
@@ -17662,7 +17700,7 @@ void    CMP_detrend_sf8_m12(sf8 *input_buffer, sf8 *output_buffer, si8 len)
 	// detrend from input_buffer to output_buffer
 	// slope and intercept values entered into block_header
 	// if input_buffer == output_buffer detrending will be done in place
-	// if cps != NULL store coefficients in block parameters
+	// if cps store coefficients in block parameters
 	
 	CMP_lad_reg_sf8_m12(input_buffer, len, &m, &b);
 	
@@ -18309,7 +18347,7 @@ void    CMP_find_extrema_m12(si4 *input_buffer, si8 len, si4 *minimum, si4 *maxi
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (cps != NULL) {
+	if (cps) {
 		len = cps->block_header->number_of_samples;
 		input_buffer = cps->input_buffer;
 	}
@@ -18322,17 +18360,17 @@ void    CMP_find_extrema_m12(si4 *input_buffer, si8 len, si4 *minimum, si4 *maxi
 			min = *input_buffer;
 	}
 	
-	if (cps != NULL) {
+	if (cps) {
 		cps->parameters.minimum_sample_value = min;
 		cps->parameters.maximum_sample_value = max;
 	}
-	if (minimum != NULL)
+	if (minimum)
 		*minimum = min;
-	if (maximum != NULL)
+	if (maximum)
 		*maximum = max;
 	
 	// get extreme difference values
-	if (cps != NULL && cps->parameters.derivative_buffer != NULL && cps->parameters.derivative_level > 0) {
+	if (cps && cps->parameters.derivative_buffer && cps->parameters.derivative_level > 0) {
 		input_buffer = cps->parameters.derivative_buffer + (si8) cps->parameters.derivative_level;
 		min = max = *input_buffer;
 		len -= (si8) cps->parameters.derivative_level;
@@ -18405,7 +18443,7 @@ TERN_m12    CMP_free_cache_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (cps->parameters.cache != NULL) {
+	if (cps->parameters.cache) {
 		free_m12((void * ) cps->parameters.cache, __FUNCTION__);
 		freed = TRUE_m12;
 		cps->parameters.allocated_decompressed_samples = 0;
@@ -18439,45 +18477,45 @@ void    CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 
 	
 	PROC_pthread_mutex_lock_m12(&cps->parameters.mutex);
 
-	if (cps->original_data != NULL)
+	if (cps->original_data)
 		free_m12((void *) cps->original_data, __FUNCTION__);
 	
-	if (cps->parameters.cache != NULL)  // decompressed_data is pointer into this
+	if (cps->parameters.cache)  // decompressed_data is pointer into this
 		free_m12((void *) cps->parameters.cache, __FUNCTION__);
 	
-	if (cps->parameters.keysample_buffer != NULL)
+	if (cps->parameters.keysample_buffer)
 		free_m12((void *) cps->parameters.keysample_buffer, __FUNCTION__);
 	
-	if (cps->parameters.detrended_buffer != NULL)
+	if (cps->parameters.detrended_buffer)
 		free_m12((void *) cps->parameters.detrended_buffer, __FUNCTION__);
 	
-	if (cps->parameters.scaled_amplitude_buffer != NULL)
+	if (cps->parameters.scaled_amplitude_buffer)
 		free_m12((void *) cps->parameters.scaled_amplitude_buffer, __FUNCTION__);
 	
-	if (cps->parameters.scaled_frequency_buffer != NULL)
+	if (cps->parameters.scaled_frequency_buffer)
 		free_m12((void *) cps->parameters.scaled_frequency_buffer, __FUNCTION__);
 	
-	if (cps->parameters.scrap_buffers != NULL)
+	if (cps->parameters.scrap_buffers)
 		CMP_free_buffers_m12(cps->parameters.scrap_buffers, TRUE_m12);
 	
-	if (cps->parameters.count != NULL)
+	if (cps->parameters.count)
 		free_m12((void *) cps->parameters.count, __FUNCTION__);
 	
-	if (cps->parameters.cumulative_count != NULL)
+	if (cps->parameters.cumulative_count)
 		free_m12((void *) cps->parameters.cumulative_count, __FUNCTION__);
 	
-	if (cps->parameters.sorted_count != NULL)
+	if (cps->parameters.sorted_count)
 		free_m12((void *) cps->parameters.sorted_count, __FUNCTION__);
 	
-	if (cps->parameters.minimum_range != NULL)
+	if (cps->parameters.minimum_range)
 		free_m12((void *) cps->parameters.minimum_range, __FUNCTION__);
 	
-	if (cps->parameters.symbol_map != NULL)
+	if (cps->parameters.symbol_map)
 		free_m12((void *) cps->parameters.symbol_map, __FUNCTION__);
 	
-	if (cps->parameters.VDS_input_buffers != NULL)
+	if (cps->parameters.VDS_input_buffers)
 		CMP_free_buffers_m12(cps->parameters.VDS_input_buffers, TRUE_m12);
-	if (cps->parameters.VDS_output_buffers != NULL)
+	if (cps->parameters.VDS_output_buffers)
 		CMP_free_buffers_m12(cps->parameters.VDS_output_buffers, TRUE_m12);
 	
 	PROC_pthread_mutex_unlock_m12(&cps->parameters.mutex);
@@ -18830,11 +18868,11 @@ TERN_m12	CMP_initialize_tables_m12(void)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (global_tables_m12->CMP_normal_CDF_table != NULL)
+	if (global_tables_m12->CMP_normal_CDF_table)
 		return(TRUE_m12);
 	
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->CMP_mutex);
-	if (global_tables_m12->CMP_normal_CDF_table != NULL) {
+	if (global_tables_m12->CMP_normal_CDF_table) {
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->CMP_mutex);
 		return(TRUE_m12);
 	}
@@ -20892,7 +20930,7 @@ CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_
 	}
 	
 	if (new_decompressed_samples) {
-		if (cps->decompressed_data != NULL)
+		if (cps->decompressed_data)
 			free_m12((void * ) cps->parameters.cache, __FUNCTION__);
 		cps->decompressed_data = cps->decompressed_ptr = cps->parameters.cache = (si4 *) calloc_m12((size_t) new_decompressed_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		if (cps->decompressed_data == NULL)
@@ -20902,27 +20940,27 @@ CMP_PROCESSING_STRUCT_m12	*CMP_reallocate_processing_struct_m12(FILE_PROCESSING_
 		
 	// reallocate the following if they were previously allocated
 	if (cps->parameters.allocated_block_samples < block_samples) {
-		if (cps->parameters.detrended_buffer != NULL) {
+		if (cps->parameters.detrended_buffer) {
 			free_m12((void * ) cps->parameters.detrended_buffer, __FUNCTION__);
 			if ((cps->parameters.detrended_buffer = (si4 *) calloc_m12((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m12;
 		}
-		if (cps->parameters.derivative_buffer != NULL) {
+		if (cps->parameters.derivative_buffer) {
 			free_m12((void * ) cps->parameters.derivative_buffer, __FUNCTION__);
 			if ((cps->parameters.derivative_buffer = (si4 *) calloc_m12((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m12;
 		}
-		if (cps->parameters.scaled_amplitude_buffer != NULL) {
+		if (cps->parameters.scaled_amplitude_buffer) {
 			free_m12((void * ) cps->parameters.scaled_amplitude_buffer, __FUNCTION__);
 			if ((cps->parameters.scaled_amplitude_buffer = (si4 *) calloc_m12((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m12;
 		}
-		if (cps->parameters.scaled_frequency_buffer != NULL) {
+		if (cps->parameters.scaled_frequency_buffer) {
 			free_m12((void * ) cps->parameters.scaled_frequency_buffer, __FUNCTION__);
 			if ((cps->parameters.scaled_frequency_buffer = (si4 *) calloc_m12((size_t) block_samples, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m12;
 		}
-		if (cps->parameters.VDS_input_buffers != NULL) {
+		if (cps->parameters.VDS_input_buffers) {
 			if (mode == CMP_COMPRESSION_MODE_m12)
 				pad_samples = CMP_VDS_LOWPASS_ORDER_m12 * 6;
 			else
@@ -22172,7 +22210,7 @@ void    CMP_scale_amplitude_si4_m12(si4 *input_buffer, si4 *output_buffer, si8 l
 	
 	// store scale in block parameter region
 	// NOTE: block parameter region must be setup first
-	if (cps != NULL) {
+	if (cps) {
 		// demote precision
 		sf4_scale = (sf4) scale_factor;
 		// store
@@ -22204,7 +22242,7 @@ void    CMP_scale_frequency_si4_m12(si4 *input_buffer, si4 *output_buffer, si8 l
 	
 	// store scale in block parameter region
 	// NOTE: block parameter region must be setup first
-	if (cps != NULL) {
+	if (cps) {
 		// demote precision
 		sf4_scale = (sf4) scale_factor;
 		// store
@@ -23548,7 +23586,7 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 			realloc_flag = TRUE_m12;
 	}
 	if (realloc_flag == TRUE_m12) {
-		if (min_filtps != NULL)
+		if (min_filtps)
 			FILT_free_processing_struct_m12(min_filtps, FALSE_m12, FALSE_m12, FALSE_m12, TRUE_m12);
 		cps->parameters.filtps[FILT_VDS_TEMPLATE_MIN_PS_m12] = (void *) FILT_initialize_processing_struct_m12(CMP_VDS_LOWPASS_ORDER_m12, FILT_LOWPASS_TYPE_m12, samp_freq, block_samps, FALSE_m12, FALSE_m12, FALSE_m12, (RETURN_ON_FAIL_m12 | SUPPRESS_WARNING_OUTPUT_m12), min_cutoff);
 		min_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_MIN_PS_m12];
@@ -23577,7 +23615,7 @@ void	CMP_VDS_generate_template_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len)
 				realloc_flag = TRUE_m12;
 		}
 		if (realloc_flag == TRUE_m12) {
-			if (lfp_filtps != NULL)
+			if (lfp_filtps)
 				FILT_free_processing_struct_m12(lfp_filtps, FALSE_m12, FALSE_m12, FALSE_m12, TRUE_m12);
 			cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12] = (void *) FILT_initialize_processing_struct_m12(CMP_VDS_LOWPASS_ORDER_m12, FILT_LOWPASS_TYPE_m12, samp_freq, block_samps, FALSE_m12, FALSE_m12, FALSE_m12, (RETURN_ON_FAIL_m12 | SUPPRESS_WARNING_OUTPUT_m12), LFP_high_fc);
 			lfp_filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[FILT_VDS_TEMPLATE_LFP_PS_m12];
@@ -23845,11 +23883,11 @@ TERN_m12	CRC_initialize_tables_m12(void)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (global_tables_m12->CRC_table != NULL)
+	if (global_tables_m12->CRC_table)
 		return(TRUE_m12);
 
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->CRC_mutex);
-	if (global_tables_m12->CRC_table != NULL) {  // may have been done by another thread while waiting
+	if (global_tables_m12->CRC_table) {  // may have been done by another thread while waiting
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->CRC_mutex);
 		return(TRUE_m12);
 	}
@@ -24099,12 +24137,12 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 	
 	if (result_ok == FALSE_m12) {
 		PQclear(result);
-		if (rows != NULL)
+		if (rows)
 			*rows = 0;
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			(void) fprintf_m12(stderr, "%c\n\t%s(): command \"%s\" failed\n", 7, __FUNCTION__, command);
 			(void) fprintf_m12(stderr, "\tpostgres error: %s\n", PQerrorMessage(conn));
-			if (function != NULL)
+			if (function)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void) fprintf_m12(stderr, "\t=> returning NULL\n\n");
@@ -24119,7 +24157,7 @@ PGresult	*DB_execute_command_m12(PGconn *conn, si1 *command, si4 *rows, si4 expe
 	}
 
 	local_rows = PQntuples(result);
-	if (rows != NULL)
+	if (rows)
 		*rows = local_rows;
 	
 	if (expected_rows != DB_EXPECTED_ROWS_NO_ENTRY_m12) {
@@ -24187,7 +24225,7 @@ pthread_rval_m12	DM_channel_thread_m12(void *ptr)
 		trace_ranges = TRUE_m12;
 	} else {
 		trace_ranges = FALSE_m12;
-		if (dm->out_bufs[chan_idx] != NULL)
+		if (dm->out_bufs[chan_idx])
 			if (dm->out_bufs[chan_idx]->n_buffers != 1)
 				CMP_free_buffers_m12(dm->out_bufs[chan_idx], FALSE_m12);  // will be allocated below
 	}
@@ -24246,7 +24284,7 @@ pthread_rval_m12	DM_channel_thread_m12(void *ptr)
 	if (trace_ranges == TRUE_m12)
 		n_out_bufs = 3;
 	if ((dm->flags & DM_FMT_CHANNEL_MAJOR_m12) && (dm->flags & DM_TYPE_SF8_m12)) {  // special case - put results directly in output array(s)
-		if (dm->out_bufs[chan_idx] != NULL) {
+		if (dm->out_bufs[chan_idx]) {
 			CMP_free_buffers_m12(dm->out_bufs[chan_idx], TRUE_m12);
 			dm->out_bufs[chan_idx] = NULL;
 		}
@@ -24658,19 +24696,19 @@ void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
 		return;
 	}
 	
-	if (matrix->data != NULL)
+	if (matrix->data)
 		free_m12(matrix->data, __FUNCTION__);
 	
-	if (matrix->range_minima != NULL)
+	if (matrix->range_minima)
 		free_m12(matrix->range_minima, __FUNCTION__);
 	
-	if (matrix->range_maxima != NULL)
+	if (matrix->range_maxima)
 		free_m12(matrix->range_maxima, __FUNCTION__);
 	
-	if (matrix->contigua != NULL)
+	if (matrix->contigua)
 		free_m12((void *) matrix->contigua, __FUNCTION__);
 
-	if (matrix->in_bufs != NULL) {
+	if (matrix->in_bufs) {
 		for (i = 0; i < matrix->n_proc_bufs; ++i) {
 			CMP_free_buffers_m12(matrix->in_bufs[i], TRUE_m12);
 			CMP_free_buffers_m12(matrix->out_bufs[i], TRUE_m12);
@@ -24679,7 +24717,7 @@ void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
 		free_m12((void *) matrix->out_bufs, __FUNCTION__);
 	}
 	
-	if (matrix->mak_in_bufs != NULL) {
+	if (matrix->mak_in_bufs) {
 		for (i = 0; i < matrix->n_proc_bufs; ++i) {
 			CMP_free_buffers_m12(matrix->mak_in_bufs[i], TRUE_m12);
 			CMP_free_buffers_m12(matrix->mak_out_bufs[i], TRUE_m12);
@@ -24688,7 +24726,7 @@ void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
 		free_m12((void *) matrix->mak_out_bufs, __FUNCTION__);
 	}
 
-	if (matrix->spline_bufs != NULL) {
+	if (matrix->spline_bufs) {
 		for (i = 0; i < matrix->n_proc_bufs; ++i)
 			CMP_free_buffers_m12(matrix->spline_bufs[i], TRUE_m12);
 		free_m12((void *) matrix->spline_bufs, __FUNCTION__);
@@ -25041,7 +25079,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	}
 	if (matrix->flags & DM_TRACE_EXTREMA_m12) {
 		if (matrix->n_proc_bufs < matrix->channel_count || matrix->el_size > old_el_size) {
-			if (matrix->trace_minima != NULL) {
+			if (matrix->trace_minima) {
 				free_m12(matrix->trace_minima, __FUNCTION__);
 				free_m12(matrix->trace_maxima, __FUNCTION__);
 				matrix->trace_minima = matrix->trace_maxima = NULL;
@@ -25063,9 +25101,9 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	}
 	if (matrix->data_bytes < (si8) new_data_bytes) {
 		matrix->data_bytes = (si8) new_data_bytes;
-		if (matrix->data != NULL) {
+		if (matrix->data) {
 			free_m12((void *) matrix->data, __FUNCTION__);
-			if (matrix->range_minima != NULL) {  // always paired
+			if (matrix->range_minima) {  // always paired
 				free_m12((void *) matrix->range_minima, __FUNCTION__);
 				free_m12((void *) matrix->range_maxima, __FUNCTION__);
 				matrix->range_minima = matrix->range_maxima = NULL;
@@ -25117,7 +25155,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 
 	// get contigua
 	if (matrix->flags & DM_DSCNT_MASK_m12) {
-		if (matrix->contigua != NULL) {
+		if (matrix->contigua) {
 			free_m12((void *) matrix->contigua, __FUNCTION__);
 			matrix->contigua = NULL;
 			matrix->number_of_contigua = 0;
@@ -25479,7 +25517,7 @@ DATA_MATRIX_m12 *DM_transpose_m12(DATA_MATRIX_m12 **in_matrix_p, DATA_MATRIX_m12
 		}
 	}
 	
-	if (out_matrix != NULL) {  // 2D indexing requires reallocation for transposition
+	if (out_matrix) {  // 2D indexing requires reallocation for transposition
 		if (out_matrix->flags & DM_2D_INDEXING_m12) {
 			if (in_matrix->maj_dim != out_matrix->min_dim || in_matrix->min_dim != out_matrix->maj_dim) {
 				DM_free_matrix_m12(out_matrix, TRUE_m12);
@@ -25533,7 +25571,7 @@ DATA_MATRIX_m12 *DM_transpose_m12(DATA_MATRIX_m12 **in_matrix_p, DATA_MATRIX_m12
 		DM_transpose_out_of_place_m12(in_matrix, out_matrix, in_matrix->range_maxima, out_matrix->range_maxima);
 	}
 	
-	if (out_matrix_p != NULL)
+	if (out_matrix_p)
 		*out_matrix_p = out_matrix;
 	if (false_in_place == TRUE_m12) {
 		DM_free_matrix_m12(in_matrix, TRUE_m12);
@@ -26544,7 +26582,7 @@ void	FILT_free_CPS_filtps_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 free_orig
 		return;
 	for (i = 0; i < cps->parameters.n_filtps; ++i) {
 		filtps = (FILT_PROCESSING_STRUCT_m12 *) cps->parameters.filtps[i];
-		if (filtps != NULL)
+		if (filtps)
 			FILT_free_processing_struct_m12(filtps, free_orig_data, free_filt_data, free_buffer, TRUE_m12);
 	}
 	free_m12((void *) cps->parameters.filtps, __FUNCTION__);
@@ -26565,21 +26603,21 @@ void	FILT_free_processing_struct_m12(FILT_PROCESSING_STRUCT_m12 *filtps, TERN_m1
 		G_warning_message_m12("%s(): trying to free a NULL FILT_PROCESSING_STRUCT_m12", __FUNCTION__);
 		return;
 	}
-	if (filtps->numerators != NULL)
+	if (filtps->numerators)
 		free_m12((void *) filtps->numerators, __FUNCTION__);
-	if (filtps->denominators != NULL)
+	if (filtps->denominators)
 		free_m12((void *) filtps->denominators, __FUNCTION__);
-	if (filtps->initial_conditions != NULL)
+	if (filtps->initial_conditions)
 		free_m12((void *) filtps->initial_conditions, __FUNCTION__);
-	if (filtps->orig_data != NULL)
+	if (filtps->orig_data)
 		if (free_orig_data == TRUE_m12)  // IMPORTANT: if keeping orig_data, caller should have a copy of address to free when they're done to avoid a memory leak
 			if (filtps->orig_data != filtps->filt_data)  // simple filter-in-place arrangement
 				if (filtps->orig_data != FILT_OFFSET_ORIG_DATA_m12(filtps))  // efficient filter-in-place arrangement
 					free_m12((void *) filtps->orig_data, __FUNCTION__);
-	if (filtps->filt_data != NULL)
+	if (filtps->filt_data)
 		if (free_filt_data == TRUE_m12)  // IMPORTANT: if keeping filt_data, caller should have a copy of address to free when they're done to avoid a memory leak
 			free_m12((void *) filtps->filt_data, __FUNCTION__);
-	if (filtps->buffer != NULL)
+	if (filtps->buffer)
 		if (free_buffer == TRUE_m12)
 			free_m12((void *) filtps->buffer, __FUNCTION__);
 	
@@ -26604,11 +26642,11 @@ void	FILT_free_quantfilt_data_m12(QUANTFILT_DATA_m12 *qd, TERN_m12 free_structur
 	if (qd == NULL)
 		return;
 	
-	if (qd->x != NULL)
+	if (qd->x)
 		free_m12((void *) qd->x, __FUNCTION__);
-	if (qd->qx != NULL)
+	if (qd->qx)
 		free_m12((void *) qd->qx, __FUNCTION__);
-	if (qd->nodes != NULL)
+	if (qd->nodes)
 		free_m12((void *) qd->nodes, __FUNCTION__);
 
 	if (free_structure == TRUE_m12)
@@ -28152,13 +28190,13 @@ FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_S
 	if (fps == NULL) {
 		fps = (FILE_PROCESSING_STRUCT_m12 *) calloc_m12((size_t) 1, sizeof(FILE_PROCESSING_STRUCT_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		free_fps = TRUE_m12;
-	} else if (fps->parameters.raw_data != NULL) {
+	} else if (fps->parameters.raw_data) {
 		free_m12((void *) fps->parameters.raw_data, __FUNCTION__);
 		fps->parameters.raw_data = NULL;
 	}
-	if (parent != NULL)
+	if (parent)
 		fps->parent = (void *) parent;
-	if (full_file_name != NULL)
+	if (full_file_name)
 		if (*full_file_name)
 			strncpy_m12(fps->full_file_name, full_file_name, FULL_FILE_NAME_BYTES_m12);
 	if (*fps->full_file_name && type_code == UNKNOWN_TYPE_CODE_m12)
@@ -28179,7 +28217,7 @@ FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_S
 	fps->number_of_items = 0;
 
 	// if a prototype FILE_PROCESSING_STRUCT_m12 was passed - copy its directives, password data, universal_header, and raw data
-	if (proto_fps != NULL) {
+	if (proto_fps) {
 		fps->directives = proto_fps->directives;
 		fps->parameters.password_data = proto_fps->parameters.password_data;
 		bytes_to_copy += UNIVERSAL_HEADER_BYTES_m12;  // all files start with universal header
@@ -28208,7 +28246,7 @@ FILE_PROCESSING_STRUCT_m12	*FPS_allocate_processing_struct_m12(FILE_PROCESSING_S
 			break;
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 			cps = fps->parameters.cps;
-			if (cps != NULL) {
+			if (cps) {
 				cps->block_header = (CMP_BLOCK_FIXED_HEADER_m12 *) fps->data_pointers;
 				cps->parameters.allocated_compressed_bytes = raw_data_bytes - UNIVERSAL_HEADER_BYTES_m12;
 			}
@@ -28246,8 +28284,8 @@ void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	if (fps != NULL) {
-		if (fps->parameters.fp != NULL) {
+	if (fps) {
+		if (fps->parameters.fp) {
 			if (fps->parameters.fd > 2) { // fclose() can crash under some circumstances (e.g. if file is already closed)  (fd < 0 == closed, 0-2 == standard streams)
 				fclose(fps->parameters.fp);
 
@@ -28305,21 +28343,21 @@ void	FPS_free_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, TERN_m12 fr
 		return;
 	}
 	
-	if (fps->universal_header != NULL) {
+	if (fps->universal_header) {
 		if (fps->universal_header->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m12)  // CPS requires special freeing
-			if (fps->parameters.cps != NULL)
+			if (fps->parameters.cps)
 				if (fps->directives.free_CMP_processing_struct == TRUE_m12)
 					CMP_free_processing_struct_m12(fps->parameters.cps, TRUE_m12);
 	}
 	
-	if (fps->parameters.raw_data != NULL)
+	if (fps->parameters.raw_data)
 		free_m12((void *) fps->parameters.raw_data, __FUNCTION__);
 	
 	if (fps->directives.free_password_data == TRUE_m12)
-		if (fps->parameters.password_data != &globals_m12->password_data && fps->parameters.password_data != NULL)
+		if (fps->parameters.password_data != &globals_m12->password_data && fps->parameters.password_data)
 			free_m12((void *) fps->parameters.password_data, __FUNCTION__);
 	
-	if (fps->parameters.mmap_block_bitmap != NULL)
+	if (fps->parameters.mmap_block_bitmap)
 		free_m12((void *) fps->parameters.mmap_block_bitmap, __FUNCTION__);
 	
 	// Note: always close when freeing; close_file directives used in reading / writing functions
@@ -28766,7 +28804,7 @@ TERN_m12	FPS_reallocate_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, s
 	// reset fps pointers
 	fps->universal_header = (UNIVERSAL_HEADER_m12 *) fps->parameters.raw_data; // all files start with universal header
 	fps->data_pointers = fps->parameters.raw_data + UNIVERSAL_HEADER_BYTES_m12;
-	if (fps->universal_header->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m12 && fps->parameters.cps != NULL) {
+	if (fps->universal_header->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m12 && fps->parameters.cps) {
 		fps->parameters.cps->block_header = (CMP_BLOCK_FIXED_HEADER_m12 *) fps->data_pointers;
 		fps->parameters.cps->parameters.allocated_compressed_bytes = new_raw_data_bytes - UNIVERSAL_HEADER_BYTES_m12;
 	}
@@ -28809,7 +28847,7 @@ void	FPS_set_pointers_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset)
 	else
 		fps->data_pointers = fps->parameters.raw_data + UNIVERSAL_HEADER_BYTES_m12;  // file_offset irrelevant
 
-	if (fps->parameters.cps != NULL)
+	if (fps->parameters.cps)
 		fps->parameters.cps->block_header = (CMP_BLOCK_FIXED_HEADER_m12 *) fps->data_pointers;
 	
 	return;
@@ -29376,7 +29414,7 @@ void	HW_get_machine_serial_m12(void)
 #endif
 
 	// copy machine serial number
-	if (machine_sn != NULL)
+	if (machine_sn)
 		strcpy(hw_params->serial_number, machine_sn);
 
 	free(buf);
@@ -30044,7 +30082,7 @@ TERN_m12	NET_get_adapter_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	
 	if (dwRetVal == NO_ERROR) {
 		pCurrAddress = pAddresses;
-		while (pCurrAddress != NULL) {
+		while (pCurrAddress) {
 			// match MAC address to interface
 			if (pCurrAddress->PhysicalAddressLength != 0) {
 				for (i = 0; i < pCurrAddress->PhysicalAddressLength; ++i)
@@ -30080,7 +30118,7 @@ TERN_m12	NET_get_adapter_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	}
 
 	// clean up
-	if (pAddresses != NULL)
+	if (pAddresses)
 		free((void *) pAddresses);
 
 	// called for mtu, duplex, link_speed, & active status in Windows
@@ -30421,12 +30459,12 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 
 	// find next network adapter
 	pattern = "adapter";
-	if ((c = STR_match_start_m12(pattern, iface_start)) != NULL)
+	if ((c = STR_match_start_m12(pattern, iface_start)))
 		*c = 0;  // terminate all subsequent searches here
 
 	np->plugged_in = TRUE_m12;
 	pattern = "Media disconnected";
-	if ((c = STR_match_end_m12(pattern, iface_start)) != NULL)
+	if ((c = STR_match_end_m12(pattern, iface_start)))
 		np->plugged_in = FALSE_m12;
 
 	pattern = "Physical Address";
@@ -30552,16 +30590,16 @@ NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np)
 
 	#ifdef MACOS_m12
 	// parse route() output to get internet interface name
-	if ((c = STR_match_end_m12("interface: ", buffer)) != NULL)
+	if ((c = STR_match_end_m12("interface: ", buffer)))
 		sscanf(c, "%s", np->interface_name);
 	#endif  // MACOS_m12
 	
 	#ifdef LINUX_m12
 	// parse route() output to get internet interface name
-	if ((c = STR_match_end_m12("dev ", buffer)) != NULL)
+	if ((c = STR_match_end_m12("dev ", buffer)))
 		sscanf(c, "%s", np->interface_name);
 	// parse route() output to get internet ip address
-	if ((c = STR_match_end_m12("src ", buffer)) != NULL) {
+	if ((c = STR_match_end_m12("src ", buffer))) {
 		sscanf(c, "%s", np->LAN_IPv4_address_string);
 		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
 	}
@@ -30571,7 +30609,7 @@ NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np)
 	si1	tmp_str[128];
 
 	// parse route() output to get default ip address
-	if ((c = STR_match_end_m12("0.0.0.0", buffer)) != NULL) {
+	if ((c = STR_match_end_m12("0.0.0.0", buffer))) {
 		sscanf(c, "%s%s%s", tmp_str, tmp_str, np->LAN_IPv4_address_string);
 		sscanf(np->LAN_IPv4_address_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
 		NET_iface_name_for_addr_m12(np->interface_name, np->LAN_IPv4_address_string);
@@ -30686,10 +30724,10 @@ TERN_m12	NET_get_ethtool_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 		G_warning_message_m12("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__);
 	} else {
 		pattern = "Speed: ";
-		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
+		if ((c = STR_match_end_m12(pattern, buffer)))  // not present for wireless connections
 			sscanf(c, "%s", np->link_speed);
 		pattern = "Duplex: ";
-		if ((c = STR_match_end_m12(pattern, buffer)) != NULL)  // not present for wireless connections
+		if ((c = STR_match_end_m12(pattern, buffer)))  // not present for wireless connections
 			sscanf(c, "%s", np->duplex);
 		free(buffer);
 	}
@@ -31101,7 +31139,7 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 	if (iface_name == NULL)
 		iface_name = local_iface_name;  // not thread safe
 
-	for (ifa = if_addr_list; ifa != NULL; ifa = ifa->ifa_next) {
+	for (ifa = if_addr_list; ifa; ifa = ifa->ifa_next) {
 		if (ifa->ifa_addr == NULL)
 			continue;
 		
@@ -31158,7 +31196,7 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 	ret_val = system_pipe_m12(&buffer, 0, "ipconfig", SP_DEFAULT_m12, __FUNCTION__,  RETURN_ON_FAIL_m12);
 	*iface_name = 0;
 	if (ret_val > 0) {  // parse ipconfig() output to find internet ip address
-		if ((c = STR_match_start_m12(iface_addr, buffer)) != NULL) {
+		if ((c = STR_match_start_m12(iface_addr, buffer))) {
 			// find "LAN adapter" backwards fromm here
 			while (c >= buffer) {
 				if (*c == 'L')
@@ -31265,7 +31303,7 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 	
 	// returns "copy global" (if global value known, just copy to np, else get & copy to global)
 	
-	if (iface != NULL) {
+	if (iface) {
 		if (*iface == 0)
 			iface = NULL;
 	}
@@ -31277,7 +31315,7 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 	*free_params = FALSE_m12;
 	
 	params_are_global = FALSE_m12;
-	if (params != NULL) {
+	if (params) {
 		if (params == &global_tables_m12->NET_params)
 			params_are_global = TRUE_m12;
 		if (iface == NULL)
@@ -31289,7 +31327,7 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 		NET_get_default_interface_m12(&global_tables_m12->NET_params);
 
 	interface_is_global = FALSE_m12;
-	if (iface != NULL) {
+	if (iface) {
 		if (*iface >= '0' && *iface <= '9') {  // caller passed interface ip for interface name
 			strcpy_m12(tmp_str, iface);
 			NET_iface_name_for_addr_m12(iface, tmp_str);
@@ -31298,9 +31336,9 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 			interface_is_global = TRUE_m12;
 	}
 	
-	if (iface != NULL) {
+	if (iface) {
 		// case: +iface, +params
-		if (params != NULL) {
+		if (params) {
 			if (iface != params->interface_name) {
 				if (strcmp(iface, params->interface_name)) {  // interface changed, zero other params
 					memset((void *) params, 0, sizeof(NET_PARAMS_m12));
@@ -31315,10 +31353,10 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 			strcpy(params->interface_name, iface);
 		}
 	} else { // iface == NULL
-		interface_is_global = TRUE_m12;  // true for both cases because if params->interface_name exists, iface != NULL
+		interface_is_global = TRUE_m12;  // true for both cases because if params->interface_name exists, iface
 		iface = global_tables_m12->NET_params.interface_name;
 		 // case: -iface, +params
-		if (params != NULL) {
+		if (params) {
 			if (params_are_global == FALSE_m12)
 				strcpy(iface, params->interface_name);
 		}
@@ -31533,7 +31571,7 @@ PAR_INFO_m12	*PAR_init_m12(PAR_INFO_m12 *par_info, si1 *function, si1 *label, ..
 	strcpy(par_info->function, function);
 
 	defaults = FALSE_m12;
-	if (label != NULL)
+	if (label)
 		if (strcmp(label, PAR_DEFAULTS_m12) == 0)
 			defaults = TRUE_m12;
 	
@@ -31571,7 +31609,7 @@ PAR_INFO_m12	*PAR_init_m12(PAR_INFO_m12 *par_info, si1 *function, si1 *label, ..
 
 
 PAR_INFO_m12	*PAR_launch_m12(PAR_INFO_m12 *par_info, ...)  // varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, , si4 detached, <function arguments>
-							      // varargs (par_info != NULL): <function arguments>
+							      // varargs (par_info): <function arguments>
 {
 	TERN_m12		unthreaded;
 	PAR_THREAD_INFO_m12	par_t_info;
@@ -31672,7 +31710,7 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 	
 	// set globals
 	tid = PROC_gettid_m12();
-	if (par_info->tid && globals_list_m12 != NULL && globals_list_m12 != NULL) {  // find prior thread globals and change to this tid
+	if (par_info->tid && globals_list_len_m12 && globals_list_m12) {  // find prior thread globals and change to this tid
 		// medlib globals
 		PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);
 		for (i = 0; i < globals_list_len_m12; ++i)
@@ -31718,7 +31756,7 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 		case PAR_READ_SESSION_m12:
 			sess = va_arg(par_t_info->args, SESSION_m12 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m12 *);
-			if (fn == PAR_READ_SESSION_m12 && sess != NULL) {
+			if (fn == PAR_READ_SESSION_m12 && sess) {
 				par_info->status = PAR_RUNNING_m12;
 				par_info->ret_val = (void *) G_read_session_m12(sess, slice);
 			} else {
@@ -31746,10 +31784,10 @@ pthread_rval_m12	PAR_thread_m12(void *arg)
 			else
 				chan = va_arg(par_t_info->args, CHANNEL_m12 *);
 			slice = va_arg(par_t_info->args, TIME_SLICE_m12 *);
-			if (fn == PAR_READ_CHANNEL_m12 && chan != NULL) {
+			if (fn == PAR_READ_CHANNEL_m12 && chan) {
 				par_info->status = PAR_RUNNING_m12;
 				par_info->ret_val = (void *) G_read_channel_m12(chan, slice);
-			} else if (fn == PAR_READ_SEGMENT_m12 && seg != NULL) {
+			} else if (fn == PAR_READ_SEGMENT_m12 && seg) {
 				par_info->status = PAR_RUNNING_m12;
 				par_info->ret_val = (void *) G_read_segment_m12(seg, slice);
 			} else {
@@ -32346,7 +32384,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_id_ptr, pthread_fn_m12 threa
 		cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 	}
 	// set affinity
-	if (cpu_set_p != NULL) {
+	if (cpu_set_p) {
 		PROC_set_thread_affinity_m12(NULL, &thread_attributes, cpu_set_p, TRUE_m12);
 		if (free_cpu_set == TRUE_m12)
 			free((void *) cpu_set_p);
@@ -32424,7 +32462,7 @@ ui4    PROC_launch_thread_m12(pthread_t_m12 *thread_handle_p, pthread_fn_m12 thr
 			free_cpu_set = TRUE_m12;  // PROC_generate_cpu_set_m12() will allocate
 		cpu_set_p = PROC_generate_cpu_set_m12(affinity_str, cpu_set_p);
 	}
-	if (cpu_set_p != NULL) {
+	if (cpu_set_p) {
 		PROC_set_thread_affinity_m12(thread_hp, NULL, cpu_set_p, TRUE_m12);
 		if (free_cpu_set == TRUE_m12)
 			free((void *) cpu_set_p);
@@ -32610,7 +32648,7 @@ TERN_m12    PROC_set_thread_affinity_m12(pthread_t_m12 *thread_id_p, pthread_att
 	
 	if (err) {
 		*thread_name = 0;
-		if (thread_id_p != NULL)
+		if (thread_id_p)
 			pthread_getname_np(thread_id, thread_name, (size_t) THREAD_NAME_BYTES_m12);  // _np is for "not portable"
 		if (*thread_name)
 			G_warning_message_m12("%s(): error setting affinity for thread \"%s\" => not set", __FUNCTION__, thread_name);
@@ -35389,11 +35427,11 @@ TERN_m12	SHA_initialize_tables_m12(void)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (global_tables_m12->SHA_h0_table != NULL)
+	if (global_tables_m12->SHA_h0_table)
 		return(TRUE_m12);
 
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->SHA_mutex);
-	if (global_tables_m12->SHA_h0_table != NULL) {  // may have been done by another thread while waiting
+	if (global_tables_m12->SHA_h0_table) {  // may have been done by another thread while waiting
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->SHA_mutex);
 		return(TRUE_m12);
 	}
@@ -35531,7 +35569,7 @@ wchar_t	*STR_char2wchar_m12(wchar_t *target, si1 *source)
 	while (len--)
 		*(c += wsz) = *c2++;  // little endian version
 	
-	if (tmp_source != NULL)
+	if (tmp_source)
 		free((void *) tmp_source);
 	
 	return(target);
@@ -35631,7 +35669,7 @@ TERN_m12    STR_contains_formatting_m12(si1 *string, si1 *plain_string)
 	
 	// if plain_string == NULL : return T/F on string, do not modify string
 	// if plain_string == string : return T/F on string, do modify string (done in place)
-	// if plain_string != string && plain_string != NULL : return T/F on path, return plain_string with formatting removed, leave string intact
+	// if plain_string != string && plain_string : return T/F on path, return plain_string with formatting removed, leave string intact
 	// assumes plain_string has adequate space for deformatted string if passed (length plain_string will always be <= length of string)
 	
 #ifdef FN_DEBUG_m12
@@ -36641,7 +36679,7 @@ TR_INFO_m12	*TR_alloc_trans_info_m12(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	
 	// password / expanded key only required for encrypted transissions
 	trans_info->expanded_key_allocated = FALSE_m12;
-	if (password != NULL) {
+	if (password) {
 		if (*password) {
 			trans_info->expanded_key = (ui1 *) malloc_m12((size_t) AES_EXPANDED_KEY_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			AES_key_expansion_m12(trans_info->expanded_key, password);
@@ -37050,7 +37088,7 @@ void	TR_free_transmission_info_m12(TR_INFO_m12 **trans_info_ptr, TERN_m12 free_s
 	
 	TR_close_transmission_m12(trans_info);
 
-	if (trans_info->buffer != NULL)
+	if (trans_info->buffer)
 		free_m12((void *) trans_info->buffer, __FUNCTION__);
 	
 	if (trans_info->expanded_key_allocated == TRUE_m12)  // don't free password itself - passed by caller
@@ -37081,7 +37119,7 @@ void	TR_realloc_trans_info_m12(TR_INFO_m12 *trans_info, si8 buffer_bytes, TR_HEA
 		trans_info->buffer = (ui1 *) realloc_m12((void *) trans_info->buffer, (size_t) (buffer_bytes + TR_HEADER_BYTES_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		trans_info->buffer_bytes = buffer_bytes;
 		trans_info->data = trans_info->buffer + TR_HEADER_BYTES_m12;
-		if (caller_header != NULL)
+		if (caller_header)
 			*caller_header = trans_info->header;
 	}
 
@@ -38102,11 +38140,11 @@ TERN_m12	UTF8_initialize_tables_m12(void)
 	printf_m12("%s()\n", __FUNCTION__);
 #endif
 
-	if (global_tables_m12->UTF8_offsets_table != NULL)
+	if (global_tables_m12->UTF8_offsets_table)
 		return(TRUE_m12);
 
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->UTF8_mutex);
-	if (global_tables_m12->UTF8_offsets_table != NULL) {  // may have been done by another thread while waiting
+	if (global_tables_m12->UTF8_offsets_table) {  // may have been done by another thread while waiting
 		PROC_pthread_mutex_unlock_m12(&global_tables_m12->UTF8_mutex);
 		return(TRUE_m12);
 	}
@@ -38176,7 +38214,7 @@ TERN_m12 UTF8_is_valid_m12(si1 *string, TERN_m12 zero_invalid, si1 *field_name)
 	
 	// if field name passed, warning will be displayed
 	warn_invalid = FALSE_m12;
-	if (field_name != NULL)
+	if (field_name)
 		if (*field_name)
 			warn_invalid = TRUE_m12;
 	
@@ -39052,7 +39090,7 @@ void	WN_nap_m12(struct timespec *nap)
 			goto G_WN_SLEEP_USE_MS;
 		} else {
 			ZwSetTimerResolution = (ZWSETTIMERRESTYPE) GetProcAddress(global_tables_m12->hNTdll, "ZwSetTimerResolution");
-			if (ZwSetTimerResolution != NULL) {
+			if (ZwSetTimerResolution) {
 				ZwSetTimerResolution(1, 1, &actual_resolution);  // call the set timer resolution function (only done once)
 			} else {
 				G_warning_message_m12("%s(): error loading ZwSetTimerResolution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
@@ -39453,7 +39491,7 @@ void	*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 beha
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed to allocate the requested array (%ld members of size %ld)\n", 7, __FUNCTION__, n_members, el_size);
 			err = errno_m12();
 			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void)fprintf_m12(stderr, "\t=> returning NULL\n\n");
@@ -39653,7 +39691,7 @@ FILE	*fopen_m12(si1 *path, si1 *mode, const si1 *function, ui4 behavior_on_fail)
 			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to open file \"%s\"\n", 7, __FUNCTION__, path);
 			err = errno_m12();
 			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				fprintf_m12(stderr, "\t=> returning NULL\n\n");
@@ -39736,7 +39774,7 @@ size_t	fread_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1 
 			err = errno_m12();
 			UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to read file \"%s\"\n", 7, __FUNCTION__, path);
 			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				fprintf_m12(stderr, "\t=> returning number of items read\n\n");
@@ -39944,7 +39982,7 @@ si4	fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 			(void) UTF8_fprintf_m12(stderr, "%\tin file \"%s\"\n", path);
 			err = errno_m12();
 			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void) fprintf_m12(stderr, "\t=> returning -1\n\n");
@@ -39966,7 +40004,7 @@ si4	fseek_m12(FILE *stream, si8 offset, si4 whence, si1 *path, const si1 *functi
 			(void) UTF8_fprintf_m12(stderr, "%\tin file \"%s\"\n", path);
 			err = errno_m12();
 			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void) fprintf_m12(stderr, "\t=> returning -1\n\n");
@@ -40005,7 +40043,7 @@ si8	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
 			err = errno_m12();
 			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void)fprintf_m12(stderr, "\t=> returning -1\n\n");
@@ -40025,7 +40063,7 @@ si8	ftell_m12(FILE *stream, const si1 *function, ui4 behavior_on_fail)
 			(void) fprintf_m12(stderr, "%c\n\t%s() failed obtain the current location\n", 7, __FUNCTION__);
 			err = errno_m12();
 			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void) fprintf_m12(stderr, "\t=> returning -1\n\n");
@@ -40063,7 +40101,7 @@ size_t	fwrite_m12(void *ptr, size_t el_size, size_t n_members, FILE *stream, si1
 			(void) UTF8_fprintf_m12(stderr, "%c\n\t%s() failed to write file \"%s\"\n", 7, __FUNCTION__, path);
 			err = errno_m12();
 			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void) fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void) fprintf_m12(stderr, "\t=> returning number of items written\n\n");
@@ -40131,7 +40169,7 @@ void	*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail)
 			(void)fprintf_m12(stderr, "%c\n\t%s() failed to allocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			err = errno_m12();
 			(void)fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				(void)fprintf_m12(stderr, "\t=> returning NULL\n\n");
@@ -40340,7 +40378,7 @@ TERN_m12	mlock_m12(void *addr, size_t len, TERN_m12 zero_data, const si1 *functi
 		#endif
 		fprintf_m12(stderr, "%c\n\t%s() failed to lock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
 		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, err_str);
-		if (function != NULL)
+		if (function)
 			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 		if (behavior_on_fail & RETURN_ON_FAIL_m12)
 			fprintf_m12(stderr, "\t=> returning FALSE\n\n");
@@ -40385,7 +40423,7 @@ TERN_m12	munlock_m12(void *addr, size_t len, const si1 *function, ui4 behavior_o
 		fprintf_m12(stderr, "%c\n\t%s() failed to unlock the requested array (%ld bytes)\n", 7, __FUNCTION__, len);
 		err = errno_m12();
 		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-		if (function != NULL)
+		if (function)
 			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 		if (behavior_on_fail & RETURN_ON_FAIL_m12)
 			fprintf_m12(stderr, "\t=> returning FALSE\n\n");
@@ -40484,7 +40522,7 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
 	if (n_bytes == 0) {
-		if (orig_ptr != NULL)
+		if (orig_ptr)
 			free_m12((void *) orig_ptr, function);
 		return((void *) NULL);
 	}
@@ -40493,7 +40531,7 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 	ui8	alloced_bytes;
 	
 	// see if already has enough memory
-	if (orig_ptr != NULL)
+	if (orig_ptr)
 		alloced_bytes = AT_alloc_size_m12(orig_ptr);
 	else
 		alloced_bytes = 0;
@@ -40512,7 +40550,7 @@ void	*realloc_m12(void *orig_ptr, size_t n_bytes, const si1 *function, ui4 behav
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			fprintf_m12(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, n_bytes);
 			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				fprintf_m12(stderr, "\t=> returning unreallocated pointer\n\n");
@@ -40557,7 +40595,7 @@ void	**realloc_2D_m12(void **curr_ptr, size_t curr_dim1, size_t new_dim1, size_t
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
 	if (new_dim1 == 0 || new_dim2 == 0 || el_size == 0) {
-		if (curr_ptr != NULL)
+		if (curr_ptr)
 			free_m12((void *) curr_ptr, function);
 		return((void **) NULL);
 	}
@@ -40600,7 +40638,7 @@ void	*recalloc_m12(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 		behavior_on_fail = globals_m12->behavior_on_fail;
 	
 	if (new_bytes == 0) {
-		if (orig_ptr != NULL)
+		if (orig_ptr)
 			free_m12((void *) orig_ptr, function);
 		return((void *) NULL);
 	}
@@ -40617,7 +40655,7 @@ void	*recalloc_m12(void *orig_ptr, size_t curr_bytes, size_t new_bytes, const si
 			fprintf_m12(stderr, "%c\n\t%s() failed to reallocate the requested array (%ld bytes)\n", 7, __FUNCTION__, new_bytes);
 			err = errno_m12();
 			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-			if (function != NULL)
+			if (function)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				fprintf_m12(stderr, "\t=> returning unreallocated pointer\n\n");
@@ -40945,7 +40983,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 			fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
 			fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
 			fprintf_m12(stderr, "\tshell return value %d\n", ret_val);
-			if (function != NULL)
+			if (function)
 				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
 			if (behavior_on_fail & RETURN_ON_FAIL_m12)
 				fprintf_m12(stderr, "\t=> returning -1\n\n");
@@ -40973,7 +41011,7 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 
 // not a standard function, but closely related
 #if defined MACOS_m12 || defined LINUX_m12
-si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SP_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	TERN_m12	no_command, command_needs_shell, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
 	si1		**e_buffer_ptr, *buffer, *e_buffer, *c;
@@ -40981,7 +41019,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 	si4		master_fd, stdout_master_fd, stdout_slave_fd, stderr_master_fd, stderr_slave_fd;
 	si8		bytes_in_buffer, bytes_in_e_buffer, bytes_avail, *e_buf_len;
 	pid_t		child_pid;
-
+	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -40991,12 +41029,12 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 	// if *buffer_ptr == NULL buffer is allocated on the heap (caller responsible for freeing)
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
 	// *buffer_ptr contains a NULL terminated string from the system command, if passed
-	// returns negative system error number or buffer string length on success (zero if no buffer returned)
-	// if SP_SEPERATE_STREAMS_m12 flag is set, returns error buffer string length on success in e_buf_len (zero if no buffer returned)
+	// returns negative system error number or buffer string length on success (zero if no buffer returned), allocated buffers will be freed
+	// if SP_SEPERATE_STREAMS_m12 flag is set, returns error buffer string length on success in e_buf_len (zero if no buffer returned), allocated buffers are not freed
 	
 	errno_reset_m12();  // parent globals
 	err = 0;
-
+	
 	if (behavior == USE_GLOBAL_BEHAVIOR_m12)
 		behavior = globals_m12->behavior_on_fail;
 	
@@ -41032,10 +41070,10 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 				goto SYSTEM_PIPE_NEEDS_SHELL_m12;  // break out of while loop
 		}
 	} SYSTEM_PIPE_NEEDS_SHELL_m12:
-
+	
 	// skip any leading spaces in command (& re-increment from above)
 	while (*++command == 32);
-
+	
 	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m12;
 		assign_buffer = FALSE_m12;
@@ -41068,7 +41106,12 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 		e_buffer_ptr = va_arg(v_args, si1 **);
 		e_buf_len = va_arg(v_args, si8 *);
 		va_end(v_args);
-
+		
+		if (e_buf_len == NULL) {
+			G_warning_message_m12("%s(): e_buf_len is NULL\n", __FUNCTION__);
+			return(-1);
+		}
+		
 		if (e_buffer_ptr == NULL) {
 			free_e_buffer = TRUE_m12;
 			assign_e_buffer = FALSE_m12;
@@ -41076,7 +41119,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 			*e_buf_len = 0;
 		} else {
 			free_e_buffer = FALSE_m12;
-			e_buffer = *buffer_ptr;
+			e_buffer = *e_buffer_ptr;
 			if (e_buffer == NULL) {
 				assign_e_buffer = TRUE_m12;
 				*e_buf_len = 0;
@@ -41094,7 +41137,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 	} else {
 		free_e_buffer = assign_e_buffer = FALSE_m12;
 	}
-
+	
 	retried = FALSE_m12;
 	
 SYSTEM_PIPE_RETRY_m12:
@@ -41148,11 +41191,11 @@ SYSTEM_PIPE_RETRY_m12:
 		si1		*tmp_command, **args, *c2, *c3;
 		si4		arg_cnt, alloced_args, ALLOCED_ARGS_INC;
 		si8		command_len;
-
+		
 		
 		errno_reset_m12();  // child globals
 		err = 0;
-
+		
 		// allocate argument pointers
 		if (command_needs_shell == TRUE_m12)
 			ALLOCED_ARGS_INC = 3;
@@ -41163,12 +41206,12 @@ SYSTEM_PIPE_RETRY_m12:
 		
 		// use shell to expand regex (less efficient, but simplest)
 		if (command_needs_shell == TRUE_m12) {
-			#ifdef MACOS_m12
+#ifdef MACOS_m12
 			args[0] = "/bin/sh";
-			#endif
-			#ifdef LINUX_m12
+#endif
+#ifdef LINUX_m12
 			args[0] = "/usr/bin/sh";
-			#endif
+#endif
 			args[1] = "-c";
 			args[2] = command;
 			args[3] = (char *) NULL;
@@ -41240,10 +41283,10 @@ SYSTEM_PIPE_RETRY_m12:
 			exit_m12(err);  // exit child to allow parent to continue
 		}
 	}  // rest is parent
-
+	
 	// read child output
-
-	// close slave ends of pseudoterminal
+	
+	// close write ends of piped (not closed in pseudoterminal)
 	if (flags & SP_SEPERATE_STREAMS_m12) {
 		close(stdout_slave_fd);
 		close(stderr_slave_fd);
@@ -41289,11 +41332,15 @@ SYSTEM_PIPE_RETRY_m12:
 		}
 		e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
 	}
-
+	
 	// wait for child
 	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
 	err = WEXITSTATUS(status);  // save any error code
 	if (err) {
+		if (flags & SP_SEPERATE_STREAMS_m12) {
+			if (*e_buffer == 0 && *buffer)  // output in stdout, nothing in stderr => set no no error
+				err = 0;
+		}
 		if (command_needs_shell == TRUE_m12) {
 			err = errno_m12();
 			if (err == EIO)  // input/output error: not important
@@ -41302,7 +41349,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (err)
 			goto SYSTEM_PIPE_FAIL_m12;
 	}
-
+	
 	// close master ends of pseudoterminal
 	if (flags & SP_SEPERATE_STREAMS_m12) {
 		if (stdout_master_fd)
@@ -41313,6 +41360,7 @@ SYSTEM_PIPE_RETRY_m12:
 		close(master_fd);
 	}
 	
+	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m12) {
 		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m12)) {
 			printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
@@ -41320,7 +41368,7 @@ SYSTEM_PIPE_RETRY_m12:
 				printf_m12("%s\n", e_buffer);
 		}
 	}
-
+	
 	if (free_e_buffer == TRUE_m12) {
 		free((void *) e_buffer);
 		*e_buf_len = 0;
@@ -41332,16 +41380,15 @@ SYSTEM_PIPE_RETRY_m12:
 		
 	if (assign_buffer == TRUE_m12)
 		*buffer_ptr = buffer;
-	if (assign_e_buffer == TRUE_m12)
+	if (assign_e_buffer == TRUE_m12) {
 		*e_buffer_ptr = e_buffer;
-	
-	if (flags & SP_SEPERATE_STREAMS_m12)
 		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	}
 
 	return(bytes_in_buffer);
 	
 SYSTEM_PIPE_FAIL_m12:
-	
+
 	// close master ends of pseudoterminal
 	if (flags & SP_SEPERATE_STREAMS_m12) {
 		if (stdout_master_fd)
@@ -41351,7 +41398,7 @@ SYSTEM_PIPE_FAIL_m12:
 	} else if (master_fd) {
 		close(master_fd);
 	}
-
+	
 	if (behavior & RETRY_ONCE_m12) {
 		if (retried == FALSE_m12) {
 			G_nap_m12("1 ms");  // wait 1 ms
@@ -41408,75 +41455,67 @@ SYSTEM_PIPE_FAIL_m12:
 	}
 
 	if (err) {
-		err = (err < 0) ? -err : err;  // make positive for strerror() below
-	} else {
-		if (flags & SP_TEE_TO_TERMINAL_m12) {
-			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m12)) {
-				printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
-				if (flags & SP_SEPERATE_STREAMS_m12)
-					printf_m12("%s\n", e_buffer);
-			}
-		}
-		if (free_e_buffer == TRUE_m12) {
-			free((void *) e_buffer);
-			*e_buf_len = 0;
-		}
-		if (free_buffer == TRUE_m12) {
-			free((void *) buffer);
-			return(0);
-		}
-		if (assign_buffer == TRUE_m12)
-			*buffer_ptr = buffer;
-		if (assign_e_buffer == TRUE_m12)
-			*e_buffer_ptr = e_buffer;
-		
-		return(bytes_in_buffer);
-	}
-
-	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m12)) {
-		fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
-		fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
-		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-		if (flags & SP_TEE_TO_TERMINAL_m12) {
-			if (flags & SP_SEPERATE_STREAMS_m12) {
-				if (*buffer)
+		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m12)) {
+			fprintf_m12(stderr, "%s(): command \"%s\" failed\n",  __FUNCTION__, command);
+			if (flags & SP_TEE_TO_TERMINAL_m12) {
+				if (flags & SP_SEPERATE_STREAMS_m12) {
 					printf_m12("\tstandard out: \"%s\"\n", buffer);
-				if (*e_buffer)
 					printf_m12("\n\tstandard error: \"%s\"\n", e_buffer);
-			} else if (*buffer) {
+				} else if (buffer) {
 					printf_m12("\tcaptured output: \"%s\"\n", buffer);
+				}
 			}
+			if (function)
+				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
+			if (behavior & EXIT_ON_FAIL_m12)
+				fprintf_m12(stderr, "\t=> exiting\n\n");
+			else
+				fprintf_m12(stderr, "\t=> returning\n\n");
+			fflush(stderr);
 		}
-		if (function != NULL)
-			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
-		if (behavior & EXIT_ON_FAIL_m12)
-			fprintf_m12(stderr, "\t=> exiting\n\n");
-		else
-			fprintf_m12(stderr, "\t=> returning\n\n");
-		fflush(stderr);
+	}
+	
+	if (flags & SP_TEE_TO_TERMINAL_m12) {
+		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m12)) {
+			printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
+			if (flags & SP_SEPERATE_STREAMS_m12)
+				printf_m12("%s\n", e_buffer);
+		}
 	}
 
-	if (behavior & EXIT_ON_FAIL_m12)
-		exit_m12(-1);
+	if (err) {
+		// make negative for return
+		bytes_in_buffer = err = (err > 0) ? -err : err;
+		
+		// free any allocated buffer unless seperate strems were requested
+		if ((flags & SP_SEPERATE_STREAMS_m12) == 0 && assign_buffer == TRUE_m12)
+			free_buffer = TRUE_m12;
+	}
 
-	if (free_buffer == TRUE_m12)
-		free_m12((void *) buffer, __FUNCTION__);
 	if (free_e_buffer == TRUE_m12) {
-		free_m12((void *) e_buffer, __FUNCTION__);
+		free((void *) e_buffer);
 		*e_buf_len = 0;
 	}
+	if (free_buffer == TRUE_m12) {
+		free((void *) buffer);
+		return(err);  // zero if no error, otherwise error code
+	}
+		
+	if (assign_buffer == TRUE_m12)
+		*buffer_ptr = buffer;
+	if (assign_e_buffer == TRUE_m12) {
+		*e_buffer_ptr = e_buffer;
+		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	}
 
-	// make negative, for return
-	err = -err;
-	
-	return(err);
+	return(bytes_in_buffer);  // bytes in buffer if no error, otherwise error code
 }
 #endif  // MACOS_m12 || LINUX_m12
 
 
 // not a standard function, but closely related
 #ifdef WINDOWS_m12
-si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SPF_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...)  // varargs(SP_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
 {
 	TERN_m12		no_command, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
 	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command;
@@ -41548,6 +41587,11 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 		e_buf_len = va_arg(v_args, si8 *);
 		va_end(v_args);
 
+		if (e_buf_len == NULL) {
+			G_warning_message_m12("%s(): e_buf_len is NULL\n", __FUNCTION__);
+			return(-1);
+		}
+
 		if (e_buffer_ptr == NULL) {
 			free_e_buffer = TRUE_m12;
 			assign_e_buffer = FALSE_m12;
@@ -41555,7 +41599,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 			*e_buf_len = 0;
 		} else {
 			free_e_buffer = FALSE_m12;
-			e_buffer = *buffer_ptr;
+			e_buffer = *e_buffer_ptr;
 			if (e_buffer == NULL) {
 				assign_e_buffer = TRUE_m12;
 				*e_buf_len = 0;
@@ -41577,6 +41621,7 @@ si4	system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, cons
 	retried = FALSE_m12;
 	
 SYSTEM_PIPE_RETRY_m12:
+	
 	tmp_command = NULL;
 	read_h = e_read_h =NULL;
 	write_h = e_write_h = NULL;
@@ -41703,11 +41748,10 @@ SYSTEM_PIPE_RETRY_m12:
 	
 	if (assign_buffer == TRUE_m12)
 		*buffer_ptr = buffer;
-	if (assign_e_buffer == TRUE_m12)
+	if (assign_e_buffer == TRUE_m12) {
 		*e_buffer_ptr = e_buffer;
-	
-	if (flags & SP_SEPERATE_STREAMS_m12)
 		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	}
 
 	return(bytes_in_buffer);
 
@@ -41719,13 +41763,13 @@ SYSTEM_PIPE_FAIL_m12:
 	else
 		err = errno_m12();
 
-	if (tmp_command != NULL)
+	if (tmp_command)
 		free((void *) tmp_command);
-	if (read_h != NULL)
+	if (read_h)
 		CloseHandle(read_h);
-	if (process_info.hProcess != NULL)
+	if (process_info.hProcess)
 		CloseHandle(process_info.hProcess);
-	if (process_info.hThread != NULL)
+	if (process_info.hThread)
 		CloseHandle(process_info.hThread);
 
 	if (behavior & RETRY_ONCE_m12) {
@@ -41781,70 +41825,62 @@ SYSTEM_PIPE_FAIL_m12:
 		e_buffer[bytes_in_e_buffer] = 0;  // terminal zero
 		G_remove_path_m12(e_tmp_file);  // delete temp file
 	}
-	
+		
 	if (err) {
-		err = (err < 0) ? -err : err;  // make positive for strerror() below
-	} else {
-		if (flags & SP_TEE_TO_TERMINAL_m12) {
-			if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m12)) {
-				printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
-				if (flags & SP_SEPERATE_STREAMS_m12)
-					printf_m12("%s\n", e_buffer);
-			}
-		}
-		if (free_e_buffer == TRUE_m12) {
-			free_m12((void *) e_buffer, __FUNCTION__);
-			*e_buf_len = 0;
-		}
-		if (free_buffer == TRUE_m12) {
-			free_m12((void *) buffer, __FUNCTION__);
-			return(0);
-		}
-		if (assign_buffer == TRUE_m12)
-			*buffer_ptr = buffer;
-		if (assign_e_buffer == TRUE_m12)
-			*e_buffer_ptr = e_buffer;
-
-		return(bytes_in_buffer);
-	}
-
-	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m12)) {
-		fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
-		fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
-		fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
-		if (flags & SP_TEE_TO_TERMINAL_m12) {
-			if (flags & SP_SEPERATE_STREAMS_m12) {
-				if (*buffer)
+		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m12)) {
+			fprintf_m12(stderr, "%s(): command \"%s\" failed\n",  __FUNCTION__, command);
+			if (flags & SP_TEE_TO_TERMINAL_m12) {
+				if (flags & SP_SEPERATE_STREAMS_m12) {
 					printf_m12("\tstandard out: \"%s\"\n", buffer);
-				if (*e_buffer)
 					printf_m12("\n\tstandard error: \"%s\"\n", e_buffer);
-			} else if (*buffer) {
+				} else if (buffer) {
 					printf_m12("\tcaptured output: \"%s\"\n", buffer);
+				}
 			}
+			if (function)
+				fprintf_m12(stderr, "\tcalled from function %s()\n", function);
+			if (behavior & EXIT_ON_FAIL_m12)
+				fprintf_m12(stderr, "\t=> exiting\n\n");
+			else
+				fprintf_m12(stderr, "\t=> returning\n\n");
+			fflush(stderr);
 		}
-		if (function != NULL)
-			fprintf_m12(stderr, "\tcalled from function %s()\n", function);
-		if (behavior & EXIT_ON_FAIL_m12)
-			fprintf_m12(stderr, "\t=> exiting\n\n");
-		else
-			fprintf_m12(stderr, "\t=> returning\n\n");
-		fflush(stderr);
+	}
+	
+	if (flags & SP_TEE_TO_TERMINAL_m12) {
+		if (!(behavior & SUPPRESS_MESSAGE_OUTPUT_m12)) {
+			printf_m12("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m12, __FUNCTION__, TC_RESET_m12, TC_BLUE_m12, command, TC_RESET_m12, buffer);
+			if (flags & SP_SEPERATE_STREAMS_m12)
+				printf_m12("%s\n", e_buffer);
+		}
 	}
 
-	if (behavior & EXIT_ON_FAIL_m12)
-		exit_m12(-1);
-	
-	if (free_buffer == TRUE_m12)
-		free_m12((void *) buffer, __FUNCTION__);
+	if (err) {
+		// make negative for return
+		bytes_in_buffer = err = (err > 0) ? -err : err;
+		
+		// free any allocated buffer unless seperate strems were requested
+		if ((flags & SP_SEPERATE_STREAMS_m12) == 0 && assign_buffer == TRUE_m12)
+			free_buffer = TRUE_m12;
+	}
+
 	if (free_e_buffer == TRUE_m12) {
-		free_m12((void *) e_buffer, __FUNCTION__);
+		free((void *) e_buffer);
 		*e_buf_len = 0;
 	}
+	if (free_buffer == TRUE_m12) {
+		free((void *) buffer);
+		return(err);  // zero if no error, otherwise error code
+	}
+		
+	if (assign_buffer == TRUE_m12)
+		*buffer_ptr = buffer;
+	if (assign_e_buffer == TRUE_m12) {
+		*e_buffer_ptr = e_buffer;
+		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	}
 
-	// make negative for return
-	err = -err;
-	
-	return(err);
+	return(bytes_in_buffer);  // bytes in buffer if no error, otherwise error code
 }
 #endif  // WINDOWS_m12
 		    
