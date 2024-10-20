@@ -659,9 +659,6 @@ typedef struct {
 #define RECORD_INDICES_FILE_TYPE_STRING_m12                     "ridx"			// ascii[4]
 #define RECORD_INDICES_FILE_TYPE_CODE_m12                       (ui4) 0x78646972	// ui4 (little endian)
 // #define RECORD_INDICES_FILE_TYPE_CODE_m12                    (ui4) 0x72696478	// ui4 (big endian)
-#define PARITY_CRC_FILE_TYPE_STRING_m12                   	"pcrc"                  // ascii[4]
-#define PARITY_CRC_FILE_TYPE_CODE_m12                     	(ui4) 0x63726370        // ui4 (little endian)
-// #define PARITY_CRC_FILE_TYPE_CODE_m12                  	(ui4) 0x70637263        // ui4 (big endian)
 
 // Channel Types
 #define UNKNOWN_CHANNEL_TYPE_m12	NO_FILE_TYPE_CODE_m12
@@ -1227,19 +1224,6 @@ void			PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval);
 //***************************  Parity (PRTY) Functions  ****************************//
 //**********************************************************************************//
 
-// Universal Header fields not xor'ed with channels:
-// (these fields are common to all files in level - not be difficult to repair from those, if damaged)
-//	type_string
-//	MED_version_major
-//	MED_version_minor
-//	byte_order_code
-//	segment_number
-//	session_name
-//	channel_name
-//	session_UID
-//	channel_UID
-//	segment_UID
-
 // Flags
 #define PRTY_GLB_SESS_REC_DATA_m12	((ui4) 1 << 0)
 #define PRTY_GLB_SESS_REC_IDX_m12	((ui4) 1 << 1)
@@ -1292,16 +1276,14 @@ void			PAR_wait_m12(PAR_INFO_m12 *par_info, si1 *interval);
 #define PRTY_TS_MASK_m12		(PRTY_TS_CHAN_m12 | PRTY_TS_SEG_m12)
 #define PRTY_VID_MASK_m12		(PRTY_VID_CHAN_m12 | PRTY_VID_SEG_m12)
 
-// Validate CRC Constants (used in PRTY_validate_m12())
-#define	PRTY_VALID_m12		((ui1) 0)	// valid file
-#define	PRTY_BLOCKS_m12		((ui1) 1 << 0)	// bad blocks returned
-#define	PRTY_E_UNSPEC_m12	((ui1) 1 << 1)	// unspecified error (file, memory, etc.)
-#define	PRTY_E_HEADER_m12	((ui1) 1 << 2)	// error in universal header
-#define	PRTY_E_BODY_m12		((ui1) 1 << 3)	// error in body
-
-// parity file array fixed positions
+// Parity file array fixed positions
 #define PRTY_FILE_CHECK_IDX_m12		0  				// file to check in first slot
 #define PRTY_FILE_DAMAGED_IDX_m12	PRTY_FILE_CHECK_IDX_m12		// damaged file in first slot
+
+// Miscellaneous
+#define PRTY_BLOCK_BYTES_DEFAULT_m12	4096  // used in PRTY_CRC_DATA_m12 (must be multiple of 4)
+#define PRTY_PCRC_UID_m12		((ui8) 0x0123456789ABCDEF)  // used in PRTY_CRC_DATA_m12
+
 
 // Structures
 typedef struct {
@@ -1310,14 +1292,6 @@ typedef struct {
 	FILE		*fp;
 	TERN_m12	finished;  // data incorporated into parity
 } PRTY_FILE_m12;
-
-typedef struct {
-	ui4		self_crc;  // crc of folowing fields
-	ui4		file_crc_1;  // crc of file (copy 1 - mitigate against damage to this file)
-	ui4		file_crc_2;  // crc of file (copy 2 - mitigate against damage to this file)
-	ui4		file_crc_3;  // crc of file (copy 3 - mitigate against damage to this file)
-	si1		path[FULL_FILE_NAME_BYTES_m12];  // path to file at time of crc
-} PRTY_CRC_FILE_m12;
 
 typedef struct {
 	si8	length;
@@ -1333,22 +1307,36 @@ typedef struct {
 	si4		n_files;
 	si4		n_bad_blocks;
 	PRTY_BLOCK_m12	*bad_blocks;
-	ui1		validity_code;
 } PRTY_m12;
+
+typedef struct {
+	ui8		pcrc_UID;  // == PRTY_UID_m12 (marker to confirm identity of this structure)
+	ui8		session_UID;  // present in all parity files
+	ui8		segment_UID;  // zero in parity data that is session level
+	ui4		number_of_blocks;  // number of data blocks (& crcs) preceding this structure
+	ui4		block_bytes;  // bytes per block (except probably the last), multiple of 4 bytes (defaults to 4096)
+} PRTY_CRC_DATA_m12;
+
+// Parity File Structure:
+// 1) parity data
+// 2) crc of parity data in blocks  // used to confirm that parity data is not itself damaged, & if so, to localize the damage, so that it can hopefully still be used & then rebuilt
+// 3) PRTY_CRC_DATA_m12 structure
 
 // Prototypes
 TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps);
-TERN_m12	PRTY_check_pcrc_m12(si1 *file_path);
 si4		PRTY_file_compare_m12(const void *a, const void *b);
 si1		**PRTY_file_list_m12(si1 *MED_path, si4 *n_files);
+ui4		PRTY_flag_for_path_m12(si1 *path);
+si8		PRTY_pcrc_length_m12(FILE *fp, si1 *file_path);
 TERN_m12	PRTY_recover_segment_header_fields_m12(si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 TERN_m12	PRTY_repair_file_m12(PRTY_m12 *parity_ps);
 TERN_m12	PRTY_restore_m12(si1 *MED_path);
-TERN_m12	PRTY_show_header_m12(si1 *parity_path);
+TERN_m12	PRTY_set_pcrc_uids_m12(PRTY_CRC_DATA_m12 *pcrc, si1 *MED_path);
 TERN_m12	PRTY_show_pcrc_m12(si1 *file_path);
-ui1        	PRTY_validate_m12(si1 *MED_file, ...);  // varargs(MED_file == NULL): si1 *MED_file, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks)
+TERN_m12        PRTY_validate_m12(si1 *file_path, ...);  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+TERN_m12	PRTY_validate_pcrc_m12(si1 *file_path, ...);  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m12 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 TERN_m12	PRTY_write_m12(si1 *sess_path, ui4 flags, si4 segment_number);
-TERN_m12	PRTY_write_pcrc_m12(si1 *file_path);
+TERN_m12	PRTY_write_pcrc_m12(si1 *file_path, ui4 block_bytes);
 
 
 
@@ -1414,6 +1402,7 @@ typedef struct {
 	TERN_m12        active;  // interface status
 	TERN_m12        plugged_in;
 } NET_PARAMS_m12;
+
 
 // Prototypes
 TERN_m12	NET_check_internet_connection_m12(void);
@@ -2502,7 +2491,9 @@ si4		G_search_Sgmt_records_m12(Sgmt_RECORD_m12 *Sgmt_records, TIME_SLICE_m12 *sl
 si4		G_segment_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_sample);
 si4		G_segment_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_sample);
 si4		G_segment_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_time);
+si4		G_segment_number_for_path_m12(si1 *path);
 void		G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
+si1		*G_session_path_for_path_m12(si1 *path, si1 *sess_path);
 void		G_set_error_m12(const si4 err_code, const si1 *function, const si4 line);
 TERN_m12	G_set_global_time_constants_m12(TIMEZONE_INFO_m12 *timezone_info, si8 session_start_time, TERN_m12 prompt);
 void		G_set_globals_pointer_m12(GLOBALS_m12 *new_globals);
