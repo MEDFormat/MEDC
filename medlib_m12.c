@@ -32930,7 +32930,6 @@ TERN_m12	PROC_wait_jobs_m12(PROC_THREAD_INFO_m12 *jobs, si4 n_jobs)
 // MARK: PARITY FUNCTIONS  (PRTY)
 //********************************************//
 
-
 TERN_m12	PRTY_build_m12(PRTY_m12 *parity_ps)
 {
 	ui1			*parity, *data;
