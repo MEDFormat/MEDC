@@ -674,9 +674,6 @@ typedef struct {
 #define RECORD_INDICES_FILE_TYPE_STRING_m13                     "ridx"			// ascii[4]
 #define RECORD_INDICES_FILE_TYPE_CODE_m13                       (ui4) 0x78646972	// ui4 (little endian)
 // #define RECORD_INDICES_FILE_TYPE_CODE_m13                    (ui4) 0x72696478	// ui4 (big endian)
-#define PARITY_CRC_FILE_TYPE_STRING_m13                   	"pcrc"                  // ascii[4]
-#define PARITY_CRC_FILE_TYPE_CODE_m13                     	(ui4) 0x63726370        // ui4 (little endian)
-// #define PARITY_CRC_FILE_TYPE_CODE_m13                  	(ui4) 0x70637263        // ui4 (big endian)
 
 // Channel Types
 #define UNKNOWN_CHANNEL_TYPE_m13	NO_FILE_TYPE_CODE_m13
@@ -1338,6 +1335,126 @@ PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...);	// varargs (par_info
 tern			PAR_show_info_m13(PAR_INFO_m13 *par_info);
 pthread_rval_m13	PAR_thread_m13(void *arg);
 tern			PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
+
+
+
+//**********************************************************************************//
+//***************************  Parity (PRTY) Functions  ****************************//
+//**********************************************************************************//
+
+// Flags
+#define PRTY_GLB_SESS_REC_DATA_m13	((ui4) 1 << 0)
+#define PRTY_GLB_SESS_REC_IDX_m13	((ui4) 1 << 1)
+#define PRTY_SEG_SESS_REC_DATA_m13	((ui4) 1 << 2)
+#define PRTY_SEG_SESS_REC_IDX_m13	((ui4) 1 << 3)
+#define PRTY_TS_CHAN_REC_DATA_m13	((ui4) 1 << 4)
+#define PRTY_TS_CHAN_REC_IDX_m13	((ui4) 1 << 5)
+#define PRTY_TS_SEG_REC_DATA_m13	((ui4) 1 << 6)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_TS_SEG_REC_IDX_m13		((ui4) 1 << 7)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_TS_SEG_DAT_DATA_m13	((ui4) 1 << 8)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_TS_SEG_DAT_IDX_m13		((ui4) 1 << 9)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_TS_SEG_META_m13		((ui4) 1 << 10)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_VID_CHAN_REC_DATA_m13	((ui4) 1 << 11)
+#define PRTY_VID_CHAN_REC_IDX_m13	((ui4) 1 << 12)
+#define PRTY_VID_SEG_REC_DATA_m13	((ui4) 1 << 13)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_VID_SEG_REC_IDX_m13	((ui4) 1 << 14)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_VID_SEG_DAT_DATA_m13	((ui4) 1 << 15)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_VID_SEG_DAT_IDX_m13	((ui4) 1 << 16)		// requires segment number (or PRTY_ALL_SEGS_m13)
+#define PRTY_VID_SEG_META_m13		((ui4) 1 << 17)		// requires segment number (or PRTY_ALL_SEGS_m13)
+
+#define PRTY_GLB_SESS_RECS_m13		(PRTY_GLB_SESS_REC_DATA_m13 | PRTY_GLB_SESS_REC_IDX_m13)
+#define PRTY_SEG_SESS_RECS_m13		(PRTY_SEG_SESS_REC_DATA_m13 | PRTY_SEG_SESS_REC_IDX_m13)
+#define PRTY_TS_CHAN_RECS_m13		(PRTY_TS_CHAN_REC_DATA_m13 | PRTY_TS_CHAN_REC_IDX_m13)
+#define PRTY_VID_CHAN_RECS_m13		(PRTY_VID_CHAN_REC_DATA_m13 | PRTY_VID_CHAN_REC_IDX_m13)
+#define PRTY_TS_SEG_RECS_m13		(PRTY_TS_SEG_REC_DATA_m13 | PRTY_TS_SEG_REC_IDX_m13)
+#define PRTY_VID_SEG_RECS_m13		(PRTY_VID_SEG_REC_DATA_m13 | PRTY_VID_SEG_REC_IDX_m13)
+#define PRTY_TS_SEG_DATA_m13		(PRTY_TS_SEG_DAT_DATA_m13 | PRTY_TS_SEG_DAT_IDX_m13)
+#define PRTY_VID_SEG_DATA_m13		(PRTY_VID_SEG_DAT_DATA_m13 | PRTY_VID_SEG_DAT_IDX_m13)
+
+#define PRTY_SESS_RECS_m13		(PRTY_GLB_SESS_RECS_m13 | PRTY_SEG_SESS_RECS_m13)
+#define PRTY_CHAN_RECS_m13		(PRTY_TS_CHAN_RECS_m13 | PRTY_VID_CHAN_RECS_m13)
+#define PRTY_SEG_RECS_m13		(PRTY_TS_SEG_RECS_m13 | PRTY_VID_SEG_RECS_m13)
+#define PRTY_SEG_DATA_m13		(PRTY_TS_SEG_DATA_m13 | PRTY_VID_SEG_DATA_m13)
+
+#define PRTY_TS_CHAN_m13		PRTY_TS_CHAN_RECS_m13
+#define PRTY_TS_SEG_m13			(PRTY_TS_SEG_RECS_m13 | PRTY_TS_SEG_DATA_m13 | PRTY_TS_SEG_META_m13)
+#define PRTY_VID_CHAN_m13		PRTY_VID_CHAN_RECS_m13
+#define PRTY_VID_SEG_m13		(PRTY_VID_SEG_RECS_m13 | PRTY_VID_SEG_DATA_m13 | PRTY_VID_SEG_META_m13)
+
+#define PRTY_SESS_m13			(PRTY_SESS_RECS_m13 | PRTY_SEG_SESS_RECS_m13)
+#define PRTY_CHAN_m13			(PRTY_TS_CHAN_m13 | PRTY_VID_CHAN_m13)
+#define PRTY_SEG_m13			(PRTY_TS_SEG_m13 | PRTY_VID_SEG_m13)
+
+#define PRTY_ALL_TS_m13			(PRTY_SESS_m13 | PRTY_TS_CHAN_m13 | PRTY_TS_SEG_m13)
+#define PRTY_ALL_VID_m13		(PRTY_SESS_m13 | PRTY_VID_CHAN_m13 | PRTY_VID_SEG_m13)
+#define PRTY_ALL_FILES_m13		(PRTY_ALL_TS_m13 | PRTY_ALL_VID_m13)
+#define PRTY_ALL_SEGS_m13		((si4) -1)  // pass as "segment_number" argument to PRTY_write_m13()
+
+// Masks
+#define PRTY_TS_MASK_m13		(PRTY_TS_CHAN_m13 | PRTY_TS_SEG_m13)
+#define PRTY_VID_MASK_m13		(PRTY_VID_CHAN_m13 | PRTY_VID_SEG_m13)
+
+// Parity file array fixed positions
+#define PRTY_FILE_CHECK_IDX_m13		0  				// file to check in first slot
+#define PRTY_FILE_DAMAGED_IDX_m13	PRTY_FILE_CHECK_IDX_m13		// damaged file in first slot
+
+// Miscellaneous
+#define PRTY_BLOCK_BYTES_DEFAULT_m13	4096  // used in PRTY_CRC_DATA_m13 (must be multiple of 4)
+#define PRTY_PCRC_UID_m13		((ui8) 0x0123456789ABCDEF)  // used in PRTY_CRC_DATA_m13
+
+
+// Structures
+typedef struct {
+	si1		path[FULL_FILE_NAME_BYTES_m13];
+	si8		len;
+	FILE_m13	*fp;
+	tern	finished;  // data incorporated into parity
+} PRTY_FILE_m13;
+
+typedef struct {
+	si8	length;
+	si8	offset;
+} PRTY_BLOCK_m13;  // bad block location returned from PRTY_validate_m13()
+
+typedef struct {
+	ui1		*parity;
+	ui1		*data;
+	si8		mem_block_bytes;
+	si1		path[FULL_FILE_NAME_BYTES_m13];  // path to parity file
+	PRTY_FILE_m13	*files;
+	si4		n_files;
+	si4		n_bad_blocks;
+	PRTY_BLOCK_m13	*bad_blocks;
+} PRTY_m13;
+
+typedef struct {
+	ui8		pcrc_UID;  // == PRTY_UID_m13 (marker to confirm identity of this structure)
+	ui8		session_UID;  // present in all parity files
+	ui8		segment_UID;  // zero in parity data that is session level
+	ui4		number_of_blocks;  // number of data blocks (& crcs) preceding this structure
+	ui4		block_bytes;  // bytes per block (except probably the last), multiple of 4 bytes (defaults to 4096)
+} PRTY_CRC_DATA_m13;
+
+// Parity File Structure:
+// 1) parity data
+// 2) crc of parity data in blocks  // used to confirm that parity data is not itself damaged, & if so, to localize the damage, so that it can hopefully still be used & then rebuilt
+// 3) PRTY_CRC_DATA_m13 structure
+
+// Prototypes
+tern	PRTY_build_m13(PRTY_m13 *parity_ps);
+si4	PRTY_file_compare_m13(const void *a, const void *b);
+si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files);
+ui4	PRTY_flag_for_path_m13(si1 *path);
+si8	PRTY_pcrc_length_m13(FILE_m13 *fp, si1 *file_path);
+tern	PRTY_recover_segment_header_fields_m13(si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
+tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
+tern	PRTY_restore_m13(si1 *MED_path);
+tern	PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, si1 *MED_path);
+tern	PRTY_show_pcrc_m13(si1 *file_path);
+tern	PRTY_validate_m13(si1 *file_path, ...);  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+tern	PRTY_validate_pcrc_m13(si1 *file_path, ...);  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+tern	PRTY_write_m13(si1 *sess_path, ui4 flags, si4 segment_number);
+tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes);
 
 
 
@@ -2697,6 +2814,7 @@ ui4             G_MED_type_code_from_string_m13(si1 *string);
 tern		G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern		G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void    	G_message_m13(si1 *fmt, ...);
+tern		G_move_path_m13(si1 *path, si1 *new_path);
 void     	G_nap_m13(si1 *nap_str);
 si1		*G_numerical_fixed_width_string_m13(si1 *string, si4 string_bytes, si4 number);
 CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *parent, ui8 flags, si1 *password);
@@ -2735,9 +2853,11 @@ tern		G_reset_metadata_for_update_m13(FPS_m13 *fps);
 si8		G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4		G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *slice, ui4 search_mode);
 si4		G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
+si4		G_segment_for_path_m13(si1 *path);
 si4		G_segment_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
 si4		G_segment_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_time);
 tern		G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
+si1		*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 void		G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
 tern		G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 tern		G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
@@ -3560,7 +3680,7 @@ tern	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, s
 tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CPS_m13 *cps);
 tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
 tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, tern free_structure);
-tern    CMP_free_cps_cache_m12(CPS_m13 *cps);
+tern    CMP_free_cps_cache_m13(CPS_m13 *cps);
 tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure);
 tern	CMP_generate_lossy_data_m13(CPS_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 tern	CMP_generate_parameter_map_m13(CPS_m13 *cps);
@@ -4290,7 +4410,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_TRANSMISSION_BYTES_NO_ENTRY_m13		0
 #define TR_OFFSET_OFFSET_m13				24				// ui8
 
-// Transmission Info Modes  [set by TR_send_transmission_m12() & TR_recv_transmission_m12(), used by TR_close_transmission_m12()]
+// Transmission Info Modes  [set by TR_send_transmission_m13() & TR_recv_transmission_m13(), used by TR_close_transmission_m13()]
 // indicates whether last transmission was a send or receive
 #define TR_MODE_NONE_m13		0
 #define TR_MODE_SEND_m13		1

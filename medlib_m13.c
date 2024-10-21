@@ -7312,72 +7312,22 @@ ui4    G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1 *MED_name)
 }
 
 
-si1	*G_MED_type_string_from_code_m13(ui4 code)
-{
-#ifdef FN_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// could have written this differently, since the string bytes are the code bytes, just NULL terminated
-	// but would've required accounting for endianness, and handling thread safety
-	
-	switch (code) {
-		case NO_FILE_TYPE_CODE_m13:
-			return_m13(NO_FILE_TYPE_STRING_m13);
-		case SESSION_DIRECTORY_TYPE_CODE_m13:
-			return_m13(SESSION_DIRECTORY_TYPE_STRING_m13);
-		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13:
-			return_m13(TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13);
-		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
-			return_m13(VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13);
-		case RECORD_DIRECTORY_TYPE_CODE_m13:
-			return_m13(RECORD_DIRECTORY_TYPE_STRING_m13);
-		case RECORD_DATA_FILE_TYPE_CODE_m13:
-			return_m13(RECORD_DATA_FILE_TYPE_STRING_m13);
-		case RECORD_INDICES_FILE_TYPE_CODE_m13:
-			return_m13(RECORD_INDICES_FILE_TYPE_STRING_m13);
-		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13:
-			return_m13(VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13);
-		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
-			return_m13(VIDEO_METADATA_FILE_TYPE_STRING_m13);
-		case VIDEO_DATA_FILE_TYPE_CODE_m13:
-			return_m13(VIDEO_DATA_FILE_TYPE_STRING_m13);
-		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
-			return_m13(VIDEO_INDICES_FILE_TYPE_STRING_m13);
-		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13:
-			return_m13(TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13);
-		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
-			return_m13(TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
-		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
-			return_m13(TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
-		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
-			return_m13(TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
-		case PARITY_CRC_FILE_TYPE_CODE_m13:
-			return_m13(PARITY_CRC_FILE_TYPE_STRING_m13);
-		default:
-			G_set_error_m13(E_NOT_MED_m13, "unrecognized MED file type code (0x%08x)", code);
-			return_m13(NULL);
-	}
-}
-
-
 ui4     G_MED_type_code_from_string_m13(si1 *string)
 {
 	tern		ext_only = FALSE_m13;
 	si1		*c, *c2;
 	si8     	i, len;
 	EXT_CODE_m13	type;
-
+	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	if (string == NULL) {
 		G_warning_message_m13("%s(): string is NULL\n", __FUNCTION__);
-		return_m13(NO_FILE_TYPE_CODE_m13);
+		return(NO_FILE_TYPE_CODE_m13);
 	}
 	
-		
 	// move to end of string
 	c = string - 1;
 	while (*++c);
@@ -7391,12 +7341,12 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 		++c;
 	else
 		ext_only = TRUE_m13;  // possible string is an extension
-	
+
 	c2 = type.ext;
 	for (i = sizeof(EXT_CODE_m13) - 1; i-- && *c;)
 		*c2++ = *c++;
 	*c2 = 0;
-	
+
 	switch (type.code) {
 		case NO_FILE_TYPE_CODE_m13:
 		case SESSION_DIRECTORY_TYPE_CODE_m13:
@@ -7413,7 +7363,6 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
-		case PARITY_CRC_FILE_TYPE_CODE_m13:
 			return(type.code);
 		default:  // check tag to determine if this is a MED video data file
 			si1	name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m13];
@@ -7440,15 +7389,15 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 			for (i = FILE_NUMBERING_DIGITS_m13; i--; ++c)
 				if (*c < '0' || *c > '9')
 					goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
-			
-			return_m13(VIDEO_DATA_FILE_TYPE_CODE_m13);
+
+			return(VIDEO_DATA_FILE_TYPE_CODE_m13);
 	}
-		
+	
 MED_TYPE_CODE_FOR_STRING_NOT_MED_m13:
-		
+	
 	G_warning_message_m13("%s(): \"%s\" is not a recognized MED file type\n", __FUNCTION__, string);
 	
-	return_m13(NO_FILE_TYPE_CODE_m13);
+	return(NO_FILE_TYPE_CODE_m13);
 }
 
 
@@ -7905,6 +7854,40 @@ void    G_message_m13(si1 *fmt, ...)
 	}
 	
 	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+tern	G_move_path_m13(si1 *path, si1 *new_path)
+{
+	si1	command[FULL_FILE_NAME_BYTES_m13 + 8];
+	si4	fe, ret_val;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	fe = G_exists_m13(path);
+	
+	if (fe & (FILE_EXISTS_m13 | DIR_EXISTS_m13)) {
+		#if defined MACOS_m13 || defined LINUX_m13
+		sprintf_m13(command, "mv -f \"%s\" \"%s\"", path, new_path);
+		#endif
+		#ifdef WINDOWS_m13
+		sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
+		#endif
+		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		if (ret_val) {
+			G_warning_message_m13("%s(): could not copy \"%s\" to \"%s\"\n", __FUNCTION__, path, new_path);
+			return_m13(FALSE_m13);
+		}
+		
+		return_m13(TRUE_m13);
+	}
+	
+	return_m13(UNKNOWN_m13);
 }
 
 
@@ -11707,6 +11690,58 @@ si4	G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_fr
 }
 
 
+si4	G_segment_for_path_m13(si1 *path)
+{
+	tern	video_data;
+	si1	*c, name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m13];
+	ui4	level_code, type_code;
+	si4	seg_num;
+	si8	len;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	level_code = G_get_level_m13(path, &type_code);
+	video_data = FALSE_m13;
+	switch (type_code) {
+		case RECORD_INDICES_FILE_TYPE_CODE_m13:
+		case RECORD_DATA_FILE_TYPE_CODE_m13:
+			switch (level_code) {
+				case LH_VIDEO_CHANNEL_m13:
+				case LH_TIME_SERIES_CHANNEL_m13:
+				case LH_SESSION_m13:
+					return((si4) FALSE_m13);
+				case LH_SEGMENTED_SESS_RECS_m13:
+				case LH_TIME_SERIES_SEGMENT_m13:
+				case LH_VIDEO_SEGMENT_m13:
+					break;
+			}
+			break;
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
+		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
+			break;
+		case VIDEO_DATA_FILE_TYPE_CODE_m13:
+			video_data = TRUE_m13;
+			break;
+	}
+
+	G_extract_path_parts_m13(path, NULL, name, NULL);
+	len = strlen(name);
+	if (video_data == TRUE_m13)
+		c = name + len - 10;
+	else
+		c = name + len - 4;
+	
+	seg_num = (si4) strtol(c, NULL, 10);
+
+	return_m13(seg_num);
+}
+
+
 si4	G_segment_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample)
 {
 	si4			idx, low_idx, high_idx;
@@ -11876,6 +11911,29 @@ tern    G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 #endif
 
 	return_m13(TRUE_m13);
+}
+
+
+si1	*G_session_path_for_path_m13(si1 *path, si1 *sess_path)
+{
+	si1		tmp_path[FULL_FILE_NAME_BYTES_m13];
+	EXT_CODE_m13	type;
+
+#ifdef FN_DEBUG_m12
+	G_push_function_m13();
+#endif
+	
+	if (sess_path == NULL)  // call responsible for freeing
+		sess_path = (si1 *) calloc_m13((size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1));
+
+	strcpy(sess_path, path);
+	G_extract_path_parts_m13(sess_path, tmp_path, NULL, type.ext);
+	while (type.code != SESSION_DIRECTORY_TYPE_CODE_m13) {
+		strcpy(sess_path, tmp_path);
+		G_extract_path_parts_m13(sess_path, tmp_path, NULL, type.ext);
+	}
+					       
+	return_m13(sess_path);
 }
 
 
@@ -28774,11 +28832,8 @@ si8	FPS_memory_map_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read)
 
 tern	FPS_open_m13(FPS_m13 *fps)
 {
-	tern		create_file = FALSE_m13, create_path = FALSE_m13;
-	si1		*mode, path[FULL_FILE_NAME_BYTES_m13], command[FULL_FILE_NAME_BYTES_m13 + 16];
+	si1		*mode;
 	ui2		flags, permissions;
-	static ui4	create_modes = (ui4) (FPS_R_PLUS_OPEN_MODE_m13 | FPS_W_OPEN_MODE_m13 | FPS_W_PLUS_OPEN_MODE_m13 | FPS_A_OPEN_MODE_m13 | FPS_A_PLUS_OPEN_MODE_m13);
-	si4		err;
 #if defined MACOS_m13 || defined LINUX_m13
 	struct stat	sb;
 #endif
@@ -28792,9 +28847,6 @@ tern	FPS_open_m13(FPS_m13 *fps)
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
-	if (fps->directives.open_mode & create_modes)
-		create_file = TRUE_m13;
 	
 	// open
 	mode = NULL;
@@ -28834,34 +28886,8 @@ tern	FPS_open_m13(FPS_m13 *fps)
 	flags = FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 | FILE_FLAGS_MED_m13; // MED library functions depend on len & pos fields being maintained
 	fps->parameters.fp = fopen_m13(fps->path, NULL, mode, flags, (si4) permissions);
 	G_pop_behavior_m13();
-	if (fps->parameters.fp == NULL) {
-		if (create_file == TRUE_m13) {
-			err = errno_m13();
-			if (err == ENOENT)
-				create_path = TRUE_m13;
-#ifdef WINDOWS_m13
-			if (err == ERROR_PATH_NOT_FOUND)  // Windows can also return this code for same thing
-				create_path = TRUE_m13;
-#endif
-			if (create_path == TRUE_m13) {
-				G_extract_path_parts_m13(fps->path, path, NULL, NULL);
-				if (G_exists_m13(path) != DIR_EXISTS_m13) {  // a component of the required directory tree does not exist - build it & try again
-#if defined MACOS_m13 || defined LINUX_m13
-					sprintf_m13(command, "mkdir -p \"%s\"", path);
-#endif
-#ifdef WINDOWS_m13
-					sprintf_m13(command, "mkdir \"%s\"", path);
-#endif
-					system_m13(command, TRUE_m13);
-					fps->parameters.fp = fopen_m13(fps->path, NULL, mode, flags, (si4) permissions);
-				}
-			}
-		}
-		if (fps->parameters.fp == NULL) {
-			G_set_error_m13(E_OPEN_m13, NULL);
-			return_m13(FALSE_m13);
-		}
-	}
+	if (fps->parameters.fp == NULL)
+		return_m13(FALSE_m13);
 
 #if defined MACOS_m13 || defined LINUX_m13
 	fstat(fps->parameters.fp->fd, &sb);
@@ -32220,6 +32246,7 @@ pid_t_m13	PROC_gettid_m13(void)
 tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...)  // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs;
 {
 	tern	ret_val;
+	si4	sys_ret_val;
 	
 
 	// verbose_flag passed because this function is usually called before the MED libraries are initialized
@@ -32261,19 +32288,24 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					sprintf_m13(command, "echo %s | sudo -S chown root %s", pw, exec_name);  // in case owner wasn't root
-					if (system_m13(command, TRUE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13)) {  // just check for password failure once
+					G_push_behavior_m13(SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
+					sys_ret_val = system_m13(NULL, command, TRUE_m13);
+					if (sys_ret_val) {  // just check for password failure once
+						G_pop_behavior_m13();
 						G_warning_message_m13("%s(): Invalid sudo password\n", __FUNCTION__);
-						return_m13(FALSE_m13);
+						return(FALSE_m13);
 					}
 					sprintf_m13(command, "echo %s | sudo -S chmod g+x %s", pw, exec_name);  // in case group didn't have execute permissions
-					system_m13(command, TRUE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
+					system_m13(NULL, command, TRUE_m13);
 					sprintf_m13(command, "echo %s | sudo -S chmod ug+s %s", pw, exec_name);  // set the "set-user" bits (must do owner and group)
-					system_m13(command, TRUE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
+					system_m13(NULL, command, TRUE_m13);
 					// renice in shell with sudo password (can't change current process priority from within process unless UID is root, or change kernel CAP_SETUID to true)
 					pid = getpid();
 					sprintf_m13(command, "echo %s | sudo -S renice %d -p %d", pw, PRIO_MIN, pid);
-					if (system_m13(command, TRUE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13))
-						return_m13(FALSE_m13);
+					sys_ret_val = system_m13(NULL, command, TRUE_m13);
+					G_pop_behavior_m13();
+					if (sys_ret_val)
+						return(FALSE_m13);
 					return(TRUE_m13);
 				} else {
 					return(FALSE_m13);  // no password entered
@@ -32900,6 +32932,1871 @@ tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 	return_m13(TRUE_m13);
 }
 
+
+//********************************************//
+// MARK: PARITY FUNCTIONS  (PRTY)
+//********************************************//
+
+tern	PRTY_build_m13(PRTY_m13 *parity_ps)
+{
+	ui1			*parity, *data;
+	si1			*parity_path;
+	ui4			type_code;
+	si4			i, j, n_files;
+	ui8			*target_ptr, *source_ptr;
+	si8			len, nr, nw, mem_block_bytes, bytes_read, bytes_written, bytes_remaining, bytes_to_read, bytes_to_write, basis_len;
+	si8			source_bytes_to_read, source_bytes_remaining;
+	PRTY_FILE_m13		*files, *basis_file, *source_file;
+	FILE_m13		*parity_fp;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// break out ps
+	files = parity_ps->files;
+	n_files = parity_ps->n_files;
+	parity = parity_ps->parity;
+	data = parity_ps->data;
+	mem_block_bytes = parity_ps->mem_block_bytes;
+	parity_path = parity_ps->path;
+	
+	// copy single files (they're their own parity)
+	if (n_files == 1) {
+		if (G_exists_m13(files[0].path) == TRUE_m13) {
+			G_copy_path_m13(files[0].path, parity_path);
+			return_m13(TRUE_m13);
+		}
+		return_m13(FALSE_m13);
+	}
+
+	// open files
+	for (i = 0; i < n_files; ++i) {
+		if (G_exists_m13(files[i].path) == FILE_EXISTS_m13) {
+			files[i].fp = fopen_m13(files[i].path, "r");
+			files[i].len = flen_m13(files[i].fp);
+			len = PRTY_pcrc_length_m13(files[i].fp, NULL);  // check if file has parity data
+			if (len)
+				files[i].len -= len;
+		} else {
+			G_set_error_m13(E_UNSPEC_m13, "file \"%s\" does not exist", files[i].path);
+			return_m13(FALSE_m13);
+		}
+		files[i].finished = FALSE_m13;
+	}
+
+	// sort by length
+	qsort((void *) files, (size_t) n_files, sizeof(PRTY_FILE_m13), PRTY_file_compare_m13);
+		
+	// open parity file
+	parity_fp = fopen_m13(parity_path, "w");
+	
+	// build parity
+	bytes_read = bytes_written = 0;
+	--n_files;  // longest (last) file is will be read into parity array as basis file
+	basis_file = files + n_files;
+	basis_len = basis_file->len;
+	while (bytes_read < basis_len) {
+		// read basis file (longest)
+		bytes_remaining = basis_len - bytes_read;
+		bytes_to_read = mem_block_bytes;
+		if (bytes_remaining < mem_block_bytes)
+			bytes_to_read = bytes_remaining;
+		bytes_to_write = bytes_to_read;
+		nr = fread_m13((void *) parity, sizeof(ui1), (size_t) bytes_to_read, basis_file->fp);
+		if (nr != bytes_to_read)
+			return_m13(FALSE_m13);
+		bytes_read += nr;
+		
+		// read source files
+		for (i = 0; i < n_files; ++i) {
+			source_file = files + i;
+			if (source_file->finished == TRUE_m13)
+				continue;
+			source_bytes_to_read = bytes_to_read;
+			source_bytes_remaining = source_file->len - bytes_written;
+			if (source_bytes_remaining & 7)
+				G_warning_message_m13("%s(): source_bytes_remaining not multiple of 8 in \"%s\"\n", __FUNCTION__, source_file->path);
+			if (source_bytes_to_read >= source_bytes_remaining) {
+				source_bytes_to_read = source_bytes_remaining;
+				source_file->finished = TRUE_m13;
+			}
+			nr = fread_m13((void *) data, sizeof(ui1), (size_t) source_bytes_to_read, source_file->fp);
+			if (nr != source_bytes_to_read)
+				return_m13(FALSE_m13);
+
+			// add to parity array
+			target_ptr = (ui8 *) parity;
+			source_ptr = (ui8 *) data;
+			
+			for (j = source_bytes_to_read >> 3; j--;)
+				*target_ptr++ ^= *source_ptr++;
+		}
+
+		// write out new parity
+		nw = fwrite_m13((void *) parity, sizeof(ui1), (size_t) bytes_to_write, parity_fp);
+		if (nw != bytes_to_write)
+			return_m13(FALSE_m13);
+		bytes_written += nw;
+	}
+	
+	// close files
+	++n_files;  // (n_files decremented above)
+	for (i = 0; i < n_files; ++i)
+		fclose_m13(files[i].fp);
+	fclose_m13(parity_fp);
+
+	// add parity crc data for video data
+	type_code = G_MED_type_code_from_string_m13(files[0].path);
+	if (type_code == VIDEO_DATA_FILE_TYPE_CODE_m13) {
+		for (i = 0; i < n_files; ++i) {
+			if (PRTY_write_pcrc_m13(files[i].path, 0) != TRUE_m13)
+				return_m13(FALSE_m13);
+		}
+	}
+	
+	// add parity crc data for parity file
+	if (PRTY_write_pcrc_m13(parity_path, 0) != TRUE_m13)
+		return_m13(FALSE_m13);
+
+	return_m13(TRUE_m13);
+}
+
+
+si4	PRTY_file_compare_m13(const void *a, const void *b)
+{
+	PRTY_FILE_m13	*as, *bs;
+	
+	
+	as = (PRTY_FILE_m13 *) a;
+	bs = (PRTY_FILE_m13 *) b;
+	
+	if (as->len < bs->len)
+		return((si4) -1);
+	if (as->len > bs->len)
+		return((si4) 1);
+	
+	return((si4) 0);
+}
+
+
+si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files)  // MED_path is MED file or directory
+{
+	tern	sess_files, ssr_files, chan_files, all_segs;
+	si1		sess_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1		sess_name[BASE_FILE_NAME_BYTES_m13] = { 0 };
+	si1		ssr_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1		chan_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1		seg_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1		tmp_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1		tmp_str[SEGMENT_BASE_FILE_NAME_BYTES_m13] = { 0 };
+	si1		**file_list, **tmp_list, **ssr_list, **chan_list, **seg_list, **vid_list;
+	ui4		type_code;
+	si4		i, j, k, tmp_files;
+	si4		n_ssrs, n_chans, n_segs, n_vids;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns a list of file paths that exist at or below the passed path level
+	
+	G_path_from_root_m13(MED_path, tmp_path);
+	
+	file_list = NULL;
+	*n_files = 0;
+
+	n_chans = n_segs = 0;
+	sess_files = ssr_files = chan_files = all_segs = FALSE_m13;
+	type_code = G_MED_type_code_from_string_m13(tmp_path);
+	ssr_list = chan_list = NULL;
+	switch (type_code) {
+		case SESSION_DIRECTORY_TYPE_CODE_m13:
+			strcpy(sess_path, tmp_path);
+			G_extract_path_parts_m13(sess_path, NULL, sess_name, NULL);
+			sprintf_m13(ssr_path, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13);
+			chan_list = G_generate_file_list_m13(NULL, &n_chans, sess_path, NULL, "?icd", GFL_FULL_PATH_m13);
+			sess_files = ssr_files = chan_files = all_segs = TRUE_m13;
+			break;
+		case RECORD_DIRECTORY_TYPE_CODE_m13:
+			strcpy(ssr_path, tmp_path);
+			G_extract_path_parts_m13(ssr_path, sess_path, sess_name, NULL);
+			ssr_files = TRUE_m13;
+			break;
+		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13:
+		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13:
+			strcpy(chan_path, tmp_path);
+			G_extract_path_parts_m13(chan_path, sess_path, NULL, NULL);
+			sess_files = ssr_files = FALSE_m13;
+			chan_list = (si1 **) calloc_2D_m13((size_t) 1, (size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+			strcpy(chan_list[0], chan_path);
+			chan_files = all_segs = TRUE_m13;
+			n_chans = 1;
+			break;
+		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13:
+		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
+			strcpy(seg_path, tmp_path);
+			G_extract_path_parts_m13(seg_path, chan_path, NULL, NULL);
+			G_extract_path_parts_m13(chan_path, sess_path, NULL, NULL);
+			n_chans = 1;
+			chan_list = (si1 **) calloc_2D_m13((size_t) n_chans, (size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+			strcpy(chan_list[0], chan_path);
+			n_segs = 1;
+			seg_list = (si1 **) calloc_2D_m13((size_t) n_segs, (size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+			strcpy(seg_list[0], seg_path);
+			all_segs = FALSE_m13;
+			break;
+		case RECORD_DATA_FILE_TYPE_CODE_m13:
+		case RECORD_INDICES_FILE_TYPE_CODE_m13:
+		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
+		case VIDEO_DATA_FILE_TYPE_CODE_m13:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
+			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13) {
+				file_list = (si1 **) calloc_2D_m13((size_t) 1, (size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+				strcpy(file_list[0], tmp_path);
+				*n_files = 1;
+			}
+			return_m13(file_list);
+		case NO_FILE_TYPE_CODE_m13:
+			return_m13(NULL);
+	}
+		
+	tmp_files = MAX_OPEN_FILES_m13(2048, 1);  // max channels 2048
+	tmp_list = (si1 **) calloc_2D_m13((size_t) tmp_files, (size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+	tmp_files = 0;
+	
+	// session records
+	if (sess_files == TRUE_m13) {
+		sprintf_m13(tmp_path, "%s/%s.%s", sess_path, sess_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+		if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+			strcpy(tmp_list[tmp_files++], tmp_path);
+		sprintf_m13(tmp_path, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+			strcpy(tmp_list[tmp_files++], tmp_path);
+	}
+
+	if (ssr_files == TRUE_m13) {
+		if (G_exists_m13(ssr_path) == DIR_EXISTS_m13) {
+			ssr_list = G_generate_file_list_m13(NULL, &n_ssrs, ssr_path, NULL, "r*", GFL_FULL_PATH_m13);
+			for (i = 0; i < n_ssrs; ++i) {
+				if (G_exists_m13(ssr_list[i]) == FILE_EXISTS_m13)
+					strcpy(tmp_list[tmp_files++], ssr_list[i]);
+			}
+			free_m13((void *) ssr_list);
+		}
+	}
+	
+	for (i = 0; i < n_chans; ++i) {
+		if (chan_files == TRUE_m13) {
+			G_extract_path_parts_m13(chan_list[i], NULL, tmp_str, NULL);
+			sprintf_m13(tmp_path, "%s/%s.%s", chan_list[i], tmp_str, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+				strcpy(tmp_list[tmp_files++], tmp_path);
+			sprintf_m13(tmp_path, "%s/%s.%s", chan_list[i], tmp_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+				strcpy(tmp_list[tmp_files++], tmp_path);
+		}
+		if (all_segs == TRUE_m13)
+			seg_list = G_generate_file_list_m13(NULL, &n_segs, chan_list[i], NULL, "?isd", GFL_FULL_PATH_m13);
+		
+		type_code = G_MED_type_code_from_string_m13(chan_list[i]);
+		for (j = 0; j < n_segs; ++j) {
+			G_extract_path_parts_m13(seg_list[j], NULL, tmp_str, NULL);
+
+			if (type_code == TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13) {
+				sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+					strcpy(tmp_list[tmp_files++], tmp_path);
+				sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+					strcpy(tmp_list[tmp_files++], tmp_path);
+				sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+					strcpy(tmp_list[tmp_files++], tmp_path);
+			} else if (type_code == VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13) {
+				vid_list = G_generate_file_list_m13(NULL, &n_vids, chan_list[i], "*_s????_n????", NULL, GFL_FULL_PATH_m13);
+				for (k = 0; k < n_vids; ++k)
+					strcpy(tmp_list[tmp_files++], vid_list[k]);
+				free_m13((void *) vid_list);
+				sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, VIDEO_INDICES_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+					strcpy(tmp_list[tmp_files++], tmp_path);
+				sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, VIDEO_METADATA_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+					strcpy(tmp_list[tmp_files++], tmp_path);
+			}
+			sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+				strcpy(tmp_list[tmp_files], tmp_path);
+			sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
+				strcpy(tmp_list[tmp_files++], tmp_path);
+		}
+		free_m13((void *) seg_list);  // free for next channel
+	}
+	free_m13((void *) chan_list);
+
+	file_list = (si1 **) calloc_2D_m13((size_t) tmp_files, (size_t) FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+	for (i = 0; i < tmp_files; ++i)
+		strcpy(file_list[i], tmp_list[i]);
+	free_m13((void *) tmp_list);
+
+	*n_files = tmp_files;
+	
+	return_m13(file_list);
+}
+
+
+ui4	PRTY_flag_for_path_m13(si1 *path)
+{
+	ui4	level_code, type_code, flag;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	level_code = G_get_level_m13(path, &type_code);
+	switch (type_code) {
+		case RECORD_DATA_FILE_TYPE_CODE_m13:
+			switch (level_code) {
+				case LH_SESSION_m13:
+					flag = PRTY_GLB_SESS_REC_DATA_m13;
+					break;
+				case LH_SEGMENTED_SESS_RECS_m13:
+					flag = PRTY_SEG_SESS_REC_DATA_m13;
+					break;
+				case LH_TIME_SERIES_CHANNEL_m13:
+					flag = PRTY_TS_CHAN_REC_DATA_m13;
+					break;
+				case LH_VIDEO_CHANNEL_m13:
+					flag = PRTY_VID_CHAN_REC_DATA_m13;
+					break;
+				case LH_TIME_SERIES_SEGMENT_m13:
+					flag = PRTY_TS_SEG_REC_DATA_m13;
+					break;
+				case LH_VIDEO_SEGMENT_m13:
+					flag = PRTY_VID_SEG_REC_DATA_m13;
+					break;
+			}
+			break;
+		case RECORD_INDICES_FILE_TYPE_CODE_m13:
+			switch (level_code) {
+				case LH_SESSION_m13:
+					flag = PRTY_GLB_SESS_REC_IDX_m13;
+					break;
+				case LH_SEGMENTED_SESS_RECS_m13:
+					flag = PRTY_SEG_SESS_REC_IDX_m13;
+					break;
+				case LH_TIME_SERIES_CHANNEL_m13:
+					flag = PRTY_TS_CHAN_REC_IDX_m13;
+					break;
+				case LH_VIDEO_CHANNEL_m13:
+					flag = PRTY_VID_CHAN_REC_IDX_m13;
+					break;
+				case LH_TIME_SERIES_SEGMENT_m13:
+					flag = PRTY_TS_SEG_REC_IDX_m13;
+					break;
+				case LH_VIDEO_SEGMENT_m13:
+					flag = PRTY_VID_SEG_REC_IDX_m13;
+					break;
+			}
+			break;
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
+			flag = PRTY_TS_SEG_META_m13;
+			break;
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
+			flag = PRTY_TS_SEG_DAT_DATA_m13;
+			break;
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
+			flag = PRTY_TS_SEG_DAT_IDX_m13;
+			break;
+		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
+			flag = PRTY_VID_SEG_META_m13;
+			break;
+		case VIDEO_DATA_FILE_TYPE_CODE_m13:
+			flag = PRTY_VID_SEG_DAT_DATA_m13;
+			break;
+		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
+			flag = PRTY_VID_SEG_DAT_IDX_m13;
+			break;
+	}
+
+	return_m13(flag);
+}
+
+
+si8	PRTY_pcrc_length_m13(FILE_m13 *fp, si1 *file_path)
+{
+	si8			offset, pcrc_len;
+	PRTY_CRC_DATA_m13	pcrc;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// returns length of pcrc including crcs & structure, zero indicates no pcrc data
+	// if fp passed: assumes file is open with read priveleges, returns fp to where it was when called
+	// if path passed: file is opened & closed
+	
+	offset = -1;
+	if (fp == NULL)
+		fp = fopen_m13(file_path, "r");
+	else
+		offset = ftell_m13(fp);
+	
+	fseek_m13(fp, -sizeof(PRTY_CRC_DATA_m13), SEEK_END);
+	fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
+	if (pcrc.pcrc_UID == PRTY_PCRC_UID_m13)
+		pcrc_len = (pcrc.number_of_blocks * sizeof(ui4)) + sizeof(PRTY_CRC_DATA_m13);  // if true for one, assume true for all
+	else
+		pcrc_len = 0;
+
+	if (offset == -1)
+		fclose_m13(fp);
+	else
+		fseek_m13(fp, offset, SEEK_SET, file_path);
+
+	return_m13(pcrc_len);
+}
+
+
+tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps)
+{
+	tern			result, repaired, rebuild_parity, block_included;
+	ui1			*parity, *data, diffs, mask;
+	si1			*parity_path, sess_path[FULL_FILE_NAME_BYTES_m13], response[8];
+	ui4			flag;
+	si4			i, j, k, m, n_files, n_bad_blocks, p_n_bad_blocks, seg_num;
+	ui8			*target_ptr, *source_ptr;
+	si8			nr, nw, bytes_read, bytes_written, mem_block_bytes, offset;
+	si8			len, bytes_to_read, bytes_to_write, bytes_remaining, parity_modification;
+	si8			parity_damage_start, parity_damage_end, file_damage_start, file_damage_end;
+	si8			source_bytes_to_read, source_bytes_remaining;
+	PRTY_FILE_m13		*files, *source_file;
+	PRTY_BLOCK_m13		*bad_blocks, *p_bad_blocks;
+	FILE_TIMES_m13		ft;
+	FILE_m13		*parity_fp;
+
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// internal function called from PRTY_restore_m13()
+	
+	// unpack ps
+	files = parity_ps->files;
+	n_files = parity_ps->n_files;
+	parity = parity_ps->parity;
+	data = parity_ps->data;
+	mem_block_bytes = parity_ps->mem_block_bytes;
+	parity_path = parity_ps->path;
+	n_bad_blocks = parity_ps->n_bad_blocks;
+	bad_blocks = parity_ps->bad_blocks;
+
+	// set up for exit
+	parity_fp = NULL;
+	for (i = 0; i < n_files; ++i) {
+		files[i].fp = NULL;
+		files[i].finished = FALSE_m13;
+	}
+	
+	// check parity pcrc data (if exists)
+	rebuild_parity = FALSE_m13;
+	p_bad_blocks = NULL;
+	p_n_bad_blocks = 0;
+	result = PRTY_validate_pcrc_m13(NULL, parity_path, &p_bad_blocks, &p_n_bad_blocks, NULL);
+	if (result == FALSE_m13) {
+		// see if damage is in same region
+		for (i = 0; i < n_bad_blocks; ++i) {
+			parity_damage_start = bad_blocks[i].offset;
+			parity_damage_end = parity_damage_start + bad_blocks[i].length - 1;
+			for (j = 0; j < p_n_bad_blocks; ++i) {
+				file_damage_start = p_bad_blocks[j].offset;
+				file_damage_end = file_damage_start + p_bad_blocks[j].length - 1;
+				block_included = FALSE_m13;
+				if (file_damage_start >= parity_damage_start && file_damage_start <= parity_damage_end)
+					block_included = TRUE_m13;
+				if (file_damage_end >= parity_damage_start && file_damage_end <= parity_damage_end)
+					block_included = TRUE_m13;
+				if (block_included == TRUE_m13) {
+					G_warning_message_m13("%s(): parity data is damaged in the same region as the damaged file; cannot repair => returning", __FUNCTION__);
+					return_m13(FALSE_m13);
+				}
+			}
+			rebuild_parity = TRUE_m13;
+		}
+		free_m13((void *) p_bad_blocks);
+	} else if (result == UNKNOWN_m13) {
+		G_warning_message_m13("%s(): validity of parity data cannot be confirmed\n", __FUNCTION__);
+		G_get_terminal_entry_m13("Would you like to proceed & rebuild parity (y/n) ?", RC_STRING_TYPE_m13, (void *) response, "n", FALSE_m13, FALSE_m13);
+		if (*response == 'y' || *response == 'Y')
+			rebuild_parity = TRUE_m13;
+		else
+			return_m13(FALSE_m13);
+	}
+	
+	// check validity of other parity component files
+	for (i = PRTY_FILE_DAMAGED_IDX_m13 + 1; i < n_files; ++i) {
+		p_bad_blocks = NULL;
+		p_n_bad_blocks = 0;
+		G_push_behavior_m13(SUPPRESS_MESSAGE_OUTPUT_m13);
+		result = PRTY_validate_m13(NULL, files[i].path, &p_bad_blocks, &p_n_bad_blocks, NULL);
+		G_pop_behavior_m13();
+		if (result == FALSE_m13) {
+			parity_damage_start = bad_blocks[i].offset;
+			parity_damage_end = parity_damage_start + bad_blocks[i].length - 1;
+			for (j = 0; j < p_n_bad_blocks; ++i) {
+				file_damage_start = p_bad_blocks[j].offset;
+				file_damage_end = file_damage_start + p_bad_blocks[j].length - 1;
+				block_included = FALSE_m13;
+				if (file_damage_start >= parity_damage_start && file_damage_start <= parity_damage_end)
+					block_included = TRUE_m13;
+				if (file_damage_end >= parity_damage_start && file_damage_end <= parity_damage_end)
+					block_included = TRUE_m13;
+				if (block_included == TRUE_m13) {
+					G_warning_message_m13("%s(): parity component file \"%s\" is damaged in the same region as the damaged file; cannot repair => returning", __FUNCTION__, files[i].path);
+					return_m13(FALSE_m13);
+				}
+			}
+			free_m13((void *) p_bad_blocks);
+		} else if (result == UNKNOWN_m13) {
+			G_warning_message_m13("%s(): validity of parity component data cannot be confirmed\n", __FUNCTION__);
+			G_get_terminal_entry_m13("Would you like to proceed (y/n) ?", RC_STRING_TYPE_m13, (void *) response, "n", FALSE_m13, FALSE_m13);
+			if (*response != 'y' && *response != 'Y')
+				return_m13(FALSE_m13);
+		}
+	}
+	
+	// open parity file
+	parity_fp = fopen_m13(parity_path, "r");
+	if (parity_fp == NULL) {
+		G_warning_message_m13("Error opening parity data file \"%s\" => returning\n", parity_path);
+		return_m13(FALSE_m13);
+	}
+
+	for (i = PRTY_FILE_DAMAGED_IDX_m13 + 1; i < n_files; ++i) {
+		files[i].fp = fopen_m13(files[i].path, "r");
+		if (files[i].fp == NULL)
+			goto PRTY_REPAIR_EXIT_m13;
+		files[i].len = flen_m13(files[i].fp);
+		files[i].len -= PRTY_pcrc_length_m13(files[i].fp, NULL);
+	}
+
+	// check that parity is at least as recent as rest of files
+	G_file_times_m13(parity_fp, NULL, &ft, FALSE_m13);  // get parity modification time
+	parity_modification = ft.modification;
+	for (i = PRTY_FILE_DAMAGED_IDX_m13 + 1; i < n_files; ++i) {  // skip damaged file
+		G_file_times_m13(files[i].fp, NULL, &ft, FALSE_m13);  // get parity modification time
+		if (ft.modification > parity_modification && i != PRTY_FILE_DAMAGED_IDX_m13) {
+			G_warning_message_m13("File \"%s\" was modified after the parity file => returning\n", files[i].path);
+			goto PRTY_REPAIR_EXIT_m13;
+		}
+	}
+
+	// open damaged file
+	i = PRTY_FILE_DAMAGED_IDX_m13;
+	files[i].fp = fopen_m13(files[i].path, "r+");
+	if (files[i].fp == NULL)
+		goto PRTY_REPAIR_EXIT_m13;
+	files[i].len = flen_m13(files[i].fp);
+
+	// repair
+	repaired = FALSE_m13;
+	for (i = 0; i < n_bad_blocks; ++i) {
+		offset = bad_blocks[i].offset;
+		fseek_m13(parity_fp, offset, SEEK_SET);
+		for (j = 0; j < n_files; ++j) {
+			if (offset >= files[j].len)
+				files[j].finished = TRUE_m13;
+			else
+				fseek_m13(files[j].fp, offset, SEEK_SET);
+		}
+		
+		// read parity file
+		len = bad_blocks[i].length;
+		bytes_read = bytes_written = 0;
+		while (bytes_read < len) {
+			// read parity file
+			bytes_remaining = len - bytes_read;
+			bytes_to_read = mem_block_bytes;
+			if (bytes_remaining < mem_block_bytes)
+				bytes_to_read = bytes_remaining;
+			bytes_to_write = bytes_to_read;
+			nr = fread_m13((void *) parity, sizeof(ui1), (size_t) bytes_to_read, parity_fp);
+			if (nr != bytes_to_read)
+				return_m13(FALSE_m13);
+			bytes_read += nr;
+			
+			// read undamaged files
+			for (j = PRTY_FILE_DAMAGED_IDX_m13 + 1; j < n_files; ++j) {
+				source_file = files + j;
+				if (source_file->finished == TRUE_m13)
+					continue;
+				source_bytes_to_read = bytes_to_read;
+				source_bytes_remaining = source_file->len - (offset + bytes_written);
+				if (source_bytes_to_read >= source_bytes_remaining) {
+					source_bytes_to_read = source_bytes_remaining;
+					source_file->finished = TRUE_m13;
+				}
+				nr = fread_m13((void *) data, sizeof(ui1), (size_t) source_bytes_to_read, source_file->fp);
+				if (nr != source_bytes_to_read)
+					return_m13(FALSE_m13);
+				
+				// add to parity array
+				target_ptr = (ui8 *) parity;
+				source_ptr = (ui8 *) data;
+				for (k = source_bytes_to_read >> 3; k--;)
+					*target_ptr++ ^= *source_ptr++;
+			}
+			
+			// show modifications
+			j = PRTY_FILE_DAMAGED_IDX_m13;
+			nr = fread_m13((void *) data, sizeof(ui1), (size_t) bytes_to_read, files[j].fp);
+			if (nr == bytes_to_read) {
+				for (k = 0; k < bytes_to_read; ++k) {
+					if (data[k] != parity[k]) {
+						G_message_m13("\t%sByte %ld: 0x%02hhx (damaged) => 0x%02hhx (repaired)   [flip position(s):", TC_BLUE_m13, offset + k, data[k], parity[k]);
+						diffs = data[k] ^ parity[k];
+						for (mask = 1, m = 0; m < 8; ++m, mask <<= 1) {
+							if (diffs & mask)
+								G_message_m13(" %d", m);
+						}
+						G_message_m13("]\n%s", TC_RESET_m13);
+					}
+				}
+			}
+			fseek_m13(files[j].fp, offset, SEEK_SET);
+
+			// write out repaired data
+			nw = fwrite_m13((void *) parity, sizeof(ui1), (size_t) bytes_to_write, files[j].fp);
+			if (nw != bytes_to_write)
+				goto PRTY_REPAIR_EXIT_m13;
+			bytes_written += nw;
+		}
+	}
+	repaired = TRUE_m13;
+
+PRTY_REPAIR_EXIT_m13:
+
+	if (parity_fp)
+		fclose_m13(parity_fp);
+	for (i = 0; i < n_files; ++i) {
+		if (files[i].fp)
+			fclose_m13(files[i].fp);
+	}
+	
+	if (rebuild_parity == TRUE_m13) {
+		flag = PRTY_flag_for_path_m13(parity_path);
+		if (flag & PRTY_SEG_m13)
+			seg_num = G_segment_for_path_m13(parity_path);
+		else
+			seg_num = 0;
+		G_session_path_for_path_m13(parity_path, sess_path);
+		PRTY_write_m13(sess_path, flag, seg_num);
+	}
+	
+	return_m13(repaired);
+}
+
+
+tern	PRTY_restore_m13(si1 *MED_path)
+{
+	tern			success, valid, video_data;
+	si1			sess_path[FULL_FILE_NAME_BYTES_m13], sess_name[BASE_FILE_NAME_BYTES_m13], base_name[SEGMENT_BASE_FILE_NAME_BYTES_m13];
+	si1			tmp_path[FULL_FILE_NAME_BYTES_m13], **input_file_list, **ts_chan_names, **vid_chan_names, **ssr_names, **list;
+	si1			*parity_path, command[(FULL_FILE_NAME_BYTES_m13 * 2) + 16], response[8];
+	ui4			level_code;
+	si4			i, j, k, fd, n_ts_chans, n_vid_chans, n_segs, n_input_files, n_parity_files, n_bad_blocks;
+	si4			allocated_parity_files, n_repaired, n_attempted, n_skipped;
+	si8			len, mmap_block_bytes, mem_block_bytes, mem_blocks;
+	FILE_m13		*fp;
+	PROC_GLOBALS_m13	*proc_globals;
+	PRTY_FILE_m13		*parity_files;
+	PRTY_BLOCK_m13		*bad_blocks;
+	PRTY_m13		parity_ps;
+	EXT_CODE_m13 		type;
+	#if defined MACOS_m13 || defined LINUX_m13
+	struct stat		sb;
+	#endif
+	#ifdef WINDOWS_m13
+	HANDLE			file_h;
+	DISK_GEOMETRY		disk_geom = { 0 };
+	ui4			dg_result;
+	#endif
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// get file list
+	input_file_list = PRTY_file_list_m13(MED_path, &n_input_files);
+	if (n_input_files == 0) {
+		G_warning_message_m13("\nNo MED files found at or below \"%s\"\n", MED_path);
+		return_m13(FALSE_m13);
+	}
+	
+	// get session path & name
+	G_session_path_for_path_m13(input_file_list[0], sess_path);
+	G_extract_path_parts_m13(sess_path, NULL, sess_name, NULL);
+
+	// get volume block size
+	proc_globals = G_proc_globals_m13(NULL);
+	if (proc_globals->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
+		fp = fopen_m13(input_file_list[0], "r");
+		fd = fp->fd;
+
+		#if defined MACOS_m13 || defined LINUX_m13
+		fstat(fd, &sb);
+		mmap_block_bytes = (si8) sb.st_blksize;
+		#endif
+		#ifdef WINDOWS_m13
+		if ((file_h = (HANDLE) _get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
+			dg_result = (ui4) DeviceIoControl(file_h, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &disk_geom, sizeof(DISK_GEOMETRY), &dg_result, (LPOVERLAPPED) NULL);
+			if (dg_result == 1)
+				mmap_block_bytes = (si8) disk_geom.BytesPerSector;
+		}
+		#endif
+		fclose_m13(fp);
+
+		if (mmap_block_bytes <= 0)
+			mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13;
+		proc_globals->mmap_block_bytes = mmap_block_bytes;
+	} else {
+		mmap_block_bytes = proc_globals->mmap_block_bytes;
+	}
+	
+	// get parity & data arrays
+	mem_block_bytes = (si8) (1 << 29);  // 500 MiB
+	mem_blocks = mem_block_bytes / mmap_block_bytes;
+	parity_ps.mem_block_bytes = mem_blocks * mmap_block_bytes;
+	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
+	mlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m13);
+	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
+	mlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m13);
+	n_parity_files = allocated_parity_files = 0;
+	parity_path = parity_ps.path;
+	parity_files = NULL;
+
+	// validate & restore files
+	n_repaired = n_attempted = n_skipped = 0;
+	ts_chan_names = vid_chan_names = ssr_names = NULL;
+	n_ts_chans = n_vid_chans = n_segs = 0;
+	for (i = 0; i < n_input_files; ++i) {
+		valid = PRTY_validate_m13(NULL, input_file_list[i], &bad_blocks, &n_bad_blocks, NULL);
+		if (valid == TRUE_m13)
+			continue;
+		if (valid == UNKNOWN_m13) {
+			++n_skipped;
+			G_warning_message_m13("Unspecified error processing file \"%s\" => skipping\n", input_file_list[i]);
+			continue;
+		}
+		++n_attempted;
+
+		// get channel names, channel count, & segment count, if needed
+		level_code = G_get_level_m13(input_file_list[i], &type.code);
+		switch (level_code) {
+			case LH_SESSION_m13:
+				n_parity_files = 1;
+				break;
+			case LH_SEGMENTED_SESS_RECS_m13:
+				if (ssr_names == NULL) {
+					sprintf_m13(tmp_path, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13);
+					ssr_names = G_generate_file_list_m13(NULL, &n_segs, tmp_path, NULL, RECORD_DATA_FILE_TYPE_STRING_m13, GFL_NAME_m13);
+				}
+				n_parity_files = n_segs;
+				list = ssr_names;
+				break;
+			case LH_TIME_SERIES_CHANNEL_m13:
+			case LH_TIME_SERIES_SEGMENT_m13:
+				if (ts_chan_names == NULL)
+					ts_chan_names = G_generate_file_list_m13(NULL, &n_ts_chans, sess_path, NULL, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
+				n_parity_files = n_ts_chans;
+				list = ts_chan_names;
+				break;
+			case LH_VIDEO_CHANNEL_m13:
+			case LH_VIDEO_SEGMENT_m13:
+				if (vid_chan_names == NULL)
+					vid_chan_names = G_generate_file_list_m13(NULL, &n_vid_chans, sess_path, NULL, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
+				n_parity_files = n_vid_chans;
+				list = vid_chan_names;
+				break;
+		}
+		
+		// realloc, if needed
+		if (n_parity_files > allocated_parity_files) {
+			parity_files = (PRTY_FILE_m13 *) realloc_m13((void *) parity_files, (size_t) n_parity_files * sizeof(PRTY_FILE_m13));
+			allocated_parity_files = n_parity_files;
+		}
+				
+		// build parity path
+		video_data = FALSE_m13;
+		G_extract_path_parts_m13(input_file_list[i], NULL, base_name, type.ext);
+		switch (type.code) {
+			case RECORD_DATA_FILE_TYPE_CODE_m13:
+			case RECORD_INDICES_FILE_TYPE_CODE_m13:
+				switch (level_code) {
+					case LH_SESSION_m13:
+						sprintf_m13(parity_path, "%s/parity.%s", sess_path, type.ext);
+						break;
+					case LH_SEGMENTED_SESS_RECS_m13:
+						sprintf_m13(parity_path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, type.ext);
+						break;
+					case LH_TIME_SERIES_SEGMENT_m13:
+					case LH_VIDEO_SEGMENT_m13:
+						len = strlen(base_name);
+						base_name[len - 6] = 0;
+					case LH_TIME_SERIES_CHANNEL_m13:
+					case LH_VIDEO_CHANNEL_m13:
+						STR_replace_pattern_m13(base_name, "parity", input_file_list[i], parity_path);
+						break;
+				}
+				break;
+			case VIDEO_DATA_FILE_TYPE_CODE_m13:
+				video_data = TRUE_m13;
+			case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
+			case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
+			case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
+			case VIDEO_METADATA_FILE_TYPE_CODE_m13:
+			case VIDEO_INDICES_FILE_TYPE_CODE_m13:
+				len = strlen(base_name);
+				if (video_data == TRUE_m13)
+					base_name[len - 12] = 0;
+				else
+					base_name[len - 6] = 0;
+				STR_replace_pattern_m13(base_name, "parity", input_file_list[i], parity_path);
+				break;
+		}
+		if (G_exists_m13(parity_path) == DOES_NOT_EXIST_m13) {
+			++n_skipped;
+			G_warning_message_m13("No parity data for file \"%s\" => skipping\n", input_file_list[i]);
+			continue;
+		}
+
+		// build file list
+		strcpy(parity_files[PRTY_FILE_DAMAGED_IDX_m13].path, input_file_list[i]);
+		for (j = 1, k = 0; j < n_parity_files; ++k) {
+			if (strcmp(list[k], base_name)) {
+				STR_replace_pattern_m13("parity", list[k], parity_path, tmp_path);
+				strcpy(parity_files[j++].path, tmp_path);
+			}
+		}
+
+		// repair
+		G_warning_message_m13("Repairing \"%s\" ...\n", input_file_list[i]);
+		parity_ps.files = parity_files;
+		parity_ps.n_files = n_parity_files;
+		parity_ps.n_bad_blocks = n_bad_blocks;
+		parity_ps.bad_blocks = bad_blocks;
+
+		// make a copy (just in case)
+		sprintf_m13(tmp_path, "%s.damaged_original", input_file_list[i]);
+		#if defined MACOS_m13 || defined LINUX_m13
+		sprintf_m13(command, "cp -f \"%s\" \"%s\"", input_file_list[i], tmp_path);
+		#endif
+		#ifdef WINDOWS_m13
+		sprintf_m13(command, "copy \\/y \"%s\" \"%s\"", input_file_list[i], tmp_path);
+		#endif
+		system_m13(NULL, command, TRUE_m13);
+		
+		success = PRTY_repair_file_m13(&parity_ps);
+		if (success == TRUE_m13) {
+			++n_repaired;
+			G_get_terminal_entry_m13("Repair successful. Would you like to remove the damaged file (y/n) ?", RC_STRING_TYPE_m13, (void *) response, "y", FALSE_m13, FALSE_m13);
+			if (*response == 'y' || *response == 'Y')
+				G_remove_path_m13(tmp_path);
+		} else {
+			G_warning_message_m13("Error restoring file \"%s\".  Reverting to input state.\n", input_file_list[i]);
+			G_move_path_m13(tmp_path, input_file_list[i]);
+		}
+		if (n_bad_blocks) {
+			n_bad_blocks = 0;
+			free_m13((void *) bad_blocks);
+		}
+	}
+	
+	munlock_m13((void *) parity_ps.parity, (size_t) parity_ps.mem_block_bytes);
+	free_m13((void *) parity_ps.parity);
+	munlock_m13((void *) parity_ps.data, (size_t) parity_ps.mem_block_bytes);
+	free_m13((void *) parity_ps.data);
+	munlock_m13((void *) parity_ps.files, (size_t) allocated_parity_files * sizeof(PRTY_FILE_m13));
+	free_m13((void *) parity_ps.files);
+
+	free_m13((void *) ts_chan_names);
+	free_m13((void *) vid_chan_names);
+	free_m13((void *) ssr_names);
+
+	if (n_attempted == 0) {
+		if (n_skipped) {
+			G_message_m13("No damaged files detected  (%d files skipped)\n\n", n_skipped);
+			success = UNKNOWN_m13;
+		} else {
+			G_message_m13("No damaged files detected\n\n");
+			success = TRUE_m13;
+		}
+	} else {
+		if (n_attempted == n_repaired) {
+			if (n_skipped) {
+				G_message_m13("All damaged files restored  (%d files skipped)\n\n", n_skipped);
+				success = UNKNOWN_m13;
+			} else {
+				G_message_m13("All damaged files restored\n\n");
+				success = TRUE_m13;
+			}
+		} else {
+			if (n_skipped) {
+				G_message_m13("%d of %d damaged files restored  (%d files skipped)\n\n", n_repaired, n_attempted, n_skipped);
+				success = UNKNOWN_m13;
+			} else {
+				G_message_m13("%d of %d damaged files restored\n\n", n_repaired, n_attempted);
+				success = FALSE_m13;
+			}
+		}
+	}
+
+	return_m13(success);
+}
+
+
+tern	PRTY_show_pcrc_m13(si1 *file_path)
+{
+	FILE_m13		*fp;
+	PRTY_CRC_DATA_m13	pcrc;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+		
+	if (G_exists_m13(file_path) == DOES_NOT_EXIST_m13) {
+		G_warning_message_m13("%s(): file \"%s\" does not exist\n", __FUNCTION__, file_path);
+		return_m13(FALSE_m13);
+	}
+	
+	fp = fopen_m13(file_path, "r");
+	fseek_m13(fp, -sizeof(PRTY_CRC_DATA_m13), SEEK_END);
+	fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
+	fclose_m13(fp);
+
+	printf_m13("parity_UID: 0x%08x\n", pcrc.pcrc_UID);
+	printf_m13("session_UID: 0x%08x\n", pcrc.session_UID);
+	printf_m13("segment_UID: 0x%08x\n", pcrc.segment_UID);
+	printf_m13("number_of_blocks: %u\n", pcrc.number_of_blocks);
+	printf_m13("block_bytes: %u\n", pcrc.block_bytes);
+
+	return_m13(TRUE_m13);
+}
+
+
+tern        PRTY_validate_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks)
+{
+	tern			ret_val, valid, header_valid, body_valid, return_bb, localizing_crcs;
+	ui1				*bytes, *idx_bytes;
+	si1				idx_path[FULL_FILE_NAME_BYTES_m13];
+	ui4				n_b, *n_blocks, type_code;
+	si4				n_bb, bb_size, *n_bad_blocks, BAD_BLOCK_INCREMENT;
+	si8				i, len, pcrc_len, idx_len, nr, offset, record_bytes, block_bytes;
+	va_list				v_args;
+	FILE_m13			*fp, *idx_fp;
+	UNIVERSAL_HEADER_m13		*uh;
+	GENERIC_INDEX_m13		*idx;
+	RECORD_HEADER_m13		*rh;
+	CMP_BLOCK_FIXED_HEADER_m13	*bh;
+	PRTY_BLOCK_m13			*bb, **bad_blocks;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// validates MED file CRCs
+	// if bad_blocks or n_bad_blocks are NULL, they will not be returned
+	// n_blocks can be NULL
+	// returns TRUE_m13 if valid, FALSE_m13 if invaliid, UNKNOWN_m13 for errors
+
+	// get varargs
+	return_bb = FALSE_m13;
+	if (file_path == NULL) {
+		bad_blocks = NULL;
+		n_bad_blocks = NULL;
+		if (file_path == NULL) {
+			va_start(v_args, file_path);
+			file_path = (si1 *) va_arg(v_args, si1 *);
+			bad_blocks = (PRTY_BLOCK_m13 **) va_arg(v_args, PRTY_BLOCK_m13 **);
+			n_bad_blocks = (si4 *) va_arg(v_args, si4 *);
+			n_blocks = (ui4 *) va_arg(v_args, ui4 *);
+			va_end(v_args);
+			
+			if (bad_blocks && n_bad_blocks) {
+				return_bb = TRUE_m13;
+				*bad_blocks = NULL;
+				*n_bad_blocks = 0;
+				if (n_blocks)
+					*n_blocks = 0;
+				BAD_BLOCK_INCREMENT = 5;
+			}
+		}
+	}
+	bb = NULL;
+	n_b = n_bb = bb_size = 0;
+
+	G_message_m13("Validating \"%s\" ... ", file_path);
+
+	if (G_exists_m13(file_path) == DOES_NOT_EXIST_m13) {
+		G_warning_message_m13("\n%s(): file \"%s\" does not exist\n", __FUNCTION__, file_path);
+		return_m13(UNKNOWN_m13);
+	}
+
+	type_code = G_MED_type_code_from_string_m13(file_path);
+	switch (type_code) {
+		case SESSION_DIRECTORY_TYPE_CODE_m13:
+		case RECORD_DIRECTORY_TYPE_CODE_m13:
+		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13:
+		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13:
+		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13:
+		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
+			G_warning_message_m13("\n%s(): \"%s\" is a MED directory, not file\n", __FUNCTION__, file_path);
+			return_m13(UNKNOWN_m13);
+		case RECORD_DATA_FILE_TYPE_CODE_m13:
+		case RECORD_INDICES_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
+		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
+		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
+		case VIDEO_DATA_FILE_TYPE_CODE_m13:
+		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
+			break;
+		case NO_TYPE_CODE_m13:
+		default:
+			G_warning_message_m13("\n%s(): file \"%s\" is not a MED type\n", __FUNCTION__, file_path);
+			return_m13(UNKNOWN_m13);
+	}
+	
+	fp = fopen_m13(file_path, "r");
+	if (fp == NULL)
+		return_m13(UNKNOWN_m13);
+	len = flen_m13(fp);
+	pcrc_len = PRTY_pcrc_length_m13(fp, NULL);
+	len -= pcrc_len;
+	bytes = (ui1 *) malloc((size_t) len);
+	if (bytes == NULL) {
+		G_warning_message_m13("\n%s(): allocation error\n", __FUNCTION__);
+		return_m13(UNKNOWN_m13);
+	}
+	nr = fread_m13((void *) bytes, sizeof(ui1), (size_t) len, fp);
+	fclose_m13(fp);
+	if (nr != len) {
+		free((void *) bytes);
+		return_m13(UNKNOWN_m13);
+	}
+
+	// check universal header CRCs
+	header_valid = body_valid = valid = UNKNOWN_m13;
+	if (type_code != VIDEO_DATA_FILE_TYPE_CODE_m13) {
+		// header CRC
+		uh = (UNIVERSAL_HEADER_m13 *) bytes;
+		header_valid = CRC_validate_m13(bytes + UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m13, UNIVERSAL_HEADER_BYTES_m13 - UNIVERSAL_HEADER_HEADER_CRC_START_OFFSET_m13, uh->header_CRC);
+		if (header_valid == FALSE_m13) {
+			if (return_bb == TRUE_m13) {
+				if (n_bb == bb_size) {
+					bb_size += BAD_BLOCK_INCREMENT;
+					bb = (PRTY_BLOCK_m13 *) realloc_m13((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m13));
+				}
+				bb[n_bb].length = (si8) UNIVERSAL_HEADER_BYTES_m13;
+				bb[n_bb].offset = 0;
+				++n_bb;
+			}
+		}
+		// body CRC
+		body_valid = CRC_validate_m13(bytes + UNIVERSAL_HEADER_BODY_CRC_START_OFFSET_m13, len - UNIVERSAL_HEADER_BODY_CRC_START_OFFSET_m13, uh->body_CRC);
+		if (body_valid == FALSE_m13) {
+			if (return_bb == TRUE_m13) {
+				if (n_bb == bb_size) {
+					bb_size += BAD_BLOCK_INCREMENT;
+					bb = (PRTY_BLOCK_m13 *) realloc_m13((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m13));
+				}
+				bb[n_bb].length = len - (si8) UNIVERSAL_HEADER_BODY_CRC_START_OFFSET_m13;
+				bb[n_bb].offset = (si8) UNIVERSAL_HEADER_BODY_CRC_START_OFFSET_m13;
+				++n_bb;
+			}
+		}
+		if (header_valid == TRUE_m13 && body_valid == TRUE_m13)
+			valid = TRUE_m13;
+		else if (header_valid == FALSE_m13 || body_valid == FALSE_m13)
+			valid = FALSE_m13;
+	}
+
+	localizing_crcs = FALSE_m13;
+	if (body_valid != TRUE_m13 && return_bb == TRUE_m13)
+		if (type_code == RECORD_DATA_FILE_TYPE_CODE_m13 || type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m13 || pcrc_len)
+			localizing_crcs = TRUE_m13;
+
+	// check body CRCs (localize within in data files)
+	if (localizing_crcs == TRUE_m13) {
+		if (body_valid == FALSE_m13) {
+			if (bb[0].offset == 0)  // keep universal header entry, if present, overwrite body entry
+				n_bb = 1;
+			else
+				n_bb = 0;  // overwrite body entry
+		}
+		if (type_code == RECORD_DATA_FILE_TYPE_CODE_m13) {
+			idx_len = strcpy_m13(idx_path, file_path);
+			strcpy(idx_path + (idx_len - 4), RECORD_INDICES_FILE_TYPE_STRING_m13);
+			idx_fp = fopen_m13(idx_path, "r");
+			if (idx_fp == NULL)
+				goto PRTY_VALIDATE_EXIT_m13;
+			idx_len = flen_m13(idx_fp);
+			idx_bytes = (ui1 *) malloc((size_t) idx_len);
+			if (idx_bytes == NULL) {
+				G_warning_message_m13("\n%s(): allocation error\n", __FUNCTION__);
+				fclose_m13(idx_fp);
+				goto PRTY_VALIDATE_EXIT_m13;
+			}
+			nr = fread_m13((void *) idx_bytes, sizeof(ui1), (size_t) idx_len, idx_fp);
+			fclose_m13(idx_fp);
+			if (nr != idx_len) {
+				free((void *) idx_bytes);
+				G_warning_message_m13("\n%s(): index file read error\n", __FUNCTION__);
+				goto PRTY_VALIDATE_EXIT_m13;
+			}
+			idx = (GENERIC_INDEX_m13 *) (idx_bytes + UNIVERSAL_HEADER_BYTES_m13);
+			for (i = uh->number_of_entries - 1; i--; ++idx) {
+				offset = idx->file_offset;
+				rh = (RECORD_HEADER_m13 *) (bytes + offset);
+				record_bytes = (idx + 1)->file_offset - offset;  // no discontinuities in record indices
+				ret_val = CRC_validate_m13((ui1 *) rh + RECORD_HEADER_CRC_START_OFFSET_m13, record_bytes - RECORD_HEADER_CRC_START_OFFSET_m13, rh->record_CRC);
+				if (ret_val == FALSE_m13) {
+					if (return_bb == TRUE_m13) {
+						if (n_bb == bb_size) {
+							bb_size += BAD_BLOCK_INCREMENT;
+							bb = (PRTY_BLOCK_m13 *) realloc_m13((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m13));
+						}
+						bb[n_bb].length = (si8) rh->total_record_bytes;
+						bb[n_bb].offset = offset;
+						++n_bb;
+					}
+				}
+			}
+		} else if (type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m13) {
+			idx_len = strcpy_m13(idx_path, file_path);
+			strcpy(idx_path + (idx_len - 4), TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+			idx_fp = fopen_m13(idx_path, "r");
+			if (idx_fp == NULL)
+				goto PRTY_VALIDATE_EXIT_m13;
+			idx_len = flen_m13(idx_fp);
+			idx_bytes = (ui1 *) malloc((size_t) idx_len);
+			if (idx_bytes == NULL) {
+				G_warning_message_m13("\n%s(): allocation error\n", __FUNCTION__);
+				fclose_m13(idx_fp);
+				goto PRTY_VALIDATE_EXIT_m13;
+			}
+			nr = fread_m13((void *) idx_bytes, sizeof(ui1), (size_t) idx_len, idx_fp);
+			fclose_m13(idx_fp);
+			if (nr != idx_len) {
+				free((void *) idx_bytes);
+				G_warning_message_m13("\n%s(): index file read error\n", __FUNCTION__);
+				goto PRTY_VALIDATE_EXIT_m13;
+			}
+			idx = (GENERIC_INDEX_m13 *) (idx_bytes + UNIVERSAL_HEADER_BYTES_m13);
+			for (i = uh->number_of_entries - 1; i--; ++idx) {
+				offset = REMOVE_DISCONTINUITY_m13(idx->file_offset);  // discontinuities possible in time series indices
+				bh = (CMP_BLOCK_FIXED_HEADER_m13 *) (bytes + offset);
+				block_bytes = REMOVE_DISCONTINUITY_m13((idx + 1)->file_offset) - offset;
+				ret_val = CRC_validate_m13((ui1 *) bh + CMP_BLOCK_CRC_START_OFFSET_m13, block_bytes - CMP_BLOCK_CRC_START_OFFSET_m13, bh->block_CRC);
+				if (ret_val == FALSE_m13) {
+					if (return_bb == TRUE_m13) {
+						if (n_bb == bb_size) {
+							bb_size += BAD_BLOCK_INCREMENT;
+							bb = (PRTY_BLOCK_m13 *) realloc_m13((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m13));
+						}
+						bb[n_bb].length = (si8) bh->total_block_bytes;
+						bb[n_bb].offset = offset;
+						++n_bb;
+					}
+				}
+			}
+		} else {  // pcrc data present (covers video data also)
+			valid = PRTY_validate_pcrc_m13(NULL, file_path, &bb, &n_bb, &n_b);
+		}
+	}
+	
+PRTY_VALIDATE_EXIT_m13:
+	
+	free((void *) bytes);
+	
+	if (return_bb == TRUE_m13 && n_bb) {
+		*bad_blocks = bb;
+		*n_bad_blocks = n_bb;
+		if (n_blocks)
+			*n_blocks = n_b;
+	} else if (bb) {
+		free_m13((void *) bb);
+	}
+	
+	switch (valid) {
+		case FALSE_m13:
+			G_message_m13("%sinvalid%s\n", TC_RED_m13, TC_RESET_m13);
+			break;
+		case UNKNOWN_m13:
+			G_message_m13("%sprocessing error%s\n", TC_BLUE_m13, TC_RESET_m13);
+			break;
+		case TRUE_m13:
+			G_message_m13("%svalid%s\n", TC_GREEN_m13, TC_RESET_m13);
+			break;
+	}
+
+	return_m13(valid);
+}
+
+
+tern	PRTY_validate_pcrc_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+{
+	tern		return_bb;
+	ui1			*block;
+	ui4			*n_blocks, n_b, *crcs, block_bytes;
+	si4			i, *n_bad_blocks, n_bb, bb_size, BAD_BLOCK_INCREMENT;
+	si8			len, offset, crc_bytes;
+	PRTY_CRC_DATA_m13	pcrc;
+	PRTY_BLOCK_m13		**bad_blocks, *bb;
+	FILE_m13		*fp;
+	va_list			v_args;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// if bad_blocks or n_bad_blocks are NULL, they will not be returned
+	// n_blocks can be NULL
+	// returns TRUE_m13 if valid, FALSE_m13 if invaliid, UNKNOWN_m13 for errors
+		
+	// get varargs
+	return_bb = FALSE_m13;
+	if (file_path == NULL) {
+		bad_blocks = NULL;
+		n_bad_blocks = NULL;
+		if (file_path == NULL) {
+			va_start(v_args, file_path);
+			file_path = (si1 *) va_arg(v_args, si1 *);
+			bad_blocks = (PRTY_BLOCK_m13 **) va_arg(v_args, PRTY_BLOCK_m13 **);
+			n_bad_blocks = (si4 *) va_arg(v_args, si4 *);
+			n_blocks = (ui4 *) va_arg(v_args, ui4 *);
+			va_end(v_args);
+			
+			if (bad_blocks && n_bad_blocks) {
+				return_bb = TRUE_m13;
+				*bad_blocks = NULL;
+				*n_bad_blocks = 0;
+				if (n_blocks)
+					*n_blocks = 0;
+
+				BAD_BLOCK_INCREMENT = 5;
+			}
+		}
+	}
+	bb = NULL;
+	n_b = bb_size = 0;
+
+	if (G_exists_m13(file_path) != FILE_EXISTS_m13) {
+		G_warning_message_m13("%s(): file \"%s\" does not exist => returning\n", __FUNCTION__, file_path);
+		return_m13(UNKNOWN_m13);
+	}
+		
+	// check if in pcrc data exists
+	fp = fopen_m13(file_path, "r");
+	len = flen_m13(fp);
+	len -= sizeof(PRTY_CRC_DATA_m13);
+	fseek_m13(fp, len, SEEK_SET);
+	fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
+	if (pcrc.pcrc_UID != PRTY_PCRC_UID_m13) {
+		G_warning_message_m13("%s(): file \"%s\" does not contain parity crc data\n", __FUNCTION__, file_path);
+		fclose_m13(fp);
+		return_m13(UNKNOWN_m13);
+	}
+	
+	// read in crcs
+	n_b = pcrc.number_of_blocks;
+	if (n_blocks)
+		*n_blocks = n_b;
+	block_bytes = pcrc.block_bytes;
+	crc_bytes = (si8) n_b * sizeof(ui4);
+	crcs = (ui4 *) malloc((size_t) crc_bytes);
+	len -= crc_bytes;
+	fseek_m13(fp, len, SEEK_SET);
+	fread_m13((void *) crcs, sizeof(ui4), (size_t) n_b, fp);
+
+	// check crcs
+	block = (ui1 *) malloc((size_t) block_bytes);
+	fseek_m13(fp, 0, SEEK_SET);
+	offset = 0;
+	n_bb = 0;
+	for (i = 0; i < n_b; ++i) {
+		if (len < block_bytes)
+			block_bytes = len;
+		fread_m13((void *) block, sizeof(ui1), (size_t) block_bytes, fp);
+		if (crcs[i] != CRC_calculate_m13(block, block_bytes)) {
+			if (return_bb == TRUE_m13) {
+				if (n_bb == bb_size) {
+					bb_size += BAD_BLOCK_INCREMENT;
+					bb = (PRTY_BLOCK_m13 *) realloc_m13((void *) bb, (size_t) bb_size * sizeof(PRTY_BLOCK_m13));
+				}
+				bb[n_bb].length = (si8) block_bytes;
+				bb[n_bb].offset = offset;
+				offset += block_bytes;
+				++n_bb;
+			} else {
+				fclose_m13(fp);
+				free((void *) block);
+				free((void *) crcs);
+				return_m13(FALSE_m13);
+			}
+		}
+		len -= block_bytes;
+	}
+
+	// clean up
+	fclose_m13(fp);
+	free((void *) block);
+	free((void *) crcs);
+
+	if (n_bb) {
+		*bad_blocks = bb;
+		*n_bad_blocks = n_bb;
+		if (n_blocks)
+			*n_blocks = n_b;
+		return_m13(FALSE_m13);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
+{
+	si1			sess_path[FULL_FILE_NAME_BYTES_m13], md_path[FULL_FILE_NAME_BYTES_m13];
+	si1			sess_name[BASE_FILE_NAME_BYTES_m13], tmp_str[FULL_FILE_NAME_BYTES_m13];
+	si1			num_str[FILE_NUMBERING_DIGITS_m13 + 1], type_string[TYPE_BYTES_m13];
+	si1			**chan_names, **vid_paths, **seg_names, **base_paths;
+	si4			i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_files, new_files;
+	si8			mmap_block_bytes, mem_block_bytes, mem_blocks;
+	FILE_m13		*md_fp;
+	PROC_GLOBALS_m13	*proc_globals;
+	PRTY_FILE_m13		*files;
+	PRTY_m13		parity_ps;
+	#if defined MACOS_m13 || defined LINUX_m13
+	struct stat		sb;
+	#endif
+	#ifdef WINDOWS_m13
+	HANDLE			file_h;
+	DISK_GEOMETRY		disk_geom = { 0 };
+	ui4			dg_result;
+	#endif
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	G_message_m13("Creating parity data ...\n");
+
+	// get volume block size
+	proc_globals = G_proc_globals_m13(NULL);
+	if (proc_globals->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
+		G_path_from_root_m13(session_path, sess_path);
+		G_extract_path_parts_m13(sess_path, NULL, sess_name, NULL);
+		G_find_metadata_file_m13(sess_path, md_path);  // just find any file - metadata should always be there
+		md_fp = fopen_m13(md_path, "r");
+		fd = md_fp->fd;
+		#if defined MACOS_m13 || defined LINUX_m13
+		fstat(fd, &sb);
+		mmap_block_bytes = (si8) sb.st_blksize;
+		#endif
+		#ifdef WINDOWS_m13
+		if ((file_h = (HANDLE) _get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
+			dg_result = (ui4) DeviceIoControl(file_h, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &disk_geom, sizeof(DISK_GEOMETRY), &dg_result, (LPOVERLAPPED) NULL);
+			if (dg_result == 1)
+				mmap_block_bytes = (si8) disk_geom.BytesPerSector;
+		}
+		#endif
+		fclose_m13(md_fp);
+		
+		if (mmap_block_bytes <= 0)
+			mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13;
+		proc_globals->mmap_block_bytes = mmap_block_bytes;
+	} else {
+		mmap_block_bytes = proc_globals->mmap_block_bytes;
+	}
+	
+	// get time series channel names
+	n_chans = n_segs = 0;
+	chan_names = NULL;
+	if (flags & PRTY_TS_MASK_m13) {
+		chan_names = G_generate_file_list_m13(NULL, &n_chans, sess_path, NULL, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
+		if (n_chans) {
+			// get segment count
+			if (segment_number == PRTY_ALL_SEGS_m13) {
+				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, chan_names[0], TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13);
+				seg_names = G_generate_file_list_m13(NULL, &n_segs, tmp_str, NULL, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
+				free_m13((void *) seg_names);
+				start_seg = 1;
+				end_seg = n_segs;
+			} else {
+				start_seg = end_seg = segment_number;
+				n_segs = 1;
+			}
+		}
+	}
+
+	// fill parity ps
+	mem_block_bytes = (si8) (1 << 29);  // 500 MiB
+	mem_blocks = mem_block_bytes / mmap_block_bytes;
+	parity_ps.mem_block_bytes = mem_block_bytes = mem_blocks * mmap_block_bytes;
+	
+	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
+	mlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m13);
+	
+	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
+	mlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m13);
+	
+	n_files = (n_chans > n_segs) ? n_chans : n_segs;
+	parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
+	mlock_m13((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m13), FALSE_m13);
+	
+	base_paths = (si1 **) calloc_2D_m13(n_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+	
+	// build time series segment parity
+	if (n_chans) {
+		for (i = start_seg; i <= end_seg; ++i) {
+			// build segment base paths
+			G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
+			for (j = 0; j < n_chans; ++j) {
+				sprintf_m13(tmp_str, "%s_s%s", chan_names[j], num_str);
+				sprintf_m13(base_paths[j], "%s/%s.%s/%s.%s/%s", sess_path, chan_names[j], TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str);
+			}
+			
+			// time series data
+			if (flags & PRTY_TS_SEG_DAT_DATA_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building segment %d time series data parity ...\n", i);
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// time series indices
+			if (flags & PRTY_TS_SEG_DAT_IDX_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building segment %d time series indices parity ...\n", i);
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// time series metadata
+			if (flags & PRTY_TS_SEG_META_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building segment %d time series metadata parity ...\n", i);
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// time series segment record data
+			if (flags & PRTY_TS_SEG_REC_DATA_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], RECORD_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, RECORD_DATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building time series segment record data parity ...\n");
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// time series segment record indices
+			if (flags & PRTY_TS_SEG_REC_IDX_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], RECORD_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building time series segment record indices parity ...\n");
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+		}
+		
+		// build time series channel record base paths
+		if (flags & PRTY_TS_CHAN_RECS_m13) {
+			for (i = 0; i < n_chans; ++i)
+				sprintf_m13(base_paths[i], "%s/%s.%s/%s", sess_path, chan_names[i], TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, chan_names[i]);
+			
+			// time series channel record data
+			if (flags & PRTY_TS_CHAN_REC_DATA_m13) {
+				for (i = j = 0; i < n_chans; ++i) {
+					sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
+						++j;
+				}
+				if (j) {
+					sprintf_m13(parity_ps.path, "%s/parity.%s/parity.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, RECORD_DATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = j;
+					G_message_m13("Building channel record data parity ...\n");
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// time series channel record indices
+			if (flags & PRTY_TS_CHAN_REC_IDX_m13) {
+				for (i = j = 0; i < n_chans; ++i) {
+					sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
+						++j;
+				}
+				if (j) {
+					sprintf_m13(parity_ps.path, "%s/parity.%s/parity.%s", sess_path, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, RECORD_INDICES_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = j;
+					G_message_m13("Building channel record indices parity ...\n");
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+		}
+	}  // end time series channels
+	free_m13((void *) chan_names);
+	
+	// get video channel names
+	n_chans = 0;
+	chan_names = NULL;
+	if (flags & PRTY_VID_MASK_m13) {
+		chan_names = G_generate_file_list_m13(NULL, &n_chans, sess_path, NULL, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
+		if (n_chans && n_segs == 0) {  // segment count should be same for time series & video channels
+			// get segment count
+			if (segment_number == PRTY_ALL_SEGS_m13) {
+				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, chan_names[0], VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13);
+				seg_names = G_generate_file_list_m13(NULL, &n_segs, tmp_str, NULL, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
+				free_m13((void *) seg_names);
+				start_seg = 1;
+				end_seg = n_segs;
+			} else {
+				start_seg = end_seg = segment_number;
+				n_segs = 1;
+			}
+		}
+	}
+	
+	new_files = (n_chans > n_segs) ? n_chans : n_segs;
+	if (new_files > n_files) {
+		munlock_m13((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		free_m13((void *) parity_ps.files);
+		free_m13((void *) base_paths);
+
+		n_files = new_files;
+		parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
+		mlock_m13((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m13), FALSE_m13);
+		base_paths = (si1 **) calloc_2D_m13(n_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+	}
+	
+	if (n_chans) {
+		
+		// build video segment parity
+		for (i = start_seg; i <= end_seg; ++i) {
+			
+			G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
+			
+			// video segment data (these are done across video data files within a segment)
+			if (flags & PRTY_VID_SEG_DAT_DATA_m13) {
+				sprintf_m13(base_paths[0], "%s/%s.%s/%s.%s", sess_path, chan_names[j], VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13);
+				strcat(tmp_str, "_n0000");
+				vid_paths = G_generate_file_list_m13(NULL, &n_vids, base_paths[0], tmp_str, NULL, GFL_FULL_PATH_m13);
+				if (n_vids) {
+					G_extract_path_parts_m13(vid_paths[0], NULL, NULL, type_string);  // get video extension
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, type_string);
+					G_message_m13("Building segment %d video data parity ...\n", i);
+					for (j = 0; j < n_vids; ++j)
+						strcpy_m13(files[j].path, vid_paths[j]);
+					free_m13((void *) vid_paths);
+					parity_ps.n_files = n_vids;
+					PRTY_build_m13(&parity_ps);
+					for (j = 0; j < n_vids; ++j)  // create parity crc files for video data files
+						PRTY_write_pcrc_m13(files[j].path, 0);
+				}
+			}
+			
+			// build segment base paths
+			for (j = 0; j < n_chans; ++j) {
+				sprintf_m13(tmp_str, "%s_s%s", chan_names[j], num_str);
+				sprintf_m13(base_paths[j], "%s/%s.%s/%s.%s/%s", sess_path, chan_names[j], VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str);
+			}
+			
+			// video indices
+			if (flags & PRTY_VID_SEG_DAT_IDX_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], VIDEO_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_INDICES_FILE_TYPE_STRING_m13);
+					G_message_m13("Building segment %d video indices parity ...\n", i);
+					parity_ps.n_files = k;
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// video metadata
+			if (flags & PRTY_VID_SEG_META_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], VIDEO_METADATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_METADATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building segment %d video metadata parity ...\n", i);
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// video segment record data
+			if (flags & PRTY_VID_SEG_REC_DATA_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], RECORD_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, RECORD_DATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building segment %d record data parity ...\n", i);
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// video segment record indices
+			if (flags & PRTY_VID_SEG_REC_IDX_m13) {
+				for (j = k = 0; j < n_chans; ++j) {
+					sprintf_m13(files[k].path, "%s.%s", base_paths[j], RECORD_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[k].path) == FILE_EXISTS_m13)
+						++k;
+				}
+				if (k) {
+					sprintf_m13(tmp_str, "parity_s%s", num_str);
+					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, tmp_str, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, tmp_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = k;
+					G_message_m13("Building segment %d record indices parity ...\n", i);
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+		}
+		
+		// build video channel record base paths
+		if (flags & PRTY_VID_CHAN_RECS_m13) {
+			for (i = 0; i < n_chans; ++i)
+				sprintf_m13(base_paths[i], "%s/%s.%s/%s", sess_path, chan_names[i], VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, chan_names[i]);
+			
+			// video record data
+			if (flags & PRTY_VID_CHAN_REC_DATA_m13) {
+				for (i = j = 0; i < n_chans; ++i) {
+					sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
+						++j;
+				}
+				if (j) {
+					sprintf_m13(parity_ps.path, "%s/parity.%s/parity.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, RECORD_DATA_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = j;
+					G_message_m13("Building channel record data parity ...\n");
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+			
+			// video channel record indices
+			if (flags & PRTY_VID_CHAN_REC_IDX_m13) {
+				for (i = j = 0; i < n_chans; ++i) {
+					sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
+						++j;
+				}
+				if (j) {
+					sprintf_m13(parity_ps.path, "%s/parity.%s/parity.%s", sess_path, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, RECORD_INDICES_FILE_TYPE_STRING_m13);
+					parity_ps.n_files = j;
+					G_message_m13("Building channel record indices parity ...\n");
+					PRTY_build_m13(&parity_ps);
+				}
+			}
+		}
+		
+	}  // end video channels
+	free_m13((void *) chan_names);
+	
+	// segmented session records
+	if (flags & PRTY_SEG_SESS_RECS_m13) {
+		for (i = 0; i < n_segs; ++i) {
+			G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, i + 1);
+			sprintf_m13(base_paths[i], "%s/%s.%s/%s_s%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, sess_name, num_str);
+		}
+		
+		// segmented session record data
+		if (flags & PRTY_SEG_SESS_REC_DATA_m13) {
+			for (i = j = 0; i < n_segs; ++i) {
+				sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
+					++j;
+			}
+			if (j) {
+				sprintf_m13(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, RECORD_DATA_FILE_TYPE_STRING_m13);
+				parity_ps.n_files = j;
+				G_message_m13("Building segmented session record data parity ...\n");
+				PRTY_build_m13(&parity_ps);
+			}
+		}
+		
+		// segmented session record indices
+		if (flags & PRTY_SEG_SESS_REC_IDX_m13) {
+			for (i = j = 0; i < n_segs; ++i) {
+				sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
+				if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
+					++j;
+			}
+			if (j) {
+				sprintf_m13(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, RECORD_INDICES_FILE_TYPE_STRING_m13);
+				parity_ps.n_files = j;
+				G_message_m13("Building segmented session record indices parity ...\n");
+				PRTY_build_m13(&parity_ps);
+			}
+		}
+	}
+
+	// session records
+	if (flags & PRTY_SESS_RECS_m13) {
+		// session records data
+		if (flags & PRTY_GLB_SESS_REC_DATA_m13) {
+			sprintf_m13(files[0].path, "%s/%s.%s", sess_path, sess_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(files[0].path) == FILE_EXISTS_m13) {
+				sprintf_m13(parity_ps.path, "%s/parity.%s", sess_path, RECORD_DATA_FILE_TYPE_STRING_m13);
+				parity_ps.n_files = 1;
+				G_message_m13("Building session record data parity ...\n");
+				PRTY_build_m13(&parity_ps);
+			}
+		}
+		
+		// session records indices
+		if (flags & PRTY_GLB_SESS_REC_IDX_m13) {
+			sprintf_m13(files[0].path, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(files[0].path) == FILE_EXISTS_m13) {
+				sprintf_m13(parity_ps.path, "%s/parity.%s", sess_path, RECORD_INDICES_FILE_TYPE_STRING_m13);
+				parity_ps.n_files = 1;
+				G_message_m13("Building session record indices parity ...\n");
+				PRTY_build_m13(&parity_ps);
+			}
+		}
+	}
+
+	munlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes);
+	free_m13((void *) parity_ps.parity);
+	munlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes);
+	free_m13((void *) parity_ps.data);
+	munlock_m13((void *) parity_ps.files, (size_t) n_chans * sizeof(PRTY_FILE_m13));
+	free_m13((void *) files);
+	free_m13((void *) base_paths);
+
+	G_message_m13("Parity data created\n\n");
+
+	return_m13(0);
+}
+
+
+tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes)
+{
+	ui1			*bytes;
+	ui4			*crcs, n_blocks;
+	si4			i;
+	si8			len;
+	PRTY_CRC_DATA_m13	pcrc;
+	FILE_m13		*fp;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// function expects file to be closed
+	// pass zero for blocks_bytes to use default
+	// if file_path can be any file, typically used for files that have no CRCs such as partity parity data and video data
+	// can be used to enhance localization in any file that has only one crc for the entire body, such as record or time series index files
+	
+	if (G_exists_m13(file_path) != FILE_EXISTS_m13) {
+		G_warning_message_m13("%s(): parity file \"%s\" does not exist\n", __FUNCTION__, file_path);
+		return_m13(FALSE_m13);
+	}
+
+	// open file
+	fp = fopen_m13(file_path, "r+");
+	len = (ui8) flen_m13(fp);
+	len -= PRTY_pcrc_length_m13(fp, NULL);  // subtract pcrc length if already present
+	if (block_bytes == 0)
+		block_bytes = PRTY_BLOCK_BYTES_DEFAULT_m13;
+	pcrc.pcrc_UID = PRTY_PCRC_UID_m13;
+	pcrc.block_bytes = block_bytes;
+	
+	// allocate
+	bytes = (ui1 *) malloc((size_t) block_bytes);
+	n_blocks = pcrc.number_of_blocks = (ui4) ceil((sf8) len / (sf8) block_bytes);
+	crcs = (ui4 *) malloc((size_t) n_blocks * sizeof(ui4));
+
+	// calculate crcs
+	for (i = 0; i < n_blocks; ++i) {
+		if (len < block_bytes)
+			block_bytes = len;
+		fread_m13((void *) bytes, sizeof(ui1), block_bytes, fp);
+		crcs[i] = CRC_calculate_m13(bytes, block_bytes);
+		len -= block_bytes;
+	}
+	
+	// write crcs
+	fwrite_m13((void *) crcs, sizeof(ui4), (size_t) n_blocks, fp);
+	
+	// write pcrc data
+	fwrite_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
+	
+	// clean up
+	fclose_m13(fp);
+	free((void *) bytes);
+	free((void *) crcs);
+
+	return_m13(TRUE_m13);
+}
 
 
 //********************************************//
@@ -35917,7 +37814,7 @@ tern	TR_show_message_m13(TR_HEADER_m13 *header)
 			G_warning_message_m13("%s", msg);
 			return_m13(TRUE_m13);
 		case TR_TYPE_OPERATION_FAILED_WITH_ERROR_MESSAGE_m13:
-			G_error_message_m13("%s", msg);
+			G_set_error_m13(E_UNSPEC_m13, "%s", msg);
 			return_m13(TRUE_m13);
 	}
 	
@@ -38184,7 +40081,7 @@ FLOCK_ENTRY_m13	*flock_add_m13(void)
 FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *mode, si4 flags, si4 permissions
 {
 	tern		read_mode, write_mode, append_mode, plus_mode;
-	si1		*c, main_mode_total;
+	si1		*c, main_mode_total, tmp_path[FULL_FILE_NAME_BYTES_m13];
 	ui2 		flags, permissions;
 	FILE_m13	*fp;
 	si4		sys_mode_flags;
@@ -38196,12 +40093,11 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 	struct _stat64	sb;
 	#endif
 
+	// function will create path if it does not exist in write or append modes
 	
 	if (STR_empty_m13(path) == TRUE_m13) {
-		if (mode == NULL) {
-			G_set_error_m13(E_OPEN_m13, "path is empty\n");
-			return(NULL);
-		}
+		G_set_error_m13(E_OPEN_m13, "path is empty\n");
+		return(NULL);
 	}
 	
 	// get varargs
@@ -38220,6 +40116,9 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 		G_set_error_m13(E_OPEN_m13, "mode is empty\n");
 		return(NULL);
 	}
+	
+	G_path_from_root_m13(path, tmp_path);
+	path = tmp_path;
 	
 	// get new FILE_m13
 	fp = FILE_init_m13(NULL);
@@ -38255,6 +40154,26 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 		free_m13((void *) fp);
 		G_set_error_m13(E_OPEN_m13, "invalid mode: %s\n", mode);
 		return(NULL);
+	}
+	
+	// create path
+	if (write_mode == TRUE_m13 || append_mode  == TRUE_m13) {
+		si1	*dir, command[FULL_FILE_NAME_BYTES_m13 + 16];
+		
+		dir = command;
+		G_extract_path_parts_m13(path, dir, NULL, NULL);
+		if (G_exists_m13(dir) != DIR_EXISTS_m13) {
+			#if defined MACOS_m13 || defined LINUX_m13
+			sprintf_m13(command, "mkdir -p \"%s\"", dir);
+			#endif
+			#ifdef WINDOWS_m13
+			sprintf_m13(command, "mkdir \"%s\"", dir);
+			#endif
+			if (system_m13(NULL, command, TRUE_m13)) {
+				G_set_error_m13(E_OPEN_m13, "cannot create path\n");
+				return(NULL);
+			}
+		}
 	}
 	
 	errno_reset_m13();
