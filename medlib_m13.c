@@ -41575,10 +41575,11 @@ si8     strcat_m13(si1 *target, si1 *source)
 
 si8     strcpy_m13(si1 *target, si1 *source)
 {
-	si1	*c;
+	si1	*c, *c2, *c3;
 	
 	
 	// returns length (not including terminal zero)
+	// strings may overlap
 	
 	if (target == NULL || source == NULL) {
 		G_set_error_m13(E_UNSPEC_m13, "target or source is null");
@@ -41586,7 +41587,15 @@ si8     strcpy_m13(si1 *target, si1 *source)
 	}
 
 	c = target;
-	while ((*c++ = *source++));
+	if (target <= source) {
+		while ((*c++ = *source++));
+	} else {  // overwrite possible, copy backwards
+		c2 = source;
+		while (*c2++);
+		c3 = (c += (c2 - source));  // leave c here for return value
+		while (c3 != target)
+			*--c3 = *--c2;
+	}
 	
 	return((si8) ((c - target) - 1));
 }
@@ -41641,33 +41650,42 @@ si8    strncat_m13(si1 *target, si1 *source, si4 target_field_bytes)
 
 si8    strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes)
 {
-	si1	*c;
-	si8	len = 0;
+	si1	*c, *c2, *t = NULL;
+	si8	len, tfb;
 	
 	
 	// returns length (not including terminal zeros)
-	
+	// strings may overlap
+
 	if (target == NULL) {
 		G_set_error_m13(E_UNSPEC_m13, "target is null");
 		return(-1);
 	}
-	
-	if (target_field_bytes < 1) {
-		G_set_error_m13(E_UNSPEC_m13, "invalid field bytes (%d)", target_field_bytes);
-		*target = 0;
+	if (source == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "source is null");
+		return(-1);
+	}
+	if (target_field_bytes <= 0) {
+		G_set_error_m13(E_UNSPEC_m13, "no target field bytes");
 		return(-1);
 	}
 	
-	c = target;
-	if (source == NULL) {
-		--target_field_bytes;
-	} else {
-		while (--target_field_bytes) {
-			if ((*c++ = *source++) == 0)
-				break;
+	if (target > source) {  // possible overwrite if arrays overlap (backwards copy not possible with strncpy)
+		for (c = source, tfb = target_field_bytes; tfb && *c; ++c, --tfb);
+		if (c >= target) {  // would overlap in forward copy
+			len = (si8) (c - source) + 1;
+			c = source;
+			source = c2 = t = malloc(len);
+			while ((*c++ = *c2++));  // copy to temp string (double parenthesis to suppress compiler warning)
 		}
-		len = (si8)((c - target) - 1);
 	}
+	
+	c = target;
+	while (--target_field_bytes) {
+		if ((*c++ = *source++) == 0)
+			break;
+	}
+	len = (si8)((c - target) - 1);
 	
 	if (target_field_bytes) {
 		while (--target_field_bytes)
@@ -41677,6 +41695,9 @@ si8    strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes)
 	}
 	
 	*c = '\0';
+	
+	if (t)
+		free((void *) t);
 	
 	return(len);
 }
