@@ -443,6 +443,12 @@ typedef struct {
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m12		0  // full permissions for everyone (Windows does not support "other" category)
 #endif
 
+// Pipes
+#define READ_END_m12		0
+#define WRITE_END_m12		1
+#define PIPE_FAILURE_m12	((si4) 254)
+#define PIPE_FAILURE_SEND_m12	((si4) -2)  // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m12)
+
 // Error Handling Constants
 #define USE_GLOBAL_BEHAVIOR_m12         ((ui4) 0)
 #define RESTORE_BEHAVIOR_m12            ((ui4) 1)
@@ -689,7 +695,7 @@ typedef struct {
 // System Pipe flags
 #define SP_DEFAULT_m12			0  // no flags set (default)
 #define SP_TEE_TO_TERMINAL_m12		1  // print buffer(s) to terminal in addition to returning
-#define SP_SEPERATE_STREAMS_m12		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
+#define SP_SEPARATE_STREAMS_m12		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
 
 // Spaces Constants
 #define NO_SPACES_m12                           0
@@ -4624,7 +4630,7 @@ si8		strcpy_m12(si1 *target, si1 *source);
 si8		strncat_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si8		strncpy_m12(si1 *target, si1 *source, si4 target_field_bytes);
 si4             system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function, ui4 behavior_on_fail);
-si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...);  // varargs(SP_SEPERATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		system_pipe_m12(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, const si1 *function, ui4 behavior, ...);  // varargs(SP_SEPARATE_STREAMS_m12 set): si1 **e_buffer_ptr, si8 e_buf_len
 si4		vasprintf_m12(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m12(FILE *stream, si1 *fmt, va_list args);
 si4		vprintf_m12(si1 *fmt, va_list args);
