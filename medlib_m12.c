@@ -34313,8 +34313,8 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	si1		sess_path[FULL_FILE_NAME_BYTES_m12], md_path[FULL_FILE_NAME_BYTES_m12];
 	si1		sess_name[BASE_FILE_NAME_BYTES_m12], tmp_str[FULL_FILE_NAME_BYTES_m12];
 	si1		num_str[FILE_NUMBERING_DIGITS_m12 + 1], type_string[TYPE_BYTES_m12];
-	si1		**chan_names, **vid_paths, **seg_names, **base_paths;
-	si4		i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_files, new_files;
+	si1		**chan_names, **vid_paths, **seg_names, **base_paths, **ssr_list;
+	si4		i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_ssrs, n_files, new_files;
 	si8		mmap_block_bytes, mem_block_bytes, mem_blocks;
 	FILE		*md_fp;
 	PRTY_FILE_m12	*files;
@@ -34700,21 +34700,18 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	
 	// segmented session records
 	if (flags & PRTY_SEG_SESS_RECS_m12) {
-		for (i = 0; i < n_segs; ++i) {
-			G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i + 1);
-			sprintf_m12(base_paths[i], "%s/%s.%s/%s_s%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12, sess_name, num_str);
-		}
-		
+		// get ssr list (all segments for segmented session records)
+		// n_ssrs not necessarily == n_segs (not written if no records)
+		sprintf_m12(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12);
+		ssr_list = G_generate_file_list_m12(NULL, &n_ssrs, tmp_str, NULL, RECORD_DATA_FILE_TYPE_STRING_m12, GFL_PATH_m12 | GFL_NAME_m12);
+
 		// segmented session record data
 		if (flags & PRTY_SEG_SESS_REC_DATA_m12) {
-			for (i = j = 0; i < n_segs; ++i) {
-				sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
-					++j;
-			}
-			if (j) {
+			for (i = 0; i < n_ssrs; ++i)
+				sprintf_m12(files[j].path, "%s.%s", ssr_list[i], RECORD_DATA_FILE_TYPE_STRING_m12);
+			if (n_ssrs) {
 				sprintf_m12(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12, RECORD_DATA_FILE_TYPE_STRING_m12);
-				parity_ps.n_files = j;
+				parity_ps.n_files = n_ssrs;
 				G_message_m12("Building segmented session record data parity ...\n");
 				PRTY_build_m12(&parity_ps);
 			}
@@ -34722,18 +34719,16 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		
 		// segmented session record indices
 		if (flags & PRTY_SEG_SESS_REC_IDX_m12) {
-			for (i = j = 0; i < n_segs; ++i) {
-				sprintf_m12(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_exists_m12(files[j].path) == FILE_EXISTS_m12)
-					++j;
-			}
-			if (j) {
+			for (i = 0; i < n_ssrs; ++i)
+				sprintf_m12(files[j].path, "%s.%s", ssr_list[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
+			if (n_ssrs) {
 				sprintf_m12(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				parity_ps.n_files = j;
+				parity_ps.n_files = n_ssrs;
 				G_message_m12("Building segmented session record indices parity ...\n");
 				PRTY_build_m12(&parity_ps);
 			}
-		}
+		}		
+		free_m12((void *) ssr_list, __FUNCTION__);
 	}
 
 	// session records

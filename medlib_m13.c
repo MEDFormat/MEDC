@@ -33080,17 +33080,17 @@ si4	PRTY_file_compare_m13(const void *a, const void *b)
 si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files)  // MED_path is MED file or directory
 {
 	tern	sess_files, ssr_files, chan_files, all_segs;
-	si1		sess_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
-	si1		sess_name[BASE_FILE_NAME_BYTES_m13] = { 0 };
-	si1		ssr_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
-	si1		chan_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
-	si1		seg_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
-	si1		tmp_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
-	si1		tmp_str[SEGMENT_BASE_FILE_NAME_BYTES_m13] = { 0 };
-	si1		**file_list, **tmp_list, **ssr_list, **chan_list, **seg_list, **vid_list;
-	ui4		type_code;
-	si4		i, j, k, tmp_files;
-	si4		n_ssrs, n_chans, n_segs, n_vids;
+	si1	sess_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1	sess_name[BASE_FILE_NAME_BYTES_m13] = { 0 };
+	si1	ssr_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1	chan_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1	seg_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
+	si1	tmp_str[SEGMENT_BASE_FILE_NAME_BYTES_m13] = { 0 };
+	si1	**file_list, **tmp_list, **ssr_list, **chan_list, **seg_list, **vid_list;
+	ui4	type_code;
+	si4	i, j, k, tmp_files;
+	si4	n_ssrs, n_chans, n_segs, n_vids;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -34149,7 +34149,7 @@ PRTY_VALIDATE_EXIT_m13:
 
 tern	PRTY_validate_pcrc_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 {
-	tern		return_bb;
+	tern			return_bb;
 	ui1			*block;
 	ui4			*n_blocks, n_b, *crcs, block_bytes;
 	si4			i, *n_bad_blocks, n_bb, bb_size, BAD_BLOCK_INCREMENT;
@@ -34273,8 +34273,8 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	si1			sess_path[FULL_FILE_NAME_BYTES_m13], md_path[FULL_FILE_NAME_BYTES_m13];
 	si1			sess_name[BASE_FILE_NAME_BYTES_m13], tmp_str[FULL_FILE_NAME_BYTES_m13];
 	si1			num_str[FILE_NUMBERING_DIGITS_m13 + 1], type_string[TYPE_BYTES_m13];
-	si1			**chan_names, **vid_paths, **seg_names, **base_paths;
-	si4			i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_files, new_files;
+	si1			**chan_names, **vid_paths, **seg_names, **base_paths, **ssr_list;
+	si4			i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_ssrs, n_files, new_files;
 	si8			mmap_block_bytes, mem_block_bytes, mem_blocks;
 	FILE_m13		*md_fp;
 	PROC_GLOBALS_m13	*proc_globals;
@@ -34660,21 +34660,18 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	
 	// segmented session records
 	if (flags & PRTY_SEG_SESS_RECS_m13) {
-		for (i = 0; i < n_segs; ++i) {
-			G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, i + 1);
-			sprintf_m13(base_paths[i], "%s/%s.%s/%s_s%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, sess_name, num_str);
-		}
-		
+		// get ssr list (all segments for segmented session records)
+		// n_ssrs not necessarily == n_segs (not written if no records)
+		sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13);
+		ssr_list = G_generate_file_list_m13(NULL, &n_ssrs, tmp_str, NULL, RECORD_DATA_FILE_TYPE_STRING_m13, GFL_PATH_m13 | GFL_NAME_m13);
+
 		// segmented session record data
 		if (flags & PRTY_SEG_SESS_REC_DATA_m13) {
-			for (i = j = 0; i < n_segs; ++i) {
-				sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_DATA_FILE_TYPE_STRING_m13);
-				if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
-					++j;
-			}
-			if (j) {
+			for (i = 0; i < n_ssrs; ++i)
+				sprintf_m13(files[j].path, "%s.%s", ssr_list[i], RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (n_ssrs) {
 				sprintf_m13(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, RECORD_DATA_FILE_TYPE_STRING_m13);
-				parity_ps.n_files = j;
+				parity_ps.n_files = n_ssrs;
 				G_message_m13("Building segmented session record data parity ...\n");
 				PRTY_build_m13(&parity_ps);
 			}
@@ -34682,18 +34679,16 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 		
 		// segmented session record indices
 		if (flags & PRTY_SEG_SESS_REC_IDX_m13) {
-			for (i = j = 0; i < n_segs; ++i) {
-				sprintf_m13(files[j].path, "%s.%s", base_paths[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
-				if (G_exists_m13(files[j].path) == FILE_EXISTS_m13)
-					++j;
-			}
-			if (j) {
+			for (i = 0; i < n_ssrs; ++i)
+				sprintf_m13(files[j].path, "%s.%s", ssr_list[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (n_ssrs) {
 				sprintf_m13(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, RECORD_INDICES_FILE_TYPE_STRING_m13);
-				parity_ps.n_files = j;
+				parity_ps.n_files = n_ssrs;
 				G_message_m13("Building segmented session record indices parity ...\n");
 				PRTY_build_m13(&parity_ps);
 			}
 		}
+		free_m13((void *) ssr_list);
 	}
 
 	// session records
