@@ -11231,7 +11231,7 @@ TERN_m12    G_recover_passwords_m12(si1 *L3_password, UNIVERSAL_HEADER_m12 *univ
 		G_message_m12("Level 1 password (bytes): '%s' (%s)\n", saved_L1_password_bytes, hex_str);
 		G_message_m12("No Level 2 password\n");
 	} else {
-		G_warning_message_m12("%s(): the level 3 password is not valid for recovery\n", __FUNCTION__, __LINE__);
+		G_warning_message_m12("%s(): the level 3 password is not valid for recovery\n", __FUNCTION__);
 		return(FALSE_m12);
 	}
 	
@@ -36178,7 +36178,7 @@ si1     *STR_re_escape_m12(si1 *str, si1 *esc_str)
 	while (*c1++);
 	len = c1 - str;
 	if (esc_str == NULL)  // up to caller to free
-		esc_str = (si1 *) calloc_m12((size_t) (len * 2), sizeof(si1), __FUNCTION__, __LINE__);
+		esc_str = (si1 *) calloc_m12((size_t) (len * 2), sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	strcpy(esc_str, str);
 	c1 = esc_str;
 	c2 = str - 1;
@@ -41362,7 +41362,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (realloc_buffer == TRUE_m12) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -41381,7 +41381,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (realloc_e_buffer == TRUE_m12) {
 			if (bytes_avail < 2) {
 				e_buf_len += BUFFER_SIZE_INC;
-				e_buffer = (si1 *) realloc_m12((void *) e_buffer, (size_t) e_buf_len, __FUNCTION__, __LINE__);
+				e_buffer = (si1 *) realloc_m12((void *) e_buffer, (size_t) e_buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -41423,27 +41423,27 @@ SYSTEM_PIPE_RETRY_m12:
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m12) {
 				buf_len = tot_buf_len;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			}
 		}
 		strncat(buffer, e_buffer, buf_len);
 	}
 
 	if (free_buffer == TRUE_m12)
-		free((void *) buffer);
+		free_m12((void *) buffer, __FUNCTION__);
 	if (free_e_buffer == TRUE_m12)
-		free((void *) e_buffer);
+		free_m12((void *) e_buffer, __FUNCTION__);
 	if (assign_buffer == TRUE_m12) {
 		if (*buffer)
 			*buffer_ptr = buffer;
 		else if (buffer_initially_null == TRUE_m12)
-			free((void *) buffer);
+			free_m12((void *) buffer, __FUNCTION__);
 	}
 	if (assign_e_buffer == TRUE_m12) {
 		if (*e_buffer)
 			*e_buffer_ptr = e_buffer;
 		else if (e_buffer_initially_null == TRUE_m12)
-			free((void *) e_buffer);
+			free_m12((void *) e_buffer, __FUNCTION__);
 	}
 
 	G_pop_behavior_m12();
@@ -41469,6 +41469,7 @@ SYSTEM_PIPE_FAIL_m12:
 
 	// try with file redirection
 	if (pipe_failure == TRUE_m12) {
+		
 		si1	*tmp_command, *tmp_file, *e_tmp_file;
 		si8	len;
 		FILE	*fp;
@@ -41489,7 +41490,7 @@ SYSTEM_PIPE_FAIL_m12:
 		if (realloc_buffer == TRUE_m12) {
 			if (bytes_in_buffer >= buf_len) {
 				buf_len = bytes_in_buffer + 1;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);  // allow for terminal zero
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);  // allow for terminal zero
 			}
 		} else {
 			bytes_in_buffer = buf_len - 1;
@@ -41504,13 +41505,13 @@ SYSTEM_PIPE_FAIL_m12:
 		bytes_in_e_buffer = G_file_length_m12(fp, NULL);
 		if (realloc_e_buffer == TRUE_m12) {
 			if (bytes_in_e_buffer >= e_buf_len) {
-				e_buf_len = bytes_in_e_buffer +  1;
+				e_buf_len = bytes_in_e_buffer + 1;
 				e_buffer = (si1 *) realloc_m12((void *) buffer, (size_t) e_buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);  // allow for terminal zero
 			}
 		} else {
 			bytes_in_e_buffer = e_buf_len - 1;
 		}
-		fread((void *) e_buffer, sizeof(si1), (size_t) e_buf_len, fp);
+		fread((void *) e_buffer, sizeof(si1), (size_t) bytes_in_e_buffer, fp);
 		fclose(fp);
 		e_buffer[bytes_in_e_buffer] = 0;  // terminal zero
 		G_remove_path_m12(e_tmp_file);  // delete temp file
@@ -41556,27 +41557,27 @@ SYSTEM_PIPE_FAIL_m12:
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m12) {
 				buf_len = tot_buf_len;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			}
 		}
 		strncat(buffer, e_buffer, buf_len);
 	}
 
 	if (free_buffer == TRUE_m12)
-		free((void *) buffer);
+		free_m12((void *) buffer, __FUNCTION__);
 	if (free_e_buffer == TRUE_m12)
-		free((void *) e_buffer);
+		free_m12((void *) e_buffer, __FUNCTION__);
 	if (assign_buffer == TRUE_m12) {
 		if (*buffer)
 			*buffer_ptr = buffer;
 		else if (buffer_initially_null == TRUE_m12)
-			free((void *) buffer);
+			free_m12((void *) buffer, __FUNCTION__);
 	}
 	if (assign_e_buffer == TRUE_m12) {
 		if (*e_buffer)
 			*e_buffer_ptr = e_buffer;
 		else if (e_buffer_initially_null == TRUE_m12)
-			free((void *) e_buffer);
+			free_m12((void *) e_buffer, __FUNCTION__);
 	}
 
 	G_pop_behavior_m12();
@@ -41797,7 +41798,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (realloc_buffer == TRUE_m12) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -41815,7 +41816,7 @@ SYSTEM_PIPE_RETRY_m12:
 		if (realloc_e_buffer == TRUE_m12) {
 			if (bytes_avail < 2) {
 				e_buf_len += BUFFER_SIZE_INC;
-				e_buffer = (si1 *) realloc_m12((void *) e_buffer, (size_t) e_buf_len, __FUNCTION__, __LINE__);
+				e_buffer = (si1 *) realloc_m12((void *) e_buffer, (size_t) e_buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -41834,7 +41835,6 @@ SYSTEM_PIPE_RETRY_m12:
 	CloseHandle(process_info.hProcess);  // process handle
 	CloseHandle(process_info.hThread);  // process' primary thread handle
 
-	
 	// errors
 	if (pipe_failure == TRUE_m12)
 		goto SYSTEM_PIPE_FAIL_m12;
@@ -41862,27 +41862,27 @@ SYSTEM_PIPE_RETRY_m12:
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m12) {
 				buf_len = tot_buf_len;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			}
 		}
 		strncat(buffer, e_buffer, buf_len);
 	}
 
 	if (free_buffer == TRUE_m12)
-		free((void *) buffer);
+		free_m12((void *) buffer, __FUNCTION__);
 	if (free_e_buffer == TRUE_m12)
-		free((void *) e_buffer);
+		free_m12((void *) e_buffer, __FUNCTION__);
 	if (assign_buffer == TRUE_m12) {
 		if (*buffer)
 			*buffer_ptr = buffer;
 		else if (buffer_initially_null == TRUE_m12)
-			free((void *) buffer);
+			free_m12((void *) buffer, __FUNCTION__);
 	}
 	if (assign_e_buffer == TRUE_m12) {
 		if (*e_buffer)
 			*e_buffer_ptr = e_buffer;
 		else if (e_buffer_initially_null == TRUE_m12)
-			free((void *) e_buffer);
+			free_m12((void *) e_buffer, __FUNCTION__);
 	}
 
 	G_pop_behavior_m12();
@@ -41934,7 +41934,7 @@ SYSTEM_PIPE_FAIL_m12:
 		if (realloc_buffer == TRUE_m12) {
 			if (bytes_in_buffer >= buf_len) {
 				buf_len = bytes_in_buffer + 1;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);  // allow for terminal zero
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);  // allow for terminal zero
 			}
 		} else {
 			bytes_in_buffer = buf_len - 1;
@@ -41998,27 +41998,27 @@ SYSTEM_PIPE_FAIL_m12:
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m12) {
 				buf_len = tot_buf_len;
-				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, __LINE__);
+				buffer = (si1 *) realloc_m12((void *) buffer, (size_t) buf_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			}
 		}
 		strncat(buffer, e_buffer, buf_len);
 	}
 
 	if (free_buffer == TRUE_m12)
-		free((void *) buffer);
+		free_m12((void *) buffer, __FUNCTION__);
 	if (free_e_buffer == TRUE_m12)
-		free((void *) e_buffer);
+		free_m12((void *) e_buffer, __FUNCTION__);
 	if (assign_buffer == TRUE_m12) {
 		if (*buffer)
 			*buffer_ptr = buffer;
 		else if (buffer_initially_null == TRUE_m12)
-			free((void *) buffer);
+			free_m12((void *) buffer, __FUNCTION__);
 	}
 	if (assign_e_buffer == TRUE_m12) {
 		if (*e_buffer)
 			*e_buffer_ptr = e_buffer;
 		else if (e_buffer_initially_null == TRUE_m12)
-			free((void *) e_buffer);
+			free_m12((void *) e_buffer, __FUNCTION__);
 	}
 
 	return(err);

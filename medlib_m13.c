@@ -5029,11 +5029,10 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 {
 	tern	regex;
 	si1		tmp_enclosing_directory[FULL_FILE_NAME_BYTES_m13], tmp_path[FULL_FILE_NAME_BYTES_m13];
-	si1		tmp_name[FULL_FILE_NAME_BYTES_m13], tmp_extension[16], tmp_ext[16], *buffer, *e_buffer, *c, *c2;
+	si1		tmp_name[FULL_FILE_NAME_BYTES_m13], tmp_extension[16], tmp_ext[16], *buffer, *c, *c2;
 	si1		**tmp_ptr_ptr;
 	ui4		path_parts;
 	si4		i, j, n_in_files, *n_out_files;
-	si8		e_buf_len;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -5164,11 +5163,9 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 		}
 		free_2D_m13((void **) file_list, n_in_files);
 
-		buffer = e_buffer = NULL;
-		e_buf_len = 0;
-		ret_val = system_pipe_m13(&buffer, 0, command, SP_SEPERATE_STREAMS_m13, &e_buffer, &e_buf_len);
-		if (e_buffer)
-			free_m13((void *) e_buffer);
+		buffer = NULL;
+		ret_val = system_pipe_m13(&buffer, 0, command, SP_SEPARATE_STREAMS_m13, NULL, 0);  // NULL because don't actually want error output
+		free((void *) command);
 		if (ret_val < 0) {
 			if (buffer)
 				free_m13((void *) buffer);
@@ -11919,7 +11916,7 @@ si1	*G_session_path_for_path_m13(si1 *path, si1 *sess_path)
 	si1		tmp_path[FULL_FILE_NAME_BYTES_m13];
 	EXT_CODE_m13	type;
 
-#ifdef FN_DEBUG_m12
+#ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
@@ -39657,13 +39654,17 @@ void	**AT_calloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el
 	dim2_bytes = dim2 * el_size;
 	content_bytes = dim1 * dim2_bytes;
 	total_bytes = dim1_bytes + content_bytes;
-	G_push_behavior_m13(SUPPRESS_ERROR_OUTPUT_m13);
 #ifdef AT_DEBUG_m13
+	G_push_behavior_m13(SUPPRESS_ERROR_OUTPUT_m13);
 	ptr = (void **) AT_calloc_m13(function, total_bytes, sizeof(ui1));
-#else
-	ptr = (void **) calloc(total_bytes, sizeof(ui1));
-#endif
 	G_pop_behavior_m13();
+#else
+	#ifdef MATLAB_PERSISTENT_m13
+	ptr = (void **) mxCalloc(total_bytes, sizeof(ui1));
+	#else
+	ptr = (void **) calloc(total_bytes, sizeof(ui1));
+	#endif
+#endif
 	if (ptr == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
@@ -39680,6 +39681,10 @@ void	**AT_calloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el
 		}
 	}
 			
+#ifdef MATLAB_PERSISTENT_m13
+	mexMakeMemoryPersistent(ptr);
+#endif
+	
 	return(ptr);
 }
 
@@ -40932,13 +40937,17 @@ void	**AT_malloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el
 	dim2_bytes = dim2 * el_size;
 	content_bytes = dim1 * dim2_bytes;
 	total_bytes = dim1_bytes + content_bytes;
-	G_push_behavior_m13(SUPPRESS_ERROR_OUTPUT_m13);
 #ifdef AT_DEBUG_m13
-	ptr = (void **) AT_calloc_m13(function, total_bytes, sizeof(ui1));
-#else
-	ptr = (void **) calloc(total_bytes, sizeof(ui1));
-#endif
+	G_push_behavior_m13(SUPPRESS_ERROR_OUTPUT_m13);
+	ptr = (void **) AT_malloc_m13(function, total_bytes);
 	G_pop_behavior_m13();
+#else
+	#ifdef MATLAB_PERSISTENT_m13
+	ptr = (void **) mxMalloc(total_bytes);
+	#else
+	ptr = (void **) malloc(total_bytes);
+	#endif
+#endif
 	if (ptr == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
@@ -40954,7 +40963,11 @@ void	**AT_malloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el
 			lh->en_bloc_allocation = TRUE_m13;
 		}
 	}
-			
+
+#ifdef MATLAB_PERSISTENT_m13
+	mexMakeMemoryPersistent(ptr);
+#endif
+
 	return(ptr);
 }
 
@@ -41372,13 +41385,11 @@ void	*AT_recalloc_m13(const si1 *function, void *curr_ptr, size_t curr_bytes, si
 		return(NULL);
 	}
 		
-	G_push_behavior_m13(SUPPRESS_ERROR_OUTPUT_m13);
 #ifdef MATLAB_PERSISTENT_m13
 	ptr = mxRealloc(curr_ptr, (mwSize) new_bytes);
 #else
 	ptr = realloc(curr_ptr, new_bytes);
 #endif
-	G_pop_behavior_m13();
 	if (ptr == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
@@ -41768,14 +41779,13 @@ si4		system_m13(si1 *command, ...) // varargs(command = NULL): si1 *command, ter
 
 // not a standard function, but closely related
 #if defined MACOS_m13 || defined LINUX_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
 {
-	tern	no_command, command_needs_shell, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
+	tern	command_needs_shell, pipe_failure, buffer_initially_null, e_buffer_initially_null;
+	tern	free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
 	si1	**e_buffer_ptr, *buffer, *e_buffer, *c;
-	ui4	behavior;
-	si4	ret_val, status, err, BUFFER_SIZE_INC;
-	si4	master_fd, stdout_master_fd, stdout_slave_fd, stderr_master_fd, stderr_slave_fd;
-	si8	bytes_in_buffer, bytes_in_e_buffer, bytes_avail, *e_buf_len;
+	si4	ret_val, status, err, BUFFER_SIZE_INC, stdout_pipe[2], stderr_pipe[2], retry_count;
+	si8	bytes_in_buffer, bytes_in_e_buffer, bytes_avail, e_buf_len, tot_buf_len;
 	pid_t	child_pid;
 
 #ifdef FN_DEBUG_m13
@@ -41784,22 +41794,22 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 
 	// executes command (for output, more efficient than redirecting to temp file & reading)
 	// if buffer_ptr == NULL, no buffer is returned
-	// if *buffer_ptr == NULL buffer is allocated on the heap (caller responsible for freeing)
+	// if *buffer_ptr == NULL buffer is allocated (caller responsible for freeing)
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
-	// *buffer_ptr contains a NULL terminated string from the system command, if passed
-	// returns negative system error number or buffer string length on success (zero if no buffer returned)
-	// if SP_SEPERATE_STREAMS_m13 flag is set, returns error buffer string length on success in e_buf_len (zero if no buffer returned)
-
-	behavior = G_current_behavior_m13();
-	errno_reset_m13();  // parent globals
-	err = 0;
+	// *buffer_ptr will contains a NULL terminated string from the system command, if passed
+	// if SP_SEPARATE_STREAMS_m13 flag is set, buffer string length returned in e_buf_len
+	// if buffer_ptr or e_buffer_ptr are NULL, they will be freed upon return
+	// if *buffer_ptr or *e_buffer_ptr are NULL:
+	//	if there is content they will be allocated, ownership transfers to caller
+	//	if there is no content, they will remain NULL
+	// if *buffer_ptr or *e_buffer_ptr are not NULL:
+	//	if the pointers are assignable, they will be reallocated as needed
+	//	if they are NOT assignable, returned output will be restricted to the passed buffer sizes on overflow
+	// 		if buf_len or e_buf_len are zero, the command will be executed with no output returned, only the system result
+	// 		the output will still be read, so if SP_TEE_TO_TERMINAL_m13 is set, output still be displayed
+	// returns system result code (0 on success or error code)
 	
-	no_command = FALSE_m13;
-	if (command == NULL)
-		no_command = TRUE_m13;
-	else if (*command == 0)
-		no_command = TRUE_m13;
-	if (no_command == TRUE_m13) {
+	if (STR_empty_m13(command) == TRUE_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "no command");
 		return_m13(-1);
 	}
@@ -41822,130 +41832,133 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 			case 39:  // single quote / apostrophe
 			case 96:  // grave accent
 				command_needs_shell = TRUE_m13;
-				goto SYSTEM_PIPE_NEEDS_SHELL_m13;
+				goto SYSTEM_PIPE_NEEDS_SHELL_m13;  // break out of while loop
 		}
 	} SYSTEM_PIPE_NEEDS_SHELL_m13:
-
+	
 	// skip any leading spaces in command (& re-increment from above)
 	while (*++command == 32);
-
+	
+	// discern calling configuration
+	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
 	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m13;
 		assign_buffer = FALSE_m13;
+		realloc_buffer = TRUE_m13;
 		buffer = NULL;
 		buf_len = 0;
 	} else {
 		free_buffer = FALSE_m13;
 		buffer = *buffer_ptr;
-		if (buffer == NULL) {
+		if (buffer == NULL) {  // no buffer passed, do with local buffers but do not return anything
+			buffer_initially_null = TRUE_m13;
 			assign_buffer = TRUE_m13;
+			realloc_buffer = TRUE_m13;
 			buf_len = 0;
-		} else {
+		} else {  // buffer pointer passed
 			assign_buffer = freeable_m13((void *) buffer);
-			if (assign_buffer == TRUE_m13)
-				buf_len = malloc_size_m13((void *) buffer);
+			if (assign_buffer == TRUE_m13) {  // pointer can be modified
+				buffer_initially_null = FALSE_m13;
+				realloc_buffer = TRUE_m13;
+				if (buf_len == 0)
+					buf_len = malloc_size_m13((void *) buffer);
+			} else {  // pointer cannot be modified
+				if (buf_len == 0) {  // no length passed, do with local buffers but do not return anything
+					free_buffer = TRUE_m13;
+					realloc_buffer = TRUE_m13;
+					buffer = NULL;
+				} else {  // finite length passed, restrict output to passed length
+					realloc_buffer = FALSE_m13;
+				}
+			}
 		}
 	}
-	
-	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
 	if (buf_len == 0) {
 		buf_len = BUFFER_SIZE_INC;
 		buffer = (si1 *) malloc_m13((size_t) buf_len);
 	}
-
+	
 	// get varargs & set up error buffer
-	if (flags & SP_SEPERATE_STREAMS_m13) {
+	if (flags & SP_SEPARATE_STREAMS_m13) {
 		va_list		v_args;
 		
 		va_start(v_args, flags);
 		e_buffer_ptr = va_arg(v_args, si1 **);
-		e_buf_len = va_arg(v_args, si8 *);
+		e_buf_len = va_arg(v_args, si8);
 		va_end(v_args);
-
-		if (e_buf_len == NULL) {
-			G_set_error_m13(E_UNSPEC_m13, "e_buf_len is NULL");
-			return_m13(-1);
-		}
-		
-		if (e_buffer_ptr == NULL) {
-			free_e_buffer = TRUE_m13;
-			assign_e_buffer = FALSE_m13;
-			e_buffer = NULL;
-			*e_buf_len = 0;
-		} else {
-			free_e_buffer = FALSE_m13;
-			e_buffer = *buffer_ptr;
-			if (e_buffer == NULL) {
-				assign_e_buffer = TRUE_m13;
-				*e_buf_len = 0;
-			} else {
-				assign_e_buffer = freeable_m13((void *) e_buffer);
-				if (assign_e_buffer == TRUE_m13)
-					*e_buf_len = malloc_size_m13((void *) e_buffer);
+	} else {
+		e_buffer_ptr = NULL;
+		e_buf_len = 0;
+	}
+	
+	if (e_buffer_ptr == NULL) {
+		free_e_buffer = TRUE_m13;
+		assign_e_buffer = FALSE_m13;
+		realloc_e_buffer = TRUE_m13;
+		e_buffer = NULL;
+		e_buf_len = 0;
+	} else {
+		free_e_buffer = FALSE_m13;
+		e_buffer = *e_buffer_ptr;
+		if (e_buffer == NULL) {  // no buffer passed, do with local buffers but do not return anything
+			e_buffer_initially_null = TRUE_m13;
+			assign_e_buffer = TRUE_m13;
+			realloc_e_buffer = TRUE_m13;
+			e_buf_len = 0;
+		} else {  // buffer pointer passed
+			assign_e_buffer = freeable_m13((void *) e_buffer);
+			if (assign_e_buffer == TRUE_m13) {  // pointer can be modified
+				e_buffer_initially_null = FALSE_m13;
+				realloc_e_buffer = TRUE_m13;
+				if (e_buf_len == 0)
+					e_buf_len = malloc_size_m13((void *) buffer);
+			} else {  // pointer cannot be modified
+				if (e_buf_len == 0) {  // no length passed, do with local buffers but do not return anything
+					free_e_buffer = TRUE_m13;
+					realloc_e_buffer = TRUE_m13;
+					e_buffer = NULL;
+				} else {  // finite length passed, restrict output to passed length
+					realloc_e_buffer = FALSE_m13;
+				}
 			}
 		}
-		
-		if (*e_buf_len == 0) {
-			*e_buf_len = BUFFER_SIZE_INC;
-			e_buffer = (si1 *) malloc_m13((size_t) *e_buf_len);
-		}
-	} else {
-		free_e_buffer = assign_e_buffer = FALSE_m13;
+	}
+	if (e_buf_len == 0) {
+		e_buf_len = BUFFER_SIZE_INC;
+		e_buffer = (si1 *) malloc_m13((size_t) e_buf_len);
 	}
 	
-	retried = FALSE_m13;
-	
+	if (G_current_behavior_m13() & RETRY_ONCE_m13)
+		retry_count = 1;
+	else
+		retry_count = 0;;
+
 SYSTEM_PIPE_RETRY_m13:
 	
-	// spawn child and connect to a pseudoterminal
-	*buffer = 0;
+	pipe_failure = FALSE_m13;
 	err = 0;
-	
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		stdout_master_fd = stdout_slave_fd = stderr_master_fd = stderr_slave_fd = 0;
-		*e_buffer = 0;
-		// create master & slave ends of pseudoterminal
-		if (openpty(&stdout_master_fd, &stdout_slave_fd, NULL, NULL, NULL) == -1) {
-			G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-		if (openpty(&stderr_master_fd, &stderr_slave_fd, NULL, NULL, NULL) == -1) {
-			G_warning_message_m13("%s(): openpty() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-		// set close on exec on master ends of pseudoterminal
-		if ((fcntl(stdout_master_fd, F_SETFD, FD_CLOEXEC)) == -1) {
-			G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-		if ((fcntl(stderr_master_fd, F_SETFD, FD_CLOEXEC)) == -1) {
-			G_warning_message_m13("%s(): fcntl() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-		child_pid = fork();
-		if (child_pid == -1) {
-			G_warning_message_m13("%s(): fork() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-	} else {
-		master_fd = 0;
-		child_pid = forkpty(&master_fd, NULL, NULL, NULL);
-		if (child_pid == -1) {
-			G_warning_message_m13("%s(): forkpty() error\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-	}
 
+	// spawn child
+	*buffer = *e_buffer = 0;
+	stdout_pipe[READ_END_m13] = stdout_pipe[WRITE_END_m13] = stderr_pipe[READ_END_m13] = stderr_pipe[WRITE_END_m13] = 0;
+	if (pipe(stdout_pipe) || pipe(stderr_pipe)) {
+		pipe_failure = TRUE_m13;
+		goto SYSTEM_PIPE_FAIL_m13;
+	}
+		
+	child_pid = fork();
+	if (child_pid == -1) {
+		pipe_failure = TRUE_m13;
+		goto SYSTEM_PIPE_FAIL_m13;
+	}
+	
 	if (child_pid == 0) {  // child process
 		
 		si1		*tmp_command, **args, *c2, *c3;
 		si4		arg_cnt, alloced_args, ALLOCED_ARGS_INC;
 		si8		command_len;
-
 		
-		errno_reset_m13();  // child globals
-		err = 0;
-
+		
 		// allocate argument pointers
 		if (command_needs_shell == TRUE_m13)
 			ALLOCED_ARGS_INC = 3;
@@ -41956,12 +41969,12 @@ SYSTEM_PIPE_RETRY_m13:
 		
 		// use shell to expand regex (less efficient, but simplest)
 		if (command_needs_shell == TRUE_m13) {
-			#ifdef MACOS_m13
+#ifdef MACOS_m13
 			args[0] = "/bin/sh";
-			#endif
-			#ifdef LINUX_m13
+#endif
+#ifdef LINUX_m13
 			args[0] = "/usr/bin/sh";
-			#endif
+#endif
 			args[1] = "-c";
 			args[2] = command;
 			args[3] = (char *) NULL;
@@ -42005,57 +42018,46 @@ SYSTEM_PIPE_RETRY_m13:
 			}
 			args[arg_cnt] = (si1 *) NULL;  // terminal NULL argument
 		}
-
-		if (flags & SP_SEPERATE_STREAMS_m13) {
-			// assign child stdout & stderr to slave file descriptors
-			if (login_tty(stdout_slave_fd)) {
-				G_set_error_m13(E_UNSPEC_m13, "child login_tty() error");
-				err = errno_m13();  // capture errno to send back to parent
-				err = (err < 0) ? err : -err;  // make negative, for return
-				return_m13(err);
-			}
-			// make slave end of stderr file descriptor equal stderr
-			if ((dup2(stderr_slave_fd, STDERR_FILENO)) == -1) {
-				G_set_error_m13(E_UNSPEC_m13, "child dup2() error");
-				err = errno_m13();  // capture errno to send back to parent
-				err = (err < 0) ? err : -err;  // make negative, for return
-				return_m13(err);
-			}
-		}
+		
+		dup2(stdout_pipe[WRITE_END_m13], STDOUT_FILENO);  // change child stdout to write end of stdout pipe
+		close(stdout_pipe[READ_END_m13]);  // close read end of stdout
+		dup2(stderr_pipe[WRITE_END_m13], STDERR_FILENO);  // change child stderr fd to write end of stderr pipe
+		close(stderr_pipe[READ_END_m13]);  // close read end of stderr
 		
 		// convert child to command
 		// if execvp() is successful, it does not return
 		// "p" version uses environment path if no "/" in args[0]
+		// child-allocated memory will be freed by kernel on exit
+		
 		if (execvp(args[0], args) == -1) {
-			G_set_error_m13(E_UNSPEC_m13, "child execvp() error");
-			err = errno_m13();  // capture errno to send back to parent
-			err = (err < 0) ? err : -err;  // make negative, for return
-			return_m13(err);  // exit child to allow parent to continue
+			close(stdout_pipe[WRITE_END_m13]);  // close write end of stdout
+			close(stderr_pipe[WRITE_END_m13]);  // close write end of stderr
+			free((void *) args);
+			if (tmp_command)
+				free((void *) tmp_command);
+			exit(PIPE_FAILURE_SEND_m13);
 		}
 	}  // rest is parent
-			
+	
 	// read child output
 	
-	// close slave ends of pseudoterminal
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		close(stdout_slave_fd);
-		close(stderr_slave_fd);
-		master_fd = stdout_master_fd;  // use master_fd to read stdout
-	}
-
-	// read combined output, or stdout
+	// close write ends of pipes
+	close(stdout_pipe[WRITE_END_m13]);
+	close(stderr_pipe[WRITE_END_m13]);
+	
+	// read stdout
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
-		ret_val = read(master_fd, buffer + bytes_in_buffer, bytes_avail - 1);  // leave room for terminal zero
+		ret_val = read(stdout_pipe[READ_END_m13], buffer + bytes_in_buffer, bytes_avail - 1);  // leave room for terminal zero
 		if (ret_val <= 0)
 			break;
 		bytes_in_buffer += ret_val;
 		bytes_avail -= ret_val;
-		if (assign_buffer == TRUE_m13) {
+		if (realloc_buffer == TRUE_m13) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
-				buffer = (si1 *) realloc((void *) buffer, (size_t) buf_len);
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
 				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
@@ -42063,203 +42065,214 @@ SYSTEM_PIPE_RETRY_m13:
 	buffer[bytes_in_buffer] = 0;  // set terminal zero
 	
 	// read stderr
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		bytes_in_e_buffer = 0;
-		bytes_avail = *e_buf_len;
-		while (bytes_avail > 1) {
-			ret_val = read(stderr_master_fd, e_buffer + bytes_in_e_buffer, bytes_avail - 1);  // leave room for terminal zero
-			if (ret_val <= 0)
-				break;
-			bytes_in_e_buffer += ret_val;
-			bytes_avail -= ret_val;
-			if (assign_e_buffer == TRUE_m13) {
-				if (bytes_avail < 2) {
-					*e_buf_len += BUFFER_SIZE_INC;
-					e_buffer = (si1 *) realloc((void *) e_buffer, (size_t) *e_buf_len);
-					bytes_avail += BUFFER_SIZE_INC;
-				}
+	bytes_in_e_buffer = 0;
+	bytes_avail = e_buf_len;
+	while (bytes_avail > 1) {
+		ret_val = read(stderr_pipe[READ_END_m13], e_buffer + bytes_in_e_buffer, bytes_avail - 1);  // leave room for terminal zero
+		if (ret_val <= 0)
+			break;
+		bytes_in_e_buffer += ret_val;
+		bytes_avail -= ret_val;
+		if (realloc_e_buffer == TRUE_m13) {
+			if (bytes_avail < 2) {
+				e_buf_len += BUFFER_SIZE_INC;
+				e_buffer = (si1 *) realloc_m13((void *) e_buffer, (size_t) e_buf_len);
+				bytes_avail += BUFFER_SIZE_INC;
 			}
 		}
-		e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
 	}
-
+	e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
+	
 	// wait for child
 	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
 	err = WEXITSTATUS(status);  // save any error code
+	
+	// errors
 	if (err) {
-		if (flags & SP_SEPERATE_STREAMS_m13) {
-			if (*e_buffer == 0 && *buffer)  // output in stdout, nothing in stderr => set no no error
-				err = 0;
-		}
-		if (command_needs_shell == TRUE_m13) {
-			err = errno_m13();
-			if (err == EIO)  // input/output error: not important
-				err = 0;
-		}
-		if (err)
+		if (err == PIPE_FAILURE_m13 || bytes_in_e_buffer) {
+			if (err == PIPE_FAILURE_m13)
+				pipe_failure = TRUE_m13;
 			goto SYSTEM_PIPE_FAIL_m13;
+		}
+		err = 0;  // there are a lots of benign error codes => if no error text, ignore
 	}
-
-	// close master ends of pseudoterminal
-	if (master_fd)
-		close(master_fd);
-	if (flags & SP_SEPERATE_STREAMS_m13)
-		if (stderr_master_fd)
-			close(stderr_master_fd);
+		
+	// close read ends of pipes
+	close(stdout_pipe[READ_END_m13]);
+	close(stderr_pipe[READ_END_m13]);
 	
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
-		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-		if (flags & SP_SEPERATE_STREAMS_m13)
-			G_message_m13("%s\n", e_buffer);
+		if (bytes_in_buffer || bytes_in_e_buffer) {
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			if (bytes_in_buffer)
+				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
+			if (bytes_in_e_buffer)
+				G_message_m13("[%serr%s]: %s", TC_RED_m13, TC_RESET_m13, e_buffer);
+		}
 	}
-
-	if (free_e_buffer == TRUE_m13) {
-		free((void *) e_buffer);
-		*e_buf_len = 0;
-	}
-	if (free_buffer == TRUE_m13) {
-		free((void *) buffer);
-		return_m13(0);
-	}
-		
-	if (assign_buffer == TRUE_m13)
-		*buffer_ptr = buffer;
-	if (assign_e_buffer == TRUE_m13)
-		*e_buffer_ptr = e_buffer;
 	
-	if (flags & SP_SEPERATE_STREAMS_m13)
-		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+	// fuse buffers
+	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		if (tot_buf_len > buf_len) {
+			if (realloc_buffer == TRUE_m13) {
+				buf_len = tot_buf_len;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
+			}
+		}
+		strncat(buffer, e_buffer, buf_len);
+	}
 
-	return_m13(bytes_in_buffer);
+	if (free_buffer == TRUE_m13)
+		free_m13((void *) buffer);
+	if (free_e_buffer == TRUE_m13)
+		free_m13((void *) e_buffer);
+	if (assign_buffer == TRUE_m13) {
+		if (*buffer)
+			*buffer_ptr = buffer;
+		else if (buffer_initially_null == TRUE_m13)
+			free_m13((void *) buffer);
+	}
+	if (assign_e_buffer == TRUE_m13) {
+		if (*e_buffer)
+			*e_buffer_ptr = e_buffer;
+		else if (e_buffer_initially_null == TRUE_m13)
+			free_m13((void *) e_buffer);
+	}
+
+	return(0);
 	
 SYSTEM_PIPE_FAIL_m13:
-	
-	// close master ends of pseudoterminal
-	if (master_fd)
-		close(master_fd);
-	if (flags & SP_SEPERATE_STREAMS_m13)
-		if (stderr_master_fd)
-			close(stderr_master_fd);
 
-	if (behavior & RETRY_ONCE_m13) {
-		if (retried == FALSE_m13) {
-			G_nap_m13("1 ms");  // wait 1 ms
-			retried = TRUE_m13;
-			goto SYSTEM_PIPE_RETRY_m13;
-		}
+	// close read ends of pipes, if open
+	if (stdout_pipe[READ_END_m13])
+		close(stdout_pipe[READ_END_m13]);
+	if (stderr_pipe[READ_END_m13])
+		close(stderr_pipe[READ_END_m13]);
+
+	if (retry_count) {
+		G_nap_m13("1 ms");  // wait 1 ms
+		--retry_count;
+		G_warning_message_m13("%s(): initial attempt failed => retrying\n", __FUNCTION__);
+		goto SYSTEM_PIPE_RETRY_m13;
 	}
 
-	// try with system_m13() redirected to temp file
-	si1	*tmp_command, tmp_file[FULL_FILE_NAME_BYTES_m13], *e_tmp_file;
-	si8	len;
-	FILE	*fp;
-	
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		e_tmp_file = (si1 *) malloc_m13((size_t) FULL_FILE_NAME_BYTES_m13);
-		G_unique_temp_file_m13(e_tmp_file);
-	} else {
-		e_tmp_file = tmp_file;
-	}
-	
-	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m13) + 9;
-	tmp_command = (si1 *) malloc(len);
-	G_unique_temp_file_m13(tmp_file);
-	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
-	err = system_m13(tmp_command, FALSE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
-	free((void *) tmp_command);
-	
-	fp = fopen(tmp_file, "r");
-	bytes_in_buffer = flen_m13((FILE_m13 *) fp);
-	if (assign_buffer == TRUE_m13) {
-		if (bytes_in_buffer >= buf_len) {
-			buf_len = bytes_in_buffer;
-			buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_buffer + 1));  // allow for terminal zero
-		}
-	}
-	fread((void *) buffer, sizeof(si1), (size_t) buf_len, fp);
-	fclose(fp);
-	buffer[bytes_in_buffer] = 0;  // terminal zero
-	G_remove_path_m13(tmp_file);  // delete temp file
-	
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		fp = fopen(e_tmp_file, "r");
-		free_m13((void *) e_tmp_file);
-		bytes_in_e_buffer = flen_m13((FILE_m13 *) fp);
-		if (assign_e_buffer == TRUE_m13) {
-			if (bytes_in_e_buffer >= *e_buf_len) {
-				*e_buf_len = bytes_in_e_buffer;
-				e_buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_e_buffer + 1));  // allow for terminal zero
+	// try with file redirection
+	if (pipe_failure == TRUE_m13) {
+		
+		si1		*tmp_command, *tmp_file, *e_tmp_file;
+		si8		len;
+		FILE_m13	*fp;
+		
+
+		G_warning_message_m13("%s(): pipe mechanism failed => using file redirection\n", __FUNCTION__);
+
+		len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m13) + 16;
+		tmp_command = (si1 *) malloc_m13(len);
+		tmp_file = G_unique_temp_file_m13(NULL);
+		e_tmp_file = G_unique_temp_file_m13(NULL);
+		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
+		err = system_m13(NULL, tmp_command, TRUE_m13);
+		free((void *) tmp_command);
+		
+		fp = fopen_m13(tmp_file, "r");
+		bytes_in_buffer = flen_m13(fp);
+		if (realloc_buffer == TRUE_m13) {
+			if (bytes_in_buffer >= buf_len) {
+				buf_len = bytes_in_buffer + 1;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);  // allow for terminal zero
 			}
+		} else {
+			bytes_in_buffer = buf_len - 1;
 		}
-		fread((void *) e_buffer, sizeof(si1), (size_t) *e_buf_len, fp);
-		fclose(fp);
+		fread_m13((void *) buffer, sizeof(si1), (size_t) bytes_in_buffer, fp);
+		fclose_m13(fp);
+		buffer[bytes_in_buffer] = 0;  // terminal zero
+		G_remove_path_m13(tmp_file);  // delete temp file
+		free_m13((void *) tmp_file);
+
+		fp = fopen_m13(e_tmp_file, "r");
+		bytes_in_e_buffer = flen_m13(fp);
+		if (realloc_e_buffer == TRUE_m13) {
+			if (bytes_in_e_buffer >= e_buf_len) {
+				e_buf_len = bytes_in_e_buffer + 1;
+				e_buffer = (si1 *) realloc_m13((void *) buffer, (size_t) e_buf_len);  // allow for terminal zero
+			}
+		} else {
+			bytes_in_e_buffer = e_buf_len - 1;
+		}
+		fread_m13((void *) e_buffer, sizeof(si1), (size_t) bytes_in_e_buffer, fp);
+		fclose_m13(fp);
 		e_buffer[bytes_in_e_buffer] = 0;  // terminal zero
 		G_remove_path_m13(e_tmp_file);  // delete temp file
-	}
+		free_m13((void *) e_tmp_file);
 
-	if (err) {
-		G_warning_message_m13("%s(): command \"%s\" failed\n",  __FUNCTION__, command);
-		if (flags & SP_TEE_TO_TERMINAL_m13) {
-			if (flags & SP_SEPERATE_STREAMS_m13) {
-				G_warning_message_m13("\tstandard out: \"%s\"\n", buffer);
-				G_warning_message_m13("\tstandard error: \"%s\"\n", e_buffer);
-			} else if (buffer) {
-				G_warning_message_m13("\tcaptured output: \"%s\"\n", buffer);
-			}
-		}
-		if (behavior & RETURN_ON_FAIL_m13)
-			G_warning_message_m13("\t=> returning\n\n");
-		else
-			G_warning_message_m13("\t=> exiting\n\n");
-		fflush(stderr);
+		if (err && bytes_in_e_buffer == 0) // there are a lots of benign error codes => if no error text, ignore
+			err = 0;
 	}
 	
-	if (flags & SP_TEE_TO_TERMINAL_m13) {
-		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-		if (flags & SP_SEPERATE_STREAMS_m13)
-			G_message_m13("%s\n", e_buffer);
-	}
-
+	// errors (may not be if redirection worked)
 	if (err) {
-		// make negative for return
-		bytes_in_buffer = err = (err > 0) ? -err : err;
-		
-		// free any allocated buffer unless seperate strems were requested
-		if ((flags & SP_SEPERATE_STREAMS_m13) == 0 && assign_buffer == TRUE_m13)
-			free_buffer = TRUE_m13;
+		G_set_error_m13(E_UNSPEC_m13, "command failed with message \"%s\" (err #%d)", strerror(err), err);
+		flags |= SP_TEE_TO_TERMINAL_m13;
+	}
+	
+	// tee
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		if (bytes_in_buffer || bytes_in_e_buffer) {
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			if (bytes_in_buffer)
+				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
+			if (bytes_in_e_buffer)
+				G_message_m13("[%serr%s]: %s", TC_RED_m13, TC_RESET_m13, e_buffer);
+		}
+	}
+	
+	// fuse buffers
+	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		if (tot_buf_len > buf_len) {
+			if (realloc_buffer == TRUE_m13) {
+				buf_len = tot_buf_len;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
+			}
+		}
+		strncat(buffer, e_buffer, buf_len);
 	}
 
-	if (free_e_buffer == TRUE_m13) {
-		free((void *) e_buffer);
-		*e_buf_len = 0;
+	if (free_buffer == TRUE_m13)
+		free_m13((void *) buffer);
+	if (free_e_buffer == TRUE_m13)
+		free_m13((void *) e_buffer);
+	if (assign_buffer == TRUE_m13) {
+		if (*buffer)
+			*buffer_ptr = buffer;
+		else if (buffer_initially_null == TRUE_m13)
+			free_m13((void *) buffer);
 	}
-	if (free_buffer == TRUE_m13) {
-		free((void *) buffer);
-		return_m13(err);  // zero if no error, otherwise error code
-	}
-		
-	if (assign_buffer == TRUE_m13)
-		*buffer_ptr = buffer;
 	if (assign_e_buffer == TRUE_m13) {
-		*e_buffer_ptr = e_buffer;
-		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+		if (*e_buffer)
+			*e_buffer_ptr = e_buffer;
+		else if (e_buffer_initially_null == TRUE_m13)
+			free_m13((void *) e_buffer);
 	}
 
-	return_m13(bytes_in_buffer);  // bytes in buffer if no error, otherwise error code
+	return_m13(err);
 }
 #endif  // MACOS_m13 || LINUX_m13
 
 
 // not a standard function, but closely related
 #ifdef WINDOWS_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
 {
-	tern		no_command, assign_buffer, assign_e_buffer, free_buffer, free_e_buffer, retried;
+	tern			pipe_failure, buffer_initially_null, e_buffer_initially_null;
+	tern			free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
 	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command;
 	ui4			behavior;
-	si4			BUFFER_SIZE_INC, err;
-	si8			len, *e_buf_len;
+	si4			BUFFER_SIZE_INC, err, retry_count;
+	si8			len, e_buf_len, tot_buf_len;
 	PROCESS_INFORMATION	process_info;
 	STARTUPINFOA		startup_info;
 	SECURITY_ATTRIBUTES 	sec_attr;
@@ -42273,89 +42286,128 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 
 	// executes command (for output, more efficient than redirecting to temp file & reading)
 	// if buffer_ptr == NULL, no buffer is returned
-	// if *buffer_ptr == NULL buffer is allocated on the heap (caller responsible for freeing)
+	// if *buffer_ptr == NULL buffer is allocated (caller responsible for freeing)
 	// else if *buffer_ptr is heap allocated, it will be dynamically reallocated as needed
-	// *buffer_ptr contains a NULL terminated string from the system command, if passed
-	// returns negative system error number or buffer string length on success (zero if no buffer returned)
-	// if SP_SEPERATE_STREAMS_m13 flag is set, returns error buffer string length on success in e_buf_len (zero if no buffer returned)
+	// *buffer_ptr will contains a NULL terminated string from the system command, if passed
+	// if SP_SEPARATE_STREAMS_m13 flag is set, buffer string length returned in e_buf_len
+	// if buffer_ptr or e_buffer_ptr are NULL, they will be freed upon return
+	// if *buffer_ptr or *e_buffer_ptr are NULL:
+	//	if there is content they will be allocated, ownership transfers to caller
+	//	if there is no content, they will remain NULL
+	// if *buffer_ptr or *e_buffer_ptr are not NULL:
+	//	if the pointers are assignable, they will be reallocated as needed
+	//	if they are NOT assignable, returned output will be restricted to the passed buffer sizes on overflow
+	// 		if buf_len or e_buf_len are zero, the command will be executed with no output returned, only the system result
+	// 		the output will still be read, so if SP_TEE_TO_TERMINAL_m13 is set, output still be displayed
+	// returns system result code (0 on success or error code)
 
-	behavior = G_current_behavior_m13();
-
-	no_command = FALSE_m13;
-	if (command == NULL)
-		no_command = TRUE_m13;
-	else if (*command == 0)
-		no_command = TRUE_m13;
-	if (no_command == TRUE_m13) {
+	if (G_empty_string_m13(command) == TRUE_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "no command");
 		return_m13(-1);
 	}
-
+	
+	// discern calling configuration
+	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
 	if (buffer_ptr == NULL) {
 		free_buffer = TRUE_m13;
 		assign_buffer = FALSE_m13;
+		realloc_buffer = TRUE_m13;
 		buffer = NULL;
 		buf_len = 0;
 	} else {
 		free_buffer = FALSE_m13;
 		buffer = *buffer_ptr;
-		if (buffer == NULL) {
+		if (buffer == NULL) {  // no buffer passed, do with local buffers but do not return anything
+			buffer_initially_null = TRUE_m13;
 			assign_buffer = TRUE_m13;
+			realloc_buffer = TRUE_m13;
 			buf_len = 0;
-		} else {
+		} else {  // buffer pointer passed
 			assign_buffer = freeable_m13((void *) buffer);
-			if (assign_buffer == TRUE_m13)
-				buf_len = malloc_size_m13((void *) buffer);
+			if (assign_buffer == TRUE_m13) {  // pointer can be modified
+				buffer_initially_null = FALSE_m13;
+				realloc_buffer = TRUE_m13;
+				if (buf_len == 0)
+					buf_len = malloc_size_m13((void *) buffer);
+			} else {  // pointer cannot be modified
+				if (buf_len == 0) {  // no length passed, do with local buffers but do not return anything
+					free_buffer = TRUE_m13;
+					realloc_buffer = TRUE_m13;
+					buffer = NULL;
+				} else {  // finite length passed, restrict output to passed length
+					realloc_buffer = FALSE_m13;
+				}
+			}
 		}
 	}
-	
-	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
 	if (buf_len == 0) {
 		buf_len = BUFFER_SIZE_INC;
 		buffer = (si1 *) malloc_m13((size_t) buf_len);
 	}
-
+	
 	// get varargs & set up error buffer
-	if (flags & SP_SEPERATE_STREAMS_m13) {
+	if (flags & SP_SEPARATE_STREAMS_m13) {
 		va_list		v_args;
 		
-		va_start(v_args, behavior);
+		va_start(v_args, flags);
 		e_buffer_ptr = va_arg(v_args, si1 **);
-		e_buf_len = va_arg(v_args, si8 *);
+		e_buf_len = va_arg(v_args, si8);
 		va_end(v_args);
-
-		if (e_buffer_ptr == NULL) {
-			free_e_buffer = TRUE_m13;
-			assign_e_buffer = FALSE_m13;
-			e_buffer = NULL;
-			*e_buf_len = 0;
-		} else {
-			free_e_buffer = FALSE_m13;
-			e_buffer = *buffer_ptr;
-			if (e_buffer == NULL) {
-				assign_e_buffer = TRUE_m13;
-				*e_buf_len = 0;
-			} else {
-				assign_e_buffer = freeable_m13((void *) e_buffer);
-				if (assign_e_buffer == TRUE_m13)
-					*e_buf_len = malloc_size_m13((void *) e_buffer);
-			}
-		}
-		
-		if (*e_buf_len == 0) {
-			*e_buf_len = BUFFER_SIZE_INC;
-			e_buffer = (si1 *) malloc_m13((size_t) *e_buf_len);
-		}
 	} else {
-		free_e_buffer = assign_e_buffer = FALSE_m13;
+		e_buffer_ptr = NULL;
+		e_buf_len = 0;
 	}
 	
-	retried = FALSE_m13;
+	if (e_buffer_ptr == NULL) {
+		free_e_buffer = TRUE_m13;
+		assign_e_buffer = FALSE_m13;
+		realloc_e_buffer = TRUE_m13;
+		e_buffer = NULL;
+		e_buf_len = 0;
+	} else {
+		free_e_buffer = FALSE_m13;
+		e_buffer = *e_buffer_ptr;
+		if (e_buffer == NULL) {  // no buffer passed, do with local buffers but do not return anything
+			e_buffer_initially_null = TRUE_m13;
+			assign_e_buffer = TRUE_m13;
+			realloc_e_buffer = TRUE_m13;
+			e_buf_len = 0;
+		} else {  // buffer pointer passed
+			assign_e_buffer = freeable_m13((void *) e_buffer);
+			if (assign_e_buffer == TRUE_m13) {  // pointer can be modified
+				e_buffer_initially_null = FALSE_m13;
+				realloc_e_buffer = TRUE_m13;
+				if (e_buf_len == 0)
+					e_buf_len = malloc_size_m13((void *) buffer);
+			} else {  // pointer cannot be modified
+				if (e_buf_len == 0) {  // no length passed, do with local buffers but do not return anything
+					free_e_buffer = TRUE_m13;
+					realloc_e_buffer = TRUE_m13;
+					e_buffer = NULL;
+				} else {  // finite length passed, restrict output to passed length
+					realloc_e_buffer = FALSE_m13;
+				}
+			}
+		}
+	}
+	if (e_buf_len == 0) {
+		e_buf_len = BUFFER_SIZE_INC;
+		e_buffer = (si1 *) malloc_m13((size_t) e_buf_len);
+	}
+
+	if (G_current_behavior_m13() & RETRY_ONCE_m13)
+		retry_count = 1;
+	else
+		retry_count = 0;;
 	
 SYSTEM_PIPE_RETRY_m13:
 	
+	pipe_failure = FALSE_m13;
+	errno_reset_m13();  // parent globals
+	err = 0;
+
 	tmp_command = NULL;
-	read_h = e_read_h =NULL;
+	read_h = e_read_h = NULL;
 	write_h = e_write_h = NULL;
 	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
 	ZeroMemory(&startup_info, sizeof(STARTUPINFO));
@@ -42365,22 +42417,20 @@ SYSTEM_PIPE_RETRY_m13:
 	sec_attr.lpSecurityDescriptor = NULL;
 	sec_attr.bInheritHandle = TRUE;
 	if (CreatePipe(&read_h, &write_h, &sec_attr, 0) == FALSE) {
-		G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
+		pipe_failure = TRUE_m13;
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	if (SetHandleInformation(read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
-		G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
+		pipe_failure = TRUE_m13;
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		if (CreatePipe(&e_read_h, &e_write_h, &sec_attr, 0) == FALSE) {
-			G_warning_message_m13("%s(): CreatePipe() failed\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-		if (SetHandleInformation(e_read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
-			G_warning_message_m13("%s(): SetHandleInformation() failed\n", __FUNCTION__);
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
+	if (CreatePipe(&e_read_h, &e_write_h, &sec_attr, 0) == FALSE) {
+		pipe_failure = TRUE_m13;
+		goto SYSTEM_PIPE_FAIL_m13;
+	}
+	if (SetHandleInformation(e_read_h, HANDLE_FLAG_INHERIT, 0) == FALSE) {  // process should not inherit read handle of read pipe
+		pipe_failure = TRUE_m13;
+		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	
 	// set up process
@@ -42394,7 +42444,7 @@ SYSTEM_PIPE_RETRY_m13:
 	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;  // make nShowWindow member valid
 	startup_info.wShowWindow = SW_HIDE;
 	startup_info.hStdOutput = write_h;
-	if (flags & SP_SEPERATE_STREAMS_m13)
+	if (flags & SP_SEPARATE_STREAMS_m13)
 		startup_info.hStdError = e_write_h;
 	else
 		startup_info.hStdError = write_h;  // put stdout & stderr on same pipe
@@ -42402,204 +42452,236 @@ SYSTEM_PIPE_RETRY_m13:
 	// start process
 	errno_reset_m13();
 	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &startup_info, &process_info) == 0) {
-		G_warning_message_m13("%s(): CreateProcess() failed\n", __FUNCTION__);
+		pipe_failure = TRUE_m13;
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
-	
+	free((void *) tmp_command);
+
 	// close unused pipe ends
 	CloseHandle(write_h);
-	if (flags & SP_SEPERATE_STREAMS_m13)
-		CloseHandle(e_write_h);
+	CloseHandle(e_write_h);
 
 	// read combined or stdout pipe
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
-		if (assign_buffer == TRUE_m13) {
-			if (bytes_avail < BUFFER_SIZE_INC) {
-				buf_len += BUFFER_SIZE_INC;
-				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
-				bytes_avail += BUFFER_SIZE_INC;
-			}
-		}
 		success = ReadFile(read_h, buffer + bytes_in_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
 		if (success == FALSE || n_bytes_read == 0)
 			break;
 		bytes_in_buffer += n_bytes_read;
 		bytes_avail -= n_bytes_read;
+		if (realloc_buffer == TRUE_m13) {
+			if (bytes_avail < 2) {
+				buf_len += BUFFER_SIZE_INC;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
+				bytes_avail += BUFFER_SIZE_INC;
+			}
+		}
 	}
 	buffer[bytes_in_buffer] = 0;  // set terminal zero
-	CloseHandle(read_h);
 
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		bytes_in_e_buffer = 0;
-		bytes_avail = *e_buf_len;
-		while (bytes_avail > 1) {
-			if (assign_e_buffer == TRUE_m13) {
-				if (bytes_avail < BUFFER_SIZE_INC) {
-					*e_buf_len += BUFFER_SIZE_INC;
-					buffer = (si1 *) realloc_m13((void *) buffer, (size_t) *e_buf_len);
-					bytes_avail += BUFFER_SIZE_INC;
-				}
+	bytes_in_e_buffer = 0;
+	bytes_avail = e_buf_len;
+	while (bytes_avail > 1) {
+		success = ReadFile(read_h, buffer + bytes_in_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
+		if (success == FALSE || n_bytes_read == 0)
+			break;
+		bytes_in_e_buffer += n_bytes_read;
+		bytes_avail -= n_bytes_read;
+		if (realloc_e_buffer == TRUE_m13) {
+			if (bytes_avail < 2) {
+				e_buf_len += BUFFER_SIZE_INC;
+				e_buffer = (si1 *) realloc_m13((void *) e_buffer, (size_t) e_buf_len);
+				bytes_avail += BUFFER_SIZE_INC;
 			}
-			success = ReadFile(read_h, buffer + bytes_in_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
-			if (success == FALSE || n_bytes_read == 0)
-				break;
-			bytes_in_e_buffer += n_bytes_read;
-			bytes_avail -= n_bytes_read;
 		}
-		buffer[bytes_in_e_buffer] = 0;  // set terminal zero
-		CloseHandle(e_read_h);
 	}
+	buffer[bytes_in_e_buffer] = 0;  // set terminal zero
 
-	free((void *) tmp_command);
-	CloseHandle(process_info.hProcess);  // process handle
-	CloseHandle(process_info.hThread);  // process' primary thread handle
-
-	if (flags & SP_TEE_TO_TERMINAL_m13) {
-		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-		if (flags & SP_SEPERATE_STREAMS_m13)
-			G_message_m13("%s\n", e_buffer);
-	}
-
-	if (free_e_buffer == TRUE_m13) {
-		free_m13((void *) e_buffer);
-		*e_buf_len = 0;
-	}
-	if (free_buffer == TRUE_m13) {
-		free_m13((void *) buffer);
-		return_m13(0);
-	}
-	
-	if (assign_buffer == TRUE_m13)
-		*buffer_ptr = buffer;
-	if (assign_e_buffer == TRUE_m13)
-		*e_buffer_ptr = e_buffer;
-	
-	if (flags & SP_SEPERATE_STREAMS_m13)
-		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
-
-	return(bytes_in_buffer);
-
-SYSTEM_PIPE_FAIL_m13:
-	
 	// check process
 	if (GetExitCodeProcess(process_info.hProcess, &exit_code))  // call to GetExitCodeProcess() succeeded, not the process itself
 		err = (si4) exit_code;
 	else
 		err = errno_m13();
 
+	// close process & read ends of pipes
+	CloseHandle(read_h);
+	CloseHandle(e_read_h);
+	CloseHandle(process_info.hProcess);  // process handle
+	CloseHandle(process_info.hThread);  // process' primary thread handle
+	
+	// errors
+	if (pipe_failure == TRUE_m13)
+		goto SYSTEM_PIPE_FAIL_m13;
+	if (err) {
+		if (bytes_in_e_buffer == 0)  // there are a lots of benign error codes => if no error text, ignore
+			err = 0;
+		else
+			goto SYSTEM_PIPE_FAIL_m13;
+	}
+
+	// tee
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		if (bytes_in_buffer || bytes_in_e_buffer) {
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			if (bytes_in_buffer)
+				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
+			if (bytes_in_e_buffer)
+				G_message_m13("[%serr%s]: %s", TC_RED_m13, TC_RESET_m13, e_buffer);
+		}
+	}
+
+	// fuse buffers
+	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		if (tot_buf_len > buf_len) {
+			if (realloc_buffer == TRUE_m13) {
+				buf_len = tot_buf_len;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
+			}
+		}
+		strncat(buffer, e_buffer, buf_len);
+	}
+
+	if (free_buffer == TRUE_m13)
+		free_m13((void *) buffer);
+	if (free_e_buffer == TRUE_m13)
+		free_m13((void *) e_buffer);
+	if (assign_buffer == TRUE_m13) {
+		if (*buffer)
+			*buffer_ptr = buffer;
+		else if (buffer_initially_null == TRUE_m13)
+			free_m13((void *) buffer);
+	}
+	if (assign_e_buffer == TRUE_m13) {
+		if (*e_buffer)
+			*e_buffer_ptr = e_buffer;
+		else if (e_buffer_initially_null == TRUE_m13)
+			free_m13((void *) e_buffer);
+	}
+
+	G_pop_behavior_m13();
+
+	return_m13(0);
+
+SYSTEM_PIPE_FAIL_m13:
+	
 	if (tmp_command)
 		free((void *) tmp_command);
 	if (read_h)
 		CloseHandle(read_h);
+	if (e_read_h)
+		CloseHandle(e_read_h);
 	if (process_info.hProcess)
 		CloseHandle(process_info.hProcess);
 	if (process_info.hThread)
 		CloseHandle(process_info.hThread);
 
-	if (behavior & RETRY_ONCE_m13) {
-		if (retried == FALSE_m13) {
-			G_nap_m13("1 ms");  // wait 1 ms
-			retried = TRUE_m13;
-			goto SYSTEM_PIPE_RETRY_m13;
-		}
+	if (retry_count) {
+		G_nap_m13("1 ms");  // wait 1 ms
+		--retry_count;
+		G_warning_message_m13("%s(): initial attempt failed => retrying\n", __FUNCTION__);
+		goto SYSTEM_PIPE_RETRY_m13;
 	}
 
-	// try with system_m13() redirected to temp file
-	si1		tmp_file[FULL_FILE_NAME_BYTES_m13], *e_tmp_file;
-	FILE_m13	*fp;
-	
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		e_tmp_file = (si1 *) malloc_m13((size_t) FULL_FILE_NAME_BYTES_m13);
-		G_unique_temp_file_m13(e_tmp_file);
-	} else {
-		e_tmp_file = tmp_file;
-	}
-	
-	len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m13) + 9;
-	tmp_command = (si1 *) malloc((size_t) len);
-	G_unique_temp_file_m13(tmp_file);
-	sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
-	err = system_m13(tmp_command, FALSE_m13, SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
-	free((void *) tmp_command);
-	fp = fopen_m13(tmp_file, "r");
-	bytes_in_buffer = flen_m13(fp);
-	if (assign_buffer == TRUE_m13) {
-		if (bytes_in_buffer >= buf_len) {
-			buf_len = bytes_in_buffer;
-			buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_buffer + 1));  // allow for terminal zero
-		}
-	}
-	fread_m13((void *) buffer, sizeof(si1), (size_t) buf_len, fp);
-	fclose_m13(fp);
-	buffer[buf_len] = 0;  // terminal zero
-	G_remove_path_m13(tmp_file);  // delete temp file
+	// try with file redirection
+	if (pipe_failure == TRUE_m13) {
+		si1		*tmp_file, *e_tmp_file;
+		FILE_m13	*fp;
 		
-	if (flags & SP_SEPERATE_STREAMS_m13) {
-		fp = fopen_m13(e_tmp_file, "r");
-		free_m13((void *) e_tmp_file);
-		bytes_in_e_buffer = flen_m13(fp);
-		if (assign_e_buffer == TRUE_m13) {
-			if (bytes_in_e_buffer >= *e_buf_len) {
-				*e_buf_len = bytes_in_e_buffer;
-				e_buffer = (si1 *) realloc((void *) buffer, (size_t) (bytes_in_e_buffer + 1));  // allow for terminal zero
-			}
-		}
-		fread_m13((void *) e_buffer, sizeof(si1), (size_t) *e_buf_len, fp);
-		fclose_m13(fp);
-		e_buffer[*e_buf_len] = 0;  // terminal zero
-		G_remove_path_m13(e_tmp_file);  // delete temp file
-	}
-	
-	if (err) {
-		G_warning_message_m13("%s(): command \"%s\" failed\n",  __FUNCTION__, command);
-		if (flags & SP_TEE_TO_TERMINAL_m13) {
-			if (flags & SP_SEPERATE_STREAMS_m13) {
-				G_warning_message_m13("\tstandard out: \"%s\"\n", buffer);
-				G_warning_message_m13("\n\tstandard error: \"%s\"\n", e_buffer);
-			} else if (buffer) {
-				G_warning_message_m13("\tcaptured output: \"%s\"\n", buffer);
-			}
-		}
-		if (behavior & RETURN_ON_FAIL_m13)
-			G_warning_message_m13("\t=> returning\n\n");
+		
+		G_warning_message_m13("%s(): pipe mechanism failed => using file redirection\n", __FUNCTION__);
+
+		len = strlen(command) + (2 * FULL_FILE_NAME_BYTES_m13) + 16;
+		tmp_command = (si1 *) malloc((size_t) len);
+		tmp_file = G_unique_temp_file_m13(NULL);
+		if (flags & SP_SEPARATE_STREAMS_m13)
+			e_tmp_file = G_unique_temp_file_m13(NULL);
 		else
-			G_warning_message_m13("\t=> exiting\n\n");
+			e_tmp_file = tmp_file;
+		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
+		err = system_m13(NULL, tmp_command, TRUE_m13);
+		free((void *) tmp_command);
+		fp = fopen_m13(tmp_file, "r");
+		bytes_in_buffer = flen_m13(fp);
+		if (realloc_buffer == TRUE_m13) {
+			if (bytes_in_buffer >= buf_len) {
+				buf_len = bytes_in_buffer + 1;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);  // allow for terminal zero
+			}
+		} else {
+			bytes_in_buffer = buf_len - 1;
+		}
+		fread_m13((void *) buffer, sizeof(si1), (size_t) bytes_in_buffer, fp);
+		fclose_m13(fp);
+		buffer[bytes_in_buffer] = 0;  // terminal zero
+		G_remove_path_m13(tmp_file);  // delete temp file
+		free_m13((void *) tmp_file);
+		
+		fp = fopen_m13(e_tmp_file, "r");
+		bytes_in_e_buffer = flen_m13(fp);
+		if (realloc_e_buffer == TRUE_m13) {
+			if (bytes_in_e_buffer >= e_buf_len) {
+				e_buf_len = bytes_in_e_buffer +  1;
+				e_buffer = (si1 *) realloc_m13((void *) buffer, (size_t) e_buf_len);  // allow for terminal zero
+			}
+		} else {
+			bytes_in_e_buffer = e_buf_len - 1;
+		}
+		fread_m13((void *) e_buffer, sizeof(si1), (size_t) e_buf_len, fp);
+		fclose_m13(fp);
+		e_buffer[bytes_in_e_buffer] = 0;  // terminal zero
+		G_remove_path_m13(e_tmp_file);  // delete temp file
+		free_m13((void *) e_tmp_file);
 	}
 	
-	if (flags & SP_TEE_TO_TERMINAL_m13) {
-		G_message_m13("%s[%s() tee]%s: %s%s%s\n%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13, TC_BLUE_m13, command, TC_RESET_m13, buffer);
-		if (flags & SP_SEPERATE_STREAMS_m13)
-			G_message_m13("%s\n", e_buffer);
-	}
-
+	// errors (may not be if redirection worked)
 	if (err) {
-		// make negative for return
-		bytes_in_buffer = err = (err > 0) ? -err : err;
-		
-		// free any allocated buffer unless seperate strems were requested
-		if ((flags & SP_SEPERATE_STREAMS_m13) == 0 && assign_buffer == TRUE_m13)
-			free_buffer = TRUE_m13;
+		G_set_error_m13(E_UNSPEC_m13, "command failed with message \"%s\" (err #%d)", strerror(err), err);
+		flags |= SP_TEE_TO_TERMINAL_m13;
 	}
 
-	if (free_e_buffer == TRUE_m13) {
-		free((void *) e_buffer);
-		*e_buf_len = 0;
+	// tee
+	if (flags & SP_TEE_TO_TERMINAL_m13) {
+		if (bytes_in_buffer || bytes_in_e_buffer) {
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			if (bytes_in_buffer)
+				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
+			if (bytes_in_e_buffer)
+				G_message_m13("[%serr%s]: %s", TC_RED_m13, TC_RESET_m13, e_buffer);
+		}
 	}
-	if (free_buffer == TRUE_m13) {
-		free((void *) buffer);
-		return_m13(err);  // zero if no error, otherwise error code
+	
+	// fuse buffers
+	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		if (tot_buf_len > buf_len) {
+			if (realloc_buffer == TRUE_m13) {
+				buf_len = tot_buf_len;
+				buffer = (si1 *) realloc_m13((void *) buffer, (size_t) buf_len);
+			}
+		}
+		strncat(buffer, e_buffer, buf_len);
 	}
-		
-	if (assign_buffer == TRUE_m13)
-		*buffer_ptr = buffer;
+
+	if (free_buffer == TRUE_m13)
+		free_m13((void *) buffer);
+	if (free_e_buffer == TRUE_m13)
+		free_m13((void *) e_buffer);
+	if (assign_buffer == TRUE_m13) {
+		if (*buffer)
+			*buffer_ptr = buffer;
+		else if (buffer_initially_null == TRUE_m13)
+			free_m13((void *) buffer);
+	}
 	if (assign_e_buffer == TRUE_m13) {
-		*e_buffer_ptr = e_buffer;
-		*e_buf_len = bytes_in_e_buffer;  // return value for error buffer
+		if (*e_buffer)
+			*e_buffer_ptr = e_buffer;
+		else if (e_buffer_initially_null == TRUE_m13)
+			free_m13((void *) e_buffer);
 	}
 
-	return_m13(bytes_in_buffer);  // bytes in buffer if no error, otherwise error code
+	return_m13(err);
 }
 
 #endif  // WINDOWS_m13

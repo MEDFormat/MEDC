@@ -458,6 +458,12 @@ typedef struct {
 	#define PROT_EXEC	4  // page can be executed
 #endif
 
+// Pipes
+#define READ_END_m13		0
+#define WRITE_END_m13		1
+#define PIPE_FAILURE_m13	((si4) 254)
+#define PIPE_FAILURE_SEND_m13	((si4) -2)  // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m13)
+
 // Target Value Constants (ui4)
 #define NO_INDEX_m13			-1  // assigned to signed values (si4 or si8)
 #define FIND_DEFAULT_MODE_m13        	0
@@ -704,7 +710,7 @@ typedef struct {
 // System Pipe flags
 #define SP_DEFAULT_m13			0  // no flags set (default)
 #define SP_TEE_TO_TERMINAL_m13		1  // print buffer(s) to terminal in addition to returning
-#define SP_SEPERATE_STREAMS_m13		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
+#define SP_SEPARATE_STREAMS_m13		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
 
 // Spaces Constants
 #define NO_SPACES_m13                           ((ui4) 0)
