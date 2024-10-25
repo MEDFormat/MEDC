@@ -34334,6 +34334,9 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 
 	G_message_m12("Creating parity data ...\n");
 
+	n_files = n_chans = n_vids = n_segs = n_ssrs = 0;
+	base_paths = NULL; files = NULL;
+	
 	// get volume block size
 	if (globals_m12->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12) {
 		G_path_from_root_m12(session_path, sess_path);
@@ -34364,7 +34367,6 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	}
 	
 	// get time series channel names
-	n_chans = n_segs = 0;
 	chan_names = NULL;
 	if (flags & PRTY_TS_MASK_m12) {
 		chan_names = G_generate_file_list_m12(NULL, &n_chans, sess_path, NULL, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12, GFL_NAME_m12);
@@ -34395,11 +34397,12 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	n_files = (n_chans > n_segs) ? n_chans : n_segs;
-	parity_ps.files = files = (PRTY_FILE_m12 *) malloc((size_t) n_files * sizeof(PRTY_FILE_m12));
-	mlock_m12((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	
-	base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	
+	if (n_files) {
+		parity_ps.files = files = (PRTY_FILE_m12 *) malloc((size_t) n_files * sizeof(PRTY_FILE_m12));
+		mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	}
+		
 	// build time series segment parity
 	if (n_chans) {
 		for (i = start_seg; i <= end_seg; ++i) {
@@ -34491,7 +34494,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 			}
 		}
 		
-		// build time series channel record base paths
+		// build time series channel record parity
 		if (flags & PRTY_TS_CHAN_RECS_m12) {
 			for (i = 0; i < n_chans; ++i)
 				sprintf_m12(base_paths[i], "%s/%s.%s/%s", sess_path, chan_names[i], TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m12, chan_names[i]);
@@ -34551,13 +34554,14 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	
 	new_files = (n_chans > n_segs) ? n_chans : n_segs;
 	if (new_files > n_files) {
-		munlock_m12((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		free((void *) parity_ps.files);
-		free_m12((void *) base_paths, __FUNCTION__);
-
+		if (n_files) {
+			munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			free_m12((void *) base_paths, __FUNCTION__);
+		}
+		
 		n_files = new_files;
-		parity_ps.files = files = (PRTY_FILE_m12 *) malloc((size_t) n_files * sizeof(PRTY_FILE_m12));
-		mlock_m12((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		parity_ps.files = files = (PRTY_FILE_m12 *) realloc((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12));
+		mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
 	
@@ -34704,11 +34708,17 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		// n_ssrs not necessarily == n_segs (not written if no records)
 		sprintf_m12(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12);
 		ssr_list = G_generate_file_list_m12(NULL, &n_ssrs, tmp_str, NULL, RECORD_DATA_FILE_TYPE_STRING_m12, GFL_PATH_m12 | GFL_NAME_m12);
+		if (n_ssrs > n_files) {
+			munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			n_files = n_ssrs;
+			parity_ps.files = files = (PRTY_FILE_m12 *) realloc((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12));
+			mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		}
 
 		// segmented session record data
 		if (flags & PRTY_SEG_SESS_REC_DATA_m12) {
 			for (i = 0; i < n_ssrs; ++i)
-				sprintf_m12(files[j].path, "%s.%s", ssr_list[i], RECORD_DATA_FILE_TYPE_STRING_m12);
+				sprintf_m12(files[i].path, "%s.%s", ssr_list[i], RECORD_DATA_FILE_TYPE_STRING_m12);
 			if (n_ssrs) {
 				sprintf_m12(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12, RECORD_DATA_FILE_TYPE_STRING_m12);
 				parity_ps.n_files = n_ssrs;
@@ -34720,14 +34730,14 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		// segmented session record indices
 		if (flags & PRTY_SEG_SESS_REC_IDX_m12) {
 			for (i = 0; i < n_ssrs; ++i)
-				sprintf_m12(files[j].path, "%s.%s", ssr_list[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
+				sprintf_m12(files[i].path, "%s.%s", ssr_list[i], RECORD_INDICES_FILE_TYPE_STRING_m12);
 			if (n_ssrs) {
 				sprintf_m12(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12, RECORD_INDICES_FILE_TYPE_STRING_m12);
 				parity_ps.n_files = n_ssrs;
 				G_message_m12("Building segmented session record indices parity ...\n");
 				PRTY_build_m12(&parity_ps);
 			}
-		}		
+		}
 		free_m12((void *) ssr_list, __FUNCTION__);
 	}
 
@@ -34760,9 +34770,12 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	free((void *) parity_ps.parity);
 	munlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) parity_ps.data);
-	munlock_m12((void *) parity_ps.files, (size_t) n_chans * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	free((void *) files);
-	free_m12((void *) base_paths, __FUNCTION__);
+	if (files) {
+		munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		free((void *) files);
+	}
+	if (base_paths)
+		free_m12((void *) base_paths, __FUNCTION__);
 
 	G_message_m12("Parity data created\n\n");
 

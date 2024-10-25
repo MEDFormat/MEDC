@@ -16542,7 +16542,7 @@ CMP_BUFFERS_m13    *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buf
 	// lock
 	buffers->locked = FALSE_m13;
 	if (lock_memory == TRUE_m13)
-		buffers->locked = mlock_m13((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, FALSE_m13);
+		buffers->locked = mlock_m13((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes);
 	
 	return_m13(buffers);
 }
@@ -19478,7 +19478,7 @@ tern	CMP_lock_buffers_m13(CMP_BUFFERS_m13 *buffers)
 
 	// lock
 	if (buffers->locked != TRUE_m13) {
-		buffers->locked = mlock_m13((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m13);
+		buffers->locked = mlock_m13((void *) buffers->buffer, buffers->total_allocated_bytes);
 		buffers->locked = TRUE_m13;
 	}
 
@@ -29633,9 +29633,9 @@ tern	HW_get_performance_specs_m13(tern get_current)
 	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr3 = (ui8 *) malloc((size_t) ROUNDS << 3);
-	mlock_m13((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m13);
-	mlock_m13((void *) test_arr2, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m13);
-	mlock_m13((void *) test_arr3, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m13);
+	mlock_m13((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)));
+	mlock_m13((void *) test_arr2, (size_t) (ROUNDS * sizeof(sf8)));
+	mlock_m13((void *) test_arr3, (size_t) (ROUNDS * sizeof(sf8)));
 
 	p1 = test_arr1;
 	p2 = test_arr2;
@@ -33671,9 +33671,9 @@ tern	PRTY_restore_m13(si1 *MED_path)
 	mem_blocks = mem_block_bytes / mmap_block_bytes;
 	parity_ps.mem_block_bytes = mem_blocks * mmap_block_bytes;
 	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m13);
+	mlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes);
 	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m13);
+	mlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes);
 	n_parity_files = allocated_parity_files = 0;
 	parity_path = parity_ps.path;
 	parity_files = NULL;
@@ -34295,6 +34295,9 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 
 	G_message_m13("Creating parity data ...\n");
 
+	n_files = n_chans = n_vids = n_segs = n_ssrs = 0;
+	base_paths = NULL; files = NULL;
+
 	// get volume block size
 	proc_globals = G_proc_globals_m13(NULL);
 	if (proc_globals->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
@@ -34324,7 +34327,6 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	}
 	
 	// get time series channel names
-	n_chans = n_segs = 0;
 	chan_names = NULL;
 	if (flags & PRTY_TS_MASK_m13) {
 		chan_names = G_generate_file_list_m13(NULL, &n_chans, sess_path, NULL, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_NAME_m13);
@@ -34349,16 +34351,17 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	parity_ps.mem_block_bytes = mem_block_bytes = mem_blocks * mmap_block_bytes;
 	
 	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m13);
+	mlock_m13((void *) parity_ps.parity, (size_t) mem_block_bytes);
 	
 	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m13);
+	mlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes);
 	
 	n_files = (n_chans > n_segs) ? n_chans : n_segs;
-	parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
-	mlock_m13((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m13), FALSE_m13);
-	
-	base_paths = (si1 **) calloc_2D_m13(n_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+	if (n_files) {
+		parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
+		mlock_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		base_paths = (si1 **) calloc_2D_m13(n_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+	}
 	
 	// build time series segment parity
 	if (n_chans) {
@@ -34511,13 +34514,14 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	
 	new_files = (n_chans > n_segs) ? n_chans : n_segs;
 	if (new_files > n_files) {
-		munlock_m13((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m13));
-		free_m13((void *) parity_ps.files);
-		free_m13((void *) base_paths);
+		if (n_files) {
+			munlock_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+			free_m13((void *) base_paths);
+		}
 
 		n_files = new_files;
-		parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
-		mlock_m13((void *) parity_ps.files, (size_t) n_files * sizeof(PRTY_FILE_m13), FALSE_m13);
+		parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		mlock_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
 		base_paths = (si1 **) calloc_2D_m13(n_files, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
 	}
 	
@@ -34664,11 +34668,17 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 		// n_ssrs not necessarily == n_segs (not written if no records)
 		sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13);
 		ssr_list = G_generate_file_list_m13(NULL, &n_ssrs, tmp_str, NULL, RECORD_DATA_FILE_TYPE_STRING_m13, GFL_PATH_m13 | GFL_NAME_m13);
+		if (n_ssrs > n_files) {
+			munlock_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+			n_files = n_ssrs;
+			parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+			mlock_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		}
 
 		// segmented session record data
 		if (flags & PRTY_SEG_SESS_REC_DATA_m13) {
 			for (i = 0; i < n_ssrs; ++i)
-				sprintf_m13(files[j].path, "%s.%s", ssr_list[i], RECORD_DATA_FILE_TYPE_STRING_m13);
+				sprintf_m13(files[i].path, "%s.%s", ssr_list[i], RECORD_DATA_FILE_TYPE_STRING_m13);
 			if (n_ssrs) {
 				sprintf_m13(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, RECORD_DATA_FILE_TYPE_STRING_m13);
 				parity_ps.n_files = n_ssrs;
@@ -34680,7 +34690,7 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 		// segmented session record indices
 		if (flags & PRTY_SEG_SESS_REC_IDX_m13) {
 			for (i = 0; i < n_ssrs; ++i)
-				sprintf_m13(files[j].path, "%s.%s", ssr_list[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
+				sprintf_m13(files[i].path, "%s.%s", ssr_list[i], RECORD_INDICES_FILE_TYPE_STRING_m13);
 			if (n_ssrs) {
 				sprintf_m13(parity_ps.path, "%s/%s.%s/parity_s0000.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m13, RECORD_INDICES_FILE_TYPE_STRING_m13);
 				parity_ps.n_files = n_ssrs;
@@ -34720,9 +34730,12 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	free_m13((void *) parity_ps.parity);
 	munlock_m13((void *) parity_ps.data, (size_t) mem_block_bytes);
 	free_m13((void *) parity_ps.data);
-	munlock_m13((void *) parity_ps.files, (size_t) n_chans * sizeof(PRTY_FILE_m13));
-	free_m13((void *) files);
-	free_m13((void *) base_paths);
+	if (files) {
+		munlock_m13((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		free_m13((void *) files);
+	}
+	if (base_paths)
+		free_m13((void *) base_paths);
 
 	G_message_m13("Parity data created\n\n");
 
@@ -41064,11 +41077,22 @@ void	*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_member
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	mlock_m13(void *addr, size_t len, tern zero_data)
+tern	mlock_m13(void *addr, size_t len, ...)  // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
 {
-	si4	ret_val;
+	tern		zero_data;
+	si4		ret_val;
+	va_list		v_args;
 	
 
+	if (addr == NULL) {
+		va_start(v_args, len);
+		addr = (void *) va_arg(v_args, void *);
+		len = (size_t) va_arg(v_args, size_t);
+		zero_data = (tern) va_arg(v_args, si4);
+		va_end(v_args);
+	} else {
+		zero_data = FALSE_m13;
+	}
 	errno_reset_m13();
 
 	#if defined MACOS_m13 || defined LINUX_m13

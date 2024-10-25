@@ -5002,7 +5002,7 @@ size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ..
 char		*getcwd_m13(char *buf, size_t size);
 size_t		malloc_size_m13(void *address);
 void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
-tern		mlock_m13(void *addr, size_t len, tern zero_data);
+tern		mlock_m13(void *addr, size_t len, ...);  // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 si4		printf_m13(si1 *fmt, ...);
