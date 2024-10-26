@@ -222,25 +222,41 @@ typedef long double	sf16;
 #define NOT_SET_m13			UNKNOWN_m13
 #define FALSE_m13			((tern) -1)
 
-// Reserved si8 Sample Values
+// Reserved si8 Values
 #define NAN_SI8_m13			((si8) 0x8000000000000000)
 #define NEG_INF_SI8_m13           	((si8) 0x8000000000000001)
 #define POS_INF_SI8_m13			((si8) 0x7FFFFFFFFFFFFFFF)
-#define MAX_SAMP_VAL_SI8_m13        	((si8) 0x7FFFFFFFFFFFFFFE)
-#define MIN_SAMP_VAL_SI8_m13		((si8) 0x8000000000000002)
-// Reserved si4 Sample Values
+#define MAX_VAL_SI8_m13        		((si8) 0x7FFFFFFFFFFFFFFE)
+#define MIN_VAL_SI8_m13			((si8) 0x8000000000000002)
+
+// Reserved ui8 Values
+#define POS_INF_UI8_m13			((ui8) 0xFFFFFFFFFFFFFFFF)
+#define MAX_VAL_UI8_m13        		((ui8) 0x7FFFFFFFFFFFFFFE)
+#define MIN_VAL_UI8_m13			((ui8) 0x0000000000000000)
+
+// Reserved si4 Values
 #define NAN_SI4_m13			((si4) 0x80000000)
 #define NEG_INF_SI4_m13           	((si4) 0x80000001)
 #define POS_INF_SI4_m13			((si4) 0x7FFFFFFF)
-#define MAX_SAMP_VAL_SI4_m13        	((si4) 0x7FFFFFFE)
-#define MIN_SAMP_VAL_SI4_m13		((si4) 0x80000002)
-// Reserved si2 Sample Values
+#define MAX_VAL_SI4_m13        		((si4) 0x7FFFFFFE)
+#define MIN_VAL_SI4_m13			((si4) 0x80000002)
+
+// Reserved ui4 Values
+#define POS_INF_UI4_m13			((ui4) 0xFFFFFFFF)
+#define MAX_VAL_UI4_m13        		((ui4) 0xFFFFFFFE)
+#define MIN_VAL_UI4_m13			((ui4) 0x00000000)
+
+// Reserved si2 Values
 #define NAN_SI2_m13			((si2) 0x8000)
 #define NEG_INF_SI2_m13           	((si2) 0x8001)
 #define POS_INF_SI2_m13			((si2) 0x7FFF)
-#define MAX_SAMP_VAL_SI2_m13        	((si2) 0x7FFE)
-#define MIN_SAMP_VAL_SI2_m13		((si2) 0x8002)
+#define MAX_VAL_SI2_m13        		((si2) 0x7FFE)
+#define MIN_VAL_SI2_m13			((si2) 0x8002)
 
+// Reserved ui2 Values
+#define POS_INF_UI2_m13			((ui2) 0xFFFF)
+#define MAX_VAL_UI2_m13        		((ui2) 0xFFFE)
+#define MIN_VAL_UI2_m13			((ui2) 0x0000)
 
 
 //**********************************************************************************//
@@ -808,14 +824,14 @@ typedef struct {
 // Metadata: File Format Constants - Section 1 Fields
 #define METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m13		1024	// utf8[63]
 #define METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m13		1280    // utf8[63]
-#define METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13		1536    // si1
+#define METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13		1536   // si1
 #define METADATA_SECTION_2_ENCRYPTION_LEVEL_DEFAULT_m13		LEVEL_1_ENCRYPTION_m13
 #define METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13		1537    // si1
 #define METADATA_SECTION_3_ENCRYPTION_LEVEL_DEFAULT_m13		LEVEL_2_ENCRYPTION_m13
-#define METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_OFFSET_m13	1538
-#define METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_DEFAULT_m13	NO_ENCRYPTION_m13
-#define METADATA_VIDEO_DATA_ENCRYPTION_LEVEL_OFFSET_m13		1539	// MED 1.1 & above
-#define METADATA_VIDEO_DATA_ENCRYPTION_LEVEL_DEFAULT_m13	NO_ENCRYPTION_m13
+#define METADATA_DATA_ENCRYPTION_LEVEL_OFFSET_m13		1538	// si1
+#define METADATA_DATA_ENCRYPTION_LEVEL_DEFAULT_m13		NO_ENCRYPTION_m13
+#define METADATA_SUPPLEMENTAL_PROTECTED_REGION_OFFSET_m13	1539
+#define METADATA_SUPPLEMENTAL_PROTECTED_REGION_BYTES_m13	1
 #define METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13		1540	// MED 1.1 & above
 #define METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13		256	// utf8[63]
 #define METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13		1796
@@ -1894,7 +1910,8 @@ typedef struct {
 	// Miscellaneous
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
-	si1				time_series_data_encryption_level;  // from metadata
+	si1				time_series_data_encryption_level;  // from time series metadata
+	si1				video_data_encryption_level;  // from video metadata
 } PROC_GLOBALS_m13;
 #else  // __cplusplus
 typedef struct {
@@ -1914,6 +1931,7 @@ typedef struct {
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
 	si1				time_series_data_encryption_level;  // from metadata
+	si1				video_data_encryption_level;  // from video metadata
 } PROC_GLOBALS_m13;
 #endif  // __cplusplus
 
@@ -2149,11 +2167,10 @@ typedef struct {
 typedef struct {
 	si1     level_1_password_hint[PASSWORD_HINT_BYTES_m13];
 	si1     level_2_password_hint[PASSWORD_HINT_BYTES_m13];
+	si1	anonymized_subject_ID[METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13]; // utf8[63], MED 1.1 & above (moved from universal header)
 	si1     section_2_encryption_level;
 	si1     section_3_encryption_level;
-	si1     time_series_data_encryption_level;
-	si1     video_data_encryption_level; // MED 1.1 & above
-	si1	anonymized_subject_ID[METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13]; // utf8[63], MED 1.1 & above (moved from universal header)
+	si1     data_encryption_level;
 	ui1     protected_region[METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13];
 	ui1     discretionary_region[METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m13];
 } METADATA_SECTION_1_m13;

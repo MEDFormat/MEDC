@@ -2352,9 +2352,12 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password;
 
-	// time series encryption global
-	proc_globals->time_series_data_encryption_level = fps->metadata->section_1.time_series_data_encryption_level;
-		
+	// data encryption level globals
+	if (fps->universal_header->type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m13)
+		proc_globals->time_series_data_encryption_level = fps->metadata->section_1.data_encryption_level;
+	else if (fps->universal_header->type_code == VIDEO_METADATA_FILE_TYPE_CODE_m13)
+		proc_globals->video_data_encryption_level = fps->metadata->section_1.data_encryption_level;
+
 	// section 2 decryption
 	if (fps->metadata->section_1.section_2_encryption_level > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
 		if (pwd->access_level >= fps->metadata->section_1.section_2_encryption_level) {
@@ -2474,12 +2477,11 @@ tern     G_decrypt_time_series_data_m13(FPS_m13 *fps)
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-	if (fps->metadata->section_1.time_series_data_encryption_level == NO_ENCRYPTION_m13)
-		return_m13(TRUE_m13);
 	
 	// get decryption key - assume all blocks encrypted at same level
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
+	if (proc_globals->time_series_data_encryption_level == NO_ENCRYPTION_m13)
+		return_m13(TRUE_m13);
 	pwd = &proc_globals->password;
 	bh = fps->parameters.cps->block_header;
 	
@@ -6733,8 +6735,8 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	// section 1 fields
 	md1->section_2_encryption_level = METADATA_SECTION_2_ENCRYPTION_LEVEL_DEFAULT_m13;
 	md1->section_3_encryption_level = METADATA_SECTION_3_ENCRYPTION_LEVEL_DEFAULT_m13;
-	md1->time_series_data_encryption_level = METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_DEFAULT_m13;
-	
+	md1->data_encryption_level = METADATA_DATA_ENCRYPTION_LEVEL_DEFAULT_m13;
+
 	// section 2 fields
 	
 	// type independent fields
@@ -12961,33 +12963,16 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 		printf_m13("(level 2, currently decrypted)\n");
 	else
 		printf_m13("(unrecognized code)\n");
-	printf_m13("Time Series Data Encryption Level: %d ", md1->time_series_data_encryption_level);
-	if (md1->time_series_data_encryption_level == NO_ENCRYPTION_m13)
+	printf_m13("Data Encryption Level: %d ", md1->data_encryption_level);
+	if (md1->data_encryption_level == NO_ENCRYPTION_m13)
 		printf_m13("(none)\n");
-	else if (md1->time_series_data_encryption_level == LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1, currently encrypted)\n");
-	else if (md1->time_series_data_encryption_level == LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2, currently encrypted)\n");
-	else if (md1->time_series_data_encryption_level == -LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1, currently decrypted)\n");
-	else if (md1->time_series_data_encryption_level == -LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2, currently decrypted)\n");
+	else if (md1->data_encryption_level == LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1)\n");
+	else if (md1->data_encryption_level == LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2)\n");
 	else
 		printf_m13("(unrecognized code)\n");
 	if (MED_version_major > 1 || MED_version_minor > 0) {  // MED 1.1 & above
-		printf_m13("Video Data Encryption Level: %d ", md1->video_data_encryption_level);
-		if (md1->video_data_encryption_level == NO_ENCRYPTION_m13)
-			printf_m13("(none)\n");
-		else if (md1->video_data_encryption_level == LEVEL_1_ENCRYPTION_m13)
-			printf_m13("(level 1, currently encrypted)\n");
-		else if (md1->video_data_encryption_level == LEVEL_2_ENCRYPTION_m13)
-			printf_m13("(level 2, currently encrypted)\n");
-		else if (md1->video_data_encryption_level == -LEVEL_1_ENCRYPTION_m13)
-			printf_m13("(level 1, currently decrypted)\n");
-		else if (md1->video_data_encryption_level == -LEVEL_2_ENCRYPTION_m13)
-			printf_m13("(level 2, currently decrypted)\n");
-		else
-			printf_m13("(unrecognized code)\n");
 		if (*md1->anonymized_subject_ID)
 			UTF8_printf_m13("Anonymized Subject ID: %s\n", md1->anonymized_subject_ID);
 		else
@@ -15449,9 +15434,7 @@ tern	ALCK_metadata_section_1_m13(ui1 *bytes)
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (&md1->section_3_encryption_level != (si1 *) (bytes + METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (&md1->time_series_data_encryption_level != (si1 *) (bytes + METADATA_TIME_SERIES_DATA_ENCRYPTION_LEVEL_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (&md1->video_data_encryption_level != (si1 *) (bytes + METADATA_VIDEO_DATA_ENCRYPTION_LEVEL_OFFSET_m13))
+	if (&md1->data_encryption_level != (si1 *) (bytes + METADATA_DATA_ENCRYPTION_LEVEL_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (md1->anonymized_subject_ID != (si1 *) (bytes + METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
