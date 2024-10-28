@@ -454,8 +454,6 @@ typedef struct {
 #define SAMPLE_NUMBER_EPS_m13			((sf8) 0.001)
 #define FRAME_NUMBER_EPS_m13			((sf8) 0.01)
 #define UNMAPPED_CHANNEL_m13			((si4) -1)
-#define SHOW_CURRENT_BEHAVIOR_m13		1
-#define SHOW_BEHAVIOR_STACK_m13			2
 #if defined MACOS_m13 || defined LINUX_m13
 	#define NULL_DEVICE_m13				"/dev/null"
 	#define DIR_BREAK_m13					'/'
@@ -640,62 +638,62 @@ typedef struct {
 #define GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13           ""
 #define GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13            ""
 
-// File Type Constants
-#define NO_TYPE_CODE_m13                                        (ui4) 0x0
+// Hierarchy Type Constants
+#define NO_TYPE_CODE_m13                                        ((ui4) 0x00000000)	// ui4 (big & little endian)
 #define UNKNOWN_TYPE_CODE_m13                                   NO_TYPE_CODE_m13
 #define NO_FILE_TYPE_STRING_m13				        ""			// ascii[4]
 #define NO_FILE_TYPE_CODE_m13				        NO_TYPE_CODE_m13	// ui4 (big & little endian)
 #define ALL_TYPES_STRING_m13		        		"allt"			// ascii[4]
-#define ALL_TYPES_CODE_m13                                      (ui4) 0x746C6C61	// ui4 (little endian)
-// #define ALL_TYPES_CODE_m13					(ui4) 0x616C6C74	// ui4 (big endian)
+#define ALL_TYPES_CODE_m13                                      ((ui4) 0x746C6C61)	// ui4 (little endian)
+// #define ALL_TYPES_CODE_m13					((ui4) 0x616C6C74)	// ui4 (big endian)
 #define GENERIC_FILE_TYPE_STRING_m13		        	"file"			// ascii[4]
-#define GENERIC_FILE_TYPE_CODE_m13                         	(ui4) 0x656C6966	// ui4 (little endian)
-// #define GENERIC_FILE_TYPE_CODE_m13				(ui4) 0x66696C65        // ui4 (big endian)
+#define GENERIC_FILE_TYPE_CODE_m13                         	((ui4) 0x656C6966)	// ui4 (little endian)
+// #define GENERIC_FILE_TYPE_CODE_m13				((ui4) 0x66696C65)	// ui4 (big endian)
 #define PROC_GLOBALS_TYPE_STRING_m13		        	"pglb"			// ascii[4]
-#define PROC_GLOBALS_TYPE_CODE_m13                         	(ui4) 0x626C6770	// ui4 (little endian)
-// #define PROC_GLOBALS_TYPE_CODE_m13				(ui4) 0x70676C62        // ui4 (big endian)
+#define PROC_GLOBALS_TYPE_CODE_m13                         	((ui4) 0x626C6770)	// ui4 (little endian)
+// #define PROC_GLOBALS_TYPE_CODE_m13				((ui4) 0x70676C62)	// ui4 (big endian)
 #define SESSION_DIRECTORY_TYPE_STRING_m13		        "medd"			// ascii[4]
-#define SESSION_DIRECTORY_TYPE_CODE_m13                         (ui4) 0x6464656D	// ui4 (little endian)
-// #define SESSION_DIRECTORY_TYPE_CODE_m13                      (ui4) 0x6D656464        // ui4 (big endian)
+#define SESSION_DIRECTORY_TYPE_CODE_m13                         ((ui4) 0x6464656D)	// ui4 (little endian)
+// #define SESSION_DIRECTORY_TYPE_CODE_m13                      ((ui4) 0x6D656464)	// ui4 (big endian)
 #define TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13           "ticd"                  // ascii[4]
-#define TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13             (ui4) 0x64636974        // ui4 (little endian)
-// #define TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13          (ui4) 0x74696364        // ui4 (big endian)
+#define TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13             ((ui4) 0x64636974)	// ui4 (little endian)
+// #define TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13          ((ui4) 0x74696364)	// ui4 (big endian)
 #define TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13           "tisd"                  // ascii[4]
-#define TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13             (ui4) 0x64736974        // ui4 (little endian)
-// #define TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13          (ui4) 0x74697364        // ui4 (big endian)
+#define TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13             ((ui4) 0x64736974)	// ui4 (little endian)
+// #define TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13          ((ui4) 0x74697364)	// ui4 (big endian)
 #define TIME_SERIES_METADATA_FILE_TYPE_STRING_m13               "tmet"                  // ascii[4]
-#define TIME_SERIES_METADATA_FILE_TYPE_CODE_m13                 (ui4) 0x74656D74        // ui4 (little endian)
-// #define TIME_SERIES_METADATA_FILE_TYPE_CODE_m13              (ui4) 0x746D6574        // ui4 (big endian)
+#define TIME_SERIES_METADATA_FILE_TYPE_CODE_m13                 ((ui4) 0x74656D74)	// ui4 (little endian)
+// #define TIME_SERIES_METADATA_FILE_TYPE_CODE_m13              ((ui4) 0x746D6574)	// ui4 (big endian)
 #define TIME_SERIES_DATA_FILE_TYPE_STRING_m13                   "tdat"                  // ascii[4]
-#define TIME_SERIES_DATA_FILE_TYPE_CODE_m13                     (ui4) 0x74616474        // ui4 (little endian)
-// #define TIME_SERIES_DATA_FILE_TYPE_CODE_m13                  (ui4) 0x74646174        // ui4 (big endian)
+#define TIME_SERIES_DATA_FILE_TYPE_CODE_m13                     ((ui4) 0x74616474)	// ui4 (little endian)
+// #define TIME_SERIES_DATA_FILE_TYPE_CODE_m13                  ((ui4) 0x74646174)	// ui4 (big endian)
 #define TIME_SERIES_INDICES_FILE_TYPE_STRING_m13                "tidx"                  // ascii[4]
-#define TIME_SERIES_INDICES_FILE_TYPE_CODE_m13                  (ui4) 0x78646974        // ui4 (little endian)
-// #define TIME_SERIES_INDICES_FILE_TYPE_CODE_m13               (ui4) 0x74696478        // ui4 (big endian)
+#define TIME_SERIES_INDICES_FILE_TYPE_CODE_m13                  ((ui4) 0x78646974)	// ui4 (little endian)
+// #define TIME_SERIES_INDICES_FILE_TYPE_CODE_m13               ((ui4) 0x74696478)	// ui4 (big endian)
 #define VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13                 "visd"                  // ascii[4]
-#define VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13                   (ui4) 0x64736976        // ui4 (little endian)
-// #define VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13                (ui4) 0x76697364        // ui4 (big endian)
+#define VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13                   ((ui4) 0x64736976)	// ui4 (little endian)
+// #define VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13                ((ui4) 0x76697364)	// ui4 (big endian)
 #define VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13                 "vicd"                  // ascii[4]
-#define VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13                   (ui4) 0x64636976        // ui4 (little endian)
-// #define VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13                (ui4) 0x76696364        // ui4 (big endian)
+#define VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13                   ((ui4) 0x64636976)	// ui4 (little endian)
+// #define VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13                ((ui4) 0x76696364)	// ui4 (big endian)
 #define VIDEO_METADATA_FILE_TYPE_STRING_m13                     "vmet"                  // ascii[4]
-#define VIDEO_METADATA_FILE_TYPE_CODE_m13                       (ui4) 0x74656D76        // ui4 (little endian)
-// #define VIDEO_METADATA_FILE_TYPE_CODE_m13                    (ui4) 0x766D6574        // ui4 (big endian)
+#define VIDEO_METADATA_FILE_TYPE_CODE_m13                       ((ui4) 0x74656D76)	// ui4 (little endian)
+// #define VIDEO_METADATA_FILE_TYPE_CODE_m13                    ((ui4) 0x766D6574)	// ui4 (big endian)
 #define VIDEO_DATA_FILE_TYPE_STRING_m13                   	"vdat"                  // ascii[4]			// NOT a file type extension
-#define VIDEO_DATA_FILE_TYPE_CODE_m13                     	(ui4) 0x74616476        // ui4 (little endian)		// NOT a file type extension
-// #define VIDEO_DATA_FILE_TYPE_CODE_m13                  	(ui4) 0x76646174        // ui4 (big endian)		// NOT a file type extension
+#define VIDEO_DATA_FILE_TYPE_CODE_m13                     	((ui4) 0x74616476)	// ui4 (little endian)		// NOT a file type extension
+// #define VIDEO_DATA_FILE_TYPE_CODE_m13                  	((ui4) 0x76646174)	// ui4 (big endian)		// NOT a file type extension
 #define VIDEO_INDICES_FILE_TYPE_STRING_m13                      "vidx"                  // ascii[4]
-#define VIDEO_INDICES_FILE_TYPE_CODE_m13                        (ui4) 0x78646976        // ui4 (little endian)
-// #define VIDEO_INDICES_FILE_TYPE_CODE_m13                     (ui4) 0x76696478        // ui4 (big endian)
-#define RECORD_DIRECTORY_TYPE_STRING_m13                        "recd"                        // ascii[4]
-#define RECORD_DIRECTORY_TYPE_CODE_m13                          (ui4) 0x64636572        // ui4 (little endian)
-// #define RECORD_DIRECTORY_TYPE_CODE_m13                       (ui4) 0x72656364        // ui4 (big endian)
+#define VIDEO_INDICES_FILE_TYPE_CODE_m13                        ((ui4) 0x78646976)	// ui4 (little endian)
+// #define VIDEO_INDICES_FILE_TYPE_CODE_m13                     ((ui4) 0x76696478)	// ui4 (big endian)
+#define RECORD_DIRECTORY_TYPE_STRING_m13                        "recd"			// ascii[4]
+#define RECORD_DIRECTORY_TYPE_CODE_m13                          ((ui4) 0x64636572)	// ui4 (little endian)
+// #define RECORD_DIRECTORY_TYPE_CODE_m13                       ((ui4) 0x72656364)	// ui4 (big endian)
 #define RECORD_DATA_FILE_TYPE_STRING_m13                        "rdat"			// ascii[4]
-#define RECORD_DATA_FILE_TYPE_CODE_m13                          (ui4) 0x74616472	// ui4 (little endian)
-// #define RECORD_DATA_FILE_TYPE_CODE_m13                       (ui4) 0x72646174	// ui4 (big endian)
+#define RECORD_DATA_FILE_TYPE_CODE_m13                          ((ui4) 0x74616472)	// ui4 (little endian)
+// #define RECORD_DATA_FILE_TYPE_CODE_m13                       ((ui4) 0x72646174)	// ui4 (big endian)
 #define RECORD_INDICES_FILE_TYPE_STRING_m13                     "ridx"			// ascii[4]
-#define RECORD_INDICES_FILE_TYPE_CODE_m13                       (ui4) 0x78646972	// ui4 (little endian)
-// #define RECORD_INDICES_FILE_TYPE_CODE_m13                    (ui4) 0x72696478	// ui4 (big endian)
+#define RECORD_INDICES_FILE_TYPE_CODE_m13                       ((ui4) 0x78646972)	// ui4 (little endian)
+// #define RECORD_INDICES_FILE_TYPE_CODE_m13                    ((ui4) 0x72696478)	// ui4 (big endian)
 
 // Channel Types
 #define UNKNOWN_CHANNEL_TYPE_m13	NO_FILE_TYPE_CODE_m13
@@ -1575,15 +1573,19 @@ tern		NET_trim_address_m13(si1 *addr_str);
 //**********************************  MED Errors  **********************************//
 //**********************************************************************************//
 
-// Error Handling Constants
+// Behavior constants
 #define CURRENT_BEHAVIOR_m13		((ui4) 0xFFFFFFFF)  // get behavior from stack
+#define SHOW_CURRENT_BEHAVIOR_m13	((ui4) 1 << 0)
+#define SHOW_BEHAVIOR_STACK_m13		((ui4) 1 << 1)
+
+// Error Handling Constants
 #define DEFAULT_BEHAVIOR_m13		((ui4) 0)  // show all output & exit on error (with no retries)
-#define RETURN_ON_FAIL_m13		((ui4) 1)  // if not set, exit program
-#define SUPPRESS_ERROR_OUTPUT_m13       ((ui4) 2)
-#define SUPPRESS_WARNING_OUTPUT_m13     ((ui4) 4)
-#define SUPPRESS_MESSAGE_OUTPUT_m13     ((ui4) 8)
+#define RETURN_ON_FAIL_m13		((ui4) 1 << 0)  // if not set, exit program
+#define SUPPRESS_ERROR_OUTPUT_m13       ((ui4) 1 << 1)
+#define SUPPRESS_WARNING_OUTPUT_m13     ((ui4) 1 << 2)
+#define SUPPRESS_MESSAGE_OUTPUT_m13     ((ui4) 1 << 3)
 #define SUPPRESS_OUTPUT_m13         	(SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13)
-#define RETRY_ONCE_m13                  ((ui4) 16)
+#define RETRY_ONCE_m13                  ((ui4) 1 << 4)
 
 // error codes
 #define	E_NONE_m13			0
@@ -1870,9 +1872,9 @@ typedef struct LEVEL_HEADER_m13 {
 			si1		type_string_terminal_zero;  // not used - here for clarity
 		};
 	};
-	struct LEVEL_HEADER_m13	*parent;  // parent structure, NULL for session or if created alone
-	ui8			flags;
-	si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
+	struct LEVEL_HEADER_m13		*parent;  // parent structure, NULL for PROC_GLOBALS_m13
+	ui8				flags;
+	volatile si8			access_time;  // uutc of last use of this structure by the calling program (updated by read & open functions)
 } LEVEL_HEADER_m13;
 
 // non-standard structure
@@ -1900,16 +1902,17 @@ typedef struct {
 		};
 	};
 	// Password
-	PASSWORD_DATA_m13               password;
+	PASSWORD_DATA_m13               password_data;
 	// Current Session
-	CURRENT_SESSION_m13		session;
+	CURRENT_SESSION_m13		current_session;
 	// Active Channels
 	ACTIVE_CHANNELS_m13		active_channels;
 	// Time Constants
-	TIME_CONSTANTS_m13		time;
+	TIME_CONSTANTS_m13		time_constants;
 	// Miscellaneous
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
-	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
+	LEVEL_HEADER_m13		*child;  // hierarchy level immediately below these process globals
+	ui4				memory_map_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
 	si1				time_series_data_encryption_level;  // from time series metadata
 	si1				video_data_encryption_level;  // from video metadata
 } PROC_GLOBALS_m13;
@@ -1929,6 +1932,7 @@ typedef struct {
 	TIME_CONSTANTS_m13		time;
 	// Miscellaneous
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
+	LEVEL_HEADER_m13		*child;  // hierarchy level immediately below these process globals
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
 	si1				time_series_data_encryption_level;  // from metadata
 	si1				video_data_encryption_level;  // from video metadata
@@ -2801,6 +2805,7 @@ tern		G_free_segment_m13(SEGMENT_m13 *segment, tern free_structure);
 tern		G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_structure);
 tern		G_free_session_m13(SESSION_m13 *session, tern free_structure);
 tern		G_frequencies_vary_m13(SESSION_m13 *sess);
+void		G_function_stack_trap_m13(si4 sig_num);
 si1		**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 number_of_names);
 tern		G_generate_password_data_m13(FPS_m13* fps, si1* L1_pw, si1* L2_pw, si1* L3_pw, si1* L1_pw_hint, si1* L2_pw_hint);
@@ -3802,8 +3807,8 @@ tern	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
 
 // CRC Modes
 #define CRC_IGNORE_m13		((ui4) 0)  // ignore CRCs
-#define CRC_VALIDATE_m13	((ui4) 1)  // validate on input
-#define CRC_CALCULATE_m13	((ui4) 2)  // calculate on output
+#define CRC_VALIDATE_m13	((ui4) 1 << 0)  // validate on input
+#define CRC_CALCULATE_m13	((ui4) 1 << 1)  // calculate on output
 #define CRC_MODES_ALL_m13	(CRC_VALIDATE_m13 | CRC_VALIDATE_m13)  // validate on input & calculate on output
 
 // Macros

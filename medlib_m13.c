@@ -4316,63 +4316,6 @@ si8	G_find_record_index_m13(FPS_m13 *record_indices_fps, si8 target_time, ui4 mo
 }
 
 
-void	G_function_stack_trap_m13(si4 sig_num)
-{
-	const si1	*error_type;
-	
-	
-	switch(sig_num) {
-		case SIGINT:
-			error_type = "Interrupt (SIGINT)";
-			break;
-		case SIGILL:
-			error_type = "Illegal instruction (SIGILL)";
-			break;
-		case SIGABRT:
-			error_type = "Abnormal termination (SIGABRT)";
-			break;
-		case SIGFPE:
-			error_type = "Floating point exception (SIGFPE)";
-			break;
-		case SIGSEGV:
-			error_type = "Segmentation violation (SIGSEGV)";
-			break;
-		case SIGTERM:
-			error_type = "Terminate (SIGTERM)";
-			break;
-		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
-		case SIGQUIT:
-			error_type = "Quit (SIGQUIT)";
-			break;
-		case SIGKILL:
-			error_type = "Kill (SIGKILL)";
-			break;
-		case SIGBUS:
-			error_type = "Bus error (SIGBUS)";
-			break;
-		case SIGXCPU:
-			error_type = "CPU time limit exceeded (SIGXCPU)";
-			break;
-		case SIGXFSZ:
-			error_type = "File size limit exceeded (SIGXFSZ)";
-			break;
-		#endif
-		default:
-			return;
-	}
-
-#ifdef MATLAB_m13
-	mexPrintf("%s\n\n", error_type);
-#else
-	fprintf(stderr, "%c%s%s%s\n\n", 7, TC_RED_m13, error_type, TC_RESET_m13);
-#endif
-		
-	exit_m13(-1);  // exit() shows function stack
-
-	return;
-}
-
-
 si8     G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...)  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -5024,6 +4967,63 @@ tern	G_frequencies_vary_m13(SESSION_m13 *sess)
 		return_m13(TRUE_m13);
 
 	return_m13(FALSE_m13);
+}
+
+
+void	G_function_stack_trap_m13(si4 sig_num)
+{
+	const si1	*error_type;
+	
+	
+	switch(sig_num) {
+		case SIGINT:
+			error_type = "Interrupt (SIGINT)";
+			break;
+		case SIGILL:
+			error_type = "Illegal instruction (SIGILL)";
+			break;
+		case SIGABRT:
+			error_type = "Abnormal termination (SIGABRT)";
+			break;
+		case SIGFPE:
+			error_type = "Floating point exception (SIGFPE)";
+			break;
+		case SIGSEGV:
+			error_type = "Segmentation violation (SIGSEGV)";
+			break;
+		case SIGTERM:
+			error_type = "Terminate (SIGTERM)";
+			break;
+		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
+		case SIGQUIT:
+			error_type = "Quit (SIGQUIT)";
+			break;
+		case SIGKILL:
+			error_type = "Kill (SIGKILL)";
+			break;
+		case SIGBUS:
+			error_type = "Bus error (SIGBUS)";
+			break;
+		case SIGXCPU:
+			error_type = "CPU time limit exceeded (SIGXCPU)";
+			break;
+		case SIGXFSZ:
+			error_type = "File size limit exceeded (SIGXFSZ)";
+			break;
+		#endif
+		default:
+			return;
+	}
+
+#ifdef MATLAB_m13
+	mexPrintf("%s\n\n", error_type);
+#else
+	fprintf(stderr, "%c%s%s%s\n\n", 7, TC_RED_m13, error_type, TC_RESET_m13);
+#endif
+		
+	exit_m13(-1);  // exit() shows function stack
+
+	return;
 }
 
 
@@ -9476,6 +9476,9 @@ PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 	// set parent
 	if (level_header)
 		level_header->parent = (LEVEL_HEADER_m13 *) proc_globals;
+	
+	// set child
+	proc_globals->child = level_header;
 
 	return(proc_globals);
 }
