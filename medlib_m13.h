@@ -1693,6 +1693,7 @@ typedef struct {
 } HW_PARAMS_m13;
 
 // Prototypes
+ui4	HW_get_block_size_m13(si1 *volume_path);
 tern	HW_get_core_info_m13(void);
 tern	HW_get_endianness_m13(void);
 tern	HW_get_info_m13(void);  // fill whole HW_PARAMS_m13 structure
@@ -1846,7 +1847,7 @@ typedef struct {
 } ACTIVE_CHANNELS_m13;  // PROC_GLOBALS_m13 element
 
 typedef struct {
-	tern				constants_set;
+	tern				set;
 	tern				RTO_known;  // recording time offset
 	tern                        	observe_DST;
 	si8                             recording_time_offset;
@@ -1923,13 +1924,13 @@ typedef struct {
 		LEVEL_HEADER_m13;	// anonymous LEVEL_HEADER_m13
 	};
 	// Password
-	PASSWORD_DATA_m13		password;
+	PASSWORD_DATA_m13		password_data;
 	// Current Session
-	CURRENT_SESSION_m13		session;
+	CURRENT_SESSION_m13		current_session;
 	// Active Channels
 	ACTIVE_CHANNELS_m13		active_channels;
 	// Time Constants
-	TIME_CONSTANTS_m13		time;
+	TIME_CONSTANTS_m13		time_constants;
 	// Miscellaneous
 	volatile tern			proc_error_state;  // flag for void functions
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
@@ -2677,8 +2678,8 @@ typedef struct {
 	FPS_m13	*record_data_fps;
 	FPS_m13	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m13		*segmented_sess_recs;
-	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to session directory (including directory itself)
-	si1                             *name;					// points to uh_name (universal header), if known otherwise to fs_name (from file system)
+	si1			        *path;			// points to proc globals current_session.directory (including directory itself)
+	si1                             *name;			// points to  proc globals current_session.uh_name (universal header), if known otherwise to fs_name (file system)
 	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
@@ -2698,8 +2699,8 @@ typedef struct {
 	FPS_m13	*record_data_fps;
 	FPS_m13	*record_indices_fps;
 	SEGMENTED_SESS_RECS_m13		*segmented_sess_recs;
-	si1			        path[FULL_FILE_NAME_BYTES_m13];		// full path to session directory (including session directory itself)
-	si1                             *name;					// points to proc_globals uh_session_name or fs_session_name
+	si1			        *path;			// points to proc globals current_session.directory (including directory itself)
+	si1                             *name;			// points to  proc globals current_session.uh_name (universal header), if known otherwise to fs_name (file system)
 	TIME_SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
@@ -2752,7 +2753,7 @@ CHANNEL_m13	*G_change_index_ref_chan_m13(SESSION_m13 *sess, CHANNEL_m13 *chan, s
 ui4             G_channel_type_from_path_m13(si1 *path);
 tern		G_check_char_type_m13(void);
 tern		G_check_file_list_m13(si1 **file_list, si4 n_files);
-tern		G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...);  // varargs: si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
+tern		G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...);  // varargs (is_cloud == TRUE_m13): si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
 tern        	G_check_password_m13(si1 *password);
 si4		G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess);
 void		G_clear_error_m13(LEVEL_HEADER_m13 *level_header);
@@ -2790,7 +2791,7 @@ si8		G_find_index_m13(SEGMENT_m13 *seg, si8 target, ui4 mode);
 si1		*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
 si1		*G_find_metadata_file_m13(si1 *path, si1 *md_path);
 si8		G_find_record_index_m13(FPS_m13 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
-si8     	G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
+si8     	G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs (level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 tern		G_free_channel_m13(CHANNEL_m13* channel, tern free_structure);
 void		G_free_global_tables_m13(void);
 void            G_free_globals_m13(tern cleanup_for_exit);
@@ -2843,7 +2844,7 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
 SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr);
-SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);
+SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
 si8             G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern		G_path_from_root_m13(si1 *path, si1 *root_path);
 void            G_pop_behavior_m13(void);
@@ -2860,14 +2861,14 @@ void            G_push_behavior_exec_m13(const si1 *function, const si4 line, ui
 #ifdef FN_DEBUG_m13
 void		G_push_function_exec_m13(const si1 *function);
 #endif
-CHANNEL_m13	*G_read_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, ...);  // varargs: si1 *chan_path, SESSION_m13 *parent, ui4 flags, si1 *password
+CHANNEL_m13	*G_read_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, ...);  // varargs (chan == NULL): si1 *chan_path, SESSION_m13 *parent, ui4 flags, si1 *password, si1 *index_channel_name
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
-LEVEL_HEADER_m13	*G_read_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
+LEVEL_HEADER_m13	*G_read_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name
 FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *path, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m13 *lh, si1 *password);
 si8     	G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *slice, ...);  // varargs: si4 seg_num
-SEGMENT_m13	*G_read_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, ...);  // varargs: si1 *seg_path, SESSION_m13 *parent, ui8 flags, si1 *password
+SEGMENT_m13	*G_read_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, ...);  // varargs (seg == NULL): si1 *seg_path, SESSION_m13 *parent, ui8 flags, si1 *password
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
-SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...);  // varargs: void *file_list, si4 list_len, ui4 flags, si1 *password
+SESSION_m13	*G_read_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, ...);  // varargs (sess == NULL): void *file_list, si4 list_len, ui4 flags, si1 *password
 si8     	G_read_time_series_data_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice);
 tern		G_recover_passwords_m13(si1 *L3_password, UNIVERSAL_HEADER_m13* universal_header);
 void		G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
@@ -2875,7 +2876,7 @@ tern		G_remove_path_m13(si1 *path);
 void     	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 tern		G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 behavior_code);
 tern		G_reset_metadata_for_update_m13(FPS_m13 *fps);
-si8		G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
+si8		G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs (level_header == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4		G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, TIME_SLICE_m13 *slice, ui4 search_mode);
 si4		G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample);
 si4		G_segment_for_path_m13(si1 *path);
@@ -2910,8 +2911,8 @@ tern		G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number);
 tern		G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 si1		*G_unique_temp_file_m13(si1 *temp_file);
 tern		G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset);
-si8		G_uutc_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
-si8		G_uutc_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs: si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
+si8		G_uutc_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_frame_number, ui4 mode, ...);  // varargs (level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
+si8		G_uutc_for_sample_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_sample_number, ui4 mode, ...);  // varargs (level_header == NULL): si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 tern		G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern		G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 void            G_warning_message_m13(si1 *fmt, ...);
@@ -3707,6 +3708,13 @@ tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *c
 tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, tern free_structure);
 tern    CMP_free_cps_cache_m13(CPS_m13 *cps);
 tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure);
+sf8	CMP_gamma_cdf_m13(sf8 x, sf8 k, sf8 theta, sf8 offset);
+sf8	CMP_gamma_cf_m13(sf8 a, sf8 x, sf8 *g_ln);
+sf8	CMP_gamma_inv_cdf_m13(sf8 p, sf8 k, sf8 theta, sf8 offset);
+sf8	CMP_gamma_inv_p_m13(sf8 p, sf8 a);
+sf8	CMP_gamma_ln_m13(sf8 xx);
+sf8	CMP_gamma_p_m13(sf8 a, sf8 x);
+sf8	CMP_gamma_ser_m13(sf8 a, sf8 x, sf8 *g_ln);
 tern	CMP_generate_lossy_data_m13(CPS_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 tern	CMP_generate_parameter_map_m13(CPS_m13 *cps);
 ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm);

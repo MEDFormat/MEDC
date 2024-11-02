@@ -18603,6 +18603,232 @@ void    CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 
 }
 
 
+sf8	CMP_gamma_cdf_m12(sf8 x, sf8 k, sf8 theta, sf8 offset)
+{
+	sf8  p;
+	
+	
+	x -= offset;
+	
+	if (x < (sf8) 0.0)
+		x = (sf8) 0.0;
+	if (k <= (sf8) 0.0)
+		k = nan(NULL);
+	if (theta <= (sf8) 0.0)
+		theta = nan(NULL);
+
+	x /= theta;
+	p = CMP_gamma_p_m12(k, x);
+	
+	return(p);
+}
+
+
+sf8	CMP_gamma_cf_m12(sf8 a, sf8 x, sf8 *g_ln)
+{
+	si4		i;
+	static si4	ITMAX = 100;
+	sf8		gam_cf, an, b, c, d, del, h;
+	static sf8	EPS = 3.0e-7;
+	static sf8	FPMIN = 1.0e-30;
+
+	
+	*g_ln = CMP_gamma_ln_m12(a);
+	b = x + (sf8) 1.0 - a;
+	c = (sf8) 1.0 / FPMIN;
+	d = (sf8) 1.0 / b;
+	h = d;
+	for (i = 1;i <= ITMAX; i++) {
+		an = (sf8) -i * ((sf8) i - a);
+		b += (sf8) 2.0;
+		d = (an * d) + b;
+		if (fabs(d) < FPMIN)
+			d = FPMIN;
+		c = b + (an / c);
+		if (fabs(c) < FPMIN)
+			c = FPMIN;
+		d = (sf8) 1.0 / d;
+		del = d * c;
+		h *= del;
+		if (fabs(del - (sf8) 1.0) < EPS)
+			break;
+	}
+	if (i > ITMAX) {
+		G_error_message_m12("%s(): a too large or ITMAX too small\n", __FUNCTION__);
+		exit(1);
+	}
+	gam_cf = exp(-x + (a * log(x)) - (*g_ln)) * h;
+	
+	return(gam_cf);
+}
+
+
+sf8	CMP_gamma_inv_cdf_m12(sf8 p, sf8 k, sf8 theta, sf8 offset)
+{
+	sf8  x;
+	
+	
+	if (p < (sf8) 0.0)
+		p = (sf8) 0.0;
+	if (p > (sf8) 1.0)
+		p = (sf8) 1.0;
+	if (k <= (sf8) 0.0)
+		k = nan(NULL);
+	if (theta <= (sf8) 0.0)
+		theta = nan(NULL);
+	
+	x = CMP_gamma_inv_p_m12(p, k);
+	x = (x * theta) + offset;
+	
+	return(x);
+}
+
+
+sf8	CMP_gamma_inv_p_m12(sf8 p, sf8 a)
+{
+	si4		j;
+	sf8		x, err, u, pp, lna1, afac, a1, t, t2, g_ln;
+	const sf8	EPS = 1.e-8;
+	
+	
+	// inverse incomplete gamma
+	a1 = a - (sf8) 1.0;
+	g_ln = CMP_gamma_ln_m12(a);
+	
+	if (a <= (sf8) 0.0) {
+		G_error_message_m12("a must be pos\n", __FUNCTION__);
+		exit(1);
+	}
+	
+	if (p >= (sf8) 1.0) {
+		t = a + ((sf8) 100.0 * sqrt(a));
+		if (t > (sf8) 100.0)
+			return(t);
+		else
+			return((sf8) 100.0);
+	}
+	
+	if (p <= (sf8) 0.0)
+		return((sf8) 0.0);
+	
+	if (a > (sf8) 1.0) {
+		lna1 = log(a1);
+		afac = exp((a1 * (lna1 - (sf8) 1.0)) - g_ln);
+		pp = (p < (sf8) 0.5) ? p : ((sf8) 1.0 - p);
+		t = sqrt((sf8) -2.0 * log(pp));
+		x = (((sf8) 2.30753 + (t * (sf8) 0.27061)) / ((sf8) 1.0 + (t * ((sf8) 0.99229 + (t * (sf8) 0.04481))))) - t;
+		if (p < (sf8) 0.5)
+			x = -x;
+		t = a * pow(((sf8) 1.0 - ((sf8) 1.0 / ((sf8) 9.0 * a)) - (x / ((sf8) 3.0 * sqrt(a)))), (sf8) 3.0);
+		if (t > (sf8) 1.0e-3)
+			x = t;
+		else
+			x = (sf8) 1.0e-3;
+	} else {
+		t = (sf8) 1.0 - (a * ((sf8) 0.253 + (a * (sf8) 0.12)));
+		if (p < t)
+			x = pow((p / t), ((sf8) 1.0 / a));
+		else
+			x = (sf8) 1.0 - log((sf8) 1.0 - ((p - t) / ((sf8) 1.0 - t)));
+	}
+	
+	for (j = 0; j < 12; j++) {
+		if (x <= (sf8) 0.0)
+			return((sf8) 0.0);
+		err = CMP_gamma_p_m12(a, x) - p;
+		if (a > (sf8) 1.0)
+			t = afac * exp(-(x - a1) + a1 * (log(x) - lna1));
+		else
+			t = exp(-x + a1 * log(x) - g_ln);
+		u = err / t;
+		t2 = u * (((a - (sf8) 1.0) / x) - (sf8) 1.0);
+		if (t2 > (sf8) 1.0)
+			t2 = (sf8) 1.0;
+		x -= (t = u / ((sf8) 1.0 - ((sf8) 0.5 * t2)));
+		if (x <= (sf8) 0.0)
+		      x = (sf8) 0.5 * (x + t);
+		if (fabs(t) < (EPS * x))
+		      break;
+	}
+		      
+	return(x);
+}
+
+
+sf8	CMP_gamma_ln_m12(sf8 xx)
+{
+	si4             i;
+	sf8             x, y, tmp, ser;
+	static sf8      cof[6] = {76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5};
+
+	
+	y = x = xx;
+	tmp = x + (sf8) 5.5;
+	tmp -= (x + (sf8) 0.5) * log(tmp);
+	ser = (sf8) 1.000000000190015;
+	for (i = 0; i <= 5; i++)
+		ser += cof[i] / ++y;
+	
+	return(-tmp + log((sf8) 2.5066282746310005 * ser / x));
+}
+
+
+sf8	CMP_gamma_p_m12(sf8 a, sf8 x)
+{
+	sf8     gam_ser, gam_cf, g_ln;
+	
+	
+	if (x < (sf8) 0.0 || a <= (sf8) 0.0) {
+		G_error_message_m12("%s(): invalid arguments\n", __FUNCTION__);
+		exit(1);
+	}
+	if (x < (a + (sf8) 1.0)) {
+		gam_ser = CMP_gamma_ser_m12(a, x, &g_ln);
+		return(gam_ser);
+	}
+	
+	gam_cf = CMP_gamma_cf_m12(a, x, &g_ln);
+	
+	return((sf8) 1.0 - gam_cf);
+}
+
+
+sf8	CMP_gamma_ser_m12(sf8 a, sf8 x, sf8 *g_ln)
+{
+	si4		i;
+	static si4	ITMAX = 100;
+	sf8		sum, del, ap, gam_ser;
+	static sf8	EPS = 3.0e-7;
+
+	
+	*g_ln = CMP_gamma_ln_m12(a);
+	
+	if (x <= (sf8) 0.0) {
+		if (x < (sf8) 0.0) {
+			G_error_message_m12("%s(): x less than 0 in routine gser\n", __FUNCTION__);
+			exit(1);
+		}
+		return((sf8) 0.0);
+	}
+	
+	ap = a;
+	del = sum = (sf8) 1.0 / a;
+	for (i = 0; i < ITMAX; i++) {
+		++ap;
+		del *= (x / ap);
+		sum += del;
+		if (fabs(del) < (fabs(sum) * EPS)) {
+			gam_ser = sum * exp(-x + (a*log(x)) - (*g_ln));
+			return(gam_ser);
+		}
+	}
+	
+	G_error_message_m12("%s(): a too large or ITMAX too small\n", __FUNCTION__);
+	
+	return((sf8) 0.0);
+}
+
+
 void    CMP_generate_lossy_data_m12(CMP_PROCESSING_STRUCT_m12 *cps, si4 *input_buffer, si4 *output_buffer, ui1 mode)
 {
 	CMP_BLOCK_FIXED_HEADER_m12	*block_header;

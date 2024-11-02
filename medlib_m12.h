@@ -3293,6 +3293,13 @@ TERN_m12	CMP_find_frequency_scale_m12(CMP_PROCESSING_STRUCT_m12 *cps, void (*com
 void    	CMP_free_buffers_m12(CMP_BUFFERS_m12 *buffers, TERN_m12 free_structure);
 TERN_m12    	CMP_free_cache_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 free_cps_structure);
+sf8		CMP_gamma_cdf_m12(sf8 x, sf8 k, sf8 theta, sf8 offset);
+sf8		CMP_gamma_cf_m12(sf8 a, sf8 x, sf8 *g_ln);
+sf8		CMP_gamma_inv_cdf_m12(sf8 p, sf8 k, sf8 theta, sf8 offset);
+sf8		CMP_gamma_inv_p_m12(sf8 p, sf8 a);
+sf8		CMP_gamma_ln_m12(sf8 xx);
+sf8		CMP_gamma_p_m12(sf8 a, sf8 x);
+sf8		CMP_gamma_ser_m12(sf8 a, sf8 x, sf8 *g_ln);
 void    	CMP_generate_lossy_data_m12(CMP_PROCESSING_STRUCT_m12 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 void		CMP_generate_parameter_map_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 ui1    		CMP_get_overflow_bytes_m12(CMP_PROCESSING_STRUCT_m12 *cps, ui4 mode, ui4 algorithm);
