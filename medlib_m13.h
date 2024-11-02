@@ -1931,6 +1931,7 @@ typedef struct {
 	// Time Constants
 	TIME_CONSTANTS_m13		time;
 	// Miscellaneous
+	volatile tern			proc_error_state;  // flag for void functions
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	LEVEL_HEADER_m13		*child;  // hierarchy level immediately below these process globals
 	ui4				mmap_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
@@ -1946,6 +1947,8 @@ typedef struct {
 //	sess = (SESSION_m13 *) level_header;
 
 typedef struct {
+	pthread_mutex_t_m13		mutex;
+	
 	TIMEZONE_INFO_m13		*timezone_table;
 	TIMEZONE_ALIAS_m13		*country_aliases_table;
 	TIMEZONE_ALIAS_m13		*country_acronym_aliases_table;
@@ -1962,16 +1965,6 @@ typedef struct {
 	NET_PARAMS_m13			NET_params;  // parameters for default internet interface
 	HW_PARAMS_m13			HW_params;
 	const si1			**E_strings_table;
-
-	pthread_mutex_t_m13		TZ_mutex;
-	pthread_mutex_t_m13		SHA_mutex;
-	pthread_mutex_t_m13		AES_mutex;
-	pthread_mutex_t_m13		CRC_mutex;
-	pthread_mutex_t_m13		UTF8_mutex;
-	pthread_mutex_t_m13		CMP_mutex;
-	pthread_mutex_t_m13		NET_mutex;
-	pthread_mutex_t_m13		HW_mutex;
-	pthread_mutex_t_m13		E_mutex;  // error strings table
 	
 	#ifdef WINDOWS_m13
 	HINSTANCE			hNTdll;  // handle to ntdll dylib (used by WN_nap_m13(); only loaded if used)
@@ -2762,6 +2755,7 @@ tern		G_check_file_list_m13(si1 **file_list, si4 n_files);
 tern		G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...);  // varargs: si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
 tern        	G_check_password_m13(si1 *password);
 si4		G_check_segment_map_m13(TIME_SLICE_m13 *slice, SESSION_m13 *sess);
+void		G_clear_error_m13(LEVEL_HEADER_m13 *level_header);
 tern		G_clear_terminal_m13(void);
 si4		G_compare_acq_nums_m13(const void *a, const void *b);
 si4    		G_compare_record_index_times(const void *a, const void *b);
@@ -2854,6 +2848,9 @@ si8             G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern		G_path_from_root_m13(si1 *path, si1 *root_path);
 void            G_pop_behavior_m13(void);
 void            G_pop_function_m13(void);
+void		G_proc_error_clear_m13(LEVEL_HEADER_m13 *level_header);
+void		G_proc_error_set_m13(LEVEL_HEADER_m13 *level_header);
+tern		G_proc_error_state_m13(LEVEL_HEADER_m13 *level_header);
 PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header);  // top of process heirarchy
 void		G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header);
 PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header);

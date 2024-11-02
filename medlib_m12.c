@@ -33630,7 +33630,7 @@ PRTY_REPAIR_EXIT_m12:
 
 TERN_m12	PRTY_restore_m12(si1 *MED_path)
 {
-	TERN_m12	success, valid, video_data;
+	TERN_m12	success, valid, video_data, unlock_parity, unlock_data;
 	si1		sess_path[FULL_FILE_NAME_BYTES_m12], sess_name[BASE_FILE_NAME_BYTES_m12], base_name[SEGMENT_BASE_FILE_NAME_BYTES_m12];
 	si1		tmp_path[FULL_FILE_NAME_BYTES_m12], **input_file_list, **ts_chan_names, **vid_chan_names, **ssr_names, **list;
 	si1		*parity_path, command[(FULL_FILE_NAME_BYTES_m12 * 2) + 16], response[8];
@@ -33698,9 +33698,9 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 	mem_blocks = mem_block_bytes / mmap_block_bytes;
 	parity_ps.mem_block_bytes = mem_blocks * mmap_block_bytes;
 	parity_ps.parity = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	unlock_parity = mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	parity_ps.data = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	unlock_data = mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	n_parity_files = allocated_parity_files = 0;
 	parity_path = parity_ps.path;
 	parity_files = NULL;
@@ -33855,11 +33855,12 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 		}
 	}
 	
-	munlock_m12((void *) parity_ps.parity, (size_t) parity_ps.mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (unlock_parity == TRUE_m12)
+		munlock_m12((void *) parity_ps.parity, (size_t) parity_ps.mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) parity_ps.parity);
-	munlock_m12((void *) parity_ps.data, (size_t) parity_ps.mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (unlock_data == TRUE_m12)
+		munlock_m12((void *) parity_ps.data, (size_t) parity_ps.mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) parity_ps.data);
-	munlock_m12((void *) parity_ps.files, (size_t) allocated_parity_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) parity_ps.files);
 
 	free_m12((void *) ts_chan_names, __FUNCTION__);
@@ -34310,13 +34311,14 @@ TERN_m12	PRTY_validate_pcrc_m12(si1 *file_path, ...)  // varargs(file_path == NU
 
 TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 {
-	si1		sess_path[FULL_FILE_NAME_BYTES_m12], md_path[FULL_FILE_NAME_BYTES_m12];
-	si1		sess_name[BASE_FILE_NAME_BYTES_m12], tmp_str[FULL_FILE_NAME_BYTES_m12];
-	si1		num_str[FILE_NUMBERING_DIGITS_m12 + 1], type_string[TYPE_BYTES_m12];
+	TERN_m12	unlock_parity, unlock_data, unlock_files;
+	si1		sess_path[FULL_FILE_NAME_BYTES_m12], test_path[FULL_FILE_NAME_BYTES_m12];
+	si1		sess_name[BASE_FILE_NAME_BYTES_m12], tmp_str[FULL_FILE_NAME_BYTES_m12 + 64];
+	si1		num_str[FILE_NUMBERING_DIGITS_m12 + 1], type_string[TYPE_BYTES_m12], *command;
 	si1		**chan_names, **vid_paths, **seg_names, **base_paths, **ssr_list;
-	si4		i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_ssrs, n_files, new_files;
+	si4		i, j, k, start_seg, end_seg, fd, n_chans, n_vids, n_segs, n_ssrs, n_files, new_files, ret_val;
 	si8		mmap_block_bytes, mem_block_bytes, mem_blocks;
-	FILE		*md_fp;
+	FILE		*test_fp;
 	PRTY_FILE_m12	*files;
 	PRTY_m12	parity_ps;
 	#if defined MACOS_m12 || defined LINUX_m12
@@ -34333,39 +34335,55 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 #endif
 
 	G_message_m12("Creating parity data ...\n");
-
+	
 	n_files = n_chans = n_vids = n_segs = n_ssrs = 0;
 	base_paths = NULL; files = NULL;
 	
+	// get full path & name
+	G_path_from_root_m12(session_path, sess_path);
+	G_extract_path_parts_m12(sess_path, NULL, sess_name, NULL);
+
 	// get volume block size
 	if (globals_m12->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12) {
-		G_path_from_root_m12(session_path, sess_path);
-		G_extract_path_parts_m12(sess_path, NULL, sess_name, NULL);
-		G_find_metadata_file_m12(sess_path, md_path);  // just find any file - metadata should always be there
-		md_fp = fopen_m12(md_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-		
-		#if defined MACOS_m12 || defined LINUX_m12
-		fd = fileno(md_fp);
-		fstat(fd, &sb);
-		mmap_block_bytes = (si8) sb.st_blksize;
-		#endif
-		#ifdef WINDOWS_m12
-		fd = _fileno(md_fp);
-		if ((file_h = (HANDLE) _get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
-			dg_result = (ui4) DeviceIoControl(file_h, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &disk_geom, sizeof(DISK_GEOMETRY), &dg_result, (LPOVERLAPPED) NULL);
-			if (dg_result == 1)
-				mmap_block_bytes = (si8) disk_geom.BytesPerSector;
+		mmap_block_bytes = 0;
+		command = tmp_str;
+		sprintf_m12(test_path, "%s/test_file-remove_me", sess_path);
+		sprintf_m12(command, "echo x > \"%s\"", test_path);  // create non-empty file in case file system is cloud
+		ret_val = system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+		if (ret_val == 0) {
+			test_fp = fopen_m12(test_path, "r", __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			
+			#if defined MACOS_m12 || defined LINUX_m12
+			fd = fileno(test_fp);
+			fstat(fd, &sb);
+			mmap_block_bytes = (si8) sb.st_blksize;
+			#endif
+			#ifdef WINDOWS_m12
+			fd = _fileno(test_fp);
+			if ((file_h = (HANDLE) _get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
+				dg_result = (ui4) DeviceIoControl(file_h, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &disk_geom, sizeof(DISK_GEOMETRY), &dg_result, (LPOVERLAPPED) NULL);
+				if (dg_result == 1)
+					mmap_block_bytes = (si8) disk_geom.BytesPerSector;
+			}
+			#endif
+			fclose(test_fp);
+			
+			#if defined MACOS_m12 || defined LINUX_m12
+			sprintf(command, "rm \"%s\"", test_path);
+			#endif
+			#ifdef WINDOWS_m12
+			sprintf(command, "del \"%s\"", test_path);
+			#endif
+			system_m12(command, TRUE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
+			
 		}
-		#endif
-		fclose(md_fp);
-		
 		if (mmap_block_bytes <= 0)
 			mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m12;
 		globals_m12->mmap_block_bytes = mmap_block_bytes;
 	} else {
 		mmap_block_bytes = globals_m12->mmap_block_bytes;
 	}
-	
+
 	// get time series channel names
 	chan_names = NULL;
 	if (flags & PRTY_TS_MASK_m12) {
@@ -34391,15 +34409,16 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	parity_ps.mem_block_bytes = mem_block_bytes = mem_blocks * mmap_block_bytes;
 	
 	parity_ps.parity = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	unlock_parity = mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	
 	parity_ps.data = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	unlock_data = mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	
 	n_files = (n_chans > n_segs) ? n_chans : n_segs;
+	unlock_files = FALSE_m12;
 	if (n_files) {
 		parity_ps.files = files = (PRTY_FILE_m12 *) malloc((size_t) n_files * sizeof(PRTY_FILE_m12));
-		mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
 		
@@ -34555,13 +34574,14 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	new_files = (n_chans > n_segs) ? n_chans : n_segs;
 	if (new_files > n_files) {
 		if (n_files) {
-			munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			if (unlock_files == TRUE_m12)
+				munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			free_m12((void *) base_paths, __FUNCTION__);
 		}
 		
 		n_files = new_files;
 		parity_ps.files = files = (PRTY_FILE_m12 *) realloc((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12));
-		mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
 	
@@ -34709,10 +34729,11 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		sprintf_m12(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_DIRECTORY_TYPE_STRING_m12);
 		ssr_list = G_generate_file_list_m12(NULL, &n_ssrs, tmp_str, NULL, RECORD_DATA_FILE_TYPE_STRING_m12, GFL_PATH_m12 | GFL_NAME_m12);
 		if (n_ssrs > n_files) {
-			munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			if (unlock_files == TRUE_m12)
+				munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			n_files = n_ssrs;
 			parity_ps.files = files = (PRTY_FILE_m12 *) realloc((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12));
-			mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		}
 
 		// segmented session record data
@@ -34766,12 +34787,15 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		}
 	}
 
-	munlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (unlock_parity == TRUE_m12)
+		munlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) parity_ps.parity);
-	munlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	if (unlock_data == TRUE_m12)
+		munlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	free((void *) parity_ps.data);
 	if (files) {
-		munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (unlock_files == TRUE_m12)
+			munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		free((void *) files);
 	}
 	if (base_paths)
@@ -35862,7 +35886,7 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviat
 	const si1	*abbr[9] = {"yr", "mo", "wk", "day", "hr", "min", "sec", "ms", "us"};
 	si1		*offset_dur_str;
 	si4		level_idx, int_level_1, int_level_2;
-	const sf8	divisors[9] = {31556926000000.0, 2629744000000.0, 604800000000.0, 86400000000.0, 3600000000.0, 60000000.0, 1000000.0, 1000.0, -1.0};
+	const sf8	divisors[9] = {31556926000000.0, 2629744000000.0, 604800000000.0, 86400000000.0, 3600000000.0, 60000000.0, 1000000.0, 1000.0, 1.0};
 	sf8             usecs, level_1, level_2;
 	
 #ifdef FN_DEBUG_m12
@@ -35873,7 +35897,18 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviat
 	if (dur_str == NULL)
 		dur_str = calloc_m12((size_t) TIME_STRING_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
-	if (int_usecs < 0) {
+	if (int_usecs <= 0) {
+		if (int_usecs == 0) {
+			if (two_level == TRUE_m12)
+				strcpy(dur_str, "0 ");
+			else
+				strcpy(dur_str, "0.00 ");
+			if (abbreviated == TRUE_m12)
+				strcat(dur_str, "us");
+			else
+				strcat(dur_str, "microseconds");
+			return(dur_str);
+		}
 		if (abbreviated == TRUE_m12) {
 			strcpy(dur_str, "neg ");
 			offset_dur_str = dur_str + 4;
