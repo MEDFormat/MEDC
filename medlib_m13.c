@@ -95,11 +95,11 @@
 
 #include "medlib_m13.h"
 
-// Globals (tagged in case using with other versions of the library)
+// Globals (variable name tagged in case using with other versions of the library)
 #ifdef MATLAB_m13
 // "static" qualifier necessary for Matlab to maintain values between mex calls
 // limits scope to current file - prevents linking across compiled libraries
-static GLOBALS_m13		*globals_m13 = NULL;
+static GLOBALS_m13	*globals_m13 = NULL;
 #else
 GLOBALS_m13		*globals_m13 = NULL;
 #endif
@@ -8069,9 +8069,11 @@ CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, TIME_SLICE_m13 *slice, si1 *c
 	if (parent)
 		chan->parent = (LEVEL_HEADER_m13 *) parent;
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) chan);
-
+	if (*proc_globals->current_session.directory == 0)
+		G_extract_path_parts_m13(chan->path, proc_globals->current_session.directory, proc_globals->current_session.fs_name, NULL);
+	
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (proc_globals->password_data.processed == 0 || proc_globals->time_constants.set != TRUE_m13) {
+	if (proc_globals->time_constants.set != TRUE_m13) {
 		if (G_set_time_and_password_data_m13(password, chan->path, NULL, NULL) == FALSE_m13) {
 			if (free_channel == TRUE_m13)
 				G_free_channel_m13(chan, TRUE_m13);
@@ -8327,7 +8329,7 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 
 SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *parent, ui8 flags, si1 *password)
 {
-	tern		free_segment;
+	tern			free_segment;
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m13];
 	PROC_GLOBALS_m13	*proc_globals;
 	
@@ -8370,9 +8372,13 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 	if (parent)
 		seg->parent = (LEVEL_HEADER_m13 *) parent;
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) seg);
-	
+	if (*proc_globals->current_session.directory == 0) {
+		G_extract_path_parts_m13(seg->path, tmp_str, NULL, NULL);
+		G_extract_path_parts_m13(tmp_str, proc_globals->current_session.directory, proc_globals->current_session.fs_name, NULL);
+	}
+
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (proc_globals->password_data.processed == 0 || proc_globals->time_constants.set != TRUE_m13) {
+	if (proc_globals->time_constants.set != TRUE_m13) {
 		if (G_set_time_and_password_data_m13(password, seg->path, NULL, NULL) == FALSE_m13) {
 			if (free_segment == TRUE_m13)
 				G_free_segment_m13(seg, TRUE_m13);
@@ -8808,7 +8814,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 
 	// set up time & generate password data (note do this before slice is conditioned)
-	if (proc_globals->password_data.processed == 0 || proc_globals->time_constants.set != TRUE_m13) {
+	if (proc_globals->time_constants.set != TRUE_m13) {
 		if (G_set_time_and_password_data_m13(password, sess->path, NULL, NULL) == FALSE_m13) {
 			if (free_session == TRUE_m13)
 				G_free_session_m13(sess, TRUE_m13);
@@ -10266,7 +10272,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 		if (uh->session_UID != proc_globals->current_session.UID)  // set current session directory globals
 			G_get_session_directory_m13(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13) {
-			if (proc_globals->password_data.processed == 0)	// better if done with a metadata file read (for password hints) below
+			if (proc_globals->password_data.processed != TRUE_m13)	// better if done with a metadata file read (for password hints) below
 				G_process_password_data_m13(fps, password);	// done here to satify rule that any read of any MED file will process password
 			FPS_set_pointers_m13(fps, UNIVERSAL_HEADER_BYTES_m13);
 			fps->number_of_items = 0;
@@ -10315,7 +10321,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	}
 
 	// process password (better done here than above because may be reading a metadata file)
-	if (proc_globals->password_data.processed == 0)	// if metadata file, hints from section 1 will be added to password
+	if (proc_globals->password_data.processed != TRUE_m13)	// if metadata file, hints from section 1 will be added to password
 		G_process_password_data_m13(fps, password);	// data structure, and displayed if the password is invalid
 	
 	// get number_of_items (preferably this is passed)
@@ -12008,8 +12014,9 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	// Call set_error for causal errors only.
 	// Return error local error condition for errors returned from functions, no messages necessary
 	
-	// set process globals flag for void functions
-	proc_globals = G_proc_globals_m13(NULL);  // use process / thread ID
+	// set process globals error_state (for void functions)
+	// ideally calling function set this this because these are thread-local, not hierarchy-local globals, which can differ
+	proc_globals = G_proc_globals_m13(NULL);  // NULL => use process / thread ID
 	proc_globals->proc_error_state = TRUE_m13;
 
 	// check global error
@@ -12294,7 +12301,7 @@ tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_direct
 	// G_read_file_m13() will process password and set current session directory globals
 	// G_decrypt_metadata_m13() will set global time constants, from section 3
 	proc_globals = G_proc_globals_m13(NULL);
-	proc_globals->password_data.processed = 0;  // not ternary FALSE_m13 (so when structure is zeroed it is marked as not processed)
+	proc_globals->password_data.processed = FALSE_m13;
 	metadata_fps = G_read_file_m13(NULL, metadata_file, 0, 0, FPS_FULL_FILE_m13, NULL, unspecified_password);
 	if (metadata_fps == NULL)
 		return_m13(FALSE_m13);

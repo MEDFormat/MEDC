@@ -396,7 +396,7 @@ typedef struct {
 	si1     level_1_password_hint[PASSWORD_HINT_BYTES_m13];
 	si1     level_2_password_hint[PASSWORD_HINT_BYTES_m13];
 	ui1	access_level;
-	ui1	processed;  // 0 or 1 (boolean, not ternary)
+	tern	processed;
 } PASSWORD_DATA_m13;
 
 
@@ -1911,6 +1911,7 @@ typedef struct {
 	// Time Constants
 	TIME_CONSTANTS_m13		time_constants;
 	// Miscellaneous
+	volatile tern			proc_error_state;  // flag for void functions
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	LEVEL_HEADER_m13		*child;  // hierarchy level immediately below these process globals
 	ui4				memory_map_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
