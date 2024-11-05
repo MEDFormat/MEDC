@@ -2801,6 +2801,7 @@ tern		G_free_segment_m13(SEGMENT_m13 *segment, tern free_structure);
 tern		G_free_segmented_sess_recs_m13(SEGMENTED_SESS_RECS_m13 *ssr, tern free_structure);
 tern		G_free_session_m13(SESSION_m13 *session, tern free_structure);
 tern		G_frequencies_vary_m13(SESSION_m13 *sess);
+tern		G_full_path_m13(si1 *path, si1 *full_path);
 void		G_function_stack_trap_m13(si4 sig_num);
 si1		**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1		**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 number_of_names);
@@ -2847,7 +2848,6 @@ SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, si1 *se
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr);
 SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
 si8             G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
-tern		G_path_from_root_m13(si1 *path, si1 *root_path);
 void            G_pop_behavior_m13(void);
 void            G_pop_function_m13(void);
 void		G_proc_error_clear_m13(LEVEL_HEADER_m13 *level_header);
@@ -3682,7 +3682,7 @@ typedef struct CPS_m13 {
 
 // Function Prototypes
 CMP_BUFFERS_m13	*CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, tern zero_data, tern lock_memory);
-CPS_m13	*CMP_allocate_processing_struct_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMETERS_m13 *parameters);
+CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMETERS_m13 *parameters);
 tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, tern extrema, sf8 *minima, sf8 *maxima);
 tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
 sf8	CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps);

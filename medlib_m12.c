@@ -16602,6 +16602,8 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 		cps->parameters.symbol_map = NULL;
 		cps->parameters.cumulative_count = NULL;
 		cps->parameters.minimum_range = NULL;
+		if (cps->directives.algorithm == CMP_MBE_COMPRESSION_m12 && cps->directives.mode == CMP_COMPRESSION_MODE_m12)
+			need_derivative_buffer = TRUE_m12;
 	}
 	
 	// VDS
@@ -19883,10 +19885,10 @@ void    CMP_MBE_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 			*++out_word = (out_val >> (bits_per_samp - out_bit));
 		}
 	}
-	
+
 	// fill in block header
 	block_header->total_block_bytes = G_pad_m12((ui1 *) block_header, (si8) (cmp_data_bytes + block_header->total_header_bytes), 8);
-	
+
 	return;
 }
 
@@ -30281,6 +30283,8 @@ NET_PARAMS_m12	*NET_get_active_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (global_tables_m12->NET_params.active != UNKNOWN_m12)
@@ -30463,7 +30467,7 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	// get ifconfig() output
 	sprintf_m12(temp_str, "/usr/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
-	ret_val = system_pipe_m12(&buffer, 0, temp_str, SP_DEFAULT_m12, __FUNCTION__,  USE_GLOBAL_BEHAVIOR_m12);
+	ret_val = system_pipe_m12(&buffer, 0, temp_str, SP_DEFAULT_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	if (ret_val) {
 		if (global_np == TRUE_m12)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
@@ -30855,14 +30859,10 @@ NET_PARAMS_m12	*NET_get_default_interface_m12(NET_PARAMS_m12 *np)
 		return(np);
 	}
 
-	if (global_np == TRUE_m12) {
-		PROC_pthread_mutex_lock_m12(&global_tables_m12->NET_mutex);
-		if (*np->interface_name)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
+	if (global_np == TRUE_m12)
+		if (*np->interface_name)  // may have been done by another thread while waiting
 			return(np);
-		}
-	}
-			
+
 	#ifdef MACOS_m12
 	command = "/sbin/route -n get default";
 	#endif
@@ -30945,6 +30945,8 @@ NET_PARAMS_m12	*NET_get_duplex_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (*global_tables_m12->NET_params.duplex)
@@ -31121,6 +31123,8 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (*global_tables_m12->NET_params.LAN_IPv4_address_string) {
@@ -31136,7 +31140,7 @@ NET_PARAMS_m12	*NET_get_lan_ipv4_address_m12(si1 *iface, NET_PARAMS_m12 *np)
 			free_m12((void *) np, __FUNCTION__);
 		return(NULL);
 	}
-	
+
 	return(np);
 }
 
@@ -31150,6 +31154,8 @@ NET_PARAMS_m12	*NET_get_link_speed_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (*global_tables_m12->NET_params.link_speed)
@@ -31193,6 +31199,8 @@ NET_PARAMS_m12	*NET_get_mac_address_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (*global_tables_m12->NET_params.MAC_address_string) {
@@ -31222,6 +31230,8 @@ NET_PARAMS_m12	*NET_get_mtu_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (global_tables_m12->NET_params.MTU > 0)
@@ -31260,6 +31270,8 @@ NET_PARAMS_m12	*NET_get_parameters_m12(si1 *iface, NET_PARAMS_m12 *np)
 	// fill all fields of NET_PARAMS_m12 structure
 
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (global_tables_m12->NET_params.plugged_in != UNKNOWN_m12)
@@ -31313,6 +31325,8 @@ NET_PARAMS_m12	*NET_get_plugged_in_m12(si1 *iface, NET_PARAMS_m12 *np)
 #endif
 	
 	copy_global = NET_resolve_arguments_m12(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m12)
+		return(NULL);
 
 	if (copy_global == TRUE_m12) {
 		if (global_tables_m12->NET_params.plugged_in != UNKNOWN_m12)
@@ -31376,7 +31390,7 @@ NET_PARAMS_m12 *NET_get_wan_ipv4_address_m12(NET_PARAMS_m12 *np)
 	
 	buffer = NULL;
 	ret_val = system_pipe_m12(&buffer, 0, command, SP_DEFAULT_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12 | RETRY_ONCE_m12);
-	if (ret_val) {
+	if (ret_val || buffer == NULL) {  // curl can fail without output, in which case buffer is NULL
 		if (NET_get_lan_ipv4_address_m12(NULL, np) == NULL)
 			G_warning_message_m12("%s(): no internet connection\n", __FUNCTION__);
 		else
@@ -31596,6 +31610,7 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 #endif
 	
 	// returns "copy global" (if global value known, just copy to np, else get & copy to global)
+	// UNKNOWN_m12 indicates failure
 	
 	if (iface) {
 		if (*iface == 0)
@@ -31618,7 +31633,8 @@ TERN_m12	NET_resolve_arguments_m12(si1 *iface, NET_PARAMS_m12 **params_ptr, TERN
 	}
 	
 	if (*global_tables_m12->NET_params.interface_name == 0)
-		NET_get_default_interface_m12(&global_tables_m12->NET_params);
+		if (NET_get_default_interface_m12(&global_tables_m12->NET_params) == NULL)
+			return(UNKNOWN_m12);
 
 	interface_is_global = FALSE_m12;
 	if (iface) {
@@ -32521,7 +32537,8 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 		if (effective_user == 0) {  // just reset sudo timeout if necessary (root UID == 0 so this should not prompt)
 			system("sudo -l > /dev/null");
 		} else {
-			si1			pw[MAX_ASCII_PASSWORD_STRING_BYTES_m12], command[1024], *exec_name;
+			si1			pw[MAX_ASCII_PASSWORD_STRING_BYTES_m12], command[1024];
+			si1			*exec_name, full_exec_name[FULL_FILE_NAME_BYTES_m12];
 			sf8			timeout_secs;
 			va_list			arg_p;
 			pid_t			pid;
@@ -32543,21 +32560,22 @@ TERN_m12	PROC_increase_process_priority_m12(TERN_m12 verbose_flag, si4 sudo_prom
 			exec_name = va_arg(arg_p, si1 *);
 			timeout_secs = va_arg(arg_p, sf8);
 			va_end(arg_p);
-			
+			G_path_from_root_m12(exec_name, full_exec_name);
+
 			if (G_enter_ascii_password_m12(pw, "Enter sudo password", FALSE_m12, (sf8) timeout_secs, FALSE_m12) == TRUE_m12) {
 				if (*pw) {
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					G_push_behavior_m12(SUPPRESS_OUTPUT_m12 | RETURN_ON_FAIL_m12);
-					sprintf_m12(command, "echo %s | sudo -S chown root %s", pw, exec_name);  // in case owner wasn't root
+					sprintf_m12(command, "echo %s | sudo -S chown root %s", pw, full_exec_name);  // in case owner wasn't root
 					if (system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) {  // just check for password failure once
 						G_pop_behavior_m12();
 						G_warning_message_m12("%s(): Invalid sudo password\n", __FUNCTION__);
 						return(FALSE_m12);
 					}
-					sprintf_m12(command, "echo %s | sudo -S chmod g+x %s", pw, exec_name);  // in case group didn't have execute permissions
+					sprintf_m12(command, "echo %s | sudo -S chmod g+x %s", pw, full_exec_name);  // in case group didn't have execute permissions
 					system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-					sprintf_m12(command, "echo %s | sudo -S chmod ug+s %s", pw, exec_name);  // set the "set-user" bits (must do owner and group)
+					sprintf_m12(command, "echo %s | sudo -S chmod ug+s %s", pw, full_exec_name);  // set the "set-user" bits (must do owner and group)
 					system_m12(command, TRUE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 					// renice in shell with sudo password (can't change current process priority from within process unless UID is root, or change kernel CAP_SETUID to true)
 					pid = getpid();
@@ -32862,6 +32880,49 @@ si4	PROC_pthread_mutex_lock_m12(pthread_mutex_t_m12 *mutex)
 #endif
 	
 	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m12  // inline causes linking problem in Windows
+inline
+#endif
+si4	PROC_pthread_mutex_trylock_m12(pthread_mutex_t_m12 *mutex)
+{
+	// Non-blocking version of PROC_pthread_mutex_lock_m13()
+	// If the mutex is valid & unlocked: locks the mutex & will returns zero
+	// If the mutex is valid & locked: returns EBUSY
+	// If the mutex is invalid: returns EINVAL
+
+#if defined MACOS_m12 || defined LINUX_m12
+	si4	ret_val;
+	
+	ret_val = pthread_mutex_trylock(mutex);
+	if (ret_val) {
+		if (ret_val == EBUSY)  // already locked
+			return(FALSE_m12);
+		return(UNKNOWN_m12);    // error
+	}
+#endif
+#ifdef WINDOWS_m12
+	DWORD	win_ret_val;
+	
+	win_ret_val = WaitForSingleObject(mutex, (DWORD) 0);
+	switch (win_ret_val) {
+		case WAIT_ABANDONED:  // owning thread terminated - mutex given to calling thread
+		case WAIT_OBJECT_0:  // mutex not owned - given to calling thread
+			ret_val = 0;
+			break;
+		case WAIT_TIMEOUT:
+			ret_val = EBUSY;
+			break;
+		case WAIT_FAILED:
+		default:
+			ret_val = EINVAL;
+			break;
+	}
+#endif
+	
+	return(TRUE_m12);  // mutex obtained
 }
 
 

@@ -124,7 +124,7 @@ ui4 	G_add_level_extension_m13(si1 *directory_name)
 	// returns type code of existing level
 	// appends extension to passed directory_name (enough space assumed to be available)
 
-	from_root = G_path_from_root_m13(directory_name, full_path);  // returns T/F on whether full_path path wsa from root
+	from_root = G_full_path_m13(directory_name, full_path);  // returns T/F on whether full_path path wsa from root
 	G_extract_path_parts_m13(full_path, enclosing_dir, base_name, NULL);
 		
 	// try session
@@ -1628,7 +1628,7 @@ tern	G_check_file_list_m13(si1 **file_list, si4 n_files)
 	for (i = 0; i < n_files; ++i) {
 		if (STR_contains_regex_m13(file_list[i]) == TRUE_m13)
 			return_m13(FALSE_m13);
-		if (G_path_from_root_m13(file_list[i], NULL) == FALSE_m13)
+		if (G_full_path_m13(file_list[i], NULL) == FALSE_m13)
 			return_m13(FALSE_m13);
 	}
 
@@ -1652,7 +1652,7 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 		file_system_path = ".";
 	else if (*file_system_path == 0)
 		file_system_path = ".";
-	G_path_from_root_m13(file_system_path, full_path);
+	G_full_path_m13(file_system_path, full_path);
 	
 	// make directory if it doesn't exist
 	#if defined MACOS_m13 || defined LINUX_m13
@@ -3324,7 +3324,7 @@ si1     G_exists_m13(si1 *path)
 		return_m13(DOES_NOT_EXIST_m13);
 	
 	tmp_path[0] = 0;
-	G_path_from_root_m13(path, tmp_path);
+	G_full_path_m13(path, tmp_path);
 	
 	errno_reset_m13();
 #if defined MACOS_m13 || defined LINUX_m13
@@ -3370,7 +3370,7 @@ tern	G_extract_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *ex
 	}
 		
 	// get path from root
-	G_path_from_root_m13(full_file_name, temp_full_file_name);
+	G_full_path_m13(full_file_name, temp_full_file_name);
 
 	// move pointer to end of string
 	c = temp_full_file_name + strlen(temp_full_file_name) - 1;
@@ -3990,7 +3990,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		md_path = (si1 *) malloc_m13((size_t) FULL_FILE_NAME_BYTES_m13);
 	
 	// find entry level
-	G_path_from_root_m13(path, md_path);
+	G_full_path_m13(path, md_path);
 	code = G_MED_type_code_from_string_m13(md_path);
 	switch(code) {
 		case SESSION_DIRECTORY_TYPE_CODE_m13:
@@ -4154,7 +4154,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		md_path = (si1 *) malloc_m13((size_t) FULL_FILE_NAME_BYTES_m13);
 	
 	// find entry level
-	G_path_from_root_m13(path, md_path);
+	G_full_path_m13(path, md_path);
 	code = G_MED_type_code_from_string_m13(path);
 	switch(code) {
 		case RECORD_DIRECTORY_TYPE_CODE_m13:
@@ -4987,6 +4987,127 @@ tern	G_frequencies_vary_m13(SESSION_m13 *sess)
 }
 
 
+tern	G_full_path_m13(si1 *path, si1 *full_path)
+{
+	tern	contains_formatting, from_root, modify_path;
+	si1	tmp_path[FULL_FILE_NAME_BYTES_m13];
+	si8	len;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// assumes full_path has adequate space for new path
+	
+	// if full_path == NULL : return T/F on path, do not modify path
+	// if full_path == path : return T/F on path, do modify path
+	// if full_path != path && full_path : return T/F on path, return path from root in full_path, leaving path unmodified
+	
+	if (path == NULL) {
+		if (full_path)
+			*full_path = 0;
+		return_m13(FALSE_m13);
+	}
+	
+	from_root = contains_formatting = modify_path = FALSE_m13;
+	contains_formatting = STR_contains_formatting_m13(path, tmp_path);  // also remove formatting
+	if (full_path)
+		modify_path = TRUE_m13;
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	si1	*c, *c2, base_dir[FULL_FILE_NAME_BYTES_m13];
+
+	// already from root
+	if (*tmp_path == '/')
+		from_root = TRUE_m13;
+
+	if (modify_path == FALSE_m13)
+		goto PATH_FROM_ROOT_EXIT_m13;
+
+	strcpy(full_path, tmp_path);
+
+	// remove terminal '/' from passed path if present
+	len = strlen(full_path);
+	if (len)
+		if (full_path[len - 1] == '/')
+			full_path[--len] = 0;
+	
+	if (*full_path == '/')
+		return_m13(TRUE_m13);
+	
+	// get base directory
+	c = full_path;
+	if (*c == '~') {
+		strcpy(base_dir, getenv("HOME"));
+		++c;  // skip '~'
+		if (*c == '/')  // skip "~/"
+			++c;
+	} else {
+		getcwd_m13(base_dir, FULL_FILE_NAME_BYTES_m13);
+	}
+	
+	// drop terminal '/' from base_dir, if present
+	len = strlen(base_dir);
+	if (base_dir[len - 1] == '/') {
+		if (len > 1)  // not at root
+			base_dir[--len] = 0;
+	}
+	
+	// handle "." & ".."
+	while (*c == '.') {
+		if (*(c + 1) == '.') {  // backup base_dir to previous directory
+			c2 = base_dir + len;
+			while (*--c2 != '/');
+			if (c2 == base_dir)  // at root
+				*++c2 = 0;
+			else
+				*c2 = 0;
+			len = c2 - base_dir;
+			++c;
+		}
+		if (*(c + 1) == '/')
+			c += 2;
+		else
+			break;  // ".filename" (invisible) form
+	}
+
+	if (*c)
+		sprintf_m13(full_path, "%s/%s", base_dir, c);  // Note c may overlap full_path so use sprintf_m13()
+	else
+		strcpy(full_path, base_dir);
+#endif
+	
+#ifdef WINDOWS_m13
+	si1		tmp_path2[FULL_FILE_NAME_BYTES_m13];
+	
+	
+	len = (si8) GetFullPathNameA(tmp_path, (DWORD) FULL_FILE_NAME_BYTES_m13, tmp_path2, NULL);
+	if (len == 0) {  // can't resolve path
+		if (full_path != path)  // if in place, leave path intact
+			*full_path = 0;
+		from_root = FALSE_m13;
+		goto PATH_FROM_ROOT_EXIT_m13;
+	}
+	
+	if (strncmp(tmp_path, tmp_path2, len) == 0)
+		from_root = TRUE_m13;
+	
+	// don't modify path, just return T/F
+	if (modify_path == FALSE_m13)
+		goto PATH_FROM_ROOT_EXIT_m13;
+	
+	strcpy(full_path, tmp_path2);
+#endif
+	
+PATH_FROM_ROOT_EXIT_m13:
+	
+	if (contains_formatting == TRUE_m13 && modify_path == FALSE_m13)  // only give message if not modifying path
+		G_warning_message_m13("%s(): path contains formatting\n", __FUNCTION__);  // only message if from root & can't modify path
+
+	return_m13(from_root);
+}
+
+
 void	G_function_stack_trap_m13(si4 sig_num)
 {
 	const si1	*error_type;
@@ -5101,7 +5222,7 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	// If list components do not have a file name, and one is passed, it is used.
 	// If list components do not have a file name, and none is passed, "*" is used.
 	// If list components do not have an enclosing directory, and one is passed, it is used.
-	// If list components do not have an enclosing directory, and none is passed, G_path_from_root_m13() is used.
+	// If list components do not have an enclosing directory, and none is passed, G_full_path_m13() is used.
 	// If list components do not have an extension, and one is passed, it is used.
 	// If list components do not have an extension, and none is passed, none is used.
 	regex = FALSE_m13;
@@ -5118,7 +5239,7 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 				if (*enclosing_directory == 0)
 					sprintf_m13(tmp_ptr_ptr[i], "%s/%s", enclosing_directory, file_list[i]);
 				else
-					G_path_from_root_m13(file_list[i], file_list[i]);
+					G_full_path_m13(file_list[i], file_list[i]);
 				
 			} else {
 				strcpy(tmp_ptr_ptr[i], file_list[i]);
@@ -5132,12 +5253,12 @@ si1	**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_dir
 	}
 
 	// no file_list passed (+/- enclosing_directory, +/- name, +/- extension, are passed instead)
-	// If no enclosing_directory passed, G_path_from_root_m130() is used.
+	// If no enclosing_directory passed, G_full_path_m130() is used.
 	// If no name is passed, "*" is used.
 	// If no extension is passed, none is used.
 	else {  // file_list == NULL
 		file_list = (si1 **) calloc_2D_m13((size_t) 1, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
-		G_path_from_root_m13(enclosing_directory, enclosing_directory);
+		G_full_path_m13(enclosing_directory, enclosing_directory);
 		if (*name)
 			sprintf_m13(file_list[0], "%s/%s", enclosing_directory, name);
 		else
@@ -6172,7 +6293,7 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 	}
 	
 	memset(session_directory, 0, FULL_FILE_NAME_BYTES_m13);
-	G_path_from_root_m13(MED_file_name, session_directory);
+	G_full_path_m13(MED_file_name, session_directory);
 	code = G_MED_type_code_from_string_m13(session_directory);
 
 	switch (code) {
@@ -6561,7 +6682,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		globals_m13->app_info->version_minor = (ui1) va_arg(args, ui4);  // varargs can't take single byte arguments
 		va_end(args);
 		
-		G_path_from_root_m13(app_path, globals_m13->app_info->path);
+		G_full_path_m13(app_path, globals_m13->app_info->path);
 		G_extract_path_parts_m13(globals_m13->app_info->path, NULL, globals_m13->app_info->name, NULL);
 
 		G_file_times_m13(NULL, globals_m13->app_info->path, &globals_m13->app_info->file_times, FALSE_m13);
@@ -7081,7 +7202,7 @@ ui4	G_level_from_base_name_m13(si1 *path, si1 *level_path)
 		return(NO_TYPE_CODE_m13);
 	
 	// get path from root
-	G_path_from_root_m13(path, tmp_path);
+	G_full_path_m13(path, tmp_path);
 	
 	// see if it already has a level
 	level = G_get_level_m13(tmp_path, NULL);
@@ -7277,7 +7398,7 @@ ui4    G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1 *MED_name)
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x20);  // spaces
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x27);  // apostrophes
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x60);  // graves
-	G_path_from_root_m13(local_MED_dir, local_MED_dir);
+	G_full_path_m13(local_MED_dir, local_MED_dir);
 
 	// check path: if file passed, get enclosing directory
 	fe = G_exists_m13(local_MED_dir);
@@ -9095,127 +9216,6 @@ si8     G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment)
 }
 
 
-tern	G_path_from_root_m13(si1 *path, si1 *root_path)
-{
-	tern	contains_formatting, from_root, modify_path;
-	si1	tmp_path[FULL_FILE_NAME_BYTES_m13];
-	si8	len;
-
-#ifdef FN_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// assumes root_path has adequate space for new path
-	
-	// if root_path == NULL : return T/F on path, do not modify path
-	// if root_path == path : return T/F on path, do modify path
-	// if root_path != path && root_path : return T/F on path, return path from root in root_path, leaving path unmodified
-	
-	if (path == NULL) {
-		if (root_path)
-			*root_path = 0;
-		return_m13(FALSE_m13);
-	}
-	
-	from_root = contains_formatting = modify_path = FALSE_m13;
-	contains_formatting = STR_contains_formatting_m13(path, tmp_path);  // also remove formatting
-	if (root_path)
-		modify_path = TRUE_m13;
-	
-#if defined MACOS_m13 || defined LINUX_m13
-	si1	*c, *c2, base_dir[FULL_FILE_NAME_BYTES_m13];
-
-	// already from root
-	if (*tmp_path == '/')
-		from_root = TRUE_m13;
-
-	if (modify_path == FALSE_m13)
-		goto PATH_FROM_ROOT_EXIT_m13;
-
-	strcpy(root_path, tmp_path);
-
-	// remove terminal '/' from passed path if present
-	len = strlen(root_path);
-	if (len)
-		if (root_path[len - 1] == '/')
-			root_path[--len] = 0;
-	
-	if (*root_path == '/')
-		return_m13(TRUE_m13);
-	
-	// get base directory
-	c = root_path;
-	if (*c == '~') {
-		strcpy(base_dir, getenv("HOME"));
-		++c;  // skip '~'
-		if (*c == '/')  // skip "~/"
-			++c;
-	} else {
-		getcwd_m13(base_dir, FULL_FILE_NAME_BYTES_m13);
-	}
-	
-	// drop terminal '/' from base_dir, if present
-	len = strlen(base_dir);
-	if (base_dir[len - 1] == '/') {
-		if (len > 1)  // not at root
-			base_dir[--len] = 0;
-	}
-	
-	// handle "." & ".."
-	while (*c == '.') {
-		if (*(c + 1) == '.') {  // backup base_dir to previous directory
-			c2 = base_dir + len;
-			while (*--c2 != '/');
-			if (c2 == base_dir)  // at root
-				*++c2 = 0;
-			else
-				*c2 = 0;
-			len = c2 - base_dir;
-			++c;
-		}
-		if (*(c + 1) == '/')
-			c += 2;
-		else
-			break;  // ".filename" (invisible) form
-	}
-
-	if (*c)
-		sprintf_m13(root_path, "%s/%s", base_dir, c);  // Note c may overlap root_path so use sprintf_m13()
-	else
-		strcpy(root_path, base_dir);
-#endif
-	
-#ifdef WINDOWS_m13
-	si1		tmp_path2[FULL_FILE_NAME_BYTES_m13];
-	
-	
-	len = (si8) GetFullPathNameA(tmp_path, (DWORD) FULL_FILE_NAME_BYTES_m13, tmp_path2, NULL);
-	if (len == 0) {  // can't resolve path
-		if (root_path != path)  // if in place, leave path intact
-			*root_path = 0;
-		from_root = FALSE_m13;
-		goto PATH_FROM_ROOT_EXIT_m13;
-	}
-	
-	if (strncmp(tmp_path, tmp_path2, len) == 0)
-		from_root = TRUE_m13;
-	
-	// don't modify path, just return T/F
-	if (modify_path == FALSE_m13)
-		goto PATH_FROM_ROOT_EXIT_m13;
-	
-	strcpy(root_path, tmp_path2);
-#endif
-	
-PATH_FROM_ROOT_EXIT_m13:
-	
-	if (contains_formatting == TRUE_m13 && modify_path == FALSE_m13)  // only give message if not modifying path
-		G_warning_message_m13("%s(): path contains formatting\n", __FUNCTION__);  // only message if from root & can't modify path
-
-	return_m13(from_root);
-}
-
-
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
@@ -11000,7 +11000,7 @@ si8     G_read_time_series_data_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice)
 	read_end_block = end_block;
 	if (tsd_fps->parameters.cps == NULL) {
 		compressed_data_bytes = REMOVE_DISCONTINUITY_m13(tsi[end_block + 1].file_offset) - start_offset;
-		cps = CMP_allocate_processing_struct_m13(tsd_fps, CMP_DECOMPRESSION_MODE_m13, n_samps, compressed_data_bytes, tmd2->maximum_block_keysample_bytes, tmd2->maximum_block_samples, NULL, NULL);
+		cps = CMP_allocate_CPS_m13(tsd_fps, CMP_DECOMPRESSION_MODE_m13, n_samps, compressed_data_bytes, tmd2->maximum_block_keysample_bytes, tmd2->maximum_block_samples, NULL, NULL);
 		if ((cps_caching = cps->directives.cps_caching) == TRUE_m13) {
 			cached_blocks = cps->parameters.cached_blocks = (CMP_CACHE_BLOCK_INFO_m13 *) calloc_m13((size_t) n_blocks, sizeof(CMP_CACHE_BLOCK_INFO_m13));
 			cps->parameters.cached_block_list_len = n_blocks;
@@ -16606,7 +16606,7 @@ CMP_BUFFERS_m13    *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buf
 }
 
 
-CPS_m13	*CMP_allocate_processing_struct_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMETERS_m13 *parameters)
+CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMETERS_m13 *parameters)
 {
 	tern	need_compressed_data = FALSE_m13;
 	tern	need_decompressed_data = FALSE_m13;
@@ -16689,8 +16689,10 @@ CPS_m13	*CMP_allocate_processing_struct_m13(FPS_m13 *fps, ui4 mode, si8 data_sam
 		cps->parameters.symbol_map = NULL;
 		cps->parameters.cumulative_count = NULL;
 		cps->parameters.minimum_range = NULL;
+		if (cps->directives.algorithm == CMP_MBE_COMPRESSION_m13 && cps->directives.mode == CMP_COMPRESSION_MODE_m13)
+			need_derivative_buffer = TRUE_m13;
 	}
-	
+
 	// VDS
 	if (cps->directives.algorithm == CMP_VDS_COMPRESSION_m13)
 		need_VDS_buffers = TRUE_m13;
@@ -30437,6 +30439,8 @@ NET_PARAMS_m13	*NET_get_active_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (globals_m13->tables->NET_params.active != UNKNOWN_m13)
@@ -30618,8 +30622,10 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// get ifconfig() output
 	sprintf_m13(temp_str, "/usr/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
-	if (ret_val < 0) {
+	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
+	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13);
+	G_pop_behavior_m13();
+	if (ret_val) {
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
@@ -30737,8 +30743,10 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// get ifconfig() output
 	sprintf_m13(temp_str, "/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
-	if (ret_val < 0) {
+	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
+	ret_val = system_pipe_m13(&buffer, 0, temp_str, SP_DEFAULT_m13);
+	G_pop_behavior_m13();
+	if (ret_val) {
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
@@ -30871,8 +30879,10 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		
 	// get ipconfig() output
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, "ipconfig /all", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
-	if (ret_val < 0) {
+	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
+	ret_val = system_pipe_m13(&buffer, 0, "ipconfig /all", SP_DEFAULT_m13);
+	G_pop_behavior_m13();
+	if (ret_val) {
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
@@ -31010,13 +31020,9 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 		return_m13(np);
 	}
 
-	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
-		if (*np->interface_name)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	if (global_np == TRUE_m13)
+		if (*np->interface_name)  // may have been done by another thread while waiting
 			return_m13(np);
-		}
-	}
 			
 	#ifdef MACOS_m13
 	command = "/sbin/route -n get default";
@@ -31028,8 +31034,10 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	command = "route PRINT -4 0.0.0.0";
 	#endif
 	buffer = NULL;
+	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13)
 	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
-	if (ret_val < 0) {  // probably no internet connection, otherwise route() error
+	G_pop_behavior_m13();
+	if (ret_val) {  // probably no internet connection, otherwise route() error
 		if (global_np == TRUE_m13)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		if (free_np == TRUE_m13)
@@ -31100,6 +31108,8 @@ NET_PARAMS_m13	*NET_get_duplex_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (*globals_m13->tables->NET_params.duplex)
@@ -31276,6 +31286,8 @@ NET_PARAMS_m13	*NET_get_lan_ipv4_address_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (*globals_m13->tables->NET_params.LAN_IPv4_address_string) {
@@ -31305,6 +31317,8 @@ NET_PARAMS_m13	*NET_get_link_speed_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (*globals_m13->tables->NET_params.link_speed)
@@ -31348,6 +31362,8 @@ NET_PARAMS_m13	*NET_get_mac_address_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (*globals_m13->tables->NET_params.MAC_address_string) {
@@ -31377,6 +31393,8 @@ NET_PARAMS_m13	*NET_get_mtu_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (globals_m13->tables->NET_params.MTU > 0)
@@ -31415,6 +31433,8 @@ NET_PARAMS_m13	*NET_get_parameters_m13(si1 *iface, NET_PARAMS_m13 *np)
 	// fill all fields of NET_PARAMS_m13 structure
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (globals_m13->tables->NET_params.plugged_in != UNKNOWN_m13)
@@ -31468,6 +31488,8 @@ NET_PARAMS_m13	*NET_get_plugged_in_m13(si1 *iface, NET_PARAMS_m13 *np)
 #endif
 
 	copy_global = NET_resolve_arguments_m13(iface, &np, &free_np);
+	if (copy_global == UNKNOWN_m13)
+		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
 		if (globals_m13->tables->NET_params.plugged_in != UNKNOWN_m13)
@@ -31531,8 +31553,10 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 #endif
 	
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 | RETRY_ONCE_m13);
-	if (ret_val < 0) {
+	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13 | RETRY_ONCE_m13);
+	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13);
+	G_pop_behavior_m13();
+	if (ret_val || buffer == NULL) {  // curl can fail without output, in which case buffer is NULL
 		if (NET_get_lan_ipv4_address_m13(NULL, np) == NULL)
 			G_warning_message_m13("%s(): no internet connection\n", __FUNCTION__);
 		else
@@ -31749,6 +31773,8 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 #endif
 
 	// returns "copy global" (if global value known, just copy to np, else get & copy to global)
+	// UNKNOWN_m12 indicates failure
+
 	
 	if (iface) {
 		if (*iface == 0)
@@ -31771,7 +31797,8 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 	}
 	
 	if (*globals_m13->tables->NET_params.interface_name == 0)
-		NET_get_default_interface_m13(&globals_m13->tables->NET_params);
+		if (NET_get_default_interface_m13(&globals_m13->tables->NET_params) == NULL)
+			return_m13(UNKNOWN_m13);
 
 	interface_is_global = FALSE_m13;
 	if (iface) {
@@ -32618,7 +32645,8 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 		if (effective_user == 0) {  // just reset sudo timeout if necessary (root UID == 0 so this should not prompt)
 			system("sudo -l > /dev/null");
 		} else {
-			si1			pw[MAX_ASCII_PASSWORD_STRING_BYTES_m13], command[1024], *exec_name;
+			si1			pw[MAX_ASCII_PASSWORD_STRING_BYTES_m13], command[1024];
+			si1			*exec_name, full_exec_name[FULL_FILE_NAME_BYTES_m13];
 			sf8			timeout_secs;
 			va_list			arg_p;
 			pid_t			pid;
@@ -32640,12 +32668,13 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 			exec_name = va_arg(arg_p, si1 *);
 			timeout_secs = va_arg(arg_p, sf8);
 			va_end(arg_p);
-			
+			G_full_path_m13(exec_name, full_exec_name);
+
 			if (G_enter_ascii_password_m13(pw, "Enter sudo password", FALSE_m13, (sf8) timeout_secs, FALSE_m13) == TRUE_m13) {
 				if (*pw) {
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
-					sprintf_m13(command, "echo %s | sudo -S chown root %s", pw, exec_name);  // in case owner wasn't root
+					sprintf_m13(command, "echo %s | sudo -S chown root %s", pw, full_exec_name);  // in case owner wasn't root
 					G_push_behavior_m13(SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
 					sys_ret_val = system_m13(NULL, command, TRUE_m13);
 					if (sys_ret_val) {  // just check for password failure once
@@ -32653,9 +32682,9 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 						G_warning_message_m13("%s(): Invalid sudo password\n", __FUNCTION__);
 						return(FALSE_m13);
 					}
-					sprintf_m13(command, "echo %s | sudo -S chmod g+x %s", pw, exec_name);  // in case group didn't have execute permissions
+					sprintf_m13(command, "echo %s | sudo -S chmod g+x %s", pw, full_exec_name);  // in case group didn't have execute permissions
 					system_m13(NULL, command, TRUE_m13);
-					sprintf_m13(command, "echo %s | sudo -S chmod ug+s %s", pw, exec_name);  // set the "set-user" bits (must do owner and group)
+					sprintf_m13(command, "echo %s | sudo -S chmod ug+s %s", pw, full_exec_name);  // set the "set-user" bits (must do owner and group)
 					system_m13(NULL, command, TRUE_m13);
 					// renice in shell with sudo password (can't change current process priority from within process unless UID is root, or change kernel CAP_SETUID to true)
 					pid = getpid();
@@ -33459,7 +33488,7 @@ si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 
 	// returns a list of file paths that exist at or below the passed path level
 	
-	G_path_from_root_m13(MED_path, tmp_path);
+	G_full_path_m13(MED_path, tmp_path);
 	
 	file_list = NULL;
 	*n_files = 0;
@@ -34622,7 +34651,7 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 	base_paths = NULL; files = NULL;
 
 	// get full path & name
-	G_path_from_root_m13(session_path, sess_path);
+	G_full_path_m13(session_path, sess_path);
 	G_extract_path_parts_m13(sess_path, NULL, sess_name, NULL);
 
 	// get volume block size
@@ -39402,7 +39431,7 @@ si4    WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buf
 		if (find_h == INVALID_HANDLE_VALUE)
 			continue;
 		if (full_path == TRUE_m13) {
-			G_path_from_root_m13(dir_name, dir_name);
+			G_full_path_m13(dir_name, dir_name);
 			G_extract_path_parts_m13(dir_name, enclosing_directory, NULL, NULL);
 		}
 		do {
@@ -40456,7 +40485,7 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 		return(NULL);
 	}
 	
-	G_path_from_root_m13(path, tmp_path);
+	G_full_path_m13(path, tmp_path);
 	path = tmp_path;
 	
 	// get new FILE_m13
