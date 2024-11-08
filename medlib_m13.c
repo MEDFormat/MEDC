@@ -16684,13 +16684,13 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		cps->parameters.cumulative_count = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8), FALSE_m13);
 		cps->parameters.minimum_range = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8), FALSE_m13);
 	} else {
+		if (cps->directives.compression_mode == CMP_COMPRESSION_MODE_m13)  // MBE needs derivative buffer for compression
+			need_derivative_buffer = TRUE_m13;
 		cps->parameters.count = NULL;
 		cps->parameters.sorted_count = NULL;
 		cps->parameters.symbol_map = NULL;
 		cps->parameters.cumulative_count = NULL;
 		cps->parameters.minimum_range = NULL;
-		if (cps->directives.algorithm == CMP_MBE_COMPRESSION_m13 && cps->directives.mode == CMP_COMPRESSION_MODE_m13)
-			need_derivative_buffer = TRUE_m13;
 	}
 
 	// VDS
@@ -31034,7 +31034,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	command = "route PRINT -4 0.0.0.0";
 	#endif
 	buffer = NULL;
-	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13)
+	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
 	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
 	G_pop_behavior_m13();
 	if (ret_val) {  // probably no internet connection, otherwise route() error

@@ -16597,13 +16597,13 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 		cps->parameters.cumulative_count = (void *) calloc_2D_m12((size_t) CMP_PRED_CATS_m12, CMP_RED_MAX_STATS_BINS_m12 + 1, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		cps->parameters.minimum_range = (void *) calloc_2D_m12((size_t) CMP_PRED_CATS_m12, CMP_RED_MAX_STATS_BINS_m12, sizeof(ui8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	} else {
+		if (cps->directives.mode == CMP_COMPRESSION_MODE_m12)  // MBE needs derivative buffer for compression
+			need_derivative_buffer = TRUE_m12;
 		cps->parameters.count = NULL;
 		cps->parameters.sorted_count = NULL;
 		cps->parameters.symbol_map = NULL;
 		cps->parameters.cumulative_count = NULL;
 		cps->parameters.minimum_range = NULL;
-		if (cps->directives.algorithm == CMP_MBE_COMPRESSION_m12 && cps->directives.mode == CMP_COMPRESSION_MODE_m12)
-			need_derivative_buffer = TRUE_m12;
 	}
 	
 	// VDS
