@@ -3729,6 +3729,7 @@ tern	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf
 tern	CMP_lad_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 tern	CMP_lad_reg_sf8_m13(sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
 tern	CMP_lad_reg_si4_m13(si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
+sf8	*CMP_lin_interp_2_sf8_m13(si8 *in_x, sf8 *in_y, si8 in_len, sf8 *out_y, si8 *out_len);
 sf8	*CMP_lin_interp_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len);
 si4	*CMP_lin_interp_si4_m13(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len);
 tern	CMP_lin_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);

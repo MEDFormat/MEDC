@@ -19586,6 +19586,57 @@ tern    CMP_lad_reg_si4_m13(si4 *input_buffer, si8 len, sf8 *m, sf8 *b)
 }
 
 
+sf8	*CMP_lin_interp_2_sf8_m13(si8 *in_x, sf8 *in_y, si8 in_len, sf8 *out_y, si8 *out_len)
+{
+	tern	free_out_y = FALSE_m13;
+	si8	i, local_out_len, *xp, dx, last_x;
+	sf8	*yp, *oy, dy, last_y, step;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// linear interpolation between points in (x,y) pairs at unitary spacing
+		
+	if (out_len == NULL)
+		out_len = &local_out_len;
+	*out_len = (in_x[in_len - 1] - in_x[0]) + 1;
+	
+	*out_len = (in_x[in_len - 1] - in_x[0]) + 1;
+	if (out_y == NULL) {
+		free_out_y = TRUE_m13;
+		out_y = (sf8 *) malloc_m13((size_t) (*out_len << 3));
+	}
+
+	xp = in_x + 1;
+	last_x = *xp;
+	yp = in_y + 1;
+	last_y = *yp;
+	oy = out_y;
+	*oy++ = *in_y;
+	for (i = in_len - 1; i--;) {
+		dx = *xp - last_x;
+		if (dx <= 0) {
+			if (dx)
+				G_set_error_m13(E_CMP_m13, "x is not sorted");
+			else
+				G_set_error_m13(E_CMP_m13, "x is not unique");
+			if (free_out_y == TRUE_m13)
+				free_m13((void *) out_y);
+			return_m13(NULL);
+		}
+		dy = *yp - last_y;
+		step = dy / dx;
+		while (dx--)
+			*oy++ = (last_y += step);
+		last_x = *xp++;
+		last_y = *yp++;
+	}
+	
+	return_m13(out_y);
+}
+
+
 sf8	*CMP_lin_interp_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len)
 {
 	sf8     x, inc, f_bot_x, bot_y, range;
@@ -31773,7 +31824,7 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 #endif
 
 	// returns "copy global" (if global value known, just copy to np, else get & copy to global)
-	// UNKNOWN_m12 indicates failure
+	// UNKNOWN_m13 indicates failure
 
 	
 	if (iface) {

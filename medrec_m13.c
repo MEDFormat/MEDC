@@ -744,7 +744,7 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 		proc_globals = G_proc_globals_m13(NULL);
 		Seiz = (REC_Seiz_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
 		STR_time_m13(NULL, Seiz->latest_offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globals->time.recording_time_offset, time_str);
+		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globals->time_constants.recording_time_offset, time_str);
 		printf_m13("Number of Channels: %d\n", Seiz->number_of_channels);
 		printf_m13("Onset Code: %d ", Seiz->onset_code);
 		switch (Seiz->onset_code) {
@@ -793,9 +793,9 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 			else
 				printf_m13("Channel Name: no entry\n");
 			STR_time_m13(NULL, chans[i].onset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globals->time.recording_time_offset, time_str);
+			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globals->time_constants.recording_time_offset, time_str);
 			STR_time_m13(NULL, chans[i].offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globals->time.recording_time_offset, time_str);
+			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globals->time_constants.recording_time_offset, time_str);
 			if (chans[i].segment_number == REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13)
 				printf_m13("Segment Number: no entry\n");
 			else
@@ -1419,6 +1419,166 @@ REC_CSti_NOT_ALIGNED_m13:
 	G_set_error_m13(E_REC_m13, "CSti structure is NOT aligned");
 
 	return_m13(FALSE_m13);
+
+}
+
+
+//*************************************************************************************//
+//*****************************   HFOc: CS HFO Detection   ****************************//
+//*************************************************************************************//
+
+void    REC_show_HFOc_type_m13(RECORD_HEADER_m13 *record_header)
+{
+	REC_HFOc_v11_m13	*hfoc_1;
+	REC_HFOc_v12_m13	*hfoc_2;
+	REC_HFOc_v13_m13	*hfoc_3;
+
+#ifdef FN_DEBUG_m13
+	G_message_m13("%s()\n", __FUNCTION__);
+#endif
+	
+	// Versions 1.0-3
+	if (record_header->version_major == 1 && record_header->version_minor <= 3) {
+		switch (record_header->version_minor) {
+			case 0:
+				break;
+			case 1:
+				hfoc_1 = (REC_HFOc_v11_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+				printf_m13("End Time: %ld\n", hfoc_1->end_time);
+				printf_m13("Start Frequency: %f\n", hfoc_1->start_frequency);
+				printf_m13("End Frequency: %f\n", hfoc_1->end_frequency);
+				break;
+			case 2:
+				hfoc_2 = (REC_HFOc_v12_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+				printf_m13("End Time: %ld\n", hfoc_2->end_time);
+				printf_m13("Start Frequency: %f\n", hfoc_2->start_frequency);
+				printf_m13("End Frequency: %f\n", hfoc_2->end_frequency);
+				printf_m13("Start Times: %ld, %ld, %ld, %ld\n", hfoc_2->start_times[0], hfoc_2->start_times[1], hfoc_2->start_times[2], hfoc_2->start_times[3]);
+				printf_m13("End Times: %ld, %ld, %ld, %ld\n", hfoc_2->end_times[0], hfoc_2->end_times[1], hfoc_2->end_times[2], hfoc_2->end_times[3]);
+				printf_m13("Combinations: %f, %f, %f, %f\n", hfoc_2->combinations[0], hfoc_2->combinations[1], hfoc_2->combinations[2], hfoc_2->combinations[3]);
+				break;
+			case 3:
+				hfoc_3 = (REC_HFOc_v13_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+				printf_m13("End Time: %ld\n", hfoc_3->end_time);
+				printf_m13("Start Frequency: %f\n", hfoc_3->start_frequency);
+				printf_m13("End Frequency: %f\n", hfoc_3->end_frequency);
+				printf_m13("Start Times: %ld, %ld, %ld, %ld\n", hfoc_3->start_times[0], hfoc_3->start_times[1], hfoc_3->start_times[2], hfoc_3->start_times[3]);
+				printf_m13("End Times: %ld, %ld, %ld, %ld\n", hfoc_3->end_times[0], hfoc_3->end_times[1], hfoc_3->end_times[2], hfoc_3->end_times[3]);
+				printf_m13("Combinations: %f, %f, %f, %f\n", hfoc_3->combinations[0], hfoc_3->combinations[1], hfoc_3->combinations[2], hfoc_3->combinations[3]);
+				printf_m13("Amplitudes: %f, %f, %f, %f\n", hfoc_3->amplitudes[0], hfoc_3->amplitudes[1], hfoc_3->amplitudes[2], hfoc_3->amplitudes[3]);
+				printf_m13("Frequency Dominances: %f, %f, %f, %f\n", hfoc_3->frequency_dominances[0], hfoc_3->frequency_dominances[1], hfoc_3->frequency_dominances[2], hfoc_3->frequency_dominances[3]);
+				printf_m13("Products: %f, %f, %f, %f\n", hfoc_3->products[0], hfoc_3->products[1], hfoc_3->products[2], hfoc_3->products[3]);
+				printf_m13("Cycles: %f, %f, %f, %f\n", hfoc_3->cycles[0], hfoc_3->cycles[1], hfoc_3->cycles[2], hfoc_3->cycles[3]);
+				break;
+		}
+
+	}
+	// Unrecognized record version
+	else {
+		G_set_error_m13(E_REC_m13, "unrecognized HFOc Record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
+	}
+
+	return;
+}
+
+
+tern	REC_check_HFOc_type_alignment_m13(ui1 *bytes)
+{
+	tern			free_flag = FALSE_m13;
+	ui1			version;
+	REC_HFOc_v11_m13	*hfoc_1;
+	REC_HFOc_v12_m13	*hfoc_2;
+	REC_HFOc_v13_m13	*hfoc_3;
+
+#ifdef FN_DEBUG_m13
+	G_message_m13("%s()\n", __FUNCTION__);
+#endif
+	
+	// check overall size
+	if (sizeof(REC_HFOc_v11_m13) != REC_HFOc_v11_BYTES_m13) {
+		version = 1;
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	}
+	if (sizeof(REC_HFOc_v12_m13) != REC_HFOc_v12_BYTES_m13) {
+		version = 2;
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	}
+	if (sizeof(REC_HFOc_v13_m13) != REC_HFOc_v13_BYTES_m13) {
+		version = 3;
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	}
+
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(REC_HFOc_v13_BYTES_m13);
+		free_flag = TRUE_m13;
+	}
+
+	// version 1.1
+	version = 1;
+	hfoc_1 = (REC_HFOc_v11_m13 *) bytes;
+	if (&hfoc_1->end_time != (si8 *) (bytes + REC_HFOc_v11_END_TIME_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_1->start_frequency != (sf4 *) (bytes + REC_HFOc_v11_START_FREQUENCY_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_1->end_frequency != (sf4 *) (bytes + REC_HFOc_v11_END_FREQUENCY_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+
+	// version 1.2
+	version = 2;
+	hfoc_2 = (REC_HFOc_v12_m13 *) bytes;
+	if (&hfoc_2->end_time != (si8 *) (bytes + REC_HFOc_v12_END_TIME_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_2->start_frequency != (sf4 *) (bytes + REC_HFOc_v12_START_FREQUENCY_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_2->end_frequency != (sf4 *) (bytes + REC_HFOc_v12_END_FREQUENCY_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_2->start_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v12_START_TIMES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_2->end_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v12_END_TIMES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_2->combinations != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v12_COMBINATIONS_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+
+	// version 1.3
+	version = 3;
+	hfoc_3 = (REC_HFOc_v13_m13 *) bytes;
+	if (&hfoc_3->end_time != (si8 *) (bytes + REC_HFOc_v13_END_TIME_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->start_frequency != (sf4 *) (bytes + REC_HFOc_v13_START_FREQUENCY_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->end_frequency != (sf4 *) (bytes + REC_HFOc_v13_END_FREQUENCY_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->start_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_START_TIMES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->end_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_END_TIMES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->combinations != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_COMBINATIONS_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->amplitudes != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_AMPLITUDES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->frequency_dominances != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_FREQUENCY_DOMINANCES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->products != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_PRODUCTS_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+	if (&hfoc_3->cycles != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_CYCLES_OFFSET_m13))
+		goto REC_HFOc_NOT_ALIGNED_m13;
+
+	// aligned
+	if (free_flag == TRUE_m13)
+		free((void *) bytes);
+
+	return(TRUE_m13);
+
+	// not aligned
+REC_HFOc_NOT_ALIGNED_m13:
+
+	if (free_flag == TRUE_m13)
+		free((void *) bytes);
+
+	G_set_error_m13(E_REC_m13, "REC_HFOc_v1%hhu_m13 structure is NOT aligned", version);
+
+	return(FALSE_m13);
 
 }
 

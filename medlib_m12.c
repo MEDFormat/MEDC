@@ -19560,6 +19560,56 @@ void    CMP_lad_reg_si4_m12(si4 *input_buffer, si8 len, sf8 *m, sf8 *b)
 }
 
 
+sf8	*CMP_lin_interp_2_sf8_m12(si8 *in_x, sf8 *in_y, si8 in_len, sf8 *out_y, si8 *out_len)
+{
+	TERN_m12	free_out_y = FALSE_m12;
+	si8     	i, *xp, dx, last_x, local_out_len;
+	sf8		*yp, *oy, dy, last_y, step;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// linear interpolation between points in (x,y) pairs at unitary spacing
+		
+	if (out_len == NULL)
+		out_len = &local_out_len;
+	*out_len = (in_x[in_len - 1] - in_x[0]) + 1;
+	
+	if (out_y == NULL) {
+		free_out_y = TRUE_m12;
+		out_y = (sf8 *) malloc_m12((size_t) (*out_len << 3), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	}
+
+	xp = in_x + 1;
+	last_x = *xp;
+	yp = in_y + 1;
+	last_y = *yp;
+	oy = out_y;
+	*oy++ = *in_y;
+	for (i = in_len - 1; i--;) {
+		dx = *xp - last_x;
+		if (dx <= 0) {
+			if (dx)
+				G_warning_message_m12("%s(): x is not sorted\n", __FUNCTION__);
+			else
+				G_warning_message_m12("%s(): x is not unique\n", __FUNCTION__);
+			if (free_out_y == TRUE_m12)
+				free_m12((void *) out_y, __FUNCTION__);
+			return(NULL);
+		}
+		dy = *yp - last_y;
+		step = dy / dx;
+		while (dx--)
+			*oy++ = (last_y += step);
+		last_x = *xp++;
+		last_y = *yp++;
+	}
+	
+	return(out_y);
+}
+
+
 sf8	*CMP_lin_interp_sf8_m12(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len)
 {
 	sf8     x, inc, f_bot_x, bot_y, range;

@@ -135,9 +135,8 @@ TERN_m12        REC_check_structure_alignments_m12(ui1 *bytes);
 #define REC_Term_TYPE_CODE_m12          (ui4) 0x6d726554        // ui4 (little endian)
 // #define REC_Term_TYPE_CODE_m12       (ui4) 0x5465726d        // ui4 (big endian)
 
-// If there are any records, there is also a terminal record index
-// in record indices files
-// with the following header values, and no body
+// If there are any records, there is an additional a terminal record index
+// This is for terminal index only, there is no corresponding "Term" record data entry
 // File Offset = record data file length
 // Start Time = segment end μUTC + 1
 // Type String = REC_Term_TYPE_STRING_m12
@@ -610,6 +609,91 @@ typedef struct {
 // Prototypes
 void            REC_show_CSti_type_m12(RECORD_HEADER_m12 *record_header);
 TERN_m12        REC_check_CSti_type_alignment_m12(ui1 *bytes);
+
+
+
+//*************************************************************************************//
+//******************************   HFOc: CS HFO Detection   ***************************//
+//*************************************************************************************//
+
+// Constants
+#define REC_HFOc_TYPE_STRING_m12			"HFOc"                  // ascii[4]
+#define REC_HFOc_TYPE_CODE_m12				(ui4) 0x634F4648        // ui4 (little endian)
+// #define REC_HFOc_TYPE_CODE_m12			(ui4) 0x48464F63        // ui4 (big endian)
+
+// CS HFO bands
+#define REC_HFOc_NUMBER_OF_BANDS_m12			4
+#define REC_HFOc_BAND_STARTS_m12			{44, 73, 120, 197}
+#define REC_HFOc_BAND_CENTERS_m12			{73, 120, 197, 326}
+#define REC_HFOc_BAND_STOPS_m12				{120, 197, 326, 537}
+
+// Version 1.0 (onset time only)
+#define REC_HFOc_v10_BYTES_m12          		0
+
+// Version 1.1 (minimal info)
+#define REC_HFOc_v11_BYTES_m12          		16
+#define REC_HFOc_v11_END_TIME_OFFSET_m12		0	// si8
+#define REC_HFOc_v11_START_FREQUENCY_OFFSET_m12		8	// sf4
+#define REC_HFOc_v11_END_FREQUENCY_OFFSET_m12		12	// sf4
+
+// Version 1.2 (standard info)
+#define REC_HFOc_v12_BYTES_m12          		96
+#define REC_HFOc_v12_END_TIME_OFFSET_m12		REC_HFOc_v11_END_TIME_OFFSET_m12
+#define REC_HFOc_v12_START_FREQUENCY_OFFSET_m12		REC_HFOc_v11_START_FREQUENCY_OFFSET_m12
+#define REC_HFOc_v12_END_FREQUENCY_OFFSET_m12		REC_HFOc_v11_END_FREQUENCY_OFFSET_m12
+#define REC_HFOc_v12_START_TIMES_OFFSET_m12		16	// si8[4]
+#define REC_HFOc_v12_END_TIMES_OFFSET_m12		48	// si8[4]
+#define REC_HFOc_v12_COMBINATIONS_OFFSET_m12		80	// sf4[4]
+
+// Version 1.3 (maximal info)
+#define REC_HFOc_v13_BYTES_m12          		160
+#define REC_HFOc_v13_END_TIME_OFFSET_m12		REC_HFOc_v12_END_TIME_OFFSET_m12
+#define REC_HFOc_v13_START_FREQUENCY_OFFSET_m12		REC_HFOc_v12_START_FREQUENCY_OFFSET_m12
+#define REC_HFOc_v13_END_FREQUENCY_OFFSET_m12		REC_HFOc_v12_END_FREQUENCY_OFFSET_m12
+#define REC_HFOc_v13_START_TIMES_OFFSET_m12		REC_HFOc_v12_START_TIMES_OFFSET_m12
+#define REC_HFOc_v13_END_TIMES_OFFSET_m12		REC_HFOc_v12_END_TIMES_OFFSET_m12
+#define REC_HFOc_v13_COMBINATIONS_OFFSET_m12		REC_HFOc_v12_COMBINATIONS_OFFSET_m12
+#define REC_HFOc_v13_AMPLITUDES_OFFSET_m12		96	// sf4[4]
+#define REC_HFOc_v13_FREQUENCY_DOMINANCES_OFFSET_m12	112	// sf4[4]
+#define REC_HFOc_v13_PRODUCTS_OFFSET_m12		128	// sf4[4]
+#define REC_HFOc_v13_CYCLES_OFFSET_m12			144	// sf4[4]
+
+// Structures
+
+// version 1.1
+typedef struct {
+	si8	end_time;  // conglomerate end time
+	sf4	start_frequency;  // lowest frequency in detection bands
+	sf4	end_frequency;  // highest frequency in detection bands
+} REC_HFOc_v11_m12;
+
+// version 1.2
+typedef struct {
+	si8	end_time;  // conglomerate end time
+	sf4	start_frequency;  // lowest frequency in detection bands
+	sf4	end_frequency;  // highest frequency in detection bands
+	si8	start_times[REC_HFOc_NUMBER_OF_BANDS_m12];
+	si8	end_times[REC_HFOc_NUMBER_OF_BANDS_m12];
+	sf4	combinations[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized combination scores (0 - 1)
+} REC_HFOc_v12_m12;
+
+// version 1.3
+typedef struct {
+	si8	end_time;  // conglomerate end time
+	sf4	start_frequency;  // lowest frequency in detection bands
+	sf4	end_frequency;  // highest frequency in detection bands
+	si8	start_times[REC_HFOc_NUMBER_OF_BANDS_m12];
+	si8	end_times[REC_HFOc_NUMBER_OF_BANDS_m12];
+	sf4	combinations[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized combination scores (0 - 1)
+	sf4	amplitudes[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized amplitude scores (0 - 1)
+	sf4	frequency_dominances[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized frequency dominance scores (0 - 1)
+	sf4	products[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized product scores (0 - 1)
+	sf4	cycles[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized cycles scores (0 - 1)
+} REC_HFOc_v13_m12;
+
+// Prototypes
+void            REC_show_HFOc_type_m12(RECORD_HEADER_m12 *record_header);
+TERN_m12        REC_check_HFOc_type_alignment_m12(ui1 *bytes);
 
 
 
