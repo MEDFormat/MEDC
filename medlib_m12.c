@@ -89,7 +89,7 @@
 
 // All library versions associated with a particular major format version are guaranteed to work on MED files of that major version.
 // Minor format versions may add fields to the format in protected regions, but no preexisting fields will be removed or moved.
-// Only library versions released on or afer a minor version will make use of new fields, and only if the minor version of the files contains them.
+// Only library versions released on or after a minor version will make use of new fields, and only if the minor version of the files contains them.
 // Backward compatibility will be maintained between major versions if practical.
 
 
@@ -305,7 +305,7 @@ SEGMENT_m12	*G_allocate_segment_m12(SEGMENT_m12 *seg, FILE_PROCESSING_STRUCT_m12
 	
 	// enclosing_path is the path to the enclosing directory
 	// chan_name is the base name, with no extension
-	// if time series channels are requested, the CMP_PROCESSING_STRUCT_m12 structures must be allocated seperately.
+	// if time series channels are requested, the CMP_PROCESSING_STRUCT_m12 structures must be allocated separately.
 	// if time series data are requested, enough memory for one time series index is allocated.
 	// if records are requested, enough memory for 1 record of size REC_LARGEST_RECORD_BYTES_m12 is allocated (use FPS_reallocate_processing_struct_m12() to change this)
 	// if records are requested, enough memory for 1 record index is allocated (FPS_reallocate_processing_struct_m12() to change this)
@@ -541,7 +541,7 @@ TERN_m12	G_allocated_en_bloc_m12(LEVEL_HEADER_m12 *level_header)
 			test_ptr_ptr = (LEVEL_HEADER_m12 **) ((ui1 *) level_header - sizeof(void *));
 			if (*test_ptr_ptr == level_header)
 				en_bloc = TRUE_m12;
-			// else not allocated en bloc
+			// else not allocated en block
 		}
 	}
 	
@@ -1889,7 +1889,7 @@ TERN_m12	G_correct_universal_header_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 			break;
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
-			break;  // these are wirtten on close - there won't be anything to read except universal header
+			break;  // these are written on close - there won't be anything to read except universal header
 		case RECORD_DATA_FILE_TYPE_CODE_m12:
 			// see if indices known
 			level_header = (LEVEL_HEADER_m12 *) fps->parent;  // try using parent
@@ -2449,7 +2449,7 @@ TERN_m12	G_en_bloc_allocation_m12(LEVEL_HEADER_m12 *level_header)
 			test_ptr_ptr = (LEVEL_HEADER_m12 **) ((ui1 *) level_header - sizeof(void *));
 			if (*test_ptr_ptr == level_header)
 				en_bloc = TRUE_m12;
-			// else not allocated en bloc
+			// else not allocated en block
 		}
 	}
 	
@@ -4154,7 +4154,7 @@ TERN_m12	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structur
 			if (seg)
 				G_free_segment_m12(seg, TRUE_m12);
 		}
-		free_m12((void *) channel->segments, __FUNCTION__);  // ok whether allocated en bloc or not
+		free_m12((void *) channel->segments, __FUNCTION__);  // ok whether allocated en block or not
 	}
 	if (channel->metadata_fps)
 		FPS_free_processing_struct_m12(channel->metadata_fps, TRUE_m12);
@@ -4367,7 +4367,7 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 	if (globals->AT_nodes) {
 		AT_free_all_m12();  // display memory still allocated & free it
 #ifdef MATLAB_PERSISTENT_m12
-		mxFree((void *) globals->AT_nodes);  // AT nodes are not allocted with AT functions
+		mxFree((void *) globals->AT_nodes);  // AT nodes are not allocated with AT functions
 #else
 		free((void *) globals->AT_nodes);  // AT nodes are not allocated with AT functions
 #endif
@@ -4433,7 +4433,7 @@ TERN_m12	G_free_segment_m12(SEGMENT_m12 *segment, TERN_m12 free_segment_structur
 
 	if (free_segment_structure == TRUE_m12) {
 		if (segment->en_bloc_allocation == FALSE_m12)
-			free_m12((void *) segment, __FUNCTION__);  // not allocated en bloc
+			free_m12((void *) segment, __FUNCTION__);  // not allocated en block
 		return(FALSE_m12);
 	} else {
 		// leave name, path, & slice intact (i.e. clear everything with allocated memory)
@@ -4516,7 +4516,7 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 			if (chan)
 				G_free_channel_m12(chan, TRUE_m12);
 		}
-		free_m12((void *) session->time_series_channels, __FUNCTION__);  // ok whether allocated en bloc or not
+		free_m12((void *) session->time_series_channels, __FUNCTION__);  // ok whether allocated en block or not
 	}
 	if (session->video_channels) {
 		for (i = 0; i < session->number_of_video_channels; ++i) {
@@ -5742,7 +5742,7 @@ si1	*G_get_session_directory_m12(si1 *session_directory, si1 *MED_file_name, FIL
 		// up one level
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m12:
 		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m12:
-		case RECORD_DIRECTORY_TYPE_CODE_m12:  // segmented session records is only MED component that uses a diectory - session level
+		case RECORD_DIRECTORY_TYPE_CODE_m12:  // segmented session records is only MED component that uses a directory - session level
 			G_extract_path_parts_m12(session_directory, session_directory, NULL, NULL);
 			break;
 			
@@ -6145,7 +6145,7 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 	// initialize global list mutex
 	if (globals_list_m12 == NULL)
 		PROC_pthread_mutex_init_m12(&globals_list_mutex_m12, NULL);
-	PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);  // lock immediately - only this function initializes other global mutices
+	PROC_pthread_mutex_lock_m12(&globals_list_mutex_m12);  // lock immediately - only this function initializes other global mutexes
 
 	// realloc global list
 	#ifdef MATLAB_PERSISTENT_m12
@@ -6173,7 +6173,7 @@ TERN_m12	G_initialize_globals_m12(TERN_m12 initialize_all_tables)
 	globals_list_m12[globals_list_len_m12++] = globals;
 	PROC_pthread_mutex_unlock_m12(&globals_list_mutex_m12);
 	
-	// initialize new globals mutices
+	// initialize new globals mutexes
 	PROC_pthread_mutex_init_m12(&globals->behavior_mutex, NULL);
 
 	// AT (do this as soon as possible)
@@ -7160,7 +7160,7 @@ TERN_m12	G_merge_metadata_m12(FILE_PROCESSING_STRUCT_m12 *md_fps_1, FILE_PROCESS
 		}
 		if (tmd2_1->sampling_frequency != tmd2_2->sampling_frequency) {
 			if (tmd2_1->sampling_frequency == FREQUENCY_NO_ENTRY_m12 || tmd2_2->sampling_frequency == FREQUENCY_NO_ENTRY_m12)
-				tmd2_m->sampling_frequency = FREQUENCY_NO_ENTRY_m12; // no entry supercedes variable frequency
+				tmd2_m->sampling_frequency = FREQUENCY_NO_ENTRY_m12; // no entry supersedes variable frequency
 			else
 				tmd2_m->sampling_frequency = FREQUENCY_VARIABLE_m12;
 			equal = FALSE_m12;
@@ -8372,7 +8372,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 					chan = sess->video_channels[i];
 					chan->flags |= LH_CHANNEL_ACTIVE_m12;  // need to mark active for change_reference_channel_m12()
 				}
-			} else {  // lists are in alphbetical order
+			} else {  // lists are in alphabetical order
 				for (i = j = 0; i < n_vid_chans; ++i) {
 					for (; strcmp(vid_chan_list[i], full_vid_chan_list[j]); ++j);
 					chan = sess->video_channels[j];
@@ -8672,7 +8672,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// if file_list is a pointer to single string, make list_len zero to indicate a one dimentional char array
+	// if file_list is a pointer to single string, make list_len zero to indicate a one dimensional char array
 	// if list_len > 0, assumed to be two dimensional array
 	
 	// allocate session
@@ -8894,7 +8894,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 					chan = sess->video_channels[i];
 					chan->flags |= LH_CHANNEL_ACTIVE_m12;
 				}
-			} else {  // lists are in alphbetical order
+			} else {  // lists are in alphabetical order
 				for (i = j = 0; i < n_vid_chans; ++i) {
 					for (; strcmp(vid_chan_list[i], full_vid_chan_list[j]); ++j);
 					chan = sess->video_channels[j];
@@ -10071,7 +10071,7 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 			G_get_session_directory_m12(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12) {
 			if (fps->parameters.password_data->processed == 0)	// better if done with a metadata file read (for password hints) below
-				G_process_password_data_m12(fps, password);	// done here to satify rule that any read of any MED file will process password
+				G_process_password_data_m12(fps, password);	// done here to satisfy rule that any read of any MED file will process password
 			FPS_set_pointers_m12(fps, UNIVERSAL_HEADER_BYTES_m12);
 			fps->number_of_items = 0;
 			return(fps);
@@ -10205,7 +10205,7 @@ si8     G_read_record_data_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *s
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// seg_num only reqired for segmented session records levels
+	// seg_num only required for segmented session records levels
 	
 	switch (level_header->type_code) {
 		case LH_SESSION_m12:
@@ -10371,7 +10371,7 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 						inactive_ref = TRUE_m12;
 				}
 				if (inactive_ref == TRUE_m12)
-					seg->flags &= ~LH_REFERENCE_INACTIVE_m12;  // reset segment level flag in case propogated in call
+					seg->flags &= ~LH_REFERENCE_INACTIVE_m12;  // reset segment level flag in case propagated in call
 				else  // read data
 					G_read_time_series_data_m12(seg, slice);
 				break;
@@ -16222,7 +16222,7 @@ TERN_m12	AT_remove_entry_m12(void *address, const si1 *function)
 	return(FALSE_m12);
 #endif
 
-	// Note this function does not free the accociated memory, just marks it as freed in the AT list
+	// Note this function does not free the associated memory, just marks it as freed in the AT list
 	
 	if (address == NULL) {
 		G_warning_message_m12("%s(): attempting to free NULL object, called from function %s()\n", __FUNCTION__, function);
@@ -19943,7 +19943,7 @@ void    CMP_MBE_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 }
 
 
-// Mofified Akima cubic interpolation
+// Modified Akima cubic interpolation
 // Attribution: modifications based on Matlab's adjustments to weights of Akima function
 // Note: input x's are integers, output x's are floats
 sf8	*CMP_mak_interp_sf8_m12(CMP_BUFFERS_m12 *in_bufs, si8 in_len, CMP_BUFFERS_m12 *out_bufs, si8 out_len)
@@ -22883,7 +22883,7 @@ void    CMP_show_block_model_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 recurs
 				}
 				printf_m12("\n");
 			}
-			printf_m12("%sPRED Model Flag Bits: ", indent);
+			printf_m12("%spread Model Flag Bits: ", indent);
 			for (i = 0, mask = 1; i < 16; ++i, mask <<= 1) {
 				if (PRED_header->flags & mask)
 					printf_m12("%d ", i);
@@ -24144,7 +24144,7 @@ void    CMP_zero_buffers_m12(CMP_BUFFERS_m12 *buffers)
 //
 // "This library provides general CRC calculation & validation functions and an
 // operation to combine the CRCs of two sequences of bytes into a single CRC.
-// The routines in this libary only work with the particular CRC-32 polynomial
+// The routines in this library only work with the particular CRC-32 polynomial
 // provided here."
 //
 // Minor modifications for compatibility with the MED Library.
@@ -25130,7 +25130,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	// NOTE:
 	// DM_EXTMD_COUNT_AND_FREQ_m12: If the caller wants a fixed number of valid output samples, at a specific output frequency, they should set this flag,
 	// and fill in both of these values. DM_get_matrix_m12() will use the slice start time, or start sample number, but adjust the end time if there are
-	// discontinuities. The session time slice will reflect what actually occured upon return.
+	// discontinuities. The session time slice will reflect what actually occurred upon return.
 	// DM_EXTMD_COUNT_AND_FREQ_m12 is not compatible with DM_DSCNT_NAN_m12 or DM_DSCNT_ZERO_m12. If these are set the function will return.
 	// If discontinuity information is desired with DM_EXTMD_COUNT_AND_FREQ_m12, set DM_DSCNT_CONTIG_m12. This is because DM_EXTMD_COUNT_AND_FREQ_m12
 	// implies the caller wants only valid sample values & also, if padding were requested, the number of output samples could be enormous.
@@ -25442,7 +25442,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	new_data_bytes = matrix->maj_dim * matrix->min_dim * matrix->el_size;
 	if (matrix->flags & DM_2D_INDEXING_m12) {
 		new_data_bytes += matrix->maj_dim * sizeof(void *);
-		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everthing must match
+		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everything must match
 			matrix->data_bytes = 0;  // force failure below
 	}
 	if (matrix->data_bytes < (si8) new_data_bytes) {
@@ -26539,7 +26539,7 @@ void	FILT_complex_div_m12(FILT_COMPLEX_m12 *a, FILT_COMPLEX_m12 *b, FILT_COMPLEX
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
-void	FILT_complex_exp_m12(FILT_COMPLEX_m12 *exponent, FILT_COMPLEX_m12 *ans)
+void	FILT_complex_exp_m12(FILT_COMPLEX_m12 *exponent, FILT_COMPLEX_m12 *and)
 {
 	FILT_COMPLEX_m12	t;
 	sf8            		c;
@@ -27364,7 +27364,7 @@ sf8	FILT_line_noise_filter_m12(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 #endif
 
 	// if zero passed for cycles_per_template, it is set to line frequency cycles in 1 second
-	// returns score == proportion of line noise in unfiltered data (range 0 - 1; -1 indicates errpr, nan indicates no score)
+	// returns score == proportion of line noise in unfiltered data (range 0 - 1; -1 indicates error, nan indicates no score)
 	
 	filt_order = 4;  // degenerate above 4 for these settings
 	free_buffers = FALSE_m12;
@@ -28715,7 +28715,7 @@ void	FPS_free_processing_struct_m12(FILE_PROCESSING_STRUCT_m12 *fps, TERN_m12 fr
 		// leave full_file_name intact
 		fps->parameters.last_access_time = UUTC_NO_ENTRY_m12;
 		fps->parameters.cps = NULL;
-		if (fps->parameters.password_data != &globals_m12->password_data)  // if points to global password data, leave intact for re-use
+		if (fps->parameters.password_data != &globals_m12->password_data)  // if points to global password data, leave intact for reuse
 			fps->parameters.password_data = NULL;
 		fps->universal_header = NULL;
 		fps->data_pointers = NULL;  // Note: if free_CMP_processing_struct == FALSE_m12, this pointer is still set to NULL => assumes cps address is also stored elsewhere
@@ -30803,7 +30803,7 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(FALSE_m12);
 	}
-	iface_start = c;  // start all subsequent searches fro this point
+	iface_start = c;  // start all subsequent searches from this point
 
 	// find next network adapter
 	pattern = "adapter";
@@ -31555,7 +31555,7 @@ si1	*NET_iface_name_for_addr_m12(si1 *iface_name, si1 *iface_addr)
 	*iface_name = 0;
 	if (ret_val == 0) {  // parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m12(iface_addr, buffer))) {
-			// find "LAN adapter" backwards fromm here
+			// find "LAN adapter" backwards from here
 			while (c >= buffer) {
 				if (*c == 'L')
 					if (strncmp(c, "LAN adapter ", 12) == 0)
@@ -31997,7 +31997,7 @@ PAR_INFO_m12	*PAR_launch_m12(PAR_INFO_m12 *par_info, ...)  // varargs (par_info 
 		}
 	}
 		
-	// "unthreaded" mechanism => just want seperate globals
+	// "unthreaded" mechanism => just want separate globals
 	if (par_info->detached == PAR_UNTHREADED_m12) {
 		unthreaded = TRUE_m12;
 		par_info->detached = FALSE_m12;  // launch as attached thread
@@ -33694,7 +33694,7 @@ si8	PRTY_pcrc_length_m12(FILE *fp, si1 *file_path)
 #endif
 	
 	// returns length of pcrc including crcs & structure, zero indicates no pcrc data
-	// if fp passed: assumes file is open with read priveleges, returns fp to where it was when called
+	// if fp passed: assumes file is open with read privileges, returns fp to where it was when called
 	// if path passed: file is opened & closed
 	
 	offset = -1;
@@ -36230,7 +36230,7 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviat
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// Note: if dur_str == NULL, it will be allocated & calling functio is responsible for freeing
+	// Note: if dur_str == NULL, it will be allocated & calling function is responsible for freeing
 	if (dur_str == NULL)
 		dur_str = calloc_m12((size_t) TIME_STRING_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
@@ -36773,7 +36773,7 @@ const si1	*STR_tern_m12(TERN_m12 val)
 }
 
 
-si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m12
+si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...)  // time_str buffer should be of length TIME_STRING_BYTES_m12
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
 	static si1      	private_time_str[TIME_STRING_BYTES_m12];
@@ -37596,7 +37596,7 @@ si8	TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_hea
 		G_warning_message_m12("%s(): transmission info is NULL\n", __FUNCTION__);
 		return((si8) FALSE_m12);
 	}
-	trans_info->mode = TR_MODE_NONE_m12;  // zero until transmission successful (not set for acknowlegements)
+	trans_info->mode = TR_MODE_NONE_m12;  // zero until transmission successful (not set for acknowledgements)
 	if (trans_info->sock_fd == -1) {  // try to reopen socket
 		if (TR_create_socket_m12(trans_info) == FALSE_m12)
 			return((si8) FALSE_m12);
@@ -37843,7 +37843,7 @@ TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt
 }
 
 
-si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NULL if not encypting
+si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NULL if not encrypting
 {
 	TERN_m12	password_passed, acknowledge, no_destruct_flag;
 	ui1		*buffer, *data;
@@ -37862,7 +37862,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 		G_warning_message_m12("%s(): transmission info is NULL\n", __FUNCTION__);
 		return((si8) FALSE_m12);
 	}
-	trans_info->mode = TR_MODE_NONE_m12;  // zero until transmission successful (not set for acknowlegements)
+	trans_info->mode = TR_MODE_NONE_m12;  // zero until transmission successful (not set for acknowledgements)
 	if (trans_info->sock_fd == -1) {  // try to reopen socket
 		if (TR_create_socket_m12(trans_info) == FALSE_m12)
 			return((si8) FALSE_m12);
@@ -40334,7 +40334,7 @@ TERN_m12	freeable_m12(void *address)
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m12);
 
-#ifndef MATLAB_m12  // Matlab mex functions= heaps are within the Matlab heap. So heap base in Matlab is from Matlab itself and ths far below first allocated medlib variable.
+#ifndef MATLAB_m12  // Matlab mex functions= heaps are within the Matlab heap. So heap base in Matlab is from Matlab itself and this far below first allocated medlib variable.
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
 #endif

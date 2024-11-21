@@ -45,7 +45,7 @@
 	// 	#ifdef MATLAB_PERSISTENT_m12
 	//	void mexExitFcn(void) {
 	//
-	//		// free session seperately to close files
+	//		// free session separately to close files
 	//		free_session_m12(sess, TRUE_m12);
 	//
 	//		// free everything else
