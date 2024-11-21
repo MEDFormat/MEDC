@@ -89,7 +89,7 @@
 
 // All library versions associated with a particular major format version are guaranteed to work on MED files of that major version.
 // Minor format versions may add fields to the format in protected regions, but no preexisting fields will be removed or moved.
-// Only library versions released on or afer a minor version will make use of new fields, and only if the minor version of the files contains them.
+// Only library versions released on or after a minor version will make use of new fields, and only if the minor version of the files contains them.
 // Backward compatibility will be maintained between major versions if practical.
 
 
@@ -465,7 +465,7 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FPS_m13 *proto_fps, si1 *e
 	
 	// enclosing_path is the path to the enclosing directory
 	// chan_name is the base name, with no extension
-	// if time series channels are requested, the CPS_m13 structures must be allocated seperately.
+	// if time series channels are requested, the CPS_m13 structures must be allocated separately.
 	// if time series data are requested, enough memory for one time series index is allocated.
 	// if records are requested, enough memory for 1 record of size REC_LARGEST_RECORD_BYTES_m13 is allocated (use FPS_reallocate_m13() to change this)
 	// if records are requested, enough memory for 1 record index is allocated (FPS_reallocate_m13() to change this)
@@ -2168,7 +2168,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 			break;
 		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
-			break;  // these are wirtten on close - there won't be anything to read except universal header
+			break;  // these are written on close - there won't be anything to read except universal header
 		case RECORD_DATA_FILE_TYPE_CODE_m13:
 			// see if indices known
 			level_header = (LEVEL_HEADER_m13 *) fps->parent;  // try using parent
@@ -2597,7 +2597,7 @@ void	G_delete_behavior_stack_m13(void)
 	if (stack == list->stacks + list->top_idx)
 		--list->top_idx;
 	
-	// reset stack for re-use (leave size intact, behaviors allocated)
+	// reset stack for reuse (leave size intact, behaviors allocated)
 	stack->_id = 0;
 	stack->top_idx = -1;
 
@@ -2626,7 +2626,7 @@ void	G_delete_function_stack_m13(void)
 	if (stack == list->stacks + list->top_idx)
 		--list->top_idx;
 	
-	// reset stack for re-use (leave size intact, functions allocated)
+	// reset stack for reuse (leave size intact, functions allocated)
 	stack->_id = 0;
 	stack->top_idx = -1;
 
@@ -2802,7 +2802,7 @@ tern	G_en_bloc_allocation_m13(LEVEL_HEADER_m13 *level_header)
 			struct_bytes = sizeof(FPS_m13);
 			break;
 		case LH_PROC_GLOBALS_m13:
-			struct_bytes = sizeof(PROC_GLOBALS_m13);  // not typically allocated en bloc
+			struct_bytes = sizeof(PROC_GLOBALS_m13);  // not typically allocated en block
 			break;
 		default:
 			return(FALSE_m13);
@@ -2824,7 +2824,7 @@ tern	G_en_bloc_allocation_m13(LEVEL_HEADER_m13 *level_header)
 			test_ptr_ptr = (LEVEL_HEADER_m13 **) ((ui1 *) level_header - sizeof(void *));
 			if (*test_ptr_ptr == level_header)
 				en_bloc = TRUE_m13;
-			// else not allocated en bloc
+			// else not allocated en block
 		}
 	}
 	
@@ -4505,7 +4505,7 @@ tern	G_free_channel_m13(CHANNEL_m13 *channel, tern free_structure)
 			if (seg)
 				G_free_segment_m13(seg, TRUE_m13);
 		}
-		free_m13((void *) channel->segments);  // ok whether allocated en bloc or not
+		free_m13((void *) channel->segments);  // ok whether allocated en block or not
 	}
 	if (channel->metadata_fps)
 		FPS_free_m13(channel->metadata_fps, TRUE_m13);
@@ -6307,7 +6307,7 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 		// up one level
 		case TIME_SERIES_CHANNEL_DIRECTORY_TYPE_CODE_m13:
 		case VIDEO_CHANNEL_DIRECTORY_TYPE_CODE_m13:
-		case RECORD_DIRECTORY_TYPE_CODE_m13:  // segmented session records is only MED component that uses a diectory - session level
+		case RECORD_DIRECTORY_TYPE_CODE_m13:  // segmented session records is only MED component that uses a directory - session level
 			G_extract_path_parts_m13(session_directory, session_directory, NULL, NULL);
 			break;
 			
@@ -7622,7 +7622,7 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 		}
 		if (tmd2_1->sampling_frequency != tmd2_2->sampling_frequency) {
 			if (tmd2_1->sampling_frequency == FREQUENCY_NO_ENTRY_m13 || tmd2_2->sampling_frequency == FREQUENCY_NO_ENTRY_m13)
-				tmd2_m->sampling_frequency = FREQUENCY_NO_ENTRY_m13; // no entry supercedes variable frequency
+				tmd2_m->sampling_frequency = FREQUENCY_NO_ENTRY_m13; // no entry supersedes variable frequency
 			else
 				tmd2_m->sampling_frequency = FREQUENCY_VARIABLE_m13;
 			equal = FALSE_m13;
@@ -8769,7 +8769,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	// divide channel lists
 	if (flags & LH_EXCLUDE_TIME_SERIES_CHANNELS_m13) {
 		n_ts_chans = 0;
-		flags &= ~LH_MAP_ALL_TIME_SERIES_CHANNELS_m13;  // exclude flag supercedes map all flag
+		flags &= ~LH_MAP_ALL_TIME_SERIES_CHANNELS_m13;  // exclude flag supersedes map all flag
 	} else if (n_ts_chans) {
 		ts_chan_list = (si1 **) calloc_2D_m13((size_t) n_ts_chans, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
 		if (ts_chan_list == NULL) {
@@ -8780,7 +8780,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 	}
 	if (flags & LH_EXCLUDE_VIDEO_CHANNELS_m13) {
 		n_vid_chans = 0;
-		flags &= ~LH_MAP_ALL_VIDEO_CHANNELS_m13;  // exclude flag supercedes map all flag
+		flags &= ~LH_MAP_ALL_VIDEO_CHANNELS_m13;  // exclude flag supersedes map all flag
 	} else if (n_vid_chans) {
 		vid_chan_list = (si1 **) calloc_2D_m13((size_t) n_vid_chans, FULL_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
 		if (vid_chan_list == NULL) {
@@ -8905,7 +8905,7 @@ SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, TIME_SLICE_m13 *slice, void *
 					chan = sess->video_channels[i];
 					chan->flags |= LH_CHANNEL_ACTIVE_m13;
 				}
-			} else {  // lists are in alphbetical order
+			} else {  // lists are in alphabetical order
 				for (i = j = 0; i < n_vid_chans; ++i) {
 					for (; strcmp(vid_chan_list[i], full_vid_chan_list[j]); ++j);
 					chan = sess->video_channels[j];
@@ -9382,7 +9382,7 @@ PROC_GLOBALS_m13	*G_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 	// initialize
 	*proc_globals_ptr = G_proc_globals_init_m13(level_header);
 
-	// relase mutex
+	// release mutex
 	PROC_pthread_mutex_unlock_m13(&list->mutex);
 
 	return(*proc_globals_ptr);
@@ -9453,7 +9453,7 @@ void	G_proc_globals_delete_m13(LEVEL_HEADER_m13 *level_header)
 		}
 	}
 	
-	// relase mutex
+	// release mutex
 	PROC_pthread_mutex_unlock_m13(&list->mutex);
 
 	return;
@@ -10273,7 +10273,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 			G_get_session_directory_m13(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13) {
 			if (proc_globals->password_data.processed != TRUE_m13)	// better if done with a metadata file read (for password hints) below
-				G_process_password_data_m13(fps, password);	// done here to satify rule that any read of any MED file will process password
+				G_process_password_data_m13(fps, password);	// done here to satisfy rule that any read of any MED file will process password
 			FPS_set_pointers_m13(fps, UNIVERSAL_HEADER_BYTES_m13);
 			fps->number_of_items = 0;
 			return_m13(fps);
@@ -10407,7 +10407,7 @@ si8     G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, TIME_SLICE_m13 *s
 	G_push_function_m13();
 #endif
 	
-	seg_num = 0;  // seg_num only reqired for segmented session records levels
+	seg_num = 0;  // seg_num only required for segmented session records levels
 	switch (level_header->type_code) {
 		case LH_SESSION_m13:
 			sess = (SESSION_m13 *) level_header;
@@ -10616,7 +10616,7 @@ SEGMENT_m13	*G_read_segment_m13(SEGMENT_m13 *seg, TIME_SLICE_m13 *slice, ...)  /
 						inactive_ref = TRUE_m13;
 				}
 				if (inactive_ref == TRUE_m13)
-					seg->flags &= ~LH_REFERENCE_INACTIVE_m13;  // reset segment level flag in case propogated during call
+					seg->flags &= ~LH_REFERENCE_INACTIVE_m13;  // reset segment level flag in case propagated during call
 				else  // read data
 					G_read_time_series_data_m13(seg, slice);
 				break;
@@ -12039,7 +12039,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 		vsnprintf_m13(err->message, E_MESSAGE_LEN_m13, message, args);
 		va_end(args);
 		
-		if (code == E_NONE_m13)  // caller passsed an error message, but did not set code
+		if (code == E_NONE_m13)  // caller passed an error message, but did not set code
 			code = E_UNSPEC_m13;
 	}
 
@@ -12364,7 +12364,7 @@ Sgmt_RECORD_m13	*G_Sgmt_records(LEVEL_HEADER_m13 *level_header)
 	else  // LH_VIDEO_CHANNEL_m13
 		rate = chan->segments[seg_idx]->metadata_fps->metadata->video_section_2.frame_rate;
 		
-	// search for matching entery
+	// search for matching entry
 	list = proc_globals->current_session.Sgmt_records_list;
 	PROC_pthread_mutex_lock_m13(&list->mutex);
 	rec_entry = list->entries;
@@ -16295,7 +16295,7 @@ tern	AT_remove_entry_m13(void *address, const si1 *function)
 	AT_ENTRY_m13	*ate, *freed_ate;
 	
 	
-	// Note this function does not free the accociated memory, just marks it as freed in the AT list
+	// Note this function does not free the associated memory, just marks it as freed in the AT list
 
 	if (address == NULL) {
 		G_warning_message_m13("%s(): attempting to free NULL object, called from function %s()\n", __FUNCTION__, function);
@@ -16916,7 +16916,7 @@ tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_l
 	}
 	
 	// central bins
-	// Note: every combination is done to avoid unnessary computation where possible
+	// Note: every combination is done to avoid unnecessary computation where possible
 	if (extrema == TRUE_m13) {
 		switch (center_mode) {
 			case CMP_CENT_MODE_NONE_m13:
@@ -19970,7 +19970,7 @@ tern    CMP_MBE_encode_m13(CPS_m13 *cps)
 }
 
 
-// Mofified Akima cubic interpolation
+// Modified Akima cubic interpolation
 // Attribution: modifications based on Matlab's adjustments to weights of Akima function
 // Note: input x's are integers, output x's are floats
 sf8	*CMP_mak_interp_sf8_m13(CMP_BUFFERS_m13 *in_bufs, si8 in_len, CMP_BUFFERS_m13 *out_bufs, si8 out_len)
@@ -22896,7 +22896,7 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				}
 				printf_m13("\n");
 			}
-			printf_m13("%sPRED Model Flag Bits: ", indent);
+			printf_m13("%spread Model Flag Bits: ", indent);
 			for (i = 0, mask = 1; i < 16; ++i, mask <<= 1) {
 				if (PRED_header->flags & mask)
 					printf_m13("%d ", i);
@@ -24160,7 +24160,7 @@ tern    CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers)
 //
 // "This library provides general CRC calculation & validation functions and an
 // operation to combine the CRCs of two sequences of bytes into a single CRC.
-// The routines in this libary only work with the particular CRC-32 polynomial
+// The routines in this library only work with the particular CRC-32 polynomial
 // provided here."
 //
 // Minor modifications for compatibility with the MED Library.
@@ -25107,7 +25107,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, T
 	// NOTE:
 	// DM_EXTMD_COUNT_AND_FREQ_m13: If the caller wants a fixed number of valid output samples, at a specific output frequency, they should set this flag,
 	// and fill in both of these values. DM_get_matrix_m13() will use the slice start time, or start sample number, but adjust the end time if there are
-	// discontinuities. The session time slice will reflect what actually occured upon return.
+	// discontinuities. The session time slice will reflect what actually occurred upon return.
 	// DM_EXTMD_COUNT_AND_FREQ_m13 is not compatible with DM_DSCNT_NAN_m13 or DM_DSCNT_ZERO_m13. If these are set the function will return.
 	// If discontinuity information is desired with DM_EXTMD_COUNT_AND_FREQ_m13, set DM_DSCNT_CONTIG_m13. This is because DM_EXTMD_COUNT_AND_FREQ_m13
 	// implies the caller wants only valid sample values & also, if padding were requested, the number of output samples could be enormous.
@@ -25420,7 +25420,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, T
 	new_data_bytes = matrix->maj_dim * matrix->min_dim * matrix->el_size;
 	if (matrix->flags & DM_2D_INDEXING_m13) {
 		new_data_bytes += matrix->maj_dim * sizeof(void *);
-		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everthing must match
+		if (matrix->maj_dim != old_maj_dim || matrix->min_dim != old_min_dim || matrix->el_size != old_el_size)  // everything must match
 			matrix->data_bytes = 0;  // force failure below
 	}
 	if (matrix->data_bytes < (si8) new_data_bytes) {
@@ -26850,7 +26850,7 @@ void	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans)
+void	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *and)
 {
 	FILT_COMPLEX_m13	t;
 	sf8            		c;
@@ -27672,7 +27672,7 @@ sf8	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line
 #endif
 
 	// if zero passed for cycles_per_template, it is set to line frequency cycles in 1 second
-	// returns score == proportion of line noise in unfiltered data (range 0 - 1; -1 indicates errpr, nan indicates no score)
+	// returns score == proportion of line noise in unfiltered data (range 0 - 1; -1 indicates error, nan indicates no score)
 
 	filt_order = 4;  // degenerate above 4 for these settings
 	free_buffers = FALSE_m13;
@@ -31722,7 +31722,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 	*iface_name = 0;
 	if (ret_val > 0) {  // parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m13(iface_addr, buffer))) {
-			// find "LAN adapter" backwards fromm here
+			// find "LAN adapter" backwards from here
 			while (c >= buffer) {
 				if (*c == 'L')
 					if (strncmp(c, "LAN adapter ", 12) == 0)
@@ -32130,7 +32130,7 @@ PAR_INFO_m13	*PAR_launch_m13(PAR_INFO_m13 *par_info, ...)  // varargs (par_info 
 		}
 	}
 		
-	// "unthreaded" mechanism => just want seperate globals
+	// "unthreaded" mechanism => just want separate globals
 	if (par_info->detached == PAR_UNTHREADED_m13) {
 		unthreaded = TRUE_m13;
 		par_info->detached = FALSE_m13;  // launch as attached thread
@@ -32222,7 +32222,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				break;
 		}
 	}
-	PROC_pthread_mutex_unlock_m13(&list->mutex);  // relase mutex
+	PROC_pthread_mutex_unlock_m13(&list->mutex);  // release mutex
 
 	if (i == -1)  // proc_globals not found, create new
 		proc_globals = G_proc_globals_m13(NULL);
@@ -33776,7 +33776,7 @@ si8	PRTY_pcrc_length_m13(FILE_m13 *fp, si1 *file_path)
 #endif
 	
 	// returns length of pcrc including crcs & structure, zero indicates no pcrc data
-	// if fp passed: assumes file is open with read priveleges, returns fp to where it was when called
+	// if fp passed: assumes file is open with read privileges, returns fp to where it was when called
 	// if path passed: file is opened & closed
 	
 	offset = -1;
@@ -37880,7 +37880,7 @@ tern	TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, si1 *f
 }
 
 
-si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NULL if not encypting
+si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NULL if not encrypting
 {
 	tern	password_passed, acknowledge, no_destruct_flag;
 	ui1		*buffer, *data;
@@ -40544,7 +40544,7 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 	if (fp == NULL)
 		return(NULL);
 	if (permissions)
-		fp->permissions = permissions;  // custom permissions (overwitten by system permission if opened as read only)
+		fp->permissions = permissions;  // custom permissions (overwritten by system permission if opened as read only)
 	if (flags)
 		fp->flags = flags;
 		
@@ -40709,7 +40709,7 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 	if (write_mode == TRUE_m13 || plus_mode == TRUE_m13)
 		fp->flags |= FILE_FLAGS_WRITE_m13;
 
-	// set permissions to file system valuess (may have been altered by umask)
+	// set permissions to file system values (may have been altered by umask)
 	#if defined MACOS_m13 || defined LINUX_m13
 	fp->permissions = (ui2) sb.st_mode & FILE_PERM_STAT_MASK_m13;
 	#endif
@@ -40913,7 +40913,7 @@ void    AT_free_2D_m13(const si1 *function, void **ptr, size_t dim1)
 	void	*base_address;
 	
 		
-	// dim1 == 0 indicates allocated en bloc per caller (caller could just use free_m13() in this case, as here)
+	// dim1 == 0 indicates allocated en block per caller (caller could just use free_m13() in this case, as here)
 	if (dim1 == 0) {
 		#ifdef AT_DEBUG_m13
 		AT_free_m13(function, (void *) ptr);
@@ -40923,7 +40923,7 @@ void    AT_free_2D_m13(const si1 *function, void **ptr, size_t dim1)
 		return;
 	}
 		
-	// allocated en bloc  (check all addresses because pointers may have been sorted)
+	// allocated en block  (check all addresses because pointers may have been sorted)
 	base_address = (void *) ((ui1 *) ptr + (dim1 * sizeof(void *)));
 	for (i = 0; i < dim1; ++i) {
 		if (ptr[i] == base_address) {

@@ -89,7 +89,7 @@
 
 // All library versions associated with a particular major format version are guaranteed to work on MED files of that major version.
 // Minor format versions may add fields to the format in protected regions, but no preexisting fields will be removed or moved.
-// Only library versions released on or afer a minor version will make use of new fields, and only if the minor version of the files contains them.
+// Only library versions released on or after a minor version will make use of new fields, and only if the minor version of the files contains them.
 // Backward compatibility will be maintained between major versions if practical.
 
 
@@ -110,7 +110,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 rec
 	G_push_function_m13();
 #endif
 
-	// decrypt record body if necesary
+	// decrypt record body if necessary
 	if (record_header->encryption_level > NO_ENCRYPTION_m13)
 		G_decrypt_record_data_m13(fps, record_header, 1);
 		    

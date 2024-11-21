@@ -89,7 +89,7 @@
 
 // All library versions associated with a particular major format version are guaranteed to work on MED files of that major version.
 // Minor format versions may add fields to the format in protected regions, but no preexisting fields will be removed or moved.
-// Only library versions released on or afer a minor version will make use of new fields, and only if the minor version of the files contains them.
+// Only library versions released on or after a minor version will make use of new fields, and only if the minor version of the files contains them.
 // Backward compatibility will be maintained between major versions if practical.
 
 
@@ -264,7 +264,7 @@ tern	REC_check_Stat_type_alignment_m13(ui1 *bytes);
 typedef struct {
 	si8	duration;  // microseconds (single element structure not really necessary, but done for consistency).
 } REC_EDFA_v10_m13;
-// Annotation follows structure - aribitrary length array of si1s padded to 16 byte alignment (for structure + string)
+// Annotation follows structure - arbitrary length array of si1s padded to 16 byte alignment (for structure + string)
 
 // Prototypes
 tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header);
@@ -286,7 +286,7 @@ tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes);
 
 // Structures
 // (none)
-// Annotation follows header - aribitrary length array of si1s padded to 16 byte alignment
+// Annotation follows header - arbitrary length array of si1s padded to 16 byte alignment
 
 // Version 1.1
 #define REC_Note_v11_BYTES_m13			16
@@ -303,7 +303,7 @@ typedef struct {
 	};
 } REC_Note_v11_m13;
 
-// Annotation begins in structure, but may extend beyond it - aribitrary length array of si1s padded to 16 byte alignment (struct plus excess text)
+// Annotation begins in structure, but may extend beyond it - arbitrary length array of si1s padded to 16 byte alignment (struct plus excess text)
 
 
 // Prototypes
@@ -389,7 +389,7 @@ tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 
 // Structures
 // (none)
-// Log text follows header - aribitrary length array of si1s padded to 16 byte alignment
+// Log text follows header - arbitrary length array of si1s padded to 16 byte alignment
 
 // Prototype
 tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header);

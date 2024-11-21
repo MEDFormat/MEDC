@@ -92,7 +92,7 @@
 
 // All library versions associated with a particular major format version are guaranteed to work on MED files of that major version.
 // Minor format versions may add fields to the format in protected regions, but no preexisting fields will be removed or moved.
-// Only library versions released on or afer a minor version will make use of new fields, and only if the minor version of the files contains them.
+// Only library versions released on or after a minor version will make use of new fields, and only if the minor version of the files contains them.
 // Backward compatibility will be maintained between major versions if practical.
 
 
@@ -270,7 +270,7 @@ typedef struct {
 } REC_Sgmt_v10_m12;
 
 // Description follows sampling_frequency / frame_rate in structure.
-// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
+// The description is an arbitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
 typedef struct {
 	si8     	end_time;
@@ -287,7 +287,7 @@ typedef struct {
 } REC_Sgmt_v11_m12;
 
 // Description follows acquisition_channel_number in structure.
-// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
+// The description is an arbitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
 
 
@@ -689,13 +689,13 @@ typedef struct {
 #define GFL_PATH_PARTS_MASK_m12        		GFL_FULL_PATH_m12
 	// Other Options
 #define GFL_FREE_INPUT_LIST_m12			((ui4) 16)
-#define GFL_INCLUDE_PARITY_m12			((ui4) 32)  // files or directrories
-#define GFL_INCLUDE_INVISIBLE_m12		((ui4) 64)  // files or directrories
+#define GFL_INCLUDE_PARITY_m12			((ui4) 32)  // files or directories
+#define GFL_INCLUDE_INVISIBLE_m12		((ui4) 64)  // files or directories
 
 // System Pipe flags
 #define SP_DEFAULT_m12			0  // no flags set (default)
 #define SP_TEE_TO_TERMINAL_m12		1  // print buffer(s) to terminal in addition to returning
-#define SP_SEPARATE_STREAMS_m12		2  // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
+#define SP_SEPARATE_STREAMS_m12		2  // return separate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
 
 // Spaces Constants
 #define NO_SPACES_m12                           0
@@ -1216,7 +1216,7 @@ typedef struct {
 	va_list		args;
 } PAR_THREAD_INFO_m12;
 
-// Protoypes
+// Prototypes
 void			PAR_free_m12(PAR_INFO_m12 **par_info_ptr);
 PAR_INFO_m12		*PAR_init_m12(PAR_INFO_m12 *par_info, si1 *function, si1 *label, ...); // varagrgs(label == PAR_DEFAULTS_m12): si4 priority, si1 *affinity, si4 detached
 PAR_INFO_m12		*PAR_launch_m12(PAR_INFO_m12 *par_info, ...);	// varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, si4 detached, <function arguments>
@@ -1717,7 +1717,7 @@ typedef struct {
 	TERN_m12                        verbose;
 	ui4                             behavior_on_fail;
 	si1				temp_dir[FULL_FILE_NAME_BYTES_m12];  // system temp directory (periodically auto-cleared)
-	si1				temp_file[FULL_FILE_NAME_BYTES_m12];  // full path to temp file (i.e. incudes temp_dir), not thread safe => use G_unique_temp_file_m12() in threaded applications
+	si1				temp_file[FULL_FILE_NAME_BYTES_m12];  // full path to temp file (i.e. includes temp_dir), not thread safe => use G_unique_temp_file_m12() in threaded applications
 	ui4				*behavior_stack;
 	volatile ui4			behavior_stack_entries;
 	volatile ui4			behavior_stack_size;
@@ -2266,7 +2266,7 @@ typedef struct {
 	FILE_PROCESSING_STRUCT_m12	**record_data_fps;
 	FILE_PROCESSING_STRUCT_m12	**record_indices_fps;
 	si1			        path[FULL_FILE_NAME_BYTES_m12];		// full path to segmented session records directory (including directory itself)
-	si1                             name[BASE_FILE_NAME_BYTES_m12];		// session name, duplcated in globals
+	si1                             name[BASE_FILE_NAME_BYTES_m12];		// session name, duplicated in globals
 	TIME_SLICE_m12			time_slice;
 } SEGMENTED_SESS_RECS_m12;
 #else
@@ -2567,7 +2567,7 @@ si8		WN_filetime_to_uutc_m12(ui1 *win_filetime);  // for conversion of windows f
 
 
 //**********************************************************************************//
-//********************  MED Alignmment Checking (ALCK) Functions  ******************//
+//********************  MED Alignment Checking (ALCK) Functions  ******************//
 //**********************************************************************************//
 
 TERN_m12	ALCK_all_m12(void);
@@ -3382,7 +3382,7 @@ void    	CMP_zero_buffers_m12(CMP_BUFFERS_m12 *buffers);
 //
 // "This library provides general CRC calculation & validation functions and an
 // operation to combine the CRCs of two sequences of bytes into a single CRC.
-// The routines in this libary only work with the particular CRC-32 polynomial
+// The routines in this library only work with the particular CRC-32 polynomial
 // provided here."
 //
 // Minor modifications for compatibility with the MED Library.
@@ -3494,7 +3494,7 @@ si4		UTF8_wc_to_utf8_m12(si1 *dest, ui4 ch);  // single character to UTF-8
 //*************************************  AES-128  **********************************//
 //**********************************************************************************//
 
-// ATRIBUTION
+// ATTRIBUTION
 //
 // Advanced Encryption Standard implementation in C.
 // By Niyaz PK
@@ -3750,7 +3750,7 @@ QUANTFILT_DATA_m12	*FILT_alloc_quantfilt_data_m12(si8 len, si8 span);
 void    FILT_balance_m12(sf8 **a, si4 poles);
 si4     FILT_butter_m12(FILT_PROCESSING_STRUCT_m12 *filtps);
 void    FILT_complex_div_m12(FILT_COMPLEX_m12 *a, FILT_COMPLEX_m12 *b, FILT_COMPLEX_m12 *quotient);
-void    FILT_complex_exp_m12(FILT_COMPLEX_m12 *exponent, FILT_COMPLEX_m12 *ans);
+void    FILT_complex_exp_m12(FILT_COMPLEX_m12 *exponent, FILT_COMPLEX_m12 *and);
 void    FILT_complex_mult_m12(FILT_COMPLEX_m12 *a, FILT_COMPLEX_m12 *b, FILT_COMPLEX_m12 *product);
 void    FILT_elmhes_m12(sf8 **a, si4 poles);
 void	FILT_excise_transients_m12(CMP_PROCESSING_STRUCT_m12 *cps, si8 data_len, si8 *n_extrema);
@@ -3791,7 +3791,7 @@ void    FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs);
 //			read session by sample numbers
 //		Samples specified, padding requested:
 //			NOTE: There is potential for huge discontinuities being padded in output matrix, so samples are treated as relative.
-//			NOTE: If discontinuity does ocurr in the specified slice, a warning message is displayed that relative output was produced.
+//			NOTE: If discontinuity does occur in the specified slice, a warning message is displayed that relative output was produced.
 //			start_time = time of start sample number
 //			duration = (end_sample_number - start_sample_number) / ref_chan_samp_freq;
 //			end_time = start_time + duration
@@ -3878,7 +3878,7 @@ void    FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs);
 #define DM_MAXIMUM_INPUT_COUNT_m12		((si8) -3)	// value chosen to parallel DM_MAXIMUM_INPUT_FREQUENCY_m12 & not conflict with NUMBER_OF_SAMPLES_NO_ENTRY_m12 (-1)
 
 
-// Note: if arrays are allocted as 2D arrays, array[0] is beginning of one dimensional array containing (channel_count * sample_count) values of specfified type
+// Note: if arrays are allocated as 2D arrays, array[0] is beginning of one dimensional array containing (channel_count * sample_count) values of specfified type
 typedef struct {
 	si8		channel_count;		// defines dimension of allocated matrix: updated based on active channels
 	si8		sample_count;		// defines dimension of allocated matrix: if extent mode (EXTMD) == DM_EXTMD_SAMP_FREQ_m12, resultant sample count filled in
@@ -3989,7 +3989,7 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_E_ID_MISMATCH_STR_m12	"transmission ID mismatch"
 #define TR_E_TRANS_FAILED_STR_m12	"transmission failed"
 #define TR_E_CRC_MISMATCH_STR_m12	"checksum mismatch"
-#define TR_E_NO_ACK_STR_m12		"no acknowlegment"
+#define TR_E_NO_ACK_STR_m12		"no acknowledgment"
 
 // Transmission Flags
 #define TR_FLAGS_DEFAULT_m12			((ui2) 0)
@@ -4000,7 +4000,7 @@ void			DM_transpose_out_of_place_m12(DATA_MATRIX_m12 *in_matrix, DATA_MATRIX_m12
 #define TR_FLAGS_CLOSE_m12			((ui2) 1 << 4)	// Bit 4  (close socket after send/recv)
 #define TR_FLAGS_ACKNOWLEDGE_m12		((ui2) 1 << 5)	// Bit 5  (acknowledge receipt with OK or retransmit)
 #define TR_FLAGS_CRC_m12			((ui2) 1 << 6)	// Bit 6  (calculate/check transmission CRC - last 4 bytes of transmission)
-#define TR_FLAGS_NO_DESTRUCT_m12		((ui2) 1 << 7)	// Bit 7  (set if local memory should not be altered - applies to encrpyted transmissions & transmissions that exceed TR_MTU_BYTES_m12)
+#define TR_FLAGS_NO_DESTRUCT_m12		((ui2) 1 << 7)	// Bit 7  (set if local memory should not be altered - applies to encrypted transmissions & transmissions that exceed TR_MTU_BYTES_m12)
 #define TR_FLAGS_TO_FILE_m12			((ui2) 1 << 8)	// Bit 8  (set if received data should go to a file rather than buffer - pseudo FTP)
 
 // TR Defaults
@@ -4075,7 +4075,7 @@ typedef struct {
 			};
 		};
 	};
-	si8	transmission_bytes;  // full size of tramsmitted data in bytes (*** does not include header ***)
+	si8	transmission_bytes;  // full size of transmitted data in bytes (*** does not include header ***)
 	si8	offset;  // offset (in bytes) of packet data into full data (*** does not include header ***)
 } TR_HEADER_m12;
 
@@ -4134,7 +4134,7 @@ si1		*TR_strerror(si4 err_num);
 // Notes:
 //
 // Western Sahara:
-// DST is on most of the year and off during Ramadan, whose dates change annually in a way that is not accomodated by this schema.
+// DST is on most of the year and off during Ramadan, whose dates change annually in a way that is not accommodated by this schema.
 // As Ramadan only lasts a month, and can occur at virtually any time of year, this table treats it as if it's Daylight Time
 // is it's Standard Time, and it does not observe DST.
 //
@@ -4549,8 +4549,8 @@ si1		*TR_strerror(si4 err_num);
 
 #define TZ_COUNTRY_ALIASES_ENTRIES_m12      16
 #define TZ_COUNTRY_ALIASES_TABLE_m12 { \
-	{ "CHINA", "PEOPLE'S REPUBIC OF CHINA" }, \
-	{ "CHINA", "PEOPLES REPUBIC OF CHINA" }, \
+	{ "CHINA", "PEOPLE'S REPUBLIC OF CHINA" }, \
+	{ "CHINA", "PEOPLES REPUBLIC OF CHINA" }, \
 	{ "CZECH REPUBLIC", "CZECHIA" }, \
 	{ "RUSSIA", "RUSSIAN FEDERATION" }, \
 	{ "TURKS AND CAICOS", "TURKS & CAICOS" }, \
@@ -4575,7 +4575,7 @@ si1		*TR_strerror(si4 err_num);
 
 
 //**********************************************************************************//
-//*****************************  DATBASE (DB) FUNCTIONS  ***************************//
+//*****************************  DATABASE (DB) FUNCTIONS  ***************************//
 //**********************************************************************************//
 
 // Currently only postgres databases are supported.

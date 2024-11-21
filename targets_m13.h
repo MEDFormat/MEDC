@@ -49,7 +49,7 @@
 // 	#ifdef MATLAB_PERSISTENT_m13
 //	void mexExitFcn(void) {
 //
-//		// free session seperately to close files
+//		// free session separately to close files
 //		free_session_m13(sess, TRUE_m13);
 //
 //		// free everything else (if using AT_DEBUG mode)

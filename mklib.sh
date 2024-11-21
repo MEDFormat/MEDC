@@ -81,7 +81,7 @@ echo $CMD; echo " "
 $CMD
 
 
-# build libaries
+# build libraries
 LIBNAME="medlib_m12"
 if [ $BIN = "x86" ]; then
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
