@@ -2,5 +2,7 @@
 # Ref: https://github.com/codespell-project/codespell#using-a-config-file
 skip = .git*,*.pdf,.codespellrc
 check-hidden = true
-# ignore-regex = 
-# ignore-words-list =
+# Ignore localities records, could be replaced with blocked ignores
+# after next version after 2.3.0 of codespell is released
+ignore-regex = .*{ ".*, 0x.*, 0x.*|"[a-z][a-z]"
+ignore-words-list = ser,trough,dum
