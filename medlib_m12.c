@@ -30803,7 +30803,7 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 			PROC_pthread_mutex_unlock_m12(&global_tables_m12->NET_mutex);
 		return(FALSE_m12);
 	}
-	iface_start = c;  // start all subsequent searches fro this point
+	iface_start = c;  // start all subsequent searches from this point
 
 	// find next network adapter
 	pattern = "adapter";
@@ -36773,7 +36773,7 @@ const si1	*STR_tern_m12(TERN_m12 val)
 }
 
 
-si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m12
+si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...)  // time_str buffer should be of length TIME_STRING_BYTES_m12
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
 	static si1      	private_time_str[TIME_STRING_BYTES_m12];
@@ -40334,7 +40334,7 @@ TERN_m12	freeable_m12(void *address)
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m12);
 
-#ifndef MATLAB_m12  // Matlab mex functions= heaps are within the Matlab heap. So heap base in Matlab is from Matlab itself and ths far below first allocated medlib variable.
+#ifndef MATLAB_m12  // Matlab mex functions= heaps are within the Matlab heap. So heap base in Matlab is from Matlab itself and this far below first allocated medlib variable.
 	if (address_val < hw_params->heap_base_address)  // covers NULL address case & Windows stack
 		return(FALSE_m12);
 #endif

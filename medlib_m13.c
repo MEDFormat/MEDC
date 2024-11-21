@@ -30965,7 +30965,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
-	iface_start = c;  // start all subsequent searches fro this point
+	iface_start = c;  // start all subsequent searches from this point
 
 	// find next network adapter
 	pattern = "adapter";
@@ -36832,7 +36832,7 @@ const si1	*STR_tern_m13(tern val)
 }
 
 
-si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m13
+si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...)  // time_str buffer should be of length TIME_STRING_BYTES_m13
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
 	const si1      		*mos[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
