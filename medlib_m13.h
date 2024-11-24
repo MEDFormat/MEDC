@@ -475,8 +475,8 @@ typedef struct {
 // Pipes
 #define READ_END_m13		0
 #define WRITE_END_m13		1
-#define PIPE_FAILURE_m13	((si4) 254)
-#define PIPE_FAILURE_SEND_m13	((si4) -2)  // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m13)
+#define PIPE_FAILURE_m13	((si4) 255)
+#define PIPE_FAILURE_SEND_m13	((si4) -1)  // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m13)
 
 // Target Value Constants (ui4)
 #define NO_INDEX_m13			-1  // assigned to signed values (si4 or si8)

@@ -6314,7 +6314,7 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 			exit_m12(-1);
 		}
 	}
-	
+
 #if defined FN_DEBUG_m12 || defined AT_DEBUG_m12  // need UTF8 tables for G_message_m12()
 	if (global_tables_m12->UTF8_offsets_table == NULL) {
 		if (UTF8_initialize_tables_m12() == FALSE_m12)
@@ -6355,18 +6355,17 @@ TERN_m12	G_initialize_medlib_m12(TERN_m12 check_structure_alignments, TERN_m12 i
 	srand((ui4) time(NULL));
 #endif
 	
-#if defined WINDOWS_m12 && defined NEED_WIN_SOCKETS_m12
-	// initialize Windows sockets DLL
+#if defined WINDOWS_m12
+	#ifdef NEED_WIN_SOCKETS_m12  // initialize Windows sockets DLL
 	if (WN_socket_startup_m12() == FALSE_m12)
 		ret_val = FALSE_m12;
-#endif
-	
-#if defined WINDOWS_m12 && !defined MATLAB_m12
-	// initialize Windows terminal
+	#endif
+	#ifndef MATLAB_m12  // initialize Windows terminal
 	if (WN_initialize_terminal_m12() == FALSE_m12)
 		ret_val = FALSE_m12;
+	#endif
 #endif
-		
+			
 	return(ret_val);
 }
 
@@ -8206,7 +8205,6 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	regex_str = "?icd";  // less specific (than MacOS or Linux)
 #endif
 	chan_list = G_generate_file_list_m12(chan_list, &n_chans, sess_dir, NULL, regex_str, GFL_FULL_PATH_m12);  // more specific (than Windows)
-
 	if (n_chans == 0) {
 		if (free_session == TRUE_m12)
 			G_free_session_m12(sess, TRUE_m12);
@@ -13725,6 +13723,7 @@ TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess)
 	*num_str = 0;
 	for (i = 0; i < n_chans; ++i) {
 		chan = sess->time_series_channels[i];
+
 		read_metadata = FALSE_m12;
 		if (chan->segments == NULL) {
 			read_metadata = TRUE_m12;
@@ -13763,7 +13762,7 @@ TERN_m12	G_sort_channels_by_acq_num_m12(SESSION_m12 *sess)
 
 	// sort it
 	qsort((void *) acq_idxs, (size_t) n_chans, sizeof(ACQ_NUM_SORT_m12), G_compare_acq_nums_m12);
-	
+
 	// check for duplicates
 	for (i = 1; i < n_chans; ++i)
 		if (acq_idxs[i].acq_num == acq_idxs[i - 1].acq_num)
@@ -21164,7 +21163,7 @@ void    CMP_PRED2_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
 			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m12;
 			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m12 *) cps->parameters.model_region;
 			if (use_raw == TRUE_m12) {
-				// cps->input_buffer = unchanged
+				// cps->input_buffer == unchanged
 				MBE_header->minimum_value = cps->parameters.minimum_sample_value;
 				MBE_header->derivative_level = 0;
 			} else {
@@ -29468,7 +29467,7 @@ void	HW_get_core_info_m12()
 	si1	*buf = NULL, *c;;
 	si4	ret_val;
 
-	ret_val = system_pipe_m12(&buf, 0, "lscpu", SP_DEFAULT_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	ret_val = system_pipe_m12(&buf, 0, "/usr/bin/lscpu", SP_DEFAULT_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val) {
 		hw_params->logical_cores = (si4) get_nprocs_conf();
 	} else {
@@ -29703,6 +29702,7 @@ inline
 #endif
 void	HW_get_machine_serial_m12(void)
 {
+	si1		*command, *buf, *machine_sn;
 	HW_PARAMS_m12	*hw_params;
 
 #ifdef FN_DEBUG_m12
@@ -29720,40 +29720,47 @@ void	HW_get_machine_serial_m12(void)
 	}
 	
 	// get machine serial number
-#ifdef LINUX_m12
-	// Linux makes it impossible to get product serial from within program, even with sudo password. Use default interface MAC.
-	if (*global_tables_m12->NET_params.MAC_address_string == 0)
-		NET_get_mac_address_m12(NULL, &global_tables_m12->NET_params);
-	strcpy(hw_params->serial_number, global_tables_m12->NET_params.MAC_address_string);
-	STR_strip_character_m12(hw_params->serial_number, ':');
-	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
-	return;
-#endif
-#if defined MACOS_m12 || defined WINDOWS_m12
-	si1		*command, *buf, *machine_sn;
-	si8		buf_len;
 
-	#ifdef MACOS_m12
+#ifdef MACOS_m12
 	// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
-	command = "ioreg -l | grep IOPlatformSerialNumber";
-	#endif
+	command = "/usr/sbin/ioreg -l | grep IOPlatformSerialNumber";
+#endif
 	
-	#ifdef WINDOWS_m12
+#ifdef LINUX_m12
+	// out example: 111e157e322f47c79119cfc8de1de11c
+	// Linux makes it impossible to get true product serial from within program, even with sudo password. Use /etc/machine-id
+	command = "/usr/bin/cat /etc/machine-id";
+#endif
+
+#ifdef WINDOWS_m12
 	// out example: SerialNumber\nC02RP18FG8WM
 	command = "wmic bios get serialnumber";
-	#endif
+#endif
 	
 	buf = NULL;
-	if (system_pipe_m12(&buf, 0, command, SP_DEFAULT_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12))
+	if (system_pipe_m12(&buf, 0, command, SP_DEFAULT_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12)) {
+		if (buf)
+			free(buf);
+		*hw_params->serial_number = 0;
 		return;
-	buf_len = strlen(buf);
+	}
 	
 #ifdef MACOS_m12
+	si8		buf_len;
+	
 	machine_sn = STR_match_end_m12("IOPlatformSerialNumber\" = \"", buf);
+	buf_len = strlen(buf);
 	buf[buf_len - 3] = 0;  // <quote><lf>
 #endif
 	
+#ifdef LINUX_m12
+	machine_sn = buf;
+#endif
+
 #ifdef WINDOWS_m12
+	si8		buf_len;
+	
+	buf_len = strlen(buf);
 	buf[buf_len - 7] = buf[buf_len - 8] = 0;  // <cr><lf>
 	STR_wchar2char_m12(buf, (wchar_t *) buf);
 	machine_sn = STR_match_end_m12("SerialNumber  \r\n", buf);
@@ -29768,7 +29775,6 @@ void	HW_get_machine_serial_m12(void)
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 
 	return;
-#endif
 }
 
 
@@ -30500,6 +30506,11 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	// (get all info present in same buffers regardless of which was requested)
 	//
 	// called for mtu, MAC_address, LAN_IPv4, plugged_in, & active in Linux
+	
+	if (*np->interface_name == 0) {
+		G_warning_message_m12("%s(): no interface name\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
 
 	global_np = FALSE_m12;
 	if (copy_global == FALSE_m12)
@@ -30620,6 +30631,11 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	//
 	// called for mtu, MAC_address, LAN_IPv4, plugged_in, active, link_speed, & duplex fields in MacOS
 
+	if (*np->interface_name == 0) {
+		G_warning_message_m12("%s(): no interface name\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
 	global_np = FALSE_m12;
 	if (copy_global == FALSE_m12)
 		if (np == &global_tables_m12->NET_params)
@@ -30755,6 +30771,11 @@ TERN_m12	NET_get_config_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	//
 	// called for host_name, MAC_address, LAN_IPv4, & plugged_in fields in Windows
 
+	if (*np->interface_name == 0) {
+		G_warning_message_m12("%s(): no interface name\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
 	global_np = FALSE_m12;
 	if (copy_global == FALSE_m12)
 		if (np == &global_tables_m12->NET_params)
@@ -31594,7 +31615,7 @@ TERN_m12	NET_initialize_tables_m12(void)
 	
 	if (NET_get_config_m12(np, copy_global) == FALSE_m12)
 		return(FALSE_m12);
-	
+
 	// this can is problematic and is rarely needed
 //	if (NET_get_wan_ipv4_address_m12(np) == NULL)
 //		return(FALSE_m12);
@@ -32954,6 +32975,7 @@ si4	PROC_pthread_mutex_trylock_m12(pthread_mutex_t_m12 *mutex)
 	}
 #endif
 #ifdef WINDOWS_m12
+	si4	ret_val;
 	DWORD	win_ret_val;
 	
 	win_ret_val = WaitForSingleObject(mutex, (DWORD) 0);
@@ -37332,16 +37354,6 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-// ??? shutdown screwing up TCP close, shutdown necessary?
-	// TCP: receiver should initiate closure, send should wait for it
-//	if ((trans_info->header->flags & TR_FLAGS_UDP_m12) == 0) {  // TCP bit == zero
-//		if (trans_info->mode == TR_MODE_SEND_m12) {
-//			ui1	buffer[8];
-//			TR_set_socket_blocking_m12(trans_info, TRUE_m12);  // in case socket is non-blocking
-//			// not expecting any further transmissions, so should block until socket closes
-//			recv(trans_info->sock_fd, (void *) buffer, 8, 0);
-//		}
-//	}
 
 #if defined MACOS_m12 || defined LINUX_m12
 	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m12)
@@ -37355,7 +37367,8 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 #endif
 	trans_info->sock_fd = -1;
 	trans_info->mode = TR_MODE_NONE_m12;
-	
+	trans_info->header->flags &= ~TR_FLAGS_CLOSE_m12;  // reset close flag if set
+
 	return;
 }
 
@@ -37783,10 +37796,8 @@ TR_RECV_FAIL_m12:
 	header->flags &= ~(TR_FLAGS_ENCRYPT_m12 | TR_FLAGS_INCLUDE_KEY_m12);
 	
 	// close on request or error
-	if (data_bytes_received < 0 || header->flags & TR_FLAGS_CLOSE_m12) {
+	if (data_bytes_received < 0 || header->flags & TR_FLAGS_CLOSE_m12)
 		TR_close_transmission_m12(trans_info);
-		header->flags &= ~TR_FLAGS_CLOSE_m12;  // reset close flag if set
-	}
 	
 	// clean up
 	if (acknowledge == TRUE_m12)
@@ -37969,13 +37980,13 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 				G_warning_message_m12("%s(%s:%hu -> %s:%hu): %s (sock errno %d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_sent), err);
 			}
 			header->flags |= TR_FLAGS_CLOSE_m12;
-			goto TR_SEND_FAIL;
+			goto TR_SEND_FAIL_m12;
 		}
 		if (ret_val != (si8) packet_bytes) {
 			G_warning_message_m12("%s(): packet size error\n", __FUNCTION__);
 			header->flags |= TR_FLAGS_CLOSE_m12;
 			data_bytes_sent = TR_E_TRANS_FAILED_m12;
-			goto TR_SEND_FAIL;
+			goto TR_SEND_FAIL_m12;
 		}
 
 		// acknowledge
@@ -37996,7 +38007,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 				data_bytes_sent = TR_E_NO_ACK_m12;
 				G_warning_message_m12("%s(): %s\n", __FUNCTION__, TR_strerror(data_bytes_sent));
 				header->flags |= TR_FLAGS_CLOSE_m12;
-				goto TR_SEND_FAIL;
+				goto TR_SEND_FAIL_m12;
 			}
 		}
 		
@@ -38012,7 +38023,7 @@ si8	TR_send_transmission_m12(TR_INFO_m12 *trans_info)  // expanded_key can be NU
 	
 	trans_info->mode = TR_MODE_SEND_m12;  // set only if transmission successful
 	
-TR_SEND_FAIL:
+TR_SEND_FAIL_m12:
 	
 	// clean up header
 	header->crc = 0;
@@ -38029,10 +38040,8 @@ TR_SEND_FAIL:
 	}
 	
 	// close
-	if (header->flags & TR_FLAGS_CLOSE_m12) {
+	if (header->flags & TR_FLAGS_CLOSE_m12)
 		TR_close_transmission_m12(trans_info);
-		header->flags &= ~TR_FLAGS_CLOSE_m12;  // reset close flag
-	}
 	
 	// clean up
 	if (acknowledge == TRUE_m12)
@@ -41407,28 +41416,40 @@ si4     system_m12(si1 *command, TERN_m12 null_std_streams, const si1 *function,
 	errno_reset_m12();
 #if defined MACOS_m12 || defined LINUX_m12
 	ret_val = system(command);
+	if (ret_val) {  // shell can return values in bytes 2-4 that do not indicate error
+		err = errno_m12();
+		if (err == 0)
+			ret_val = 0;
+	}
 #endif
 #ifdef WINDOWS_m12
 	ret_val = WN_system_m12(command);
+	err = errno_m12();
 #endif
 
 	if (ret_val) {
 		if (behavior_on_fail & RETRY_ONCE_m12) {
 			G_nap_m12("1 ms");  // wait 1 ms
 			errno_reset_m12();
-#if defined MACOS_m12 || defined LINUX_m12
+			#if defined MACOS_m12 || defined LINUX_m12
 			ret_val = system(command);
-#endif
-#ifdef WINDOWS_m12
+			if (ret_val) {  // shell can return values in bytes 2-4 that do not indicate error
+				err = errno_m12();
+				if (err == 0)
+					ret_val = 0;
+			}
+			#endif
+			#ifdef WINDOWS_m12
 			ret_val = WN_system_m12(command);
-#endif
+			err = errno_m12();
+			#endif
+			
 			if (ret_val == 0) {
 				if (null_std_streams == TRUE_m12)
 					free((void *) temp_command);
 				return(0);
 			}
 		}
-		err = errno_m12();
 		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 			fprintf_m12(stderr, "%c\n%s() failed\n", 7, __FUNCTION__);
 			fprintf_m12(stderr, "\tcommand: \"%s\"\n", command);
@@ -41639,9 +41660,9 @@ SYSTEM_PIPE_RETRY_m12:
 	
 	if (child_pid == 0) {  // child process
 		
-		si1		*tmp_command, **args, *c2, *c3;
-		si4		arg_cnt, alloced_args, ALLOCED_ARGS_INC;
-		si8		command_len;
+		si1	*tmp_command, **args, *c2, *c3;
+		si4	arg_cnt, alloced_args, ALLOCED_ARGS_INC;
+		si8	command_len;
 		
 		
 		// allocate argument pointers
@@ -41662,7 +41683,7 @@ SYSTEM_PIPE_RETRY_m12:
 #endif
 			args[1] = "-c";
 			args[2] = command;
-			args[3] = (char *) NULL;
+			args[3] = (si1 *) NULL;
 			tmp_command = NULL;
 		} else {  // parse args
 			
@@ -41773,15 +41794,13 @@ SYSTEM_PIPE_RETRY_m12:
 	err = WEXITSTATUS(status);  // save any error code
 	
 	// errors
-	if (err) {
-		if (err == PIPE_FAILURE_m12 || bytes_in_e_buffer) {
-			if (err == PIPE_FAILURE_m12)
-				pipe_failure = TRUE_m12;
-			goto SYSTEM_PIPE_FAIL_m12;
-		}
-		err = 0;  // there are a lots of benign error codes => if no error text, ignore
+	if (bytes_in_e_buffer)
+		goto SYSTEM_PIPE_FAIL_m12;
+	if (err == PIPE_FAILURE_m12) {
+		pipe_failure = TRUE_m12;
+		goto SYSTEM_PIPE_FAIL_m12;
 	}
-		
+
 	// close read ends of pipes
 	close(stdout_pipe[READ_END_m12]);
 	close(stderr_pipe[READ_END_m12]);

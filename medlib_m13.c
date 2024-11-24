@@ -6767,7 +6767,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ... )  // varargs (app_path) ui4 version_major, ui4 version_minor
 {
 	tern	ret_val = TRUE_m13;
-	ui4		version_major, version_minor;
+	ui4	version_major, version_minor;
 
 
 	// get varargs, if present
@@ -6826,18 +6826,17 @@ tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path
 	srand((ui4) time(NULL));
 #endif
 	
-#if defined WINDOWS_m13 && defined NEED_WIN_SOCKETS_m13
-	// initialize Windows sockets DLL
+#if defined WINDOWS_m13
+	#ifdef NEED_WIN_SOCKETS_m13  // initialize Windows sockets DLL
 	if (WN_socket_startup_m13() == FALSE_m13)
 		ret_val = FALSE_m13;
-#endif
-	
-#if defined WINDOWS_m13 && !defined MATLAB_m13
-	// initialize Windows terminal
-	if (WN_init_terminal_m13() == FALSE_m13)
+	#endif
+	#ifndef MATLAB_m13  // initialize Windows terminal
+	if (WN_initialize_terminal_m13() == FALSE_m13)
 		ret_val = FALSE_m13;
+	#endif
 #endif
-		
+
 	return(ret_val);
 }
 
@@ -29592,7 +29591,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		mmap_block_bytes = (si8) sb.st_blksize;
 		#endif
 		#ifdef WINDOWS_m13
-		if ((file_h = (HANDLE) _get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
+		if ((file_h = (HANDLE) _get_osfhandle(test_fp->fd)) != INVALID_HANDLE_VALUE) {
 			dg_result = (ui4) DeviceIoControl(file_h, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &disk_geom, sizeof(DISK_GEOMETRY), &dg_result, (LPOVERLAPPED) NULL);
 			if (dg_result == 1)
 				mmap_block_bytes = (ui4) disk_geom.BytesPerSector;
@@ -29644,7 +29643,7 @@ tern	HW_get_core_info_m13()
 	si1	*buf = NULL, *c;;
 	si8	buf_len;
 
-	buf_len = system_pipe_m13(&buf, 0, "lscpu", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+	buf_len = system_pipe_m13(&buf, 0, "/usr/bin/lscpu", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (buf_len < 0) {
 		hw_params->logical_cores = (si4) get_nprocs_conf();
 	} else {
@@ -30657,6 +30656,11 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	//
 	// called for mtu, MAC_address, LAN_IPv4, plugged_in, & active in Linux
 
+	if (*np->interface_name == 0) {
+		G_warning_message_m13("%s(): no interface name\n", __FUNCTION__);
+		return(FALSE_m13);
+	}
+
 	global_np = FALSE_m13;
 	if (copy_global == FALSE_m13)
 		if (np == &globals_m13->tables->NET_params)
@@ -30777,6 +30781,11 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// (get all info present in same buffer regardless of which was requested)
 	//
 	// called for mtu, MAC_address, LAN_IPv4, plugged_in, active, link_speed, & duplex fields in MacOS
+
+	if (*np->interface_name == 0) {
+		G_warning_message_m13("%s(): no interface name\n", __FUNCTION__);
+		return(FALSE_m13);
+	}
 
 	global_np = FALSE_m13;
 	if (copy_global == FALSE_m13)
@@ -30914,6 +30923,11 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// (get all info present in same buffers regardless of which was requested)
 	//
 	// called for host_name, MAC_address, LAN_IPv4, & plugged_in fields in Windows
+
+	if (*np->interface_name == 0) {
+		G_warning_message_m13("%s(): no interface name\n", __FUNCTION__);
+		return(FALSE_m13);
+	}
 
 	global_np = FALSE_m13;
 	if (copy_global == FALSE_m13)
@@ -37392,6 +37406,7 @@ tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)
 #endif
 	trans_info->sock_fd = -1;
 	trans_info->mode = TR_MODE_NONE_m13;
+	trans_info->header->flags &= ~TR_FLAGS_CLOSE_m13;  // reset close flag
 	
 	return_m13(TRUE_m13);
 }
@@ -37820,10 +37835,8 @@ TR_RECV_FAIL_m13:
 	header->flags &= ~(TR_FLAGS_ENCRYPT_m13 | TR_FLAGS_INCLUDE_KEY_m13);
 	
 	// close on request or error
-	if (data_bytes_received < 0 || header->flags & TR_FLAGS_CLOSE_m13) {
+	if (data_bytes_received < 0 || header->flags & TR_FLAGS_CLOSE_m13)
 		TR_close_transmission_m13(trans_info);
-		header->flags &= ~TR_FLAGS_CLOSE_m13;  // reset close flag if set
-	}
 	
 	// clean up
 	if (acknowledge == TRUE_m13)
@@ -38006,13 +38019,13 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 				G_warning_message_m13("%s(%s:%hu -> %s:%hu): %s (sock errno %d)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror(data_bytes_sent), err);
 			}
 			header->flags |= TR_FLAGS_CLOSE_m13;
-			goto TR_SEND_FAIL;
+			goto TR_SEND_FAIL_m13;
 		}
 		if (ret_val != (si8) packet_bytes) {
 			G_warning_message_m13("%s(): packet size error\n", __FUNCTION__);
 			header->flags |= TR_FLAGS_CLOSE_m13;
 			data_bytes_sent = TR_E_TRANS_FAILED_m13;
-			goto TR_SEND_FAIL;
+			goto TR_SEND_FAIL_m13;
 		}
 
 		// acknowledge
@@ -38033,7 +38046,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 				data_bytes_sent = TR_E_NO_ACK_m13;
 				G_warning_message_m13("%s(): %s\n", __FUNCTION__, TR_strerror(data_bytes_sent));
 				header->flags |= TR_FLAGS_CLOSE_m13;
-				goto TR_SEND_FAIL;
+				goto TR_SEND_FAIL_m13;
 			}
 		}
 		
@@ -38049,7 +38062,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	
 	trans_info->mode = TR_MODE_SEND_m13;
 	
-TR_SEND_FAIL:
+TR_SEND_FAIL_m13:
 	
 	// clean up header
 	header->crc = 0;
@@ -38066,10 +38079,8 @@ TR_SEND_FAIL:
 	}
 	
 	// close
-	if (header->flags & TR_FLAGS_CLOSE_m13) {
+	if (header->flags & TR_FLAGS_CLOSE_m13)
 		TR_close_transmission_m13(trans_info);
-		header->flags &= ~TR_FLAGS_CLOSE_m13;  // reset close flag
-	}
 	
 	// clean up
 	if (acknowledge == TRUE_m13)
@@ -42167,30 +42178,39 @@ si4		system_m13(si1 *command, ...) // varargs(command = NULL): si1 *command, ter
 	errno_reset_m13();
 #if defined MACOS_m13 || defined LINUX_m13
 	ret_val = system(command);
+	if (ret_val) {  // shell can return values in bytes 2-4 that do not indicate error
+		err = errno_m13();
+		if (err == 0)
+			ret_val = 0;
+	}
 #endif
 #ifdef WINDOWS_m13
 	ret_val = WN_system_m13(command);
+	err = errno_m13();
 #endif
 	if (ret_val) {
 		if (behavior & RETRY_ONCE_m13) {
 			G_nap_m13("1 ms");  // wait 1 ms
 			errno_reset_m13();
-#if defined MACOS_m13 || defined LINUX_m13
+			#if defined MACOS_m13 || defined LINUX_m13
 			ret_val = system(command);
-#endif
-#ifdef WINDOWS_m13
+			if (ret_val) {  // shell can return values in bytes 2-4 that do not indicate error
+				err = errno_m13();
+				if (err == 0)
+					ret_val = 0;
+			}
+			#endif
+			#ifdef WINDOWS_m13
 			ret_val = WN_system_m13(command);
-#endif
+			err = errno_m13();
+			#endif
 		}
-		err = errno_m13();
 	}
 	if (null_std_streams == TRUE_m13)
 		free((void *) temp_command);
 	
 	if (ret_val)
 		G_set_error_m13(E_UNSPEC_m13, "command: \"%s\" failed", command);
-
-	err = (err > 0) ? -err : err;  // make negative, for return
 	
 	return_m13(err);
 }
@@ -42507,15 +42527,13 @@ SYSTEM_PIPE_RETRY_m13:
 	err = WEXITSTATUS(status);  // save any error code
 	
 	// errors
-	if (err) {
-		if (err == PIPE_FAILURE_m13 || bytes_in_e_buffer) {
-			if (err == PIPE_FAILURE_m13)
-				pipe_failure = TRUE_m13;
-			goto SYSTEM_PIPE_FAIL_m13;
-		}
-		err = 0;  // there are a lots of benign error codes => if no error text, ignore
+	if (bytes_in_e_buffer)
+		goto SYSTEM_PIPE_FAIL_m13;
+	if (err == PIPE_FAILURE_m13) {
+		pipe_failure = TRUE_m13;
+		goto SYSTEM_PIPE_FAIL_m13;
 	}
-		
+
 	// close read ends of pipes
 	close(stdout_pipe[READ_END_m13]);
 	close(stderr_pipe[READ_END_m13]);
