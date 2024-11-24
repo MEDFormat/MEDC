@@ -36705,7 +36705,6 @@ si1	*STR_replace_pattern_m12(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *n
 
 si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes, TERN_m12 base_2)
 {
-	static si1              private_size_str[SIZE_STRING_BYTES_m12];
 	static const si1        units[6][8] = {"bytes", "KB", "MB", "GB", "TB", "PB"};
 	static const si1        i_units[6][8] = {"bytes", "KiB", "MiB", "GiB", "TiB", "PiB"};
 	ui8                     i, j, t;
@@ -36715,9 +36714,9 @@ si1     *STR_size_string_m12(si1 *size_str, si8 n_bytes, TERN_m12 base_2)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	// Note: if size_str == NULL, this function is not thread safe
+	// Note: if size_str == NULL, caller reponsible for freeing
 	if (size_str == NULL)
-		size_str = private_size_str;
+		size_str = malloc_m12((size_t) SIZE_STRING_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	if (base_2 == TRUE_m12) {
 		for (i = 0, j = 1, t = n_bytes; t >>= 10; ++i, j <<= 10);
