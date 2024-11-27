@@ -9589,7 +9589,7 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 	if (unspecified_pw == NULL)  // NULL and "" are equivalent in this function
 		unspecified_pw = "";
 	pw_ok = FALSE_m13;
-	if (*unspecified_pw)  // don't warn if no password passed (could be intentional), but still show hints (below) if they exist
+	if (*unspecified_pw)  // don't warn if no password passed (could be intentional), but still show hints one is passed they exist
 		pw_ok = G_check_password_m13(unspecified_pw);
 	if (pw_ok == TRUE_m13) {
 			
@@ -9633,8 +9633,10 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 		// invalid as level 2 password
 		G_warning_message_m13("%s(): password is not valid for Level 1 or Level 2 access\n", __FUNCTION__);
 	}
-	// G_check_password_m13() == FALSE_m13 or unspecified password invalid
-	G_show_password_hints_m13(pwd); // if hints exist
+
+	// show hints if password passed
+	if (*unspecified_pw)
+		G_show_password_hints_m13(pwd);
 
 	return_m13(FALSE_m13);
 }
