@@ -463,6 +463,8 @@ SESSION_m12	*G_allocate_session_m12(FILE_PROCESSING_STRUCT_m12 *proto_fps, si1 *
 		strcpy_m12(ssr->name, sess->name);
 		ssr->type_code = LH_SEGMENTED_SESS_RECS_m12;
 		ssr->flags = sess->flags;
+		ssr->parent = (void *) sess;
+		ssr->en_bloc_allocation = FALSE_m12;
 		for (i = 0; i < n_segs; ++i) {
 			// get a segment prototype
 			if (n_ts_chans)
@@ -630,7 +632,15 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 #endif
 
 	// find contigua in current time slice, and set in level
-	
+	if (level_header == NULL) {
+		G_warning_message_m12("%s(): level is not open\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	if ((level_header->flags & LH_OPEN_m12) == 0) {
+		G_warning_message_m12("%s(): level is not open\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+			
 	switch (level_header->type_code) {
 		case LH_TIME_SERIES_SEGMENT_m12:
 		case LH_VIDEO_SEGMENT_m12:
@@ -649,7 +659,7 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 			sess = (SESSION_m12 *) level_header;
 			chan = globals_m12->reference_channel;
 			slice = &sess->time_slice;
-			type_code = chan->type_code;
+			type_code = chan->type_code;  // use ref chan type
 			break;
 		default:
 			G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
@@ -665,11 +675,11 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 	
 	contigua = NULL;
 	n_contigua = 0;
-	force_discont = TRUE_m12;
+	force_discont = TRUE_m12;  // force_discont set to open new contiguon for initial index
 	new_bytes = 0;
 	if (type_code == LH_TIME_SERIES_CHANNEL_m12) {
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			if (chan)  // segment level passed
+			if (chan)  // else segment level passed
 				seg = chan->segments[j];
 			if (seg == NULL) {  // segment missing
 				force_discont = TRUE_m12;
@@ -745,9 +755,11 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 		}
 		
 		// close final contiguon
-		contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;  // k == next index of last set of indices
-		contiguon->end_time = tsi[k].start_time - 1;  // next index start time
-		contiguon->end_segment_number = (si4) j;
+		contiguon->end_sample_number = (tsi[k].start_sample_number + absolute_numbering_offset) - 1;
+		last_block_samples = tsi[k].start_sample_number - tsi[k - 1].start_sample_number;
+		last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1e6);
+		contiguon->end_time = (tsi[k - 1].start_time + last_block_usecs) - 1;
+		contiguon->end_segment_number = (si4) last_segment_number;
 	} else {  // LH_VIDEO_CHANNEL_m12
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 			if (chan)  // segment level passed
@@ -825,24 +837,26 @@ si8	G_build_contigua_m12(LEVEL_HEADER_m12 *level_header)
 		}
 		
 		// close final contiguon
-		contiguon->end_frame_number = ((si8) vi[k].start_frame_number + absolute_numbering_offset) - 1;  // k == next index of last set of indices
-		contiguon->end_time = vi[k].start_time - 1;  // next index start time
-		contiguon->end_segment_number = (si4) j;
+		contiguon->end_frame_number = (vi[k].start_frame_number + absolute_numbering_offset) - 1;
+		last_block_frames = vi[k].start_frame_number - vi[k - 1].start_frame_number;
+		last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1e6);
+		contiguon->end_time = (vi[k - 1].start_time + last_block_usecs) - 1;
+		contiguon->end_segment_number = (si4) last_segment_number;
 	}
 	
 	if (n_contigua == 0)
 		return((si4) FALSE_m12);
 	
 	// trim contigua ends to slice (sample_number == frame_number)
-	if (contigua[0].start_time < slice->start_time)
+	if (contigua[0].start_time < slice->start_time && slice->start_time != UUTC_NO_ENTRY_m12)
 		contigua[0].start_time = slice->start_time;
-	if (contigua[n_contigua - 1].end_time > slice->end_time)
+	if (contigua[n_contigua - 1].end_time > slice->end_time && slice->end_time != UUTC_NO_ENTRY_m12)
 		contigua[n_contigua - 1].end_time = slice->end_time;
-	if (contigua[0].start_sample_number < slice->start_sample_number)
+	if (contigua[0].start_sample_number < slice->start_sample_number && slice->start_sample_number != SAMPLE_NUMBER_NO_ENTRY_m12)
 		contigua[0].start_sample_number = slice->start_sample_number;
-	if (contigua[n_contigua - 1].end_sample_number > slice->end_sample_number)
+	if (contigua[n_contigua - 1].end_sample_number > slice->end_sample_number && slice->end_sample_number != SAMPLE_NUMBER_NO_ENTRY_m12)
 		contigua[n_contigua - 1].end_sample_number = slice->end_sample_number;
-	
+
 	// set sample/frame numbers to NO ENTRY for variable frequency sessions
 	if (level_header->type_code == LH_SESSION_m12) {
 		null_sample_numbers = FALSE_m12;
@@ -2064,8 +2078,8 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 			AES_decrypt_m12(fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m12, METADATA_SECTION_2_BYTES_m12, NULL, decryption_key);
 			fps->metadata->section_1.section_2_encryption_level = -fps->metadata->section_1.section_2_encryption_level;  // mark as currently decrypted
 		} else {
-			G_error_message_m12("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_2_encryption_level);
-			G_show_password_hints_m12(pwd);
+			G_warning_message_m12("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_2_encryption_level);
+			G_show_password_hints_m12(pwd, fps->metadata->section_1.section_2_encryption_level);
 			G_set_error_m12(E_BAD_PASSWORD_m12, __FUNCTION__, __LINE__);
 			return(FALSE_m12);  // can't do anything without section 2, so fail
 		}
@@ -2083,7 +2097,7 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		} else {
 			if (globals_m12->verbose == TRUE_m12) {
 				G_warning_message_m12("%s(): Metadata section 3 encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_3_encryption_level);
-				G_show_password_hints_m12(pwd);
+				G_show_password_hints_m12(pwd, fps->metadata->section_1.section_3_encryption_level);
 			}
 			globals_m12->RTO_known = FALSE_m12;
 			globals_m12->time_constants_set = TRUE_m12;  // set to defaults
@@ -2091,7 +2105,7 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		}
 	}
 	
-	// set global time data
+	// set global time data (requires section 3 data)
 	if (globals_m12->RTO_known != TRUE_m12) {  // UNKNOWN || FALSE
 		section_3 = &fps->metadata->section_3;
 		globals_m12->recording_time_offset = section_3->recording_time_offset;
@@ -2116,7 +2130,7 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // varargs (fps == NULL): RECORD_HEADER_m12 *rh, si8 number_of_records
 {
 	ui1			*encryption_key;
-	si8			i, failed_decryption_count, number_of_records;
+	si8			i, number_of_records;
 	va_list			args;
 	RECORD_HEADER_m12	*rh;
 	PASSWORD_DATA_m12	*pwd;
@@ -2124,6 +2138,8 @@ TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // var
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
+	
+	// always returns true at this point - failed decryption on per record bassis is to be expected under some circumstances
 	
 	if (fps == NULL) {
 		va_start(args, fps);
@@ -2141,7 +2157,7 @@ TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // var
 	if (pwd == NULL)
 		pwd = &globals_m12->password_data;
 
-	for (i = failed_decryption_count = 0; i < number_of_records; ++i) {
+	for (i = 0; i < number_of_records; ++i) {
 		if (rh->encryption_level > NO_ENCRYPTION_m12) {
 			if (pwd->access_level >= rh->encryption_level) {
 				if (rh->encryption_level == LEVEL_1_ENCRYPTION_m12)
@@ -2151,16 +2167,12 @@ TERN_m12	G_decrypt_record_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, ...)  // var
 				AES_decrypt_m12((ui1 *) rh + RECORD_HEADER_BYTES_m12, rh->total_record_bytes - RECORD_HEADER_BYTES_m12, NULL, encryption_key);
 				rh->encryption_level = -rh->encryption_level;  // mark as currently decrypted
 			} else {
-				++failed_decryption_count;
 				if (globals_m12->verbose == TRUE_m12)
 					G_warning_message_m12("%s(): Cannot decrypt record => skipping\n", __FUNCTION__);
 			}
 		}
 		rh = (RECORD_HEADER_m12 *) ((ui1 *) rh + rh->total_record_bytes);
 	}
-
-	if (failed_decryption_count == number_of_records)  // failure == all records unreadable
-		return(FALSE_m12);
 	
 	return(TRUE_m12);
 }
@@ -2202,7 +2214,8 @@ TERN_m12     G_decrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				key = pwd->level_1_encryption_key;
 				break;
 			} else {
-				G_error_message_m12("%s(): Cannot decrypt data: insufficient access\n", __FUNCTION__);
+				G_warning_message_m12("%s(): data encrypted at level 1 => cannot decrypt\n", __FUNCTION__);
+				G_show_password_hints_m12(pwd, LEVEL_1_ENCRYPTION_m12);
 				return(FALSE_m12);
 			}
 		} else {  // level 2 bit is set
@@ -2210,7 +2223,8 @@ TERN_m12     G_decrypt_time_series_data_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 				key = pwd->level_2_encryption_key;
 				break;
 			} else {
-				G_error_message_m12("%s(): Cannot decrypt data: insufficient access\n", __FUNCTION__);
+				G_warning_message_m12("%s(): data encrypted at level 2 => cannot decrypt\n", __FUNCTION__);
+				G_show_password_hints_m12(pwd, LEVEL_2_ENCRYPTION_m12);
 				return(FALSE_m12);
 			}
 		}
@@ -4402,7 +4416,7 @@ void    G_free_globals_m12(TERN_m12 cleanup_for_exit)
 #else
 	free((void *) globals);
 #endif
-	
+
 	return;
 }
 
@@ -4482,7 +4496,7 @@ void	G_free_segmented_sess_recs_m12(SEGMENTED_SESS_RECS_m12 *ssr, TERN_m12 free_
 		free_m12((void *) ssr, __FUNCTION__);
 	else
 		ssr->record_indices_fps = ssr->record_data_fps = NULL;
-	
+
 	return;
 }
 
@@ -4582,7 +4596,6 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 
 		// reset miscellaneous globals
 		globals->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m12;
-		globals->password_data.processed = 0;  // don't zero password hints can be shown, if they exist
 
 	} else {  // leave name, path, slice, & globals intact (i.e. clear everything with allocated memory)
 		session->flags &= ~LH_OPEN_m12;
@@ -6995,8 +7008,7 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 	}
 	
 	// move to end of string
-	c = string - 1;
-	while (*++c);
+	for (c = string - 1; *++c;);
 	
 	// find last period period
 	while (--c != string)
@@ -8112,14 +8124,86 @@ pthread_rval_m12	G_open_segment_thread_m12(void *ptr)
 }
 
 
+TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess)
+{
+	si1				tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
+	si4				i, j, fe, mapped_segs, seg_idx;
+	TIME_SLICE_m12			*slice;
+	SEGMENTED_SESS_RECS_m12		*ssr;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	ssr = sess->segmented_sess_recs;
+	if (ssr)
+		if (ssr->flags & LH_OPEN_m12)
+			return(TRUE_m12);
+	
+	sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
+	fe = G_exists_m12(tmp_str);
+	if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
+		if (strcmp(globals_m12->uh_session_name, globals_m12->fs_session_name)) {
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
+			fe = G_exists_m12(tmp_str);
+		}
+	}
+	if (fe != DIR_EXISTS_m12)
+		return(FALSE_m12);
+	
+	ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m12 *) calloc_m12((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	strcpy_m12(ssr->path, tmp_str);
+	strcpy_m12(ssr->name, sess->name);
+	ssr->type_code = LH_SEGMENTED_SESS_RECS_m12;
+	ssr->flags = sess->flags;
+	ssr->parent = (void *) sess;
+	ssr->en_bloc_allocation = FALSE_m12;
+	mapped_segs = globals_m12->number_of_mapped_segments;
+	ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	slice = &sess->time_slice;
+	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
+	for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
+		// record indices
+		G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
+		sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+		fe = G_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			fe = G_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12)
+			ssr->record_indices_fps[j] = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
+
+		// record data
+		sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+		fe = G_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+			fe = G_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12) {
+			if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m12)
+				ssr->record_data_fps[j] = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
+			else  // just read in data universal header & leave open
+				ssr->record_data_fps[j] = G_read_file_m12(NULL, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
+		}
+	}
+	
+	ssr->flags |= LH_OPEN_m12;
+	
+	return(TRUE_m12);
+}
+
+
 SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password)
 {
-	TERN_m12			free_session, all_channels_selected, fs_name_differs, ret_val;
-	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12], *tmp_str_ptr;
-	si1				**full_ts_chan_list, **full_vid_chan_list, num_str[FILE_NUMBERING_DIGITS_m12 + 1], *regex_str;
+	TERN_m12			free_session, all_channels_selected, ret_val;
+	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[FULL_FILE_NAME_BYTES_m12];
+	si1				*tmp_str_ptr, **full_ts_chan_list, **full_vid_chan_list, *regex_str;
 	ui4				type_code;
-	si4				i, j, k, n_chans, mapped_segs, n_segs, seg_idx, thread_idx;
-	si4				fe, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
+	si4				i, j, k, n_chans, n_segs, seg_idx, thread_idx;
+	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
 	si8				curr_time;
 	CHANNEL_m12			*chan;
 	UNIVERSAL_HEADER_m12		*uh;
@@ -8406,22 +8490,12 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	}
 	
 	// user generated channel subsets (setting password also sets global session names)
-	fs_name_differs = UNKNOWN_m12;
-	if (*globals_m12->uh_session_name || *globals_m12->fs_session_name) {
-		if (*globals_m12->uh_session_name && *globals_m12->fs_session_name) {
-			if (strcmp(globals_m12->uh_session_name, globals_m12->fs_session_name))
-				fs_name_differs = TRUE_m12;
-			else
-				fs_name_differs = FALSE_m12;
-			sess->name = globals_m12->uh_session_name;  // default to the more generally useful version
-		} else if (*globals_m12->uh_session_name) {
-			fs_name_differs = FALSE_m12;
-			sess->name = globals_m12->uh_session_name;  // only available version
-		} else {
-			fs_name_differs = FALSE_m12;
-			sess->name = globals_m12->fs_session_name;  // only available version
-		}
-	}
+	if (*globals_m12->fs_session_name)
+		sess->name = globals_m12->fs_session_name;  // default to the more generally useful version
+	else if (*globals_m12->uh_session_name)
+		sess->name = globals_m12->uh_session_name;
+	else
+		G_error_message_m12("%s(): session name unknowm\n", __FUNCTION__);
 
 	// process time slice (passed slice is not modified)
 	if (slice == NULL) {
@@ -8511,78 +8585,17 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 	G_sort_channels_by_acq_num_m12(sess);
 
 	// session records
-	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
-		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
-			fe = G_exists_m12(tmp_str);
-		}
-		if (fe == FILE_EXISTS_m12)
-			sess->record_indices_fps = G_read_file_m12(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
-		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
-		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
-			fe = G_exists_m12(tmp_str);
-		}
-		if (fe == FILE_EXISTS_m12) {
-			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m12)
-				sess->record_data_fps = G_read_file_m12(sess->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
-			else  // just read in data universal header & leave open
-				sess->record_data_fps = G_read_file_m12(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
-		}
-	}
+	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
+		G_open_session_records(sess);
 
 	// segmented session records level
-	ssr = NULL;
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
-		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
-		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
-			fe = G_exists_m12(tmp_str);
-		}
-		if (fe == DIR_EXISTS_m12) {
-			ssr = sess->segmented_sess_recs = (SEGMENTED_SESS_RECS_m12 *) calloc_m12((size_t) 1, sizeof(SEGMENTED_SESS_RECS_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			strcpy_m12(ssr->path, tmp_str);
-			strcpy_m12(ssr->name, sess->name);
-			ssr->type_code = LH_SEGMENTED_SESS_RECS_m12;
-			ssr->flags = sess->flags;
-			ssr->parent = (void *) sess;
-			ssr->en_bloc_allocation = FALSE_m12;
-			mapped_segs = globals_m12->number_of_mapped_segments;
-			ssr->record_data_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			ssr->record_indices_fps = (FILE_PROCESSING_STRUCT_m12 **) calloc_m12((size_t) mapped_segs, sizeof(FILE_PROCESSING_STRUCT_m12 *), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			seg_idx = G_get_segment_index_m12(slice->start_segment_number);
-			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
-				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				fe = G_exists_m12(tmp_str);
-				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
-					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-					fe = G_exists_m12(tmp_str);
-				}
-				if (fe == FILE_EXISTS_m12)
-					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				fe = G_exists_m12(tmp_str);
-				if (fe == DOES_NOT_EXIST_m12 && fs_name_differs == TRUE_m12) {  // sess->name defaults to uh_name
-					sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-					fe = G_exists_m12(tmp_str);
-				}
-				if (fe == FILE_EXISTS_m12) {
-					if (ssr->flags & LH_READ_FULL_SEGMENTED_SESS_RECS_m12)
-						ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-					else  // just read in data universal header & leave open
-						ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-				}
-			}
-		}
-	}
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12)
+		G_open_segmented_session_records(sess);
 	
 	// ephemeral data
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
+		ssr = sess->segmented_sess_recs;
+		seg_idx = G_get_segment_index_m12(slice->start_segment_number);
 		if (sess->number_of_time_series_channels) {
 			if (sess->time_series_metadata_fps)
 				FPS_free_processing_struct_m12(sess->time_series_metadata_fps, TRUE_m12);
@@ -9156,6 +9169,54 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 }
 
 
+TERN_m12	G_open_session_records(SESSION_m12 *sess)
+{
+	si1	tmp_str[FULL_FILE_NAME_BYTES_m12];
+	si4	fe;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// record indices
+	if (sess->record_indices_fps == NULL) {
+		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+		fe = G_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+			fe = G_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12)
+			sess->record_indices_fps = G_read_file_m12(sess->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
+		else
+			return(FALSE_m12);
+	}
+	
+	// records data
+	if (sess->record_data_fps == NULL) {
+		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
+		fe = G_exists_m12(tmp_str);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
+			fe = G_exists_m12(tmp_str);
+		}
+		if (fe == FILE_EXISTS_m12) {
+			if (sess->flags & LH_READ_FULL_SESSION_RECORDS_m12)
+				sess->record_data_fps = G_read_file_m12(sess->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
+			else  // just read in data universal header & leave open
+				sess->record_data_fps = G_read_file_m12(sess->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m12, (LEVEL_HEADER_m12 *) sess, NULL, USE_GLOBAL_BEHAVIOR_m12);
+		} else {
+			return(FALSE_m12);
+		}
+	}
+	
+	if (sess->record_indices_fps && sess->record_data_fps)
+		return(TRUE_m12);
+
+	return(FALSE_m12);
+}
+
+
 si8     G_pad_m12(ui1 *buffer, si8 content_len, ui4 alignment)
 {
 	si8        i, pad_bytes;
@@ -9331,7 +9392,7 @@ void	G_pop_behavior_m12(void)  //*** THIS ROUTINE IS NOT THREAD SAFE - USE JUDIC
 
 TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspecified_pw)
 {
-	TERN_m12		pw_ok, LEVEL_1_valid;
+	TERN_m12		LEVEL_1_valid;
 	PASSWORD_DATA_m12	*pwd;
 	ui1			hash[SHA_HASH_BYTES_m12];
 	si1			unspecified_pw_bytes[PASSWORD_BYTES_m12] = {0}, putative_L1_pw_bytes[PASSWORD_BYTES_m12] = {0};
@@ -9352,18 +9413,16 @@ TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspe
 		G_warning_message_m12("%s(): file processing struct is NULL\n", __FUNCTION__);
 		return(FALSE_m12);
 	}
-	pwd = fps->parameters.password_data;
-	if (pwd == NULL)
-		pwd = fps->parameters.password_data = &globals_m12->password_data;
+	pwd = &globals_m12->password_data;
 	memset((void *) pwd, 0, sizeof(PASSWORD_DATA_m12));
 	pwd->processed = TRUE_m12;
-	
-	// NULL and "" are equivalent in this function
-	if (unspecified_pw == NULL)
-		unspecified_pw = "";
-		
-	// copy password hints from metadata to pwd if possible
+
+	// check if password protected (no need to check level 2, since for level 2 to exist, level 1 must exist)
 	uh = fps->universal_header;
+	if (G_all_zeros_m12(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m12) == TRUE_m12)
+		return(TRUE_m12);
+	
+	// copy password hints from metadata to pwd if possible
 	if (uh->type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m12 || uh->type_code == VIDEO_METADATA_FILE_TYPE_CODE_m12) {
 		md1 = &fps->metadata->section_1;
 		if (*md1->level_1_password_hint)
@@ -9372,60 +9431,55 @@ TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspe
 			strncpy_m12(pwd->level_2_password_hint, md1->level_2_password_hint, PASSWORD_HINT_BYTES_m12);
 	}
 
-	pw_ok = FALSE_m12;
-	if (*unspecified_pw) // don't warn if no password passed (could be intentional), but still show hints one is passed they exist
-		pw_ok = G_check_password_m12(unspecified_pw);
-	if (pw_ok == TRUE_m12) {
+	if (G_check_password_m12(unspecified_pw) == FALSE_m12)
+		G_show_password_hints_m12(pwd, 0);
 			
-		// get terminal bytes
-		G_extract_terminal_password_bytes_m12(unspecified_pw, unspecified_pw_bytes);
+	// get terminal bytes
+	G_extract_terminal_password_bytes_m12(unspecified_pw, unspecified_pw_bytes);
 
-		// check if password protected (no need to check level 2, since for level 2 to exist, level 1 must exist)
-		if (G_all_zeros_m12(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m12) == TRUE_m12)
-			return(TRUE_m12);
+	// check for level 1 access
+	SHA_hash_m12((ui1 *) unspecified_pw_bytes, PASSWORD_BYTES_m12, hash);  // generate SHA-256 hash of password bytes
+	for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m12; ++i)  // compare with stored level 1 hash
+		if (hash[i] != uh->level_1_password_validation_field[i])
+			break;
+	LEVEL_1_valid = FALSE_m12;
+	if (i == PASSWORD_BYTES_m12) {  // Level 1 password valid (could be level 2 password also)
+		pwd->access_level = LEVEL_1_ACCESS_m12;
+		AES_key_expansion_m12(pwd->level_1_encryption_key, unspecified_pw_bytes);  // generate key
+		if (globals_m12->verbose == TRUE_m12)
+			G_message_m12("Unspecified password is valid for Level 1 access");
+		LEVEL_1_valid = TRUE_m12;
+	}
 		
-		// check for level 1 access
-		SHA_hash_m12((ui1 *) unspecified_pw_bytes, PASSWORD_BYTES_m12, hash);  // generate SHA-256 hash of password bytes
-		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m12; ++i)  // compare with stored level 1 hash
-			if (hash[i] != uh->level_1_password_validation_field[i])
-				break;
-		LEVEL_1_valid = FALSE_m12;
-		if (i == PASSWORD_BYTES_m12) {  // Level 1 password valid (could be level 2 password also)
-			pwd->access_level = LEVEL_1_ACCESS_m12;
-			AES_key_expansion_m12(pwd->level_1_encryption_key, unspecified_pw_bytes);  // generate key
-			if (globals_m12->verbose == TRUE_m12)
-				G_message_m12("Unspecified password is valid for Level 1 access");
-			LEVEL_1_valid = TRUE_m12;
-		}
-			
-		// check if level 2 password
-		for (i = 0; i < PASSWORD_BYTES_m12; ++i)  // xor with level 2 password validation field
-			putative_L1_pw_bytes[i] = hash[i] ^ uh->level_2_password_validation_field[i];
-			
-		SHA_hash_m12((ui1 *) putative_L1_pw_bytes, PASSWORD_BYTES_m12, hash); // generate SHA-256 hash of putative level 1 password
-			
-		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m12; ++i)  // compare with stored level 1 hash
-			if (hash[i] != uh->level_1_password_validation_field[i])
-				break;
-		if (i == PASSWORD_VALIDATION_FIELD_BYTES_m12) {  // Level 2 password valid
-			pwd->access_level = LEVEL_2_ACCESS_m12;
-			AES_key_expansion_m12(pwd->level_1_encryption_key, putative_L1_pw_bytes);  // generate level 1 key
-			AES_key_expansion_m12(pwd->level_2_encryption_key, unspecified_pw_bytes);  // generate level 2 key
-			if (globals_m12->verbose == TRUE_m12)
-				G_message_m12("Unspecified password is valid for Level 1 and Level 2 access\n");
-			return(TRUE_m12);
-		}
-		if (LEVEL_1_valid == TRUE_m12)
-			return(TRUE_m12);
-
-		// invalid as level 2 password
-		G_warning_message_m12("%s(): password is not valid for Level 1 or Level 2 access\n", __FUNCTION__);
+	// check if level 2 password was set
+	if (G_all_zeros_m12(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m12) == TRUE_m12) {
+		if (LEVEL_1_valid == FALSE_m12)
+			G_show_password_hints_m12(pwd, 1);
+		return(LEVEL_1_valid);
 	}
 
-	// show hints if password passed
-	if (*unspecified_pw)
-		G_show_password_hints_m12(pwd);
+	// generate putative L1 password
+	for (i = 0; i < PASSWORD_BYTES_m12; ++i)  // xor with level 2 password validation field
+		putative_L1_pw_bytes[i] = hash[i] ^ uh->level_2_password_validation_field[i];
+		
+	SHA_hash_m12((ui1 *) putative_L1_pw_bytes, PASSWORD_BYTES_m12, hash); // generate SHA-256 hash of putative level 1 password
+	for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m12; ++i)  // compare with stored level 1 hash
+		if (hash[i] != uh->level_1_password_validation_field[i])
+			break;
+	
+	// Level 2 password valid
+	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m12) {
+		pwd->access_level = LEVEL_2_ACCESS_m12;
+		AES_key_expansion_m12(pwd->level_1_encryption_key, putative_L1_pw_bytes);  // generate level 1 key
+		AES_key_expansion_m12(pwd->level_2_encryption_key, unspecified_pw_bytes);  // generate level 2 key
+		if (globals_m12->verbose == TRUE_m12)
+			G_message_m12("Unspecified password is valid for Level 1 and Level 2 access\n");
+		return(TRUE_m12);
+	}
+	if (LEVEL_1_valid == TRUE_m12)
+		return(TRUE_m12);
 
+	// invalid as both level 1 & 2 password
 	return(FALSE_m12);
 }
 
@@ -9835,6 +9889,205 @@ CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...
 }
 
 
+si4	G_read_channel_specification_file_m12(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions)
+{
+	TERN_m12	outside_range_warning_given;
+	si1		*buffer, *next_line, len, *c1, *c2, *c3, temp_str[1024], *end_ptr;
+	si4		i, row_length, max_row_length, n_rows, n_channels, acq_num, comma_count, n_fields;
+	si8		file_bytes;
+	FILE		*fp;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// map & reverse_map, names, decimation_frequencies, block_samples, & descriptions are allocated here & filled in
+	// number of channels returned
+	
+	// open channel specification file
+	fp = fopen_m12(cs_file_name, "r", __FUNCTION__, EXIT_ON_FAIL_m12);
+	
+	// get file length
+	file_bytes = (ui8) G_file_length_m12(fp, NULL);
+	
+	// read in channel specification file
+	buffer = (si1 *) malloc((size_t) (file_bytes + 2));
+	fread_m12(buffer, sizeof(si1), (size_t) file_bytes, fp, cs_file_name, __FUNCTION__, EXIT_ON_FAIL_m12);
+	fclose(fp);
+	if (buffer[file_bytes - 1] != '\n')  // in case no terminal newline
+		buffer[file_bytes++] = '\n';
+	buffer[file_bytes] = 0;
+	
+	// remove carriage returns & non-printing characters (courtesy of Excel)
+	c1 = c2 = buffer - 1;
+	while (*++c1)
+		if (*c1 == '\n' || (*c1 >= 32 && *c1 < 127))
+			*++c2 = *c1;
+	*++c2 = 0;
+	
+	// count rows (just count newlines, fine to over allocate here)
+	max_row_length = 0;
+	n_rows = 0;
+	c1 = c2 = buffer - 1;
+	while (*++c1) {
+		if (*c1 == '\n') {
+			row_length = c1 - c2;
+			++n_rows;
+			if (max_row_length < row_length)
+				max_row_length = row_length;
+			c2 = c1;
+		}
+	}
+	
+	// allocate
+	*map = (si4 *) calloc_m12(n_available_channels, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	*reverse_map = (si4 *) calloc_m12(n_available_channels, sizeof(si4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	*names = (si1 **) calloc_2D_m12(n_rows, max_row_length, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	*decimation_frequencies = (sf8 *) calloc_m12(n_rows, sizeof(si8), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	*block_samples = (ui4 *) calloc_m12(n_rows, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	*descriptions = (si1 **) calloc_2D_m12(n_rows, max_row_length, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	
+	// initialize maps
+	for (i = 0; i < n_available_channels; ++i)
+		(*map)[i] = (*reverse_map)[i] = UNMAPPED_CHANNEL_m12;
+	
+	// fill arrays
+	n_channels = 0;
+	c1 = buffer;
+	n_fields = 5;
+	outside_range_warning_given = FALSE_m12;
+	while (*c1) {
+
+		if (n_channels > n_available_channels) {
+			G_warning_message_m12("%s(): requested channel count exceeds acquired channels => using all available channels\n\n", __FUNCTION__);
+			break;
+		}
+
+		// find next line
+		next_line = c1 - 1;
+		while (*++next_line != '\n');
+		*next_line++ = 0;
+		
+		// replace commas & find end of line
+		c2 = c1;
+		comma_count = 0;
+		while (*c2) {
+			if (*c2 == ',')
+				if (++comma_count < n_fields)  // allow commas in channel description
+					*c2 = 0;
+			++c2;
+		}
+
+		// acquisition channel number
+		len = strcpy_m12(temp_str, c1) + 1;  // include terminal zero
+		acq_num = ((si4) strtol(temp_str, &end_ptr, 10)) - 1;  // convert to index (-1)
+		if (end_ptr == temp_str) {
+			c1 = next_line;  // move to next line
+			continue;
+		}
+		if (acq_num >= n_available_channels) {
+			if (outside_range_warning_given == FALSE_m12) {
+				G_warning_message_m12("%s(): at least one requested channel number exceeds available range\n", __FUNCTION__);
+				outside_range_warning_given = TRUE_m12;
+			}
+			c1 = next_line;  // move to next row
+			continue;
+		}
+		(*map)[acq_num] = n_channels;
+		(*reverse_map)[n_channels] = acq_num;
+		if ((c1 += len) == next_line)
+			continue;
+
+		// channel name
+		len = strcpy_m12(temp_str, c1) + 1;  // include terminal zero
+		if (len == 1)
+			continue;
+		c1 += len;
+		
+		// condition name
+		// remove leading spaces
+		c2 = temp_str;
+		while (*c2 == ' ')
+			++c2;
+		c3 = temp_str;
+		while (*c2)
+			*c3++ = *c2++;
+		*c3 = 0;
+
+		// remove trailing spaces
+		len = strlen(temp_str);
+		c2 = temp_str + len - 1;
+		while (*c2 == ' ')
+			*c2-- = 0;
+
+		// replace multiple spaces within name with single spaces
+		c2 = c3 = temp_str;
+		while (*c3) {
+			if (*c3 == ' ') {
+				if (*(c3 - 1) == ' ') {
+					++c3;
+					continue;
+				}
+			}
+			*c2++ = *c3++;
+		}
+		*c2 = 0;
+
+		// replace single spaces within name with underscores
+		c2 = temp_str;
+		while (*c2) {
+			if (*c2 == ' ')
+				*c2 = '_';
+			++c2;
+		}
+
+		len = strcpy_m12((*names)[n_channels], temp_str);
+		if (len == 0)
+			continue;
+		if (c1 == next_line) {
+			++n_channels;
+			continue;
+		}
+
+		// decimation frequency
+		len = strcpy_m12(temp_str, c1) + 1;  // include terminal zero
+		(*decimation_frequencies)[n_channels] = (sf8) strtod(temp_str, &end_ptr);
+		if (end_ptr == temp_str || (c1 += len) == next_line) {
+			c1 = next_line;  // move to next line
+			++n_channels;
+			continue;
+		}
+
+		// block samples
+		len = strcpy_m12(temp_str, c1) + 1;  // include terminal zero
+		(*block_samples)[n_channels] = (ui4) strtoul(temp_str, &end_ptr, 10);
+		if (end_ptr == temp_str || (c1 += len) == next_line) {
+			c1 = next_line;  // move to next line
+			++n_channels;
+			continue;
+		}
+
+		// channel description
+		strcpy_m12(temp_str, c1);
+		c1 = next_line;
+
+		// condition channel description
+		c2 = temp_str;
+		while (*c2 == ' ')  // remove leading spaces
+			++c2;
+		len = strlen(c2);
+		c3 = c2 + len - 1;
+		while (*c3 == ' ')  // remove trailing spaces
+			*c3-- = 0;
+		strcpy_m12((*descriptions)[n_channels], c2);
+		++n_channels;
+	}
+	free((void *) buffer);
+
+	return(n_channels);
+}
+
+
 pthread_rval_m12	G_read_channel_thread_m12(void *ptr)
 {
 	PROC_THREAD_INFO_m12 		*pi;
@@ -10178,7 +10431,6 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 			break;
 	}
 	if (readable == FALSE_m12) {
-		G_warning_message_m12("%s(): cannot decrypt file \"%s\"\n", __FUNCTION__, fps->full_file_name);
 		if (allocated_flag == TRUE_m12)
 			FPS_free_processing_struct_m12(fps, TRUE_m12);
 		G_set_error_m12(E_READ_ERR_m12, __FUNCTION__, __LINE__);
@@ -10417,8 +10669,7 @@ pthread_rval_m12	G_read_segment_thread_m12(void *ptr)
 SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  // varargs: void *file_list, si4 list_len, ui4 flags, si1 *password
 {
 	TERN_m12			open_session, free_session, calculate_channel_indices, ret_val;
-	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
-	si1				tmp_str[FULL_FILE_NAME_BYTES_m12];
+	si1                             *password;
 	si4                             i, j, list_len, seg_idx, search_mode, thread_idx;
 	si4				active_chans, active_ts_chans, active_vid_chans;
 	ui8                             flags;
@@ -10468,7 +10719,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 			G_condition_time_slice_m12(slice);
 	}
 	slice = &sess->time_slice;
-	
+
 	// get segment range
 	if (slice->number_of_segments == UNKNOWN_m12) {
 		if (G_get_segment_range_m12((LEVEL_HEADER_m12 *) sess, slice) == 0) {
@@ -10626,30 +10877,25 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 	}
 
 	// read session record data
-	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
+	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
+		if (sess->record_indices_fps == NULL || sess->record_data_fps == NULL)
+			G_open_session_records(sess);
 		if (sess->record_indices_fps && sess->record_data_fps)
-			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice, 0);
-		
+			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice);
+	}
+
 	// read segmented session record data
-	ssr = sess->segmented_sess_recs;
-	seg_idx = G_get_segment_index_m12(slice->start_segment_number);
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12 && ssr) {
-		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
-			// allocate new segment records
-			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
-				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
-					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
-					ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-			}
-			if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
-				G_read_record_data_m12((LEVEL_HEADER_m12 *) ssr, slice, i);
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
+		if (sess->segmented_sess_recs == NULL)
+			G_open_segmented_session_records(sess);
+		ssr = sess->segmented_sess_recs;
+		if (ssr) {
+			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j)
+				if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
+					G_read_record_data_m12((LEVEL_HEADER_m12 *) ssr, slice, i);
 		}
 	}
-	
+
 	// update ephemeral data  (session record ephemeral data updated on session / segment open)
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
 		// time series ephemeral data
@@ -10712,8 +10958,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  // varargs: void *file_list, si4 list_len, ui8 flags, si1 *password
 {
 	TERN_m12			open_session, free_session, calculate_channel_indices;
-	si1                             *password, num_str[FILE_NUMBERING_DIGITS_m12 + 1];
-	si1				tmp_str[FULL_FILE_NAME_BYTES_m12];
+	si1                             *password;
 	si4                             i, j, list_len, seg_idx, search_mode;
 	ui8                             flags;
 	sf8				ref_sf, sf_ratio;
@@ -10860,29 +11105,24 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 		slice->start_sample_number = slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
 
 	// read session record data
-	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
+	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
+		if (sess->record_indices_fps == NULL || sess->record_data_fps == NULL)
+			G_open_session_records(sess);
 		if (sess->record_indices_fps && sess->record_data_fps)
 			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice);
+	}
 
 	// read segmented session record data
-	ssr = sess->segmented_sess_recs;
-	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12 && ssr) {
+	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
+		ssr = sess->segmented_sess_recs;
+		if (ssr == NULL)
+			G_open_segmented_session_records(sess);
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
-			// allocate new segment records
-			if (ssr->record_indices_fps[j] == NULL && ssr->record_data_fps[j] == NULL) {
-				G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
-				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
-					ssr->record_indices_fps[j] = G_read_file_m12(ssr->record_indices_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
-				if (G_exists_m12(tmp_str) == FILE_EXISTS_m12)
-					ssr->record_data_fps[j] = G_read_file_m12(ssr->record_data_fps[j], tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
-			}
 			if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 				G_read_record_data_m12((LEVEL_HEADER_m12 *) ssr, slice, i);
 		}
 	}
-	
+		
 	// update ephemeral data (session record ephemeral data updated on session / segment open)
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
 		// time series ephemeral data
@@ -12356,6 +12596,69 @@ void	G_show_behavior_m12(void)
 }
 
 
+TERN_m12	G_show_contigua_m12(LEVEL_HEADER_m12 *level_header)
+{
+	si8		i, n_contigua;
+	CONTIGUON_m12	*contigua;
+	SEGMENT_m12	*seg;
+	CHANNEL_m12	*chan;
+	SESSION_m12	*sess;
+
+	// find contigua in current time slice, and set in level
+	if (level_header == NULL) {
+		G_warning_message_m12("%s(): level is not open\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	if ((level_header->flags & LH_OPEN_m12) == 0) {
+		G_warning_message_m12("%s(): level is not open\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
+	n_contigua = 0;
+	contigua = NULL;
+	switch (level_header->type_code) {
+		case LH_TIME_SERIES_SEGMENT_m12:
+		case LH_VIDEO_SEGMENT_m12:
+			seg = (SEGMENT_m12 *) level_header;
+			contigua = seg->contigua;
+			n_contigua = seg->number_of_contigua;
+			break;
+		case LH_TIME_SERIES_CHANNEL_m12:
+		case LH_VIDEO_CHANNEL_m12:
+			chan = (CHANNEL_m12 *) level_header;
+			contigua = chan->contigua;
+			n_contigua = chan->number_of_contigua;
+			break;
+		case LH_SESSION_m12:
+			sess = (SESSION_m12 *) level_header;
+			contigua = sess->contigua;
+			n_contigua = sess->number_of_contigua;
+			break;
+		default:
+			G_warning_message_m12("%s(): invalid level type\n", __FUNCTION__);
+			return(FALSE_m12);
+	}
+	
+	if (n_contigua == 0 || contigua == NULL) {
+		G_warning_message_m12("%s(): no contigua for level\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
+	printf_m12("Level Contigua:\n");
+	for (i = 0; i < n_contigua; ++i) {
+		printf_m12("%ld)\n", i + 1);
+		printf_m12("\tstart time: %ld\n", contigua[i].start_time);
+		printf_m12("\tend time: %ld\n", contigua[i].end_time);
+		printf_m12("\tstart sample/frame number: %ld\n", contigua[i].start_sample_number);
+		printf_m12("\tend sample/frame number: %ld\n", contigua[i].end_sample_number);
+		printf_m12("\tstart segment number: %ld\n", contigua[i].start_segment_number);
+		printf_m12("\tend segment number: %ld\n\n", contigua[i].end_segment_number);
+	}
+
+	return(TRUE_m12);
+}
+
+
 void    G_show_daylight_change_code_m12(DAYLIGHT_TIME_CHANGE_CODE_m12 *code, si1 *prefix)
 {
 	static si1	*relative_days[7] = { "", "First", "Second", "Third", "Fourth", "Fifth", "Last"};
@@ -13197,7 +13500,7 @@ void	G_show_password_data_m12(PASSWORD_DATA_m12 *pwd)
 		STR_generate_hex_string_m12(pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m12, hex_str);
 		G_message_m12("Level 2 Encryption Key: %s\n", hex_str);
 	}
-	G_show_password_hints_m12(pwd);
+	G_show_password_hints_m12(pwd, 0);
 	G_message_m12("Access Level: %hhu\n", pwd->access_level);
 	G_message_m12("Processed: %hhd\n", pwd->processed);
 	G_message_m12("------------------- Password Data - END ------------------\n\n");
@@ -13206,20 +13509,29 @@ void	G_show_password_data_m12(PASSWORD_DATA_m12 *pwd)
 }
 
 
-void	G_show_password_hints_m12(PASSWORD_DATA_m12 *pwd)
+void	G_show_password_hints_m12(PASSWORD_DATA_m12 *pwd, si1 pw_level)
 {
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	// pass level 0 to show all hints
 	// use G_message_m12() because show_password_data_m12() is used in normal (not programming) functions => so allow output to be suppressed easily
-	
+
 	if (pwd == NULL)
 		pwd = &globals_m12->password_data;
-	if (*pwd->level_1_password_hint)
-		G_message_m12("Level 1 Password Hint: %s\n", pwd->level_1_password_hint);
-	if (*pwd->level_2_password_hint)
-		G_message_m12("Level 2 Password Hint: %s\n", pwd->level_2_password_hint);
+	if (pw_level == 1 || pw_level == 0) {
+		if (*pwd->level_1_password_hint)
+			G_message_m12("Level 1 Password Hint: %s\n", pwd->level_1_password_hint);
+		else
+			G_message_m12("Level 1 Password Hint: none provided\n");
+	}
+	if (pw_level == 2 || pw_level == 0) {
+		if (*pwd->level_2_password_hint)
+			G_message_m12("Level 2 Password Hint: %s\n", pwd->level_2_password_hint);
+		else
+			G_message_m12("Level 2 Password Hint: none provided\n");
+	}
 	
 	return;
 }
@@ -16776,7 +17088,7 @@ void	CMP_binterpolate_sf8_m12(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_l
 			G_warning_message_m12("%s(): invalid center mode\n", __FUNCTION__);
 			return;
 	}
-	
+
 	// upsample
 	if (in_len <= out_len) {
 		if (center_mode == CMP_CENT_MODE_NONE_m12)
@@ -16970,7 +17282,6 @@ void	CMP_binterpolate_sf8_m12(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_l
 	
 	if (center_mode == CMP_CENT_MODE_MEDIAN_m12)
 		free((void *) quantile_buf);
-
 
 	return;
 }
@@ -24707,7 +25018,6 @@ pthread_rval_m12	DM_channel_thread_m12(void *ptr)
 		case DM_INTRP_BINTRP_MDPT_m12:
 			bint_mode = CMP_CENT_MODE_MIDPOINT_m12;
 			break;
-			break;
 		case DM_INTRP_BINTRP_MEDN_m12:
 			bint_mode = CMP_CENT_MODE_MEDIAN_m12;
 			break;
@@ -25100,15 +25410,17 @@ void	DM_free_matrix_m12(DATA_MATRIX_m12 *matrix, TERN_m12 free_structure)
 
 DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, TIME_SLICE_m12 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
 {
-	TERN_m12			changed_to_relative, ret_val;
+	TERN_m12			changed_to_absolute_time, padding_required, ret_val;
 	ui1				*data_base, *minima_base, *maxima_base;
 	si2				si2_pad;
 	si4				search_mode, seg_idx, si4_pad;
 	sf4				sf4_pad;
 	ui8				tmp_ui8;
 	si8				i, j, old_maj_dim, old_min_dim, old_el_size, old_offset, new_offset, samp_offset;
-	si8				req_num_samps, ref_num_samps, bytes_per_sample, bytes_per_channel, data_end, contig_samples;
-	si8				gap_start, gap_end, gap_len, common_offset, gap_offset, tmp_si8;
+	si8				req_num_samps, ref_num_samps, bytes_per_sample, bytes_per_channel, data_start, data_end;
+	si8				contig_samples, gap_start, gap_end, gap_len, common_offset, gap_offset, tmp_si8;
+	si8				start_sample_number, end_sample_number, req_duration;
+	ui8				saved_matrix_flags;
 	sf8 				ratio, duration, fc1, fc2, req_samp_secs, ref_samp_secs, ref_samp_freq, sf8_pad, tmp_sf8;
 	void				*pattern;
 	size_t				new_data_bytes, curr_bytes, new_bytes, trace_extrema_bytes, n_elements, pattern_sz, bytes_to_move;
@@ -25117,7 +25429,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	TIME_SLICE_m12			passed_slice_copy, *req_slice, *sess_slice;
 	PROC_THREAD_INFO_m12		*proc_thread_infos, *pi;
 	DM_CHANNEL_THREAD_INFO_m12	*chan_thread_infos, *ci;
-	
+		
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -25161,7 +25473,7 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		slice = &sess->time_slice;
 	if ((search_mode = G_get_search_mode_m12(slice)) == FALSE_m12)  // ensure there's a valid limit pair
 		return(NULL);
-
+	
 	// allocate matrix structure
 	if (matrix == NULL)
 		matrix = (DATA_MATRIX_m12 *) calloc_m12((size_t) 1, sizeof(DATA_MATRIX_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -25187,6 +25499,19 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	old_maj_dim = matrix->maj_dim;
 	old_min_dim = matrix->min_dim;
 	old_el_size = matrix->el_size;
+	
+	// clear contigua, if present
+	ref_chan = globals_m12->reference_channel;
+	if (ref_chan->contigua) {
+		free_m12((void *) ref_chan->contigua, __FUNCTION__);
+		ref_chan->contigua = NULL;
+		ref_chan->number_of_contigua = 0;
+	}
+	if (matrix->contigua) {
+		free_m12((void *) matrix->contigua, __FUNCTION__);
+		matrix->contigua = NULL;
+		matrix->number_of_contigua = 0;
+	}
 	
 	// check maximum input defaults
 	if (matrix->sample_count == DM_MAXIMUM_INPUT_COUNT_m12 || matrix->sampling_frequency == DM_MAXIMUM_INPUT_FREQUENCY_m12) {
@@ -25230,62 +25555,62 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 	passed_slice_copy = *slice;  // passed slice not modified
 	req_slice = &passed_slice_copy;  // this slice may be modified
 	
+	// change requested limits to time
 	if (req_slice->conditioned == FALSE_m12)
 		G_condition_time_slice_m12(req_slice);
 	if (search_mode == TIME_SEARCH_m12)
 		req_samp_secs = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == SAMPLE_SEARCH_m12
 		req_num_samps = TIME_SLICE_SAMPLE_COUNT_m12(req_slice);  // requested samples read (on reference channel)
-	ref_chan = globals_m12->reference_channel;
 	seg_idx = G_get_segment_index_m12(FIRST_OPEN_SEGMENT_m12);
 	ref_samp_freq = ref_chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
-	changed_to_relative = FALSE_m12;
-	switch (matrix->flags & DM_EXTMD_LIMIT_MASK_m12) {
-		case DM_EXTMD_ABSOLUTE_LIMITS_m12:
-			if (search_mode == SAMPLE_SEARCH_m12) {
-				req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
-					duration = (sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq;
-					req_slice->end_time = req_slice->start_time + (si8) (duration + (sf8) 0.5) - (si8) 1;
-					changed_to_relative = TRUE_m12;
-				} else {  // no padding
-					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-				}
+	
+	// change all limits to time
+	changed_to_absolute_time = FALSE_m12;
+	padding_required = FALSE_m12;
+	if (matrix->flags & DM_PAD_MASK_m12) {
+		G_build_contigua_m12((LEVEL_HEADER_m12 *) ref_chan);  // always need contigua for padding
+		if (ref_chan->number_of_contigua > 1)
+			padding_required = TRUE_m12;
+		else if (req_slice->start_time < ref_chan->contigua[0].start_time)
+			padding_required = TRUE_m12;
+		else if (req_slice->end_time > ref_chan->contigua[0].end_time)
+			padding_required = TRUE_m12;
+		// convert slice to absolute time
+		if (padding_required == TRUE_m12) {
+			if (search_mode == SAMPLE_SEARCH_m12 || matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12) {
+				if (search_mode == SAMPLE_SEARCH_m12)
+					req_duration = (si8) ((((sf8) req_num_samps / ref_samp_freq) * (sf8) 1000000.0) + (sf8) 0.5);
+				else  // TIME_SEARCH_m12
+					req_duration = TIME_SLICE_DURATION_m12(req_slice);
+				req_slice->end_time = (req_slice->start_time + req_duration) - 1;
+				req_slice->start_sample_number = req_slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;
+				req_slice->number_of_segments = UNKNOWN_m12;
+				search_mode = TIME_SEARCH_m12;
+				saved_matrix_flags = matrix->flags;
+				matrix->flags &= ~DM_EXTMD_RELATIVE_LIMITS_m12;
+				matrix->flags |= DM_EXTMD_ABSOLUTE_LIMITS_m12;
+				changed_to_absolute_time = TRUE_m12;
+				G_warning_message_m12("%s(): discontinuity in slice => temporarily changed limits to absolute time\n", __FUNCTION__);
 			}
-			break;
-		case DM_EXTMD_RELATIVE_LIMITS_m12:
-			if (search_mode == TIME_SEARCH_m12) {
-				if ((matrix->flags & DM_PAD_MASK_m12) == 0) {  // no padding
-					req_slice->start_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_time, FIND_CURRENT_m12);
-					duration = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1e6;  // convert to seconds
-					req_slice->end_sample_number = req_slice->start_sample_number + (si8) ((ref_samp_freq * duration) + (sf8) 0.5) - (si8) 1;  // relative samples
-					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-				}
-			} else {  // search_mode == SAMPLE_SEARCH_m12
-				if (matrix->flags & DM_PAD_MASK_m12) {  // convert to relative time search
-					duration = (sf8) TIME_SLICE_SAMPLE_COUNT_m12(req_slice) / ref_samp_freq;
-					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-					req_slice->end_time = req_slice->start_time + (si8) (duration + (sf8) 0.5) - (si8) 1;
-				} else {  // no padding
-					req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
-					req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
-				}
-			}
-			break;
-		default:
-			G_warning_message_m12("%s(): invalid extents limits (DM_EXTMD_ABSOLUTE_LIMITS_m12 or DM_EXTMD_RELATIVE_LIMITS_m12) => returning\n", __FUNCTION__);
-			return(NULL);
+		}
+	} else if (search_mode == SAMPLE_SEARCH_m12) {
+		req_slice->start_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_sample_number, FIND_START_m12);
+		req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, req_slice->end_sample_number, FIND_END_m12);
+	} else if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12) {
+		start_sample_number = G_sample_number_for_uutc_m12((LEVEL_HEADER_m12 *) sess, req_slice->start_time, FIND_CURRENT_m12);
+		duration = (sf8) TIME_SLICE_DURATION_m12(req_slice) / (sf8) 1e6;  // convert to seconds
+		end_sample_number = start_sample_number + (si8) ((ref_samp_freq * duration) + (sf8) 0.5) - (si8) 1;  // relative samples
+		req_slice->end_time = G_uutc_for_sample_number_m12((LEVEL_HEADER_m12 *) sess, end_sample_number, FIND_END_m12);
 	}
-
 	req_slice->start_sample_number = req_slice->end_sample_number = SAMPLE_NUMBER_NO_ENTRY_m12;  // all extents now changed to time (for variable frequency channels)
-	if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m12 || changed_to_relative == TRUE_m12)  // force re-evaluation of segment range for relative modes
-		req_slice->number_of_segments = UNKNOWN_m12;
+	req_slice->number_of_segments = UNKNOWN_m12;
 
 	// read session
 	if (G_read_session_m12(sess, req_slice) == NULL)
 		return(NULL);
 	sess_slice = &sess->time_slice;  // filled in with actual values
-	
+
 	// return a NULL matrix if there is no data found
 	if (sess_slice->number_of_segments == UNKNOWN_m12)
 		return(NULL);
@@ -25424,6 +25749,8 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		}
 		matrix->n_proc_bufs = matrix->channel_count;
 	}
+	
+	// allocate matrix return contents
 	if (matrix->flags & DM_TRACE_EXTREMA_m12) {
 		if (matrix->n_proc_bufs < matrix->channel_count || matrix->el_size > old_el_size) {
 			if (matrix->trace_minima) {
@@ -25439,7 +25766,6 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		}
 	}
 
-	// allocate matrix return contents
 	new_data_bytes = matrix->maj_dim * matrix->min_dim * matrix->el_size;
 	if (matrix->flags & DM_2D_INDEXING_m12) {
 		new_data_bytes += matrix->maj_dim * sizeof(void *);
@@ -25500,34 +25826,28 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		return(NULL);
 	}
 
-	// get contigua
-	if (matrix->flags & DM_DSCNT_MASK_m12) {
-		if (matrix->contigua) {
-			free_m12((void *) matrix->contigua, __FUNCTION__);
-			matrix->contigua = NULL;
-			matrix->number_of_contigua = 0;
-		}
-		matrix->number_of_contigua = G_build_contigua_m12((LEVEL_HEADER_m12 *) sess);
-		// make contigua indices matrix relative
-		if (matrix->number_of_contigua) {
-			matrix->contigua = (CONTIGUON_m12 *) calloc_m12((size_t) matrix->number_of_contigua, sizeof(CONTIGUON_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-			memcpy(matrix->contigua, sess->contigua, matrix->number_of_contigua * sizeof(CONTIGUON_m12));
-			tmp_sf8 = matrix->sampling_frequency / (sf8) 1e6;
-			if (matrix->flags & DM_PAD_MASK_m12) {
-				// sf = (sf8) matrix->sampling_frequency / (sf8) 1e6;
-				for (i = 0; i < matrix->number_of_contigua; ++i) {
-					matrix->contigua[i].start_sample_number = (si8) round((matrix->contigua[i].start_time - sess_slice->start_time) * tmp_sf8);
-					matrix->contigua[i].end_sample_number = (si8) round((matrix->contigua[i].end_time - sess_slice->start_time) * tmp_sf8);
-				}
-			} else {  // not padded
-				for (samp_offset = i = 0; i < matrix->number_of_contigua; ++i) {
-					matrix->contigua[i].start_sample_number = samp_offset;
-					duration = (sf8) ((matrix->contigua[i].end_time - matrix->contigua[i].start_time) + 1);
-					samp_offset += (si8) round(duration * tmp_sf8);
-					matrix->contigua[i].end_sample_number = samp_offset;
-					if (matrix->contigua[i].end_sample_number > matrix->contigua[i].start_sample_number)
-						--matrix->contigua[i].end_sample_number;
-				}
+	// contigua
+	if (matrix->flags & (DM_DSCNT_MASK_m12 | DM_PAD_MASK_m12)) {
+		if (ref_chan->number_of_contigua == 0)  // zeroed on function entry, ref_chan contigua retrieved above if padding
+			G_build_contigua_m12((LEVEL_HEADER_m12 *) ref_chan);
+		// copy contigua & make indices matrix relative
+		matrix->number_of_contigua = ref_chan->number_of_contigua;
+		matrix->contigua = (CONTIGUON_m12 *) calloc_m12((size_t) matrix->number_of_contigua, sizeof(CONTIGUON_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		memcpy((void *) matrix->contigua, (void *) ref_chan->contigua, (size_t) ref_chan->number_of_contigua * sizeof(CONTIGUON_m12));
+		tmp_sf8 = matrix->sampling_frequency / (sf8) 1e6;  // samples per microsecond
+		if (matrix->flags & DM_PAD_MASK_m12) {
+			for (i = 0; i < matrix->number_of_contigua; ++i) {
+				matrix->contigua[i].start_sample_number = (si8) round((matrix->contigua[i].start_time - sess_slice->start_time) * tmp_sf8);
+				matrix->contigua[i].end_sample_number = (si8) round((matrix->contigua[i].end_time - sess_slice->start_time) * tmp_sf8);
+			}
+		} else {  // not padded
+			for (samp_offset = i = 0; i < matrix->number_of_contigua; ++i) {
+				matrix->contigua[i].start_sample_number = samp_offset;
+				duration = (sf8) ((matrix->contigua[i].end_time - matrix->contigua[i].start_time) + 1);
+				samp_offset += (si8) round(duration * tmp_sf8);
+				matrix->contigua[i].end_sample_number = samp_offset;
+				if (matrix->contigua[i].end_sample_number > matrix->contigua[i].start_sample_number)
+					--matrix->contigua[i].end_sample_number;
 			}
 			matrix->contigua[matrix->number_of_contigua - 1].end_sample_number = matrix->sample_count - 1;
 		}
@@ -25543,136 +25863,163 @@ DATA_MATRIX_m12 *DM_get_matrix_m12(DATA_MATRIX_m12 *matrix, SESSION_m12 *sess, T
 		G_warning_message_m12("%s(): channel thread error => returning\n", __FUNCTION__);
 		return(NULL);
 	}
+	
+	if (padding_required == FALSE_m12)
+		return(matrix);
 
-	// padding options (big pain in the ass)
-	if ((matrix->flags & DM_PAD_MASK_m12) && (matrix->number_of_contigua > 1)) {
-		// changed extents mode warning
-		if (changed_to_relative == TRUE_m12)
-			G_warning_message_m12("%s(): discontinuity => extents mode temporarily changed from absolute to relative\n", __FUNCTION__);
-		// set patterns up for padding
-		switch (matrix->flags & DM_TYPE_MASK_m12) {
-			case DM_TYPE_SI2_m12:
-				si2_pad = (si2) 0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					si2_pad = NAN_SI2_m12;
-				pattern = (void *) &si2_pad;
-				pattern_sz = 2;
-				break;
-			case DM_TYPE_SI4_m12:
-				si4_pad = (si4) 0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					si4_pad = NAN_SI4_m12;
-				pattern = (void *) &si4_pad;
-				pattern_sz = 4;
-				break;
-			case DM_TYPE_SF4_m12:
-				sf4_pad = (sf4) 0.0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					sf4_pad = NAN;
-				pattern = (void *) &sf4_pad;
-				pattern_sz = 4;
-				break;
-			case DM_TYPE_SF8_m12:
-				sf8_pad = (sf8) 0.0;
-				if (matrix->flags & DM_DSCNT_NAN_m12)
-					sf8_pad = NAN;
-				pattern = (void *) &sf8_pad;
-				pattern_sz = 8;
-				break;
+	// padding (big pain in the ass)
+	
+	// set up patterns
+	switch (matrix->flags & DM_TYPE_MASK_m12) {
+		case DM_TYPE_SI2_m12:
+			si2_pad = (si2) 0;
+			if (matrix->flags & DM_DSCNT_NAN_m12)
+				si2_pad = NAN_SI2_m12;
+			pattern = (void *) &si2_pad;
+			pattern_sz = 2;
+			break;
+		case DM_TYPE_SI4_m12:
+			si4_pad = (si4) 0;
+			if (matrix->flags & DM_DSCNT_NAN_m12)
+				si4_pad = NAN_SI4_m12;
+			pattern = (void *) &si4_pad;
+			pattern_sz = 4;
+			break;
+		case DM_TYPE_SF4_m12:
+			sf4_pad = (sf4) 0.0;
+			if (matrix->flags & DM_DSCNT_NAN_m12)
+				sf4_pad = NAN;
+			pattern = (void *) &sf4_pad;
+			pattern_sz = 4;
+			break;
+		case DM_TYPE_SF8_m12:
+			sf8_pad = (sf8) 0.0;
+			if (matrix->flags & DM_DSCNT_NAN_m12)
+				sf8_pad = NAN;
+			pattern = (void *) &sf8_pad;
+			pattern_sz = 8;
+			break;
 
-		}
-		// set up for indexing
-		data_base = (ui1 *) matrix->data;
-		if (matrix->flags & DM_2D_INDEXING_m12) {
-			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
-				data_base += matrix->sample_count * sizeof(void *);
-			else  // DM_FMT_CHANNEL_MAJOR_m12
-				data_base += matrix->channel_count * sizeof(void *);
-		}
-		if (matrix->flags & DM_TRACE_RANGES_m12) {
-			minima_base = (ui1 *) matrix->range_minima;
-			if (matrix->flags & DM_2D_INDEXING_m12) {
-				if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
-					minima_base += matrix->sample_count * sizeof(void *);
-				else  // DM_FMT_CHANNEL_MAJOR_m12
-					minima_base += matrix->channel_count * sizeof(void *);
-			}
-			maxima_base = (ui1 *) matrix->range_maxima;
-			if (matrix->flags & DM_2D_INDEXING_m12) {
-				if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
-					maxima_base += matrix->sample_count * sizeof(void *);
-				else  // DM_FMT_CHANNEL_MAJOR_m12
-					maxima_base += matrix->channel_count * sizeof(void *);
-			}
-		}
-
-		// loop backwards over contigua
-		data_end = matrix->valid_sample_count;
-		gap_end = matrix->sample_count;
-		for (i = matrix->number_of_contigua; i--;) {
-			contig_samples = (matrix->contigua[i].start_sample_number - matrix->contigua[i].start_sample_number) + 1;
-			gap_start = matrix->contigua[i].end_sample_number + 1;
-			gap_len = gap_end - gap_start;
-			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
-				// move block
-				bytes_per_sample = matrix->channel_count * matrix->el_size;
-				old_offset = (data_end - contig_samples) * bytes_per_sample;
-				new_offset = bytes_per_sample * matrix->contigua[i].start_sample_number;
-				bytes_to_move = bytes_per_sample * contig_samples;
-				memmove((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
-				if (matrix->flags & DM_TRACE_RANGES_m12) {
-					memmove((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
-					memmove((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
-				}
-				// fill gap
-				if (gap_len > 0) {
-					n_elements = gap_len * matrix->channel_count;
-					gap_offset = gap_len * bytes_per_sample;
-					memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
-					if (matrix->flags & DM_TRACE_RANGES_m12) {
-						memset_m12(minima_base + gap_offset, pattern, pattern_sz, n_elements);
-						memset_m12(maxima_base + gap_offset, pattern, pattern_sz, n_elements);
-					}
-				}
-			} else {  // DM_FMT_CHANNEL_MAJOR_m12
-				// move blocks
-				bytes_per_sample = matrix->el_size;
-				bytes_per_channel = bytes_per_sample * matrix->sample_count;
-				common_offset = bytes_per_channel * matrix->channel_count;
-				old_offset = common_offset + ((data_end - contig_samples) * bytes_per_sample);
-				new_offset = common_offset + (bytes_per_sample * matrix->contigua[i].start_sample_number);
-				bytes_to_move = bytes_per_sample * contig_samples;
-				for (j = matrix->channel_count; j--;) {
-					old_offset -= bytes_per_channel;
-					new_offset -= bytes_per_channel;
-					memmove((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
-					if (matrix->flags & DM_TRACE_RANGES_m12) {
-						memmove((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
-						memmove((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
-					}
-					// fill gap
-					if (gap_len > 0) {
-						gap_offset = new_offset + (gap_start * bytes_per_sample);
-						memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
-						if (matrix->flags & DM_TRACE_RANGES_m12) {
-							memset_m12(minima_base + gap_offset, pattern, pattern_sz, gap_len);
-							memset_m12(maxima_base + gap_offset, pattern, pattern_sz, gap_len);
-						}
-					}
-				}
-			}
-			gap_end = matrix->contigua[i].start_sample_number;
-			data_end -= contig_samples;
-		}
-	}
-
-	// free contigua, if just used for padding
-	if (!(matrix->flags & DM_DSCNT_CONTIG_m12) && matrix->number_of_contigua) {
-		free_m12((void *) matrix->contigua, __FUNCTION__);
-		matrix->contigua = NULL;
-		matrix->number_of_contigua = 0;
 	}
 	
+	// set up for indexing
+	data_base = (ui1 *) matrix->data;
+	if (matrix->flags & DM_2D_INDEXING_m12) {
+		if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
+			data_base += matrix->sample_count * sizeof(void *);
+		else  // DM_FMT_CHANNEL_MAJOR_m12
+			data_base += matrix->channel_count * sizeof(void *);
+	}
+	if (matrix->flags & DM_TRACE_RANGES_m12) {
+		minima_base = (ui1 *) matrix->range_minima;
+		if (matrix->flags & DM_2D_INDEXING_m12) {
+			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
+				minima_base += matrix->sample_count * sizeof(void *);
+			else  // DM_FMT_CHANNEL_MAJOR_m12
+				minima_base += matrix->channel_count * sizeof(void *);
+		}
+		maxima_base = (ui1 *) matrix->range_maxima;
+		if (matrix->flags & DM_2D_INDEXING_m12) {
+			if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12)
+				maxima_base += matrix->sample_count * sizeof(void *);
+			else  // DM_FMT_CHANNEL_MAJOR_m12
+				maxima_base += matrix->channel_count * sizeof(void *);
+		}
+	}
+
+	// loop backwards over contigua
+	data_end = matrix->valid_sample_count;
+	gap_end = matrix->sample_count;
+	for (i = matrix->number_of_contigua; i--;) {
+		contig_samples = (matrix->contigua[i].end_sample_number - matrix->contigua[i].start_sample_number) + 1;
+		data_start = data_end - contig_samples;
+		gap_start = matrix->contigua[i].end_sample_number + 1;
+		gap_len = gap_end - gap_start;
+		if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
+			// move block
+			bytes_per_sample = matrix->channel_count * matrix->el_size;
+			old_offset = data_start * bytes_per_sample;
+			new_offset = matrix->contigua[i].start_sample_number * bytes_per_sample;
+			bytes_to_move = bytes_per_sample * contig_samples;
+			memcpy((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
+			if (matrix->flags & DM_TRACE_RANGES_m12) {
+				memcpy((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
+				memcpy((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
+			}
+			// fill gap after (if any)
+			if (gap_len) {
+				n_elements = gap_len * matrix->channel_count;
+				gap_offset = gap_start * bytes_per_sample;
+				memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
+				if (matrix->flags & DM_TRACE_RANGES_m12) {
+					memset_m12(minima_base + gap_offset, pattern, pattern_sz, n_elements);
+					memset_m12(maxima_base + gap_offset, pattern, pattern_sz, n_elements);
+				}
+			}
+		} else {  // DM_FMT_CHANNEL_MAJOR_m12
+			// move blocks
+			bytes_per_sample = matrix->el_size;
+			bytes_per_channel = bytes_per_sample * matrix->sample_count;
+			common_offset = bytes_per_channel * matrix->channel_count;
+			old_offset = common_offset + (data_start * bytes_per_sample);
+			new_offset = common_offset + (bytes_per_sample * matrix->contigua[i].start_sample_number);
+			gap_offset = common_offset + (gap_start * bytes_per_sample);
+			bytes_to_move = bytes_per_sample * contig_samples;
+			for (j = matrix->channel_count; j--;) {
+				old_offset -= bytes_per_channel;
+				new_offset -= bytes_per_channel;
+				memcpy((void *) (data_base + new_offset), (void *) (data_base + old_offset), bytes_to_move);
+				if (matrix->flags & DM_TRACE_RANGES_m12) {
+					memcpy((void *) (minima_base + new_offset), (void *) (minima_base + old_offset), bytes_to_move);
+					memcpy((void *) (maxima_base + new_offset), (void *) (maxima_base + old_offset), bytes_to_move);
+				}
+				// fill gap after (if any)
+				if (gap_len) {
+					gap_offset -= bytes_per_channel;
+					memset_m12(data_base + gap_offset, pattern, pattern_sz, gap_len);
+					if (matrix->flags & DM_TRACE_RANGES_m12) {
+						memset_m12(minima_base + gap_offset, pattern, pattern_sz, gap_len);
+						memset_m12(maxima_base + gap_offset, pattern, pattern_sz, gap_len);
+					}
+				}
+			}
+		}
+		gap_end = matrix->contigua[i].start_sample_number;  // gap end is first sample after end of gap
+		data_end -= (contig_samples - 1);  // data end is first sample after end contiguon
+	}
+
+	// fill gap before (if any)
+	gap_start = 0;
+	gap_len = gap_end - gap_start;
+	if (gap_len) {
+		if (matrix->flags & DM_FMT_SAMPLE_MAJOR_m12) {
+			bytes_per_sample = matrix->channel_count * matrix->el_size;
+			n_elements = gap_len * matrix->channel_count;
+			gap_offset = gap_start * bytes_per_sample;
+			memset_m12(data_base + gap_offset, pattern, pattern_sz, n_elements);
+			if (matrix->flags & DM_TRACE_RANGES_m12) {
+				memset_m12(minima_base + gap_offset, pattern, pattern_sz, n_elements);
+				memset_m12(maxima_base + gap_offset, pattern, pattern_sz, n_elements);
+			}
+		} else {  // DM_FMT_CHANNEL_MAJOR_m12
+			bytes_per_sample = matrix->el_size;
+			bytes_per_channel = bytes_per_sample * matrix->sample_count;
+			common_offset = bytes_per_channel * matrix->channel_count;
+			gap_offset = common_offset + (gap_start * bytes_per_sample);
+			for (j = matrix->channel_count; j--;) {
+				gap_offset -= bytes_per_channel;
+				memset_m12(data_base + gap_offset, pattern, pattern_sz, gap_len);
+				if (matrix->flags & DM_TRACE_RANGES_m12) {
+					memset_m12(minima_base + gap_offset, pattern, pattern_sz, gap_len);
+					memset_m12(maxima_base + gap_offset, pattern, pattern_sz, gap_len);
+				}
+			}
+		}
+	}
+
+	if (changed_to_absolute_time == TRUE_m12)
+		matrix->flags = saved_matrix_flags;  // restore matrix flags
+
 	return(matrix);
 }
 
@@ -28635,16 +28982,6 @@ void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
 		if (fps->parameters.fp) {
 			if (fps->parameters.fd > 2) { // fclose() can crash under some circumstances (e.g. if file is already closed)  (fd < 0 == closed, 0-2 == standard streams)
 				fclose(fps->parameters.fp);
-
-				// below was from some Linux fclose/flushing issue - but not sure it's needed anymore - close() alone causes problem with Matlab
-				// fflush(fps->parameters.fp);  // close() alone doesn't flush internal file buffers
-				// #if defined MACOS_m12 || defined LINUX_m12
-				// close(fps->parameters.fd);
-				// #endif
-				// #ifdef WINDOWS_m12
-				// _close(fps->parameters.fd);
-				// #endif
-				
 				fps->parameters.fp = NULL;
 				fps->parameters.fd = FPS_FD_CLOSED_m12;
 				fps->parameters.fpos = 0;
@@ -28652,7 +28989,6 @@ void	FPS_close_m12(FILE_PROCESSING_STRUCT_m12 *fps) {
 			}
 		}
 	}
-
 
 	return;
 }
@@ -36000,6 +36336,58 @@ void	SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len)
 // MARK: STRING FUNCTIONS  (STR)
 //******************************//
 
+si1	*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
+{
+	si1	*c, *c2;
+	ui8	str_len, sep_len, byte_bits, num, mask;
+
+	
+	if (byte_separator) {
+		for (c = byte_separator - 1; *++c;);
+		sep_len = (c - byte_separator);
+	} else {
+		sep_len = 0;
+	}
+
+	if (str == NULL) {  // caller responsible for freeing
+		str_len = (num_bytes << 3) + 1;  // account for terminal zero
+		if (sep_len)
+			str_len += (num_bytes - 1) * sep_len;
+		str = malloc_m12((size_t) str_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	}
+	
+	switch (num_bytes) {
+		case 1:
+			num = (ui8) *((ui1 *) num_ptr);
+			break;
+		case 2:
+			num = (ui8) *((ui2 *) num_ptr);
+			break;
+		case 4:
+			num = (ui8) *((ui4 *) num_ptr);
+			break;
+		case 8:
+			num = (ui8) *((ui8 *) num_ptr);
+			break;
+	}
+	
+	mask = 1 << ((num_bytes << 3) - 1);
+	for (c = str; num_bytes--; mask >>= 1) {
+		for (byte_bits = 8; byte_bits--;) {
+			if (num & mask)
+				*c++ = '1';
+			else
+				*c++ = '0';
+		}
+		if (sep_len)
+			for (c2 = byte_separator; *c2; *c++ = *c2++);
+	}
+	*c = 0;
+
+	return(str);
+}
+
+
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
@@ -36294,11 +36682,15 @@ si1     *STR_duration_string_m12(si1 *dur_str, si8 int_usecs, TERN_m12 abbreviat
 		int_level_1 = (si4) level_1;  // rounnd down
 		usecs = (level_1 - (sf8) int_level_1) * divisors[level_idx];
 		level_2 = usecs / divisors[level_idx + 1];
-		int_level_2 = (si4) level_2;  // rounnd down
-		if (abbreviated == TRUE_m12)
+		int_level_2 = (si4) level_2;  // round down
+		if (abbreviated == TRUE_m12) {
 			sprintf_m12(offset_dur_str, "%d %s, %d %s", int_level_1, abbr[level_idx], int_level_2, abbr[level_idx + 1]);
-		else
-			sprintf_m12(offset_dur_str, "%d %s%s, %d %s%s", int_level_1, full[level_idx], PLURAL_m12(int_level_1), int_level_2, full[level_idx + 1], PLURAL_m12(int_level_2));
+		} else {
+			if (level_idx == 2 && int_level_1 == 2 && int_level_2 == 0)  // :)
+				sprintf_m12(offset_dur_str, "a fortnight");
+			else
+				sprintf_m12(offset_dur_str, "%d %s%s, %d %s%s", int_level_1, full[level_idx], PLURAL_m12(int_level_1), int_level_2, full[level_idx + 1], PLURAL_m12(int_level_2));
+		}
 	} else {
 		if (abbreviated == TRUE_m12)
 			sprintf_m12(offset_dur_str, "%0.2lf %s", level_1, abbr[level_idx]);
@@ -42512,9 +42904,9 @@ inline
 #endif
 si4    vsnprintf_m12(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args)
 {
-	si4	ret_val;
-	si1	*temp_str;
-	
+	si4		ret_val;
+	si1		*temp_str;
+
 	
 	//******** vsnprintf_m12() CONTAINS THE WINDOWS FORMATTING FOR ALL MED PRINTF FUNCTIONS ********//
 	
@@ -42539,6 +42931,7 @@ si4    vsnprintf_m12(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 		fmt = new_fmt;
 		free_fmt = TRUE_m12;
 	}
+	
 #endif
 	// guarantee zeros in unused bytes per MED requirements
 	temp_str = (si1 *) calloc((size_t) target_field_bytes, sizeof(si1));
@@ -42558,7 +42951,7 @@ si4    vsnprintf_m12(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args
 
 	// clean up
 	if (free_fmt == TRUE_m12)
-		free((void *) new_fmt);
+		free((void *) fmt);
 #endif
 	
 	return(ret_val);

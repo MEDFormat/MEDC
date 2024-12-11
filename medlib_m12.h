@@ -221,6 +221,8 @@ typedef si1				TERN_m12;
 #define UNKNOWN_m12			0
 #define FALSE_m12			-1
 
+#define NOT_SET_m12			UNKNOWN_m12  // common use of zero value
+
 // Reserved si4 Sample Values
 #define NAN_SI4_m12			((si4) 0x80000000)
 #define NEG_INF_SI4_m12           	((si4) 0x80000001)
@@ -1095,10 +1097,6 @@ typedef struct {
 // record reading groups
 #define LH_READ_SLICE_ALL_RECORDS_m12	      (	LH_READ_SLICE_SESSION_RECORDS_m12 | LH_READ_SLICE_SEGMENTED_SESS_RECS_m12 | LH_READ_SLICE_CHANNEL_RECORDS_m12 | LH_READ_SLICE_SEGMENT_RECORDS_m12 )
 #define LH_READ_FULL_ALL_RECORDS_m12	      (	LH_READ_FULL_SESSION_RECORDS_m12 | LH_READ_FULL_SEGMENTED_SESS_RECS_m12 | LH_READ_FULL_CHANNEL_RECORDS_m12 | LH_READ_FULL_SEGMENT_RECORDS_m12 )
-
-// channel type groups
-#define LH_INCLUDE_ALL_CHAN_TYPES_m12	      (	LH_INCLUDE_TIME_SERIES_CHANNELS_m12 | LH_INCLUDE_VIDEO_CHANNELS_m12 )
-
 
 
 //**********************************************************************************//
@@ -2470,8 +2468,10 @@ CHANNEL_m12	*G_open_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1
 pthread_rval_m12	G_open_channel_thread_m12(void *ptr);
 SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *segment_path, ui8 flags, si1 *password);
 pthread_rval_m12	G_open_segment_thread_m12(void *ptr);
+TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess);
 SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);
 SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);  // "nt" == not threaded
+TERN_m12	G_open_session_records(SESSION_m12 *sess);
 si8             G_pad_m12(ui1 *buffer, si8 content_len, ui4 alignment);
 TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path);
 void            G_pop_behavior_m12(void);
@@ -2480,6 +2480,7 @@ void		G_propogate_flags_m12(LEVEL_HEADER_m12 *level_header, ui8 new_flags);
 void            G_push_behavior_m12(ui4 behavior);
 CHANNEL_m12	*G_read_channel_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...);  // varargs: si1 *chan_path, ui4 flags, si1 *password
 CHANNEL_m12	*G_read_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, ...);  // varargs: si1 *chan_path, ui8 flags, si1 *password  ("nt" == not threaded)
+si4		G_read_channel_specification_file_m12(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
 pthread_rval_m12	G_read_channel_thread_m12(void *ptr);
 LEVEL_HEADER_m12	*G_read_data_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *slice, ...);  // varargs (level_header == NULL): si1 *file_list, si4 list_len, ui8 flags, si1 *password
 FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *full_file_name, si8 file_offset, si8 bytes_to_read, si8 number_of_items, LEVEL_HEADER_m12 *lh, si1 *password, ui4 behavior_on_fail);
@@ -2506,6 +2507,7 @@ TERN_m12	G_set_global_time_constants_m12(TIMEZONE_INFO_m12 *timezone_info, si8 s
 void		G_set_globals_pointer_m12(GLOBALS_m12 *new_globals);
 TERN_m12	G_set_time_and_password_data_m12(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level);
 void		G_show_behavior_m12(void);
+TERN_m12	G_show_contigua_m12(LEVEL_HEADER_m12 *level_header);
 void            G_show_daylight_change_code_m12(DAYLIGHT_TIME_CHANGE_CODE_m12 *code, si1 *prefix);
 void		G_show_file_times_m12(FILE_TIMES_m12 *ft);
 void            G_show_globals_m12(void);
@@ -2513,7 +2515,7 @@ void		G_show_level_header_flags_m12(ui8 flags);
 void    	G_show_location_info_m12(LOCATION_INFO_m12 *li);
 void            G_show_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps, METADATA_m12 *md, ui4 type_code);
 void            G_show_password_data_m12(PASSWORD_DATA_m12 *pwd);
-void		G_show_password_hints_m12(PASSWORD_DATA_m12 *pwd);
+void		G_show_password_hints_m12(PASSWORD_DATA_m12 *pwd, si1 pw_level);
 void		G_show_records_m12(FILE_PROCESSING_STRUCT_m12 *record_data_fps, si4 *record_filters);
 void		G_show_Sgmt_records_array_m12(LEVEL_HEADER_m12 *level_header, Sgmt_RECORD_m12 *Sgmt);
 void    	G_show_time_slice_m12(TIME_SLICE_m12 *slice);
@@ -2640,6 +2642,7 @@ si8		FPS_write_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes_t
 //**********************************************************************************//
 
 // Prototypes
+si1		*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator);
 wchar_t		*STR_char2wchar_m12(wchar_t *target, si1 *source);
 ui4             STR_check_spaces_m12(si1 *string);
 si4		STR_compare_m12(const void *a, const void *b);
@@ -3863,7 +3866,7 @@ void    FILT_unsymmeig_m12(sf8 **a, si4 poles, FILT_COMPLEX_m12 *eigs);
 #define DM_TRACE_RANGES_m12			((ui8) 1 << 40)		// return bin minima & maxima (equal in size, type, & format to data matrix)
 #define DM_TRACE_EXTREMA_m12			((ui8) 1 << 41)		// return minima & maxima values in put traces as two arrays (minimum & maximum per channel, same type as data matrix)
 #define DM_DETREND_m12				((ui8) 1 << 42)		// detrend traces (and trace range matrices if DM_TRACE_RANGES_m12 is set)
-#define DM_DSCNT_CONTIG_m12			((ui8) 1 << 48)		// return contiguons
+#define DM_DSCNT_CONTIG_m12			((ui8) 1 << 48)		// return contigua
 #define DM_DSCNT_NAN_m12			((ui8) 1 << 49)		// fill absent samples with NaNs (locations specified in returned arrays)
 									// si2: NAN_SI2_m12 (0x8000)
 									// si4: NAN_SI4_m12 (0x80000000)
