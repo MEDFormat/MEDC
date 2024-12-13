@@ -804,12 +804,14 @@ typedef struct {
 #define UNIVERSAL_HEADER_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13	880     // ui1
 #define UNIVERSAL_HEADER_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13   896     // ui1
 #define UNIVERSAL_HEADER_VIDEO_DATA_FILE_NUMBER_OFFSET_m13   		912     // ui4, MED 1.1 & above
-#define UNIVERSAL_HEADER_ENCYPTION_OFFSET_m13				916	// si1, MED 1.1 & above
-#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				917	// tern, MED 1.1 & above
-#define UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13			918
-#define UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13			50
-#define UNIVERSAL_HEADER_DISCRETIONARY_REGION_OFFSET_m13		968
-#define UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13			56
+#define UNIVERSAL_HEADER_DATA_ENCRYPTION_OFFSET_m13			916	// si1, MED 1.1 & above
+#define UNIVERSAL_HEADER_METADATA_SECTION_2_ENCRYPTION_OFFSET_m13	917	// si1, MED 1.1 & above
+#define UNIVERSAL_HEADER_METADATA_SECTION_3_ENCRYPTION_OFFSET_m13	918	// si1, MED 1.1 & above
+#define UNIVERSAL_HEADER_ORDERED_OFFSET_m13				919	// tern, MED 1.1 & above
+#define UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13			920
+#define UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13			56
+#define UNIVERSAL_HEADER_DISCRETIONARY_REGION_OFFSET_m13		976
+#define UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13			48
 
 // Metadata: File Format Constants
 #define METADATA_BYTES_m13			15360   // 15 KiB
@@ -824,19 +826,13 @@ typedef struct {
 
 // Metadata: File Format Constants - Section 1 Fields
 #define METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m13		1024	// utf8[63]
+#define METADATA_LEVEL_1_PASSWORD_HINT_BYTES_m13		PASSWORD_HINT_BYTES_m13
 #define METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m13		1280    // utf8[63]
-#define METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13		1536   // si1
-#define METADATA_SECTION_2_ENCRYPTION_LEVEL_DEFAULT_m13		LEVEL_1_ENCRYPTION_m13
-#define METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13		1537    // si1
-#define METADATA_SECTION_3_ENCRYPTION_LEVEL_DEFAULT_m13		LEVEL_2_ENCRYPTION_m13
-#define METADATA_DATA_ENCRYPTION_LEVEL_OFFSET_m13		1538	// si1
-#define METADATA_DATA_ENCRYPTION_LEVEL_DEFAULT_m13		NO_ENCRYPTION_m13
-#define METADATA_SUPPLEMENTAL_PROTECTED_REGION_OFFSET_m13	1539
-#define METADATA_SUPPLEMENTAL_PROTECTED_REGION_BYTES_m13	1
-#define METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13		1540	// MED 1.1 & above
+#define METADATA_LEVEL_2_PASSWORD_HINT_BYTES_m13		PASSWORD_HINT_BYTES_m13
+#define METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13		1536	// MED 1.1 & above
 #define METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13		256	// utf8[63]
-#define METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13		1796
-#define METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13		124
+#define METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13		1792
+#define METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13		128
 #define METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m13	1920
 #define METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m13	128
 
@@ -1816,7 +1812,9 @@ typedef struct {
 typedef struct {
 	ui8				UID;
 	si1				directory[FULL_FILE_NAME_BYTES_m13];	// path including file system session directory name
-	si1				name[BASE_FILE_NAME_BYTES_m13];	 // name from file system (if differs from header & update names global set, headers changed)
+	si1				fs_name[BASE_FILE_NAME_BYTES_m13];	 // name from file system (if differs from header & update names global set, headers changed)
+	si1				uh_name[BASE_FILE_NAME_BYTES_m13];	 // name from universal_headers (if differs from header & update names global set, headers changed)
+	tern				names_differ;
 	si8				start_time;
 	si8				end_time;
 	union {
@@ -1913,8 +1911,6 @@ typedef struct {
 	pid_t_m13			_id;  // thread or process id (used if LEVEL_HEADER_m13 unknown [NULL])
 	LEVEL_HEADER_m13		*child;  // hierarchy level immediately below these process globals
 	ui4				memory_map_block_bytes;  // read size for memory mapped files (process data may be on different volumes)
-	si1				time_series_data_encryption_level;  // from time series metadata
-	si1				video_data_encryption_level;  // from video metadata
 } PROC_GLOBALS_m13;
 #else  // __cplusplus
 typedef struct {
@@ -2157,7 +2153,9 @@ typedef struct {
 	ui1     	level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1		level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui4		video_data_file_number;  // MED 1.1 and above
-	tern		encryption;  // MED 1.1 and above
+	si1		data_encryption;  // MED 1.1 and above
+	si1		metadata_section_2_encryption;  // MED 1.1 and above
+	si1		metadata_section_3_encryption;  // MED 1.1 and above
 	tern		ordered;  // MED 1.1 and above
 	ui1		protected_region[UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13];
 	ui1		discretionary_region[UNIVERSAL_HEADER_DISCRETIONARY_REGION_BYTES_m13];
@@ -2168,9 +2166,6 @@ typedef struct {
 	si1     level_1_password_hint[PASSWORD_HINT_BYTES_m13];
 	si1     level_2_password_hint[PASSWORD_HINT_BYTES_m13];
 	si1	anonymized_subject_ID[METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13]; // utf8[63], MED 1.1 & above (moved from universal header)
-	si1     section_2_encryption_level;
-	si1     section_3_encryption_level;
-	si1     data_encryption_level;
 	ui1     protected_region[METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13];
 	ui1     discretionary_region[METADATA_SECTION_1_DISCRETIONARY_REGION_BYTES_m13];
 } METADATA_SECTION_1_m13;
@@ -2816,7 +2811,7 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
 FUNCTION_STACK_m13	*G_get_function_stack_m13(void);
 #endif
 ui4		G_get_level_m13(si1 *full_file_name, ui4 *input_type_code);
-LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, tern set_timezone_globals, tern prompt);
+tern		G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
 si4		G_get_search_mode_m13(SLICE_m13 *slice);
 si4		G_get_segment_index_m13(si4 segment_number, LEVEL_HEADER_m13 *level_header);
 si4             G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, SLICE_m13 *slice);

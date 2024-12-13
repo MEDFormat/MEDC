@@ -5301,35 +5301,68 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 }
 
 
-LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12 set_timezone_globals, TERN_m12 prompt)
+ TERN_m12	G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, si1 *ip_str, si1 *ipinfo_token, TERN_m12 set_timezone_globals, TERN_m12 prompt)
 {
 	TERN_m12	free_loc_info = FALSE_m12;
-	si1		*command, *buffer, *pattern, *c;
+	si1		command[256], *buffer, *pattern, *c;
 	si4		ret_val;
+	size_t		len;
 	time_t 		curr_time;
 	struct tm 	loc_time;
 	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
-		
+	// pass NULL or "" for ip_str to get local info
+	// pass NULL or "" for ipinfo_token if you don't have one (they are free)
+	
 	if (loc_info == NULL) {
 		loc_info = (LOCATION_INFO_m12 *) calloc((size_t) 1, sizeof(LOCATION_INFO_m12));
 		free_loc_info = TRUE_m12;
 	} else {
 		memset((void *) loc_info, 0, sizeof(LOCATION_INFO_m12));
 	}
-	
+		
 #if defined MACOS_m12 || defined LINUX_m12
-	command = "/usr/bin/curl --connect-timeout 5.0 -s ipinfo.io";
+	len = strcpy_m12(command, "/usr/bin/curl --connect-timeout 5.0 -s ipinfo.io");
 #endif
 #ifdef WINDOWS_m12
-	command = "curl.exe --connect-timeout 5.0 .exe -s ipinfo.io";
+	len = strcpy_m12(command, "curl.exe --connect-timeout 5.0 -s ipinfo.io");
 #endif
+	 // get timezone acronym from system
+	if (G_empty_string_m12(ip_str) == TRUE_m12) {
+		curr_time = time(NULL);
+		#if defined MACOS_m12 || defined LINUX_m12
+		size_t	len2;
+		
+		localtime_r(&curr_time, &loc_time);
+		len2 = strlen(loc_time.tm_zone);
+		if (len2 >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
+			if (loc_time.tm_isdst)
+				strcpy(loc_info->timezone_info.daylight_timezone_acronym, loc_time.tm_zone);
+			else
+				strcpy(loc_info->timezone_info.standard_timezone_acronym, loc_time.tm_zone);
+		}
+		#endif
+		#ifdef WINDOWS_m12
+		loc_time = *(localtime(&curr_time));
+		if (*_tzname[0])
+			strcpy(loc_info->timezone_info.standard_timezone, _tzname[0]);
+		if (*_tzname[1])
+			strcpy(loc_info->timezone_info.daylight_timezone, _tzname[1]);
+		#endif
+	} else {
+		command[len++] = '/';
+		len += strcpy_m12(command + len, ip_str);
+	}
+	if (G_empty_string_m12(ipinfo_token) == FALSE_m12)
+		sprintf(command + len, "?token=%s", ipinfo_token);
+	printf("%s(%d): command = %s\n", __FUNCTION__, __LINE__, command);
+	
 	buffer = NULL;
 	ret_val = system_pipe_m12(&buffer, 0, command, SP_DEFAULT_m12,  __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	if (ret_val)
-		return(NULL);
+		return(FALSE_m12);
 	
 	// condition output
 	STR_strip_character_m12(buffer, '"');
@@ -5379,37 +5412,18 @@ LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12
 	
 	free((void *) buffer);
 	
-	// get timezone acronym from system
-	curr_time = time(NULL);
-#if defined MACOS_m12 || defined LINUX_m12
-	si8	len;
+	 ret_val = TRUE_m12;
+	 if (set_timezone_globals == TRUE_m12) {
+		 if (G_set_global_time_constants_m12(&loc_info->timezone_info, 0, prompt) == FALSE_m12) {
+			 G_warning_message_m12("%s(): could not set timezone globals\n", __FUNCTION__);
+			 ret_val = FALSE_m12;
+		 }
+	 }
 	
-	localtime_r(&curr_time, &loc_time);
-	len = strlen(loc_time.tm_zone);
-	if (len >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
-		if (loc_time.tm_isdst)
-			strcpy(loc_info->timezone_info.daylight_timezone_acronym, loc_time.tm_zone);
-		else
-			strcpy(loc_info->timezone_info.standard_timezone_acronym, loc_time.tm_zone);
-	}
-#endif
-#ifdef WINDOWS_m12
-	loc_time = *(localtime(&curr_time));
-	if (*_tzname[0])
-		strcpy(loc_info->timezone_info.standard_timezone, _tzname[0]);
-	if (*_tzname[1])
-		strcpy(loc_info->timezone_info.daylight_timezone, _tzname[1]);
-#endif
-
-	if (G_set_global_time_constants_m12(&loc_info->timezone_info, 0, prompt) == FALSE_m12)
-		G_warning_message_m12("%s(): could not set timezone globals => returning NULL\n", __FUNCTION__);
-	
-	if (free_loc_info == TRUE_m12) {
+	if (free_loc_info == TRUE_m12)
 		free((void *) loc_info);
-		return(NULL);
-	}
 
-	return(loc_info);
+	return((TERN_m12) ret_val);
 }
 
 
@@ -29809,12 +29823,22 @@ void	HW_get_core_info_m12()
 	if (ret_val) {
 		hw_params->logical_cores = (si4) get_nprocs_conf();
 	} else {
-		si4	threads_per_core, cores_per_socket, sockets;
+		si4	physical_cores, logical_cores, threads_per_core, cores_per_socket, sockets;
 		sf8	scaling, min_mhz, max_mhz;
 		
-		threads_per_core = cores_per_socket = sockets = 0;
+		
+		threads_per_core = cores_per_socket = sockets = physical_cores = logical_cores = 0;
 		scaling = min_mhz = max_mhz = (sf8) 0.0;
 		
+		c = STR_match_end_m12("CPU(s):", buf);
+		if (c == NULL) {
+			c = buf;
+		} else {
+			while (*c == ' ')
+				++c;
+			sscanf_m12(c, "%d", &logical_cores);
+		}
+
 		c = STR_match_end_m12("Vendor ID:", buf);
 		if (c == NULL) {
 			c = buf;
@@ -29882,12 +29906,18 @@ void	HW_get_core_info_m12()
 		free(buf);
 		
 		hw_params->physical_cores = sockets * cores_per_socket;
-		hw_params->logical_cores = hw_params->physical_cores * threads_per_core;
-		if (threads_per_core > 1)
+		if (logical_cores)
+			hw_params->logical_cores = logical_cores;
+		else
+			hw_params->logical_cores = hw_params->physical_cores * threads_per_core;  // this may be inaccurate if hyperthreading not availabale on all cores
+	
+		if (threads_per_core == 1)
+			hw_params->hyperthreading = FALSE_m12;
+		else if (logical_cores == (hw_params->physical_cores * threads_per_core))
 			hw_params->hyperthreading = TRUE_m12;
 		else
-			hw_params->hyperthreading = FALSE_m12;
-		
+			hw_params->hyperthreading = UNKNOWN_m12;  // truly unknown, or not available on all cores
+
 		hw_params->minimum_speed = min_mhz / (sf8) 1000.0;
 		hw_params->maximum_speed = max_mhz / (sf8) 1000.0;
 		hw_params->current_speed = hw_params->maximum_speed * (scaling / (sf8) 100.0);
@@ -30507,7 +30537,10 @@ void	HW_show_info_m12(void)
 			printf_m12("true\n");
 			break;
 		case UNKNOWN_m12:
-			printf_m12("unknown\n");
+			if (hw_params->logical_cores && hw_params->physical_cores)
+				printf_m12("partial (%d of %d physical cores)\n", (hw_params->logical_cores - hw_params->physical_cores), hw_params->physical_cores);
+			else
+				printf_m12("unknown\n");
 			break;
 		default:
 			printf_m12("invalid value (%hhd)\n", hw_params->hyperthreading);
@@ -37227,7 +37260,7 @@ si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12
 		case CURRENT_TIME_m12:
 			uutc = G_current_uutc_m12();
 			if (globals_m12->time_constants_set == FALSE_m12)  // set global time constants to location of machine
-				if (G_get_location_info_m12(&loc_info, TRUE_m12, FALSE_m12) == NULL)
+				if (G_get_location_info_m12(&loc_info, NULL, NULL, TRUE_m12, FALSE_m12) == FALSE_m12)
 					G_warning_message_m12("%s(): daylight change data not available\n", __FUNCTION__);
 			break;
 	}

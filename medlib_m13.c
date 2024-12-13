@@ -581,8 +581,10 @@ SESSION_m13	*G_allocate_session_m13(FPS_m13 *proto_fps, si1 *enclosing_path, si1
 		G_generate_UID_m13(&uh->session_UID);
 	uh->segment_number = UNIVERSAL_HEADER_SESSION_LEVEL_CODE_m13;;
 	strncpy_m13(uh->session_name, sess_name, BASE_FILE_NAME_BYTES_m13);
+	strncpy_m13(proc_globals->current_session.fs_name, sess_name, BASE_FILE_NAME_BYTES_m13);
 	strncpy_m13(proc_globals->current_session.uh_name, sess_name, BASE_FILE_NAME_BYTES_m13);
-	sess->name = proc_globals->current_session.name = proc_globals->current_session.uh_name;
+	proc_globals->current_session.names_differ = FALSE_m13;
+	sess->name = proc_globals->current_session.fs_name;  // default is fs_name
 	sess->path = proc_globals->current_session.directory;
 	snprintf_m13(sess->path, FULL_FILE_NAME_BYTES_m13, "%s/%s.%s", enclosing_path, sess->name, SESSION_DIRECTORY_TYPE_STRING_m13);
 		
@@ -2389,6 +2391,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	PROC_GLOBALS_m13	*proc_globals;
 	PASSWORD_DATA_m13	*pwd;
 	METADATA_SECTION_3_m13	*section_3;
+	UNIVERSAL_HEADER_m13	*uh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -2400,27 +2403,22 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	}
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
-
-	// data encryption level globals
-	if (fps->universal_header->type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m13)
-		proc_globals->time_series_data_encryption_level = fps->metadata->section_1.data_encryption_level;
-	else if (fps->universal_header->type_code == VIDEO_METADATA_FILE_TYPE_CODE_m13)
-		proc_globals->video_data_encryption_level = fps->metadata->section_1.data_encryption_level;
+	uh = fps->universal_header;
 
 	// section 2 decryption
-	if (fps->metadata->section_1.section_2_encryption_level > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
-		if (pwd->access_level >= fps->metadata->section_1.section_2_encryption_level) {
-			if (fps->metadata->section_1.section_2_encryption_level == LEVEL_1_ENCRYPTION_m13)
+	if (uh->metadata_section_2_encryption > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
+		if (pwd->access_level >= uh->metadata_section_2_encryption ) {
+			if (uh->metadata_section_2_encryption == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
 			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, NULL, decryption_key);
-			fps->metadata->section_1.section_2_encryption_level = -fps->metadata->section_1.section_2_encryption_level;  // mark as currently decrypted
+			uh->metadata_section_2_encryption = -uh->metadata_section_2_encryption ;  // mark as currently decrypted
 		} else {
 			G_add_behavior_m13(RETURN_ON_FAIL_m13);  // force return to show hints
-			G_set_error_m13(E_NO_METADATA_m13, "Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt", fps->metadata->section_1.section_2_encryption_level);
+			G_set_error_m13(E_NO_METADATA_m13, "Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt", uh->metadata_section_2_encryption);
 			G_pop_behavior_m13();  // restore behavior
-			G_show_password_hints_m13(pwd, fps->metadata->section_1.section_2_encryption_level);
+			G_show_password_hints_m13(pwd, uh->metadata_section_2_encryption);
 			if (G_current_behavior_m13() & RETURN_ON_FAIL_m13)
 				return_m13(FALSE_m13);
 			exit_m13(-1);
@@ -2428,14 +2426,14 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	}
 
 	// section 3 decryption
-	if (fps->metadata->section_1.section_3_encryption_level > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
-		if (pwd->access_level >= fps->metadata->section_1.section_3_encryption_level) {
-			if (fps->metadata->section_1.section_3_encryption_level == LEVEL_1_ENCRYPTION_m13)
+	if (uh->metadata_section_3_encryption > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
+		if (pwd->access_level >= uh->metadata_section_3_encryption) {
+			if (uh->metadata_section_3_encryption == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
 			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, NULL, decryption_key);
-			fps->metadata->section_1.section_3_encryption_level = -fps->metadata->section_1.section_3_encryption_level;  // mark as currently decrypted
+			uh->metadata_section_3_encryption = -uh->metadata_section_3_encryption;  // mark as currently decrypted
 		} else {
 			proc_globals->time_constants.RTO_known = FALSE_m13;
 			proc_globals->time_constants.set = TRUE_m13;  // set to defaults
@@ -2874,6 +2872,7 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	PASSWORD_DATA_m13	*pwd;
 	METADATA_m13		*md;
 	PROC_GLOBALS_m13	*proc_globals;
+	UNIVERSAL_HEADER_m13	*uh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -2882,12 +2881,13 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
 	md = fps->metadata;
+	uh = fps->universal_header;
 
 	// section 2 encrypt
-	if (md->section_1.section_2_encryption_level < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
-		if (pwd->access_level >= -md->section_1.section_2_encryption_level) {
-			md->section_1.section_2_encryption_level = -md->section_1.section_2_encryption_level;  // mark as currently encrypted
-			if (md->section_1.section_2_encryption_level == LEVEL_1_ENCRYPTION_m13)
+	if (uh->metadata_section_2_encryption < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
+		if (pwd->access_level >= -uh->metadata_section_2_encryption) {
+			uh->metadata_section_2_encryption = -uh->metadata_section_2_encryption;  // mark as currently encrypted
+			if (uh->metadata_section_2_encryption == LEVEL_1_ENCRYPTION_m13)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
@@ -2896,10 +2896,10 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	}
 	
 	// section 3 encrypt
-	if (md->section_1.section_3_encryption_level < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
-		if (pwd->access_level >= -md->section_1.section_3_encryption_level) {
-			md->section_1.section_3_encryption_level = -md->section_1.section_3_encryption_level;  // mark as currently encrypted
-			if (fps->metadata->section_1.section_3_encryption_level == LEVEL_1_ENCRYPTION_m13)
+	if (uh->metadata_section_3_encryption < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
+		if (pwd->access_level >= -uh->metadata_section_3_encryption) {
+			uh->metadata_section_3_encryption = -uh->metadata_section_3_encryption;  // mark as currently encrypted
+			if (uh->metadata_section_3_encryption == LEVEL_1_ENCRYPTION_m13)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
@@ -5879,17 +5879,21 @@ ui4	G_get_level_m13(si1 *full_file_name, ui4 *input_type_code)
 }
 
 
-LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, tern set_timezone_globals, tern prompt)
+tern	G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt)
 {
-	tern	free_loc_info = FALSE_m13;
-	si1		*command, *buffer, *pattern, *c;
+	tern		free_loc_info = FALSE_m13, local_ip = FALSE_m13;
+	si1		command[256], *buffer, *pattern, *c;
 	si4		ret_val;
+	size_t		len;
 	time_t 		curr_time;
 	struct tm 	loc_time;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// pass NULL or "" for ip_str to get local info
+	// pass NULL or "" for ipinfo_token if you don't have one (they're free)
 	
 	if (loc_info == NULL) {
 		loc_info = (LOCATION_INFO_m13 *) calloc((size_t) 1, sizeof(LOCATION_INFO_m13));
@@ -5898,16 +5902,52 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, tern set
 		memset((void *) loc_info, 0, sizeof(LOCATION_INFO_m13));
 	}
 	
+	// get timezone acronym from system
+	if (STR_empty_m13(ip_str) == TRUE_m13) {
+		curr_time = time(NULL);
+		local_ip = TRUE_m13;
+	}
+	
 #if defined MACOS_m13 || defined LINUX_m13
-	command = "/usr/bin/curl --connect-timeout 5.0 -s ipinfo.io";
+	len = strcpy_m13(command, "/usr/bin/curl --connect-timeout 5.0 -s ipinfo.io");
+	
+	// get timezone acronym from system
+	if (local_ip == TRUE_m13) {
+		size_t	len2;
+		
+		localtime_r(&curr_time, &loc_time);
+		len2 = strlen(loc_time.tm_zone);
+		if (len2 >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
+			if (loc_time.tm_isdst)
+				strcpy(loc_info->timezone_info.daylight_timezone_acronym, loc_time.tm_zone);
+			else
+				strcpy(loc_info->timezone_info.standard_timezone_acronym, loc_time.tm_zone);
+		}
+	}
 #endif
 #ifdef WINDOWS_m13
-	command = "curl.exe --connect-timeout 5.0 .exe -s ipinfo.io";
+	len = strcpy_m13(command, "curl.exe --connect-timeout 5.0 -s ipinfo.io");
+		
+	// get timezone acronym from system
+	if (local_ip == TRUE_m13) {
+		loc_time = *(localtime(&curr_time));
+		if (*_tzname[0])
+			strcpy(loc_info->timezone_info.standard_timezone, _tzname[0]);
+		if (*_tzname[1])
+			strcpy(loc_info->timezone_info.daylight_timezone, _tzname[1]);
+	}
 #endif
+	if (local_ip == TRUE_m13) {
+		command[len++] = '/';
+		len += strcpy_m13(command + len, ip_str);
+	}
+	if (STR_empty_m13(ipinfo_token) == FALSE_m13)
+		sprintf(command + len, "?token=%s", ipinfo_token);
+	
 	buffer = NULL;
 	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
 	if (ret_val < 0)
-		return_m13(NULL);
+		return_m13(FALSE_m13);
 	
 	// condition output
 	STR_strip_character_m13(buffer, '"');
@@ -5957,37 +5997,18 @@ LOCATION_INFO_m13	*G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, tern set
 	
 	free((void *) buffer);
 	
-	// get timezone acronym from system
-	curr_time = time(NULL);
-#if defined MACOS_m13 || defined LINUX_m13
-	si8	len;
-	
-	localtime_r(&curr_time, &loc_time);
-	len = strlen(loc_time.tm_zone);
-	if (len >= 3) { // the table does not contain 2 letter timezone acronyms (e.g. MT for MST)
-		if (loc_time.tm_isdst)
-			strcpy(loc_info->timezone_info.daylight_timezone_acronym, loc_time.tm_zone);
-		else
-			strcpy(loc_info->timezone_info.standard_timezone_acronym, loc_time.tm_zone);
+	ret_val = TRUE_m13;
+	if (set_timezone_globals == TRUE_m13) {
+		if (G_set_global_time_constants_m13(&loc_info->timezone_info, 0, prompt) == FALSE_m13) {
+			G_warning_message_m13("%s(): could not set timezone globals => returning NULL\n", __FUNCTION__);
+			ret_val = FALSE_m13;
+		}
 	}
-#endif
-#ifdef WINDOWS_m13
-	loc_time = *(localtime(&curr_time));
-	if (*_tzname[0])
-		strcpy(loc_info->timezone_info.standard_timezone, _tzname[0]);
-	if (*_tzname[1])
-		strcpy(loc_info->timezone_info.daylight_timezone, _tzname[1]);
-#endif
-
-	if (G_set_global_time_constants_m13(&loc_info->timezone_info, 0, prompt) == FALSE_m13)
-		G_warning_message_m13("%s(): could not set timezone globals => returning NULL\n", __FUNCTION__);
 	
-	if (free_loc_info == TRUE_m13) {
+	if (free_loc_info == TRUE_m13)
 		free((void *) loc_info);
-		return_m13(NULL);
-	}
 
-	return_m13(loc_info);
+	return_m13((tern) ret_val);
 }
 
 
@@ -6160,7 +6181,7 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, SLICE_m13 *slice
 				md_fps = G_read_file_m13(NULL, tmp_str, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
 				FPS_free_m13(md_fps, TRUE_m13);
 			}
-			sess_name = proc_globals->current_session.name;
+			sess_name = proc_globals->current_session.fs_name;
 			if (sess) {
 				strcpy(sess_path, sess->path);
 				ri_fps = sess->record_indices_fps;
@@ -6179,10 +6200,10 @@ si4     G_get_segment_range_m13(LEVEL_HEADER_m13 *level_header, SLICE_m13 *slice
 			else
 				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 			file_exists = G_exists_m13(tmp_str);
-			if (file_exists == DOES_NOT_EXIST_m13) {  // uh session name is default, try fs session name (e.g. a channel subset)
-				if (proc_globals->current_session.name == proc_globals->current_session.uh_name) {
+			if (file_exists == DOES_NOT_EXIST_m13) {
+				if (proc_globals->current_session.names_differ == TRUE_m13) {  // fs_name is default, try uh_name (e.g. a channel subset, without full renaming)
 					G_extract_path_parts_m13(sess_path, tmp_str, NULL, NULL);
-					sprintf_m13(sess_path, "%s/%s", tmp_str, proc_globals->current_session.fs_name);
+					sprintf_m13(sess_path, "%s/%s", tmp_str, proc_globals->current_session.uh_name);
 					sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
 					file_exists = G_exists_m13(tmp_str);
 				}
@@ -6372,9 +6393,10 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 		if (MED_fps) {
 			proc_globals->current_session.UID = MED_fps->universal_header->session_UID;
 			strcpy(proc_globals->current_session.uh_name, MED_fps->universal_header->session_name);
-			proc_globals->current_session.name = proc_globals->current_session.uh_name;
-		} else {
-			proc_globals->current_session.name = proc_globals->current_session.fs_name;
+			if (strcmp(proc_globals->current_session.fs_name, proc_globals->current_session.uh_name))
+				proc_globals->current_session.names_differ = TRUE_m13;
+			else
+				proc_globals->current_session.names_differ = FALSE_m13;
 		}
 	}
 
@@ -6875,7 +6897,6 @@ tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path
 tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 {
 	PROC_GLOBALS_m13			*proc_globals;
-	METADATA_SECTION_1_m13			*md1;
 	TIME_SERIES_METADATA_SECTION_2_m13	*tmd2;
 	VIDEO_METADATA_SECTION_2_m13		*vmd2;
 	METADATA_SECTION_3_m13			*md3;
@@ -6886,17 +6907,11 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 #endif
 
 	// shortcuts
-	md1 = &fps->metadata->section_1;
 	tmd2 = &fps->metadata->time_series_section_2;
 	vmd2 = &fps->metadata->video_section_2;
 	md3 = &fps->metadata->section_3;
 	uh = fps->universal_header;
 	
-	// section 1 fields
-	md1->section_2_encryption_level = METADATA_SECTION_2_ENCRYPTION_LEVEL_DEFAULT_m13;
-	md1->section_3_encryption_level = METADATA_SECTION_3_ENCRYPTION_LEVEL_DEFAULT_m13;
-	md1->data_encryption_level = METADATA_DATA_ENCRYPTION_LEVEL_DEFAULT_m13;
-
 	// section 2 fields
 	
 	// type independent fields
@@ -7567,7 +7582,7 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 	TIME_SERIES_METADATA_SECTION_2_m13	*tmd2_1, *tmd2_2, *tmd2_m;
 	VIDEO_METADATA_SECTION_2_m13		*vmd2_1, *vmd2_2, *vmd2_m;
 	METADATA_SECTION_3_m13			*md3_1, *md3_2, *md3_m;
-	tern                                equal;
+	tern                                	equal;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -7577,14 +7592,14 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 	// returns TRUE_m13 if md_fps_1->metadata == md_fps_2->metadata, FALSE_m13 otherwise
 
 	// decrypt if needed
-	md1_1 = &md_fps_1->metadata->section_1;
-	if (md1_1->section_2_encryption_level > NO_ENCRYPTION_m13 || md1_1->section_3_encryption_level > NO_ENCRYPTION_m13)
+	if (md_fps_1->universal_header->metadata_section_2_encryption > NO_ENCRYPTION_m13 || md_fps_1->universal_header->metadata_section_3_encryption > NO_ENCRYPTION_m13)
 		G_decrypt_metadata_m13(md_fps_1);
-	md1_2 = &md_fps_2->metadata->section_1;
-	if (md1_2->section_2_encryption_level > NO_ENCRYPTION_m13 || md1_2->section_3_encryption_level > NO_ENCRYPTION_m13)
+	if (md_fps_2->universal_header->metadata_section_2_encryption > NO_ENCRYPTION_m13 || md_fps_2->universal_header->metadata_section_3_encryption > NO_ENCRYPTION_m13)
 		G_decrypt_metadata_m13(md_fps_2);
 	
 	// setup
+	md1_1 = &md_fps_1->metadata->section_1;
+	md1_2 = &md_fps_2->metadata->section_1;
 	if (merged_md_fps == NULL)
 		merged_md_fps = md_fps_1;
 	else
@@ -7613,12 +7628,6 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 	}
 	if (memcmp(md1_1->level_2_password_hint, md1_2->level_2_password_hint, PASSWORD_HINT_BYTES_m13)) {
 		memset(md1_m->level_2_password_hint, 0, PASSWORD_HINT_BYTES_m13); equal = FALSE_m13;
-	}
-	if (md1_1->section_2_encryption_level != md1_2->section_2_encryption_level) {
-		md1_m->section_2_encryption_level = ENCRYPTION_LEVEL_NO_ENTRY_m13; equal = FALSE_m13;
-	}
-	if (md1_1->section_3_encryption_level != md1_2->section_3_encryption_level) {
-		md1_m->section_3_encryption_level = ENCRYPTION_LEVEL_NO_ENTRY_m13; equal = FALSE_m13;
 	}
 	if (memcmp(md1_1->protected_region, md1_2->protected_region, METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13)) {
 		memset(md1_m->protected_region, 0, METADATA_SECTION_1_PROTECTED_REGION_BYTES_m13); equal = FALSE_m13;
@@ -9512,9 +9521,9 @@ PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 	*proc_globals->current_session.directory = 0;
 	proc_globals->current_session.start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m13;
 	proc_globals->current_session.end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m13;
-	proc_globals->current_session.name = NULL;
 	*proc_globals->current_session.uh_name = 0;
 	*proc_globals->current_session.fs_name = 0;
+	proc_globals->current_session.names_differ = UNKNOWN_m13;
 	proc_globals->current_session.start_time = UUTC_NO_ENTRY_m13;
 	proc_globals->current_session.end_time = UUTC_NO_ENTRY_m13;
 	proc_globals->current_session.number_of_samples = SAMPLE_NUMBER_NO_ENTRY_m13;  // == number_of_session_frames
@@ -12516,8 +12525,8 @@ tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_direct
 {
 	si1                             metadata_file[FULL_FILE_NAME_BYTES_m13];
 	PROC_GLOBALS_m13		*proc_globals;
-	FPS_m13	*metadata_fps;
-	METADATA_SECTION_1_m13		*md1;
+	FPS_m13				*metadata_fps;
+	UNIVERSAL_HEADER_m13		*uh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -12536,14 +12545,14 @@ tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_direct
 	metadata_fps = G_read_file_m13(NULL, metadata_file, 0, 0, FPS_FULL_FILE_m13, NULL, unspecified_password);
 	if (metadata_fps == NULL)
 		return_m13(FALSE_m13);
-	proc_globals->current_session.start_time = metadata_fps->universal_header->session_start_time;
+	uh = metadata_fps->universal_header;
+	proc_globals->current_session.start_time = uh->session_start_time;
 
 	// return metadata encryption level info
-	md1 = &metadata_fps->metadata->section_1;
 	if (metadata_section_2_encryption_level)
-		*metadata_section_2_encryption_level = md1->section_2_encryption_level;
+		*metadata_section_2_encryption_level = uh->metadata_section_2_encryption;
 	if (metadata_section_3_encryption_level)
-		*metadata_section_3_encryption_level = md1->section_3_encryption_level;
+		*metadata_section_3_encryption_level = uh->metadata_section_3_encryption;
 
 	// clean up
 	FPS_free_m13(metadata_fps, TRUE_m13);
@@ -13007,12 +13016,10 @@ tern    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 		printf_m13("end of time\n");
 	else
 		printf_m13("%ld\n", proc_globals->current_session.end_time);
-	if (proc_globals->current_session.name == NULL)
-		printf_m13("Session Name: NULL\n");
-	else
-		printf_m13("Session Name: %s\n", proc_globals->current_session.name);
-	printf_m13("\tuh_session_name: %s\n", proc_globals->current_session.uh_name);  // from session universal headers
-	printf_m13("\tfs_session_name: %s\n", proc_globals->current_session.fs_name);  // from file system (different if user created channel subset with different name)
+	printf_m13("Session Name:\n");
+	printf_m13("\tuh_name: %s\n", proc_globals->current_session.uh_name);  // from file system
+	printf_m13("\tfs_name: %s\n", proc_globals->current_session.fs_name);  // from session universal headers
+	printf_m13("\tnames_differ: %hhd\n", proc_globals->current_session.names_differ);
 	printf_m13("Number of Session Samples / Frames: ");
 	if (proc_globals->current_session.number_of_samples == SAMPLE_NUMBER_NO_ENTRY_m13)
 		printf_m13("no entry\n");
@@ -13279,6 +13286,7 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 	TIME_SERIES_METADATA_SECTION_2_m13	*tmd2, *gmd2;
 	VIDEO_METADATA_SECTION_2_m13		*vmd2;
 	METADATA_SECTION_3_m13			*md3;
+	UNIVERSAL_HEADER_m13			*uh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -13291,9 +13299,11 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 		MED_version_major = fps->universal_header->MED_version_major;
 		MED_version_minor = fps->universal_header->MED_version_minor;
 		md = (METADATA_m13 *) fps->data_pointers;
+		uh = fps->universal_header;
 		type_code = fps->universal_header->type_code;
 	} else {
 		MED_version_major = MED_version_minor = 0;
+		uh = NULL;
 	}
 	
 	if (md) {
@@ -13319,41 +13329,6 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 		UTF8_printf_m13("Level 1 Password Hint: %s\n", md1->level_1_password_hint);
 	if (*md1->level_2_password_hint)
 		UTF8_printf_m13("Level 2 Password Hint: %s\n", md1->level_2_password_hint);
-	printf_m13("Section 2 Encryption Level: %d ", md1->section_2_encryption_level);
-	if (md1->section_2_encryption_level == NO_ENCRYPTION_m13)
-		printf_m13("(none)\n");
-	else if (md1->section_2_encryption_level == LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1, currently encrypted)\n");
-	else if (md1->section_2_encryption_level == LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2, currently encrypted)\n");
-	else if (md1->section_2_encryption_level == -LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1, currently decrypted)\n");
-	else if (md1->section_2_encryption_level == -LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2, currently decrypted)\n");
-	else
-		printf_m13("(unrecognized code)\n");
-	printf_m13("Section 3 Encryption Level: %d ", md1->section_3_encryption_level);
-	if (md1->section_3_encryption_level == NO_ENCRYPTION_m13)
-		printf_m13("(none)\n");
-	else if (md1->section_3_encryption_level == LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1, currently encrypted)\n");
-	else if (md1->section_3_encryption_level == LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2, currently encrypted)\n");
-	else if (md1->section_3_encryption_level == -LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1, currently decrypted)\n");
-	else if (md1->section_3_encryption_level == -LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2, currently decrypted)\n");
-	else
-		printf_m13("(unrecognized code)\n");
-	printf_m13("Data Encryption Level: %d ", md1->data_encryption_level);
-	if (md1->data_encryption_level == NO_ENCRYPTION_m13)
-		printf_m13("(none)\n");
-	else if (md1->data_encryption_level == LEVEL_1_ENCRYPTION_m13)
-		printf_m13("(level 1)\n");
-	else if (md1->data_encryption_level == LEVEL_2_ENCRYPTION_m13)
-		printf_m13("(level 2)\n");
-	else
-		printf_m13("(unrecognized code)\n");
 	if (MED_version_major > 1 || MED_version_minor > 0) {  // MED 1.1 & above
 		if (*md1->anonymized_subject_ID)
 			UTF8_printf_m13("Anonymized Subject ID: %s\n", md1->anonymized_subject_ID);
@@ -13362,292 +13337,297 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 	}
 	printf_m13("------------------- Section 1 - END --------------------\n");
 	
-	printf_m13("------------------ Section 2 - START -------------------\n");
 	// decrypt if needed
-	if (md1->section_2_encryption_level > NO_ENCRYPTION_m13 || md1->section_3_encryption_level > NO_ENCRYPTION_m13)
-		if (fps)
+	if (uh) {
+		if (uh->metadata_section_2_encryption > NO_ENCRYPTION_m13 || uh->metadata_section_2_encryption > NO_ENCRYPTION_m13)
 			G_decrypt_metadata_m13(fps);
-	
-	if (md1->section_2_encryption_level <= NO_ENCRYPTION_m13) {
-		
-		// type-independent fields
-		gmd2 = tmd2;
-		if (*gmd2->session_description)
-			UTF8_printf_m13("Session Description: %s\n", gmd2->session_description);
-		else
-			printf_m13("Session Description: no entry\n");
-		if (*gmd2->channel_description)
-			UTF8_printf_m13("Channel Description: %s\n", gmd2->channel_description);
-		else
-			printf_m13("Channel Description: no entry\n");
-		if (*gmd2->segment_description)
-			UTF8_printf_m13("Segment Description: %s\n", gmd2->segment_description);
-		else
-			printf_m13("Segment Description: no entry\n");
-		if (*gmd2->equipment_description)
-			UTF8_printf_m13("Equipment Description: %s\n", gmd2->equipment_description);
-		else
-			printf_m13("Equipment Description: no entry\n");
-		if (gmd2->acquisition_channel_number == METADATA_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13)
-			printf_m13("Acquisition Channel Number: no entry\n");
-		else
-			printf_m13("Acquisition Channel Number: %d\n", gmd2->acquisition_channel_number);
-		
-		// type-specific fields
-		if (tmd2) {
-			if (*tmd2->reference_description)
-				UTF8_printf_m13("Reference Description: %s\n", tmd2->reference_description);
-			else
-				printf_m13("Reference Description: no entry\n");
-			if (tmd2->sampling_frequency == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
-				printf_m13("Sampling Frequency: no entry\n");
-			else if (tmd2->sampling_frequency == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
-				printf_m13("Sampling Frequency: variable\n");
-			else
-				printf_m13("Sampling Frequency: %lf\n", tmd2->sampling_frequency);
-			if (tmd2->low_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
-				printf_m13("Low Frequency Filter Setting: no entry\n");
-			else if (tmd2->low_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
-				printf_m13("Low Frequency Filter Setting: variable\n");
-			else
-				printf_m13("Low Frequency Filter Setting (Hz): %lf\n", tmd2->low_frequency_filter_setting);
-			if (tmd2->high_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
-				printf_m13("High Frequency Filter Setting: no entry\n");
-			else if (tmd2->high_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
-				printf_m13("High Frequency Filter Setting: variable\n");
-			else
-				printf_m13("High Frequency Filter Setting (Hz): %lf\n", tmd2->high_frequency_filter_setting);
-			if (tmd2->notch_filter_frequency_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
-				printf_m13("Notch Filter Frequency Setting: no entry\n");
-			else if (tmd2->notch_filter_frequency_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
-				printf_m13("Notch Filter Frequency Setting: variable\n");
-			else
-				printf_m13("Notch Filter Frequency Setting (Hz): %lf\n", tmd2->notch_filter_frequency_setting);
-			if (tmd2->AC_line_frequency == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
-				printf_m13("AC Line Frequency: no entry\n");
-			else
-				printf_m13("AC Line Frequency (Hz): %lf\n", tmd2->AC_line_frequency);
-			if (tmd2->amplitude_units_conversion_factor == TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
-				printf_m13("Amplitiude Units Conversion Factor: no entry\n");
-			else
-				printf_m13("Amplitude Units Conversion Factor: %lf\n", tmd2->amplitude_units_conversion_factor);
-			if (*tmd2->amplitude_units_description)
-				UTF8_printf_m13("Amplitude Units Description: %s\n", tmd2->amplitude_units_description);
-			else
-				printf_m13("Amplitude Units Description: no entry\n");
-			if (tmd2->time_base_units_conversion_factor == TIME_SERIES_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
-				printf_m13("Time Base Units Conversion Factor: no entry\n");
-			else
-				printf_m13("Time Base Units Conversion Factor: %lf\n", tmd2->time_base_units_conversion_factor);
-			if (*tmd2->time_base_units_description)
-				UTF8_printf_m13("Time Base Units Description: %s\n", tmd2->time_base_units_description);
-			else
-				printf_m13("Time Base Units Description: no entry\n");
-			if (tmd2->session_start_sample_number == TIME_SERIES_METADATA_SESSION_START_SAMPLE_NUMBER_NO_ENTRY_m13)
-				printf_m13("Session Start Sample Number: no entry\n");
-			else
-				printf_m13("Session Start Sample Number: %ld\n", tmd2->session_start_sample_number);
-			if (tmd2->number_of_samples == TIME_SERIES_METADATA_NUMBER_OF_SAMPLES_NO_ENTRY_m13)
-				printf_m13("Number of Samples: no entry\n");
-			else
-				printf_m13("Number of Samples: %ld\n", tmd2->number_of_samples);
-			if (tmd2->number_of_blocks == TIME_SERIES_METADATA_NUMBER_OF_BLOCKS_NO_ENTRY_m13)
-				printf_m13("Number of Blocks: no entry\n");
-			else
-				printf_m13("Number of Blocks: %ld\n", tmd2->number_of_blocks);
-			if (tmd2->maximum_block_bytes == TIME_SERIES_METADATA_MAXIMUM_BLOCK_BYTES_NO_ENTRY_m13)
-				printf_m13("Maximum Block Bytes: no entry\n");
-			else
-				printf_m13("Maximum Block Bytes: %ld\n", tmd2->maximum_block_bytes);
-			if (tmd2->maximum_block_samples == TIME_SERIES_METADATA_MAXIMUM_BLOCK_SAMPLES_NO_ENTRY_m13)
-				printf_m13("Maximum Block Samples: no entry\n");
-			else
-				printf_m13("Maximum Block Samples: %u\n", tmd2->maximum_block_samples);
-			if (tmd2->maximum_block_keysample_bytes == TIME_SERIES_METADATA_MAXIMUM_BLOCK_KEYSAMPLE_BYTES_NO_ENTRY_m13)
-				printf_m13("Maximum Block Difference Bytes: no entry\n");
-			else
-				printf_m13("Maximum Block Keysample Bytes: %u\n", tmd2->maximum_block_keysample_bytes);
-			if (tmd2->maximum_block_duration == TIME_SERIES_METADATA_MAXIMUM_BLOCK_DURATION_NO_ENTRY_m13)
-				printf_m13("Maximum Block Duration: no entry\n");
-			else
-				UTF8_printf_m13("Maximum Block Duration: %lf %s\n", tmd2->maximum_block_duration, tmd2->time_base_units_description);
-			if (tmd2->number_of_discontinuities == TIME_SERIES_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m13)
-				printf_m13("Number of Discontinuities: no entry\n");
-			else
-				printf_m13("Number of Discontinuities: %ld\n", tmd2->number_of_discontinuities);
-			if (tmd2->maximum_contiguous_blocks == TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCKS_NO_ENTRY_m13)
-				printf_m13("Maximum Contiguous Blocks: no entry\n");
-			else
-				printf_m13("Maximum Contiguous Blocks: %ld\n", tmd2->maximum_contiguous_blocks);
-			if (tmd2->maximum_contiguous_block_bytes == TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCK_BYTES_NO_ENTRY_m13)
-				printf_m13("Maximum Contiguous Block Bytes: no entry\n");
-			else
-				printf_m13("Maximum Contiguous Block Bytes: %ld\n", tmd2->maximum_contiguous_block_bytes);
-			if (tmd2->maximum_contiguous_samples == TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_SAMPLES_NO_ENTRY_m13)
-				printf_m13("Maximum Contiguous Samples: no entry\n");
-			else
-				printf_m13("Maximum Contiguous Samples: %ld\n", tmd2->maximum_contiguous_samples);
-		} else if (vmd2) {
-			if (vmd2->time_base_units_conversion_factor == VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
-				printf_m13("Time Base Units Conversion Factor: no entry\n");
-			else
-				printf_m13("Time Base Units Conversion Factor: %lf\n", vmd2->time_base_units_conversion_factor);
-			if (*vmd2->time_base_units_description)
-				UTF8_printf_m13("Time Base Units Description: %s\n", vmd2->time_base_units_description);
-			else
-				printf_m13("Time Base Units Description: no entry\n");
-			if (vmd2->session_start_frame_number == VIDEO_METADATA_SESSION_START_FRAME_NUMBER_NO_ENTRY_m13)
-				printf_m13("Session Start Frame Number: no entry\n");
-			else
-				printf_m13("Session Start Frame Number: %ld\n", vmd2->session_start_frame_number);
-			if (vmd2->number_of_frames == VIDEO_METADATA_NUMBER_OF_FRAMES_NO_ENTRY_m13)
-				printf_m13("Number of Frames: no entry\n");
-			else
-				printf_m13("Number of Frames: %ld\n", vmd2->number_of_frames);
-			if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m13)
-				printf_m13("Frame Rate: no entry\n");
-			else if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_VARIABLE_m13)
-				printf_m13("Frame Rate: variable\n");
-			else
-				printf_m13("Frame Rate: %lf (frames per second)\n", vmd2->frame_rate);
-			if (vmd2->number_of_clips == VIDEO_METADATA_NUMBER_OF_CLIPS_NO_ENTRY_m13)
-				printf_m13("Number of Clips: no entry\n");
-			else
-				printf_m13("Number of Clips: %ld (~= number of video indices)\n", vmd2->number_of_clips);
-			if (vmd2->maximum_clip_bytes == VIDEO_METADATA_MAXIMUM_CLIP_BYTES_NO_ENTRY_m13)
-				printf_m13("Maximum Clip Bytes: no entry\n");
-			else
-				printf_m13("Maximum Clip Bytes: %ld\n", vmd2->maximum_clip_bytes);
-			if (vmd2->maximum_clip_frames == VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_NO_ENTRY_m13)
-				printf_m13("Maximum Clip Frames: no entry\n");
-			else
-				printf_m13("Maximum Clip Frames: %ld\n", vmd2->maximum_clip_frames);
-			if (vmd2->number_of_video_files == VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_NO_ENTRY_m13)
-				printf_m13("Number of Video Files: no entry\n");
-			else
-				printf_m13("Number of Video Files: %d\n", vmd2->number_of_video_files);
-			if (vmd2->maximum_clip_duration == VIDEO_METADATA_MAXIMUM_CLIP_DURATION_NO_ENTRY_m13)
-				printf_m13("Maximum Clip Duration: no entry\n");
-			else
-				UTF8_printf_m13("Maximum Clip Duration: %lf %s\n", vmd2->maximum_clip_duration, vmd2->time_base_units_description);
-			if (vmd2->number_of_discontinuities == VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m13)
-				printf_m13("Number of Discontinuities: no entry\n");
-			else
-				printf_m13("Number of Discontinuities: %ld\n", vmd2->number_of_discontinuities);
-			if (vmd2->maximum_contiguous_clips == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_NO_ENTRY_m13)
-				printf_m13("Maximum Contiguous Clips: no entry\n");
-			else
-				printf_m13("Maximum Contiguous Clips: %ld\n", vmd2->maximum_contiguous_clips);
-			if (vmd2->maximum_contiguous_clip_bytes == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_NO_ENTRY_m13)
-				printf_m13("Maximum Contiguous Clip Bytes: no entry\n");
-			else
-				printf_m13("Maximum Contiguous Clip Bytes: %ld\n", vmd2->maximum_contiguous_clip_bytes);
-			if (vmd2->maximum_contiguous_frames == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_NO_ENTRY_m13)
-				printf_m13("Maximum Contiguous Frames: no entry\n");
-			else
-				printf_m13("Maximum Contiguous Frames: %ld\n", vmd2->maximum_contiguous_frames);
-			if (vmd2->horizontal_pixels == VIDEO_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m13)
-				printf_m13("Horizontal Pixels: no entry\n");
-			else
-				printf_m13("Horizontal Pixels: %u\n", vmd2->horizontal_pixels);
-			if (vmd2->vertical_pixels == VIDEO_METADATA_VERTICAL_PIXELS_NO_ENTRY_m13)
-				printf_m13("Vertical Pixels: no entry\n");
-			else
-				printf_m13("Vertical Pixels: %u\n", vmd2->vertical_pixels);
-			if (*vmd2->video_format)
-				UTF8_printf_m13("Video Format: %s\n", vmd2->video_format);
-			else
-				printf_m13("Video Format: no entry\n");
-		} else {
-			printf_m13("(unrecognized metadata section 2 type)\n");
-		}
-	} else {
-		printf_m13("No access to section 2\n");
 	}
-	printf_m13("------------------- Section 2 - END --------------------\n");
 	
-	printf_m13("------------------ Section 3 - START -------------------\n");
-	if (md1->section_3_encryption_level <= NO_ENCRYPTION_m13) {
-		if (md3->recording_time_offset == UUTC_NO_ENTRY_m13)
-			printf_m13("Recording Time Offset: no entry\n");
-		else
-			printf_m13("Recording Time Offset: %ld\n", md3->recording_time_offset);
-		if (md3->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
-			printf_m13("Daylight Time Start Code: no entry\n");
+	if (uh) {
+		printf_m13("------------------ Section 2 - START -------------------\n");
+		if (uh->metadata_section_2_encryption <= NO_ENCRYPTION_m13) {
+			
+			// type-independent fields
+			gmd2 = tmd2;
+			if (*gmd2->session_description)
+				UTF8_printf_m13("Session Description: %s\n", gmd2->session_description);
+			else
+				printf_m13("Session Description: no entry\n");
+			if (*gmd2->channel_description)
+				UTF8_printf_m13("Channel Description: %s\n", gmd2->channel_description);
+			else
+				printf_m13("Channel Description: no entry\n");
+			if (*gmd2->segment_description)
+				UTF8_printf_m13("Segment Description: %s\n", gmd2->segment_description);
+			else
+				printf_m13("Segment Description: no entry\n");
+			if (*gmd2->equipment_description)
+				UTF8_printf_m13("Equipment Description: %s\n", gmd2->equipment_description);
+			else
+				printf_m13("Equipment Description: no entry\n");
+			if (gmd2->acquisition_channel_number == METADATA_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13)
+				printf_m13("Acquisition Channel Number: no entry\n");
+			else
+				printf_m13("Acquisition Channel Number: %d\n", gmd2->acquisition_channel_number);
+			
+			// type-specific fields
+			if (tmd2) {
+				if (*tmd2->reference_description)
+					UTF8_printf_m13("Reference Description: %s\n", tmd2->reference_description);
+				else
+					printf_m13("Reference Description: no entry\n");
+				if (tmd2->sampling_frequency == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
+					printf_m13("Sampling Frequency: no entry\n");
+				else if (tmd2->sampling_frequency == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
+					printf_m13("Sampling Frequency: variable\n");
+				else
+					printf_m13("Sampling Frequency: %lf\n", tmd2->sampling_frequency);
+				if (tmd2->low_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
+					printf_m13("Low Frequency Filter Setting: no entry\n");
+				else if (tmd2->low_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
+					printf_m13("Low Frequency Filter Setting: variable\n");
+				else
+					printf_m13("Low Frequency Filter Setting (Hz): %lf\n", tmd2->low_frequency_filter_setting);
+				if (tmd2->high_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
+					printf_m13("High Frequency Filter Setting: no entry\n");
+				else if (tmd2->high_frequency_filter_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
+					printf_m13("High Frequency Filter Setting: variable\n");
+				else
+					printf_m13("High Frequency Filter Setting (Hz): %lf\n", tmd2->high_frequency_filter_setting);
+				if (tmd2->notch_filter_frequency_setting == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
+					printf_m13("Notch Filter Frequency Setting: no entry\n");
+				else if (tmd2->notch_filter_frequency_setting == TIME_SERIES_METADATA_FREQUENCY_VARIABLE_m13)
+					printf_m13("Notch Filter Frequency Setting: variable\n");
+				else
+					printf_m13("Notch Filter Frequency Setting (Hz): %lf\n", tmd2->notch_filter_frequency_setting);
+				if (tmd2->AC_line_frequency == TIME_SERIES_METADATA_FREQUENCY_NO_ENTRY_m13)
+					printf_m13("AC Line Frequency: no entry\n");
+				else
+					printf_m13("AC Line Frequency (Hz): %lf\n", tmd2->AC_line_frequency);
+				if (tmd2->amplitude_units_conversion_factor == TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
+					printf_m13("Amplitiude Units Conversion Factor: no entry\n");
+				else
+					printf_m13("Amplitude Units Conversion Factor: %lf\n", tmd2->amplitude_units_conversion_factor);
+				if (*tmd2->amplitude_units_description)
+					UTF8_printf_m13("Amplitude Units Description: %s\n", tmd2->amplitude_units_description);
+				else
+					printf_m13("Amplitude Units Description: no entry\n");
+				if (tmd2->time_base_units_conversion_factor == TIME_SERIES_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
+					printf_m13("Time Base Units Conversion Factor: no entry\n");
+				else
+					printf_m13("Time Base Units Conversion Factor: %lf\n", tmd2->time_base_units_conversion_factor);
+				if (*tmd2->time_base_units_description)
+					UTF8_printf_m13("Time Base Units Description: %s\n", tmd2->time_base_units_description);
+				else
+					printf_m13("Time Base Units Description: no entry\n");
+				if (tmd2->session_start_sample_number == TIME_SERIES_METADATA_SESSION_START_SAMPLE_NUMBER_NO_ENTRY_m13)
+					printf_m13("Session Start Sample Number: no entry\n");
+				else
+					printf_m13("Session Start Sample Number: %ld\n", tmd2->session_start_sample_number);
+				if (tmd2->number_of_samples == TIME_SERIES_METADATA_NUMBER_OF_SAMPLES_NO_ENTRY_m13)
+					printf_m13("Number of Samples: no entry\n");
+				else
+					printf_m13("Number of Samples: %ld\n", tmd2->number_of_samples);
+				if (tmd2->number_of_blocks == TIME_SERIES_METADATA_NUMBER_OF_BLOCKS_NO_ENTRY_m13)
+					printf_m13("Number of Blocks: no entry\n");
+				else
+					printf_m13("Number of Blocks: %ld\n", tmd2->number_of_blocks);
+				if (tmd2->maximum_block_bytes == TIME_SERIES_METADATA_MAXIMUM_BLOCK_BYTES_NO_ENTRY_m13)
+					printf_m13("Maximum Block Bytes: no entry\n");
+				else
+					printf_m13("Maximum Block Bytes: %ld\n", tmd2->maximum_block_bytes);
+				if (tmd2->maximum_block_samples == TIME_SERIES_METADATA_MAXIMUM_BLOCK_SAMPLES_NO_ENTRY_m13)
+					printf_m13("Maximum Block Samples: no entry\n");
+				else
+					printf_m13("Maximum Block Samples: %u\n", tmd2->maximum_block_samples);
+				if (tmd2->maximum_block_keysample_bytes == TIME_SERIES_METADATA_MAXIMUM_BLOCK_KEYSAMPLE_BYTES_NO_ENTRY_m13)
+					printf_m13("Maximum Block Difference Bytes: no entry\n");
+				else
+					printf_m13("Maximum Block Keysample Bytes: %u\n", tmd2->maximum_block_keysample_bytes);
+				if (tmd2->maximum_block_duration == TIME_SERIES_METADATA_MAXIMUM_BLOCK_DURATION_NO_ENTRY_m13)
+					printf_m13("Maximum Block Duration: no entry\n");
+				else
+					UTF8_printf_m13("Maximum Block Duration: %lf %s\n", tmd2->maximum_block_duration, tmd2->time_base_units_description);
+				if (tmd2->number_of_discontinuities == TIME_SERIES_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m13)
+					printf_m13("Number of Discontinuities: no entry\n");
+				else
+					printf_m13("Number of Discontinuities: %ld\n", tmd2->number_of_discontinuities);
+				if (tmd2->maximum_contiguous_blocks == TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCKS_NO_ENTRY_m13)
+					printf_m13("Maximum Contiguous Blocks: no entry\n");
+				else
+					printf_m13("Maximum Contiguous Blocks: %ld\n", tmd2->maximum_contiguous_blocks);
+				if (tmd2->maximum_contiguous_block_bytes == TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_BLOCK_BYTES_NO_ENTRY_m13)
+					printf_m13("Maximum Contiguous Block Bytes: no entry\n");
+				else
+					printf_m13("Maximum Contiguous Block Bytes: %ld\n", tmd2->maximum_contiguous_block_bytes);
+				if (tmd2->maximum_contiguous_samples == TIME_SERIES_METADATA_MAXIMUM_CONTIGUOUS_SAMPLES_NO_ENTRY_m13)
+					printf_m13("Maximum Contiguous Samples: no entry\n");
+				else
+					printf_m13("Maximum Contiguous Samples: %ld\n", tmd2->maximum_contiguous_samples);
+			} else if (vmd2) {
+				if (vmd2->time_base_units_conversion_factor == VIDEO_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
+					printf_m13("Time Base Units Conversion Factor: no entry\n");
+				else
+					printf_m13("Time Base Units Conversion Factor: %lf\n", vmd2->time_base_units_conversion_factor);
+				if (*vmd2->time_base_units_description)
+					UTF8_printf_m13("Time Base Units Description: %s\n", vmd2->time_base_units_description);
+				else
+					printf_m13("Time Base Units Description: no entry\n");
+				if (vmd2->session_start_frame_number == VIDEO_METADATA_SESSION_START_FRAME_NUMBER_NO_ENTRY_m13)
+					printf_m13("Session Start Frame Number: no entry\n");
+				else
+					printf_m13("Session Start Frame Number: %ld\n", vmd2->session_start_frame_number);
+				if (vmd2->number_of_frames == VIDEO_METADATA_NUMBER_OF_FRAMES_NO_ENTRY_m13)
+					printf_m13("Number of Frames: no entry\n");
+				else
+					printf_m13("Number of Frames: %ld\n", vmd2->number_of_frames);
+				if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_NO_ENTRY_m13)
+					printf_m13("Frame Rate: no entry\n");
+				else if (vmd2->frame_rate == VIDEO_METADATA_FRAME_RATE_VARIABLE_m13)
+					printf_m13("Frame Rate: variable\n");
+				else
+					printf_m13("Frame Rate: %lf (frames per second)\n", vmd2->frame_rate);
+				if (vmd2->number_of_clips == VIDEO_METADATA_NUMBER_OF_CLIPS_NO_ENTRY_m13)
+					printf_m13("Number of Clips: no entry\n");
+				else
+					printf_m13("Number of Clips: %ld (~= number of video indices)\n", vmd2->number_of_clips);
+				if (vmd2->maximum_clip_bytes == VIDEO_METADATA_MAXIMUM_CLIP_BYTES_NO_ENTRY_m13)
+					printf_m13("Maximum Clip Bytes: no entry\n");
+				else
+					printf_m13("Maximum Clip Bytes: %ld\n", vmd2->maximum_clip_bytes);
+				if (vmd2->maximum_clip_frames == VIDEO_METADATA_MAXIMUM_CLIP_FRAMES_NO_ENTRY_m13)
+					printf_m13("Maximum Clip Frames: no entry\n");
+				else
+					printf_m13("Maximum Clip Frames: %ld\n", vmd2->maximum_clip_frames);
+				if (vmd2->number_of_video_files == VIDEO_METADATA_NUMBER_OF_VIDEO_FILES_NO_ENTRY_m13)
+					printf_m13("Number of Video Files: no entry\n");
+				else
+					printf_m13("Number of Video Files: %d\n", vmd2->number_of_video_files);
+				if (vmd2->maximum_clip_duration == VIDEO_METADATA_MAXIMUM_CLIP_DURATION_NO_ENTRY_m13)
+					printf_m13("Maximum Clip Duration: no entry\n");
+				else
+					UTF8_printf_m13("Maximum Clip Duration: %lf %s\n", vmd2->maximum_clip_duration, vmd2->time_base_units_description);
+				if (vmd2->number_of_discontinuities == VIDEO_METADATA_NUMBER_OF_DISCONTINUITIES_NO_ENTRY_m13)
+					printf_m13("Number of Discontinuities: no entry\n");
+				else
+					printf_m13("Number of Discontinuities: %ld\n", vmd2->number_of_discontinuities);
+				if (vmd2->maximum_contiguous_clips == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_NO_ENTRY_m13)
+					printf_m13("Maximum Contiguous Clips: no entry\n");
+				else
+					printf_m13("Maximum Contiguous Clips: %ld\n", vmd2->maximum_contiguous_clips);
+				if (vmd2->maximum_contiguous_clip_bytes == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_NO_ENTRY_m13)
+					printf_m13("Maximum Contiguous Clip Bytes: no entry\n");
+				else
+					printf_m13("Maximum Contiguous Clip Bytes: %ld\n", vmd2->maximum_contiguous_clip_bytes);
+				if (vmd2->maximum_contiguous_frames == VIDEO_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_NO_ENTRY_m13)
+					printf_m13("Maximum Contiguous Frames: no entry\n");
+				else
+					printf_m13("Maximum Contiguous Frames: %ld\n", vmd2->maximum_contiguous_frames);
+				if (vmd2->horizontal_pixels == VIDEO_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m13)
+					printf_m13("Horizontal Pixels: no entry\n");
+				else
+					printf_m13("Horizontal Pixels: %u\n", vmd2->horizontal_pixels);
+				if (vmd2->vertical_pixels == VIDEO_METADATA_VERTICAL_PIXELS_NO_ENTRY_m13)
+					printf_m13("Vertical Pixels: no entry\n");
+				else
+					printf_m13("Vertical Pixels: %u\n", vmd2->vertical_pixels);
+				if (*vmd2->video_format)
+					UTF8_printf_m13("Video Format: %s\n", vmd2->video_format);
+				else
+					printf_m13("Video Format: no entry\n");
+			} else {
+				printf_m13("(unrecognized metadata section 2 type)\n");
+			}
 		} else {
-			STR_hex_m13((ui1 *) &md3->daylight_time_start_code.value, 8, hex_str);
-			printf_m13("Daylight Time Start Code: %s\n", hex_str);
+			printf_m13("No access to section 2\n");
 		}
-		if (md3->daylight_time_end_code.value == DTCC_VALUE_NO_ENTRY_m13) {
-			printf_m13("Daylight Time End Code: no entry\n");
-		} else {
-			STR_hex_m13((ui1 *) &md3->daylight_time_end_code.value, 8, hex_str);
-			printf_m13("Daylight Time End Code: %s\n", hex_str);
-		}
-		if (*md3->standard_timezone_acronym)
-			printf_m13("Standard Timezone Acronym: %s\n", md3->standard_timezone_acronym);
-		else
-			printf_m13("Standard Timezone Acronym: no entry\n");
-		if (*md3->standard_timezone_string)
-			printf_m13("Standard Timezone String: %s\n", md3->standard_timezone_string);
-		else
-			printf_m13("Standard Timezone String: no entry\n");
-		if (*md3->daylight_timezone_acronym)
-			printf_m13("Daylight Timezone Acronym: %s\n", md3->daylight_timezone_acronym);
-		else
-			printf_m13("Daylight Timezone Acronym: no entry\n");
-		if (*md3->daylight_timezone_string)
-			printf_m13("Daylight Timezone String: %s\n", md3->daylight_timezone_string);
-		else
-			printf_m13("Daylight Timezone String: no entry\n");
-		if (*md3->subject_name_1)
-			UTF8_printf_m13("Subject Name 1: %s\n", md3->subject_name_1);
-		else
-			printf_m13("Subject Name 1: no entry\n");
-		if (*md3->subject_name_2)
-			UTF8_printf_m13("Subject Name 2: %s\n", md3->subject_name_2);
-		else
-			printf_m13("Subject Name 2: no entry\n");
-		if (*md3->subject_name_3)
-			UTF8_printf_m13("Subject Name 3: %s\n", md3->subject_name_3);
-		else
-			printf_m13("Subject Name 3: no entry\n");
-		if (*md3->subject_ID)
-			UTF8_printf_m13("Subject ID: %s\n", md3->subject_ID);
-		else
-			printf_m13("Subject ID: no entry\n");
-		if (*md3->recording_country)
-			UTF8_printf_m13("Recording Country: %s\n", md3->recording_country);
-		else
-			printf_m13("Recording Country: no entry\n");
-		if (*md3->recording_territory)
-			UTF8_printf_m13("Recording Territory: %s\n", md3->recording_territory);
-		else
-			printf_m13("Recording Territory: no entry\n");
-		if (*md3->recording_locality)
-			UTF8_printf_m13("Recording Locality: %s\n", md3->recording_locality);
-		else
-			printf_m13("Recording Locality: no entry\n");
-		if (*md3->recording_institution)
-			UTF8_printf_m13("Recording Institution: %s\n", md3->recording_institution);
-		else
-			printf_m13("Recording Institution: no entry\n");
-		if (*md3->geotag_format)
-			UTF8_printf_m13("GeoTag Format: %s\n", md3->geotag_format);
-		else
-			printf_m13("GeoTag Format: no entry\n");
-		if (*md3->geotag_data)
-			UTF8_printf_m13("GeoTag Data: %s\n", md3->geotag_data);
-		else
-			printf_m13("GeoTag Data: no entry\n");
-		if (md3->standard_UTC_offset == STANDARD_UTC_OFFSET_NO_ENTRY_m13)
-			printf_m13("Standard UTC Offset: no entry\n");
-		else
-			printf_m13("Standard UTC Offset: %d\n", md3->standard_UTC_offset);
-	} else {
-		printf_m13("No access to section 3\n");
+		printf_m13("------------------- Section 2 - END --------------------\n");
 	}
-	printf_m13("------------------- Section 3 - END --------------------\n");
+	
+	if (uh) {
+		printf_m13("------------------ Section 3 - START -------------------\n");
+		if (uh->metadata_section_3_encryption <= NO_ENCRYPTION_m13) {
+			if (md3->recording_time_offset == UUTC_NO_ENTRY_m13)
+				printf_m13("Recording Time Offset: no entry\n");
+			else
+				printf_m13("Recording Time Offset: %ld\n", md3->recording_time_offset);
+			if (md3->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
+				printf_m13("Daylight Time Start Code: no entry\n");
+			} else {
+				STR_hex_m13((ui1 *) &md3->daylight_time_start_code.value, 8, hex_str);
+				printf_m13("Daylight Time Start Code: %s\n", hex_str);
+			}
+			if (md3->daylight_time_end_code.value == DTCC_VALUE_NO_ENTRY_m13) {
+				printf_m13("Daylight Time End Code: no entry\n");
+			} else {
+				STR_hex_m13((ui1 *) &md3->daylight_time_end_code.value, 8, hex_str);
+				printf_m13("Daylight Time End Code: %s\n", hex_str);
+			}
+			if (*md3->standard_timezone_acronym)
+				printf_m13("Standard Timezone Acronym: %s\n", md3->standard_timezone_acronym);
+			else
+				printf_m13("Standard Timezone Acronym: no entry\n");
+			if (*md3->standard_timezone_string)
+				printf_m13("Standard Timezone String: %s\n", md3->standard_timezone_string);
+			else
+				printf_m13("Standard Timezone String: no entry\n");
+			if (*md3->daylight_timezone_acronym)
+				printf_m13("Daylight Timezone Acronym: %s\n", md3->daylight_timezone_acronym);
+			else
+				printf_m13("Daylight Timezone Acronym: no entry\n");
+			if (*md3->daylight_timezone_string)
+				printf_m13("Daylight Timezone String: %s\n", md3->daylight_timezone_string);
+			else
+				printf_m13("Daylight Timezone String: no entry\n");
+			if (*md3->subject_name_1)
+				UTF8_printf_m13("Subject Name 1: %s\n", md3->subject_name_1);
+			else
+				printf_m13("Subject Name 1: no entry\n");
+			if (*md3->subject_name_2)
+				UTF8_printf_m13("Subject Name 2: %s\n", md3->subject_name_2);
+			else
+				printf_m13("Subject Name 2: no entry\n");
+			if (*md3->subject_name_3)
+				UTF8_printf_m13("Subject Name 3: %s\n", md3->subject_name_3);
+			else
+				printf_m13("Subject Name 3: no entry\n");
+			if (*md3->subject_ID)
+				UTF8_printf_m13("Subject ID: %s\n", md3->subject_ID);
+			else
+				printf_m13("Subject ID: no entry\n");
+			if (*md3->recording_country)
+				UTF8_printf_m13("Recording Country: %s\n", md3->recording_country);
+			else
+				printf_m13("Recording Country: no entry\n");
+			if (*md3->recording_territory)
+				UTF8_printf_m13("Recording Territory: %s\n", md3->recording_territory);
+			else
+				printf_m13("Recording Territory: no entry\n");
+			if (*md3->recording_locality)
+				UTF8_printf_m13("Recording Locality: %s\n", md3->recording_locality);
+			else
+				printf_m13("Recording Locality: no entry\n");
+			if (*md3->recording_institution)
+				UTF8_printf_m13("Recording Institution: %s\n", md3->recording_institution);
+			else
+				printf_m13("Recording Institution: no entry\n");
+			if (*md3->geotag_format)
+				UTF8_printf_m13("GeoTag Format: %s\n", md3->geotag_format);
+			else
+				printf_m13("GeoTag Format: no entry\n");
+			if (*md3->geotag_data)
+				UTF8_printf_m13("GeoTag Data: %s\n", md3->geotag_data);
+			else
+				printf_m13("GeoTag Data: no entry\n");
+			if (md3->standard_UTC_offset == STANDARD_UTC_OFFSET_NO_ENTRY_m13)
+				printf_m13("Standard UTC Offset: no entry\n");
+			else
+				printf_m13("Standard UTC Offset: %d\n", md3->standard_UTC_offset);
+		} else {
+			printf_m13("No access to section 3\n");
+		}
+		printf_m13("------------------- Section 3 - END --------------------\n");
+	}
 	
 	printf_m13("-------------------- Metadata - END --------------------\n\n");
 	
@@ -14102,6 +14082,50 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 		else
 			printf_m13("Anonymized Subject ID: no entry\n");
 	} else {   // all versions above MED 1.0
+		if (uh->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m13 || uh->type_code == VIDEO_DATA_FILE_TYPE_CODE_m13) {
+			printf_m13("Data Encryption: %d ", uh->data_encryption);
+			if (uh->data_encryption == NO_ENCRYPTION_m13)
+				printf_m13("(none)\n");
+			else if (uh->data_encryption == LEVEL_1_ENCRYPTION_m13)
+				printf_m13("(level 1, currently encrypted)\n");
+			else if (uh->data_encryption == LEVEL_2_ENCRYPTION_m13)
+				printf_m13("(level 2, currently encrypted)\n");
+			else if (uh->data_encryption == -LEVEL_1_ENCRYPTION_m13)
+				printf_m13("(level 1, currently decrypted)\n");
+			else if (uh->data_encryption == -LEVEL_2_ENCRYPTION_m13)
+				printf_m13("(level 2, currently decrypted)\n");
+			else
+				printf_m13("(unrecognized code)\n");
+		}
+		if (uh->type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m13 || uh->type_code == VIDEO_METADATA_FILE_TYPE_CODE_m13) {
+			printf_m13("Metadata Section 2 Encryption: %d ", uh->metadata_section_2_encryption);
+			if (uh->metadata_section_2_encryption == NO_ENCRYPTION_m13)
+				printf_m13("(none)\n");
+			else if (uh->metadata_section_2_encryption == LEVEL_1_ENCRYPTION_m13)
+				printf_m13("(level 1, currently encrypted)\n");
+			else if (uh->metadata_section_2_encryption == LEVEL_2_ENCRYPTION_m13)
+				printf_m13("(level 2, currently encrypted)\n");
+			else if (uh->metadata_section_2_encryption == -LEVEL_1_ENCRYPTION_m13)
+				printf_m13("(level 1, currently decrypted)\n");
+			else if (uh->metadata_section_2_encryption == -LEVEL_2_ENCRYPTION_m13)
+				printf_m13("(level 2, currently decrypted)\n");
+			else
+				printf_m13("(unrecognized code)\n");
+			
+			printf_m13("Metadata Section 3 Encryption: %d ", uh->metadata_section_3_encryption);
+			if (uh->metadata_section_3_encryption == NO_ENCRYPTION_m13)
+				printf_m13("(none)\n");
+			else if (uh->metadata_section_3_encryption == LEVEL_1_ENCRYPTION_m13)
+				printf_m13("(level 1, currently encrypted)\n");
+			else if (uh->metadata_section_3_encryption == LEVEL_2_ENCRYPTION_m13)
+				printf_m13("(level 2, currently encrypted)\n");
+			else if (uh->metadata_section_3_encryption == -LEVEL_1_ENCRYPTION_m13)
+				printf_m13("(level 1, currently decrypted)\n");
+			else if (uh->metadata_section_3_encryption == -LEVEL_2_ENCRYPTION_m13)
+				printf_m13("(level 2, currently decrypted)\n");
+			else
+				printf_m13("(unrecognized code)\n");
+		}
 		if (uh->type_code == RECORD_INDICES_FILE_TYPE_CODE_m13 || uh->type_code == RECORD_DATA_FILE_TYPE_CODE_m13) {
 			if (uh->ordered == TRUE_m13)
 				printf_m13("Ordered: true\n");
@@ -15822,12 +15846,6 @@ tern	ALCK_metadata_section_1_m13(ui1 *bytes)
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (md1->level_2_password_hint != (si1 *) (bytes + METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (&md1->section_2_encryption_level != (si1 *) (bytes + METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (&md1->section_3_encryption_level != (si1 *) (bytes + METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (&md1->data_encryption_level != (si1 *) (bytes + METADATA_DATA_ENCRYPTION_LEVEL_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (md1->anonymized_subject_ID != (si1 *) (bytes + METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13))
 		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
 	if (md1->protected_region != (ui1 *) (bytes + METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13))
@@ -16232,7 +16250,11 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->video_data_file_number != (ui4 *) (bytes + UNIVERSAL_HEADER_VIDEO_DATA_FILE_NUMBER_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->encryption != (si1 *) (bytes + UNIVERSAL_HEADER_ENCYPTION_OFFSET_m13))
+	if (&uh->data_encryption != (si1 *) (bytes + UNIVERSAL_HEADER_DATA_ENCRYPTION_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->metadata_section_2_encryption != (si1 *) (bytes + UNIVERSAL_HEADER_METADATA_SECTION_2_ENCRYPTION_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->metadata_section_3_encryption != (si1 *) (bytes + UNIVERSAL_HEADER_METADATA_SECTION_3_ENCRYPTION_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->ordered != (tern *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
@@ -25405,6 +25427,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, S
 	si8				i, j, old_maj_dim, old_min_dim, old_el_size, old_offset, new_offset, samp_offset;
 	si8				req_num_samps, ref_num_samps, bytes_per_sample, bytes_per_channel, data_end, contig_samples;
 	si8				gap_start, gap_end, gap_len, common_offset, gap_offset, req_duration, tmp_si8;
+	si8				start_sample_number, end_sample_number, data_start;
 	sf8 				ratio, duration, fc1, fc2, req_samp_secs, ref_samp_secs, ref_samp_freq, sf8_pad, tmp_sf8;
 	ui8				saved_matrix_flags;
 	void				*pattern;
@@ -25491,12 +25514,12 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, S
 	// clear contigua, if present
 	ref_chan = proc_globals->active_channels.index_channel;
 	if (ref_chan->contigua) {
-		free_m13((void *) ref_chan->contigua, __FUNCTION__);
+		free_m13((void *) ref_chan->contigua);
 		ref_chan->contigua = NULL;
 		ref_chan->number_of_contigua = 0;
 	}
 	if (matrix->contigua) {
-		free_m13((void *) matrix->contigua, __FUNCTION__);
+		free_m13((void *) matrix->contigua);
 		matrix->contigua = NULL;
 		matrix->number_of_contigua = 0;
 	}
@@ -25544,12 +25567,12 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, S
 	
 	// change requested limits to time
 	if (req_slice->conditioned == FALSE_m13)
-		G_condition_time_slice_m13(req_slice);
+		G_condition_slice_m13(req_slice, (LEVEL_HEADER_m13 *) sess);
 	if (search_mode == TIME_SEARCH_m13)
 		req_samp_secs = (sf8) TIME_SLICE_DURATION_m13(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == SAMPLE_SEARCH_m13
 		req_num_samps = TIME_SLICE_SAMPLE_COUNT_m13(req_slice);  // requested samples read (on reference channel)
-	seg_idx = G_get_segment_index_m13(FIRST_OPEN_SEGMENT_m13);
+	seg_idx = G_get_segment_index_m13(FIRST_OPEN_SEGMENT_m13, (LEVEL_HEADER_m13 *) sess);
 	ref_samp_freq = ref_chan->segments[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
 	
 	// change all limits to time
@@ -37305,7 +37328,7 @@ si1	*STR_time_m13(LEVEL_HEADER_m13 *level_header, si8 uutc, si1 *time_str, tern 
 		case CURRENT_TIME_m13:
 			uutc = G_current_uutc_m13();
 			if (proc_globals->time_constants.set == FALSE_m13)  // set global time constants to location of machine
-				if (G_get_location_info_m13(&loc_info, TRUE_m13, FALSE_m13) == NULL)
+				if (G_get_location_info_m13(&loc_info, NULL, NULL, TRUE_m13, FALSE_m13) == FALSE_m13)
 					G_warning_message_m13("%s(): daylight change data not available\n", __FUNCTION__);
 			break;
 	}

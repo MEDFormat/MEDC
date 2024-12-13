@@ -2435,7 +2435,7 @@ si1		*G_generate_segment_name_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *segment_
 ui8             G_generate_UID_m12(ui8 *uid);
 CHANNEL_m12	*G_get_active_channel_m12(SESSION_m12 *sess, si1 channel_type);
 ui4		G_get_level_m12(si1 *full_file_name, ui4 *input_type_code);
-LOCATION_INFO_m12	*G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, TERN_m12 set_timezone_globals, TERN_m12 prompt);
+TERN_m12	G_get_location_info_m12(LOCATION_INFO_m12 *loc_info, si1 *ip_str, si1 *ipinfo_token, TERN_m12 set_timezone_globals, TERN_m12 prompt);
 si4		G_get_search_mode_m12(TIME_SLICE_m12 *slice);
 si4		G_get_segment_index_m12(si4 segment_number);
 si4             G_get_segment_range_m12(LEVEL_HEADER_m12 *level_header, TIME_SLICE_m12 *slice);
