@@ -7056,7 +7056,7 @@ ui4     G_MED_type_code_from_string_m12(si1 *string)
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m12:
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m12:
 			return(type.code);
-		default:  // check tag to determine if this is a MED video data file
+		default:;  // check tag to determine if this is a MED video data file (semicolon added for Python)
 			si1	name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m12];
 			
 			if (ext_only == TRUE_m12)  // need path to do following check
