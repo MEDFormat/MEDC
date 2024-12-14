@@ -36369,12 +36369,21 @@ void	SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len)
 // MARK: STRING FUNCTIONS  (STR)
 //******************************//
 
-si1	*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
+si1	*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, TERN_m12 prefix)
 {
+	ui1	*num, mask;
 	si1	*c, *c2;
-	ui8	str_len, sep_len, byte_bits, num, mask;
+	si4	str_len, sep_len, byte_bits;
 
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
 	
+	// input presumed to be little endian
+	// displayed high bit => low bit, left to right
+	// pass NULL or "" for byte_separator for no separation between bytes
+	// prefix will prepend string with "0b"
+
 	if (byte_separator) {
 		for (c = byte_separator - 1; *++c;);
 		sep_len = (c - byte_separator);
@@ -36389,30 +36398,21 @@ si1	*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separat
 		str = malloc_m12((size_t) str_len, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
 	
-	switch (num_bytes) {
-		case 1:
-			num = (ui8) *((ui1 *) num_ptr);
-			break;
-		case 2:
-			num = (ui8) *((ui2 *) num_ptr);
-			break;
-		case 4:
-			num = (ui8) *((ui4 *) num_ptr);
-			break;
-		case 8:
-			num = (ui8) *((ui8 *) num_ptr);
-			break;
+	c = str;
+	if (prefix == TRUE_m12) {
+		*c++ = '0';
+		*c++ = 'b';
 	}
 	
-	mask = 1 << ((num_bytes << 3) - 1);
-	for (c = str; num_bytes--; mask >>= 1) {
-		for (byte_bits = 8; byte_bits--;) {
-			if (num & mask)
+	num = (ui1 *) num_ptr + (num_bytes - 1);
+	for (; num_bytes--; --num) {
+		for (mask = 1 << 7, byte_bits = 8; byte_bits--; mask >>= 1) {
+			if (*num & mask)
 				*c++ = '1';
 			else
 				*c++ = '0';
 		}
-		if (sep_len)
+		if (sep_len && num_bytes)
 			for (c2 = byte_separator; *c2; *c++ = *c2++);
 	}
 	*c = 0;

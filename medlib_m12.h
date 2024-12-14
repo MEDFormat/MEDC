@@ -2642,7 +2642,7 @@ si8		FPS_write_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 file_offset, si8 bytes_t
 //**********************************************************************************//
 
 // Prototypes
-si1		*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator);
+si1		*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, TERN_m12 prefix);
 wchar_t		*STR_char2wchar_m12(wchar_t *target, si1 *source);
 ui4             STR_check_spaces_m12(si1 *string);
 si4		STR_compare_m12(const void *a, const void *b);

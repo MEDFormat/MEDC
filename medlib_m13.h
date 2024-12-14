@@ -3049,7 +3049,7 @@ si8		FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write);
 //**********************************************************************************//
 
 // Prototypes
-si1		*STR_binary_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator);
+si1		*STR_binary_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern prefix);
 wchar_t		*STR_char2wchar_m13(wchar_t *target, si1 *source);
 ui4             STR_check_spaces_m13(si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
