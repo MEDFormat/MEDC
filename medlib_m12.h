@@ -285,7 +285,7 @@ typedef struct {
 		si8     end_frame_number;	// session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m12 for variable frequency, session level entries)
 	};
 	si4     segment_number;
-	si4     acquisition_channel_number;  // REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13 in session level records
+	si4     acquisition_channel_number;  // REC_Sgmt_v11_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m12 in session level records
 } REC_Sgmt_v11_m12;
 
 // Description follows acquisition_channel_number in structure.
@@ -4123,6 +4123,9 @@ si8		TR_recv_transmission_m12(TR_INFO_m12 *trans_info, TR_HEADER_m12 **caller_he
 TERN_m12	TR_send_message_m12(TR_INFO_m12 *trans_info, ui1 type, TERN_m12 encrypt, si1 *fmt, ...);
 si8		TR_send_transmission_m12(TR_INFO_m12 *trans_info);
 TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking);
+TERN_m12	TR_set_socket_broadcast_m12(TR_INFO_m12 *trans_info, TERN_m12 set);
+TERN_m12	TR_set_socket_reuse_address_m12(TR_INFO_m12 *trans_info, TERN_m12 set);
+TERN_m12	TR_set_socket_reuse_port_m12(TR_INFO_m12 *trans_info, TERN_m12 set);
 void		TR_set_socket_timeout_m12(TR_INFO_m12 *trans_info);
 TERN_m12	TR_show_message_m12(TR_HEADER_m12 *header);
 void		TR_show_transmission_m12(TR_INFO_m12 *trans_info);

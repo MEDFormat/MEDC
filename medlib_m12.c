@@ -4165,8 +4165,12 @@ TERN_m12	G_free_channel_m12(CHANNEL_m12 *channel, TERN_m12 free_channel_structur
 	if (channel->segments) {
 		for (i = 0; i < globals_m12->number_of_mapped_segments; ++i) {
 			seg = channel->segments[i];
-			if (seg)
-				G_free_segment_m12(seg, TRUE_m12);
+			if (seg) {
+				if (seg->en_bloc_allocation == TRUE_m12)
+					G_free_segment_m12(seg, FALSE_m12);
+				else
+					G_free_segment_m12(seg, TRUE_m12);
+			}
 		}
 		free_m12((void *) channel->segments, __FUNCTION__);  // ok whether allocated en bloc or not
 	}
@@ -4527,8 +4531,12 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 	if (session->time_series_channels) {
 		for (i = 0; i < session->number_of_time_series_channels; ++i) {
 			chan = session->time_series_channels[i];
-			if (chan)
-				G_free_channel_m12(chan, TRUE_m12);
+			if (chan) {
+				if (chan->en_bloc_allocation == TRUE_m12)
+					G_free_channel_m12(chan, FALSE_m12);
+				else
+					G_free_channel_m12(chan, TRUE_m12);
+			}
 		}
 		free_m12((void *) session->time_series_channels, __FUNCTION__);  // ok whether allocated en bloc or not
 	}
@@ -4540,15 +4548,17 @@ void	G_free_session_m12(SESSION_m12 *session, TERN_m12 free_session_structure)
 		}
 		free_m12((void *) session->video_channels, __FUNCTION__);
 	}
-	if (session->segmented_sess_recs)
-		G_free_segmented_sess_recs_m12(session->segmented_sess_recs, TRUE_m12);
-
+	if (session->segmented_sess_recs) {
+		if (session->segmented_sess_recs->en_bloc_allocation == TRUE_m12)
+			G_free_segmented_sess_recs_m12(session->segmented_sess_recs, FALSE_m12);
+		else
+			G_free_segmented_sess_recs_m12(session->segmented_sess_recs, TRUE_m12);
+	}
 	if (session->contigua)
 		free_m12(session->contigua, __FUNCTION__);
 
 	if (free_session_structure == TRUE_m12) {
 		GLOBALS_m12	*globals;
-		
 		
 		free_m12((void *) session, __FUNCTION__);
 		
@@ -5357,7 +5367,6 @@ ui4	G_get_level_m12(si1 *full_file_name, ui4 *input_type_code)
 	}
 	if (G_empty_string_m12(ipinfo_token) == FALSE_m12)
 		sprintf(command + len, "?token=%s", ipinfo_token);
-	printf("%s(%d): command = %s\n", __FUNCTION__, __LINE__, command);
 	
 	buffer = NULL;
 	ret_val = system_pipe_m12(&buffer, 0, command, SP_DEFAULT_m12,  __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -8156,9 +8165,9 @@ TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess)
 	
 	sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DIRECTORY_TYPE_STRING_m12);
 	fe = G_exists_m12(tmp_str);
-	if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
+	if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to fs_name
 		if (strcmp(globals_m12->uh_session_name, globals_m12->fs_session_name)) {
-			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->uh_session_name, RECORD_DIRECTORY_TYPE_STRING_m12);
 			fe = G_exists_m12(tmp_str);
 		}
 	}
@@ -8182,8 +8191,8 @@ TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess)
 		G_numerical_fixed_width_string_m12(num_str, FILE_NUMBERING_DIGITS_m12, i);
 		sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
 		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to fs_name
+			sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->uh_session_name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m12);
 			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12)
@@ -8192,8 +8201,8 @@ TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess)
 		// record data
 		sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
 		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->fs_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to fs_name
+			sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->uh_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
 			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12) {
@@ -9196,8 +9205,8 @@ TERN_m12	G_open_session_records(SESSION_m12 *sess)
 	if (sess->record_indices_fps == NULL) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m12);
 		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to fs_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->uh_session_name, RECORD_INDICES_FILE_TYPE_STRING_m12);
 			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12)
@@ -9210,8 +9219,8 @@ TERN_m12	G_open_session_records(SESSION_m12 *sess)
 	if (sess->record_data_fps == NULL) {
 		sprintf_m12(tmp_str, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m12);
 		fe = G_exists_m12(tmp_str);
-		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to uh_name
-			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->fs_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
+		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to fs_name
+			sprintf_m12(tmp_str, "%s/%s.%s", sess->path, globals_m12->uh_session_name, RECORD_DATA_FILE_TYPE_STRING_m12);
 			fe = G_exists_m12(tmp_str);
 		}
 		if (fe == FILE_EXISTS_m12) {
@@ -33330,7 +33339,7 @@ inline
 #endif
 si4	PROC_pthread_mutex_trylock_m12(pthread_mutex_t_m12 *mutex)
 {
-	// Non-blocking version of PROC_pthread_mutex_lock_m13()
+	// Non-blocking version of PROC_pthread_mutex_lock_m12()
 	// If the mutex is valid & unlocked: locks the mutex & will returns zero
 	// If the mutex is valid & locked: returns EBUSY
 	// If the mutex is invalid: returns EINVAL
@@ -37224,7 +37233,6 @@ const si1	*STR_tern_m12(TERN_m12 val)
 si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12 relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m12
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
-	static si1      	private_time_str[TIME_STRING_BYTES_m12];
 	const si1      		*mos[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 	const si1		*months[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
 	const si1		*wdays[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
@@ -37243,9 +37251,12 @@ si1	*STR_time_string_m12(si8 uutc, si1 *time_str, TERN_m12 fixed_width, TERN_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
-	// Note if NULL is passed for time_str, this function is not thread-safe
-	if (time_str == NULL)
-		time_str = private_time_str;
+	// Note if time_str is NULL it is allocated & caller is responsible for freeing
+	if (time_str == NULL) {
+		time_str = malloc_m12((size_t) TIME_STRING_BYTES_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		if (time_str == NULL)
+			return(NULL);
+	}
 	
 	switch (uutc) {
 		case UUTC_NO_ENTRY_m12:
@@ -37638,17 +37649,8 @@ TERN_m12	TR_bind_m12(TR_INFO_m12 *trans_info, si1 *iface_addr, ui2 iface_port)
 	sock_fd = trans_info->sock_fd;
 
 	// set socket reuse address option
-	#if defined MACOS_m12 || defined LINUX_m12
-	si4	flags;
-	#endif
-	#ifdef WINDOWS_m12
-	si1	flags;
-	#endif
-	flags = 1;
-	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1) {
-		G_warning_message_m12("%s: socket option error\n", __FUNCTION__);
+	if (TR_set_socket_reuse_address_m12(trans_info, TRUE_m12) == FALSE_m12)
 		return(FALSE_m12);
-	}
 
 	// set socket info
 	si_len = sizeof(struct sockaddr_in);
@@ -37780,6 +37782,10 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 	
+	trans_info->mode = TR_MODE_NONE_m12;  // reset mode
+	trans_info->header->flags &= ~TR_FLAGS_CLOSE_m12;  // reset close flag if set
+	if (trans_info->sock_fd == -1)
+		return;
 
 #if defined MACOS_m12 || defined LINUX_m12
 	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m12)
@@ -37791,9 +37797,8 @@ void	TR_close_transmission_m12(TR_INFO_m12 *trans_info)
 		shutdown(trans_info->sock_fd, SD_BOTH);
 	closesocket(trans_info->sock_fd);
 #endif
+	
 	trans_info->sock_fd = -1;
-	trans_info->mode = TR_MODE_NONE_m12;
-	trans_info->header->flags &= ~TR_FLAGS_CLOSE_m12;  // reset close flag if set
 
 	return;
 }
@@ -37865,7 +37870,7 @@ TERN_m12	TR_connect_m12(TR_INFO_m12 *trans_info, si1 *dest_addr, ui2 dest_port)
 			else
 				timeout_ms = 5;  // default to 5 second timeout
 
-			// use poll() because socket fd's often exceed set size limit (1024) of select()
+			// use poll() because socket fd's often exceed set size limit of select() (1024)
 #if defined MACOS_m12 || defined LINUX_m12
 			memset((void *) &fds, 0, sizeof(struct pollfd));
 #endif
@@ -37974,7 +37979,8 @@ void	TR_free_transmission_info_m12(TR_INFO_m12 **trans_info_ptr, TERN_m12 free_s
 		return;
 	}
 	
-	TR_close_transmission_m12(trans_info);
+	if (trans_info->sock_fd != -1)
+		TR_close_transmission_m12(trans_info);
 
 	if (trans_info->buffer)
 		free_m12((void *) trans_info->buffer, __FUNCTION__);
@@ -38479,6 +38485,10 @@ TR_SEND_FAIL_m12:
 
 TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 {
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
 #if defined MACOS_m12 || defined LINUX_m12
 	TERN_m12	current_state;
 	si4		socket_flags;
@@ -38555,8 +38565,113 @@ TERN_m12	TR_set_socket_blocking_m12(TR_INFO_m12 *trans_info, TERN_m12 blocking)
 }
 
 
+TERN_m12	TR_set_socket_broadcast_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
+{
+#if defined MACOS_m12 || defined LINUX_m12
+	si4	flags;
+#endif
+#ifdef WINDOWS_m12
+	si1	flags;
+#endif
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// set socket reuse address option
+	// pass TRUE_m12 to set FALSE_m12 to unset
+	
+	if (set == TRUE_m12)
+		flags = 1;
+	else
+		flags = 0;
+	if (setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_BROADCAST, &flags, sizeof(flags)) == -1) {
+		G_warning_message_m12("%s(): socket option error\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
+	return(TRUE_m12);
+}
+
+
+TERN_m12	TR_set_socket_reuse_address_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
+{
+#if defined MACOS_m12 || defined LINUX_m12
+	si4	flags;
+#endif
+#ifdef WINDOWS_m12
+	si1	flags;
+#endif
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// set socket reuse address option
+	// pass TRUE_m12 to set FALSE_m12 to unset
+	
+	if (set == TRUE_m12)
+		flags = 1;
+	else
+		flags = 0;
+	if (setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1) {
+		G_warning_message_m12("%s(): socket option error\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
+	return(TRUE_m12);
+}
+
+
+TERN_m12	TR_set_socket_reuse_port_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
+{
+#if defined MACOS_m12 || defined LINUX_m12
+	si4	flags;
+#endif
+#ifdef WINDOWS_m12
+	si1	flags;
+#endif
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	// set socket reuse port option
+	// pass TRUE_m12 to set FALSE_m12 to unset
+
+#ifndef SO_REUSEPORT
+	return(UNKNOWN_m12);
+#endif
+	
+	// Notes:
+	//	SO_REUSEPORT available on Linux since version 3.9
+	//	Permits multiple AF_INET or AF_INET6 sockets to be bound to an
+	//	identical socket address.  This option must be set on each
+	//	socket (including the first socket) prior to calling bind(2)
+	//	on the socket.  To prevent port hijacking, all of the
+	//	processes binding to the same address must have the same
+	//	effective UID.  This option can be employed with both TCP and
+	//	UDP sockets.
+	
+	if (set == TRUE_m12)
+		flags = 1;
+	else
+		flags = 0;
+	if (setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_REUSEPORT, &flags, sizeof(flags)) == -1) {
+		G_warning_message_m12("%s(): socket option error\n", __FUNCTION__);
+		return(FALSE_m12);
+	}
+	
+	return(TRUE_m12);
+}
+
+
 void	TR_set_socket_timeout_m12(TR_INFO_m12 *trans_info)
 {
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
 #if defined MACOS_m12 || defined LINUX_m12
 	struct timeval	tv;
 	
