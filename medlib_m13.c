@@ -23032,9 +23032,95 @@ tern    CMP_set_variable_region_m13(CPS_m13 *cps)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+tern      CMP_sf8_to_si2_m13(sf8 *sf8_arr, si2 *si2_arr, si8 len, tern round)
+{
+	sf8	val, pos_inf, neg_inf;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (round == FALSE_m13) {
+		while (len--)
+			*si2_arr++ = (si2) *sf8_arr++;
+		
+		return_m13(TRUE_m13);
+	}
+	
+	pos_inf = (sf8) POS_INF_SI2_m13;
+	neg_inf = (sf8) NEG_INF_SI2_m13;
+
+	while (len--) {
+		val = *sf8_arr++;
+		if (isnan(val)) {
+			*si2_arr++ = NAN_SI2_m13;
+			continue;
+		}
+		if (val >= (sf8) 0.0) {
+			if ((val += (sf8) 0.5) > pos_inf) {
+				*si2_arr++ = POS_INF_SI2_m13;
+				continue;
+			}
+		} else if ((val -= (sf8) 0.5) < neg_inf) {
+			*si2_arr++ = NEG_INF_SI2_m13;
+			continue;
+		}
+		*si2_arr++ = (si2) val;
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+tern      CMP_sf8_to_sf4_m13(sf8 *sf8_arr, sf4 *sf4_arr, si8 len, tern round)
+{
+	sf8	val, pos_inf, neg_inf;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (round == FALSE_m13) {
+		while (len--)
+			*sf4_arr++ = (sf4) *sf8_arr++;
+		
+		return_m13(TRUE_m13);
+	}
+
+	pos_inf = (sf8) FLT_MAX;
+	neg_inf = (sf8) -FLT_MAX;
+	
+	while (len--) {
+		val = *sf8_arr++;
+		if (isnan(val)) {
+			*sf4_arr++ = NAN;
+			continue;
+		}
+		if (val >= (sf8) 0.0) {
+			if ((val += (sf8) 0.5) > pos_inf) {
+				*sf4_arr++ = (sf4) pos_inf;
+				continue;
+			}
+		} else if ((val -= (sf8) 0.5) < neg_inf) {
+			*sf4_arr++ = (sf4) neg_inf;
+			continue;
+		}
+		*sf4_arr++ = (sf4) val;
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 tern      CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, tern round)
 {
-	sf8	val;
+	sf8	val, pos_inf, neg_inf;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -23047,6 +23133,9 @@ tern      CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, tern round)
 		return_m13(TRUE_m13);
 	}
 
+	pos_inf = (sf8) POS_INF_SI4_m13;
+	neg_inf = (sf8) NEG_INF_SI4_m13;
+
 	while (len--) {
 		val = *sf8_arr++;
 		if (isnan(val)) {
@@ -23054,15 +23143,13 @@ tern      CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, tern round)
 			continue;
 		}
 		if (val >= (sf8) 0.0) {
-			if ((val += (sf8) 0.5) > (sf8) POS_INF_SI4_m13) {
+			if ((val += (sf8) 0.5) > pos_inf) {
 				*si4_arr++ = POS_INF_SI4_m13;
 				continue;
 			}
-		} else {
-			if ((val -= (sf8) 0.5) < (sf8) NEG_INF_SI4_m13) {
-				*si4_arr++ = NEG_INF_SI4_m13;
-				continue;
-			}
+		} else if ((val -= (sf8) 0.5) < neg_inf) {
+			*si4_arr++ = NEG_INF_SI4_m13;
+			continue;
 		}
 		*si4_arr++ = (si4) val;
 	}
@@ -23076,12 +23163,15 @@ inline
 #endif
 tern      CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale)
 {
-	sf8	val;
+	sf8	val, pos_inf, neg_inf;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	pos_inf = (sf8) POS_INF_SI4_m13;
+	neg_inf = (sf8) NEG_INF_SI4_m13;
+	
 	while (len--) {
 		val = *sf8_arr++ * scale;
 		if (isnan(val)) {
@@ -23089,15 +23179,13 @@ tern      CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 
 			continue;
 		}
 		if (val >= (sf8) 0.0) {
-			if ((val += (sf8) 0.5) > (sf8) POS_INF_SI4_m13) {
+			if ((val += (sf8) 0.5) > pos_inf) {
 				*si4_arr++ = POS_INF_SI4_m13;
 				continue;
 			}
-		} else {
-			if ((val -= (sf8) 0.5) < (sf8) NEG_INF_SI4_m13) {
-				*si4_arr++ = NEG_INF_SI4_m13;
-				continue;
-			}
+		} else if ((val -= (sf8) 0.5) < neg_inf) {
+			*si4_arr++ = NEG_INF_SI4_m13;
+			continue;
 		}
 		*si4_arr++ = (si4) val;
 	}
@@ -25568,6 +25656,10 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, S
 	// change requested limits to time
 	if (req_slice->conditioned == FALSE_m13)
 		G_condition_slice_m13(req_slice, (LEVEL_HEADER_m13 *) sess);
+	if (req_slice->start_time == BEGINNING_OF_TIME_m13)
+		req_slice->start_time = globals_m13->session_start_time;
+	if (req_slice->end_time == END_OF_TIME_m13)
+		req_slice->end_time = globals_m13->session_end_time;
 	if (search_mode == TIME_SEARCH_m13)
 		req_samp_secs = (sf8) TIME_SLICE_DURATION_m13(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == SAMPLE_SEARCH_m13
@@ -25854,12 +25946,16 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, S
 				matrix->contigua[i].start_sample_number = samp_offset;
 				duration = (sf8) ((matrix->contigua[i].end_time - matrix->contigua[i].start_time) + 1);
 				samp_offset += (si8) round(duration * tmp_sf8);
-				matrix->contigua[i].end_sample_number = samp_offset;
-				if (matrix->contigua[i].end_sample_number > matrix->contigua[i].start_sample_number)
-					--matrix->contigua[i].end_sample_number;
 			}
-			matrix->contigua[matrix->number_of_contigua - 1].end_sample_number = matrix->sample_count - 1;
+			for (i = 0; i < (matrix->number_of_contigua - 1); ++i) {
+				matrix->contigua[i].end_sample_number = matrix->contigua[i + 1].start_sample_number - 1;
+				if (matrix->contigua[i].end_sample_number < matrix->contigua[i].start_sample_number)  // can happen if highly decimated
+					matrix->contigua[i].end_sample_number = matrix->contigua[i].start_sample_number;
+			}
 		}
+		// compensate for rounding errors
+		matrix->contigua[0].start_sample_number = 0;
+		matrix->contigua[matrix->number_of_contigua - 1].end_sample_number = matrix->sample_count - 1;
 	}
 
 	// wait for channel threads
@@ -37703,18 +37799,9 @@ tern	TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port)
 		TR_create_socket_m13(trans_info);
 	sock_fd = trans_info->sock_fd;
 
-	// set socket reuse address option
-	#if defined MACOS_m13 || defined LINUX_m13
-	si4	flags;
-	#endif
-	#ifdef WINDOWS_m13
-	si1	flags;
-	#endif
-	flags = 1;
-	if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1) {
-		G_warning_message_m13("%s(): socket option error\n", __FUNCTION__);
-		return_m13(FALSE_m13);
-	}
+	// set socket to reuse address
+	if (TR_set_socket_reuse_address_m13(trans_info, TRUE_m13) == FALSE_m13)
+		return(FALSE_m13);
 
 	// set socket info
 	si_len = sizeof(struct sockaddr_in);
@@ -37831,6 +37918,11 @@ tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)
 	G_push_function_m13();
 #endif
 
+	trans_info->mode = TR_MODE_NONE_m13;  // reset mode
+	trans_info->header->flags &= ~TR_FLAGS_CLOSE_m13;  // reset close flag if set
+	if (trans_info->sock_fd == -1)
+		return_m13(TRUE_m13);
+
 #if defined MACOS_m13 || defined LINUX_m13
 	if (trans_info->mode == TR_MODE_FORCE_CLOSE_m13)
 		shutdown(trans_info->sock_fd, SHUT_RDWR);
@@ -37841,9 +37933,8 @@ tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)
 		shutdown(trans_info->sock_fd, SD_BOTH);
 	closesocket(trans_info->sock_fd);
 #endif
+	
 	trans_info->sock_fd = -1;
-	trans_info->mode = TR_MODE_NONE_m13;
-	trans_info->header->flags &= ~TR_FLAGS_CLOSE_m13;  // reset close flag
 	
 	return_m13(TRUE_m13);
 }
@@ -38024,7 +38115,8 @@ tern	TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr, tern free_struc
 		return_m13(FALSE_m13);
 	}
 	
-	TR_close_transmission_m13(trans_info);
+	if (trans_info->sock_fd != -1)
+		TR_close_transmission_m13(trans_info);
 
 	if (trans_info->buffer)
 		free_m13((void *) trans_info->buffer);
@@ -38527,7 +38619,7 @@ TR_SEND_FAIL_m13:
 }
 
 
-tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern blocking)
+tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern set)
 {
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -38535,22 +38627,22 @@ tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern blocking)
 
 #if defined MACOS_m13 || defined LINUX_m13
 	tern	current_state;
-	si4		socket_flags;
+	si4	socket_flags;
 
 	socket_flags = fcntl(trans_info->sock_fd, F_GETFL, 0);  // get existing flags
 	if (socket_flags == -1)
 		return_m13(UNKNOWN_m13);
 	
 	current_state = (socket_flags & O_NONBLOCK) ? FALSE_m13 : TRUE_m13;
-	if (current_state == blocking || blocking == UNKNOWN_m13)
+	if (current_state == set || set == UNKNOWN_m13)
 		return_m13(current_state);
 
 	// set socket to blocking
-	if (blocking == TRUE_m13) {
+	if (set == TRUE_m13) {
 		socket_flags &= ~O_NONBLOCK;
 		if (fcntl(trans_info->sock_fd, F_SETFL, socket_flags) == -1) {
 			G_warning_message_m13("%s(): could not set socket to blocking\n", __FUNCTION__);
-			blocking = UNKNOWN_m13;
+			set = UNKNOWN_m13;
 		}
 	}
 
@@ -38559,7 +38651,7 @@ tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern blocking)
 		socket_flags |= O_NONBLOCK;
 		if (fcntl(trans_info->sock_fd, F_SETFL, socket_flags) == -1) {
 			G_warning_message_m13("%s(): could not set socket to non-blocking\n", __FUNCTION__);
-			blocking = UNKNOWN_m13;
+			set = UNKNOWN_m13;
 		}
 	}
 #endif
@@ -38570,22 +38662,22 @@ tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern blocking)
 	
 	
 	// set socket to blocking
-	if (blocking == TRUE_m13) {
+	if (set == TRUE_m13) {
 		enable = 1;
 		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
 		if (err != NO_ERROR) {
 			G_warning_message_m13("%s(): could not set socket to blocking\n", __FUNCTION__);
-			blocking = UNKNOWN_m13;
+			set = UNKNOWN_m13;
 		}
 	}
 
 	// set socket to non-blocking
-	else if (blocking == FALSE_m13) {
+	else if (set == FALSE_m13) {
 		enable = 0;
 		err = ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
 		if (err != NO_ERROR) {
 			G_warning_message_m13("%s(): could not set socket to non-blocking\n", __FUNCTION__);
-			blocking = UNKNOWN_m13;
+			set = UNKNOWN_m13;
 		}
 	}
 	
@@ -38597,14 +38689,115 @@ tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern blocking)
 		if (err == NO_ERROR) {  // reset to non-blocking
 			enable = 0;
 			ioctlsocket(trans_info->sock_fd, FIONBIO, &enable);
-			blocking = FALSE_m13;
+			set = FALSE_m13;
 		} else if (WSAGetLastError() == WSAEOPNOTSUPP) {
-			blocking = TRUE_m13;
+			set = TRUE_m13;
 		}
 	}
 #endif
 
-	return_m13(blocking);
+	return_m13(set);
+}
+
+
+tern	TR_set_socket_broadcast_m13(TR_INFO_m13 *trans_info, tern set)
+{
+#if defined MACOS_m13 || defined LINUX_m13
+	si4	flags;
+#endif
+#ifdef WINDOWS_m13
+	si1	flags;
+#endif
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// set socket reuse address option
+	// pass TRUE_m13 to set, FALSE_m13 to unset
+	
+	if (set == TRUE_m13)
+		flags = 1;
+	else
+		flags = 0;
+	if (setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_BROADCAST, &flags, sizeof(flags)) == -1) {
+		G_warning_message_m13("%s(): socket option error\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern	TR_set_socket_reuse_address_m13(TR_INFO_m13 *trans_info, tern set)
+{
+#if defined MACOS_m13 || defined LINUX_m13
+	si4	flags;
+#endif
+#ifdef WINDOWS_m13
+	si1	flags;
+#endif
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// set socket reuse address option
+	// pass TRUE_m13 to set, FALSE_m13 to unset
+	
+	if (set == TRUE_m13)
+		flags = 1;
+	else
+		flags = 0;
+	if (setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1) {
+		G_warning_message_m13("%s(): socket option error\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern	TR_set_socket_reuse_port_m13(TR_INFO_m13 *trans_info, tern set)
+{
+#if defined MACOS_m13 || defined LINUX_m13
+	si4	flags;
+#endif
+#ifdef WINDOWS_m13
+	si1	flags;
+#endif
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// set socket reuse port option
+	// pass TRUE_m13 to set, FALSE_m13 to unset
+
+#ifndef SO_REUSEPORT
+	return_m13(UNKNOWN_m13);
+#endif
+	
+	// Notes:
+	//	SO_REUSEPORT available on Linux since version 3.9
+	//	Permits multiple AF_INET or AF_INET6 sockets to be bound to an
+	//	identical socket address.  This option must be set on each
+	//	socket (including the first socket) prior to calling bind(2)
+	//	on the socket.  To prevent port hijacking, all of the
+	//	processes binding to the same address must have the same
+	//	effective UID.  This option can be employed with both TCP and
+	//	UDP sockets.
+
+	if (set == TRUE_m13)
+		flags = 1;
+	else
+		flags = 0;
+	if (setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_REUSEPORT, &flags, sizeof(flags)) == -1) {
+		G_warning_message_m13("%s(): socket option error\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+	
+	return(TRUE_m13);
 }
 
 

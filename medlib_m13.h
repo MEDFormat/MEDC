@@ -3760,6 +3760,8 @@ si4	CMP_round_si4_m13(sf8 val);
 tern	CMP_scale_amplitude_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CPS_m13 *cps);
 tern	CMP_scale_frequency_si4_m13(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CPS_m13 *cps);
 tern	CMP_set_variable_region_m13(CPS_m13 *cps);
+tern    CMP_sf8_to_si2_m13(sf8 *sf8_arr, si2 *si2_arr, si8 len, tern round);
+tern    CMP_sf8_to_sf4_m13(sf8 *sf8_arr, si2 *sf4_arr, si8 len, tern round);
 tern	CMP_sf8_to_si4_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, tern round);
 tern	CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
 tern	CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXED_HEADER_m13 *block_header);
@@ -4115,8 +4117,7 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 
 // Macros
 #define FILT_ABS_m13(x)             		((x) >= ((sf8) 0.0) ? (x) : (-x))
-#define FILT_SIGN_m13(x, y)         		((y) >= ((sf8) 0.0) ? FILT_ABS_m13(x) : -FILT_ABS_m13(x))
-// filtps->n_poles = poles = n_fcs * order;
+#define FILT_SIGN_m13(x, y)         		((y) >= ((sf8) 0.0) ? FILT_ABS_m13(x) : -FILT_ABS_m13(x))  // y = abs(x)
 #define FILT_POLES_m13(order, cutoffs)		(order * cutoffs)
 #define FILT_FILT_PAD_SAMPLES_m13(poles)	(poles * FILT_PAD_SAMPLES_PER_POLE_m13 * 2)
 #define FILT_OFFSET_ORIG_DATA_m13(filtps)	(filtps->filt_data + (filtps->n_poles * FILT_PAD_SAMPLES_PER_POLE_m13))
@@ -4530,7 +4531,10 @@ tern	TR_realloc_trans_info_m13(TR_INFO_m13 *trans_info, si8 buffer_bytes, TR_HEA
 si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HEADER_m13 **caller_header);  // receive may reallocate, pass caller header to have function set local variable, otherwise pass NULL, can do manually
 tern	TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, si1 *fmt, ...);
 si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info);
-tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern blocking);
+tern	TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern set);
+tern	TR_set_socket_broadcast_m13(TR_INFO_m13 *trans_info, tern set);
+tern	TR_set_socket_reuse_address_m13(TR_INFO_m13 *trans_info, tern set);
+tern	TR_set_socket_reuse_port_m13(TR_INFO_m13 *trans_info, tern set);
 tern	TR_set_socket_timeout_m13(TR_INFO_m13 *trans_info);
 tern	TR_show_message_m13(TR_HEADER_m13 *header);
 tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info);

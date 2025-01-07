@@ -662,15 +662,15 @@ tern	REC_check_CSti_type_alignment_m13(ui1 *bytes);
 // version 1.1
 typedef struct {
 	si8	end_time;  // conglomerate end time
-	sf4	start_frequency;  // lowest frequency in detection bands
-	sf4	end_frequency;  // highest frequency in detection bands
+	sf4	start_frequency;  // lowest frequency  (in detected bands)
+	sf4	end_frequency;  // highest frequency  (in detected bands)
 } REC_HFOc_v11_m13;
 
 // version 1.2
 typedef struct {
 	si8	end_time;  // conglomerate end time
-	sf4	start_frequency;  // lowest frequency in detection bands
-	sf4	end_frequency;  // highest frequency in detection bands
+	sf4	start_frequency;  // lowest frequency  (in detected bands)
+	sf4	end_frequency;  // highest frequency  (in detected bands)
 	si8	start_times[REC_HFOc_NUMBER_OF_BANDS_m13];
 	si8	end_times[REC_HFOc_NUMBER_OF_BANDS_m13];
 	sf4	combinations[REC_HFOc_NUMBER_OF_BANDS_m13];  // normalized combination scores (0 - 1)
@@ -679,8 +679,8 @@ typedef struct {
 // version 1.3
 typedef struct {
 	si8	end_time;  // conglomerate end time
-	sf4	start_frequency;  // lowest frequency in detection bands
-	sf4	end_frequency;  // highest frequency in detection bands
+	sf4	start_frequency;  // lowest frequency  (in detected bands)
+	sf4	end_frequency;  // highest frequency  (in detected bands)
 	si8	start_times[REC_HFOc_NUMBER_OF_BANDS_m13];
 	si8	end_times[REC_HFOc_NUMBER_OF_BANDS_m13];
 	sf4	combinations[REC_HFOc_NUMBER_OF_BANDS_m13];  // normalized combination scores (0 - 1)
