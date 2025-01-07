@@ -533,7 +533,8 @@ REC_Stat_v10_NOT_ALIGNED_m12:
 
 void	REC_show_Note_type_m12(RECORD_HEADER_m12 *record_header)
 {
-	si1	*note_text;
+	si1			*note_text;
+	REC_Note_v11_m12	*Note_v11;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -551,6 +552,18 @@ void	REC_show_Note_type_m12(RECORD_HEADER_m12 *record_header)
 			printf_m12("Note Text: no entry\n");
 		}
 	}
+	
+	// Version 1.1
+	else if (record_header->version_major == 1 && record_header->version_minor == 1) {
+		Note_v11 = (REC_Note_v11_m12 *) (record_header + 1);
+		printf_m12("End Time: %ld\n", Note_v11->end_time);
+		note_text = (si1 *) &Note_v11->text;
+		if (*note_text)
+			UTF8_printf_m12("Note Text: %s\n", note_text);
+		else
+			printf_m12("Note Text: no entry\n");
+	}
+
 	// Unrecognized record version
 	else {
 		G_error_message_m12("%s(): Unrecognized Note Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
@@ -653,10 +666,12 @@ REC_EDFA_v10_NOT_ALIGNED_m12:
 
 void	REC_show_Seiz_type_m12(RECORD_HEADER_m12 *record_header)
 {
+	si1				*description_text;
 	si4			        i;
 	TERN_m12                        mn1 = FALSE_m12, mn2 = FALSE_m12;
-	REC_Seiz_v10_m12		*Seiz;
-	REC_Seiz_v10_CHANNEL_m12	*chans;
+	REC_Seiz_v10_m12		*Seiz_v10;
+	REC_Seiz_v20_m12		*Seiz_v20;
+	REC_Seiz_v20_CHANNEL_m12	*chans;
 	si1			        time_str[TIME_STRING_BYTES_m12];
 
 #ifdef FN_DEBUG_m12
@@ -665,52 +680,63 @@ void	REC_show_Seiz_type_m12(RECORD_HEADER_m12 *record_header)
 	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		Seiz = (REC_Seiz_v10_m12 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m12);
-		STR_time_string_m12(Seiz->latest_offset_time, time_str, TRUE_m12, FALSE_m12, FALSE_m12);
-		printf_m12("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + globals_m12->recording_time_offset, time_str);
-		printf_m12("Number of Channels: %d\n", Seiz->number_of_channels);
-		printf_m12("Onset Code: %d ", Seiz->onset_code);
-		switch (Seiz->onset_code) {
-		case REC_Seiz_v10_ONSET_NO_ENTRY_m12:
+		Seiz_v10 = (REC_Seiz_v10_m12 *) (record_header + 1);
+		printf_m12("End Time: %ld\n", Seiz_v10->end_time);
+		description_text = (si1 *) &Seiz_v10->description;
+		if (*description_text)
+			UTF8_printf_m12("Description: %s\n", description_text);
+		else
+			printf_m12("Description: no entry\n");
+	}
+
+	// Version 2.0
+	if (record_header->version_major == 2 && record_header->version_minor == 0) {
+		Seiz_v20 = (REC_Seiz_v20_m12 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m12);
+		STR_time_string_m12(Seiz_v20->latest_offset_time, time_str, TRUE_m12, FALSE_m12, FALSE_m12);
+		printf_m12("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz_v20->latest_offset_time, Seiz_v20->latest_offset_time + globals_m12->recording_time_offset, time_str);
+		printf_m12("Number of Channels: %d\n", Seiz_v20->number_of_channels);
+		printf_m12("Onset Code: %d ", Seiz_v20->onset_code);
+		switch (Seiz_v20->onset_code) {
+		case REC_Seiz_v20_ONSET_NO_ENTRY_m12:
 			printf_m12("(no entry)\n");
 			break;
-		case REC_Seiz_v10_ONSET_UNKNOWN_m12:
+		case REC_Seiz_v20_ONSET_UNKNOWN_m12:
 			printf_m12("(unknown)\n");
 			break;
-		case REC_Seiz_v10_ONSET_FOCAL_m12:
+		case REC_Seiz_v20_ONSET_FOCAL_m12:
 			printf_m12("(focal)\n");
 			break;
-		case REC_Seiz_v10_ONSET_GENERALIZED_m12:
+		case REC_Seiz_v20_ONSET_GENERALIZED_m12:
 			printf_m12("(generalized)\n");
 			break;
-		case REC_Seiz_v10_ONSET_PROPAGATED_m12:
+		case REC_Seiz_v20_ONSET_PROPAGATED_m12:
 			printf_m12("(propagated)\n");
 			break;
-		case REC_Seiz_v10_ONSET_MIXED_m12:
+		case REC_Seiz_v20_ONSET_MIXED_m12:
 			printf_m12("(mixed)\n");
 			break;
 		default:
-			G_warning_message_m12("%s(): %d is an unrecognized Seiz onset code", __FUNCTION__, Seiz->onset_code);
+			G_warning_message_m12("%s(): %d is an unrecognized Seiz onset code", __FUNCTION__, Seiz_v20->onset_code);
 			break;
 		}
-		if (strlen(Seiz->marker_name_1))
+		if (strlen(Seiz_v20->marker_name_1))
 			mn1 = TRUE_m12;
-		if (strlen(Seiz->marker_name_2))
+		if (strlen(Seiz_v20->marker_name_2))
 			mn2 = TRUE_m12;
 		if (mn1 == TRUE_m12 && mn2 == TRUE_m12)
-			UTF8_printf_m12("Marker Names: %s %s\n", Seiz->marker_name_1, Seiz->marker_name_2);
+			UTF8_printf_m12("Marker Names: %s %s\n", Seiz_v20->marker_name_1, Seiz_v20->marker_name_2);
 		else if (mn1 == TRUE_m12)
-			UTF8_printf_m12("Marker Name 1: %s\nMarker Name 2: no entry\n", Seiz->marker_name_1);
+			UTF8_printf_m12("Marker Name 1: %s\nMarker Name 2: no entry\n", Seiz_v20->marker_name_1);
 		else if (mn2 == TRUE_m12)
-			UTF8_printf_m12("Marker Name 1: no_entry\nMarker Name 2: %s\n", Seiz->marker_name_2);
+			UTF8_printf_m12("Marker Name 1: no_entry\nMarker Name 2: %s\n", Seiz_v20->marker_name_2);
 		else
 			printf_m12("Marker Names: no_entry\n");
-		if (strlen(Seiz->annotation))
-			UTF8_printf_m12("Annotation: %s\n", Seiz->annotation);
+		if (strlen(Seiz_v20->annotation))
+			UTF8_printf_m12("Annotation: %s\n", Seiz_v20->annotation);
 		else
 			printf_m12("Annotation: no entry\n");
-		chans = (REC_Seiz_v10_CHANNEL_m12 *) ((ui1 *) Seiz + REC_Seiz_v10_CHANNELS_OFFSET_m12);
-		for (i = 0; i < Seiz->number_of_channels; ++i) {
+		chans = (REC_Seiz_v20_CHANNEL_m12 *) ((ui1 *) Seiz_v20 + REC_Seiz_v20_CHANNELS_OFFSET_m12);
+		for (i = 0; i < Seiz_v20->number_of_channels; ++i) {
 			if (strlen(chans[i].name))
 				UTF8_printf_m12("Channel Name: %s\n", chans[i].name);
 			else
@@ -719,12 +745,13 @@ void	REC_show_Seiz_type_m12(RECORD_HEADER_m12 *record_header)
 			printf_m12("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + globals_m12->recording_time_offset, time_str);
 			STR_time_string_m12(chans[i].offset_time, time_str, TRUE_m12, FALSE_m12, FALSE_m12);
 			printf_m12("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + globals_m12->recording_time_offset, time_str);
-			if (chans[i].segment_number == REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m12)
+			if (chans[i].segment_number == REC_Seiz_v20_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m12)
 				printf_m12("Segment Number: no entry\n");
 			else
 				printf_m12("Segment Number: %d\n", chans[i].segment_number);
 		}
 	}
+	
 	// Unrecognized record version
 	else {
 		G_error_message_m12("%s(): Unrecognized Seiz Record version (%hhd.%hhd)\n", __FUNCTION__, record_header->version_major, record_header->version_minor);
@@ -736,8 +763,9 @@ void	REC_show_Seiz_type_m12(RECORD_HEADER_m12 *record_header)
 
 TERN_m12	REC_check_Seiz_type_alignment_m12(ui1 *bytes)
 {
-	REC_Seiz_v10_m12		*Seiz;
-	REC_Seiz_v10_CHANNEL_m12	*chan;
+	REC_Seiz_v10_m12		*Seiz_v10;
+	REC_Seiz_v20_m12		*Seiz_v20;
+	REC_Seiz_v20_CHANNEL_m12	*chan;
 	TERN_m12			free_flag = FALSE_m12;
 	ui1				*chan_bytes;
 
@@ -748,47 +776,59 @@ TERN_m12	REC_check_Seiz_type_alignment_m12(ui1 *bytes)
 	// check overall sizes
 	if (sizeof(REC_Seiz_v10_m12) != REC_Seiz_v10_BYTES_m12)
 		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (sizeof(REC_Seiz_v10_CHANNEL_m12) != REC_Seiz_v10_CHANNEL_BYTES_m12)
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
+	if (sizeof(REC_Seiz_v20_m12) != REC_Seiz_v20_BYTES_m12)
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (sizeof(REC_Seiz_v20_CHANNEL_m12) != REC_Seiz_v20_CHANNEL_BYTES_m12)
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
 
 	// check fields - base structure
 	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_Seiz_v10_BYTES_m12 + REC_Seiz_v10_CHANNEL_BYTES_m12);
+		bytes = (ui1 *) malloc(REC_Seiz_v20_BYTES_m12 + REC_Seiz_v20_CHANNEL_BYTES_m12);
 		free_flag = TRUE_m12;
 	}
-	Seiz = (REC_Seiz_v10_m12 *) bytes;
-	if (&Seiz->latest_offset_time != (si8 *) (bytes + REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m12))
+	
+	// Version 1.0 fields
+	Seiz_v10 = (REC_Seiz_v10_m12 *) bytes;
+	if (&Seiz_v10->end_time != (si8 *) (bytes + REC_Seiz_v10_END_TIME_OFFSET_m12))
 		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (&Seiz->number_of_channels != (si4 *) (bytes + REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m12))
+	if (Seiz_v10->description != (si1 *) (bytes + REC_Seiz_v10_DESCRIPTION_OFFSET_m12))
 		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (&Seiz->onset_code != (si4 *) (bytes + REC_Seiz_v10_ONSET_CODE_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (Seiz->marker_name_1 != (si1 *) (bytes + REC_Seiz_v10_MARKER_NAME_1_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (Seiz->marker_name_2 != (si1 *) (bytes + REC_Seiz_v10_MARKER_NAME_2_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (Seiz->annotation != (si1 *) (bytes + REC_Seiz_v10_ANNOTATION_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
+
+	// Version 2.0 fields
+	Seiz_v20 = (REC_Seiz_v20_m12 *) bytes;
+	if (&Seiz_v20->latest_offset_time != (si8 *) (bytes + REC_Seiz_v20_LATEST_OFFSET_TIME_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (&Seiz_v20->number_of_channels != (si4 *) (bytes + REC_Seiz_v20_NUMBER_OF_CHANNELS_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (&Seiz_v20->onset_code != (si4 *) (bytes + REC_Seiz_v20_ONSET_CODE_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (Seiz_v20->marker_name_1 != (si1 *) (bytes + REC_Seiz_v20_MARKER_NAME_1_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (Seiz_v20->marker_name_2 != (si1 *) (bytes + REC_Seiz_v20_MARKER_NAME_2_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (Seiz_v20->annotation != (si1 *) (bytes + REC_Seiz_v20_ANNOTATION_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	
 	// check fields - channel structures
-	chan_bytes = bytes + REC_Seiz_v10_CHANNELS_OFFSET_m12;
-	chan = (REC_Seiz_v10_CHANNEL_m12 *) chan_bytes;
-	if (chan->name != (si1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_NAME_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (&chan->onset_time != (si8 *) (chan_bytes + REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (&chan->offset_time != (si8 *) (chan_bytes + REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (&chan->segment_number != (si4 *) (chan_bytes + REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
-	if (chan->pad != (ui1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_PAD_OFFSET_m12))
-		goto REC_Seiz_v10_NOT_ALIGNED_m12;
+	chan_bytes = bytes + REC_Seiz_v20_CHANNELS_OFFSET_m12;
+	chan = (REC_Seiz_v20_CHANNEL_m12 *) chan_bytes;
+	if (chan->name != (si1 *) (chan_bytes + REC_Seiz_v20_CHANNEL_NAME_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (&chan->onset_time != (si8 *) (chan_bytes + REC_Seiz_v20_CHANNEL_ONSET_TIME_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (&chan->offset_time != (si8 *) (chan_bytes + REC_Seiz_v20_CHANNEL_OFFSET_TIME_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (&chan->segment_number != (si4 *) (chan_bytes + REC_Seiz_v20_CHANNEL_SEGMENT_NUMBER_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
+	if (chan->pad != (ui1 *) (chan_bytes + REC_Seiz_v20_CHANNEL_PAD_OFFSET_m12))
+		goto REC_Seiz_v20_NOT_ALIGNED_m12;
 
 	// aligned
 	if (free_flag == TRUE_m12)
 		free((void *) bytes);
 
 	if (globals_m12->verbose == TRUE_m12)
-		printf_m12("%s(): REC_Seiz_v10_m12 structure is aligned\n", __FUNCTION__);
+		printf_m12("%s(): REC_Seiz_vxx_m12 structures are aligned\n", __FUNCTION__);
 
 	return(TRUE_m12);
 
@@ -799,6 +839,15 @@ REC_Seiz_v10_NOT_ALIGNED_m12:
 		free((void *) bytes);
 
 	G_error_message_m12("%s(): REC_Seiz_v10_m12 structure is NOT aligned\n", __FUNCTION__);
+
+	return(FALSE_m12);
+	
+REC_Seiz_v20_NOT_ALIGNED_m12:
+
+	if (free_flag == TRUE_m12)
+		free((void *) bytes);
+
+	G_error_message_m12("%s(): REC_Seiz_v20_m12 structure is NOT aligned\n", __FUNCTION__);
 
 	return(FALSE_m12);
 }
@@ -1051,23 +1100,23 @@ void    REC_show_Epoc_type_m12(RECORD_HEADER_m12 *record_header)
 	// Version 2.0
 	else if (record_header->version_major == 2 && record_header->version_minor == 0) {
 		epoc2 = (REC_Epoc_v20_m12 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m12);
-		printf_m12("ID Number: %ld\n", epoc2->end_time);
+		printf_m12("End Time: %ld\n", epoc2->end_time);
 		printf_m12("Stage: ");
 		switch (epoc2->stage_code) {
 			case REC_Epoc_v20_STAGE_AWAKE_m12:
 				printf_m12("awake\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_1_m12:
-				printf_m12("non-REM 1\n");
+				printf_m12("1\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_2_m12:
-				printf_m12("non-REM 2\n");
+				printf_m12("2\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_3_m12:
-				printf_m12("non-REM 3\n");
+				printf_m12("3\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_4_m12:
-				printf_m12("non-REM 4\n");
+				printf_m12("4\n");
 				break;
 			case REC_Epoc_v20_STAGE_REM_m12:
 				printf_m12("REM\n");

@@ -3349,6 +3349,8 @@ si4     	CMP_round_si4_m12(sf8 val);
 void    	CMP_scale_amplitude_si4_m12(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_scale_frequency_si4_m12(si4 *input_buffer, si4 *output_buffer, si8 len, sf8 scale_factor, CMP_PROCESSING_STRUCT_m12 *cps);
 void    	CMP_set_variable_region_m12(CMP_PROCESSING_STRUCT_m12 *cps);
+void      	CMP_sf8_to_si2_m12(sf8 *sf8_arr, si2 *si2_arr, si8 len, TERN_m12 round);
+void      	CMP_sf8_to_sf4_m12(sf8 *sf8_arr, sf4 *sf4_arr, si8 len, TERN_m12 round);
 void      	CMP_sf8_to_si4_m12(sf8 *sf8_arr, si4 *si4_arr, si8 len, TERN_m12 round);
 void      	CMP_sf8_to_si4_and_scale_m12(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scale);
 void    	CMP_show_block_header_m12(CMP_BLOCK_FIXED_HEADER_m12 *block_header);
@@ -3707,8 +3709,7 @@ void		SHA_update_m12(SHA_CTX_m12 *ctx, const ui1 *data, si8 len);
 
 // Macros
 #define FILT_ABS_m12(x)             		((x) >= ((sf8) 0.0) ? (x) : (-x))
-#define FILT_SIGN_m12(x, y)         		((y) >= ((sf8) 0.0) ? FILT_ABS_m12(x) : -FILT_ABS_m12(x))
-// filtps->n_poles = poles = n_fcs * order;
+#define FILT_SIGN_m12(x, y)         		((y) >= ((sf8) 0.0) ? FILT_ABS_m12(x) : -FILT_ABS_m12(x))  // y = abs(x)
 #define FILT_POLES_m12(order, cutoffs)		(order * cutoffs)
 #define FILT_FILT_PAD_SAMPLES_m12(poles)	(poles * FILT_PAD_SAMPLES_PER_POLE_m12 * 2)
 #define FILT_OFFSET_ORIG_DATA_m12(filtps)	(filtps->filt_data + (filtps->n_poles * FILT_PAD_SAMPLES_PER_POLE_m12))

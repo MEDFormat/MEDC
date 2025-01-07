@@ -287,7 +287,7 @@ TERN_m12        REC_check_EDFA_type_alignment_m12(ui1 *bytes);
 
 // Structures
 // (none)
-// Annotation follows header - aribitrary length array of si1s padded to 16 byte alignment
+// Annotation follows header - aribitrary length array of si1s padded to 16 byte alignment (null terminated)
 
 // Version 1.1
 #define REC_Note_v11_BYTES_m12			16
@@ -299,12 +299,12 @@ TERN_m12        REC_check_EDFA_type_alignment_m12(ui1 *bytes);
 typedef struct {
 	si8     end_time;  // time when note entered into record (header start time is time when note initiated)
 	union {
+		si1     text[REC_Note_v11_PAD_BYTES_m12];  // first 8 bytes of note, but can extend beyond end of structure
 		si1     pad[REC_Note_v11_PAD_BYTES_m12];
-		si1     text[REC_Note_v11_PAD_BYTES_m12];  // first 8 bytes of note, can extend beyondend of structure
 	};
 } REC_Note_v11_m12;
 
-// Annotation begins in structure, but may extend beyond it - aribitrary length array of si1s padded to 16 byte alignment (struct plus excess text)
+// Annotation begins in structure, but may extend beyond it - aribitrary length array of si1s padded to 16 byte alignment (struct plus excess text, null terminated)
 
 
 // Prototypes
@@ -323,52 +323,67 @@ TERN_m12	REC_check_Note_type_alignment_m12(ui1 *bytes);
 // #define REC_Seiz_TYPE_CODE_m12       (ui4) 0x5365697a        // ui4 (big endian)
 
 // Version 1.0
-// REC_Seiz_v10_m12 offsets below apply to base address of record
-#define REC_Seiz_v10_BYTES_m12			                        1296
-#define REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m12	                0	// si8
-#define REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m12	                8	// si4
-#define REC_Seiz_v10_ONSET_CODE_OFFSET_m12		                12	// si4
-#define REC_Seiz_v10_MARKER_NAME_1_OFFSET_m12	                        16	// utf8[31]
-#define REC_Seiz_v10_MARKER_NAME_BYTES_m12		                128
-#define REC_Seiz_v10_MARKER_NAME_2_OFFSET_m12	                        144	// utf8[31]
-#define REC_Seiz_v10_ANNOTATION_OFFSET_m12		                272	// utf8[255]
-#define REC_Seiz_v10_ANNOTATION_BYTES_m12		                1024
-#define REC_Seiz_v10_CHANNELS_OFFSET_m12		                REC_Seiz_v10_BYTES_m12
-// REC_Seiz_v10_CHANNEL_m12 offsets below apply to base address of channel
-#define REC_Seiz_v10_CHANNEL_BYTES_m12		                        280
-#define REC_Seiz_v10_CHANNEL_NAME_OFFSET_m12		                0	// utf8[63]
-#define REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m12                      256	// si8
-#define REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m12                     264	// si8
-#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m12                  272	// si4
-#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m12                SEGMENT_NUMBER_NO_ENTRY_m12
-#define REC_Seiz_v10_CHANNEL_PAD_OFFSET_m12                       	276	// ui1[4]
-#define REC_Seiz_v10_CHANNEL_PAD_BYTES_m12                              4
+#define REC_Seiz_v10_BYTES_m12			16
+#define REC_Seiz_v10_END_TIME_OFFSET_m12	0
+#define REC_Seiz_v10_DESCRIPTION_OFFSET_m12	8  // beginning of pad
+#define REC_Seiz_v10_PAD_BYTES_m12		8
+
+// Version 2.0
+// REC_Seiz_v20_m12 offsets below apply to base address of record
+#define REC_Seiz_v20_BYTES_m12			                        1296
+#define REC_Seiz_v20_LATEST_OFFSET_TIME_OFFSET_m12	                0	// si8
+#define REC_Seiz_v20_NUMBER_OF_CHANNELS_OFFSET_m12	                8	// si4
+#define REC_Seiz_v20_ONSET_CODE_OFFSET_m12		                12	// si4
+#define REC_Seiz_v20_MARKER_NAME_1_OFFSET_m12	                        16	// utf8[31]
+#define REC_Seiz_v20_MARKER_NAME_BYTES_m12		                128
+#define REC_Seiz_v20_MARKER_NAME_2_OFFSET_m12	                        144	// utf8[31]
+#define REC_Seiz_v20_ANNOTATION_OFFSET_m12		                272	// utf8[255]
+#define REC_Seiz_v20_ANNOTATION_BYTES_m12		                1024
+#define REC_Seiz_v20_CHANNELS_OFFSET_m12		                REC_Seiz_v20_BYTES_m12
+// REC_Seiz_v20_CHANNEL_m12 offsets below apply to base address of channel
+#define REC_Seiz_v20_CHANNEL_BYTES_m12		                        280
+#define REC_Seiz_v20_CHANNEL_NAME_OFFSET_m12		                0	// utf8[63]
+#define REC_Seiz_v20_CHANNEL_ONSET_TIME_OFFSET_m12                      256	// si8
+#define REC_Seiz_v20_CHANNEL_OFFSET_TIME_OFFSET_m12                     264	// si8
+#define REC_Seiz_v20_CHANNEL_SEGMENT_NUMBER_OFFSET_m12                  272	// si4
+#define REC_Seiz_v20_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m12                SEGMENT_NUMBER_NO_ENTRY_m12
+#define REC_Seiz_v20_CHANNEL_PAD_OFFSET_m12                       	276	// ui1[4]
+#define REC_Seiz_v20_CHANNEL_PAD_BYTES_m12                              4
 // Onset Codes
-#define REC_Seiz_v10_ONSET_NO_ENTRY_m12		-1
-#define REC_Seiz_v10_ONSET_UNKNOWN_m12		0
-#define REC_Seiz_v10_ONSET_FOCAL_m12            1
-#define REC_Seiz_v10_ONSET_GENERALIZED_m12      2
-#define REC_Seiz_v10_ONSET_PROPAGATED_m12       3
-#define REC_Seiz_v10_ONSET_MIXED_m12            4
+#define REC_Seiz_v20_ONSET_NO_ENTRY_m12		-1
+#define REC_Seiz_v20_ONSET_UNKNOWN_m12		0
+#define REC_Seiz_v20_ONSET_FOCAL_m12            1
+#define REC_Seiz_v20_ONSET_GENERALIZED_m12      2
+#define REC_Seiz_v20_ONSET_PROPAGATED_m12       3
+#define REC_Seiz_v20_ONSET_MIXED_m12            4
 
 // Structures
+typedef struct {
+	si8     end_time;  // time when note entered into record (header start time is time when note initiated)
+	union {
+		si1     description[REC_Seiz_v10_PAD_BYTES_m12];  // first 8 bytes of decsription, but can extend beyond end of structure
+		si1     pad[REC_Seiz_v10_PAD_BYTES_m12];
+	};
+} REC_Seiz_v10_m12;
+
+
 typedef struct {
         // earliest_onset_time is in the record header
         si8	latest_offset_time;                                     // uutc
         si4	number_of_channels;
         si4	onset_code;
-        si1	marker_name_1[REC_Seiz_v10_MARKER_NAME_BYTES_m12];	// utf8[31]
-        si1	marker_name_2[REC_Seiz_v10_MARKER_NAME_BYTES_m12];	// utf8[31]
-        si1	annotation[REC_Seiz_v10_ANNOTATION_BYTES_m12];		// utf8[255]
-} REC_Seiz_v10_m12;
+        si1	marker_name_1[REC_Seiz_v20_MARKER_NAME_BYTES_m12];	// utf8[31]
+        si1	marker_name_2[REC_Seiz_v20_MARKER_NAME_BYTES_m12];	// utf8[31]
+        si1	annotation[REC_Seiz_v20_ANNOTATION_BYTES_m12];		// utf8[255]
+} REC_Seiz_v20_m12;
 
 typedef struct {
  	si1	name[BASE_FILE_NAME_BYTES_m12]; // channel name, no extension
        	si8	onset_time;                     // uutc
         si8	offset_time;                    // uutc
         si4     segment_number;
-        ui1     pad[REC_Seiz_v10_CHANNEL_PAD_BYTES_m12];	// for 8 byte alignment (couldn't think of a use for them)
-} REC_Seiz_v10_CHANNEL_m12;
+        ui1     pad[REC_Seiz_v20_CHANNEL_PAD_BYTES_m12];	// for 8 byte alignment (couldn't think of a use for them)
+} REC_Seiz_v20_CHANNEL_m12;
 
 // Prototypes
 void	        REC_show_Seiz_type_m12(RECORD_HEADER_m12 *record_header);
@@ -663,15 +678,15 @@ TERN_m12        REC_check_CSti_type_alignment_m12(ui1 *bytes);
 // version 1.1
 typedef struct {
 	si8	end_time;  // conglomerate end time
-	sf4	start_frequency;  // lowest frequency in detection bands
-	sf4	end_frequency;  // highest frequency in detection bands
+	sf4	start_frequency;  // lowest frequency (in detected bands)
+	sf4	end_frequency;  // highest frequency (in detected bands)
 } REC_HFOc_v11_m12;
 
 // version 1.2
 typedef struct {
 	si8	end_time;  // conglomerate end time
-	sf4	start_frequency;  // lowest frequency in detection bands
-	sf4	end_frequency;  // highest frequency in detection bands
+	sf4	start_frequency;  // lowest frequency (in detected bands)
+	sf4	end_frequency;  // highest frequency (in detected bands)
 	si8	start_times[REC_HFOc_NUMBER_OF_BANDS_m12];
 	si8	end_times[REC_HFOc_NUMBER_OF_BANDS_m12];
 	sf4	combinations[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized combination scores (0 - 1)
@@ -680,8 +695,8 @@ typedef struct {
 // version 1.3
 typedef struct {
 	si8	end_time;  // conglomerate end time
-	sf4	start_frequency;  // lowest frequency in detection bands
-	sf4	end_frequency;  // highest frequency in detection bands
+	sf4	start_frequency;  // lowest frequency (in detected bands)
+	sf4	end_frequency;  // highest frequency (in detected bands)
 	si8	start_times[REC_HFOc_NUMBER_OF_BANDS_m12];
 	si8	end_times[REC_HFOc_NUMBER_OF_BANDS_m12];
 	sf4	combinations[REC_HFOc_NUMBER_OF_BANDS_m12];  // normalized combination scores (0 - 1)
