@@ -38730,13 +38730,6 @@ TERN_m12	TR_set_socket_reuse_address_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
 
 TERN_m12	TR_set_socket_reuse_port_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
 {
-#if defined MACOS_m12 || defined LINUX_m12
-	si4	flags;
-#endif
-#ifdef WINDOWS_m12
-	si1	flags;
-#endif
-	
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
@@ -38744,15 +38737,19 @@ TERN_m12	TR_set_socket_reuse_port_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
 	// set socket reuse port option
 	// pass TRUE_m12 to set FALSE_m12 to unset
 
-#ifndef SO_REUSEPORT
-	return(UNKNOWN_m12);
-#endif
-	
+#ifdef SO_REUSEPORT
+	#if defined MACOS_m12 || defined LINUX_m12
+		si4	flags;
+	#endif
+	#ifdef WINDOWS_m12
+		si1	flags;
+	#endif	
+
 	// Notes:
 	//	SO_REUSEPORT available on Linux since version 3.9
 	//	Permits multiple AF_INET or AF_INET6 sockets to be bound to an
 	//	identical socket address.  This option must be set on each
-	//	socket (including the first socket) prior to calling bind(2)
+	//	socket (including the first socket) prior to calling bind()
 	//	on the socket.  To prevent port hijacking, all of the
 	//	processes binding to the same address must have the same
 	//	effective UID.  This option can be employed with both TCP and
@@ -38768,6 +38765,9 @@ TERN_m12	TR_set_socket_reuse_port_m12(TR_INFO_m12 *trans_info, TERN_m12 set)
 	}
 	
 	return(TRUE_m12);
+#else
+	return(UNKNOWN_m12);
+#endif
 }
 
 
