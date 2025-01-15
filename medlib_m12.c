@@ -61,7 +61,7 @@
 // However, it can be used with in 32-bit contexts without modification at a performance cost.
 
 // The library is written with tab width = indent width = 8 spaces and a monospaced font.
-// Tabs are tabs characters, not spaces.
+// Tabs are tab characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
 // The library contains some non-standard structures:

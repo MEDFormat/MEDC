@@ -25657,9 +25657,9 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, S
 	if (req_slice->conditioned == FALSE_m13)
 		G_condition_slice_m13(req_slice, (LEVEL_HEADER_m13 *) sess);
 	if (req_slice->start_time == BEGINNING_OF_TIME_m13)
-		req_slice->start_time = globals_m13->session_start_time;
+		req_slice->start_time = proc_globals->current_session.start_time;
 	if (req_slice->end_time == END_OF_TIME_m13)
-		req_slice->end_time = globals_m13->session_end_time;
+		req_slice->end_time = proc_globals->current_session.end_time;
 	if (search_mode == TIME_SEARCH_m13)
 		req_samp_secs = (sf8) TIME_SLICE_DURATION_m13(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == SAMPLE_SEARCH_m13
