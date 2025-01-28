@@ -8147,7 +8147,7 @@ pthread_rval_m12	G_open_segment_thread_m12(void *ptr)
 }
 
 
-TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess)
+TERN_m12	G_open_segmented_session_records_m12(SESSION_m12 *sess)
 {
 	TERN_m12			sess_fs_name;
 	si1				tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
@@ -8205,8 +8205,8 @@ TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess)
 			ssr->record_indices_fps[i] = G_read_file_m12(NULL, tmp_str, 0, 0, 0, (LEVEL_HEADER_m12 *) ssr, NULL, USE_GLOBAL_BEHAVIOR_m12);
 
 		// record data
-		fe = G_exists_m12(tmp_str);
 		sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
+		fe = G_exists_m12(tmp_str);
 		if (fe == DOES_NOT_EXIST_m12) {  // sess->name defaults to fs_name
 			if (sess_fs_name == TRUE_m12)
 				sprintf_m12(tmp_str, "%s/%s_s%s.%s", ssr->path, globals_m12->uh_session_name, num_str, RECORD_DATA_FILE_TYPE_STRING_m12);
@@ -8618,11 +8618,11 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 
 	// session records
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12)
-		G_open_session_records(sess);
+		G_open_session_records_m12(sess);
 
 	// segmented session records level
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12)
-		G_open_segmented_session_records(sess);
+		G_open_segmented_session_records_m12(sess);
 	
 	// ephemeral data
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m12) {
@@ -9201,7 +9201,7 @@ SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, voi
 }
 
 
-TERN_m12	G_open_session_records(SESSION_m12 *sess)
+TERN_m12	G_open_session_records_m12(SESSION_m12 *sess)
 {
 	si1	tmp_str[FULL_FILE_NAME_BYTES_m12];
 	si4	fe;
@@ -10911,7 +10911,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		if (sess->record_indices_fps == NULL || sess->record_data_fps == NULL)
-			G_open_session_records(sess);
+			G_open_session_records_m12(sess);
 		if (sess->record_indices_fps && sess->record_data_fps)
 			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice);
 	}
@@ -10919,7 +10919,7 @@ SESSION_m12	*G_read_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...)  
 	// read segmented session record data
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
 		if (sess->segmented_sess_recs == NULL)
-			G_open_segmented_session_records(sess);
+			G_open_segmented_session_records_m12(sess);
 		ssr = sess->segmented_sess_recs;
 		if (ssr) {
 			for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j)
@@ -11139,7 +11139,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	// read session record data
 	if (sess->flags & LH_READ_SESSION_RECORDS_MASK_m12) {
 		if (sess->record_indices_fps == NULL || sess->record_data_fps == NULL)
-			G_open_session_records(sess);
+			G_open_session_records_m12(sess);
 		if (sess->record_indices_fps && sess->record_data_fps)
 			G_read_record_data_m12((LEVEL_HEADER_m12 *) sess, slice);
 	}
@@ -11148,7 +11148,7 @@ SESSION_m12	*G_read_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, ...
 	if (sess->flags & LH_READ_SEGMENTED_SESS_RECS_MASK_m12) {
 		ssr = sess->segmented_sess_recs;
 		if (ssr == NULL)
-			G_open_segmented_session_records(sess);
+			G_open_segmented_session_records_m12(sess);
 		for (i = slice->start_segment_number, j = seg_idx; i <= slice->end_segment_number; ++i, ++j) {
 			if (ssr->record_indices_fps[j] && ssr->record_data_fps[j])
 				G_read_record_data_m12((LEVEL_HEADER_m12 *) ssr, slice, i);
@@ -23184,7 +23184,7 @@ void      CMP_sf8_to_si4_and_scale_m12(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 
 
 void    CMP_show_block_header_m12(CMP_BLOCK_FIXED_HEADER_m12 *block_header)
 {
-	si1     hex_str[HEX_STRING_BYTES_m12(CRC_BYTES_m12)], time_str[TIME_STRING_BYTES_m12];
+	si1     hex_str[HEX_STRING_BYTES_m12(CRC_BYTES_m12)], time_str[TIME_STRING_BYTES_m12], bin_str[40];
 	ui4     i, mask;
 	
 #ifdef FN_DEBUG_m12
@@ -23204,7 +23204,8 @@ void    CMP_show_block_header_m12(CMP_BLOCK_FIXED_HEADER_m12 *block_header)
 		if (block_header->block_flags & mask)
 			printf_m12("%d ", i);
 	}
-	printf_m12(" (value: 0x%08x)\n", block_header->block_flags);
+	STR_binary_m12(bin_str, (void *) &block_header->block_flags, (size_t) 4, "-", FALSE_m12);
+	printf_m12(" (value: %s)\n", bin_str);
 	if (block_header->start_time == UUTC_NO_ENTRY_m12)
 		printf_m12("Start Time: no entry\n");
 	else {
@@ -23217,11 +23218,11 @@ void    CMP_show_block_header_m12(CMP_BLOCK_FIXED_HEADER_m12 *block_header)
 	printf_m12("Number of Records: %hu\n", block_header->number_of_records);
 	printf_m12("Record Region Bytes: %hu\n", block_header->record_region_bytes);
 	printf_m12("Parameter Flag Bits: ");
-	for (i = 0, mask = 1; i < 32; ++i, mask <<= 1) {
+	for (i = 0, mask = 1; i < 32; ++i, mask <<= 1)
 		if (block_header->parameter_flags & mask)
 			printf_m12("%d ", i);
-	}
-	printf_m12(" (value: 0x%08x)\n", block_header->parameter_flags);
+	STR_binary_m12(bin_str, (void *) &block_header->parameter_flags, (size_t) 4, "-", FALSE_m12);
+	printf_m12(" (value: %s)\n", bin_str);
 	printf_m12("Parameter Region Bytes: %hu\n", block_header->parameter_region_bytes);
 	printf_m12("Protected Region Bytes: %hu\n", block_header->protected_region_bytes);
 	printf_m12("Discretionary Region Bytes: %hu\n", block_header->discretionary_region_bytes);
@@ -36498,7 +36499,7 @@ si1	*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separat
 	// pass NULL or "" for byte_separator for no separation between bytes
 	// prefix will prepend string with "0b"
 
-	if (byte_separator) {
+	if (G_empty_string_m12(byte_separator) == FALSE_m12) {
 		for (c = byte_separator - 1; *++c;);
 		sep_len = (c - byte_separator);
 	} else {
@@ -36516,6 +36517,8 @@ si1	*STR_binary_m12(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separat
 	if (prefix == TRUE_m12) {
 		*c++ = '0';
 		*c++ = 'b';
+		if (sep_len)
+			for (c2 = byte_separator; *c2; *c++ = *c2++);
 	}
 	
 	num = (ui1 *) num_ptr + (num_bytes - 1);

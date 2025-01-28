@@ -2468,10 +2468,10 @@ CHANNEL_m12	*G_open_channel_nt_m12(CHANNEL_m12 *chan, TIME_SLICE_m12 *slice, si1
 pthread_rval_m12	G_open_channel_thread_m12(void *ptr);
 SEGMENT_m12	*G_open_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, si1 *segment_path, ui8 flags, si1 *password);
 pthread_rval_m12	G_open_segment_thread_m12(void *ptr);
-TERN_m12	G_open_segmented_session_records(SESSION_m12 *sess);
+TERN_m12	G_open_segmented_session_records_m12(SESSION_m12 *sess);
 SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);
 SESSION_m12	*G_open_session_nt_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password);  // "nt" == not threaded
-TERN_m12	G_open_session_records(SESSION_m12 *sess);
+TERN_m12	G_open_session_records_m12(SESSION_m12 *sess);
 si8             G_pad_m12(ui1 *buffer, si8 content_len, ui4 alignment);
 TERN_m12	G_path_from_root_m12(si1 *path, si1 *root_path);
 void            G_pop_behavior_m12(void);

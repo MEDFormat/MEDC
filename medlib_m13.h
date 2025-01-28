@@ -439,7 +439,7 @@ typedef struct {
 #define CHANNEL_NUMBER_NO_ENTRY_m13             -1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m13         -2
 #define DOES_NOT_EXIST_m13                      FALSE_m13	// -1
-#define EXISTS_ERROR_m13                   UNKNOWN_m13	// 0
+#define EXISTS_ERROR_m13                   	UNKNOWN_m13	// 0
 #define FILE_EXISTS_m13				TRUE_m13	// 1
 #define DIR_EXISTS_m13                          ((si1) 2)
 #define SIZE_STRING_BYTES_m13                   32
@@ -1053,6 +1053,12 @@ typedef struct {
 #define LH_FILE_m13			GENERIC_FILE_TYPE_CODE_m13
 #define LH_PROC_GLOBALS_m13		PROC_GLOBALS_TYPE_CODE_m13
 
+// Level Header (LH) Allocation Codes:
+#define LH_HEAP_m13			((ui1) 0)  // default (from calloc())
+#define LH_EN_BLOC_m13			((ui1) 1)  // set by alloc_2D functions
+#define LH_STACK_m13			((ui1) 2)  // set by function to whom the stack belongs, or use LH_STACK_ALLOC_m13() macro
+#define LH_STACK_ALLOC_m13(x)		(x; x.allocation = LH_STACK_m13)  // e.g.  FPS_m13	LH_STACK_ALLOC_m13(fps);
+
 // all levels
 #define LH_NO_FLAGS_m13					((ui8) 0)
 #define LH_NO_THREADING_m13				((ui8) 1 << 0)	// no library threading, typically set for debugging
@@ -1061,27 +1067,24 @@ typedef struct {
 #define LH_UPDATE_EPHEMERAL_DATA_m13			((ui8) 1 << 2)	// signal to higher level from lower level (reset by higher level after update)
 
 // session level
-#define LH_SESSION_OPEN_m13				((ui8) 1 << 8)  // all mapped channels & segmented session records are open
-#define LH_EXCLUDE_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 9)  // useful when session directory passed, but don't want time series channels
-#define LH_EXCLUDE_VIDEO_CHANNELS_m13			((ui8) 1 << 10) // useful when session directory passed, but don't want video channels
-#define LH_MAP_ALL_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 11) // useful when time series channels may be added to open session
-#define LH_MAP_ALL_VIDEO_CHANNELS_m13			((ui8) 1 << 12) // useful when video channels may be added to open session
+#define LH_EXCLUDE_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 8)  // useful when session directory passed, but don't want time series channels
+#define LH_EXCLUDE_VIDEO_CHANNELS_m13			((ui8) 1 << 9) // useful when session directory passed, but don't want video channels
+#define LH_MAP_ALL_TIME_SERIES_CHANNELS_m13		((ui8) 1 << 10) // useful when time series channels may be added to open session
+#define LH_MAP_ALL_VIDEO_CHANNELS_m13			((ui8) 1 << 11) // useful when video channels may be added to open session
 
 #define LH_READ_SLICE_SESSION_RECORDS_m13		((ui8) 1 << 16)	// read full record indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_SESSION_RECORDS_m13		((ui8) 1 << 17)	// read full recordindices & data files, close all files
 #define LH_MEM_MAP_SESSION_RECORDS_m13			((ui8) 1 << 18)	// allocate, but don't read full file
 
 // segmented session records level
-#define LH_SEGMENTED_SESS_RECS_OPEN_m13			((ui8) 1 << 24) // all mapped segmented session records files are open or in memory
-#define LH_READ_SLICE_SEG_SESS_RECS_m13		((ui8) 1 << 25)	// read full indices file (close file); open data, read universal header, leave open
-#define LH_READ_FULL_SEG_SESS_RECS_m13		((ui8) 1 << 26)	// read full indices file & data files, close all files
-#define LH_MEM_MAP_SEG_SESS_RECS_m13		((ui8) 1 << 27)	// allocate, but don't read full data file
+#define LH_READ_SLICE_SEG_SESS_RECS_m13			((ui8) 1 << 24)	// read full indices file (close file); open data, read universal header, leave open
+#define LH_READ_FULL_SEG_SESS_RECS_m13			((ui8) 1 << 25)	// read full indices file & data files, close all files
+#define LH_MEM_MAP_SEG_SESS_RECS_m13			((ui8) 1 << 26)	// allocate, but don't read full data file
 
 // channel level
-#define LH_CHANNEL_OPEN_m13				((ui8) 1 << 32)  // all mapped segments are open
-#define LH_CHANNEL_ACTIVE_m13				((ui8) 1 << 33)  // include channel in current read set
-#define LH_REFERENCE_INACTIVE_m13			((ui8) 1 << 34)
-#define LH_MAP_ALL_SEGMENTS_m13				((ui8) 1 << 35)  // allocate slots for every segment, regardless of whether required for current read
+#define LH_CHANNEL_ACTIVE_m13				((ui8) 1 << 32)  // include channel in current read set
+#define LH_REFERENCE_INACTIVE_m13			((ui8) 1 << 33)
+#define LH_MAP_ALL_SEGMENTS_m13				((ui8) 1 << 34)  // allocate slots for every segment, regardless of whether required for current read
 // (active channels only)
 #define LH_READ_SLICE_CHANNEL_RECORDS_m13		((ui8) 1 << 40)	// read full record indices file (close file); open record data, read universal header, leave open
 #define LH_READ_FULL_CHANNEL_RECORDS_m13		((ui8) 1 << 41)	// read full record indices & data files, close all files
@@ -1089,9 +1092,8 @@ typedef struct {
 #define LH_THREAD_SEGMENT_READS_m13			((ui8) 1 << 43)	// set if likely to cross many segment boundaries in read (e.g. one channel, long reads or short segments)
 
 // segment level
-#define LH_SEGMENT_OPEN_m13				((ui8) 1 << 48) // all records & data files are open or in memory
-#define LH_NO_CPS_PTR_RESET_m13				((ui8) 1 << 49) // caller will update pointers
-#define LH_NO_CPS_CACHING_m13				((ui8) 1 << 50) // set cps_caching parameter to FALSE
+#define LH_NO_CPS_PTR_RESET_m13				((ui8) 1 << 48) // caller will update pointers
+#define LH_NO_CPS_CACHING_m13				((ui8) 1 << 49) // set cps_caching parameter to FALSE
 // (active channels only)
 #define LH_READ_SLICE_SEGMENT_DATA_m13			((ui8) 1 << 56)	// read full metadata & indices files, close files; open data, read universal header, leave open
 #define LH_READ_FULL_SEGMENT_DATA_m13			((ui8) 1 << 57)	// read full metadata, indices, & data files, close all files
@@ -1110,11 +1112,11 @@ typedef struct {
 #define LH_READ_CHANNEL_RECORDS_MASK_m13      (	LH_READ_SLICE_CHANNEL_RECORDS_m13 | LH_READ_FULL_CHANNEL_RECORDS_m13 )
 #define LH_READ_SEGMENT_RECORDS_MASK_m13      (	LH_READ_SLICE_SEGMENT_RECORDS_m13 | LH_READ_FULL_SEGMENT_RECORDS_m13 )
 #define LH_READ_SEGMENT_DATA_MASK_m13         (	LH_READ_SLICE_SEGMENT_DATA_m13 | LH_READ_FULL_SEGMENT_DATA_m13 )
-#define LH_READ_RECORDS_MASK_m13	      (	LH_READ_SESSION_RECORDS_MASK_m13 | LH_READ_SEGMENTED_SESS_RECS_MASK_m13 | \
-						LH_READ_CHANNEL_RECORDS_MASK_m13 | LH_READ_SEGMENT_RECORDS_MASK_m13 )
+#define LH_READ_RECORDS_MASK_m13	      (	LH_READ_SESSION_RECORDS_MASK_m13 | LH_READ_SEGMENTED_SESS_RECS_MASK_m13 | LH_READ_CHANNEL_RECORDS_MASK_m13 | LH_READ_SEGMENT_RECORDS_MASK_m13 )
 #define LH_ALL_READ_FLAGS_MASK_m13	      ( LH_READ_RECORDS_MASK_m13 | LH_READ_SEGMENT_DATA_MASK_m13 )
 #define LH_READ_FULL_RECORDS_MASK_m13	      (	LH_READ_FULL_SESSION_RECORDS_m13 | LH_READ_FULL_SEG_SESS_RECS_m13 | LH_READ_FULL_CHANNEL_RECORDS_m13 | LH_READ_FULL_SEGMENT_RECORDS_m13 )
 #define LH_READ_FULL_FILES_MASK_m13	      (	LH_READ_FULL_RECORDS_MASK_m13 | LH_READ_FULL_SEGMENT_DATA_m13 )
+#define LH_READ_METADATA_MASK_m3	      (	LH_READ_SEGMENT_DATA_MASK_m13 | LH_READ_SEGMENT_METADATA_m13 | LH_GENERATE_EPHEMERAL_DATA_m13 )
 // memory map flags & masks
 #define LH_MEM_MAP_ALL_RECORDS_m13	      ( LH_MEM_MAP_SESSION_RECORDS_m13 | LH_MEM_MAP_SEG_SESS_RECS_m13 | LH_MEM_MAP_CHANNEL_RECORDS_m13 | LH_MEM_MAP_SEGMENT_RECORDS_m13 )
 #define LH_MEM_MAP_ALL_m13	      	      (	LH_MEM_MAP_ALL_RECORDS_m13 | LH_MEM_MAP_SEGMENT_DATA_m13 )
@@ -1861,7 +1863,7 @@ typedef struct LEVEL_HEADER_m13 {
 	union {  // anonymous union
 		struct {
 			si1     	type_string[TYPE_BYTES_m13];
-			tern		en_bloc_allocation;
+			ui1		allocation;
 			ui1     	pad[2];  // force to 8-byte alignment
 		};
 		struct {
@@ -2675,8 +2677,8 @@ typedef struct {
 	FPS_m13	*record_data_fps;
 	FPS_m13	*record_indices_fps;
 	SEG_SESS_RECS_m13		*seg_sess_recs;
-	si1			        *path;			// points to proc globals current_session.directory (including directory itself)
-	si1                             *name;			// points to  proc globals current_session.name (file system)
+	si1			        *path;	// points to proc globals current_session.directory (including directory itself)
+	si1                             *name;	// points to  proc globals current_session.name (file system)
 	SLICE_m13			slice;
 	si8				number_of_contigua;
 	CONTIGUON_m13			*contigua;
@@ -2789,13 +2791,13 @@ si1		*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset
 si1		*G_find_metadata_file_m13(si1 *path, si1 *md_path);
 si8		G_find_record_index_m13(FPS_m13 *record_indices_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8     	G_frame_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_uutc, ui4 mode, ...);  // varargs (level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
-tern		G_free_channel_m13(CHANNEL_m13* channel, tern free_structure);
+tern		G_free_channel_m13(CHANNEL_m13 **channel_ptr);
 void		G_free_global_tables_m13(void);
 void            G_free_globals_m13(tern cleanup_for_exit);
 void		G_free_thread_local_storage_m13(LEVEL_HEADER_m13 *level_header);
-tern		G_free_segment_m13(SEGMENT_m13 *segment, tern free_structure);
-tern		G_free_seg_sess_recs_m13(SEG_SESS_RECS_m13 *ssr, tern free_structure);
-tern		G_free_session_m13(SESSION_m13 *session, tern free_structure);
+tern		G_free_segment_m13(SEGMENT_m13 **segment_ptr);
+tern		G_free_seg_sess_recs_m13(SEG_SESS_RECS_m13 **ssr_ptr);
+tern		G_free_session_m13(SESSION_m13 **session_ptr);
 tern		G_frequencies_vary_m13(SESSION_m13 *sess);
 tern		G_full_path_m13(si1 *path, si1 *full_path);
 void		G_function_stack_trap_m13(si4 sig_num);
@@ -2838,11 +2840,13 @@ void    	G_message_m13(si1 *fmt, ...);
 tern		G_move_path_m13(si1 *path, si1 *new_path);
 void     	G_nap_m13(si1 *nap_str);
 si1		*G_numerical_fixed_width_string_m13(si1 *string, si4 string_bytes, si4 number);
-CHANNEL_m13	*G_open_channel_m13(CHANNEL_m13 *chan, SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *parent, ui8 flags, si1 *password);
+CHANNEL_m13	*G_open_channel_m13(SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
-SEGMENT_m13	*G_open_segment_m13(SEGMENT_m13 *seg, SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *parent, ui8 flags, si1 *password);
+SEG_SESS_RECS_m13	*G_open_seg_sess_recs_m13(SESSION_m13 *sess);
+SEGMENT_m13	*G_open_segment_m13(SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr);
-SESSION_m13	*G_open_session_m13(SESSION_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
+SESSION_m13	*G_open_session_m13(SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
+tern		G_open_session_recs_m13(SESSION_m13 *sess);
 si8             G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 void            G_pop_behavior_m13(void);
 void            G_pop_function_m13(void);
@@ -3029,7 +3033,7 @@ void		**AT_recalloc_2D_m13(const si1 *function, void **curr_ptr, size_t curr_dim
 FPS_m13		*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FPS_m13 *proto_fps, si8 bytes_to_copy);
 tern		FPS_close_m13(FPS_m13 *fps);
 si4		FPS_compare_start_times_m13(const void *a, const void *b);
-tern		FPS_free_m13(FPS_m13 *fps, tern free_structure);
+tern		FPS_free_m13(FPS_m13 **fps_ptr);
 FPS_DIRECTIVES_m13	*FPS_init_directives_m13(FPS_DIRECTIVES_m13 *directives);
 FPS_PARAMETERS_m13	*FPS_init_parameters_m13(FPS_PARAMETERS_m13 *parameters);
 si8		FPS_memory_map_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read);
@@ -3049,7 +3053,7 @@ si8		FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write);
 //**********************************************************************************//
 
 // Prototypes
-si1		*STR_binary_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern prefix);
+si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern prefix);
 wchar_t		*STR_char2wchar_m13(wchar_t *target, si1 *source);
 ui4             STR_check_spaces_m13(si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
@@ -3705,9 +3709,9 @@ si8	*CMP_find_crits_m13(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs);
 tern	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, si8 *n_troughs, si8 *trough_xs);
 tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CPS_m13 *cps);
 tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
-tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 *buffers, tern free_structure);
+tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 **buffers_ptr);
 tern    CMP_free_cps_cache_m13(CPS_m13 *cps);
-tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure);
+tern	CMP_free_cps_m13(CPS_m13 **cps_ptr);
 sf8	CMP_gamma_cdf_m13(sf8 x, sf8 k, sf8 theta, sf8 offset);
 sf8	CMP_gamma_cf_m13(sf8 a, sf8 x, sf8 *g_ln);
 sf8	CMP_gamma_inv_cdf_m13(sf8 p, sf8 k, sf8 theta, sf8 offset);
@@ -4168,8 +4172,8 @@ tern	FILT_elmhes_m13(sf8 **a, si4 poles);
 tern	FILT_excise_transients_m13(CPS_m13 *cps, si8 data_len, si8 *n_extrema);
 si4	FILT_filtfilt_m13(FILTPS_m13 *filtps);
 tern	FILT_free_CPS_m13(CPS_m13 *cps, tern free_orig_data, tern free_filt_data, tern free_buffer);
-tern	FILT_free_m13(FILTPS_m13 *filtps, tern free_orig_data, tern free_filt_data, tern free_buffer, tern free_structure);
-tern	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 *qd, tern free_structure);
+tern	FILT_free_m13(FILTPS_m13 **filtps_ptr, tern free_orig_data, tern free_filt_data, tern free_buffer);
+tern	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 **qd_ptr);
 FILTPS_m13  *FILT_init_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, tern alloc_orig_data, tern alloc_filt_data, tern alloc_buffer, ui4 behavior_on_fail, sf8 cutoff_1, ...);
 tern	FILT_generate_initial_conditions_m13(FILTPS_m13 *filtps);
 tern	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
@@ -4329,7 +4333,7 @@ typedef struct {
 
 // Prototypes
 pthread_rval_m13	DM_channel_thread_m13(void *ptr);
-tern			DM_free_matrix_m13(DATA_MATRIX_m13 *matrix, tern free_structure);
+tern			DM_free_matrix_m13(DATA_MATRIX_m13 **matrix);
 DATA_MATRIX_m13 	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESSION_m13 *sess, SLICE_m13 *slice, si4 varargs, ...);  // can't use tern to flag varargs (undefined behavior)
 // DM_get_matrix_m13() varargs: si8 sample_count, sf8 sampling_frequency, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
 //
@@ -4526,7 +4530,7 @@ tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info);
 tern	TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port);
 tern	TR_connect_to_server_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port);
 tern	TR_create_socket_m13(TR_INFO_m13 *trans_info);
-tern	TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr, tern free_structure);
+tern	TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr);
 tern	TR_realloc_trans_info_m13(TR_INFO_m13 *trans_info, si8 buffer_bytes, TR_HEADER_m13 **caller_header);
 si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HEADER_m13 **caller_header);  // receive may reallocate, pass caller header to have function set local variable, otherwise pass NULL, can do manually
 tern	TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, si1 *fmt, ...);
