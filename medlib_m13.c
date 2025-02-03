@@ -6316,10 +6316,14 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 		if (MED_fps) {
 			proc_globals->current_session.UID = MED_fps->universal_header->session_UID;
 			strcpy(proc_globals->current_session.uh_name, MED_fps->universal_header->session_name);
-			if (strcmp(proc_globals->current_session.fs_name, proc_globals->current_session.uh_name))
+			proc_globals->current_session.names_differ = FALSE_m13;
+			if (strcmp(proc_globals->current_session.fs_name, proc_globals->current_session.uh_name)) {
 				proc_globals->current_session.names_differ = TRUE_m13;
-			else
-				proc_globals->current_session.names_differ = FALSE_m13;
+				if (globals_m13->update_header_names == TRUE_m13)
+					if (proc_globals->child->type_code == LH_SESSION_m13)
+						if (G_update_session_name_m13((SESSION_m13 *) proc_globals->child) == TRUE_m13)
+							proc_globals->current_session.names_differ = FALSE_m13;
+			}
 		}
 	}
 
@@ -8165,7 +8169,7 @@ CHANNEL_m13	*G_open_channel_m13(SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *p
 			break;
 		default:
 			G_free_channel_m13(&chan);
-			G_set_error_m13(E_NOT_MED_m13, "bad channel type");
+			G_set_error_m13(E_NOT_MED_m13, "unrecognized channel type");
 			return_m13(NULL);
 	}
 	chan->flags = flags;
@@ -8196,6 +8200,33 @@ CHANNEL_m13	*G_open_channel_m13(SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *p
 		if (G_get_segment_range_m13((LEVEL_HEADER_m13 *) chan, slice) == 0) {
 			G_free_channel_m13(&chan);
 			return_m13(NULL);
+		}
+	}
+	
+	// channel records
+	// Note: open records before opening segments because that may be threaded, so preferable to change channel names now
+	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m13) {
+		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+			chan->record_indices_fps = G_read_file_m13(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
+			if (chan->record_indices_fps == NULL) {
+				G_free_channel_m13(&chan);
+				return_m13(NULL);
+			}
+			// check for rename
+			if (strcmp(chan->name, chan->record_indices_fps->universal_header->channel_name))
+				G_update_channel_name_m13(chan);
+		}
+		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
+		if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m13)
+				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
+			else  // just read in data universal header & leave open
+				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) chan, NULL);
+			if (chan->record_data_fps == NULL) {
+				G_free_channel_m13(&chan);
+				return_m13(NULL);
+			}
 		}
 	}
 	
@@ -8319,29 +8350,6 @@ CHANNEL_m13	*G_open_channel_m13(SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *p
 	slice->end_segment_number = seg->slice.end_segment_number;
 	slice->number_of_segments = TIME_SLICE_SEGMENT_COUNT_m13(slice);
 
-	// channel records
-	if (chan->flags & LH_READ_CHANNEL_RECORDS_MASK_m13) {
-		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-		if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-			chan->record_indices_fps = G_read_file_m13(chan->record_indices_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
-			if (chan->record_indices_fps == NULL) {
-				G_free_channel_m13(&chan);
-				return_m13(NULL);
-			}
-		}
-		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
-		if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-			if (chan->flags & LH_READ_FULL_CHANNEL_RECORDS_m13)
-				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, 0, (LEVEL_HEADER_m13 *) chan, NULL);
-			else  // just read in data universal header & leave open
-				chan->record_data_fps = G_read_file_m13(chan->record_data_fps, tmp_str, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, (LEVEL_HEADER_m13 *) chan, NULL);
-			if (chan->record_data_fps == NULL) {
-				G_free_channel_m13(&chan);
-				return_m13(NULL);
-			}
-		}
-	}
-	
 	// ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		if (chan->metadata_fps)
@@ -8420,6 +8428,7 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 SEGMENT_m13	*G_open_segment_m13(SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *parent, ui8 flags, si1 *password)
 {
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m13];
+	si8			len;
 	SEGMENT_m13		*seg;
 	PROC_GLOBALS_m13	*proc_globals;
 	
@@ -8491,6 +8500,13 @@ SEGMENT_m13	*G_open_segment_m13(SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *pa
 				G_free_segment_m13(&seg);
 				return_m13(NULL);
 			}
+			// check for rename
+			len = strlen(seg->name);
+			seg->name[len - 5] = 0;
+			if (strcmp(tmp_str, seg->metadata_fps->universal_header->channel_name))
+				if (seg->parent->type_code == LH_TIME_SERIES_CHANNEL_m13 || seg->parent->type_code == LH_VIDEO_CHANNEL_m13)
+					G_update_channel_name_m13((CHANNEL_m13 *) seg->parent);
+			seg->name[len - 5] = '-';
 		}
 	}
 	
@@ -15063,13 +15079,14 @@ tern	G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 number_of_items, si8 byte
 }
 
 
-tern	G_update_session_name_m13(SESSION_m13 *sess, FPS_m13 *fps)
+tern	G_update_session_name_m13(SESSION_m13 *sess)
 {
-	tern			reopen_fps, path_exists;
+	tern			path_exists;
 	si1			**file_list, **chan_list, **seg_list, **vid_list;
 	si1			path[SEG_BASE_FILE_NAME_BYTES_m13], tmp_path[SEG_BASE_FILE_NAME_BYTES_m13], *fs_name, *uh_name;
 	si1			chan_name[BASE_FILE_NAME_BYTES_m13], seg_name[SEG_BASE_FILE_NAME_BYTES_m13];
 	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
+	
 	PROC_GLOBALS_m13	*proc_globals;
 
 #ifdef FN_DEBUG_m13
@@ -15078,25 +15095,21 @@ tern	G_update_session_name_m13(SESSION_m13 *sess, FPS_m13 *fps)
 	
 	// update all FPS universal header session names to file system session name
 
+	if (globals_m13->update_header_names == FALSE_m13)
+		return_m13(FALSE_m13);
+	
 	if (sess == NULL) {
 		G_set_error_m13(E_UNSPEC_m13, "session is NULL");
 		return_m13(FALSE_m13);
 	}
 
-	if (globals_m13->update_header_names == FALSE_m13)
-		return_m13(FALSE_m13);
-	
 	G_message_m13("Updating session name ...\n");
-	
-	if (fps) {
-		FPS_close_m13(fps);
-		reopen_fps = TRUE_m13;
-	} else {
-		reopen_fps = FALSE_m13;
-	}
-	
+		
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) sess);
 	if (proc_globals->current_session.names_differ == FALSE_m13)
+		return_m13(FALSE_m13);
+	sess = (SESSION_m13 *) proc_globals->child;
+	if (sess->type_code != LH_SESSION_m13)
 		return_m13(FALSE_m13);
 	
 	fs_name = proc_globals->current_session.fs_name;
@@ -15243,11 +15256,6 @@ tern	G_update_session_name_m13(SESSION_m13 *sess, FPS_m13 *fps)
 			}
 		}
 		free_m13((void *) chan_list);
-	}
-
-	if (reopen_fps == TRUE_m13) {
-		STR_replace_pattern_m13(uh_name, fs_name, fps->path, fps->path);
-		G_read_file_m13(fps, NULL, 0, fps->parameters.raw_data_bytes, 0, NULL, NULL);
 	}
 	
 	return_m13(TRUE_m13);
