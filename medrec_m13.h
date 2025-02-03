@@ -96,6 +96,7 @@
 #ifndef MEDREC_IN_m13
 #define MEDREC_IN_m13
 
+#include "medlib_m13.h"
 
 //*************************************************************************************//
 //***************************   General Record Constants   ****************************//
@@ -157,7 +158,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_TYPE_CODE_m13          (ui4) 0x746D6753        // ui4 (little endian)
 // #define REC_Sgmt_TYPE_CODE_m13       (ui4) 0x53676D74        // ui4 (big endian)
 
-// Version 1.0
+// Version 1.0 (for compatibility)
 #define REC_Sgmt_v10_BYTES_m13                                          48
 #define REC_Sgmt_v10_END_TIME_OFFSET_m13                                0							// si8
 #define REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13			8							// si8
@@ -198,12 +199,12 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13                          24							// si4
 #define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13                        SEGMENT_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_PAD_OFFSET_m13              			28
-#define REC_Sgmt_v11_PAD_BYTES_m13                                      4
-#define REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13                     REC_Sgmt_v11_BYTES_m13					// si1 (arbitrary length, padded to 16-byte alignment for encryption)
+#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13              		28
+// REC_Sgmt_v11_DESCRIPTION_BYTES_m13 defined in medlib_m13.h due to codependency
+#define REC_Sgmt_v11_PAD_OFFSET_m13              			REC_Sgmt_v11_DESCRIPTION_OFFSET_m13
+// REC_Sgmt_v11_PAD_BYTES_m13 defined in medlib_m13.h due to codependency
 
-// Structures
-// REC_Sgmt_v11_m13 defined in medlib_m13.h due to codependency
+// Structures defined in medlib.h due to codependency
 
 // Prototypes
 tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header);

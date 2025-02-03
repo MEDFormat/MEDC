@@ -94,7 +94,7 @@
 
 
 
-#include "medlib_m13.h"
+#include "medrec_m13.h"
 
 
 //*************************************************************************************//
@@ -104,7 +104,7 @@
 tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
 {
 	ui4	type_code;
-	si1	time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(CRC_BYTES_m13)];
+	si1	time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(CRC_BYTES_m13, 1)];
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -121,12 +121,12 @@ tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 rec
 	if (record_header->record_CRC == RECORD_HEADER_CRC_NO_ENTRY_m13) {
 		printf_m13("Record CRC: no entry\n");
 	} else {
-		STR_hex_m13((ui1 *) &record_header->record_CRC, CRC_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &record_header->record_CRC, CRC_BYTES_m13, ":");
 		printf_m13("Record CRC: %s\n", hex_str);
 	}
 	type_code = record_header->type_code;
 	if (type_code) {
-		STR_hex_m13((ui1 *) record_header->type_string, CRC_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) record_header->type_string, CRC_BYTES_m13, ":");
 		printf_m13("Record Type String: %s (%s)\n", record_header->type_string, hex_str);
 	} else {
 		printf_m13("Record Type String: no entry\n");
@@ -280,9 +280,10 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes)
 
 tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 {
+	si1			*segment_description;
 	REC_Sgmt_v10_m13	*Sgmt_v10;
 	REC_Sgmt_v11_m13	*Sgmt_v11;
-	si1                     time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(8)], *segment_description;
+	si1                     time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(ui8), 1)];
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -302,7 +303,7 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 			printf_m13("End Sample Number: no entry\n");
 		else
 			printf_m13("End Sample Number: %ld\n", Sgmt_v10->end_sample_number);
-		STR_hex_m13((ui1 *) &Sgmt_v10->segment_UID, 8, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &Sgmt_v10->segment_UID, sizeof(si8), ":");
 		printf_m13("Segment UID: %s\n", hex_str);
 		if (Sgmt_v10->segment_number == REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
@@ -350,15 +351,10 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 			printf_m13("Segment Number: no entry\n");
 		else
 			printf_m13("Segment Number: %d\n", Sgmt_v11->segment_number);
-		if (record_header->total_record_bytes > (RECORD_HEADER_BYTES_m13 + REC_Sgmt_v11_BYTES_m13)) {
-			segment_description = (si1 *) Sgmt_v11 + REC_Sgmt_v11_SEGMENT_DESCRIPTION_OFFSET_m13;
-			if (*segment_description)
-				UTF8_printf_m13("Segment Description: %s\n", segment_description);
-			else
-				printf_m13("Segment Description: no entry\n");
-		} else {
+		if (*Sgmt_v11->description)
+			UTF8_printf_m13("Segment Description: %s\n", Sgmt_v11->description);
+		else
 			printf_m13("Segment Description: no entry\n");
-		}
 	}
 	// Unrecognized record version
 	else {
@@ -925,7 +921,7 @@ tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 
 tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 {
-	si1                     hex_str[HEX_STRING_BYTES_m13(4)];
+	si1                     hex_str[HEX_STR_BYTES_m13(sizeof(ui4), 1)];
 	REC_NlxP_v10_m13	*nlxp;
 
 #ifdef FN_DEBUG_m13
@@ -954,7 +950,7 @@ tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 			break;
 		}
 		printf_m13("Raw Port Value: %u  (unsigned dec)\n", nlxp->raw_port_value);
-		STR_hex_m13((ui1 *) &nlxp->raw_port_value, 4, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &nlxp->raw_port_value, sizeof(ui4), ":");
 		printf_m13("Raw Port Bytes: %s  (hex)\n", hex_str);
 	}
 	// Unrecognized record version

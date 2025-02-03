@@ -114,7 +114,7 @@ ui4 	G_add_level_extension_m13(si1 *directory_name)
 {
 	tern	from_root;
 	si1	full_path[FULL_FILE_NAME_BYTES_m13], enclosing_dir[FULL_FILE_NAME_BYTES_m13];
-	si1	base_name[SEGMENT_BASE_FILE_NAME_BYTES_m13], *extension;
+	si1	base_name[SEG_BASE_FILE_NAME_BYTES_m13], *extension;
 	ui4	type_code;
 	
 #ifdef FN_DEBUG_m13
@@ -473,7 +473,7 @@ SEGMENT_m13	*G_allocate_segment_m13(SEGMENT_m13 *seg, FPS_m13 *proto_fps, si1 *e
 	if (seg == NULL)
 		seg = (SEGMENT_m13 *) calloc_m13((size_t)1, sizeof(SEGMENT_m13));
 	G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, seg_num);
-	snprintf_m13(seg->name, SEGMENT_BASE_FILE_NAME_BYTES_m13, "%s_s%s", chan_name, num_str);
+	snprintf_m13(seg->name, SEG_BASE_FILE_NAME_BYTES_m13, "%s_s%s", chan_name, num_str);
 	seg->parent = (LEVEL_HEADER_m13 *) parent;
 	
 	// allocate metadata, data, & indices
@@ -1069,7 +1069,7 @@ si8	G_build_contigua_m13(LEVEL_HEADER_m13 *level_header)
 Sgmt_RECORD_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, CHANNEL_m13 *chan)
 {
 	tern			seek_mode;
-	si1			**seg_list, *metadata_ext, tmp_str[FULL_FILE_NAME_BYTES_m13], seg_name[SEGMENT_BASE_FILE_NAME_BYTES_m13];
+	si1			**seg_list, *metadata_ext, tmp_str[FULL_FILE_NAME_BYTES_m13], seg_name[SEG_BASE_FILE_NAME_BYTES_m13];
 	si4			n_segs;
 	si8			i, file_offset, data_len, n_recs, seek_data_size;
 	const si8		SEEK_THRESHOLD = 10;  // this factor is a guess, for now
@@ -1849,7 +1849,7 @@ void	G_clear_error_m13(LEVEL_HEADER_m13 *level_header)
 	
 	// set thread specific flag for void functions
 	proc_globals = G_proc_globals_m13(level_header);
-	proc_globals->proc_error_state = FALSE_m13;  // should always be set if there is an error, but can be cleared
+	proc_globals->miscellaneous.proc_error_state = FALSE_m13;  // should always be set if there is an error, but can be cleared
 
 	// check global error
 	err = &globals_m13->error;
@@ -2105,7 +2105,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 {
 	static tern			warning_given = FALSE_m13;
 	tern			free_fps2;
-	si1				path[FULL_FILE_NAME_BYTES_m13], name[SEGMENT_BASE_FILE_NAME_BYTES_m13];
+	si1				path[FULL_FILE_NAME_BYTES_m13], name[SEG_BASE_FILE_NAME_BYTES_m13];
 	si8				number_of_entries, file_offset, idx;
 	ui4				maximum_entry_size;
 	FPS_m13	*fps2;
@@ -2394,44 +2394,41 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
 	if (fps == NULL) {
 		G_set_error_m13(E_NO_METADATA_m13, "FPS is null");
 		return_m13(FALSE_m13);
 	}
+	
+	uh = fps->universal_header;
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
-	uh = fps->universal_header;
 
 	// section 2 decryption
-	if (uh->metadata_section_2_encryption > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
-		if (pwd->access_level >= uh->metadata_section_2_encryption ) {
-			if (uh->metadata_section_2_encryption == LEVEL_1_ENCRYPTION_m13)
+	if (uh->encryption_2 > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
+		if (pwd->access_level >= uh->encryption_2 ) {
+			if (uh->encryption_2 == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
-			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, NULL, decryption_key);
-			uh->metadata_section_2_encryption = -uh->metadata_section_2_encryption ;  // mark as currently decrypted
+			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, NULL, decryption_key, uh->encryption_rounds);
+			uh->encryption_2 = -uh->encryption_2 ;  // mark as currently decrypted
 		} else {
-			G_add_behavior_m13(RETURN_ON_FAIL_m13);  // force return to show hints
-			G_set_error_m13(E_NO_METADATA_m13, "Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt", uh->metadata_section_2_encryption);
-			G_pop_behavior_m13();  // restore behavior
-			G_show_password_hints_m13(pwd, uh->metadata_section_2_encryption);
-			if (G_current_behavior_m13() & RETURN_ON_FAIL_m13)
-				return_m13(FALSE_m13);
-			exit_m13(-1);
+			G_show_password_hints_m13(pwd, uh->encryption_2);
+			G_set_error_m13(E_NO_METADATA_m13, "Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt", uh->encryption_2);
+			return_m13(FALSE_m13);
 		}
 	}
 
 	// section 3 decryption
-	if (uh->metadata_section_3_encryption > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
-		if (pwd->access_level >= uh->metadata_section_3_encryption) {
-			if (uh->metadata_section_3_encryption == LEVEL_1_ENCRYPTION_m13)
+	if (uh->encryption_3 > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
+		if (pwd->access_level >= uh->encryption_3) {
+			if (uh->encryption_3 == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
-			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, NULL, decryption_key);
-			uh->metadata_section_3_encryption = -uh->metadata_section_3_encryption;  // mark as currently decrypted
+			AES_decrypt_m13(fps->parameters.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, NULL, decryption_key, uh->encryption_rounds);
+			uh->encryption_3 = -uh->encryption_3;  // mark as currently decrypted
 		} else {
 			proc_globals->time_constants.RTO_known = FALSE_m13;
 			proc_globals->time_constants.set = TRUE_m13;  // set to defaults
@@ -2463,7 +2460,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 
 tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): RECORD_HEADER_m13 *rh, si8 number_of_records
 {
-	ui1			*encryption_key;
+	ui1			*encryption_key, encryption_rounds;
 	si8			i, number_of_records;
 	va_list			args;
 	RECORD_HEADER_m13	*rh;
@@ -2474,8 +2471,8 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 	G_push_function_m13();
 #endif
 	
-	// always returns TRUE_m13 at this point - failed decryption on per record bassis is normal under some circumstances
-
+	// always returns TRUE_m13 - failed decryption on per record basis may be expected
+	
 	if (fps == NULL) {
 		va_start(args, fps);
 		rh = va_arg(args, RECORD_HEADER_m13 *);
@@ -2487,8 +2484,10 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 	}
 	if (number_of_records == 0)  // failure == all records unreadable, not no records
 		return_m13(TRUE_m13);
+	
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
+	encryption_rounds = fps->universal_header->encryption_rounds;
 
 	for (i = 0; i < number_of_records; ++i) {
 		if (rh->encryption_level > NO_ENCRYPTION_m13) {
@@ -2497,7 +2496,7 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 					encryption_key = pwd->level_1_encryption_key;
 				else
 					encryption_key = pwd->level_2_encryption_key;
-				AES_decrypt_m13((ui1 *) rh + RECORD_HEADER_BYTES_m13, rh->total_record_bytes - RECORD_HEADER_BYTES_m13, NULL, encryption_key);
+				AES_decrypt_m13((ui1 *) rh + RECORD_HEADER_BYTES_m13, rh->total_record_bytes - RECORD_HEADER_BYTES_m13, NULL, encryption_key, encryption_rounds);
 				rh->encryption_level = -rh->encryption_level;  // mark as currently decrypted
 			}
 		}
@@ -2510,81 +2509,60 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 
 tern     G_decrypt_time_series_data_m13(FPS_m13 *fps)
 {
-	ui1				*key = NULL;
+	static tern			warning_delivered = FALSE_m13;
+	ui1				*key, encryption_rounds;
+	si1				enc_level;
 	si8                             i, encryption_bytes, encryptable_bytes, number_of_items;
+	CPS_m13				*cps;
 	CMP_BLOCK_FIXED_HEADER_m13	*bh;
 	PASSWORD_DATA_m13		*pwd;
 	PROC_GLOBALS_m13		*proc_globals;
-	
+	UNIVERSAL_HEADER_m13		*uh;
+
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	// get decryption key - assume all blocks encrypted at same level
-	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	if (proc_globals->time_series_data_encryption_level == NO_ENCRYPTION_m13)
-		return_m13(TRUE_m13);
-	pwd = &proc_globals->password_data;
-	bh = fps->parameters.cps->block_header;
-	
-	number_of_items = fps->number_of_items;	// looks like big loop but breaks out as soon as encrypted block encountered
-	for (i = 0; i < number_of_items; ++i) {	// if none encountered, function done
-		// check if already decrypted
-		if ((bh->block_flags & CMP_BF_ENCRYPTION_MASK_m13) == 0) {
-			bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *)bh + bh->total_block_bytes);
-			continue;
-		}
-		if (bh->block_flags & CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13) {
-			if (bh->block_flags & CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13) {
-				G_set_error_m13(E_NO_ACCESS_m13, "cannot decrypt data: flags indicate both level 1 & level 2 encryption");
-				return_m13(FALSE_m13);
-			}
-			if (pwd->access_level >= LEVEL_1_ENCRYPTION_m13) {
-				key = pwd->level_1_encryption_key;
-				break;
-			} else {
-				G_add_behavior_m13(RETURN_ON_FAIL_m13);  // force return to show hints
-				G_set_error_m13(E_NO_ACCESS_m13, "data encrypted at level 1 => cannot decrypt");
-				G_pop_behavior_m13();  // restore behavior
-				G_show_password_hints_m13(pwd, LEVEL_1_ENCRYPTION_m13);
-				if (G_current_behavior_m13() & RETURN_ON_FAIL_m13)
-					return_m13(FALSE_m13);
-				exit_m13(-1);
-			}
-		} else {  // level 2 bit is set
-			if (pwd->access_level == LEVEL_2_ENCRYPTION_m13) {
-				key = pwd->level_2_encryption_key;
-				break;
-			} else {
-				G_add_behavior_m13(RETURN_ON_FAIL_m13);  // force return to show hints
-				G_set_error_m13(E_NO_ACCESS_m13, "data encrypted at level 2 => cannot decrypt");
-				G_pop_behavior_m13();  // restore behavior
-				G_show_password_hints_m13(pwd, LEVEL_2_ENCRYPTION_m13);
-				if (G_current_behavior_m13() & RETURN_ON_FAIL_m13)
-					return_m13(FALSE_m13);
-				exit_m13(-1);
-			}
-		}
-		bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *) bh + bh->total_block_bytes);
+	if (fps == NULL) {
+		G_set_error_m13(E_NO_METADATA_m13, "FPS is NULL");
+		return_m13(FALSE_m13);
 	}
-	
-	// no blocks encrypted
-	if (i == number_of_items)
+	uh = fps->universal_header;
+	enc_level = uh->encryption_1;
+	if (enc_level == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
 	
+	cps = fps->parameters.cps;
+	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
+	pwd = &proc_globals->password_data;
+	if (pwd->access_level >= enc_level) {
+		if (enc_level == LEVEL_1_ENCRYPTION_m13)
+			key = pwd->level_1_encryption_key;
+		else
+			key = pwd->level_2_encryption_key;
+	} else {
+		if (warning_delivered == FALSE_m13) {
+			G_warning_message_m13("%s(): Cannot decrypt data => returning without decrypting\n", __FUNCTION__);
+			warning_delivered = TRUE_m13;
+		}
+		return_m13(FALSE_m13);
+	}
+
 	// decrypt
-	bh = fps->parameters.cps->block_header;
+	bh = cps->block_header;
+	number_of_items = fps->number_of_items;
+	encryption_rounds = uh->encryption_rounds;
 	for (i = number_of_items; i--;) {
 		
-		// block if already decrypted
-		if ((bh->block_flags & CMP_BF_ENCRYPTION_MASK_m13) == 0) {
-			bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *) bh + bh->total_block_bytes);
+		// check if block already decrypted
+		if (!(bh->block_flags & CMP_BF_ENCRYPTED_m13)) {
+			bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *) bh + bh->total_block_bytes); // set pointer to next block
 			continue;
 		}
-		
+		    
 		// calculate encryption bytes
 		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-		if (bh->block_flags | CMP_BF_MBE_ENCODING_MASK_m13) {
+		if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
 			encryption_bytes = encryptable_bytes;
 		} else {
 			encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
@@ -2593,14 +2571,25 @@ tern     G_decrypt_time_series_data_m13(FPS_m13 *fps)
 		}
 		
 		// decrypt
-		AES_decrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key);
+		AES_decrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, encryption_rounds);
 		
-		// set block flag to decrypted
-		bh->block_flags &= ~CMP_BF_ENCRYPTION_MASK_m13;
+		// mark block as decrypted
+		bh->block_flags &= ~CMP_BF_ENCRYPTED_m13;
 		
 		// set pointer to next block
 		bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *) bh + bh->total_block_bytes);
 	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern        	G_decrypt_video_data_m13(FPS_m13 *fps)
+{
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
 	
 	return_m13(TRUE_m13);
 }
@@ -2833,26 +2822,26 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	uh = fps->universal_header;
 
 	// section 2 encrypt
-	if (uh->metadata_section_2_encryption < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
-		if (pwd->access_level >= -uh->metadata_section_2_encryption) {
-			uh->metadata_section_2_encryption = -uh->metadata_section_2_encryption;  // mark as currently encrypted
-			if (uh->metadata_section_2_encryption == LEVEL_1_ENCRYPTION_m13)
+	if (uh->encryption_2 < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
+		if (pwd->access_level >= -uh->encryption_2) {
+			uh->encryption_2 = -uh->encryption_2;  // mark as currently encrypted
+			if (uh->encryption_2 == LEVEL_1_ENCRYPTION_m13)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m13((ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m13, NULL, encryption_key);
+			AES_encrypt_m13((ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m13, NULL, encryption_key, uh->encryption_rounds);
 		}
 	}
 	
 	// section 3 encrypt
-	if (uh->metadata_section_3_encryption < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
-		if (pwd->access_level >= -uh->metadata_section_3_encryption) {
-			uh->metadata_section_3_encryption = -uh->metadata_section_3_encryption;  // mark as currently encrypted
-			if (uh->metadata_section_3_encryption == LEVEL_1_ENCRYPTION_m13)
+	if (uh->encryption_3 < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
+		if (pwd->access_level >= -uh->encryption_3) {
+			uh->encryption_3 = -uh->encryption_3;  // mark as currently encrypted
+			if (uh->encryption_3 == LEVEL_1_ENCRYPTION_m13)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m13((ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m13, NULL, encryption_key);
+			AES_encrypt_m13((ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m13, NULL, encryption_key, uh->encryption_rounds);
 		}
 	}
 	
@@ -2867,7 +2856,8 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 	PASSWORD_DATA_m13	*pwd;
 	RECORD_HEADER_m13	*rh;
 	PROC_GLOBALS_m13	*proc_globals;
-	
+	UNIVERSAL_HEADER_m13	*uh;
+
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -2875,7 +2865,8 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
 	rh = (RECORD_HEADER_m13 *) fps->record_data;
-		
+	uh = fps->universal_header;
+
 	for (i = fps->number_of_items; i--;) {
 		if (rh->encryption_level < NO_ENCRYPTION_m13) {
 			rh->encryption_level = -rh->encryption_level;  // mark as currently encrypted
@@ -2883,7 +2874,7 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 				encryption_key = pwd->level_1_encryption_key;
 			else
 				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m13((ui1 *) rh + RECORD_HEADER_BYTES_m13, rh->total_record_bytes - RECORD_HEADER_BYTES_m13, NULL, encryption_key);
+			AES_encrypt_m13((ui1 *) rh + RECORD_HEADER_BYTES_m13, rh->total_record_bytes - RECORD_HEADER_BYTES_m13, NULL, encryption_key, uh->encryption_rounds);
 		}
 		rh = (RECORD_HEADER_m13 *) ((ui1 *) rh + rh->total_record_bytes);
 	}
@@ -2894,58 +2885,70 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 		
 tern     G_encrypt_time_series_data_m13(FPS_m13 *fps)
 {
-	ui1				*key;
-	si1				encryption_level;
-	ui4				encryption_mask;
+	static tern			warning_delivered = FALSE_m13;
+	ui1				*key, encryption_rounds;
+	si1				enc_level;
 	si8				i, encryptable_bytes, encryption_bytes;
 	PASSWORD_DATA_m13		*pwd;
 	CMP_BLOCK_FIXED_HEADER_m13	*bh;
 	PROC_GLOBALS_m13		*proc_globals;
+	UNIVERSAL_HEADER_m13		*uh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-	encryption_level = fps->parameters.cps->directives.encryption_level;
-	if (encryption_level == NO_ENCRYPTION_m13)
-		return_m13(TRUE_m13);
 	
-	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	pwd = &proc_globals->password_data;
-	if (pwd->access_level >= encryption_level) {
-		if (encryption_level == LEVEL_1_ENCRYPTION_m13) {
-			key = pwd->level_1_encryption_key;
-			encryption_mask = CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13;
-		} else {
-			key = pwd->level_2_encryption_key;
-			encryption_mask = CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13;
-		}
-	} else {
-		G_warning_message_m13("%s(): Cannot encrypt data => returning without encrypting\n", __FUNCTION__);
-		fps->parameters.cps->directives.encryption_level = NO_ENCRYPTION_m13;
+	if (fps == NULL) {
+		G_set_error_m13(E_NO_METADATA_m13, "FPS is null");
 		return_m13(FALSE_m13);
 	}
-	
-	bh = (CMP_BLOCK_FIXED_HEADER_m13 *) fps->data_pointers;
-	for (i = fps->number_of_items; i--;) {
-		if (!(bh->block_flags & CMP_BF_ENCRYPTION_MASK_m13)) {  // already encrypted
-			
-			// calculate encryption bytes
-			encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-			if (bh->block_flags | CMP_BF_MBE_ENCODING_MASK_m13) {
-				encryption_bytes = encryptable_bytes;
-			} else {
-				encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
-				if (encryption_bytes > encryptable_bytes)
-					encryption_bytes = encryptable_bytes;
-			}
-			
-			// encrypt
-			AES_encrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key);
 
-			// set block flag to encyrpted
-			bh->block_flags |= encryption_mask;
+	uh = fps->universal_header;
+	enc_level = uh->encryption_1;
+	if (enc_level == NO_ENCRYPTION_m13)
+		return_m13(TRUE_m13);
+
+	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
+	pwd = &proc_globals->password_data;
+	if (pwd->access_level >= enc_level) {
+		if (enc_level == LEVEL_1_ENCRYPTION_m13)
+			key = pwd->level_1_encryption_key;
+		else
+			key = pwd->level_2_encryption_key;
+	} else {
+		if (warning_delivered == FALSE_m13) {
+			G_warning_message_m13("%s(): Cannot encrypt data => returning without encrypting\n", __FUNCTION__);
+			warning_delivered = TRUE_m13;
 		}
+		return_m13(FALSE_m13);
+	}
+
+	bh = (CMP_BLOCK_FIXED_HEADER_m13 *) fps->time_series_data;
+	encryption_rounds = uh->encryption_rounds;
+	for (i = fps->number_of_items; i--;) {
+			
+		// check if block already encrypted
+		if (bh->block_flags & CMP_BF_ENCRYPTED_m13) {
+			bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *) bh + bh->total_block_bytes);
+			continue;
+		}
+		
+		// calculate encryption bytes
+		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
+		if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
+			encryption_bytes = encryptable_bytes;
+		} else {
+			encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
+			if (encryption_bytes > encryptable_bytes)
+				encryption_bytes = encryptable_bytes;
+		}
+		
+		// encrypt
+		AES_encrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, encryption_rounds);
+
+		// mark block as encrypted
+		bh->block_flags |= CMP_BF_ENCRYPTED_m13;
+
 		bh = (CMP_BLOCK_FIXED_HEADER_m13 *) ((ui1 *) bh + bh->total_block_bytes);
 	}
 	
@@ -2953,6 +2956,17 @@ tern     G_encrypt_time_series_data_m13(FPS_m13 *fps)
 }
 		
 		
+tern        	G_encrypt_video_data_m13(FPS_m13 *fps)
+{
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	return_m13(TRUE_m13);
+}
+
+
 #if defined MACOS_m13 || defined LINUX_m13
 tern	G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password)
 {
@@ -5364,14 +5378,14 @@ si1	**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 number_of_name
 #endif
 
 	if (names == NULL) {
-		names = (si1 **) calloc_2D_m13((size_t) number_of_names, SEGMENT_BASE_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
+		names = (si1 **) calloc_2D_m13((size_t) number_of_names, SEG_BASE_FILE_NAME_BYTES_m13, sizeof(si1), FALSE_m13);
 		if (names == NULL)
 			return_m13(NULL);
 	}
 	
 	for (i = 0; i < number_of_names; ++i) {
 		G_numerical_fixed_width_string_m13(number_str, FILE_NUMBERING_DIGITS_m13, i + 1);
-		snprintf_m13(names[i], SEGMENT_BASE_FILE_NAME_BYTES_m13, "%s%s", prefix, number_str);
+		snprintf_m13(names[i], SEG_BASE_FILE_NAME_BYTES_m13, "%s%s", prefix, number_str);
 	}
 	
 	return_m13(names);
@@ -5573,11 +5587,11 @@ si1	*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name)
 #endif
 
 	if (segment_name == NULL)  // if NULL is passed, this will be allocated, but the calling function has the responsibility to free it.
-		segment_name = (si1 *) malloc_m13((size_t) SEGMENT_BASE_FILE_NAME_BYTES_m13);
+		segment_name = (si1 *) malloc_m13((size_t) SEG_BASE_FILE_NAME_BYTES_m13);
 	
 	G_numerical_fixed_width_string_m13(segment_number_str, FILE_NUMBERING_DIGITS_m13, fps->universal_header->segment_number);
 	
-	snprintf_m13(segment_name, SEGMENT_BASE_FILE_NAME_BYTES_m13, "%s_s%s", fps->universal_header->channel_name, segment_number_str);
+	snprintf_m13(segment_name, SEG_BASE_FILE_NAME_BYTES_m13, "%s_s%s", fps->universal_header->channel_name, segment_number_str);
 	
 	return_m13(segment_name);
 }
@@ -6698,6 +6712,9 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
 	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
 	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
+	globals_m13->update_header_names = GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13;
+	globals_m13->update_file_version = GLOBALS_UPDATE_FILE_VERSION_DEFAULT_m13;
+
 	#if defined MACOS_m13 || defined LINUX_m13
 	strcpy(globals_m13->temp_dir, "/tmp");
 	strcpy(globals_m13->temp_file, "/tmp/MED_junk");
@@ -7024,7 +7041,10 @@ tern	G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file
 	uh->segment_end_time = UUTC_NO_ENTRY_m13;
 	uh->number_of_entries = 0;
 	uh->maximum_entry_size = 0;
-	
+	uh->encryption_rounds = UNIVERSAL_HEADER_ENCRYPTION_ROUNDS_DEFAULT_m13;
+	uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+	uh->ordered = TRUE_m13;  // empty, so inherently ordered
+
 	if (generate_file_UID == TRUE_m13)
 		G_generate_UID_m13(&uh->file_UID);
 	if (originating_file == TRUE_m13)
@@ -7332,7 +7352,7 @@ tern	G_lh_set_directives_m13(si1 *full_file_name, ui8 lh_flags, tern *mmap_flag,
 		    
 ui4    G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1 *MED_name)
 {
-	si1     extension[TYPE_BYTES_m13], local_MED_name[SEGMENT_BASE_FILE_NAME_BYTES_m13];
+	si1     extension[TYPE_BYTES_m13], local_MED_name[SEG_BASE_FILE_NAME_BYTES_m13];
 	si1     local_MED_dir[FULL_FILE_NAME_BYTES_m13];;
 	si4     fe, name_bytes;
 	ui4     code;
@@ -7378,7 +7398,7 @@ ui4    G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1 *MED_name)
 			break;
 		case TIME_SERIES_SEGMENT_DIRECTORY_TYPE_CODE_m13:
 		case VIDEO_SEGMENT_DIRECTORY_TYPE_CODE_m13:
-			name_bytes = SEGMENT_BASE_FILE_NAME_BYTES_m13;
+			name_bytes = SEG_BASE_FILE_NAME_BYTES_m13;
 			break;
 		default:
 			G_set_error_m13(E_NOT_MED_m13, "passed path \"%s\" is not a MED directory\n", local_MED_dir);
@@ -7448,7 +7468,7 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
 			return(type.code);
 		default:  // check tag to determine if this is a MED video data file
-			si1	name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m13];
+			si1	name[VID_BASE_FILE_NAME_BYTES_m13];
 			
 			if (ext_only == TRUE_m13)  // need path to do following check
 				break;
@@ -7456,28 +7476,26 @@ ui4     G_MED_type_code_from_string_m13(si1 *string)
 			G_extract_path_parts_m13(string, NULL, name, NULL);
 			len = strlen(name);
 			if (len <= 12)
-				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+				break;
 			c = name + (len - 12);
 			if (*c++ != '-')
-				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+				break;
 			if (*c++ != 's')
-				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+				break;
 			for (i = FILE_NUMBERING_DIGITS_m13; i--; ++c)
 				if (*c < '0' || *c > '9')
-					goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+					break;
 			if (*c++ != '-')
-				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+				break;
 			if (*c++ != 'n')
-				goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+				break;
 			for (i = FILE_NUMBERING_DIGITS_m13; i--; ++c)
 				if (*c < '0' || *c > '9')
-					goto MED_TYPE_CODE_FOR_STRING_NOT_MED_m13;
+					break;
 
 			return(VIDEO_DATA_FILE_TYPE_CODE_m13);
 	}
-	
-MED_TYPE_CODE_FOR_STRING_NOT_MED_m13:
-	
+		
 	G_warning_message_m13("%s(): \"%s\" is not a recognized MED file type\n", __FUNCTION__, string);
 	
 	return(NO_FILE_TYPE_CODE_m13);
@@ -7501,9 +7519,9 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 	// returns TRUE_m13 if md_fps_1->metadata == md_fps_2->metadata, FALSE_m13 otherwise
 
 	// decrypt if needed
-	if (md_fps_1->universal_header->metadata_section_2_encryption > NO_ENCRYPTION_m13 || md_fps_1->universal_header->metadata_section_3_encryption > NO_ENCRYPTION_m13)
+	if (md_fps_1->universal_header->encryption_2 > NO_ENCRYPTION_m13 || md_fps_1->universal_header->encryption_3 > NO_ENCRYPTION_m13)
 		G_decrypt_metadata_m13(md_fps_1);
-	if (md_fps_2->universal_header->metadata_section_2_encryption > NO_ENCRYPTION_m13 || md_fps_2->universal_header->metadata_section_3_encryption > NO_ENCRYPTION_m13)
+	if (md_fps_2->universal_header->encryption_2 > NO_ENCRYPTION_m13 || md_fps_2->universal_header->encryption_3 > NO_ENCRYPTION_m13)
 		G_decrypt_metadata_m13(md_fps_2);
 	
 	// setup
@@ -7877,9 +7895,6 @@ tern        G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m
 	if (memcmp(uh_1->channel_name, uh_2->channel_name, BASE_FILE_NAME_BYTES_m13)) {
 		memset(merged_uh->channel_name, 0, BASE_FILE_NAME_BYTES_m13); equal = FALSE_m13;
 	}
-	if (uh_1->ordered != uh_2->ordered) {
-		merged_uh->ordered = UNKNOWN_m13; equal = FALSE_m13;
-	}
 	if (uh_1->session_UID != uh_2->session_UID) {
 		merged_uh->session_UID = UID_NO_ENTRY_m13; equal = FALSE_m13;
 	}
@@ -7903,6 +7918,24 @@ tern        G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m
 	}
 	if (memcmp(uh_1->level_3_password_validation_field, uh_2->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13)) {
 		memset(merged_uh->level_3_password_validation_field, 0, PASSWORD_VALIDATION_FIELD_BYTES_m13); equal = FALSE_m13;
+	}
+	if (uh_1->video_data_file_number != uh_2->video_data_file_number) {
+		merged_uh->video_data_file_number = 0; equal = FALSE_m13;
+	}
+	if (uh_1->ordered != uh_2->ordered) {
+		merged_uh->ordered = UNKNOWN_m13; equal = FALSE_m13;
+	}
+	if (uh_1->encryption_rounds != uh_2->encryption_rounds) {
+		merged_uh->encryption_rounds = 0; equal = FALSE_m13;
+	}
+	if (uh_1->encryption_1 != uh_2->encryption_1) {
+		merged_uh->encryption_1 = NO_ENCRYPTION_m13; equal = FALSE_m13;
+	}
+	if (uh_1->encryption_2 != uh_2->encryption_2) {
+		merged_uh->encryption_2 = NO_ENCRYPTION_m13; equal = FALSE_m13;
+	}
+	if (uh_1->encryption_3 != uh_2->encryption_3) {
+		merged_uh->encryption_3 = NO_ENCRYPTION_m13; equal = FALSE_m13;
 	}
 	if (memcmp(uh_1->protected_region, uh_2->protected_region, UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13)) {
 		memset(merged_uh->protected_region, 0, UNIVERSAL_HEADER_PROTECTED_REGION_BYTES_m13); equal = FALSE_m13;
@@ -7939,7 +7972,7 @@ inline
 #endif
 tern	G_move_path_m13(si1 *path, si1 *new_path)
 {
-	si1	command[FULL_FILE_NAME_BYTES_m13 + 8];
+	si1	command[(FULL_FILE_NAME_BYTES_m13 * 2) + 16];
 	si4	fe, ret_val;
 	
 #ifdef FN_DEBUG_m13
@@ -8143,7 +8176,7 @@ CHANNEL_m13	*G_open_channel_m13(SLICE_m13 *slice, si1 *chan_path, SESSION_m13 *p
 	
 	// set up time & generate password data (note do this before slice is conditioned)
 	if (proc_globals->time_constants.set != TRUE_m13) {
-		if (G_set_time_and_password_data_m13(password, chan->path, NULL, NULL) == FALSE_m13) {
+		if (G_set_time_and_password_data_m13(password, chan->path) == FALSE_m13) {
 			G_free_channel_m13(&chan);
 			return_m13(NULL);
 		}
@@ -8431,7 +8464,7 @@ SEGMENT_m13	*G_open_segment_m13(SLICE_m13 *slice, si1 *seg_path, CHANNEL_m13 *pa
 
 	// set up time & generate password data (note do this before slice is conditioned)
 	if (proc_globals->time_constants.set != TRUE_m13) {
-		if (G_set_time_and_password_data_m13(password, seg->path, NULL, NULL) == FALSE_m13) {
+		if (G_set_time_and_password_data_m13(password, seg->path) == FALSE_m13) {
 			G_free_segment_m13(&seg);
 			return_m13(NULL);
 		}
@@ -8926,7 +8959,7 @@ SESSION_m13	*G_open_session_m13(SLICE_m13 *slice, void *file_list, si4 list_len,
 
 	// set up time & generate password data (note do this before slice is conditioned)
 	if (proc_globals->time_constants.set != TRUE_m13) {
-		if (G_set_time_and_password_data_m13(password, sess->path, NULL, NULL) == FALSE_m13) {
+		if (G_set_time_and_password_data_m13(password, sess->path) == FALSE_m13) {
 			G_free_session_m13(&sess);
 			return_m13(NULL);
 		}
@@ -9263,7 +9296,7 @@ void	G_proc_error_clear_m13(LEVEL_HEADER_m13 *level_header)
 	// level header can be NULL - will use process / thread ID
 	
 	proc_globals = G_proc_globals_m13(level_header);
-	proc_globals->proc_error_state = FALSE_m13;
+	proc_globals->miscellaneous.proc_error_state = FALSE_m13;
 	
 	return;
 }
@@ -9279,7 +9312,7 @@ void	G_proc_error_set_m13(LEVEL_HEADER_m13 *level_header)
 	// level header can be NULL - will use process / thread ID
 	
 	proc_globals = G_proc_globals_m13(level_header);
-	proc_globals->proc_error_state = TRUE_m13;
+	proc_globals->miscellaneous.proc_error_state = TRUE_m13;
 	
 	return;
 }
@@ -9296,7 +9329,7 @@ tern	G_proc_error_state_m13(LEVEL_HEADER_m13 *level_header)
 	
 	proc_globals = G_proc_globals_m13(level_header);
 	
-	return(proc_globals->proc_error_state);
+	return(proc_globals->miscellaneous.proc_error_state);
 }
 
 
@@ -9524,8 +9557,8 @@ PROC_GLOBALS_m13	*G_proc_globals_init_m13(LEVEL_HEADER_m13 *level_header)
 	PROC_pthread_mutex_init_m13(&proc_globals->current_session.Sgmt_records_list->mutex, NULL);
 	
 	// reset miscellaneous globals
-	proc_globals->time_series_data_encryption_level = 0;  // don't zero password data, password hints can be shown, if they exist
-	proc_globals->proc_error_state = FALSE_m13;
+	proc_globals->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
+	proc_globals->miscellaneous.proc_error_state = FALSE_m13;
 
 	// set parent
 	if (level_header)
@@ -10349,7 +10382,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 {
 	tern			opened_flag, mmap_flag, close_flag, data_read_flag, allocated_flag, readable, CRC_valid;
 	ui8			lh_flags;
-	si8			bytes_read, required_bytes;
+	si8			bytes_read, required_bytes, header_offset;
 	UNIVERSAL_HEADER_m13	*uh;
 	PROC_GLOBALS_m13	*proc_globals;
 	
@@ -10393,27 +10426,31 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 			G_set_error_m13(E_NO_FILE_m13, "fps and full_file_name are both NULL");
 			return_m13(NULL);
 		}
-		close_flag = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m13;
-		mmap_flag = FPS_DIRECTIVES_MEMORY_MAP_DEFAULT_m13;
-		if (lh_flags)
+		if (lh_flags) {
 			G_lh_set_directives_m13(full_file_name, lh_flags, &mmap_flag, &close_flag, &number_of_items);
+		} else {
+			close_flag = FPS_DIRECTIVES_CLOSE_AFTER_OPERATION_DEFAULT_m13;
+			mmap_flag = FPS_DIRECTIVES_MEMORY_MAP_DEFAULT_m13;
+		}
 		if (number_of_items == FPS_FULL_FILE_m13)
 			mmap_flag = FALSE_m13;
 		// allocate
 		if (mmap_flag == TRUE_m13 || number_of_items == FPS_FULL_FILE_m13)
-			fps = FPS_allocate_m13(NULL, full_file_name, NO_FILE_TYPE_CODE_m13, FPS_FULL_FILE_m13, lh, NULL, 0);
+			fps = FPS_allocate_m13(NULL, full_file_name, UNKNOWN_TYPE_CODE_m13, FPS_FULL_FILE_m13, lh, NULL, 0);  // FPS_allocate will get type code from name
 		else
-			fps = FPS_allocate_m13(NULL, full_file_name, NO_FILE_TYPE_CODE_m13, bytes_to_read, lh, NULL, 0);
+			fps = FPS_allocate_m13(NULL, full_file_name, UNKNOWN_TYPE_CODE_m13, bytes_to_read, lh, NULL, 0);  // FPS_allocate will get type code from name
 		if (fps == NULL)
 			return_m13(NULL);
-		fps->directives.memory_map = mmap_flag;
-		fps->directives.close_file = close_flag;
+		if (mmap_flag == TRUE_m13)
+			fps->directives.flags |= FPS_DF_MEMORY_MAP_m13;
+		if (close_flag == TRUE_m13)
+			fps->directives.flags |= FPS_DF_CLOSE_AFTER_OPERATION_m13;
 		allocated_flag = TRUE_m13;
 	}
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 
 	// full file already read
-	// (NOTE: if possible file was modified since last read, calling function should check for this - too uncommon to justify overhead for all files)
+	// (NOTE: possible file was modified since last read, calling function should check for this - too uncommon to justify overhead for all files)
 	if (fps->parameters.full_file_read == TRUE_m13) {
 		if (file_offset < UNIVERSAL_HEADER_BYTES_m13)  // set pointers to beginning of data if none provided
 			file_offset = UNIVERSAL_HEADER_BYTES_m13;
@@ -10432,8 +10469,10 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	// open file
 	opened_flag = FALSE_m13;
 	if (fps->parameters.fp == NULL) {
-		if (!(fps->directives.open_mode & FPS_GENERIC_READ_OPEN_MODE_m13))
-			fps->directives.open_mode = FPS_R_OPEN_MODE_m13;
+		if (!(fps->directives.flags & FPS_R_OPEN_MODE_m13)) {
+			fps->directives.flags &= ~FPS_OPEN_MODE_MASK_m13;  // unset
+			fps->directives.flags |= FPS_DIRECTIVES_READ_OPEN_MODE_DEFAULT_m13;
+		}
 		FPS_open_m13(fps);
 		opened_flag = TRUE_m13;
 	}
@@ -10441,29 +10480,35 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	// universal header
 	uh = fps->universal_header;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13 || number_of_items == FPS_FULL_FILE_m13 || opened_flag == TRUE_m13) {
-		
-		FPS_read_m13(fps, 0, UNIVERSAL_HEADER_BYTES_m13);
+		if (fps->type_code == VIDEO_DATA_FILE_TYPE_CODE_m13)
+			header_offset = fps->parameters.fp->len - UNIVERSAL_HEADER_BYTES_m13;
+		else
+			header_offset = 0;
+		FPS_read_m13(fps, header_offset, UNIVERSAL_HEADER_BYTES_m13);
 		if (uh->number_of_entries == 0)
 			if (G_correct_universal_header_m13(fps) == FALSE_m13)  // live or abnormally terminated file
 				return_m13(NULL);
 		if (uh->session_UID != proc_globals->current_session.UID)  // set current session directory globals
 			G_get_session_directory_m13(NULL, NULL, fps);
-		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13) {
-			if (proc_globals->password_data.processed != TRUE_m13)	// better if done with a metadata file read (for password hints) below
-				G_process_password_data_m13(fps, password);	// done here to satify rule that any read of any MED file will process password
-			FPS_set_pointers_m13(fps, UNIVERSAL_HEADER_BYTES_m13);
-			fps->number_of_items = 0;
-			return_m13(fps);
-		} else if (number_of_items == FPS_FULL_FILE_m13) {
-			file_offset = UNIVERSAL_HEADER_BYTES_m13;
-			bytes_to_read = fps->parameters.fp->len - UNIVERSAL_HEADER_BYTES_m13;
-			number_of_items = uh->number_of_entries;
-			fps->parameters.full_file_read = TRUE_m13;
-			fps->directives.memory_map = FALSE_m13;	// full file doesn't need memory mapping
-			fps->directives.close_file = TRUE_m13;	// full file reads are closed to keep open file count down
-		}
 	}
-	
+	if (MED_VER_1_0_m13(uh) == TRUE_m13 && globals_m13->update_file_version == TRUE_m13)
+		if (G_update_file_version_m13(&fps, password) == FALSE_m13)
+			return_m13(NULL);
+	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13) {
+		if (proc_globals->password_data.processed != TRUE_m13)	// better if done with a metadata file read (for password hints) below
+			G_process_password_data_m13(fps, password);	// done here to satify rule that any read of any MED file will process password
+		FPS_set_pointers_m13(fps, UNIVERSAL_HEADER_BYTES_m13);
+		fps->number_of_items = 0;
+		return_m13(fps);
+	} else if (number_of_items == FPS_FULL_FILE_m13) {
+		file_offset = UNIVERSAL_HEADER_BYTES_m13;
+		bytes_to_read = fps->parameters.fp->len - UNIVERSAL_HEADER_BYTES_m13;
+		number_of_items = uh->number_of_entries;
+		fps->parameters.full_file_read = TRUE_m13;
+		fps->directives.flags &= ~FPS_DF_MEMORY_MAP_m13;	// full file doesn't need memory mapping
+		fps->directives.flags |= FPS_DF_CLOSE_AFTER_OPERATION_m13;  // full file reads are closed to keep open file count down
+	}
+
 	// get bytes_to_read (preferably this is passed)
 	data_read_flag = FALSE_m13;
 	if (bytes_to_read == 0) {
@@ -10475,7 +10520,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	}
 
 	// allocate memory
-	if (fps->directives.memory_map == TRUE_m13 || fps->parameters.full_file_read == TRUE_m13)
+	if (fps->directives.flags & FPS_DF_MEMORY_MAP_m13 || fps->parameters.full_file_read == TRUE_m13)
 		required_bytes = fps->parameters.fp->len;
 	else
 		required_bytes = bytes_to_read + UNIVERSAL_HEADER_BYTES_m13;
@@ -10488,7 +10533,7 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	// read
 	if (data_read_flag == FALSE_m13)
 		bytes_read = FPS_read_m13(fps, file_offset, bytes_to_read);
-	if (fps->directives.close_file == TRUE_m13)
+	if (fps->directives.flags & FPS_DF_CLOSE_AFTER_OPERATION_m13)
 		FPS_close_m13(fps);
 	if (bytes_read != bytes_to_read) {
 		if (allocated_flag == TRUE_m13)
@@ -10538,21 +10583,23 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 	}
 
 	// decrypt
+	readable = TRUE_m13;  // file types without (possible) encryption
 	switch (fps->universal_header->type_code) {
 		case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
-			readable = TRUE_m13;
-			if (proc_globals->time_series_data_encryption_level)
+			if (uh->encryption_1 > NO_ENCRYPTION_m13)
 				readable = G_decrypt_time_series_data_m13(fps);
+			break;
+		case VIDEO_DATA_FILE_TYPE_CODE_m13:
+			if (uh->encryption_1 > NO_ENCRYPTION_m13)
+				readable = G_decrypt_video_data_m13(fps);
 			break;
 		case RECORD_DATA_FILE_TYPE_CODE_m13:
 			readable = G_decrypt_record_data_m13(fps);
 			break;
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m13:
-			readable = G_decrypt_metadata_m13(fps);
-			break;
-		default:
-			readable = TRUE_m13;  // file types without (possible) encryption
+			if ((uh->encryption_2 > NO_ENCRYPTION_m13) || (uh->encryption_3 > NO_ENCRYPTION_m13))
+				readable = G_decrypt_metadata_m13(fps);
 			break;
 	}
 	if (readable == FALSE_m13) {
@@ -10568,11 +10615,9 @@ FPS_m13	*G_read_file_m13(FPS_m13 *fps, si1 *full_file_name, si8 file_offset, si8
 
 si8     G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, SLICE_m13 *slice, ...)  // varags: si4 seg_num
 {
-	tern			sort_records;
 	si4				seg_num;
 	si8				start_idx, end_idx, n_recs, bytes_to_read, offset;
 	FPS_m13	*ri_fps, *rd_fps;
-	UNIVERSAL_HEADER_m13		*uh;
 	RECORD_INDEX_m13		*ri;
 	SESSION_m13			*sess;
 	SEG_SESS_RECS_m13		*ssr;
@@ -10617,49 +10662,9 @@ si8     G_read_record_data_m13(LEVEL_HEADER_m13 *level_header, SLICE_m13 *slice,
 			break;
 	}
 
-	// sort records, if necessary
-	uh = ri_fps->universal_header;
-	sort_records = FALSE_m13;
-	if (globals_m13->write_sorted_records == TRUE_m13) {
-		if (uh->MED_version_major == 1 && uh->MED_version_minor == 0)  // upgrade record files (MED 1.0)
-			sort_records = TRUE_m13;
-		else if (uh->ordered != TRUE_m13)
-			sort_records = TRUE_m13;
-	}
-	if (sort_records == TRUE_m13) {
-		FPS_m13	**ri_fps_addr, **rd_fps_addr;
-		
-		switch (level_header->type_code) {
-			case LH_SESSION_m13:
-				ri_fps_addr = &sess->record_indices_fps;
-				rd_fps_addr = &sess->record_data_fps;
-				break;
-			case LH_SEG_SESS_RECS_m13:
-				ri_fps_addr = &ssr->record_indices_fps[seg_num];
-				rd_fps_addr = &ssr->record_data_fps[seg_num];
-				break;
-			case LH_TIME_SERIES_CHANNEL_m13:
-			case LH_VIDEO_CHANNEL_m13:
-				ri_fps_addr = &chan->record_indices_fps;
-				rd_fps_addr = &chan->record_data_fps;
-				break;
-			case LH_TIME_SERIES_SEGMENT_m13:
-			case LH_VIDEO_SEGMENT_m13:
-				ri_fps_addr = &seg->record_indices_fps;
-				rd_fps_addr = &seg->record_data_fps;
-				break;
-		}
-		// close files (G_sort_records_m13() works on closed files)
-		FPS_close_m13(ri_fps);
-		FPS_close_m13(rd_fps);
-		G_sort_records_m13(level_header, seg_num);
-		// reopen files
-		ri_fps = *ri_fps_addr = G_read_file_m13(ri_fps, NULL, 0, 0, 0, level_header, NULL);
-		if (level_header->flags | LH_READ_FULL_RECORDS_MASK_m13)
-			rd_fps = *rd_fps_addr = G_read_file_m13(rd_fps, NULL, 0, 0, 0, level_header, NULL);
-		else
-			rd_fps = *rd_fps_addr = G_read_file_m13(rd_fps, NULL, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, level_header, NULL);
-	}
+	// sort records
+	if (globals_m13->write_sorted_records == TRUE_m13 && ri_fps->universal_header->ordered != TRUE_m13)
+		G_sort_records_m13(ri_fps, rd_fps);
 
 	start_idx = G_find_record_index_m13(ri_fps, slice->start_time, FIND_FIRST_ON_OR_AFTER_m13, 0);
 	if (start_idx == NO_INDEX_m13) {  // no records "on or after" slice beginning
@@ -11184,13 +11189,14 @@ si8     G_read_time_series_data_m13(SEGMENT_m13 *seg, SLICE_m13 *slice)
 	if (tsd_fps->parameters.cps == NULL) {
 		compressed_data_bytes = REMOVE_DISCONTINUITY_m13(tsi[end_block + 1].file_offset) - start_offset;
 		cps = CMP_allocate_CPS_m13(tsd_fps, CMP_DECOMPRESSION_MODE_m13, n_samps, compressed_data_bytes, tmd2->maximum_block_keysample_bytes, tmd2->maximum_block_samples, NULL, NULL);
-		if ((cps_caching = cps->directives.cps_caching) == TRUE_m13) {
+		cps_caching = (cps->directives.flags & CPS_DF_CPS_CACHING_m13) ? TRUE_m13 : FALSE_m13;
+		if (cps_caching == TRUE_m13) {
 			cached_blocks = cps->parameters.cached_blocks = (CMP_CACHE_BLOCK_INFO_m13 *) calloc_m13((size_t) n_blocks, sizeof(CMP_CACHE_BLOCK_INFO_m13));
 			cps->parameters.cached_block_list_len = n_blocks;
 		}
 	} else {
 		cps = tsd_fps->parameters.cps;
-		cps_caching = cps->directives.cps_caching;
+		cps_caching = (cps->directives.flags & CPS_DF_CPS_CACHING_m13) ? TRUE_m13 : FALSE_m13;
 		if (cps_caching == TRUE_m13) {
 			if (cps->parameters.cached_block_list_len < n_blocks) {
 				cps->parameters.cached_blocks = (CMP_CACHE_BLOCK_INFO_m13 *) realloc_m13((void *) cps->parameters.cached_blocks, (size_t) n_blocks * sizeof(CMP_CACHE_BLOCK_INFO_m13));
@@ -11297,7 +11303,7 @@ si8     G_read_time_series_data_m13(SEGMENT_m13 *seg, SLICE_m13 *slice)
 	cps->parameters.block_start_index = local_start_idx - tsi[start_block].start_sample_number;
 	
 	scale = FALSE_m13;
-	if (cps->directives.convert_to_native_units == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_CONVERT_TO_NATIVE_UNITS_m13) {
 		scale_factor = tmd2->amplitude_units_conversion_factor;
 		if (scale_factor != 1.0 && scale_factor != TIME_SERIES_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13)
 			scale = TRUE_m13;
@@ -11350,7 +11356,7 @@ tern    G_recover_passwords_m13(si1 *L3_password, UNIVERSAL_HEADER_m13 *universa
 {
 	tern	level_1_valid;
 	ui1     	hash[SHA_HASH_BYTES_m13], L3_hash[SHA_HASH_BYTES_m13];
-	si1     	L3_password_bytes[PASSWORD_BYTES_m13], hex_str[HEX_STRING_BYTES_m13(PASSWORD_BYTES_m13)];
+	si1     	L3_password_bytes[PASSWORD_BYTES_m13], hex_str[HEX_STR_BYTES_m13(PASSWORD_BYTES_m13, 1)];
 	si1     	saved_L1_password_bytes[PASSWORD_BYTES_m13], putative_L1_password_bytes[PASSWORD_BYTES_m13], putative_L2_password_bytes[PASSWORD_BYTES_m13];
 	si4     	i;
 	
@@ -11395,12 +11401,12 @@ tern    G_recover_passwords_m13(si1 *L3_password, UNIVERSAL_HEADER_m13 *universa
 	
 	// Level 2 password valid
 	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m13) {
-		STR_hex_m13((ui1 *) putative_L1_password_bytes, PASSWORD_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) putative_L1_password_bytes, PASSWORD_BYTES_m13, ":");
 		G_message_m13("Level 1 password (bytes): '%s' (%s)\n", putative_L1_password_bytes, hex_str);
-		STR_hex_m13((ui1 *) putative_L2_password_bytes, PASSWORD_BYTES_m13, hex_str);
-		G_message_m13("Level 2 password (bytes): '%s' (%s)\n", putative_L2_password_bytes, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) putative_L2_password_bytes, PASSWORD_BYTES_m13, hex_str);
+		G_message_m13("Level 2 password (bytes): '%s' (%s)\n", putative_L2_password_bytes, ":");
 	} else if (level_1_valid == TRUE_m13) {
-		STR_hex_m13((ui1 *) saved_L1_password_bytes, PASSWORD_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) saved_L1_password_bytes, PASSWORD_BYTES_m13, ":");
 		G_message_m13("Level 1 password (bytes): '%s' (%s)\n", saved_L1_password_bytes, hex_str);
 		G_message_m13("No Level 2 password\n");
 	} else {
@@ -11733,7 +11739,7 @@ si8     G_sample_number_for_uutc_m13(LEVEL_HEADER_m13 *level_header, si8 target_
 
 si4	G_search_Sgmt_records_m13(Sgmt_RECORD_m13 *Sgmt_records, SLICE_m13 *slice, ui4 search_mode)
 {
-	si1				seg_name[SEGMENT_BASE_FILE_NAME_BYTES_m13], md_file[FULL_FILE_NAME_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
+	si1				seg_name[SEG_BASE_FILE_NAME_BYTES_m13], md_file[FULL_FILE_NAME_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	si4				i, idx, low_idx, high_idx;
 	si8				target;
 	PROC_GLOBALS_m13		*proc_globals;
@@ -11938,7 +11944,7 @@ si4	G_segment_for_frame_number_m13(LEVEL_HEADER_m13 *level_header, si8 target_fr
 si4	G_segment_for_path_m13(si1 *path)
 {
 	tern	video_data;
-	si1	*c, name[VIDEO_DATA_BASE_FILE_NAME_BYTES_m13];
+	si1	*c, name[VID_BASE_FILE_NAME_BYTES_m13];
 	ui4	level_code, type_code;
 	si4	seg_num;
 	si8	len;
@@ -12195,7 +12201,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	// set process globals error_state (for void functions)
 	// ideally calling function set this this because these are thread-local, not hierarchy-local globals, which can differ
 	proc_globals = G_proc_globals_m13(NULL);  // NULL => use process / thread ID
-	proc_globals->proc_error_state = TRUE_m13;
+	proc_globals->miscellaneous.proc_error_state = TRUE_m13;
 
 	// check global error
 	err = &globals_m13->error;
@@ -12459,7 +12465,7 @@ SET_GTC_TIMEZONE_MATCH_m13:
 }
 
 
-tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, si1 *metadata_section_2_encryption_level, si1 *metadata_section_3_encryption_level)
+tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory)
 {
 	si1                             metadata_file[FULL_FILE_NAME_BYTES_m13];
 	PROC_GLOBALS_m13		*proc_globals;
@@ -12485,13 +12491,7 @@ tern	G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_direct
 		return_m13(FALSE_m13);
 	uh = metadata_fps->universal_header;
 	proc_globals->current_session.start_time = uh->session_start_time;
-
-	// return metadata encryption level info
-	if (metadata_section_2_encryption_level)
-		*metadata_section_2_encryption_level = uh->metadata_section_2_encryption;
-	if (metadata_section_3_encryption_level)
-		*metadata_section_3_encryption_level = uh->metadata_section_3_encryption;
-
+	
 	// clean up
 	FPS_free_m13(&metadata_fps);
 
@@ -12916,7 +12916,7 @@ void    G_show_globals_m13(void)
 
 tern    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 {
-	si1     		hex_str[HEX_STRING_BYTES_m13(sizeof(si8))];
+	si1     		hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
 	PROC_GLOBALS_m13	*proc_globals;
 	
 #ifdef FN_DEBUG_m13
@@ -12983,7 +12983,7 @@ tern    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 		printf_m13("not set\n");
 	else
 		printf_m13("set\n");
-
+	
 	printf_m13("\nActive Channels\n---------------\n");
 	printf_m13("Sampling Frequencies Vary: %s\n", STR_tern_m13(proc_globals->active_channels.sampling_frequencies_vary));
 	if (proc_globals->active_channels.minimum_sampling_frequency == FREQUENCY_NO_ENTRY_m13)
@@ -13030,19 +13030,19 @@ tern    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 	printf_m13("standard_timezone_string: %s\n", proc_globals->time_constants.standard_timezone_string);
 	printf_m13("daylight_timezone_acronym: %s\n", proc_globals->time_constants.daylight_timezone_acronym);
 	printf_m13("daylight_timezone_string: %s\n", proc_globals->time_constants.daylight_timezone_string);
-	STR_hex_m13((ui1 *) &proc_globals->time_constants.daylight_start_code.value, 8, hex_str);
+	STR_hex_m13(hex_str, (ui1 *) &proc_globals->time_constants.daylight_start_code.value, sizeof(si8), ":");
 	printf_m13("daylight_time_start_code: %s\n", hex_str);
-	STR_hex_m13((ui1 *) &proc_globals->time_constants.daylight_end_code.value, 8, hex_str);
+	STR_hex_m13(hex_str, (ui1 *) &proc_globals->time_constants.daylight_end_code.value, sizeof(si8), ":");
 	printf_m13("daylight_time_end_code: %s\n", hex_str);
 		
-	printf_m13("\nMiscellaneous\n-------------\n");
-	printf_m13("time_series_data_encryption_level: %hhd\n", proc_globals->time_series_data_encryption_level);
+	printf_m13("\nMiscellaneous\n---------------\n");
 	printf_m13("mmap_block_bytes: ");
-	if (proc_globals->mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13)
+	if (proc_globals->miscellaneous.mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%d\n", proc_globals->mmap_block_bytes);
-	
+		printf_m13("%d\n", proc_globals->miscellaneous.mmap_block_bytes);
+	printf_m13("proc_error_state: %s\n", STR_tern_m13(proc_globals->miscellaneous.proc_error_state));
+
 	printf_m13("\n");
 	
 	return_m13(TRUE_m13);
@@ -13051,7 +13051,7 @@ tern    G_show_proc_globals_m13(LEVEL_HEADER_m13 *level_header)
 
 tern	G_show_level_header_flags_m13(ui8 flags)
 {
-	si1	bin_str[80];
+	si1	bin_str[BIN_STR_BYTES_m13(sizeof(ui8), 3)];
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -13179,7 +13179,7 @@ tern	G_show_level_header_flags_m13(ui8 flags)
 	else
 		printf_m13("LH_MEM_MAP_SEGMENT_RECORDS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
 	
-	STR_bin_m13(bin_str, (void *) &flags, (size_t) 8, "-", FALSE_m13);
+	STR_bin_m13(bin_str, (void *) &flags, sizeof(ui8), " - ");
 	printf_m13("\n(value: %s)\n\n", bin_str);
 	
 	return_m13(TRUE_m13);
@@ -13207,7 +13207,7 @@ tern    G_show_location_info_m13(LOCATION_INFO_m13 *li)
 tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 {
 	ui1					MED_version_major, MED_version_minor;
-	si1                                     hex_str[HEX_STRING_BYTES_m13(8)];
+	si1                                     hex_str[HEX_STR_BYTES_m13(sizeof(ui8), 1)];
 	METADATA_SECTION_1_m13			*md1;
 	TIME_SERIES_METADATA_SECTION_2_m13	*tmd2, *gmd2;
 	VIDEO_METADATA_SECTION_2_m13		*vmd2;
@@ -13255,7 +13255,7 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 		UTF8_printf_m13("Level 1 Password Hint: %s\n", md1->level_1_password_hint);
 	if (*md1->level_2_password_hint)
 		UTF8_printf_m13("Level 2 Password Hint: %s\n", md1->level_2_password_hint);
-	if (MED_version_major > 1 || MED_version_minor > 0) {  // MED 1.1 & above
+	if (MED_version_major > 1 || MED_version_minor >= 1) {  // MED 1.1 & above
 		if (*md1->anonymized_subject_ID)
 			UTF8_printf_m13("Anonymized Subject ID: %s\n", md1->anonymized_subject_ID);
 		else
@@ -13265,13 +13265,13 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 	
 	// decrypt if needed
 	if (uh) {
-		if (uh->metadata_section_2_encryption > NO_ENCRYPTION_m13 || uh->metadata_section_2_encryption > NO_ENCRYPTION_m13)
+		if (uh->encryption_2 > NO_ENCRYPTION_m13 || uh->encryption_3 > NO_ENCRYPTION_m13)
 			G_decrypt_metadata_m13(fps);
 	}
 	
 	if (uh) {
 		printf_m13("------------------ Section 2 - START -------------------\n");
-		if (uh->metadata_section_2_encryption <= NO_ENCRYPTION_m13) {
+		if (uh->encryption_2 <= NO_ENCRYPTION_m13) {
 			
 			// type-independent fields
 			gmd2 = tmd2;
@@ -13472,7 +13472,7 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 	
 	if (uh) {
 		printf_m13("------------------ Section 3 - START -------------------\n");
-		if (uh->metadata_section_3_encryption <= NO_ENCRYPTION_m13) {
+		if (uh->encryption_3 <= NO_ENCRYPTION_m13) {
 			if (md3->recording_time_offset == UUTC_NO_ENTRY_m13)
 				printf_m13("Recording Time Offset: no entry\n");
 			else
@@ -13480,13 +13480,13 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 			if (md3->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 				printf_m13("Daylight Time Start Code: no entry\n");
 			} else {
-				STR_hex_m13((ui1 *) &md3->daylight_time_start_code.value, 8, hex_str);
+				STR_hex_m13(hex_str, (ui1 *) &md3->daylight_time_start_code.value, sizeof(ui8), ":");
 				printf_m13("Daylight Time Start Code: %s\n", hex_str);
 			}
 			if (md3->daylight_time_end_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 				printf_m13("Daylight Time End Code: no entry\n");
 			} else {
-				STR_hex_m13((ui1 *) &md3->daylight_time_end_code.value, 8, hex_str);
+				STR_hex_m13(hex_str, (ui1 *) &md3->daylight_time_end_code.value, sizeof(ui8), ":");
 				printf_m13("Daylight Time End Code: %s\n", hex_str);
 			}
 			if (*md3->standard_timezone_acronym)
@@ -13563,7 +13563,7 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 
 tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 {
-	si1			hex_str[HEX_STRING_BYTES_m13(ENCRYPTION_KEY_BYTES_m13)];
+	si1			hex_str[HEX_STR_BYTES_m13(ENCRYPTION_KEY_BYTES_m13, 1)];
 	PROC_GLOBALS_m13	*proc_globals;
 
 #ifdef FN_DEBUG_m13
@@ -13578,11 +13578,11 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	
 	G_message_m13("\n------------------ Password Data - START -----------------\n");
 	if (pwd->access_level >= LEVEL_1_ACCESS_m13) {
-		STR_hex_m13(pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13, ":");
 		G_message_m13("Level 1 Encryption Key: %s\n", hex_str);
 	}
 	if (pwd->access_level == LEVEL_2_ACCESS_m13) {
-		STR_hex_m13(pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m13, ":");
 		G_message_m13("Level 2 Encryption Key: %s\n", hex_str);
 	}
 	G_show_password_hints_m13(pwd, 0);
@@ -13837,7 +13837,8 @@ tern    G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DS
 tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 {
 	tern	ephemeral_flag;
-	si1	hex_str[HEX_STRING_BYTES_m13(PASSWORD_VALIDATION_FIELD_BYTES_m13)], time_str[TIME_STRING_BYTES_m13], *anonymized_subject_ID;
+	ui1	MED_version_major, MED_version_minor;
+	si1	hex_str[HEX_STR_BYTES_m13(PASSWORD_VALIDATION_FIELD_BYTES_m13, 1)], time_str[TIME_STRING_BYTES_m13];
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -13859,27 +13860,27 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 	}
 	
 	printf_m13("---------------- Universal Header - START ----------------\n");
-	if (uh->header_CRC == CRC_NO_ENTRY_m13)
+	if (uh->header_CRC == CRC_NO_ENTRY_m13) {
 		printf_m13("Header CRC: no entry\n");
-	else {
-		STR_hex_m13((ui1 *)  &uh->header_CRC, CRC_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (ui1 *)  &uh->header_CRC, CRC_BYTES_m13, ":");
 		printf_m13("Header CRC: %s\n", hex_str);
 	}
-	if (uh->body_CRC == CRC_NO_ENTRY_m13)
+	if (uh->body_CRC == CRC_NO_ENTRY_m13) {
 		printf_m13("Body CRC: no entry\n");
-	else {
-		STR_hex_m13((ui1 *) &uh->body_CRC, CRC_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (ui1 *) &uh->body_CRC, CRC_BYTES_m13, ":");
 		printf_m13("Body CRC: %s\n", hex_str);
 	}
-	if (uh->segment_end_time == UUTC_NO_ENTRY_m13)
+	if (uh->segment_end_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("Segment End Time: no entry\n");
-	else {
+	} else {
 		STR_time_m13((LEVEL_HEADER_m13 *) fps, uh->segment_end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("Segment End Time: %ld (oUTC), %s\n", uh->segment_end_time, time_str);
 	}
-	if (uh->number_of_entries == UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_NO_ENTRY_m13)
+	if (uh->number_of_entries == UNIVERSAL_HEADER_NUMBER_OF_ENTRIES_NO_ENTRY_m13) {
 		printf_m13("Number of Entries: no entry\n");
-	else {
+	} else {
 		printf_m13("Number of Entries: %ld  ", uh->number_of_entries);
 		switch (uh->type_code) {
 			case RECORD_DATA_FILE_TYPE_CODE_m13:
@@ -13911,9 +13912,9 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 				break;
 		}
 	}
-	if (uh->maximum_entry_size == UNIVERSAL_HEADER_MAXIMUM_ENTRY_SIZE_NO_ENTRY_m13)
+	if (uh->maximum_entry_size == UNIVERSAL_HEADER_MAXIMUM_ENTRY_SIZE_NO_ENTRY_m13) {
 		printf_m13("Maximum Entry Size: no entry\n");
-	else {
+	} else {
 		printf_m13("Maximum Entry Size: %u  ", uh->maximum_entry_size);
 		switch (uh->type_code) {
 			case RECORD_DATA_FILE_TYPE_CODE_m13:
@@ -13958,21 +13959,23 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 		printf_m13("File Type String: %s\n", uh->type_string);
 	else
 		printf_m13("File Type String: no entry\n");
-	if (uh->MED_version_major == UNIVERSAL_HEADER_MED_VERSION_MAJOR_NO_ENTRY_m13 || uh->MED_version_minor == UNIVERSAL_HEADER_MED_VERSION_MINOR_NO_ENTRY_m13) {
-		if (uh->MED_version_major == UNIVERSAL_HEADER_MED_VERSION_MAJOR_NO_ENTRY_m13)
+	MED_version_major = uh->MED_version_major;
+	MED_version_minor = uh->MED_version_minor;
+	if (MED_version_major == UNIVERSAL_HEADER_MED_VERSION_MAJOR_NO_ENTRY_m13 || MED_version_minor == UNIVERSAL_HEADER_MED_VERSION_MINOR_NO_ENTRY_m13) {
+		if (MED_version_major == UNIVERSAL_HEADER_MED_VERSION_MAJOR_NO_ENTRY_m13)
 			printf_m13("MED Version Major: no entry\n");
 		else
-			printf_m13("MED Version Major: %u\n", uh->MED_version_major);
-		if (uh->MED_version_minor == UNIVERSAL_HEADER_MED_VERSION_MINOR_NO_ENTRY_m13)
+			printf_m13("MED Version Major: %u\n", MED_version_major);
+		if (MED_version_minor == UNIVERSAL_HEADER_MED_VERSION_MINOR_NO_ENTRY_m13)
 			printf_m13("MED Version Minor: no entry\n");
 		else
-			printf_m13("MED Version Minor: %u\n", uh->MED_version_minor);
+			printf_m13("MED Version Minor: %u\n", MED_version_minor);
+	} else {
+		printf_m13("MED Version: %u.%u\n", MED_version_major, MED_version_minor);
 	}
-	else
-		printf_m13("MED Version: %u.%u\n", uh->MED_version_major, uh->MED_version_minor);
-	if (uh->byte_order_code == UNIVERSAL_HEADER_BYTE_ORDER_CODE_NO_ENTRY_m13)
+	if (uh->byte_order_code == UNIVERSAL_HEADER_BYTE_ORDER_CODE_NO_ENTRY_m13) {
 		printf_m13("Byte Order Code: no entry ");
-	else {
+	} else {
 		printf_m13("Byte Order Code: %u ", uh->byte_order_code);
 		if (uh->byte_order_code == LITTLE_ENDIAN_m13)
 			printf_m13("(little endian)\n");
@@ -13981,15 +13984,15 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 		else
 			printf_m13("(unrecognized code)\n");
 	}
-	if (uh->session_start_time == UUTC_NO_ENTRY_m13)
+	if (uh->session_start_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("Session Start Time: no entry\n");
-	else {
+	} else {
 		STR_time_m13((LEVEL_HEADER_m13 *) fps, uh->session_start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("Session Start Time: %ld (oUTC), %s\n", uh->session_start_time, time_str);
 	}
-	if (uh->segment_start_time == UUTC_NO_ENTRY_m13)
+	if (uh->segment_start_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("Segment Start Time: no entry\n");
-	else {
+	} else {
 		STR_time_m13((LEVEL_HEADER_m13 *) fps, uh->segment_start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("Segment Start Time: %ld (oUTC), %s\n", uh->segment_start_time, time_str);
 	}
@@ -14001,120 +14004,108 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UNIVERSAL_HEADER_m13 *uh)
 		UTF8_printf_m13("Channel Name: %s\n", uh->channel_name);
 	else
 		printf_m13("Channel Name: no entry\n");
-	if (uh->MED_version_major == 1 && uh->MED_version_minor == 0) {
-		anonymized_subject_ID = (si1 *) &uh->ordered;  // ordered replaced subject_ID in MED 1.1 & above
-		if (*anonymized_subject_ID)
-			UTF8_printf_m13("Anonymized Subject ID: %s\n", anonymized_subject_ID);
-		else
-			printf_m13("Anonymized Subject ID: no entry\n");
-	} else {   // all versions above MED 1.0
-		if (uh->type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m13 || uh->type_code == VIDEO_DATA_FILE_TYPE_CODE_m13) {
-			printf_m13("Data Encryption: %d ", uh->data_encryption);
-			if (uh->data_encryption == NO_ENCRYPTION_m13)
-				printf_m13("(none)\n");
-			else if (uh->data_encryption == LEVEL_1_ENCRYPTION_m13)
-				printf_m13("(level 1, currently encrypted)\n");
-			else if (uh->data_encryption == LEVEL_2_ENCRYPTION_m13)
-				printf_m13("(level 2, currently encrypted)\n");
-			else if (uh->data_encryption == -LEVEL_1_ENCRYPTION_m13)
-				printf_m13("(level 1, currently decrypted)\n");
-			else if (uh->data_encryption == -LEVEL_2_ENCRYPTION_m13)
-				printf_m13("(level 2, currently decrypted)\n");
-			else
-				printf_m13("(unrecognized code)\n");
-		}
-		if (uh->type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m13 || uh->type_code == VIDEO_METADATA_FILE_TYPE_CODE_m13) {
-			printf_m13("Metadata Section 2 Encryption: %d ", uh->metadata_section_2_encryption);
-			if (uh->metadata_section_2_encryption == NO_ENCRYPTION_m13)
-				printf_m13("(none)\n");
-			else if (uh->metadata_section_2_encryption == LEVEL_1_ENCRYPTION_m13)
-				printf_m13("(level 1, currently encrypted)\n");
-			else if (uh->metadata_section_2_encryption == LEVEL_2_ENCRYPTION_m13)
-				printf_m13("(level 2, currently encrypted)\n");
-			else if (uh->metadata_section_2_encryption == -LEVEL_1_ENCRYPTION_m13)
-				printf_m13("(level 1, currently decrypted)\n");
-			else if (uh->metadata_section_2_encryption == -LEVEL_2_ENCRYPTION_m13)
-				printf_m13("(level 2, currently decrypted)\n");
-			else
-				printf_m13("(unrecognized code)\n");
-			
-			printf_m13("Metadata Section 3 Encryption: %d ", uh->metadata_section_3_encryption);
-			if (uh->metadata_section_3_encryption == NO_ENCRYPTION_m13)
-				printf_m13("(none)\n");
-			else if (uh->metadata_section_3_encryption == LEVEL_1_ENCRYPTION_m13)
-				printf_m13("(level 1, currently encrypted)\n");
-			else if (uh->metadata_section_3_encryption == LEVEL_2_ENCRYPTION_m13)
-				printf_m13("(level 2, currently encrypted)\n");
-			else if (uh->metadata_section_3_encryption == -LEVEL_1_ENCRYPTION_m13)
-				printf_m13("(level 1, currently decrypted)\n");
-			else if (uh->metadata_section_3_encryption == -LEVEL_2_ENCRYPTION_m13)
-				printf_m13("(level 2, currently decrypted)\n");
-			else
-				printf_m13("(unrecognized code)\n");
-		}
-		if (uh->type_code == RECORD_INDICES_FILE_TYPE_CODE_m13 || uh->type_code == RECORD_DATA_FILE_TYPE_CODE_m13) {
-			if (uh->ordered == TRUE_m13)
-				printf_m13("Ordered: true\n");
-			else if (uh->ordered == FALSE_m13)
-				printf_m13("Ordered: false\n");
-			else if (uh->ordered == UNKNOWN_m13)
-				printf_m13("Ordered: unknown\n");
-			else
-				printf_m13("Ordered: invalid value (%hhd)\n", uh->ordered);
-		}
-	}
-	if (uh->session_UID == UID_NO_ENTRY_m13)
+	if (uh->session_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Session UID: no entry\n");
-	else {
-		STR_hex_m13((ui1 *)&uh->session_UID, UID_BYTES_m13, hex_str);
-		printf_m13("Session UID: %s\n", hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) &uh->session_UID, UID_BYTES_m13, ":");
+		printf_m13("Session UID: 0x%s\n", hex_str);
 	}
-	if (uh->channel_UID == UID_NO_ENTRY_m13)
+	if (uh->channel_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Channel UID: no entry\n");
-	else {
-		STR_hex_m13((ui1 *)&uh->channel_UID, UID_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) &uh->channel_UID, UID_BYTES_m13, ":");
 		printf_m13("Channel UID: %s\n", hex_str);
 	}
-	if (uh->segment_UID == UID_NO_ENTRY_m13)
+	if (uh->segment_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Segment UID: no entry\n");
-	else {
-		STR_hex_m13((ui1 *)&uh->segment_UID, UID_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) &uh->segment_UID, UID_BYTES_m13, ":");
 		printf_m13("Segment UID: %s\n", hex_str);
 	}
-	if (uh->file_UID == UID_NO_ENTRY_m13)
+	if (uh->file_UID == UID_NO_ENTRY_m13) {
 		printf_m13("File UID: no entry\n");
-	else {
-		STR_hex_m13((ui1 *)&uh->file_UID, UID_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) &uh->file_UID, UID_BYTES_m13, ":");
 		printf_m13("File UID: %s\n", hex_str);
 	}
-	if (uh->provenance_UID == UID_NO_ENTRY_m13)
+	if (uh->provenance_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Provenance UID: no entry\n");
-	else {
-		STR_hex_m13((ui1 *)&uh->provenance_UID, UID_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) &uh->provenance_UID, UID_BYTES_m13, ":");
 		printf_m13("Provenance UID: %s  ", hex_str);
 		if (uh->provenance_UID == uh->file_UID)
 			printf_m13("(original data)\n");
 		else
 			printf_m13("(derived data)\n");
 	}
-	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
+	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
 		printf_m13("Level 1 Password Validation_Field: no entry\n");
-	else {
-		STR_hex_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, ":");
 		printf_m13("Level 1 Password Validation_Field: %s\n", hex_str);
 	}
-	if (G_all_zeros_m13(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
+	if (G_all_zeros_m13(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
 		printf_m13("Level 2 Password Validation_Field: no entry\n");
-	else {
-		STR_hex_m13(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, ":");
 		printf_m13("Level 2 Password Validation_Field: %s\n", hex_str);
 	}
-	if (G_all_zeros_m13(uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
+	if (G_all_zeros_m13(uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
 		printf_m13("Level 3 Password Validation_Field: no entry\n");
-	else {
-		STR_hex_m13(uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, hex_str);
+	} else {
+		STR_hex_m13(hex_str, (void *) uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, ":");
 		printf_m13("Level 3 Password Validation_Field: %s\n", hex_str);
 	}
+	printf_m13("Ordered: %s ", STR_tern_m13(uh->ordered));
+	printf_m13("Encryption Rounds: %hhu ", uh->encryption_rounds);
+	printf_m13("Encryption 1: %hhd ", uh->encryption_1);
+	if (uh->encryption_1 == NO_ENCRYPTION_m13)
+		printf_m13("(none)\n");
+	else if (uh->encryption_1 == LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1, currently encrypted)\n");
+	else if (uh->encryption_1 == LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2, currently encrypted)\n");
+	else if (uh->encryption_1 == -LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1, currently decrypted)\n");
+	else if (uh->encryption_1 == -LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2, currently decrypted)\n");
+	else if (uh->encryption_1 == ENCRYPTION_VARIABLE_m13)
+		printf_m13("(variable encryption)\n");
+	else
+		printf_m13("(unrecognized code)\n");
+
+	printf_m13("Encryption 2: %hhd ", uh->encryption_2);
+	if (uh->encryption_2 == NO_ENCRYPTION_m13)
+		printf_m13("(none)\n");
+	else if (uh->encryption_2 == LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1, currently encrypted)\n");
+	else if (uh->encryption_2 == LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2, currently encrypted)\n");
+	else if (uh->encryption_2 == -LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1, currently decrypted)\n");
+	else if (uh->encryption_2 == -LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2, currently decrypted)\n");
+	else if (uh->encryption_2 == ENCRYPTION_VARIABLE_m13)
+		printf_m13("(variable encryption)\n");
+	else
+		printf_m13("(unrecognized code)\n");
+
+	printf_m13("Encryption 3: %hhd ", uh->encryption_3);
+	if (uh->encryption_3 == NO_ENCRYPTION_m13)
+		printf_m13("(none)\n");
+	else if (uh->encryption_3 == LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1, currently encrypted)\n");
+	else if (uh->encryption_3 == LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2, currently encrypted)\n");
+	else if (uh->encryption_3 == -LEVEL_1_ENCRYPTION_m13)
+		printf_m13("(level 1, currently decrypted)\n");
+	else if (uh->encryption_3 == -LEVEL_2_ENCRYPTION_m13)
+		printf_m13("(level 2, currently decrypted)\n");
+	else if (uh->encryption_3 == ENCRYPTION_VARIABLE_m13)
+		printf_m13("(variable encryption)\n");
+	else
+		printf_m13("(unrecognized code)\n");
+
 	printf_m13("---------------- Universal Header - END ----------------\n\n");
 	
 	return_m13(TRUE_m13);
@@ -14208,102 +14199,57 @@ tern	G_sort_channels_by_acq_num_m13(SESSION_m13 *sess)
 }
 
 
-tern	G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number)
+tern	G_sort_records_m13(FPS_m13 *record_indices_fps, FPS_m13 *record_data_fps)
 {
+	static tern			message_given = FALSE_m13;
 	ui1				*tmp_rec_data;
-	si1				ri_path[FULL_FILE_NAME_BYTES_m13], rd_path[FULL_FILE_NAME_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
-	si4				seg_idx, description_bytes;
+	si1				path[FULL_FILE_NAME_BYTES_m13], name[SEG_BASE_FILE_NAME_BYTES_m13];
+	ui8				flags;
 	si8				i, n_recs, file_start_time;
-	PROC_GLOBALS_m13		*proc_globals;
-	UNIVERSAL_HEADER_m13		*uh;
-	SEGMENT_m13			*seg;
-	CHANNEL_m13			*chan;
-	SESSION_m13			*sess;
-	SEG_SESS_RECS_m13		*ssr;
-	FPS_m13	*ri_fps, *rd_fps;
+	FPS_m13				*ri_fps, *rd_fps;
 	RECORD_INDEX_m13		*ri;
 	RECORD_HEADER_m13		*rh;
-	REC_Sgmt_v10_m13		*Sgmt_v10;
-	REC_Sgmt_v11_m13		*Sgmt_v11;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// for efficient searching of records during reading, MED requires records to be in temporal order
-	// this function exists because in some converted file formats, records of different types are in different files, & it is not convenient to sort them during the conversion
-	// call this function after records are completely written to disk, including terminal indices (if files are open they will be closed & reopened)
-	// call for each potentially affected MED level
-	// sorted records will overwrite the unsorted records
-	// records with start times of UUTC_NO_ENTRY_m13 (information not associated with a specific time) will be assigned the segment start time if segmented, or the session start time
-	// the segment_number argument is only required for segmented session records, otherwise ignored
+	// call with either record_indices_fps or record_data_fp, other can be NULL, but both will be processed
 	// this process is not terribly efficient, but should only need to be done once
 	
-	switch (level_header->type_code) {
-		case LH_VIDEO_SEGMENT_m13:
-		case LH_TIME_SERIES_SEGMENT_m13:
-			seg = (SEGMENT_m13 *) level_header;
-			sprintf_m13(ri_path, "%s/%s.%s", seg->path, seg->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-			sprintf_m13(rd_path, "%s/%s.%s", seg->path, seg->name, RECORD_DATA_FILE_TYPE_STRING_m13);
-			FPS_close_m13(seg->record_indices_fps);
-			FPS_close_m13(seg->record_data_fps);
-			break;
-		case LH_TIME_SERIES_CHANNEL_m13:
-		case LH_VIDEO_CHANNEL_m13:
-			chan = (CHANNEL_m13 *) level_header;
-			sprintf_m13(ri_path, "%s/%s.%s", chan->path, chan->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-			sprintf_m13(rd_path, "%s/%s.%s", chan->path, chan->name, RECORD_DATA_FILE_TYPE_STRING_m13);
-			FPS_close_m13(chan->record_indices_fps);
-			FPS_close_m13(chan->record_data_fps);
-			break;
-		case LH_SESSION_m13:
-			sess = (SESSION_m13 *) level_header;
-			sprintf_m13(ri_path, "%s/%s.%s", sess->path, sess->name, RECORD_INDICES_FILE_TYPE_STRING_m13);
-			sprintf_m13(rd_path, "%s/%s.%s", sess->path, sess->name, RECORD_DATA_FILE_TYPE_STRING_m13);
-			FPS_close_m13(sess->record_indices_fps);
-			FPS_close_m13(sess->record_data_fps);
-			break;
-		case LH_SEG_SESS_RECS_m13:
-			ssr = (SEG_SESS_RECS_m13 *) level_header;
-			G_numerical_fixed_width_string_m13(num_str, FILE_NUMBERING_DIGITS_m13, segment_number);
-			sprintf_m13(ri_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_INDICES_FILE_TYPE_STRING_m13);
-			sprintf_m13(rd_path, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, RECORD_DATA_FILE_TYPE_STRING_m13);
-			proc_globals = G_proc_globals_m13(level_header);
-			if (proc_globals->current_session.number_of_mapped_segments == 1) {  // most commonly just allocate one ssr & overwrite with new segments, but not required to do it that way
-				seg_idx = 0;
-			} else {
-				G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
-				seg_idx = G_get_segment_index_m13(segment_number, level_header);
-				G_pop_behavior_m13();
-				if (seg_idx == FALSE_m13)
-					return_m13(FALSE_m13);
-			}
-			FPS_close_m13(ssr->record_indices_fps[seg_idx]);
-			FPS_close_m13(ssr->record_data_fps[seg_idx]);
-			break;
-		default:
-			G_warning_message_m13("%s(): invalid level type\n", __FUNCTION__);
-			return_m13(FALSE_m13);
+	if (globals_m13->write_sorted_records == FALSE_m13)
+		return_m13(FALSE_m13);
+
+	ri_fps = record_indices_fps;
+	rd_fps = record_data_fps;
+	if (ri_fps) {
+		G_read_file_m13(ri_fps, NULL, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
+		if (rd_fps == NULL) {
+			G_extract_path_parts_m13(ri_fps->path, path, name, NULL);
+			sprintf_m13(path, "%s/%s.%s", path, name, RECORD_DATA_FILE_TYPE_STRING_m13);
+			rd_fps = G_read_file_m13(NULL, path, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
+		}
+	} else if (rd_fps) {
+		G_read_file_m13(rd_fps, NULL, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
+		if (ri_fps == NULL) {
+			G_extract_path_parts_m13(rd_fps->path, path, name, NULL);
+			sprintf_m13(path, "%s/%s.%s", path, name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			ri_fps = G_read_file_m13(NULL, path, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
+		}
+	} else {
+		G_set_error_m13(E_UNSPEC_m13, "both FPSs are NULL");
+		return_m13(FALSE_m13);
 	}
-	if (G_exists_m13(ri_path) != FILE_EXISTS_m13)
-		return_m13(FALSE_m13);
-	if (G_exists_m13(rd_path) != FILE_EXISTS_m13)
-		return_m13(FALSE_m13);
 
 	// check if already sorted
-	ri_fps = G_read_file_m13(NULL, ri_path, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
-	uh = ri_fps->universal_header;
-	if (uh->MED_version_major > 1 || uh->MED_version_minor >= 1) {  // MED 1.0 or greater
-		if (uh->ordered == TRUE_m13) {
-			FPS_close_m13(ri_fps);
-			return_m13(TRUE_m13);
-		}
-	}
+	if (ri_fps->universal_header->ordered == TRUE_m13 && rd_fps->universal_header->ordered == TRUE_m13)
+		return_m13(TRUE_m13);
 
-	// read data (full file read will automatically close files)
-	ri_fps = G_read_file_m13(ri_fps, ri_path, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
-	rd_fps = G_read_file_m13(NULL, rd_path, 0, 0, FPS_FULL_FILE_m13, NULL, NULL);
-	
+	if (message_given == FALSE_m13) {
+		G_message_m13("Sorting records ...\n");
+		message_given = TRUE_m13;
+	}
+		
 	// fix any no-entry start times
 	n_recs = rd_fps->number_of_items;
 	ri = ri_fps->record_indices;
@@ -14315,51 +14261,22 @@ tern	G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number)
 		}
 	}
 	
-	// update any version 1.0 Sgmt records to 1.1
-	// (nothing to do with sorting, but efficient to do this here)
-	n_recs = rd_fps->number_of_items;
-	ri = ri_fps->record_indices;
-	file_start_time = ri_fps->universal_header->file_start_time;
-	for (i = n_recs; i--; ++ri) {
-		if (ri->type_code == REC_Sgmt_TYPE_CODE_m13) {
-			if (ri->version_major == 1 && ri->version_minor == 0) {
-				rh = (RECORD_HEADER_m13 *) (rd_fps->parameters.raw_data + ri->file_offset);
-				Sgmt_v10 = (REC_Sgmt_v10_m13 *) ((ui1 *) rh + RECORD_HEADER_BYTES_m13);
-				Sgmt_v11 = (REC_Sgmt_v11_m13 *) Sgmt_v10;
-				Sgmt_v11->segment_number = Sgmt_v10->segment_number;
-				description_bytes = rh->total_record_bytes - (RECORD_HEADER_BYTES_m13 + REC_Sgmt_v10_BYTES_m13);
-				rh->total_record_bytes = REC_Sgmt_v10_BYTES_m13;
-				if (description_bytes) {
-					description_bytes = strncpy_m13( (si1 *) Sgmt_v11 + REC_Sgmt_v11_BYTES_m13, (si1 *) rh + REC_Sgmt_v10_BYTES_m13, description_bytes);
-					if (description_bytes > 0)
-						rh->total_record_bytes = G_pad_m13((ui1 *) Sgmt_v11, REC_Sgmt_v11_BYTES_m13 + description_bytes, REC_RECORD_BODY_ALIGNMENT_m13);
-				}
-				rh->total_record_bytes += RECORD_HEADER_BYTES_m13;
-				rh->version_minor = ri->version_minor = 1;
-			}
-		}
-	}
-
 	// sort indices (leave file offsets intact)
 	qsort((void *) ri_fps->record_indices, (size_t) n_recs, sizeof(RECORD_INDEX_m13), G_compare_record_index_times);  // leave terminal index where it is
 	
 	// copy record data before writing
 	tmp_rec_data = (ui1 *) malloc((size_t) rd_fps->parameters.raw_data_bytes);
 	memcpy((void *) tmp_rec_data, (void *) rd_fps->parameters.raw_data, (size_t) rd_fps->parameters.raw_data_bytes);
-		
-	// upgrade to MED 1.1, if necessary
-	uh = ri_fps->universal_header;
-	if (uh->MED_version_major == 1 && uh->MED_version_minor == 0)
-		uh->MED_version_minor = rd_fps->universal_header->MED_version_minor = 1;
-	
-	// set ordered flag
-	uh->ordered = rd_fps->universal_header->ordered = TRUE_m13;
-	
-	// reopen files for writing
-	ri_fps->directives.close_file = FALSE_m13;
-	G_write_file_m13(ri_fps, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL);
-	rd_fps->directives.close_file = FALSE_m13;
-	G_write_file_m13(rd_fps, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL);
+			
+	// reopen files for reading & writing
+	freopen_m13(NULL, "r+", ri_fps->parameters.fp);
+	freopen_m13(NULL, "r+", rd_fps->parameters.fp);
+
+	// set file pointers to start of entries
+	FPS_seek_m13(ri_fps, UNIVERSAL_HEADER_BYTES_m13);
+	ri_fps->parameters.fp->len = UNIVERSAL_HEADER_BYTES_m13;
+	FPS_seek_m13(rd_fps, UNIVERSAL_HEADER_BYTES_m13);
+	rd_fps->parameters.fp->len = UNIVERSAL_HEADER_BYTES_m13;
 
 	// write out sorted records
 	ri = ri_fps->record_indices;
@@ -14370,20 +14287,31 @@ tern	G_sort_records_m13(LEVEL_HEADER_m13 *level_header, si4 segment_number)
 		G_write_file_m13(rd_fps, FPS_APPEND_m13, rh->total_record_bytes, 1, (void *) rh);
 	}
 	
+	// update record data universal header
+	rd_fps->universal_header->ordered = TRUE_m13;
+	flags = rd_fps->directives.flags;  // save
+	rd_fps->directives.flags |= FPS_DF_UPDATE_UNIVERSAL_HEADER_m13;
+	G_write_file_m13(rd_fps, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL);
+	rd_fps->directives.flags = flags;  // reset
+
 	// write terminal index
 	ri->file_offset = rd_fps->parameters.fp->len;
-	ri->start_time = uh->segment_end_time + 1;
+	ri->start_time = ri_fps->universal_header->segment_end_time + 1;
 	ri->type_code = REC_Term_TYPE_CODE_m13;
 	ri->version_major = 0xFF;
 	ri->version_minor = 0xFF;
 	ri->encryption_level = NO_ENCRYPTION_m13;
-	G_write_file_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri);
-
-	// clean up (free will close files)
-	FPS_free_m13(&ri_fps);
-	FPS_free_m13(&rd_fps);
-	free((void *) tmp_rec_data);
 	
+	// write out terminal index & update universal header
+	ri_fps->universal_header->ordered = TRUE_m13;
+	flags = ri_fps->directives.flags;  // save
+	ri_fps->directives.flags |= FPS_DF_UPDATE_UNIVERSAL_HEADER_m13;
+	G_write_file_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri);
+	ri_fps->directives.flags = flags;  // reset
+
+	// clean up
+	free((void *) tmp_rec_data);
+		
 	return_m13(TRUE_m13);
 }
 
@@ -14514,6 +14442,570 @@ si1	*G_unique_temp_file_m13(si1 *temp_file)
 }
 
 
+tern	G_update_channel_name_m13(CHANNEL_m13 *chan)
+{
+	si1	**file_list, **seg_list, **vid_list, path[FULL_FILE_NAME_BYTES_m13], tmp_path[FULL_FILE_NAME_BYTES_m13];
+	si1	fs_name[BASE_FILE_NAME_BYTES_m13], name[MAX_BASE_FILE_NAME_BYTES_m13], sufx[8];
+	si4	i, j, n_files, n_segs, n_vids;
+	si8	len;
+	
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	if (chan == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "channel is NULL");
+		return_m13(FALSE_m13);
+	}
+	
+	G_message_m13("Updating channel name ...\n");
+	
+	G_extract_path_parts_m13(chan->path, NULL, fs_name, NULL);
+	strcpy(chan->name, fs_name);
+	
+	// channel record indices
+	file_list = G_generate_file_list_m13(NULL, &n_files, chan->path, NULL, RECORD_INDICES_FILE_TYPE_STRING_m13, GFL_NAME_m13);
+	if (n_files) {
+		sprintf_m13(path, "%s/%s.%s", chan->path, fs_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+		G_extract_path_parts_m13(file_list[0], NULL, name, NULL);
+		if (strcmp(fs_name, name))
+			G_move_path_m13(file_list[0], path);
+		free_m13((void *) file_list);
+		G_update_channel_name_header_m13(path, fs_name);
+	}
+	
+	// channel record data
+	file_list = G_generate_file_list_m13(NULL, &n_files, chan->path, NULL, RECORD_DATA_FILE_TYPE_STRING_m13, GFL_NAME_m13);
+	if (n_files) {
+		sprintf_m13(path, "%s/%s.%s", chan->path, fs_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+		G_extract_path_parts_m13(file_list[0], NULL, name, NULL);
+		if (strcmp(fs_name, name))
+			G_move_path_m13(file_list[0], path);
+		free_m13((void *) file_list);
+		G_update_channel_name_header_m13(path, fs_name);
+	}
+	
+	// time series segments
+	seg_list = G_generate_file_list_m13(NULL, &n_segs, chan->path, NULL, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+	if (n_segs) {
+		for (i = 0; i < n_segs; ++i) {
+			
+			// rename directory
+			G_extract_path_parts_m13(seg_list[i], NULL, name, NULL);
+			len = strlen(name);
+			name[len - 5] = 0;
+			if (strcmp(fs_name, name)) {
+				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
+				G_move_path_m13(seg_list[i], path);
+				strcpy(seg_list[i], path);
+			}
+			name[len - 5] = '_';
+			
+			// time series metadata
+			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == TRUE_m13) {
+				STR_replace_pattern_m13(name, fs_name, path, tmp_path);
+				G_move_path_m13(path, tmp_path);
+				G_update_channel_name_header_m13(tmp_path, fs_name);
+			}
+			
+			// time series indices
+			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == TRUE_m13) {
+				STR_replace_pattern_m13(name, fs_name, path, tmp_path);
+				G_move_path_m13(path, tmp_path);
+				G_update_channel_name_header_m13(tmp_path, fs_name);
+			}
+			
+			// time series data
+			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == TRUE_m13) {
+				STR_replace_pattern_m13(name, fs_name, path, tmp_path);
+				G_move_path_m13(path, tmp_path);
+				G_update_channel_name_header_m13(tmp_path, fs_name);
+			}
+			
+			// segment record indices
+			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == TRUE_m13) {
+				STR_replace_pattern_m13(name, fs_name, path, tmp_path);
+				G_move_path_m13(path, tmp_path);
+				G_update_channel_name_header_m13(tmp_path, fs_name);
+			}
+			
+			// segment record data
+			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == TRUE_m13) {
+				STR_replace_pattern_m13(name, fs_name, path, tmp_path);
+				G_move_path_m13(path, tmp_path);
+				G_update_channel_name_header_m13(tmp_path, fs_name);
+			}
+		}
+		free_m13((void *) seg_list);
+	}
+	
+	// video segments
+	seg_list = G_generate_file_list_m13(NULL, &n_segs, chan->path, NULL, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+	if (n_segs) {
+		for (i = 0; i < n_segs; ++i) {
+			
+			// rename directory
+			G_extract_path_parts_m13(seg_list[i], NULL, name, NULL);
+			len = strlen(name);
+			strcpy(sufx, name + (len - 5));
+			name[len - 5] = 0;
+			if (strcmp(fs_name, name)) {
+				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
+				G_move_path_m13(seg_list[i], path);
+				strcpy(seg_list[i], path);
+			}
+			
+			// video metadata
+			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, VIDEO_METADATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == TRUE_m13) {
+				sprintf_m13(path, "%s/%s%s.%s", seg_list[i], fs_name, sufx, VIDEO_METADATA_FILE_TYPE_STRING_m13);
+				G_move_path_m13(tmp_path, path);
+				G_update_channel_name_header_m13(path, fs_name);
+			}
+			
+			// video indices
+			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, VIDEO_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == TRUE_m13) {
+				sprintf_m13(path, "%s/%s%s.%s", seg_list[i], fs_name, sufx, VIDEO_INDICES_FILE_TYPE_STRING_m13);
+				G_move_path_m13(tmp_path, path);
+				G_update_channel_name_header_m13(path, fs_name);
+			}
+			
+			// video data
+			vid_list = G_generate_file_list_m13(NULL, &n_vids, seg_list[i], "*_n????", NULL, GFL_FULL_PATH_m13);
+			if (n_vids) {
+				for (j = 0; j < n_vids; ++j) {
+					STR_replace_pattern_m13(name, fs_name, vid_list[i], path);
+					G_move_path_m13(vid_list[i], path);
+					G_update_channel_name_header_m13(path, fs_name);
+				}
+				free_m13((void *) vid_list);
+			}
+			
+			// segment record indices
+			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == TRUE_m13) {
+				sprintf_m13(path, "%s/%s%s.%s", seg_list[i], fs_name, sufx, RECORD_INDICES_FILE_TYPE_STRING_m13);
+				G_move_path_m13(tmp_path, path);
+				G_update_channel_name_header_m13(path, fs_name);
+			}
+			
+			// segment record data
+			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(tmp_path) == TRUE_m13) {
+				sprintf_m13(path, "%s/%s%s.%s", seg_list[i], fs_name, sufx, RECORD_DATA_FILE_TYPE_STRING_m13);
+				G_move_path_m13(tmp_path, path);
+				G_update_channel_name_header_m13(path, fs_name);
+			}
+		}
+		free_m13((void *) seg_list);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_update_chan_name_m13
+{
+	FPS_m13			*fps;
+	UNIVERSAL_HEADER_m13	*uh;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	fps = G_read_file_m13(NULL, path, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
+	if (fps) {
+		uh = fps->universal_header;
+		if (strcmp(uh->channel_name, fs_name)) {
+			strncpy(uh->channel_name, fs_name, BASE_FILE_NAME_BYTES_m13);
+			G_write_file_m13(fps, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL);
+		}
+		FPS_free_m13(&fps);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern	G_update_file_version_m13(FPS_m13 **fps_ptr, si1 *password)
+{
+	static tern			message_given = FALSE_m13;
+	ui1				*rd, *encryption_key;
+	si1				*path, tmp_path[FULL_FILE_NAME_BYTES_m13], *mode;
+	si4				body_bytes, description_bytes;
+	ui4				type_code, bh_clear_mask;
+	si8				i, fpos, bytes_to_read, bytes_to_write, n_blocks;
+	PROC_GLOBALS_m13		*proc_globals;
+	FPS_m13 			*fps;
+	FILE				*fp, *new_fp;
+	UNIVERSAL_HEADER_m13		*uh;
+	METADATA_SECTION_1_m13		*md1;
+	CMP_BLOCK_FIXED_HEADER_m13	*bh;
+	RECORD_HEADER_m13		*rh;
+	REC_Sgmt_v10_m13		Sgmt_v10;
+	REC_Sgmt_v11_m13		*Sgmt_v11;
+	PASSWORD_DATA_m13		*pwd;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	if (fps_ptr == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "FPS pointer is NULL");
+		return_m13(FALSE_m13);
+	}
+	fps = *fps_ptr;
+	if (fps == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "FPS is NULL");
+		return_m13(FALSE_m13);
+	}
+	
+	if (message_given == FALSE_m13) {
+		G_message_m13("Updating files to MED version %d.%d. This may take some time ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
+		message_given = TRUE_m13;
+	}
+		
+	// set up
+	type_code = fps->type_code;
+	path = fps->path;
+	fclose(fps->parameters.fp->fp);
+	fps->parameters.fp->fp = NULL;  // reset below, just in case error out
+	fps->parameters.fp->fd = FPS_FD_CLOSED_m13;  // reset below, just in case error out
+	fp = fopen(path, "r+");  // open with read & write privileges
+
+	// metadata
+	if (type_code == TIME_SERIES_METADATA_FILE_TYPE_CODE_m13 || type_code == VIDEO_METADATA_FILE_TYPE_CODE_m13) {
+		
+		// read in raw data
+		bytes_to_read = UNIVERSAL_HEADER_BYTES_m13 + METADATA_SECTION_1_BYTES_m13;
+		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		if (rd == NULL) {
+			fclose(fp);
+			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			return(FALSE_m13);
+		}
+		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+				
+		// set up
+		uh = (UNIVERSAL_HEADER_m13 *) (rd + UNIVERSAL_HEADER_OFFSET_m13);
+		md1 = (METADATA_SECTION_1_m13 *) (rd + METADATA_SECTION_1_OFFSET_m13);  // unencrypted section
+
+		// update version
+		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+		
+		// update fields: no overlaps, no encryption
+		
+		// ordered
+		uh->ordered = UNKNOWN_m13;
+		// encryption
+		if (uh->encryption_2 > NO_ENCRYPTION_m13 || uh->encryption_3 > NO_ENCRYPTION_m13)
+			uh->encryption_rounds = 1;  // only one round allowed in MED 1.0
+		else
+			uh->encryption_rounds = 0;  // no encryption
+		uh->encryption_1 = NO_ENCRYPTION_m13;
+		uh->encryption_2 = *((si1 *) (rd + MED_10_METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13));
+		uh->encryption_3 = *((si1 *) (rd + MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13));
+		// anonymized subject
+		strncpy_m13(md1->anonymized_subject_ID, (si1 *) (rd + MED_10_UNIVERSAL_HEADER_ANONYMIZED_SUBJECT_ID_OFFSET_m13), METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13);
+		memset((void *) (rd + UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero previous location
+		
+		// write out
+		fseek(fp, 0, SEEK_SET);
+		bytes_to_write = bytes_to_read;
+		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		fclose(fp);
+	}
+	
+	// all indices
+	else if (type_code == TIME_SERIES_INDICES_FILE_TYPE_CODE_m13 || type_code == VIDEO_INDICES_FILE_TYPE_CODE_m13 || type_code == RECORD_INDICES_FILE_TYPE_CODE_m13) {
+		
+		// read in raw data
+		bytes_to_read = UNIVERSAL_HEADER_BYTES_m13;
+		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		if (rd == NULL) {
+			fclose(fp);
+			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			return(FALSE_m13);
+		}
+		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+				
+		// set up
+		uh = (UNIVERSAL_HEADER_m13 *) (rd + UNIVERSAL_HEADER_OFFSET_m13);
+
+		// update version
+		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+
+		// update fields: no overlaps, no encryption
+		
+		// ordered
+		if (type_code == RECORD_INDICES_FILE_TYPE_CODE_m13)
+			uh->ordered = FALSE_m13;  // may not be true in MED 1.0
+		else  // TIME_SERIES_INDICES_FILE_TYPE_CODE_m13 & VIDEO_INDICES_FILE_TYPE_CODE_m13
+			uh->ordered = TRUE_m13;  // must be true in MED 1.0
+		// encryption
+		uh->encryption_rounds = 0;  // indices not encrypted
+		uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		// anonymized subject
+		memset((void *) (rd + UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
+		
+		// write out
+		fseek(fp, 0, SEEK_SET);
+		bytes_to_write = bytes_to_read;
+		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		fclose(fp);
+	}
+	
+	// time series data
+	else if (type_code == TIME_SERIES_DATA_FILE_TYPE_CODE_m13) {
+		
+		// read in universal header & first block header (for encryption flags)
+		bytes_to_read = UNIVERSAL_HEADER_BYTES_m13 + CMP_BLOCK_FIXED_HEADER_BYTES_m13;
+		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		if (rd == NULL) {
+			fclose(fp);
+			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			return(FALSE_m13);
+		}
+		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+				
+		// set up
+		uh = (UNIVERSAL_HEADER_m13 *) (rd + UNIVERSAL_HEADER_OFFSET_m13);
+		bh = (CMP_BLOCK_FIXED_HEADER_m13 *) (rd + UNIVERSAL_HEADER_BYTES_m13);
+
+		// update version
+		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+
+		// update fields: no overlaps
+		
+		// ordered
+		uh->ordered = TRUE_m13;  // must be true im MED 1.0
+		// encryption
+		if (bh->block_flags & MED_10_CMP_BF_LEVEL_1_ENCRYPTION_BIT_m13) {
+			uh->encryption_1 = LEVEL_1_ENCRYPTION_m13;
+			uh->encryption_rounds = 1;  // only one round allowed in MED 1.0
+		} else if (bh->block_flags & MED_10_CMP_BF_LEVEL_2_ENCRYPTION_BIT_m13) {
+			uh->encryption_1 = LEVEL_2_ENCRYPTION_m13;
+			uh->encryption_rounds = 1;  // only one round allowed in MED 1.0
+		} else {
+			uh->encryption_1 = NO_ENCRYPTION_m13;
+			uh->encryption_rounds = 0;  // not encrypted
+		}
+		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		// anonymized subject
+		memset((void *) (rd + UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
+		
+		// write out
+		fseek(fp, 0, SEEK_SET);
+		bytes_to_write = UNIVERSAL_HEADER_BYTES_m13;
+		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+
+		// loop over blocks
+		n_blocks = uh->number_of_entries;
+		fpos = UNIVERSAL_HEADER_BYTES_m13;  // just wrote out universal header
+		bytes_to_read = bytes_to_write = CMP_BLOCK_FIXED_HEADER_BYTES_m13;
+		bh_clear_mask = ~((ui4) MED_10_CMP_BF_LEVEL_1_ENCRYPTION_BIT_m13 | (ui4) MED_10_CMP_BF_LEVEL_2_ENCRYPTION_BIT_m13);
+		
+		for (i = 0; i < n_blocks; ++i) {
+			fread((void *) bh, sizeof(ui1), (size_t) bytes_to_read, fp);
+			
+			// clear encryption bits (encryption level made gloabl & moved to universal header)
+			bh->block_flags &= bh_clear_mask;
+
+			// write out
+			fseek(fp, -bytes_to_read, SEEK_CUR);
+			fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+			
+			// move to next block
+			fpos += bh->total_block_bytes;
+			fseek(fp, fpos, SEEK_SET);
+		}
+		fclose(fp);
+	}
+	
+	// video data
+	else if (type_code == VIDEO_DATA_FILE_TYPE_CODE_m13) {
+		// read in raw data
+		bytes_to_read = UNIVERSAL_HEADER_BYTES_m13;
+		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		if (rd == NULL) {
+			fclose(fp);
+			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			return(FALSE_m13);
+		}
+		fseek(fp, -UNIVERSAL_HEADER_BYTES_m13, SEEK_END);
+		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+				
+		// set up
+		uh = (UNIVERSAL_HEADER_m13 *) (rd + UNIVERSAL_HEADER_OFFSET_m13);
+
+		// update version
+		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+
+		// update fields: no overlaps, no encryption
+		
+		// ordered
+		uh->ordered = TRUE_m13;
+		// encryption
+		uh->encryption_rounds = 0;  // no encryption in MED 1.0 video
+		uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;  // no encryption in MED 1.0 video
+		// anonymized subject
+		memset((void *) (rd + UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
+		
+		// write out
+		fseek(fp, -UNIVERSAL_HEADER_BYTES_m13, SEEK_END);
+		bytes_to_write = bytes_to_read;
+		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		fclose(fp);
+	}
+		
+	// record data (new Sgmt record format is different size - requires new temp file)
+	else if (type_code == RECORD_DATA_FILE_TYPE_CODE_m13) {
+		
+		// create new file
+		sprintf(tmp_path, "%s.tmp", path);
+		new_fp = fopen(tmp_path, "w");
+		
+		// process password
+		proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
+		if (proc_globals->password_data.processed != TRUE_m13)
+			G_process_password_data_m13(fps, password);
+		pwd = &proc_globals->password_data;
+		
+		// read in raw data
+		bytes_to_read = UNIVERSAL_HEADER_BYTES_m13;
+		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		if (rd == NULL) {
+			fclose(fp);
+			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			return(FALSE_m13);
+		}
+		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+				
+		// set up
+		uh = (UNIVERSAL_HEADER_m13 *) (rd + UNIVERSAL_HEADER_OFFSET_m13);
+
+		// update version
+		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+
+		// update fields: no overlaps, no encryption
+		
+		// ordered
+		uh->ordered = FALSE_m13;  // may not be true in MED 1.0
+		// encryption
+		uh->encryption_rounds = 1;  // records encrypted individually; only one round allowed in MED 1.0
+		uh->encryption_1 = ENCRYPTION_VARIABLE_m13;
+		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		// anonymized subject
+		memset((void *) (rd + UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UNIVERSAL_HEADER_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
+		
+		// write out universal header
+		bytes_to_write = bytes_to_read;
+		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
+		
+		// loop over blocks
+		n_blocks = uh->number_of_entries;
+		rd = (ui1 *) realloc((void *) rd, (size_t) uh->maximum_entry_size);
+		
+		for (i = 0; i < n_blocks; ++i) {
+			bytes_to_read = RECORD_HEADER_BYTES_m13;
+			fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+			
+			rh = (RECORD_HEADER_m13 *) rd;
+			bytes_to_read = rh->total_record_bytes;
+			fread((void *) (rd + RECORD_HEADER_BYTES_m13), sizeof(ui1), (size_t) bytes_to_read, fp);
+			
+			// update Sgmt record
+			if (rh->type_code == REC_Sgmt_TYPE_CODE_m13) {
+				if (rh->version_major == 1 && rh->version_minor == 0) {
+					// decrypt
+					if (rh->encryption_level > NO_ENCRYPTION_m13) {
+						if (rh->encryption_level == LEVEL_1_ENCRYPTION_m13)
+							encryption_key = pwd->level_1_encryption_key;
+						else
+							encryption_key = pwd->level_2_encryption_key;
+						AES_decrypt_m13(rd + RECORD_HEADER_BYTES_m13, rh->total_record_bytes - RECORD_HEADER_BYTES_m13, NULL, encryption_key, 1);
+					}
+					
+					Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (rd + RECORD_HEADER_BYTES_m13));  // copy
+					Sgmt_v11 = (REC_Sgmt_v11_m13 *) (rd + RECORD_HEADER_BYTES_m13);  // pointer
+					Sgmt_v11->end_time = Sgmt_v10.end_time;
+					Sgmt_v11->start_sample_number = Sgmt_v10.start_sample_number;
+					Sgmt_v11->end_sample_number = Sgmt_v10.end_sample_number;
+					Sgmt_v11->segment_number = Sgmt_v10.segment_number;
+					Sgmt_v11->pad[0] = Sgmt_v11->pad[1] = Sgmt_v11->pad[2] = Sgmt_v11->pad[3] = 0;
+					description_bytes = rh->total_record_bytes - (RECORD_HEADER_BYTES_m13 + REC_Sgmt_v10_BYTES_m13);
+					if (description_bytes)
+						strcpy(Sgmt_v11->description, (si1 *) rd + RECORD_HEADER_BYTES_m13 + REC_Sgmt_v10_SEGMENT_DESCRIPTION_OFFSET_m13);
+					description_bytes -= REC_Sgmt_v11_PAD_BYTES_m13;
+					description_bytes = (description_bytes < 0) ? 0 : description_bytes;
+					body_bytes = REC_Sgmt_v11_BYTES_m13 + description_bytes;
+					if (description_bytes)
+						rh->total_record_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_RECORD_BODY_ALIGNMENT_m13) + RECORD_HEADER_BYTES_m13;
+					else
+						rh->total_record_bytes = body_bytes + RECORD_HEADER_BYTES_m13;
+					
+					// encrypt
+					if (rh->encryption_level > NO_ENCRYPTION_m13)
+						AES_encrypt_m13(rd + RECORD_HEADER_BYTES_m13, rh->total_record_bytes - RECORD_HEADER_BYTES_m13, NULL, encryption_key, 1);
+				}
+			}
+			
+			// write out
+			bytes_to_write = rh->total_record_bytes;
+			fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
+		}
+		fclose(fp);
+		fclose(new_fp);
+		
+		// move new file into place
+		G_move_path_m13(tmp_path, path);
+	}
+
+	// unknown file type
+	else {
+		fclose(fp);
+		G_set_error_m13(E_NOT_MED_m13, NULL);
+		return_m13(FALSE_m13);
+	}
+	
+	// clean up
+	free((void *) rd);
+
+	// reopen file
+	if (fps->parameters.fp->flags & FILE_FLAGS_WRITE_m13)
+		mode = "r+";
+	else
+		mode = "r";
+	fp = fopen(fps->path, mode);
+	fps->parameters.fp->fp = fp;
+#if defined MACOS_m13 || defined LINUX_m13
+	fps->parameters.fp->fd = fileno(fp);
+#endif
+#ifdef WINDOWS_m13
+	fps->parameters.fp->fd = _fileno(fp);
+#endif
+	
+	// read in universal header (status when called in read_file_m13()
+	fread((void *) fps->parameters.raw_data, sizeof(ui1), (size_t) UNIVERSAL_HEADER_BYTES_m13, fp);
+
+	*fps_ptr = fps;
+	
+	return_m13(TRUE_m13);
+}
+
+
 tern	G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 number_of_items, si8 bytes_to_write, si8 file_offset)
 {
 	ui4				entry_size;
@@ -14567,6 +15059,227 @@ tern	G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 number_of_items, si8 byte
 			break;
 	}
 		
+	return_m13(TRUE_m13);
+}
+
+
+tern	G_update_session_name_m13(SESSION_m13 *sess, FPS_m13 *fps)
+{
+	tern			reopen_fps, path_exists;
+	si1			**file_list, **chan_list, **seg_list, **vid_list;
+	si1			path[SEG_BASE_FILE_NAME_BYTES_m13], tmp_path[SEG_BASE_FILE_NAME_BYTES_m13], *fs_name, *uh_name;
+	si1			chan_name[BASE_FILE_NAME_BYTES_m13], seg_name[SEG_BASE_FILE_NAME_BYTES_m13];
+	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
+	PROC_GLOBALS_m13	*proc_globals;
+
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// update all FPS universal header session names to file system session name
+
+	if (sess == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "session is NULL");
+		return_m13(FALSE_m13);
+	}
+
+	if (globals_m13->update_header_names == FALSE_m13)
+		return_m13(FALSE_m13);
+	
+	G_message_m13("Updating session name ...\n");
+	
+	if (fps) {
+		FPS_close_m13(fps);
+		reopen_fps = TRUE_m13;
+	} else {
+		reopen_fps = FALSE_m13;
+	}
+	
+	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) sess);
+	if (proc_globals->current_session.names_differ == FALSE_m13)
+		return_m13(FALSE_m13);
+	
+	fs_name = proc_globals->current_session.fs_name;
+	uh_name = proc_globals->current_session.uh_name;
+
+	// session record indices
+	sprintf_m13(path, "%s/%s.%s", sess->path, fs_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+	G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+	// session record data
+	sprintf_m13(path, "%s/%s.%s", sess->path, fs_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+	G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+	// segmented session records
+	sprintf_m13(path, "%s/%s.%s", sess->path, fs_name, RECORD_DIRECTORY_TYPE_STRING_m13);
+	path_exists = FALSE_m13;
+	if (G_exists_m13(path) == FALSE_m13) {
+		sprintf_m13(tmp_path, "%s/%s.%s", sess->path, uh_name, RECORD_DIRECTORY_TYPE_STRING_m13);
+		if (G_exists_m13(tmp_path) == DIR_EXISTS_m13) {
+			G_move_path_m13(tmp_path, path);
+			path_exists = TRUE_m13;
+		}
+	} else {
+		path_exists = TRUE_m13;
+	}
+	if (path_exists == TRUE_m13) {
+		// seg sess record indices
+		file_list = G_generate_file_list_m13(NULL, &n_files, path, fs_name, RECORD_INDICES_FILE_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+		for (i = 0; i < n_files; ++i)
+			G_update_sess_name_header_m13(file_list[i], fs_name, uh_name);
+		free_m13((void *) file_list);
+
+		// seg sess record data
+		file_list = G_generate_file_list_m13(NULL, &n_files, path, fs_name, RECORD_DATA_FILE_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+		for (i = 0; i < n_files; ++i)
+			G_update_sess_name_header_m13(file_list[i], fs_name, uh_name);
+		free_m13((void *) file_list);
+	}
+		
+	// time series channels
+	chan_list = G_generate_file_list_m13(NULL, &n_chans, sess->path, NULL, TIME_SERIES_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+	if (n_chans) {
+		for (i = 0; i < n_chans; ++i) {
+			G_extract_path_parts_m13(chan_list[i], NULL, chan_name, NULL);
+			
+			// channel record indices
+			sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == DIR_EXISTS_m13)
+				G_update_sess_name_header_m13(path, fs_name, uh_name);
+			
+			// channel record data
+			sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == DIR_EXISTS_m13)
+				G_update_sess_name_header_m13(path, fs_name, uh_name);
+			
+			// time series segments
+			seg_list = G_generate_file_list_m13(NULL, &n_segs, chan_list[i], NULL, TIME_SERIES_SEGMENT_DIRECTORY_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+			if (n_segs) {
+				for (j = 0; j < n_segs; ++j) {
+					G_extract_path_parts_m13(seg_list[j], NULL, seg_name, NULL);
+					
+					// time series metadata
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, TIME_SERIES_METADATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+					// time series indices
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, TIME_SERIES_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+					// time series data
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, TIME_SERIES_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+					
+					// segment record indices
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+					// segment record data
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+				}
+				free_m13((void *) seg_list);
+			}
+		}
+		free_m13((void *) chan_list);
+	}
+
+	// video channels
+	chan_list = G_generate_file_list_m13(NULL, &n_chans, sess->path, NULL, VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+	if (n_chans) {
+		for (i = 0; i < n_chans; ++i) {
+			G_extract_path_parts_m13(chan_list[i], NULL, chan_name, NULL);
+			
+			// channel record indices
+			sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == DIR_EXISTS_m13)
+				G_update_sess_name_header_m13(path, fs_name, uh_name);
+			
+			// channel record data
+			sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+			if (G_exists_m13(path) == DIR_EXISTS_m13)
+				G_update_sess_name_header_m13(path, fs_name, uh_name);
+			
+			// video segments
+			seg_list = G_generate_file_list_m13(NULL, &n_segs, chan_list[i], NULL, VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m13, GFL_FULL_PATH_m13);
+			if (n_segs) {
+				for (j = 0; j < n_segs; ++j) {
+					G_extract_path_parts_m13(seg_list[j], NULL, seg_name, NULL);
+					
+					// video metadata
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, VIDEO_METADATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+					// video indices
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, VIDEO_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+					// video data
+					vid_list = G_generate_file_list_m13(NULL, &n_vids, seg_list[j], "*_n????", NULL, GFL_FULL_PATH_m13);
+					if (n_vids) {
+						for (k = 0; k < n_vids; ++k)
+							G_update_sess_name_header_m13(vid_list[k], fs_name, uh_name);
+						free_m13((void *) vid_list);
+					}
+					
+					// segment record indices
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, RECORD_INDICES_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+
+					// segment record data
+					sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, RECORD_DATA_FILE_TYPE_STRING_m13);
+					if (G_exists_m13(path) == TRUE_m13)
+						G_update_sess_name_header_m13(path, fs_name, uh_name);
+				}
+				free_m13((void *) seg_list);
+			}
+		}
+		free_m13((void *) chan_list);
+	}
+
+	if (reopen_fps == TRUE_m13) {
+		STR_replace_pattern_m13(uh_name, fs_name, fps->path, fps->path);
+		G_read_file_m13(fps, NULL, 0, fps->parameters.raw_data_bytes, 0, NULL, NULL);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+tern	G_update_sess_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  // used by G_update_sess_name_m13()
+{
+	si1			tmp_path[FULL_FILE_NAME_BYTES_m13];
+	FPS_m13			*fps;
+	UNIVERSAL_HEADER_m13	*uh;
+	
+#ifdef FN_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	fps = G_read_file_m13(NULL, path, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
+	if (fps == NULL) {
+		STR_replace_pattern_m13(uh_name, fs_name, path, tmp_path);
+		G_move_path_m13(path, tmp_path);
+		fps = G_read_file_m13(NULL, tmp_path, 0, 0, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL, NULL);
+		if (fps == NULL)
+			return_m13(FALSE_m13);
+	}
+
+	uh = fps->universal_header;
+	if (strcmp(uh->session_name, fs_name)) {
+		strncpy(uh->session_name, fs_name, BASE_FILE_NAME_BYTES_m13);
+		G_write_file_m13(fps, 0, UNIVERSAL_HEADER_BYTES_m13, FPS_UNIVERSAL_HEADER_ONLY_m13, NULL);
+	}
+	
+	FPS_free_m13(&fps);
+	
 	return_m13(TRUE_m13);
 }
 
@@ -14927,9 +15640,9 @@ void    G_warning_message_m13(si1 *fmt, ...)
 si8	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 number_of_items, void *external_data)
 {
 	tern			update_maximum_entry_size;
-	si8                             bytes_written;
-	void				*saved_data_pointers, *encrypted_data, *unencrypted_data;
-	UNIVERSAL_HEADER_m13		*uh;
+	si8			bytes_written, header_offset;
+	void			*saved_data_pointers, *encrypted_data, *unencrypted_data;
+	UNIVERSAL_HEADER_m13	*uh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -14937,21 +15650,14 @@ si8	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 numb
 
 	// if number_of_items == FPS_FULL_FILE_m13, full file is written, universal header CRC is updated, and file is closed. Note: number_of_entries must be filled in in universal header.
 	// if number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13, the universal header is written, and file is left open (header CRC is not updated unless directive is set)
-	// if number_of_items == FPS_CLOSE_m13: update universal header & close file => only universal header written
 	// if file_offset == FPS_APPEND_m13, the file is appended
 	
-	// clobber file if exists and is closed, create if non-existent
 	if (fps->parameters.fp == NULL) {
-		if (!(fps->directives.open_mode & FPS_GENERIC_WRITE_OPEN_MODE_m13))
-			fps->directives.open_mode = FPS_W_OPEN_MODE_m13;
+		if (!(fps->directives.flags & FPS_W_OPEN_MODE_m13)) {
+			fps->directives.flags &= ~FPS_OPEN_MODE_MASK_m13;  // unset
+			fps->directives.flags |= FPS_DIRECTIVES_WRITE_OPEN_MODE_DEFAULT_m13;
+		}
 		FPS_open_m13(fps);
-	}
-	
-	if (number_of_items == FPS_CLOSE_m13) {
-		fps->directives.update_universal_header = TRUE_m13;
-		FPS_write_m13(fps, 0, UNIVERSAL_HEADER_BYTES_m13);
-		FPS_close_m13(fps);
-		return_m13(0);  // nothing new written
 	}
 	
 	if (external_data) {
@@ -14962,7 +15668,11 @@ si8	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 numb
 	uh = fps->universal_header;
 	update_maximum_entry_size = TRUE_m13;
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m13) {
-		bytes_written = FPS_write_m13(fps, 0, UNIVERSAL_HEADER_BYTES_m13);
+		if (uh->type_code == VIDEO_DATA_FILE_TYPE_CODE_m13)
+			header_offset = fps->parameters.fp->len - UNIVERSAL_HEADER_BYTES_m13;
+		else
+			header_offset = 0;
+		bytes_written = FPS_write_m13(fps, header_offset, UNIVERSAL_HEADER_BYTES_m13);
 		fps->number_of_items = 0;
 		return_m13(bytes_written);
 	}
@@ -14970,7 +15680,7 @@ si8	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 numb
 	if (number_of_items == FPS_FULL_FILE_m13) {
 		number_of_items = uh->number_of_entries;
 		file_offset = UNIVERSAL_HEADER_BYTES_m13;
-		fps->directives.close_file = TRUE_m13;  // update universal header automatically set with close_file directive
+		fps->directives.flags |= FPS_DF_CLOSE_AFTER_OPERATION_m13;  // update universal header automatically done with close
 	}
 	
 	if (number_of_items == 0) {
@@ -14996,12 +15706,12 @@ si8	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 numb
 	
 	// leave decrypted directive
 	encrypted_data = NULL;
-	if (fps->directives.leave_decrypted == TRUE_m13) {
+	if (fps->directives.flags & FPS_DF_LEAVE_DECRYPTED_m13) {
 		switch (uh->type_code) {
 			case TIME_SERIES_DATA_FILE_TYPE_CODE_m13:
 			case TIME_SERIES_METADATA_FILE_TYPE_CODE_m13:
 			case VIDEO_METADATA_FILE_TYPE_CODE_m13:
-			case RECORD_DATA_FILE_TYPE_CODE_m13:  // this mechanism assumes copying is faster than decrypting, but it might not be.
+			case RECORD_DATA_FILE_TYPE_CODE_m13:  // this mechanism assumes copying is faster than decrypting, but it might not be
 				encrypted_data = malloc_m13(bytes_to_write);
 				memcpy(encrypted_data, fps->data_pointers, bytes_to_write);  // encrypted below
 				unencrypted_data = fps->data_pointers;
@@ -15045,17 +15755,15 @@ si8	G_write_file_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write, si8 numb
 				break;
 		}
 	}
-	
-	// always update universal header on close
-	if (fps->directives.close_file == TRUE_m13)
-		fps->directives.update_universal_header = TRUE_m13;
-	
+		
 	// write
 	bytes_written = FPS_write_m13(fps, file_offset, bytes_to_write);
 	
 	// close
-	if (fps->directives.close_file == TRUE_m13)
+	if (fps->directives.flags & FPS_DF_CLOSE_AFTER_OPERATION_m13) {
 		FPS_close_m13(fps);
+		return_m13(0);  // nothing new written
+	}
 	
 	// leave decrypted directive
 	if (encrypted_data) {
@@ -15158,14 +15866,18 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 // "len" is bytes to be decrypted
 // if decrypting multiple times with the same encryption key, pass in expanded key
 // decryption is done in place
-void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
+void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
 {
-	ui1	*ui1_p;
+	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13];
 	si1	key[AES_KEY_BYTES_m13] = {0};
-	si8	i, encryption_blocks, n_leftovers;
+	si4	i, n_leftovers;
+	si8	j, encryption_blocks;
 	ui1	state[4][4]; // array that holds the intermediate results during encryption
 	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
 
+	
+	if (rounds == 0)
+		return;
 	
 	if (globals_m13->tables->AES_sbox_table == NULL)  // all tables initialized together
 		AES_init_tables_m13();
@@ -15186,20 +15898,37 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 		G_warning_message_m13("%s(): No password or expanded key\n", __FUNCTION__);
 		return;
 	}
+	
+	// copy key if >1 rounds to keep thread-safe
+	if (rounds > 1) {
+		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
+		expanded_key = local_expanded_key;
+	}
 
 	// AES decryption
 	encryption_blocks = len >> 4;
-	ui1_p = data;
-	for (i = encryption_blocks; i--;) {
-		AES_inv_cipher_m13(ui1_p, ui1_p, state, expanded_key);
-		ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+	for (i = (si4) rounds; i--;) {
+		ui1_p = data;
+		for (j = encryption_blocks; j--;) {
+			AES_inv_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+		}
+		
+		// handle leftovers
+		n_leftovers = (si4) (len - (encryption_blocks << 4));
+		if (n_leftovers)
+			AES_keyless_decrypt_m13(n_leftovers, ui1_p);
+		
+		// encrypt expanded key on each round (reverse of encrypt)
+		if (i) {
+			ui1_p = expanded_key;  // key used to set state, then state used to set output, so no conflict
+			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
+				AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+			}
+		}
 	}
-
-	// handle leftovers
-	n_leftovers = len - (encryption_blocks << 4);
-	if (n_leftovers)
-		AES_keyless_decrypt_m13(n_leftovers, ui1_p);
-
+		
 	return;
 }
 
@@ -15208,14 +15937,18 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 // "len" is bytes to be encrypted
 // if encrypting multiple times with the same encryption key, pass in expanded key
 // encryption is done in place
-void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
+void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
 {
-	ui1	*ui1_p;
+	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13];
 	si1	key[AES_KEY_BYTES_m13] = {0};
-	si8	i, encryption_blocks, n_leftovers;
+	si4	i;
+	si8	j, encryption_blocks, n_leftovers;
 	ui1	state[4][4]; // array that holds the intermediate results during encryption
 	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
 	
+	
+	if (rounds == 0)
+		return;
 	
 	if (globals_m13->tables->AES_sbox_table == NULL)  // all tables initialized together
 		AES_init_tables_m13();
@@ -15237,19 +15970,47 @@ void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key)
 		return;
 	}
 
+	// copy key if >1 rounds to keep thread-safe
+	if (rounds > 1) {
+		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
+		expanded_key = local_expanded_key;
+		
+		// self-encrypt for each round so not using same key in next round
+		// done in encryption so decryption (more common) is more efficient
+		for (i = (si4) rounds; --i;) {
+			ui1_p = expanded_key;  // key used to set state, then state used to set output, so no conflict
+			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
+				AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+			}
+		}
+
+	}
+	
 	// AES encryption
 	encryption_blocks = len >> 4;
-	ui1_p = data;
-	for (i = encryption_blocks; i--;) {
-		AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
-		ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+	for (i = (si4) rounds; i--;) {
+		ui1_p = data;
+		for (j = encryption_blocks; j--;) {
+			AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+		}
+		
+		// handle leftovers
+		n_leftovers = (si4) (len - (encryption_blocks << 4));
+		if (n_leftovers)
+			AES_keyless_encrypt_m13(n_leftovers, ui1_p);
+		
+		// decrypt expanded key on each round back to original key (encrypted above)
+		if (i) {
+			ui1_p = expanded_key;  // key used to set state, then state used to set output, so no conflict
+			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
+				AES_inv_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+			}
+		}
 	}
-
-	// handle leftovers
-	n_leftovers = len - (encryption_blocks << 4);
-	if (n_leftovers)
-		AES_keyless_encrypt_m13(n_leftovers, ui1_p);
-
+	
 	return;
 }
 
@@ -16168,13 +16929,15 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->video_data_file_number != (ui4 *) (bytes + UNIVERSAL_HEADER_VIDEO_DATA_FILE_NUMBER_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->data_encryption != (si1 *) (bytes + UNIVERSAL_HEADER_DATA_ENCRYPTION_OFFSET_m13))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->metadata_section_2_encryption != (si1 *) (bytes + UNIVERSAL_HEADER_METADATA_SECTION_2_ENCRYPTION_OFFSET_m13))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
-	if (&uh->metadata_section_3_encryption != (si1 *) (bytes + UNIVERSAL_HEADER_METADATA_SECTION_3_ENCRYPTION_OFFSET_m13))
-		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (&uh->ordered != (tern *) (bytes + UNIVERSAL_HEADER_ORDERED_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->encryption_rounds != (ui1 *) (bytes + UNIVERSAL_HEADER_ENCRYPTION_ROUNDS_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->encryption_1 != (si1 *) (bytes + UNIVERSAL_HEADER_ENCRYPTION_1_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->encryption_2 != (si1 *) (bytes + UNIVERSAL_HEADER_ENCRYPTION_2_OFFSET_m13))
+		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
+	if (&uh->encryption_3 != (si1 *) (bytes + UNIVERSAL_HEADER_ENCRYPTION_3_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
 	if (uh->protected_region != (ui1 *) (bytes + UNIVERSAL_HEADER_PROTECTED_REGION_OFFSET_m13))
 		goto UNIVERSAL_HEADER_NOT_ALIGNED_m13;
@@ -16867,7 +17630,7 @@ CMP_BUFFERS_m13    *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buf
 }
 
 
-CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMETERS_m13 *parameters)
+CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECTIVES_m13 *directives, CPS_PARAMS_m13 *parameters)
 {
 	tern	need_compressed_data = FALSE_m13;
 	tern	need_decompressed_data = FALSE_m13;
@@ -16879,7 +17642,7 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 	tern	need_scaled_amplitude_buffer = FALSE_m13;
 	tern	need_scaled_frequency_buffer = FALSE_m13;
 	tern	need_VDS_buffers = FALSE_m13;
-	si8		pad_samples;
+	si8	pad_samples;
 	CPS_m13	*cps;
 	
 	
@@ -16901,9 +17664,9 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		CMP_init_directives_m13(&cps->directives, (ui1) mode);
 	if (fps->parent) {  // set level header directives
 		if (((LEVEL_HEADER_m13 *) fps->parent)->flags & LH_NO_CPS_PTR_RESET_m13)
-			cps->directives.cps_pointer_reset = FALSE_m13;  // default is TRUE_m13
+			cps->directives.flags &= ~CPS_DF_CPS_POINTER_RESET_m13;  // default is TRUE_m13
 		if (((LEVEL_HEADER_m13 *) fps->parent)->flags & LH_NO_CPS_CACHING_m13)
-			cps->directives.cps_caching = FALSE_m13;  // default is TRUE_m13
+			cps->directives.flags &= ~CPS_DF_CPS_CACHING_m13;  // default is TRUE_m13
 	}
 	
 	// set up parameters
@@ -16916,10 +17679,14 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		G_warning_message_m13("%s(): No compression mode specified\n", __FUNCTION__);
 		return_m13(cps);
 	}
+	if (mode == CMP_COMPRESSION_MODE_m13)
+		cps->directives.flags |= CPS_DF_COMPRESSION_MODE_m13;
+	else
+		cps->directives.flags &= ~CPS_DF_COMPRESSION_MODE_m13;
 	
 	// allocate RED/PRED buffers
-	if (cps->directives.algorithm == CMP_RED1_COMPRESSION_m13 || cps->directives.algorithm == CMP_RED2_COMPRESSION_m13) {  // VDS uses RED & PRED, but allocated for PRED
-		if (cps->directives.compression_mode == CMP_COMPRESSION_MODE_m13) {
+	if (cps->directives.flags & (CPS_DF_RED1_ALGORITHM_m13 | CPS_DF_RED2_ALGORITHM_m13)) {
+		if (mode == CMP_COMPRESSION_MODE_m13) {
 			cps->parameters.count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
 			cps->parameters.sorted_count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(CMP_STATISTICS_BIN_m13));
 			cps->parameters.symbol_map = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui1));
@@ -16931,8 +17698,8 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		}
 		cps->parameters.cumulative_count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8));
 		cps->parameters.minimum_range = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8));
-	} else if (cps->directives.algorithm == CMP_PRED1_COMPRESSION_m13 || cps->directives.algorithm == CMP_PRED2_COMPRESSION_m13 || cps->directives.algorithm == CMP_VDS_COMPRESSION_m13) {  // VDS uses RED & PRED, but buffers allocated for PRED
-		if (cps->directives.compression_mode == CMP_COMPRESSION_MODE_m13) {
+	} else if (cps->directives.flags & (CPS_DF_PRED1_ALGORITHM_m13 | CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_VDS_ALGORITHM_m13)) {  // VDS uses RED & PRED, but buffers allocated for PRED
+		if (mode == CMP_COMPRESSION_MODE_m13) {
 			cps->parameters.count = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4), FALSE_m13);
 			cps->parameters.sorted_count = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(CMP_STATISTICS_BIN_m13), FALSE_m13);
 			cps->parameters.symbol_map = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui1), FALSE_m13);
@@ -16945,7 +17712,7 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		cps->parameters.cumulative_count = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8), FALSE_m13);
 		cps->parameters.minimum_range = (void *) calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8), FALSE_m13);
 	} else {
-		if (cps->directives.compression_mode == CMP_COMPRESSION_MODE_m13)  // MBE needs derivative buffer for compression
+		if (mode == CMP_COMPRESSION_MODE_m13)  // MBE needs derivative buffer for compression
 			need_derivative_buffer = TRUE_m13;
 		cps->parameters.count = NULL;
 		cps->parameters.sorted_count = NULL;
@@ -16955,11 +17722,11 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 	}
 
 	// VDS
-	if (cps->directives.algorithm == CMP_VDS_COMPRESSION_m13)
+	if (cps->directives.flags & CPS_DF_VDS_ALGORITHM_m13)
 		need_VDS_buffers = TRUE_m13;
 	
 	// decompression
-	if (cps->directives.compression_mode == CMP_DECOMPRESSION_MODE_m13) {
+	if (mode == CMP_DECOMPRESSION_MODE_m13) {
 		need_compressed_data = TRUE_m13;
 		need_decompressed_data = TRUE_m13;
 		need_keysample_buffer = TRUE_m13;
@@ -16968,15 +17735,15 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		need_original_data = TRUE_m13;
 		need_keysample_buffer = TRUE_m13;
 		
-		if (cps->directives.detrend_data == TRUE_m13)
+		if (cps->directives.flags & CPS_DF_DETREND_DATA_m13)
 			need_detrended_buffer = TRUE_m13;
-		if (cps->directives.find_derivative_level == TRUE_m13)
+		if (cps->directives.flags & CPS_DF_FIND_DERIVATIVE_LEVEL_m13)
 			need_scrap_buffer = TRUE_m13;
-		if (cps->directives.set_amplitude_scale == TRUE_m13 || cps->directives.find_amplitude_scale == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_SET_AMPLITUDE_SCALE_m13 | CPS_DF_FIND_AMPLITUDE_SCALE_m13))
 			need_scaled_amplitude_buffer = TRUE_m13;
-		if (cps->directives.set_frequency_scale == TRUE_m13 || cps->directives.find_frequency_scale == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_SET_FREQUENCY_SCALE_m13 | CPS_DF_FIND_FREQUENCY_SCALE_m13))
 			need_scaled_frequency_buffer = TRUE_m13;
-		if (cps->directives.find_amplitude_scale == TRUE_m13 || cps->directives.find_frequency_scale == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_FIND_AMPLITUDE_SCALE_m13 | CPS_DF_FIND_FREQUENCY_SCALE_m13))
 			need_decompressed_data = TRUE_m13;
 	}
 	
@@ -17014,7 +17781,7 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 
 	// decompressed_data - caller specified array size
 	if (need_decompressed_data == TRUE_m13) {
-		if (cps->directives.compression_mode == CMP_DECOMPRESSION_MODE_m13) {
+		if (mode == CMP_DECOMPRESSION_MODE_m13) {
 			if (data_samples > 0) {
 				cps->parameters.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m13((size_t) data_samples, sizeof(si4));
 			} else {
@@ -17574,33 +18341,29 @@ tern     CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 		return_m13(FALSE_m13);
 	}
 	
-	if (cps->directives.algorithm == CMP_VDS_COMPRESSION_m13)
+	if (cps->directives.flags & CPS_DF_VDS_ALGORITHM_m13)
 		need_VDS_buffers = TRUE_m13;
 
-	// decompression
-	if (cps->directives.compression_mode == CMP_DECOMPRESSION_MODE_m13) {
-		need_compressed_data = TRUE_m13;
-		need_decompressed_data = TRUE_m13;
-		need_keysample_buffer = TRUE_m13;
-	}
+	need_compressed_data = TRUE_m13;
+	need_keysample_buffer = TRUE_m13;
 	
 	// compression
-	else {
-		need_compressed_data = TRUE_m13;
+	if (cps->directives.flags & CPS_DF_COMPRESSION_MODE_m13) {
 		need_original_data = TRUE_m13;
-		need_keysample_buffer = TRUE_m13;
-		
-		if (cps->directives.detrend_data == TRUE_m13)
+		if (cps->directives.flags & CPS_DF_DETREND_DATA_m13)
 			need_detrended_buffer = TRUE_m13;
-		if (cps->directives.set_derivative_level == TRUE_m13 || cps->directives.find_derivative_level == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_SET_DERIVATIVE_LEVEL_m13 | CPS_DF_FIND_DERIVATIVE_LEVEL_m13))
 			need_derivative_buffer = TRUE_m13;
-		if (cps->directives.set_amplitude_scale == TRUE_m13 || cps->directives.find_amplitude_scale == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_SET_AMPLITUDE_SCALE_m13 | CPS_DF_FIND_AMPLITUDE_SCALE_m13))
 			need_scaled_amplitude_buffer = TRUE_m13;
-		if (cps->directives.set_frequency_scale == TRUE_m13 || cps->directives.find_frequency_scale == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_SET_FREQUENCY_SCALE_m13 | CPS_DF_FIND_FREQUENCY_SCALE_m13))
 			need_scaled_frequency_buffer = TRUE_m13;
-		if (cps->directives.find_amplitude_scale == TRUE_m13 || cps->directives.find_frequency_scale == TRUE_m13)
+		if (cps->directives.flags & (CPS_DF_FIND_AMPLITUDE_SCALE_m13 | CPS_DF_FIND_FREQUENCY_SCALE_m13))
 			need_decompressed_data = TRUE_m13;
+	} else { // decompression
+		need_decompressed_data = TRUE_m13;
 	}
+
 	
 	// check compressed_data
 	if (need_compressed_data == TRUE_m13 && fps->time_series_data == NULL) {
@@ -17839,6 +18602,7 @@ tern    CMP_decode_m13(FPS_m13 *fps)
 	si4				*si4_p;
 	sf4				*sf4_p;
 	sf8				intercept, gradient, amplitude_scale, frequency_scale;
+	tern				(*decompression_f)(CPS_m13 *cps);
 	CMP_BLOCK_FIXED_HEADER_m13	*block_header;
 	CPS_m13	*cps;
 
@@ -17859,12 +18623,8 @@ tern    CMP_decode_m13(FPS_m13 *fps)
 		block_header = cps->block_header;
 	}
 	
-	// decrypt (probably done in G_read_file_m13(), but if not, do here)
-	if (block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m13)
-		CMP_decrypt_m13(fps);
-	
 	// discontinuity
-	if (block_header->block_flags & CMP_BF_DISCONTINUITY_MASK_m13)
+	if (block_header->block_flags & CMP_BF_DISCONTINUITY_m13)
 		cps->parameters.discontinuity = TRUE_m13;
 	else
 		cps->parameters.discontinuity = FALSE_m13;
@@ -17873,40 +18633,42 @@ tern    CMP_decode_m13(FPS_m13 *fps)
 	CMP_get_variable_region_m13(cps);
 	
 	// decompress
+	cps->directives.flags &= ~CPS_DF_ALGORITHM_MASK_m13;  // clear directives algorithm flags
 	switch (block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m13) {
-		case CMP_BF_RED1_ENCODING_MASK_m13:
-			cps->directives.algorithm = CMP_RED1_COMPRESSION_m13;
-			CMP_RED1_decode_m13(cps);
+		case CMP_BF_RED1_ENCODING_m13:
+			cps->directives.flags |= CPS_DF_RED1_ALGORITHM_m13;
+			decompression_f = CMP_RED1_decode_m13;
 			break;
-		case CMP_BF_PRED1_ENCODING_MASK_m13:
-			cps->directives.algorithm = CMP_PRED1_COMPRESSION_m13;
-			CMP_PRED1_decode_m13(cps);
+		case CMP_BF_PRED1_ENCODING_m13:
+			cps->directives.flags |= CPS_DF_PRED1_ALGORITHM_m13;
+			decompression_f = CMP_PRED1_decode_m13;
 			break;
-		case CMP_BF_MBE_ENCODING_MASK_m13:
-			cps->directives.algorithm = CMP_MBE_COMPRESSION_m13;
-			CMP_MBE_decode_m13(cps);
+		case CMP_BF_RED2_ENCODING_m13:
+			cps->directives.flags |= CPS_DF_RED2_ALGORITHM_m13;
+			decompression_f = CMP_RED2_decode_m13;
 			break;
-		case CMP_BF_VDS_ENCODING_MASK_m13:
-			cps->directives.algorithm = CMP_VDS_COMPRESSION_m13;
-			CMP_VDS_decode_m13(cps);
+		case CMP_BF_PRED2_ENCODING_m13:
+			cps->directives.flags |= CPS_DF_PRED2_ALGORITHM_m13;
+			decompression_f = CMP_PRED2_decode_m13;
 			break;
-		case CMP_BF_RED2_ENCODING_MASK_m13:
-			cps->directives.algorithm = CMP_RED2_COMPRESSION_m13;
-			CMP_RED2_decode_m13(cps);
+		case CMP_BF_MBE_ENCODING_m13:
+			cps->directives.flags |= CPS_DF_MBE_ALGORITHM_m13;
+			decompression_f = CMP_MBE_decode_m13;
 			break;
-		case CMP_BF_PRED2_ENCODING_MASK_m13:
-			cps->directives.algorithm = CMP_PRED2_COMPRESSION_m13;
-			CMP_PRED2_decode_m13(cps);
+		case CMP_BF_VDS_ENCODING_m13:
+			cps->directives.flags |= CPS_DF_VDS_ALGORITHM_m13;
+			decompression_f = CMP_VDS_decode_m13;
 			break;
 		default:
 			G_set_error_m13(E_UNSPEC_m13, "unrecognized compression algorithm (%u)\n", block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m13);
 			return_m13(FALSE_m13);
 	}
+	(*decompression_f)(cps);  // block-specific decompression algorithm
 
-	if (cps->directives.algorithm != CMP_VDS_COMPRESSION_m13) {
+	if (!(cps->directives.flags & CPS_DF_VDS_ALGORITHM_m13)) {
 		// unscale frequency-scaled decompressed_data if scaled (in place)
 		// no blockwise frequency scaling in VDS encoded data
-		if (block_header->parameter_flags & CMP_PF_FREQUENCY_SCALE_MASK_m13) {
+		if (block_header->parameter_flags & CMP_PF_FREQUENCY_SCALE_m13) {
 			sf4_p = (sf4 *) cps->block_parameters;
 			offset = cps->parameters.block_parameter_map[CMP_PF_FREQUENCY_SCALE_IDX_m13];
 			frequency_scale = (sf8) *(sf4_p + offset);
@@ -17915,7 +18677,7 @@ tern    CMP_decode_m13(FPS_m13 *fps)
 		
 		// unscale amplitude-scaled decompressed_data if scaled (in place)
 		// VDS_decode_m13() does amplitude scaling itself
-		if (block_header->parameter_flags & CMP_PF_AMPLITUDE_SCALE_MASK_m13) {
+		if (block_header->parameter_flags & CMP_PF_AMPLITUDE_SCALE_m13) {
 			sf4_p = (sf4 *) cps->block_parameters;
 			offset = cps->parameters.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m13];
 			amplitude_scale = (sf8) *(sf4_p + offset);
@@ -17938,7 +18700,7 @@ tern    CMP_decode_m13(FPS_m13 *fps)
 	// restrict returned samples
 	cps->parameters.block_end_index = 0xFFFFFFFF;  // reset
 	if (cps->parameters.block_start_index) {
-		if (cps->directives.algorithm != CMP_VDS_COMPRESSION_m13 || cps->directives.cps_caching == TRUE_m13)
+		if (!(cps->directives.flags & CPS_DF_VDS_ALGORITHM_m13) || (cps->directives.flags & CPS_DF_CPS_CACHING_m13))
 			cps->decompressed_data = cps->parameters.cache + cps->parameters.block_start_index;
 		cps->parameters.block_start_index = 0;  // reset
 	}
@@ -17950,11 +18712,13 @@ tern    CMP_decode_m13(FPS_m13 *fps)
 tern	CMP_decrypt_m13(FPS_m13 *fps)
 {
 	ui1				*key;
+	si1				enc_level;
 	si8				encryption_bytes, encryptable_bytes;
 	PROC_GLOBALS_m13		*proc_globals;
+	UNIVERSAL_HEADER_m13		*uh;
 	CMP_BLOCK_FIXED_HEADER_m13	*block_header;
 	PASSWORD_DATA_m13		*pwd;
-	CPS_m13	*cps;
+	CPS_m13				*cps;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -17966,37 +18730,29 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 	}
 	cps = fps->parameters.cps;
 	block_header = cps->block_header;
-
-	// check if block is encrypted (already checked in CMP_decode() - just check here in case function being used independently)
-	if (!(block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m13))
+	
+	// block not encrypted
+	if (!(block_header->block_flags & CMP_BF_ENCRYPTED_m13))
 		return_m13(TRUE_m13);
 
 	// get decryption key
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
-	if (block_header->block_flags & CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13) {
-		if (block_header->block_flags & CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13) {
-			G_set_error_m13(E_ENCRYPT_m13, "cannot decrypt data: flags indicate both level 1 & level 2 encryption\n");
-			return_m13(FALSE_m13);
-		}
-		if (pwd->access_level >= LEVEL_1_ENCRYPTION_m13) {
+	uh = fps->universal_header;
+	enc_level = uh->encryption_1;
+	if (pwd->access_level >= enc_level) {
+		if (enc_level == LEVEL_1_ENCRYPTION_m13)
 			key = pwd->level_1_encryption_key;
-		} else {
-			G_set_error_m13(E_ENCRYPT_m13, "cannot decrypt data: insufficient access");
-			return_m13(FALSE_m13);
-		}
-	} else {  // level 2 bit is set
-		if (pwd->access_level == LEVEL_2_ENCRYPTION_m13) {
-			key = pwd->level_2_encryption_key;
-		} else {
-			G_set_error_m13(E_ENCRYPT_m13, "cannot decrypt data: insufficient access");
-			return_m13(FALSE_m13);
-		}
+		else
+			key = pwd->level_1_encryption_key;
+	} else {
+		G_set_error_m13(E_ENCRYPT_m13, "cannot decrypt data: insufficient access");
+		return_m13(FALSE_m13);
 	}
 	
 	// calculate encryption bytes
 	encryptable_bytes = block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-	if (block_header->block_flags | CMP_BF_MBE_ENCODING_MASK_m13) {
+	if (block_header->block_flags | CMP_BF_MBE_ENCODING_m13) {
 		encryption_bytes = encryptable_bytes;
 	} else {
 		encryption_bytes = (block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
@@ -18005,10 +18761,10 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 	}
 	
 	// decrypt
-	AES_decrypt_m13((ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key);
+	AES_decrypt_m13((ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, uh->encryption_rounds);
 	
-	// set block flags to decrypted
-	block_header->block_flags &= ~CMP_BF_ENCRYPTION_MASK_m13;
+	// mark block as decrypted
+	block_header->block_flags &= ~CMP_BF_ENCRYPTED_m13;
 	
 	return_m13(TRUE_m13);
 }
@@ -18111,9 +18867,9 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	}
 
 	set_deriv_level = 1;  // default
-	if (cps->directives.find_derivative_level == TRUE_m13)
+	if (cps->directives.flags & CPS_DF_FIND_DERIVATIVE_LEVEL_m13)
 		set_deriv_level = 0xFF;
-	else if (cps->directives.set_derivative_level == TRUE_m13)
+	else if (cps->directives.flags & CPS_DF_SET_DERIVATIVE_LEVEL_m13)
 		set_deriv_level = cps->parameters.goal_derivative_level;
 	if (set_deriv_level != 1) {
 		if (set_deriv_level == 0) {
@@ -18222,10 +18978,10 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 
 tern    CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 number_of_samples)
 {
-	tern                        data_is_compressed, allow_lossy_compression;
+	tern                       	 data_is_compressed, allow_lossy_compression;
 	ui1				normality;
-	tern			(*compression_f)(CPS_m13 *cps);
-	CPS_m13	*cps;
+	tern				(*compression_f)(CPS_m13 *cps);
+	CPS_m13				*cps;
 	CMP_BLOCK_FIXED_HEADER_m13	*block_header;
 	
 #ifdef FN_DEBUG_m13
@@ -18269,39 +19025,39 @@ tern    CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_num
 	
 	// discontinuity
 	if (cps->parameters.discontinuity == TRUE_m13) {
-		block_header->block_flags |= CMP_BF_DISCONTINUITY_MASK_m13;
-		if (cps->directives.reset_discontinuity == TRUE_m13)
+		block_header->block_flags |= CMP_BF_DISCONTINUITY_m13;
+		if (cps->directives.flags & CPS_DF_RESET_DISCONTINUITY_m13)
 			cps->parameters.discontinuity = FALSE_m13;
 	}
 		
 	// select compression
 	// (compression algorithms are responsible for filling in: algorithm block flag, total_header_bytes, total_block_bytes, model_region_bytes, & model details)
-	switch (cps->directives.algorithm) {
-		case CMP_RED1_COMPRESSION_m13:
+	switch (cps->directives.flags & CPS_DF_ALGORITHM_MASK_m13) {
+		case CPS_DF_RED1_ALGORITHM_m13:
 			compression_f = CMP_RED1_encode_m13;
 			break;
-		case CMP_PRED1_COMPRESSION_m13:
+		case CPS_DF_PRED1_ALGORITHM_m13:
 			compression_f = CMP_PRED1_encode_m13;
 			break;
-		case CMP_MBE_COMPRESSION_m13:
-			compression_f = CMP_MBE_encode_m13;
-			break;
-		case CMP_VDS_COMPRESSION_m13:
-			compression_f = CMP_VDS_encode_m13;
-			break;
-		case CMP_RED2_COMPRESSION_m13:
+		case CPS_DF_RED2_ALGORITHM_m13:
 			compression_f = CMP_RED2_encode_m13;
 			break;
-		case CMP_PRED2_COMPRESSION_m13:
+		case CPS_DF_PRED2_ALGORITHM_m13:
 			compression_f = CMP_PRED2_encode_m13;
 			break;
+		case CPS_DF_MBE_ALGORITHM_m13:
+			compression_f = CMP_MBE_encode_m13;
+			break;
+		case CPS_DF_VDS_ALGORITHM_m13:
+			compression_f = CMP_VDS_encode_m13;
+			break;
 		default:
-			G_set_error_m13(E_UNSPEC_m13, "unrecognized compression algorithm (%u)\n", cps->directives.algorithm);
+			G_set_error_m13(E_UNSPEC_m13, "unrecognized compression algorithm\n");
 			return_m13(FALSE_m13);
 	}
 	
 	// detrend
-	if (cps->directives.detrend_data == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_DETREND_DATA_m13) {
 		CMP_detrend_m13(cps->input_buffer, cps->parameters.detrended_buffer, block_header->number_of_samples, cps);
 		cps->input_buffer = cps->parameters.detrended_buffer;
 	}
@@ -18310,25 +19066,25 @@ tern    CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_num
 	data_is_compressed = FALSE_m13;
 	if (compression_f != CMP_VDS_encode_m13) {
 		allow_lossy_compression = TRUE_m13;
-		if (cps->directives.require_normality == TRUE_m13) {
+		if (cps->directives.flags & CPS_DF_REQUIRE_NORMALITY_m13) {
 			normality = CMP_normality_score_m13(cps->input_buffer, block_header->number_of_samples);
 			if (normality < cps->parameters.minimum_normality) {
 				allow_lossy_compression = FALSE_m13;
-				block_header->parameter_flags &= ~(CMP_PF_AMPLITUDE_SCALE_MASK_m13 | CMP_PF_FREQUENCY_SCALE_MASK_m13);
+				block_header->parameter_flags &= ~(CMP_PF_AMPLITUDE_SCALE_m13 | CMP_PF_FREQUENCY_SCALE_m13);
 			}
 		}
 		if (allow_lossy_compression == TRUE_m13) {
-			if (cps->directives.set_amplitude_scale == TRUE_m13 || cps->directives.find_amplitude_scale == TRUE_m13) {
-				if (cps->directives.find_amplitude_scale == TRUE_m13)
+			if (cps->directives.flags & (CPS_DF_SET_AMPLITUDE_SCALE_m13 | CPS_DF_FIND_AMPLITUDE_SCALE_m13)) {
+				if (cps->directives.flags & CPS_DF_FIND_AMPLITUDE_SCALE_m13)
 					data_is_compressed = CMP_find_amplitude_scale_m13(cps, compression_f);
-				else if (cps->directives.set_amplitude_scale == TRUE_m13)
+				else if (cps->directives.flags & CPS_DF_SET_AMPLITUDE_SCALE_m13)
 					CMP_scale_amplitude_si4_m13(cps->input_buffer, cps->parameters.scaled_amplitude_buffer, block_header->number_of_samples, (sf8) cps->parameters.amplitude_scale, cps);
 				cps->input_buffer = cps->parameters.scaled_amplitude_buffer;
 			}
-			if (cps->directives.set_frequency_scale == TRUE_m13 || cps->directives.find_frequency_scale == TRUE_m13) {
-				if (cps->directives.find_frequency_scale == TRUE_m13)
+			    if (cps->directives.flags & (CPS_DF_SET_FREQUENCY_SCALE_m13 | CPS_DF_FIND_FREQUENCY_SCALE_m13)) {
+				if (cps->directives.flags & CPS_DF_FIND_FREQUENCY_SCALE_m13)
 					data_is_compressed = CMP_find_frequency_scale_m13(cps, compression_f);
-				else if (cps->directives.set_frequency_scale == TRUE_m13)
+				else if (cps->directives.flags & CPS_DF_SET_FREQUENCY_SCALE_m13)
 					CMP_scale_frequency_si4_m13(cps->input_buffer, cps->parameters.scaled_frequency_buffer, block_header->number_of_samples, (sf8)cps->parameters.frequency_scale, cps);
 				cps->input_buffer = cps->parameters.scaled_frequency_buffer;
 			}
@@ -18336,7 +19092,7 @@ tern    CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_num
 	}
 	
 	// noise scores
-	if (cps->directives.include_noise_scores == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_INCLUDE_NOISE_SCORES_m13) {
 		// code not written yet
 	}
 	
@@ -18358,13 +19114,12 @@ tern    CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_num
 tern     CMP_encrypt_m13(FPS_m13 *fps)
 {
 	ui1				*key;
-	si1				encryption_level;
-	ui4				encryption_mask, encryption_bits;
-	si8				encryption_bytes, encryptable_bytes;
+	si1				enc_level;
+	ui4				encryption_bytes, encryptable_bytes;
 	PROC_GLOBALS_m13		*proc_globals;
+	UNIVERSAL_HEADER_m13		*uh;
 	PASSWORD_DATA_m13		*pwd;
-	CPS_m13	*cps;
-	CMP_BLOCK_FIXED_HEADER_m13	*block_header;
+	CMP_BLOCK_FIXED_HEADER_m13	*bh;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -18374,43 +19129,26 @@ tern     CMP_encrypt_m13(FPS_m13 *fps)
 		G_set_error_m13(E_UNSPEC_m13, "fps must be time series data");
 		return_m13(FALSE_m13);
 	}
+
+	uh = fps->universal_header;
+	enc_level = uh->encryption_1;
+	if (enc_level == NO_ENCRYPTION_m13)
+		return_m13(TRUE_m13);
+
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
 	pwd = &proc_globals->password_data;
-	cps = fps->parameters.cps;
-
-	encryption_level = cps->directives.encryption_level;
-	block_header = cps->block_header;
-	encryption_bits = block_header->block_flags & CMP_BF_ENCRYPTION_MASK_m13;
+	bh = fps->parameters.cps->block_header;
 	
-	// check if block is already encrypted
-	switch (encryption_bits) {
-		case 0: // not encrypted
-			break;
-		case CMP_BF_ENCRYPTION_MASK_m13:
-			G_set_error_m13(E_ENCRYPT_m13, "level 1 & 2 bits set in block => cannot encrypt");
-			return_m13(FALSE_m13);
-		case CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13:
-			if (encryption_level == LEVEL_1_ENCRYPTION_m13)
-				return_m13(TRUE_m13); // already encrypted
-			CMP_decrypt_m13(fps); // encrypted, but at wrong level
-			break;
-		case CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13:
-			if (encryption_level == LEVEL_2_ENCRYPTION_m13)
-				return_m13(TRUE_m13); // already encrypted
-			CMP_decrypt_m13(fps); // encrypted, but at wrong level
-			break;
-	}
-	if (encryption_level == NO_ENCRYPTION_m13)
+	// block already encrypted
+	if (bh->block_flags & CMP_BF_ENCRYPTED_m13)
 		return_m13(TRUE_m13);
 	
 	// check access
-	if (pwd->access_level >= encryption_level) {
-		if (encryption_level == LEVEL_1_ENCRYPTION_m13) {
+	if (pwd->access_level >= enc_level) {
+		if (enc_level == LEVEL_1_ENCRYPTION_m13) {
 			key = pwd->level_1_encryption_key;
-			encryption_mask = CMP_BF_LEVEL_1_ENCRYPTION_MASK_m13;
 		} else {
 			key = pwd->level_2_encryption_key;
-			encryption_mask = CMP_BF_LEVEL_2_ENCRYPTION_MASK_m13;
 		}
 	} else {
 		G_set_error_m13(E_ENCRYPT_m13, "cannot encrypt data => insufficient access\n");
@@ -18418,21 +19156,21 @@ tern     CMP_encrypt_m13(FPS_m13 *fps)
 	}
 	
 	// calculate encryption bytes
-	encryptable_bytes = block_header->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-	if (block_header->block_flags | CMP_BF_MBE_ENCODING_MASK_m13) {
+	encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
+	if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
 		encryption_bytes = encryptable_bytes;
 	} else {
-		encryption_bytes = (block_header->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
+		encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
 		if (encryption_bytes > encryptable_bytes)
 			encryption_bytes = encryptable_bytes;
 	}
 	
 	// encrypt
-	AES_encrypt_m13((ui1 *) block_header + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key);
-
-	// set block flags to encrypted
-	block_header->block_flags |= encryption_mask;
+	AES_encrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, uh->encryption_rounds);
 	
+	// mark block as encrypted
+	bh->block_flags |= CMP_BF_ENCRYPTED_m13;
+
 	return_m13(TRUE_m13);
 }
 
@@ -18456,7 +19194,7 @@ tern    CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13
 	block_header = cps->block_header;
 	data_is_compressed = FALSE_m13;
 
-	if (cps->directives.use_compression_ratio == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_USE_COMPRESSION_RATIO_m13) {
 		goal_compression_ratio = cps->parameters.goal_ratio;
 		goal_low_bound = goal_compression_ratio - cps->parameters.goal_tolerance;
 		goal_high_bound = goal_compression_ratio + cps->parameters.goal_tolerance;
@@ -18479,7 +19217,7 @@ tern    CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13
 			}
 		}
 	}
-	else if (cps->directives.use_mean_residual_ratio == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_USE_MEAN_RESIDUAL_RATIO_m13) {
 		// get residual ratio at sf 2 & 5 (roughly linear relationship: reasonable sample points)
 		cps->parameters.amplitude_scale = (sf4) 2.0;
 		CMP_generate_lossy_data_m13(cps, input_buffer, cps->decompressed_ptr, CMP_AMPLITUDE_SCALE_MODE_m13);
@@ -18521,7 +19259,7 @@ tern    CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13
 		}
 		cps->parameters.actual_ratio = mrr;
 	} else {
-		G_set_error_m13(E_UNSPEC_m13, "either use_compression_ratio or use_mean_residual_ratio directive must be set (compression mode == %d)", cps->directives.compression_mode);
+		G_set_error_m13(E_UNSPEC_m13, "either use_compression_ratio or use_mean_residual_ratio directive must be set");
 		return_m13(data_is_compressed);
 	} CMP_MRR_DONE_m13:
 	
@@ -19186,7 +19924,7 @@ ui1    CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm)
 #endif
 
 	if (mode == CMP_COMPRESSION_MODE_m13) {  // assumes extrema are known & derivative level is set
-		if (cps->directives.find_overflow_bytes == TRUE_m13) {
+		if (cps->directives.flags & CPS_DF_FIND_OVERFLOW_BYTES_m13) {
 			if (cps->parameters.derivative_level) {
 				abs_min = ABS_m13((si8) cps->parameters.minimum_difference_value);   // cannot make 0x80000000 positive as si4, must use si8 here
 				abs_max = ABS_m13((si8) cps->parameters.maximum_difference_value);
@@ -19199,54 +19937,54 @@ ui1    CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm)
 				++bits_per_samp;
 			if (algorithm == CMP_RED1_COMPRESSION_m13 || algorithm == CMP_RED2_COMPRESSION_m13) {
 				RED_header = (CMP_RED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
-				if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m13)
+				if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13)
 					--bits_per_samp;  // don't need a sign bit
 			}
 			cps->parameters.overflow_bytes = (bits_per_samp + 7) >> 3;
-		} else if (cps->directives.set_overflow_bytes == TRUE_m13) {
+		} else if (cps->directives.flags & CPS_DF_SET_OVERFLOW_BYTES_m13) {
 			if (cps->parameters.goal_overflow_bytes != 2 && cps->parameters.goal_overflow_bytes != 3) {
 				G_warning_message_m13("%s(): overflow bytes must be 2-4 => setting to 4\n", __FUNCTION__);
-				cps->parameters.goal_overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
-				cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
+				cps->parameters.goal_overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
+				cps->parameters.overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
 			}
 		} else {
-			cps->parameters.goal_overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
-			cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
+			cps->parameters.goal_overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
+			cps->parameters.overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
 		}
 		// set block flag
 		if (algorithm == CMP_RED1_COMPRESSION_m13 || algorithm == CMP_RED2_COMPRESSION_m13) {
 			RED_header->flags &= ~CMP_RED_OVERFLOW_BYTES_MASK_m13;
 			if (cps->parameters.overflow_bytes == 2)
-				RED_header->flags |= CMP_RED_2_BYTE_OVERFLOWS_MASK_m13;
+				RED_header->flags |= CMP_RED_2_BYTE_OVERFLOWS_m13;
 			else if	(cps->parameters.overflow_bytes == 3)
-				RED_header->flags |= CMP_RED_3_BYTE_OVERFLOWS_MASK_m13;
+				RED_header->flags |= CMP_RED_3_BYTE_OVERFLOWS_m13;
 		} else if (algorithm == CMP_PRED1_COMPRESSION_m13 || algorithm == CMP_PRED2_COMPRESSION_m13 ) {
 			PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			PRED_header->flags &= ~CMP_PRED_OVERFLOW_BYTES_MASK_m13;
 			if (cps->parameters.overflow_bytes == 2)
-				PRED_header->flags |= CMP_PRED_2_BYTE_OVERFLOWS_MASK_m13;
+				PRED_header->flags |= CMP_PRED_2_BYTE_OVERFLOWS_m13;
 			else if	(cps->parameters.overflow_bytes == 3)
-				PRED_header->flags |= CMP_PRED_3_BYTE_OVERFLOWS_MASK_m13;
+				PRED_header->flags |= CMP_PRED_3_BYTE_OVERFLOWS_m13;
 		}
 	} else {  // CMP_DECOMPRESSION_MODE_m13
 		if (algorithm == CMP_RED1_COMPRESSION_m13 || algorithm == CMP_RED2_COMPRESSION_m13) {
 			RED_header = (CMP_RED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			flags = RED_header->flags & CMP_RED_OVERFLOW_BYTES_MASK_m13;
-			if (flags == CMP_RED_2_BYTE_OVERFLOWS_MASK_m13)
+			if (flags == CMP_RED_2_BYTE_OVERFLOWS_m13)
 				cps->parameters.overflow_bytes =  2;
-			else if (flags == CMP_RED_3_BYTE_OVERFLOWS_MASK_m13)
+			else if (flags == CMP_RED_3_BYTE_OVERFLOWS_m13)
 				cps->parameters.overflow_bytes =  3;
 			else
-				cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
+				cps->parameters.overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
 		} else if (algorithm == CMP_PRED_COMPRESSION_m13) {
 			PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			flags = PRED_header->flags & CMP_PRED_OVERFLOW_BYTES_MASK_m13;
-			if (flags == CMP_PRED_2_BYTE_OVERFLOWS_MASK_m13)
+			if (flags == CMP_PRED_2_BYTE_OVERFLOWS_m13)
 				cps->parameters.overflow_bytes =  2;
-			else if (flags == CMP_PRED_3_BYTE_OVERFLOWS_MASK_m13)
+			else if (flags == CMP_PRED_3_BYTE_OVERFLOWS_m13)
 				cps->parameters.overflow_bytes =  3;
 			else
-				cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
+				cps->parameters.overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;  // 4
 		}
 	}
 	
@@ -19351,49 +20089,121 @@ tern	CMP_hex_to_int_m13(ui1 *in, ui1 *out, si4 len)
 }
 
 
-tern	CMP_init_directives_m13(CPS_DIRECTIVES_m13 *directives, ui1 compression_mode)
+CPS_DIRECTIVES_m13	*CMP_init_directives_m13(CPS_DIRECTIVES_m13 *directives, ui1 compression_mode)
 {
+	ui8	flags;
+	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	directives->compression_mode = compression_mode;
-	directives->algorithm = CMP_DIRECTIVES_ALGORITHM_DEFAULT_m13;
-	directives->encryption_level = CMP_DIRECTIVES_ENCRYPTION_LEVEL_DEFAULT_m13;
-	directives->cps_pointer_reset = CMP_DIRECTIVES_CPS_POINTER_RESET_DEFAULT_m13;
-	directives->cps_caching = CMP_DIRECTIVES_CPS_CACHING_DEFAULT_m13;
-	directives->fall_through_to_best_encoding = CMP_DIRECTIVES_FALL_THROUGH_TO_BEST_ENCODING_DEFAULT_m13;
-	directives->reset_discontinuity = CMP_DIRECTIVES_RESET_DISCONTINUITY_DEFAULT_m13;
-	directives->include_noise_scores = CMP_DIRECTIVES_INCLUDE_NOISE_SCORES_DEFAULT_m13;
-	directives->no_zero_counts = CMP_DIRECTIVES_NO_ZERO_COUNTS_DEFAULT_m13;
-	directives->set_derivative_level = CMP_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m13;
-	directives->find_derivative_level = CMP_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m13;
-	directives->set_overflow_bytes = CMP_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m13;
-	directives->find_overflow_bytes = CMP_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m13;
-	directives->convert_to_native_units = CMP_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m13;
-	directives->detrend_data = CMP_DIRECTIVES_DETREND_DATA_DEFAULT_m13;
-	directives->require_normality = CMP_DIRECTIVES_REQUIRE_NORMALITY_DEFAULT_m13;
-	directives->use_compression_ratio = CMP_DIRECTIVES_USE_COMPRESSION_RATIO_DEFAULT_m13;
-	directives->use_mean_residual_ratio = CMP_DIRECTIVES_USE_MEAN_RESIDUAL_RATIO_DEFAULT_m13;
-	directives->use_relative_ratio = CMP_DIRECTIVES_USE_RELATIVE_RATIO_DEFAULT_m13;
-	directives->set_amplitude_scale = CMP_DIRECTIVES_SET_AMPLITUDE_SCALE_DEFAULT_m13;
-	directives->find_amplitude_scale = CMP_DIRECTIVES_FIND_AMPLITUDE_SCALE_DEFAULT_m13;
-	directives->set_frequency_scale = CMP_DIRECTIVES_SET_FREQUENCY_SCALE_DEFAULT_m13;
-	directives->find_frequency_scale = CMP_DIRECTIVES_FIND_FREQUENCY_SCALE_DEFAULT_m13;
-	directives->set_overflow_bytes = CMP_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m13;
-	directives->find_overflow_bytes = CMP_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m13;
-	directives->VDS_scale_by_baseline = CMP_DIRECTIVES_VDS_SCALE_BY_BASELINE_DEFAULT_m13;
+	if (directives == NULL)
+		directives = (CPS_DIRECTIVES_m13 *) calloc_m13((size_t) 1, sizeof(CPS_DIRECTIVES_m13));
 	
-	return_m13(TRUE_m13);
+	flags = (ui8) 0;
+	
+	if (compression_mode == CMP_COMPRESSION_MODE_NO_ENTRY_m13)
+		if (CPS_DIRECTIVES_COMPRESSION_MODE_DEFAULT_m13 == TRUE_m13)
+			compression_mode = CMP_COMPRESSION_MODE_m13;
+	if (compression_mode == CMP_COMPRESSION_MODE_m13)
+		flags |= CPS_DF_COMPRESSION_MODE_m13;
+	
+	if (CPS_DIRECTIVES_PRED_ALGORITHM_DEFAULT_m13 == TRUE_m13)  // default lossless (PRED2)
+		flags |= CPS_DF_PRED2_ALGORITHM_m13;
+	else if (CPS_DIRECTIVES_VDS_ALGORITHM_DEFAULT_m13 == TRUE_m13)  // default lossless
+		flags |= CPS_DF_VDS_ALGORITHM_m13;
+	else if (CPS_DIRECTIVES_MBE_ALGORITHM_DEFAULT_m13 == TRUE_m13)  // fastest
+		flags |= CPS_DF_MBE_ALGORITHM_m13;
+	else if (CPS_DIRECTIVES_RED_ALGORITHM_DEFAULT_m13 == TRUE_m13)  // generally only used in hardware (RED2)
+		flags |= CPS_DF_RED2_ALGORITHM_m13;
+		
+	if (CPS_DIRECTIVES_CPS_POINTER_RESET_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_CPS_POINTER_RESET_m13;
+
+	if (CPS_DIRECTIVES_CPS_CACHING_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_CPS_CACHING_m13;
+
+	if (CPS_DIRECTIVES_FALL_THROUGH_TO_BEST_ENCODING_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13;
+
+	if (CPS_DIRECTIVES_RESET_DISCONTINUITY_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_RESET_DISCONTINUITY_m13;
+
+	if (CPS_DIRECTIVES_INCLUDE_NOISE_SCORES_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_INCLUDE_NOISE_SCORES_m13;
+
+	if (CPS_DIRECTIVES_NO_ZERO_COUNTS_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_NO_ZERO_COUNTS_m13;
+
+	if (CPS_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_SET_OVERFLOW_BYTES_m13;
+
+	if (CPS_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_FIND_OVERFLOW_BYTES_m13;
+
+	if (CPS_DIRECTIVES_POSITIVE_DERIVATIVES_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_POSITIVE_DERIVATIVES_m13;
+
+	if (CPS_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_SET_DERIVATIVE_LEVEL_m13;
+
+	if (CPS_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_FIND_DERIVATIVE_LEVEL_m13;
+
+	if (CPS_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_CONVERT_TO_NATIVE_UNITS_m13;
+
+	if (CPS_DIRECTIVES_DETREND_DATA_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_DETREND_DATA_m13;
+
+	if (CPS_DIRECTIVES_REQUIRE_NORMALITY_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_REQUIRE_NORMALITY_m13;
+
+	if (CPS_DIRECTIVES_USE_COMPRESSION_RATIO_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_USE_COMPRESSION_RATIO_m13;
+
+	if (CPS_DIRECTIVES_USE_MEAN_RESIDUAL_RATIO_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_USE_MEAN_RESIDUAL_RATIO_m13;
+
+	if (CPS_DIRECTIVES_USE_RELATIVE_RATIO_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_USE_RELATIVE_RATIO_m13;
+
+	if (CPS_DIRECTIVES_SET_AMPLITUDE_SCALE_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_SET_AMPLITUDE_SCALE_m13;
+
+	if (CPS_DIRECTIVES_FIND_AMPLITUDE_SCALE_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_FIND_AMPLITUDE_SCALE_m13;
+
+	if (CPS_DIRECTIVES_SET_FREQUENCY_SCALE_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_SET_FREQUENCY_SCALE_m13;
+
+	if (CPS_DIRECTIVES_FIND_FREQUENCY_SCALE_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_FIND_FREQUENCY_SCALE_m13;
+
+	if (CPS_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_SET_OVERFLOW_BYTES_m13;
+
+	if (CPS_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_FIND_OVERFLOW_BYTES_m13;
+	
+	if (CPS_DIRECTIVES_VDS_SCALE_BY_BASELINE_DEFAULT_m13 == TRUE_m13)
+		flags |= CPS_DF_VDS_SCALE_BY_BASELINE_m13;
+		
+	directives->flags = flags;
+	
+	return_m13(directives);
 }
 
 
-tern	CMP_init_parameters_m13(CPS_PARAMETERS_m13 *parameters)
+CPS_PARAMS_m13	*CMP_init_parameters_m13(CPS_PARAMS_m13 *parameters)
 {
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	if (parameters == NULL)
+		parameters = (CPS_PARAMS_m13 *) calloc_m13((size_t) 1, sizeof(CPS_PARAMS_m13));
+	
 	parameters->cache = NULL;
 	parameters->cached_blocks = NULL;
 	parameters->cached_block_cnt = 0;
@@ -19404,29 +20214,29 @@ tern	CMP_init_parameters_m13(CPS_PARAMETERS_m13 *parameters)
 	parameters->allocated_keysample_bytes = 0;
 	parameters->allocated_compressed_bytes = 0;
 	parameters->allocated_decompressed_samples = 0;
-	parameters->discontinuity = CMP_PARAMETERS_DISCONTINUITY_DEFAULT_m13;
-	parameters->goal_derivative_level = CMP_PARAMETERS_DERIVATIVE_LEVEL_DEFAULT_m13;
+	parameters->discontinuity = CPS_PARAMS_DISCONTINUITY_DEFAULT_m13;
+	parameters->goal_derivative_level = CPS_PARAMS_DERIVATIVE_LEVEL_DEFAULT_m13;
 	parameters->derivative_level = 0;
-	parameters->goal_overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m13;
+	parameters->goal_overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;
 	parameters->overflow_bytes = 0;
 	parameters->number_of_block_parameters = 0;
-	parameters->minimum_sample_value = CMP_PARAMETERS_MINIMUM_SAMPLE_VALUE_DEFAULT_m13;
-	parameters->maximum_sample_value = CMP_PARAMETERS_MAXIMUM_SAMPLE_VALUE_DEFAULT_m13;
+	parameters->minimum_sample_value = CPS_PARAMS_MINIMUM_SAMPLE_VALUE_DEFAULT_m13;
+	parameters->maximum_sample_value = CPS_PARAMS_MAXIMUM_SAMPLE_VALUE_DEFAULT_m13;
 	parameters->user_number_of_records = CMP_USER_NUMBER_OF_RECORDS_DEFAULT_m13;
 	parameters->user_record_region_bytes = CMP_USER_RECORD_REGION_BYTES_DEFAULT_m13;
 	parameters->user_parameter_flags = CMP_USER_PARAMETER_FLAGS_DEFAULT_m13;
 	parameters->protected_region_bytes = CMP_PROTECTED_REGION_BYTES_DEFAULT_m13;
 	parameters->user_discretionary_region_bytes = CMP_USER_DISCRETIONARY_REGION_BYTES_DEFAULT_m13;
 	parameters->variable_region_bytes = 0;
-	parameters->goal_ratio = CMP_PARAMETERS_GOAL_RATIO_DEFAULT_m13;
-	parameters->goal_tolerance = CMP_PARAMETERS_GOAL_TOLERANCE_DEFAULT_m13;
-	parameters->maximum_goal_attempts = CMP_PARAMETERS_MAXIMUM_GOAL_ATTEMPTS_DEFAULT_m13;
-	parameters->minimum_normality = CMP_PARAMETERS_MINIMUM_NORMALITY_DEFAULT_m13;
-	parameters->amplitude_scale = CMP_PARAMETERS_AMPLITUDE_SCALE_DEFAULT_m13;
-	parameters->frequency_scale = CMP_PARAMETERS_FREQUENCY_SCALE_DEFAULT_m13;
+	parameters->goal_ratio = CPS_PARAMS_GOAL_RATIO_DEFAULT_m13;
+	parameters->goal_tolerance = CPS_PARAMS_GOAL_TOLERANCE_DEFAULT_m13;
+	parameters->maximum_goal_attempts = CPS_PARAMS_MAXIMUM_GOAL_ATTEMPTS_DEFAULT_m13;
+	parameters->minimum_normality = CPS_PARAMS_MINIMUM_NORMALITY_DEFAULT_m13;
+	parameters->amplitude_scale = CPS_PARAMS_AMPLITUDE_SCALE_DEFAULT_m13;
+	parameters->frequency_scale = CPS_PARAMS_FREQUENCY_SCALE_DEFAULT_m13;
 	parameters->VDS_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
 	parameters->VDS_LFP_high_fc = FREQUENCY_NO_ENTRY_m13;
-	parameters->VDS_threshold = CMP_PARAMETERS_VDS_THRESHOLD_DEFAULT_m13;
+	parameters->VDS_threshold = CPS_PARAMS_VDS_THRESHOLD_DEFAULT_m13;
 
 	parameters->count = NULL;
 	parameters->sorted_count = NULL;
@@ -19438,7 +20248,7 @@ tern	CMP_init_parameters_m13(CPS_PARAMETERS_m13 *parameters)
 	parameters->filtps = NULL;
 	parameters->n_filtps = 0;
 
-	return_m13(TRUE_m13);
+	return_m13(parameters);
 }
 
 
@@ -20162,7 +20972,7 @@ tern    CMP_MBE_encode_m13(CPS_m13 *cps)
 	// set algorithm block flag
 	block_header = cps->block_header;
 	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-	block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m13;
+	block_header->block_flags |= CMP_BF_MBE_ENCODING_m13;
 
 	MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 	if (MBE_header->flags & CMP_MBE_FLAGS_PREPROCESSED_MASK_m13) {
@@ -20567,7 +21377,7 @@ tern    CMP_PRED1_decode_m13(CPS_m13 *cps)
 	
 	// get block flags
 	no_zero_counts = FALSE_m13;
-	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_MASK_m13)
+	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
@@ -20722,7 +21532,7 @@ tern    CMP_PRED2_decode_m13(CPS_m13 *cps)
 	
 	// get block flags
 	no_zero_counts = FALSE_m13;
-	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_MASK_m13)
+	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
@@ -20928,7 +21738,7 @@ tern    CMP_PRED1_encode_m13(CPS_m13 *cps)
 	// set algorithm block flag
 	block_header = cps->block_header;
 	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-	block_header->block_flags |= CMP_BF_PRED1_ENCODING_MASK_m13;
+	block_header->block_flags |= CMP_BF_PRED1_ENCODING_m13;
 	
 	PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 	n_samps = block_header->number_of_samples;
@@ -20963,9 +21773,9 @@ tern    CMP_PRED1_encode_m13(CPS_m13 *cps)
 	// set model parameters
 	PRED_header->derivative_level = n_derivs;
 	no_zero_counts = FALSE_m13;
-	if (cps->directives.no_zero_counts == TRUE_m13) {
+	if (cps->directives.flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
-		PRED_header->flags |= CMP_PRED_FLAGS_NO_ZERO_COUNTS_MASK_m13;
+		PRED_header->flags |= CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 
@@ -21138,7 +21948,7 @@ tern    CMP_PRED1_encode_m13(CPS_m13 *cps)
 	block_header->total_block_bytes = (ui4) G_pad_m13((ui1 *) block_header, PRED_total_bytes, 8);
 	
 	// calculate fall through encoding bytes
-	if (cps->directives.fall_through_to_best_encoding == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
 		for (raw_bits_per_samp = 0, i = (si8) cps->parameters.maximum_sample_value - (si8) cps->parameters.minimum_sample_value; i; i >>= 1)
 			++raw_bits_per_samp;
 		if (n_derivs) {
@@ -21164,7 +21974,7 @@ tern    CMP_PRED1_encode_m13(CPS_m13 *cps)
 			fall_through_bytes += 8 - rem;
 		if (fall_through_bytes < block_header->total_block_bytes) {
 			block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m13;
+			block_header->block_flags |= CMP_BF_MBE_ENCODING_m13;
 			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			if (use_raw == TRUE_m13) {
 				// cps->input_buffer = unchanged
@@ -21211,7 +22021,7 @@ tern    CMP_PRED2_encode_m13(CPS_m13 *cps)
 	// set algorithm block flag
 	block_header = cps->block_header;
 	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-	block_header->block_flags |= CMP_BF_PRED2_ENCODING_MASK_m13;
+	block_header->block_flags |= CMP_BF_PRED2_ENCODING_m13;
 	
 	PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 	n_samps = block_header->number_of_samples;
@@ -21246,9 +22056,9 @@ tern    CMP_PRED2_encode_m13(CPS_m13 *cps)
 	// set model parameters
 	PRED_header->derivative_level = n_derivs;
 	no_zero_counts = FALSE_m13;
-	if (cps->directives.no_zero_counts == TRUE_m13) {
+	if (cps->directives.flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
-		PRED_header->flags |= CMP_PRED_FLAGS_NO_ZERO_COUNTS_MASK_m13;
+		PRED_header->flags |= CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 
@@ -21424,7 +22234,7 @@ tern    CMP_PRED2_encode_m13(CPS_m13 *cps)
 	block_header->total_block_bytes = (ui4) G_pad_m13((ui1 *) block_header, PRED_total_bytes, 8);
 	
 	// calculate fall through encoding bytes
-	if (cps->directives.fall_through_to_best_encoding == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
 		for (raw_bits_per_samp = 0, i = (si8) cps->parameters.maximum_sample_value - (si8) cps->parameters.minimum_sample_value; i; i >>= 1)
 			++raw_bits_per_samp;
 		if (n_derivs) {
@@ -21450,7 +22260,7 @@ tern    CMP_PRED2_encode_m13(CPS_m13 *cps)
 			fall_through_bytes += 8 - rem;
 		if (fall_through_bytes < block_header->total_block_bytes) {
 			block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m13;
+			block_header->block_flags |= CMP_BF_MBE_ENCODING_m13;
 			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			if (use_raw == TRUE_m13) {
 				// cps->input_buffer = unchanged
@@ -21501,10 +22311,12 @@ CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sample
 	if (cps->parameters.allocated_block_samples < block_samples)
 		realloc_flag = TRUE_m13;
 	
-	switch (cps->directives.algorithm) {
-		case CMP_RED_COMPRESSION_m13:
-		case CMP_PRED_COMPRESSION_m13:
-		case CMP_VDS_COMPRESSION_m13:
+	switch (cps->directives.flags & CPS_DF_ALGORITHM_MASK_m13) {
+		case CPS_DF_RED1_ALGORITHM_m13:
+		case CPS_DF_RED2_ALGORITHM_m13:
+		case CPS_DF_PRED1_ALGORITHM_m13:
+		case CPS_DF_PRED2_ALGORITHM_m13:
+		case CPS_DF_VDS_ALGORITHM_m13:
 			new_val = CMP_MAX_KEYSAMPLE_BYTES_m13(block_samples);
 			if (cps->parameters.allocated_keysample_bytes < new_val) {
 				new_keysample_bytes = new_val;
@@ -21544,7 +22356,7 @@ CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sample
 			}
 			break;
 		default:
-			G_set_error_m13(E_CMP_m13, "no compression mode specified\n");
+			G_set_error_m13(E_CMP_m13, "invalid compression mode specified\n");
 			return_m13(NULL);
 	}
 	
@@ -21812,10 +22624,10 @@ tern	CMP_RED1_decode_m13(CPS_m13 *cps)
 	
 	// get block flags
 	no_zero_counts = FALSE_m13;
-	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_MASK_m13)
+	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
 	pos_derivs = FALSE_m13;
-	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m13)
+	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13)
 		pos_derivs = TRUE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
@@ -21980,10 +22792,10 @@ tern    CMP_RED2_decode_m13(CPS_m13 *cps)
 	
 	// get block flags
 	no_zero_counts = FALSE_m13;
-	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_MASK_m13)
+	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
 	pos_derivs = FALSE_m13;
-	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m13)
+	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13)
 		pos_derivs = TRUE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
@@ -22194,7 +23006,7 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 	// set algorithm block flag
 	block_header = cps->block_header;
 	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-	block_header->block_flags |= CMP_BF_RED1_ENCODING_MASK_m13;
+	block_header->block_flags |= CMP_BF_RED1_ENCODING_m13;
 
 	RED_header = (CMP_RED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 	n_samps = block_header->number_of_samples;
@@ -22231,12 +23043,12 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 	pos_derivs = FALSE_m13;
 	if (n_derivs && cps->parameters.minimum_difference_value > 0) {
 		pos_derivs = TRUE_m13;
-		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m13;
+		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13;
 	}
 	no_zero_counts = FALSE_m13;
-	if (cps->directives.no_zero_counts == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
-		RED_header->flags |= CMP_RED_FLAGS_NO_ZERO_COUNTS_MASK_m13;
+		RED_header->flags |= CMP_RED_FLAGS_NO_ZERO_COUNTS_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 
@@ -22402,7 +23214,7 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 	block_header->total_block_bytes = (ui4) G_pad_m13((ui1 *) block_header, RED_total_bytes, 8);
 	
 	// calculate fall through encoding bytes
-	if (cps->directives.fall_through_to_best_encoding == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
 		for (raw_bits_per_samp = 0, i = (si8) cps->parameters.maximum_sample_value - (si8) cps->parameters.minimum_sample_value; i; i >>= 1)
 			++raw_bits_per_samp;
 		if (n_derivs) {
@@ -22428,7 +23240,7 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 			fall_through_bytes += 8 - rem;
 		if (fall_through_bytes < block_header->total_block_bytes) {
 			block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m13;
+			block_header->block_flags |= CMP_BF_MBE_ENCODING_m13;
 			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			if (use_raw == TRUE_m13) {
 				// cps->input_buffer = unchanged
@@ -22477,7 +23289,7 @@ tern    CMP_RED2_encode_m13(CPS_m13 *cps)
 	// set algorithm block flag
 	block_header = cps->block_header;
 	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-	block_header->block_flags |= CMP_BF_RED2_ENCODING_MASK_m13;
+	block_header->block_flags |= CMP_BF_RED2_ENCODING_m13;
 
 	RED_header = (CMP_RED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 	n_samps = block_header->number_of_samples;
@@ -22514,12 +23326,12 @@ tern    CMP_RED2_encode_m13(CPS_m13 *cps)
 	pos_derivs = FALSE_m13;
 	if (n_derivs && cps->parameters.minimum_difference_value > 0) {
 		pos_derivs = TRUE_m13;
-		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_MASK_m13;
+		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13;
 	}
 	no_zero_counts = FALSE_m13;
-	if (cps->directives.no_zero_counts == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
-		RED_header->flags |= CMP_RED_FLAGS_NO_ZERO_COUNTS_MASK_m13;
+		RED_header->flags |= CMP_RED_FLAGS_NO_ZERO_COUNTS_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 
@@ -22687,7 +23499,7 @@ tern    CMP_RED2_encode_m13(CPS_m13 *cps)
 	block_header->total_block_bytes = (ui4) G_pad_m13((ui1 *) block_header, RED_total_bytes, 8);
 	
 	// calculate fall through encoding bytes
-	if (cps->directives.fall_through_to_best_encoding == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
 		for (raw_bits_per_samp = 0, i = (si8) cps->parameters.maximum_sample_value - (si8) cps->parameters.minimum_sample_value; i; i >>= 1)
 			++raw_bits_per_samp;
 		if (n_derivs) {
@@ -22713,7 +23525,7 @@ tern    CMP_RED2_encode_m13(CPS_m13 *cps)
 			fall_through_bytes += 8 - rem;
 		if (fall_through_bytes < block_header->total_block_bytes) {
 			block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m13;
+			block_header->block_flags |= CMP_BF_MBE_ENCODING_m13;
 			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			if (use_raw == TRUE_m13) {
 				// cps->input_buffer = unchanged
@@ -22903,25 +23715,25 @@ tern    CMP_set_variable_region_m13(CPS_m13 *cps)
 	cps->block_parameters = (ui4 *) var_reg_ptr;
 	
 	// set library parameter flags
-	if (cps->directives.detrend_data == TRUE_m13)
-		block_header->parameter_flags |= (CMP_PF_INTERCEPT_MASK_m13 | CMP_PF_GRADIENT_MASK_m13);
+	if (cps->directives.flags & CPS_DF_DETREND_DATA_m13)
+		block_header->parameter_flags |= (CMP_PF_INTERCEPT_m13 | CMP_PF_GRADIENT_m13);
 	else
-		block_header->parameter_flags &= ~(CMP_PF_INTERCEPT_MASK_m13 | CMP_PF_GRADIENT_MASK_m13);
+		block_header->parameter_flags &= ~(CMP_PF_INTERCEPT_m13 | CMP_PF_GRADIENT_m13);
 	
-	if (cps->directives.set_amplitude_scale == TRUE_m13 || cps->directives.find_amplitude_scale == TRUE_m13)
-		block_header->parameter_flags |= CMP_PF_AMPLITUDE_SCALE_MASK_m13;
+	if (cps->directives.flags & CPS_DF_SET_AMPLITUDE_SCALE_m13 || cps->directives.flags & CPS_DF_FIND_AMPLITUDE_SCALE_m13)
+		block_header->parameter_flags |= CMP_PF_AMPLITUDE_SCALE_m13;
 	else
-		block_header->parameter_flags &= ~CMP_PF_AMPLITUDE_SCALE_MASK_m13;
+		block_header->parameter_flags &= ~CMP_PF_AMPLITUDE_SCALE_m13;
 	
-	if (cps->directives.set_frequency_scale == TRUE_m13 || cps->directives.find_frequency_scale == TRUE_m13)
-		block_header->parameter_flags |= CMP_PF_FREQUENCY_SCALE_MASK_m13;
+	if (cps->directives.flags & CPS_DF_SET_FREQUENCY_SCALE_m13 || cps->directives.flags & CPS_DF_FIND_FREQUENCY_SCALE_m13)
+		block_header->parameter_flags |= CMP_PF_FREQUENCY_SCALE_m13;
 	else
-		block_header->parameter_flags &= ~CMP_PF_FREQUENCY_SCALE_MASK_m13;
+		block_header->parameter_flags &= ~CMP_PF_FREQUENCY_SCALE_m13;
 	
-	if (cps->directives.include_noise_scores == TRUE_m13)
-		block_header->parameter_flags |= CMP_PF_NOISE_SCORES_MASK_m13;
+	if (cps->directives.flags & CPS_DF_INCLUDE_NOISE_SCORES_m13)
+		block_header->parameter_flags |= CMP_PF_NOISE_SCORES_m13;
 	else
-		block_header->parameter_flags &= ~CMP_PF_NOISE_SCORES_MASK_m13;
+		block_header->parameter_flags &= ~CMP_PF_NOISE_SCORES_m13;
 	
 	CMP_generate_parameter_map_m13(cps);
 	var_reg_ptr += block_header->parameter_region_bytes;
@@ -23113,7 +23925,7 @@ tern      CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 
 
 tern    CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXED_HEADER_m13 *block_header)
 {
-	si1     hex_str[HEX_STRING_BYTES_m13(CRC_BYTES_m13)], time_str[TIME_STRING_BYTES_m13], bin_str[40];
+	si1     hex_str[HEX_STR_BYTES_m13(CRC_BYTES_m13, 1)], time_str[TIME_STRING_BYTES_m13], bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
 	ui4     i, mask;
 	
 #ifdef FN_DEBUG_m13
@@ -23125,7 +23937,7 @@ tern    CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXE
 	if (block_header->block_CRC == CRC_NO_ENTRY_m13)
 		printf_m13("Block CRC: no entry\n");
 	else {
-		STR_hex_m13((ui1 *) &block_header->block_CRC, CRC_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &block_header->block_CRC, CRC_BYTES_m13, ":");
 		printf_m13("Block CRC: %s\n", hex_str);
 	}
 	printf_m13("Block Flag Bits: ");
@@ -23133,7 +23945,7 @@ tern    CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXE
 		if (block_header->block_flags & mask)
 			printf_m13("%d ", i);
 	}
-	STR_bin_m13(bin_str, (void *) &block_header->block_flags, (size_t) 4, "-", FALSE_m13);
+	STR_bin_m13(bin_str, (void *) &block_header->block_flags, sizeof(ui4), " - " );
 	printf_m13(" (value: %s)\n", bin_str);
 	if (block_header->start_time == UUTC_NO_ENTRY_m13)
 		printf_m13("Start Time: no entry\n");
@@ -23151,7 +23963,7 @@ tern    CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXE
 		if (block_header->parameter_flags & mask)
 			printf_m13("%d ", i);
 	}
-	STR_bin_m13(bin_str, (void *) &block_header->parameter_flags, (size_t) 4, "-", FALSE_m13);
+	STR_bin_m13(bin_str, (void *) &block_header->parameter_flags, sizeof(ui4), " - ");
 	printf_m13(" (value: %s)\n", bin_str);
 	printf_m13("Parameter Region Bytes: %hu\n", block_header->parameter_region_bytes);
 	printf_m13("Protected Region Bytes: %hu\n", block_header->protected_region_bytes);
@@ -23167,7 +23979,7 @@ tern    CMP_show_block_header_m13(LEVEL_HEADER_m13 *level_header, CMP_BLOCK_FIXE
 tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 {
 	ui1					*VDS_model_region;
-	si1					*symbols, *time_alg, *amp_alg, *indent, bin_str[40];
+	si1					*symbols, *time_alg, *amp_alg, *indent, bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
 	ui2     				*counts;
 	ui4					algorithm, mask, amp_alg_flag, time_alg_flag;
 	si4					*derivs;
@@ -23192,10 +24004,10 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 		printf_m13("------------------- CMP Block Model - START ------------------\n");
 	}
 	switch (block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m13) {
-		case CMP_BF_RED1_ENCODING_MASK_m13:
-		case CMP_BF_RED2_ENCODING_MASK_m13:
+		case CMP_BF_RED1_ENCODING_m13:
+		case CMP_BF_RED2_ENCODING_m13:
 			RED_header = (CMP_RED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
-			if (block_header->block_flags & CMP_BF_RED1_ENCODING_MASK_m13)
+			if (block_header->block_flags & CMP_BF_RED1_ENCODING_m13)
 				printf_m13("%sModel: Range Encoded Derivatives 1 (RED1)\n", indent);
 			else
 				printf_m13("%sModel: Range Encoded Derivatives 2 (RED2)\n", indent);
@@ -23217,7 +24029,7 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (RED_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &RED_header->flags, (size_t) 2, "-", FALSE_m13);
+			STR_bin_m13(bin_str, (void *) &RED_header->flags, sizeof(ui2), " - ");
 			printf_m13(" (value: %s)\n", bin_str);
 			printf_m13("\n%sNumber of Statistics Bins: %hu  (counts are scaled)\n", indent, RED_header->number_of_statistics_bins);
 			// end fixed RED model fields
@@ -23227,10 +24039,10 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				printf_m13("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
 			break;
 			
-		case CMP_BF_PRED1_ENCODING_MASK_m13:
-		case CMP_BF_PRED2_ENCODING_MASK_m13:
+		case CMP_BF_PRED1_ENCODING_m13:
+		case CMP_BF_PRED2_ENCODING_m13:
 			PRED_header = (CMP_PRED_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
-			if (block_header->block_flags & CMP_BF_PRED1_ENCODING_MASK_m13)
+			if (block_header->block_flags & CMP_BF_PRED1_ENCODING_m13)
 				printf_m13("%sModel: Predictive Range Encoded Derivatives 1 (PRED1)\n", indent);
 			else
 				printf_m13("%sModel: Predictive Range Encoded Derivatives 2 (PRED2)\n", indent);
@@ -23252,7 +24064,7 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (PRED_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &PRED_header->flags, (size_t) 2, "-", FALSE_m13);
+			STR_bin_m13(bin_str, (void *) &PRED_header->flags, sizeof(ui2), " - ");
 			printf_m13(" (value: %s)\n", bin_str);
 			// end fixed PRED model fields
 			counts = (ui2 *) (cps->parameters.model_region + CMP_PRED_MODEL_FIXED_HEADER_BYTES_m13 + (PRED_header->derivative_level * 4));
@@ -23269,7 +24081,7 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				printf_m13("%sbin %03d:    symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
 			break;
 			
-		case CMP_BF_MBE_ENCODING_MASK_m13:
+		case CMP_BF_MBE_ENCODING_m13:
 			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m13 *) cps->parameters.model_region;
 			printf_m13("%sModel: Minimal Bit Encoding (MBE)\n", indent);
 			printf_m13("%sMinimum Value: %d\n", indent, MBE_header->minimum_value);
@@ -23287,45 +24099,45 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (MBE_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &MBE_header->flags, (size_t) 2, "-", FALSE_m13);
+			STR_bin_m13(bin_str, (void *) &MBE_header->flags, sizeof(ui2), " - ");
 			printf_m13(" (value: %s)\n", bin_str);
 			break;
 			
-		case CMP_BF_VDS_ENCODING_MASK_m13:
+		case CMP_BF_VDS_ENCODING_m13:
 			VDS_model_region = cps->parameters.model_region;
 			VDS_header = (CMP_VDS_MODEL_FIXED_HEADER_m13 *) VDS_model_region;
 			algorithm = VDS_header->flags & CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m13;
 			switch (algorithm) {
-				case CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m13:
-				case CMP_VDS_FLAGS_AMPLITUDE_RED2_MASK_m13:
+				case CMP_VDS_FLAGS_AMPLITUDE_RED1_m13:
+				case CMP_VDS_FLAGS_AMPLITUDE_RED2_m13:
 					amp_alg = "RED";
-					amp_alg_flag = CMP_BF_RED2_ENCODING_MASK_m13;  // either fine, headers same
+					amp_alg_flag = CMP_BF_RED2_ENCODING_m13;  // either fine, headers same
 					break;
-				case CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m13:
-				case CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m13:
+				case CMP_VDS_FLAGS_AMPLITUDE_PRED1_m13:
+				case CMP_VDS_FLAGS_AMPLITUDE_PRED2_m13:
 					amp_alg = "PRED";
-					amp_alg_flag = CMP_BF_PRED2_ENCODING_MASK_m13;  // either fine, headers same
+					amp_alg_flag = CMP_BF_PRED2_ENCODING_m13;  // either fine, headers same
 					break;
-				case CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m13:
+				case CMP_VDS_FLAGS_AMPLITUDE_MBE_m13:
 					amp_alg = "MBE";
-					amp_alg_flag = CMP_BF_MBE_ENCODING_MASK_m13;
+					amp_alg_flag = CMP_BF_MBE_ENCODING_m13;
 					break;
 			}
 			algorithm = VDS_header->flags & CMP_VDS_TIME_ALGORITHMS_MASK_m13;
 			switch (algorithm) {
-				case CMP_VDS_FLAGS_TIME_RED1_MASK_m13:
-				case CMP_VDS_FLAGS_TIME_RED2_MASK_m13:
+				case CMP_VDS_FLAGS_TIME_RED1_m13:
+				case CMP_VDS_FLAGS_TIME_RED2_m13:
 					time_alg = "RED";
-					time_alg_flag = CMP_BF_RED2_ENCODING_MASK_m13;  // either fine, headers same
+					time_alg_flag = CMP_BF_RED2_ENCODING_m13;  // either fine, headers same
 					break;
-				case CMP_VDS_FLAGS_TIME_PRED1_MASK_m13:
-				case CMP_VDS_FLAGS_TIME_PRED2_MASK_m13:
+				case CMP_VDS_FLAGS_TIME_PRED1_m13:
+				case CMP_VDS_FLAGS_TIME_PRED2_m13:
 					time_alg = "PRED";
-					time_alg_flag = CMP_BF_PRED2_ENCODING_MASK_m13;  // either fine, headers same
+					time_alg_flag = CMP_BF_PRED2_ENCODING_m13;  // either fine, headers same
 					break;
-				case CMP_VDS_FLAGS_TIME_MBE_MASK_m13:
+				case CMP_VDS_FLAGS_TIME_MBE_m13:
 					time_alg = "MBE";
-					time_alg_flag = CMP_BF_MBE_ENCODING_MASK_m13;
+					time_alg_flag = CMP_BF_MBE_ENCODING_m13;
 					break;
 			}
 			printf_m13("Model: Vectorized Data Stream (VDS)\n");
@@ -23340,7 +24152,7 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (VDS_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &VDS_header->flags, (size_t) 4, "-", FALSE_m13);
+			STR_bin_m13(bin_str, (void *) &VDS_header->flags, sizeof(ui4), " - ");
 			printf_m13(" (value: %s)\n", bin_str);
 			// show amplitude model
 			printf_m13("\t============== VDS Amplitude Block Model - START =============\n");
@@ -23359,7 +24171,7 @@ tern    CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 			// restore base VDS model
 			cps->parameters.model_region = VDS_model_region;
 			block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-			block_header->block_flags |= CMP_BF_VDS_ENCODING_MASK_m13;
+			block_header->block_flags |= CMP_BF_VDS_ENCODING_m13;
 			break;
 		default:
 			G_set_error_m13(E_CMP_m13, "unrecognized model (%u)", block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m13);
@@ -23863,15 +24675,15 @@ tern	CMP_VDS_decode_m13(CPS_m13 *cps)
 	block_header->model_region_bytes = VDS_header->amplitude_block_model_bytes;
 	algorithm = VDS_header->flags & CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m13;
 	switch (algorithm) {
-		case CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m13:  // older VDS used RED for amplitudes - this should go away eventually
-		case CMP_VDS_FLAGS_AMPLITUDE_RED2_MASK_m13:
+		case CMP_VDS_FLAGS_AMPLITUDE_RED1_m13:  // older VDS used RED for amplitudes - this should go away eventually
+		case CMP_VDS_FLAGS_AMPLITUDE_RED2_m13:
 			// change PRED buffers to RED
 			saved_cumulative_count_p = cps->parameters.cumulative_count;
 			saved_minimum_range_p = cps->parameters.minimum_range;
 			cps->parameters.cumulative_count = *((void **) saved_cumulative_count_p);
 			cps->parameters.minimum_range = *((void **) saved_minimum_range_p);
 			// decode
-			if (algorithm == CMP_VDS_FLAGS_AMPLITUDE_RED1_MASK_m13)
+			if (algorithm == CMP_VDS_FLAGS_AMPLITUDE_RED1_m13)
 				CMP_RED1_decode_m13(cps);
 			else
 				CMP_RED2_decode_m13(cps);
@@ -23879,13 +24691,13 @@ tern	CMP_VDS_decode_m13(CPS_m13 *cps)
 			cps->parameters.cumulative_count = saved_cumulative_count_p;
 			cps->parameters.minimum_range = saved_minimum_range_p;
 			break;
-		case CMP_VDS_FLAGS_AMPLITUDE_PRED1_MASK_m13:
+		case CMP_VDS_FLAGS_AMPLITUDE_PRED1_m13:
 			CMP_PRED1_decode_m13(cps);
 			break;
-		case CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m13:
+		case CMP_VDS_FLAGS_AMPLITUDE_PRED2_m13:
 			CMP_PRED2_decode_m13(cps);
 			break;
-		case CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m13:
+		case CMP_VDS_FLAGS_AMPLITUDE_MBE_m13:
 			CMP_MBE_decode_m13(cps);
 			break;
 	}
@@ -23904,7 +24716,7 @@ tern	CMP_VDS_decode_m13(CPS_m13 *cps)
 	CMP_si4_to_sf8_m13(cps->decompressed_ptr, in_y, (si8) VDS_header->number_of_VDS_samples);
 
 	// apply amplitude scaling (if applied) here (b/c fewer samples)
-	if (block_header->parameter_flags & CMP_PF_AMPLITUDE_SCALE_MASK_m13) {
+	if (block_header->parameter_flags & CMP_PF_AMPLITUDE_SCALE_m13) {
 		sf4_p = (sf4 *) cps->block_parameters;
 		offset = (si8) cps->parameters.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m13];
 		amplitude_scale = (sf8) *(sf4_p + offset);
@@ -23917,14 +24729,14 @@ tern	CMP_VDS_decode_m13(CPS_m13 *cps)
 	block_header->model_region_bytes = VDS_header->time_block_model_bytes;
 	algorithm = VDS_header->flags & CMP_VDS_TIME_ALGORITHMS_MASK_m13;
 	switch (algorithm) {
-		case CMP_VDS_FLAGS_TIME_RED1_MASK_m13:
-		case CMP_VDS_FLAGS_TIME_RED2_MASK_m13:
+		case CMP_VDS_FLAGS_TIME_RED1_m13:
+		case CMP_VDS_FLAGS_TIME_RED2_m13:
 			// change PRED amplitude buffers to RED time buffers
 			saved_cumulative_count_p = cps->parameters.cumulative_count;
 			saved_minimum_range_p = cps->parameters.minimum_range;
 			cps->parameters.cumulative_count = *((void **) saved_cumulative_count_p);
 			cps->parameters.minimum_range = *((void **) saved_minimum_range_p);
-			if (algorithm == CMP_VDS_FLAGS_TIME_RED1_MASK_m13)
+			if (algorithm == CMP_VDS_FLAGS_TIME_RED1_m13)
 				CMP_RED1_decode_m13(cps);
 			else
 				CMP_RED2_decode_m13(cps);
@@ -23932,7 +24744,7 @@ tern	CMP_VDS_decode_m13(CPS_m13 *cps)
 			cps->parameters.cumulative_count = saved_cumulative_count_p;
 			cps->parameters.minimum_range = saved_minimum_range_p;
 			break;
-		case CMP_VDS_FLAGS_TIME_MBE_MASK_m13:
+		case CMP_VDS_FLAGS_TIME_MBE_m13:
 			CMP_MBE_decode_m13(cps);
 			break;
 	}
@@ -23944,7 +24756,7 @@ tern	CMP_VDS_decode_m13(CPS_m13 *cps)
 		*si8_p++ = (si8) *si4_p++;
 
 	// reconstruct trace
-	if (cps->directives.cps_caching == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_CPS_CACHING_m13) {
 		start_sample = 0;
 	} else {
 		start_sample = cps->parameters.block_start_index;
@@ -24001,7 +24813,9 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 
        	// redirect to PRED for lossless encoding
 	if (cps->parameters.VDS_threshold == (sf8) 0.0) {
-		cps->directives.algorithm = CMP_PRED_COMPRESSION_m13;  // change directive so don't do this for every block
+		cps->directives.flags &= ~CPS_DF_ALGORITHM_MASK_m13;
+		cps->directives.flags |= CPS_DF_PRED_ALGORITHM_m13;
+		algorithm = CMP_PRED_COMPRESSION_m13;  // change directive so don't do this for every block
 		CMP_PRED2_encode_m13(cps);
 		return_m13(TRUE_m13);
 	}
@@ -24013,7 +24827,7 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	block_samps = (si8) cps->block_header->number_of_samples;
 	if (block_samps < CMP_VDS_MINIMUM_SAMPLES_m13) {
 		cps->block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-		cps->block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m13;
+		cps->block_header->block_flags |= CMP_BF_MBE_ENCODING_m13;
 		CMP_MBE_encode_m13(cps);
 		return_m13(TRUE_m13);
 	}
@@ -24140,17 +24954,17 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	}
 
 	// scale data (if requested)
-	if (cps->directives.VDS_scale_by_baseline == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_VDS_SCALE_BY_BASELINE_m13) {
 		if (baseline > (sf8) 1.0) {
-			cps->directives.set_amplitude_scale = TRUE_m13;
+			cps->directives.flags |= CPS_DF_SET_AMPLITUDE_SCALE_m13;
 			cps->parameters.amplitude_scale = (sf4) baseline;
 			CMP_set_variable_region_m13(cps);
 		} else {
-			cps->directives.set_amplitude_scale = FALSE_m13;
+			cps->directives.flags &= ~CPS_DF_SET_AMPLITUDE_SCALE_m13;
 			cps->parameters.amplitude_scale = (sf4) 1.0;
 		}
 	}
-	if (cps->directives.set_amplitude_scale == TRUE_m13) {
+	if (cps->directives.flags & CPS_DF_SET_AMPLITUDE_SCALE_m13) {
 		sf4_p = (sf4 *) cps->block_parameters;
 		offset = (si8) cps->parameters.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m13];
 		*(sf4_p + offset) = cps->parameters.amplitude_scale;
@@ -24186,11 +25000,11 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	VDS_header->flags &= ~CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m13;
 	algorithm = block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m13;
 	switch (algorithm) {
-		case CMP_BF_PRED2_ENCODING_MASK_m13:
-			VDS_header->flags |= CMP_VDS_FLAGS_AMPLITUDE_PRED2_MASK_m13;
+		case CMP_BF_PRED2_ENCODING_m13:
+			VDS_header->flags |= CMP_VDS_FLAGS_AMPLITUDE_PRED2_m13;
 			break;
-		case CMP_BF_MBE_ENCODING_MASK_m13:
-			VDS_header->flags |= CMP_VDS_FLAGS_AMPLITUDE_MBE_MASK_m13;
+		case CMP_BF_MBE_ENCODING_m13:
+			VDS_header->flags |= CMP_VDS_FLAGS_AMPLITUDE_MBE_m13;
 			break;
 	}
 	
@@ -24219,11 +25033,11 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	VDS_header->flags &= ~CMP_VDS_TIME_ALGORITHMS_MASK_m13;
 	algorithm = block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m13;
 	switch (algorithm) {
-		case CMP_BF_RED2_ENCODING_MASK_m13:
-			VDS_header->flags |= CMP_VDS_FLAGS_TIME_RED2_MASK_m13;
+		case CMP_BF_RED2_ENCODING_m13:
+			VDS_header->flags |= CMP_VDS_FLAGS_TIME_RED2_m13;
 			break;
-		case CMP_BF_MBE_ENCODING_MASK_m13:
-			VDS_header->flags |= CMP_VDS_FLAGS_TIME_MBE_MASK_m13;
+		case CMP_BF_MBE_ENCODING_m13:
+			VDS_header->flags |= CMP_VDS_FLAGS_TIME_MBE_m13;
 			break;
 	}
 	
@@ -24236,7 +25050,7 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 
 	// set block back to VDS values
 	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
-	block_header->block_flags |= CMP_BF_VDS_ENCODING_MASK_m13;
+	block_header->block_flags |= CMP_BF_VDS_ENCODING_m13;
 	block_header->number_of_samples = (ui4) block_samps;
 	block_header->total_header_bytes = VDS_total_header_bytes;
 	block_header->model_region_bytes = (ui2) CMP_VDS_MODEL_FIXED_HEADER_BYTES_m13;
@@ -24248,10 +25062,10 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 
 tern	CMP_VDS_generate_template_m13(CPS_m13 *cps, si8 data_len)
 {
-	tern			LFP_filter, realloc_flag;
-	si8				i, j, block_samps, *extrema, n_extrema, min_cutoff;
-	sf8				*y, *smooth, *transients, *template, samp_freq, LFP_high_fc;
-	sf8				*sf8_p1, *sf8_p2, *sf8_p3;
+	tern		LFP_filter, realloc_flag;
+	si8		i, j, block_samps, *extrema, n_extrema, min_cutoff;
+	sf8		*y, *smooth, *transients, *template, samp_freq, LFP_high_fc;
+	sf8		*sf8_p1, *sf8_p2, *sf8_p3;
 	FILTPS_m13	*min_filtps, *lfp_filtps;
 	
 #ifdef FN_DEBUG_m13
@@ -29222,7 +30036,7 @@ tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs)
 // MARK: FILE PROCESSING FUNCTIONS  (FPS)
 //***************************************//
 
-FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FPS_m13 *proto_fps, si8 bytes_to_copy)
+FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 file_type_code, si8 raw_data_bytes, LEVEL_HEADER_m13 *parent, FPS_m13 *proto_fps, si8 bytes_to_copy)
 {
 	tern			free_fps;
 	UNIVERSAL_HEADER_m13		*uh;
@@ -29247,11 +30061,11 @@ FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_b
 		if (*path)
 			strncpy_m13(fps->path, path, FULL_FILE_NAME_BYTES_m13);
 	fps->type_code = LH_FILE_m13;  // level type code, not specific file type
-	if (*fps->path && type_code == UNKNOWN_TYPE_CODE_m13)
-		type_code = G_MED_type_code_from_string_m13(fps->path);
+	if (*fps->path && file_type_code == UNKNOWN_TYPE_CODE_m13)
+		file_type_code = G_MED_type_code_from_string_m13(fps->path);
 
 	// allocate raw_data
-	(void) FPS_init_parameters_m13(&fps->parameters);
+	FPS_init_parameters_m13(&fps->parameters);
 	if (raw_data_bytes == FPS_FULL_FILE_m13) {  // use this to allocate a memory mapped file also
 		fps->parameters.raw_data_bytes = raw_data_bytes = G_file_length_m13(NULL, fps->path);
 	} else {  // all files start with universal header
@@ -29274,20 +30088,20 @@ FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_b
 			G_set_error_m13(E_UNSPEC_m13, "copy request size exceeds available data or space => no copying done");
 		else
 			memcpy(fps->parameters.raw_data, proto_fps->parameters.raw_data, bytes_to_copy);
-		uh->type_code = type_code;
+		uh->type_code = file_type_code;
 		uh->header_CRC = uh->body_CRC = CRC_START_VALUE_m13;
 		uh->number_of_entries = 0;
 		uh->maximum_entry_size = 0;
 	} else {
-		(void) FPS_init_directives_m13(&fps->directives);  // set directives to defaults
-		G_init_universal_header_m13(fps, type_code, FALSE_m13, FALSE_m13);
+		FPS_init_directives_m13(&fps->directives);  // set directives to defaults
+		G_init_universal_header_m13(fps, file_type_code, FALSE_m13, FALSE_m13);
 	}
 	G_generate_UID_m13(&uh->file_UID);
 	uh->provenance_UID = uh->file_UID;  // if not originating file, caller should change provenance_UID to file_UID of originating file
 
 	// set appropriate pointers (also set maximum entry size where it's a fixed value)
 	fps->data_pointers = fps->parameters.raw_data + UNIVERSAL_HEADER_BYTES_m13;
-	switch (type_code) {
+	switch (file_type_code) {
 		case TIME_SERIES_INDICES_FILE_TYPE_CODE_m13:
 			uh->maximum_entry_size = TIME_SERIES_INDEX_BYTES_m13;
 			break;
@@ -29306,6 +30120,9 @@ FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_b
 		case VIDEO_INDICES_FILE_TYPE_CODE_m13:
 			uh->maximum_entry_size = VIDEO_INDEX_BYTES_m13;
 			break;
+		case VIDEO_DATA_FILE_TYPE_CODE_m13:
+			uh->number_of_entries = 1;  // not sure what to choose for this
+			break;
 		case RECORD_DATA_FILE_TYPE_CODE_m13:
 			break;
 		case RECORD_INDICES_FILE_TYPE_CODE_m13:
@@ -29314,7 +30131,7 @@ FPS_m13	*FPS_allocate_m13(FPS_m13 *fps, si1 *path, ui4 type_code, si8 raw_data_b
 		default:
 			if (free_fps == TRUE_m13)
 				FPS_free_m13(&fps);
-			G_set_error_m13(E_NOT_MED_m13, "unrecognized type code (code = 0x%08x)", type_code);
+			G_set_error_m13(E_NOT_MED_m13, "unrecognized file type code (code = 0x%08x)", file_type_code);
 			return_m13(NULL);
 	}
 
@@ -29331,7 +30148,12 @@ tern	FPS_close_m13(FPS_m13 *fps) {
 #endif
 
 	if (fps) {
+
 		if (fps->parameters.fp->fp) {
+			// update universal header before closing
+			fps->directives.flags |= FPS_DF_UPDATE_UNIVERSAL_HEADER_m13;
+			FPS_write_m13(fps, 0, UNIVERSAL_HEADER_BYTES_m13);
+			
 			fclose_m13(fps->parameters.fp);
 			fps->parameters.fp = NULL;
 		}
@@ -29418,6 +30240,8 @@ tern	FPS_free_m13(FPS_m13 **fps_ptr)
 
 FPS_DIRECTIVES_m13	*FPS_init_directives_m13(FPS_DIRECTIVES_m13 *directives)
 {
+	ui8	flags;
+	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -29425,26 +30249,43 @@ FPS_DIRECTIVES_m13	*FPS_init_directives_m13(FPS_DIRECTIVES_m13 *directives)
 	if (directives == NULL)
 		directives = (FPS_DIRECTIVES_m13 *) calloc_m13((size_t) 1, sizeof(FPS_DIRECTIVES_m13));
 	
+	flags = (ui8) 0;
+	
 	// set directives to defaults
-	directives->close_file = FPS_DIRECTIVES_CLOSE_FILE_DEFAULT_m13;
-	directives->flush_after_write = FPS_DIRECTIVES_FLUSH_AFTER_WRITE_DEFAULT_m13;
-	directives->update_universal_header = FPS_DIRECTIVES_UPDATE_UNIVERSAL_HEADER_DEFAULT_m13;
-	directives->leave_decrypted = FPS_DIRECTIVES_LEAVE_DECRYPTED_DEFAULT_m13;
-	directives->open_mode = FPS_DIRECTIVES_OPEN_MODE_DEFAULT_m13;
-	directives->memory_map = FPS_DIRECTIVES_MEMORY_MAP_DEFAULT_m13;
+	if (FPS_DIRECTIVES_CLOSE_AFTER_OPERATION_DEFAULT_m13 == TRUE_m13)
+		flags |= FPS_DF_CLOSE_AFTER_OPERATION_m13;
+		
+	if (FPS_DIRECTIVES_FLUSH_AFTER_WRITE_DEFAULT_m13 == TRUE_m13)
+		flags |= FPS_DF_FLUSH_AFTER_WRITE_m13;
+			
+	if (FPS_DIRECTIVES_UPDATE_UNIVERSAL_HEADER_DEFAULT_m13 == TRUE_m13)
+		flags |= FPS_DF_UPDATE_UNIVERSAL_HEADER_m13;
+				
+	if (FPS_DIRECTIVES_LEAVE_DECRYPTED_DEFAULT_m13 == TRUE_m13)
+		flags |= FPS_DF_LEAVE_DECRYPTED_m13;
+				
+	if (FPS_DIRECTIVES_LEAVE_DECRYPTED_DEFAULT_m13 == TRUE_m13)
+		flags |= FPS_DF_LEAVE_DECRYPTED_m13;
+		
+	if (FPS_DIRECTIVES_MEMORY_MAP_DEFAULT_m13 == TRUE_m13)
+		flags |= FPS_DF_MEMORY_MAP_m13;
+	
+	flags |= FPS_DIRECTIVES_OPEN_MODE_DEFAULT_m13;  // default is a bit pattern
+	
+	directives->flags = flags;
 	
 	return_m13(directives);
 }
 
 
-FPS_PARAMETERS_m13	*FPS_init_parameters_m13(FPS_PARAMETERS_m13 *parameters)
+FPS_PARAMS_m13	*FPS_init_parameters_m13(FPS_PARAMS_m13 *parameters)
 {
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	if (parameters == NULL)  // caller responsible for freeing (unusual way to use this function)
-		parameters = (FPS_PARAMETERS_m13 *) calloc_m13((size_t) 1, sizeof(FPS_PARAMETERS_m13));
+		parameters = (FPS_PARAMS_m13 *) calloc_m13((size_t) 1, sizeof(FPS_PARAMS_m13));
 	
 	// set parameters to defaults
 	parameters->full_file_read = FALSE_m13;
@@ -29491,7 +30332,7 @@ si8	FPS_memory_map_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read)
 		bytes_to_read = remaining_bytes;
 		
 	proc_globals = G_proc_globals_m13((LEVEL_HEADER_m13 *) fps);
-	block_bytes = (si8) proc_globals->mmap_block_bytes;
+	block_bytes = (si8) proc_globals->miscellaneous.mmap_block_bytes;
 	start_block = file_offset / block_bytes;
 	end_block = (file_offset + bytes_to_read - 1) / block_bytes;
 	bit_mask = 1 << (start_block % 64);
@@ -29571,7 +30412,7 @@ tern	FPS_open_m13(FPS_m13 *fps)
 	
 	// open
 	mode = NULL;
-	switch (fps->directives.open_mode) {
+	switch (fps->directives.flags & FPS_OPEN_MODE_MASK_m13) {
 		case FPS_R_OPEN_MODE_m13:
 			permissions = FILE_PERM_UG_R_m13;
 			mode = "r";
@@ -29596,9 +30437,19 @@ tern	FPS_open_m13(FPS_m13 *fps)
 			permissions = FILE_PERM_UG_RW_m13;
 			mode = "a+";
 			break;
+		case FPS_W_NO_TRUCATE_OPEN_MODE_m13:  // macro, not bit pattern
+			permissions = FILE_PERM_UG_W_m13;
+			if (G_exists_m13(fps->path) == FALSE_m13) {
+				fps->directives.flags |= FPS_W_OPEN_MODE_m13;
+				mode = "w";
+			} else {
+				fps->directives.flags |= FPS_R_PLUS_OPEN_MODE_m13;
+				mode = "r+";  // can technically read also, but macro defined as write only (prevents truncation if file exists)
+			}
+			break;
 		case FPS_NO_OPEN_MODE_m13:
 		default:
-			G_set_error_m13(E_FILT_m13, "invalid open mode (%u)\n", fps->directives.open_mode);
+			G_set_error_m13(E_UNSPEC_m13, "invalid open mode");
 			return_m13(FALSE_m13);
 	}
 	
@@ -29618,7 +30469,7 @@ tern	FPS_open_m13(FPS_m13 *fps)
 #endif
 
 	// memory mapping
-	if (fps->directives.memory_map == TRUE_m13) {
+	if (fps->directives.flags & FPS_DF_MEMORY_MAP_m13) {
 		if (fps->parameters.mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
 #if defined MACOS_m13 || defined LINUX_m13
 			fps->parameters.mmap_block_bytes = (ui4) sb.st_blksize;
@@ -29676,7 +30527,7 @@ si8	FPS_read_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_read)
 	if (bytes_to_read > bytes_remaining)
 		bytes_to_read = bytes_remaining;
 	
-	if (fps->directives.memory_map == TRUE_m13) {
+	if (fps->directives.flags & FPS_DF_MEMORY_MAP_m13) {
 		bytes_read = FPS_memory_map_read_m13(fps, file_offset, bytes_to_read);
 	} else {
 		FPS_seek_m13(fps, file_offset);
@@ -29756,7 +30607,7 @@ tern	FPS_set_pointers_m13(FPS_m13 *fps, si8 file_offset)
 	G_push_function_m13();
 #endif
 
-	if (fps->parameters.full_file_read == TRUE_m13 || fps->directives.memory_map == TRUE_m13)
+	if (fps->parameters.full_file_read == TRUE_m13 || fps->directives.flags & FPS_DF_MEMORY_MAP_m13)
 		fps->data_pointers = fps->parameters.raw_data + REMOVE_DISCONTINUITY_m13(file_offset);
 	else
 		fps->data_pointers = fps->parameters.raw_data + UNIVERSAL_HEADER_BYTES_m13;  // file_offset irrelevant
@@ -29770,7 +30621,7 @@ tern	FPS_set_pointers_m13(FPS_m13 *fps, si8 file_offset)
 
 tern	FPS_show_m13(FPS_m13 *fps)
 {
-	si1	hex_str[HEX_STRING_BYTES_m13(TYPE_STRLEN_m13)], *s;
+	si1	hex_str[HEX_STR_BYTES_m13(TYPE_STRLEN_m13, 1)], *s;
 	si4	i;
 	
 #ifdef FN_DEBUG_m13
@@ -29796,7 +30647,7 @@ tern	FPS_show_m13(FPS_m13 *fps)
 	else
 		printf_m13("%ld\n", fps->parameters.fp->len);
 	s = (si1 *) &fps->universal_header->type_code;
-	STR_hex_m13((ui1 *) s, TYPE_STRLEN_m13, hex_str);
+	STR_hex_m13(hex_str, (ui1 *) s, TYPE_STRLEN_m13, ":");
 	printf_m13("File Type Code: %s    (", hex_str);
 	for (i = 0; i < 4; ++i)
 		printf_m13(" %c ", *s++);
@@ -29816,7 +30667,7 @@ tern	FPS_show_m13(FPS_m13 *fps)
 				break;
 		}
 	}
-	if (fps->directives.memory_map == TRUE_m13) {
+	if (fps->directives.flags & FPS_DF_MEMORY_MAP_m13) {
 		printf_m13("Memory Mapping:\n");
 		printf_m13("\tBlock Size: %u\n", fps->parameters.mmap_block_bytes);
 		printf_m13("\tNumber of Blocks: %u\n", fps->parameters.mmap_number_of_blocks);
@@ -29868,7 +30719,7 @@ si8	FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write)
 		file_offset = REMOVE_DISCONTINUITY_m13(file_offset);
 	
 	// update universal header, if requested
-	if (fps->directives.update_universal_header == TRUE_m13) {
+	if (fps->directives.flags & FPS_DF_UPDATE_UNIVERSAL_HEADER_m13) {
 		uh = fps->universal_header;
 		
 		// update universal_header->body_CRC
@@ -29891,7 +30742,7 @@ si8	FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write)
 
 		// return if all that was requested was universal header update
 		if (file_offset == 0 && bytes_to_write == UNIVERSAL_HEADER_BYTES_m13) {
-			if (fps->directives.flush_after_write == TRUE_m13)
+			if (fps->directives.flags & FPS_DF_FLUSH_AFTER_WRITE_m13)
 				fflush(fps->parameters.fp->fp);
 			fps->parameters.fp->pos = UNIVERSAL_HEADER_BYTES_m13;
 			if (fps->parameters.fp->len < UNIVERSAL_HEADER_BYTES_m13) {
@@ -29908,7 +30759,7 @@ si8	FPS_write_m13(FPS_m13 *fps, si8 file_offset, si8 bytes_to_write)
 		G_warning_message_m13("%s(): write error\n", __FUNCTION__);
 	
 	// flush
-	if (fps->directives.flush_after_write == TRUE_m13 || fps->directives.update_universal_header == TRUE_m13)
+	if (fps->directives.flags & (FPS_DF_FLUSH_AFTER_WRITE_m13 | FPS_DF_UPDATE_UNIVERSAL_HEADER_m13))
 		fflush(fps->parameters.fp->fp);  // fflush() updates stat structure
 		
 	if (globals_m13->access_times == TRUE_m13) {
@@ -30004,7 +30855,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 	if (mmap_block_bytes <= 0)
 		mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13;
 	
-	proc_globals->mmap_block_bytes = mmap_block_bytes;
+	proc_globals->miscellaneous.mmap_block_bytes = mmap_block_bytes;
 
 	return_m13(mmap_block_bytes);
 }
@@ -32308,7 +33159,7 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 
 tern    NET_show_parameters_m13(NET_PARAMS_m13 *np)
 {
-	si1        hex_str[HEX_STRING_BYTES_m13(NET_MAC_ADDRESS_BYTES_m13)];
+	si1        hex_str[HEX_STR_BYTES_m13(NET_MAC_ADDRESS_BYTES_m13, 1)];
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -32328,7 +33179,7 @@ tern    NET_show_parameters_m13(NET_PARAMS_m13 *np)
 	else
 		printf_m13("unknown\n");
 	if (np->MAC_address_num) {
-		STR_hex_m13(np->MAC_address_bytes, NET_MAC_ADDRESS_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, np->MAC_address_bytes, NET_MAC_ADDRESS_BYTES_m13, ":");
 		printf_m13("MAC_address_bytes: %s\n", hex_str);
 		printf_m13("MAC_address_string: %s\n", np->MAC_address_string);
 	} else {
@@ -32336,7 +33187,7 @@ tern    NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("MAC_address_string: unknown\n");
 	}
 	if (np->LAN_IPv4_address_num) {
-		STR_hex_m13(np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":");
 		printf_m13("LAN_IPv4_address_bytes: %s\n", hex_str);
 		printf_m13("LAN_IPv4_address_string: %s\n", np->LAN_IPv4_address_string);
 	} else {
@@ -32344,7 +33195,7 @@ tern    NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("LAN_IPv4_address_string: unknown\n");
 	}
 	if (np->LAN_IPv4_subnet_mask_num) {
-		STR_hex_m13(np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":");
 		printf_m13("LAN_IPv4_subnet_mask_bytes: %s\n", hex_str);
 		printf_m13("LAN_IPv4_subnet_mask_string: %s\n", np->LAN_IPv4_subnet_mask_string);
 	} else {
@@ -32352,7 +33203,7 @@ tern    NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("LAN_IPv4_subnet_mask_string: unknown\n");
 	}
 	if (np->WAN_IPv4_address_num) {
-		STR_hex_m13(np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, hex_str);
+		STR_hex_m13(hex_str, np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":");
 		printf_m13("WAN_IPv4_address_bytes: %s\n", hex_str);
 		printf_m13("WAN_IPv4_address_string: %s\n", np->WAN_IPv4_address_string);
 	} else {
@@ -33931,7 +34782,7 @@ si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 	si1	chan_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
 	si1	seg_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
 	si1	tmp_path[FULL_FILE_NAME_BYTES_m13] = { 0 };
-	si1	tmp_str[SEGMENT_BASE_FILE_NAME_BYTES_m13] = { 0 };
+	si1	tmp_str[SEG_BASE_FILE_NAME_BYTES_m13] = { 0 };
 	si1	**file_list, **tmp_list, **ssr_list, **chan_list, **seg_list, **vid_list;
 	ui4	type_code;
 	si4	i, j, k, tmp_files;
@@ -34448,7 +35299,7 @@ PRTY_REPAIR_EXIT_m13:
 tern	PRTY_restore_m13(si1 *MED_path)
 {
 	tern			success, valid, video_data, unlock_parity, unlock_data;
-	si1			sess_path[FULL_FILE_NAME_BYTES_m13], sess_name[BASE_FILE_NAME_BYTES_m13], base_name[SEGMENT_BASE_FILE_NAME_BYTES_m13];
+	si1			sess_path[FULL_FILE_NAME_BYTES_m13], sess_name[BASE_FILE_NAME_BYTES_m13], base_name[SEG_BASE_FILE_NAME_BYTES_m13];
 	si1			tmp_path[FULL_FILE_NAME_BYTES_m13], **input_file_list, **ts_chan_names, **vid_chan_names, **ssr_names, **list;
 	si1			*parity_path, command[(FULL_FILE_NAME_BYTES_m13 * 2) + 16], response[8];
 	ui4			level_code;
@@ -36418,7 +37269,7 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 // MARK: STRING FUNCTIONS  (STR)
 //******************************//
 
-si1	*STR_binary_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern prefix)
+si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 {
 	ui1	*num, mask;
 	si1	*c, *c2;
@@ -36428,12 +37279,12 @@ si1	*STR_binary_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separat
 	G_push_function_m13();
 #endif
 	
+	// returns a binary string for num
 	// input presumed to be little endian
 	// displayed high bit => low bit, left to right
 	// pass NULL or "" for byte_separator for no separation between bytes
-	// prefix will prepend string with "0b"
 
-	if (byte_separator) {
+	if (STR_empty_m13(byte_separator) == FALSE_m13) {
 		for (c = byte_separator - 1; *++c;);
 		sep_len = (c - byte_separator);
 	} else {
@@ -36447,13 +37298,8 @@ si1	*STR_binary_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separat
 		str = malloc_m13((size_t) str_len);
 	}
 	
-	c = str;
-	if (prefix == TRUE_m13) {
-		*c++ = '0';
-		*c++ = 'b';
-	}
-	
 	num = (ui1 *) num_ptr + (num_bytes - 1);
+	c = str;
 	for (; num_bytes--; --num) {
 		for (mask = 1 << 7, byte_bits = 8; byte_bits--; mask >>= 1) {
 			if (*num & mask)
@@ -36847,34 +37693,51 @@ tern    STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len)
 }
 
 
-si1	*STR_hex_m13(ui1 *bytes, si4 num_bytes, si1 *string)
+si1	*STR_hex_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 {
-	si4	i;
-	si1	*s;
+	ui1	*bytes;
+	si4	i, lim, sep_len, str_len;
+	si1	*c, *c2;
 	
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (string == NULL) {  // up to caller to free
-		string = (si1 *) calloc_m13((size_t)((num_bytes + 1) * 3), sizeof(si1));
-		if (string == NULL)
-			return_m13(NULL);
+	// returns a binary string for num
+	// input presumed to be little endian
+	// displayed high bit => low bit, left to right
+	// pass NULL or "" for byte_separator for no separation between bytes
+
+	if (STR_empty_m13(byte_separator) == FALSE_m13) {
+		for (c = byte_separator - 1; *++c;);
+		sep_len = (c - byte_separator);
+		lim = num_bytes - 1;
+	} else {
+		sep_len = 0;
+	}
+
+	if (str == NULL) {  // caller responsible for freeing
+		str_len = (num_bytes << 3) + 1;  // account for terminal zero
+		if (sep_len)
+			str_len += (num_bytes - 1) * sep_len;
+		str = malloc_m13((size_t) str_len);
 	}
 	
-	s = string;
-	*s++ = '0';
-	*s++ = 'x';
-	
+	c = str;
+	bytes = (ui1 *) num_ptr;
 	for (i = 0; i < num_bytes; ++i) {
-		sprintf_m13(s, " %02x", bytes[i]);
-		if (bytes[i] < 0x10)
-			*(s + 1) = '0';
-		s += 3;
+		sprintf_m13(c, " %02x", bytes[i]);
+		c += 2;
+		if (sep_len) {
+			if (i < lim) {
+				for (c2 = byte_separator; *c2; *c++ = *c2++);
+				c += sep_len;
+			}
+		}
 	}
-	*s = 0;
+	*c = 0;
 	
-	return_m13(string);
+	return_m13(str);
 }
 
 
@@ -38260,7 +39123,7 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HEADER_m13 **caller_hea
 			trans_info->expanded_key_allocated = TRUE_m13;
 			AES_key_expansion_m13(trans_info->expanded_key, trans_info->password);
 		}
-		AES_decrypt_m13(trans_info->data, data_bytes_received, NULL, trans_info->expanded_key);
+		AES_decrypt_m13(trans_info->data, data_bytes_received, NULL, trans_info->expanded_key, 1);
 	}
 	
 	trans_info->mode = TR_MODE_RECV_m13;
@@ -38408,7 +39271,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	
 	// encrypt
 	if (header->flags & TR_FLAGS_ENCRYPT_m13)
-		AES_encrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key);
+		AES_encrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key, 1);
 	
 	// acknowledge
 	acknowledge = FALSE_m13;
@@ -38515,7 +39378,7 @@ TR_SEND_FAIL_m13:
 	// note: faster to copy & substitute buffer than decrypt after transmitting, but may cause memory issue for large transmissions & this mode is rarely necessary)
 	if (header->flags & TR_FLAGS_ENCRYPT_m13) {
 		if (no_destruct_flag == TRUE_m13)
-			AES_decrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key);
+			AES_decrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key, 1);
 		// reset encryption flags
 		header->flags &= ~(TR_FLAGS_ENCRYPT_m13 | TR_FLAGS_INCLUDE_KEY_m13);
 	}
@@ -38789,8 +39652,8 @@ tern	TR_show_message_m13(TR_HEADER_m13 *header)
 
 tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 {
-	tern		blocking;
-	si1			hex_str[HEX_STRING_BYTES_m13(sizeof(ui4))];
+	tern			blocking;
+	si1			hex_str[HEX_STR_BYTES_m13(sizeof(ui4), 1)];
 	TR_HEADER_m13		*header;
 		
 #ifdef FN_DEBUG_m13
@@ -38872,7 +39735,7 @@ tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 	if (header->crc == CRC_NO_ENTRY_m13) {
 		printf_m13("CRC: no entry\n");
 	} else {
-		STR_hex_m13((ui1 *) &header->crc, sizeof(ui4), hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &header->crc, sizeof(ui4), ":");
 		printf_m13("CRC: %s (%s)\n", header->crc, hex_str);
 	}
 	printf_m13("Packet Bytes: %hu\n", header->packet_bytes);
@@ -38910,7 +39773,7 @@ tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 	if (header->ID_code == TR_ID_CODE_NO_ENTRY_m13) {
 		printf_m13("ID String: no entry\n");
 	} else {
-		STR_hex_m13((ui1 *) &header->ID_code, sizeof(ui4), hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &header->ID_code, sizeof(ui4), ":");
 		printf_m13("ID String: %s (%s)\n", header->ID_string, hex_str);
 	}
 	if (header->type == TR_TYPE_NO_ENTRY_m13)
@@ -40007,7 +40870,7 @@ si4    WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buf
 	if (full_path == TRUE_m13)
 		file_name_size = FULL_FILE_NAME_BYTES_m13;
 	else
-		file_name_size = SEGMENT_BASE_FILE_NAME_BYTES_m13;
+		file_name_size = SEG_BASE_FILE_NAME_BYTES_m13;
 		
 	if (*buffer == NULL) {
 		*buffer = (si1 *) malloc_m13((size_t) file_name_size);
@@ -41065,6 +41928,7 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 	struct stat	sb;
 	#endif
 	#ifdef WINDOWS_m13
+	si1		local_mode[8];
 	struct _stat64	sb;
 	#endif
 
@@ -41072,6 +41936,13 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 	
 	if (STR_empty_m13(path) == TRUE_m13) {
 		G_set_error_m13(E_OPEN_m13, "path is empty\n");
+		return(NULL);
+	}
+	G_full_path_m13(path, tmp_path);
+	path = tmp_path;
+	
+	if (STR_empty_m13(mode) == TRUE_m13) {
+		G_set_error_m13(E_OPEN_m13, "mode is empty\n");
 		return(NULL);
 	}
 	
@@ -41087,14 +41958,6 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 		va_end(v_args);
 	}
 	
-	if (STR_empty_m13(mode) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "mode is empty\n");
-		return(NULL);
-	}
-	
-	G_full_path_m13(path, tmp_path);
-	path = tmp_path;
-	
 	// get new FILE_m13
 	fp = FILE_init_m13(NULL);
 	if (fp == NULL)
@@ -41104,16 +41967,29 @@ FILE_m13	*fopen_m13(si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *m
 	if (flags)
 		fp->flags = flags;
 		
+	// check mode
+	if (STR_empty_m13(mode) == TRUE_m13) {
+		G_set_error_m13(E_OPEN_m13, "mode is empty\n");
+		return(NULL);
+	}
+	#ifdef WINDOWS_m13
+	// ensure room for 'b'
+	strcpy_m13(local_mode, mode);
+	mode = local_mode;
+	#endif
 	read_mode = write_mode = append_mode = plus_mode = UNKNOWN_m13;
 	c = mode;
 	while (*c++) {
 		switch (*c) {
+			case 'R':
 			case 'r':
 				read_mode = TRUE_m13;
 				break;
+			case 'W':
 			case 'w':
 				write_mode = TRUE_m13;
 				break;
+			case 'A':
 			case 'a':
 				append_mode = TRUE_m13;
 				break;
@@ -41581,6 +42457,207 @@ tern	freeable_m13(void *address)
 
 	// checked all that we can check, possibly still false though
 	return(TRUE_m13);
+}
+
+
+FILE_m13 *freopen_m13(si1 *path, si1 *mode, FILE_m13 *fp)
+{
+	tern		is_stream, mode_matches, read_mode, write_mode, append_mode, plus_mode;
+	si1		*c, tmp_path[FULL_FILE_NAME_BYTES_m13];
+	si4		main_mode_total;
+	FILE		*real_fp;
+	#if defined MACOS_m13 || defined LINUX_m13
+	struct stat	sb;
+	#endif
+	#ifdef WINDOWS_m13
+	si1		local_mode[8];
+	struct _stat64	sb;
+	#endif
+
+	
+	// get pointer type
+	is_stream = FILE_stream_m13(fp);
+	
+	// check path
+	if (is_stream == TRUE_m13) {
+		G_full_path_m13(path, tmp_path);
+		path = tmp_path;
+		real_fp = (FILE *) fp;
+	} else {
+		path = fp->path;
+		if (fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
+		real_fp = fp->fp;
+	}
+	if (STR_empty_m13(path) == TRUE_m13) {
+		G_set_error_m13(E_OPEN_m13, "path is empty\n");
+		return(NULL);
+	}
+
+	// check mode
+	if (STR_empty_m13(mode) == TRUE_m13) {
+		G_set_error_m13(E_OPEN_m13, "mode is empty\n");
+		return(NULL);
+	}
+	#ifdef WINDOWS_m13
+	// ensure room for 'b'
+	strcpy_m13(local_mode, mode);
+	mode = local_mode;
+	#endif
+	read_mode = write_mode = append_mode = plus_mode = UNKNOWN_m13;
+	c = mode;
+	while (*c++) {
+		switch (*c) {
+			case 'R':
+			case 'r':
+				read_mode = TRUE_m13;
+				break;
+			case 'W':
+			case 'w':
+				write_mode = TRUE_m13;
+				break;
+			case 'A':
+			case 'a':
+				append_mode = TRUE_m13;
+				break;
+			case '+':
+				plus_mode = TRUE_m13;
+				break;
+			default:  // skip 't' & 'b'; 'b' added below
+				break;
+		}
+	}
+	
+	main_mode_total = read_mode + write_mode + append_mode;
+	if (main_mode_total != 1) {
+		free_m13((void *) fp);
+		G_set_error_m13(E_OPEN_m13, "invalid mode: %s\n", mode);
+		return(NULL);
+	}
+	
+	// check if file already open in requested mode
+	if (is_stream == TRUE_m13) {
+		#if defined MACOS_m13 || defined LINUX_m13
+		si4	fd, curr_mode;
+		
+		fd = fileno(real_fp);
+		curr_mode = fcntl(fd, F_GETFL);
+		mode_matches = TRUE_m13;
+		if (read_mode == TRUE_m13 || plus_mode == TRUE_m13)
+			if ((curr_mode & (O_RDONLY | O_RDWR)) == 0)
+				mode_matches = FALSE_m13;
+		if (write_mode == TRUE_m13 || plus_mode == TRUE_m13)
+			if ((curr_mode & (O_WRONLY | O_RDWR)) == 0)
+				mode_matches = FALSE_m13;
+		if (append_mode == TRUE_m13)
+			if ((curr_mode & O_APPEND) == 0)
+				mode_matches = FALSE_m13;
+		if (mode_matches == TRUE_m13)
+			return(fp);
+		#endif
+		
+		#ifdef WINDOWS_m13
+		// NOTE: this code requires <mdn.h> & <ntifs.h> which are not in standard locations &
+		// require explicit function loading from DLL's, so just call freopen() even if same mode
+		
+		// si4				fd;
+		// ui8				curr_mode;
+		// HANDLE			file_h;
+		// IO_STATUS_BLOCK		io_block;
+		// FILE_ACCESS_INFORMATION	access_info;
+		//
+		// fd = _fileno(fp);
+		// file_h = (HANDLE) _get_osfhandle(fd);
+		// if (file_h != INVALID_HANDLE_VALUE) {
+		//	NtQueryInformationFile(file_h, &io_block, (void *) &access_info, (ULONG) sizeof(FILE_ACCESS_INFORMATION), (FILE_INFORMATION_CLASS) 8);
+		//	curr_mode = (ui8) access_info.AccessFlags;
+		//	mode_matches = TRUE_m13;
+		//	if (read_mode == TRUE_m13 || plus_mode == TRUE_m13 && !(curr_mode & GENERIC_READ))
+		//		mode_matches = FALSE_m13;
+		//	if (write_mode == TRUE_m13 || plus_mode == TRUE_m13 && !(curr_mode & GENERIC_WRITE))
+		//		mode_matches = FALSE_m13;
+		//	if (append_mode == TRUE_m13 && !(curr_mode & FILE_APPEND_DATA))
+		//		mode_matches = FALSE_m13;
+		//	if (mode_matches == TRUE_m13)
+		//		return(fp);
+		// }
+		#endif
+	} else {
+		mode_matches = TRUE_m13;
+		if (read_mode == TRUE_m13 && !(fp->flags & FILE_FLAGS_READ_m13))
+			mode_matches = FALSE_m13;
+		if (write_mode == TRUE_m13 && !(fp->flags & FILE_FLAGS_WRITE_m13))
+			mode_matches = FALSE_m13;
+		if (append_mode == TRUE_m13 && !(fp->flags & FILE_FLAGS_APPEND_m13))
+			mode_matches = FALSE_m13;
+		if (mode_matches == TRUE_m13)
+			return(fp);
+	}
+	
+	// build mode string
+	c = mode;
+	if (read_mode == TRUE_m13)
+		*c++ = 'r';
+	else if (write_mode == TRUE_m13)
+		*c++ = 'w';
+	else  // (append_mode == TRUE_m13)
+		*c++ = 'a';
+	#ifdef WINDOWS_m13
+	*c++ = 'b';
+	#endif
+	if (plus_mode == TRUE_m13)
+		*c++ = '+';
+	*c = 0;
+
+	// reopen
+	errno_reset_m13();
+	real_fp = freopen(path, mode, real_fp);
+	if (real_fp == NULL) {
+		G_set_error_m13(E_OPEN_m13, "can't reopen file \"%s\" with mode \"%s\"", path, mode);
+		return(NULL);
+	}
+
+	if (is_stream == TRUE_m13) {
+		fp = (FILE_m13 *) real_fp;
+	} else {
+		// set FILE pointer & descriptor
+		fp->fp = real_fp;
+		// set file descriptor
+		#if defined MACOS_m13 || defined LINUX_m13
+		fp->fd = (si4) fileno(real_fp);
+		#endif
+		#ifdef WINDOWS_m13
+		fp->fd = (si4) _fileno(real_fp);
+		#endif
+		
+		// update flags
+		fp->flags &= ~FILE_FLAGS_MODE_MASK_m13;
+		if (read_mode == TRUE_m13)
+			fp->flags |= FILE_FLAGS_READ_m13;
+		else if (write_mode == TRUE_m13)
+			fp->flags |= FILE_FLAGS_WRITE_m13;
+		else  // (append_mode == TRUE_m13)
+			fp->flags |= FILE_FLAGS_APPEND_m13;
+		
+		// set permissions
+		#if defined MACOS_m13 || defined LINUX_m13
+		fstat(fp->fd, &sb);
+		fp->permissions = (ui2) sb.st_mode & FILE_PERM_STAT_MASK_m13;
+		#endif
+		#ifdef WINDOWS_m13
+		_fstat64(fp->fd, &sb);
+		if (sb.st_mode & _S_IREAD)
+			fp->permissions = FILE_PERM_UGO_R_m13;
+		if (sb.st_mode & _S_IWRITE)
+			fp->permissions = FILE_PERM_UGO_W_m13;
+		#endif
+
+		// update access time
+		if (fp->flags & FILE_FLAGS_TIME_m13)
+			fp->acc = G_current_uutc_m13();
+	}
+		
+	return(fp);
 }
 
 
