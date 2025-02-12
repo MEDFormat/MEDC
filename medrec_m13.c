@@ -101,7 +101,7 @@
 //**********************************   show_record()   ********************************//
 //*************************************************************************************//
 
-tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number)
+tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_number)
 {
 	ui4	type_code;
 	si1	time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(CRC_BYTES_m13, 1)];
@@ -118,7 +118,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 rec
 	if (record_number != REC_NO_RECORD_NUMBER_m13)
 		printf_m13("Record Number: %ld\n", record_number);
 	printf_m13("---------------- Record Header - START ----------------\n");
-	if (record_header->record_CRC == RECORD_HEADER_CRC_NO_ENTRY_m13) {
+	if (record_header->record_CRC == REC_HDR_CRC_NO_ENTRY_m13) {
 		printf_m13("Record CRC: no entry\n");
 	} else {
 		STR_hex_m13(hex_str, (ui1 *) &record_header->record_CRC, CRC_BYTES_m13, ":");
@@ -131,12 +131,12 @@ tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 rec
 	} else {
 		printf_m13("Record Type String: no entry\n");
 	}
-	if (record_header->version_major == RECORD_HEADER_VERSION_MAJOR_NO_ENTRY_m13 || record_header->version_minor == RECORD_HEADER_VERSION_MINOR_NO_ENTRY_m13) {
-		if (record_header->version_major == RECORD_HEADER_VERSION_MAJOR_NO_ENTRY_m13)
+	if (record_header->version_major == REC_HDR_VERSION_MAJOR_NO_ENTRY_m13 || record_header->version_minor == REC_HDR_VERSION_MINOR_NO_ENTRY_m13) {
+		if (record_header->version_major == REC_HDR_VERSION_MAJOR_NO_ENTRY_m13)
 			printf_m13("Record Version Major: no entry\n");
 		else
 			printf_m13("Record Version Major: %u\n", record_header->version_major);
-		if (record_header->version_minor == RECORD_HEADER_VERSION_MINOR_NO_ENTRY_m13)
+		if (record_header->version_minor == REC_HDR_VERSION_MINOR_NO_ENTRY_m13)
 			printf_m13("Record Version Minor: no entry\n");
 		else
 			printf_m13("Record Version Minor: %u\n", record_header->version_minor);
@@ -156,15 +156,15 @@ tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 rec
 		printf_m13("(level 2, currently decrypted)\n");
 	else
 		printf_m13("(unrecognized code)\n");
-	if (record_header->total_record_bytes == RECORD_HEADER_TOTAL_RECORD_BYTES_NO_ENTRY_m13)
+	if (record_header->total_record_bytes == REC_HDR_TOTAL_RECORD_BYTES_NO_ENTRY_m13)
 		printf_m13("Record Total Record Bytes: no entry\n");
 	else
 		printf_m13("Record Total Record Bytes: %u\n", record_header->total_record_bytes);
 
-	if (record_header->start_time == RECORD_HEADER_START_TIME_NO_ENTRY_m13)
+	if (record_header->start_time == REC_HDR_START_TIME_NO_ENTRY_m13)
 		printf_m13("Record Start Time: no entry\n");
 	else {
-		STR_time_m13((LEVEL_HEADER_m13 *) fps, record_header->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		STR_time_m13((LH_m13 *) fps, record_header->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("Record Start Time: %ld (oUTC), %s\n", record_header->start_time, time_str);
 	}
 	printf_m13("----------------- Record Header - END -----------------\n");
@@ -278,7 +278,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes)
 //*******************************   Sgmt: Segment Record   ****************************//
 //*************************************************************************************//
 
-tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 {
 	si1			*segment_description;
 	REC_Sgmt_v10_m13	*Sgmt_v10;
@@ -291,7 +291,7 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		Sgmt_v10 = (REC_Sgmt_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		Sgmt_v10 = (REC_Sgmt_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 
 		STR_time_m13(NULL, Sgmt_v10->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v10->end_time, time_str);
@@ -323,7 +323,7 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 			printf_m13("Sampling Frequency: variable\n");
 		else
 			printf_m13("Sampling Frequency: %lf\n", Sgmt_v10->sampling_frequency);
-		if (record_header->total_record_bytes > (RECORD_HEADER_BYTES_m13 + REC_Sgmt_v10_BYTES_m13)) {
+		if (record_header->total_record_bytes > (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13)) {
 			segment_description = (si1 *) Sgmt_v10 + REC_Sgmt_v10_SEGMENT_DESCRIPTION_OFFSET_m13;
 			if (*segment_description)
 				UTF8_printf_m13("Segment Description: %s\n", segment_description);
@@ -335,7 +335,7 @@ tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Version 1.1
 	if (record_header->version_major == 1 && record_header->version_minor == 1) {
-		Sgmt_v11 = (REC_Sgmt_v11_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		Sgmt_v11 = (REC_Sgmt_v11_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 
 		STR_time_m13(NULL, Sgmt_v11->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v11->end_time, time_str);
@@ -441,7 +441,7 @@ REC_Sgmt_NOT_ALIGNED_m13:
 //*******************************   Stat: Segment Record   ****************************//
 //*************************************************************************************//
 
-tern    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_Stat_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_Stat_v10_m13	*Stat;
 
@@ -451,7 +451,7 @@ tern    REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		Stat = (REC_Stat_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		Stat = (REC_Stat_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		if (Stat->minimum == REC_Stat_v10_MINIMUM_NO_ENTRY_m13)
 			printf_m13("Minimum: no entry\n");
 		else
@@ -553,7 +553,7 @@ REC_Stat_NOT_ALIGNED_m13:
 //********************************   Note: Note Record   ******************************//
 //*************************************************************************************//
 
-tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header)
 {
 	si1			*note_text;
 	REC_Note_v11_m13	*note;
@@ -564,8 +564,8 @@ tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 	
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		if (record_header->total_record_bytes > RECORD_HEADER_BYTES_m13) {
-			note_text = (si1 *) record_header + RECORD_HEADER_BYTES_m13;
+		if (record_header->total_record_bytes > REC_HDR_BYTES_m13) {
+			note_text = (si1 *) record_header + REC_HDR_BYTES_m13;
 			if (*note_text)
 				UTF8_printf_m13("Note Text: %s\n", note_text);
 			else
@@ -576,7 +576,7 @@ tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Version 1.1
 	else if (record_header->version_major == 1 && record_header->version_minor == 1) {
-		note = (REC_Note_v11_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		note = (REC_Note_v11_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		if (note->end_time <= 0)  // covers zero & UUTC_NO_ENTRY_m13
 			printf_m13("End Time: no entry\n");
 		else
@@ -649,7 +649,7 @@ REC_NOTE_NOT_ALIGNED_m13:
 //******************   EDFA: European Data Format Annotation Record   *****************//
 //*************************************************************************************//
 
-tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_EDFA_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_EDFA_v10_m13	*edfa;
 	si1			*annotation;
@@ -660,7 +660,7 @@ tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		edfa = (REC_EDFA_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		edfa = (REC_EDFA_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("Duration %ld microseconds\n", edfa->duration);
 		annotation = (si1 *) edfa + REC_EDFA_v10_ANNOTATION_OFFSET_m13;
 		if (*annotation)
@@ -722,14 +722,14 @@ REC_EDFA_NOT_ALIGNED_m13:
 //*******************************   Seiz: Seizure Record   ****************************//
 //*************************************************************************************//
 
-tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_Seiz_type_m13(REC_HDR_m13 *record_header)
 {
 	tern				mn1 = FALSE_m13, mn2 = FALSE_m13;
 	si4			        i;
 	REC_Seiz_v10_m13		*Seiz;
 	REC_Seiz_v10_CHANNEL_m13	*chans;
 	si1			        time_str[TIME_STRING_BYTES_m13];
-	PROC_GLOBALS_m13		*proc_globals;
+	PROC_GLOBS_m13			*proc_globs;
 
 #ifdef FN_DEBUG_m13
 	G_push_function_m13();
@@ -737,10 +737,10 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		proc_globals = G_proc_globals_m13(NULL);
-		Seiz = (REC_Seiz_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		proc_globs = G_proc_globs_m13(NULL);
+		Seiz = (REC_Seiz_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		STR_time_m13(NULL, Seiz->latest_offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globals->time_constants.recording_time_offset, time_str);
+		printf_m13("Latest Offset Time: %ld (oUTC), %ld (µUTC), %s\n", Seiz->latest_offset_time, Seiz->latest_offset_time + proc_globs->time_constants.recording_time_offset, time_str);
 		printf_m13("Number of Channels: %d\n", Seiz->number_of_channels);
 		printf_m13("Onset Code: %d ", Seiz->onset_code);
 		switch (Seiz->onset_code) {
@@ -789,9 +789,9 @@ tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header)
 			else
 				printf_m13("Channel Name: no entry\n");
 			STR_time_m13(NULL, chans[i].onset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globals->time_constants.recording_time_offset, time_str);
+			printf_m13("\tOnset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].onset_time, chans[i].onset_time + proc_globs->time_constants.recording_time_offset, time_str);
 			STR_time_m13(NULL, chans[i].offset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globals->time_constants.recording_time_offset, time_str);
+			printf_m13("\tOffset Time: %ld (oUTC), %ld (µUTC), %s\n", chans[i].offset_time, chans[i].offset_time + proc_globs->time_constants.recording_time_offset, time_str);
 			if (chans[i].segment_number == REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13)
 				printf_m13("Segment Number: no entry\n");
 			else
@@ -878,7 +878,7 @@ REC_Seiz_NOT_ALIGNED_m13:
 //*****************************   SyLg: System Log Record   ***************************//
 //*************************************************************************************//
 
-tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header)
 {
 	si1	*log_entry;
 
@@ -888,7 +888,7 @@ tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		log_entry = (si1 *) record_header + RECORD_HEADER_BYTES_m13;
+		log_entry = (si1 *) record_header + REC_HDR_BYTES_m13;
 		if (*log_entry)
 			UTF8_printf_m13("System Log entry:\n%s\n", log_entry);
 		else
@@ -919,7 +919,7 @@ tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 //*********************   NlxP: NeuraLynx Parallel Port Record   **********************//
 //*************************************************************************************//
 
-tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_NlxP_type_m13(REC_HDR_m13 *record_header)
 {
 	si1                     hex_str[HEX_STR_BYTES_m13(sizeof(ui4), 1)];
 	REC_NlxP_v10_m13	*nlxp;
@@ -930,7 +930,7 @@ tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		nlxp = (REC_NlxP_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		nlxp = (REC_NlxP_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("Value: %u\n", nlxp->value);
 		printf_m13("Subport: %hhu\n", nlxp->subport);
 		printf_m13("Number of Subports: %hhu\n", nlxp->number_of_subports);
@@ -1018,7 +1018,7 @@ REC_NlxP_NOT_ALIGNED_m13:
 //***********************   Curs: Cadwell EMG Cursor Annotation   *********************//
 //*************************************************************************************//
 
-tern    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_Curs_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_Curs_v10_m13	*curs;
 
@@ -1028,7 +1028,7 @@ tern    REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		curs = (REC_Curs_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		curs = (REC_Curs_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("ID Number: %ld\n", curs->id_number);
 		printf_m13("Latency: %ld\n", curs->latency);
 		printf_m13("Value: %lf\n", curs->value);
@@ -1094,7 +1094,7 @@ REC_Curs_NOT_ALIGNED_m13:
 //****************************   Epoc: Sleep Stage Record   ***************************//
 //*************************************************************************************//
 
-tern    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_Epoc_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_Epoc_v10_m13	*epoc1;
 	REC_Epoc_v20_m13	*epoc2;
@@ -1105,7 +1105,7 @@ tern    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		epoc1 = (REC_Epoc_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		epoc1 = (REC_Epoc_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("ID Number: %ld\n", epoc1->id_number);
 		printf_m13("End Time: %ld\n", epoc1->end_time);
 		UTF8_printf_m13("Epoch Type: %s\n", epoc1->epoch_type);
@@ -1113,7 +1113,7 @@ tern    REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header)
 	}
 	// Version 2.0
 	else if (record_header->version_major == 2 && record_header->version_minor == 0) {
-		epoc2 = (REC_Epoc_v20_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		epoc2 = (REC_Epoc_v20_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("ID Number: %ld\n", epoc2->end_time);
 		printf_m13("Stage: ");
 		switch (epoc2->stage_code) {
@@ -1223,7 +1223,7 @@ REC_Epoc_NOT_ALIGNED_m13:
 //**************************   ESti: Electrical Stimulation   *************************//
 //*************************************************************************************//
 
-tern	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
+tern	REC_show_ESti_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_ESti_v10_m13	*esti;
 
@@ -1233,7 +1233,7 @@ tern	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		esti = (REC_ESti_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		esti = (REC_ESti_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("Amplitude: %lf ", esti->amplitude);
 		switch (esti->amp_unit_code) {
 			case REC_ESti_v10_AMP_UNIT_MA_m13:
@@ -1346,7 +1346,7 @@ REC_ESti_NOT_ALIGNED_m13:
 //**************************   CSti: Cognitive Stimulation   **************************//
 //*************************************************************************************//
 
-tern    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
+tern    REC_show_CSti_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_CSti_v10_m13	*csti;
 
@@ -1356,7 +1356,7 @@ tern    REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header)
 
 	// Version 1.0
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
-		csti = (REC_CSti_v10_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+		csti = (REC_CSti_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("Stimulus Duration: %ld (usecs)\n", csti->stimulus_duration);
 		UTF8_printf_m13("Task Type: %s\n", csti->task_type);
 		UTF8_printf_m13("Stimulus Type: %s\n", csti->stimulus_type);
@@ -1423,7 +1423,7 @@ REC_CSti_NOT_ALIGNED_m13:
 //*****************************   HFOc: CS HFO Detection   ****************************//
 //*************************************************************************************//
 
-void    REC_show_HFOc_type_m13(RECORD_HEADER_m13 *record_header)
+void    REC_show_HFOc_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_HFOc_v11_m13	*hfoc_1;
 	REC_HFOc_v12_m13	*hfoc_2;
@@ -1439,13 +1439,13 @@ void    REC_show_HFOc_type_m13(RECORD_HEADER_m13 *record_header)
 			case 0:
 				break;
 			case 1:
-				hfoc_1 = (REC_HFOc_v11_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+				hfoc_1 = (REC_HFOc_v11_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 				printf_m13("End Time: %ld\n", hfoc_1->end_time);
 				printf_m13("Start Frequency: %f\n", hfoc_1->start_frequency);
 				printf_m13("End Frequency: %f\n", hfoc_1->end_frequency);
 				break;
 			case 2:
-				hfoc_2 = (REC_HFOc_v12_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+				hfoc_2 = (REC_HFOc_v12_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 				printf_m13("End Time: %ld\n", hfoc_2->end_time);
 				printf_m13("Start Frequency: %f\n", hfoc_2->start_frequency);
 				printf_m13("End Frequency: %f\n", hfoc_2->end_frequency);
@@ -1454,7 +1454,7 @@ void    REC_show_HFOc_type_m13(RECORD_HEADER_m13 *record_header)
 				printf_m13("Combinations: %f, %f, %f, %f\n", hfoc_2->combinations[0], hfoc_2->combinations[1], hfoc_2->combinations[2], hfoc_2->combinations[3]);
 				break;
 			case 3:
-				hfoc_3 = (REC_HFOc_v13_m13 *) ((ui1 *) record_header + RECORD_HEADER_BYTES_m13);
+				hfoc_3 = (REC_HFOc_v13_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 				printf_m13("End Time: %ld\n", hfoc_3->end_time);
 				printf_m13("Start Frequency: %f\n", hfoc_3->start_frequency);
 				printf_m13("End Frequency: %f\n", hfoc_3->end_frequency);

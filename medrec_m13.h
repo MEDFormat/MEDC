@@ -106,11 +106,11 @@
 // LARGEST_RECORD_BYTES_m13 needs to be kept up to date, and can fail with arbitrary size records
 // If it exceeds METADATA_FILE_BYTES_m13 then check_all_alignments() should be updated.
 #define REC_LARGEST_RECORD_BYTES_m13		METADATA_FILE_BYTES_m13  // 16 kB
-#define REC_RECORD_BODY_ALIGNMENT_m13		16
+#define REC_BODY_ALIGNMENT_m13			16
 #define REC_NO_RECORD_NUMBER_m13		-1
 
 // Prototypes
-tern	REC_show_record_m13(FPS_m13 *fps, RECORD_HEADER_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
+tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
 tern	REC_check_structure_alignments_m13(ui1 *bytes);
 
 
@@ -171,10 +171,10 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v10_END_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v10_SEGMENT_UID_OFFSET_m13                             24							// ui8
 #define REC_Sgmt_v10_SEGMENT_NUMBER_OFFSET_m13                          32							// si4
-#define REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13                        SEGMENT_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13                        SEG_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13              36							// si4
-#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13            CHANNEL_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13        CHANNEL_NUMBER_ALL_CHANNELS_m13
+#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13            CHAN_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13        CHAN_NUMBER_ALL_CHANNELS_m13
 #define REC_Sgmt_v10_SAMPLING_FREQUENCY_OFFSET_m13                      40							// sf8
 #define REC_Sgmt_v10_SAMPLING_FREQUENCY_NO_ENTRY_m13                    FREQUENCY_NO_ENTRY_m13
 #define REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13		        FREQUENCY_VARIABLE_m13
@@ -187,19 +187,19 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // REC_Sgmt_v10_m13 defined in medlib_m13.h due to codependency
 
 // Version 1.1
-#define REC_Sgmt_v11_BYTES_m13                                          32
-#define REC_Sgmt_v11_END_TIME_OFFSET_m13                                0							// si8
-#define REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13			8							// si8
-#define REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13			SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_START_FRAME_NUMBER_OFFSET_m13			REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13		// si8
-#define REC_Sgmt_v11_START_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13			16							// si8
-#define REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m13			SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_FRAME_NUMBER_OFFSET_m13			REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13		// si8
-#define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13                          24							// si4
-#define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13                        SEGMENT_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13              		28
+#define REC_Sgmt_v11_BYTES_m13					32
+#define REC_Sgmt_v11_END_TIME_OFFSET_m13			0							// si8
+#define REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13		8							// si8
+#define REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_START_FRAME_NUMBER_OFFSET_m13		REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13		// si8
+#define REC_Sgmt_v11_START_FRAME_NUMBER_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13		16							// si8
+#define REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_END_FRAME_NUMBER_OFFSET_m13		REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13		// si8
+#define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13			24							// si4
+#define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13		SEG_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13			28
 // REC_Sgmt_v11_DESCRIPTION_BYTES_m13 defined in medlib_m13.h due to codependency
 #define REC_Sgmt_v11_PAD_OFFSET_m13              			REC_Sgmt_v11_DESCRIPTION_OFFSET_m13
 // REC_Sgmt_v11_PAD_BYTES_m13 defined in medlib_m13.h due to codependency
@@ -207,7 +207,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // Structures defined in medlib.h due to codependency
 
 // Prototypes
-tern	REC_show_Sgmt_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
 
 
@@ -243,7 +243,7 @@ tern	REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
 // REC_Stat_v10_m13 defined in medlib_m13.h due to codependency
 
 // Prototypes
-tern	REC_show_Stat_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_Stat_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_Stat_type_alignment_m13(ui1 *bytes);
 
 
@@ -268,7 +268,7 @@ typedef struct {
 // Annotation follows structure - aribitrary length array of si1s padded to 16 byte alignment (for structure + string)
 
 // Prototypes
-tern	REC_show_EDFA_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_EDFA_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes);
 
 
@@ -308,7 +308,7 @@ typedef struct {
 
 
 // Prototypes
-tern	REC_show_Note_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_Note_type_alignment_m13(ui1 *bytes);
 
 
@@ -324,25 +324,25 @@ tern	REC_check_Note_type_alignment_m13(ui1 *bytes);
 
 // Version 1.0
 // REC_Seiz_v10_m13 offsets below apply to base address of record
-#define REC_Seiz_v10_BYTES_m13			                        1296
-#define REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m13	                0	// si8
-#define REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m13	                8	// si4
-#define REC_Seiz_v10_ONSET_CODE_OFFSET_m13		                12	// si4
-#define REC_Seiz_v10_MARKER_NAME_1_OFFSET_m13	                        16	// utf8[31]
-#define REC_Seiz_v10_MARKER_NAME_BYTES_m13		                128
-#define REC_Seiz_v10_MARKER_NAME_2_OFFSET_m13	                        144	// utf8[31]
-#define REC_Seiz_v10_ANNOTATION_OFFSET_m13		                272	// utf8[255]
-#define REC_Seiz_v10_ANNOTATION_BYTES_m13		                1024
-#define REC_Seiz_v10_CHANNELS_OFFSET_m13		                REC_Seiz_v10_BYTES_m13
+#define REC_Seiz_v10_BYTES_m13					1296
+#define REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m13		0	// si8
+#define REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m13		8	// si4
+#define REC_Seiz_v10_ONSET_CODE_OFFSET_m13			12	// si4
+#define REC_Seiz_v10_MARKER_NAME_1_OFFSET_m13			16	// utf8[31]
+#define REC_Seiz_v10_MARKER_NAME_BYTES_m13			128
+#define REC_Seiz_v10_MARKER_NAME_2_OFFSET_m13			144	// utf8[31]
+#define REC_Seiz_v10_ANNOTATION_OFFSET_m13			272	// utf8[255]
+#define REC_Seiz_v10_ANNOTATION_BYTES_m13			1024
+#define REC_Seiz_v10_CHANNELS_OFFSET_m13			REC_Seiz_v10_BYTES_m13
 // REC_Seiz_v10_CHANNEL_m13 offsets below apply to base address of channel
-#define REC_Seiz_v10_CHANNEL_BYTES_m13		                        280
-#define REC_Seiz_v10_CHANNEL_NAME_OFFSET_m13		                0	// utf8[63]
-#define REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m13                      256	// si8
-#define REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m13                     264	// si8
-#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m13                  272	// si4
-#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13                SEGMENT_NUMBER_NO_ENTRY_m13
-#define REC_Seiz_v10_CHANNEL_PAD_OFFSET_m13                       	276	// ui1[4]
-#define REC_Seiz_v10_CHANNEL_PAD_BYTES_m13                              4
+#define REC_Seiz_v10_CHANNEL_BYTES_m13				280
+#define REC_Seiz_v10_CHANNEL_NAME_OFFSET_m13			0	// utf8[63]
+#define REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m13		256	// si8
+#define REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m13		264	// si8
+#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m13		272	// si4
+#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13	SEG_NUMBER_NO_ENTRY_m13
+#define REC_Seiz_v10_CHANNEL_PAD_OFFSET_m13			276	// ui1[4]
+#define REC_Seiz_v10_CHANNEL_PAD_BYTES_m13			4
 // Onset Codes
 #define REC_Seiz_v10_ONSET_NO_ENTRY_m13		-1
 #define REC_Seiz_v10_ONSET_UNKNOWN_m13		0
@@ -371,7 +371,7 @@ typedef struct {
 } REC_Seiz_v10_CHANNEL_m13;
 
 // Prototypes
-tern	REC_show_Seiz_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_Seiz_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 
 
@@ -393,7 +393,7 @@ tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 // Log text follows header - aribitrary length array of si1s padded to 16 byte alignment
 
 // Prototype
-tern	REC_show_SyLg_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes);
 
 
@@ -434,7 +434,7 @@ typedef struct {
 } REC_NlxP_v10_m13;
 
 // Prototypes
-tern	REC_show_NlxP_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_NlxP_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_NlxP_type_alignment_m13(ui1 *bytes);
 
 
@@ -443,17 +443,17 @@ tern	REC_check_NlxP_type_alignment_m13(ui1 *bytes);
 //*************************************************************************************//
 
 // Constants
-#define REC_Curs_TYPE_STRING_m13             "Curs"                  // ascii[4]
-#define REC_Curs_TYPE_CODE_m13               (ui4) 0x73727543        // ui4 (little endian)
-// #define REC_Curs_TYPE_CODE_m13            (ui4) 0x43757273        // ui4 (big endian)
+#define REC_Curs_TYPE_STRING_m13	"Curs"                  // ascii[4]
+#define REC_Curs_TYPE_CODE_m13		(ui4) 0x73727543        // ui4 (little endian)
+// #define REC_Curs_TYPE_CODE_m13	(ui4) 0x43757273        // ui4 (big endian)
 
 // Version 1.0
-#define REC_Curs_v10_BYTES_m13                          160
-#define REC_Curs_v10_ID_NUMBER_OFFSET_m13          	0	// si8
-#define REC_Curs_v10_LATENCY_OFFSET_m13			8	// si8
-#define REC_Curs_v10_VALUE_OFFSET_m13			16	// sf8
-#define REC_Curs_v10_NAME_OFFSET_m13			24	// si1[136]
-#define REC_Curs_v10_NAME_BYTES_m13         		136
+#define REC_Curs_v10_BYTES_m13			160
+#define REC_Curs_v10_ID_NUMBER_OFFSET_m13	0	// si8
+#define REC_Curs_v10_LATENCY_OFFSET_m13		8	// si8
+#define REC_Curs_v10_VALUE_OFFSET_m13		16	// sf8
+#define REC_Curs_v10_NAME_OFFSET_m13		24	// si1[136]
+#define REC_Curs_v10_NAME_BYTES_m13		136
 
 // Structures
 typedef struct {
@@ -464,7 +464,7 @@ typedef struct {
 } REC_Curs_v10_m13;
 
 // Prototypes
-tern	REC_show_Curs_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_Curs_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_Curs_type_alignment_m13(ui1 *bytes);
 
 
@@ -474,18 +474,18 @@ tern	REC_check_Curs_type_alignment_m13(ui1 *bytes);
 //*************************************************************************************//
 
 // Constants
-#define REC_Epoc_TYPE_STRING_m13             "Epoc"                  // ascii[4]
-#define REC_Epoc_TYPE_CODE_m13               (ui4) 0x636F7045        // ui4 (little endian)
-// #define REC_Epoc_TYPE_CODE_m13            (ui4) 0x45706F63        // ui4 (big endian)
+#define REC_Epoc_TYPE_STRING_m13	"Epoc"                  // ascii[4]
+#define REC_Epoc_TYPE_CODE_m13		(ui4) 0x636F7045        // ui4 (little endian)
+// #define REC_Epoc_TYPE_CODE_m13	(ui4) 0x45706F63        // ui4 (big endian)
 
 // Version 1.0 Defines
-#define REC_Epoc_v10_BYTES_m13                          176
-#define REC_Epoc_v10_ID_NUMBER_OFFSET_m13          	0	// si8
-#define REC_Epoc_v10_END_TIME_OFFSET_m13		8	// si8
-#define REC_Epoc_v10_EPOCH_TYPE_OFFSET_m13		16	// si1[32]
-#define REC_Epoc_v10_EPOCH_TYPE_BYTES_m13          	32
-#define REC_Epoc_v10_TEXT_OFFSET_m13			48	// si1[128]
-#define REC_Epoc_v10_TEXT_BYTES_m13          		128
+#define REC_Epoc_v10_BYTES_m13			176
+#define REC_Epoc_v10_ID_NUMBER_OFFSET_m13	0	// si8
+#define REC_Epoc_v10_END_TIME_OFFSET_m13	8	// si8
+#define REC_Epoc_v10_EPOCH_TYPE_OFFSET_m13	16	// si1[32]
+#define REC_Epoc_v10_EPOCH_TYPE_BYTES_m13	32
+#define REC_Epoc_v10_TEXT_OFFSET_m13		48	// si1[128]
+#define REC_Epoc_v10_TEXT_BYTES_m13		128
 
 // Version 1.0 Structures
 typedef struct {
@@ -496,19 +496,19 @@ typedef struct {
 } REC_Epoc_v10_m13;
 
 // Version 2.0 Defines
-#define REC_Epoc_v20_BYTES_m13                          48
-#define REC_Epoc_v20_END_TIME_OFFSET_m13		0	// si8
-#define REC_Epoc_v20_STAGE_CODE_OFFSET_m13		8	// ui1
-#define REC_Epoc_v20_SCORER_ID_OFFSET_m13		9	// si1[39]
-#define REC_Epoc_v20_SCORER_ID_BYTES_m13		39
+#define REC_Epoc_v20_BYTES_m13			48
+#define REC_Epoc_v20_END_TIME_OFFSET_m13	0	// si8
+#define REC_Epoc_v20_STAGE_CODE_OFFSET_m13	8	// ui1
+#define REC_Epoc_v20_SCORER_ID_OFFSET_m13	9	// si1[39]
+#define REC_Epoc_v20_SCORER_ID_BYTES_m13	39
 
-#define REC_Epoc_v20_STAGE_AWAKE_m13			0
-#define REC_Epoc_v20_STAGE_NREM_1_m13			1
-#define REC_Epoc_v20_STAGE_NREM_2_m13			2
-#define REC_Epoc_v20_STAGE_NREM_3_m13			3
-#define REC_Epoc_v20_STAGE_NREM_4_m13			4
-#define REC_Epoc_v20_STAGE_REM_m13			5
-#define REC_Epoc_v20_STAGE_UNKNOWN_m13			255
+#define REC_Epoc_v20_STAGE_AWAKE_m13		0
+#define REC_Epoc_v20_STAGE_NREM_1_m13		1
+#define REC_Epoc_v20_STAGE_NREM_2_m13		2
+#define REC_Epoc_v20_STAGE_NREM_3_m13		3
+#define REC_Epoc_v20_STAGE_NREM_4_m13		4
+#define REC_Epoc_v20_STAGE_REM_m13		5
+#define REC_Epoc_v20_STAGE_UNKNOWN_m13		255
 
 // Structures
 typedef struct {
@@ -518,7 +518,7 @@ typedef struct {
 } REC_Epoc_v20_m13;
 
 // Prototypes
-tern	REC_show_Epoc_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_Epoc_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_Epoc_type_alignment_m13(ui1 *bytes);
 
 
@@ -528,15 +528,15 @@ tern	REC_check_Epoc_type_alignment_m13(ui1 *bytes);
 //*************************************************************************************//
 
 // Constants
-#define REC_ESti_TYPE_STRING_m13             "ESti"                  // ascii[4]
-#define REC_ESti_TYPE_CODE_m13               (ui4) 0x69745345        // ui4 (little endian)
-// #define REC_ESti_TYPE_CODE_m13            (ui4) 0x45537469        // ui4 (big endian)
+#define REC_ESti_TYPE_STRING_m13	"ESti"                  // ascii[4]
+#define REC_ESti_TYPE_CODE_m13		(ui4) 0x69745345        // ui4 (little endian)
+// #define REC_ESti_TYPE_CODE_m13	(ui4) 0x45537469        // ui4 (big endian)
 
 // Version 1.0
 #define REC_ESti_v10_BYTES_m13          		416
 #define REC_ESti_v10_AMPLITUDE_OFFSET_m13          	0	// sf8
 #define REC_ESti_v10_FREQUENCY_OFFSET_m13  		8	// sf8
-#define REC_ESti_v10_PULSE_WIDTH_OFFSET_m13  		16	// si8
+#define REC_ESti_v10_PULSE_WIDTH_OFFSET_m13		16	// si8
 #define REC_ESti_v10_AMP_UNIT_CODE_OFFSET_m13		24	// si4
 #define REC_ESti_v10_MODE_CODE_OFFSET_m13		28	// si4
 #define REC_ESti_v10_WAVEFORM_OFFSET_m13		32	// utf8[31]
@@ -571,7 +571,7 @@ typedef struct {
 } REC_ESti_v10_m13;
 
 // Prototypes
-tern	REC_show_ESti_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_ESti_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_ESti_type_alignment_m13(ui1 *bytes);
 
 
@@ -581,9 +581,9 @@ tern	REC_check_ESti_type_alignment_m13(ui1 *bytes);
 //*************************************************************************************//
 
 // Constants
-#define REC_CSti_TYPE_STRING_m13             "CSti"                  // ascii[4]
-#define REC_CSti_TYPE_CODE_m13               (ui4) 0x69745343        // ui4 (little endian)
-// #define REC_CSti_TYPE_CODE_m13            (ui4) 0x43537469        // ui4 (big endian)
+#define REC_CSti_TYPE_STRING_m13	"CSti"                  // ascii[4]
+#define REC_CSti_TYPE_CODE_m13		(ui4) 0x69745343        // ui4 (little endian)
+// #define REC_CSti_TYPE_CODE_m13	(ui4) 0x43537469        // ui4 (big endian)
 
 // Version 1.0
 #define REC_CSti_v10_BYTES_m13          		208
@@ -607,7 +607,7 @@ typedef struct {
 } REC_CSti_v10_m13;
 
 // Prototypes
-tern	REC_show_CSti_type_m13(RECORD_HEADER_m13 *record_header);
+tern	REC_show_CSti_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_CSti_type_alignment_m13(ui1 *bytes);
 
 
@@ -692,7 +692,7 @@ typedef struct {
 } REC_HFOc_v13_m13;
 
 // Prototypes
-void	REC_show_HFOc_type_m13(RECORD_HEADER_m13 *record_header);
+void	REC_show_HFOc_type_m13(REC_HDR_m13 *record_header);
 tern	REC_check_HFOc_type_alignment_m13(ui1 *bytes);
 
 
