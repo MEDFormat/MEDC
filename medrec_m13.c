@@ -295,34 +295,34 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 
 		STR_time_m13(NULL, Sgmt_v10->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v10->end_time, time_str);
-		if (Sgmt_v10->start_sample_number == REC_Sgmt_v10_START_SAMPLE_NUMBER_NO_ENTRY_m13)
+		if (Sgmt_v10->start_samp_num == REC_Sgmt_v10_START_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("Start Sample Number: no entry\n");
 		else
-			printf_m13("Start Sample Number: %ld\n", Sgmt_v10->start_sample_number);
-		if (Sgmt_v10->end_sample_number == REC_Sgmt_v10_END_SAMPLE_NUMBER_NO_ENTRY_m13)
+			printf_m13("Start Sample Number: %ld\n", Sgmt_v10->start_samp_num);
+		if (Sgmt_v10->end_samp_num == REC_Sgmt_v10_END_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("End Sample Number: no entry\n");
 		else
-			printf_m13("End Sample Number: %ld\n", Sgmt_v10->end_sample_number);
-		STR_hex_m13(hex_str, (ui1 *) &Sgmt_v10->segment_UID, sizeof(si8), ":");
+			printf_m13("End Sample Number: %ld\n", Sgmt_v10->end_samp_num);
+		STR_hex_m13(hex_str, (ui1 *) &Sgmt_v10->seg_UID, sizeof(si8), ":");
 		printf_m13("Segment UID: %s\n", hex_str);
-		if (Sgmt_v10->segment_number == REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13)
+		if (Sgmt_v10->seg_num == REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
-			printf_m13("Segment Number: %d\n", Sgmt_v10->segment_number);
+			printf_m13("Segment Number: %d\n", Sgmt_v10->seg_num);
 
-		if (Sgmt_v10->acquisition_channel_number == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13)
+		if (Sgmt_v10->acq_chan_num == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13)
 			printf_m13("Acquisition Channel Number: all channels\n");
-		else if (Sgmt_v10->acquisition_channel_number == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13)
+		else if (Sgmt_v10->acq_chan_num == REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13)
 			printf_m13("Acquisition Channel Number: no entry\n");
 		else
-			printf_m13("Acquisition Channel Number: %d\n", Sgmt_v10->acquisition_channel_number);
+			printf_m13("Acquisition Channel Number: %d\n", Sgmt_v10->acq_chan_num);
 
-		if (Sgmt_v10->sampling_frequency == REC_Sgmt_v10_SAMPLING_FREQUENCY_NO_ENTRY_m13)
+		if (Sgmt_v10->samp_freq == REC_Sgmt_v10_SAMPLING_FREQUENCY_NO_ENTRY_m13)
 			printf_m13("Sampling Frequency: no entry\n");
-		else if (Sgmt_v10->sampling_frequency == REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13)
+		else if (Sgmt_v10->samp_freq == REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13)
 			printf_m13("Sampling Frequency: variable\n");
 		else
-			printf_m13("Sampling Frequency: %lf\n", Sgmt_v10->sampling_frequency);
+			printf_m13("Sampling Frequency: %lf\n", Sgmt_v10->samp_freq);
 		if (record_header->total_record_bytes > (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13)) {
 			segment_description = (si1 *) Sgmt_v10 + REC_Sgmt_v10_SEGMENT_DESCRIPTION_OFFSET_m13;
 			if (*segment_description)
@@ -339,18 +339,18 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 
 		STR_time_m13(NULL, Sgmt_v11->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v11->end_time, time_str);
-		if (Sgmt_v11->start_sample_number == REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13)
+		if (Sgmt_v11->start_samp_num == REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("Start Sample Number: no entry\n");
 		else
-			printf_m13("Start Sample Number: %ld\n", Sgmt_v11->start_sample_number);
-		if (Sgmt_v11->end_sample_number == REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m13)
+			printf_m13("Start Sample Number: %ld\n", Sgmt_v11->start_samp_num);
+		if (Sgmt_v11->end_samp_num == REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m13)
 			printf_m13("End Sample Number: no entry\n");
 		else
-			printf_m13("End Sample Number: %ld\n", Sgmt_v11->end_sample_number);
-		if (Sgmt_v11->segment_number == REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13)
+			printf_m13("End Sample Number: %ld\n", Sgmt_v11->end_samp_num);
+		if (Sgmt_v11->seg_num == REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
-			printf_m13("Segment Number: %d\n", Sgmt_v11->segment_number);
+			printf_m13("Segment Number: %d\n", Sgmt_v11->seg_num);
 		if (*Sgmt_v11->description)
 			UTF8_printf_m13("Segment Description: %s\n", Sgmt_v11->description);
 		else
@@ -391,17 +391,17 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	version_string = "version 1.0";
 	if (&Sgmt_v10->end_time != (si8 *) (bytes + REC_Sgmt_v10_END_TIME_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->start_sample_number != (si8 *) (bytes + REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13))
+	if (&Sgmt_v10->start_samp_num != (si8 *) (bytes + REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->end_sample_number != (si8 *) (bytes + REC_Sgmt_v10_END_SAMPLE_NUMBER_OFFSET_m13))
+	if (&Sgmt_v10->end_samp_num != (si8 *) (bytes + REC_Sgmt_v10_END_SAMPLE_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->segment_UID != (ui8 *) (bytes + REC_Sgmt_v10_SEGMENT_UID_OFFSET_m13))
+	if (&Sgmt_v10->seg_UID != (ui8 *) (bytes + REC_Sgmt_v10_SEGMENT_UID_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->segment_number != (si4 *) (bytes + REC_Sgmt_v10_SEGMENT_NUMBER_OFFSET_m13))
+	if (&Sgmt_v10->seg_num != (si4 *) (bytes + REC_Sgmt_v10_SEGMENT_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->acquisition_channel_number != (si4 *) (bytes + REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
+	if (&Sgmt_v10->acq_chan_num != (si4 *) (bytes + REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->sampling_frequency != (sf8 *) (bytes + REC_Sgmt_v10_SAMPLING_FREQUENCY_OFFSET_m13))
+	if (&Sgmt_v10->samp_freq != (sf8 *) (bytes + REC_Sgmt_v10_SAMPLING_FREQUENCY_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 
 	// Version 1.1
@@ -409,11 +409,11 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	version_string = "version 1.1";
 	if (&Sgmt_v11->end_time != (si8 *) (bytes + REC_Sgmt_v11_END_TIME_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->start_sample_number != (si8 *) (bytes + REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13))
+	if (&Sgmt_v11->start_samp_num != (si8 *) (bytes + REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->end_sample_number != (si8 *) (bytes + REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13))
+	if (&Sgmt_v11->end_samp_num != (si8 *) (bytes + REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->segment_number != (si4 *) (bytes + REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13))
+	if (&Sgmt_v11->seg_num != (si4 *) (bytes + REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (Sgmt_v11->pad != bytes + REC_Sgmt_v11_PAD_OFFSET_m13)
 		goto REC_Sgmt_NOT_ALIGNED_m13;

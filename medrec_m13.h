@@ -363,7 +363,7 @@ typedef struct {
 } REC_Seiz_v10_m13;
 
 typedef struct {
- 	si1	name[BASE_FILE_NAME_BYTES_m13]; // channel name, no extension
+ 	si1	name[NAME_BYTES_m13]; // channel name, no extension
        	si8	onset_time;                     // uutc
         si8	offset_time;                    // uutc
         si4     segment_number;
