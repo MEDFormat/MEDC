@@ -3187,7 +3187,7 @@ ENTER_ASCII_PASSWORD_RETRY_1_m13:
 			goto ENTER_ASCII_PASSWORD_RETRY_1_m13;
 		}
 	}
-	
+
 	// confirm
 	attempts = 0;
 	if (create_password == TRUE_m13) {
@@ -5824,7 +5824,7 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 	for (i = n_stacks; i--; ++stack)
 		if (stack->_id == _id)
 			break;
-		
+	
 	if (i == -1) {  // thread stack not found, try process id (child pids are different from parent)
 		_id = PROC_getpid_m13();
 		stack = list->stacks;;  // reset
@@ -6774,8 +6774,9 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		printf_m13("%s(): calloc() failure for AT list => exiting\n", __FUNCTION__);
 		exit(-1);
 	}
-	PROC_pthread_mutex_init_m13(&globals_m13->AT_list->mutex, NULL);
+	globals_m13->AT_list->top_idx = -1;
 	globals_m13->AT_list->size = GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
+	PROC_pthread_mutex_init_m13(&globals_m13->AT_list->mutex, NULL);
 #endif
 	
 	// application info
@@ -6810,6 +6811,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		printf_m13("%s(): calloc() failure for behavior_stack_list => exiting\n", __FUNCTION__);
 		exit(-1);
 	}
+	globals_m13->behavior_stack_list->top_idx = -1;
 	globals_m13->behavior_stack_list->default_behavior = default_behavior;
 	PROC_pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
 	
@@ -6834,6 +6836,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		printf_m13("%s(): calloc() failure for function_stack_list => exiting\n", __FUNCTION__);
 		exit(-1);
 	}
+	globals_m13->function_stack_list->top_idx = -1;
 	PROC_pthread_mutex_init_m13(&globals_m13->function_stack_list->mutex, NULL);
 #endif
 	globals_m13->proc_globs_list = (PROC_GLOBS_LIST_m13 *) calloc((size_t) 1, sizeof(PROC_GLOBS_LIST_m13));
@@ -6841,8 +6844,9 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		printf_m13("%s(): calloc() failure for proc_globs_list => exiting\n", __FUNCTION__);
 		exit(-1);
 	}
+	globals_m13->proc_globs_list->top_idx = -1;
 	PROC_pthread_mutex_init_m13(&globals_m13->proc_globs_list->mutex, NULL);
-	G_proc_globs_init_m13(NULL);  // create main thread proc globals
+	G_proc_globs_m13(NULL);  // create main thread proc globals
 
 	// miscellaneous
 	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
@@ -9373,13 +9377,12 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 		for (i = entries; i--; ++proc_globs_ptr) {
 			if (*proc_globs_ptr) {
 				if ((*proc_globs_ptr)->_id == _id) {
-					lh->proc_globs = *proc_globs_ptr;
 					PROC_pthread_mutex_unlock_m13(&list->mutex);
 					return(*proc_globs_ptr);
 				}
 			}
 		}
-		
+
 		// thread stack not found, try process id
 		_id = PROC_getpid_m13();  // child pids are different from parent
 		proc_globs_ptr = list->proc_globs_ptrs;
@@ -9389,7 +9392,6 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 				if (first_empty == NULL)
 					first_empty = proc_globs_ptr;
 			} else if ((*proc_globs_ptr)->_id == _id) {
-				lh->proc_globs = *proc_globs_ptr;
 				PROC_pthread_mutex_unlock_m13(&list->mutex);
 				return(*proc_globs_ptr);
 			}
@@ -9416,7 +9418,8 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	
 	// initialize
 	*proc_globs_ptr = G_proc_globs_init_m13(lh);
-	lh->proc_globs = *proc_globs_ptr;
+	if (lh)
+		lh->proc_globs = *proc_globs_ptr;
 
 	// relase mutex
 	PROC_pthread_mutex_unlock_m13(&list->mutex);
@@ -12690,7 +12693,7 @@ void  G_show_globals_m13(void)
 }
 
 
-tern  G_show_proc_globs_m13(LH_m13 *lh)
+tern	G_show_proc_globs_m13(LH_m13 *lh)
 {
 	si1 		hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
 	PROC_GLOBS_m13	*proc_globs;
@@ -12701,16 +12704,19 @@ tern  G_show_proc_globs_m13(LH_m13 *lh)
 
 
 	proc_globs = G_proc_globs_m13(lh);
-	
+
 	printf_m13("\nProcess Globals\n-----------\n-----------\n");
-	printf_m13("\n_id: 0x%ld: ");
-	if (proc_globs->_id == 0)
+	printf_m13("\n_id: ");
+	if (proc_globs->_id == 0) {
 		printf_m13("no entry\n");
-	else
-		printf_m13("%ld\n", proc_globs->_id);
+	} else {
+		STR_hex_m13(hex_str, (ui1 *) &proc_globs->_id, sizeof(ui8), ":");
+		printf_m13("%lu  (0x%s)\n", proc_globs->_id, hex_str);
+	}
 
 	printf_m13("\nCurrent Session\n---------------\n");
-	printf_m13("Session UID: 0x%lx\n", proc_globs->current_session.UID);
+	STR_hex_m13(hex_str, (ui1 *) &proc_globs->current_session.UID, sizeof(ui8), ":");
+	printf_m13("Session UID: %lu  (0x%s)\n", proc_globs->current_session.UID, hex_str);
 	printf_m13("Session Directory: %s\n", proc_globs->current_session.directory);  // path including file system session directory name
 	printf_m13("Session Start Time: ");
 	if (proc_globs->current_session.start_time == UUTC_NO_ENTRY_m13)
@@ -12731,9 +12737,15 @@ tern  G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("%ld\n", proc_globs->current_session.end_time);
 	printf_m13("Session Name:\n");
-	printf_m13("\tuh_name: %s\n", proc_globs->current_session.uh_name);  // from file system
-	printf_m13("\tfs_name: %s\n", proc_globs->current_session.fs_name);  // from session universal headers
-	printf_m13("\tnames_differ: %hhd\n", proc_globs->current_session.names_differ);
+	if (*proc_globs->current_session.fs_name)
+		printf_m13("\tfs_name: %s\n", proc_globs->current_session.fs_name);  // from file system
+	else
+		printf_m13("\tfs_name: no entry\n");  // from file system
+	if (*proc_globs->current_session.uh_name)
+		printf_m13("\tuh_name: %s\n", proc_globs->current_session.uh_name);  // from file system
+	else
+		printf_m13("\tuh_name: no entry\n");  // from file system
+	printf_m13("\tnames_differ: %s\n", STR_tern_m13(proc_globs->current_session.names_differ));
 	printf_m13("Number of Session Samples / Frames: ");
 	if (proc_globs->current_session.n_samples == SAMPLE_NUMBER_NO_ENTRY_m13)
 		printf_m13("no entry\n");
@@ -12797,9 +12809,9 @@ tern  G_show_proc_globs_m13(LH_m13 *lh)
 		printf_m13("Maximum Frame Rate Channel Name: %s\n", proc_globs->active_channels.maximum_frame_rate_channel->name);
 
 	printf_m13("\nTime Constants\n--------------\n");
-	printf_m13("time_constants_set: %hhd\n", proc_globs->time_constants.set);
-	printf_m13("RTO_known: %hhd\n", proc_globs->time_constants.RTO_known);
-	printf_m13("observe_DST: %hhd\n", proc_globs->time_constants.observe_DST);
+	printf_m13("time_constants_set: %s\n", STR_tern_m13(proc_globs->time_constants.set));
+	printf_m13("RTO_known: %s\n", STR_tern_m13(proc_globs->time_constants.RTO_known));
+	printf_m13("observe_DST: %s\n", STR_tern_m13(proc_globs->time_constants.observe_DST));
 	printf_m13("recording_time_offset: %ld\n", proc_globs->time_constants.recording_time_offset);
 	printf_m13("standard_UTC_offset: %d\n", proc_globs->time_constants.standard_UTC_offset);
 	printf_m13("standard_timezone_acronym: %s\n", proc_globs->time_constants.standard_timezone_acronym);
@@ -12807,9 +12819,9 @@ tern  G_show_proc_globs_m13(LH_m13 *lh)
 	printf_m13("daylight_timezone_acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
 	printf_m13("daylight_timezone_string: %s\n", proc_globs->time_constants.daylight_timezone_string);
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), ":");
-	printf_m13("daylight_time_start_code: %s\n", hex_str);
+	printf_m13("daylight_time_start_code: %ld  (0x%s)\n", proc_globs->time_constants.daylight_start_code.value, hex_str);
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), ":");
-	printf_m13("daylight_time_end_code: %s\n", hex_str);
+	printf_m13("daylight_time_end_code: %ld  (0x%s)\n", proc_globs->time_constants.daylight_end_code.value, hex_str);
 		
 	printf_m13("\nMiscellaneous\n---------------\n");
 	printf_m13("mmap_block_bytes: ");
@@ -38380,8 +38392,8 @@ si1	*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number)
 
 si1	*STR_hex_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 {
-	ui1	*bytes;
-	si4	i, lim, sep_len, str_len;
+	ui1	*byte;
+	si4	sep_len, str_len;
 	si1	*c, *c2;
 	
 #ifdef FN_DEBUG_m13
@@ -38396,7 +38408,6 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 	if (STR_empty_m13(byte_separator) == FALSE_m13) {
 		for (c = byte_separator - 1; *++c;);
 		sep_len = (c - byte_separator);
-		lim = num_bytes - 1;
 	} else {
 		sep_len = 0;
 	}
@@ -38409,16 +38420,12 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 	}
 	
 	c = str;
-	bytes = (ui1 *) num_ptr;
-	for (i = 0; i < num_bytes; ++i) {
-		sprintf_m13(c, " %02x", bytes[i]);
+	byte = (ui1 *) num_ptr;
+	for (; num_bytes--; ++byte) {
+		sprintf(c, "%02hhx", *byte);
 		c += 2;
-		if (sep_len) {
-			if (i < lim) {
-				for (c2 = byte_separator; *c2; *c++ = *c2++);
-				c += sep_len;
-			}
-		}
+		if (sep_len && num_bytes)
+			for (c2 = byte_separator; *c2; *c++ = *c2++);
 	}
 	*c = 0;
 	
@@ -44064,18 +44071,18 @@ inline
 #endif
 si4	putchar_m13(si4 c)
 {
-	return(fputc_m13(c, stdout_m13));
+	return(fputc(c, stdout));
 }
 
 
 #ifdef AT_DEBUG_m13
 void	*AT_realloc_m13(const si1 *function, void *ptr, size_t n_bytes)
 #else
-void	*realloc_m13(void *curr_ptr, size_t n_bytes)
+void	*realloc_m13(void *ptr, size_t n_bytes)
 #endif
 {
 	tern	is_level_header = FALSE_m13;
-	void	*ptr;
+	void	*new_ptr;
 	
 	
 	// pass negative n_bytes size to flag as level header
@@ -44085,8 +44092,8 @@ void	*realloc_m13(void *curr_ptr, size_t n_bytes)
 		is_level_header = TRUE_m13;
 	}
 	
-	if (n_bytes == 0 || curr_ptr == NULL) {
-		G_set_error_m13(E_ALLOC_m13, "requested bytes is zero or current pointer is null");
+	if (n_bytes == 0) {
+		G_set_error_m13(E_ALLOC_m13, "requested bytes is zero");
 		return(NULL);
 	}
 	
@@ -44094,38 +44101,38 @@ void	*realloc_m13(void *curr_ptr, size_t n_bytes)
 	ui8	alloced_bytes;
 
 	// see if already has enough memory
-	alloced_bytes = AT_actual_size_m13(curr_ptr);
+	alloced_bytes = AT_actual_size_m13(ptr);
 	if (alloced_bytes >= n_bytes) {
 		// update requested bytes field
-		alloced_bytes = AT_requested_size_m13(curr_ptr);
+		alloced_bytes = AT_requested_size_m13(ptr);
 		if (n_bytes > alloced_bytes)
-			AT_update_entry_m13(curr_ptr, curr_ptr, n_bytes, __FUNCTION__);
-		return(curr_ptr);
+			AT_update_entry_m13(ptr, ptr, n_bytes, __FUNCTION__);
+		return(ptr);
 	}
 #endif
 	
 #ifdef MATLAB_PERSISTENT_m13
-	ptr = mxRealloc(curr_ptr, (mwSize) n_bytes);
+	new_ptr = mxRealloc(ptr, (mwSize) n_bytes);
 #else
-	ptr = realloc_m13(curr_ptr, n_bytes);
+	new_ptr = realloc_m13(ptr, n_bytes);
 #endif
-	if (ptr == NULL) {
+	if (new_ptr == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
 	}
 	
 	// alloc tracking
 #ifdef AT_DEBUG_m13
-	AT_update_entry_m13(curr_ptr, ptr, n_bytes, function);
+	AT_update_entry_m13(ptr, new_ptr, n_bytes, function);
 #endif
 #ifdef MATLAB_PERSISTENT_m13
 	mexMakeMemoryPersistent(ptr);
 #endif
 	
 	if (is_level_header == TRUE_m13)
-		((LH_m13 *) ptr)->flags |= LH_ALLOCATED_m13;
+		((LH_m13 *) new_ptr)->flags |= LH_ALLOCATED_m13;
 	
-	return(ptr);
+	return(new_ptr);
 }
 
 
@@ -44188,13 +44195,14 @@ void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr
 
 // not a standard function, but closely related
 #ifdef AT_DEBUG_m13
-void	*AT_recalloc_m13(const si1 *function, void *ptr, curr_members, size_t new_members, size_t el_size)
+void	*AT_recalloc_m13(const si1 *function, void *ptr, size_t curr_members, size_t new_members, size_t el_size)
 #else
 void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, size_t el_size)
 #endif
 {
 	tern	is_level_header = FALSE_m13;
 	size_t	curr_bytes, new_bytes;
+	void	*new_ptr;
 	
 	
 	// pass negative el_size size to flag as level header
@@ -44213,37 +44221,37 @@ void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, size_t el
 	new_bytes = new_members * el_size;
 		
 #ifdef MATLAB_PERSISTENT_m13
-	ptr = mxRealloc(ptr, (mwSize) new_bytes);
+	new_ptr = mxRealloc(ptr, (mwSize) new_bytes);
 #else
-	ptr = realloc(ptr, new_bytes);
+	new_ptr = realloc(ptr, new_bytes);
 #endif
-	if (ptr == NULL) {
+	if (new_ptr == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
 	}
 	
 	// zero new bytes
 	if (new_bytes > curr_bytes)
-		memset((ui1 *) ptr + curr_bytes, 0, new_bytes - curr_bytes);
+		memset((ui1 *) new_ptr + curr_bytes, 0, new_bytes - curr_bytes);
 	
 	// alloc tracking
 #ifdef AT_DEBUG_m13
-	AT_update_entry_m13(curr_ptr, ptr, new_bytes, function);
+	AT_update_entry_m13(ptr, new_ptr, new_bytes, function);
 #endif
 	
 #ifdef MATLAB_PERSISTENT_m13
-	mexMakeMemoryPersistent(ptr);
+	mexMakeMemoryPersistent(new_ptr);
 #endif
 		
 	if (is_level_header == TRUE_m13)
-		((LH_m13 *) ptr)->flags |= LH_ALLOCATED_m13;
+		((LH_m13 *) new_ptr)->flags |= LH_ALLOCATED_m13;
 	
-	return(ptr);
+	return(new_ptr);
 }
 
 
 #ifdef AT_DEBUG_m13
-void	**AT_recalloc_2D_m13(const si1 *function, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size)
+void	**AT_recalloc_2D_m13(const si1 *function, void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size)
 #else
 void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size)
 #endif
@@ -44278,7 +44286,7 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 		G_warning_message_m13("%s(): re-allocating second dimension to smaller size\n", __FUNCTION__);
 	
 	new_ptr = malloc_2D_m13(new_dim1, new_dim2 * el_size);
-	if (ptr == NULL)
+	if (new_ptr == NULL)
 		return(NULL);
 
 	least_dim1 = (curr_dim1 <= new_dim1) ? curr_dim1 : new_dim1;

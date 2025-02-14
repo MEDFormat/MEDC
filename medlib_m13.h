@@ -1573,8 +1573,8 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define SUPPRESS_ERROR_OUTPUT_m13	((ui4) 1 << 1)
 #define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 2)
 #define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 3)
+#define RETRY_ONCE_m13			((ui4) 1 << 4)
 #define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
-#define RETRY_ONCE_m13 ((ui4) 1 << 4)
 
 // error codes
 #define	E_NONE_m13			0
@@ -2994,6 +2994,7 @@ tern			G_show_location_info_m13(LOCATION_INFO_m13 *li);
 tern			G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code);
 tern			G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level);
 tern			G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level);
+tern			G_show_proc_globs_m13(LH_m13 *lh);
 tern			G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters);
 tern			G_show_Sgmt_records_array_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt);
 tern 			G_show_slice_m13(SLICE_m13 *slice);
@@ -3104,9 +3105,9 @@ void	AT_free_m13(const si1 *function, void *ptr);
 void	AT_free_2D_m13(const si1 *function, void **ptr, size_t dim1);
 void	*AT_malloc_m13(const si1 *function, size_t n_bytes);
 void	**AT_malloc_2D_m13(const si1 *function, size_t dim1, size_t dim2_bytes);
-void	*AT_realloc_m13(const si1 *function, void *curr_ptr, size_t n_bytes);
-void	**AT_realloc_2D_m13(const si1 *function, void **ptr, size_t curr_dim1, size_t new_dim2, size_t, curr_dim2_bytes, size_t new_dim2_bytes);
-void	*AT_recalloc_m13(const si1 *function, void *ptr, size_t curr_bytes, size_t new_bytes);
+void	*AT_realloc_m13(const si1 *function, void *ptr, size_t n_bytes);
+void	**AT_realloc_2D_m13(const si1 *function, void **ptr, size_t curr_dim1, size_t new_dim2, size_t curr_dim2_bytes, size_t new_dim2_bytes);
+void	*AT_recalloc_m13(const si1 *function, void *ptr, size_t curr_members, size_t new_members, size_t el_size);
 void	**AT_recalloc_2D_m13(const si1 *function, void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size);
 
 // preprocessor directives to replace standard alloc functions with AT versions
