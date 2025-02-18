@@ -1157,10 +1157,10 @@ typedef struct {
 #define FILE_FLAGS_MED_m13		((ui2) 1 << 3) // file is a MED file
 #define FILE_FLAGS_READ_m13		((ui2) 1 << 4) // file is open for reading
 #define FILE_FLAGS_WRITE_m13		((ui2) 1 << 5) // file is open for writing
-#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 5) // file is open in append mode (all writes will append regarless of fp)
-#define FILE_FLAGS_LEN_m13		((ui2) 1 << 6) // update len with each operation
-#define FILE_FLAGS_POS_m13		((ui2) 1 << 7) // update pos with each operation
-#define FILE_FLAGS_TIME_m13		((ui2) 1 << 8) // update access time with each operation (global sets flag here, but flag supersedes global in exectution)
+#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 6) // file is open in append mode (all writes will append regarless of fp)
+#define FILE_FLAGS_LEN_m13		((ui2) 1 << 7) // update len with each operation
+#define FILE_FLAGS_POS_m13		((ui2) 1 << 8) // update pos with each operation
+#define FILE_FLAGS_TIME_m13		((ui2) 1 << 9) // update access time with each operation (global sets flag here, but flag supersedes global in exectution)
 #define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
 #define FILE_FLAGS_MODE_MASK_m13	( FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13 | FILE_FLAGS_APPEND_m13 )
 
@@ -1207,7 +1207,7 @@ typedef struct {
 	ui4	file_id; // CRC of file path (file descriptors are unique to file open (unless dup'd)
 	si1	path[PATH_BYTES_m13];
 	ui2	flags;
-	ui2	permissions; // lower 9 bits of "st_mode" element of stat structure
+	ui2	perms; // permissions (lower 9 bits of "st_mode" element of stat structure)
 	si4	fd; // file descriptor
 	FILE	*fp; // file pointer
 	si8	len; // file length
@@ -1227,17 +1227,19 @@ tern		FILE_stream_m13(FILE_m13 *fp);
 //**********************************************************************************//
 
 // Thread Management Constants
-#define PROC_DEFAULT_PRIORITY_m13 	0x7FFFFFFF
-#define PROC_MIN_PRIORITY_m13		0x7FFFFFFE
-#define PROC_LOW_PRIORITY_m13		0x7FFFFFFD
-#define PROC_MEDIUM_PRIORITY_m13	0x7FFFFFFC
-#define PROC_HIGH_PRIORITY_m13		0x7FFFFFFB
-#define PROC_MAX_PRIORITY_m13		0x7FFFFFFA
-#define PROC_UNDEFINED_PRIORITY_m13	0x7FFFFFF9
+#define PROC_DEFAULT_PRIORITY_m13 		0x7FFFFFFF
+#define PROC_MIN_PRIORITY_m13			0x7FFFFFFE
+#define PROC_LOW_PRIORITY_m13			0x7FFFFFFD
+#define PROC_MEDIUM_PRIORITY_m13		0x7FFFFFFC
+#define PROC_HIGH_PRIORITY_m13			0x7FFFFFFB
+#define PROC_MAX_PRIORITY_m13			0x7FFFFFFA
+#define PROC_UNDEFINED_PRIORITY_m13		0x7FFFFFF9
 
-#define PROC_THREAD_WAITING_m13		((si4) 0)
-#define PROC_THREAD_RUNNING_m13		((si4) 1)
-#define PROC_THREAD_FINISHED_m13	((si4) 2)
+#define PROC_THREAD_WAITING_m13			((si4) 0)
+#define PROC_THREAD_RUNNING_m13			((si4) 1)
+#define PROC_THREAD_FINISHED_m13		((si4) 2)
+
+#define PROC_THREAD_NAME_LEN_DEFAULT_m13	64
 
 
 typedef ui8	pid_t_m13; // big enough for all OSs, none use signed values
@@ -1282,6 +1284,7 @@ typedef struct {
 tern		PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
 tern		PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *thread_infos, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs);
 cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
+si1		*PROC_get_thread_name_m13(si1 *thread_name, size_t thread_name_len);
 pid_t_m13	PROC_getpid_m13(void); // calling process id
 pid_t_m13	PROC_gettid_m13(void); // calling thread id
 tern		PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...); // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs
@@ -1567,14 +1570,15 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define SHOW_CURRENT_BEHAVIOR_m13	((ui4) 1 << 0)
 #define SHOW_BEHAVIOR_STACK_m13		((ui4) 1 << 1)
 
-// Error Handling Constants
-#define DEFAULT_BEHAVIOR_m13		((ui4) 0) // show all output & exit on error (with no retries)
+// Behaviors Constants
 #define RETURN_ON_FAIL_m13		((ui4) 1 << 0) // if not set, exit program
 #define SUPPRESS_ERROR_OUTPUT_m13	((ui4) 1 << 1)
 #define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 2)
 #define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 3)
 #define RETRY_ONCE_m13			((ui4) 1 << 4)
 #define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
+
+#define DEFAULT_BEHAVIOR_m13		RETURN_ON_FAIL_m13 // show all output, return on fail, do not retry
 
 // error codes
 #define	E_NONE_m13			0
@@ -1596,13 +1600,13 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define E_DB_m13			16
 
 // error string table
-#define	E_MAX_STR_LEN_m13		128 // ascii[127]
+#define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
 #define E_MESSAGE_LEN_m13		E_MAX_STR_LEN_m13
 #define E_STR_TABLE_ENTRIES_m13		17
 #define E_STR_TABLE_m13 { \
 	"no errors", \
 	"unspecified error", \
-	"memory allocation error" \
+	"memory allocation error", \
 	"file open error", \
 	"file read error", \
 	"file write error", \
@@ -1616,7 +1620,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"network error", \
 	"compression error", \
 	"filter error", \
-	"database error", \
+	"database error" \
 }
 
 typedef struct {
@@ -1627,6 +1631,12 @@ typedef struct {
 } ERR_m13;
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
+#ifdef MATLAB_m13
+	#define eprintf_m13(fmt, ...)		mexPrintf("%s() [%d]: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+	#define eprintf_m13(fmt, ...)		fprintf_m13(stderr_m13, "%s%s() %s[%d]%s: " fmt, TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__)
+#endif
+
 
 
 //**********************************************************************************//
@@ -1855,7 +1865,7 @@ typedef struct {
 typedef struct {
 	ui4		mmap_block_bytes; // read size for memory mapped files (process data may be on different volumes)
 					 // if files are on different volumes, use/set mmap_block_bytes in FILE_m13 structure
-	volatile tern	proc_error_state; // flag for void functions
+	volatile tern	proc_error_state; // flag for void functions, not global error state
 } MISCELLANEOUS_m13; // PROC_GLOBS_m13 element
 
 // All MED File Structures begin with a level header structure
@@ -1992,8 +2002,9 @@ typedef struct {
 #define G_remove_behavior_m13(behavior_code)	G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_remove_behavior_m13(ui4 behavior)" prototype
 #define G_reset_behavior_stack_m13(behavior_code)	G_reset_behavior_stack_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_reset_behavior_stack_m13(ui4 behavior)" prototype
 
-#ifdef FN_DEBUG_m13
-#define G_push_function_m13() 	G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
+#ifdef FT_DEBUG_m13
+#define G_push_function_m13() 		G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
+#define G_pop_function_m13(arg)		G_pop_function_exec_m13(__FUNCTION__, arg) // call with "G_pop_function_m13(exit_code)" prototype
 
 typedef struct {
 	pid_t_m13	_id; // thread or process id
@@ -2008,7 +2019,7 @@ typedef struct {
 	volatile si4		size; // total allocated function_stacks
 	volatile si4		top_idx; // last non-empty function_stack in list
 } FUNCTION_STACK_LIST_m13;
-#endif // FN_DEBUG_m13
+#endif // FT_DEBUG_m13
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
@@ -2038,6 +2049,10 @@ typedef struct {
 	ui8		actual_bytes; // actual bytes allocated => may be more than were requested
 	const si1	*alloc_function;
 	const si1	*free_function;
+	si4		alloc_line;
+	si4		free_line;
+	si1		alloc_thread[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si1		free_thread[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 } AT_ENTRY_m13;
 
 typedef struct {
@@ -2064,10 +2079,10 @@ typedef struct {
 	GLOBAL_TABLES_m13		*tables;
  // Behavior Stacks (thread local)
 	BEHAVIOR_STACK_LIST_m13		*behavior_stack_list;
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
  // Function Stacks (thread local)
 	FUNCTION_STACK_LIST_m13		*function_stack_list;
-#endif // FN_DEBUG_m13
+#endif // FT_DEBUG_m13
  // Process Globals (thread local)
 	PROC_GLOBS_LIST_m13		*proc_globs_list;
  // File Locking (global)
@@ -2095,7 +2110,7 @@ typedef struct {
 	tern				write_sorted_records; // if records unsorted, sort & re-write
 	tern				update_header_names; // if session or channel file system name differs from universal header, update all affected universal headers
 	tern				update_file_version; // if file MED version is not current, update the files
-	ERR_m13			error; // causal error
+	ERR_m13				error; // causal error
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -2386,7 +2401,7 @@ typedef struct {
 #define FPS_A_PLUS_OPEN_MODE_m13		( FPS_DF_APPEND_MODE_m13 | FPS_DF_PLUS_MODE_m13 )
 #define FPS_OPEN_MODE_MASK_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13 | FPS_DF_APPEND_MODE_m13 | \
 						FPS_DF_NO_TRUNC_MODE_m13 | FPS_DF_PLUS_MODE_m13 )
-#define FPS_DIRECS_OPEN_MODE_DEFAULT_m13	FPS_R_OPEN_MODE_m13  // used to initialize (read only is safest mode)
+#define FPS_DIRECS_OPEN_MODE_DEFAULT_m13	FPS_R_PLUS_OPEN_MODE_m13
 
 // Open Mode Strings
 #define FPS_NO_OPEN_STRING_m13			""
@@ -2397,6 +2412,7 @@ typedef struct {
 #define FPS_W_NO_TRUNC_OPEN_STRING_m13		"wn"
 #define FPS_A_OPEN_STRING_m13			"a"
 #define FPS_A_PLUS_OPEN_STRING_m13		"a+"
+#define FPS_OPEN_STRING_DEFAULT_m13		FPS_R_PLUS_OPEN_STRING_m13
 
 // Directive Defaults
 #define FPS_DIRECS_CLOSE_AFTER_OPERATION_DEFAULT_m13		FALSE_m13
@@ -2494,12 +2510,12 @@ typedef struct {
 
 // Prototypes
 FPS_m13		*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13 *parent);
-tern		FPS_close_m13(FPS_m13 *fps);
+tern		FPS_close_m13(FPS_m13 *fps, tern free_fp);
 si4		FPS_compare_times_m13(const void *a, const void *b);
 tern		FPS_free_m13(FPS_m13 **fps);
-FPS_m13		*FPS_init_m13(FPS_m13 *fps, si1 *path, si8 n_bytes, LH_m13 *parent);
-FPS_DIRECS_m13	*FPS_init_directives_m13(FPS_DIRECS_m13 *direcs);
-FPS_PARAMS_m13	*FPS_init_parameters_m13(FPS_PARAMS_m13 *params);
+FPS_m13		*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent);
+FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
+FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 FPS_m13		*FPS_open_m13(si1 *path, si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): si1 *mode, ui8 fd_flags
@@ -2823,7 +2839,7 @@ typedef struct {
 // Prototypes
 void			G_add_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void);
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 FUNCTION_STACK_m13	*G_add_function_stack_m13(void);
 #endif
 ui4 			G_add_level_extension_m13(si1 *directory_name);
@@ -2894,7 +2910,6 @@ tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
 tern			G_frequencies_vary_m13(SESS_m13 *sess);
 tern			G_full_path_m13(si1 *path, si1 *full_path);
 void			G_function_stack_trap_m13(si4 sig_num);
-si1			**G_generate_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 si1			**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 n_names);
 tern			G_generate_password_data_m13(FPS_m13 *fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_pw, si1 *L1_pw_hint, si1 *L2_pw_hint);
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
@@ -2902,7 +2917,8 @@ si1			*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name);
 ui8			G_generate_UID_m13(ui8 *uid);
 CHAN_m13		*G_get_active_channel_m13(SESS_m13 *sess, si1 channel_type);
 BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
-#ifdef FN_DEBUG_m13
+si1			**G_get_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
+#ifdef FT_DEBUG_m13
 FUNCTION_STACK_m13	*G_get_function_stack_m13(void);
 #endif
 ui4			G_get_level_m13(si1 *full_file_name, ui4 *input_type_code);
@@ -2915,8 +2931,8 @@ si1			*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, F
 tern			G_get_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
 tern			G_init_global_tables_m13(tern init_all_tables);
-tern			G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ...); // varargs (app_path != NULL) ui4 version_major, ui4 version_minor
-tern			G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ... ); // varargs (app_path != NULL) ui4 version_major, ui4 version_minor;
+tern			G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ...); // varargs(app_path != NULL): ui4 version_major, ui4 version_minor
+tern			G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ...); // varargs(app_path != NULL): ui4 version_major, ui4 version_minor;
 tern			G_init_metadata_m13(FPS_m13 *fps, tern init_for_update);
 SLICE_m13		*G_init_slice_m13(SLICE_m13 *slice);
 tern			G_init_timezone_tables_m13(void);
@@ -2940,7 +2956,7 @@ SESS_m13		*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list,
 tern			G_open_session_records_m13(SESS_m13 *sess);
 si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 void			G_pop_behavior_m13(void);
-void			G_pop_function_m13(void);
+void			G_pop_function_exec_m13(const si1 *function, ...);
 void			G_proc_error_clear_m13(LH_m13 *lh);
 void			G_proc_error_set_m13(LH_m13 *lh);
 tern			G_proc_error_state_m13(LH_m13 *lh);
@@ -2950,7 +2966,7 @@ PROC_GLOBS_m13		*G_proc_globs_init_m13(LH_m13 *lh);
 tern			G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
 tern			G_propogate_flags_m13(LH_m13 *lh, ui8 new_flags);
 void			G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 void			G_push_function_exec_m13(const si1 *function);
 #endif
 CHAN_m13		*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...); // varargs(chan == NULL): si1 *chan_path, LH_m13 *parent, ui8 lh_flags, si1 *password, si1 *index_channel_name
@@ -2985,8 +3001,8 @@ tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
 tern			G_show_error_m13(void);
 tern			G_show_file_times_m13(FILE_TIMES_m13 *ft);
-#ifdef FN_DEBUG_m13
-void			G_show_function_stack_m13(void);
+#ifdef FT_DEBUG_m13
+void			G_show_function_stack_m13(tern release_stack);
 #endif
 void			G_show_globals_m13(void);
 tern			G_show_level_header_flags_m13(ui8 flags);
@@ -3081,46 +3097,41 @@ tern	ALCK_video_metadata_section_2_m13(ui1 *bytes);
 // NOTE: The AT system keeps track all allocated & freed memory blocks, so the list can grow continuously & may appear like a a very slow memory leak
 // Previously freed memory blocks are not replaced in the list so in the case of an attempted double free, it can inform where the block was previously freed.
 
-#define AT_CURRENTLY_ALLOCATED_m13	((ui4) 1)
-#define AT_PREVIOUSLY_FREED_m13		((ui4) 2)
-#define AT_ALL_m13			(AT_CURRENTLY_ALLOCATED_m13 | AT_PREVIOUSLY_FREED_m13)
-
 // Prototypes
 ui8	AT_actual_size_m13(void *address);
-void	AT_add_entry_m13(void *address, size_t requested_bytes, const si1 *function);
-void	AT_free_all_m13(void);
+void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t requested_bytes);
 tern	AT_freeable_m13(void *address);
-void	AT_mutex_off(void);
-void	AT_mutex_on(void);
-tern	AT_remove_entry_m13(void *address, const si1 *function);
+tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line);
 ui8	AT_requested_size_m13(void *address);
-void	AT_show_entries_m13(ui4 entry_type);
+void	AT_show_entries_m13(void);
 void	AT_show_entry_m13(void *address);
-tern	AT_update_entry_m13(void *orig_address, void *new_address, size_t requested_bytes, const si1 *function);
+tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void *new_address, size_t requested_bytes);
 
-// AT replacement functions for alloc standard functions (these need not to be called directly)
-void	*AT_calloc_m13(const si1 *function, size_t n_members, size_t el_size);
-void	**AT_calloc_2D_m13(const si1 *function, size_t dim1, size_t dim2, size_t el_size);
-void	AT_free_m13(const si1 *function, void *ptr);
-void	AT_free_2D_m13(const si1 *function, void **ptr, size_t dim1);
-void	*AT_malloc_m13(const si1 *function, size_t n_bytes);
-void	**AT_malloc_2D_m13(const si1 *function, size_t dim1, size_t dim2_bytes);
-void	*AT_realloc_m13(const si1 *function, void *ptr, size_t n_bytes);
-void	**AT_realloc_2D_m13(const si1 *function, void **ptr, size_t curr_dim1, size_t new_dim2, size_t curr_dim2_bytes, size_t new_dim2_bytes);
-void	*AT_recalloc_m13(const si1 *function, void *ptr, size_t curr_members, size_t new_members, size_t el_size);
-void	**AT_recalloc_2D_m13(const si1 *function, void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size);
+// AT replacement functions for alloc standard functions (these do not need to be called directly)
+void	*AT_calloc_m13(const si1 *function, si4 line, size_t n_members, si8 el_size);
+void	**AT_calloc_2D_m13(const si1 *function, si4 line, size_t dim1, size_t dim2, si8 el_size);
+void	AT_free_m13(const si1 *function, si4 line, void *ptr);
+void	AT_free_all_m13(const si1 *function, si4 line);
+void	AT_free_2D_m13(const si1 *function, si4 line, void **ptr, size_t dim1);
+void	*AT_malloc_m13(const si1 *function, si4 line, si8 n_bytes);
+void	**AT_malloc_2D_m13(const si1 *function, si4 line, size_t dim1, si8 dim2_bytes);
+void	*AT_realloc_m13(const si1 *function, si4 line, void *ptr, si8 n_bytes);
+void	**AT_realloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr_dim1, size_t new_dim2, size_t curr_dim2_bytes, si8 new_dim2_bytes);
+void	*AT_recalloc_m13(const si1 *function, si4 line, void *ptr, size_t curr_members, size_t new_members, si8 el_size);
+void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size);
 
 // preprocessor directives to replace standard alloc functions with AT versions
-#define calloc_m13(a, b)			AT_calloc_m13(__FUNCTION__, a, b)
-#define calloc_2D_m13(a, b, c)			AT_calloc_2D_m13(__FUNCTION__, a, b, c)
-#define free_m13(a)				AT_free_m13(__FUNCTION__, a)
-#define free_2D_m13(a, b)			AT_free_2D_m13(__FUNCTION__, a, b)
-#define malloc_m13(a)				AT_malloc_m13(__FUNCTION__, a)
-#define malloc_2D_m13(a, b)			AT_malloc_2D_m13(__FUNCTION__, a, b)
-#define realloc_m13(a, b)			AT_realloc_m13(__FUNCTION__, a, b)
-#define realloc_2D_m13(a, b, c, d, e)		AT_realloc_2D_m13(__FUNCTION__, a, b, c, d, e)
-#define recalloc_m13(a, b, c, d)		AT_recalloc_m13(__FUNCTION__, a, b, c, d)
-#define recalloc_2D_m13(a, b, c, d, e, f)	AT_recalloc_2D_m13(__FUNCTION__, a, b, c, d, e, f)
+#define calloc_m13(a, b)			AT_calloc_m13(__FUNCTION__, __LINE__, a, b)
+#define calloc_2D_m13(a, b, c)			AT_calloc_2D_m13(__FUNCTION__, __LINE__, a, b, c)
+#define free_m13(a)				AT_free_m13(__FUNCTION__, __LINE__, a)
+#define free_all_m13()				AT_free_all_m13(__FUNCTION__, __LINE__)
+#define free_2D_m13(a, b)			AT_free_2D_m13(__FUNCTION__, __LINE__, a, b)
+#define malloc_m13(a)				AT_malloc_m13(__FUNCTION__, __LINE__, a)
+#define malloc_2D_m13(a, b)			AT_malloc_2D_m13(__FUNCTION__, __LINE__, a, b)
+#define realloc_m13(a, b)			AT_realloc_m13(__FUNCTION__, __LINE__, a, b)
+#define realloc_2D_m13(a, b, c, d, e)		AT_realloc_2D_m13(__FUNCTION__, __LINE__, a, b, c, d, e)
+#define recalloc_m13(a, b, c, d)		AT_recalloc_m13(__FUNCTION__, __LINE__, a, b, c, d)
+#define recalloc_2D_m13(a, b, c, d, e, f)	AT_recalloc_2D_m13(__FUNCTION__, __LINE__, a, b, c, d, e, f)
 
 #endif // AT_DEBUG_m13
 
@@ -3141,7 +3152,7 @@ si1 		*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_
 tern		STR_empty_m13(si1 *string);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number);
-si1		*STR_hex_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator);
+si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator);
 si1		*STR_match_end_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1		*STR_match_line_end_m13(si1 *pattern, si1 *buffer);
@@ -3817,9 +3828,9 @@ tern	CMP_generate_lossy_data_m13(CPS_m13 *cps, si4* input_buffer, si4 *output_bu
 tern	CMP_generate_parameter_map_m13(CPS_m13 *cps);
 ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm);
 tern	CMP_get_variable_region_m13(CPS_m13 *cps);
-tern	CMP_hex_to_int_m13(ui1 *in, ui1 *out, si4 len);
-CPS_DIRECS_m13	*CMP_init_directives_m13(CPS_DIRECS_m13 *direcs, ui1 compression_mode);
-CPS_PARAMS_m13	*CMP_init_parameters_m13(CPS_PARAMS_m13 *params);
+tern	CMP_hex_to_int_m13(si1 *hex_str, void *hex_val, si4 val_bytes);
+CPS_DIRECS_m13	*CMP_init_direcs_m13(CPS_DIRECS_m13 *direcs, ui1 compression_mode);
+CPS_PARAMS_m13	*CMP_init_params_m13(CPS_PARAMS_m13 *params);
 tern	CMP_init_tables_m13(void);
 tern	CMP_integrate_m13(CPS_m13 *cps);
 tern	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf8 *m, sf8 *b);
@@ -5155,25 +5166,25 @@ si4		vsprintf_m13(si1 *target, si1 *fmt, va_list args);
 
 // standard functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13 // use these protoypes in all cases, defines will convert if needed
-void	*calloc_m13(size_t n_members, size_t el_size); // flag level header with negative el_size
-void	**calloc_2D_m13(size_t dim1, size_t dim2, size_t el_size); // flag level header with negative el_size
+void	*calloc_m13(size_t n_members, si8 el_size); // flag level header with negative el_size
+void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size); // flag level header with negative el_size
 void	free_m13(void *ptr);
 void	free_2D_m13(void **ptr, size_t dim1);
-void	*malloc_m13(size_t n_bytes);
-void	**malloc_2D_m13(size_t dim1, size_t dim2_bytes); // flag level header with negative dim2_bytes
-void	*realloc_m13(void *ptr, size_t n_bytes); // flag level header with negative n_bytes
-void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2_bytes, size_t new_dim2_bytes); // flag level header with negative new_dim2_bytes
-void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, size_t el_size); // flag level header with negative el_size
-void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, size_t el_size); // flag level header with negative el_size
+void	*malloc_m13(si8 n_bytes);
+void	**malloc_2D_m13(size_t dim1, si8 dim2_bytes); // flag level header with negative dim2_bytes
+void	*realloc_m13(void *ptr, si8 n_bytes); // flag level header with negative n_bytes
+void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2_bytes, si8 new_dim2_bytes); // flag level header with negative new_dim2_bytes
+void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, si8 el_size); // flag level header with negative el_size
+void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size); // flag level header with negative el_size
 #endif // AT_DEBUG_m13
 
-#ifdef FN_DEBUG_m13
-#define return_m13(arg) 	do { G_pop_function_m13(); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
-#define return_void_m13 	do { G_pop_function_m13(); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+#ifdef FT_DEBUG_m13
+#define return_m13(arg) 	do { G_pop_function_m13(arg); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+#define return_void_m13 	do { G_pop_function_m13(-1); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
 #else
 #define return_m13(arg) 	return(arg)
 #define return_void_m13 	return // not used in library => the only void library functions are low level & not added to function stacks (they use standard returns)
-#endif // FN_DEBUG_m13
+#endif // FT_DEBUG_m13
 
 
 
