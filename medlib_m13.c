@@ -223,7 +223,7 @@ void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 behavior_code)
 	behavior->code = (behavior - 1)->code | behavior_code;
 
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return;
 }
@@ -272,7 +272,7 @@ BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void)
 	}
 	
 	// set up stack
-	stack->_id = PROC_gettid_m13();
+	stack->_id = gettid_m13();
 	stack->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
 	stack->top_idx = 0;  // if reusing stack, behaviors already allocated, just reset top idx
 	
@@ -331,7 +331,7 @@ FUNCTION_STACK_m13	*G_add_function_stack_m13(void)
 	}
 	
 	// set up stack
-	stack->_id = PROC_gettid_m13();
+	stack->_id = gettid_m13();
 	stack->top_idx = -1;  // if reusing stack, functions already allocated, just reset top idx
 	
 	return(stack);
@@ -2412,7 +2412,7 @@ ui4	G_current_behavior_m13(void)
 		behavior = stack->behaviors[stack->top_idx].code;
 	
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return(behavior);
 }
@@ -2434,7 +2434,7 @@ BEHAVIOR_m13	*G_current_behavior_entry_m13(void)
 		behavior = stack->behaviors + stack->top_idx;
 	
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return(behavior);
 }
@@ -2755,7 +2755,7 @@ void	G_delete_behavior_stack_m13(void)
 	stack->top_idx = -1;
 
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return;
 }
@@ -2784,7 +2784,7 @@ void	G_delete_function_stack_m13(void)
 	stack->top_idx = -1;
 
 	// release function stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 	return;
 }
@@ -4724,7 +4724,7 @@ void	G_free_global_tables_m13(void)
 	#endif
 
 	// destroy mutex
-	PROC_pthread_mutex_destroy_m13(&tables->mutex);
+	pthread_mutex_destroy_m13(&tables->mutex);
 	
 	free((void *) tables);
 	globals_m13->tables = NULL;
@@ -4757,13 +4757,13 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		for (i = 0; i < globals_m13->behavior_stack_list->size; ++i)
 			free((void *) globals_m13->behavior_stack_list->stacks[i].behaviors);
 		free((void *) globals_m13->behavior_stack_list->stacks);
-		PROC_pthread_mutex_destroy_m13(&globals_m13->behavior_stack_list->mutex);
+		pthread_mutex_destroy_m13(&globals_m13->behavior_stack_list->mutex);
 		free((void *) globals_m13->behavior_stack_list);
 	}
 
 	if (globals_m13->file_lock_list) {
 		free((void *) globals_m13->file_lock_list->locks);
-		PROC_pthread_mutex_destroy_m13(&globals_m13->file_lock_list->mutex);
+		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->mutex);
 		free((void *) globals_m13->file_lock_list);
 	}
 
@@ -4772,7 +4772,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		for (i = 0; i < globals_m13->function_stack_list->size; ++i)
 			free((void *) globals_m13->function_stack_list->stacks[i].functions);
 		free((void *) globals_m13->function_stack_list->stacks);
-		PROC_pthread_mutex_destroy_m13(&globals_m13->function_stack_list->mutex);
+		pthread_mutex_destroy_m13(&globals_m13->function_stack_list->mutex);
 		free((void *) globals_m13->function_stack_list);
 	}
 #endif
@@ -4782,7 +4782,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 			if (globals_m13->proc_globs_list->proc_globs_ptrs[i])
 				free((void *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
 		free((void *) globals_m13->proc_globs_list->proc_globs_ptrs);
-		PROC_pthread_mutex_destroy_m13(&globals_m13->proc_globs_list->mutex);
+		pthread_mutex_destroy_m13(&globals_m13->proc_globs_list->mutex);
 		free((void *) globals_m13->proc_globs_list);
 	}
 	
@@ -4790,7 +4790,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	if (globals_m13->AT_list) {
 		free_all_m13();  // display memory still allocated & free it
 		free((void *) globals_m13->AT_list->entries);
-		PROC_pthread_mutex_destroy_m13(&globals_m13->AT_list->mutex);
+		pthread_mutex_destroy_m13(&globals_m13->AT_list->mutex);
 		free((void *) globals_m13->AT_list);
 	}
 #endif
@@ -5597,10 +5597,10 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 	// NOTE: the calling function is expected to release the mutex, unless it returns NULL
 	
 	list = globals_m13->behavior_stack_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);
+	pthread_mutex_lock_m13(&list->mutex);
 
 	// find stack
-	_id = PROC_gettid_m13();  // in single thread process tid == pid
+	_id = gettid_m13();  // in single thread process tid == pid
 	stack = list->stacks;
 	n_stacks = list->top_idx + 1;
 	for (i = n_stacks; i--; ++stack)
@@ -5608,7 +5608,7 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 			break;
 	
 	if (i == -1) {  // thread stack not found, try process id (child pids are different from parent)
-		_id = PROC_getpid_m13();
+		_id = getpid_m13();
 		stack = list->stacks;;  // reset
 		for (i = n_stacks; i--; ++stack)
 			if (stack->_id == _id)
@@ -5618,7 +5618,7 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 		if (i == -1) {
 			stack = G_add_behavior_stack_m13();
 			if (stack == NULL) {  // return with no changes to global stacks
-				PROC_pthread_mutex_unlock_m13(&list->mutex);
+				pthread_mutex_unlock_m13(&list->mutex);
 				return(NULL);
 			}
 		}
@@ -5890,10 +5890,10 @@ FUNCTION_STACK_m13	*G_get_function_stack_m13(void)
 	// get function stacks mutex
 	// NOTE: the calling function is expected to release the mutex, unless it returns NULL
 	list = globals_m13->function_stack_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);
+	pthread_mutex_lock_m13(&list->mutex);
 	
 	// find stack
-	_id = PROC_gettid_m13();  // in single thread process tid == pid
+	_id = gettid_m13();  // in single thread process tid == pid
 	stack = list->stacks;
 	n_stacks = list->top_idx + 1;
 	for (i = n_stacks; i--; ++stack)
@@ -5901,7 +5901,7 @@ FUNCTION_STACK_m13	*G_get_function_stack_m13(void)
 			break;
 		
 	if (i == -1) {  // thread stack not found, try process id (child pids are different from parent)
-		_id = PROC_getpid_m13();
+		_id = getpid_m13();
 		stack = list->stacks;
 		for (i = n_stacks; i--; ++stack)
 			if (stack->_id == _id)
@@ -5911,7 +5911,7 @@ FUNCTION_STACK_m13	*G_get_function_stack_m13(void)
 		if (i == -1) {
 			stack = G_add_function_stack_m13();
 			if (stack == NULL) {  // return with no change to function stacks
-				PROC_pthread_mutex_unlock_m13(&list->mutex);
+				pthread_mutex_unlock_m13(&list->mutex);
 				return(NULL);
 			}
 		}
@@ -6705,16 +6705,16 @@ tern	G_init_error_tables_m13(void)
 	if (tables->E_strings_table)
 		return(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->E_strings_table) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 	
 	// error strings table
 	tables->E_strings_table = (const si1 **) calloc((size_t) E_STR_TABLE_ENTRIES_m13, sizeof(const si1 *));
 	if (tables->E_strings_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -6722,7 +6722,7 @@ tern	G_init_error_tables_m13(void)
 		memcpy((void *) tables->E_strings_table, (void *) temp, (size_t) E_STR_TABLE_ENTRIES_m13 * sizeof(const si1 *));
 	}
 
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -6744,7 +6744,7 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 
 	// initialize all table muticies
 	tables = globals_m13->tables;
-	PROC_pthread_mutex_init_m13(&tables->mutex, NULL);
+	pthread_mutex_init_m13(&tables->mutex, NULL);
 
 	if (init_all_tables == TRUE_m13) {  // otherwise load on demand
 		if (CRC_init_tables_m13() == FALSE_m13)  // do this before initializing hardware tables (CRC used to get machine code)
@@ -6799,8 +6799,8 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		exit(-1);
 		#endif
 	}
-	PROC_pthread_mutex_init_m13(&globals_m13->mutex, NULL);
-	PROC_pthread_mutex_lock_m13(&globals_m13->mutex);
+	pthread_mutex_init_m13(&globals_m13->mutex, NULL);
+	pthread_mutex_lock_m13(&globals_m13->mutex);
 	
 	// Allocation tracking (do this before anything else)
 #ifdef AT_DEBUG_m13
@@ -6824,7 +6824,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	}
 	globals_m13->AT_list->top_idx = -1;
 	globals_m13->AT_list->size = GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
-	PROC_pthread_mutex_init_m13(&globals_m13->AT_list->mutex, NULL);
+	pthread_mutex_init_m13(&globals_m13->AT_list->mutex, NULL);
 	if (!(GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 		#ifdef MATLAB_m13
 		mexPrintf("Allocation tracking enabled\n");
@@ -6846,7 +6846,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		#endif
 	}
 	globals_m13->function_stack_list->top_idx = -1;
-	PROC_pthread_mutex_init_m13(&globals_m13->function_stack_list->mutex, NULL);
+	pthread_mutex_init_m13(&globals_m13->function_stack_list->mutex, NULL);
 	G_push_function_exec_m13("main");  // main doesn't push itself because it has to initialize globals first
 	if (!(GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 		#ifdef MATLAB_m13
@@ -6873,7 +6873,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	}
 	globals_m13->behavior_stack_list->top_idx = -1;
 	globals_m13->behavior_stack_list->default_behavior = default_behavior;
-	PROC_pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
+	pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
 	
 	// file locks
 	if (GLOBALS_FILE_LOCK_MODE_DEFAULT_m13) {  // any file locking
@@ -6896,7 +6896,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 			#endif
 		}
 		globals_m13->file_lock_list->size = GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
-		PROC_pthread_mutex_init_m13(&globals_m13->file_lock_list->mutex, NULL);
+		pthread_mutex_init_m13(&globals_m13->file_lock_list->mutex, NULL);
 	}
 	
 	// process globals
@@ -6910,7 +6910,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		#endif
 	}
 	globals_m13->proc_globs_list->top_idx = -1;
-	PROC_pthread_mutex_init_m13(&globals_m13->proc_globs_list->mutex, NULL);
+	pthread_mutex_init_m13(&globals_m13->proc_globs_list->mutex, NULL);
 	G_proc_globs_m13(NULL);  // create main thread proc globals
 
 	// application info
@@ -6962,7 +6962,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	globals_m13->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
 		
-	PROC_pthread_mutex_unlock_m13(&globals_m13->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->mutex);
 	
 	return(TRUE_m13);
 }
@@ -7201,16 +7201,16 @@ tern	G_init_timezone_tables_m13(void)
 	if (tables->timezone_table)
 		return(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->timezone_table) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 	
 	// timezone table
 	tables->timezone_table = (TIMEZONE_INFO_m13 *) calloc((size_t) TZ_TABLE_ENTRIES_m13, sizeof(TIMEZONE_INFO_m13));
 	if (tables->timezone_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -7221,7 +7221,7 @@ tern	G_init_timezone_tables_m13(void)
 	// country aliases
 	tables->country_aliases_table = (TIMEZONE_ALIAS_m13 *) calloc((size_t) TZ_COUNTRY_ALIASES_ENTRIES_m13, sizeof(TIMEZONE_ALIAS_m13));
 	if (tables->country_aliases_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -7232,7 +7232,7 @@ tern	G_init_timezone_tables_m13(void)
 	// country acronym aliases
 	tables->country_acronym_aliases_table = (TIMEZONE_ALIAS_m13 *) calloc((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13, sizeof(TIMEZONE_ALIAS_m13));
 	if (tables->country_acronym_aliases_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -7240,7 +7240,7 @@ tern	G_init_timezone_tables_m13(void)
 		memcpy((void *) tables->country_acronym_aliases_table, (void *) temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
 	}
 
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -9348,7 +9348,7 @@ void	G_pop_behavior_m13(void)
 		--stack->top_idx;
 
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return;
 }
@@ -9370,7 +9370,7 @@ void	G_pop_function_exec_m13(const si1 *function, ...)
 	// causal error set - // leave stack intact
 	if (globals_m13->error.code) {  // != E_NONE_m13
 		
-		PROC_pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 		// at stack base (get exit code)
 		if (strcmp(stack->functions[0], function) == 0) {
@@ -9392,7 +9392,7 @@ void	G_pop_function_exec_m13(const si1 *function, ...)
 		stack->_id = 0;  // release stack (popping stack base)
 
 	// release function stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 	return;
 }
@@ -9469,24 +9469,24 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 
 	// get mutex
 	list = globals_m13->proc_globs_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);
+	pthread_mutex_lock_m13(&list->mutex);
 			
 	// find proc globals by thread_id (first entry is main process globals)
 	if (lh == NULL) {
-		_id = PROC_gettid_m13();  // in single thread process tid == pid
+		_id = gettid_m13();  // in single thread process tid == pid
 		entries = list->top_idx + 1;
 		proc_globs_ptr = list->proc_globs_ptrs;
 		for (i = entries; i--; ++proc_globs_ptr) {
 			if (*proc_globs_ptr) {
 				if ((*proc_globs_ptr)->_id == _id) {
-					PROC_pthread_mutex_unlock_m13(&list->mutex);
+					pthread_mutex_unlock_m13(&list->mutex);
 					return(*proc_globs_ptr);
 				}
 			}
 		}
 
 		// thread stack not found, try process id
-		_id = PROC_getpid_m13();  // child pids are different from parent
+		_id = getpid_m13();  // child pids are different from parent
 		proc_globs_ptr = list->proc_globs_ptrs;
 		first_empty = NULL;
 		for (i = entries; i--; ++proc_globs_ptr) {
@@ -9494,7 +9494,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 				if (first_empty == NULL)
 					first_empty = proc_globs_ptr;
 			} else if ((*proc_globs_ptr)->_id == _id) {
-				PROC_pthread_mutex_unlock_m13(&list->mutex);
+				pthread_mutex_unlock_m13(&list->mutex);
 				return(*proc_globs_ptr);
 			}
 		}
@@ -9506,7 +9506,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 		new_ptrs = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) list->size * sizeof(PROC_GLOBS_m13 *));
 		if (new_ptrs == NULL) {
 			list->size -= GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-			PROC_pthread_mutex_unlock_m13(&list->mutex);
+			pthread_mutex_unlock_m13(&list->mutex);
 			G_set_error_m13(E_ALLOC_m13, NULL);
 			return(NULL);
 		}
@@ -9524,7 +9524,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 		lh->proc_globs = *proc_globs_ptr;
 
 	// relase mutex
-	PROC_pthread_mutex_unlock_m13(&list->mutex);
+	pthread_mutex_unlock_m13(&list->mutex);
 
 	return(*proc_globs_ptr);
 }
@@ -9559,12 +9559,12 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	for (i = Sgmt_records_list->top_idx + 1; i--; ++Sgmt_records_entry)
 		free((void *) Sgmt_records_entry->Sgmt_recs);
 	free((void *) Sgmt_records_list->entries);
-	PROC_pthread_mutex_destroy_m13(&proc_globs->current_session.Sgmt_recs_list->mutex);
+	pthread_mutex_destroy_m13(&proc_globs->current_session.Sgmt_recs_list->mutex);
 	free((void *) Sgmt_records_list);
 
 	// get mutex
 	list = globals_m13->proc_globs_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);
+	pthread_mutex_lock_m13(&list->mutex);
 
 	// find globals
 	entries = list->top_idx + 1;
@@ -9575,7 +9575,7 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 			break;
 		
 	if (i == -1) {  // not found
-		PROC_pthread_mutex_unlock_m13(&list->mutex);
+		pthread_mutex_unlock_m13(&list->mutex);
 		return;
 	}
 	
@@ -9595,7 +9595,7 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	}
 	
 	// relase mutex
-	PROC_pthread_mutex_unlock_m13(&list->mutex);
+	pthread_mutex_unlock_m13(&list->mutex);
 
 	return;
 }
@@ -9616,7 +9616,7 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 	
 	// set header
 	proc_globs->type_code = PROC_GLOBS_TYPE_CODE_m13;
-	proc_globs->_id = PROC_gettid_m13();  // use current thread id
+	proc_globs->_id = gettid_m13();  // use current thread id
 	
 	// current session constants
 	proc_globs->current_session.UID = UID_NO_ENTRY_m13;
@@ -9671,7 +9671,7 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 		return(NULL);
 	}
 	proc_globs->current_session.Sgmt_recs_list->size = GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-	PROC_pthread_mutex_init_m13(&proc_globs->current_session.Sgmt_recs_list->mutex, NULL);
+	pthread_mutex_init_m13(&proc_globs->current_session.Sgmt_recs_list->mutex, NULL);
 	
 	// reset miscellaneous globals
 	proc_globs->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
@@ -9923,7 +9923,7 @@ void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior_
 	behavior->code = behavior_code;
 	
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return;
 }
@@ -9954,7 +9954,7 @@ void	G_push_function_exec_m13(const si1 *function)
 		if (new_functions == NULL) {
 			stack->size -= GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
 			--stack->top_idx;
-			PROC_pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 			return;
 		}
 		stack->functions = new_functions;
@@ -9964,7 +9964,7 @@ void	G_push_function_exec_m13(const si1 *function)
 	stack->functions[stack->top_idx] = function;
 		
 	// release mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 	return;
 }
@@ -11331,7 +11331,7 @@ void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavio
 	behavior->code = (behavior - 1)->code & ~behavior_code;
 	
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return;
 }
@@ -11427,7 +11427,7 @@ tern	G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 behavior
 	behavior->code = behavior_code;
 
 	// release behavior stacks mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -12080,7 +12080,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	err = &globals_m13->error;
 	if (err->code != E_NONE_m13)  // already set => keep causal error
 		return;
-		
+	
 	// set error message
 	if (STR_empty_m13(message) == TRUE_m13) {
 		if (code == E_NONE_m13)  // no error specified in code or message
@@ -12104,6 +12104,8 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	err->code = code;
 	err->line = line;
 	err->function = function;
+	pthread_getname_m13(NULL, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	err->thread_id = gettid_m13();
 		
 	// exit
 	behavior = G_current_behavior_m13();
@@ -12413,7 +12415,7 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh)
 		
 	// search for matching entry
 	list = proc_globs->current_session.Sgmt_recs_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);
+	pthread_mutex_lock_m13(&list->mutex);
 	rec_entry = list->entries;
 	for (i = list->top_idx + 1; i--; ++rec_entry) {
 		if (rec_entry->rate == rate)
@@ -12429,7 +12431,7 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh)
 			if (new_entries == NULL) {
 				--list->top_idx;
 				list->size -= GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-				PROC_pthread_mutex_unlock_m13(&list->mutex);
+				pthread_mutex_unlock_m13(&list->mutex);
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
@@ -12445,7 +12447,7 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh)
 		Sgmt_recs = (Sgmt_REC_m13 *) rec_entry->Sgmt_recs;
 	}
 
-	PROC_pthread_mutex_unlock_m13(&list->mutex);  // unlock
+	pthread_mutex_unlock_m13(&list->mutex);  // unlock
 
 	return_m13(Sgmt_recs);
 }
@@ -12484,7 +12486,7 @@ tern	G_show_behavior_m13(ui4 mode)
 	}
 	
 	// release mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -12656,9 +12658,9 @@ tern	G_show_error_m13(void)
 	}
 
 #ifdef MATLAB_m13
-	mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d]\n\n", err->message, err->code, err->function, err->line);
+	mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]\n\n", err->message, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id);
 #else
-	fprintf(stderr, "%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, TC_RESET_m13);
+	printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id, TC_RESET_m13);
 #endif
 
 	return(TRUE_m13);
@@ -12706,14 +12708,14 @@ void	G_show_function_stack_m13(tern release_stack)
 {
 	si1			*c, thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si4			i;
+	pid_t_m13		tid;
 	FUNCTION_STACK_m13	*stack;
 
 	
-	PROC_get_thread_name_m13(thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	pthread_getname_m13(NULL, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	tid = gettid_m13();
 
-	if (STR_empty_m13(thread_name) == TRUE_m13)
-		strcpy(thread_name, "<Unnamed Thread>");
-	sprintf_m13(thread_name, "\"%s\" Function Stack:", thread_name);
+	sprintf_m13(thread_name, "\"%s\" (id %lu) Function Stack:", thread_name, tid);
 
 	stack = G_get_function_stack_m13();
 	
@@ -12730,7 +12732,7 @@ void	G_show_function_stack_m13(tern release_stack)
 		stack->_id = 0;
 	
 	// release mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 	return;
 }
@@ -14177,7 +14179,7 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	if (rd_open == TRUE_m13)
 		FPS_write_m13(rd_fps, 0, FPS_UH_ONLY_m13, 0, NULL, NULL);
 	else
-		FPS_close_m13(rd_fps, FALSE_m13);  // this fps will probably be reopened
+		FPS_close_m13(rd_fps);
 
 	// write terminal index
 	ri->file_offset = rd_fps->params.fp->len;
@@ -14193,7 +14195,7 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	if (ri_open == TRUE_m13)
 		FPS_write_m13(ri_fps, 0, FPS_UH_ONLY_m13, 0, NULL, NULL);
 	else
-		FPS_close_m13(ri_fps, FALSE_m13);  // this fps will probably be reopened
+		FPS_close_m13(ri_fps);
 
 	// clean up
 	free((void *) tmp_rec_data);
@@ -15967,16 +15969,16 @@ tern	AES_init_tables_m13(void)
 	if (tables->AES_rcon_table)
 		return(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->AES_rcon_table) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 
 	// rcon table
 	tables->AES_rcon_table = (si4 *) calloc((size_t) AES_RCON_ENTRIES_m13, sizeof(si4));
 	if (tables->AES_rcon_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -15989,7 +15991,7 @@ tern	AES_init_tables_m13(void)
 	// rsbox table
 	tables->AES_rsbox_table = (si4 *) calloc((size_t) AES_RSBOX_ENTRIES_m13, sizeof(si4));
 	if (tables->AES_rsbox_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -16002,7 +16004,7 @@ tern	AES_init_tables_m13(void)
 	// sbox table
 	tables->AES_sbox_table = (si4 *) calloc((size_t) AES_SBOX_ENTRIES_m13, sizeof(si4));
 	if (tables->AES_sbox_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -16012,7 +16014,7 @@ tern	AES_init_tables_m13(void)
 		memcpy((void *) tables->AES_sbox_table, (void *) temp, len);
 	}
 
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -16902,20 +16904,20 @@ ui8	AT_actual_size_m13(void *address)
 	if (address == NULL)  // usually from realloc() with ptr == NULL
 		return(0);
 	
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
 		if (ate->address == address) {
 			actual_bytes = ate->actual_bytes;
-			PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return(actual_bytes);
 		}
 	}
 	
 	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return(0);
 }
@@ -16925,6 +16927,7 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 {
 	ui8		actual_bytes;
 	si4		i, n_entries;
+	pid_t_m13	tid;
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
 
@@ -16932,14 +16935,15 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	if (address == NULL) {
 		si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 		
-		PROC_get_thread_name_m13(thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+		pthread_getname_m13(NULL, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+		tid = gettid_m13();
 
-		G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called from %s() at line %d in \"%s\"]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name);
+		G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called from %s() at line %d in in thread \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, tid);
 		return;
 	}
 	
 	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
 	// find first freed address
 	list = globals_m13->AT_list;
@@ -16954,7 +16958,7 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 			list->size += GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
 			list->entries = (AT_ENTRY_m13 *) realloc((void *) list->entries, list->size * sizeof(AT_ENTRY_m13));
 			if (list->entries == NULL) {
-				PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+				pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 				exit_m13(-1);
 			}
 			// zero new memory
@@ -16981,13 +16985,15 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	ate->actual_bytes = actual_bytes;
 	ate->alloc_function = function;
 	ate->alloc_line = line;
-	PROC_get_thread_name_m13(ate->alloc_thread, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	pthread_getname_m13(NULL, ate->alloc_thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	ate->alloc_thread_id = gettid_m13();
 	ate->free_function = NULL;
 	ate->free_line = 0;
-	*ate->free_thread = 0;
+	*ate->free_thread_name = 0;
+	ate->free_thread_id = 0;
 
 	// return mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 	
 	return;
 }
@@ -16998,13 +17004,15 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 	const si1	*plural_str;
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si8		i, alloced_entries;
+	pid_t_m13	tid;
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
 	
 	
-	PROC_get_thread_name_m13(thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	pthread_getname_m13(NULL, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	tid = gettid_m13();
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
 	alloced_entries = 0;
 	list = globals_m13->AT_list;
@@ -17027,9 +17035,9 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 		ate = list->entries;
 		for (i = list->top_idx + 1; i--; ++ate) {
 			if (ate->free_function == NULL) {
-				PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);  // release mutex for AT_show_entry_m13()
+				pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);  // release mutex for AT_show_entry_m13()
 				AT_show_entry_m13(ate->address);
-				PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);  // reclaim mutex
+				pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);  // reclaim mutex
 				#ifdef MATLAB_PERSISTENT_m13
 				mxFree(ate->address);
 				#else
@@ -17037,12 +17045,13 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 				#endif
 				ate->free_function = function;
 				ate->free_line = line;
-				strcpy(ate->free_thread, thread_name);
+				strcpy(ate->free_thread_name, thread_name);
+				ate->free_thread_id = tid;
 			}
 		}
 	}
 
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return;
 }
@@ -17060,7 +17069,7 @@ tern	AT_freeable_m13(void *address)
 		return(FALSE_m13);
 	
 	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
 	// look for match entry
 	ate = globals_m13->AT_list->entries;
@@ -17070,18 +17079,18 @@ tern	AT_freeable_m13(void *address)
 
 	// no entry
 	if (i == -1) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		return(FALSE_m13);
 	}
 
 	// already freed
 	if (ate->free_function) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		return(FALSE_m13);
 	}
 
 	// return mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 	
 	return(TRUE_m13);
 }
@@ -17090,6 +17099,7 @@ tern	AT_freeable_m13(void *address)
 tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line)
 {
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	pid_t_m13	tid;
 	si8		i;
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
@@ -17097,18 +17107,17 @@ tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line)
 	
 	// Note this function does not free the accociated memory, just marks it as freed in the AT list
 
+	pthread_getname_m13(NULL, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	tid = gettid_m13();
+	
 	if (address == NULL) {
-		si1	thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+		G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called from %s() at line %d in thread \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, tid);
 		
-		PROC_get_thread_name_m13(thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-		G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called from %s() at line %d in \"%s\"]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name);
 		return(FALSE_m13);
 	}
 
-	PROC_get_thread_name_m13(thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	
 	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
 	// look for match entry
 	list = globals_m13->AT_list;
@@ -17119,9 +17128,9 @@ tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line)
 
 	// no entry
 	if (i == -1) {
-		G_warning_message_m13("%s(): %saddress was not allocated%s  [called from %s() at line %d in \"%s\"]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name);
+		G_warning_message_m13("%s(): %saddress was not allocated%s  [called from %s() at line %d in thread \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, tid);
 		
-		PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		
 		return(FALSE_m13);
 	}
@@ -17129,10 +17138,10 @@ tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line)
 	// already freed
 	else if (ate->free_function) {
 		G_warning_message_m13("%s(): %sDouble Free%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-		G_warning_message_m13("\tPrior free: called from %s() at line %d in \"%s\".\n", ate->free_function, ate->free_line, ate->free_thread);
-		G_warning_message_m13("\tThis free: called from %s() at line %d in \"%s\".\n", function, line, thread_name);
+		G_warning_message_m13("\tPrior free: called from %s() at line %d in thread \"%s\" (id %lu).\n", ate->free_function, ate->free_line, ate->free_thread_name, ate->free_thread_id);
+		G_warning_message_m13("\tThis free: called from %s() at line %d in thread \"%s\" (id %lu).\n", function, line, thread_name, tid);
 
-		PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		
 		return(FALSE_m13);
 	}
@@ -17140,7 +17149,7 @@ tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line)
 	// mark as freed
 	ate->free_function = function;
 	ate->free_line = line;
-	strcpy(ate->free_thread, thread_name);
+	strcpy(ate->free_thread_name, thread_name);
 
 	// trim search extents
 	if (ate == list->entries + list->top_idx) {
@@ -17153,7 +17162,7 @@ tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line)
 	}
 	
 	// return mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 	
 	return(TRUE_m13);
 }
@@ -17171,20 +17180,20 @@ ui8	AT_requested_size_m13(void *address)
 		return(0);
 	}
 	
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
 		if (ate->address == address) {
 			requested_bytes = ate->requested_bytes;
-			PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return(requested_bytes);
 		}
 	}
 	
 	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return(0);
 }
@@ -17197,7 +17206,7 @@ void	AT_show_entries_m13(void)
 	si8		alloced_entries = 0;
 
 	
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
@@ -17207,14 +17216,15 @@ void	AT_show_entries_m13(void)
 			printf_m13("actual bytes: %lu\n", ate->actual_bytes);
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
-			printf_m13("allocating thread: \"%s\"\n", ate->alloc_thread);
+			printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
+			printf_m13("allocating thread id: %lu\n", ate->alloc_thread_id);
 			++alloced_entries;
 		}
 	}
 
 	printf_m13("\ncurrently allocated AT entries: %lu\n", alloced_entries);
 
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return;
 }
@@ -17231,7 +17241,7 @@ void	AT_show_entry_m13(void *address)
 		return;
 	}
 	
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
@@ -17241,20 +17251,22 @@ void	AT_show_entry_m13(void *address)
 			printf_m13("actual bytes: %lu\n", ate->actual_bytes);
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
-			printf_m13("allocating thread: \"%s\"\n", ate->alloc_thread);
+			printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
+			printf_m13("allocating thread id: %lu\n", ate->alloc_thread_id);
 			if (ate->free_function) {
 				printf_m13("freeing function: %s()\n", ate->free_function);
 				printf_m13("freeing line: %d\n", ate->free_line);
-				printf_m13("freeing thread: \"%s\"\n", ate->free_thread);
+				printf_m13("freeing thread name: \"%s\"\n", ate->free_thread_name);
+				printf_m13("freeing thread id: %lu\n", ate->free_thread_id);
 			}
-			PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return;
 		}
 	}
 	
 	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return;
 }
@@ -17263,6 +17275,7 @@ void	AT_show_entry_m13(void *address)
 tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void *new_address, size_t requested_bytes)
 {
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	pid_t_m13	tid;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 
@@ -17274,15 +17287,16 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 		}
 	}
 	
-	PROC_get_thread_name_m13(thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	pthread_getname_m13(NULL, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	tid = gettid_m13();
 
 	if (new_address == NULL) {
-		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called from %s() at line %d in \"%s\"]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name);
+		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called from %s() at line %d in \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
 		return(FALSE_m13);
 	}
 	
 	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
 	// look for match entry
 	ate = globals_m13->AT_list->entries;
@@ -17292,18 +17306,19 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	
 	// no entry
 	if (i == -1) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-		G_warning_message_m13("%s(): %saddress is not allocated%s  [called from %s() at line %d in \"%s\"]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name);
+		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+		G_warning_message_m13("%s(): %saddress is not allocated%s  [called from %s() at line %d in \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
 		return(FALSE_m13);
 	}
 	
 	if (ate->free_function) {
-		G_warning_message_m13("%s(): %saddress %lu was already freed%s  [called from %s() at line %d in \"%s\"]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name);
+		G_warning_message_m13("%s(): %saddress %lu was already freed%s  [called from %s() at line %d in \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) tid);
 		AT_show_entry_m13(orig_address);
 		G_warning_message_m13("=> replacing with new data\n");
 		ate->free_function = NULL;
 		ate->free_line = 0;
-		*ate->free_thread = 0;
+		*ate->free_thread_name = 0;
+		ate->free_thread_id = 0;
 	}
 
 	// update
@@ -17320,10 +17335,11 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	ate->requested_bytes = requested_bytes;
 	ate->alloc_function = function;
 	ate->alloc_line = line;
-	PROC_get_thread_name_m13(ate->alloc_thread, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	strcpy(ate->alloc_thread_name, thread_name);
+	ate->alloc_thread_id = tid;
 
 	// return mutex
-	PROC_pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return(TRUE_m13);
 }
@@ -20072,15 +20088,15 @@ tern	CMP_init_tables_m13(void)
 	if (tables->CMP_normal_CDF_table)
 		return(TRUE_m13);
 	
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->CMP_normal_CDF_table) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 
 	tables->CMP_normal_CDF_table = (sf8 *) calloc((size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13, sizeof(sf8));
 	if (tables->CMP_normal_CDF_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -20092,7 +20108,7 @@ tern	CMP_init_tables_m13(void)
 	
 	tables->CMP_VDS_threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) calloc((size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13, sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
 	if (tables->CMP_VDS_threshold_map == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -20102,7 +20118,7 @@ tern	CMP_init_tables_m13(void)
 		memcpy(tables->CMP_VDS_threshold_map, temp, len);
 	}
 		
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -25217,9 +25233,9 @@ tern	CRC_init_tables_m13(void)
 	if (tables->CRC_table)
 		return(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->CRC_table) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 
@@ -25232,7 +25248,7 @@ tern	CRC_init_tables_m13(void)
 		len = dim1_bytes + content_bytes;
 		crc_table = (ui4 **) malloc(len);
 		if (crc_table == NULL) {
-			PROC_pthread_mutex_unlock_m13(&tables->mutex);
+			pthread_mutex_unlock_m13(&tables->mutex);
 			return(FALSE_m13);
 		}
 		crc_table[0] = (ui4 *) (crc_table + CRC_TABLES_m13);
@@ -25260,7 +25276,7 @@ tern	CRC_init_tables_m13(void)
 		tables->CRC_table = crc_table;
 	}
 	
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -29958,7 +29974,7 @@ FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_byte
 }
 
 
-tern	FPS_close_m13(FPS_m13 *fps, tern free_fp)
+tern	FPS_close_m13(FPS_m13 *fps)
 {
 	
 #ifdef FT_DEBUG_m13
@@ -29968,13 +29984,11 @@ tern	FPS_close_m13(FPS_m13 *fps, tern free_fp)
 	if (fps == NULL)
 		return_m13(FALSE_m13);
 	
-	if (FPS_is_open_m13(fps) == TRUE_m13) {
+	if (FPS_is_open_m13(fps) == TRUE_m13)
 		FPS_write_m13(fps, 0, FPS_UH_ONLY_m13, 0, NULL, NULL);   // update universal header before closing
+
+	if (fps->params.fp) {
 		fclose_m13(fps->params.fp);
-	}
-	
-	if (fps->params.fp && free_fp == TRUE_m13) {
-		free_m13((void *) fps->params.fp);
 		fps->params.fp = NULL;
 	}
 	
@@ -30044,7 +30058,7 @@ tern	FPS_free_m13(FPS_m13 **fps_ptr)
 		free_m13((void *) fps->params.mmap_block_bitmap);
 	
 	// Note: always close when freeing; close_file directives used in reading / writing functions
-	FPS_close_m13(fps, TRUE_m13);  // fine if already closed
+	FPS_close_m13(fps);  // fine if already closed
 	
 	// free heap addresses & to NULL
 	// stack & en_bloc addresses zeroed
@@ -30611,7 +30625,7 @@ FPS_m13 *FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		fps->n_items = 0;
 		
 		if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
-			FPS_close_m13(fps, FALSE_m13); // don't free fp b/c header only will usually have subsequent reads
+			FPS_close_m13(fps);
 		
 		return_m13(fps);
 	} else if (full_file == TRUE_m13) {
@@ -30656,7 +30670,7 @@ FPS_m13 *FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 			bytes_read = fread_m13(dest, sizeof(ui1), (size_t) n_bytes, fps->params.fp);
 	}
 	if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
-		FPS_close_m13(fps, TRUE_m13);  // free fp here because subsequent reads unlikely
+		FPS_close_m13(fps);
 	if (bytes_read != n_bytes) {
 		if (free_fps == TRUE_m13)
 			FPS_free_m13(&fps);
@@ -31399,7 +31413,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 				fflush(fps->params.fp->fp);
 			fps->n_items = 0;  // universal header does not count as an item
 			if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
-				FPS_close_m13(fps, FALSE_m13);  // subsequent writes likely
+				FPS_close_m13(fps);
 			
 			return_m13(TRUE_m13);
 		}
@@ -31510,7 +31524,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		fflush(fps->params.fp->fp);  // fflush() updates stat structure
 		
 	if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
-		FPS_close_m13(fps, TRUE_m13);  // subsequent writes unlikely
+		FPS_close_m13(fps);
 	
 	if (globals_m13->access_times == TRUE_m13)
 		G_update_access_time_m13((LH_m13 *) fps);
@@ -31614,9 +31628,9 @@ tern	HW_get_core_info_m13()
 	if (hw_params->logical_cores)
 		return_m13(TRUE_m13);
 	
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	if (hw_params->logical_cores) {  // may have been set by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 
@@ -31780,7 +31794,7 @@ tern	HW_get_core_info_m13()
 	}
 #endif  // WINDOWS_m13
 
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -31800,9 +31814,9 @@ tern	HW_get_endianness_m13(void)
 	if (hw_params->endianness == LITTLE_ENDIAN_m13)
 		return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	if (hw_params->endianness == LITTLE_ENDIAN_m13) {  // may have been set by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 
@@ -31811,7 +31825,7 @@ tern	HW_get_endianness_m13(void)
 
 	hw_params->endianness = endianness;
 
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -31833,16 +31847,16 @@ tern	HW_get_machine_code_m13(void)
 	if (*hw_params->serial_number == 0)
 		HW_get_machine_serial_m13();
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	if (hw_params->machine_code) {  // may have been set by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 
 	// get CRC of machine serial number
 	hw_params->machine_code = CRC_calculate_m13((ui1 *) hw_params->serial_number, strlen(hw_params->serial_number));
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -31860,9 +31874,9 @@ tern	HW_get_machine_serial_m13(void)
 	if (*hw_params->serial_number)
 		return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	if (*hw_params->serial_number) {  // may have been set by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 	
@@ -31873,7 +31887,7 @@ tern	HW_get_machine_serial_m13(void)
 		NET_get_mac_address_m13(NULL, &globals_m13->tables->NET_params);
 	strcpy(hw_params->serial_number, globals_m13->tables->NET_params.MAC_address_string);
 	STR_strip_character_m13(hw_params->serial_number, ':');
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	
 	return_m13(TRUE_m13);
 #endif
@@ -31913,7 +31927,7 @@ tern	HW_get_machine_serial_m13(void)
 
 	free(buf);
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(TRUE_m13);
 #endif
@@ -31935,9 +31949,9 @@ tern	HW_get_memory_info_m13(void)
 	if (hw_params->system_memory_size)
 		return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	if (hw_params->system_memory_size) {  // may have been set by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 
@@ -31947,7 +31961,7 @@ tern	HW_get_memory_info_m13(void)
 	
 	if (pages == -1 || page_size == -1) {
 		fprintf_m13(stderr_m13, "%s(): sysconf() error\n");
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 
@@ -31962,7 +31976,7 @@ tern	HW_get_memory_info_m13(void)
 	status.dwLength = sizeof(status);
 	if (GlobalMemoryStatusEx(&status) == 0) {
 		fprintf_m13(stderr_m13, "%s(): GlobalMemoryStatusEx() error\n", __FUNCTION__);
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 	hw_params->system_memory_size = (ui8) status.ullTotalPhys;
@@ -31974,7 +31988,7 @@ tern	HW_get_memory_info_m13(void)
 	hw_params->heap_base_address = (ui8) globals_m13;  // first thing allocated by init_medlib_m13()
 	hw_params->heap_max_address = (hw_params->heap_base_address + hw_params->system_memory_size) - 1;
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	
 	return_m13(TRUE_m13);
 }
@@ -32008,10 +32022,10 @@ tern	HW_get_performance_specs_m13(tern get_current)
 		if (HW_get_performance_specs_from_file_m13() == TRUE_m13)
 			return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	// may have been done by another thread while waiting
 	if (perf_specs->integer_multiplications_per_sec != 0.0)  {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 	
@@ -32079,7 +32093,7 @@ tern	HW_get_performance_specs_m13(tern get_current)
 	free((void *) test_arr2);
 	free((void *) test_arr3);
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	
 	// write out (for future use)
 	if (get_current != TRUE_m13) {
@@ -32177,9 +32191,9 @@ tern	HW_get_performance_specs_from_file_m13(void)
 	perf_specs = &hw_params->performance_specs;
 
 	// get mutex
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);  // delay getting mutex until machine code known
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);  // delay getting mutex until machine code known
 	if (perf_specs->integer_multiplications_per_sec != 0.0) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		fclose_m13(fp);
 		return_m13(TRUE_m13);
 	}
@@ -32227,13 +32241,13 @@ tern	HW_get_performance_specs_from_file_m13(void)
 	if (items == 0)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	free((void *) buffer);
 	return_m13(TRUE_m13);
 
 HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13:
 	
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	free((void *) buffer);
 	return_m13(FALSE_m13);
 }
@@ -32405,9 +32419,9 @@ tern	NET_check_internet_connection_m13(void)
 
 	np = &globals_m13->tables->NET_params;
 	
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	*np->interface_name = 0;
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
 	np = NET_get_default_interface_m13(np);
 	G_pop_behavior_m13();
@@ -32415,9 +32429,9 @@ tern	NET_check_internet_connection_m13(void)
 		return_m13(FALSE_m13);
 	
 	// LAN can be up but WAN still down, so check wan IP
-	PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	*np->WAN_IPv4_address_string = 0;
-	PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
 	np = NET_get_wan_ipv4_address_m13(np);
 	G_pop_behavior_m13();
@@ -32526,9 +32540,9 @@ tern	NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global)
 			global_np = TRUE_m13;
 
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->link_speed)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(TRUE_m13);
 		}
 	}
@@ -32537,7 +32551,7 @@ tern	NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global)
 	if (NET_get_mac_address_m13(NULL, np) == NULL) {
 		G_warning_message_m13("%s(): cannot get MAC address\n", __FUNCTION__);
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 
@@ -32607,14 +32621,14 @@ tern	NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global)
 
 	// called for mtu, duplex, link_speed, & active status in Windows
 	if (copy_global == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		globals_m13->tables->NET_params.MTU = np->MTU;
 		globals_m13->tables->NET_params.active = np->active;
 		strcpy(globals_m13->tables->NET_params.link_speed, np->link_speed);
 		strcpy(globals_m13->tables->NET_params.duplex, np->duplex);
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(TRUE_m13);
@@ -32648,9 +32662,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 			global_np = TRUE_m13;
 
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->MAC_address_string)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(TRUE_m13);
 		}
 	}
@@ -32663,7 +32677,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	G_pop_behavior_m13();
 	if (ret_val) {
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 
@@ -32728,7 +32742,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	free(buffer);
 
 	if (copy_global == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		globals_m13->tables->NET_params.MTU = np->MTU;
 		strcpy(globals_m13->tables->NET_params.MAC_address_string, np->MAC_address_string);
 		globals_m13->tables->NET_params.MAC_address_num = np->MAC_address_num;
@@ -32738,9 +32752,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
 		globals_m13->tables->NET_params.plugged_in = np->plugged_in;
 		globals_m13->tables->NET_params.active = np->active;
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(TRUE_m13);
@@ -32774,9 +32788,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 			global_np = TRUE_m13;
 
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->MAC_address_string)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(TRUE_m13);
 		}
 	}
@@ -32789,7 +32803,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	G_pop_behavior_m13();
 	if (ret_val) {
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 
@@ -32864,7 +32878,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	free(buffer);
 
 	if (copy_global == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		globals_m13->tables->NET_params.MTU = np->MTU;
 		strcpy(globals_m13->tables->NET_params.MAC_address_string, np->MAC_address_string);
 		globals_m13->tables->NET_params.MAC_address_num = np->MAC_address_num;
@@ -32876,9 +32890,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		globals_m13->tables->NET_params.active = np->active;
 		strcpy(globals_m13->tables->NET_params.link_speed, np->link_speed);
 		strcpy(globals_m13->tables->NET_params.duplex, np->duplex);
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(TRUE_m13);
@@ -32916,9 +32930,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 			global_np = TRUE_m13;
 
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->MAC_address_string)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(TRUE_m13);
 		}
 	}
@@ -32930,7 +32944,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	G_pop_behavior_m13();
 	if (ret_val) {
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 
@@ -32957,7 +32971,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	if ((c = STR_match_end_m13(tmp_str, buffer)) == NULL) {
 		G_warning_message_m13("%s(): Could not find interface \"%s\" in output of ipconfig()\n", __FUNCTION__, np->interface_name);
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
 	iface_start = c;  // start all subsequent searches fro this point
@@ -33023,7 +33037,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	free((void *) buffer);
 
 	if (copy_global == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		strcpy(globals_m13->tables->NET_params.host_name, np->host_name);
 		strcpy(globals_m13->tables->NET_params.MAC_address_string, np->MAC_address_string);
 		globals_m13->tables->NET_params.MAC_address_num = np->MAC_address_num;
@@ -33032,9 +33046,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		strcpy(globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
 		globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
 		globals_m13->tables->NET_params.plugged_in = np->plugged_in;
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(TRUE_m13);
@@ -33085,7 +33099,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	G_pop_behavior_m13();
 	if (ret_val) {  // probably no internet connection, otherwise route() error
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		if (free_np == TRUE_m13)
 			free((void *) np);
 		return_m13(NULL);
@@ -33139,7 +33153,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	}
 	
 	if (global_np == TRUE_m13)
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(np);
 }
@@ -33214,9 +33228,9 @@ tern	NET_get_ethtool_m13(NET_PARAMS_m13 *np, tern copy_global)
 			global_np = TRUE_m13;
 
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->link_speed)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(TRUE_m13);
 		}
 	}
@@ -33242,12 +33256,12 @@ tern	NET_get_ethtool_m13(NET_PARAMS_m13 *np, tern copy_global)
 		strcpy(np->duplex, "unknown");
 
 	if (copy_global == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		strcpy(globals_m13->tables->NET_params.link_speed, np->link_speed);
 		strcpy(globals_m13->tables->NET_params.duplex, np->duplex);
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(TRUE_m13);
@@ -33282,9 +33296,9 @@ NET_PARAMS_m13	*NET_get_host_name_m13(NET_PARAMS_m13 *np)
 	}
 	
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->host_name)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(np);
 		}
 	}
@@ -33299,11 +33313,11 @@ NET_PARAMS_m13	*NET_get_host_name_m13(NET_PARAMS_m13 *np)
 	}
 	
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		strcpy(globals_m13->tables->NET_params.host_name, np->host_name);
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(np);
@@ -33582,9 +33596,9 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 	}
 	
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		if (*np->WAN_IPv4_address_string)  {  // may have been done by another thread while waiting
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(np);
 		}
 	}
@@ -33608,7 +33622,7 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 		else
 			G_warning_message_m13("%s(): cannot connect to checkip.dyndns.org\n", __FUNCTION__);
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(NULL);
 	}
 
@@ -33617,7 +33631,7 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL) {
 		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of \"%s\"\n", __FUNCTION__, pattern, command);
 		if (global_np == TRUE_m13)
-			PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		free((void *) buffer);
 		return_m13(NULL);
 	}
@@ -33627,12 +33641,12 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 	free((void *) buffer);
 
 	if (global_np == TRUE_m13) {
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else {
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 		strcpy(globals_m13->tables->NET_params.WAN_IPv4_address_string, np->WAN_IPv4_address_string);
 		globals_m13->tables->NET_params.WAN_IPv4_address_num = np->WAN_IPv4_address_num;
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
 	return_m13(np);
@@ -33797,12 +33811,12 @@ tern	NET_reset_parameters_m13(NET_PARAMS_m13 *np)
 		global_np = TRUE_m13;
 
 	if (global_np == TRUE_m13)
-		PROC_pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
 	
 	memset((void *) np, 0, sizeof(NET_PARAMS_m13));
 	
 	if (global_np == TRUE_m13)
-		PROC_pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -34206,7 +34220,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	// find proc_globs by previous thread id
 	_id = par_info->tid;
 	list = globals_m13->proc_globs_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);  // get mutex
+	pthread_mutex_lock_m13(&list->mutex);  // get mutex
 	entries = list->top_idx + 1;
 	proc_globs_ptr = list->proc_globs_ptrs;
 	proc_globs = NULL;
@@ -34217,12 +34231,12 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				break;
 		}
 	}
-	PROC_pthread_mutex_unlock_m13(&list->mutex);  // relase mutex
+	pthread_mutex_unlock_m13(&list->mutex);  // relase mutex
 
 	if (i == -1)  // proc_globs not found, create new
 		proc_globs = G_proc_globs_m13(NULL);
 	else
-		proc_globs->_id = PROC_gettid_m13();  // set to current thread id
+		proc_globs->_id = gettid_m13();  // set to current thread id
 	par_info->tid = proc_globs->_id;
 
 	// get function
@@ -34336,7 +34350,7 @@ tern	PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval)
 #endif
 
 	if (par_info->detached == FALSE_m13) {
-		PROC_pthread_join_m13(par_info->thread_id, NULL);
+		pthread_join_m13(par_info->thread_id, NULL);
 		return_m13(TRUE_m13);
 	}
 	
@@ -34638,80 +34652,6 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *passe
 }
 
 
-si1	*PROC_get_thread_name_m13(si1 *thread_name, size_t thread_name_len)
-{
-	pid_t_m13	_id;
-	
-	
-	if (thread_name == NULL) {
-		thread_name_len = PROC_THREAD_NAME_LEN_DEFAULT_m13;
-		thread_name = (si1 *) calloc_m13(thread_name_len, sizeof(si1));
-	}
-	
-	_id = PROC_gettid_m13();
-	if (_id == 0) {
-		_id = PROC_getpid_m13();
-		sprintf_m13(thread_name, "Process_%lu", _id);
-		return(thread_name);
-	}
-	
-	*thread_name = 0;
-	
-# ifdef LINUX_m13
-	pthread_getname_np(_id, thread_name, thread_name_len);
-# endif
-	
-# ifdef WINDOWS_m13
-	HRESULT		res;
-	
-	res = GetThreadDescription(tid, (WSTR *) thread_name);
-	if (SUCCEEDED(res))
-		STR_wchar2char_m13(thread_name, thread_name);
-# endif
-	
-	if (*thread_name == 0)
-		sprintf_m13(thread_name, "Thread_%lu", _id);
-
-	return(thread_name);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-pid_t_m13	PROC_getpid_m13(void)
-{
-#if defined MACOS_m13 || defined LINUX_m13
-	return(getpid());
-#endif
-#ifdef WINDOWS_m13
-	return(GetCurrentProcessId());
-#endif
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-pid_t_m13	PROC_gettid_m13(void)
-{
-#ifdef LINUX_m13
-	return(gettid());
-#endif
-	
-#ifdef MACOS_m13
-	pid_t_m13	tid;
-	
-	pthread_threadid_np(NULL, &tid);  // NULL for thread returns current thread id
-	return(tid);
-#endif
-	
-#ifdef WINDOWS_m13
-	return(GetCurrentThreadId());
-#endif
-}
-
-
 tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...)  // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs;
 {
 	tern	ret_val;
@@ -34896,19 +34836,33 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_id_ptr, pthread_fn_m13 thread_
 	}
 # endif  // LINUX_m13
 
+# ifdef MACOS_m13
+	// in MacOS pthread_setname_np must be run from within the thread itself, so launch thread to name & then run code from within that thread
+	if (STR_empty_m13(thread_name) == FALSE_m13) {
+		PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
+		
+		named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) malloc(sizeof(PROC_MACOS_NAMED_THREAD_INFO_m13));
+		named_thread_info->thread_name = thread_name;
+		named_thread_info->thread_f = thread_f;
+		named_thread_info->thread_arg = arg;
+		arg = (void *) named_thread_info;
+		thread_f = PROC_macos_named_thread_m13;
+	}
+# endif  // MACOS_m13
+
 	// start thread
 	pthread_create(thread_id_p, &thread_attributes, thread_f, arg);
 
 	// finished with attributes (destroy, or get memory leak)
 	pthread_attr_destroy(&thread_attributes);
 
-	// set thread name
 # ifdef LINUX_m13
+	// set thread name (after thread created)
 	if (STR_empty_m13(thread_name) == FALSE_m13)
-		pthread_setname_np(*thread_id_p, thread_name);  // _np is for "not portable"
+		pthread_setname_np(*thread_id_p, thread_name);  // suffix _np is for "not posix" or "not portable"
 # endif  // LINUX_m13
 	
-	return_m13(1);  // zero indicates failure (for compatibility with Windows version)
+	return_m13(1);  // zero indicates failure (for compatibility with Windows version, which returns thread id)
 }
 #endif  // MACOS_m13 || LINUX_m13
 
@@ -34916,7 +34870,7 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_id_ptr, pthread_fn_m13 thread_
 #ifdef WINDOWS_m13
 ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
 {
-	tern	free_cpu_set;
+	tern		free_cpu_set;
 	HANDLE		*thread_hp, local_thread_h;
 	ui4		thread_id;
 	wchar_t		w_thread_name[THREAD_NAME_BYTES_m13];
@@ -34994,163 +34948,38 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 threa
 #endif  // WINDOWS_m13
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	PROC_pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr)
+pthread_rval_m13	PROC_macos_named_thread_m13(void *arg)
 {
-	si4	ret_val;
+	PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
+	si1					*thread_name;
+	pthread_fn_m13				thread_f;
+	void					*thread_arg;
+	pthread_rval_m13			rval;
+
+#ifndef MACOS_m13
+	return((pthread_rval_m13) 0);
+#endif
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_join(thread_id, value_ptr);
-#endif
-#ifdef WINDOWS_m13
-	if (WaitForSingleObject(thread_id, INFINITE) == WAIT_OBJECT_0)
-		ret_val = 0;
-	else
-		ret_val = -1;
-#endif
-
-	return_m13(ret_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	PROC_pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex)
-{
-	si4	ret_val;
-		
-#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_destroy(mutex);
-#endif
-#ifdef WINDOWS_m13
-	ret_val = (si4) CloseHandle(*mutex) - (si4) 1;  // CloseHandle returns zero on fail
-#endif
 	
-	return(ret_val);
-}
+	// break out (for readability)
+	named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) arg;
+	thread_name = named_thread_info->thread_name;
+	thread_f = named_thread_info->thread_f;
+	thread_arg = named_thread_info->thread_arg;
 
+	// name thread
+	pthread_setname_np(thread_name);  // suffix _np is for "not posix" or "not portable"
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	PROC_pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr)
-{
-	si4	ret_val;
+	// start thread function
+	rval = thread_f(thread_arg);
 	
-#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_init(mutex, attr);
-#endif
-#ifdef WINDOWS_m13
-	if ((*mutex = CreateMutex(attr, 0, NULL)) == NULL)
-		ret_val = -1;
-	else
-		ret_val = 0;
-#endif
+	// release named_thread_info structure
+	free(arg);
 	
-	return(ret_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	PROC_pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex)
-{
-	si4	ret_val;
-	
-#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_lock(mutex);
-#endif
-#ifdef WINDOWS_m13
-	if (WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0)
-		ret_val = 0;
-	else
-		ret_val = -1;
-#endif
-	
-	return(ret_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	PROC_pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex)
-{
-	si4	ret_val;
-	
-	// Non-blocking version of PROC_pthread_mutex_lock_m13()
-	// If the mutex is valid & unlocked: locks the mutex & will returns zero
-	// If the mutex is valid & locked: returns EBUSY
-	// If the mutex is invalid: returns EINVAL
-
-#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_trylock(mutex);
-#endif
-	 
-#ifdef WINDOWS_m13
-	DWORD	win_ret_val;
-	
-	win_ret_val = WaitForSingleObject(mutex, (DWORD) 0);
-	switch (win_ret_val) {
-		case WAIT_ABANDONED:  // owning thread terminated - mutex given to calling thread
-		case WAIT_OBJECT_0:  // mutex not owned - given to calling thread
-			ret_val = 0;
-			break;
-		case WAIT_TIMEOUT:
-			ret_val = EBUSY;
-			break;
-		case WAIT_FAILED:
-		default:
-			ret_val = EINVAL;
-			break;
-	}
-#endif
-	
-	return(ret_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	PROC_pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex)
-{
-	si4	ret_val;
-	
-#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_unlock(mutex);
-#endif
-#ifdef WINDOWS_m13
-	if (ReleaseMutex(*mutex) == 0)
-		ret_val = -1;
-	else
-		ret_val = 0;
-#endif
-	
-	return(ret_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-pthread_t_m13	PROC_pthread_self_m13(void)
-{
-#if defined MACOS_m13 || defined LINUX_m13
-	return(pthread_self());
-#endif
-	
-#ifdef WINDOWS_m13
-	return(GetCurrentThread());
-#endif
+	return_m13(rval);
 }
 
 
@@ -35373,6 +35202,72 @@ tern  PROC_show_thread_affinity_m13(pthread_t_m13 *thread_handle_p)
 	return_m13(TRUE_m13);
 }
 #endif  // WINDOWS
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+pthread_t_m13	PROC_thread_from_id_m13(pid_t_m13 id)
+{
+	pthread_t_m13 thread;
+
+	
+	// pass 0 for id for current process thread
+
+	if (id == 0)
+		return(pthread_self_m13());
+
+#if defined MACOS_m13 || defined LINUX_m13
+	#if def MACOS_m13
+	// (difficult)
+	#endif
+
+	#ifdef LINUX_m13
+	// (difficult)
+	#endif
+	
+	// apparently this works on some implementations
+	G_warning_message_m13("%s(): returning a value that works on some implementations\n", __FUNCTION__);
+	memcpy((void *) &thread, (void *) &id, sizeof(pthread_t_m13));
+#endif
+	
+#ifdef WINDOWS_m13
+	thread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, id);
+	CloseHandle(thread);
+#endif
+	
+	return(thread);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+pid_t_m13	PROC_id_from_thread_m13(pthread_t_m13 *thread_p)
+{
+	pid_t_m13	id;
+
+	// pass NULL for thread_p for current process id
+	
+	if (thread_p == NULL)
+		return(gettid_m13());
+
+#if defined MACOS_m13 || defined LINUX_m13
+	#ifdef MACOS_m13
+	pthread_threadid_np(*thread_p, &id);
+	#endif
+	
+	#ifdef LINUX_m13
+	pthread_getunique_np(thread_p, &id);
+	#endif
+#endif
+	
+#ifdef WINDOWS_m13
+	id = (pid_t_m13) GetThreadId(*thread_p);
+#endif
+	
+	return(id);
+}
 
 
 tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
@@ -37931,16 +37826,16 @@ tern	SHA_init_tables_m13(void)
 	if (tables->SHA_h0_table)
 		return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->SHA_h0_table) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 
 	// h0 table
 	tables->SHA_h0_table = (ui4 *) calloc((size_t) SHA_H0_ENTRIES_m13, sizeof(ui4));
 	if (tables->SHA_h0_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -37953,7 +37848,7 @@ tern	SHA_init_tables_m13(void)
 	// k table
 	tables->SHA_k_table = (ui4 *) calloc((size_t) SHA_K_ENTRIES_m13, sizeof(ui4));
 	if (tables->SHA_k_table == NULL) {
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
@@ -37963,7 +37858,7 @@ tern	SHA_init_tables_m13(void)
 		memcpy((void *) tables->SHA_k_table, (void *) temp, len);
 	}
 
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -40900,9 +40795,9 @@ tern	UTF8_init_tables_m13(void)
 	if (tables->UTF8_offsets_table)
 		return_m13(TRUE_m13);
 
-	PROC_pthread_mutex_lock_m13(&tables->mutex);
+	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->UTF8_offsets_table) {  // may have been done by another thread while waiting
-		PROC_pthread_mutex_unlock_m13(&tables->mutex);
+		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 
@@ -40928,7 +40823,7 @@ tern	UTF8_init_tables_m13(void)
 		}
 	}
 
-	PROC_pthread_mutex_unlock_m13(&tables->mutex);
+	pthread_mutex_unlock_m13(&tables->mutex);
 
 	return(TRUE_m13);
 }
@@ -42494,36 +42389,35 @@ tern	fclose_m13(FILE_m13 *fp)
 		return_m13(FALSE_m13);
 	
 	is_stream = FILE_stream_m13(fp);
-	if (is_stream == TRUE_m13)
-		real_fp = (FILE *) fp;
-	else
-		real_fp = fp->fp;
 	
 	if (is_stream == TRUE_m13) {
+		real_fp = (FILE *) fp;
+	} else {
+		if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
+			return_m13(FALSE_m13);  // don't close standard streams
+		real_fp = fp->fp;
+	}
+	
+	if (real_fp) {
 		if (fclose(real_fp)) {
 			G_set_error_m13(E_UNSPEC_m13, "error closing file");
 			return_m13(FALSE_m13);
 		}
-		return_m13(TRUE_m13);
 	}
+	
+	if (is_stream == TRUE_m13)
+		return_m13(TRUE_m13);
 	
 	if (fp->flags & FILE_FLAGS_LOCK_m13)
 		flock_m13(fp, FLOCK_CLOSE_m13);
 
-	if (fp->flags & FILE_FLAGS_ALLOCED_m13)
+	if (fp->flags & FILE_FLAGS_ALLOCED_m13) {
 		free_m13((void *) fp);
-
-	fp->fp = NULL;
-	fp->fd = FILE_FD_CLOSED_m13;
-
-	if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
-		return_m13(FALSE_m13);  // don't close standard streams
-	
-	if (fclose(real_fp)) {
-		G_set_error_m13(E_UNSPEC_m13, "error closing file \"%s\"", fp->path);
-		return_m13(FALSE_m13);
+	} else {
+		fp->fp = NULL;
+		fp->fd = FILE_FD_CLOSED_m13;
 	}
-	
+		
 	return_m13(TRUE_m13);
 }
 
@@ -42618,7 +42512,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 
 	// get mutex
 	list = globals_m13->file_lock_list;
-	PROC_pthread_mutex_lock_m13(&list->mutex);
+	pthread_mutex_lock_m13(&list->mutex);
 
 	// see if file in lock table
 	n_locks = list->top_idx + 1;
@@ -42636,13 +42530,13 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 	// not in list
 	if (i == -1) {
 		if (operation == FLOCK_UNLOCK_m13) {
-			PROC_pthread_mutex_unlock_m13(&list->mutex);
+			pthread_mutex_unlock_m13(&list->mutex);
 			return(FLOCK_SUCCESS_m13);
 		} else {  // operation == FLOCK_LOCK_m13, FLOCK_LOCK_NB_m13, or FLOCK_OPEN_m13
 			if (first_empty == NULL) {  // expand list
 				lock = flock_add_m13();
 				if (lock == NULL) {
-					PROC_pthread_mutex_unlock_m13(&list->mutex);
+					pthread_mutex_unlock_m13(&list->mutex);
 					return_m13(FLOCK_ERR_m13);
 				}
 				first_empty = list->locks + list->top_idx;
@@ -42655,7 +42549,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 	if (operation == FLOCK_OPEN_m13) {
 		++lock->opens;
 		lock->file_id = file_id;
-		PROC_pthread_mutex_unlock_m13(&list->mutex);
+		pthread_mutex_unlock_m13(&list->mutex);
 		return_m13(FLOCK_SUCCESS_m13);
 	}
 		
@@ -42682,7 +42576,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 				}
 			}
 		}
-		PROC_pthread_mutex_unlock_m13(&list->mutex);
+		pthread_mutex_unlock_m13(&list->mutex);
 		return_m13(FLOCK_SUCCESS_m13);
 	}
 	
@@ -42697,7 +42591,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 	if (operation & FLOCK_UNLOCK_m13) {
 		ret_val = FLOCK_SUCCESS_m13;
 		if (operation & FLOCK_WRITE_m13) { // write unlock
-			if (lock->write_id == PROC_gettid_m13())  // only owner can release write lock (unless forced)
+			if (lock->write_id == gettid_m13())  // only owner can release write lock (unless forced)
 				lock->write_id = 0;  // release ownership
 			else
 				ret_val = FLOCK_LOCKED_m13;
@@ -42705,7 +42599,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 			if (lock->reads)
 				--lock->reads;  // release a read lock
 		}  // else no unlock mode
-		PROC_pthread_mutex_unlock_m13(&list->mutex);
+		pthread_mutex_unlock_m13(&list->mutex);
 		return_m13(ret_val);
 	}
 	
@@ -42721,16 +42615,16 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 		
 		// non-blocking
 		if (operation & FLOCK_NON_BLOCKING_m13) {
-			PROC_pthread_mutex_unlock_m13(&list->mutex);
+			pthread_mutex_unlock_m13(&list->mutex);
 			return_m13(FLOCK_LOCKED_m13);
 		}
 		
 		// blocking
 		lock_idx = lock - list->locks;
 		do {
-			PROC_pthread_mutex_unlock_m13(&list->mutex);  // release mutex
+			pthread_mutex_unlock_m13(&list->mutex);  // release mutex
 			G_nap_m13(nap_str);  // sleep
-			PROC_pthread_mutex_lock_m13(&list->mutex);  // get mutex
+			pthread_mutex_lock_m13(&list->mutex);  // get mutex
 			
 			// use index - lock table may have been realloced in another process
 			lock = list->locks + lock_idx;
@@ -42743,7 +42637,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 				if (i == -1) {  // expand list
 					lock = flock_add_m13();
 					if (lock == NULL) {
-						PROC_pthread_mutex_unlock_m13(&list->mutex);
+						pthread_mutex_unlock_m13(&list->mutex);
 						return_m13(FLOCK_ERR_m13);
 					}
 				}
@@ -42761,10 +42655,10 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(operation == 0): si4
 	if (operation & FLOCK_READ_m13)
 		++lock->reads;
 	else if (operation & FLOCK_WRITE_m13)
-		lock->write_id = PROC_gettid_m13();
+		lock->write_id = gettid_m13();
 	// else no lock mode
 	
-	PROC_pthread_mutex_unlock_m13(&list->mutex);
+	pthread_mutex_unlock_m13(&list->mutex);
 
 	return_m13(FLOCK_SUCCESS_m13);
 }
@@ -43428,7 +43322,6 @@ FILE_m13 *freopen_m13(si1 *path, si1 *mode, FILE_m13 *fp)
 	
 	main_mode_total = read_mode + write_mode + append_mode;
 	if (main_mode_total != 1) {
-		free_m13((void *) fp);
 		G_set_error_m13(E_OPEN_m13, "invalid mode: %s", mode);
 		return_m13(NULL);
 	}
@@ -43856,6 +43749,42 @@ char	*getcwd_m13(char *buf, size_t size)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+pid_t_m13	getpid_m13(void)
+{
+#if defined MACOS_m13 || defined LINUX_m13
+	return(getpid());
+#endif
+#ifdef WINDOWS_m13
+	return(GetCurrentProcessId());
+#endif
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+pid_t_m13	gettid_m13(void)
+{
+#ifdef LINUX_m13
+	return(gettid());
+#endif
+	
+#ifdef MACOS_m13
+	pid_t_m13	tid;
+	
+	pthread_threadid_np(NULL, &tid);  // NULL for thread returns current thread id
+	return(tid);
+#endif
+	
+#ifdef WINDOWS_m13
+	return(GetCurrentThreadId());
+#endif
+}
+
+
 #ifndef AT_DEBUG_m13
 void	*malloc_m13(si8 n_bytes)
 #else
@@ -44247,6 +44176,199 @@ si4 printf_m13(si1 *fmt, ...)
 	}
 		
 	return(ret_val);
+}
+
+
+si1	*pthread_getname_m13(pthread_t_m13 thread_id, si1 *thread_name, size_t name_len)
+{
+	// pass null for thread_id to get name of calling thread
+	// pass null or "" for thread_name to allocate
+	
+	if (STR_empty_m13(thread_name) == TRUE_m13) {
+		name_len = (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13;
+		thread_name = (si1 *) calloc_m13(name_len, sizeof(si1));
+	}
+	*thread_name = 0;
+
+	if (thread_id == NULL)
+		thread_id = pthread_self_m13();
+
+# if defined MACOS_m13 || defined LINUX_m13
+	pthread_getname_np(thread_id, thread_name, name_len);
+# endif
+		
+# ifdef WINDOWS_m13
+	HRESULT		res;
+	
+	res = GetThreadDescription(thread_id, (WSTR *) thread_name);
+	if (SUCCEEDED(res))
+		STR_wchar2char_m13(thread_name, thread_name);
+# endif
+	
+	if (*thread_name == 0)
+		strncpy_m13(thread_name, "<unnamed>", name_len);
+
+	return(thread_name);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr)
+{
+	si4	ret_val;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_join(thread_id, value_ptr);
+#endif
+#ifdef WINDOWS_m13
+	if (WaitForSingleObject(thread_id, INFINITE) == WAIT_OBJECT_0)
+		ret_val = 0;
+	else
+		ret_val = -1;
+#endif
+
+	return_m13(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex)
+{
+	si4	ret_val;
+		
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_mutex_destroy(mutex);
+#endif
+#ifdef WINDOWS_m13
+	ret_val = (si4) CloseHandle(*mutex) - (si4) 1;  // CloseHandle returns zero on fail
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr)
+{
+	si4	ret_val;
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_mutex_init(mutex, attr);
+#endif
+#ifdef WINDOWS_m13
+	if ((*mutex = CreateMutex(attr, 0, NULL)) == NULL)
+		ret_val = -1;
+	else
+		ret_val = 0;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex)
+{
+	si4	ret_val;
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_mutex_lock(mutex);
+#endif
+#ifdef WINDOWS_m13
+	if (WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0)
+		ret_val = 0;
+	else
+		ret_val = -1;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex)
+{
+	si4	ret_val;
+	
+	// Non-blocking version of pthread_mutex_lock_m13()
+	// If the mutex is valid & unlocked: locks the mutex & will returns zero
+	// If the mutex is valid & locked: returns EBUSY
+	// If the mutex is invalid: returns EINVAL
+
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_mutex_trylock(mutex);
+#endif
+	 
+#ifdef WINDOWS_m13
+	DWORD	win_ret_val;
+	
+	win_ret_val = WaitForSingleObject(mutex, (DWORD) 0);
+	switch (win_ret_val) {
+		case WAIT_ABANDONED:  // owning thread terminated - mutex given to calling thread
+		case WAIT_OBJECT_0:  // mutex not owned - given to calling thread
+			ret_val = 0;
+			break;
+		case WAIT_TIMEOUT:
+			ret_val = EBUSY;
+			break;
+		case WAIT_FAILED:
+		default:
+			ret_val = EINVAL;
+			break;
+	}
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex)
+{
+	si4	ret_val;
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	ret_val = pthread_mutex_unlock(mutex);
+#endif
+#ifdef WINDOWS_m13
+	if (ReleaseMutex(*mutex) == 0)
+		ret_val = -1;
+	else
+		ret_val = 0;
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+pthread_t_m13	pthread_self_m13(void)
+{
+#if defined MACOS_m13 || defined LINUX_m13
+	return(pthread_self());
+#endif
+	
+#ifdef WINDOWS_m13
+	return(GetCurrentThread());
+#endif
 }
 
 

@@ -1280,26 +1280,27 @@ typedef struct {
 	pthread_t_m13	thread_id;
 } PROC_THREAD_INFO_m13;
 
+typedef struct {
+	si1			*thread_name;
+	pthread_fn_m13		thread_f;
+	void			*thread_arg;
+	pthread_rval_m13	rval;
+} PROC_MACOS_NAMED_THREAD_INFO_m13;
 
-tern		PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
-tern		PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *thread_infos, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs);
-cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
-si1		*PROC_get_thread_name_m13(si1 *thread_name, size_t thread_name_len);
-pid_t_m13	PROC_getpid_m13(void); // calling process id
-pid_t_m13	PROC_gettid_m13(void); // calling thread id
-tern		PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...); // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs
-ui4		PROC_launch_thread_m13(pthread_t_m13 *thread_id, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name);
-si4		PROC_pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr);
-si4		PROC_pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
-si4		PROC_pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr);
-si4		PROC_pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
-si4		PROC_pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex);
-si4		PROC_pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
-pthread_t_m13	PROC_pthread_self_m13(void);
-tern		PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
-tern		PROC_show_thread_affinity_m13(pthread_t_m13 *thread_id);
-tern		PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
+// Prototypes
+// Note: medlib versions of standard pthread functions are prototyped with other standard function versions
+tern			PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
+tern			PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *thread_infos, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs);
+cpu_set_t_m13		*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
+tern			PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...); // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs
+ui4			PROC_launch_thread_m13(pthread_t_m13 *thread_id, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name);
+pthread_rval_m13	PROC_macos_named_thread_m13(void *arg);
+tern			PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
+tern			PROC_show_thread_affinity_m13(pthread_t_m13 *thread_id);
+pthread_t_m13		PROC_thread_from_id_m13(pid_t_m13 tid);
+pid_t_m13		PROC_id_from_thread_m13(pthread_t_m13 *thread_p);
+tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
 
 //**********************************************************************************//
@@ -1628,6 +1629,8 @@ typedef struct {
 	si4		line;
 	const si1	*function;
 	si1		message[E_MAX_STR_LEN_m13];
+	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	pid_t_m13	thread_id;
 } ERR_m13;
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
@@ -2051,8 +2054,10 @@ typedef struct {
 	const si1	*free_function;
 	si4		alloc_line;
 	si4		free_line;
-	si1		alloc_thread[PROC_THREAD_NAME_LEN_DEFAULT_m13];
-	si1		free_thread[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si1		alloc_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si1		free_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	ui8		alloc_thread_id;
+	ui8		free_thread_id;
 } AT_ENTRY_m13;
 
 typedef struct {
@@ -2510,7 +2515,7 @@ typedef struct {
 
 // Prototypes
 FPS_m13		*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13 *parent);
-tern		FPS_close_m13(FPS_m13 *fps, tern free_fp);
+tern		FPS_close_m13(FPS_m13 *fps);
 si4		FPS_compare_times_m13(const void *a, const void *b);
 tern		FPS_free_m13(FPS_m13 **fps);
 FPS_m13		*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent);
@@ -5138,12 +5143,22 @@ si4		fscanf_m13(FILE_m13 *fp, si1 *fmt, ...);
 si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence, ...); // vararg(whence negative): tern (as si4) non_blocking
 si8		ftell_m13(FILE_m13 *fp);
 size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
-char		*getcwd_m13(char *buf, size_t size);
+si1		*getcwd_m13(si1 *buf, size_t size);
+pid_t_m13	getpid_m13(void); // calling process id
+pid_t_m13	gettid_m13(void); // calling thread id
 size_t		malloc_size_m13(void *address);
 void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
+si1		*pthread_getname_m13(pthread_t_m13 thread_id, si1 *thread_name, size_t name_len);
+si4		pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr);
+si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
+si4		pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr);
+si4		pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
+si4		pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex);
+si4		pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
+pthread_t_m13	pthread_self_m13(void);
 si4		printf_m13(si1 *fmt, ...);
 si4		putc_m13(si4 c, FILE_m13 *fp);
 si4		putch_m13(si4 c);
