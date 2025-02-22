@@ -326,7 +326,7 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 		if (record_header->total_record_bytes > (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13)) {
 			segment_description = (si1 *) Sgmt_v10 + REC_Sgmt_v10_SEGMENT_DESCRIPTION_OFFSET_m13;
 			if (*segment_description)
-				UTF8_printf_m13("Segment Description: %s\n", segment_description);
+				printf_m13("Segment Description: %s\n", segment_description);
 			else
 				printf_m13("Segment Description: no entry\n");
 		} else {
@@ -352,7 +352,7 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 		else
 			printf_m13("Segment Number: %d\n", Sgmt_v11->seg_num);
 		if (*Sgmt_v11->description)
-			UTF8_printf_m13("Segment Description: %s\n", Sgmt_v11->description);
+			printf_m13("Segment Description: %s\n", Sgmt_v11->description);
 		else
 			printf_m13("Segment Description: no entry\n");
 	}
@@ -567,7 +567,7 @@ tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header)
 		if (record_header->total_record_bytes > REC_HDR_BYTES_m13) {
 			note_text = (si1 *) record_header + REC_HDR_BYTES_m13;
 			if (*note_text)
-				UTF8_printf_m13("Note Text: %s\n", note_text);
+				printf_m13("Note Text: %s\n", note_text);
 			else
 				printf_m13("Note Text: no entry\n");
 		} else {
@@ -583,7 +583,7 @@ tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header)
 			printf_m13("End Time: %ld\n", note->end_time);
 		note_text = (si1 *) ((ui1 *) note + REC_Note_v11_TEXT_OFFSET_m13);
 		if (*note_text)
-			UTF8_printf_m13("Text: %s\n", note_text);
+			printf_m13("Text: %s\n", note_text);
 		else
 			printf_m13("Text: no entry\n");
 	}
@@ -664,7 +664,7 @@ tern	REC_show_EDFA_type_m13(REC_HDR_m13 *record_header)
 		printf_m13("Duration %ld microseconds\n", edfa->duration);
 		annotation = (si1 *) edfa + REC_EDFA_v10_ANNOTATION_OFFSET_m13;
 		if (*annotation)
-			UTF8_printf_m13("Annotation: %s\n", annotation);
+			printf_m13("Annotation: %s\n", annotation);
 		else
 			printf_m13("Annotation: no entry\n");
 	}
@@ -771,21 +771,21 @@ tern	REC_show_Seiz_type_m13(REC_HDR_m13 *record_header)
 		if (strlen(Seiz->marker_name_2))
 			mn2 = TRUE_m13;
 		if (mn1 == TRUE_m13 && mn2 == TRUE_m13)
-			UTF8_printf_m13("Marker Names: %s %s\n", Seiz->marker_name_1, Seiz->marker_name_2);
+			printf_m13("Marker Names: %s %s\n", Seiz->marker_name_1, Seiz->marker_name_2);
 		else if (mn1 == TRUE_m13)
-			UTF8_printf_m13("Marker Name 1: %s\nMarker Name 2: no entry\n", Seiz->marker_name_1);
+			printf_m13("Marker Name 1: %s\nMarker Name 2: no entry\n", Seiz->marker_name_1);
 		else if (mn2 == TRUE_m13)
-			UTF8_printf_m13("Marker Name 1: no_entry\nMarker Name 2: %s\n", Seiz->marker_name_2);
+			printf_m13("Marker Name 1: no_entry\nMarker Name 2: %s\n", Seiz->marker_name_2);
 		else
 			printf_m13("Marker Names: no_entry\n");
 		if (strlen(Seiz->annotation))
-			UTF8_printf_m13("Annotation: %s\n", Seiz->annotation);
+			printf_m13("Annotation: %s\n", Seiz->annotation);
 		else
 			printf_m13("Annotation: no entry\n");
 		chans = (REC_Seiz_v10_CHANNEL_m13 *) ((ui1 *) Seiz + REC_Seiz_v10_CHANNELS_OFFSET_m13);
 		for (i = 0; i < Seiz->number_of_channels; ++i) {
 			if (strlen(chans[i].name))
-				UTF8_printf_m13("Channel Name: %s\n", chans[i].name);
+				printf_m13("Channel Name: %s\n", chans[i].name);
 			else
 				printf_m13("Channel Name: no entry\n");
 			STR_time_m13(NULL, chans[i].onset_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
@@ -890,7 +890,7 @@ tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header)
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		log_entry = (si1 *) record_header + REC_HDR_BYTES_m13;
 		if (*log_entry)
-			UTF8_printf_m13("System Log entry:\n%s\n", log_entry);
+			printf_m13("System Log entry:\n%s\n", log_entry);
 		else
 			printf_m13("System Log entry: no entry\n");
 	}
@@ -1032,7 +1032,7 @@ tern    REC_show_Curs_type_m13(REC_HDR_m13 *record_header)
 		printf_m13("ID Number: %ld\n", curs->id_number);
 		printf_m13("Latency: %ld\n", curs->latency);
 		printf_m13("Value: %lf\n", curs->value);
-		UTF8_printf_m13("Name: %s\n", curs->name);
+		printf_m13("Name: %s\n", curs->name);
 	}
 	// Unrecognized record version
 	else {
@@ -1108,8 +1108,8 @@ tern    REC_show_Epoc_type_m13(REC_HDR_m13 *record_header)
 		epoc1 = (REC_Epoc_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("ID Number: %ld\n", epoc1->id_number);
 		printf_m13("End Time: %ld\n", epoc1->end_time);
-		UTF8_printf_m13("Epoch Type: %s\n", epoc1->epoch_type);
-		UTF8_printf_m13("Text: %s\n", epoc1->text);
+		printf_m13("Epoch Type: %s\n", epoc1->epoch_type);
+		printf_m13("Text: %s\n", epoc1->text);
 	}
 	// Version 2.0
 	else if (record_header->version_major == 2 && record_header->version_minor == 0) {
@@ -1142,7 +1142,7 @@ tern    REC_show_Epoc_type_m13(REC_HDR_m13 *record_header)
 				G_warning_message_m13("%s(): Unrecognized Epoc v2.0 stage code (%hhu)\n", __FUNCTION__, epoc2->stage_code);
 				break;
 		}
-		UTF8_printf_m13("Scorer ID: %s\n", epoc2->scorer_id);
+		printf_m13("Scorer ID: %s\n", epoc2->scorer_id);
 	}
 	// Unrecognized record version
 	else {
@@ -1273,9 +1273,9 @@ tern	REC_show_ESti_type_m13(REC_HDR_m13 *record_header)
 				break;
 		}
 
-		UTF8_printf_m13("Waveform: %s\n", esti->waveform);
-		UTF8_printf_m13("Anode: %s\n", esti->anode);
-		UTF8_printf_m13("Cathode: %s\n", esti->cathode);
+		printf_m13("Waveform: %s\n", esti->waveform);
+		printf_m13("Anode: %s\n", esti->anode);
+		printf_m13("Cathode: %s\n", esti->cathode);
 	}
 	// Unrecognized record version
 	else {
@@ -1358,9 +1358,9 @@ tern    REC_show_CSti_type_m13(REC_HDR_m13 *record_header)
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		csti = (REC_CSti_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
 		printf_m13("Stimulus Duration: %ld (usecs)\n", csti->stimulus_duration);
-		UTF8_printf_m13("Task Type: %s\n", csti->task_type);
-		UTF8_printf_m13("Stimulus Type: %s\n", csti->stimulus_type);
-		UTF8_printf_m13("Patient Response: %s\n", csti->patient_response);
+		printf_m13("Task Type: %s\n", csti->task_type);
+		printf_m13("Stimulus Type: %s\n", csti->stimulus_type);
+		printf_m13("Patient Response: %s\n", csti->patient_response);
 	}
 	// Unrecognized record version
 	else {

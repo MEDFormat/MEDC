@@ -1293,13 +1293,13 @@ typedef struct {
 tern			PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
 tern			PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *thread_infos, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs);
 cpu_set_t_m13		*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
+pid_t_m13		PROC_id_from_thread_m13(pthread_t_m13 thread);
 tern			PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...); // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs
 ui4			PROC_launch_thread_m13(pthread_t_m13 *thread_id, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name);
 pthread_rval_m13	PROC_macos_named_thread_m13(void *arg);
 tern			PROC_set_thread_affinity_m13(pthread_t_m13 *thread_id_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
 tern			PROC_show_thread_affinity_m13(pthread_t_m13 *thread_id);
 pthread_t_m13		PROC_thread_from_id_m13(pid_t_m13 tid);
-pid_t_m13		PROC_id_from_thread_m13(pthread_t_m13 *thread_p);
 tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
 
@@ -1635,9 +1635,9 @@ typedef struct {
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
 #ifdef MATLAB_m13
-	#define eprintf_m13(fmt, ...)		mexPrintf("%s() [%d]: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+	#define eprintf_m13(fmt, ...)		mexPrintf("%s() [%d]: " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
-	#define eprintf_m13(fmt, ...)		fprintf_m13(stderr_m13, "%s%s() %s[%d]%s: " fmt, TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__)
+	#define eprintf_m13(fmt, ...)		printf_m13("%s%s() %s[%d]%s: " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__)
 #endif
 
 
@@ -1965,8 +1965,6 @@ typedef struct {
 	si4				*AES_rcon_table;
 	ui4				*SHA_h0_table;
 	ui4				*SHA_k_table;
-	ui4				*UTF8_offsets_table;
-	si1				*UTF8_trailing_bytes_table;
 	sf8				*CMP_normal_CDF_table;
 	CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*CMP_VDS_threshold_map;
 	NET_PARAMS_m13			NET_params; // parameters for default internet interface
@@ -2003,7 +2001,7 @@ typedef struct {
 #define G_add_behavior_m13(behavior_code)	G_add_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_add_behavior_m13(ui4 behavior)" prototype
 #define G_push_behavior_m13(behavior_code)	G_push_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_push_behavior_m13(ui4 behavior)" prototype
 #define G_remove_behavior_m13(behavior_code)	G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_remove_behavior_m13(ui4 behavior)" prototype
-#define G_reset_behavior_stack_m13(behavior_code)	G_reset_behavior_stack_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_reset_behavior_stack_m13(ui4 behavior)" prototype
+#define G_reset_behavior_stack_m13()		G_reset_behavior_stack_exec_m13(__FUNCTION__, __LINE__, behavior_code) // call with "G_reset_behavior_stack_m13(ui4 behavior)" prototype
 
 #ifdef FT_DEBUG_m13
 #define G_push_function_m13() 		G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
@@ -2390,7 +2388,7 @@ typedef struct {
 #define FPS_DF_PLUS_MODE_m13			((ui8) 1 << 4)
 #define FPS_DF_CLOSE_AFTER_OP_m13		((ui8) 1 << 5) // close after operation (read / write)
 #define FPS_DF_FLUSH_AFTER_WRITE_m13		((ui8) 1 << 6)
-#define FPS_DF_UPDATE_UH_m13			((ui8) 1 << 7) // update universal header with each write
+#define FPS_DF_UPDATE_UH_m13			((ui8) 1 << 7) // update universal header with write
 #define FPS_DF_LEAVE_DECRYPTED_m13		((ui8) 1 << 8)
 #define FPS_DF_FREE_CPS_m13			((ui8) 1 << 9)
 #define FPS_DF_MMAP_m13				((ui8) 1 << 10)
@@ -2524,7 +2522,7 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 FPS_m13		*FPS_open_m13(si1 *path, si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): si1 *mode, ui8 fd_flags
-FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, si1 *password, ...); // varargs(fps == NULL): si1 *path, si1 *mode, LH *parent
+FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): si1 *path, si1 *mode, si1 *password, LH *parent
 														   // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 tern		FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes);
 tern		FPS_reopen_m13(FPS_m13 *fps, si1 *mode);
@@ -2535,8 +2533,10 @@ ui8		FPS_set_open_flags_m13(FPS_m13 *fps, si1 *mode_str);
 si1		*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags);
 tern		FPS_set_pointers_m13(FPS_m13 *fps, si8 offset);
 tern		FPS_show_m13(FPS_m13 *fps);
+tern		FPS_show_direcs_m13(FPS_m13 *fps);
+tern		FPS_show_params_m13(FPS_m13 *fps);
 tern		FPS_sort_m13(FPS_m13 **fps_array, si4 n_fps);
-tern		FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *source, si1 *password, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
+tern		FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *source, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 
 
 
@@ -2999,7 +2999,7 @@ tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1
 si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
 tern			G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
-tern			G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory);
+tern			G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, LH_m13 *lh);
 Sgmt_REC_m13		*G_Sgmt_records(LH_m13 *lh);
 tern			G_show_behavior_m13(ui4 mode);
 tern			G_show_contigua_m13(LH_m13 *lh);
@@ -3007,9 +3007,10 @@ tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 
 tern			G_show_error_m13(void);
 tern			G_show_file_times_m13(FILE_TIMES_m13 *ft);
 #ifdef FT_DEBUG_m13
-void			G_show_function_stack_m13(tern release_stack);
+void			G_show_function_stack_m13(void);
 #endif
 void			G_show_globals_m13(void);
+tern			G_show_level_header_m13(LH_m13 *lh);
 tern			G_show_level_header_flags_m13(ui8 flags);
 tern			G_show_location_info_m13(LOCATION_INFO_m13 *li);
 tern			G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code);
@@ -3024,11 +3025,12 @@ tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
+void			G_thread_exit_m13(void);
 si1			*G_unique_temp_file_m13(si1 *temp_file);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
-tern			G_update_file_version_m13(FPS_m13 **fps, si1 *password);
+tern			G_update_file_version_m13(FPS_m13 **fps);
 tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
 tern			G_update_session_name_m13(SESS_m13 *sess);
 tern			G_update_session_name_header_m13(si1 *fs_path, si1 *fs_name, si1 *uh_name); // used by G_update_session_name_m13
@@ -3148,6 +3150,7 @@ void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr
 
 // Prototypes
 si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator);
+const si1	*STR_bool_m13(ui8 val);
 wchar_t		*STR_char2wchar_m13(wchar_t *target, si1 *source);
 ui4		STR_check_spaces_m13(si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
@@ -3951,69 +3954,14 @@ tern	CRC_validate_m13(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_validate
 //************************************ UTF-8 *************************************//
 //**********************************************************************************//
 
-// ATTRIBUTION
-//
-// Basic UTF-8 manipulation routines
-// by Jeff Bezanson
-// placed in the public domain Fall 2005
-//
-// "This code is designed to provide the utilities you need to manipulate
-// UTF-8 as an internal string encoding. These functions do not perform the
-// error checking normally needed when handling UTF-8 data, so if you happen
-// to be from the Unicode Consortium you will want to flay me alive.
-// I do this because error checking can be performed at the boundaries (I/O),
-// with these routines reserved for higher performance on data known to be
-// valid."
-//
-// downloaded from http://www.cprogramming.com
-//
-// Minor modifications for compatibility with the MED Library.
-
-// Defines
-#define UTF8_BUFFER_SIZE	2048
-
-// Macros
-#define UTF8_ISUTF_m13(c) (((c) & 0xC0) != 0x80) // true if c is the start of a UTF-8 sequence
-
-#define UTF8_OFFSETS_TABLE_ENTRIES_m13	6
-#define UTF8_OFFSETS_TABLE_m13 { 0x0UL, 0x00003080UL, 0x000E2080UL, 0x03C82080UL, 0xFA082080UL, 0x82082080UL }
-
-#define UTF8_TRAILING_BYTES_TABLE_ENTRIES_m13	256
-#define UTF8_TRAILING_BYTES_TABLE_m13 {	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, \
-					1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, \
-					2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5 }
-
-// Function Prototypes
-si4	UTF8_char_num_m13(si1 *s, si4 offset); // byte offset to character number
-void	UTF8_dec_m13(si1 *s, si4 *i); // move to previous character
-si4	UTF8_escape_m13(si1 *buf, si4 sz, si1 *src, si4 escape_quotes); // convert UTF-8 "src" to ASCII with escape sequences.
-si4	UTF8_escape_wchar_m13(si1 *buf, si4 sz, ui4 ch); // given a wide character, convert it to an ASCII escape sequence stored in buf, where buf is "sz" bytes. returns the number of characters output
-si4	UTF8_fprintf_m13(FILE_m13 *fp, si1 *fmt, ...); // fprintf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary fprintf() if the current locale is UTF-8.
-si4	UTF8_hex_digit_m13(si1 c); // utility predicates used by the above
-void	UTF8_inc_m13(si1 *s, si4 *i); // move to next character
-tern	UTF8_init_tables_m13(void);
-si4	UTF8_is_locale_utf8_m13(si1 *locale); // boolean function returns if locale is UTF-8, 0 otherwise
-tern	UTF8_is_valid_m13(si1 *string, tern zero_invalid, si1 *field_name);
-si1	*UTF8_memchr_m13(si1 *s, ui4 ch, size_t sz, si4 *char_num); // same as the above, but searches a buffer of a given size instead of a NUL-terminated string.
-ui4	UTF8_next_char_m13(si1 *s, si4* i); // return next character, updating an index variable
-si4	UTF8_octal_digit_m13(si1 c); // utility predicates used by the above
-si4	UTF8_offset_m13(si1 *str, si4 char_num); // character number to byte offset
-si4	UTF8_printf_m13(si1 *fmt, ...); // printf() where the format string and arguments may be in UTF-8. You can avoid this function and just use ordinary printf() if the current locale is UTF-8.
-si4	UTF8_read_escape_sequence_m13(si1 *str, ui4 *dest); // assuming str points to the character after a backslash, read an escape sequence, storing the result in dest and returning the number of input characters processed
-si4	UTF8_seqlen_m13(si1 *s); // returns length of next UTF-8 sequence
-si1	*UTF8_strchr_m13(si1 *s, ui4 ch, si4 *char_num); // return a pointer to the first occurrence of ch in s, or NULL if not found. character index of found character returned in *char_num.
-si4	UTF8_strlen_m13(si1 *s); // count the number of characters in a UTF-8 string
-si4	UTF8_to_ucs_m13(ui4 *dest, si4 sz, si1 *src, si4 srcsz); // convert UTF-8 data to wide character
-si4	UTF8_to_utf8_m13(si1 *dest, si4 sz, ui4 *src, si4 srcsz); // convert wide character to UTF-8 data
-si4	UTF8_unescape_m13(si1 *buf, si4 sz, si1 *src); // convert a string "src" containing escape sequences to UTF-8 if escape_quotes is nonzero, quote characters will be preceded by backslashes as well.
-si4	UTF8_vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list ap); // called by UTF8_fprintf()
-si4	UTF8_vprintf_m13(si1 *fmt, va_list ap); // called by UTF8_printf()
-si4	UTF8_wc_to_utf8_m13(si1 *dest, ui4 ch); // single character to UTF-8
+tern		UTF8_1_byte_char_m13(si1 *c);
+tern		UTF8_2_byte_char_m13(si1 *c);
+tern		UTF8_3_byte_char_m13(si1 *c);
+tern		UTF8_4_byte_char_m13(si1 *c);
+si4		UTF8_char_bytes_m13(si1 *c);
+size_t		UTF8_strlen_m13(si1 *s);
+tern		UTF8_valid_char_m13(si1 *c);
+tern		UTF8_valid_str_m13(si1 *s);
 
 
 
@@ -5194,11 +5142,15 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 #endif // AT_DEBUG_m13
 
 #ifdef FT_DEBUG_m13
-#define return_m13(arg) 	do { G_pop_function_m13(arg); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
-#define return_void_m13 	do { G_pop_function_m13(-1); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+#define return_m13(arg) 		do { G_pop_function_m13(arg); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+#define return_void_m13 		do { G_pop_function_m13(-1); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+#define thread_return_m13(arg)		do { G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0)
+#define thread_return_void_m13 		do { G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0)
 #else
-#define return_m13(arg) 	return(arg)
-#define return_void_m13 	return // not used in library => the only void library functions are low level & not added to function stacks (they use standard returns)
+#define return_m13(arg) 		return(arg)
+#define return_void_m13 		return // not used in library => the only void library functions are low level & not added to function stacks (they use standard returns)
+#define thread_return_m13(arg) 		do { G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0)
+#define thread_return_void_m13 		do { G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0)
 #endif // FT_DEBUG_m13
 
 
