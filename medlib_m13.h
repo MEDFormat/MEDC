@@ -52,7 +52,7 @@
 
 // Strings are encoded in the Universal Character Set standard, ISO/IEC 10646:2012 otherwise known as UTF-8.
 // ( http://standards.iso.org/ittf/PubliclyAvailableStandards/c056921_ISO_IEC_10646_2012.zip )
-// Basic UTF-8 manipulation routines are included in the library, with attribution, for convenience.
+// Minimal UTF-8 manipulation routines are included in the library, for convenience.
 
 // Error detection is implemented with 32-bit cyclic redundancy checksums (CRCs).
 // Basic CRC-32 manipulation routines are included in the library, with attribution, for convenience.
@@ -788,12 +788,13 @@ typedef struct {
 #define UH_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13		896 // ui1
 #define UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13 			912 // ui4, MED 1.1 & above
 #define UH_ORDERED_OFFSET_m13					916 // tern, MED 1.1 & above
-#define UH_ENCRYPTION_ROUNDS_OFFSET_m13				917 // ui1, MED 1.1 & above
-#define UH_ENCRYPTION_1_OFFSET_m13				918 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_2_OFFSET_m13				919 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_3_OFFSET_m13				920 // si1, MED 1.1 & above
-#define UH_PROTECTED_REGION_OFFSET_m13				921
-#define UH_PROTECTED_REGION_BYTES_m13				55
+#define UH_EXPANDED_PASSWORDS_OFFSET_m13			917 // tern, MED 1.1 & above
+#define UH_ENCRYPTION_ROUNDS_OFFSET_m13				918 // ui1, MED 1.1 & above
+#define UH_ENCRYPTION_1_OFFSET_m13				919 // si1, MED 1.1 & above
+#define UH_ENCRYPTION_2_OFFSET_m13				920 // si1, MED 1.1 & above
+#define UH_ENCRYPTION_3_OFFSET_m13				921 // si1, MED 1.1 & above
+#define UH_PROTECTED_REGION_OFFSET_m13				922
+#define UH_PROTECTED_REGION_BYTES_m13				54
 #define UH_DISCRETIONARY_REGION_OFFSET_m13			976
 #define UH_DISCRETIONARY_REGION_BYTES_m13			48
 
@@ -801,6 +802,7 @@ typedef struct {
 #define UH_DATA_ENCRYPTION_DEFAULT_m13				NO_ENCRYPTION_m13 // si1, MED 1.1 & above
 #define UH_METADATA_SECTION_2_ENCRYPTION_DEFAULT_m13		LEVEL_1_ENCRYPTION_m13 // si1, MED 1.1 & above
 #define UH_METADATA_SECTION_3_ENCRYPTION_DEFAULT_m13		LEVEL_2_ENCRYPTION_m13 // si1, MED 1.1 & above
+#define UH_EXPANDED_PASSWORDS_DEFAULT_m13			TRUE_m13
 #define UH_ENCRYPTION_ROUNDS_DEFAULT_m13			((ui1) 1)
 
 // Metadata: File Format Constants
@@ -1647,6 +1649,8 @@ typedef struct {
 //**********************************************************************************//
 
 #define METADATA_CODE_m13(x)			( (((x) == TS_METADATA_TYPE_CODE_m13) || ((x) == VID_METADATA_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
+#define CHANNEL_CODE_m13(x)			( (((x) == LH_TS_CHAN_m13) || ((x) == LH_VID_CHAN_m13)) ? TRUE_m13 : FALSE_m13 )
+#define SEGMENT_CODE_m13(x)			( (((x) == LH_TS_SEG_m13) || ((x) == LH_VID_SEG_m13)) ? TRUE_m13 : FALSE_m13 )
 #define PLURAL_m13(x) 				( ((x) == 1) ? "" : "s" )
 #define ABS_m13(x)				( ((x) >= 0) ? (x) : -(x) )  // do not increment/decrement in call to ABS (as x occurs thrice)
 #define HEX_STR_BYTES_m13(x, y) 		( ((x) * 2) + (((x) - 1) * (y)) + 1 ) // x numerical bytes with y-byte seperators plus termianl zero
@@ -2159,6 +2163,7 @@ typedef struct {
 	ui1		level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui4		video_data_file_number; // MED 1.1 and above
 	tern		ordered; // MED 1.1 and above
+	tern		expanded_passwords; // MED 1.1 and above
 	ui1		encryption_rounds; // MED 1.1 and above
 	si1		encryption_1; // MED 1.1 and above
 	si1		encryption_2; // MED 1.1 and above
@@ -2873,9 +2878,9 @@ void			G_clear_error_m13(LH_m13 *lh);
 tern			G_clear_terminal_m13(void);
 si4			G_compare_acq_nums_m13(const void *a, const void *b);
 si4 			G_compare_record_index_times(const void *a, const void *b);
-tern			G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
+tern			G_condition_password_m13(si1 *password, si1 *password_bytes, tern expand_password);
 tern			G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh);
-tern			G_copy_path_m13(si1 *path, si1 *new_path);
+tern			G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
 tern			G_correct_universal_header_m13(FPS_m13 *fps);
 ui4			G_current_behavior_m13(void); // returns behavior code
 BEHAVIOR_m13		*G_current_behavior_entry_m13(void); // returns pointer to BEHAVIOR_m13 struct (useful for debugging)
@@ -2894,8 +2899,7 @@ tern 			G_encrypt_time_series_data_m13(FPS_m13 *fps);
 tern			G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
 void 			G_error_message_m13(si1 *fmt, ...);
 si1 			G_exists_m13(si1 *path);
-tern			G_extract_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
-tern			G_extract_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
+tern			G_expand_password_m13(si1 *password_bytes);
 si8			G_file_length_m13(FILE_m13 *fp, si1 *path);
 FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
 tern			G_fill_empty_password_bytes_m13(si1 *password_bytes);
@@ -2950,7 +2954,6 @@ ui4			G_MED_type_code_from_string_m13(si1 *string);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void 			G_message_m13(si1 *fmt, ...);
-tern			G_move_path_m13(si1 *path, si1 *new_path);
 void 			G_nap_m13(si1 *nap_str);
 CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
@@ -2960,6 +2963,7 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr);
 SESS_m13		*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
 tern			G_open_session_records_m13(SESS_m13 *sess);
 si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
+tern			G_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void			G_pop_behavior_m13(void);
 void			G_pop_function_exec_m13(const si1 *function, ...);
 void			G_proc_error_clear_m13(LH_m13 *lh);
@@ -2985,7 +2989,6 @@ SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs
 si8			G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice);
 tern			G_recover_passwords_m13(si1 *L3_password, UH_m13* universal_header);
 void			G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
-tern			G_remove_path_m13(si1 *path);
 void			G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 tern			G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 behavior_code);
 tern			G_reset_metadata_for_update_m13(FPS_m13 *fps);
@@ -2999,7 +3002,7 @@ tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1
 si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
 tern			G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
-tern			G_set_time_and_password_data_m13(si1 *unspecified_password, si1 *MED_directory, LH_m13 *lh);
+tern			G_set_session_globals_m13(si1 *MED_directory, LH_m13 *lh, si1 *password);
 Sgmt_REC_m13		*G_Sgmt_records(LH_m13 *lh);
 tern			G_show_behavior_m13(ui4 mode);
 tern			G_show_contigua_m13(LH_m13 *lh);
@@ -3024,6 +3027,8 @@ tern			G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST
 tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
+tern			G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
+tern			G_ternary_entry_m13(si1 *entry);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void			G_thread_exit_m13(void);
 si1			*G_unique_temp_file_m13(si1 *temp_file);
@@ -5074,6 +5079,7 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 
 si4		asprintf_m13(si1 **target, si1 *fmt, ...);
 size_t		calloc_size_m13(void *address, size_t element_size);
+tern		cp_m13(si1 *path, si1 *new_path);  // copy
 si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_m13(si4 status);
@@ -5095,10 +5101,13 @@ si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void); // calling process id
 pid_t_m13	gettid_m13(void); // calling thread id
 size_t		malloc_size_m13(void *address);
+tern		md_m13(si1 *dir);  // synonym for mkdir()
 void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
+tern		mkdir_m13(si1 *dir);
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
+tern		mv_m13(si1 *path, si1 *new_path);  // move
 si1		*pthread_getname_m13(pthread_t_m13 thread_id, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr);
 si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
@@ -5111,6 +5120,7 @@ si4		printf_m13(si1 *fmt, ...);
 si4		putc_m13(si4 c, FILE_m13 *fp);
 si4		putch_m13(si4 c);
 si4		putchar_m13(si4 c);
+tern		rm_m13(si1 *path);  // remove
 si4		scanf_m13(si1 *fmt, ...);
 si4		sprintf_m13(si1 *target, si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
