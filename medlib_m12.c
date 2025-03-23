@@ -4009,6 +4009,7 @@ si8	G_find_record_index_m12(FILE_PROCESSING_STRUCT_m12 *record_indices_fps, si8 
 
 si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_uutc, ui4 mode, ...)  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
+	TERN_m12		terminal_index;
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
 	si8                     n_inds, i, absolute_numbering_offset;
@@ -4043,6 +4044,7 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 		ref_frame_number = va_arg(args, si8);
 		ref_uutc = va_arg(args, si8);
 		frame_rate = va_arg(args, sf8);
+		frame_rate /= (sf8) 1e6;  // frames per microsecond
 		va_end(args);
 		absolute_numbering_offset = 0;
 		vi = NULL;
@@ -4092,7 +4094,13 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 			G_warning_message_m12("%s(): video indices are NULL => returning FRAME_NUMBER_NO_ENTRY_m12\n", __FUNCTION__);
 			return(FRAME_NUMBER_NO_ENTRY_m12);
 		}
-		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
+		n_inds = seg->video_indices_fps->universal_header->number_of_entries;
+		if (seg->video_indices_fps->universal_header->segment_end_time > 0) {
+			--n_inds;  // account for terminal index here - cleaner code below
+			terminal_index = TRUE_m12;
+		} else {
+			terminal_index = FALSE_m12;
+		}
 		if (mode & FIND_RELATIVE_m12)
 			absolute_numbering_offset = 0;
 		else  // FIND_ABSOLUTE_m12 (default)
@@ -4110,16 +4118,24 @@ si8     G_frame_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_u
 		if (i == -1)  // target time earlier than segment start => return segment start sample
 			return(absolute_numbering_offset);
 
-		ref_frame_number = (vi += i)->start_frame_number;
-		if (i == n_inds)  // target time later than segment end => return segment end sample number
-			return((ref_frame_number - 1) + absolute_numbering_offset);
+		vi += i;
+		if (i == n_inds) {  // target time later than segment end => return segment end sample number
+			--vi;
+			if (terminal_index == TRUE_m12)
+				return((vi->start_frame_number - 1) + absolute_numbering_offset);
+		}
+		ref_frame_number = vi->start_frame_number;
 		ref_uutc = vi->start_time;
-
-		frame_rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+		if (terminal_index == FALSE_m12 && i == n_inds) {
+			frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate / (sf8) 1e6;
+		} else {
+			++vi;
+			frame_rate = (sf8) (vi->start_frame_number - ref_frame_number) / (sf8) (vi->start_time - ref_uutc);  // frames per microsecond
+		}
 	}
 	
 	// round up if very close to next frame
-	tmp_sf8 = ((sf8) (target_uutc - ref_uutc) / (sf8) 1e6) * frame_rate;
+	tmp_sf8 = (sf8) (target_uutc - ref_uutc) * frame_rate;
 	rounded_frame_num = (sf8) ((si8) (tmp_sf8 + (sf8) 0.5));
 	frame_num_eps = rounded_frame_num - tmp_sf8;
 	if (frame_num_eps > (sf8) 0.0)
@@ -8537,6 +8553,7 @@ SESSION_m12	*G_open_session_m12(SESSION_m12 *sess, TIME_SLICE_m12 *slice, void *
 		sess->time_slice = *slice;  // passed slice is not modified
 	}
 	slice = &sess->time_slice;
+	
 	if (slice->conditioned == FALSE_m12)
 		G_condition_time_slice_m12(slice);
 	
@@ -9484,11 +9501,8 @@ TERN_m12	G_process_password_data_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1 *unspe
 	}
 		
 	// check if level 2 password was set
-	if (G_all_zeros_m12(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m12) == TRUE_m12) {
-		if (LEVEL_1_valid == FALSE_m12)
-			G_show_password_hints_m12(pwd, 1);
+	if (G_all_zeros_m12(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m12) == TRUE_m12)
 		return(LEVEL_1_valid);
-	}
 
 	// generate putative L1 password
 	for (i = 0; i < PASSWORD_BYTES_m12; ++i)  // xor with level 2 password validation field
@@ -10664,7 +10678,7 @@ SEGMENT_m12	*G_read_segment_m12(SEGMENT_m12 *seg, TIME_SLICE_m12 *slice, ...)  /
 				break;
 		}
 	}
-	
+
 	// read segment records
 	if (seg->flags & LH_READ_SEGMENT_RECORDS_MASK_m12)
 		if (seg->record_indices_fps && seg->record_data_fps)
@@ -11623,6 +11637,7 @@ void    G_reset_metadata_for_update_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 
 si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_uutc, ui4 mode, ...)  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 {
+	TERN_m12		terminal_index;
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
 	si8                     n_inds, i, absolute_numbering_offset;
@@ -11657,6 +11672,7 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 		ref_sample_number = va_arg(args, si8);
 		ref_uutc = va_arg(args, si8);
 		sampling_frequency = va_arg(args, sf8);
+		sampling_frequency /= (sf8) 1e6;  // samples per microsecond
 		va_end(args);
 		absolute_numbering_offset = 0;
 		tsi = NULL;
@@ -11707,7 +11723,13 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 			G_warning_message_m12("%s(): time series indices are NULL => returning SAMPLE_NUMBER_NO_ENTRY_m12\n", __FUNCTION__);
 			return(SAMPLE_NUMBER_NO_ENTRY_m12);
 		}
-		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
+		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries;
+		if (seg->time_series_indices_fps->universal_header->segment_end_time > 0) {
+			--n_inds;  // account for terminal index here - cleaner code below
+			terminal_index = TRUE_m12;
+		} else {
+			terminal_index = FALSE_m12;
+		}
 		if (mode & FIND_RELATIVE_m12)
 			absolute_numbering_offset = 0;
 		else  // FIND_ABSOLUTE_m12 (default)
@@ -11725,16 +11747,24 @@ si8     G_sample_number_for_uutc_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 		if (i == -1)  // target time earlier than segment start => return segment start sample
 			return(absolute_numbering_offset);
 
-		ref_sample_number = (tsi += i)->start_sample_number;
-		if (i == n_inds)  // target time later than segment end => return segment end sample number
-			return((ref_sample_number - 1) + absolute_numbering_offset);
+		tsi += i;
+		if (i == n_inds) {  // target time later than segment end => return segment end sample number
+			--tsi;
+			if (terminal_index == TRUE_m12)
+				return((tsi->start_sample_number - 1) + absolute_numbering_offset);
+		}
+		ref_sample_number = tsi->start_sample_number;
 		ref_uutc = tsi->start_time;
-
-		sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+		if (terminal_index == FALSE_m12 && i == n_inds) {
+			sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency / (sf8) 1e6;
+		} else {
+			++tsi;
+			sampling_frequency = (sf8) (tsi->start_sample_number - ref_sample_number) / (sf8) (tsi->start_time - ref_uutc);  // samples per microsecond
+		}
 	}
 	
 	// round up if very close to next sample
-	tmp_sf8 = ((sf8) (target_uutc - ref_uutc) / (sf8) 1e6) * sampling_frequency;
+	tmp_sf8 = (sf8) (target_uutc - ref_uutc) * sampling_frequency;
 	rounded_samp_num = (sf8) ((si8) (tmp_sf8 + (sf8) 0.5));
 	samp_num_eps = rounded_samp_num - tmp_sf8;
 	if (samp_num_eps > (sf8) 0.0)
@@ -14435,6 +14465,7 @@ void	G_update_maximum_entry_size_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 number
 
 si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_frame_number, ui4 mode, ...)  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
+	TERN_m12		terminal_index;
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
 	si8                     absolute_numbering_offset, ref_frame_number;
@@ -14468,6 +14499,7 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 		ref_frame_number = va_arg(args, si8);
 		ref_uutc = va_arg(args, si8);
 		frame_rate = va_arg(args, sf8);
+		frame_rate /= (sf8) 1e6;  // frames per microsecond
 		va_end(args);
 		vi = NULL;
 	} else {  // level header passed
@@ -14517,41 +14549,56 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 			G_warning_message_m12("%s(): video indices are NULL => returning UUTC_NO_ENTRY_m12\n", __FUNCTION__);
 			return(UUTC_NO_ENTRY_m12);
 		}
-		n_inds = seg->video_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
+		n_inds = seg->video_indices_fps->universal_header->number_of_entries;
+		if (seg->video_indices_fps->universal_header->segment_end_time > 0) {
+			--n_inds;  // account for terminal index here - cleaner code below
+			terminal_index = TRUE_m12;
+		} else {
+			terminal_index = FALSE_m12;
+		}
 		
 		i = G_find_index_m12(seg, target_frame_number, SAMPLE_SEARCH_m12);
 		if (i == -1)  // target frame earlier than segment start => return segment start time
 			return(vi->start_time);
 		vi += i;
-		if (i == n_inds)  // target frame later than segment end => return segment end uutc
-			return(vi->start_time - 1);
+		if (i == n_inds) {  // target frame later than segment end => return segment end uutc
+			if (terminal_index == TRUE_m12)
+				return(vi->start_time - 1);
+			--vi;
+		}
 		
-		// make target_frame_number relative
+		// make target_frame_number relative, if needed
 		absolute_numbering_offset = seg->metadata_fps->metadata->video_section_2.absolute_start_frame_number;
-		target_frame_number -= absolute_numbering_offset;
+		if (target_frame_number > absolute_numbering_offset)
+			target_frame_number -= absolute_numbering_offset;
 
 		ref_uutc = vi->start_time;
 		ref_frame_number = vi->start_frame_number;
-		frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
+		if (terminal_index == FALSE_m12 && i == n_inds) {
+			frame_rate = seg->metadata_fps->metadata->video_section_2.frame_rate / (sf8) 1e6;
+		} else {
+			++vi;
+			frame_rate = (sf8) (vi->start_frame_number - ref_frame_number) / (sf8) (vi->start_time - ref_uutc);  // frames per microsecond
+		}
 	}
 	
-	tmp_sf8 = (sf8) (target_frame_number - ref_frame_number) * (sf8) 1e6;
+	tmp_sf8 = (sf8) (target_frame_number - ref_frame_number);
 	mask = (ui4) (FIND_END_m12 | FIND_CENTER_m12 | FIND_START_m12);
 	switch (mode & mask) {
 		case FIND_END_m12:
-			tmp_sf8 = (tmp_sf8 + (sf8) 1e6) / frame_rate;
+			tmp_sf8 = (tmp_sf8 + (sf8) 1.0) / frame_rate;
 			tmp_si8 = (si8) tmp_sf8;
-			if (tmp_sf8 == (sf8) tmp_si8)
+			if (tmp_sf8 == (sf8) tmp_si8)  // floor() without calling function
 				--tmp_si8;
 			break;
 		case FIND_CENTER_m12:
-			tmp_si8 = (si8) (((tmp_sf8 + (sf8) 5e5) / frame_rate) + (sf8) 0.5);
+			tmp_si8 = (si8) (((tmp_sf8 + (sf8) 0.5) / frame_rate) + (sf8) 0.5);
 			break;
 		case FIND_START_m12:
 		default:
 			tmp_sf8 = tmp_sf8 / frame_rate;
 			tmp_si8 = (si8) tmp_sf8;
-			if (tmp_sf8 != (sf8) tmp_si8)
+			if (tmp_sf8 != (sf8) tmp_si8)  // ceil() without calling function
 				++tmp_si8;
 			break;
 	}
@@ -14562,6 +14609,7 @@ si8     G_uutc_for_frame_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_f
 
 si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_sample_number, ui4 mode, ...)  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 {
+	TERN_m12		terminal_index;
 	si1			tmp_str[FULL_FILE_NAME_BYTES_m12], num_str[FILE_NUMBERING_DIGITS_m12 + 1];
 	si4			seg_num, seg_idx;
 	si8                     absolute_numbering_offset, ref_sample_number;
@@ -14580,7 +14628,7 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 	
 	// G_uutc_for_sample_number_m12(NULL, si8 target_sample_number, ui4 mode, si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency)
 	// returns uutc extrapolated from ref_uutc
-	// NOTE: target_sample_number must be session-relative (global indexing)
+	// NOTE: in this mode, target_sample_number must be session-relative (global indexing)
 
 	// G_uutc_for_sample_number_m12(seg, target_uutc, mode)
 	// returns uutc extrapolated from closest time series index in frame specified by mode (this is typically more accurate, & takes discontinuities into account)
@@ -14595,6 +14643,7 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 		ref_sample_number = va_arg(args, si8);
 		ref_uutc = va_arg(args, si8);
 		sampling_frequency = va_arg(args, sf8);
+		sampling_frequency /= (sf8) 1e6;  // samples per microsecond
 		va_end(args);
 		tsi = NULL;
 	} else {  // level header passed
@@ -14644,41 +14693,56 @@ si8     G_uutc_for_sample_number_m12(LEVEL_HEADER_m12 *level_header, si8 target_
 			G_warning_message_m12("%s(): time series indices are NULL => returning UUTC_NO_ENTRY_m12\n", __FUNCTION__);
 			return(UUTC_NO_ENTRY_m12);
 		}
-		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries - 1;  // account for terminal index here - cleaner code below
+		n_inds = seg->time_series_indices_fps->universal_header->number_of_entries;
+		if (seg->time_series_indices_fps->universal_header->segment_end_time > 0) {
+			--n_inds;  // account for terminal index here - cleaner code below
+			terminal_index = TRUE_m12;
+		} else {
+			terminal_index = FALSE_m12;
+		}
 		
 		i = G_find_index_m12(seg, target_sample_number, SAMPLE_SEARCH_m12);
 		if (i == -1)  // target sample earlier than segment start => return segment start time
 			return(tsi->start_time);
 		tsi += i;
-		if (i == n_inds)  // target sample later than segment end => return segment end uutc
-			return(tsi->start_time - 1);
+		if (i == n_inds) {  // target sample later than segment end => return segment end uutc
+			if (terminal_index == TRUE_m12)
+				return(tsi->start_time - 1);
+			--tsi;
+		}
 		
-		// make target_sample_number relative
+		// make target_sample_number relative, if needed
 		absolute_numbering_offset = seg->metadata_fps->metadata->time_series_section_2.absolute_start_sample_number;
-		target_sample_number -= absolute_numbering_offset;
+		if (target_sample_number > absolute_numbering_offset)
+			target_sample_number -= absolute_numbering_offset;
 
 		ref_uutc = tsi->start_time;
 		ref_sample_number = tsi->start_sample_number;
-		sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+		if (terminal_index == FALSE_m12 && i == n_inds) {
+			sampling_frequency = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency / (sf8) 1e6;
+		} else {
+			++tsi;
+			sampling_frequency = (sf8) (tsi->start_sample_number - ref_sample_number) / (sf8) (tsi->start_time - ref_uutc);  // samples per microsecond
+		}
 	}
 	
-	tmp_sf8 = (sf8) (target_sample_number - ref_sample_number) * (sf8) 1e6;
+	tmp_sf8 = (sf8) (target_sample_number - ref_sample_number);
 	mask = (ui4) (FIND_END_m12 | FIND_CENTER_m12 | FIND_START_m12);
 	switch (mode & mask) {
 		case FIND_END_m12:
-			tmp_sf8 = (tmp_sf8 + (sf8) 1e6) / sampling_frequency;
+			tmp_sf8 = (tmp_sf8 + (sf8) 1.0) / sampling_frequency;
 			tmp_si8 = (si8) tmp_sf8;
-			if (tmp_sf8 == (sf8) tmp_si8)
+			if (tmp_sf8 == (sf8) tmp_si8)  // floor() without calling function
 				--tmp_si8;
 			break;
 		case FIND_CENTER_m12:
-			tmp_si8 = (si8) (((tmp_sf8 + (sf8) 5e5) / sampling_frequency) + (sf8) 0.5);
+			tmp_si8 = (si8) (((tmp_sf8 + (sf8) 0.5) / sampling_frequency) + (sf8) 0.5);
 			break;
 		case FIND_START_m12:
 		default:
 			tmp_sf8 = tmp_sf8 / sampling_frequency;
 			tmp_si8 = (si8) tmp_sf8;
-			if (tmp_sf8 != (sf8) tmp_si8)
+			if (tmp_sf8 != (sf8) tmp_si8)  // ceil() without calling function
 				++tmp_si8;
 			break;
 	}
@@ -16881,14 +16945,18 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 	
 	// pass CMP_SELF_MANAGED_MEMORY_m12 for data_samples to prevent automatic re-allocation
 
-	if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m12) {
-		G_error_message_m12("%s(): FPS must be time series data\n", __FUNCTION__);
-		return(NULL);
+	if (fps) {
+		if (fps->universal_header->type_code != TIME_SERIES_DATA_FILE_TYPE_CODE_m12) {
+			G_error_message_m12("%s(): FPS must be time series data\n", __FUNCTION__);
+			return(NULL);
+		}
+		
+		if (fps->parameters.cps == NULL)
+			fps->parameters.cps = (CMP_PROCESSING_STRUCT_m12 *) calloc_m12((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		cps = fps->parameters.cps;
+	} else {
+		cps = (CMP_PROCESSING_STRUCT_m12 *) calloc_m12((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
-	
-	if (fps->parameters.cps == NULL)
-		fps->parameters.cps = (CMP_PROCESSING_STRUCT_m12 *) calloc_m12((size_t) 1, sizeof(CMP_PROCESSING_STRUCT_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	cps = fps->parameters.cps;
 	PROC_pthread_mutex_init_m12(&cps->parameters.mutex,  NULL);
 	
 	// set up directives
@@ -16896,13 +16964,15 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 		cps->directives = *directives;
 	else // set defaults
 		CMP_initialize_directives_m12(&cps->directives, (ui1) mode);
-	if (fps->parent) {  // set level header directives
-		if (((LEVEL_HEADER_m12 *) fps->parent)->flags & LH_NO_CPS_PTR_RESET_m12)
-			cps->directives.cps_pointer_reset = FALSE_m12;  // default is TRUE_m12
-		if (((LEVEL_HEADER_m12 *) fps->parent)->flags & LH_NO_CPS_CACHING_m12)
-			cps->directives.cps_caching = FALSE_m12;  // default is TRUE_m12
+	if (fps) {
+		if (fps->parent) {  // set level header directives
+			if (((LEVEL_HEADER_m12 *) fps->parent)->flags & LH_NO_CPS_PTR_RESET_m12)
+				cps->directives.cps_pointer_reset = FALSE_m12;  // default is TRUE_m12
+			if (((LEVEL_HEADER_m12 *) fps->parent)->flags & LH_NO_CPS_CACHING_m12)
+				cps->directives.cps_caching = FALSE_m12;  // default is TRUE_m12
+		}
 	}
-	
+
 	// set up parameters
 	if (parameters)
 		cps->parameters = *parameters;
@@ -16915,7 +16985,7 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 	}
 	
 	// allocate RED/PRED buffers
-	if (cps->directives.algorithm == CMP_RED1_COMPRESSION_m12 || cps->directives.algorithm == CMP_RED2_COMPRESSION_m12) {  // VDS uses RED & PRED, but allocated for PRED
+	if (cps->directives.algorithm == CMP_RED1_COMPRESSION_m12 || cps->directives.algorithm == CMP_RED2_COMPRESSION_m12 || cps->directives.algorithm == CMP_SSE_COMPRESSION_m12) {  // VDS uses RED & PRED, but allocated for PRED
 		if (cps->directives.mode == CMP_COMPRESSION_MODE_m12) {
 			cps->parameters.count = calloc_m12(CMP_RED_MAX_STATS_BINS_m12, sizeof(ui4), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			cps->parameters.sorted_count = calloc_m12(CMP_RED_MAX_STATS_BINS_m12, sizeof(CMP_STATISTICS_BIN_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
@@ -16988,20 +17058,26 @@ CMP_PROCESSING_STRUCT_m12	*CMP_allocate_processing_struct_m12(FILE_PROCESSING_ST
 	
 	// compressed_data - caller specified array size
 	if (need_compressed_data == TRUE_m12) {
-		if (fps->parameters.raw_data_bytes < (compressed_data_bytes + UNIVERSAL_HEADER_BYTES_m12)) {
-			FPS_reallocate_processing_struct_m12(fps, compressed_data_bytes + UNIVERSAL_HEADER_BYTES_m12);
+		if (fps) {
+			if (fps->parameters.raw_data_bytes < (compressed_data_bytes + UNIVERSAL_HEADER_BYTES_m12)) {
+				FPS_reallocate_processing_struct_m12(fps, compressed_data_bytes + UNIVERSAL_HEADER_BYTES_m12);
+			} else {
+				cps->parameters.allocated_compressed_bytes = fps->parameters.raw_data_bytes - UNIVERSAL_HEADER_BYTES_m12;
+				cps->block_header = (CMP_BLOCK_FIXED_HEADER_m12 *) fps->data_pointers;
+			}
 		} else {
-			cps->parameters.allocated_compressed_bytes = fps->parameters.raw_data_bytes - UNIVERSAL_HEADER_BYTES_m12;
-			cps->block_header = (CMP_BLOCK_FIXED_HEADER_m12 *) fps->data_pointers;
+			cps->block_header = (CMP_BLOCK_FIXED_HEADER_m12 *) realloc_m12((void *) cps->block_header, compressed_data_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+			cps->parameters.allocated_compressed_bytes = compressed_data_bytes;
 		}
+		cps->compressed_data = (ui1 *) cps->block_header;
 	} else {
 		cps->parameters.allocated_compressed_bytes = 0;
 	}
 	
 	// keysample_buffer - caller specified or maximum bytes required for specified block size
-	if (keysample_bytes == 0)
-		keysample_bytes = CMP_MAX_KEYSAMPLE_BYTES_m12(block_samples);
 	if (need_keysample_buffer == TRUE_m12) {
+		if (keysample_bytes == 0)
+			keysample_bytes = CMP_MAX_KEYSAMPLE_BYTES_m12(block_samples);
 		cps->parameters.keysample_buffer = (si1 *) calloc_m12((size_t) keysample_bytes, sizeof(ui1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		cps->parameters.allocated_keysample_bytes = keysample_bytes;
 	} else {
@@ -17946,6 +18022,10 @@ void    CMP_decode_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 			cps->directives.algorithm = CMP_PRED2_COMPRESSION_m12;
 			CMP_PRED2_decode_m12(cps);
 			break;
+		case CMP_BF_SSE_ENCODING_MASK_m12:
+			cps->directives.algorithm = CMP_SSE_COMPRESSION_m12;
+			CMP_PRED2_decode_m12(cps);
+			break;
 		default:
 			G_error_message_m12("%s(): unrecognized compression algorithm (%u)\n", __FUNCTION__, block_header->block_flags & CMP_BF_ALGORITHMS_MASK_m12);
 			return;
@@ -18285,7 +18365,7 @@ void    CMP_encode_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 start_time, si4 acqu
 	cps = fps->parameters.cps;
 	CMP_cps_mutex_on_m12(cps);
 	block_header = cps->block_header;
-	if (cps->parameters.allocated_block_samples < block_header->number_of_samples) {
+	if (cps->parameters.allocated_block_samples < number_of_samples) {
 		if (CMP_reallocate_processing_struct_m12(fps, CMP_COMPRESSION_MODE_m12, (si8) number_of_samples, number_of_samples) == NULL) {
 			G_error_message_m12("%s(): reallocation error\n", __FUNCTION__);
 			CMP_cps_mutex_off_m12(cps);
@@ -18341,6 +18421,9 @@ void    CMP_encode_m12(FILE_PROCESSING_STRUCT_m12 *fps, si8 start_time, si4 acqu
 			break;
 		case CMP_PRED2_COMPRESSION_m12:
 			compression_f = CMP_PRED2_encode_m12;
+			break;
+		case CMP_SSE_COMPRESSION_m12:
+			compression_f = CMP_SSE_encode_m12;
 			break;
 		default:
 			G_error_message_m12("%s(): unrecognized compression algorithm (%u)\n", __FUNCTION__, cps->directives.algorithm);
@@ -18932,6 +19015,8 @@ void    CMP_free_processing_struct_m12(CMP_PROCESSING_STRUCT_m12 *cps, TERN_m12 
 	if (cps->parameters.VDS_output_buffers)
 		CMP_free_buffers_m12(cps->parameters.VDS_output_buffers, TRUE_m12);
 	
+	// if cps allocated independently = free cps->block_header manually;
+	
 	PROC_pthread_mutex_unlock_m12(&cps->parameters.mutex);
 	PROC_pthread_mutex_destroy_m12(&cps->parameters.mutex);
 
@@ -19236,6 +19321,7 @@ ui1    CMP_get_overflow_bytes_m12(CMP_PROCESSING_STRUCT_m12 *cps, ui4 mode, ui4 
 	si8					i, val, abs_min, abs_max;
 	CMP_RED_MODEL_FIXED_HEADER_m12		*RED_header;
 	CMP_PRED_MODEL_FIXED_HEADER_m12		*PRED_header;
+	CMP_SSE_MODEL_FIXED_HEADER_m12		*SSE_header;
 
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
@@ -19283,6 +19369,13 @@ ui1    CMP_get_overflow_bytes_m12(CMP_PROCESSING_STRUCT_m12 *cps, ui4 mode, ui4 
 				PRED_header->flags |= CMP_PRED_2_BYTE_OVERFLOWS_MASK_m12;
 			else if	(cps->parameters.overflow_bytes == 3)
 				PRED_header->flags |= CMP_PRED_3_BYTE_OVERFLOWS_MASK_m12;
+		} else if (algorithm == CMP_SSE_COMPRESSION_m12) {
+			SSE_header = (CMP_SSE_MODEL_FIXED_HEADER_m12 *) cps->parameters.model_region;
+			SSE_header->flags &= ~CMP_SSE_OVERFLOW_BYTES_MASK_m12;
+			if (cps->parameters.overflow_bytes == 2)
+				SSE_header->flags |= CMP_SSE_2_BYTE_OVERFLOWS_MASK_m12;
+			else if	(cps->parameters.overflow_bytes == 3)
+				SSE_header->flags |= CMP_SSE_3_BYTE_OVERFLOWS_MASK_m12;
 		}
 	} else {  // CMP_DECOMPRESSION_MODE_m12
 		if (algorithm == CMP_RED1_COMPRESSION_m12 || algorithm == CMP_RED2_COMPRESSION_m12) {
@@ -19300,6 +19393,15 @@ ui1    CMP_get_overflow_bytes_m12(CMP_PROCESSING_STRUCT_m12 *cps, ui4 mode, ui4 
 			if (flags == CMP_PRED_2_BYTE_OVERFLOWS_MASK_m12)
 				cps->parameters.overflow_bytes =  2;
 			else if (flags == CMP_PRED_3_BYTE_OVERFLOWS_MASK_m12)
+				cps->parameters.overflow_bytes =  3;
+			else
+				cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m12;  // 4
+		} else if (algorithm == CMP_SSE_COMPRESSION_m12) {
+			SSE_header = (CMP_SSE_MODEL_FIXED_HEADER_m12 *) cps->parameters.model_region;
+			flags = SSE_header->flags & CMP_SSE_OVERFLOW_BYTES_MASK_m12;
+			if (flags == CMP_SSE_2_BYTE_OVERFLOWS_MASK_m12)
+				cps->parameters.overflow_bytes =  2;
+			else if (flags == CMP_SSE_3_BYTE_OVERFLOWS_MASK_m12)
 				cps->parameters.overflow_bytes =  3;
 			else
 				cps->parameters.overflow_bytes = CMP_PARAMETERS_OVERFLOW_BYTES_DEFAULT_m12;  // 4
@@ -23663,6 +23765,354 @@ sf8	CMP_splope_m12(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt)
 	h += g * (e - f) / 6.0;
 
 	return(h);
+}
+
+
+void    CMP_SSE_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
+{
+	ui1				*comp_p, *symbol_map, n_derivs, overflow_bytes, last_bin;
+	si1				*si1_p1, *si1_p2;
+	ui4				*count, n_samps, n_keysample_bytes, remaining_bits;
+	si4				*si4_p, overflow_val, sign_bit, sign_bytes, *init_val_p;
+	si8     			cmp_data_bits, offset_bits;
+	ui8     			*in_bit, **in_word;
+	si8				i, j, n_stats_entries;
+	CMP_BLOCK_FIXED_HEADER_m12	*block_header;
+	CMP_SSE_MODEL_FIXED_HEADER_m12	*SSE_header;
+	
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// CMP decompress from block_header to decompressed_ptr
+	block_header = cps->block_header;
+	n_samps = block_header->number_of_samples;
+	
+	// zero or one or samples
+	if (n_samps <= 1) {
+		if (block_header->number_of_samples == 1)
+			cps->decompressed_ptr[0] = *((si4 *) (cps->parameters.model_region + CMP_SSE_MODEL_FIXED_HEADER_BYTES_m12));
+		cps->parameters.derivative_level = 0;
+		return;
+	}
+
+	SSE_header = (CMP_SSE_MODEL_FIXED_HEADER_m12 *) cps->parameters.model_region;
+	n_derivs = SSE_header->derivative_level;
+	n_keysample_bytes = SSE_header->number_of_keysample_bytes;
+	n_stats_entries = (si8) SSE_header->number_of_statistics_bins;
+	
+	// set parameters for return
+	cps->parameters.derivative_level = SSE_header->derivative_level;
+	
+	// get block flags
+	overflow_bytes = CMP_get_overflow_bytes_m12(cps, CMP_DECOMPRESSION_MODE_m12, CMP_SSE_COMPRESSION_m12);
+	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
+	if (overflow_bytes == 4)
+		sign_bytes = (ui4) 0;
+	else  // Windows: shift of 32 bits is equated to shift of 0, so have to do this
+		sign_bytes = (ui4) 0xFFFFFFFF << (overflow_bytes << 3);
+	
+	// copy initial derivative values to output buffer
+	init_val_p = (si4 *) (cps->parameters.model_region + CMP_SSE_MODEL_FIXED_HEADER_BYTES_m12);
+	for (i = 0; i < n_derivs; ++i)
+		cps->decompressed_ptr[i] = *init_val_p++;
+
+	// get symbol map & count array
+	count = (ui4 *) init_val_p;
+	symbol_map = (ui1 *) (count + n_stats_entries);
+
+	// set up in_bit & in_word arrays
+	in_bit = (ui8 *) calloc((size_t) n_stats_entries, sizeof(ui8));
+	in_word = (ui8 **) calloc((size_t) n_stats_entries, sizeof(ui8 *));
+
+	comp_p = symbol_map + n_stats_entries;
+	offset_bits = ((ui8) comp_p & (ui8) 7) << (ui8) 3;
+	last_bin = n_stats_entries - 1;
+	remaining_bits = n_keysample_bytes;
+	cmp_data_bits = offset_bits;
+	for (i = 0; i < last_bin; ++i) {
+		in_word[i] = (ui8 *) (comp_p + (cmp_data_bits >> 6));
+		in_bit[i] = (ui8) 1 << (cmp_data_bits & 63);
+		if (!(in_bit[i] >>= 1)) {
+			in_bit[i] = (ui8) 0x8000000000000000;
+			--in_word[i];
+		}
+		cmp_data_bits += remaining_bits;
+		remaining_bits -= count[i];
+	}
+
+	// SSE decode
+	si1_p1 = cps->parameters.keysample_buffer;
+	for (i = SSE_header->number_of_keysample_bytes; i--;) {
+		for (j = 0; j < last_bin; ++j) {
+			if (!(in_bit[j] <<= 1)) {
+				in_bit[j] = 1;
+				++in_word[j];
+			}
+			if (*in_word[j] & in_bit[j])
+				break;
+		}
+		*si1_p1++ = symbol_map[j];
+	}
+
+	free((void *) in_bit);
+	free((void *) in_word);
+	
+	// generate derivatives from keysample data
+	si4_p = cps->decompressed_ptr + n_derivs;
+	si1_p1 = (si1 *) cps->parameters.keysample_buffer;
+	for (i = n_samps - n_derivs; i--;) {
+		if (*si1_p1 == CMP_SI1_KEYSAMPLE_FLAG_m12) {
+			overflow_val = 0;
+			++si1_p1;
+			si1_p2 = (si1 *) &overflow_val;
+			j = overflow_bytes; do {
+				*si1_p2++ = *si1_p1++;
+			} while (--j);
+			if (overflow_val & sign_bit)
+				overflow_val |= sign_bytes;
+			*si4_p++ = overflow_val;
+		} else {
+			*si4_p++ = (si4) *si1_p1++;
+		}
+	}
+	
+	// integrate derivatives
+	CMP_integrate_m12(cps);
+	
+	return;
+}
+
+
+void    CMP_SSE_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps)
+{
+	TERN_m12			use_raw;
+	ui1				*ui1_p, ks_flag, *key_p, n_derivs, *comp_p, *symbols, *symbol_map, overflow_bytes;
+	ui4				*count, *bin_counts, n_keysamp_bytes, header_bytes;
+	ui4				n_samps, n_deriv_samps, bin, last_bin, fall_through_bytes, rem;
+	ui4				offset_bytes, offset_bits, cmp_data_bytes, cmp_data_bits, remaining_bits;
+	si4				*deriv_p, *init_val_p, diff, bits_per_samp, raw_bits_per_samp;
+	si4				low_d, high_d;
+	ui8				*cmp_data, *out_bit, **out_word;
+	si8				i, j, k, n_stats_entries, MBE_data_bits;
+	CMP_STATISTICS_BIN_m12		*sorted_count, temp_sorted_count;
+	CMP_BLOCK_FIXED_HEADER_m12	*block_header;
+	CMP_SSE_MODEL_FIXED_HEADER_m12	*SSE_header;
+	CMP_MBE_MODEL_FIXED_HEADER_m12	*MBE_header;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+	
+	// compress from input_buffer to block_header
+	
+	// set algorithm block flag
+	block_header = cps->block_header;
+	block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m12;
+	block_header->block_flags |= CMP_BF_SSE_ENCODING_MASK_m12;
+
+	SSE_header = (CMP_SSE_MODEL_FIXED_HEADER_m12 *) cps->parameters.model_region;
+	n_samps = block_header->number_of_samples;
+	SSE_header->flags = (ui1) 0;
+
+	// zero or one or samples
+	if (n_samps <= 1) {
+		block_header->model_region_bytes = (ui2) CMP_SSE_MODEL_FIXED_HEADER_BYTES_m12;
+		if (block_header->number_of_samples == 1) {
+			*((si4 *) (cps->parameters.model_region + block_header->model_region_bytes)) = cps->input_buffer[0];  // note: no statistics
+			block_header->model_region_bytes += sizeof(si4);
+		}
+		SSE_header->number_of_keysample_bytes = 0;
+		SSE_header->derivative_level = 0;
+		SSE_header->number_of_statistics_bins = 0;
+		block_header->total_header_bytes = (ui4) (cps->parameters.model_region - (ui1 *) block_header) + block_header->model_region_bytes;
+		block_header->total_block_bytes = G_pad_m12((ui1 *) block_header, block_header->total_header_bytes, 8);
+		return;
+	}
+
+	// calculate derivatives
+	n_derivs = CMP_differentiate_m12(cps);
+
+	// set up SSE arrays
+	count = (ui4 *) cps->parameters.count;
+	sorted_count = (CMP_STATISTICS_BIN_m12 *) cps->parameters.sorted_count;
+	symbol_map = (ui1 *) cps->parameters.symbol_map;
+	block_header = cps->block_header;
+
+	// set model parameters
+	SSE_header->derivative_level = n_derivs;
+	overflow_bytes = CMP_get_overflow_bytes_m12(cps, CMP_COMPRESSION_MODE_m12, CMP_SSE_COMPRESSION_m12);
+
+	// generate count & build keysample array
+	low_d = -127; high_d = 127;
+	ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m12;  // == -128 (non-overflow range: -127 to +127)
+	memset((void *) count, 0, CMP_SSE_MAX_STATS_BINS_m12 * sizeof(ui4));
+	
+	key_p = (ui1 *) cps->parameters.keysample_buffer;
+	deriv_p = cps->parameters.derivative_buffer + n_derivs;
+	n_deriv_samps = n_samps - n_derivs;
+	for (i = n_deriv_samps; i--;) {
+		diff = *deriv_p++;
+		if (diff < low_d || diff > high_d) {
+			ui1_p = (ui1 *) &diff;
+			++count[*key_p++ = ks_flag];
+			j = overflow_bytes; do {
+				++count[*key_p++ = *ui1_p++];
+			} while (--j);
+		} else {
+			++count[*key_p++ = (ui1) diff];
+		}
+	}
+	n_keysamp_bytes = (ui4) (key_p - (ui1 *) cps->parameters.keysample_buffer);
+
+	// build sorted_count
+	for (i = n_stats_entries = 0, j = 255, k = 128; k--; ++i, --j) {
+		if (count[i]) {
+			sorted_count[n_stats_entries].count = count[i];
+			sorted_count[n_stats_entries++].value = (si1) i;
+		}
+		if (count[j]) {
+			sorted_count[n_stats_entries].count = count[j];
+			sorted_count[n_stats_entries++].value = (si1) j;
+		}
+	}
+	SSE_header->number_of_statistics_bins = (ui2) n_stats_entries;
+	
+	// build sorted_count: bubble sort
+	i = n_stats_entries;
+	do {
+		for (j = 0, k = 1; k < i; ++k) {
+			if (sorted_count[k - 1].count < sorted_count[k].count) {
+				temp_sorted_count = sorted_count[k - 1];
+				sorted_count[k - 1] = sorted_count[k];
+				sorted_count[k] = temp_sorted_count;
+				j = k;  // highest swap index
+			}
+		}
+	} while ((i = j) > 1);
+			
+	// build symbol map, count array
+	for (i = 0; i < n_stats_entries; ++i)
+		symbol_map[sorted_count[i].pos_value] = (ui1) i;
+	
+	// copy initial derivative values to output buffer
+	init_val_p = (si4 *) (cps->parameters.model_region + CMP_RED_MODEL_FIXED_HEADER_BYTES_m12);
+	for (i = 0; i < n_derivs; ++i)
+		*init_val_p++ = cps->parameters.derivative_buffer[i];
+
+	// write scaled counts & symbols into header
+	bin_counts = (ui4 *) init_val_p;
+	symbols = (ui1 *) (bin_counts + n_stats_entries);
+	for (i = 0; i < n_stats_entries; ++i) {
+		*bin_counts++ = sorted_count[i].count;
+		*symbols++ = sorted_count[i].value;
+	}
+	
+	// fill header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
+	block_header->model_region_bytes = (ui2) (symbols - cps->parameters.model_region);
+	block_header->total_header_bytes = (ui4) (symbols - (ui1 *) block_header);
+	SSE_header->number_of_keysample_bytes = n_keysamp_bytes;
+
+	// set up in_bit & in_word arrays
+	out_bit = (ui8 *) calloc((size_t) n_stats_entries, sizeof(ui8));
+	out_word = (ui8 **) calloc((size_t) n_stats_entries, sizeof(ui8 *));
+
+	// set up out_bit & out_word arrays
+	cmp_data = (ui8 *) block_header + (block_header->total_header_bytes >> 3);
+	offset_bytes = (block_header->total_header_bytes & 7);
+	offset_bits = (ui8) (offset_bytes << 3);
+	last_bin = n_stats_entries - 1;
+	remaining_bits = n_keysamp_bytes;
+	cmp_data_bits = offset_bits;
+	for (i = 0; i < last_bin; ++i) {
+		out_word[i] = (ui8 *) (cmp_data + (cmp_data_bits >> 6));
+		out_bit[i] = (ui8) 1 << (cmp_data_bits & 63);
+		if (!(out_bit[i] >>= 1)) {
+			out_bit[i] = (ui8) 0x8000000000000000;
+			--out_word[i];
+		}
+		cmp_data_bits += remaining_bits;
+		remaining_bits -= sorted_count[i].count;
+	}
+	cmp_data_bits -= offset_bits;
+
+	// SSE encode
+	cmp_data_bytes = cmp_data_bits >> 3;
+	if (cmp_data_bits & 7)
+		++cmp_data_bytes;
+	cmp_data_bytes += block_header->total_header_bytes;
+	if (cps->parameters.allocated_compressed_bytes < cmp_data_bytes)
+		goto SSE_ENCODE_FORCE_FALL_THROUGH_m12;
+	comp_p = (ui1 *) block_header + block_header->total_header_bytes;  // can't realloc from here
+	memset(comp_p, 0, cmp_data_bytes);
+	ui1_p = (ui1 *) cps->parameters.keysample_buffer;
+	for (i = n_keysamp_bytes; i--;) {
+		bin = symbol_map[*ui1_p++];
+		for (j = bin + 1; j--;) {
+			if (!(out_bit[j] <<= 1)) {
+				out_bit[j] = 1;
+				++out_word[j];
+			}
+		}
+		if (bin != last_bin)
+			*out_word[bin] |= out_bit[bin];
+	}
+
+	free((void *) out_bit);
+	free((void *) out_word);
+
+	// finish header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
+	block_header->total_block_bytes = (ui4) G_pad_m12((ui1 *) block_header, cmp_data_bytes, 8);
+	
+	// calculate fall through encoding bytes
+	if (cps->directives.fall_through_to_best_encoding == TRUE_m12) {
+		
+		SSE_ENCODE_FORCE_FALL_THROUGH_m12:
+		
+		for (raw_bits_per_samp = 0, i = (si8) cps->parameters.maximum_sample_value - (si8) cps->parameters.minimum_sample_value; i; i >>= 1)
+			++raw_bits_per_samp;
+		if (n_derivs) {
+			for (bits_per_samp = 0, i = (si8) cps->parameters.maximum_difference_value - (si8) cps->parameters.minimum_difference_value; i; i >>= 1)
+				++bits_per_samp;
+			if (raw_bits_per_samp > bits_per_samp)  // this can happen in very noisy data
+				use_raw = FALSE_m12;
+			else
+				use_raw = TRUE_m12;
+		} else {
+			use_raw = TRUE_m12;
+		}
+		if (use_raw == TRUE_m12) {
+			bits_per_samp = raw_bits_per_samp;
+			n_derivs = 0;
+			n_deriv_samps = n_samps;
+		}
+		MBE_data_bits = (si8) n_deriv_samps * (si8) bits_per_samp;
+		fall_through_bytes = (MBE_data_bits + 7) >> 3;
+		header_bytes = cps->parameters.model_region - (ui1 *) block_header;  // fixed block bytes + variable region before model
+		fall_through_bytes += header_bytes + CMP_MBE_MODEL_FIXED_HEADER_BYTES_m12 + (n_derivs * 4);
+		if ((rem = fall_through_bytes & 7))  // pad bytes
+			fall_through_bytes += (8 - rem);
+		if (fall_through_bytes < block_header->total_block_bytes) {
+			block_header->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m12;
+			block_header->block_flags |= CMP_BF_MBE_ENCODING_MASK_m12;
+			MBE_header = (CMP_MBE_MODEL_FIXED_HEADER_m12 *) cps->parameters.model_region;
+			if (use_raw == TRUE_m12) {
+				// cps->input_buffer = unchanged
+				MBE_header->minimum_value = cps->parameters.minimum_sample_value;
+				MBE_header->derivative_level = 0;
+			} else {
+				cps->input_buffer = cps->parameters.derivative_buffer;
+				MBE_header->minimum_value = cps->parameters.minimum_difference_value;
+				MBE_header->derivative_level = n_derivs;
+			}
+			MBE_header->bits_per_sample = bits_per_samp;
+			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m12;
+			CMP_MBE_encode_m12(cps);
+			return;
+		}
+	}
+
+	return;
 }
 
 

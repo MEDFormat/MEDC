@@ -274,45 +274,48 @@ typedef long double	sf16;
 // A segment record is entered at the Session and or Channel Level for each new segment
 // The encryption level for these records is typically set to the same as for metadata section 2
 
-// definitions here due to codependency (remainder in medrec_m13.h)
-#define REC_Sgmt_v11_DESCRIPTION_BYTES_m13	4
-#define REC_Sgmt_v11_PAD_BYTES_m13		REC_Sgmt_v11_DESCRIPTION_BYTES_m13
-
 // Structures
 typedef struct {
 	si8 	end_time;
 	union {
 		si8	start_samp_num; // session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 		si8	start_frame_num; // session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
+		si8	start_num; // generic sample / frame number
 	};
 	union {
 		si8	end_samp_num; // session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 		si8	end_frame_num; // session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
+		si8	end_num; // generic sample / frame number
 	};
 	si4	seg_num;
 	union {
-		si1	description[REC_Sgmt_v11_DESCRIPTION_BYTES_m13]; // The description is an aribitrary length array of utf8s. If no description, first character is zero.
-		ui1	pad[REC_Sgmt_v11_PAD_BYTES_m13]; // description treated as pad (ignored) when structure used as element of segment records array
+		sf4	samp_freq; // channel sampling frequency (REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13 in session level records, if sampling frequencies vary across time series channels)
+		sf4	frame_rate; // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13 in session level records, if frame rates vary across video channels)
+		sf4	rate; // generic rate
 	};
 } REC_Sgmt_v11_m13;
-// The description begins within, and may extend beyond, the structure, padded to 16 byte alignment. If extends beyond, total bytes = structure + [string length - 4].
+// Description follows sampling frequency / frame rate in structure.
+// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
 
 typedef struct {
 	si8 end_time;
 	union {
-		si8 start_samp_num; // session-relative (global indexing)
-		si8 start_frame_num; // session-relative (global indexing)
+		si8	start_samp_num; // session-relative (global indexing)
+		si8	start_frame_num; // session-relative (global indexing)
+		si8	start_num; // generic sample / frame number
 	};
 	union {
-		si8 end_samp_num; // session-relative (global indexing)
-		si8 end_frame_num; // session-relative (global indexing)
+		si8	end_samp_num; // session-relative (global indexing)
+		si8	end_frame_num; // session-relative (global indexing)
+		si8	end_num; // generic sample / frame number
 	};
 	ui8	seg_UID;
 	si4	seg_num;
 	si4	acq_chan_num; // REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13 in session level records
 	union {
-		sf8 samp_freq; // channel sampling frequency (REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13 in session level records, if sampling frequencies vary across time series channels)
-		sf8 frame_rate; 	 // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13 in session level records, if frame rates vary across video channels)
+		sf8	samp_freq; // channel sampling frequency (REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13 in session level records, if sampling frequencies vary across time series channels)
+		sf8	frame_rate; 	 // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13 in session level records, if frame rates vary across video channels)
+		sf4	rate; // generic rate
 	};
 } REC_Sgmt_v10_m13; // version 1.0 included for backward compatibility
 
@@ -426,46 +429,48 @@ typedef struct {
 #define MED_LIBRARY_TAG_m13			"\"_m" ## MED_VERSION_MAJOR_m13 ## MED_LIBRARY_VERSION_m13 ## "\""
 
 // Miscellaneous Constants
-#define NAME_BYTES_m13	256 // utf8[63]
-#define SEG_NAME_BYTES_m13 	(NAME_BYTES_m13 + 8)
-#define VID_NAME_BYTES_m13 	(SEG_NAME_BYTES_m13 + 8)
-#define MAX_NAME_BYTES_m13	VID_NAME_BYTES_m13
-#define PATH_BYTES_m13		1024 // utf8[255]
-#define INDEX_BYTES_m13			24
-#define BIG_ENDIAN_m13			0
-#define LITTLE_ENDIAN_m13		1
-#define TYPE_BYTES_m13			5
-#define TYPE_STRLEN_m13			4
-#define UID_BYTES_m13			8
-#define UID_NO_ENTRY_m13		0
-#define PAD_BYTE_VALUE_m13		0x7e // ascii tilde ("~") as si1
-#define FILE_NUMBERING_DIGITS_m13	4
-#define FREQUENCY_NO_ENTRY_m13		-1.0
-#define FRAME_RATE_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13
-#define FREQUENCY_VARIABLE_m13		-2.0
-#define FRAME_RATE_VARIABLE_m13		FREQUENCY_VARIABLE_m13
-#define UNKNOWN_NUMBER_OF_ENTRIES_m13	-1
-#define SEG_NUMBER_NO_ENTRY_m13		-1
-#define FIRST_OPEN_SEG_m13		-2
-#define CHAN_NUMBER_NO_ENTRY_m13	-1
-#define CHAN_NUMBER_ALL_CHANNELS_m13	-2
-#define DOES_NOT_EXIST_m13		FALSE_m13 // -1
-#define EXISTS_ERR_m13			UNKNOWN_m13 // 0
-#define FILE_EXISTS_m13			TRUE_m13 // 1
-#define DIR_EXISTS_m13			((si1) 2)
-#define SIZE_STRING_BYTES_m13		32
-#define UNKNOWN_SEARCH_m13		0
-#define TIME_SEARCH_m13			1
-#define SAMPLE_SEARCH_m13		2
-#define FRAME_SEARCH_m13		SAMPLE_SEARCH_m13
-#define NO_OVERFLOWS_m13		4 // e.g. in find_index_m13(), restrict returned index to valid segment values
-#define IPV4_ADDRESS_BYTES_m13		4
-#define POSTAL_CODE_BYTES_m13		16
-#define LOCALITY_BYTES_m13		64  // ascii[63]
-#define THREAD_NAME_BYTES_m13		64
-#define SAMPLE_NUMBER_EPS_m13		((sf8) 0.001)
-#define FRAME_NUMBER_EPS_m13		((sf8) 0.01)
-#define UNMAPPED_CHAN_m13		((si4) -1)
+#define NAME_BYTES_m13				256 // utf8[63]
+#define SEG_NAME_BYTES_m13 			(NAME_BYTES_m13 + 8)
+#define VID_NAME_BYTES_m13 			(SEG_NAME_BYTES_m13 + 8)
+#define MAX_NAME_BYTES_m13			VID_NAME_BYTES_m13
+#define PATH_BYTES_m13				1024 // utf8[255]
+#define INDEX_BYTES_m13				24
+#define BIG_ENDIAN_m13				0
+#define LITTLE_ENDIAN_m13			1
+#define TYPE_BYTES_m13				5
+#define TYPE_STRLEN_m13				4
+#define UID_BYTES_m13				8
+#define UID_NO_ENTRY_m13			0
+#define PAD_BYTE_VALUE_m13			0x7e // ascii tilde ("~") as si1
+#define FILE_NUMBERING_DIGITS_m13		4
+#define FREQUENCY_NO_ENTRY_m13			-1.0
+#define FRAME_RATE_NO_ENTRY_m13			FREQUENCY_NO_ENTRY_m13
+#define RATE_NO_ENTRY_m13			FREQUENCY_NO_ENTRY_m13
+#define FREQUENCY_VARIABLE_m13			-2.0
+#define FRAME_RATE_VARIABLE_m13			FREQUENCY_VARIABLE_m13
+#define UNKNOWN_NUMBER_OF_ENTRIES_m13		-1
+#define SEGMENT_NUMBER_NO_ENTRY_m13			-1
+#define FIRST_OPEN_SEG_m13			-2
+#define CHANNEL_NUMBER_NO_ENTRY_m13		-1
+#define CHANNEL_NUMBER_ALL_CHANNELS_m13		-2
+#define DOES_NOT_EXIST_m13			FALSE_m13 // -1
+#define EXISTS_ERR_m13				UNKNOWN_m13 // 0
+#define FILE_EXISTS_m13				TRUE_m13 // 1
+#define DIR_EXISTS_m13				((si1) 2)
+#define SIZE_STRING_BYTES_m13			32
+#define UNKNOWN_SEARCH_m13			0
+#define TIME_SEARCH_m13				1
+#define SAMPLE_SEARCH_m13			2
+#define FRAME_SEARCH_m13			SAMPLE_SEARCH_m13
+#define NO_OVERFLOWS_m13			4 // e.g. in find_index_m13(), restrict returned index to valid segment values
+#define IPV4_ADDRESS_BYTES_m13			4
+#define POSTAL_CODE_BYTES_m13			16
+#define LOCALITY_BYTES_m13			64  // ascii[63]
+#define THREAD_NAME_BYTES_m13			64
+#define SAMPLE_NUMBER_EPS_m13			((sf8) 0.001)
+#define FRAME_NUMBER_EPS_m13			((sf8) 0.01)
+#define UNMAPPED_CHAN_m13			((si4) -1)
+
 #if defined MACOS_m13 || defined LINUX_m13
 	#define NULL_DEVICE_m13					"/dev/null"
 	#define DIR_BREAK_m13					'/'
@@ -758,7 +763,7 @@ typedef struct {
 #define UH_MAXIMUM_ENTRY_SIZE_OFFSET_m13			24 // ui4
 #define UH_MAXIMUM_ENTRY_SIZE_NO_ENTRY_m13			0
 #define UH_SEGMENT_NUMBER_OFFSET_m13				28 // si4
-#define UH_SEGMENT_NUMBER_NO_ENTRY_m13				SEG_NUMBER_NO_ENTRY_m13
+#define UH_SEGMENT_NUMBER_NO_ENTRY_m13				SEGMENT_NUMBER_NO_ENTRY_m13
 #define UH_SEGMENT_LEVEL_CODE_m13				-1
 #define UH_CHANNEL_LEVEL_CODE_m13				-2
 #define UH_SESSION_LEVEL_CODE_m13				-3
@@ -838,7 +843,7 @@ typedef struct {
 #define METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m13		6144 // utf8[510]
 #define METADATA_EQUIPMENT_DESCRIPTION_BYTES_m13		2044
 #define METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13		8188 // si4
-#define METADATA_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13	CHAN_NUMBER_NO_ENTRY_m13
+#define METADATA_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13	CHANNEL_NUMBER_NO_ENTRY_m13
 
 // Metadata: File Format Constants - Time Series Section 2 Fields
 #define TS_METADATA_REFERENCE_DESCRIPTION_OFFSET_m13			8192 // utf8[255]
@@ -1042,16 +1047,6 @@ typedef struct {
 //	The UPDATE_EPHEMERAL_DATA bit is set by the lower levels and reset by the higher level once the data has been updated.
 //	i.e read_channel_m13() checks the segment bits (e.g. read_segment_m13() opened a new segment) & if update required, it does the channel level update & clears the segment bit.
 //	It then sets it's bit to trigger update at the session level. After updating, the session will clear the channel level bit.
-
-// Level Header (LH) Type Codes:
-#define LH_SESS_m13			SESS_TYPE_CODE_m13
-#define LH_SSR_m13			SSR_TYPE_CODE_m13
-#define LH_TS_CHAN_m13			TS_CHAN_TYPE_CODE_m13
-#define LH_VID_CHAN_m13			VID_CHAN_TYPE_CODE_m13
-#define LH_TS_SEG_m13			TS_SEG_TYPE_CODE_m13
-#define LH_VID_SEG_m13			VID_SEG_TYPE_CODE_m13
-#define LH_FILE_m13			FILE_TYPE_CODE_m13
-#define LH_PROC_GLOBS_m13		PROC_GLOBS_TYPE_CODE_m13
 
 // all levels
 #define LH_NO_FLAGS_m13				((ui8) 0)
@@ -1649,8 +1644,11 @@ typedef struct {
 //**********************************************************************************//
 
 #define METADATA_CODE_m13(x)			( (((x) == TS_METADATA_TYPE_CODE_m13) || ((x) == VID_METADATA_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
-#define CHANNEL_CODE_m13(x)			( (((x) == LH_TS_CHAN_m13) || ((x) == LH_VID_CHAN_m13)) ? TRUE_m13 : FALSE_m13 )
-#define SEGMENT_CODE_m13(x)			( (((x) == LH_TS_SEG_m13) || ((x) == LH_VID_SEG_m13)) ? TRUE_m13 : FALSE_m13 )
+#define INDICES_CODE_m13(x)			( (((x) == TS_INDS_TYPE_CODE_m13) || ((x) == VID_INDS_TYPE_CODE_m13) || ((x) == REC_INDS_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
+#define DATA_CODE_m13(x)			( (((x) == TS_DATA_TYPE_CODE_m13) || ((x) == VID_DATA_TYPE_CODE_m13) || ((x) == REC_DATA_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
+#define RECORD_CODE_m13(x)			( (((x) == REC_INDS_TYPE_CODE_m13) || ((x) == REC_DATA_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
+#define CHANNEL_CODE_m13(x)			( (((x) == TS_CHAN_TYPE_CODE_m13) || ((x) == VID_CHAN_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
+#define SEGMENT_CODE_m13(x)			( (((x) == TS_SEG_TYPE_CODE_m13) || ((x) == VID_SEG_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
 #define PLURAL_m13(x) 				( ((x) == 1) ? "" : "s" )
 #define ABS_m13(x)				( ((x) >= 0) ? (x) : -(x) )  // do not increment/decrement in call to ABS (as x occurs thrice)
 #define HEX_STR_BYTES_m13(x, y) 		( ((x) * 2) + (((x) - 1) * (y)) + 1 ) // x numerical bytes with y-byte seperators plus termianl zero
@@ -1663,6 +1661,8 @@ typedef struct {
 #define MED_VER_1_0_S_m13(x)			( (x.MED_version_major == 1 && x.MED_version_minor == 0) ? TRUE_m13 : FALSE_m13 )
 #define SLICE_SAMP_COUNT_m13(x)			( ((x)->end_samp_num - (x)->start_samp_num) + 1 )
 #define SLICE_SAMP_COUNT_S_m13(x)		( ((x).end_samp_num - (x).start_samp_num) + 1 )
+#define SLICE_FRAME_COUNT_m13(x)		( ((x)->end_frame_num - (x)->start_frame_num) + 1 )
+#define SLICE_FRAME_COUNT_S_m13(x)		( ((x).end_frame_num - (x).start_frame_num) + 1 )
 #define SLICE_SEG_COUNT_m13(x)			( ((x)->end_seg_num - (x)->start_seg_num) + 1 )
 #define SLICE_SEG_COUNT_S_m13(x)		( ((x).end_seg_num - (x).start_seg_num) + 1 )
 #define SLICE_DUR_m13(x)			( ((x)->end_time - (x)->start_time) + 1 ) // time in usecs
@@ -1765,10 +1765,12 @@ typedef struct {
 	union { // session-relative (global indexing)
 		si8	start_samp_num;
 		si8	start_frame_num;
+		sf4	start_num; // generic
 	};
 	union { // session-relative (global indexing)
 		si8	end_samp_num;
 		si8	end_frame_num;
+		sf4	end_num; // generic
 	};
 	si4 	start_seg_num;
 	si4 	end_seg_num;
@@ -1780,10 +1782,12 @@ typedef struct {
 	union { // session-relative (global indexing)
 		si8	start_samp_num;
 		si8	start_frame_num;
+		sf4	start_num; // generic
 	};
 	union { // session-relative (global indexing)
 		si8	end_samp_num;
 		si8	end_frame_num;
+		sf4	end_num; // generic
 	};
 	si4 	start_seg_num;
 	si4 	end_seg_num;
@@ -1812,7 +1816,6 @@ typedef struct {
 		sf8		rate;
 	};
 	struct Sgmt_REC_m13	*Sgmt_recs; // defined below == record header + REC_Sgmt_v11_m13 body (session number of segments in length)
-	ui4			type_code; // TS_CHAN_TYPE_m13 or VID_CHAN_TYPE_m13
 } Sgmt_RECS_ENTRY_m13;
 
 typedef struct {
@@ -2366,18 +2369,17 @@ typedef struct {
 
 // Constants
 #define FPS_UH_BYTES_m13			((si8) UH_BYTES_m13) // passed as n_bytes
+#define FPS_UH_OFFSET_m13			((si8) 0) // passed as offset
 #define FPS_BYTES_NO_ENTRY_m13			((si8) 0) // passed as n_bytes
-#define FPS_ITEMS_NO_ENTRY_m13			FPS_BYTES_NO_ENTRY_m13
-#define FPS_AUTO_BYTES_m13			FPS_BYTES_NO_ENTRY_m13
-#define FPS_FULL_FILE_m13			((si8) -1) // passed as n_bytes
-#define FPS_UH_ONLY_m13				((si8) -2) // passed as n_bytes
-#define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFB) // passed as offset (Note: value positive so not treated as discontinuity)
-#define FPS_UH_OFFSET_m13			((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset; adjusted for video by FPS_resolve_offset_m13() (Note: value positive so not treated as discontinuity)
+#define FPS_ITEMS_NO_ENTRY_m13			((si8) 0) // passed as n_items
+#define FPS_AUTO_BYTES_m13			((si8) -1) // passed as n_bytes (use level header flags to determine n_bytes)
+#define FPS_FULL_FILE_m13			((si8) -2) // passed as n_bytes
+#define FPS_UH_ONLY_m13				((si8) -3) // passed as n_bytes
+#define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset (Note: value positive so not treated as discontinuity)
 #define FPS_REL_START_m13			((si8) 0x7FFFFFFFFFFFFFFD) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
 #define FPS_REL_CURR_m13			((si8) 0x7FFFFFFFFFFFFFFE) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
 #define FPS_REL_END_m13				((si8) 0x7FFFFFFFFFFFFFFF) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
 #define FPS_REL_OFFSET_m13(x)			( ((x) >= FPS_APPEND_m13) ? TRUE_m13 : FALSE_m13 )
-#define FPS_REL_VARARG_m13(x)			( ((x) >= FPS_REL_START_m13) ? TRUE_m13 : FALSE_m13 )
 
 #define FPS_FILE_LENGTH_UNKNOWN_m13		-1
 #define FPS_PROTOTYPE_TYPE_CODE_m13		TS_METADATA_TYPE_CODE_m13 // any metadata type would do
@@ -2525,10 +2527,10 @@ FPS_m13		*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m
 FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
 FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
-si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
+si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes);
 FPS_m13		*FPS_open_m13(si1 *path, si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): si1 *mode, ui8 fd_flags
 FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): si1 *path, si1 *mode, si1 *password, LH *parent
-														   // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
+												    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 tern		FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes);
 tern		FPS_reopen_m13(FPS_m13 *fps, si1 *mode);
 si8		FPS_resolve_offset_m13(FPS_m13 *fps, si8 offset, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
@@ -2593,7 +2595,10 @@ typedef struct {
 				si8	end_frame_number;
 			};
 			si4		segment_number;
-			ui1		pad[4];
+			union {
+				sf4	samp_freq;
+				sf4	frame_rate;
+			};
 		};
 	};
 } Sgmt_REC_m13;
@@ -2867,7 +2872,7 @@ tern			G_calculate_metadata_CRC_m13(FPS_m13 *fps);
 tern			G_calculate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_video_data_CRCs_m13(FPS_m13 *fps);
-CHAN_m13		*G_change_index_ref_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name, si1 chan_type);
+CHAN_m13		*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name, si1 chan_type);
 ui4			G_channel_type_from_path_m13(si1 *path);
 tern			G_check_char_type_m13(void);
 tern			G_check_file_list_m13(si1 **file_list, si4 n_files);
@@ -3001,9 +3006,9 @@ si4			G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time);
 tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
 si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
-tern			G_set_global_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 tern			G_set_session_globals_m13(si1 *MED_directory, LH_m13 *lh, si1 *password);
-Sgmt_REC_m13		*G_Sgmt_records(LH_m13 *lh);
+tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
+Sgmt_REC_m13		*G_Sgmt_records(LH_m13 *lh, si4 search_mode);
 tern			G_show_behavior_m13(ui4 mode);
 tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);

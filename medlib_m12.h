@@ -2803,6 +2803,19 @@ si1		*STR_wchar2char_m12(si1 *target, wchar_t *source);
 #define CMP_VDS_TIME_ALGORITHMS_MASK_m12				((ui4) (CMP_VDS_FLAGS_TIME_RED1_MASK_m12 | CMP_VDS_FLAGS_TIME_PRED1_MASK_m12 | CMP_VDS_FLAGS_TIME_MBE_MASK_m12 | CMP_VDS_FLAGS_TIME_RED2_MASK_m12 | CMP_VDS_FLAGS_TIME_PRED2_MASK_m12))
 #define CMP_VDS_ALGORITHMS_MASK_m12					((ui4) (CMP_VDS_AMPLITUDE_ALGORITHMS_MASK_m12 | CMP_VDS_TIME_ALGORITHMS_MASK_m12))
 
+// CMP: SSE (Symbol Sequence Encoding) Model Offset Constants
+#define CMP_SSE_MODEL_NUMBER_OF_KEYSAMPLE_BYTES_OFFSET_m12             	0                       // ui4
+#define CMP_SSE_MODEL_DERIVATIVE_LEVEL_OFFSET_m12                  	4                       // ui1
+#define CMP_SSE_MODEL_PAD_BYTES_OFFSET_m12                  		5                       // ui1[3]
+#define CMP_SSE_MODEL_NUMBER_OF_STATISTICS_BINS_OFFSET_m12              8                      	// ui2
+#define CMP_SSE_MODEL_FLAGS_OFFSET_m12                  		10                      // ui2
+#define CMP_SSE_MODEL_FIXED_HEADER_BYTES_m12                            12
+// SSE Model Flags
+#define CMP_SSE_2_BYTE_OVERFLOWS_MASK_m12				((ui2) 1 << 2)		// bit 2
+#define CMP_SSE_3_BYTE_OVERFLOWS_MASK_m12				((ui2) 1 << 3)		// bit 3
+#define CMP_SSE_OVERFLOW_BYTES_MASK_m12					(CMP_RED_2_BYTE_OVERFLOWS_MASK_m12 | CMP_RED_3_BYTE_OVERFLOWS_MASK_m12)
+
+
 // CMP Block Flag Masks
 #define CMP_BF_BLOCK_FLAG_BITS_m12			32
 #define CMP_BF_DISCONTINUITY_MASK_m12			((ui4) 1)       	// bit 0
@@ -2814,10 +2827,12 @@ si1		*STR_wchar2char_m12(si1 *target, wchar_t *source);
 #define CMP_BF_VDS_ENCODING_MASK_m12			((ui4) 1 << 11)		// bit 11
 #define CMP_BF_RED2_ENCODING_MASK_m12			((ui4) 1 << 12)		// bit 12 - faster, use as default RED version
 #define CMP_BF_PRED2_ENCODING_MASK_m12			((ui4) 1 << 13)		// bit 13 - faster, use as default PRED version
+#define CMP_BF_SSE_ENCODING_MASK_m12			((ui4) 1 << 14)		// bit 14
 
 #define CMP_BF_ALGORITHMS_MASK_m12			((ui4) (CMP_BF_RED1_ENCODING_MASK_m12 | CMP_BF_PRED1_ENCODING_MASK_m12 | \
 							CMP_BF_MBE_ENCODING_MASK_m12 | CMP_BF_VDS_ENCODING_MASK_m12 | \
-							CMP_BF_RED2_ENCODING_MASK_m12 | CMP_BF_PRED2_ENCODING_MASK_m12 ))
+							CMP_BF_RED2_ENCODING_MASK_m12 | CMP_BF_PRED2_ENCODING_MASK_m12 | \
+							CMP_BF_SSE_ENCODING_MASK_m12 ))
 #define CMP_BF_ENCRYPTION_MASK_m12			((ui4) (CMP_BF_LEVEL_1_ENCRYPTION_MASK_m12 | CMP_BF_LEVEL_2_ENCRYPTION_MASK_m12))
 
 // CMP Parameter Map Indices
@@ -2851,6 +2866,7 @@ si1		*STR_wchar2char_m12(si1 *target, wchar_t *source);
 #define CMP_VDS_COMPRESSION_m12		CMP_BF_VDS_ENCODING_MASK_m12
 #define CMP_RED2_COMPRESSION_m12	CMP_BF_RED2_ENCODING_MASK_m12
 #define CMP_PRED2_COMPRESSION_m12	CMP_BF_PRED2_ENCODING_MASK_m12
+#define CMP_SSE_COMPRESSION_m12		CMP_BF_SSE_ENCODING_MASK_m12
 
 #define CMP_RED_COMPRESSION_m12		CMP_RED2_COMPRESSION_m12	// use RED v2 as default
 #define CMP_PRED_COMPRESSION_m12	CMP_PRED2_COMPRESSION_m12	// use PRED v2 as default
@@ -2869,7 +2885,7 @@ si1		*STR_wchar2char_m12(si1 *target, wchar_t *source);
 #define CMP_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m12			TRUE_m12  	// determine overflow bytes on a block by block basis
 #define CMP_DIRECTIVES_NO_ZERO_COUNTS_DEFAULT_m12          		FALSE_m12
 #define CMP_DIRECTIVES_POSITIVE_DERIVATIVES_DEFAULT_m12    		FALSE_m12
-#define CMP_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m12			FALSE_m12	// user sets value in parameters
+#define CMP_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m12			FALSE_m12	// user sets level in parameters
 #define CMP_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m12		FALSE_m12
 #define CMP_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m12		TRUE_m12
 // lossy compression directives
@@ -2919,6 +2935,9 @@ si1		*STR_wchar2char_m12(si1 *target, wchar_t *source);
 #define CMP_PRED_NIL_m12                	0
 #define CMP_PRED_POS_m12                	1
 #define CMP_PRED_NEG_m12			2
+
+// SSE Constants
+#define CMP_SSE_MAX_STATS_BINS_m12      	256
 
 // Macros
 #define CMP_MAX_KEYSAMPLE_BYTES_m12(block_samps)		(block_samps * 5) // full si4 plus 1 keysample flag byte per sample
@@ -3117,6 +3136,14 @@ typedef struct {  // requires 4-byte alignment
 	ui4	flags;  // potentially more options for VDS, so 32 bits
 } CMP_VDS_MODEL_FIXED_HEADER_m12;
 
+typedef struct {  // requires 4-byte alignment
+	ui4	number_of_keysample_bytes;
+	ui1	derivative_level;
+	ui1	pad[3];
+	ui2	number_of_statistics_bins;
+	ui2	flags;
+} CMP_SSE_MODEL_FIXED_HEADER_m12;
+
 typedef struct {
 	ui4	type_code;  // note this is not null terminated and so cannot be treated as a string as in RECORD_HEADER_m12 structure
 	ui1	version_major;
@@ -3244,8 +3271,8 @@ typedef struct {
 	void			**filtps;
 	si4			n_filtps;
 	ui1			*model_region;
-	void			*count;  // used by RED/PRED encode & decode (ui4 * or ui4 **)
-	void			*sorted_count;  // used by RED/PRED encode & decode (CMP_STATISTICS_BIN_m12 * or CMP_STATISTICS_BIN_m12 **)
+	void			*count;  // used by RED/PRED/SSE encode & decode (ui4 * or ui4 **)
+	void			*sorted_count;  // used by RED/PRED/SSE encode & decode (CMP_STATISTICS_BIN_m12 * or CMP_STATISTICS_BIN_m12 **)
 	void			*cumulative_count;  // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void			*minimum_range;  // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void			*symbol_map;  // used by RED/PRED encode & decode (ui1 * or ui1 **)
@@ -3359,6 +3386,8 @@ void      	CMP_si4_to_sf8_m12(si4 *si4_arr, sf8 *sf8_arr, si8 len);
 sf8		*CMP_spline_interp_sf8_m12(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, CMP_BUFFERS_m12 *spline_bufs);
 si4		*CMP_spline_interp_si4_m12(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len, CMP_BUFFERS_m12 *spline_bufs);
 sf8		CMP_splope_m12(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt);
+void    	CMP_SSE_encode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
+void    	CMP_SSE_decode_m12(CMP_PROCESSING_STRUCT_m12 *cps);
 sf8		CMP_trace_amplitude_m12(sf8 *y, sf8 *buffer, si8 len, TERN_m12 detrend);
 si8             CMP_ts_sort_m12(si4 *x, si8 len, CMP_NODE_m12 *nodes, CMP_NODE_m12 *head, CMP_NODE_m12 *tail, si4 return_sorted_ts, ...);
 void		CMP_unlock_buffers_m12(CMP_BUFFERS_m12 *buffers);
