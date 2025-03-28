@@ -2252,9 +2252,9 @@ typedef struct {
 
 // All metadata section substructures are the same sizes
 typedef union {
-	ui1					section_2[METADATA_SECTION_2_BYTES_m13];
+	ui1				section_2[METADATA_SECTION_2_BYTES_m13];
 	TS_METADATA_SECTION_2_m13	time_series_section_2;
-	VID_METADATA_SECTION_2_m13		video_section_2;
+	VID_METADATA_SECTION_2_m13	video_section_2;
 } METADATA_SECTION_2_m13;
 
 typedef struct {
@@ -2284,9 +2284,9 @@ typedef struct {
 typedef struct {
 	METADATA_SECTION_1_m13		section_1;
 	union {
-		ui1					section_2[METADATA_SECTION_2_BYTES_m13];
+		ui1				section_2[METADATA_SECTION_2_BYTES_m13];
 		TS_METADATA_SECTION_2_m13	time_series_section_2;
-		VID_METADATA_SECTION_2_m13		video_section_2;
+		VID_METADATA_SECTION_2_m13	video_section_2;
 	};
 	METADATA_SECTION_3_m13		section_3;
 } METADATA_m13;
@@ -2303,7 +2303,7 @@ typedef struct REC_HDR_m13 { // struct name for medrec_m13.h interdependency
 	ui4		record_CRC;
 	ui4		total_record_bytes; // header + body bytes
 	si8		start_time;
-	union { // anonymous union
+	union {
 		struct {
 			si1	type_string[TYPE_BYTES_m13];
 			ui1	version_major;
@@ -2320,7 +2320,7 @@ typedef struct REC_HDR_m13 { // struct name for medrec_m13.h interdependency
 typedef struct {
 	si8		file_offset; // never negative: the record indices are not used to indicate discontinuities
 	si8		start_time;
-	union { // anonymous union
+	union {
 		struct {
 			si1	type_string[TYPE_BYTES_m13];
 			ui1	version_major;
@@ -2332,7 +2332,7 @@ typedef struct {
 			si1	type_string_terminal_zero; // not used - there for clarity
 		};
 	};
-} REC_IDX_m13; // m12 version for backward compatability
+} REC_IDX_m13;
 
 // Time Series Indices Structures
 typedef struct {
@@ -2353,7 +2353,7 @@ typedef struct {
 	si8	file_offset; // negative values indicate discontinuity (in time series & video indices)
 	si8	start_time;
 	ui1	pad[8];
-} GEN_IDX_m13; // m12 version for backward compatability
+} GEN_IDX_m13;
 
 // All index structures are the same size, and have the same first two fields (hence GEN_IDX_m13)
 typedef struct {
@@ -3030,7 +3030,7 @@ tern			G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level);
 tern			G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level);
 tern			G_show_proc_globs_m13(LH_m13 *lh);
 tern			G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters);
-tern			G_show_Sgmt_records_array_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt);
+tern			G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt);
 tern 			G_show_slice_m13(SLICE_m13 *slice);
 tern			G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail);
 tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
@@ -5137,9 +5137,9 @@ si4		sscanf_m13(si1 *target, si1 *fmt, ...);
 si8		strcat_m13(si1 *target, const si1 *source);
 si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
 si8		strcpy_m13(si1 *target, const si1 *source);
-si8		strncat_m13(si1 *target, const si1 *source, size_t n_bytes);
-si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_bytes);
-si8		strncpy_m13(si1 *target, const si1 *source, size_t n_bytes);
+si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
+si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
+si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		system_m13(si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
 si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		vasprintf_m13(si1 **target, si1 *fmt, va_list args);

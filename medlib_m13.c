@@ -1671,7 +1671,7 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 			for (i = 0; i < n_chans; ++i) {
 				tmp_chan = sess->ts_chans[i];
 				if (tmp_chan->flags & LH_CHAN_ACTIVE_m13) {
-					if (strcmp(tmp_chan->name, chan_name) == 0) {
+					if (strcmp_m13(tmp_chan->name, chan_name) == 0) {
 						chan = tmp_chan;
 						goto CHANGE_REF_MATCH_m13;
 					}
@@ -1683,7 +1683,7 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 			for (i = 0; i < n_chans; ++i) {
 				tmp_chan = sess->vid_chans[i];
 				if (tmp_chan->flags & LH_CHAN_ACTIVE_m13) {
-					if (strcmp(tmp_chan->name, chan_name) == 0) {
+					if (strcmp_m13(tmp_chan->name, chan_name) == 0) {
 						chan = tmp_chan;
 						goto CHANGE_REF_MATCH_m13;
 					}
@@ -1837,9 +1837,9 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 		cloud_utilities_directory = va_arg(args, si1 *);
 		va_end(args);
 		
-		if (strcmp(cloud_service_name, "amazon") == 0)
+		if (strcmp_m13(cloud_service_name, "amazon") == 0)
 			sprintf_m13(cloud_prefix, "%s/gustil ", cloud_utilities_directory);
-		else if (strcmp(cloud_service_name, "google") == 0)
+		else if (strcmp_m13(cloud_service_name, "google") == 0)
 			sprintf_m13(cloud_prefix, "%s/aws s3 ", cloud_utilities_directory);
 		
 		// copy file system test file to cloud
@@ -2175,7 +2175,7 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 	
 	if (*tz_info->country) {
 		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m13; ++i) {
-			if ((strcmp(tz_info->country, tz_aliases_table[i].alias)) == 0) {
+			if ((strcmp_m13(tz_info->country, tz_aliases_table[i].alias)) == 0) {
 				strcpy(tz_info->country, tz_aliases_table[i].table_name);
 				break;
 			}
@@ -2187,7 +2187,7 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 	
 	if (*tz_info->country_acronym_2_letter) {
 		for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13; ++i) {
-			if ((strcmp(tz_info->country_acronym_2_letter, tz_aliases_table[i].alias)) == 0) {
+			if ((strcmp_m13(tz_info->country_acronym_2_letter, tz_aliases_table[i].alias)) == 0) {
 				strcpy(tz_info->country_acronym_2_letter, tz_aliases_table[i].table_name);
 				break;
 			}
@@ -2196,7 +2196,7 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 	
 	if (*tz_info->country_acronym_3_letter) {
 		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m13; ++i) {
-			if ((strcmp(tz_info->country_acronym_3_letter, tz_aliases_table[i].alias)) == 0) {
+			if ((strcmp_m13(tz_info->country_acronym_3_letter, tz_aliases_table[i].alias)) == 0) {
 				strcpy(tz_info->country_acronym_3_letter, tz_aliases_table[i].table_name);
 				break;
 			}
@@ -3173,7 +3173,7 @@ ENTER_ASCII_PASSWORD_RETRY_1_m13:
 		}
 		pw_copy[i] = 0;
 		putchar_m13('\n');
-		if (strcmp(password, pw_copy)) {
+		if (strcmp_m13(password, pw_copy)) {
 			if (++attempts == MAX_ATTEMPTS) {
 				printf_m13("%sPasswords do not match. Maximum attempts made.\n%s", TC_RED_m13, TC_RESET_m13);
 				tcsetattr(STDIN_FILENO, TCSANOW, &saved_term);
@@ -3329,7 +3329,7 @@ tern	G_enter_ascii_password_m13(si1* password, si1* prompt, tern confirm_no_entr
 			pw_copy[i++] = c;
 		}
 
-		if (strcmp(password, pw_copy)) {
+		if (strcmp_m13(password, pw_copy)) {
 			if (++match_attempts == MAX_ATTEMPTS) {
 				if (++primary_attempts < MAX_ATTEMPTS) {
 					printf_m13("%sPasswords do not match. Re-enter password.\n%s", TC_RED_m13, TC_RESET_m13);
@@ -5114,7 +5114,7 @@ tern	G_full_path_m13(si1 *path, si1 *full_path)
 		goto PATH_FROM_ROOT_EXIT_m13;
 	}
 	
-	if (strncmp(tmp_path, tmp_path2, len) == 0)
+	if (strncmp_m13(tmp_path, tmp_path2, len) == 0)
 		from_root = TRUE_m13;
 	
 	// don't modify path, just return T/F
@@ -5750,7 +5750,7 @@ GFL_CONDITION_RETURN_DATA_m13:
 			if (*tmp_name == '.')  // exclude invisible files
 				continue;
 		if ((flags & GFL_INCLUDE_PARITY_m13) == 0)
-			if (strncmp(tmp_name, "parity", 6) == 0)  // exclude parity files
+			if (strncmp_m13(tmp_name, "parity", 6) == 0)  // exclude parity files
 				continue;
 		switch (path_parts) {
 			case (GFL_FULL_PATH_m13):
@@ -6389,7 +6389,7 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 			proc_globs->current_session.UID = MED_fps->uh->session_UID;
 			strcpy(proc_globs->current_session.uh_name, MED_fps->uh->session_name);
 			proc_globs->current_session.names_differ = FALSE_m13;
-			if (strcmp(proc_globs->current_session.fs_name, proc_globs->current_session.uh_name)) {
+			if (strcmp_m13(proc_globs->current_session.fs_name, proc_globs->current_session.uh_name)) {
 				proc_globs->current_session.names_differ = TRUE_m13;
 				if (globals_m13->update_header_names == TRUE_m13)
 					if (proc_globs->child->type_code == SESS_TYPE_CODE_m13)
@@ -8193,7 +8193,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 			}
 		}
 		// check for rename
-		if (strcmp(chan->name, chan->rec_inds_fps->uh->channel_name))
+		if (strcmp_m13(chan->name, chan->rec_inds_fps->uh->channel_name))
 			G_update_channel_name_m13(chan);
 	}
 	
@@ -8562,7 +8562,7 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 			// check for rename
 			len = strlen(seg->name);
 			seg->name[len - 5] = 0;
-			if (strcmp(tmp_str, seg->metadata_fps->uh->channel_name))
+			if (strcmp_m13(tmp_str, seg->metadata_fps->uh->channel_name))
 				if (seg->parent)  // can be null
 					if (CHANNEL_CODE_m13(seg->parent->type_code) == TRUE_m13)  // can be proc_globs
 						G_update_channel_name_m13((CHAN_m13 *) seg->parent);
@@ -8835,7 +8835,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 				}
 			} else {  // lists are in alphabetical order
 				for (i = j = 0; i < n_ts_chans; ++i) {
-					for (; strcmp(ts_chan_list[i], full_ts_chan_list[j]); ++j);
+					for (; strcmp_m13(ts_chan_list[i], full_ts_chan_list[j]); ++j);
 					chan = sess->ts_chans[j];
 					chan->flags |= LH_CHAN_ACTIVE_m13;
 				}
@@ -8897,7 +8897,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 				}
 			} else {  // lists are in alphbetical order
 				for (i = j = 0; i < n_vid_chans; ++i) {
-					for (; strcmp(vid_chan_list[i], full_vid_chan_list[j]); ++j);
+					for (; strcmp_m13(vid_chan_list[i], full_vid_chan_list[j]); ++j);
 					chan = sess->vid_chans[j];
 					chan->flags |= LH_CHAN_ACTIVE_m13;
 				}
@@ -11524,10 +11524,11 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
-	proc_globs = G_proc_globs_m13(NULL);
+	proc_globs = G_proc_globs_m13(NULL);  // use proc_globs from current thread
 	
 	eprintf_m13();
 	G_show_slice_m13(slice);
+	G_show_Sgmt_records_m13(NULL, Sgmt_records);
 	
 	if (search_mode == TIME_SEARCH_m13) {
 		// start segment
@@ -11536,6 +11537,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 		high_idx = proc_globs->current_session.n_segments - 1;
 		if (target > Sgmt_records[high_idx].end_time) {
 			slice->start_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
+			eprintf_m13();
 			G_warning_message_m13("%s(): requested start time is after session end\n", __FUNCTION__);
 			idx = 0;
 		} else {
@@ -12075,7 +12077,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->country) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->country, tz_table[potential_timezone_entries[i]].country) == 0)
+			if (strcmp_m13(timezone_info->country, tz_table[potential_timezone_entries[i]].country) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12088,7 +12090,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->country_acronym_2_letter) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
+			if (strcmp_m13(timezone_info->country_acronym_2_letter, tz_table[potential_timezone_entries[i]].country_acronym_2_letter) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12101,7 +12103,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->country_acronym_3_letter) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->country_acronym_3_letter, tz_table[potential_timezone_entries[i]].country_acronym_3_letter) == 0)
+			if (strcmp_m13(timezone_info->country_acronym_3_letter, tz_table[potential_timezone_entries[i]].country_acronym_3_letter) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12114,7 +12116,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->standard_timezone_acronym) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->standard_timezone_acronym, tz_table[potential_timezone_entries[i]].standard_timezone_acronym) == 0)
+			if (strcmp_m13(timezone_info->standard_timezone_acronym, tz_table[potential_timezone_entries[i]].standard_timezone_acronym) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12127,7 +12129,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->standard_timezone) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->standard_timezone, tz_table[potential_timezone_entries[i]].standard_timezone) == 0)
+			if (strcmp_m13(timezone_info->standard_timezone, tz_table[potential_timezone_entries[i]].standard_timezone) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12140,7 +12142,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->daylight_timezone_acronym) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->daylight_timezone_acronym, tz_table[potential_timezone_entries[i]].daylight_timezone_acronym) == 0)
+			if (strcmp_m13(timezone_info->daylight_timezone_acronym, tz_table[potential_timezone_entries[i]].daylight_timezone_acronym) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12153,7 +12155,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->daylight_timezone) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->daylight_timezone, tz_table[potential_timezone_entries[i]].daylight_timezone) == 0)
+			if (strcmp_m13(timezone_info->daylight_timezone, tz_table[potential_timezone_entries[i]].daylight_timezone) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12179,7 +12181,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->territory) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->territory, tz_table[potential_timezone_entries[i]].territory) == 0)
+			if (strcmp_m13(timezone_info->territory, tz_table[potential_timezone_entries[i]].territory) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12192,7 +12194,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	j = 0;
 	if (*timezone_info->territory_acronym) {
 		for (i = 0; i < n_potential_timezones; ++i)
-			if (strcmp(timezone_info->territory_acronym, tz_table[potential_timezone_entries[i]].territory_acronym) == 0)
+			if (strcmp_m13(timezone_info->territory_acronym, tz_table[potential_timezone_entries[i]].territory_acronym) == 0)
 				potential_timezone_entries[j++] = potential_timezone_entries[i];
 	}
 	if (j) {
@@ -12209,7 +12211,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 			break;
 		if (tz_table[potential_timezone_entries[i]].daylight_time_end_code != tz_table[potential_timezone_entries[0]].daylight_time_end_code)
 			break;
-		if (strcmp(tz_table[potential_timezone_entries[i]].standard_timezone, tz_table[potential_timezone_entries[0]].standard_timezone))
+		if (strcmp_m13(tz_table[potential_timezone_entries[i]].standard_timezone, tz_table[potential_timezone_entries[0]].standard_timezone))
 			break;
 	}
 	if (i == n_potential_timezones)
@@ -12374,7 +12376,7 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 	pthread_mutex_unlock_m13(&list->mutex);  // unlock
 	
 	eprintf_m13();
-	G_show_Sgmt_records_array_m13(NULL, Sgmt_recs);
+	G_show_Sgmt_records_m13(NULL, Sgmt_recs);
 	eprintf_m13();
 
 	return_m13(Sgmt_recs);
@@ -13534,7 +13536,7 @@ tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 }
 
 
-tern	G_show_Sgmt_records_array_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt)
+tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt)
 {
 	si1	  		time_str[TIME_STRING_BYTES_m13];
 	si4			n_segs;
@@ -14423,7 +14425,7 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 	if (n_files) {
 		sprintf_m13(path, "%s/%s.%s", chan->path, fs_name, REC_INDS_TYPE_STR_m13);
 		G_path_parts_m13(file_list[0], NULL, name, NULL);
-		if (strcmp(fs_name, name))
+		if (strcmp_m13(fs_name, name))
 			mv_m13(file_list[0], path);
 		free_m13((void *) file_list);
 		G_update_channel_name_header_m13(path, fs_name);
@@ -14434,7 +14436,7 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 	if (n_files) {
 		sprintf_m13(path, "%s/%s.%s", chan->path, fs_name, REC_DATA_TYPE_STR_m13);
 		G_path_parts_m13(file_list[0], NULL, name, NULL);
-		if (strcmp(fs_name, name))
+		if (strcmp_m13(fs_name, name))
 			mv_m13(file_list[0], path);
 		free_m13((void *) file_list);
 		G_update_channel_name_header_m13(path, fs_name);
@@ -14449,7 +14451,7 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			G_path_parts_m13(seg_list[i], NULL, name, NULL);
 			len = strlen(name);
 			name[len - 5] = 0;
-			if (strcmp(fs_name, name)) {
+			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
@@ -14509,7 +14511,7 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			len = strlen(name);
 			strcpy(sufx, name + (len - 5));
 			name[len - 5] = 0;
-			if (strcmp(fs_name, name)) {
+			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
@@ -14593,7 +14595,7 @@ tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_upd
 		G_set_error_m13(E_READ_m13, NULL);
 		return_m13(FALSE_m13);
 	}
-	if (strcmp(uh.channel_name, fs_name)) {
+	if (strcmp_m13(uh.channel_name, fs_name)) {
 		strncpy(uh.channel_name, fs_name, NAME_BYTES_m13);
 		uh.header_CRC = CRC_calculate_m13((ui1 *) &uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 #if defined MACOS_m13 || defined LINUX_m13
@@ -14651,9 +14653,10 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 	}
 	
 	if (message_given == FALSE_m13) {
-		G_message_m13("Updating all files to MED version %d.%d. This will add some time ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
+		G_message_m13("Updating files to MED version %d.%d.\nThis may add noticable time to this read ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
 		message_given = TRUE_m13;
 	}
+	eprintf_m13("updating %s", fps->path);
 		
 	// set up
 	type_code = fps->uh->type_code;
@@ -14708,9 +14711,17 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			uh->encryption_rounds = 1;  // only one round available in MED 1.0
 		else
 			uh->encryption_rounds = 0;  // no encryption
-		
-		// anonymized subject
+		// zero old section 1 encryption fields
+		*((si1 *) (rd + MED_10_METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13)) = 0;
+		*((si1 *) (rd + MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13)) = 0;
+		*((si1 *) (rd + MED_10_METADATA_TS_DATA_ENCRYPTION_LEVEL_OFFSET_m13)) = 0;
+
+		// anonymized subject id
+		eprintf_m13("md1->anonymized_subject_ID = \"%s\" (before)", md1->anonymized_subject_ID);
 		strncpy_m13(md1->anonymized_subject_ID, (si1 *) (rd + MED_10_UH_ANONYMIZED_SUBJECT_ID_OFFSET_m13), METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13);
+		eprintf_m13("(rd + MED_10_UH_ANONYMIZED_SUBJECT_ID_OFFSET_m13) = \"%s\"", (si1 *) (rd + MED_10_UH_ANONYMIZED_SUBJECT_ID_OFFSET_m13));
+		eprintf_m13("md1->anonymized_subject_ID = \"%s\"", md1->anonymized_subject_ID);
+		eprintf_m13("md1->anonymized_subject_ID offset = %lu", (ui8) md1->anonymized_subject_ID - (ui8) rd);
 		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero previous location
 		
 		// update CRCs
@@ -15551,7 +15562,7 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 	}
 
 	uh = fps->uh;
-	if (strcmp(uh->session_name, fs_name)) {
+	if (strcmp_m13(uh->session_name, fs_name)) {
 		strncpy(uh->session_name, fs_name, NAME_BYTES_m13);
 		FPS_write_m13(fps, 0, FPS_UH_ONLY_m13, 0, NULL);
 	}
@@ -33270,9 +33281,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		np->active = UNKNOWN_m13;
 	} else {
 		sscanf(c, "%s", tmp_str);
-		if (strcmp(tmp_str, "active") == 0)
+		if (strcmp_m13(tmp_str, "active") == 0)
 			np->active = TRUE_m13;
-		else if (strcmp(tmp_str, "inactive") == 0)
+		else if (strcmp_m13(tmp_str, "inactive") == 0)
 			np->active = FALSE_m13;
 		else {
 			G_warning_message_m13("%s(): Unrecognized value (\"%s\") for field \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, tmp_str, pattern, np->interface_name);
@@ -34099,7 +34110,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 		}
 		
 		// compare to target address
-		if (strcmp(tmp_addr, iface_addr) == 0)
+		if (strcmp_m13(tmp_addr, iface_addr) == 0)
 			break;
 	}
 	if (ifa == NULL) {
@@ -34140,7 +34151,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 			// find "LAN adapter" backwards fromm here
 			while (c >= buffer) {
 				if (*c == 'L')
-					if (strncmp(c, "LAN adapter ", 12) == 0)
+					if (strncmp_m13(c, "LAN adapter ", 12) == 0)
 						break;
 				--c;
 			}
@@ -34272,7 +34283,7 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 			strcpy_m13(tmp_str, iface);
 			NET_iface_name_for_addr_m13(iface, tmp_str);
 		}
-		if (strcmp(globals_m13->tables->NET_params.interface_name, iface) == 0)
+		if (strcmp_m13(globals_m13->tables->NET_params.interface_name, iface) == 0)
 			interface_is_global = TRUE_m13;
 	}
 	
@@ -34280,7 +34291,7 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 		// case: +iface, +params
 		if (params) {
 			if (iface != params->interface_name) {
-				if (strcmp(iface, params->interface_name)) {  // interface changed, zero other params
+				if (strcmp_m13(iface, params->interface_name)) {  // interface changed, zero other params
 					memset((void *) params, 0, sizeof(NET_PARAMS_m13));
 					strcpy(params->interface_name, iface);
 				}
@@ -34411,7 +34422,7 @@ tern	NET_trim_address_m13(si1 *address)
 
 	// trim ipv6 version of ipv4 address to standard ipv4 address
 	
-	if (strncmp(address, "::ffff:", 7) == 0) {
+	if (strncmp_m13(address, "::ffff:", 7) == 0) {
 		len = strlen(address);
 		memmove(address, address + 7, len - 6);
 	}
@@ -34477,7 +34488,7 @@ PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ..
 
 	defaults = FALSE_m13;
 	if (label)
-		if (strcmp(label, PAR_DEFAULTS_m13) == 0)
+		if (strcmp_m13(label, PAR_DEFAULTS_m13) == 0)
 			defaults = TRUE_m13;
 	
 	if (defaults == TRUE_m13) {
@@ -34535,7 +34546,7 @@ PAR_INFO_m13	*PAR_launch_m13(PAR_INFO_m13 *par_info, ...)  // varargs (par_info 
 		par_info = (PAR_INFO_m13 *) calloc_m13((size_t) 1, sizeof(PAR_INFO_m13));
 		function = va_arg(par_t_info.args, si1 *);
 		label = va_arg(par_t_info.args, si1 *);
-		if (strcmp(label, PAR_DEFAULTS_m13) == 0) {
+		if (strcmp_m13(label, PAR_DEFAULTS_m13) == 0) {
 			PAR_init_m13(par_info, function, label);
 		} else {
 			priority = va_arg(par_t_info.args, si4);
@@ -34646,19 +34657,19 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	par_info->tid = proc_globs->_id;
 
 	// get function
-	if (strcmp(function, "G_open_session_m13") == 0)
+	if (strcmp_m13(function, "G_open_session_m13") == 0)
 		fn = PAR_OPEN_SESSION_M13;
-	else if (strcmp(function, "G_read_session_m13") == 0)
+	else if (strcmp_m13(function, "G_read_session_m13") == 0)
 		fn = PAR_READ_SESSION_M13;
-	else if (strcmp(function, "G_open_channel_m13") == 0)
+	else if (strcmp_m13(function, "G_open_channel_m13") == 0)
 		fn = PAR_OPEN_CHANNEL_M13;
-	else if (strcmp(function, "G_read_channel_m13") == 0)
+	else if (strcmp_m13(function, "G_read_channel_m13") == 0)
 		fn = PAR_READ_CHANNEL_M13;
-	else if (strcmp(function, "G_open_segment_m13") == 0)
+	else if (strcmp_m13(function, "G_open_segment_m13") == 0)
 		fn = PAR_OPEN_SEGMENT_M13;
-	else if (strcmp(function, "G_read_segment_m13") == 0)
+	else if (strcmp_m13(function, "G_read_segment_m13") == 0)
 		fn = PAR_READ_SEGMENT_M13;
-	else if (strcmp(function, "DM_get_matrix_m13") == 0)
+	else if (strcmp_m13(function, "DM_get_matrix_m13") == 0)
 		fn = PAR_DM_GET_MATRIX_M13;
 	else {
 		G_warning_message_m13("%s(): can't match function => returning\n", __FUNCTION__);
@@ -36513,7 +36524,7 @@ tern	PRTY_restore_m13(si1 *MED_path)
 		// build file list
 		strcpy(parity_files[PRTY_FILE_DAMAGED_IDX_m13].path, input_file_list[i]);
 		for (j = 1, k = 0; j < n_parity_files; ++k) {
-			if (strcmp(list[k], base_name)) {
+			if (strcmp_m13(list[k], base_name)) {
 				STR_replace_pattern_m13("parity", list[k], parity_path, tmp_path);
 				strcpy(parity_files[j++].path, tmp_path);
 			}
@@ -37587,13 +37598,13 @@ si4 RC_read_field_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1
 	}
 
 	type = 0;
-	if (strcmp(type_str, "string") == 0) {
+	if (strcmp_m13(type_str, "string") == 0) {
 		type = RC_STRING_TYPE_m13;
-	} else if (strcmp(type_str, "float") == 0) {
+	} else if (strcmp_m13(type_str, "float") == 0) {
 		type = RC_FLOAT_TYPE_m13;
-	} else if (strcmp(type_str, "integer") == 0) {
+	} else if (strcmp_m13(type_str, "integer") == 0) {
 		type = RC_INTEGER_TYPE_m13;
-	} else if (strcmp(type_str, "ternary") == 0) {
+	} else if (strcmp_m13(type_str, "ternary") == 0) {
 		type = RC_TERNARY_TYPE_m13;
 	} else {
 		G_set_error_m13(E_UNSPEC_m13, "could not match TYPE subfield in field \"%s\" of rc file", field_name);
@@ -37609,7 +37620,7 @@ si4 RC_read_field_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1
 	}
 	if (*options_ptr == ':') {
 		++options_ptr;
-	} else if (strncmp(options_ptr, " ONLY:", 6) == 0) {
+	} else if (strncmp_m13(options_ptr, " ONLY:", 6) == 0) {
 		options_ptr += 6;
 		options_only = TRUE_m13;
 	} else {
@@ -37663,7 +37674,7 @@ si4 RC_read_field_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1
 READ_RC_HANDLE_DEFAULT_m13:
 	
 	// VALUE field is "DEFAULT", and default may be "PROMPT"
-	if (strcmp(field_value_str, "DEFAULT") == 0) {
+	if (strcmp_m13(field_value_str, "DEFAULT") == 0) {
 		if (default_item) {
 			strcpy(field_value_str, default_value_str);
 		} else {
@@ -37673,7 +37684,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 	}
 
 	// PROMPT (Note: user can enter "DEFAULT", "NO ENTRY", or any of the recognized OPTIONS here if desired)
-	if (strcmp(field_value_str, "PROMPT") == 0) {
+	if (strcmp_m13(field_value_str, "PROMPT") == 0) {
 		if (options_only == TRUE_m13)
 			printf_m13("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter an option: ", field_name, options_str, default_value_str);
 		else
@@ -37688,7 +37699,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 
 	// no entry
 	option_selected = RC_NO_OPTION_m13;
-	if ((strcmp(field_value_str, "NO ENTRY") == 0)) {
+	if ((strcmp_m13(field_value_str, "NO ENTRY") == 0)) {
 		if (options_only == TRUE_m13) {
 			G_warning_message_m13("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
 			strcpy(field_value_str, "DEFAULT");
@@ -37709,7 +37720,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 			++option_number;
 			item = sscanf(options_ptr, "%[^,\r\n]", tmp_str);
 			if (item) {
-				if (strcmp(tmp_str, field_value_str) == 0) {
+				if (strcmp_m13(tmp_str, field_value_str) == 0) {
 					option_selected = option_number;
 					strcpy(field_value_str, tmp_str);
 					break;
@@ -37772,11 +37783,11 @@ READ_RC_HANDLE_DEFAULT_m13:
 					return_m13(RC_ERR_m13);
 				}
 			} else {  // user entered option
-				if (strcmp(field_value_str, "YES") == 0 || strcmp(field_value_str, "TRUE") == 0) {
+				if (strcmp_m13(field_value_str, "YES") == 0 || strcmp_m13(field_value_str, "TRUE") == 0) {
 					*TERN_val = TRUE_m13;
-				} else if (strcmp(field_value_str, "NO") == 0 || strcmp(field_value_str, "FALSE") == 0) {
+				} else if (strcmp_m13(field_value_str, "NO") == 0 || strcmp_m13(field_value_str, "FALSE") == 0) {
 					*TERN_val = FALSE_m13;
-				} else if (strcmp(field_value_str, "UNKNOWN") == 0) {
+				} else if (strcmp_m13(field_value_str, "UNKNOWN") == 0) {
 					*TERN_val = UNKNOWN_m13;
 				}
 			}
@@ -37877,13 +37888,13 @@ si4 RC_read_field_2_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, v
 	}
 
 	type = 0;
-	if (strcmp(type_str, "string") == 0) {
+	if (strcmp_m13(type_str, "string") == 0) {
 		type = RC_STRING_TYPE_m13;
-	} else if (strcmp(type_str, "float") == 0) {
+	} else if (strcmp_m13(type_str, "float") == 0) {
 		type = RC_FLOAT_TYPE_m13;
-	} else if (strcmp(type_str, "integer") == 0) {
+	} else if (strcmp_m13(type_str, "integer") == 0) {
 		type = RC_INTEGER_TYPE_m13;
-	} else if (strcmp(type_str, "ternary") == 0) {
+	} else if (strcmp_m13(type_str, "ternary") == 0) {
 		type = RC_TERNARY_TYPE_m13;
 	} else {
 		G_set_error_m13(E_UNSPEC_m13, "could not match TYPE subfield in field \"%s\" of rc file", field_name);
@@ -37922,7 +37933,7 @@ si4 RC_read_field_2_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, v
 	}
 	if (*options_ptr == ':') {
 		++options_ptr;
-	} else if (strncmp(options_ptr, " ONLY:", 6) == 0) {
+	} else if (strncmp_m13(options_ptr, " ONLY:", 6) == 0) {
 		options_ptr += 6;
 		options_only = TRUE_m13;
 	} else {
@@ -37976,7 +37987,7 @@ si4 RC_read_field_2_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, v
 READ_RC_HANDLE_DEFAULT_m13:
 	
 	// VALUE field is "DEFAULT", and default may be "PROMPT"
-	if (strcmp(str_val, "DEFAULT") == 0) {
+	if (strcmp_m13(str_val, "DEFAULT") == 0) {
 		if (default_item) {
 			strcpy(str_val, default_value_str);
 		} else {
@@ -37986,7 +37997,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 	}
 
 	// PROMPT (Note: user can enter "DEFAULT", "NO ENTRY", or any of the recognized OPTIONS here if desired)
-	if (strcmp(str_val, "PROMPT") == 0) {
+	if (strcmp_m13(str_val, "PROMPT") == 0) {
 		if (options_only == TRUE_m13)
 			printf_m13("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter an option: ", field_name, options_str, default_value_str);
 		else
@@ -38001,7 +38012,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 
 	// no entry
 	option_selected = RC_NO_OPTION_m13;
-	if ((strcmp(str_val, "NO ENTRY") == 0)) {
+	if ((strcmp_m13(str_val, "NO ENTRY") == 0)) {
 		if (options_only == TRUE_m13) {
 			G_warning_message_m13("%s(): \"NO ENTRY\" is not an option in field \"%s\" of rc file => using default\n", __FUNCTION__, field_name);
 			strcpy(str_val, "DEFAULT");
@@ -38022,7 +38033,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 			++option_number;
 			item = sscanf(options_ptr, "%[^,\r\n]", tmp_str);
 			if (item) {
-				if (strcmp(tmp_str, str_val) == 0) {
+				if (strcmp_m13(tmp_str, str_val) == 0) {
 					option_selected = option_number;
 					strcpy(str_val, tmp_str);
 					break;
@@ -38085,11 +38096,11 @@ READ_RC_HANDLE_DEFAULT_m13:
 					return_m13(RC_ERR_m13);
 				}
 			} else {  // user entered option
-				if (strcmp(str_val, "YES") == 0 || strcmp(str_val, "TRUE") == 0) {
+				if (strcmp_m13(str_val, "YES") == 0 || strcmp_m13(str_val, "TRUE") == 0) {
 					*tern_val = TRUE_m13;
-				} else if (strcmp(str_val, "NO") == 0 || strcmp(str_val, "FALSE") == 0) {
+				} else if (strcmp_m13(str_val, "NO") == 0 || strcmp_m13(str_val, "FALSE") == 0) {
 					*tern_val = FALSE_m13;
-				} else if (strcmp(str_val, "UNKNOWN") == 0) {
+				} else if (strcmp_m13(str_val, "UNKNOWN") == 0) {
 					*tern_val = UNKNOWN_m13;
 				}
 			}
@@ -39341,7 +39352,7 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 	standard_timezone_acronym = proc_globs->time_constants.standard_timezone_acronym;
 	standard_timezone_string = proc_globs->time_constants.standard_timezone_string;
 	if (offset == FALSE_m13) {
-		if (strncmp(standard_timezone_string, "offset", 6) == 0) {
+		if (strncmp_m13(standard_timezone_string, "offset", 6) == 0) {
 			standard_timezone_acronym = "UTC";
 			standard_timezone_string = "Coordinated Universal Time";
 		}
@@ -39456,71 +39467,71 @@ tern	STR_to_title_m13(si1 *s)
 		if (cap_mode == TRUE_m13) {
 			switch (*s) {  // not exhaustive, but covers most cases
 				case 'a':
-					if (strncmp(s, "a ", 2) == 0) {
+					if (strncmp_m13(s, "a ", 2) == 0) {
 						++s;
 						continue;
 					}
-					if (strncmp(s, "an ", 3) == 0) {
+					if (strncmp_m13(s, "an ", 3) == 0) {
 						s += 2;
 						continue;
 					}
-					if (strncmp(s, "and ", 4) == 0) {
+					if (strncmp_m13(s, "and ", 4) == 0) {
 						s += 3;
 						continue;
 					}
 					break;
 				case 'b':
-					if (strncmp(s, "but ", 4) == 0) {
+					if (strncmp_m13(s, "but ", 4) == 0) {
 						s += 3;
 						continue;
 					}
-					if (strncmp(s, "by ", 3) == 0) {
+					if (strncmp_m13(s, "by ", 3) == 0) {
 						s += 2;
 						continue;
 					}
 					break;
 				case 'f':
-					if (strncmp(s, "for ", 4) == 0) {
+					if (strncmp_m13(s, "for ", 4) == 0) {
 						s += 3;
 						continue;
 					}
-					if (strncmp(s, "from ", 5) == 0) {
+					if (strncmp_m13(s, "from ", 5) == 0) {
 						s += 4;
 						continue;
 					}
 					break;
 				case 'i':
-					if (strncmp(s, "if ", 3) == 0) {
+					if (strncmp_m13(s, "if ", 3) == 0) {
 						s += 2;
 						continue;
 					}
 					break;
 				case 'o':
-					if (strncmp(s, "of ", 3) == 0) {
+					if (strncmp_m13(s, "of ", 3) == 0) {
 						s += 2;
 						continue;
 					}
 					break;
 				case 't':
-					if (strncmp(s, "the ", 4) == 0) {
+					if (strncmp_m13(s, "the ", 4) == 0) {
 						s += 3;
 						continue;
 					}
-					if (strncmp(s, "to ", 3) == 0) {
+					if (strncmp_m13(s, "to ", 3) == 0) {
 						s += 2;
 						continue;
 					}
 					break;
 				case 'w':
-					if (strncmp(s, "with ", 5) == 0) {
+					if (strncmp_m13(s, "with ", 5) == 0) {
 						s += 4;
 						continue;
 					}
-					if (strncmp(s, "within ", 7) == 0) {
+					if (strncmp_m13(s, "within ", 7) == 0) {
 						s += 6;
 						continue;
 					}
-					if (strncmp(s, "without ", 8) == 0) {
+					if (strncmp_m13(s, "without ", 8) == 0) {
 						s += 7;
 						continue;
 					}
@@ -44614,18 +44625,25 @@ si4	sscanf_m13(si1 *target, si1 *fmt, ...)
 si8	strcat_m13(si1 *target, const si1 *source)
 {
 	si1	*c;
-		
-	// returns final length (not including terminal zero)
 	
-	if (target == NULL || source == NULL)
-		return(-1);
 	
-	c = target;
-	while ((*c++));
-	--c;
+	// appends a copy of "source" to "target", including terminal zero
+	// "target"  must have sufficient space to hold the result
+	// returns final length of "target" (not including terminal zero)
+	// in contrast to standard strcat(), this function does not return a pointer to "target"
+	
+	if (target == NULL)
+		return((si8) 0);
+	if (source == NULL) {
+		c = target - 1;
+		while (*++c);
+		return((si8) (c - target));
+	}
+	
+	for (c = target - 1; *++c;);
 	while ((*c++ = *source++));
 	
-	return((si8)((c - target) - 1));
+	return((si8) ((c - target) - 1));
 }
 
 
@@ -44634,9 +44652,9 @@ inline
 #endif
 si4	strcmp_m13(const si1 *string_1, const si1 *string_2)
 {
-	// returns 0 if equal, FALSE_m13 (-1) if not
-	// strings may overlap
-	// note this version may be faster than standard as does not return string comparison value, just whether equal
+	// lexicographically compares "string_1" & "string_2"
+	// returns 0 if equal, -1 (FALSE_m13) if not
+	// note this version may be faster than standard strcmp() as it does not determine a string comparison value, only whether equal
 
 	if (string_1 == string_2)
 		return((si4) 0);
@@ -44648,7 +44666,7 @@ si4	strcmp_m13(const si1 *string_1, const si1 *string_2)
 		if (*string_1++ != *string_2++)
 			return((si4) -1);
 	
-	if (string_1 || *string_2)
+	if (*string_1 || *string_2)
 		return((si4) -1);
 	
 	return((si4) 0);
@@ -44658,72 +44676,73 @@ si4	strcmp_m13(const si1 *string_1, const si1 *string_2)
 si8	strcpy_m13(si1 *target, const si1 *source)
 {
 	const si1	*c2;
-	si1		*c, *c3;
+	si1		*c;
+	si8		i, len;
 	
 	
-	// returns length (not including terminal zero)
+	// returns final length of "target" (not including terminal zero)
+	// in contrast to standard strcpy(), this function does not return a pointer to "target"
 	// strings may overlap
 	
 	if (target == NULL || source == NULL)
-		return(-1);
+		return(0);
 
-	c = target;
 	if (target <= source) {
-		while ((*c++ = *source++));
+		c = target - 1;
+		c2 = source - 1;
+		while ((*++c = *++c2));
+		len = (si8) (c2 - source);
 	} else {  // overwrite possible, copy backwards
-		c2 = source;
-		while (*c2++);
-		c3 = (c += (c2 - source));  // leave c here for return value
-		while (c3 != target)
-			*--c3 = *--c2;
+		c2 = source - 1;
+		while (*++c2);
+		len = (si8) (c2 - source);
+
+		c = target + len;
+		c2 = source + len;
+		i = len + 1;
+		while (i--)
+			*c-- = *c2--;
 	}
 	
-	return((si8) ((c - target) - 1));
+	return(len);
 }
 
 
-si8	strncat_m13(si1 *target, const si1 *source, size_t n_bytes)
+si8	strncat_m13(si1 *target, const si1 *source, size_t n_chars)
 {
-	si1	*c;
-	si8	len = 0;
+	const si1	*c2;
+	si1		*c;
+	si8		i, len;
 	
 	
-	// returns final length (not including terminal zeros)
-	
-	if (target == NULL) {
-		G_set_error_m13(E_UNSPEC_m13, "target is NULL");
-		return(-1);
-	}
-	if (n_bytes <= 0) {
-		G_set_error_m13(E_UNSPEC_m13, "n_bytes is less than or equal to zero");
-		return(-1);
-	}
+	// appends not more than "n_chars" characters from "source" to "target"
+	// "n_chars" does not include the terminal zero
+	// "target"  must have sufficient space to hold the result
+	// returns the final length of "target" (not including terminal zero)
+	// in contrast to standard strncat(), this function does not return a pointer to "target"
+	// if final length is less than "n_chars", target is filled to "n_chars" with zeros
 
-	c = target;
+	if (target == NULL)
+		return((si8) 0);
 	if (source == NULL) {
-		--n_bytes;
-	} else {
-		while (--n_bytes)
-			if (*c++ == '\0')
-				break;
+		c = target - 1;
+		while (*++c);
+		return((si8) (c - target));
 	}
 	
-	--c;
-	++n_bytes;
-	
-	while (--n_bytes)
-		if ((*c++ = *source++) == '\0')
-			break;
-	len = (si8)((c - target) - 1);
-	if (n_bytes) {
-		while (--n_bytes)
-			*c++ = '\0';
-	} else {
-		G_warning_message_m13("%s(): target string truncated\n", __FUNCTION__);
+	for (c = target - 1; *++c;);
+	for (--c, c2 = source - 1; (*++c = *++c2);) {
+		if (n_chars--)
+			continue;
+		*c = 0;
+		break;
 	}
+	len = (si8) (c - target);
 	
-	*c = '\0';
-	
+	if (len < n_chars)
+		for (i = n_chars - len; i--;)
+			*c++ = 0;
+		
 	return(len);
 }
 
@@ -44731,14 +44750,16 @@ si8	strncat_m13(si1 *target, const si1 *source, size_t n_bytes)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_bytes)
+si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars)
 {
 	si8	len;
 	
 	
-	// returns 0 if equal up to (max of) n characters, FALSE_m13 (-1) if not
+	// lexicographically compares "string_1" & "string_2" up to a maximum of "n_chars" characters
+	// returns 0 if equal, -1 (FALSE_m13) if not
+	// strings that are equal up to their terminal zeros they are considered equal even if they are less than "n_chars" in length
 	// strings may overlap
-	// note this version may be faster than standard as does not return string comparison value, just whether equal
+	// note this version may be faster than standard strcmp() as it does not determine a string comparison value, only whether equal
 
 	if (string_1 == string_2)
 		return((si4) 0);
@@ -44746,7 +44767,7 @@ si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_bytes)
 	if (string_1 == NULL || string_2 == NULL)
 		return((si4) -1);
 
-	len = (si8) n_bytes;  // size_t is unsigned
+	len = (si8) n_chars;  // (size_t is unsigned)
 	while (*string_1 && *string_2 && len--)
 		if (*string_1++ != *string_2++)
 			return((si4) -1);
@@ -44759,32 +44780,51 @@ si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_bytes)
 }
 
 
-si8	strncpy_m13(si1 *target, const si1 *source, size_t n_bytes)
+si8	strncpy_m13(si1 *target, const si1 *source, size_t n_chars)
 {
 	const si1	*c2;
-	si1		*c, *c3;
-	si8		len;
+	si1		*c;
+	si8		i, len;
 	
 	
-	// returns length (not including terminal zero)
+	// copies not more than "n_chars" characters from "source" to "target"
+	// returns final length of "target" (not including terminal zero)
+	// in contrast to standard strncpy(), this function does not return a pointer to "target"
 	// strings may overlap
-	
-	if (target == NULL || source == NULL)
-		return(-1);
+	// if final length is less than "n_chars", target is filled to "n_chars" with zeros
 
-	c = target;
-	if (target <= source) {
-		len = (si8) n_bytes;
-		while ((*c++ = *source++) && len--);
-	} else {  // overwrite possible, copy backwards
+	if (target == NULL || source == NULL)
+		return(0);
+
+	// get length of source
+	c2 = source - 1;
+	i = (si8) n_chars;
+	while (*++c2) {
+		if (i--)
+			continue;
+		break;
+	}
+	len = (si8) (c2 - source);
+	
+	if (target <= source) {  // copy forwards
+		c = target;
 		c2 = source;
-		while (*c2++);
-		len = c2 - source;
-		if (len < n_bytes)
-			len = n_bytes;
-		c3 = target + len;
-		while (c3 != target)
-			*--c3 = *--c2;
+		for (i = len; i--;)
+			*c++ = *c2++;
+		*c = 0;
+	} else {  // overwrite possible, copy backwards
+		c = target + len;
+		*c-- = 0;
+		c2 = source + (len - 1);
+		for (i = len; i--;)
+			*c-- = *c2--;
+	}
+	
+	// zero remaining bytes
+	if (len < n_chars) {
+		c = target + len;
+		for (i = n_chars - len; i--;)
+			*c++ = 0;
 	}
 	
 	return(len);
