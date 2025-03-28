@@ -217,12 +217,13 @@ typedef long double	sf16;
 // Ternary Defines
 #define TRUE_m13	((tern) 1)
 #define UNKNOWN_m13	((tern) 0)
-#define NOT_SET_m13	((tern) 0) // common use of zero tern
-#define BOOL_FALSE_m13	((tern) 0)
 #define FALSE_m13	((tern) -1)
+#define NOT_SET_m13	UNKNOWN_m13 // common use of tern zero
+#define BOOL_FALSE_m13	UNKNOWN_m13
 
-#endif // MED_PRIMITIVES_IN_m13
-
+// Ternary Macros
+#define TERN_TO_BOOL_m13(x)	(((x) == TRUE_m13) ? TRUE_m13 : BOOL_FALSE_m13) // convert ternary to boolean  (unknown/unset set to false)
+#define BOOL_TO_TERN_m13(x)	(((x) == TRUE_m13) ? TRUE_m13 : FALSE_m13) // convert boolean to ternary  (unknown/unset not defined)
 
 // Reserved si8 Values
 #define NAN_SI8_m13		((si8) 0x8000000000000000)
@@ -259,6 +260,9 @@ typedef long double	sf16;
 #define POS_INF_UI2_m13		((ui2) 0xFFFF)
 #define MAX_VAL_UI2_m13		((ui2) 0xFFFE)
 #define MIN_VAL_UI2_m13		((ui2) 0x0000)
+
+#endif // MED_PRIMITIVES_IN_m13
+
 
 
 //**********************************************************************************//
@@ -314,8 +318,8 @@ typedef struct {
 	si4	acq_chan_num; // REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13 in session level records
 	union {
 		sf8	samp_freq; // channel sampling frequency (REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13 in session level records, if sampling frequencies vary across time series channels)
-		sf8	frame_rate; 	 // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13 in session level records, if frame rates vary across video channels)
-		sf4	rate; // generic rate
+		sf8	frame_rate; // channel frame rate (REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13 in session level records, if frame rates vary across video channels)
+		sf8	rate; // generic rate
 	};
 } REC_Sgmt_v10_m13; // version 1.0 included for backward compatibility
 
@@ -410,7 +414,7 @@ typedef struct {
 	si1	level_2_password_hint[PASSWORD_HINT_BYTES_m13];
 	ui1	access_level;
 	tern	processed;
-	tern 	hints_exist;
+	tern 	hints_exist;  // if (*level_1_password_hint || *level_2_password_hint)
 } PASSWORD_DATA_m13;
 
 
@@ -1161,7 +1165,7 @@ typedef struct {
 #define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
 #define FILE_FLAGS_MODE_MASK_m13	( FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13 | FILE_FLAGS_APPEND_m13 )
 
-#define FILE_FD_EPHEMERAL_m13 ((si4) -2)
+#define FILE_FD_EPHEMERAL_m13		((si4) -2)
 #define FILE_FD_CLOSED_m13		((si4) -1)
 #define FILE_FD_STDIN_m13		((si4) 0)
 #define FILE_FD_STDOUT_m13		((si4) 1)
@@ -1201,21 +1205,21 @@ typedef struct {
 // Typedefs
 typedef struct {
 	ui4	start_id; // == FILE_START_ID_m13 (marker for FILE_m13 vs FILE)
-	ui4	file_id; // CRC of file path (file descriptors are unique to file open (unless dup'd)
+	ui4	file_id; // CRC of file path (can't use file descriptor because not unique if file dup'd)
 	si1	path[PATH_BYTES_m13];
 	ui2	flags;
 	ui2	perms; // permissions (lower 9 bits of "st_mode" element of stat structure)
 	si4	fd; // file descriptor
-	FILE	*fp; // file pointer
-	si8	len; // file length
+	FILE	*fp; // system FILE pointer
+	si8	len; // current file length
 	si8	pos; // file pointer position (relative to start)
 	si8	acc; // uutc of last file access (open, seek, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
 } FILE_m13;
 
 // Prototypes
-FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...); // varargs(fp == stream): si1 *path
+FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...); // varargs(fp == stream): si1 *path  (create *FILE_m13 from *FILE + path)
 tern		FILE_show_m13(FILE_m13 *fp);
-tern		FILE_stream_m13(FILE_m13 *fp);
+tern		FILE_stream_m13(FILE_m13 *fp); // TRUE if fp is *FILE, FALSE if fp is *FILE_m13
 
 
 
@@ -2012,7 +2016,7 @@ typedef struct {
 
 #ifdef FT_DEBUG_m13
 #define G_push_function_m13() 		G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
-#define G_pop_function_m13(arg)		G_pop_function_exec_m13(__FUNCTION__, arg) // call with "G_pop_function_m13(exit_code)" prototype
+#define G_pop_function_m13(arg)		G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
 
 typedef struct {
 	pid_t_m13	_id; // thread or process id
@@ -2970,7 +2974,7 @@ tern			G_open_session_records_m13(SESS_m13 *sess);
 si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern			G_path_parts_m13(si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void			G_pop_behavior_m13(void);
-void			G_pop_function_exec_m13(const si1 *function, ...);
+void			G_pop_function_exec_m13(const si1 *function);
 void			G_proc_error_clear_m13(LH_m13 *lh);
 void			G_proc_error_set_m13(LH_m13 *lh);
 tern			G_proc_error_state_m13(LH_m13 *lh);
@@ -5103,13 +5107,13 @@ si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence, ...); // vararg(whence nega
 si8		ftell_m13(FILE_m13 *fp);
 size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
 si1		*getcwd_m13(si1 *buf, size_t size);
-pid_t_m13	getpid_m13(void); // calling process id
-pid_t_m13	gettid_m13(void); // calling thread id
+pid_t_m13	getpid_m13(void);
+pid_t_m13	gettid_m13(void);
 size_t		malloc_size_m13(void *address);
 tern		md_m13(si1 *dir);  // synonym for mkdir()
 void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
 tern		mkdir_m13(si1 *dir);
-tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
+tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 tern		mv_m13(si1 *path, si1 *new_path);  // move
@@ -5130,12 +5134,14 @@ si4		scanf_m13(si1 *fmt, ...);
 si4		sprintf_m13(si1 *target, si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
 si4		sscanf_m13(si1 *target, si1 *fmt, ...);
-si8		strcat_m13(si1 *target, si1 *source);
-si8		strcpy_m13(si1 *target, si1 *source);
-si8		strncat_m13(si1 *target, si1 *source, si4 target_field_bytes);
-si8		strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes);
+si8		strcat_m13(si1 *target, const si1 *source);
+si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
+si8		strcpy_m13(si1 *target, const si1 *source);
+si8		strncat_m13(si1 *target, const si1 *source, size_t n_bytes);
+si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_bytes);
+si8		strncpy_m13(si1 *target, const si1 *source, size_t n_bytes);
 si4		system_m13(si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
-si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		vasprintf_m13(si1 **target, si1 *fmt, va_list args);
 si4		vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list args);
 si4		vprintf_m13(si1 *fmt, va_list args);
@@ -5157,16 +5163,14 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 #endif // AT_DEBUG_m13
 
 #ifdef FT_DEBUG_m13
-#define return_m13(arg) 		do { G_pop_function_m13(arg); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
-#define return_void_m13 		do { G_pop_function_m13(-1); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
-#define thread_return_m13(arg)		do { G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0)
-#define thread_return_void_m13 		do { G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0)
+	#define return_m13(arg)		do { G_pop_function_m13(); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+	#define return_void_m13		do { G_pop_function_m13(); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
 #else
-#define return_m13(arg) 		return(arg)
-#define return_void_m13 		return // not used in library => the only void library functions are low level & not added to function stacks (they use standard returns)
-#define thread_return_m13(arg) 		do { G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0)
-#define thread_return_void_m13 		do { G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0)
+	#define return_m13(arg)		return(arg)
+	#define return_void_m13		return // the only void library functions are low level & not added to function stacks (they use standard returns)
 #endif // FT_DEBUG_m13
+#define thread_return_m13(arg)		do { G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0) // clears behavior stack & function stack, if it exists
+#define thread_return_void_m13 		do { G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0) // clears behavior stack & function stack, if it exists
 
 
 

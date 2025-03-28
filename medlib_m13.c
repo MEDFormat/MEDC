@@ -6144,9 +6144,7 @@ si4 G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 			G_set_error_m13(E_NOT_MED_m13, "invalid level");
 			return_m13((si4) UNKNOWN_m13);
 	}
-	eprintf_m13("");
 	Sgmt_records = G_Sgmt_records((LH_m13 *) chan, search_mode);
-	eprintf_m13("");
 
 	if (Sgmt_records == NULL) {
 
@@ -6759,7 +6757,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	G_push_function_exec_m13("main");  // main doesn't push itself because it has to initialize globals first
 	if (!(GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 		#ifdef MATLAB_m13
-		mexPrintf("sFunction tracking enabled\n");
+		mexPrintf("Function tracking enabled\n");
 		#else
 		printf("%sFunction tracking enabled%s\n", TC_BLUE_m13, TC_RESET_m13);
 		#endif
@@ -9273,7 +9271,7 @@ void	G_pop_behavior_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_pop_function_exec_m13(const si1 *function, ...)
+void	G_pop_function_exec_m13(const si1 *function)
 {
 	FUNCTION_STACK_m13	*stack;
 	
@@ -9282,22 +9280,14 @@ void	G_pop_function_exec_m13(const si1 *function, ...)
 	if (stack == NULL)
 		return;
 	
-	// causal error set - // leave stack intact
+	// causal error set - leave stack intact
 	if (globals_m13->error.code) {  // != E_NONE_m13
 		
 		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 		// at stack base (get exit code)
-		if (strcmp(stack->functions[0], function) == 0) {
-			si4		exit_code;
-			va_list		arg;
-			
-			va_start(arg, function);
-			exit_code = va_arg(arg, si4);
-			va_end(arg);
-			
-			exit_m13(exit_code);  // call exit to show error & stack
-		}
+		if (strcmp_m13(stack->functions[0], function) == 0)
+			exit_m13(globals_m13->error.code);  // call exit to show error & stack
 		
 		return;
 	}
@@ -11536,6 +11526,9 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	
 	proc_globs = G_proc_globs_m13(NULL);
 	
+	eprintf_m13();
+	G_show_slice_m13(slice);
+	
 	if (search_mode == TIME_SEARCH_m13) {
 		// start segment
 		target = slice->start_time;
@@ -12356,7 +12349,6 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 
 	// add new entry
 	if (i == -1) {
-		eprintf_m13("");
 		Sgmt_recs = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
 		if (++list->top_idx == list->size) {
 			list->size += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
@@ -12373,16 +12365,17 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 			memset((void *) rec_entry, (si4) 0, (size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13 * sizeof(Sgmt_RECS_ENTRY_m13 *));  // realloc() does not zero
 		}
 		// fill new entry
-		eprintf_m13("");
 		rec_entry->rate = (sf8) Sgmt_recs[0].rate;
-		eprintf_m13("");
 		rec_entry->Sgmt_recs = (struct Sgmt_REC_m13 *) Sgmt_recs;
-		eprintf_m13("");
 	} else {
 		Sgmt_recs = (Sgmt_REC_m13 *) rec_entry->Sgmt_recs;
 	}
 
 	pthread_mutex_unlock_m13(&list->mutex);  // unlock
+	
+	eprintf_m13();
+	G_show_Sgmt_records_array_m13(NULL, Sgmt_recs);
+	eprintf_m13();
 
 	return_m13(Sgmt_recs);
 }
@@ -12593,9 +12586,16 @@ tern	G_show_error_m13(void)
 	}
 
 #ifdef MATLAB_m13
-	mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]\n\n", err->message, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id);
+	if (*err->thread_name == '<')
+		mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread %lu]\n\n", err->message, err->code, err->function, err->line, (ui8) err->thread_id);
+	else
+		mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]\n\n", err->message, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id);
+	
 #else
-	printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id, TC_RESET_m13);
+	if (*err->thread_name == '<')
+		printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread %lu]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, (ui8) err->thread_id, TC_RESET_m13);
+	else
+		printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id, TC_RESET_m13);
 #endif
 
 	return(TRUE_m13);
@@ -13292,16 +13292,18 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	
 	G_message_m13("\n------------------ Password Data - START -----------------\n");
 	if (pwd->access_level >= LEVEL_1_ACCESS_m13) {
-		STR_hex_m13(hex_str, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13, ":");
+		STR_hex_m13(hex_str, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13, "-");
 		G_message_m13("Level 1 Encryption Key: %s\n", hex_str);
 	}
 	if (pwd->access_level == LEVEL_2_ACCESS_m13) {
-		STR_hex_m13(hex_str, pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m13, ":");
+		STR_hex_m13(hex_str, pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m13, "-");
 		G_message_m13("Level 2 Encryption Key: %s\n", hex_str);
 	}
-	G_show_password_hints_m13(pwd, pw_level);
+	if (pwd->hints_exist == TRUE_m13)
+		G_show_password_hints_m13(pwd, 0);
 	G_message_m13("Access Level: %hhu\n", pwd->access_level);
-	G_message_m13("Processed: %hhd\n", pwd->processed);
+	G_message_m13("Processed: %s\n", STR_tern_m13(BOOL_TO_TERN_m13(pwd->processed)));  // "processed" often treated as boolean in this structure
+	G_message_m13("Hints Exist: %s\n", STR_tern_m13(pwd->hints_exist));
 	G_message_m13("------------------- Password Data - END ------------------\n\n");
 	
 	return_m13(TRUE_m13);
@@ -13543,6 +13545,7 @@ tern	G_show_Sgmt_records_array_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt)
 	G_push_function_m13();
 #endif
 
+	eprintf_m13();
 	if (lh) {
 		Sgmt = G_Sgmt_records(lh, SAMPLE_SEARCH_m13);
 		if (Sgmt == NULL)
@@ -13551,14 +13554,16 @@ tern	G_show_Sgmt_records_array_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt)
 		G_set_error_m13(E_UNSPEC_m13, "both lh & Sgmt are NULL");
 		return_m13(FALSE_m13);
 	}
-	
+	eprintf_m13();
+
 	proc_globs = G_proc_globs_m13(lh);
 	n_segs = proc_globs->current_session.n_segments;
 	if (n_segs == 0) {
 		G_set_error_m13(E_UNSPEC_m13, "empty Sgmt records array");
 		return_m13(FALSE_m13);
 	}
-	
+	eprintf_m13();
+
 	for (i = 0; i < n_segs; ++i, ++Sgmt) {
 		printf_m13("%sRecord number: %ld%s\n", TC_RED_m13, i + 1, TC_RESET_m13);
 		if (Sgmt->start_time == REC_HDR_START_TIME_NO_ENTRY_m13)
@@ -14323,8 +14328,9 @@ void	G_thread_exit_m13(void)
 	FUNCTION_STACK_m13	*f_stack;
 	
 	f_stack = G_get_function_stack_m13();  // gets mutex
-	if (f_stack) {
-		f_stack->_id = 0;
+	if (f_stack) {		
+		if (globals_m13->error.code != E_NONE_m13)  // causal error set - leave stack intact
+			f_stack->_id = 0;
 		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 	}
 	#endif
@@ -14561,23 +14567,50 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 
 tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_update_chan_name_m13
 {
-	FPS_m13		*fps;
-	UH_m13		*uh;
+	size_t		nr, nw;
+	FILE		*fp;
+	UH_m13		uh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, path, "r+", NULL, NULL);
-	if (fps) {
-		uh = fps->uh;
-		if (strcmp(uh->channel_name, fs_name)) {
-			strncpy(uh->channel_name, fs_name, NAME_BYTES_m13);
-			FPS_write_m13(fps, 0, FPS_UH_ONLY_m13, 0, NULL);
-		}
-		FPS_free_m13(&fps);
-	}
+	// not using medlib versions of standard functions here for speed
 	
+#if defined MACOS_m13 || defined LINUX_m13
+	fp = fopen(path, "r+");
+#endif
+#ifdef WINDOWS_m13
+	fp = fopen(path, "rb+");
+#endif
+	if (fp == NULL) {
+		G_set_error_m13(E_OPEN_m13, NULL);
+		return_m13(FALSE_m13);
+	}
+	nr = fread((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
+	if (nr != UH_BYTES_m13) {
+		fclose(fp);
+		G_set_error_m13(E_READ_m13, NULL);
+		return_m13(FALSE_m13);
+	}
+	if (strcmp(uh.channel_name, fs_name)) {
+		strncpy(uh.channel_name, fs_name, NAME_BYTES_m13);
+		uh.header_CRC = CRC_calculate_m13((ui1 *) &uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+#if defined MACOS_m13 || defined LINUX_m13
+		fseek(fp, 0, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp 0, SEEK_SET);
+#endif
+		nw = fwrite((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
+		if (nw != UH_BYTES_m13) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+	}
+	fclose(fp);
+
 	return_m13(TRUE_m13);
 }
 
@@ -14585,17 +14618,19 @@ tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_upd
 tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 {
 	static tern			message_given = FALSE_m13;
-	ui1				*rd, *encryption_key;
+	ui1				*rd, *encryption_key, *block, *recd;
 	si1				*path, tmp_path[PATH_BYTES_m13], *mode, *c1, *c2;
 	si4				body_bytes, description_bytes;
-	ui4				type_code, bh_clear_mask;
+	ui4				type_code, bh_clear_mask, temp_CRC, full_CRC;
 	si8				i, fpos, bytes_to_read, bytes_to_write, n_blocks;
+	size_t				nr, nw;
 	PROC_GLOBS_m13			*proc_globs;
 	FPS_m13 			*fps;
 	FILE				*fp, *new_fp;
 	UH_m13				*uh;
 	METADATA_SECTION_1_m13		*md1;
 	CMP_FIXED_BH_m13		*bh;
+	REC_IDX_m13			*ri;
 	REC_HDR_m13			*rh;
 	REC_Sgmt_v10_m13		Sgmt_v10;
 	REC_Sgmt_v11_m13		*Sgmt_v11;
@@ -14616,7 +14651,7 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 	}
 	
 	if (message_given == FALSE_m13) {
-		G_message_m13("Updating files to MED version %d.%d. This may take some time ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
+		G_message_m13("Updating all files to MED version %d.%d. This will add some time ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
 		message_given = TRUE_m13;
 	}
 		
@@ -14626,20 +14661,30 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 	fclose(fps->params.fp->fp);
 	fps->params.fp->fp = NULL;  // reset below, just in case error out
 	fps->params.fp->fd = FPS_FD_CLOSED_m13;  // reset below, just in case error out
+#if defined MACOS_m13 || defined LINUX_m13
 	fp = fopen(path, "r+");  // open with read & write privileges
+#endif
+#ifdef WINDOWS_m13
+	fp = fopen(path, "rb+");  // open with read & write privileges
+#endif
 
 	// metadata
 	if (METADATA_CODE_m13(type_code) == TRUE_m13) {
 		
 		// read in raw data
-		bytes_to_read = UH_BYTES_m13 + METADATA_SECTION_1_BYTES_m13;
+		bytes_to_read = METADATA_FILE_BYTES_m13;
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL) {
 			fclose(fp);
-			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(FALSE_m13);
 		}
-		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		nr = fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		if (nr != bytes_to_read) {
+			fclose(fp);
+			G_set_error_m13(E_READ_m13, NULL);
+			return_m13(FALSE_m13);
+		}
 				
 		// set up
 		uh = (UH_m13 *) rd;
@@ -14653,6 +14698,7 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		
 		// ordered
 		uh->ordered = UNKNOWN_m13;
+		
 		// encryption
 		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
 		uh->encryption_1 = NO_ENCRYPTION_m13;
@@ -14662,30 +14708,50 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			uh->encryption_rounds = 1;  // only one round available in MED 1.0
 		else
 			uh->encryption_rounds = 0;  // no encryption
+		
 		// anonymized subject
 		strncpy_m13(md1->anonymized_subject_ID, (si1 *) (rd + MED_10_UH_ANONYMIZED_SUBJECT_ID_OFFSET_m13), METADATA_ANONYMIZED_SUBJECT_ID_BYTES_m13);
 		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero previous location
 		
+		// update CRCs
+		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+		uh->body_CRC = CRC_calculate_m13((ui1 *) uh + UH_BYTES_m13, METADATA_BYTES_m13);
+
 		// write out
+#if defined MACOS_m13 || defined LINUX_m13
 		fseek(fp, 0, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp 0, SEEK_SET);
+#endif
 		bytes_to_write = bytes_to_read;
-		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
 		fclose(fp);
 	}
 	
-	// all indices
-	else if (type_code == TS_INDS_TYPE_CODE_m13 || type_code == VID_INDS_TYPE_CODE_m13 || type_code == REC_INDS_TYPE_CODE_m13) {
+	// all time & video indices
+	else if (type_code == TS_INDS_TYPE_CODE_m13 || type_code == VID_INDS_TYPE_CODE_m13) {
 		
 		// read in raw data
 		bytes_to_read = UH_BYTES_m13;
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL) {
 			fclose(fp);
-			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(FALSE_m13);
 		}
-		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-				
+		nr = fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		if (nr != bytes_to_read) {
+			fclose(fp);
+			G_set_error_m13(E_READ_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+
 		// set up
 		uh = (UH_m13 *) rd;
 
@@ -14701,16 +14767,31 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			uh->ordered = FALSE_m13;  // may not be true in MED 1.0
 		else  // TS_INDS_TYPE_CODE_m13 & VID_INDS_TYPE_CODE_m13
 			uh->ordered = TRUE_m13;  // must be true in MED 1.0
+		
 		// encryption
 		uh->encryption_rounds = 0;  // indices not encrypted
 		uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		
 		// anonymized subject
 		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
 		
+		// update CRCs
+		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+
 		// write out
+#if defined MACOS_m13 || defined LINUX_m13
 		fseek(fp, 0, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp 0, SEEK_SET);
+#endif
 		bytes_to_write = bytes_to_read;
-		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
 		fclose(fp);
 	}
 	
@@ -14722,11 +14803,16 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL) {
 			fclose(fp);
-			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(FALSE_m13);
 		}
-		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-				
+		nr = fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		if (nr != bytes_to_read) {
+			fclose(fp);
+			G_set_error_m13(E_READ_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+
 		// set up
 		uh = (UH_m13 *) rd;
 		bh = (CMP_FIXED_BH_m13 *) (rd + UH_BYTES_m13);
@@ -14739,6 +14825,7 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		
 		// ordered
 		uh->ordered = TRUE_m13;  // must be true in MED 1.0
+		
 		// encryption
 		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
 		if (bh->block_flags & MED_10_CMP_BF_LEVEL_1_ENCRYPTION_BIT_m13) {
@@ -14752,33 +14839,93 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			uh->encryption_rounds = 0;  // not encrypted
 		}
 		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		
 		// anonymized subject
 		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
 		
-		// write out
-		fseek(fp, 0, SEEK_SET);
-		bytes_to_write = UH_BYTES_m13;
-		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
-
 		// loop over blocks
-		n_blocks = uh->n_entries;
-		fpos = UH_BYTES_m13;  // just wrote out universal header
-		bytes_to_read = bytes_to_write = CMP_BLOCK_FIXED_HDR_BYTES_m13;
-		bh_clear_mask = ~((ui4) MED_10_CMP_BF_LEVEL_1_ENCRYPTION_BIT_m13 | (ui4) MED_10_CMP_BF_LEVEL_2_ENCRYPTION_BIT_m13);
-		
-		for (i = 0; i < n_blocks; ++i) {
-			fread((void *) bh, sizeof(ui1), (size_t) bytes_to_read, fp);
-			
-			// clear encryption bits (encryption level made gloabl & moved to universal header)
-			bh->block_flags &= bh_clear_mask;
+		if (uh->encryption_1 != NO_ENCRYPTION_m13) {
+#if defined MACOS_m13 || defined LINUX_m13
+			fseek(fp, UH_BYTES_m13, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+			_fseeki64(fp, UH_BYTES_m13, SEEK_SET);
+#endif
+			n_blocks = uh->n_entries;
+			fpos = UH_BYTES_m13;  // just wrote out universal header
+			block = (ui1 *) malloc((size_t) uh->maximum_entry_size);
+			if (block == NULL) {
+				fclose(fp);
+				G_set_error_m13(E_ALLOC_m13, NULL);
+				return_m13(FALSE_m13);
+			}
+			bh_clear_mask = ~((ui4) MED_10_CMP_BF_LEVEL_1_ENCRYPTION_BIT_m13 | (ui4) MED_10_CMP_BF_LEVEL_2_ENCRYPTION_BIT_m13);
+			uh->body_CRC = CRC_START_VALUE_m13;
+			for (i = 0; i < n_blocks; ++i) {
+				bytes_to_read = CMP_BLOCK_FIXED_HDR_BYTES_m13;
+				nr = fread((void *) block, sizeof(ui1), (size_t) bytes_to_read, fp);
+				if (nr != bytes_to_read) {
+					fclose(fp);
+					G_set_error_m13(E_READ_m13, NULL);
+					return_m13(FALSE_m13);
+				}
+				bh = (CMP_FIXED_BH_m13 *) block;
+				bytes_to_read = bh->total_block_bytes - CMP_BLOCK_FIXED_HDR_BYTES_m13;
+				nr = fread((void *) (block + CMP_BLOCK_FIXED_HDR_BYTES_m13), sizeof(ui1), (size_t) bytes_to_read, fp);
+				if (nr != bytes_to_read) {
+					fclose(fp);
+					G_set_error_m13(E_READ_m13, NULL);
+					return_m13(FALSE_m13);
+				}
 
-			// write out
-			fseek(fp, -bytes_to_read, SEEK_CUR);
-			fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
-			
-			// move to next block
-			fpos += bh->total_block_bytes;
-			fseek(fp, fpos, SEEK_SET);
+				// clear encryption bits (encryption level made gloabl & moved to universal header)
+				bh->block_flags &= bh_clear_mask;
+				
+				// calculate block crc
+				bh->block_CRC = CRC_calculate_m13((ui1 *) bh + CMP_BLOCK_CRC_START_OFFSET_m13, bh->total_block_bytes - CMP_BLOCK_CRC_START_OFFSET_m13);
+				
+				// update header body crc
+				temp_CRC = CRC_calculate_m13((ui1 *) bh, CMP_BLOCK_CRC_START_OFFSET_m13);
+				full_CRC = CRC_combine_m13(temp_CRC, bh->block_CRC, bh->total_block_bytes - CMP_BLOCK_CRC_START_OFFSET_m13);
+				uh->body_CRC = CRC_combine_m13(uh->body_CRC, full_CRC, bh->total_block_bytes);
+				
+				// write out
+#if defined MACOS_m13 || defined LINUX_m13
+				fseek(fp, fpos, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+				_fseeki64(fp, fpos, SEEK_SET);
+#endif
+				bytes_to_write = bh->total_block_bytes;
+				nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+				if (nw != bytes_to_write) {
+					fclose(fp);
+					G_set_error_m13(E_WRITE_m13, NULL);
+					return_m13(FALSE_m13);
+				}
+
+				// move to next block
+				fpos += bh->total_block_bytes;
+			}
+			free((void *) block);
+		}
+
+		// update header CRC
+		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+
+		// write out header
+#if defined MACOS_m13 || defined LINUX_m13
+		fseek(fp, 0, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp, 0, SEEK_SET);
+#endif
+		bytes_to_write = UH_BYTES_m13;
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
 		}
 		fclose(fp);
 	}
@@ -14790,12 +14937,22 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL) {
 			fclose(fp);
-			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(FALSE_m13);
 		}
+#if defined MACOS_m13 || defined LINUX_m13
 		fseek(fp, -UH_BYTES_m13, SEEK_END);
-		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-				
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp, -UH_BYTES_m13, SEEK_END);
+#endif
+		nr = fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		if (nr != bytes_to_read) {
+			fclose(fp);
+			G_set_error_m13(E_READ_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+
 		// set up
 		uh = (UH_m13 *) rd;
 
@@ -14807,20 +14964,118 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		
 		// ordered
 		uh->ordered = TRUE_m13;
+		
 		// encryption
 		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
 		uh->encryption_rounds = 0;  // no encryption in MED 1.0 video
 		uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;  // no encryption in MED 1.0 video
+		
 		// anonymized subject
 		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
 		
+		// update header CRC
+		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+
 		// write out
+#if defined MACOS_m13 || defined LINUX_m13
 		fseek(fp, -UH_BYTES_m13, SEEK_END);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp, -UH_BYTES_m13, SEEK_END);
+#endif
 		bytes_to_write = bytes_to_read;
-		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
 		fclose(fp);
 	}
 		
+	// record indices
+	else if (type_code == REC_INDS_TYPE_CODE_m13) {
+		
+		// read in raw data
+		bytes_to_read = fps->params.fp->len;
+		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		if (rd == NULL) {
+			fclose(fp);
+			G_set_error_m13(E_ALLOC_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+		nr = fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		if (nr != bytes_to_read) {
+			fclose(fp);
+			G_set_error_m13(E_READ_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+
+		// set up
+		uh = (UH_m13 *) rd;
+
+		// update version
+		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+
+		// update fields: no overlaps, no encryption
+		
+		// ordered
+		uh->ordered = FALSE_m13;  // may not be true in MED 1.0
+		
+		// encryption
+		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
+		uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
+		uh->encryption_1 = ENCRYPTION_VARIABLE_m13;
+		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		
+		// anonymized subject
+		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
+		
+		// loop over blocks
+		n_blocks = uh->n_entries;
+		ri = (REC_IDX_m13 *) (rd + UH_BYTES_m13);
+		
+		// write out new file universal header
+#if defined MACOS_m13 || defined LINUX_m13
+		fseek(fp, UH_BYTES_m13, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp, UH_BYTES_m13, SEEK_SET);
+#endif
+
+		// update Sgmt index versions (data will be done also as always used as a pair)
+		uh->body_CRC = CRC_START_VALUE_m13;
+		for (i = 0; i < n_blocks; ++i, ++ri) {
+			// update Sgmt record idex versions
+			if (ri->type_code == REC_Sgmt_TYPE_CODE_m13)
+				if (ri->version_major == 1 && ri->version_minor == 0)
+					ri->version_minor = 1;
+				
+			// update header body CRC
+			uh->body_CRC = CRC_update_m13((ui1 *) ri, REC_IDX_BYTES_m13, uh->body_CRC);
+		}
+
+		// update header CRC
+		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+
+		// write out
+#if defined MACOS_m13 || defined LINUX_m13
+		fseek(fp, 0, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(fp, 0, SEEK_SET);
+#endif
+		bytes_to_write = bytes_to_read;
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+		fclose(fp);
+	}
+	
 	// record data (new Sgmt record format is different size - requires new temp file)
 	else if (type_code == REC_DATA_TYPE_CODE_m13) {
 		
@@ -14833,11 +15088,16 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL) {
 			fclose(fp);
-			G_set_error_m13(E_ALLOC_m13, "could not allocate enough memory");
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(FALSE_m13);
 		}
-		fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-				
+		nr = fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
+		if (nr != bytes_to_read) {
+			fclose(fp);
+			G_set_error_m13(E_READ_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+
 		// set up
 		uh = (UH_m13 *) rd;
 
@@ -14849,33 +15109,53 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		
 		// ordered
 		uh->ordered = FALSE_m13;  // may not be true in MED 1.0
+		
 		// encryption
 		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
 		uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
 		uh->encryption_1 = ENCRYPTION_VARIABLE_m13;
 		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
+		
 		// anonymized subject
 		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
 		
-		// write out universal header
-		bytes_to_write = bytes_to_read;
-		fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
-		
 		// loop over blocks
 		n_blocks = uh->n_entries;
-		rd = (ui1 *) realloc((void *) rd, (size_t) uh->maximum_entry_size);
+		rd = (ui1 *) realloc((void *) rd, (size_t) (UH_BYTES_m13 + uh->maximum_entry_size));
+		recd = rd + UH_BYTES_m13;
+		rh = (REC_HDR_m13 *) recd;
+
+		proc_globs = G_proc_globs_m13((LH_m13 *) fps);
+		pwd = &proc_globs->password_data;
 		
+		uh->body_CRC = CRC_START_VALUE_m13;
+		
+		// write out new file universal header
+		bytes_to_write = UH_BYTES_m13;
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
+
 		for (i = 0; i < n_blocks; ++i) {
 			bytes_to_read = REC_HDR_BYTES_m13;
-			fread((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-			
-			rh = (REC_HDR_m13 *) rd;
-			bytes_to_read = rh->total_record_bytes;
-			fread((void *) (rd + REC_HDR_BYTES_m13), sizeof(ui1), (size_t) bytes_to_read, fp);
-			
-			proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-			pwd = &proc_globs->password_data;
-			
+			nr = fread((void *) recd, sizeof(ui1), (size_t) bytes_to_read, fp);
+			if (nr != bytes_to_read) {
+				fclose(fp);
+				G_set_error_m13(E_READ_m13, NULL);
+				return_m13(FALSE_m13);
+			}
+
+			bytes_to_read = rh->total_record_bytes - REC_HDR_BYTES_m13;
+			nr = fread((void *) (recd + REC_HDR_BYTES_m13), sizeof(ui1), (size_t) bytes_to_read, fp);
+			if (nr != bytes_to_read) {
+				fclose(fp);
+				G_set_error_m13(E_READ_m13, NULL);
+				return_m13(FALSE_m13);
+			}
+
 			// update Sgmt record
 			if (rh->type_code == REC_Sgmt_TYPE_CODE_m13) {
 				if (rh->version_major == 1 && rh->version_minor == 0) {
@@ -14888,8 +15168,8 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 						AES_decrypt_m13(rd + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
 					}
 					
-					Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (rd + REC_HDR_BYTES_m13));  // copy
-					Sgmt_v11 = (REC_Sgmt_v11_m13 *) (rd + REC_HDR_BYTES_m13);  // pointer
+					Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (recd + REC_HDR_BYTES_m13));  // copy
+					Sgmt_v11 = (REC_Sgmt_v11_m13 *) (recd + REC_HDR_BYTES_m13);  // pointer
 					Sgmt_v11->end_time = Sgmt_v10.end_time;
 					Sgmt_v11->start_samp_num = Sgmt_v10.start_samp_num;
 					Sgmt_v11->end_samp_num = Sgmt_v10.end_samp_num;
@@ -14898,7 +15178,7 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 					description_bytes = rh->total_record_bytes - (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13);
 					if (description_bytes) {
 						c1 = (si1 *) (Sgmt_v11 + 1);
-						c2 = (si1 *) rd + REC_HDR_BYTES_m13 + REC_Sgmt_v10_DESCRIPTION_OFFSET_m13;
+						c2 = (si1 *) recd + REC_HDR_BYTES_m13 + REC_Sgmt_v10_DESCRIPTION_OFFSET_m13;
 						while ((*c1++ = *c2++));  // compiler requires extra parentheses
 					}
 					body_bytes = REC_Sgmt_v11_BYTES_m13 + description_bytes;
@@ -14906,20 +15186,54 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 						rh->total_record_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_BODY_ALIGNMENT_m13) + REC_HDR_BYTES_m13;
 					else
 						rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
-					
+
 					// encrypt
 					if (rh->encryption_level > NO_ENCRYPTION_m13)
-						AES_encrypt_m13(rd + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+						AES_encrypt_m13(recd + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+
+					// update version
+					rh->version_minor = 1;
+					
+					// calculate record crc
+					rh->record_CRC = CRC_calculate_m13((ui1 *) rh + REC_HDR_CRC_START_OFFSET_m13, rh->total_record_bytes - REC_HDR_CRC_START_OFFSET_m13);
 				}
 			}
 			
+			// update header body CRC
+			temp_CRC = CRC_calculate_m13((ui1 *) rh, REC_HDR_CRC_START_OFFSET_m13);
+			full_CRC = CRC_combine_m13(temp_CRC, rh->record_CRC, rh->total_record_bytes - REC_HDR_CRC_START_OFFSET_m13);
+			uh->body_CRC = CRC_combine_m13(uh->body_CRC, full_CRC, rh->total_record_bytes);
+
 			// write out
 			bytes_to_write = rh->total_record_bytes;
-			fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
+			nw = fwrite((void *) recd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
+			if (nw != bytes_to_write) {
+				fclose(fp);
+				G_set_error_m13(E_WRITE_m13, NULL);
+				return_m13(FALSE_m13);
+			}
 		}
 		fclose(fp);
+
+		// update header CRC
+		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+
+		// write out universal header
+#if defined MACOS_m13 || defined LINUX_m13
+		fseek(new_fp, 0, SEEK_SET);
+#endif
+#ifdef WINDOWS_m13
+		_fseeki64(new_fp, 0, SEEK_SET);
+#endif
+		bytes_to_write = UH_BYTES_m13;
+		nw = fwrite((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
+		if (nw != bytes_to_write) {
+			fclose(fp);
+			G_set_error_m13(E_WRITE_m13, NULL);
+			return_m13(FALSE_m13);
+		}
 		fclose(new_fp);
-		
+
 		// move new file into place
 		mv_m13(tmp_path, path);
 	}
@@ -14935,11 +15249,23 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 	free((void *) rd);
 
 	// reopen file
+#if defined MACOS_m13 || defined LINUX_m13
 	if (fps->params.fp->flags & FILE_FLAGS_WRITE_m13)
 		mode = "r+";
 	else
 		mode = "r";
+#endif
+#ifdef WINDOWS_m13
+	if (fps->params.fp->flags & FILE_FLAGS_WRITE_m13)
+		mode = "rb+";
+	else
+		mode = "rb";
+#endif
 	fp = fopen(fps->path, mode);
+	if (fp == NULL) {
+		G_set_error_m13(E_OPEN_m13, NULL);
+		return_m13(FALSE_m13);
+	}
 	fps->params.fp->fp = fp;
 #if defined MACOS_m13 || defined LINUX_m13
 	fps->params.fp->fd = fileno(fp);
@@ -14947,9 +15273,18 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 #ifdef WINDOWS_m13
 	fps->params.fp->fd = _fileno(fp);
 #endif
+	fps->params.fp->len = flen_m13((FILE_m13 *) fp);
 	
-	// read in universal header (status when called in read_file_m13()
-	fread((void *) fps->params.raw_data, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
+	// read in universal header (to status when called in read_file_m13()
+	bytes_to_read = fps->params.fp->pos;
+	if (bytes_to_read > fps->params.fp->len)
+		bytes_to_read = fps->params.fp->pos = fps->params.fp->len;
+	nr = fread((void *) fps->params.raw_data, sizeof(ui1), (size_t) bytes_to_read, fp);
+	if (nr != bytes_to_read) {
+		fclose(fp);
+		G_set_error_m13(E_READ_m13, NULL);
+		return_m13(FALSE_m13);
+	}
 
 	*fps_ptr = fps;
 	
@@ -27375,7 +27710,9 @@ FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...)  // varargs(fp == stream): si1 *path
 
 tern	FILE_show_m13(FILE_m13 *fp)
 {
-	si1	time_str[TIME_STRING_BYTES_m13];
+	si1	tim_str[TIME_STRING_BYTES_m13];
+	si1	bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 1)];
+
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -27397,77 +27734,91 @@ tern	FILE_show_m13(FILE_m13 *fp)
 	else
 		printf_m13("no entry\n");
 
-	printf_m13("Flags (0x%08x):\n", fp->flags);
+	STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), "-");
+	printf_m13("Flags (%s):\n", bin_str);
+	if (fp->flags & FILE_FLAGS_ALLOCED_m13)
+		printf_m13("\theap allocated\n");
+	else
+		printf_m13("\ten bloc or stack allocated\n");
 	if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
 		printf_m13("\tstandard stream\n");
-	if (fp->flags & FILE_FLAGS_ALLOCED_m13)
-		printf_m13("\tallocated\n");
+	else
+		printf_m13("\tregular file\n");
 	if (fp->flags & FILE_FLAGS_MED_m13)
 		printf_m13("\tMED file\n");
+	else
+		printf_m13("\tnot MED file\n");
 	if (fp->flags & FILE_FLAGS_READ_m13)
 		printf_m13("\topen for reading\n");
 	if (fp->flags & FILE_FLAGS_WRITE_m13)
 		printf_m13("\topen for writing\n");
 	if (fp->flags & FILE_FLAGS_LOCK_m13)
-		printf_m13("\tlock\n");
+		printf_m13("\tlocking enabled\n");
+	else
+		printf_m13("\tlocking disabled\n");
 	if (fp->flags & FILE_FLAGS_LEN_m13)
-		printf_m13("\tupdate length\n");
+		printf_m13("\tlength tracking enabled\n");
+	else
+		printf_m13("\tlength tracking disabled\n");
 	if (fp->flags & FILE_FLAGS_POS_m13)
-		printf_m13("\tupdate position\n");
+		printf_m13("\tposition tracking enabled\n");
+	else
+		printf_m13("\tposition tracking disabled\n");
 	if (fp->flags & FILE_FLAGS_TIME_m13)
-		printf_m13("\tupdate access time\n");
+		printf_m13("\taccess tracking enabled\n");
+	else
+		printf_m13("\taccess tracking disabled\n");
 
-	printf_m13("Permissions (0x%08x):\n", fp->perms);
-	printf_m13("\tuser: %c%c%c\n", ((fp->perms & FILE_PERM_USR_READ_m13) ? 'r' : '-'), ((fp->perms & FILE_PERM_USR_WRITE_m13) ? 'w' : '-'), ((fp->perms & FILE_PERM_USR_EXEC_m13) ? 'x' : '-'));
-	printf_m13("\tgroup: %c%c%c\n", ((fp->perms & FILE_PERM_GRP_READ_m13) ? 'r' : '-'), ((fp->perms & FILE_PERM_GRP_WRITE_m13) ? 'w' : '-'), ((fp->perms & FILE_PERM_GRP_EXEC_m13) ? 'x' : '-'));
-	printf_m13("\tother: %c%c%c\n", ((fp->perms & FILE_PERM_OTH_READ_m13) ? 'r' : '-'), ((fp->perms & FILE_PERM_OTH_WRITE_m13) ? 'w' : '-'), ((fp->perms & FILE_PERM_OTH_EXEC_m13) ? 'x' : '-'));
+	printf_m13("Permissions:\tr w x\n");
+	printf_m13("\tuser\t%c %c %c\n", ((fp->perms & FILE_PERM_USR_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_EXEC_m13) ? '+' : '-'));
+	printf_m13("\tgroup\t%c %c %c\n", ((fp->perms & FILE_PERM_GRP_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_EXEC_m13) ? '+' : '-'));
+	printf_m13("\tother\t%c %c %c\n", ((fp->perms & FILE_PERM_OTH_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_EXEC_m13) ? '+' : '-'));
 
-	printf_m13("Pointer: ");
+	printf_m13("FILE Pointer: ");
 	if (fp->fp)
 		printf_m13("set\n");
 	else
-		printf_m13("no entry\n");
+		printf_m13("not set\n");
 
-	printf_m13("Descriptor: ");
+	printf_m13("Descriptor: %d ", fp->fd);
 	switch (fp->fd) {
 		case FILE_FD_EPHEMERAL_m13:
-			printf_m13("%d (ephemeral)\n", fp->fd);
+			printf_m13("(ephemeral)\n");
 			break;
 		case FILE_FD_CLOSED_m13:
-			printf_m13("%d (closed)\n", fp->fd);
+			printf_m13("(closed)\n");
 			break;
 		case FILE_FD_STDIN_m13:
-			printf_m13("%d (stdin)\n", fp->fd);
+			printf_m13("(stdin)\n");
 			break;
 		case FILE_FD_STDOUT_m13:
-			printf_m13("%d (stdout)\n", fp->fd);
+			printf_m13("(stdout)\n");
 			break;
 		case FILE_FD_STDERR_m13:
-			printf_m13("%d (stderr)\n", fp->fd);
+			printf_m13("(stderr)\n");
 			break;
 		default:
-			printf_m13("%d (open)\n", fp->fd);
+			if (fp->fd > 0)
+				printf_m13("(open)\n");
+			else
+				printf_m13("(invalid)\n");
 			break;
 	}
 
-	printf_m13("Length: ");
-	if (fp->len)
-		printf_m13("%ld\n", fp->len);
-	else
-		printf_m13("no entry\n");
+	if (fp->flags & FILE_FLAGS_LEN_m13)
+		printf_m13("Length: %ld\n", fp->len);
 
-	printf_m13("Position: ");
-	if (fp->pos)
-		printf_m13("%ld\n", fp->pos);
-	else
-		printf_m13("no entry\n");
+	if (fp->flags & FILE_FLAGS_POS_m13)
+		printf_m13("Position: %ld\n", fp->pos);
 
-	printf_m13("Access Time: ");
-	if (fp->acc && fp->acc != UUTC_NO_ENTRY_m13) {  // cover zero case also
-		STR_time_m13(NULL, fp->acc, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-		printf_m13("%ld (oUTC), %s\n", fp->acc, time_str);
-	} else {
-		printf_m13("no entry\n");
+	if (fp->flags & FILE_FLAGS_TIME_m13) {
+		printf_m13("Access Time: ");
+		if (fp->acc <= 0) {  // covers UUTC_NO_ENTRY_m13 & zero cases
+			printf_m13("no entry\n");
+		} else {
+			STR_time_m13(NULL, fp->acc, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			printf_m13("%ld (oUTC), %s\n", fp->acc, tim_str);
+		}
 	}
 
 	return_m13(TRUE_m13);
@@ -30740,14 +31091,8 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		}
 	}
 
-	eprintf_m13("%s(%d): password = \"%s\"\n", __FUNCTION__, __LINE__, password);
-	G_show_password_data_m13(pwd, 2);
-	if (password && pwd->processed != TRUE_m13) {
-		eprintf_m13("%s(%d): password = %d\n", __FUNCTION__, __LINE__, password);
+	if (password && pwd->processed != TRUE_m13)
 		G_process_password_data_m13(fps, password);
-		eprintf_m13("%s(%d)\n", __FUNCTION__, __LINE__);
-	}
-	eprintf_m13("%s(%d)\n", __FUNCTION__, __LINE__);
 
 	// get n_items (preferably this is passed)
 	if (n_items == 0)
@@ -41892,6 +42237,8 @@ size_t	flen_m13(FILE_m13 *fp)
 #endif
 	
 	if (is_stream == FALSE_m13) {
+		if (fp->flags & FILE_FLAGS_LEN_m13)
+			fp->len = (si8) sb.st_size;
 		if (fp->flags & FILE_FLAGS_TIME_m13)
 			fp->acc = G_current_uutc_m13();
 	}
@@ -42436,7 +42783,7 @@ si4	fputc_m13(si4 c, FILE_m13 *fp)
 }
 
 
-size_t	fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...)  // varargs(n_members negative): si4 non_blocking
+size_t	fread_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ...)  // varargs(n_elements negative): tern (as si4) non_blocking
 {
 	tern	is_stream, non_blocking = FALSE_m13;
 	size_t	nr;
@@ -42444,10 +42791,10 @@ size_t	fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...)
 
 
 	// vararg
-	if (n_members < 0) {
+	if (n_elements < 0) {
 		va_list	v_arg;
 		
-		n_members = -n_members;
+		n_elements = -n_elements;
 		va_start(v_arg, fp);
 		non_blocking = (tern) va_arg(v_arg, si4);
 		va_end(v_arg);
@@ -42469,7 +42816,7 @@ size_t	fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...)
 		real_fp = (FILE *) fp;
 	}
 		
-	if ((nr = fread(ptr, el_size, n_members, real_fp)) != n_members) {
+	if ((nr = fread(ptr, el_size, n_elements, real_fp)) != n_elements) {
 		if (is_stream == TRUE_m13)
 			G_set_error_m13(E_READ_m13, NULL);
 		else
@@ -43046,7 +43393,7 @@ si8	ftell_m13(FILE_m13 *fp)
 }
 		
 		
-size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...)  // varargs(n_members negative): si4 non_blocking
+size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ...)  // varargs(n_elements negative): si4 non_blocking
 {
 	tern	is_stream, non_blocking = FALSE_m13;
 	size_t	nw;
@@ -43054,10 +43401,10 @@ size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...
 
 
 	// vararg
-	if (n_members < 0) {
+	if (n_elements < 0) {
 		va_list	v_arg;
 		
-		n_members = -n_members;
+		n_elements = -n_elements;
 		va_start(v_arg, fp);
 		non_blocking = (tern) va_arg(v_arg, si4);
 		va_end(v_arg);
@@ -43079,8 +43426,8 @@ size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...
 	}
 	
 	FILE_show_m13(fp);
-	nw = fwrite(ptr, el_size, n_members, real_fp);
-	if (nw != n_members) {
+	nw = fwrite(ptr, el_size, n_elements, real_fp);
+	if (nw != n_elements) {
 		if (is_stream == TRUE_m13)
 			G_set_error_m13(E_WRITE_m13, NULL);
 		else
@@ -44264,7 +44611,7 @@ si4	sscanf_m13(si1 *target, si1 *fmt, ...)
 }
 
 
-si8	strcat_m13(si1 *target, si1 *source)
+si8	strcat_m13(si1 *target, const si1 *source)
 {
 	si1	*c;
 		
@@ -44282,9 +44629,36 @@ si8	strcat_m13(si1 *target, si1 *source)
 }
 
 
-si8	strcpy_m13(si1 *target, si1 *source)
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	strcmp_m13(const si1 *string_1, const si1 *string_2)
 {
-	si1	*c, *c2, *c3;
+	// returns 0 if equal, FALSE_m13 (-1) if not
+	// strings may overlap
+	// note this version may be faster than standard as does not return string comparison value, just whether equal
+
+	if (string_1 == string_2)
+		return((si4) 0);
+	
+	if (string_1 == NULL || string_2 == NULL)
+		return((si4) -1);
+
+	while (*string_1 && *string_2)
+		if (*string_1++ != *string_2++)
+			return((si4) -1);
+	
+	if (string_1 || *string_2)
+		return((si4) -1);
+	
+	return((si4) 0);
+}
+
+
+si8	strcpy_m13(si1 *target, const si1 *source)
+{
+	const si1	*c2;
+	si1		*c, *c3;
 	
 	
 	// returns length (not including terminal zero)
@@ -44308,7 +44682,7 @@ si8	strcpy_m13(si1 *target, si1 *source)
 }
 
 
-si8	strncat_m13(si1 *target, si1 *source, si4 target_field_bytes)
+si8	strncat_m13(si1 *target, const si1 *source, size_t n_bytes)
 {
 	si1	*c;
 	si8	len = 0;
@@ -44320,29 +44694,29 @@ si8	strncat_m13(si1 *target, si1 *source, si4 target_field_bytes)
 		G_set_error_m13(E_UNSPEC_m13, "target is NULL");
 		return(-1);
 	}
-	if (target_field_bytes <= 0) {
-		G_set_error_m13(E_UNSPEC_m13, "target_field_bytes is less than or equal to zero");
+	if (n_bytes <= 0) {
+		G_set_error_m13(E_UNSPEC_m13, "n_bytes is less than or equal to zero");
 		return(-1);
 	}
 
 	c = target;
 	if (source == NULL) {
-		--target_field_bytes;
+		--n_bytes;
 	} else {
-		while (--target_field_bytes)
+		while (--n_bytes)
 			if (*c++ == '\0')
 				break;
 	}
 	
 	--c;
-	++target_field_bytes;
+	++n_bytes;
 	
-	while (--target_field_bytes)
+	while (--n_bytes)
 		if ((*c++ = *source++) == '\0')
 			break;
 	len = (si8)((c - target) - 1);
-	if (target_field_bytes) {
-		while (--target_field_bytes)
+	if (n_bytes) {
+		while (--n_bytes)
 			*c++ = '\0';
 	} else {
 		G_warning_message_m13("%s(): target string truncated\n", __FUNCTION__);
@@ -44354,57 +44728,64 @@ si8	strncat_m13(si1 *target, si1 *source, si4 target_field_bytes)
 }
 
 
-si8	strncpy_m13(si1 *target, si1 *source, si4 target_field_bytes)
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_bytes)
 {
-	si1	*c, *c2, *t = NULL;
-	si8	len, tfb;
+	si8	len;
 	
 	
-	// returns length (not including terminal zeros)
+	// returns 0 if equal up to (max of) n characters, FALSE_m13 (-1) if not
 	// strings may overlap
+	// note this version may be faster than standard as does not return string comparison value, just whether equal
 
-	if (target == NULL) {
-		G_set_error_m13(E_UNSPEC_m13, "target is NULL");
-		return(-1);
-	}
-	if (source == NULL) {
-		if (target_field_bytes > 0) {
-			memset((void *) target, (si4) 0, (size_t) target_field_bytes);
-			return(0);
-		}
-	}
-	if (target_field_bytes <= 0) {
-		G_set_error_m13(E_UNSPEC_m13, "target_field_bytes <= 0");
-		return(-1);
-	}
-
-	if (target > source) {  // possible overwrite if arrays overlap (backwards copy not possible with strncpy)
-		for (c = source, tfb = target_field_bytes; tfb && *c; ++c, --tfb);
-		if (c >= target) {  // would overlap in forward copy
-			len = (si8) (c - source) + 1;
-			c = source;
-			source = c2 = t = malloc(len);
-			while ((*c++ = *c2++));  // copy to temp string (double parenthesis to suppress compiler warning)
-		}
-	}
+	if (string_1 == string_2)
+		return((si4) 0);
 	
+	if (string_1 == NULL || string_2 == NULL)
+		return((si4) -1);
+
+	len = (si8) n_bytes;  // size_t is unsigned
+	while (*string_1 && *string_2 && len--)
+		if (*string_1++ != *string_2++)
+			return((si4) -1);
+	
+	if (*string_1 || *string_2)
+		if (len >= 0)
+			return((si4) -1);
+	
+	return((si4) 0);
+}
+
+
+si8	strncpy_m13(si1 *target, const si1 *source, size_t n_bytes)
+{
+	const si1	*c2;
+	si1		*c, *c3;
+	si8		len;
+	
+	
+	// returns length (not including terminal zero)
+	// strings may overlap
+	
+	if (target == NULL || source == NULL)
+		return(-1);
+
 	c = target;
-	while (--target_field_bytes)
-		if ((*c++ = *source++) == 0)
-			break;
-	len = (si8)((c - target) - 1);
-	
-	if (target_field_bytes) {
-		while (--target_field_bytes)
-			*c++ = '\0';
-	} else {
-		G_warning_message_m13("%s(): target string truncated\n", __FUNCTION__);
+	if (target <= source) {
+		len = (si8) n_bytes;
+		while ((*c++ = *source++) && len--);
+	} else {  // overwrite possible, copy backwards
+		c2 = source;
+		while (*c2++);
+		len = c2 - source;
+		if (len < n_bytes)
+			len = n_bytes;
+		c3 = target + len;
+		while (c3 != target)
+			*--c3 = *--c2;
 	}
-	
-	*c = '\0';
-	
-	if (t)
-		free((void *) t);
 	
 	return(len);
 }
