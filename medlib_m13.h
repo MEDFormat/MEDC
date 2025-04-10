@@ -1580,6 +1580,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 2)
 #define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 3)
 #define RETRY_ONCE_m13			((ui4) 1 << 4)
+#define IGNORE_SYSTEM_ERRORS_m13	((ui4) 1 << 5) // ignore errors from standard library functions
 #define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
 
 #define DEFAULT_BEHAVIOR_m13		RETURN_ON_FAIL_m13 // show all output, return on fail, do not retry
@@ -1638,9 +1639,9 @@ typedef struct {
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
 #ifdef MATLAB_m13
-	#define eprintf_m13(fmt, ...)		mexPrintf("%s() [%d]: " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
+	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
-	#define eprintf_m13(fmt, ...)		printf_m13("%s%s() %s[%d]%s: " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__)
+	#define eprintf_m13(fmt, ...)		printf_m13("%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__)
 #endif
 
 
