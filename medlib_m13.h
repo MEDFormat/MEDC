@@ -1129,7 +1129,7 @@ typedef struct {
 // Replaces standard FILE pointer in medlib functions
 
 // Defines
-#define FILE_START_ID_m13		((ui4) 0x87654321) // ui4 (decimal 2,271,560,481)
+#define FILE_MARKER_m13		((ui4) 0x87654321) // ui4 (decimal 2,271,560,481)
 
 #define FILE_PERM_OTH_EXEC_m13		((ui2) 1 << 0) // == S_IXOTH
 #define FILE_PERM_OTH_WRITE_m13		((ui2) 1 << 1) // == S_IWOTH
@@ -1205,8 +1205,8 @@ typedef struct {
 
 // Typedefs
 typedef struct {
-	ui4	start_id; // == FILE_START_ID_m13 (marker for FILE_m13 vs FILE)
-	ui4	file_id; // CRC of file path (can't use file descriptor because not unique if file dup'd)
+	ui4	marker; // == FILE_MARKER_m13 (marker for FILE_m13 vs FILE)
+	ui4	fid; // CRC of file path (can't use file descriptor because not unique if file dup'd)
 	si1	path[PATH_BYTES_m13];
 	ui2	flags;
 	ui2	perms; // permissions (lower 9 bits of "st_mode" element of stat structure)
@@ -2972,9 +2972,9 @@ tern			G_init_timezone_tables_m13(void);
 tern			G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
 tern			G_is_level_header_m13(void *ptr);
 si8			G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
-ui4			G_MED_path_components_m13(si1 *path, si1 *MED_dir, si1* MED_name);
-si1			*G_MED_type_string_from_code_m13(ui4 code);
-ui4			G_MED_type_code_from_string_m13(si1 *string);
+ui4			G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1* MED_name);
+ui4			G_MED_type_code_from_string_m13(const si1 *string);
+const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void 			G_message_m13(si1 *fmt, ...);
@@ -3070,7 +3070,7 @@ tern			G_valid_level_code_m13(ui4 level_code);
 tern			G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_video_data_CRCs_m13(FPS_m13 *fps);
-tern			G_video_data_m13(si1 *string);
+tern			G_video_data_m13(const si1 *string);
 void			G_warning_message_m13(si1 *fmt, ...);
 
 
@@ -5103,7 +5103,7 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 
 
 si4		asprintf_m13(si1 **target, si1 *fmt, ...);
-size_t		calloc_size_m13(void *address, size_t element_size);
+size_t		calloc_size_m13(void *address, size_t el_size);
 tern		cp_m13(si1 *path, si1 *new_path);  // copy
 si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
@@ -5128,7 +5128,7 @@ pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
 size_t		malloc_size_m13(void *address);
 tern		md_m13(si1 *dir);  // synonym for mkdir()
-void		*memset_m13(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
+void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members < 0): const void *el_val (val == el_size)
 tern		mkdir_m13(si1 *dir);
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
 si4		mprotect_m13(void *address, size_t len, si4 protection);
