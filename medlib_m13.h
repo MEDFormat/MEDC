@@ -1129,7 +1129,7 @@ typedef struct {
 // Replaces standard FILE pointer in medlib functions
 
 // Defines
-#define FILE_MARKER_m13		((ui4) 0x87654321) // ui4 (decimal 2,271,560,481)
+#define FILE_TAG_m13			((ui4) 0x87654321) // ui4 (decimal 2,271,560,481)
 
 #define FILE_PERM_OTH_EXEC_m13		((ui2) 1 << 0) // == S_IXOTH
 #define FILE_PERM_OTH_WRITE_m13		((ui2) 1 << 1) // == S_IWOTH
@@ -1180,7 +1180,8 @@ typedef struct {
 #define FLOCK_READ_m13			((si4) 1 << 4) // read lock mode
 #define FLOCK_WRITE_m13			((si4) 1 << 5) // write lock mode
 #define FLOCK_NON_BLOCKING_m13		((si4) 1 << 6) // do not block for lock, return FLOCK_LOCKED_m13 immediately
-#define FLOCK_FORCE_m13			((si4) 1 << 7) // unlock or lock regardless of lock status
+#define FLOCK_TIMEOUT_m13		((si4) 1 << 7) // blocking (looped) or non-blocking (once) sleep time (as nap string) included as vararg
+#define FLOCK_FORCE_m13			((si4) 1 << 8) // unlock or lock regardless of lock status
 // Return values
 #define FLOCK_SUCCESS_m13		((si4) 0) // operation succeeded
 #define FLOCK_ERR_m13			((si4) -1) // operation generated error
@@ -1205,7 +1206,7 @@ typedef struct {
 
 // Typedefs
 typedef struct {
-	ui4	marker; // == FILE_MARKER_m13 (marker for FILE_m13 vs FILE)
+	ui4	tag; // == FILE_MARKER_m13 (marker for FILE_m13 vs FILE)
 	ui4	fid; // CRC of file path (can't use file descriptor because not unique if file dup'd)
 	si1	path[PATH_BYTES_m13];
 	ui2	flags;
@@ -2122,6 +2123,7 @@ typedef struct {
 	AT_LIST_m13			*AT_list;
 #endif // AT_DEBUG_m13
  // Miscellaneous
+	si1				cwd[PATH_BYTES_m13]; // current working directory (periodically auto-cleared)
 	si1				temp_dir[PATH_BYTES_m13]; // system temp directory (periodically auto-cleared)
 	si1				temp_file[PATH_BYTES_m13]; // full path to temp file (i.e. incudes temp_dir)
 								  // not thread safe => use G_unique_temp_file_m13() in threaded applications
@@ -2952,7 +2954,7 @@ si1 			*G_get_base_name_m13(LH_m13 *lh, si1 *path, si1 *base_name);
 BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
 si1			**G_get_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
 #ifdef FT_DEBUG_m13
-FUNCTION_STACK_m13	*G_get_function_stack_m13(void);
+FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked);
 #endif
 ui4			G_get_level_m13(si1 *full_file_name, ui4 *input_type_code);
 tern			G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
@@ -2978,7 +2980,7 @@ const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void 			G_message_m13(si1 *fmt, ...);
-void 			G_nap_m13(si1 *nap_str);
+void 			G_nap_m13(const si1 *nap_str);
 CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
 SSR_m13			*G_open_seg_sess_recs_m13(SESS_m13 *sess);
@@ -2997,7 +2999,7 @@ PROC_GLOBS_m13		*G_proc_globs_m13(LH_m13 *lh);
 void			G_proc_globs_delete_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_init_m13(LH_m13 *lh);
 tern			G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
-tern			G_propogate_flags_m13(LH_m13 *lh, ui8 new_flags);
+tern			G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags);
 void			G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior);
 #ifdef FT_DEBUG_m13
 void			G_push_function_exec_m13(const si1 *function);
@@ -5101,6 +5103,12 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 //***************** MED VERSIONS OF STANDARD C FUNCTIONS ****************//
 //***********************************************************************//
 
+// the calling interfaces to these function are generally those defined by posix
+// in some cases additional functionality are added via special input values or varargs
+// in some cases behavior is more robust than standard functions
+// in a few cases return values are modified to be more useful
+// see function definition comments for specific changes
+// a few non-standard functions that are closely related to standard functions are also included here
 
 si4		asprintf_m13(si1 **target, si1 *fmt, ...);
 size_t		calloc_size_m13(void *address, size_t el_size);
@@ -5110,7 +5118,7 @@ void		errno_reset_m13(void); // zero errno before calling functions that may set
 void		exit_m13(si4 status);
 tern		fclose_m13(FILE_m13 *fp);
 size_t		flen_m13(FILE_m13 *fp);
-si4		flock_m13(FILE_m13 *fp, si4 operation, ...); // varargs(operation == 0): si4 operation, si1 *nap_str (string to pass to G_nap_m13() if locked & blocking)
+si4		flock_m13(FILE_m13 *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to G_nap_m13())
 FLOCK_ENTRY_m13	*flock_add_m13(void);
 FILE_m13	*fopen_m13(const si1 *path, si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
 si4		fprintf_m13(FILE_m13 *fp, si1 *fmt, ...);
