@@ -193,7 +193,7 @@
 
 
 //**********************************************************************************//
-//****************************** Elemental Typedefs ******************************//
+//******************************** Elemental Typedefs ******************************//
 //**********************************************************************************//
 
 #ifndef MED_PRIMITIVES_IN_m13
@@ -264,16 +264,46 @@ typedef long double	sf16;
 #endif // MED_PRIMITIVES_IN_m13
 
 
-
 //**********************************************************************************//
-//**************** Record Structures Integral to the MED Library *****************//
-//************** (prototypes & constants declared in medrec_m13.h) ***************//
+//******************************* MED Strings (mstr) *******************************//
 //**********************************************************************************//
 
+// Slightly enhanced Pascal strings
+// Best for large strings, or strings whose length needs to be known often
+// (eventually all medlib string functions will accept these)
 
-//*************************************************************************************//
+#define MSTR_TAG_m13		((ui1) 0x80)
+#define MSTR_MAX_LEN_m13	((ui4) 0xFFFFFFFF)
+
+// flags (bytes 1-3, byte 0 used for tag)
+#define MSTR_FLAG_ALLOCED_m13	((ui4) 1 << 8) // pstr structure was allocated
+#define MSTR_FLAG_CONST_m13	((ui4) 1 << 9) // string is const
+#define MSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is ascii (not sure if useful)
+
+// macros
+#define MSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((*((ui1 *) (x)) == MSTR_TAG_m13) ? TRUE_m13 : FALSE_m13))
+
+// typedefs
+typedef struct {
+	union {
+		ui1	tag; // marker for *mstr vs *si1 (MSTR_TAG_m13 == 0x80 is not valid as first byte of any utf8 character, including ascii)
+		ui4	flags; // bytes 1-3 used for flags
+	}
+	ui4	len; // string length in bytes (not necessarily characters), not including terminal zero if present
+	si1	*str; // si1 string pointer (terminal zero not required)
+} mstr;  // (not capitals because it is an elemental type)
+
+
+
+//**********************************************************************************//
+//***************** Record Structures Integral to the MED Library ******************//
+//*************** (prototypes & constants declared in medrec_m13.h) ****************//
+//**********************************************************************************//
+
+
+//*********************************************************************************//
 //******************************* Sgmt: Segment Record ****************************//
-//*************************************************************************************//
+//*********************************************************************************//
 
 // A segment record is entered at the Session and or Channel Level for each new segment
 // The encryption level for these records is typically set to the same as for metadata section 2
@@ -329,7 +359,7 @@ typedef struct {
 
 
 //*************************************************************************************//
-//***************************** Stat: Statistics Record ***************************//
+//******************************* Stat: Statistics Record *****************************//
 //*************************************************************************************//
 
 typedef struct {
@@ -346,7 +376,7 @@ typedef struct {
 
 
 //*************************************************************************************//
-//********************* CMP Structures required in MED section *********************//
+//*********************** CMP Structures required in MED section **********************//
 //*************************************************************************************//
 
 typedef struct {
@@ -379,7 +409,7 @@ typedef struct {
 
 
 //**********************************************************************************//
-//********************************** ENCRYPTION **********************************//
+//*********************************** ENCRYPTION ***********************************//
 //**********************************************************************************//
 
 // Encryption & Password Constants
@@ -420,7 +450,7 @@ typedef struct {
 
 
 //**********************************************************************************//
-//******************************** MED Constants *********************************//
+//********************************* MED Constants **********************************//
 //**********************************************************************************//
 
 // Versioning Constants
@@ -2922,8 +2952,8 @@ tern			G_encrypt_metadata_m13(FPS_m13 *fps);
 tern			G_encrypt_record_data_m13(FPS_m13 *fps);
 tern 			G_encrypt_time_series_data_m13(FPS_m13 *fps);
 tern			G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
-void 			G_error_message_m13(si1 *fmt, ...);
-si1 			G_exists_m13(si1 *path);
+void 			G_error_message_m13(const si1 *fmt, ...);
+si1 			G_exists_m13(const si1 *path);
 tern			G_expand_password_m13(si1 *password_bytes);
 si8			G_file_length_m13(FILE_m13 *fp, si1 *path);
 FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
@@ -2950,9 +2980,9 @@ si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
 si1			*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name);
 ui8			G_generate_UID_m13(ui8 *uid);
 CHAN_m13		*G_get_active_channel_m13(SESS_m13 *sess, si1 channel_type);
-si1 			*G_get_base_name_m13(LH_m13 *lh, si1 *path, si1 *base_name);
+si1 			*G_get_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name);
 BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
-si1			**G_get_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags);
+si1			**G_get_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
 #ifdef FT_DEBUG_m13
 FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked);
 #endif
@@ -2979,7 +3009,7 @@ ui4			G_MED_type_code_from_string_m13(const si1 *string);
 const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
-void 			G_message_m13(si1 *fmt, ...);
+void 			G_message_m13(const si1 *fmt, ...);
 void 			G_nap_m13(const si1 *nap_str);
 CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
@@ -3073,7 +3103,7 @@ tern			G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_video_data_CRCs_m13(FPS_m13 *fps);
 tern			G_video_data_m13(const si1 *string);
-void			G_warning_message_m13(si1 *fmt, ...);
+void			G_warning_message_m13(const si1 *fmt, ...);
 
 
 
@@ -5110,9 +5140,9 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 // see function definition comments for specific changes
 // a few non-standard functions that are closely related to standard functions are also included here
 
-si4		asprintf_m13(si1 **target, si1 *fmt, ...);
+si4		asprintf_m13(si1 **target, const si1 *fmt, ...);
 size_t		calloc_size_m13(void *address, size_t el_size);
-tern		cp_m13(si1 *path, si1 *new_path);  // copy
+tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
 si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_m13(si4 status);
@@ -5120,13 +5150,13 @@ tern		fclose_m13(FILE_m13 *fp);
 size_t		flen_m13(FILE_m13 *fp);
 si4		flock_m13(FILE_m13 *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to G_nap_m13())
 FLOCK_ENTRY_m13	*flock_add_m13(void);
-FILE_m13	*fopen_m13(const si1 *path, si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
-si4		fprintf_m13(FILE_m13 *fp, si1 *fmt, ...);
+FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
+si4		fprintf_m13(FILE_m13 *fp, const si1 *fmt, ...);
 si4		fputc_m13(si4 c, FILE_m13 *fp);
 size_t		fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
 tern		freeable_m13(void *address);
-FILE_m13	*freopen_m13(const si1 *path, si1 *mode, FILE_m13 *fp);
-si4		fscanf_m13(FILE_m13 *fp, si1 *fmt, ...);
+FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp);
+si4		fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...);
 si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence, ...); // vararg(whence negative): tern (as si4) non_blocking
 si8		ftell_m13(FILE_m13 *fp);
 si4		ftruncate_m13(si4 fd, off_t len);
@@ -5135,13 +5165,13 @@ si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
 size_t		malloc_size_m13(void *address);
-tern		md_m13(si1 *dir);  // synonym for mkdir()
+tern		md_m13(const si1 *dir);  // synonym for mkdir()
 void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members < 0): const void *el_val (val == el_size)
-tern		mkdir_m13(si1 *dir);
+tern		mkdir_m13(const si1 *dir);
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
-tern		mv_m13(si1 *path, si1 *new_path);  // move
+tern		mv_m13(const si1 *path, const si1 *new_path);  // move
 si1		*pthread_getname_m13(pthread_t_m13 thread_id, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr);
 si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
@@ -5150,29 +5180,29 @@ si4		pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
 si4		pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex);
 si4		pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
 pthread_t_m13	pthread_self_m13(void);
-si4		printf_m13(si1 *fmt, ...);
+si4		printf_m13(const si1 *fmt, ...);
 si4		putc_m13(si4 c, FILE_m13 *fp);
 si4		putch_m13(si4 c);
 si4		putchar_m13(si4 c);
-tern		rm_m13(si1 *path);  // remove
-si4		scanf_m13(si1 *fmt, ...);
-si4		sprintf_m13(si1 *target, si1 *fmt, ...);
-si4		snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...);
-si4		sscanf_m13(si1 *target, si1 *fmt, ...);
+tern		rm_m13(const si1 *path);  // remove
+si4		scanf_m13(const si1 *fmt, ...);
+si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
+si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
+si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
 si8		strcat_m13(si1 *target, const si1 *source);
 si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
 si8		strcpy_m13(si1 *target, const si1 *source);
 si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
-si4		system_m13(si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
-si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
-si4		truncate_m13(const char *path, off_t len);
-si4		vasprintf_m13(si1 **target, si1 *fmt, va_list args);
-si4		vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list args);
-si4		vprintf_m13(si1 *fmt, va_list args);
-si4		vsnprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args);
-si4		vsprintf_m13(si1 *target, si1 *fmt, va_list args);
+si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		truncate_m13(const si1 *path, off_t len);
+si4		vasprintf_m13(si1 **target, const si1 *fmt, va_list args);
+si4		vfprintf_m13(FILE_m13 *fp, const si1 *fmt, va_list args);
+si4		vprintf_m13(const si1 *fmt, va_list args);
+si4		vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list args);
+si4		vsprintf_m13(si1 *target, const si1 *fmt, va_list args);
 
 // standard functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13 // use these protoypes in all cases, defines will convert if needed

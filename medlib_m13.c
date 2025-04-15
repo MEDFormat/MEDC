@@ -885,6 +885,10 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 		strcat(behavior_string, "RETRY ONCE | ");
 	else
 		strcat(behavior_string, "DO NOT RETRY | ");
+	if (behavior & IGNORE_SYSTEM_ERRORS_m13)
+		strcat(behavior_string, "IGNORE SYSTEM ERRORS | ");
+	else
+		strcat(behavior_string, "HEED SYSTEM ERRORS | ");
 
 	len = strlen(behavior_string);
 	if (len)
@@ -3350,7 +3354,7 @@ tern	G_enter_ascii_password_m13(si1* password, si1* prompt, tern confirm_no_entr
 #endif  // WINDOWS_m13
 
 
-void  G_error_message_m13(si1 *fmt, ...)
+void  G_error_message_m13(const si1 *fmt, ...)
 {
 	ui4		behavior;
 	va_list		v_args;
@@ -3390,9 +3394,9 @@ void  G_error_message_m13(si1 *fmt, ...)
 }
 
 
-si1 G_exists_m13(si1 *path)
+si1	G_exists_m13(const si1 *path)
 {
-	si1			tmp_path[PATH_BYTES_m13];
+	si1	tmp_path[PATH_BYTES_m13];
 	si4 	err;
 #if defined MACOS_m13 || defined LINUX_m13
 	struct stat 	sb;
@@ -5492,7 +5496,7 @@ CHAN_m13	*G_get_active_channel_m13(SESS_m13 *sess, si1 chan_type)
 }
 
 
-si1 	*G_get_base_name_m13(LH_m13 *lh, si1 *path, si1 *base_name)
+si1 	*G_get_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name)
 {
 	tern		free_base_name = FALSE_m13;
 	si1		enc_dir[PATH_BYTES_m13];
@@ -5617,7 +5621,7 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 }
 
 
-si1	**G_get_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_directory, si1 *name, si1 *extension, ui4 flags)
+si1	**G_get_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags)
 {
 	tern	regex;
 	si1		tmp_enclosing_directory[PATH_BYTES_m13], tmp_path[PATH_BYTES_m13];
@@ -5710,7 +5714,8 @@ si1	**G_get_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_director
 	// If no extension is passed, none is used.
 	else {  // file_list == NULL
 		file_list = (si1 **) calloc_2D_m13((size_t) 1, PATH_BYTES_m13, sizeof(si1));
-		G_full_path_m13(enclosing_directory, enclosing_directory);
+		G_full_path_m13(enclosing_directory, (si1 *) enclosing_directory);
+		enclosing_directory = (const si1 *) tmp_enclosing_directory;
 		if (*name)
 			sprintf_m13(file_list[0], "%s/%s", enclosing_directory, name);
 		else
@@ -5747,7 +5752,7 @@ si1	**G_get_file_list_m13(si1 **file_list, si4 *n_files, si1 *enclosing_director
 			STR_escape_chars_m13(file_list[i], (si1) 0x60, PATH_BYTES_m13);  // escape grave accent
 			len = sprintf_m13(command, "%s %s", command, file_list[i]);
 			if (flags & GFL_INCLUDE_INVISIBLE_m13) {
-				G_path_parts_m13(file_list[i], NULL, name, extension);
+				G_path_parts_m13(file_list[i], NULL, (si1 *) name, (si1 *) extension);
 				len = sprintf_m13(command, "%s %s/.%s", command, enclosing_directory, name);  // explicitly include hidden files & directories with a prepended "."
 				if (*extension)
 					len = sprintf_m13(command, "%s.%s", command, extension);
@@ -5825,12 +5830,12 @@ GFL_CONDITION_RETURN_DATA_m13:
 	
 	// return requested path parts
 	for (i = j = 0; i < *n_out_files; ++i) {
-		G_path_parts_m13(file_list[i], enclosing_directory, tmp_name, tmp_extension);
+		G_path_parts_m13(file_list[i], (si1 *) enclosing_directory, (si1 *) name, (si1 *) extension);
 		if ((flags & GFL_INCLUDE_INVISIBLE_m13) == 0)  // exclude invisible files
-			if (*tmp_name == '.')
+			if (*name == '.')
 				continue;
 		if ((flags & GFL_INCLUDE_PARITY_m13) == 0)  // exclude parity files
-			if (strncmp_m13(tmp_name, "parity", 6) == 0)
+			if (strncmp_m13(name, "parity", 6) == 0)
 				continue;
 		switch (path_parts) {
 			case GFL_FULL_PATH_m13:
@@ -5838,13 +5843,13 @@ GFL_CONDITION_RETURN_DATA_m13:
 					strcpy(file_list[j], file_list[i]);
 				break;
 			case (GFL_PATH_m13 | GFL_NAME_m13):
-				sprintf_m13(file_list[j], "%s/%s", enclosing_directory, tmp_name);
+				sprintf_m13(file_list[j], "%s/%s", enclosing_directory, name);
 				break;
 			case (GFL_NAME_m13 | GFL_EXTENSION_m13):
-				sprintf(file_list[j], "%s.%s", tmp_name, tmp_extension);
+				sprintf(file_list[j], "%s.%s", name, extension);
 				break;
 			case GFL_NAME_m13:
-				strcpy(file_list[j], tmp_name);
+				strcpy(file_list[j], name);
 				break;
 			default:
 				G_set_error_m13(E_UNSPEC_m13, "unrecognized path component combination (path_parts == 0x%08x)", path_parts);
@@ -8102,7 +8107,7 @@ tern  G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m13 * m
 }
 
 
-void  G_message_m13(si1 *fmt, ...)
+void  G_message_m13(const si1 *fmt, ...)
 {
 	va_list		v_args;
 	ui4		behavior;
@@ -9433,10 +9438,8 @@ void	G_pop_function_exec_m13(const si1 *function)
 		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 		// at stack base (get exit code)
-		if (strcmp_m13(stack->functions[0], function) == 0) {
-			eprintf_m13("hit stack bottom");
+		if (strcmp_m13(stack->functions[0], function) == 0)
 			exit_m13(globals_m13->error.code);  // call exit to show error & stack
-		}
 		
 		return;
 	}
@@ -14819,6 +14822,7 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		G_set_error_m13(E_UNSPEC_m13, "FPS is NULL");
 		return_m13(FALSE_m13);
 	}
+	eprintf_m13("fps->path = %s", fps->path);
 	
 	if (message_given == FALSE_m13) {
 		G_message_m13("Updating to MED version %d.%d ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
@@ -14834,18 +14838,21 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 
 	// metadata
 	if (METADATA_CODE_m13(type_code) == TRUE_m13) {
+		eprintf_m13("start metadata");
 		
 		// read in raw data
 		bytes_to_read = METADATA_FILE_BYTES_m13;
 		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
 		if (rd == NULL) {
 			fclose_m13(fp);
+			eprintf_m13("premature end metadata");
 			return_m13(FALSE_m13);
 		}
 		nr = fread_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
 		if (nr != bytes_to_read) {
 			fclose_m13(fp);
 			free_m13((void *) rd);
+			eprintf_m13("premature end metadata");
 			return_m13(FALSE_m13);
 		}
 				
@@ -14893,14 +14900,17 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
 			free_m13((void *) rd);
+			eprintf_m13("premature end metadata");
 			return_m13(FALSE_m13);
 		}
 		fclose_m13(fp);
+		eprintf_m13("end metadata");
 	}
 	
 	// time & video indices
 	else if (type_code == TS_INDS_TYPE_CODE_m13 || type_code == VID_INDS_TYPE_CODE_m13) {
-		
+		eprintf_m13("start TS indices");
+
 		// read in raw data
 		bytes_to_read = UH_BYTES_m13;
 		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
@@ -14953,12 +14963,13 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			return_m13(FALSE_m13);
 		}
 		fclose_m13(fp);
-
+		eprintf_m13("end TS indices");
 	}
 	
 	// time series data
 	else if (type_code == TS_DATA_TYPE_CODE_m13) {
-		
+		eprintf_m13("start TS data");
+
 		// read in universal header & first block header (for encryption flags)
 		bytes_to_read = UH_BYTES_m13 + CMP_BLOCK_FIXED_HDR_BYTES_m13;
 		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
@@ -15078,6 +15089,7 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			return_m13(FALSE_m13);
 		}
 		fclose_m13(fp);
+		eprintf_m13("end TS data");
 	}
 	
 	// video data
@@ -15136,7 +15148,8 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		
 	// record indices
 	else if (type_code == REC_INDS_TYPE_CODE_m13) {
-		
+		eprintf_m13("start rec inds");
+
 		// read in raw data
 		bytes_to_read = fps->params.fp->len;
 		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
@@ -15206,11 +15219,13 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			return_m13(FALSE_m13);
 		}
 		fclose_m13(fp);
+		eprintf_m13("end rec inds");
 	}
 	
 	// record data (new Sgmt record format is different size - requires new temp file)
 	else if (type_code == REC_DATA_TYPE_CODE_m13) {
-		
+		eprintf_m13("start rec data");
+
 		// create new file
 		sprintf(tmp_path, "%s.tmp", path);
 		new_fp = fopen_m13(tmp_path, "w");
@@ -15218,15 +15233,11 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			fclose_m13(fp);
 			return_m13(FALSE_m13);
 		}
-		eprintf_m13("");
-		FILE_show_m13(new_fp);
-		eprintf_m13("");
 
 		// read in raw data
 		bytes_to_read = UH_BYTES_m13;
 		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
 		if (rd == NULL) {
-			eprintf_m13("");
 			fclose_m13(fp);
 			fclose_m13(new_fp);
 			return_m13(FALSE_m13);
@@ -15234,15 +15245,12 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		fseek_m13(fp, 0, SEEK_SET);
 		nr = fread_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
 		if (nr != bytes_to_read) {
-			eprintf_m13("nr = %lu", nr);
-			eprintf_m13("bytes_to_read = %lu", bytes_to_read);
 			FILE_show_m13(fp);
 			fclose_m13(fp);
 			fclose_m13(new_fp);
 			free_m13((void *) rd);
 			return_m13(FALSE_m13);
 		}
-		eprintf_m13("");
 
 		// set up
 		uh = (UH_m13 *) rd;
@@ -15285,10 +15293,8 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		
 		// write out new file universal header
 		bytes_to_write = UH_BYTES_m13;
-		eprintf_m13("");
 		if (globals_m13->update_parity == TRUE_m13)
 			PRTY_update_m13(fp->path, 0, rd, bytes_to_write);
-		eprintf_m13("");
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, new_fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15380,9 +15386,6 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 				return_m13(FALSE_m13);
 			}
 		}
-		eprintf_m13("");
-		FILE_show_m13(fp);
-		fclose_m13(fp);
 
 		// update header CRC
 		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
@@ -15399,12 +15402,10 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 			G_set_error_m13(E_WRITE_m13, NULL);
 			return_m13(FALSE_m13);
 		}
-		eprintf_m13("");
-		FILE_show_m13(new_fp);
-		fclose_m13(new_fp);
 		
 		// move new file into place
 		mv_m13(tmp_path, path);
+		eprintf_m13("end rec data");
 	}
 
 	// unknown file type
@@ -15412,19 +15413,17 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		G_set_error_m13(E_NOT_MED_m13, NULL);
 		return_m13(FALSE_m13);
 	}
-	
+
+	eprintf_m13("start finish");
+
 	// clean up
-	eprintf_m13("");
 	free_m13((void *) rd);
 
 	// reopen file
-	eprintf_m13("calling reopen");
 	fp = freopen_m13(path, orig_mode_str, fp);
-	eprintf_m13("back from reopen");
 	if (fp == NULL)
 		return_m13(FALSE_m13);
 	fps->params.fp = fp;
-	eprintf_m13("");
 
 	// read in to status when called in read_file_m13()
 	if ((fp->flags & FILE_FLAGS_LEN_m13) == 0)
@@ -15434,15 +15433,15 @@ tern	G_update_file_version_m13(FPS_m13 **fps_ptr)
 		bytes_to_read = fp->pos = fp->len;
 	eprintf_m13("this is the problem read");
 	nr = fread_m13((void *) fps->params.raw_data, sizeof(ui1), (size_t) bytes_to_read, fp);
+	eprintf_m13("back from read");
 	if (nr != bytes_to_read) {
 		fclose_m13(fp);
 		return_m13(FALSE_m13);
 	}
 
-	eprintf_m13("");
 	*fps_ptr = fps;
 	
-	eprintf_m13("");
+	eprintf_m13("end finish");
 	return_m13(TRUE_m13);
 }
 
@@ -15733,11 +15732,7 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 			return_m13(FALSE_m13);
 		}
 	}
-	
-	eprintf_m13("");
-	FILE_show_m13(fp);
-	fclose_m13(fp);
-	
+		
 	return_m13(TRUE_m13);
 }
 
@@ -16207,7 +16202,7 @@ tern	G_video_data_m13(const si1 *string)
 }
 
 
-void  G_warning_message_m13(si1 *fmt, ...)
+void  G_warning_message_m13(const si1 *fmt, ...)
 {
 	va_list		v_args;
 	
@@ -37194,10 +37189,7 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 	}
 	
 	// clean up
-	fclose_m13(fp);
-	eprintf_m13("");
 	free((void *) old_data);
-	eprintf_m13("");
 	
 	return_m13(TRUE_m13);
 }
@@ -42453,7 +42445,7 @@ si1	*WN_windify_format_string_m13(si1 *fmt)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4  asprintf_m13(si1 **target, si1 *fmt, ...)
+si4  asprintf_m13(si1 **target, const si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		v_args;
@@ -42607,15 +42599,21 @@ size_t	calloc_size_m13(void *address, size_t element_size)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	cp_m13(si1 *path, si1 *new_path)
+tern	cp_m13(const si1 *path, const si1 *new_path)
 {
-	si1	command[(PATH_BYTES_m13 * 2) + 16];
+	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
 	si4	fe, ret_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// condition paths
+	G_full_path_m13(path, tmp_path);
+	path = (const si1 *) tmp_path;
+	G_full_path_m13(new_path, tmp_new_path);
+	new_path = (const si1 *) tmp_new_path;
+	
 	fe = G_exists_m13(path);
 	
 	if (fe == FILE_EXISTS_m13) {
@@ -42771,7 +42769,7 @@ tern	fclose_m13(FILE_m13 *fp)
 		real_fp = (FILE *) fp;
 	} else {
 		if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
-			return_m13(FALSE_m13);  // don't close standard streams
+			return_m13(FALSE_m13);  // can't close standard streams
 		real_fp = fp->fp;
 	}
 	
@@ -42789,9 +42787,7 @@ tern	fclose_m13(FILE_m13 *fp)
 		flock_m13(fp, FLOCK_CLOSE_m13);
 
 	if (fp->flags & FILE_FLAGS_ALLOCED_m13) {
-		eprintf_m13("freeing %s", fp->path);
 		free_m13((void *) fp);
-		eprintf_m13("after free");
 	} else {
 		fp->fp = NULL;
 		fp->fd = FILE_FD_CLOSED_m13;
@@ -43077,7 +43073,7 @@ FLOCK_ENTRY_m13	*flock_add_m13(void)
 }
 
 
-FILE_m13	*fopen_m13(const si1 *path, si1 *mode, ...)  // varargs(mode == NULL): si1 *mode, ui2 flags (as si4), ui2 permissions (as si4)
+FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == NULL): si1 *mode, ui2 flags (as si4), ui2 permissions (as si4)
 {
 	tern		read_mode, write_mode, append_mode, plus_mode;
 	si1		*c, main_mode_total, tmp_path[PATH_BYTES_m13];
@@ -43146,7 +43142,7 @@ FILE_m13	*fopen_m13(const si1 *path, si1 *mode, ...)  // varargs(mode == NULL): 
 	mode = local_mode;
 	#endif
 	read_mode = write_mode = append_mode = plus_mode = UNKNOWN_m13;
-	c = mode - 1;
+	c = (si1 *) mode - 1;
 	while (*++c) {
 		switch (*c) {
 			case 'R':
@@ -43320,7 +43316,7 @@ FILE_m13	*fopen_m13(const si1 *path, si1 *mode, ...)  // varargs(mode == NULL): 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	fprintf_m13(FILE_m13 *fp, si1 *fmt, ...)
+si4	fprintf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 {
 	tern		is_stream;
 	si1		*tmp_str;
@@ -43467,8 +43463,6 @@ size_t	fread_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ...
 			G_set_error_m13(E_READ_m13, NULL);
 		else
 			G_set_error_m13(E_READ_m13, "failed to read file \"%s\"", fp->path);
-		eprintf_m13("nr = %ld, bytes_to_read = %ld", nr, bytes_to_read);
-		exit_m13(-1);
 		return_m13(nr / el_size);
 	}
 
@@ -43649,48 +43643,76 @@ tern	freeable_m13(void *address)
 }
 
 
-FILE_m13	*freopen_m13(const si1 *path, si1 *mode, FILE_m13 *fp)
+FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 {
-	tern		is_stream, mode_matches, read_mode, write_mode, append_mode, plus_mode;
+	tern		is_stream, closed, mode_matches, read_mode, write_mode, append_mode, plus_mode;
 	si1		*c, tmp_path[PATH_BYTES_m13];
 	si4		main_mode_total;
 	si8		len;
 	FILE		*real_fp;
-	#if defined MACOS_m13 || defined LINUX_m13
+#if defined MACOS_m13 || defined LINUX_m13
 	struct stat	sb;
-	#endif
-	#ifdef WINDOWS_m13
+#endif
+#ifdef WINDOWS_m13
 	si1		local_mode[8];
 	struct _stat64	sb;
-	#endif
-
+#endif
+	
 #ifdef FT_DEBUG_m13
-	eprintf_m13("pushing freopen");
 	G_push_function_m13();
 #endif
-
+	
 	// check path
 	if (STR_empty_m13(path) == TRUE_m13) {
 		G_set_error_m13(E_OPEN_m13, "path is empty");
 		return_m13(NULL);
 	}
 	
+	// condition path
+	if (STR_empty_m13(path) == FALSE_m13) {
+		G_full_path_m13(path, tmp_path);  // don't modify passed path
+		path = tmp_path;
+	}
+
 	// get pointer type
 	is_stream = FILE_stream_m13(fp);
-	
-	// set path & real_fp
-	if (is_stream == TRUE_m13) {
-		G_full_path_m13(path, tmp_path);
-		path = tmp_path;
-		real_fp = (FILE *) fp;
+	if (is_stream) {  // not UNKNOWN_m13 (i.e. fp != NULL)
+		// set path & real_fp
+		if (is_stream == TRUE_m13) {
+			real_fp = (FILE *) fp;
+		} else {
+			if (STR_empty_m13(path) == FALSE_m13)  // passed path overrides
+				strcpy(fp->path, path);
+			else
+				path = fp->path;
+			if (fp->flags & FILE_FLAGS_LOCK_m13)
+				flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
+			real_fp = fp->fp;
+		}
+		// check if closed
+		closed = FALSE_m13;
+		if (is_stream == TRUE_m13) {
+			#if defined MACOS_m13 || defined LINUX_m13
+			if (fileno(real_fp) == -1)
+				closed = TRUE_m13;
+			#endif
+			#ifdef WINDOWS_m13
+			if (_fileno(real_fp) == -1)
+				closed = TRUE_m13;
+			#endif
+		} else if (fp->fd == FILE_FD_CLOSED_m13) {
+			closed = TRUE_m13;
+		}
 	} else {
-		if (STR_empty_m13(path) == FALSE_m13)  // passed path overrides
-			strcpy(fp->path, path);
-		else
-			path = fp->path;
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
-		real_fp = fp->fp;
+		closed = TRUE_m13;
+	}
+
+	// standard open
+	if (closed == TRUE_m13) {
+		if (is_stream == FALSE_m13)
+			if (fp->flags & FILE_FLAGS_ALLOCED_m13)
+				free_m13((void *) fp);
+		return_m13(fopen_m13(path, mode));
 	}
 
 	// check mode
@@ -43704,7 +43726,7 @@ FILE_m13	*freopen_m13(const si1 *path, si1 *mode, FILE_m13 *fp)
 	mode = local_mode;
 	#endif
 	read_mode = write_mode = append_mode = plus_mode = UNKNOWN_m13;
-	c = mode - 1;
+	c = (si1 *) mode - 1;
 	while (*++c) {
 		switch (*c) {
 			case 'R':
@@ -43733,10 +43755,8 @@ FILE_m13	*freopen_m13(const si1 *path, si1 *mode, FILE_m13 *fp)
 		return_m13(NULL);
 	}
 	
-	eprintf_m13("path = %s", path);
 	// check if file already open in requested mode
 	if (is_stream == TRUE_m13) {
-		eprintf_m13("");
 		#if defined MACOS_m13 || defined LINUX_m13
 		si4	fd, curr_mode;
 		
@@ -43784,25 +43804,19 @@ FILE_m13	*freopen_m13(const si1 *path, si1 *mode, FILE_m13 *fp)
 		// }
 		#endif
 	} else {
-		eprintf_m13("");
 		mode_matches = TRUE_m13;
 		if (read_mode == TRUE_m13 && !(fp->flags & FILE_FLAGS_READ_m13))
 			mode_matches = FALSE_m13;
-		eprintf_m13("");
 		if (write_mode == TRUE_m13 && !(fp->flags & FILE_FLAGS_WRITE_m13))
 			mode_matches = FALSE_m13;
-		eprintf_m13("");
 		if (append_mode == TRUE_m13 && !(fp->flags & FILE_FLAGS_APPEND_m13))
 			mode_matches = FALSE_m13;
-		eprintf_m13("");
 		if (mode_matches == TRUE_m13)
 			return_m13(fp);
-		eprintf_m13("");
 	}
-	eprintf_m13("");
 	
 	// build mode string
-	c = mode;
+	c = (si1 *) mode;
 	if (read_mode == TRUE_m13)
 		*c++ = 'r';
 	else if (write_mode == TRUE_m13)
@@ -43900,7 +43914,7 @@ FILE_m13	*freopen_m13(const si1 *path, si1 *mode, FILE_m13 *fp)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	fscanf_m13(FILE_m13 *fp, si1 *fmt, ...)
+si4	fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 {
 	tern		is_stream;
 	si4		ret_val;
@@ -44419,7 +44433,7 @@ size_t	malloc_size_m13(void *address)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	md_m13(si1 *dir)
+tern	md_m13(const si1 *dir)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44505,13 +44519,17 @@ void	*memset_m13(void *ptr, si4 val, size_t n_members, ...)  // vargargs(n_membe
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	mkdir_m13(si1 *dir)
+tern	mkdir_m13(const si1 *dir)
 {
-	si1	command[PATH_BYTES_m13 + 16];
+	si1	command[PATH_BYTES_m13 + 16], tmp_dir[PATH_BYTES_m13];
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// condition path
+	G_full_path_m13(dir, tmp_dir);
+	dir = (const si1 *) tmp_dir;
 
 	#if defined MACOS_m13 || defined LINUX_m13
 	sprintf_m13(command, "mkdir -p \"%s\"", dir);
@@ -44687,14 +44705,20 @@ tern	munlock_m13(void *addr, size_t len)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	mv_m13(si1 *path, si1 *new_path)
+tern	mv_m13(const si1 *path, const si1 *new_path)
 {
-	si1	command[(PATH_BYTES_m13 * 2) + 16];
+	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
 	si4	fe, ret_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// condition paths
+	G_full_path_m13(path, tmp_path);
+	path = (const si1 *) tmp_path;
+	G_full_path_m13(new_path, tmp_new_path);
+	new_path = (const si1 *) tmp_new_path;
 
 	fe = G_exists_m13(path);
 	
@@ -44721,7 +44745,7 @@ tern	mv_m13(si1 *path, si1 *new_path)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4 printf_m13(si1 *fmt, ...)
+si4	printf_m13(const si1 *fmt, ...)
 {
 	si1		*tmp_str;
 	si4		ret_val;
@@ -45254,14 +45278,18 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	rm_m13(si1 *path)
+tern	rm_m13(const si1 *path)
 {
-	si1	command[PATH_BYTES_m13 + 16];
+	si1	command[PATH_BYTES_m13 + 16], tmp_path[PATH_BYTES_m13];
 	si4	fe, ret_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// condition path
+	G_full_path_m13(path, tmp_path);
+	path = (const si1 *) tmp_path;
 
 	fe = G_exists_m13(path);
 	
@@ -45303,7 +45331,7 @@ tern	rm_m13(si1 *path)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	scanf_m13(si1 *fmt, ...)
+si4	scanf_m13(const si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		v_args;
@@ -45335,7 +45363,7 @@ si4	scanf_m13(si1 *fmt, ...)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...)
+si4	snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		v_args;
@@ -45353,7 +45381,7 @@ si4	snprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, ...)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	sprintf_m13(si1 *target, si1 *fmt, ...)
+si4	sprintf_m13(si1 *target, const si1 *fmt, ...)
 {
 	si1		*tmp_str;
 	si4		ret_val;
@@ -45376,7 +45404,7 @@ si4	sprintf_m13(si1 *target, si1 *fmt, ...)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	sscanf_m13(si1 *target, si1 *fmt, ...)
+si4	sscanf_m13(si1 *target, const si1 *fmt, ...)
 {
 	si4		ret_val;
 	va_list		v_args;
@@ -45615,7 +45643,7 @@ si8	strncpy_m13(si1 *target, const si1 *source, size_t n_chars)
 }
 
 
-si4	system_m13(si1 *command, ...) // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
+si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
 {
 	tern	null_std_streams;
 	ui4	behavior;
@@ -45690,11 +45718,11 @@ si4	system_m13(si1 *command, ...) // varargs(command = NULL): si1 *command, tern
 
 // not a standard function, but closely related
 #if defined MACOS_m13 || defined LINUX_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
 {
 	tern	command_needs_shell, pipe_failure, buffer_initially_null, e_buffer_initially_null;
 	tern	free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
-	si1	**e_buffer_ptr, *buffer, *e_buffer, *c;
+	si1	**e_buffer_ptr, *buffer, *e_buffer, *c, *command_p;
 	ui4	behavior;
 	si4	ret_val, status, err, BUFFER_SIZE_INC, stdout_pipe[2], stderr_pipe[2], retry_count;
 	si8	bytes_in_buffer, bytes_in_e_buffer, bytes_avail, e_buf_len, tot_buf_len;
@@ -45727,8 +45755,9 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 	}
 	
 	// see if shell required
+	command_p = (si1 *) command;
 	command_needs_shell = FALSE_m13;
-	c = --command;  // (command re-incremented below)
+	c = --command_p;  // (command re-incremented below)
 	while (*++c) {
 		switch (*c) {
 			case '>':
@@ -45749,7 +45778,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 	} SYSTEM_PIPE_NEEDS_SHELL_m13:
 	
 	// skip any leading spaces in command (& re-increment from above)
-	while (*++command == 32);
+	while (*++command_p == 32);
 	
 	// discern calling configuration
 	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
@@ -45889,15 +45918,15 @@ SYSTEM_PIPE_RETRY_m13:
 			args[0] = "/usr/bin/sh";
 #endif
 			args[1] = "-c";
-			args[2] = command;
+			args[2] = command_p;
 			args[3] = (char *) NULL;
 			tmp_command = NULL;
 		} else {  // parse args
 			
 			// copy command so not modified
-			command_len = strlen(command) + 1;
+			command_len = strlen(command_p) + 1;
 			tmp_command = (si1 *) malloc((size_t) command_len);
-			memcpy((void *) tmp_command, (void *) command, (size_t) command_len);
+			memcpy((void *) tmp_command, (void *) command_p, (size_t) command_len);
 			c = tmp_command;
 			
 			arg_cnt = 0;
@@ -46015,7 +46044,7 @@ SYSTEM_PIPE_RETRY_m13:
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (bytes_in_buffer || bytes_in_e_buffer) {
-			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command_p);
 			if (bytes_in_buffer)
 				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
 			if (bytes_in_e_buffer)
@@ -46079,11 +46108,11 @@ SYSTEM_PIPE_FAIL_m13:
 
 		G_warning_message_m13("%s(): pipe mechanism failed => using file redirection\n", __FUNCTION__);
 
-		len = strlen(command) + (2 * PATH_BYTES_m13) + 16;
+		len = strlen(command_p) + (2 * PATH_BYTES_m13) + 16;
 		tmp_command = (si1 *) malloc_m13(len);
 		tmp_file = G_unique_temp_file_m13(NULL);
 		e_tmp_file = G_unique_temp_file_m13(NULL);
-		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
+		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command_p, tmp_file, e_tmp_file);
 		err = system_m13(NULL, tmp_command, TRUE_m13);
 		free((void *) tmp_command);
 		
@@ -46135,7 +46164,7 @@ SYSTEM_PIPE_FAIL_m13:
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (bytes_in_buffer || bytes_in_e_buffer) {
-			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command_p);
 			if (bytes_in_buffer)
 				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
 			if (bytes_in_e_buffer)
@@ -46179,11 +46208,11 @@ SYSTEM_PIPE_FAIL_m13:
 
 // not a standard function, but closely related
 #ifdef WINDOWS_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...)  // varargs(SP_SEPERATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
 {
 	tern			pipe_failure, buffer_initially_null, e_buffer_initially_null;
 	tern			free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
-	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command;
+	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command, *command_p;
 	ui4			behavior;
 	si4			BUFFER_SIZE_INC, err, retry_count;
 	si8			len, e_buf_len, tot_buf_len;
@@ -46219,6 +46248,10 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, si1 *command, ui4 flags, ...)
 		G_set_error_m13(E_UNSPEC_m13, "no command");
 		return_m13(-1);
 	}
+	
+	// skip any leading spaces in command (& re-increment from above)
+	command_p = (si1 *) command - 1;
+	while (*++command_p == 32);
 	
 	// discern calling configuration
 	BUFFER_SIZE_INC = globals_m13->tables->HW_params.system_page_size;
@@ -46352,7 +46385,7 @@ SYSTEM_PIPE_RETRY_m13:
 	GetEnvironmentVariableA("COMSPEC", cmd_exe_path, MAX_PATH);
 	len = 5;
 	len += strlen(cmd_exe_path);
-	len += strlen(command);
+	len += strlen(command_p);
 	tmp_command = (si1 *) malloc((size_t) len);
 	sprintf(tmp_command, "%s /c %s", cmd_exe_path, command);
 
@@ -46438,7 +46471,7 @@ SYSTEM_PIPE_RETRY_m13:
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (bytes_in_buffer || bytes_in_e_buffer) {
-			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command_p);
 			if (bytes_in_buffer)
 				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
 			if (bytes_in_e_buffer)
@@ -46504,7 +46537,7 @@ SYSTEM_PIPE_FAIL_m13:
 		
 		G_warning_message_m13("%s(): pipe mechanism failed => using file redirection\n", __FUNCTION__);
 
-		len = strlen(command) + (2 * PATH_BYTES_m13) + 16;
+		len = strlen(command_p) + (2 * PATH_BYTES_m13) + 16;
 		tmp_command = (si1 *) malloc((size_t) len);
 		tmp_file = G_unique_temp_file_m13(NULL);
 		if (flags & SP_SEPARATE_STREAMS_m13)
@@ -46559,7 +46592,7 @@ SYSTEM_PIPE_FAIL_m13:
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (bytes_in_buffer || bytes_in_e_buffer) {
-			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command);
+			G_message_m13("[%scmd%s]: %s\n", TC_BLUE_m13, TC_RESET_m13, command_p);
 			if (bytes_in_buffer)
 				G_message_m13("[%sout%s]: %s", TC_GREEN_m13, TC_RESET_m13, buffer);
 			if (bytes_in_e_buffer)
@@ -46605,7 +46638,7 @@ SYSTEM_PIPE_FAIL_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	truncate_m13(const char *path, off_t len)
+si4	truncate_m13(const si1 *path, off_t len)
 {
 	si4		err;
 	FILE_m13	*fp;
@@ -46628,7 +46661,7 @@ si4	truncate_m13(const char *path, off_t len)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	vasprintf_m13(si1 **target, si1 *fmt, va_list args)
+si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 {
 	si4	ret_val;
 	
@@ -46662,7 +46695,7 @@ si4	vasprintf_m13(si1 **target, si1 *fmt, va_list args)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list args)
+si4	vfprintf_m13(FILE_m13 *fp, const si1 *fmt, va_list args)
 {
 	tern	is_stream;
 	si1	*tmp_str;
@@ -46709,7 +46742,7 @@ si4	vfprintf_m13(FILE_m13 *fp, si1 *fmt, va_list args)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	vprintf_m13(si1 *fmt, va_list args)
+si4	vprintf_m13(const si1 *fmt, va_list args)
 {
 	si1	*tmp_str;
 	si4	ret_val;
@@ -46733,7 +46766,7 @@ si4	vprintf_m13(si1 *fmt, va_list args)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args)
+si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list args)
 {
 	si4	ret_val;
 	si1	*tmp_str;
@@ -46791,7 +46824,7 @@ si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, si1 *fmt, va_list args)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	vsprintf_m13(si1 *target, si1 *fmt, va_list args)
+si4	vsprintf_m13(si1 *target, const si1 *fmt, va_list args)
 {
 	si1		*tmp_str;
 	si4		ret_val;
