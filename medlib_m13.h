@@ -268,7 +268,7 @@ typedef long double	sf16;
 //******************************* MED Strings (mstr) *******************************//
 //**********************************************************************************//
 
-// Slightly enhanced Pascal strings
+// Enhanced Pascal strings
 // Best for large strings, or strings whose length needs to be known often
 // (eventually all medlib string functions will accept these)
 
@@ -281,17 +281,18 @@ typedef long double	sf16;
 #define MSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is ascii (not sure if useful)
 
 // macros
-#define MSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((*((ui1 *) (x)) == MSTR_TAG_m13) ? TRUE_m13 : FALSE_m13))
+#define MSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((*((ui1 *) (x)) == MSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is an mstr
+#define CSTR_m13(x)		((MSTR_m13(x) == TRUE_m13) ? ((*(x->str + x->len)) == 0) ? TRUE_m13 : FALSE_m13) // TRUE_m13 if x is an mstr with a null terminated string
 
 // typedefs
 typedef struct {
 	union {
-		ui1	tag; // marker for *mstr vs *si1 (MSTR_TAG_m13 == 0x80 is not valid as first byte of any utf8 character, including ascii)
+		ui1	tag; // marker for *mstr vs *si1 (MSTR_TAG_m13 [== 0x80] is not valid as first byte of any utf8 character, including ascii)
 		ui4	flags; // bytes 1-3 used for flags
-	}
+	};
 	ui4	len; // string length in bytes (not necessarily characters), not including terminal zero if present
 	si1	*str; // si1 string pointer (terminal zero not required)
-} mstr;  // (not capitals because it is an elemental type)
+} mstr;  // (untagged & uncapitalized because it is treated as an elemental type)
 
 
 
@@ -511,10 +512,10 @@ typedef struct {
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13		S_IWOTH // removes write permission for "other" (defined in <sys/stat.h>)
 #endif // MACOS_m13 || LINUX_m13
 #ifdef WINDOWS_m13
-	#define PRINTF_BUF_LEN_m13				1024
 	#define NULL_DEVICE_m13					"NUL"
 	#define DIR_BREAK_m13					'\\'
 	#define GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13		0 // full permissions for everyone (Windows does not support "other" category)
+	#define PRINTF_BUF_LEN_m13				1024
 
  // MacOS / Linux constants for mprotect_m13()
 	#define PROT_NONE	((si4) 0) // page can not be accessed
@@ -527,7 +528,7 @@ typedef struct {
 #define READ_END_m13		0
 #define WRITE_END_m13		1
 #define PIPE_FAILURE_m13	((si4) 255)
-#define PIPE_FAILURE_SEND_m13	((si4) -1) // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m13)
+#define PIPE_FAILURE_SEND_m13	((si4) -1) // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m13) [== 255]
 
 // Target Value Constants (ui4)
 #define NO_IDX_m13			-1 // assigned to signed values (si4 or si8)
@@ -1189,7 +1190,7 @@ typedef struct {
 #define FILE_FLAGS_MED_m13		((ui2) 1 << 3) // file is a MED file
 #define FILE_FLAGS_READ_m13		((ui2) 1 << 4) // file is open for reading
 #define FILE_FLAGS_WRITE_m13		((ui2) 1 << 5) // file is open for writing
-#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 6) // file is open in append mode (all writes will append regarless of fp)
+#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 6) // file is open in append mode (all writes will append regardless of fp; "append" is treated as a modifier of "write" mode)
 #define FILE_FLAGS_LEN_m13		((ui2) 1 << 7) // update len with each operation
 #define FILE_FLAGS_POS_m13		((ui2) 1 << 8) // update pos with each operation
 #define FILE_FLAGS_TIME_m13		((ui2) 1 << 9) // update access time with each operation (global sets flag here, but flag supersedes global in exectution)
@@ -2156,7 +2157,8 @@ typedef struct {
 	si1				cwd[PATH_BYTES_m13]; // current working directory (periodically auto-cleared)
 	si1				temp_dir[PATH_BYTES_m13]; // system temp directory (periodically auto-cleared)
 	si1				temp_file[PATH_BYTES_m13]; // full path to temp file (i.e. incudes temp_dir)
-								  // not thread safe => use G_unique_temp_file_m13() in threaded applications
+								  	// not thread safe => use G_unique_temp_file_m13() in threaded applications
+	ui4				file_creation_umask;
 	ERR_m13				error; // causal error
 	si1				file_lock_mode; // enable global file locking
 	ui4				CRC_mode;
@@ -3114,10 +3116,122 @@ void			G_warning_message_m13(const si1 *fmt, ...);
 #ifdef WINDOWS_m13
 
 // function typedefs for NTdll dylib()
-typedef HRESULT	(CALLBACK* ZWSETTIMERRESTYPE)(ULONG, BOOLEAN, ULONG *);
-typedef HRESULT	(CALLBACK* NTDELAYEXECTYPE)(BOOLEAN, LARGE_INTEGER *);
 
+// NtQueryInformationFile() function prototype pointer
+typedef NTSTATUS(WINAPI *NTQUERYFILEINFORMATIONTYPE)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
 
+typedef struct _IO_STATUS_BLOCK {
+	union {
+		NTSTATUS Status;
+		PVOID Pointer;
+	};
+	ULONG_PTR Information;
+} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+typedef enum _FILE_INFORMATION_CLASS {
+	FileDirectoryInformation = 1,
+	FileFullDirectoryInformation = 2,
+	FileBothDirectoryInformation = 3,
+	FileBasicInformation = 4,  // supported by WN_query_file_information_m13()
+	FileStandardInformation = 5,
+	FileInternalInformation = 6,
+	FileEaInformation = 7,
+	FileAccessInformation = 8,  // supported by WN_query_file_information_m13()
+	FileNameInformation = 9,
+	FileRenameInformation = 10,
+	FileLinkInformation = 11,
+	FileNamesInformation = 12,
+	FileDispositionInformation = 13,
+	FilePositionInformation = 14,
+	FileFullEaInformation = 15,
+	FileModeInformation = 16,
+	FileAlignmentInformation = 17,
+	FileAllInformation = 18,
+	FileAllocationInformation = 19,
+	FileEndOfFileInformation = 20,
+	FileAlternateNameInformation = 21,
+	FileStreamInformation = 22,
+	FilePipeInformation = 23,
+	FilePipeLocalInformation = 24,
+	FilePipeRemoteInformation = 25,
+	FileMailslotQueryInformation = 26,
+	FileMailslotSetInformation = 27,
+	FileCompressionInformation = 28,
+	FileObjectIdInformation = 29,
+	FileCompletionInformation = 30,
+	FileMoveClusterInformation = 31,
+	FileQuotaInformation = 32,
+	FileReparsePointInformation = 33,
+	FileNetworkOpenInformation = 34,
+	FileAttributeTagInformation = 35,
+	FileTrackingInformation = 36,
+	FileIdBothDirectoryInformation = 37,
+	FileIdFullDirectoryInformation = 38,
+	FileValidDataLengthInformation = 39,
+	FileShortNameInformation = 40,
+	FileIoCompletionNotificationInformation = 41,
+	FileIoStatusBlockRangeInformation = 42,
+	FileIoPriorityHintInformation = 43,
+	FileSfioReserveInformation = 44,
+	FileSfioVolumeInformation = 45,
+	FileHardLinkInformation = 46,
+	FileProcessIdsUsingFileInformation = 47,
+	FileNormalizedNameInformation = 48,
+	FileNetworkPhysicalNameInformation = 49,
+	FileIdGlobalTxDirectoryInformation = 50,
+	FileIsRemoteDeviceInformation = 51,
+	FileUnusedInformation = 52,
+	FileNumaNodeInformation = 53,
+	FileStandardLinkInformation = 54,
+	FileRemoteProtocolInformation = 55,
+	FileRenameInformationBypassAccessCheck = 56,
+	FileLinkInformationBypassAccessCheck = 57,
+	FileVolumeNameInformation = 58,
+	FileIdInformation = 59,
+	FileIdExtdDirectoryInformation = 60,
+	FileReplaceCompletionInformation = 61,
+	FileHardLinkFullIdInformation = 62,
+	FileIdExtdBothDirectoryInformation = 63,
+	FileDispositionInformationEx = 64,
+	FileRenameInformationEx = 65,
+	FileRenameInformationExBypassAccessCheck = 66,
+	FileDesiredStorageClassInformation = 67,
+	FileStatInformation = 68,
+	FileMemoryPartitionInformation = 69,
+	FileStatLxInformation = 70,
+	FileCaseSensitiveInformation = 71,
+	FileLinkInformationEx = 72,
+	FileLinkInformationExBypassAccessCheck = 73,
+	FileStorageReserveIdInformation = 74,
+	FileCaseSensitiveInformationForceAccessCheck = 75,
+	FileKnownFolderInformation = 76,
+	FileStatBasicInformation = 77,
+	FileId64ExtdDirectoryInformation = 78,
+	FileId64ExtdBothDirectoryInformation = 79,
+	FileIdAllExtdDirectoryInformation = 80,
+	FileIdAllExtdBothDirectoryInformation = 81,
+	FileStreamReservationInformation,
+	FileMupProviderInfo,
+	FileMaximumInformation
+} FILE_INFORMATION_CLASS, *PFILE_INFORMATION_CLASS;
+
+typedef struct _FILE_BASIC_INFORMATION {
+	LARGE_INTEGER	CreationTime;
+	LARGE_INTEGER	LastAccessTime;
+	LARGE_INTEGER	LastWriteTime;
+	LARGE_INTEGER	ChangeTime;
+	ULONG		FileAttributes;
+} FILE_BASIC_INFORMATION, *PFILE_BASIC_INFORMATION;
+
+typedef DWORD	ACCESS_MASK;
+
+typedef struct _FILE_ACCESS_INFORMATION {
+  ACCESS_MASK	AccessFlags;
+} FILE_ACCESS_INFORMATION, *PFILE_ACCESS_INFORMATION;
+
+typedef NTSTATUS(WINAPI *pNtQueryInformationFile)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
+
+// Prototypes
 FILETIME	WN_uutc_to_win_time_m13(si8 uutc);
 tern		WN_cleanup_m13(void);
 tern		WN_clear_m13(void);
@@ -3126,6 +3240,7 @@ si4 		WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buff
 si4		WN_ls_1d_to_tmp_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file);
 tern		WN_init_terminal_m13(void);
 void		WN_nap_m13(struct timespec *nap);
+void		*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi);
 tern		WN_reset_terminal_m13(void);
 tern		WN_socket_startup_m13(void);
 si4		WN_system_m13(si1 *command);
@@ -5140,6 +5255,14 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 // see function definition comments for specific changes
 // a few non-standard functions that are closely related to standard functions are also included here
 
+#if defined MACOS_m13 || defined LINUX_m13
+	typedef	struct stat		struct_stat_m13;
+#endif // MACOS_m13 || LINUX_m13
+#ifdef WINDOWS_m13
+	typedef	struct _stat64		struct_stat_m13;
+#endif // WINDOWS_m13
+
+
 si4		asprintf_m13(si1 **target, const si1 *fmt, ...);
 size_t		calloc_size_m13(void *address, size_t el_size);
 tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
@@ -5147,6 +5270,7 @@ si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_m13(si4 status);
 tern		fclose_m13(FILE_m13 *fp);
+si4		fileno_m13(FILE_m13 *fp);
 size_t		flen_m13(FILE_m13 *fp);
 si4		flock_m13(FILE_m13 *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to G_nap_m13())
 FLOCK_ENTRY_m13	*flock_add_m13(void);
@@ -5158,6 +5282,7 @@ tern		freeable_m13(void *address);
 FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp);
 si4		fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...);
 si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence, ...); // vararg(whence negative): tern (as si4) non_blocking
+si4		fstat_m13(si4 fd, struct_stat_m13 *sb);
 si8		ftell_m13(FILE_m13 *fp);
 si4		ftruncate_m13(si4 fd, off_t len);
 size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
@@ -5189,6 +5314,7 @@ si4		scanf_m13(const si1 *fmt, ...);
 si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
 si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
+si4		stat_m13(const si1 *path, struct_stat_m13 *sb);
 si8		strcat_m13(si1 *target, const si1 *source);
 si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
 si8		strcpy_m13(si1 *target, const si1 *source);
