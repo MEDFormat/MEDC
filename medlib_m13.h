@@ -3117,9 +3117,6 @@ void			G_warning_message_m13(const si1 *fmt, ...);
 
 // function typedefs for NTdll dylib()
 
-// NtQueryInformationFile() function prototype pointer
-typedef NTSTATUS(WINAPI *NTQUERYFILEINFORMATIONTYPE)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
-
 typedef struct _IO_STATUS_BLOCK {
 	union {
 		NTSTATUS Status;
@@ -3229,25 +3226,32 @@ typedef struct _FILE_ACCESS_INFORMATION {
   ACCESS_MASK	AccessFlags;
 } FILE_ACCESS_INFORMATION, *PFILE_ACCESS_INFORMATION;
 
-typedef NTSTATUS(WINAPI *pNtQueryInformationFile)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
+// function typedef for WN_query_information_file_m13()
+typedef HRESULT (CALLBACK* NTQUERYINFOFILETYPE)(HANDLE, IO_STATUS_BLOCK *, PVOID, ULONG, FILE_INFORMATION_CLASS);
+
+// function typedefs for WN_sleep_m13()
+typedef HRESULT (CALLBACK* ZWSETTIMERRESTYPE)(ULONG, BOOLEAN, ULONG *);
+typedef HRESULT (CALLBACK* NTDELAYEXECTYPE)(BOOLEAN, LARGE_INTEGER *);
+
+
 
 // Prototypes
 FILETIME	WN_uutc_to_win_time_m13(si8 uutc);
 tern		WN_cleanup_m13(void);
 tern		WN_clear_m13(void);
 si8		WN_date_to_uutc_m13(sf8 date);
-si4 		WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer);
-si4		WN_ls_1d_to_tmp_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file);
+si4 		WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer);
+si4		WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file);
 tern		WN_init_terminal_m13(void);
 void		WN_nap_m13(struct timespec *nap);
-void		*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi);
+void		*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi);
 tern		WN_reset_terminal_m13(void);
 tern		WN_socket_startup_m13(void);
-si4		WN_system_m13(si1 *command);
+si4		WN_system_m13(const si1 *command);
 si8		WN_time_to_uutc_m13(FILETIME win_time);
 sf8		WN_uutc_to_date_m13(si8 uutc);
-tern		WN_windify_file_paths_m13(si1 *target, si1 *source);
-si1		*WN_windify_format_string_m13(si1 *fmt);
+tern		WN_windify_file_paths_m13(si1 *target, const si1 *source);
+si1		*WN_windify_format_string_m13(const si1 *fmt);
 #endif // WINDOWS_m13
 
 si8		WN_filetime_to_uutc_m13(ui1 *win_filetime); // for conversion of windows file time to uutc on any platform

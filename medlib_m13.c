@@ -14750,7 +14750,7 @@ tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_upd
 		fseek(fp, 0, SEEK_SET);
 #endif
 #ifdef WINDOWS_m13
-		_fseeki64(fp 0, SEEK_SET);
+		_fseeki64(fp, 0, SEEK_SET);
 #endif
 		nw = fwrite((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 		if (nw != UH_BYTES_m13) {
@@ -27963,7 +27963,7 @@ FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...)  // varargs(fp == stream): si1 *path
 			FILE_ACCESS_INFORMATION	access_info;
 			ui8			curr_mode;
 			
-			if (WN_query_file_information_m13(fp, (si4) FileAccessInformation, (void *) &access_info)) {
+			if (WN_query_information_file_m13(fp, (si4) FileAccessInformation, (void *) &access_info)) {
 				curr_mode = (ui8) access_info.AccessFlags;
 				if (curr_mode & GENERIC_READ)
 					fp->flags |= FILE_FLAGS_READ_m13;
@@ -41857,7 +41857,7 @@ tern	WN_init_terminal_m13(void)
 }
 
 
-si4  WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer)  // replacement for unix "ls -1d (on a directory list)"
+si4  WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer)  // replacement for unix "ls -1d (on a directory list)"
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -41905,7 +41905,7 @@ si4  WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffe
 	find_h = INVALID_HANDLE_VALUE;
 	n_files = 0;
 	for (i = 0; i < n_dirs; ++i) {
-		dir_name = dir_strs[i];
+		dir_name = (si1 *) dir_strs[i];
 		if (STR_contains_regex_m13(dir_name) == FALSE_m13) {
 			fe = G_exists_m13(dir_name);
 			// a plain directory name will not list it's contents => must append "\*"
@@ -41956,7 +41956,7 @@ si4  WN_ls_1d_to_buf_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffe
 }
 
 
-si4  WN_ls_1d_to_tmp_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file)  // replacement for unix "ls -1d > temp_file (on a directory list)"
+si4  WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file)  // replacement for unix "ls -1d > temp_file (on a directory list)"
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -41994,7 +41994,7 @@ si4  WN_ls_1d_to_tmp_m13(si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_f
 	find_h = INVALID_HANDLE_VALUE;
 	n_files = 0;
 	for (i = 0; i < n_dirs; ++i) {
-		dir_name = dir_strs[i];
+		dir_name = (si1 *) dir_strs[i];
 		if (STR_contains_regex_m13(dir_name) == FALSE_m13) {
 			fe = G_exists_m13(dir_name);
 			// a plain directory name will not list it's contents => must append "\*"
@@ -42053,7 +42053,7 @@ void	WN_nap_m13(struct timespec *nap)
 	static tern		use_ms = FALSE_m13;
 	si8			hns, ms;
 	LARGE_INTEGER		interval;
-	static NTDELAYEXECTYPE	NtDelayExecution;  // pointer higher resolution sleep function
+	static NTDELAYEXECTYPE	NtDelayExecution = NULL;  // pointer higher resolution sleep function (static so find only once)
 
 		
 	// circumvent Windows' Sleep() 1 millisecond resolution
@@ -42081,8 +42081,6 @@ void	WN_nap_m13(struct timespec *nap)
 			} else {
 				G_warning_message_m13("%s(): error loading ZwSetTimerResolution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
 				use_ms = TRUE_m13;
-				FreeLibrary(globals_m13->tables->hNTdll);
-				globals_m13->tables->hNTdll = NULL;
 				goto G_WN_SLEEP_USE_MS;
 			}
 			// load the higher resolution sleep function (static)
@@ -42090,8 +42088,6 @@ void	WN_nap_m13(struct timespec *nap)
 			if (NtDelayExecution == NULL) {
 				G_warning_message_m13("%s(): error loading NtDelayExecution() from NTdll library => using millisecond resolution\n", __FUNCTION__);
 				use_ms = TRUE_m13;
-				FreeLibrary(globals_m13->tables->hNTdll);
-				globals_m13->tables->hNTdll = NULL;
 				goto G_WN_SLEEP_USE_MS;
 			}
 		}
@@ -42124,7 +42120,7 @@ void	WN_nap_m13(struct timespec *nap)
 }
 
 
-void	*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi)
+void	*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -42135,8 +42131,8 @@ void	*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi)
 	size_t				ret_struct_size;
 	FILE				*real_fp;
 	HANDLE				file_h = NULL;
-	NTQUERYFILEINFORMATIONTYPE	NtQueryInformationFile = NULL;
-	FILE_INFORMATION_CLASS		wn_info_class;
+	static NTQUERYINFOFILETYPE	NtQueryInformationFile = NULL;  // static so only find once
+	FILE_INFORMATION_CLASS		enum_class;
 	IO_STATUS_BLOCK 		iostatus;
 
 	if (fp == NULL) {
@@ -42153,8 +42149,8 @@ void	*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi)
 		return_m13(NULL);
 	}
 	
-	wn_info_class = (FILE_INFORMATION_CLASS) info_class;  // cast int into enum
-	switch (wn_info_class) {
+	enum_class = (FILE_INFORMATION_CLASS) info_class;  // cast int into enum
+	switch (enum_class) {
 		case FileAccessInformation:
 			ret_struct_size = sizeof(FILE_ACCESS_INFORMATION);
 			break;
@@ -42166,7 +42162,7 @@ void	*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi)
 			return_m13(NULL);
 	}
 	
-	if (fbi == NULL) {  // caller takes ownership
+	if (fi == NULL) {  // caller takes ownership
 		alloced = TRUE_m13;
 		fi = calloc_m13((size_t) 1, ret_struct_size);
 	} else {
@@ -42181,21 +42177,24 @@ void	*WN_query_file_information_m13(FILE_m13 *fp, si4 info_class, void *fi)
 			if (alloced == TRUE_m13)
 				free_m13(fi);
 			G_set_error_m13(E_UNSPEC_m13, "could not load NT library");
+			return_m13(NULL);
 		}
 	}
 
 	// find function
-	NtQueryInformationFile = (NTQUERYFILEINFORMATIONTYPE) GetProcAddress(globals_m13->tables->hNTdll, "NtQueryInformationFile");
 	if (NtQueryInformationFile == NULL) {
-		CloseHandle(file_h);
-		if (alloced == TRUE_m13)
-			free_m13(fi);
-		G_set_error_m13(E_UNSPEC_m13, "could not find NtQueryInformationFile() in NT library");
-		return_m13(NULL);
+		NtQueryInformationFile = (NTQUERYINFOFILETYPE) GetProcAddress(globals_m13->tables->hNTdll, "NtQueryInformationFile");
+		if (NtQueryInformationFile == NULL) {
+			CloseHandle(file_h);
+			if (alloced == TRUE_m13)
+				free_m13(fi);
+			G_set_error_m13(E_UNSPEC_m13, "could not find NtQueryInformationFile() in NT library");
+			return_m13(NULL);
+		}
 	}
 
 	// get the file information structure
-	if (NtQueryInformationFile(file_h, &iostatus, fi, ret_struct_size, info_class) < 0) {
+	if (NtQueryInformationFile(file_h, &iostatus, fi, ret_struct_size, enum_class) < 0) {
 		CloseHandle(file_h);
 		if (alloced == TRUE_m13)
 			free_m13(fi);
@@ -42272,7 +42271,7 @@ tern	WN_socket_startup_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	WN_system_m13(si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
+si4	WN_system_m13(const si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -42297,7 +42296,6 @@ si4	WN_system_m13(si1 *command)  // Windows has a system() function which works 
 	tmp_command[0] = 0x2F;  // '/'
 	tmp_command[1] = 0x63;  // 'c'
 	tmp_command[2] = 0x20;  // <space>
-	
 	
 	if (command[0] == 0x22) {  // if first character is a double quote, surround the whole command in another set of double quotes (e.g. if path to utility contains a space [e.g. "Program Files"])
 		tmp_command[3] = 0x22;  // <double quote>
@@ -42390,7 +42388,7 @@ FILETIME	WN_uutc_to_win_time_m13(si8 uutc)
 #endif
 
 
-tern	WN_windify_file_paths_m13(si1 *target, si1 *source)
+tern	WN_windify_file_paths_m13(si1 *target, const si1 *source)
 {
 #ifdef WINDOWS_m13
 	si1		*c1, *c2;
@@ -42400,7 +42398,7 @@ tern	WN_windify_file_paths_m13(si1 *target, si1 *source)
 	if (source == NULL)
 		return(FALSE_m13);
 	if (target == NULL)
-		target = source;
+		target = (si1 *) source;
 	else if (target != source)
 		strcpy(target, source);
 
@@ -42438,7 +42436,7 @@ tern	WN_windify_file_paths_m13(si1 *target, si1 *source)
 }
 
 
-si1	*WN_windify_format_string_m13(si1 *fmt)
+si1	*WN_windify_format_string_m13(const si1 *fmt)
 {
 #ifdef WINDOWS_m13
 	// changes ld, li, lo, lu, lx, lX to "ll" versions of the same
@@ -42451,7 +42449,7 @@ si1	*WN_windify_format_string_m13(si1 *fmt)
 		return(NULL);
 	
 	matches = 0;
-	c = fmt;
+	c = (si1 *) fmt;
 	while (*c) {
 		if (*c++ == '%') {
 			// skip over numbers & periods
@@ -42472,12 +42470,12 @@ si1	*WN_windify_format_string_m13(si1 *fmt)
 		}
 	}
 	if (!matches)
-		return(fmt);
+		return((si1 *) fmt);
 	
 	len = (si8) (c - fmt) + matches + 1;  // extra byte for terminal zero
 	new_fmt = (si1 *) calloc((size_t) len, sizeof(ui1));
 	
-	c = fmt;
+	c = (si1 *) fmt;
 	new_c = new_fmt;
 	while (*c) {
 		if (*c == '%') {
@@ -42506,7 +42504,7 @@ si1	*WN_windify_format_string_m13(si1 *fmt)
 		
 	return(new_fmt);
 #endif
-	return(fmt);
+	return((si1 *) fmt);
 }
 
 
@@ -42914,7 +42912,7 @@ si4	fileno_m13(FILE_m13 *fp)
 			#ifdef WINDOWS_m13
 			fd = _fileno(real_fp);
 			if (fd == -2) {  // stdout or stderr not associated with stream
-				G_warning_message_m13("%s(): stdout or stderr not associated with stream\n", __FUNCTION__)
+				G_warning_message_m13("%s(): stdout or stderr not associated with stream\n", __FUNCTION__);
 				fd = -1;
 			}
 			#endif
@@ -43198,9 +43196,6 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	si4		sys_mode_flags;
 	si8		name_len;
 	struct_stat_m13	sb;
-	#ifdef WINDOWS_m13
-	si1		local_mode[8];
-	#endif
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -43249,11 +43244,6 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		G_set_error_m13(E_OPEN_m13, "mode is empty");
 		return_m13(NULL);
 	}
-	#ifdef WINDOWS_m13
-	// ensure room for 'b'
-	strcpy_m13(local_mode, mode);
-	mode = local_mode;
-	#endif
 	read_mode = write_mode = append_mode = plus_mode = no_trunc_mode = UNKNOWN_m13;
 	c = (si1 *) mode - 1;
 	while (*++c) {
@@ -43781,7 +43771,7 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 	is_stream = FILE_stream_m13(fp);
 	eprintf_m13("is_stream = %s", STR_tern_m13(is_stream));
 	eprintf_m13("path = %s", path);
-	if (is_stream) {  // not UNKNOWN_m13 (i.e. fp != NULL)
+	if (is_stream) {  // fp != NULL
 		// set path & real_fp
 		if (is_stream == TRUE_m13) {
 			real_fp = (FILE *) fp;
@@ -43898,7 +43888,7 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 		FILE_ACCESS_INFORMATION	access_info;
 		ui8			curr_mode;
 
-		if (WN_query_file_information_m13(fp, (si4) FileAccessInformation, (void *) &access_info)) {
+		if (WN_query_information_file_m13(fp, (si4) FileAccessInformation, (void *) &access_info)) {
 			curr_mode = (ui8) access_info.AccessFlags;
 			mode_matches = TRUE_m13;
 			if (read_mode == TRUE_m13 || plus_mode == TRUE_m13) {
