@@ -2434,41 +2434,48 @@ typedef struct {
 #define FPS_FD_EPHEMERAL_m13			FILE_FD_EPHEMERAL_m13
 
 // Directives Flags
+#define FPS_DF_NO_FLAGS_m13			((ui8) 0)
 #define FPS_DF_READ_MODE_m13			((ui8) 1 << 0)
 #define FPS_DF_WRITE_MODE_m13			((ui8) 1 << 1)
 #define FPS_DF_APPEND_MODE_m13			((ui8) 1 << 2)
-#define FPS_DF_NO_TRUNC_MODE_m13		((ui8) 1 << 3) // mode modifier is "n" or "N" ("+" ignored if present)
-#define FPS_DF_PLUS_MODE_m13			((ui8) 1 << 4)
+#define FPS_DF_PLUS_MODE_m13			((ui8) 1 << 3)
+#define FPS_DF_CLOBBER_MODE_m13			((ui8) 1 << 4) // mode modifier is "c" or "C" ("clobber" == truncate on open)
 #define FPS_DF_CLOSE_AFTER_OP_m13		((ui8) 1 << 5) // close after operation (read / write)
 #define FPS_DF_FLUSH_AFTER_WRITE_m13		((ui8) 1 << 6)
 #define FPS_DF_UPDATE_UH_m13			((ui8) 1 << 7) // update universal header with write
-#define FPS_DF_LEAVE_DECRYPTED_m13		((ui8) 1 << 8)
+#define FPS_DF_LEAVE_DECRYPTED_m13		((ui8) 1 << 8) // if data would be encrypted before write, leave data in memory unencrypted
 #define FPS_DF_FREE_CPS_m13			((ui8) 1 << 9)
 #define FPS_DF_MMAP_m13				((ui8) 1 << 10)
 
 // Open Mode Flag Groups
 #define FPS_NO_OPEN_MODE_m13			((ui8) 0)
-#define FPS_R_OPEN_MODE_m13			FPS_DF_READ_MODE_m13
-#define FPS_R_PLUS_OPEN_MODE_m13		( FPS_DF_READ_MODE_m13 | FPS_DF_PLUS_MODE_m13 )
-#define FPS_W_OPEN_MODE_m13 			FPS_DF_WRITE_MODE_m13
-#define FPS_W_PLUS_OPEN_MODE_m13		( FPS_DF_WRITE_MODE_m13 | FPS_DF_PLUS_MODE_m13 )
-#define FPS_W_NO_TRUNC_OPEN_MODE_m13		( FPS_DF_WRITE_MODE_m13 | FPS_DF_NO_TRUNC_MODE_m13 ) // mode is "wn" or "nw"
-#define FPS_A_OPEN_MODE_m13			FPS_DF_APPEND_MODE_m13
-#define FPS_A_PLUS_OPEN_MODE_m13		( FPS_DF_APPEND_MODE_m13 | FPS_DF_PLUS_MODE_m13 )
-#define FPS_OPEN_MODE_MASK_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13 | FPS_DF_APPEND_MODE_m13 | \
-						FPS_DF_NO_TRUNC_MODE_m13 | FPS_DF_PLUS_MODE_m13 )
-#define FPS_DIRECS_OPEN_MODE_DEFAULT_m13	FPS_R_PLUS_OPEN_MODE_m13
+#define FPS_R_OPEN_MODE_m13			FPS_DF_READ_MODE_m13 // "r"
+#define FPS_RP_OPEN_MODE_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "r+"
+#define FPS_W_OPEN_MODE_m13 			(FPS_DF_WRITE_MODE_m13 | FPS_DF_CLOBBER_MODE_m13) // "w" (default "w" behavior is to clobber)
+#define FPS_WP_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_PLUS_MODE_m13  | FPS_DF_CLOBBER_MODE_m13)
+#define FPS_WN_OPEN_MODE_m13			FPS_DF_WRITE_MODE_m13 // "wn"
+#define FPS_WNP_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "wn+" (most flexible random write mode)
+#define FPS_A_OPEN_MODE_m13			FPS_DF_APPEND_MODE_m13 // "a"
+#define FPS_AP_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "a+" (most flexible append write mode)
+#define FPS_AC_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_CLOBBER_MODE_m13 ) // "ac" (default "a" behavior is not to clobber)
+#define FPS_ACP_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_CLOBBER_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "ac+"
+#define FPS_OPEN_MODE_MASK_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13 | FPS_DF_APPEND_MODE_m13 | FPS_DF_PLUS_MODE_m13 | FPS_DF_CLOBBER_MODE_m13 )
 
 // Open Mode Strings
 #define FPS_NO_OPEN_STRING_m13			""
 #define FPS_R_OPEN_STRING_m13			"r"
-#define FPS_R_PLUS_OPEN_STRING_m13		"r+"
+#define FPS_RP_OPEN_STRING_m13			"r+"
 #define FPS_W_OPEN_STRING_m13			"w"
-#define FPS_W_PLUS_OPEN_STRING_m13		"w+"
-#define FPS_W_NO_TRUNC_OPEN_STRING_m13		"wn"
+#define FPS_WP_OPEN_STRING_m13			"w+"
+#define FPS_WN_OPEN_STRING_m13			"wn"
+#define FPS_WNP_OPEN_STRING_m13			"wn+"
 #define FPS_A_OPEN_STRING_m13			"a"
-#define FPS_A_PLUS_OPEN_STRING_m13		"a+"
-#define FPS_OPEN_STRING_DEFAULT_m13		FPS_R_PLUS_OPEN_STRING_m13
+#define FPS_AP_OPEN_STRING_m13			"a+"
+#define FPS_AC_OPEN_STRING_m13			"ac"
+#define FPS_ACP_OPEN_STRING_m13			"ac+"
+#define FPS_READ_OPEN_STRING_DEFAULT_m13	FPS_R_OPEN_STRING_m13
+#define FPS_WRITE_OPEN_STRING_DEFAULT_m13	FPS_WN_OPEN_STRING_m13
+#define FPS_OPEN_STRING_DEFAULT_m13		FPS_READ_OPEN_STRING_DEFAULT_m13  // default to read open (safest)
 
 // Directive Defaults
 #define FPS_DIRECS_CLOSE_AFTER_OPERATION_DEFAULT_m13		FALSE_m13
@@ -2477,10 +2484,12 @@ typedef struct {
 #define FPS_DIRECS_LEAVE_DECRYPTED_DEFAULT_m13			FALSE_m13
 #define FPS_DIRECS_FREE_CMP_PROCESSING_STRUCT_DEFAULT_m13	TRUE_m13
 #define FPS_DIRECS_MEMORY_MAP_DEFAULT_m13		 	FALSE_m13
-#define FPS_DIRECS_READ_OPEN_MODE_DEFAULT_m13			FPS_R_OPEN_MODE_m13 // default to read only; no write
-#define FPS_DIRECS_READ_OPEN_STRING_DEFAULT_m13			FPS_R_OPEN_STRING_m13 // default to read only; no write
-#define FPS_DIRECS_WRITE_OPEN_MODE_DEFAULT_m13			FPS_W_NO_TRUCATE_OPEN_MODE_m13 // default to write only; no read, create if doesn't exist [not bit pattern, code to FPS_open()]
-#define FPS_DIRECS_WRITE_OPEN_STRING_DEFAULT_m13		FPS_W_NO_TRUNC_OPEN_STRING_m13 // default to write only; no read, create if doesn't exist [not bit pattern, code to FPS_open()]
+#define FPS_DIRECS_READ_OPEN_MODE_DEFAULT_m13			FPS_R_OPEN_MODE_m13
+#define FPS_DIRECS_READ_OPEN_STRING_DEFAULT_m13			FPS_R_OPEN_STRING_m13
+#define FPS_DIRECS_WRITE_OPEN_MODE_DEFAULT_m13			FPS_WN_OPEN_MODE_m13
+#define FPS_DIRECS_WRITE_OPEN_STRING_DEFAULT_m13		FPS_WN_OPEN_STRING_m13
+#define FPS_DIRECS_OPEN_MODE_DEFAULT_m13			FPS_DIRECS_READ_OPEN_MODE_DEFAULT_m13  // default to read open (safest)
+
 
 // Structures
 typedef struct {
@@ -2586,7 +2595,7 @@ tern		FPS_reopen_m13(FPS_m13 *fps, si1 *mode);
 si8		FPS_resolve_offset_m13(FPS_m13 *fps, si8 offset, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 si8		FPS_seek_m13(FPS_m13 *fps, si8 offset, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 si8		FPS_set_direcs_from_lh_flags_m13(FPS_m13 *fps, ui8 lh_flags);
-ui8		FPS_set_open_flags_m13(FPS_m13 *fps, si1 *mode_str);
+ui8		FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str);
 si1		*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags);
 tern		FPS_set_pointers_m13(FPS_m13 *fps, si8 offset);
 tern		FPS_show_m13(FPS_m13 *fps);
@@ -3093,7 +3102,7 @@ si1			*G_unique_temp_file_m13(si1 *temp_file);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
-tern			G_update_file_version_m13(FPS_m13 **fps);
+tern			G_update_file_version_m13(FPS_m13 *fps);
 tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
 tern			G_update_session_name_m13(SESS_m13 *sess);
 tern			G_update_session_name_header_m13(si1 *fs_path, si1 *fs_name, si1 *uh_name); // used by G_update_session_name_m13
