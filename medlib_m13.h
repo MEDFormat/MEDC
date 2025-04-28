@@ -484,7 +484,7 @@ typedef struct {
 #define FREQUENCY_VARIABLE_m13			-2.0
 #define FRAME_RATE_VARIABLE_m13			FREQUENCY_VARIABLE_m13
 #define UNKNOWN_NUMBER_OF_ENTRIES_m13		-1
-#define SEGMENT_NUMBER_NO_ENTRY_m13			-1
+#define SEGMENT_NUMBER_NO_ENTRY_m13		0 // segments number from one
 #define FIRST_OPEN_SEG_m13			-2
 #define CHANNEL_NUMBER_NO_ENTRY_m13		-1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m13		-2
@@ -700,9 +700,6 @@ typedef struct {
 #define ALL_TYPES_STRING_m13			"allt" // ascii[4]
 #define ALL_TYPES_CODE_m13			((ui4) 0x746C6C61) // ui4 (little endian)
 // #define ALL_TYPES_CODE_m13			((ui4) 0x616C6C74) // ui4 (big endian)
-#define FILE_TYPE_STR_m13			"file" // ascii[4]
-#define FILE_TYPE_CODE_m13			((ui4) 0x656C6966) // ui4 (little endian)
-// #define FILE_TYPE_CODE_m13			((ui4) 0x66696C65) // ui4 (big endian)
 #define PROC_GLOBS_TYPE_STR_m13			"pglb" // ascii[4]
 #define PROC_GLOBS_TYPE_CODE_m13		((ui4) 0x626C6770) // ui4 (little endian)
 // #define PROC_GLOBS_TYPE_CODE_m13		((ui4) 0x70676C62) // ui4 (big endian)
@@ -754,7 +751,7 @@ typedef struct {
 #define TS_CHAN_TYPE_m13		TS_CHAN_TYPE_CODE_m13
 #define VID_CHAN_TYPE_m13		VID_CHAN_TYPE_CODE_m13
 
-// Reference Channel Types (used in change_index_ref_chan_m13())
+// Reference Channel Types (used in change_index_chan_m13())
 #define DEFAULT_CHAN_m13		0
 #define DEFAULT_TS_CHAN_m13		1
 #define DEFAULT_VID_CHAN_m13		2
@@ -1154,7 +1151,7 @@ typedef struct {
 
 
 //**********************************************************************************//
-//************************** File Functions (FILE, FLOCK) ************************//
+//************************** File Functions (FILE & FLOCK) *************************//
 //**********************************************************************************//
 
 // Replaces standard FILE pointer in medlib functions
@@ -1181,7 +1178,14 @@ typedef struct {
 #define FILE_PERM_UGO_R_m13		( FILE_PERM_UG_R_m13 | FILE_PERM_OTH_READ_m13 )
 #define FILE_PERM_UGO_W_m13		( FILE_PERM_UG_W_m13 | FILE_PERM_OTH_WRITE_m13 )
 #define FILE_PERM_UGO_RW_m13		( FILE_PERM_UGO_R_m13 | FILE_PERM_UGO_W_m13 )
-#define FILE_PERM_DEFAULT_m13		FILE_PERM_UG_RW_m13
+#if defined MACOS_m13 || defined LINUX_m13
+	#define FILE_PERM_DEFAULT_m13		FILE_PERM_UG_RW_m13 // rw- rw- ---
+#endif
+#ifdef WINDOWS_m13
+	#define FILE_PERM_DEFAULT_m13		FILE_PERM_UGO_RW_m13 // rw- rw- rw-
+	#define WN_PERM_MODE_DEFAULT_m13	( (si4) (_S_IREAD | _S_IWRITE) ) // read & write for all (no "other" in Windows); does not replace FILE_PERM_DEFAULT_m13, but should match it
+#endif
+
 
 #define FILE_FLAGS_NONE_m13		((ui2) 0)
 #define FILE_FLAGS_ALLOCED_m13		((ui2) 1 << 0) // file structure was allocated
@@ -1193,7 +1197,7 @@ typedef struct {
 #define FILE_FLAGS_APPEND_m13		((ui2) 1 << 6) // file is open in append mode (all writes will append regardless of fp; "append" is treated as a modifier of "write" mode)
 #define FILE_FLAGS_LEN_m13		((ui2) 1 << 7) // update len with each operation
 #define FILE_FLAGS_POS_m13		((ui2) 1 << 8) // update pos with each operation
-#define FILE_FLAGS_TIME_m13		((ui2) 1 << 9) // update access time with each operation (global sets flag here, but flag supersedes global in exectution)
+#define FILE_FLAGS_TIME_m13		((ui2) 1 << 9) // update access time with each operation (global sets flag here, but flag supersedes global in execution)
 #define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
 #define FILE_FLAGS_MODE_MASK_m13	( FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13 | FILE_FLAGS_APPEND_m13 )
 
@@ -1214,8 +1218,8 @@ typedef struct {
 #define FLOCK_TIMEOUT_m13		((si4) 1 << 7) // blocking (looped) or non-blocking (once) sleep time (as nap string) included as vararg
 #define FLOCK_FORCE_m13			((si4) 1 << 8) // unlock or lock regardless of lock status
 // Return values
-#define FLOCK_SUCCESS_m13		((si4) 0) // operation succeeded
-#define FLOCK_ERR_m13			((si4) -1) // operation generated error
+#define FLOCK_SUCCESS_m13		((si4) 0) // locking operation succeeded
+#define FLOCK_ERR_m13			((si4) -1) // locking operation generated error
 #define FLOCK_LOCKED_m13		((si4) -2) // can't unlock due to ownership, or still locked in non-blocking mode
 
 // Convenience
@@ -1230,7 +1234,7 @@ typedef struct {
 #define FLOCK_MODE_MED_m13		((si1) 1) // lock MED files only
 #define FLOCK_MODE_ALL_m13		((si1) 2) // lock all files
 
-
+// Standard Streams
 #define stdin_m13	((FILE_m13 *) stdin)
 #define stdout_m13	((FILE_m13 *) stdout)
 #define stderr_m13	((FILE_m13 *) stderr)
@@ -1241,8 +1245,8 @@ typedef struct {
 	ui4	fid; // CRC of file path (can't use file descriptor because not unique if file dup'd)
 	si1	path[PATH_BYTES_m13];
 	ui2	flags;
-	ui2	perms; // permissions (lower 9 bits of "st_mode" element of stat structure)
-	si4	fd; // file descriptor
+	ui2	perms; // system file permissions (lower 9 bits of "st_mode" element of stat structure)
+	si4	fd; // system file descriptor
 	FILE	*fp; // system FILE pointer
 	si8	len; // current file length
 	si8	pos; // file pointer position (relative to start)
@@ -1284,8 +1288,9 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 #if defined MACOS_m13 || defined LINUX_m13
 	#ifdef MACOS_m13
 	typedef	ui4			cpu_set_t_m13; // max 32 logical cores
-	#else // MACOS_m13
-	typedef	cpu_set_t		cpu_set_t_m13; // unknown logical cores
+	#endif // MACOS_m13
+	#ifdef LINUX_m13
+	typedef	cpu_set_t		cpu_set_t_m13; // opaque type (unknown logical cores)
 	#endif // LINUX_m13
 	typedef	pthread_t		pthread_t_m13;
 	typedef pthread_attr_t		pthread_attr_t_m13;
@@ -1348,6 +1353,7 @@ tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 #define PAR_DEFAULTS_m13		"defaults"
 #define PAR_UNTHREADED_m13		0
 
+// Supported Functions
 #define PAR_OPEN_SESSION_M13		1
 #define PAR_READ_SESSION_M13		2
 #define PAR_OPEN_CHANNEL_M13		3
@@ -1410,7 +1416,7 @@ tern			PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
 #define PRTY_VID_SEG_META_m13		((ui4) 1 << 17)  // requires segment number (or PRTY_ALL_SEGS_m13)
 
 #define PRTY_GLB_SESS_RECS_m13		( PRTY_GLB_SESS_REC_DATA_m13 | PRTY_GLB_SESS_REC_IDX_m13 )
-#define PRTY_SSR_m13		( PRTY_SEG_SESS_REC_DATA_m13 | PRTY_SEG_SESS_REC_IDX_m13 )
+#define PRTY_SSR_m13			( PRTY_SEG_SESS_REC_DATA_m13 | PRTY_SEG_SESS_REC_IDX_m13 )
 #define PRTY_TS_CHAN_RECS_m13		( PRTY_TS_CHAN_REC_DATA_m13 | PRTY_TS_CHAN_REC_IDX_m13 )
 #define PRTY_VID_CHAN_RECS_m13		( PRTY_VID_CHAN_REC_DATA_m13 | PRTY_VID_CHAN_REC_IDX_m13 )
 #define PRTY_TS_SEG_RECS_m13		( PRTY_TS_SEG_REC_DATA_m13 | PRTY_TS_SEG_REC_IDX_m13 )
@@ -1447,7 +1453,7 @@ tern			PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
 
 // Miscellaneous
 #define PRTY_BLOCK_BYTES_DEFAULT_m13	4096 // used in PRTY_CRC_DATA_m13 (must be multiple of 4)
-#define PRTY_PCRC_UID_m13		((ui8) 0x0123456789ABCDEF) // used in PRTY_CRC_DATA_m13
+#define PRTY_PCRC_TAG_m13		((ui8) 0x0123456789ABCDEF) // used in PRTY_CRC_DATA_m13
 
 
 // Structures
@@ -1475,7 +1481,7 @@ typedef struct {
 } PRTY_m13;
 
 typedef struct {
-	ui8		pcrc_UID; // == PRTY_UID_m13 (marker to confirm identity of this structure)
+	ui8		pcrc_tag; // == PRTY_UID_m13 (marker to confirm identity of this structure)
 	ui8		session_UID; // present in all parity files
 	ui8		segment_UID; // zero in parity data that is session level
 	ui4		n_blocks; // number of data blocks (& crcs) preceding this structure
@@ -1880,11 +1886,11 @@ typedef struct {
 	si4			n_mapped_segments; // may be less than n_session_segments
 	si4			first_mapped_segment_number;
 	Sgmt_RECS_LIST_m13	*Sgmt_recs_list; // list with one entry for each unique sampling frequency and channel type
+	si1			index_channel_name[NAME_BYTES_m13]; // contains user specified value if needed, open_session_m13() matches to session channel
+	struct CHAN_m13		*index_channel;
 } CURRENT_SESSION_m13; // PROC_GLOBS_m13 element
 
 typedef struct {
-	si1			index_channel_name[NAME_BYTES_m13]; // contains user specified value if needed, open_session_m13() matches to session channel
-	struct CHAN_m13		*index_channel; // note "reference" here refers to reference channel for sample/frame numbers, not the time series recording reference electrode
 	sf8			minimum_sampling_frequency;
 	sf8			maximum_sampling_frequency;
 	sf8			minimum_frame_rate;
@@ -2010,9 +2016,9 @@ typedef struct {
 	TIMEZONE_ALIAS_m13		*country_aliases_table;
 	TIMEZONE_ALIAS_m13		*country_acronym_aliases_table;
 	ui4				**CRC_table;
-	si4				*AES_sbox_table;
-	si4				*AES_rsbox_table;
-	si4				*AES_rcon_table;
+	ui1				*AES_sbox_table;
+	ui1				*AES_rsbox_table;
+	ui1				*AES_rcon_table;
 	ui4				*SHA_h0_table;
 	ui4				*SHA_k_table;
 	sf8				*CMP_normal_CDF_table;
@@ -2710,11 +2716,11 @@ typedef struct {
 	};
 	FPS_m13			*rec_data_fps;
 	FPS_m13			*rec_inds_fps;
+	si8			n_contigua;
+	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to segment directory (including segment directory itself)
 	si1			local_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
 	SLICE_m13		slice;
-	si8			n_contigua;
-	CONTIGUON_m13		*contigua;
 } SEG_m13;
 #else // __cplusplus
 typedef struct {
@@ -2733,11 +2739,11 @@ typedef struct {
 	};
 	FPS_m13			*rec_data_fps;
 	FPS_m13			*rec_inds_fps;
+	si8			n_contigua;
+	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to segment directory (including segment directory itself)
 	si1			local_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
 	SLICE_m13		slice;
-	si8			n_contigua;
-	CONTIGUON_m13		*contigua;
 } SEG_m13;
 #endif // standard C
 
@@ -2768,11 +2774,12 @@ typedef struct CHAN_m13 {
 	FPS_m13			*rec_data_fps;
 	FPS_m13			*rec_inds_fps;
 	SEG_m13			**segs;
+	Sgmt_REC_m13		*Sgmt_recs;
+	si8			n_contigua;
+	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to channel directory (including channel directory itself)
 	si1			local_name[NAME_BYTES_m13]; // name from file system (if differs from header & update names global set, headers changed)
 	SLICE_m13		slice;
-	si8			n_contigua;
-	CONTIGUON_m13		*contigua;
 } CHAN_m13;
 #else // __cplusplus
 typedef struct CHAN_m13 {
@@ -2784,11 +2791,12 @@ typedef struct CHAN_m13 {
 	FPS_m13			*rec_data_fps;
 	FPS_m13			*rec_inds_fps;
 	SEG_m13			**segs;
+	Sgmt_REC_m13		*Sgmt_recs;
+	si8			n_contigua;
+	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to channel directory (including channel directory itself)
 	si1			local_name[NAME_BYTES_m13]; // name from file system (if differs from header & update names global set, headers changed)
 	SLICE_m13		slice;
-	si8			n_contigua;
-	CONTIGUON_m13		*contigua;
 } CHAN_m13;
 #endif // standard C
 
@@ -2817,6 +2825,7 @@ typedef struct {
 	};
 	FPS_m13		**rec_data_fps;
 	FPS_m13		**rec_inds_fps;
+	Sgmt_REC_m13	*Sgmt_recs;
 	si1		local_path[PATH_BYTES_m13]; // full path to segmented session records directory (including directory itself)
 	SLICE_m13	slice;
 } SSR_m13;
@@ -2828,6 +2837,7 @@ typedef struct {
 	};
 	FPS_m13		**rec_data_fps;
 	FPS_m13		**rec_inds_fps;
+	Sgmt_REC_m13	*Sgmt_recs;
 	si1		local_path[PATH_BYTES_m13]; // full path to segmented session records directory (including directory itself)
 	SLICE_m13	slice;
 } SSR_m13;
@@ -2865,9 +2875,10 @@ typedef struct {
 	FPS_m13			*rec_data_fps;
 	FPS_m13			*rec_inds_fps;
 	SSR_m13			*ssr;
-	SLICE_m13		slice;
+	Sgmt_REC_m13		*Sgmt_recs;
 	si8			n_contigua;
 	CONTIGUON_m13		*contigua;
+	SLICE_m13		slice;
 } SESS_m13;
 #else // __cplusplus
 typedef struct {
@@ -2884,9 +2895,10 @@ typedef struct {
 	FPS_m13			*rec_data_fps;
 	FPS_m13			*rec_inds_fps;
 	SSR_m13			*ssr;
-	SLICE_m13		slice;
+	Sgmt_REC_m13		*Sgmt_recs;
 	si8			n_contigua;
 	CONTIGUON_m13		*contigua;
+	SLICE_m13		slice;
 } SESS_m13;
 #endif // standard C
 
@@ -2925,8 +2937,8 @@ SEG_m13			*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m
 SESS_m13		*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs);
 void 			G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 si1			*G_behavior_string_m13(ui4 behavior, si1 *behavior_string);
-si8			G_build_contigua_m13(LH_m13 *lh );
-Sgmt_REC_m13		*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, CHAN_m13 *chan);
+si8			G_build_contigua_m13(LH_m13 *lh);
+Sgmt_REC_m13		*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode);
 si8			G_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset);
 tern 			G_calculate_indices_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_metadata_CRC_m13(FPS_m13 *fps);
@@ -4182,8 +4194,9 @@ tern		UTF8_valid_str_m13(si1 *s);
 #define AES_EXPANDED_KEY_BYTES_m13	ENCRYPTION_KEY_BYTES_m13 // AES-128 == ((AES_NR + 1) * AES_NK * AES_NB)
 
 #define AES_NR_m13		10 // The number of rounds in AES Cipher
-#define AES_NK_m13		4 // The number of 32 bit words in the key
-#define AES_NB_m13		4 // The number of columns comprising a state in AES. This is a constant in AES.
+#define AES_NK_m13		4 // The number of 32 bit words in the key (128 bits)
+#define AES_NB_m13		4 // The number of columns comprising a state in AES
+#define AES_NS_m13		( AES_NK_m13 * AES_NB_m13 )  // The total number of states in AES-128
 #define AES_XTIME_m13(x)	( (x << 1) ^ (((x >> 7) & 1) * 0x1b) ) // AES_XTIME is a macro that finds the product of {02} and the argument to AES_XTIME modulo {1b}
 #define AES_MULTIPLY_m13(x, y)	( ((y & 1) * x) ^ ((y >> 1 & 1) * AES_XTIME_m13(x)) ^ ((y >> 2 & 1) * AES_XTIME_m13(AES_XTIME_m13(x))) ^ \
 				((y >> 3 & 1) * AES_XTIME_m13(AES_XTIME_m13(AES_XTIME_m13(x)))) ^ ((y >> 4 & 1) * \
@@ -4249,16 +4262,14 @@ void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key);
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds);
 void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds);
-void	AES_key_expansion_m13(ui1 *round_key, si1 *key);
-void	AES_keyless_decrypt_m13(si4 n_leftovers, ui1 *data);
-void	AES_keyless_encrypt_m13(si4 n_leftovers, ui1 *data);
-si4	AES_get_sbox_invert_m13(si4 num);
-si4	AES_get_sbox_value_m13(si4 num);
 tern	AES_init_tables_m13(void);
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_inv_mix_columns_m13(ui1 state[][4]);
 void	AES_inv_shift_rows_m13(ui1 state[][4]);
 void	AES_inv_sub_bytes_m13(ui1 state[][4]);
+ui1	*AES_key_expansion_m13(ui1 *round_key, si1 *key);
+void	AES_keyless_decrypt_m13(si4 n_leftovers, ui1 *data);
+void	AES_keyless_encrypt_m13(si4 n_leftovers, ui1 *data);
 void	AES_mix_columns_m13(ui1 state[][4]);
 void	AES_shift_rows_m13(ui1 state[][4]);
 void	AES_sub_bytes_m13(ui1 state[][4]);

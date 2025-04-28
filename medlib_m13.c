@@ -959,7 +959,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 				G_set_error_m13(E_UNSPEC_m13, "session is not open");
 				return_m13(FALSE_m13);
 			}
-			chan = proc_globs->active_channels.index_channel;
+			chan = proc_globs->current_session.index_channel;
 			slice = &sess->slice;
 			type_code = chan->type_code;  // use ref channel type for session
 			break;
@@ -1208,62 +1208,121 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 }
 
 
-Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, CHAN_m13 *chan)
+Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 {
-	tern			seek_mode;
+	tern			seek_mode, seg_exists;
 	si1			**seg_list, *metadata_ext, tmp_str[PATH_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
 	si4			n_segs;
 	si8			i, file_offset, data_len, n_recs, seek_data_size;
 	const si8		SEEK_THRESHOLD = 10;  // this factor is a guess, for now
-	FPS_m13			*md_fps;
+	SESS_m13		*sess;
+	SSR_m13			*ssr;
+	CHAN_m13		*chan;
+	SEG_m13			*seg;
+	FPS_m13			*ri_fps, *rd_fps, *md_fps;
 	REC_IDX_m13		*ri;
-	Sgmt_REC_m13		*Sgmt_records, *Sgmt_rec;
-	PROC_GLOBS_m13	*proc_globs;
+	Sgmt_REC_m13		*Sgmt_recs, *Sgmt_rec;
+	PROC_GLOBS_m13		*proc_globs;
 
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
+	// level must be session or channel
+	
+	if (lh == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "level_header is NULL");
+		return_m13(NULL);
+	}
+	
 	// get proc globals
-	if (chan) {
-		proc_globs = G_proc_globs_m13((LH_m13 *) chan);
-	} else if (ri_fps && rd_fps) {
-		proc_globs = G_proc_globs_m13((LH_m13 *) ri_fps);
-	} else {
-		proc_globs = G_proc_globs_m13(NULL);  // main process proc_globs
-		chan = proc_globs->active_channels.index_channel;
-		if (chan == NULL) {
-			G_set_error_m13(E_UNSPEC_m13, "no records or channel passed or found");
+	proc_globs = G_proc_globs_m13(lh);
+	
+	// get channel
+	sess = NULL;
+	ssr = NULL;
+	chan = NULL;
+	ri_fps = rd_fps = NULL;
+	switch(lh->type_code) {
+		case SSR_TYPE_CODE_m13:
+		case SESS_TYPE_CODE_m13:
+			if (lh->type_code == SSR_TYPE_CODE_m13) {
+				ssr = (SSR_m13 *) lh;
+				sess = (SESS_m13 *) ssr->parent;
+			} else {
+				sess = (SESS_m13 *) lh;
+			}
+			chan = proc_globs->current_session.index_channel;
+			if (chan == NULL) {
+				G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
+				chan = proc_globs->current_session.index_channel;
+				if (chan == NULL)
+					return_m13(NULL);
+			}
+			break;
+		case TS_CHAN_TYPE_CODE_m13:
+		case VID_CHAN_TYPE_CODE_m13:
+			if (lh->parent->type_code == SESS_TYPE_CODE_m13)
+				sess = (SESS_m13 *) lh->parent;
+			else
+				sess = NULL;
+			chan = (CHAN_m13 *) lh;
+			break;
+		default:
+			G_set_error_m13(E_UNSPEC_m13, "level must be session or channel");
 			return_m13(NULL);
+	}
+	eprintf_m13();
+	
+	// get channel records
+	if (chan) {
+		ri_fps = chan->rec_inds_fps;
+		if (ri_fps == NULL) {
+			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
+			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
+				chan->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+		}
+		rd_fps = chan->rec_data_fps;
+		if (rd_fps == NULL) {
+			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_DATA_TYPE_STR_m13);
+			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
+				chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
 		}
 	}
-				
+	
+	// get session records
 	if (ri_fps == NULL || rd_fps == NULL) {
-		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
-		if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-			chan->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-			if (chan->rec_inds_fps == NULL)
-				return_m13(NULL);
-			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_DATA_TYPE_STR_m13);
+		ri_fps = sess->rec_inds_fps;
+		if (ri_fps == NULL) {
+			sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.fs_name, REC_INDS_TYPE_STR_m13);
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-				chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-				if (chan->rec_data_fps == NULL)
-					return_m13(NULL);
-				ri_fps = chan->rec_inds_fps;
-				rd_fps = chan->rec_data_fps;
+				sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+			} else if (proc_globs->current_session.names_differ == TRUE_m13){
+				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_INDS_TYPE_STR_m13);
+				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+					sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				}
+			}
+		}
+		rd_fps = sess->rec_data_fps;
+		if (rd_fps == NULL) {
+			sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.fs_name, REC_DATA_TYPE_STR_m13);
+			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+				sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+			} else if (proc_globs->current_session.names_differ == TRUE_m13){
+				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_DATA_TYPE_STR_m13);
+				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+					sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				}
 			}
 		}
 	}
 	
-	// use Sgmt records
-	if (ri_fps) {  // assume rd_fps
-		if (rd_fps == NULL ) {
-			G_set_error_m13(E_UNSPEC_m13, "NULL data file with non-NULL indices file");
-			return_m13(NULL);
-		}
+	// use Sgmt records (preferred)
+	n_segs = 0;
+	if (ri_fps && rd_fps) {
 		// full record index file already read in
-		proc_globs = G_proc_globs_m13((LH_m13 *) ri_fps);
 		n_recs = rd_fps->uh->n_entries;
 		if (proc_globs->current_session.n_segments == SEGMENT_NUMBER_NO_ENTRY_m13) {
 			ri = ri_fps->rec_inds;
@@ -1274,66 +1333,79 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, C
 		} else {
 			n_segs = proc_globs->current_session.n_segments;
 		}
-				
-		// allocate Sgmt_records array
-		Sgmt_records = (Sgmt_REC_m13 *) calloc((size_t) n_segs, sizeof(Sgmt_REC_m13));
-		if (Sgmt_records == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
-			return_m13(NULL);
-		}
 		
-		// decide if more efficient to read full file, or seek to specific records
-		seek_mode = FALSE_m13;
-		if (rd_fps->params.full_file_read == FALSE_m13) {  // full file not already read in
-			data_len = rd_fps->params.fp->len - FPS_UH_BYTES_m13;
-			seek_data_size = (si8) n_segs * sizeof(Sgmt_REC_m13);
-			if ((data_len / seek_data_size) >= SEEK_THRESHOLD) {
-				seek_mode = TRUE_m13;
-			} else {
-				if (FPS_read_m13(rd_fps, 0, FPS_FULL_FILE_m13, 0, NULL) == NULL) {
-					free((void *) Sgmt_records);
-					return_m13(NULL);
-				}
-			}
-		}
-		if (seek_mode == TRUE_m13) {  // ? more efficient to seek (large records files)
-			ri = ri_fps->rec_inds;
-			for (i = 0; i < n_segs; ++ri) {
-				if (ri->type_code == REC_Sgmt_TYPE_CODE_m13) {
-					if (FPS_read_m13(rd_fps, ri->file_offset, sizeof(Sgmt_REC_m13), 1, NULL) == NULL) {
-						free((void *) Sgmt_records);
+		// allocate Sgmt_recs array
+		if (n_segs) {
+			Sgmt_recs = (Sgmt_REC_m13 *) calloc((size_t) n_segs, sizeof(Sgmt_REC_m13));
+			if (Sgmt_recs == NULL)
+				return_m13(NULL);
+			
+			// decide if more efficient to read full file, or seek to specific records
+			seek_mode = FALSE_m13;
+			if (rd_fps->params.full_file_read == FALSE_m13) {  // full file not already read in
+				data_len = rd_fps->params.fp->len - FPS_UH_BYTES_m13;
+				seek_data_size = (si8) n_segs * sizeof(Sgmt_REC_m13);
+				if ((data_len / seek_data_size) >= SEEK_THRESHOLD) {
+					seek_mode = TRUE_m13;
+				} else {
+					if (FPS_read_m13(rd_fps, 0, FPS_FULL_FILE_m13, 0, NULL) == NULL) {
+						free((void *) Sgmt_recs);
 						return_m13(NULL);
 					}
-					Sgmt_records[i] = *((Sgmt_REC_m13 *) rd_fps->rec_data);
-					Sgmt_records[i++].total_record_bytes = sizeof(Sgmt_REC_m13);  // discard description, if any
 				}
 			}
-		} else {  // ? more efficient to read full file (small records files)
-			ri = ri_fps->rec_inds;
-			for (i = 0; i < n_segs; ++ri) {
-				if (ri->type_code == REC_Sgmt_TYPE_CODE_m13) {
-					file_offset = REMOVE_DISCONT_m13(ri->file_offset);
-					Sgmt_records[i] = *((Sgmt_REC_m13 *) (ri_fps->params.raw_data + file_offset));
-					Sgmt_records[i++].total_record_bytes = sizeof(Sgmt_REC_m13);  // discard description, if any
+			if (seek_mode == TRUE_m13) {  // ? more efficient to seek (large records files)
+				ri = ri_fps->rec_inds;
+				for (i = 0; i < n_segs; ++ri) {
+					if (ri->type_code == REC_Sgmt_TYPE_CODE_m13) {
+						if (FPS_read_m13(rd_fps, ri->file_offset, sizeof(Sgmt_REC_m13), 1, NULL) == NULL) {
+							free((void *) Sgmt_recs);
+							return_m13(NULL);
+						}
+						Sgmt_recs[i] = *((Sgmt_REC_m13 *) rd_fps->rec_data);
+						Sgmt_recs[i++].total_record_bytes = sizeof(Sgmt_REC_m13);  // discard description, if any
+					}
 				}
+			} else {  // full file read in
+				ri = ri_fps->rec_inds;
+				for (i = 0; i < n_segs; ++ri) {
+					if (ri->type_code == REC_Sgmt_TYPE_CODE_m13) {
+						file_offset = REMOVE_DISCONT_m13(ri->file_offset);
+						Sgmt_recs[i] = *((Sgmt_REC_m13 *) (rd_fps->params.raw_data + file_offset));
+						Sgmt_recs[i++].total_record_bytes = sizeof(Sgmt_REC_m13);  // discard description, if any
+					}
+				}
+			}
+		}
+		
+		// check Sgmt records are sufficient
+		if (search_mode == SAMPLE_SEARCH_m13) {
+			if (Sgmt_recs[0].start_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13) {
+				n_segs = 0;
+				free((void *) Sgmt_recs);
 			}
 		}
 	}
 	
-	// use metadata files (much less efficient)
-	else {  // ri_fps == NULL
+	// use metadata files (less efficient)
+	if (n_segs == 0) {
+		if (chan == NULL) {
+			G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
+			chan = proc_globs->current_session.index_channel;
+			if (chan == NULL)
+				return_m13(NULL);
+		}
 		seg_list = G_get_file_list_m13(NULL, &n_segs, chan->path, NULL, "?isd", GFL_FULL_PATH_m13);
-		if (seg_list == NULL)
-			return_m13(NULL);
-		proc_globs = G_proc_globs_m13((LH_m13 *) chan);
-		proc_globs->current_session.n_segments = n_segs;
-		
-		// allocate Sgmt_records array
-		Sgmt_records = (Sgmt_REC_m13 *) calloc((size_t) n_segs, sizeof(Sgmt_REC_m13));
-		if (Sgmt_records == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
+		if (n_segs == 0) {
+			G_set_error_m13(E_UNSPEC_m13, "no segments found");
 			return_m13(NULL);
 		}
+		proc_globs->current_session.n_segments = n_segs;
+		
+		// allocate Sgmt_recs array
+		Sgmt_recs = (Sgmt_REC_m13 *) calloc((size_t) n_segs, sizeof(Sgmt_REC_m13));
+		if (Sgmt_recs == NULL)
+			return_m13(NULL);
 
 		switch (chan->type_code) {
 			case TS_CHAN_TYPE_CODE_m13:
@@ -1345,14 +1417,25 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, C
 		}
 		
 		for (i = 0; i < n_segs; ++i) {
-			G_path_parts_m13(seg_list[i], NULL, seg_name, NULL);
-			sprintf_m13(tmp_str, "%s/%s.%s", seg_list[i], seg_name, metadata_ext);
-			md_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 1, NULL, tmp_str, "r", NULL, NULL);
-			if (md_fps == NULL) {
-				free((void *) Sgmt_records);
-				return_m13(NULL);
+			seg_exists = FALSE_m13;
+			md_fps = NULL;
+			if (chan->segs) {
+				seg = chan->segs[i];
+				md_fps = seg->metadata_fps;
+				seg_exists = TRUE_m13;
 			}
-			Sgmt_rec = Sgmt_records + i;
+			if (seg_exists == FALSE_m13) {
+				G_path_parts_m13(seg_list[i], NULL, seg_name, NULL);
+				sprintf_m13(tmp_str, "%s/%s.%s", seg_list[i], seg_name, metadata_ext);
+			}
+			if (md_fps == NULL) {
+				md_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 1, NULL, tmp_str, "r", NULL, NULL);
+				if (md_fps == NULL) {
+					free((void *) Sgmt_recs);
+					return_m13(NULL);
+				}
+			}
+			Sgmt_rec = Sgmt_recs + i;
 			Sgmt_rec->record_CRC = CRC_NO_ENTRY_m13;
 			Sgmt_rec->total_record_bytes = REC_HDR_BYTES_m13 + REC_Sgmt_v11_BYTES_m13;  // no description
 			Sgmt_rec->start_time = md_fps->uh->segment_start_time;
@@ -1374,17 +1457,27 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps, C
 					Sgmt_rec->frame_rate = (sf4) md_fps->metadata->video_section_2.frame_rate;
 					break;
 			}
-			FPS_free_m13(&md_fps);
+			if (seg_exists == TRUE_m13)
+				seg->metadata_fps = md_fps;
+			else
+				FPS_free_m13(&md_fps);
 		}
 		free_m13((void *) seg_list);
 	}
 
 	// fill in global end fields
-	proc_globs->current_session.end_time = Sgmt_records[n_segs - 1].end_time;
-	if (Sgmt_records[n_segs - 1].end_samp_num != SAMPLE_NUMBER_NO_ENTRY_m13)
-		proc_globs->current_session.n_samples = Sgmt_records[n_segs - 1].end_samp_num + 1;  // frame numbers are unioned
+	proc_globs->current_session.end_time = Sgmt_recs[n_segs - 1].end_time;
+	if (Sgmt_recs[n_segs - 1].end_samp_num != SAMPLE_NUMBER_NO_ENTRY_m13)
+		proc_globs->current_session.n_samples = Sgmt_recs[n_segs - 1].end_samp_num + 1;  // frame numbers are unioned
 
-	return_m13(Sgmt_records);
+	// set level Sgmt_record shortcuts
+	chan->Sgmt_recs = Sgmt_recs;
+	if (ssr)
+		ssr->Sgmt_recs = Sgmt_recs;
+	if (sess)
+		sess->Sgmt_recs = Sgmt_recs;
+
+	return_m13(Sgmt_recs);
 }
 
 
@@ -1616,19 +1709,19 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 		return_m13(NULL);
 	}
 
-	// reference channel passed
+	// index channel passed
 	if (chan) {
-		proc_globs->active_channels.index_channel = chan;
-		if (*proc_globs->active_channels.index_channel_name == 0)
-			strcpy(proc_globs->active_channels.index_channel_name, chan->name);
+		proc_globs->current_session.index_channel = chan;
+		if (*proc_globs->current_session.index_channel_name == 0)
+			strcpy(proc_globs->current_session.index_channel_name, chan->name);
 		return_m13(chan);
 	}
 
 	use_default_channel = FALSE_m13;
 	if (chan == NULL) {
 		if (STR_empty_m13(chan_name) == TRUE_m13) {
-			if (*proc_globs->active_channels.index_channel_name)
-				chan_name = proc_globs->active_channels.index_channel_name;
+			if (*proc_globs->current_session.index_channel_name)
+				chan_name = proc_globs->current_session.index_channel_name;
 			else
 				use_default_channel = TRUE_m13;
 		}
@@ -1665,7 +1758,7 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 	}
 	
 	// find channel from name
-	proc_globs->active_channels.index_channel = NULL;
+	proc_globs->current_session.index_channel = NULL;
 	if (chan == NULL) {
 		if (use_default_channel == TRUE_m13) {
 			chan = G_get_active_channel_m13(sess, chan_type);
@@ -1710,8 +1803,8 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 	
 CHANGE_REF_MATCH_m13:
 	
-	proc_globs->active_channels.index_channel = chan;
-	strcpy(proc_globs->active_channels.index_channel_name, chan->name);
+	proc_globs->current_session.index_channel = chan;
+	strcpy(proc_globs->current_session.index_channel_name, chan->name);
 
 	return_m13(chan);
 }
@@ -3447,25 +3540,26 @@ tern	G_expand_password_m13(si1 *password_bytes)
 	G_push_function_m13();
 #endif
 
+	// initialize random number generator with password bytes
+	// & fill in null bytes with random values
 	// expects G_termimal_password_bytes_m13 has already been called
 	
-	// initialize random number generator
-	m_w = m_z = 0;
+	m_w = (ui4) 0;
+	m_z = (ui4) 0x80000000;
 	for (i = 0; i < PASSWORD_BYTES_m13; ++i) {
-		if (password_bytes[i] == 0)
+		if (password_bytes[i] == 0) {
+			if (m_w == 0 || m_w == (ui4) 0x464FFFFF)
+				m_w = (ui4) 0x01020304;
+			if (m_z == 0 || m_z == (ui4) 0x9068FFFF)
+				m_z =(ui4)  0x05060708;
+			for (; i < PASSWORD_BYTES_m13; ++i)
+				password_bytes[i] = CMP_random_byte_m13(&m_w, &m_z);
 			break;
+		}
 		m_w += password_bytes[i];
 		m_z -= password_bytes[i];
 	}
-	if (m_w == 0 || m_w == 0x464FFFFF)
-		m_w = 0x01020304;
-	if (m_z == 0 || m_z == 0x9068FFFF)
-		m_z = 0x05060708;
 	
-	// fill in null bytes
-	for (; i < PASSWORD_BYTES_m13; ++i)
-		password_bytes[i] = CMP_random_byte_m13(&m_w, &m_z);
-  
 	return_m13(TRUE_m13);
 }
 
@@ -3696,7 +3790,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 			if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
 				chan = (CHAN_m13 *) lh;
 			} else {
-				chan = proc_globs->active_channels.index_channel;
+				chan = proc_globs->current_session.index_channel;
 				if (chan->type_code != TS_CHAN_TYPE_CODE_m13) {
 					sess = (SESS_m13 *) lh;
 					chan = sess->ts_chans[0];
@@ -4401,7 +4495,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 				if (lh->type_code == VID_CHAN_TYPE_CODE_m13) {
 					chan = (CHAN_m13 *) lh;
 				} else {
-					chan = proc_globs->active_channels.index_channel;
+					chan = proc_globs->current_session.index_channel;
 					if (chan->type_code != VID_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->vid_chans[0];
@@ -5116,11 +5210,11 @@ void	G_function_stack_trap_m13(si4 sig_num)
 	switch(sig_num) {
 		case SIGINT:
 			error_type = "SIGINT";
-			error_desc = "Interrupt";
+			error_desc = "Process Interrupted";
 			break;
 		case SIGILL:
 			error_type = "SIGILL";
-			error_desc = "Illegal Instruction";
+			error_desc = "Illegal Hardware Instruction";
 			break;
 		case SIGABRT:
 			error_type = "SIGABRT";
@@ -5132,7 +5226,7 @@ void	G_function_stack_trap_m13(si4 sig_num)
 			break;
 		case SIGSEGV:
 			error_type = "SIGSEGV";
-			error_desc = "Segmentation Fault";
+			error_desc = "Memory Segment Violation";
 			break;
 		case SIGTERM:
 			error_type = "SIGTERM";
@@ -5141,11 +5235,11 @@ void	G_function_stack_trap_m13(si4 sig_num)
 		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
 		case SIGQUIT:
 			error_type = "SIGQUIT";
-			error_desc = "Quit";
+			error_desc = "Process Quit";
 			break;
 		case SIGKILL:
 			error_type = "SIGKILL";
-			error_desc = "Kill";
+			error_desc = "Process Killed";
 			break;
 		case SIGBUS:
 			error_type = "SIGBUS";
@@ -5170,7 +5264,7 @@ void	G_function_stack_trap_m13(si4 sig_num)
 	fprintf(stderr, "%c\n\n%sSignal%s:\t%s %s[%s]%s\n\n", 7, TC_RED_m13, TC_RESET_m13, error_desc, TC_BLUE_m13, error_type, TC_RESET_m13);
 #endif
 		
-	exit_m13(-1);  // exit() shows function stack
+	exit_m13(-1);  // exit_m13() shows function stack if FN_DEBUG_m13 defined
 
 	return;
 }
@@ -6113,9 +6207,9 @@ inline
 #endif
 si4	G_get_segment_index_m13(si4 segment_number, LH_m13 *lh)
 {
-	si4			i, mapped_segs, sess_segs, first_seg, seg_idx;
+	si4		i, mapped_segs, sess_segs, first_seg, seg_idx;
 	PROC_GLOBS_m13	*proc_globs;
-	CHAN_m13		*chan;
+	CHAN_m13	*chan;
 	SEG_m13		*seg;
 	
 #ifdef FT_DEBUG_m13
@@ -6136,7 +6230,7 @@ si4	G_get_segment_index_m13(si4 segment_number, LH_m13 *lh)
 	}
 
 	if (segment_number == FIRST_OPEN_SEG_m13 || segment_number == SEGMENT_NUMBER_NO_ENTRY_m13) {
-		chan = proc_globs->active_channels.index_channel;
+		chan = proc_globs->current_session.index_channel;
 		if (chan == NULL) {
 			G_set_error_m13(E_UNSPEC_m13, "reference channel not set");
 			return_m13((si4) FALSE_m13);
@@ -6182,17 +6276,10 @@ si4	G_get_segment_index_m13(si4 segment_number, LH_m13 *lh)
 
 si4 G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 {
-	tern			Sgmts_adequate, free_fps;
-	si1			tmp_str[PATH_BYTES_m13], sess_path[PATH_BYTES_m13], *sess_name;
-	ui4			file_exists;
 	si4			search_mode, n_segs;
-	si8			i, n_recs, start_time, end_time, last_seg_idx;
+	si8			start_time, end_time, last_seg_idx;
 	PROC_GLOBS_m13		*proc_globs;
-	SESS_m13		*sess;
-	CHAN_m13		*chan;
-	FPS_m13			*ri_fps, *rd_fps, *md_fps;
-	REC_IDX_m13		*ri;
-	Sgmt_REC_m13		*Sgmt_records, *Sgmt_rec;
+	Sgmt_REC_m13		*Sgmt_records;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -6211,114 +6298,9 @@ si4 G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 		return_m13(0);
 
 	proc_globs = G_proc_globs_m13(lh);
-	switch (lh->type_code) {
-		case SESS_TYPE_CODE_m13:
-			sess = (SESS_m13 *) lh;
-			if (proc_globs->active_channels.index_channel == NULL)
-				G_change_index_chan_m13(sess, NULL, proc_globs->active_channels.index_channel_name, DEFAULT_CHAN_m13);
-			chan = proc_globs->active_channels.index_channel;
-			break;
-		case TS_CHAN_TYPE_CODE_m13:
-		case VID_CHAN_TYPE_CODE_m13:
-			chan = (CHAN_m13 *) lh;
-			sess = (SESS_m13 *) chan->parent;
-			break;
-		default:
-			G_set_error_m13(E_NOT_MED_m13, "invalid level");
-			return_m13((si4) UNKNOWN_m13);
-	}
-	Sgmt_records = G_Sgmt_records((LH_m13 *) chan, search_mode);
-
-	if (Sgmt_records == NULL) {
-
-		ri_fps = rd_fps = NULL;
-
-		// check for channel level Sgmt records (typically most efficient: usually small files & always contain sample number references)
-		sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
-		if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-			ri_fps = chan->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-			n_recs = ri_fps->uh->n_entries;
-			ri = ri_fps->rec_inds;
-			for (i = n_recs; i--; ++ri)
-				if (ri->type_code == REC_Sgmt_TYPE_CODE_m13)
-					break;
-			if (i >= 0) {
-				sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_DATA_TYPE_STR_m13);
-				rd_fps = chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-			}
-		}
-		
-		// no channel level Sgmt records => check session level (may not contain sample numbers, but may not need them)
-		if (rd_fps == NULL) {
-			// get global session name(s)
-			if (proc_globs->current_session.UID == UID_NO_ENTRY_m13) {
-				G_find_metadata_file_m13(chan->path, tmp_str);
-				md_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-				FPS_free_m13(&md_fps);
-			}
-			sess_name = proc_globs->current_session.fs_name;
-			if (sess) {
-				strcpy(sess_path, sess->path);
-				ri_fps = sess->rec_inds_fps;
-				rd_fps = sess->rec_data_fps;
-				free_fps = FALSE_m13;
-			} else {
-				G_path_parts_m13(chan->path, sess_path, NULL, NULL);
-				ri_fps = NULL;
-				rd_fps = NULL;
-				free_fps = TRUE_m13;
-			}
-			if (ri_fps == NULL)
-				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, REC_INDS_TYPE_STR_m13);
-			else if (*ri_fps->path)
-				strcpy(tmp_str, ri_fps->path);
-			else
-				sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, REC_INDS_TYPE_STR_m13);
-			file_exists = G_exists_m13(tmp_str);
-			if (file_exists == DOES_NOT_EXIST_m13) {
-				if (proc_globs->current_session.names_differ == TRUE_m13) {  // fs_name is default, try uh_name (e.g. a channel subset, without full renaming)
-					G_path_parts_m13(sess_path, tmp_str, NULL, NULL);
-					sprintf_m13(sess_path, "%s/%s", tmp_str, proc_globs->current_session.uh_name);
-					sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, REC_INDS_TYPE_STR_m13);
-					file_exists = G_exists_m13(tmp_str);
-				}
-			}
-			if (file_exists == FILE_EXISTS_m13) {
-				ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
-				n_recs = ri_fps->uh->n_entries - 1;
-				ri = ri_fps->rec_inds;
-				for (i = n_recs; i--; ++ri)
-					if (ri->type_code == REC_Sgmt_TYPE_CODE_m13)
-						break;
-				Sgmts_adequate = FALSE_m13;
-				if (i >= 0) {  // check that session Sgmt records contain sampling frequency
-					sprintf_m13(tmp_str, "%s/%s.%s", sess_path, sess_name, REC_DATA_TYPE_STR_m13);
-					rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, ri->file_offset, sizeof(Sgmt_REC_m13), 1, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-					if (search_mode == TIME_SEARCH_m13) {
-						Sgmts_adequate = TRUE_m13;
-					} else {  // SAMPLE_SEARCH_m13
-						Sgmt_rec = (Sgmt_REC_m13 *) rd_fps->rec_data;
-						if (Sgmt_rec->start_samp_num != SAMPLE_NUMBER_NO_ENTRY_m13)
-							Sgmts_adequate = TRUE_m13;
-					}
-				}
-				if (Sgmts_adequate == TRUE_m13) {
-					Sgmt_records = G_build_Sgmt_records_array_m13(ri_fps, rd_fps, NULL);
-				} else if (free_fps == TRUE_m13) {
-					FPS_free_m13(&ri_fps);
-					if (rd_fps)
-						FPS_free_m13(&rd_fps);
-				}
-			}
-		}
-
-		// no adequate session level Sgmt records => build from reference channel metadata (least efficient option)
-		if (Sgmt_records == NULL) {
-			Sgmt_records = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
-			if (Sgmt_records == NULL)
-				return_m13((si4) UNKNOWN_m13);
-		}
-	}
+	eprintf_m13();
+	Sgmt_records = G_Sgmt_records(lh, search_mode);
+	eprintf_m13();
 
 	// search Sgmt_records array for segments
 	n_segs = G_search_Sgmt_records_m13(Sgmt_records, slice, search_mode);
@@ -6475,8 +6457,7 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 				proc_globs->current_session.names_differ = TRUE_m13;
 				if (globals_m13->update_header_names == TRUE_m13)
 					if (proc_globs->child->type_code == SESS_TYPE_CODE_m13)
-						if (G_update_session_name_m13((SESS_m13 *) proc_globs->child) == TRUE_m13)
-							proc_globs->current_session.names_differ = FALSE_m13;
+						G_update_session_name_m13((SESS_m13 *) proc_globs->child);
 			}
 		}
 	}
@@ -8815,7 +8796,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	sess->path = proc_globs->current_session.directory;
 	sess->name = proc_globs->current_session.fs_name;  // default to fs_name
 	if (*index_channel_name)
-		strcpy(proc_globs->active_channels.index_channel_name, index_channel_name);
+		strcpy(proc_globs->current_session.index_channel_name, index_channel_name);
 	
 	// generate channel list
 	all_channels_selected = FALSE_m13;
@@ -9059,6 +9040,8 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	
 	// set reference channel (before get segment range)
 	G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);
+	eprintf_m13();
+	G_show_proc_globs_m13((LH_m13 *) sess);
 
 	// get segment range
 	n_segs = slice->n_segs;
@@ -9147,7 +9130,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	}
 
 	// update session slice
-	chan = proc_globs->active_channels.index_channel;
+	chan = proc_globs->current_session.index_channel;
 	if ((chan->flags & LH_CHAN_ACTIVE_m13) == 0)
 		chan = G_get_active_channel_m13(sess, DEFAULT_CHAN_m13);
 	slice->start_time = chan->slice.start_time;
@@ -9682,8 +9665,8 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 	proc_globs->current_session.n_samples = SAMPLE_NUMBER_NO_ENTRY_m13;  // == n_session_frames
 	proc_globs->current_session.n_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
 	proc_globs->current_session.n_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	proc_globs->active_channels.index_channel = NULL;
-	*proc_globs->active_channels.index_channel_name = 0;
+	proc_globs->current_session.index_channel = NULL;
+	*proc_globs->current_session.index_channel_name = 0;
 	
 	// active channel constants
 	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
@@ -9776,6 +9759,7 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
 		return_m13(TRUE_m13);
 	
+	eprintf_m13("");
 	// copy password hints from metadata to pwd
 	md1 = NULL;
 	if (METADATA_CODE_m13(uh->type_code) == TRUE_m13) {
@@ -9792,6 +9776,7 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 			free_md1 = TRUE_m13;
 		}
 	}
+	eprintf_m13("");
 	pwd->hints_exist = FALSE_m13;
 	if (md1) {
 		if (*md1->level_1_password_hint) {
@@ -9806,10 +9791,14 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 			free((void *) md1);
 	}
 	
+	eprintf_m13("");
 	// condition password (check, extract terminal bytes, expand)
 	if (G_condition_password_m13(unspecified_pw, unspecified_pw_bytes, uh->expanded_passwords) == FALSE_m13)
 		G_show_password_hints_m13(pwd, 0);
 
+	eprintf_m13("unspecified_pw = %s", unspecified_pw);
+	eprintf_m13("unspecified_pw_bytes = %s", unspecified_pw_bytes);
+	
 	// check if data is encrypted (no need to check level 2, since for level 2 to exist, level 1 must exist)
 	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
 		return_m13(TRUE_m13);
@@ -10862,7 +10851,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 
 	// set inactive reference flags
 	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
-	chan = proc_globs->active_channels.index_channel;
+	chan = proc_globs->current_session.index_channel;
 	if ((chan->flags & LH_CHAN_ACTIVE_m13) == 0) {
 		if (chan->flags & LH_READ_SEG_DATA_MASK_m13) {
 			chan->flags |= LH_IDX_CHAN_INACTIVE_m13;
@@ -10898,10 +10887,10 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		if (active_ts_chans) {
 			calculate_channel_indices = FALSE_m13;
 			if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13) {
-				if (proc_globs->active_channels.index_channel->type_code == TS_CHAN_TYPE_m13) {
+				if (proc_globs->current_session.index_channel->type_code == TS_CHAN_TYPE_m13) {
 					if (search_mode == SAMPLE_SEARCH_m13) {
 						calculate_channel_indices = TRUE_m13;
-						ref_sf = proc_globs->active_channels.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+						ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 					}
 				}
 			}
@@ -10928,10 +10917,10 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		if (active_vid_chans) {
 			calculate_channel_indices = FALSE_m13;
 			if (proc_globs->active_channels.frame_rates_vary == TRUE_m13) {
-				if (proc_globs->active_channels.index_channel->type_code == VID_CHAN_TYPE_m13) {
+				if (proc_globs->current_session.index_channel->type_code == VID_CHAN_TYPE_m13) {
 					if (search_mode == SAMPLE_SEARCH_m13) {
 						calculate_channel_indices = TRUE_m13;
-						ref_sf = proc_globs->active_channels.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
+						ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
 					}
 				}
 			}
@@ -10993,7 +10982,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	}
  
 	// update session slice
-	*slice = proc_globs->active_channels.index_channel->slice;
+	*slice = proc_globs->current_session.index_channel->slice;
 	if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globs->active_channels.frame_rates_vary == TRUE_m13)
 		slice->start_samp_num = slice->end_samp_num = SAMPLE_NUMBER_NO_ENTRY_m13;  // unioned with video fields
 
@@ -11561,7 +11550,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 				if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
 					chan = (CHAN_m13 *) lh;
 				} else {  // SESS_m13
-					chan = proc_globs->active_channels.index_channel;
+					chan = proc_globs->current_session.index_channel;
 					if (chan->type_code != TS_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->ts_chans[0];
@@ -11676,9 +11665,6 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	
 	proc_globs = G_proc_globs_m13(NULL);  // use proc_globs from current thread
 	
-	G_show_slice_m13(slice);
-	G_show_Sgmt_records_m13(NULL, Sgmt_records);
-	
 	if (search_mode == TIME_SEARCH_m13) {
 		// start segment
 		target = slice->start_time;
@@ -11737,7 +11723,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 		
 		// sample search required, but no sample data in Sgmt_records => fill it in (e.g from session records in variable frequency session)
 		if (Sgmt_records[0].start_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13) {
-			chan = proc_globs->active_channels.index_channel;
+			chan = proc_globs->current_session.index_channel;
 			for (i = 0; i < proc_globs->current_session.n_segments; ++i) {
 				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, Sgmt_records[i].seg_num);
 				sprintf_m13(seg_name, "%s_s%s", chan->name, num_str);
@@ -12417,6 +12403,8 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 	si4			i, seg_idx;
 	sf8			rate;
 	PROC_GLOBS_m13		*proc_globs;
+	SESS_m13		*sess;
+	SSR_m13			*ssr;
 	CHAN_m13		*chan;
 	SEG_m13			*seg;
 	FPS_m13			*md_fps;
@@ -12430,7 +12418,11 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 
 	proc_globs = G_proc_globs_m13(lh);
 	list = proc_globs->current_session.Sgmt_recs_list;
+	sess = NULL;
+	ssr = NULL;
+	chan = NULL;
 	if (search_mode == TIME_SEARCH_m13) {  // any Sgmt records will suffice
+		eprintf_m13();
 		pthread_mutex_lock_m13(&list->mutex);
 		if (list->top_idx >= 0) {
 			Sgmt_recs = (Sgmt_REC_m13 *) list->entries->Sgmt_recs;
@@ -12441,12 +12433,25 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 	} else {  // SAMPLE_SEARCH_m13 - find by rate
 		switch (lh->type_code) {
 			case SESS_TYPE_CODE_m13:
+				sess = (SESS_m13 *) lh;
+				if (sess->Sgmt_recs)
+					if (sess->Sgmt_recs[0].rate != (sf4) RATE_NO_ENTRY_m13)
+						return_m13(sess->Sgmt_recs);
+				chan = proc_globs->current_session.index_channel;
+				break;
 			case SSR_TYPE_CODE_m13:
-				chan = proc_globs->active_channels.index_channel;
+				ssr = (SSR_m13 *) lh;
+				if (ssr->Sgmt_recs)
+					if (ssr->Sgmt_recs[0].rate != (sf4) RATE_NO_ENTRY_m13)
+						return_m13(ssr->Sgmt_recs);
+				sess = (SESS_m13 *) ssr->parent;
+				chan = proc_globs->current_session.index_channel;
 				break;
 			case TS_CHAN_TYPE_CODE_m13:
 			case VID_CHAN_TYPE_CODE_m13:
 				chan = (CHAN_m13 *) lh;
+				if (chan->Sgmt_recs)
+					return_m13(chan->Sgmt_recs);
 				break;
 			case TS_SEG_TYPE_CODE_m13:  // unusual to call with segment, but possible
 			case VID_SEG_TYPE_CODE_m13:
@@ -12454,6 +12459,8 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 					chan = (CHAN_m13 *) (lh->parent);
 				else
 					return_m13(NULL);
+				if (chan->Sgmt_recs)
+					return_m13(chan->Sgmt_recs);
 				break;
 			default:
 				G_warning_message_m13("%s(): invalid level\n", __FUNCTION__);
@@ -12497,7 +12504,11 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 
 	// add new entry
 	if (i == -1) {
-		Sgmt_recs = G_build_Sgmt_records_array_m13(NULL, NULL, chan);
+		eprintf_m13();
+		Sgmt_recs = G_build_Sgmt_records_array_m13((LH_m13 *) lh, search_mode);
+		eprintf_m13();
+		G_show_Sgmt_records_m13(lh, Sgmt_recs);
+		eprintf_m13();
 		if (++list->top_idx == list->size) {
 			list->size += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
 			new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list->entries, (size_t) list->size * sizeof(Sgmt_RECS_ENTRY_m13 *));
@@ -12521,6 +12532,14 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 
 	pthread_mutex_unlock_m13(&list->mutex);  // unlock
 	
+	// set shortcuts
+	chan->Sgmt_recs = Sgmt_recs;
+	if (sess)
+		sess->Sgmt_recs = Sgmt_recs;
+	if (ssr)
+		ssr->Sgmt_recs = Sgmt_recs;
+
+	eprintf_m13();
 	G_show_Sgmt_records_m13(NULL, Sgmt_recs);
 
 	return_m13(Sgmt_recs);
@@ -13559,16 +13578,16 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 		printf_m13("no entry\n");
 	else
 		printf_m13("%d\n", proc_globs->current_session.n_mapped_segments);
-	printf_m13("Index Channel Name: ");
-	if (*proc_globs->active_channels.index_channel_name == 0)
-		printf_m13("no entry\n");
-	else
-		printf_m13("%s\n", proc_globs->active_channels.index_channel_name);
 	printf_m13("Index Channel: ");
-	if (proc_globs->active_channels.index_channel == NULL)
+	if (proc_globs->current_session.index_channel == NULL)
 		printf_m13("not set\n");
 	else
 		printf_m13("set\n");
+	printf_m13("Index Channel Name: ");
+	if (*proc_globs->current_session.index_channel_name == 0)
+		printf_m13("no entry\n");
+	else
+		printf_m13("%s\n", proc_globs->current_session.index_channel_name);
 	
 	printf_m13("\nActive Channels\n---------------\n");
 	printf_m13("Sampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary));
@@ -13581,11 +13600,11 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("Maximum Sampling Frequency: %lf\n", proc_globs->active_channels.maximum_sampling_frequency);
 	if (proc_globs->active_channels.minimum_sampling_frequency_channel == NULL)
-		printf_m13("Minimum Sampling Frequency Channel: no entry\n");
+		printf_m13("Minimum Sampling Frequency Channel: not set\n");
 	else
 		printf_m13("Minimum Sampling Frequency Channel Name: %s\n", proc_globs->active_channels.minimum_sampling_frequency_channel->name);
 	if (proc_globs->active_channels.maximum_sampling_frequency_channel == NULL)
-		printf_m13("Maximum Sampling Frequency Channel: no entry\n");
+		printf_m13("Maximum Sampling Frequency Channel: not set\n");
 	else
 		printf_m13("Maximum Sampling Frequency Channel Name: %s\n", proc_globs->active_channels.maximum_sampling_frequency_channel->name);
 	printf_m13("Frame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary));
@@ -13598,11 +13617,11 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("Minimum Frame Rate: %lf\n", proc_globs->active_channels.maximum_frame_rate);
 	if (proc_globs->active_channels.minimum_frame_rate_channel == NULL)
-		printf_m13("Minimum Frame Rate Channel: no entry\n");
+		printf_m13("Minimum Frame Rate Channel: not set\n");
 	else
 		printf_m13("Minimum Frame Rate Channel Name: %s\n", proc_globs->active_channels.minimum_frame_rate_channel->name);
 	if (proc_globs->active_channels.maximum_frame_rate_channel == NULL)
-		printf_m13("Maximum Frame Rate Channel: no entry\n");
+		printf_m13("Maximum Frame Rate Channel: not set\n");
 	else
 		printf_m13("Maximum Frame Rate Channel Name: %s\n", proc_globs->active_channels.maximum_frame_rate_channel->name);
 
@@ -13682,33 +13701,36 @@ tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 }
 
 
-tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt)
+tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 {
 	si1	  		time_str[TIME_STRING_BYTES_m13];
 	si4			n_segs;
 	si8			i;
 	PROC_GLOBS_m13		*proc_globs;
+	Sgmt_REC_m13		*Sgmt;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	if (lh) {
-		Sgmt = G_Sgmt_records(lh, SAMPLE_SEARCH_m13);
-		if (Sgmt == NULL)
+		Sgmt_recs = G_Sgmt_records(lh, SAMPLE_SEARCH_m13);
+		if (Sgmt_recs == NULL)
 			return_m13(FALSE_m13);
-	} else if (Sgmt == NULL) {
-		G_set_error_m13(E_UNSPEC_m13, "both lh & Sgmt are NULL");
+		eprintf_m13();
+	} else if (Sgmt_recs == NULL) {
+		G_set_error_m13(E_UNSPEC_m13, "both level header & Sgmt records are NULL");
 		return_m13(FALSE_m13);
 	}
 
 	proc_globs = G_proc_globs_m13(lh);
 	n_segs = proc_globs->current_session.n_segments;
-	if (n_segs == 0) {
+	if (n_segs == SEGMENT_NUMBER_NO_ENTRY_m13) {  // == 0
 		G_set_error_m13(E_UNSPEC_m13, "empty Sgmt records array");
 		return_m13(FALSE_m13);
 	}
 
+	Sgmt = Sgmt_recs;
 	for (i = 0; i < n_segs; ++i, ++Sgmt) {
 		printf_m13("%sRecord number: %ld%s\n", TC_RED_m13, i + 1, TC_RESET_m13);
 		if (Sgmt->start_time == REC_HDR_START_TIME_NO_ENTRY_m13)
@@ -14798,11 +14820,10 @@ tern	G_update_file_version_m13(FPS_m13 *fps)
 		G_message_m13("Updating to MED version %d.%d ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
 		message_given = TRUE_m13;
 	}
-		
+	
 	// set up
 	type_code = fps->type_code;
 	path = fps->path;
-	eprintf_m13("path = %s, (orig mode = \"%s\")", path, fps->params.mode_str);
 	init_pos = ftell_m13(fps->params.fp);
 	fp = freopen_m13(path, "r+", fps->params.fp);
 
@@ -15185,7 +15206,7 @@ tern	G_update_file_version_m13(FPS_m13 *fps)
 	else if (type_code == REC_DATA_TYPE_CODE_m13) {
 
 		// create new file
-		sprintf(tmp_path, "%s.tmp", path);
+		sprintf_m13(tmp_path, "%s.tmp", path);
 		tmp_fp = fopen_m13(tmp_path, "w");
 		if (tmp_fp == NULL) {
 			fclose_m13(fp);
@@ -15361,9 +15382,9 @@ tern	G_update_file_version_m13(FPS_m13 *fps)
 		}
 		
 		// move new file into place
-		fclose_m13(fp);
-		fp = NULL;  // force freopen_m13() to call fopen_m13() below
 		fclose_m13(tmp_fp);
+		fclose_m13(fp);
+		fp = NULL;  // redirect freopen_m13() to fopen_m13() [below]
 		mv_m13(tmp_path, path);
 	}
 
@@ -15372,7 +15393,6 @@ tern	G_update_file_version_m13(FPS_m13 *fps)
 		G_set_error_m13(E_NOT_MED_m13, NULL);
 		return_m13(FALSE_m13);
 	}
-
 
 	// clean up
 	free_m13((void *) rd);
@@ -15463,8 +15483,7 @@ tern	G_update_session_name_m13(SESS_m13 *sess)
 	si1			path[SEG_NAME_BYTES_m13], tmp_path[SEG_NAME_BYTES_m13], *fs_name, *uh_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
 	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
-	
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13		*proc_globs;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -15633,7 +15652,11 @@ tern	G_update_session_name_m13(SESS_m13 *sess)
 	}
 	if (chan_list)
 		free_m13((void *) chan_list);
-		
+	
+	// update globals
+	strcpy(proc_globs->current_session.uh_name, proc_globs->current_session.fs_name);
+	proc_globs->current_session.names_differ = FALSE_m13;
+
 	return_m13(TRUE_m13);
 }
 
@@ -15745,7 +15768,7 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 					chan = (CHAN_m13 *) lh;
 				} else {
 					proc_globs = G_proc_globs_m13(lh);
-					chan = proc_globs->active_channels.index_channel;
+					chan = proc_globs->current_session.index_channel;
 					if (chan->type_code != VID_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->vid_chans[0];
@@ -15894,7 +15917,7 @@ si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode,
 					chan = (CHAN_m13 *) lh;
 				} else {
 					proc_globs = G_proc_globs_m13(lh);
-					chan = proc_globs->active_channels.index_channel;
+					chan = proc_globs->current_session.index_channel;
 					if (chan->type_code != TS_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->ts_chans[0];
@@ -16201,12 +16224,11 @@ void  G_warning_message_m13(const si1 *fmt, ...)
 // For the complete description of the algorithm, see:
 // http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf
 //
-// THE CODE IN THIS FILE IS SET FOR AES 128-BIT ENCRYPTION / DECRYPTION ONLY
+// The code here is set for 128-bit AES encryption / decryption only
 //
-// Minor modifications have been made for compatibility with the MED Library.
+// Some modifications have been made for compatibility with the MED Library.
 
-// This function adds the round key to state.
-// The round key is added to the state by an XOR function.
+// this function adds the round key to the state
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
 {
 	si4	i, j;
@@ -16220,25 +16242,25 @@ void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
 }
 
 
-// Cipher is the main encryption function
+// cipher is the main encryption function
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
-	si4	i, j, round = 0;
+	ui1	*ui1_p1, *ui1_p2;
+	si4	i, round = 0;
 	
 
-	// Copy the input PlainText to state array.
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
-			state[j][i] = in[i * 4 + j];
-		}
-	}
+	// copy the input to state array
+	ui1_p1 = in;
+	ui1_p2 = (ui1 *) state;
+	for (i = AES_NS_m13; i--;)
+		*ui1_p2++ = *ui1_p1++;
 	
 	// Add the First round key to the state before starting the rounds.
 	AES_add_round_key_m13(0, state, round_key);
 	
-	// There will be AES_NR rounds.
-	// The first AES_NR - 1 rounds are identical.
-	// These AES_NR - 1 rounds are executed in the loop below.
+	// there will be AES_NR rounds.
+	// the first AES_NR - 1 rounds are identical
+	// these AES_NR - 1 rounds are executed in the loop below
 	for (round = 1; round < AES_NR_m13; round++) {
 		AES_sub_bytes_m13(state);
 		AES_shift_rows_m13(state);
@@ -16246,19 +16268,18 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 		AES_add_round_key_m13(round, state, round_key);
 	}
 	
-	// The last round is given below.
-	// The MixColumns function is not here in the last round.
+	// the last round is given below
+	// the mix_columns function is not here in the last round
 	AES_sub_bytes_m13(state);
 	AES_shift_rows_m13(state);
 	AES_add_round_key_m13(AES_NR_m13, state, round_key);
 	
-	// The encryption process is over.
-	// Copy the state array to output array.
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
-			out[i * 4 + j] = state[j][i];
-		}
-	}
+	// the encryption process is over
+	// copy the state array to output array
+	ui1_p1 = (ui1 *) state;
+	ui1_p2 = out;
+	for (i = AES_NS_m13; i--;)
+		*ui1_p2++ = *ui1_p1++;
 	
 	return;
 }
@@ -16270,62 +16291,63 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 // decryption is done in place
 void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
 {
-	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13];
-	si1	key[AES_KEY_BYTES_m13] = {0};
-	si4	i, n_leftovers;
-	si8	j, encryption_blocks;
 	ui1	state[4][4]; // array that holds the intermediate results during encryption
 	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
+	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13], *orig_expanded_key;
+	si1	key[AES_KEY_BYTES_m13];
+	si4	i;
+	si8	j, encryption_blocks, n_leftovers;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (rounds == 0)
+	if (rounds < 1) {
+		if (rounds < 0)
+			G_set_error_m13(E_ENCRYPT_m13, "negative number of rounds");
 		return_void_m13;
-	
-	if (globals_m13->tables->AES_sbox_table == NULL)  // all tables initialized together
+	}
+
+	if (globals_m13->tables->AES_rsbox_table == NULL)
 		AES_init_tables_m13();
 	
 	if (expanded_key == NULL) {
-		if (STR_empty_m13(password) == FALSE_m13) {
-			// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
-			strncpy_m13(key, password, AES_KEY_BYTES_m13);
-			
-			// The KeyExpansion routine must be called before encryption.
-			AES_key_expansion_m13(round_key, key);
-			expanded_key = round_key;
-		} else {
+		if (AES_key_expansion_m13(round_key, key) == NULL) {  // key expansion must be done before encryption
 			G_set_error_m13(E_ENCRYPT_m13, "no password or expanded key passed");
 			return_void_m13;
 		}
+		expanded_key = round_key;
 	}
 	
-	// copy key if >1 rounds to keep thread-safe
 	if (rounds > 1) {
-		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
+		orig_expanded_key = expanded_key;
+		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);  // copy key if rounds > 1 to keep thread-safe
 		expanded_key = local_expanded_key;
 	}
 
 	// AES decryption
 	encryption_blocks = len >> 4;
+	n_leftovers = len - (encryption_blocks << 4);
 	for (i = (si4) rounds; i--;) {
+		
+		// decrypt AES blocks
+		memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
 		ui1_p = data;
 		for (j = encryption_blocks; j--;) {
 			AES_inv_cipher_m13(ui1_p, ui1_p, state, expanded_key);
 			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 		}
 		
-		// handle leftovers
-		n_leftovers = (si4) (len - (encryption_blocks << 4));
+		// decrypt leftovers
 		if (n_leftovers)
 			AES_keyless_decrypt_m13(n_leftovers, ui1_p);
 		
-		// encrypt expanded key on each round (reverse of encrypt)
+		// encrypt expanded key (reverse of encrypt)
 		if (i) {
-			ui1_p = expanded_key;  // key used to set state, then state used to set output, so no conflict
+			memset((void *) state, (si4) 0, (size_t) AES_NS_m13); // zero state array
+			ui1_p = expanded_key;
 			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+				AES_cipher_m13(ui1_p, ui1_p, state, orig_expanded_key);
 				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 			}
 		}
@@ -16341,73 +16363,74 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 // encryption is done in place
 void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
 {
-	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13];
-	si1	key[AES_KEY_BYTES_m13] = {0};
+	ui1	state[AES_NK_m13][AES_NB_m13]; // array that holds the intermediate results during encryption
+	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
+	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13], *orig_expanded_key;
+	si1	key[AES_KEY_BYTES_m13];
 	si4	i;
 	si8	j, encryption_blocks, n_leftovers;
-	ui1	state[4][4]; // array that holds the intermediate results during encryption
-	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (rounds == 0)
+	if (rounds < 1) {
+		if (rounds < 0)
+			G_set_error_m13(E_ENCRYPT_m13, "negative number of rounds");
 		return_void_m13;
+	}
 	
 	if (globals_m13->tables->AES_sbox_table == NULL)  // all tables initialized together
 		AES_init_tables_m13();
 	
 	if (expanded_key == NULL) {
-		if (STR_empty_m13(password) == FALSE_m13) {
-			// password becomes the key (16 bytes, zero-padded if shorter, truncated if longer)
-			strncpy_m13(key, password, AES_KEY_BYTES_m13);
-			
-			// The KeyExpansion routine must be called before encryption.
-			AES_key_expansion_m13(round_key, key);
-			expanded_key = round_key;
-		} else {
+		if (AES_key_expansion_m13(round_key, key) == NULL) {  // key expansion must be done before encryption
 			G_set_error_m13(E_ENCRYPT_m13, "no password or expanded key passed");
 			return_void_m13;
 		}
+		expanded_key = round_key;
 	}
 
-	// copy key if >1 rounds to keep thread-safe
 	if (rounds > 1) {
-		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
+		orig_expanded_key = expanded_key;
+		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);  // copy key if rounds > 1 to keep thread-safe
 		expanded_key = local_expanded_key;
 		
 		// self-encrypt for each round so not using same key in next round
 		// done in encryption so decryption (more common) is more efficient
 		for (i = (si4) rounds; --i;) {
-			ui1_p = expanded_key;  // key used to set state, then state used to set output, so no conflict
+			memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
+			ui1_p = expanded_key;
 			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+				AES_cipher_m13(ui1_p, ui1_p, state, orig_expanded_key);
 				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 			}
 		}
-
 	}
 	
 	// AES encryption
 	encryption_blocks = len >> 4;
+	n_leftovers = len - (encryption_blocks << 4);
 	for (i = (si4) rounds; i--;) {
+		
+		// encrypt AES blocks
+		memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
 		ui1_p = data;
 		for (j = encryption_blocks; j--;) {
 			AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
 			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 		}
-		
-		// handle leftovers
-		n_leftovers = (si4) (len - (encryption_blocks << 4));
+
+		// encrypt leftovers
 		if (n_leftovers)
 			AES_keyless_encrypt_m13(n_leftovers, ui1_p);
-		
-		// decrypt expanded key on each round back to original key (encrypted above)
+
+		// decrypt expanded key back to original key (encrypted above)
 		if (i) {
-			ui1_p = expanded_key;  // key used to set state, then state used to set output, so no conflict
+			memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
+			ui1_p = expanded_key;
 			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_inv_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+				AES_inv_cipher_m13(ui1_p, ui1_p, state, orig_expanded_key);
 				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 			}
 		}
@@ -16417,145 +16440,8 @@ void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 }
 
 
-// This function produces AES_NB * (AES_NR + 1) round keys. The round keys are used in each round to encrypt the states.
-// NOTE: make sure any terminal unused bytes in key array (password) are zeroed
-void	AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
-{
-	si4	i, j, *rcon_table;
-	ui1	temp[4], k;
-	
-
-	// The round constant word array, Rcon[i], contains the values given by
-	// x to the power (i - 1) being powers of x (x is denoted as {02}) in the field GF(28)
-	// Note that i starts at 1, not 0).
-
-	if (globals_m13->tables->AES_rcon_table == NULL)
-		AES_init_tables_m13();
-	rcon_table = globals_m13->tables->AES_rcon_table;
-	
-	// The first round key is the key itself.
-	for (i = j = 0; i < AES_NK_m13; i++, j += 4) {
-		expanded_key[j] = key[j];
-		expanded_key[j + 1] = key[j + 1];
-		expanded_key[j + 2] = key[j + 2];
-		expanded_key[j + 3] = key[j + 3];
-	}
-	
-	// All other round keys are found from the previous round keys.
-	while (i < (AES_NB_m13 * (AES_NR_m13 + 1))) {
-		
-		for (j = 0; j < 4; j++)
-			temp[j] = expanded_key[(i - 1) * 4 + j];
-		
-		if (i % AES_NK_m13 == 0) {
-			// This rotates the 4 bytes in a word to the left once.
-			// [a0,a1,a2,a3] becomes [a1,a2,a3,a0]
-			k = temp[0];
-			temp[0] = temp[1];
-			temp[1] = temp[2];
-			temp[2] = temp[3];
-			temp[3] = k;
-			
-			// This takes a four-byte input word and applies the S-box
-			// to each of the four bytes to produce an output word.
-			temp[0] = (ui1)AES_get_sbox_value_m13(temp[0]);
-			temp[1] = (ui1)AES_get_sbox_value_m13(temp[1]);
-			temp[2] = (ui1)AES_get_sbox_value_m13(temp[2]);
-			temp[3] = (ui1)AES_get_sbox_value_m13(temp[3]);
-			
-			temp[0] = temp[0] ^ (ui1) rcon_table[i / AES_NK_m13];
-		}
-		else if (AES_NK_m13 > 6 && i % AES_NK_m13 == 4) {
-			// This takes a four-byte input word and applies the S-box
-			// to each of the four bytes to produce an output word.
-			temp[0] = (ui1)AES_get_sbox_value_m13(temp[0]);
-			temp[1] = (ui1)AES_get_sbox_value_m13(temp[1]);
-			temp[2] = (ui1)AES_get_sbox_value_m13(temp[2]);
-			temp[3] = (ui1)AES_get_sbox_value_m13(temp[3]);
-		}
-		
-		expanded_key[i * 4] = expanded_key[(i - AES_NK_m13) * 4] ^ temp[0];
-		expanded_key[i * 4 + 1] = expanded_key[(i - AES_NK_m13) * 4 + 1] ^ temp[1];
-		expanded_key[i * 4 + 2] = expanded_key[(i - AES_NK_m13) * 4 + 2] ^ temp[2];
-		expanded_key[i * 4 + 3] = expanded_key[(i - AES_NK_m13) * 4 + 3] ^ temp[3];
-		
-		i++;
-	}
-	
-	return;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	AES_keyless_decrypt_m13(si4 n_bytes, ui1 *data)
-{
-	ui1	*ui1_p1, *ui1_p2;
-	
-
-	// non-AES encryption => use sparingly
-	ui1_p1 = data;
-	if (n_bytes--) {
-		ui1_p2 = ui1_p1 + n_bytes;
-		ui1_p1 = ui1_p2 - 1;
-		for (; n_bytes--; --ui1_p2)
-			*ui1_p2 = *ui1_p2 ^ *ui1_p1--;
-		*ui1_p1 = ~*ui1_p1;
-	}
-
-	return;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	AES_keyless_encrypt_m13(si4 n_bytes, ui1 *data)
-{
-	ui1	*ui1_p1, *ui1_p2;
-	
-
-	// non-AES encryption => use sparingly
-	ui1_p1 = data;
-	if (n_bytes) {
-		*ui1_p1 = ~*ui1_p1;
-		ui1_p2 = ui1_p1 + 1;
-		for (; --n_bytes; ++ui1_p2)
-			*ui1_p2 = *ui1_p2 ^ *ui1_p1++;
-	}
-
-	return;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	AES_get_sbox_invert_m13(si4 num)
-{
-	if (globals_m13->tables->AES_rsbox_table == NULL)
-		AES_init_tables_m13();
-	
-	return(globals_m13->tables->AES_rsbox_table[num]);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	AES_get_sbox_value_m13(si4 num)
-{
-	if (globals_m13->tables->AES_sbox_table == NULL)
-		AES_init_tables_m13();
-	
-	return(globals_m13->tables->AES_sbox_table[num]);
-}
-
-
 tern	AES_init_tables_m13(void)
 {
-	size_t			len;
 	GLOBAL_TABLES_m13	*tables;
 
 	
@@ -16570,42 +16456,39 @@ tern	AES_init_tables_m13(void)
 	}
 
 	// rcon table
-	tables->AES_rcon_table = (si4 *) calloc((size_t) AES_RCON_ENTRIES_m13, sizeof(si4));
+	tables->AES_rcon_table = (ui1 *) malloc((size_t) AES_RCON_ENTRIES_m13);
 	if (tables->AES_rcon_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
-		si4 temp[AES_RCON_ENTRIES_m13] = AES_RCON_m13;
+		ui1 temp[AES_RCON_ENTRIES_m13] = AES_RCON_m13;
 		
-		len = (size_t) AES_RCON_ENTRIES_m13 * sizeof(si4);
-		memcpy((void *) tables->AES_rcon_table, (void *) temp, len);
+		memcpy((void *) tables->AES_rcon_table, (void *) temp, (size_t) AES_RCON_ENTRIES_m13);
 	}
 	
 	// rsbox table
-	tables->AES_rsbox_table = (si4 *) calloc((size_t) AES_RSBOX_ENTRIES_m13, sizeof(si4));
+	tables->AES_rsbox_table = (ui1 *) malloc((size_t) AES_RSBOX_ENTRIES_m13);
 	if (tables->AES_rsbox_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
-		si4 temp[AES_RSBOX_ENTRIES_m13] = AES_RSBOX_m13;
+		ui1 temp[AES_RSBOX_ENTRIES_m13] = AES_RSBOX_m13;
 		
-		len = (size_t) AES_RSBOX_ENTRIES_m13 * sizeof(si4);
-		memcpy((void *) tables->AES_rsbox_table, (void *) temp, len);
+		memcpy((void *) tables->AES_rsbox_table, (void *) temp, (size_t) AES_RSBOX_ENTRIES_m13);
 	}
 
 	// sbox table
-	tables->AES_sbox_table = (si4 *) calloc((size_t) AES_SBOX_ENTRIES_m13, sizeof(si4));
+	tables->AES_sbox_table = (ui1 *) malloc((size_t) AES_SBOX_ENTRIES_m13);
 	if (tables->AES_sbox_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
-		si4 temp[AES_SBOX_ENTRIES_m13] = AES_SBOX_m13;
+		ui1 temp[AES_SBOX_ENTRIES_m13] = AES_SBOX_m13;
 		
-		len = (size_t) AES_SBOX_ENTRIES_m13 * sizeof(si4);
-		memcpy((void *) tables->AES_sbox_table, (void *) temp, len);
+		memcpy((void *) tables->AES_sbox_table, (void *) temp, (size_t) AES_SBOX_ENTRIES_m13);
 	}
 
 	pthread_mutex_unlock_m13(&tables->mutex);
@@ -16614,25 +16497,25 @@ tern	AES_init_tables_m13(void)
 }
 
 
-// Inv Cipher is the main decryption function
+// inv_cipher is the main decryption function
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
-	si4	i, j, round = 0;
+	ui1	*ui1_p1, *ui1_p2;
+	si4	i, round = 0;
 	
 
-	// Copy the input encrypted text to state array.
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
-			state[j][i] = in[i * 4 + j];
-		}
-	}
+	// copy the input encrypted text to state array
+	ui1_p1 = in;
+	ui1_p2 = (ui1 *) state;
+	for (i = AES_NS_m13; i--;)
+		*ui1_p2++ = *ui1_p1++;
 	
-	// Add the First round key to the state before starting the rounds.
+	// add the first round key to the state before starting the rounds
 	AES_add_round_key_m13(AES_NR_m13, state, round_key);
 	
-	// There will be AES_NR rounds.
-	// The first AES_NR - 1 rounds are identical.
-	// These AES_NR - 1 rounds are executed in the loop below.
+	// there will be AES_NR rounds
+	// the first AES_NR - 1 rounds are identical
+	// these AES_NR - 1 rounds are executed in the loop below
 	for (round = AES_NR_m13 - 1; round > 0; round--) {
 		AES_inv_shift_rows_m13(state);
 		AES_inv_sub_bytes_m13(state);
@@ -16640,33 +16523,30 @@ void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 		AES_inv_mix_columns_m13(state);
 	}
 	
-	// The last round is given below.
-	// The MixColumns function is not here in the last round.
+	// the last round is given below
+	// the mix_columns function is not here in the last round
 	AES_inv_shift_rows_m13(state);
 	AES_inv_sub_bytes_m13(state);
 	AES_add_round_key_m13(0, state, round_key);
 	
-	// The decryption process is over.
-	// Copy the state array to output array.
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
-			out[i * 4 + j] = state[j][i];
-		}
-	}
+	// the decryption process is over
+	// copy the state array to output array
+	ui1_p1 = (ui1 *) state;
+	ui1_p2 = out;
+	for (i = AES_NS_m13; i--;)
+		*ui1_p2++ = *ui1_p1++;
 	
 	return;
 }
 
 
-// The method used to multiply may be difficult to understand.
-// Please use the references to gain more information.
 void	AES_inv_mix_columns_m13(ui1 state[][4])
 {
 	si4	i;
 	ui1	a, b, c, d;
 	
 
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < AES_NB_m13; i++) {
 		a = state[0][i];
 		b = state[1][i];
 		c = state[2][i];
@@ -16686,14 +16566,14 @@ void	AES_inv_shift_rows_m13(ui1 state[][4])
 	ui1	temp;
 	
 
-	// Rotate first row 1 columns to right
+	// rotate first row 1 columns to right
 	temp = state[1][3];
 	state[1][3] = state[1][2];
 	state[1][2] = state[1][1];
 	state[1][1] = state[1][0];
 	state[1][0] = temp;
 	
-	// Rotate second row 2 columns to right
+	// rotate second row 2 columns to right
 	temp = state[2][0];
 	state[2][0] = state[2][2];
 	state[2][2] = temp;
@@ -16702,7 +16582,7 @@ void	AES_inv_shift_rows_m13(ui1 state[][4])
 	state[2][1] = state[2][3];
 	state[2][3] = temp;
 	
-	// Rotate third row 3 columns to right
+	// rotate third row 3 columns to right
 	temp = state[3][0];
 	state[3][0] = state[3][1];
 	state[3][1] = state[3][2];
@@ -16713,31 +16593,165 @@ void	AES_inv_shift_rows_m13(ui1 state[][4])
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 void	AES_inv_sub_bytes_m13(ui1 state[][4])
 {
-	si4	i, j;
+	ui1	*ui1_p, *rsbox_table;
+	si4	i;
 	
-
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
-			state[i][j] = (ui1) AES_get_sbox_invert_m13(state[i][j]);
-		}
-	}
+	
+	rsbox_table = globals_m13->tables->AES_rsbox_table;
+	ui1_p = (ui1 *) state;
+	for (i = AES_NS_m13; i--; ++ui1_p)
+		*ui1_p = rsbox_table[*ui1_p];
 	
 	return;
 }
 
 
-// Mix Columns function mixes the columns of the state matrix
-// The method used may look complicated, but it is easy if you know the underlying theory.
-// Refer the documents specified above.
+// the key expansion function produces AES_NB * (AES_NR + 1) round keys
+// the round keys are used in each round to encrypt the states
+// NOTE: ensure any terminal unused bytes in key array (password) are zeroed
+ui1	*AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
+{
+	ui1	*rcon_table, *sbox_table, temp[4], k;
+	si1	*si1_p1, *si1_p2, conditioned_key[AES_KEY_BYTES_m13];
+	si4	i, j;
+	
+
+	// the round constant word array, rcon[i], contains the values given by
+	// x to the power (i - 1) being powers of x (x is denoted as {02}) in the field GF(28)
+	// note that i starts at 1, not 0)
+	
+	// load tables
+	if (globals_m13->tables->AES_sbox_table == NULL)
+		AES_init_tables_m13();
+	rcon_table = globals_m13->tables->AES_rcon_table;
+	sbox_table = globals_m13->tables->AES_sbox_table;
+
+	if (expanded_key == NULL)  // caller takes ownership
+		expanded_key = (ui1 *) malloc_m13((size_t) AES_KEY_BYTES_m13);
+		
+	if (STR_empty_m13(key) == TRUE_m13) {
+		G_set_error_m13(E_UNSPEC_m13, "key is empty");
+		return(NULL);
+	}
+
+	// condition key; zero-pad past null termination, if exists (truncate if longer)
+	si1_p1 = key;
+	si1_p2 = conditioned_key;
+	for (i = AES_KEY_BYTES_m13; i--;) {
+		if ((*si1_p2++ = *si1_p1++))
+			continue;
+		while (i--)
+			*si1_p2++ = (ui1) 0;
+		break;
+	}
+	
+	// the first round key is the key itself
+	for (i = j = 0; i < AES_NK_m13; i++, j += 4) {
+		expanded_key[j] = conditioned_key[j];
+		expanded_key[j + 1] = conditioned_key[j + 1];
+		expanded_key[j + 2] = conditioned_key[j + 2];
+		expanded_key[j + 3] = conditioned_key[j + 3];
+	}
+	
+	// All other round keys are found from the previous round keys.
+	while (i < (AES_NB_m13 * (AES_NR_m13 + 1))) {
+		
+		for (j = 0; j < 4; j++)
+			temp[j] = expanded_key[(i - 1) * 4 + j];
+		
+		if (i % AES_NK_m13 == 0) {
+			// this rotates the 4 bytes in a word to the left once
+			// [a0, a1, a2, a3] becomes [a1, a2, a3, a0]
+			k = temp[0];
+			temp[0] = temp[1];
+			temp[1] = temp[2];
+			temp[2] = temp[3];
+			temp[3] = k;
+			
+			// this takes a four-byte input word and applies the s-box
+			// to each of the four bytes to produce an output word
+			temp[0] = sbox_table[temp[0]];
+			temp[1] = sbox_table[temp[1]];
+			temp[2] = sbox_table[temp[2]];
+			temp[3] = sbox_table[temp[3]];
+			
+			temp[0] = temp[0] ^ (ui1) rcon_table[i / AES_NK_m13];
+		} else if (AES_NK_m13 > 6 && i % AES_NK_m13 == 4) {
+			// this takes a four-byte input word and applies the s-box
+			// to each of the four bytes to produce an output word
+			temp[0] = sbox_table[temp[0]];
+			temp[1] = sbox_table[temp[1]];
+			temp[2] = sbox_table[temp[2]];
+			temp[3] = sbox_table[temp[3]];
+		}
+		
+		expanded_key[i * 4] = expanded_key[(i - AES_NK_m13) * 4] ^ temp[0];
+		expanded_key[i * 4 + 1] = expanded_key[(i - AES_NK_m13) * 4 + 1] ^ temp[1];
+		expanded_key[i * 4 + 2] = expanded_key[(i - AES_NK_m13) * 4 + 2] ^ temp[2];
+		expanded_key[i * 4 + 3] = expanded_key[(i - AES_NK_m13) * 4 + 3] ^ temp[3];
+		
+		i++;
+	}
+	
+	return(expanded_key);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	AES_keyless_decrypt_m13(si4 n_bytes, ui1 *data)
+{
+	ui1	*ui1_p1, *ui1_p2;
+	
+
+	// non-AES encryption => use sparingly
+	if (n_bytes) {
+		ui1_p2 = data + --n_bytes;
+		ui1_p1 = ui1_p2 - 1;
+		while (n_bytes--)
+			*ui1_p2-- ^= *ui1_p1--;
+		*ui1_p2 = ~*ui1_p2;
+	}
+
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	AES_keyless_encrypt_m13(si4 n_bytes, ui1 *data)
+{
+	ui1	*ui1_p1, *ui1_p2;
+	
+
+	// non-AES encryption => use sparingly
+	if (n_bytes) {
+		ui1_p1 = data;
+		*ui1_p1 = ~*ui1_p1;
+		ui1_p2 = ui1_p1 + 1;
+		while (--n_bytes)
+			*ui1_p2++ ^= *ui1_p1++;
+	}
+
+	return;
+}
+
+
+// the mix_columns function mixes the columns of the state matrix
 void	AES_mix_columns_m13(ui1 state[][4])
 {
 	si4	i;
 	ui1	tmp, tm, t;
 	
 
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < AES_NB_m13; i++) {
 		t = state[0][i];
 		tmp = state[0][i] ^ state[1][i] ^ state[2][i] ^ state[3][i];
 		tm = state[0][i] ^ state[1][i];
@@ -16758,9 +16772,9 @@ void	AES_mix_columns_m13(ui1 state[][4])
 }
 
 
-// The Shift Rows function shifts the rows in the state to the left.
-// Each row is shifted with different offset.
-// Offset = Row number. So the first row is not shifted.
+// the shift_rows function shifts the rows in the state to the left
+// each row is shifted with a different offset
+// offset == row number, so the first row is not shifted
 void	AES_shift_rows_m13(ui1 state[][4])
 {
 	ui1	temp;
@@ -16793,18 +16807,21 @@ void	AES_shift_rows_m13(ui1 state[][4])
 }
 
 
-// The Sub Bytes function substitutes the values in the
-// state matrix with values in an S-box.
+// the sub_bytes function substitutes the values in the
+// state matrix with values in an s-box.
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 void	AES_sub_bytes_m13(ui1 state[][4])
 {
-	si4	i, j;
+	ui1	*ui1_p, *sbox_table;
+	si4	i;
 	
-
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
-			state[i][j] = (ui1) AES_get_sbox_value_m13(state[i][j]);
-		}
-	}
+	
+	sbox_table = globals_m13->tables->AES_sbox_table;
+	ui1_p = (ui1 *) state;
+	for (i = AES_NS_m13; i--; ++ui1_p)
+		*ui1_p = sbox_table[*ui1_p];
 	
 	return;
 }
@@ -22906,7 +22923,7 @@ CMP_REALLOC_CPS_FAIL_m13:
 
 	// try freeing caches on inactive channels
 	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	chan = proc_globs->active_channels.index_channel;
+	chan = proc_globs->current_session.index_channel;
 	freed = FALSE_m13;
 	if (chan) {
 		sess = (SESS_m13 *) chan;
@@ -26833,7 +26850,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	old_el_size = matrix->el_size;
 	
 	// clear contigua, if present
-	ref_chan = proc_globs->active_channels.index_channel;
+	ref_chan = proc_globs->current_session.index_channel;
 	if (ref_chan->contigua) {
 		free_m13((void *) ref_chan->contigua);
 		ref_chan->contigua = NULL;
@@ -36395,7 +36412,7 @@ si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, si1 *file_path, si8 *pcrc_len)
 		return_m13(0);
 	}
 		
-	if (pcrc.pcrc_UID == PRTY_PCRC_UID_m13) {
+	if (pcrc.pcrc_tag == PRTY_PCRC_TAG_m13) {
 		if (pcrc_len)
 			*pcrc_len = (pcrc.n_blocks * sizeof(ui4)) + sizeof(PRTY_CRC_DATA_m13);
 	} else {
@@ -36899,7 +36916,7 @@ tern	PRTY_show_pcrc_m13(si1 *file_path)
 	fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
 	fclose_m13(fp);
 
-	printf_m13("parity_UID: 0x%08x\n", pcrc.pcrc_UID);
+	printf_m13("parity_tag: 0x%08x\n", pcrc.pcrc_tag);
 	printf_m13("session_UID: 0x%08x\n", pcrc.session_UID);
 	printf_m13("segment_UID: 0x%08x\n", pcrc.segment_UID);
 	printf_m13("n_blocks: %u\n", pcrc.n_blocks);
@@ -37426,7 +37443,7 @@ tern	PRTY_validate_pcrc_m13(si1 *file_path, ...)  // varargs(file_path == NULL):
 		len -= UH_BYTES_m13;
 	fseek_m13(fp, len, SEEK_SET);
 	fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
-	if (pcrc.pcrc_UID != PRTY_PCRC_UID_m13) {
+	if (pcrc.pcrc_tag != PRTY_PCRC_TAG_m13) {
 		G_warning_message_m13("%s(): file \"%s\" does not contain parity crc data\n", __FUNCTION__, file_path);
 		fclose_m13(fp);
 		return_m13(UNKNOWN_m13);
@@ -37986,7 +38003,7 @@ tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes)
 	}
 	if (block_bytes == 0)
 		block_bytes = PRTY_BLOCK_BYTES_DEFAULT_m13;
-	pcrc.pcrc_UID = PRTY_PCRC_UID_m13;
+	pcrc.pcrc_tag = PRTY_PCRC_TAG_m13;
 	pcrc.block_bytes = block_bytes;
 	
 	// allocate
@@ -43162,7 +43179,9 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		return_m13(NULL);
 	name_len = strcpy_m13(fp->path, path);
 	if (permissions)
-		fp->perms = permissions;  // custom permissions (overwitten by system permission if opened as read only)
+		fp->perms = permissions;  // custom permissions (may be modified by process umask or system)
+	else
+		fp->perms = permissions = FILE_PERM_DEFAULT_m13;  // default permissions (may be modified by process umask or system)
 	if (flags)
 		fp->flags = flags | FILE_FLAGS_ALLOCED_m13;  // set alloced flag, but otherwise override default flags with passed flags
 	if (G_MED_type_code_from_string_m13((si1 *) path + (name_len - 4)) != NO_TYPE_CODE_m13)
@@ -43251,7 +43270,6 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		if (clob_mode == TRUE_m13)
 			sys_mode_flags |= O_TRUNC;  // clobber if exists
 	}
-
 	fp->fd = open(path, sys_mode_flags, (mode_t) permissions);
 	if (fp->fd >= 0)
 		fp->fp = fdopen(fp->fd, mode);
@@ -43264,19 +43282,17 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	c = local_mode;
 	*c++ = 'b';
 	sys_mode_flags = _O_BINARY;  // all MED files are binary
+	perm_mode = WN_PERM_MODE_DEFAULT_m13;
 	if (read_mode == TRUE_m13) {
 		// do not create
 		*c++ = 'r';
-		perm_mode = _S_IREAD;  // read permission
 		if (plus_mode == TRUE_m13) {
 			sys_mode_flags = _O_RDWR;  // read & write
-			perm_mode |= _S_IWRITE;  // write permission
 			*c++ = '+';
 		} else {
 			sys_mode_flags = _O_RDONLY;  // read only
 		}
 	} else {  // write_mode || append_mode
-		perm_mode = _S_IWRITE;  // write permission
 		sys_mode_flags = _O_CREAT;  // create if doesn't exist
 		if (append_mode == TRUE_m13) {
 			*c++ = 'a';
@@ -43286,7 +43302,6 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		}
 		if (plus_mode == TRUE_m13) {
 			sys_mode_flags |= _O_RDWR;  // read & write
-			perm_mode |= _S_IREAD;  // read permission
 			*c++ = '+';
 		} else {
 			sys_mode_flags |= _O_WRONLY;  // write only
@@ -44828,7 +44843,7 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 		#endif
 		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
-			G_set_error_m13(E_UNSPEC_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
+			G_set_error_m13(E_UNSPEC_m13, "could not move \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
 		
