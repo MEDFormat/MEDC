@@ -176,11 +176,11 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v10_ACQ_CHAN_NUM_NO_ENTRY_m13		CHANNEL_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v10_ACQ_CHAN_NUM_ALL_CHANNELS_m13	CHANNEL_NUMBER_ALL_CHANNELS_m13
 #define REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13		40						// sf8
-#define REC_Sgmt_v10_SAMP_FREQ_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13
-#define REC_Sgmt_v10_SAMP_FREQ_VARIABLE_m13		FREQUENCY_VARIABLE_m13
+#define REC_Sgmt_v10_SAMP_FREQ_NO_ENTRY_m13		RATE_NO_ENTRY_m13
+#define REC_Sgmt_v10_SAMP_FREQ_VARIABLE_m13		RATE_VARIABLE_m13
 #define REC_Sgmt_v10_FRAME_RATE_OFFSET_m13		REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13		// sf8
-#define REC_Sgmt_v10_FRAME_RATE_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13
-#define REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13		FREQUENCY_VARIABLE_m13
+#define REC_Sgmt_v10_FRAME_RATE_NO_ENTRY_m13		RATE_NO_ENTRY_m13
+#define REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13		RATE_VARIABLE_m13
 #define REC_Sgmt_v10_DESCRIPTION_OFFSET_m13		REC_Sgmt_v10_BYTES_m13				// si1 (arbitrary length, padded to 16-byte alignment for encryption)
 
 // Structure defined in medlib_m13.h due to codependency
@@ -188,23 +188,30 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // Version 1.1
 #define REC_Sgmt_v11_BYTES_m13				32
 #define REC_Sgmt_v11_END_TIME_OFFSET_m13		0						// si8
-#define REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13		8						// si8
+#define REC_Sgmt_v11_START_NUM_OFFSET_m13		8						// si8
+#define REC_Sgmt_v11_START_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13		REC_Sgmt_v11_START_NUM_OFFSET_m13		// si8
 #define REC_Sgmt_v11_START_SAMP_NUM_NO_ENTRY_m13	SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_START_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13		// si8
+#define REC_Sgmt_v11_START_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_START_NUM_OFFSET_m13		// si8
 #define REC_Sgmt_v11_START_FRAME_NUM_NO_ENTRY_m13	FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13		16						// si8
+#define REC_Sgmt_v11_END_NUM_OFFSET_m13			16						// si8
+#define REC_Sgmt_v11_END_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13		REC_Sgmt_v11_END_NUM_OFFSET_m13			// si8
 #define REC_Sgmt_v11_END_SAMP_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13		// si8
+#define REC_Sgmt_v11_END_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_END_NUM_OFFSET_m13			// si8
 #define REC_Sgmt_v11_END_FRAME_NUM_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_SEG_NUM_OFFSET_m13			24						// si4
 #define REC_Sgmt_v11_SEG_NUM_NO_ENTRY_m13		SEGMENT_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13		28						// sf4
-#define REC_Sgmt_v11_SAMP_FREQ_NO_ENTRY_m13		((sf4) FREQUENCY_NO_ENTRY_m13)
-#define REC_Sgmt_v11_SAMP_FREQ_VARIABLE_m13		((sf4) FREQUENCY_VARIABLE_m13)
-#define REC_Sgmt_v11_FRAME_RATE_OFFSET_m13		REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13		// sf4
-#define REC_Sgmt_v11_FRAME_RATE_NO_ENTRY_m13		((sf4) FREQUENCY_NO_ENTRY_m13)
-#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13		((sf4) FREQUENCY_VARIABLE_m13)
-#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13		REC_Sgmt_v11_BYTES_m13				// si1 (arbitrary length, padded to 16-byte alignment for encryption)
+#define REC_Sgmt_v11_RATE_OFFSET_m13			28						// sf4
+#define REC_Sgmt_v11_RATE_NO_ENTRY_m13			((sf4) RATE_NO_ENTRY_m13)
+#define REC_Sgmt_v11_RATE_VARIABLE_m13			((sf4) RATE_VARIABLE_m13)
+#define REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13		REC_Sgmt_v11_RATE_OFFSET_m13			// sf4
+#define REC_Sgmt_v11_SAMP_FREQ_NO_ENTRY_m13		((sf4) RATE_NO_ENTRY_m13)
+#define REC_Sgmt_v11_SAMP_FREQ_VARIABLE_m13		((sf4) RATE_VARIABLE_m13)
+#define REC_Sgmt_v11_FRAME_RATE_OFFSET_m13		REC_Sgmt_v11_RATE_OFFSET_m13			// sf4
+#define REC_Sgmt_v11_FRAME_RATE_NO_ENTRY_m13		((sf4) RATE_NO_ENTRY_m13)
+#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13		((sf4) RATE_VARIABLE_m13)
+#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13		REC_Sgmt_v11_BYTES_m13				// si1 (arbitrary length, padded to 8-byte alignment)
 
 // Structure defined in medlib.h due to codependency
 

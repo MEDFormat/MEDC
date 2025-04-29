@@ -1277,17 +1277,18 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 	
 	// get channel records
 	if (chan) {
+		eprintf_m13("using metadata");
 		ri_fps = chan->rec_inds_fps;
 		if (ri_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
-				chan->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+				ri_fps = chan->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
 		}
 		rd_fps = chan->rec_data_fps;
 		if (rd_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_DATA_TYPE_STR_m13);
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
-				chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+				rd_fps = chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
 		}
 	}
 	
@@ -1300,9 +1301,8 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 				sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			} else if (proc_globs->current_session.names_differ == TRUE_m13){
 				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_INDS_TYPE_STR_m13);
-				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
-				}
+				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
+					ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
 		}
 		rd_fps = sess->rec_data_fps;
@@ -1312,9 +1312,8 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 				sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			} else if (proc_globs->current_session.names_differ == TRUE_m13){
 				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_DATA_TYPE_STR_m13);
-				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
-				}
+				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
+					rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
 		}
 	}
@@ -1389,6 +1388,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 	
 	// use metadata files (less efficient)
 	if (n_segs == 0) {
+		eprintf_m13("using metadata");
 		if (chan == NULL) {
 			G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
 			chan = proc_globs->current_session.index_channel;
@@ -1467,8 +1467,6 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 
 	// fill in global end fields
 	proc_globs->current_session.end_time = Sgmt_recs[n_segs - 1].end_time;
-	if (Sgmt_recs[n_segs - 1].end_samp_num != SAMPLE_NUMBER_NO_ENTRY_m13)
-		proc_globs->current_session.n_samples = Sgmt_recs[n_segs - 1].end_samp_num + 1;  // frame numbers are unioned
 
 	// set level Sgmt_record shortcuts
 	chan->Sgmt_recs = Sgmt_recs;
@@ -5005,7 +5003,7 @@ tern	G_frequencies_vary_m13(SESS_m13 *sess)
 	seg_idx = G_get_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
 	n_chans = sess->n_ts_chans;
 	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_sampling_frequency = proc_globs->active_channels.maximum_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
+	proc_globs->active_channels.minimum_sampling_frequency = proc_globs->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
 	proc_globs->active_channels.minimum_sampling_frequency_channel = proc_globs->active_channels.maximum_sampling_frequency_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
@@ -5045,7 +5043,7 @@ tern	G_frequencies_vary_m13(SESS_m13 *sess)
 	// check video channels
 	n_chans = sess->n_vid_chans;
 	proc_globs->active_channels.frame_rates_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_frame_rate = proc_globs->active_channels.maximum_frame_rate = FREQUENCY_NO_ENTRY_m13;
+	proc_globs->active_channels.minimum_frame_rate = proc_globs->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
 	proc_globs->active_channels.minimum_frame_rate_channel = proc_globs->active_channels.maximum_frame_rate_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
@@ -6311,7 +6309,7 @@ si4 G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 
 	proc_globs = G_proc_globs_m13(lh);
 	eprintf_m13();
-	Sgmt_records = G_Sgmt_records(lh, search_mode);
+	Sgmt_records = G_Sgmt_records_m13(lh, search_mode);
 	eprintf_m13();
 
 	// search Sgmt_records array for segments
@@ -7068,11 +7066,11 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	// type specific fields
 	switch (uh->type_code) {
 		case TS_METADATA_TYPE_CODE_m13:
-			tmd2->sampling_frequency = TS_METADATA_FREQUENCY_NO_ENTRY_m13;
-			tmd2->low_frequency_filter_setting = TS_METADATA_FREQUENCY_NO_ENTRY_m13;
-			tmd2->high_frequency_filter_setting = TS_METADATA_FREQUENCY_NO_ENTRY_m13;
-			tmd2->notch_filter_frequency_setting = TS_METADATA_FREQUENCY_NO_ENTRY_m13;
-			tmd2->AC_line_frequency = TS_METADATA_FREQUENCY_NO_ENTRY_m13;
+			tmd2->sampling_frequency = RATE_NO_ENTRY_m13;
+			tmd2->low_frequency_filter_setting = RATE_NO_ENTRY_m13;
+			tmd2->high_frequency_filter_setting = RATE_NO_ENTRY_m13;
+			tmd2->notch_filter_frequency_setting = RATE_NO_ENTRY_m13;
+			tmd2->AC_line_frequency = RATE_NO_ENTRY_m13;
 			tmd2->amplitude_units_conversion_factor = TS_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13;
 			tmd2->time_base_units_conversion_factor = TS_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13;
 			tmd2->session_start_sample_number = TS_METADATA_SESSION_START_SAMPLE_NUMBER_NO_ENTRY_m13;
@@ -7715,23 +7713,23 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 			memset(tmd2_m->reference_description, 0, TS_METADATA_REFERENCE_DESCRIPTION_BYTES_m13); equal = FALSE_m13;
 		}
 		if (tmd2_1->sampling_frequency != tmd2_2->sampling_frequency) {
-			if (tmd2_1->sampling_frequency == FREQUENCY_NO_ENTRY_m13 || tmd2_2->sampling_frequency == FREQUENCY_NO_ENTRY_m13)
-				tmd2_m->sampling_frequency = FREQUENCY_NO_ENTRY_m13; // no entry supercedes variable frequency
+			if (tmd2_1->sampling_frequency == RATE_NO_ENTRY_m13 || tmd2_2->sampling_frequency == RATE_NO_ENTRY_m13)
+				tmd2_m->sampling_frequency = RATE_NO_ENTRY_m13; // no entry supercedes variable frequency
 			else
-				tmd2_m->sampling_frequency = FREQUENCY_VARIABLE_m13;
+				tmd2_m->sampling_frequency = RATE_VARIABLE_m13;
 			equal = FALSE_m13;
 		}
 		if (tmd2_1->low_frequency_filter_setting != tmd2_2->low_frequency_filter_setting) {
-			tmd2_m->low_frequency_filter_setting = TS_METADATA_FREQUENCY_NO_ENTRY_m13; equal = FALSE_m13;
+			tmd2_m->low_frequency_filter_setting = RATE_NO_ENTRY_m13; equal = FALSE_m13;
 		}
 		if (tmd2_1->high_frequency_filter_setting != tmd2_2->high_frequency_filter_setting) {
-			tmd2_m->high_frequency_filter_setting = TS_METADATA_FREQUENCY_NO_ENTRY_m13; equal = FALSE_m13;
+			tmd2_m->high_frequency_filter_setting = RATE_NO_ENTRY_m13; equal = FALSE_m13;
 		}
 		if (tmd2_1->notch_filter_frequency_setting != tmd2_2->notch_filter_frequency_setting) {
-			tmd2_m->notch_filter_frequency_setting = TS_METADATA_FREQUENCY_NO_ENTRY_m13; equal = FALSE_m13;
+			tmd2_m->notch_filter_frequency_setting = RATE_NO_ENTRY_m13; equal = FALSE_m13;
 		}
 		if (tmd2_1->AC_line_frequency != tmd2_2->AC_line_frequency) {
-			tmd2_m->AC_line_frequency = TS_METADATA_FREQUENCY_NO_ENTRY_m13; equal = FALSE_m13;
+			tmd2_m->AC_line_frequency = RATE_NO_ENTRY_m13; equal = FALSE_m13;
 		}
 		if (tmd2_1->amplitude_units_conversion_factor != tmd2_2->amplitude_units_conversion_factor) {
 			tmd2_m->amplitude_units_conversion_factor = TS_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_NO_ENTRY_m13; equal = FALSE_m13;
@@ -9673,7 +9671,6 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 	proc_globs->current_session.names_differ = UNKNOWN_m13;
 	proc_globs->current_session.start_time = UUTC_NO_ENTRY_m13;
 	proc_globs->current_session.end_time = UUTC_NO_ENTRY_m13;
-	proc_globs->current_session.n_samples = SAMPLE_NUMBER_NO_ENTRY_m13;  // == n_session_frames
 	proc_globs->current_session.n_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
 	proc_globs->current_session.n_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
 	proc_globs->current_session.index_channel = NULL;
@@ -9681,13 +9678,13 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 	
 	// active channel constants
 	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
-	proc_globs->active_channels.maximum_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
+	proc_globs->active_channels.minimum_sampling_frequency = RATE_NO_ENTRY_m13;
+	proc_globs->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
 	proc_globs->active_channels.minimum_sampling_frequency_channel = NULL;
 	proc_globs->active_channels.maximum_sampling_frequency_channel = NULL;
 	proc_globs->active_channels.frame_rates_vary = UNKNOWN_m13;;
-	proc_globs->active_channels.minimum_frame_rate = FREQUENCY_NO_ENTRY_m13;
-	proc_globs->active_channels.maximum_frame_rate = FREQUENCY_NO_ENTRY_m13;
+	proc_globs->active_channels.minimum_frame_rate = RATE_NO_ENTRY_m13;
+	proc_globs->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
 	proc_globs->active_channels.minimum_frame_rate_channel = NULL;
 	proc_globs->active_channels.maximum_frame_rate_channel = NULL;
 	
@@ -11832,7 +11829,7 @@ si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
 			break;
 		case VID_CHAN_TYPE_CODE_m13:
 		case SESS_TYPE_CODE_m13:
-			Sgmt_records = G_Sgmt_records(lh, FRAME_SEARCH_m13);
+			Sgmt_records = G_Sgmt_records_m13(lh, FRAME_SEARCH_m13);
 			break;
 		default:
 			G_set_error_m13(E_UNSPEC_m13, "invalid level type");
@@ -11936,7 +11933,7 @@ si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 			break;
 		case TS_CHAN_TYPE_CODE_m13:
 		case SESS_TYPE_CODE_m13:
-			Sgmt_records = G_Sgmt_records(lh, SAMPLE_SEARCH_m13);
+			Sgmt_records = G_Sgmt_records_m13(lh, SAMPLE_SEARCH_m13);
 			break;
 		default:
 			G_set_error_m13(E_UNSPEC_m13, "invalid level type");
@@ -11986,7 +11983,7 @@ si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
 		case VID_CHAN_TYPE_CODE_m13:
 		case TS_CHAN_TYPE_CODE_m13:
 		case SESS_TYPE_CODE_m13:
-			Sgmt_records = G_Sgmt_records(lh, TIME_SEARCH_m13);
+			Sgmt_records = G_Sgmt_records_m13(lh, TIME_SEARCH_m13);
 			break;
 		default:
 			G_set_error_m13(E_UNSPEC_m13, "invalid level type");
@@ -12408,11 +12405,11 @@ SET_GTC_TIMEZONE_MATCH_m13:
 }
 
 
-Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
+Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 {
 	si1			md_path[PATH_BYTES_m13];
-	si4			i, seg_idx;
-	sf8			rate;
+	si4			i, seg_idx, n_segs;
+	sf4			rate;
 	PROC_GLOBS_m13		*proc_globs;
 	SESS_m13		*sess;
 	SSR_m13			*ssr;
@@ -12486,9 +12483,9 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 				if (seg) {
 					if (seg->metadata_fps) {
 						if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
-							rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+							rate = (sf4) seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 						else  // VID_CHAN_TYPE_CODE_m13
-							rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
+							rate = (sf4) seg->metadata_fps->metadata->video_section_2.frame_rate;
 					}
 				}
 			}
@@ -12499,9 +12496,9 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 			if (md_fps == NULL)
 				return_m13(NULL);
 			if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
-				rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+				rate = (sf4) seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 			else  // VID_CHAN_TYPE_CODE_m13
-				rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
+				rate = (sf4) seg->metadata_fps->metadata->video_section_2.frame_rate;
 			FPS_free_m13(&md_fps);
 		}
 		
@@ -12517,9 +12514,6 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 	if (i == -1) {
 		eprintf_m13();
 		Sgmt_recs = G_build_Sgmt_records_array_m13((LH_m13 *) lh, search_mode);
-		eprintf_m13();
-		G_show_Sgmt_records_m13(lh, Sgmt_recs);
-		eprintf_m13();
 		if (++list->top_idx == list->size) {
 			list->size += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
 			new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list->entries, (size_t) list->size * sizeof(Sgmt_RECS_ENTRY_m13 *));
@@ -12535,7 +12529,16 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 			memset((void *) rec_entry, (si4) 0, (size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13 * sizeof(Sgmt_RECS_ENTRY_m13 *));  // realloc() does not zero
 		}
 		// fill new entry
-		rec_entry->rate = (sf8) Sgmt_recs[0].rate;
+		if (chan) {
+			eprintf_m13("type = %s", chan->type_string);
+			rec_entry->source_type = chan->type_code;
+		} else {
+			eprintf_m13("type unknown");
+			rec_entry->source_type = NO_TYPE_CODE_m13;
+		}
+		rec_entry->rate = rate;
+		n_segs = proc_globs->current_session.n_segments;
+		rec_entry->n_session_samples = Sgmt_recs[n_segs - 1].end_num + 1;
 		rec_entry->Sgmt_recs = (struct Sgmt_REC_m13 *) Sgmt_recs;
 	} else {
 		Sgmt_recs = (Sgmt_REC_m13 *) rec_entry->Sgmt_recs;
@@ -12543,6 +12546,10 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 
 	pthread_mutex_unlock_m13(&list->mutex);  // unlock
 	
+	eprintf_m13();
+	G_show_Sgmt_records_m13(lh, Sgmt_recs);
+	eprintf_m13();
+
 	// set shortcuts
 	chan->Sgmt_recs = Sgmt_recs;
 	if (sess)
@@ -12554,6 +12561,72 @@ Sgmt_REC_m13	*G_Sgmt_records(LH_m13 *lh, si4 search_mode)
 	G_show_Sgmt_records_m13(NULL, Sgmt_recs);
 
 	return_m13(Sgmt_recs);
+}
+
+
+si8	G_Sgmt_records_session_samples_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
+{
+	si4			i;
+	si8			samps;
+	PROC_GLOBS_m13		*proc_globs;
+	Sgmt_RECS_LIST_m13	*list;
+	Sgmt_RECS_ENTRY_m13 	*rec_entry;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	proc_globs = G_proc_globs_m13(lh);
+	list = proc_globs->current_session.Sgmt_recs_list;
+	
+	// search for matching entry
+	pthread_mutex_lock_m13(&list->mutex);
+	rec_entry = list->entries;
+	for (i = list->top_idx + 1; i--; ++rec_entry)
+		if (rec_entry->Sgmt_recs == (struct Sgmt_REC_m13 *) Sgmt_recs)
+			break;
+	
+	if (i == -1)
+		samps = SAMPLE_NUMBER_NO_ENTRY_m13;
+	else
+		samps = rec_entry->n_session_samples;
+
+	pthread_mutex_unlock_m13(&list->mutex);
+	
+	return_m13(samps);
+}
+
+
+ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
+{
+	ui4			source;
+	si4			i;
+	PROC_GLOBS_m13		*proc_globs;
+	Sgmt_RECS_LIST_m13	*list;
+	Sgmt_RECS_ENTRY_m13 	*rec_entry;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	proc_globs = G_proc_globs_m13(lh);
+	list = proc_globs->current_session.Sgmt_recs_list;
+	
+	// search for matching entry
+	pthread_mutex_lock_m13(&list->mutex);
+	rec_entry = list->entries;
+	for (i = list->top_idx + 1; i--; ++rec_entry)
+		if (rec_entry->Sgmt_recs == (struct Sgmt_REC_m13 *) Sgmt_recs)
+			break;
+	
+	if (i == -1)
+		source = NO_TYPE_CODE_m13;
+	else
+		source = rec_entry->source_type;
+
+	pthread_mutex_unlock_m13(&list->mutex);
+	
+	return_m13(source);
 }
 
 
@@ -13194,31 +13267,31 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 					printf_m13("Reference Description: %s\n", tmd2->reference_description);
 				else
 					printf_m13("Reference Description: no entry\n");
-				if (tmd2->sampling_frequency == TS_METADATA_FREQUENCY_NO_ENTRY_m13)
+				if (tmd2->sampling_frequency == RATE_NO_ENTRY_m13)
 					printf_m13("Sampling Frequency: no entry\n");
-				else if (tmd2->sampling_frequency == TS_METADATA_FREQUENCY_VARIABLE_m13)
+				else if (tmd2->sampling_frequency == RATE_VARIABLE_m13)
 					printf_m13("Sampling Frequency: variable\n");
 				else
 					printf_m13("Sampling Frequency: %lf\n", tmd2->sampling_frequency);
-				if (tmd2->low_frequency_filter_setting == TS_METADATA_FREQUENCY_NO_ENTRY_m13)
+				if (tmd2->low_frequency_filter_setting == RATE_NO_ENTRY_m13)
 					printf_m13("Low Frequency Filter Setting: no entry\n");
-				else if (tmd2->low_frequency_filter_setting == TS_METADATA_FREQUENCY_VARIABLE_m13)
+				else if (tmd2->low_frequency_filter_setting == RATE_VARIABLE_m13)
 					printf_m13("Low Frequency Filter Setting: variable\n");
 				else
 					printf_m13("Low Frequency Filter Setting (Hz): %lf\n", tmd2->low_frequency_filter_setting);
-				if (tmd2->high_frequency_filter_setting == TS_METADATA_FREQUENCY_NO_ENTRY_m13)
+				if (tmd2->high_frequency_filter_setting == RATE_NO_ENTRY_m13)
 					printf_m13("High Frequency Filter Setting: no entry\n");
-				else if (tmd2->high_frequency_filter_setting == TS_METADATA_FREQUENCY_VARIABLE_m13)
+				else if (tmd2->high_frequency_filter_setting == RATE_VARIABLE_m13)
 					printf_m13("High Frequency Filter Setting: variable\n");
 				else
 					printf_m13("High Frequency Filter Setting (Hz): %lf\n", tmd2->high_frequency_filter_setting);
-				if (tmd2->notch_filter_frequency_setting == TS_METADATA_FREQUENCY_NO_ENTRY_m13)
+				if (tmd2->notch_filter_frequency_setting == RATE_NO_ENTRY_m13)
 					printf_m13("Notch Filter Frequency Setting: no entry\n");
-				else if (tmd2->notch_filter_frequency_setting == TS_METADATA_FREQUENCY_VARIABLE_m13)
+				else if (tmd2->notch_filter_frequency_setting == RATE_VARIABLE_m13)
 					printf_m13("Notch Filter Frequency Setting: variable\n");
 				else
 					printf_m13("Notch Filter Frequency Setting (Hz): %lf\n", tmd2->notch_filter_frequency_setting);
-				if (tmd2->AC_line_frequency == TS_METADATA_FREQUENCY_NO_ENTRY_m13)
+				if (tmd2->AC_line_frequency == RATE_NO_ENTRY_m13)
 					printf_m13("AC Line Frequency: no entry\n");
 				else
 					printf_m13("AC Line Frequency (Hz): %lf\n", tmd2->AC_line_frequency);
@@ -13574,11 +13647,6 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("\tuh_name: no entry\n");  // from file system
 	printf_m13("\tnames_differ: %s\n", STR_tern_m13(proc_globs->current_session.names_differ));
-	printf_m13("Number of Session Samples / Frames: ");
-	if (proc_globs->current_session.n_samples == SAMPLE_NUMBER_NO_ENTRY_m13)
-		printf_m13("no entry\n");
-	else
-		printf_m13("%ld\n", proc_globs->current_session.n_samples);
 	printf_m13("Number of Session Segments: ");
 	if (proc_globs->current_session.n_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
 		printf_m13("no entry\n");
@@ -13602,11 +13670,11 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	
 	printf_m13("\nActive Channels\n---------------\n");
 	printf_m13("Sampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary));
-	if (proc_globs->active_channels.minimum_sampling_frequency == FREQUENCY_NO_ENTRY_m13)
+	if (proc_globs->active_channels.minimum_sampling_frequency == RATE_NO_ENTRY_m13)
 		printf_m13("Minimum Sampling Frequency: no entry\n");
 	else
 		printf_m13("Minimum Sampling Frequency: %lf\n", proc_globs->active_channels.minimum_sampling_frequency);
-	if (proc_globs->active_channels.maximum_sampling_frequency == FREQUENCY_NO_ENTRY_m13)
+	if (proc_globs->active_channels.maximum_sampling_frequency == RATE_NO_ENTRY_m13)
 		printf_m13("Maximum Sampling Frequency: no entry\n");
 	else
 		printf_m13("Maximum Sampling Frequency: %lf\n", proc_globs->active_channels.maximum_sampling_frequency);
@@ -13619,11 +13687,11 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("Maximum Sampling Frequency Channel Name: %s\n", proc_globs->active_channels.maximum_sampling_frequency_channel->name);
 	printf_m13("Frame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary));
-	if (proc_globs->active_channels.minimum_frame_rate == FREQUENCY_NO_ENTRY_m13)
+	if (proc_globs->active_channels.minimum_frame_rate == RATE_NO_ENTRY_m13)
 		printf_m13("Minimum Frame Rate: no entry\n");
 	else
 		printf_m13("Minimum Frame Rate: %lf\n", proc_globs->active_channels.minimum_frame_rate);
-	if (proc_globs->active_channels.maximum_frame_rate == FREQUENCY_NO_ENTRY_m13)
+	if (proc_globs->active_channels.maximum_frame_rate == RATE_NO_ENTRY_m13)
 		printf_m13("Maximum Frame Rate: no entry\n");
 	else
 		printf_m13("Minimum Frame Rate: %lf\n", proc_globs->active_channels.maximum_frame_rate);
@@ -13646,10 +13714,10 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	printf_m13("standard_timezone_string: %s\n", proc_globs->time_constants.standard_timezone_string);
 	printf_m13("daylight_timezone_acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
 	printf_m13("daylight_timezone_string: %s\n", proc_globs->time_constants.daylight_timezone_string);
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), ":", FALSE_m13);
-	printf_m13("daylight_time_start_code: %ld  (0x%s)\n", proc_globs->time_constants.daylight_start_code.value, hex_str);
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), ":", FALSE_m13);
-	printf_m13("daylight_time_end_code: %ld  (0x%s)\n", proc_globs->time_constants.daylight_end_code.value, hex_str);
+	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), "-", FALSE_m13);
+	printf_m13("daylight_time_start_code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_start_code.value);
+	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), "-", FALSE_m13);
+	printf_m13("daylight_time_end_code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_end_code.value);
 		
 	printf_m13("\nMiscellaneous\n---------------\n");
 	printf_m13("mmap_block_bytes: ");
@@ -13715,6 +13783,7 @@ tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 {
 	si1	  		time_str[TIME_STRING_BYTES_m13];
+	ui4			source;
 	si4			n_segs;
 	si8			i;
 	PROC_GLOBS_m13		*proc_globs;
@@ -13725,7 +13794,8 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 #endif
 
 	if (lh) {
-		Sgmt_recs = G_Sgmt_records(lh, SAMPLE_SEARCH_m13);
+		Sgmt_recs = G_Sgmt_records_m13(lh, SAMPLE_SEARCH_m13);
+		source = G_Sgmt_records_source_m13(lh, Sgmt_recs);
 		if (Sgmt_recs == NULL)
 			return_m13(FALSE_m13);
 		eprintf_m13();
@@ -13744,34 +13814,65 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 	Sgmt = Sgmt_recs;
 	for (i = 0; i < n_segs; ++i, ++Sgmt) {
 		printf_m13("%sRecord number: %ld%s\n", TC_RED_m13, i + 1, TC_RESET_m13);
+		if (source == TS_CHAN_TYPE_m13)
+			printf_m13("Source: time series channel\n");
+		else if (source == VID_CHAN_TYPE_m13)
+			printf_m13("Source: video channel\n");
+		else
+			printf_m13("Source: not specified\n");
 		if (Sgmt->start_time == REC_HDR_START_TIME_NO_ENTRY_m13)
-			printf_m13("Record Start Time: no entry\n");
+			printf_m13("Start Time: no entry\n");
 		else {
 			STR_time_m13(lh, Sgmt->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("Record Start Time: %ld (oUTC), %s\n", Sgmt->start_time, time_str);
+			printf_m13("Start Time: %ld (oUTC), %s\n", Sgmt->start_time, time_str);
 		}
 		STR_time_m13(lh, Sgmt->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt->end_time, time_str);
-		if (Sgmt->start_samp_num == REC_Sgmt_v11_START_SAMP_NUM_NO_ENTRY_m13)
-			printf_m13("Start Sample Number: no entry\n");
+		if (source == TS_CHAN_TYPE_m13)
+			printf_m13("Start Sample Number:");
+		else if (source == VID_CHAN_TYPE_m13)
+			printf_m13("Start Frame Number:");
 		else
-			printf_m13("Start Sample Number: %ld\n", Sgmt->start_samp_num);
-		if (Sgmt->end_samp_num == REC_Sgmt_v11_END_SAMP_NUM_NO_ENTRY_m13)
-			printf_m13("End Sample Number: no entry\n");
+			printf_m13("Start Number:");
+		if (Sgmt->start_num == REC_Sgmt_v11_START_NUM_NO_ENTRY_m13)
+			printf_m13(" no entry\n");
 		else
-			printf_m13("End Sample Number: %ld\n", Sgmt->end_samp_num);
+			printf_m13(" %ld\n", Sgmt->start_num);
+		if (source == TS_CHAN_TYPE_m13)
+			printf_m13("End Sample Number:");
+		else if (source == VID_CHAN_TYPE_m13)
+			printf_m13("End Frame Number:");
+		else
+			printf_m13("End Number:");
+		if (Sgmt->end_num == REC_Sgmt_v11_START_NUM_NO_ENTRY_m13)
+			printf_m13(" no entry\n");
+		else
+			printf_m13(" %ld\n", Sgmt->end_num);
 		if (Sgmt->seg_num == REC_Sgmt_v11_SEG_NUM_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
 			printf_m13("Segment Number: %d\n", Sgmt->seg_num);
-		if (Sgmt->samp_freq == REC_Sgmt_v11_SAMP_FREQ_NO_ENTRY_m13)
-			printf_m13("Sampling Frequency / Frame Rate: no entry\n");
-		else if (Sgmt->samp_freq == REC_Sgmt_v11_SAMP_FREQ_VARIABLE_m13)
-			printf_m13("Sampling Frequency / Frame Rate: variable\n");
+		if (source == TS_CHAN_TYPE_m13)
+			printf_m13("Sampling Frequency:");
+		else if (source == VID_CHAN_TYPE_m13)
+			printf_m13("Frame Rate:");
 		else
-			printf_m13("Sampling Frequency / Frame Rate: %f\n", Sgmt->samp_freq);
+			printf_m13("Rate:");
+		if (Sgmt->rate == REC_Sgmt_v11_RATE_NO_ENTRY_m13) {
+			printf_m13(" no entry\n");
+		} else if (Sgmt->rate == REC_Sgmt_v11_RATE_VARIABLE_m13) {
+			printf_m13(" variable\n");
+		} else {
+			printf_m13(" %0.0f", Sgmt->rate);
+			if (source == TS_CHAN_TYPE_m13)
+				printf_m13(" Hz\n");
+			else if (source == VID_CHAN_TYPE_m13)
+				printf_m13(" fps\n");
+			else
+				printf_m13("\n");
+		}
 	}
-
+	
 	return_m13(TRUE_m13);
 }
 
@@ -16780,7 +16881,7 @@ void	AES_partial_decrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
 		
 		// un-not first byte
 		*ui1_p2 = ~*ui1_p2;
-	} else if (nbytes < 0){
+	} else if (n_bytes < 0){
 		G_set_error_m13(E_ENCRYPT_m13, "negative number of bytes");
 	}
 
@@ -16818,7 +16919,7 @@ void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
 			for (i = n_bytes; i--;)
 				*ui1_p2++ ^= *ui1_p1++;
 		}
-	} else if (nbytes < 0){
+	} else if (n_bytes < 0){
 		G_set_error_m13(E_ENCRYPT_m13, "negative number of bytes");
 	}
 
@@ -20793,8 +20894,8 @@ CPS_PARAMS_m13	*CMP_init_params_m13(CPS_PARAMS_m13 *params)
 	params->minimum_normality = CPS_PARAMS_MINIMUM_NORMALITY_DEFAULT_m13;
 	params->amplitude_scale = CPS_PARAMS_AMPLITUDE_SCALE_DEFAULT_m13;
 	params->frequency_scale = CPS_PARAMS_FREQUENCY_SCALE_DEFAULT_m13;
-	params->VDS_sampling_frequency = FREQUENCY_NO_ENTRY_m13;
-	params->VDS_LFP_high_fc = FREQUENCY_NO_ENTRY_m13;
+	params->VDS_sampling_frequency = RATE_NO_ENTRY_m13;
+	params->VDS_LFP_high_fc = RATE_NO_ENTRY_m13;
 	params->VDS_threshold = CPS_PARAMS_VDS_THRESHOLD_DEFAULT_m13;
 
 	params->count = NULL;

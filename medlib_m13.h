@@ -477,11 +477,12 @@ typedef struct {
 #define UID_NO_ENTRY_m13			0
 #define PAD_BYTE_VALUE_m13			0x7e // ascii tilde ("~") as si1
 #define FILE_NUMBERING_DIGITS_m13		4
-#define FREQUENCY_NO_ENTRY_m13			-1.0
-#define FRAME_RATE_NO_ENTRY_m13			FREQUENCY_NO_ENTRY_m13
-#define RATE_NO_ENTRY_m13			FREQUENCY_NO_ENTRY_m13
-#define FREQUENCY_VARIABLE_m13			-2.0
-#define FRAME_RATE_VARIABLE_m13			FREQUENCY_VARIABLE_m13
+#define RATE_NO_ENTRY_m13			-1.0
+#define SAMPLING_FREQUENCY_NO_ENTRY_m13		RATE_NO_ENTRY_m13
+#define FRAME_RATE_NO_ENTRY_m13			RATE_NO_ENTRY_m13
+#define RATE_VARIABLE_m13			-2.0
+#define SAMPLING_FREQUENCY_RATE_VARIABLE_m13	RATE_VARIABLE_m13
+#define FRAME_RATE_VARIABLE_m13			RATE_VARIABLE_m13
 #define UNKNOWN_NUMBER_OF_ENTRIES_m13		-1
 #define SEGMENT_NUMBER_NO_ENTRY_m13		0 // segments number from one
 #define FIRST_OPEN_SEG_m13			-2
@@ -882,7 +883,7 @@ typedef struct {
 #define TS_METADATA_REFERENCE_DESCRIPTION_BYTES_m13			1024
 #define TS_METADATA_SAMPLING_FREQUENCY_OFFSET_m13			9216 // sf8
 #define TS_METADATA_FREQUENCY_NO_ENTRY_m13				FREQUENCY_NO_ENTRY_m13
-#define TS_METADATA_FREQUENCY_VARIABLE_m13				FREQUENCY_VARIABLE_m13
+#define TS_METADATA_FREQUENCY_VARIABLE_m13				RATE_VARIABLE_m13
 #define TS_METADATA_LOW_FREQUENCY_FILTER_SETTING_OFFSET_m13		9224 // sf8
 #define TS_METADATA_HIGH_FREQUENCY_FILTER_SETTING_OFFSET_m13		9232 // sf8
 #define TS_METADATA_NOTCH_FILTER_FREQUENCY_SETTING_OFFSET_m13		9240 // sf8
@@ -1854,11 +1855,13 @@ typedef struct { // fields from ipinfo.io
 } LOCATION_INFO_m13;
 
 typedef struct {
+	ui4			source_type; // type code of source channel, or NO_TYPE_CODE_m13 (session level)
 	union {
-		sf8		sampling_frequency;
-		sf8		frame_rate;
-		sf8		rate;
+		sf4		sampling_frequency;
+		sf4		frame_rate;
+		sf4		rate;
 	};
+	si8			n_session_samples;
 	struct Sgmt_REC_m13	*Sgmt_recs; // defined below == record header + REC_Sgmt_v11_m13 body (session number of segments in length)
 } Sgmt_RECS_ENTRY_m13;
 
@@ -1877,10 +1880,6 @@ typedef struct {
 	tern			names_differ; // fs & uh names differ
 	si8			start_time;
 	si8			end_time;
-	union {
-		si8		n_samples;
-		si8		n_frames;
-	};
 	si4			n_segments; // number of segments in the session, regardless of whether they are mapped
 	si4			n_mapped_segments; // may be less than n_session_segments
 	si4			first_mapped_segment_number;
@@ -3081,7 +3080,9 @@ si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
 tern			G_set_session_globals_m13(si1 *MED_directory, LH_m13 *lh, si1 *password);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
-Sgmt_REC_m13		*G_Sgmt_records(LH_m13 *lh, si4 search_mode);
+Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
+si8			G_Sgmt_records_session_samples_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
+ui4			G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
 tern			G_show_behavior_m13(ui4 mode);
 tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
@@ -4546,7 +4547,7 @@ tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 #define DM_DSCNT_MASK_m13			( DM_DSCNT_CONTIG_m13 | DM_PAD_MASK_m13 )
 
 // Non-flag defines
-#define DM_MAXIMUM_INPUT_FREQUENCY_m13		((sf8) -3.0) // value chosen to distinguish from FREQUENCY_NO_ENTRY_m13 (-1.0) & FREQUENCY_VARIABLE_m13 (-2.0)
+#define DM_MAXIMUM_INPUT_FREQUENCY_m13		((sf8) -3.0) // value chosen to distinguish from FREQUENCY_NO_ENTRY_m13 (-1.0) & RATE_VARIABLE_m13 (-2.0)
 #define DM_MAXIMUM_INPUT_COUNT_m13		((si8) -3) // value chosen to parallel DM_MAXIMUM_INPUT_FREQUENCY_m13 & not conflict with NUMBER_OF_SAMPLES_NO_ENTRY_m13 (-1)
 
 
