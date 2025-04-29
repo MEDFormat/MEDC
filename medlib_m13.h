@@ -4267,9 +4267,9 @@ void	AES_inv_mix_columns_m13(ui1 state[][4]);
 void	AES_inv_shift_rows_m13(ui1 state[][4]);
 void	AES_inv_sub_bytes_m13(ui1 state[][4]);
 ui1	*AES_key_expansion_m13(ui1 *round_key, si1 *key);
-void	AES_keyless_decrypt_m13(si4 n_leftovers, ui1 *data);
-void	AES_keyless_encrypt_m13(si4 n_leftovers, ui1 *data);
 void	AES_mix_columns_m13(ui1 state[][4]);
+void	AES_partial_decrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key); // (round_key == NULL) => keyless decryption
+void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key); // (round_key == NULL) => keyless encryption
 void	AES_shift_rows_m13(ui1 state[][4]);
 void	AES_sub_bytes_m13(ui1 state[][4]);
 

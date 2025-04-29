@@ -16354,9 +16354,9 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 		}
 		
-		// keyless decryption
+		// leftover decryption
 		if (n_leftovers)
-			AES_keyless_decrypt_m13(n_leftovers, ui1_p);
+			AES_partial_decrypt_m13(n_leftovers, ui1_p, round_key);
 		
 		// encrypt round key (reverse of encrypt)
 		if (i) {
@@ -16440,9 +16440,9 @@ void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 		}
 
-		// keyless encryption
+		// leftover encryption
 		if (n_leftovers)
-			AES_keyless_encrypt_m13(n_leftovers, ui1_p);
+			AES_partial_encrypt_m13(n_leftovers, ui1_p, round_key);
 
 		// decrypt round key back to original (encrypted above)
 		if (i) {
@@ -16722,48 +16722,6 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	AES_keyless_decrypt_m13(si4 n_bytes, ui1 *data)
-{
-	ui1	*ui1_p1, *ui1_p2;
-	
-
-	// non-AES encryption => use sparingly
-	if (n_bytes) {
-		ui1_p2 = data + --n_bytes;
-		ui1_p1 = ui1_p2 - 1;
-		while (n_bytes--)
-			*ui1_p2-- ^= *ui1_p1--;
-		*ui1_p2 = ~*ui1_p2;
-	}
-
-	return;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	AES_keyless_encrypt_m13(si4 n_bytes, ui1 *data)
-{
-	ui1	*ui1_p1, *ui1_p2;
-	
-
-	// non-AES encryption => use sparingly
-	if (n_bytes) {
-		ui1_p1 = data;
-		*ui1_p1 = ~*ui1_p1;
-		ui1_p2 = ui1_p1 + 1;
-		while (--n_bytes)
-			*ui1_p2++ ^= *ui1_p1++;
-	}
-
-	return;
-}
-
-
 // the mix_columns function mixes the columns of the state matrix
 void	AES_mix_columns_m13(ui1 state[][4])
 {
@@ -16788,6 +16746,82 @@ void	AES_mix_columns_m13(ui1 state[][4])
 		state[3][i] ^= tm ^ tmp;
 	}
 	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	AES_partial_decrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
+{
+	ui1	*ui1_p1, *ui1_p2;
+	si4	i;
+	
+	
+	// decryption for data encrypted with AES_partial_encrypt_m13()
+	// for keyless decryption pass NULL for round_key
+	
+	if (n_bytes > 0) {
+		
+		// undo xor or with first n_bytes of round key
+		if (round_key) {
+			ui1_p2 = data;
+			ui1_p1 = round_key;
+			for (i = n_bytes; i--;)
+				*ui1_p2++ ^= *ui1_p1++;
+		}
+		
+		// undo successive byte xor
+		ui1_p2 = data + --n_bytes;
+		ui1_p1 = ui1_p2 - 1;
+		for (i = n_bytes; i--;)
+			*ui1_p2-- ^= *ui1_p1--;
+		
+		// un-not first byte
+		*ui1_p2 = ~*ui1_p2;
+	} else if (nbytes < 0){
+		G_set_error_m13(E_ENCRYPT_m13, "negative number of bytes");
+	}
+
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
+{
+	ui1	*ui1_p1, *ui1_p2;
+	si4	i;
+	
+
+	// encryption for blocks smaller than 128 bits (16 bytes)
+	// for keyless encryption pass NULL for round_key
+	
+	if (n_bytes > 0) {
+		
+		// not first byte
+		ui1_p1 = data;
+		*ui1_p1 = ~*ui1_p1;
+		
+		// successive byte xor
+		ui1_p2 = ui1_p1 + 1;
+		for (i = n_bytes; i--;)
+			*ui1_p2++ ^= *ui1_p1++;
+
+		// xor with first n_bytes of round key
+		if (round_key) {
+			ui1_p2 = data;
+			ui1_p1 = round_key;
+			for (i = n_bytes; i--;)
+				*ui1_p2++ ^= *ui1_p1++;
+		}
+	} else if (nbytes < 0){
+		G_set_error_m13(E_ENCRYPT_m13, "negative number of bytes");
+	}
+
 	return;
 }
 
@@ -40789,7 +40823,7 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 		pkt_header->transmission_bytes -= ENCRYPTION_KEY_BYTES_m13;
 		data_bytes_received -= ENCRYPTION_KEY_BYTES_m13;
 		memcpy((void *) trans_info->expanded_key, (void *) (trans_info->data + pkt_header->transmission_bytes), (size_t) ENCRYPTION_KEY_BYTES_m13);
-		AES_keyless_decrypt_m13(ENCRYPTION_KEY_BYTES_m13, trans_info->expanded_key);
+		AES_partial_decrypt_m13(ENCRYPTION_KEY_BYTES_m13, trans_info->expanded_key, NULL);
 	}
 
 	// decrypt
@@ -40949,7 +40983,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	if (header->flags & TR_FLAGS_INCLUDE_KEY_m13) {
 		TR_realloc_trans_info_m13(trans_info, header->transmission_bytes + ENCRYPTION_KEY_BYTES_m13, &header);
 		memcpy((void *) (trans_info->data + header->transmission_bytes), (void *) trans_info->expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
-		AES_keyless_encrypt_m13(ENCRYPTION_KEY_BYTES_m13, trans_info->data + header->transmission_bytes);
+		AES_partial_encrypt_m13(ENCRYPTION_KEY_BYTES_m13, trans_info->data + header->transmission_bytes, NULL);
 		header->transmission_bytes += ENCRYPTION_KEY_BYTES_m13;
 	}
 	
