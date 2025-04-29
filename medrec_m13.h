@@ -49,7 +49,7 @@
 
 // Strings are encoded in the Universal Character Set standard, ISO/IEC 10646:2012 otherwise known as UTF-8.
 // ( http://standards.iso.org/ittf/PubliclyAvailableStandards/c056921_ISO_IEC_10646_2012.zip )
-// Basic UTF-8 manipulation routines are included in the library, with attribution, for convenience.
+// Mnimal UTF-8 manipulation routines are included in the library, for convenience.
 
 // Error detection is implemented with 32-bit cyclic redundancy checksums (CRCs).
 // Basic CRC-32 manipulation routines are included in the library, with attribution, for convenience.
@@ -106,7 +106,7 @@
 // LARGEST_RECORD_BYTES_m13 needs to be kept up to date, and can fail with arbitrary size records
 // If it exceeds METADATA_FILE_BYTES_m13 then check_all_alignments() should be updated.
 #define REC_LARGEST_RECORD_BYTES_m13		METADATA_FILE_BYTES_m13  // 16 kB
-#define REC_BODY_ALIGNMENT_m13			16
+#define REC_BODY_ALIGNMENT_BYTES_m13		8  // record body size must be multiple of this
 #define REC_NO_RECORD_NUMBER_m13		-1
 
 // Prototypes
@@ -159,52 +159,54 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // #define REC_Sgmt_TYPE_CODE_m13       (ui4) 0x53676D74        // ui4 (big endian)
 
 // Version 1.0 (for compatibility)
-#define REC_Sgmt_v10_BYTES_m13                                          48
-#define REC_Sgmt_v10_END_TIME_OFFSET_m13                                0							// si8
-#define REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13			8							// si8
-#define REC_Sgmt_v10_START_SAMPLE_NUMBER_NO_ENTRY_m13			SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_START_FRAME_NUMBER_OFFSET_m13			REC_Sgmt_v10_START_SAMPLE_NUMBER_OFFSET_m13		// si8
-#define REC_Sgmt_v10_START_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_END_SAMPLE_NUMBER_OFFSET_m13			16							// si8
-#define REC_Sgmt_v10_END_SAMPLE_NUMBER_NO_ENTRY_m13			SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_END_FRAME_NUMBER_OFFSET_m13			REC_Sgmt_v10_END_SAMPLE_NUMBER_OFFSET_m13		// si8
-#define REC_Sgmt_v10_END_FRAME_NUMBER_NO_ENTRY_m13			FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_SEGMENT_UID_OFFSET_m13                             24							// ui8
-#define REC_Sgmt_v10_SEGMENT_NUMBER_OFFSET_m13                          32							// si4
-#define REC_Sgmt_v10_SEGMENT_NUMBER_NO_ENTRY_m13                        SEG_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13              36							// si4
-#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13            CHAN_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_ACQUISITION_CHANNEL_NUMBER_ALL_CHANNELS_m13        CHAN_NUMBER_ALL_CHANNELS_m13
-#define REC_Sgmt_v10_SAMPLING_FREQUENCY_OFFSET_m13                      40							// sf8
-#define REC_Sgmt_v10_SAMPLING_FREQUENCY_NO_ENTRY_m13                    FREQUENCY_NO_ENTRY_m13
-#define REC_Sgmt_v10_SAMPLING_FREQUENCY_VARIABLE_m13		        FREQUENCY_VARIABLE_m13
-#define REC_Sgmt_v10_FRAME_RATE_OFFSET_m13                      	REC_Sgmt_v10_SAMPLING_FREQUENCY_OFFSET_m13		// sf8
-#define REC_Sgmt_v10_FRAME_RATE_NO_ENTRY_m13                    	FREQUENCY_NO_ENTRY_m13
-#define REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13		        	FREQUENCY_VARIABLE_m13
-#define REC_Sgmt_v10_SEGMENT_DESCRIPTION_OFFSET_m13                     REC_Sgmt_v10_BYTES_m13					// si1 (arbitrary length, padded to 16-byte alignment for encryption)
+#define REC_Sgmt_v10_BYTES_m13				48
+#define REC_Sgmt_v10_END_TIME_OFFSET_m13		0						// si8
+#define REC_Sgmt_v10_START_SAMP_NUM_OFFSET_m13		8						// si8
+#define REC_Sgmt_v10_START_SAMP_NUM_NO_ENTRY_m13	SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_START_FRAME_NUM_OFFSET_m13		REC_Sgmt_v10_START_SAMP_NUM_OFFSET_m13		// si8
+#define REC_Sgmt_v10_START_FRAME_NUM_NO_ENTRY_m13	FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_END_SAMP_NUM_OFFSET_m13		16						// si8
+#define REC_Sgmt_v10_END_SAMP_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_END_FRAME_NUM_OFFSET_m13		REC_Sgmt_v10_END_SAMP_NUM_OFFSET_m13		// si8
+#define REC_Sgmt_v10_END_FRAME_NUM_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_SEG_UID_OFFSET_m13			24						// ui8
+#define REC_Sgmt_v10_SEG_NUM_OFFSET_m13			32						// si4
+#define REC_Sgmt_v10_SEG_NUM_NO_ENTRY_m13		SEGMENT_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_ACQ_CHAN_NUM_OFFSET_m13		36						// si4
+#define REC_Sgmt_v10_ACQ_CHAN_NUM_NO_ENTRY_m13		CHANNEL_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_ACQ_CHAN_NUM_ALL_CHANNELS_m13	CHANNEL_NUMBER_ALL_CHANNELS_m13
+#define REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13		40						// sf8
+#define REC_Sgmt_v10_SAMP_FREQ_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13
+#define REC_Sgmt_v10_SAMP_FREQ_VARIABLE_m13		FREQUENCY_VARIABLE_m13
+#define REC_Sgmt_v10_FRAME_RATE_OFFSET_m13		REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13		// sf8
+#define REC_Sgmt_v10_FRAME_RATE_NO_ENTRY_m13		FREQUENCY_NO_ENTRY_m13
+#define REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13		FREQUENCY_VARIABLE_m13
+#define REC_Sgmt_v10_DESCRIPTION_OFFSET_m13		REC_Sgmt_v10_BYTES_m13				// si1 (arbitrary length, padded to 16-byte alignment for encryption)
 
-// Structures
-// REC_Sgmt_v10_m13 defined in medlib_m13.h due to codependency
+// Structure defined in medlib_m13.h due to codependency
 
 // Version 1.1
-#define REC_Sgmt_v11_BYTES_m13					32
-#define REC_Sgmt_v11_END_TIME_OFFSET_m13			0							// si8
-#define REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13		8							// si8
-#define REC_Sgmt_v11_START_SAMPLE_NUMBER_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_START_FRAME_NUMBER_OFFSET_m13		REC_Sgmt_v11_START_SAMPLE_NUMBER_OFFSET_m13		// si8
-#define REC_Sgmt_v11_START_FRAME_NUMBER_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13		16							// si8
-#define REC_Sgmt_v11_END_SAMPLE_NUMBER_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_FRAME_NUMBER_OFFSET_m13		REC_Sgmt_v11_END_SAMPLE_NUMBER_OFFSET_m13		// si8
-#define REC_Sgmt_v11_END_FRAME_NUMBER_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_SEGMENT_NUMBER_OFFSET_m13			24							// si4
-#define REC_Sgmt_v11_SEGMENT_NUMBER_NO_ENTRY_m13		SEG_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13			28
-// REC_Sgmt_v11_DESCRIPTION_BYTES_m13 defined in medlib_m13.h due to codependency
-#define REC_Sgmt_v11_PAD_OFFSET_m13              			REC_Sgmt_v11_DESCRIPTION_OFFSET_m13
-// REC_Sgmt_v11_PAD_BYTES_m13 defined in medlib_m13.h due to codependency
+#define REC_Sgmt_v11_BYTES_m13				32
+#define REC_Sgmt_v11_END_TIME_OFFSET_m13		0						// si8
+#define REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13		8						// si8
+#define REC_Sgmt_v11_START_SAMP_NUM_NO_ENTRY_m13	SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_START_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13		// si8
+#define REC_Sgmt_v11_START_FRAME_NUM_NO_ENTRY_m13	FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13		16						// si8
+#define REC_Sgmt_v11_END_SAMP_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_END_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13		// si8
+#define REC_Sgmt_v11_END_FRAME_NUM_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_SEG_NUM_OFFSET_m13			24						// si4
+#define REC_Sgmt_v11_SEG_NUM_NO_ENTRY_m13		SEGMENT_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13		28						// sf4
+#define REC_Sgmt_v11_SAMP_FREQ_NO_ENTRY_m13		((sf4) FREQUENCY_NO_ENTRY_m13)
+#define REC_Sgmt_v11_SAMP_FREQ_VARIABLE_m13		((sf4) FREQUENCY_VARIABLE_m13)
+#define REC_Sgmt_v11_FRAME_RATE_OFFSET_m13		REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13		// sf4
+#define REC_Sgmt_v11_FRAME_RATE_NO_ENTRY_m13		((sf4) FREQUENCY_NO_ENTRY_m13)
+#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13		((sf4) FREQUENCY_VARIABLE_m13)
+#define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13		REC_Sgmt_v11_BYTES_m13				// si1 (arbitrary length, padded to 16-byte alignment for encryption)
 
-// Structures defined in medlib.h due to codependency
+// Structure defined in medlib.h due to codependency
 
 // Prototypes
 tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header);
@@ -340,7 +342,7 @@ tern	REC_check_Note_type_alignment_m13(ui1 *bytes);
 #define REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m13		256	// si8
 #define REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m13		264	// si8
 #define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m13		272	// si4
-#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13	SEG_NUMBER_NO_ENTRY_m13
+#define REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_NO_ENTRY_m13	SEGMENT_NUMBER_NO_ENTRY_m13
 #define REC_Seiz_v10_CHANNEL_PAD_OFFSET_m13			276	// ui1[4]
 #define REC_Seiz_v10_CHANNEL_PAD_BYTES_m13			4
 // Onset Codes

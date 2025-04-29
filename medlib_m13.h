@@ -330,7 +330,7 @@ typedef struct {
 	};
 } REC_Sgmt_v11_m13;
 // Description follows sampling frequency / frame rate in structure.
-// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
+// The description is an aribitrary length array of characters padded (including terminal zero) to 8 byte alignment (total of structure + string).
 
 typedef struct {
 	si8 end_time;
@@ -353,9 +353,8 @@ typedef struct {
 		sf8	rate; // generic rate
 	};
 } REC_Sgmt_v10_m13; // version 1.0 included for backward compatibility
-
 // Description follows sampling frequency / frame rate in structure.
-// The description is an aribitrary length array of si1s padded to 16 byte alignment (total of structure + string).
+// The description is an aribitrary length array of characters padded (including terminal zero) to 8 byte alignment (total of structure + string).
 
 
 
@@ -3351,7 +3350,7 @@ void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr
 //**********************************************************************************//
 
 // Prototypes
-si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator);
+si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern numeric_order);
 const si1	*STR_bool_m13(ui8 val);
 wchar_t		*STR_char2wchar_m13(wchar_t *target, si1 *source);
 ui4		STR_check_spaces_m13(si1 *string);
@@ -3362,7 +3361,7 @@ si1 		*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_
 tern		STR_empty_m13(const si1 *string);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number);
-si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator);
+si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, tern numeric_order);
 si1		*STR_match_end_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1		*STR_match_line_end_m13(si1 *pattern, si1 *buffer);
@@ -4196,8 +4195,8 @@ tern		UTF8_valid_str_m13(si1 *s);
 #define AES_NR_m13		10 // The number of rounds in AES Cipher
 #define AES_NK_m13		4 // The number of 32 bit words in the key (128 bits)
 #define AES_NB_m13		4 // The number of columns comprising a state in AES
-#define AES_NS_m13		( AES_NK_m13 * AES_NB_m13 )  // The total number of states in AES-128
-#define AES_XTIME_m13(x)	( (x << 1) ^ (((x >> 7) & 1) * 0x1b) ) // AES_XTIME is a macro that finds the product of {02} and the argument to AES_XTIME modulo {1b}
+#define AES_NS_m13		( AES_NK_m13 * AES_NB_m13 )  // the number of bytes in the state matrix
+#define AES_XTIME_m13(x)	( (x << 1) ^ (((x >> 7) & 1) * 0x1b) ) // AES_XTIME is a macro that finds the product of 0x02 and the argument to AES_XTIME modulo 0x1b
 #define AES_MULTIPLY_m13(x, y)	( ((y & 1) * x) ^ ((y >> 1 & 1) * AES_XTIME_m13(x)) ^ ((y >> 2 & 1) * AES_XTIME_m13(AES_XTIME_m13(x))) ^ \
 				((y >> 3 & 1) * AES_XTIME_m13(AES_XTIME_m13(AES_XTIME_m13(x)))) ^ ((y >> 4 & 1) * \
 				AES_XTIME_m13(AES_XTIME_m13(AES_XTIME_m13(AES_XTIME_m13(x))))) ) // Multiply is a macro used to multiply numbers in the field GF(2^8)
@@ -4273,6 +4272,7 @@ void	AES_keyless_encrypt_m13(si4 n_leftovers, ui1 *data);
 void	AES_mix_columns_m13(ui1 state[][4]);
 void	AES_shift_rows_m13(ui1 state[][4]);
 void	AES_sub_bytes_m13(ui1 state[][4]);
+
 
 
 //***********************************************************************//
@@ -5345,7 +5345,7 @@ si8		strcpy_m13(si1 *target, const si1 *source);
 si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
-si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
+si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams, ui4 behavior;
 si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		truncate_m13(const si1 *path, off_t len);
 si4		vasprintf_m13(si1 **target, const si1 *fmt, va_list args);

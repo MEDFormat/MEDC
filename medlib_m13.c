@@ -1924,7 +1924,7 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 
 	// check write ability on file system
 	sprintf_m13(command, "echo x > \"%s/test_file-remove_me\"", full_path);  // create non-empty file in case file system is cloud
-	ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 	if (ret_val) {
 		G_set_error_m13(E_WRITE_m13, "cannot create files on \"%s\"", full_path);
 		return_m13(FALSE_m13);
@@ -1945,14 +1945,14 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 		
 		// copy file system test file to cloud
 		sprintf(command, "%scp %s/test_file-remove_me %s/test_file-remove_me", cloud_prefix, file_system_path, cloud_directory);
-		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
 			G_set_error_m13(E_WRITE_m13, "cannot create files on \"%s\"", cloud_directory);
 			return_m13(FALSE_m13);
 		} else {
 			// clean up
 			sprintf(command, "%srm %s/test_file-remove_me", cloud_prefix, cloud_directory);
-			system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+			ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		}
 	}
 	
@@ -2076,8 +2076,8 @@ void	G_clear_error_m13(LH_m13 *lh)
 	G_push_function_m13();
 #endif
 
-	// Call set_error for causal errors only.
-	// Return error local error condition for errors returned from functions, no messages necessary
+	// call G_set_error_m13() for causal errors only
+	// return error local error condition for errors returned from functions, no messages necessary
 	
 	// set thread specific flag for void functions
 	proc_globs = G_proc_globs_m13(lh);
@@ -2099,16 +2099,21 @@ inline
 #endif
 tern	G_clear_terminal_m13(void)
 {
+	si4	ret_val;
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 #if defined MACOS_m13 || defined LINUX_m13
-	system_m13("clear", FALSE_m13, CURRENT_BEHAVIOR_m13);
+	ret_val = system_m13(NULL, "clear", TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 #endif
 #ifdef WINDOWS_m13
-	WN_clear_m13();
+	ret_val = (WN_clear_m13() == TRUE_m13) ? 0 : FALSE_m13;  // change to system_m13() convention
 #endif
+	
+	if (ret_val)
+		return_m13(FALSE_m13);
 	
 	return_m13(TRUE_m13);
 }
@@ -2607,19 +2612,23 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	uh = fps->uh;
 	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
 	pwd = &proc_globs->password_data;
+	
+	eprintf_m13("");
+	G_show_password_data_m13(pwd, 0);
+	eprintf_m13("uh->encryption_2 = %hhd", uh->encryption_2);
+	eprintf_m13("uh->encryption_3 = %hhd", uh->encryption_3);
+	eprintf_m13("uh->encryption_rounds = %hhu", uh->encryption_rounds);
 
 	// section 2 decryption
-	if (uh->encryption_2 > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
+	if (uh->encryption_2 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= uh->encryption_2 ) {
-			if (uh->encryption_2 == LEVEL_1_ENCRYPTION_m13) {
+			if (uh->encryption_2 == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
-			} else {
+			else
 				decryption_key = pwd->level_2_encryption_key;
-			}
 			AES_decrypt_m13(fps->params.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, NULL, decryption_key, uh->encryption_rounds);
 			uh->encryption_2 = -uh->encryption_2 ;  // mark as currently decrypted
 		} else {
-			G_show_password_data_m13(NULL, 2);
 			G_show_password_hints_m13(pwd, uh->encryption_2);
 			G_set_error_m13(E_ENCRYPT_m13, "Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt", uh->encryption_2);
 			return_m13(FALSE_m13);
@@ -2627,7 +2636,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	}
 
 	// section 3 decryption
-	if (uh->encryption_3 > NO_ENCRYPTION_m13) {  // natively encrypted and currently encrypted
+	if (uh->encryption_3 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= uh->encryption_3) {
 			if (uh->encryption_3 == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
@@ -2660,6 +2669,9 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 		proc_globs->time_constants.set = TRUE_m13;
 	}
 
+	eprintf_m13("");
+	G_show_proc_globs_m13((LH_m13 *) fps);
+	
 	return_m13(TRUE_m13);
 }
 
@@ -9041,7 +9053,6 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	// set reference channel (before get segment range)
 	G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);
 	eprintf_m13();
-	G_show_proc_globs_m13((LH_m13 *) sess);
 
 	// get segment range
 	n_segs = slice->n_segs;
@@ -11345,12 +11356,12 @@ tern  G_recover_passwords_m13(si1 *L3_password, UH_m13 *universal_header)
 	
 	// Level 2 password valid
 	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m13) {
-		STR_hex_m13(hex_str, (ui1 *) putative_L1_password_bytes, PASSWORD_BYTES_m13, ":");
+		STR_hex_m13(hex_str, (ui1 *) putative_L1_password_bytes, PASSWORD_BYTES_m13, "-", FALSE_m13);
 		G_message_m13("Level 1 password (bytes): '%s' (%s)\n", putative_L1_password_bytes, hex_str);
-		STR_hex_m13(hex_str, (ui1 *) putative_L2_password_bytes, PASSWORD_BYTES_m13, hex_str);
-		G_message_m13("Level 2 password (bytes): '%s' (%s)\n", putative_L2_password_bytes, ":");
+		STR_hex_m13(hex_str, (ui1 *) putative_L2_password_bytes, PASSWORD_BYTES_m13, "-", FALSE_m13);
+		G_message_m13("Level 2 password (bytes): '%s' (%s)\n", putative_L2_password_bytes, hex_str);
 	} else if (level_1_valid == TRUE_m13) {
-		STR_hex_m13(hex_str, (ui1 *) saved_L1_password_bytes, PASSWORD_BYTES_m13, ":");
+		STR_hex_m13(hex_str, (ui1 *) saved_L1_password_bytes, PASSWORD_BYTES_m13, "-", FALSE_m13);
 		G_message_m13("Level 1 password (bytes): '%s' (%s)\n", saved_L1_password_bytes, hex_str);
 		G_message_m13("No Level 2 password\n");
 	} else {
@@ -12101,7 +12112,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	// Return error local error condition for errors returned from functions, no messages necessary
 	
 	// set process globals error_state (for void functions)
-	// ideally calling function set this this because these are thread-local, not hierarchy-local globals, which can differ
+	// ideally calling function sets this because these are thread-local, not hierarchy-local globals, which can differ
 	proc_globs = G_proc_globs_m13(NULL);  // NULL => use process / thread ID
 	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
 
@@ -12905,8 +12916,8 @@ tern	G_show_level_header_m13(LH_m13 *lh)
 #endif
 	
 	printf_m13("---------------- Level Header - START ----------------\n");
-	STR_hex_m13(hex_str, (ui1 *) lh->type_string, sizeof(ui4), ":");
-	printf_m13("Type String: \"%s\"  (0x %s)\n", lh->type_string, hex_str);
+	STR_hex_m13(hex_str, (ui1 *) lh->type_string, sizeof(ui4), NULL, TRUE_m13);
+	printf_m13("Type String: \"%s\"  (0x%s)\n", lh->type_string, hex_str);
 	if (lh->parent)
 		printf_m13("Parent: %lu\n", (ui8) lh->parent);
 	else
@@ -12916,7 +12927,7 @@ tern	G_show_level_header_m13(LH_m13 *lh)
 	else
 		printf_m13("Process Globals: null\n");
 	if (lh->flags) {
-		STR_bin_m13(bin_str, (ui1 *) &lh->flags, sizeof(ui8), ":");
+		STR_bin_m13(bin_str, (ui1 *) &lh->flags, sizeof(ui8), " - ", TRUE_m13);
 		printf_m13("Flags: %lu  (0b %s)\n", lh->flags, bin_str);
 	} else {
 		printf_m13("Flags: 0\n");
@@ -13060,7 +13071,7 @@ tern	G_show_level_header_flags_m13(ui8 flags)
 	else
 		printf_m13("LH_MMAP_SEG_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
 	
-	STR_bin_m13(bin_str, (void *) &flags, sizeof(ui8), " - ");
+	STR_bin_m13(bin_str, (void *) &flags, sizeof(ui8), " - ", TRUE_m13);
 	printf_m13("\n(value: %s)\n\n", bin_str);
 	
 	return_m13(TRUE_m13);
@@ -13361,13 +13372,13 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 			if (md3->daylight_time_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 				printf_m13("Daylight Time Start Code: no entry\n");
 			} else {
-				STR_hex_m13(hex_str, (ui1 *) &md3->daylight_time_start_code.value, sizeof(ui8), ":");
+				STR_hex_m13(hex_str, (ui1 *) &md3->daylight_time_start_code.value, sizeof(ui8), "-", FALSE_m13);
 				printf_m13("Daylight Time Start Code: %s\n", hex_str);
 			}
 			if (md3->daylight_time_end_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 				printf_m13("Daylight Time End Code: no entry\n");
 			} else {
-				STR_hex_m13(hex_str, (ui1 *) &md3->daylight_time_end_code.value, sizeof(ui8), ":");
+				STR_hex_m13(hex_str, (ui1 *) &md3->daylight_time_end_code.value, sizeof(ui8), "-", FALSE_m13);
 				printf_m13("Daylight Time End Code: %s\n", hex_str);
 			}
 			if (*md3->standard_timezone_acronym)
@@ -13459,11 +13470,11 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	
 	G_message_m13("\n------------------ Password Data - START -----------------\n");
 	if (pwd->access_level >= LEVEL_1_ACCESS_m13) {
-		STR_hex_m13(hex_str, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13, "-");
+		STR_hex_m13(hex_str, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13, "-", FALSE_m13);
 		G_message_m13("Level 1 Encryption Key: %s\n", hex_str);
 	}
 	if (pwd->access_level == LEVEL_2_ACCESS_m13) {
-		STR_hex_m13(hex_str, pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m13, "-");
+		STR_hex_m13(hex_str, pwd->level_2_encryption_key, ENCRYPTION_KEY_BYTES_m13, "-", FALSE_m13);
 		G_message_m13("Level 2 Encryption Key: %s\n", hex_str);
 	}
 	if (pwd->hints_exist == TRUE_m13)
@@ -13527,12 +13538,12 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	if (proc_globs->_id == 0) {
 		printf_m13("no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (ui1 *) &proc_globs->_id, sizeof(ui8), ":");
+		STR_hex_m13(hex_str, (ui1 *) &proc_globs->_id, sizeof(ui8), NULL, TRUE_m13);
 		printf_m13("%lu  (0x%s)\n", proc_globs->_id, hex_str);
 	}
 
 	printf_m13("\nCurrent Session\n---------------\n");
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->current_session.UID, sizeof(ui8), ":");
+	STR_hex_m13(hex_str, (ui1 *) &proc_globs->current_session.UID, sizeof(ui8), NULL, TRUE_m13);
 	printf_m13("Session UID: %lu  (0x%s)\n", proc_globs->current_session.UID, hex_str);
 	printf_m13("Session Directory: %s\n", proc_globs->current_session.directory);  // path including file system session directory name
 	printf_m13("Session Start Time: ");
@@ -13635,9 +13646,9 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	printf_m13("standard_timezone_string: %s\n", proc_globs->time_constants.standard_timezone_string);
 	printf_m13("daylight_timezone_acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
 	printf_m13("daylight_timezone_string: %s\n", proc_globs->time_constants.daylight_timezone_string);
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), ":");
+	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), ":", FALSE_m13);
 	printf_m13("daylight_time_start_code: %ld  (0x%s)\n", proc_globs->time_constants.daylight_start_code.value, hex_str);
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), ":");
+	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), ":", FALSE_m13);
 	printf_m13("daylight_time_end_code: %ld  (0x%s)\n", proc_globs->time_constants.daylight_end_code.value, hex_str);
 		
 	printf_m13("\nMiscellaneous\n---------------\n");
@@ -13900,14 +13911,14 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 	if (uh->header_CRC == CRC_NO_ENTRY_m13) {
 		printf_m13("Header CRC: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (ui1 *)  &uh->header_CRC, CRC_BYTES_m13, ":");
-		printf_m13("Header CRC: 0x %s\n", hex_str);
+		STR_hex_m13(hex_str, (ui1 *)  &uh->header_CRC, CRC_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Header CRC: 0x%s\n", hex_str);
 	}
 	if (uh->body_CRC == CRC_NO_ENTRY_m13) {
 		printf_m13("Body CRC: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (ui1 *) &uh->body_CRC, CRC_BYTES_m13, ":");
-		printf_m13("Body CRC: 0x %s\n", hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &uh->body_CRC, CRC_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Body CRC: 0x%s\n", hex_str);
 	}
 	if (uh->segment_end_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("Segment End Time: no entry\n");
@@ -13993,8 +14004,8 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 	else
 		printf_m13("Segment Number: %d\n", uh->segment_number);
 	if (*uh->type_string) {
-		STR_hex_m13(hex_str, (ui1 *) uh->type_string, sizeof(ui4), ":");
-		printf_m13("Type String: \"%s\"  (0x %s)\n", uh->type_string, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) uh->type_string, sizeof(ui4), NULL, TRUE_m13);
+		printf_m13("Type String: \"%s\"  (0x%s)\n", uh->type_string, hex_str);
 	} else {
 		printf_m13("Type String: no entry\n");
 	}
@@ -14044,32 +14055,32 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 	if (uh->session_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Session UID: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) &uh->session_UID, UID_BYTES_m13, ":");
-		printf_m13("Session UID: 0x %s\n", hex_str);
+		STR_hex_m13(hex_str, (void *) &uh->session_UID, UID_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Session UID: 0x%s\n", hex_str);
 	}
 	if (uh->channel_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Channel UID: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) &uh->channel_UID, UID_BYTES_m13, ":");
-		printf_m13("Channel UID: 0x %s\n", hex_str);
+		STR_hex_m13(hex_str, (void *) &uh->channel_UID, UID_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Channel UID: 0x%s\n", hex_str);
 	}
 	if (uh->segment_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Segment UID: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) &uh->segment_UID, UID_BYTES_m13, ":");
-		printf_m13("Segment UID: 0x %s\n", hex_str);
+		STR_hex_m13(hex_str, (void *) &uh->segment_UID, UID_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Segment UID: 0x%s\n", hex_str);
 	}
 	if (uh->file_UID == UID_NO_ENTRY_m13) {
 		printf_m13("File UID: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) &uh->file_UID, UID_BYTES_m13, ":");
-		printf_m13("File UID: 0x %s\n", hex_str);
+		STR_hex_m13(hex_str, (void *) &uh->file_UID, UID_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("File UID: 0x%s\n", hex_str);
 	}
 	if (uh->provenance_UID == UID_NO_ENTRY_m13) {
 		printf_m13("Provenance UID: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) &uh->provenance_UID, UID_BYTES_m13, ":");
-		printf_m13("Provenance UID: 0x %s  ", hex_str);
+		STR_hex_m13(hex_str, (void *) &uh->provenance_UID, UID_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Provenance UID: 0x%s  ", hex_str);
 		if (uh->provenance_UID == uh->file_UID)
 			printf_m13("(original data)\n");
 		else
@@ -14078,19 +14089,19 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
 		printf_m13("Level 1 Password Validation_Field: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, ":");
+		STR_hex_m13(hex_str, (void *) uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, "-", FALSE_m13);
 		printf_m13("Level 1 Password Validation_Field: 0x %s\n", hex_str);
 	}
 	if (G_all_zeros_m13(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
 		printf_m13("Level 2 Password Validation_Field: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, ":");
+		STR_hex_m13(hex_str, (void *) uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, "-", FALSE_m13);
 		printf_m13("Level 2 Password Validation_Field: 0x %s\n", hex_str);
 	}
 	if (G_all_zeros_m13(uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
 		printf_m13("Level 3 Password Validation_Field: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (void *) uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, ":");
+		STR_hex_m13(hex_str, (void *) uh->level_3_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13, "-", FALSE_m13);
 		printf_m13("Level 3 Password Validation_Field: 0x %s\n", hex_str);
 	}
 	if (MED_VER_1_0_m13(uh) == FALSE_m13) {
@@ -15329,7 +15340,7 @@ tern	G_update_file_version_m13(FPS_m13 *fps)
 					}
 					body_bytes = REC_Sgmt_v11_BYTES_m13 + description_bytes;
 					if (description_bytes)
-						rh->total_record_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_BODY_ALIGNMENT_m13) + REC_HDR_BYTES_m13;
+						rh->total_record_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13;
 					else
 						rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
 
@@ -16216,17 +16227,18 @@ void  G_warning_message_m13(const si1 *fmt, ...)
 // E-mail: niyazlife@gmail.com
 // Downloaded from Website: www.hoozi.com
 //
-// "This is the source code for encryption using the latest AES algorithm.
-// The AES algorithm is also called Rijndael algorithm. The AES algorithm is
-// recommended for non-classified use by the National Institute of Standards
+// "This is the source code for encryption using the AES algorithm,
+// also called Rijndael algorithm. The AES algorithm is recommended
+// for non-classified use by the National Institute of Standards
 // and Technology (NIST), USA."
 //
 // For the complete description of the algorithm, see:
 // http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf
 //
-// The code here is set for 128-bit AES encryption / decryption only
+// The code include here is for 128-bit AES encryption & decryption only.
 //
-// Some modifications have been made for compatibility with the MED Library.
+// Modifications have been made for compatibility with the MED Library.
+
 
 // this function adds the round key to the state
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
@@ -16245,16 +16257,16 @@ void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
 // cipher is the main encryption function
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
-	ui1	*ui1_p1, *ui1_p2;
-	si4	i, round = 0;
+	si4	i, j, round;
 	
 
 	// copy the input to state array
-	ui1_p1 = in;
-	ui1_p2 = (ui1 *) state;
-	for (i = AES_NS_m13; i--;)
-		*ui1_p2++ = *ui1_p1++;
-	
+	for (i = 0; i < 4; i++) {
+		for (j = 0; j < 4; j++) {
+			state[j][i] = in[i * 4 + j];
+		}
+	}
+
 	// Add the First round key to the state before starting the rounds.
 	AES_add_round_key_m13(0, state, round_key);
 	
@@ -16276,11 +16288,12 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 	
 	// the encryption process is over
 	// copy the state array to output array
-	ui1_p1 = (ui1 *) state;
-	ui1_p2 = out;
-	for (i = AES_NS_m13; i--;)
-		*ui1_p2++ = *ui1_p1++;
-	
+	for (i = 0; i < 4; i++) {
+		for (j = 0; j < 4; j++) {
+			out[i * 4 + j] = state[j][i];
+		}
+	}
+
 	return;
 }
 
@@ -16291,11 +16304,11 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 // decryption is done in place
 void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
 {
-	ui1	state[4][4]; // array that holds the intermediate results during encryption
-	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
-	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13], *orig_expanded_key;
-	si1	key[AES_KEY_BYTES_m13];
+	ui1	state[4][4];
+	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_m13];
+	ui1	*ui1_p, tmp_round_key[AES_EXPANDED_KEY_BYTES_m13], *orig_round_key;
 	si4	i;
+	ui8	*ui8_p;
 	si8	j, encryption_blocks, n_leftovers;
 
 #ifdef FT_DEBUG_m13
@@ -16312,42 +16325,45 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 		AES_init_tables_m13();
 	
 	if (expanded_key == NULL) {
-		if (AES_key_expansion_m13(round_key, key) == NULL) {  // key expansion must be done before encryption
+		round_key = local_round_key;
+		if (AES_key_expansion_m13(round_key, password) == NULL) {  // key expansion must be done before encryption
 			G_set_error_m13(E_ENCRYPT_m13, "no password or expanded key passed");
 			return_void_m13;
 		}
-		expanded_key = round_key;
+	} else {
+		round_key = expanded_key;
 	}
 	
-	if (rounds > 1) {
-		orig_expanded_key = expanded_key;
-		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);  // copy key if rounds > 1 to keep thread-safe
-		expanded_key = local_expanded_key;
+	if (rounds > 1) {  // copy key if rounds > 1 to keep thread-safe
+		orig_round_key = round_key;
+		memcpy((void *) tmp_round_key, (void *) round_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
+		round_key = tmp_round_key;
 	}
 
-	// AES decryption
+	// decrypt
 	encryption_blocks = len >> 4;
-	n_leftovers = len - (encryption_blocks << 4);
+	n_leftovers = len & (si8) 0xF;
+	ui8_p = (ui8 *) state;
 	for (i = (si4) rounds; i--;) {
 		
-		// decrypt AES blocks
-		memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
+		// AES decryption
+		ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
 		ui1_p = data;
 		for (j = encryption_blocks; j--;) {
-			AES_inv_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+			AES_inv_cipher_m13(ui1_p, ui1_p, state, round_key);
 			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 		}
 		
-		// decrypt leftovers
+		// keyless decryption
 		if (n_leftovers)
 			AES_keyless_decrypt_m13(n_leftovers, ui1_p);
 		
-		// encrypt expanded key (reverse of encrypt)
+		// encrypt round key (reverse of encrypt)
 		if (i) {
-			memset((void *) state, (si4) 0, (size_t) AES_NS_m13); // zero state array
-			ui1_p = expanded_key;
+			ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+			ui1_p = round_key;
 			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_cipher_m13(ui1_p, ui1_p, state, orig_expanded_key);
+				AES_cipher_m13(ui1_p, ui1_p, state, orig_round_key);  // use orig_round key b/c round key changes on each iteration of this loop
 				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 			}
 		}
@@ -16363,11 +16379,11 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 // encryption is done in place
 void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
 {
-	ui1	state[AES_NK_m13][AES_NB_m13]; // array that holds the intermediate results during encryption
-	ui1	round_key[AES_EXPANDED_KEY_BYTES_m13]; // array that stores the round keys
-	ui1	*ui1_p, local_expanded_key[AES_EXPANDED_KEY_BYTES_m13], *orig_expanded_key;
-	si1	key[AES_KEY_BYTES_m13];
+	ui1	state[AES_NK_m13][AES_NB_m13];
+	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_m13];
+	ui1	*ui1_p, tmp_round_key[AES_EXPANDED_KEY_BYTES_m13], *orig_round_key;
 	si4	i;
+	ui8	*ui8_p;
 	si8	j, encryption_blocks, n_leftovers;
 	
 #ifdef FT_DEBUG_m13
@@ -16384,53 +16400,56 @@ void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 		AES_init_tables_m13();
 	
 	if (expanded_key == NULL) {
-		if (AES_key_expansion_m13(round_key, key) == NULL) {  // key expansion must be done before encryption
+		round_key = local_round_key;
+		if (AES_key_expansion_m13(round_key, password) == NULL) {  // key expansion must be done before encryption
 			G_set_error_m13(E_ENCRYPT_m13, "no password or expanded key passed");
 			return_void_m13;
 		}
-		expanded_key = round_key;
+	} else {
+		round_key = expanded_key;
 	}
 
+	ui8_p = (ui8 *) state;
 	if (rounds > 1) {
-		orig_expanded_key = expanded_key;
-		memcpy((void *) local_expanded_key, (void *) expanded_key, (size_t) ENCRYPTION_KEY_BYTES_m13);  // copy key if rounds > 1 to keep thread-safe
-		expanded_key = local_expanded_key;
+		orig_round_key = round_key;
+		memcpy((void *) tmp_round_key, (void *) round_key, (size_t) ENCRYPTION_KEY_BYTES_m13);  // copy key if rounds > 1 to keep thread-safe
+		round_key = tmp_round_key;
 		
 		// self-encrypt for each round so not using same key in next round
 		// done in encryption so decryption (more common) is more efficient
 		for (i = (si4) rounds; --i;) {
-			memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
-			ui1_p = expanded_key;
+			ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+			ui1_p = round_key;
 			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_cipher_m13(ui1_p, ui1_p, state, orig_expanded_key);
+				AES_cipher_m13(ui1_p, ui1_p, state, orig_round_key);  // use orig_round key b/c round key changes on each iteration of this loop
 				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 			}
 		}
 	}
 	
-	// AES encryption
+	// encryption
 	encryption_blocks = len >> 4;
-	n_leftovers = len - (encryption_blocks << 4);
+	n_leftovers = len & (si8) 0xF;
 	for (i = (si4) rounds; i--;) {
 		
-		// encrypt AES blocks
-		memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
+		// AES encryption
+		ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
 		ui1_p = data;
 		for (j = encryption_blocks; j--;) {
-			AES_cipher_m13(ui1_p, ui1_p, state, expanded_key);
+			AES_cipher_m13(ui1_p, ui1_p, state, round_key);
 			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 		}
 
-		// encrypt leftovers
+		// keyless encryption
 		if (n_leftovers)
 			AES_keyless_encrypt_m13(n_leftovers, ui1_p);
 
-		// decrypt expanded key back to original key (encrypted above)
+		// decrypt round key back to original (encrypted above)
 		if (i) {
-			memset((void *) state, (si4) 0, (size_t) AES_NS_m13);  // zero state array
-			ui1_p = expanded_key;
+			ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+			ui1_p = round_key;
 			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_inv_cipher_m13(ui1_p, ui1_p, state, orig_expanded_key);
+				AES_inv_cipher_m13(ui1_p, ui1_p, state, orig_round_key);  // use orig_round key b/c round key changes on each iteration of this loop
 				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
 			}
 		}
@@ -16500,16 +16519,16 @@ tern	AES_init_tables_m13(void)
 // inv_cipher is the main decryption function
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
-	ui1	*ui1_p1, *ui1_p2;
-	si4	i, round = 0;
+	si4	i, j, round = 0;
 	
 
-	// copy the input encrypted text to state array
-	ui1_p1 = in;
-	ui1_p2 = (ui1 *) state;
-	for (i = AES_NS_m13; i--;)
-		*ui1_p2++ = *ui1_p1++;
-	
+	// copy the encrypted data to the state array
+	for (i = 0; i < 4; i++) {
+		for (j = 0; j < 4; j++) {
+			state[j][i] = in[i * 4 + j];
+		}
+	}
+
 	// add the first round key to the state before starting the rounds
 	AES_add_round_key_m13(AES_NR_m13, state, round_key);
 	
@@ -16531,11 +16550,12 @@ void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 	
 	// the decryption process is over
 	// copy the state array to output array
-	ui1_p1 = (ui1 *) state;
-	ui1_p2 = out;
-	for (i = AES_NS_m13; i--;)
-		*ui1_p2++ = *ui1_p1++;
-	
+	for (i = 0; i < 4; i++) {
+		for (j = 0; j < 4; j++) {
+			out[i * 4 + j] = state[j][i];
+		}
+	}
+
 	return;
 }
 
@@ -16651,7 +16671,7 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
 	}
 	
 	// the first round key is the key itself
-	for (i = j = 0; i < AES_NK_m13; i++, j += 4) {
+	for (i = j = 0; i < AES_NK_m13; i++, j += AES_NB_m13) {
 		expanded_key[j] = conditioned_key[j];
 		expanded_key[j + 1] = conditioned_key[j + 1];
 		expanded_key[j + 2] = conditioned_key[j + 2];
@@ -16661,7 +16681,7 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
 	// All other round keys are found from the previous round keys.
 	while (i < (AES_NB_m13 * (AES_NR_m13 + 1))) {
 		
-		for (j = 0; j < 4; j++)
+		for (j = 0; j < AES_NB_m13; j++)
 			temp[j] = expanded_key[(i - 1) * 4 + j];
 		
 		if (i % AES_NK_m13 == 0) {
@@ -16690,11 +16710,11 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
 			temp[3] = sbox_table[temp[3]];
 		}
 		
-		expanded_key[i * 4] = expanded_key[(i - AES_NK_m13) * 4] ^ temp[0];
-		expanded_key[i * 4 + 1] = expanded_key[(i - AES_NK_m13) * 4 + 1] ^ temp[1];
-		expanded_key[i * 4 + 2] = expanded_key[(i - AES_NK_m13) * 4 + 2] ^ temp[2];
-		expanded_key[i * 4 + 3] = expanded_key[(i - AES_NK_m13) * 4 + 3] ^ temp[3];
-		
+		expanded_key[i * AES_NB_m13] = expanded_key[(i - AES_NK_m13) * AES_NB_m13] ^ temp[0];
+		expanded_key[(i * AES_NB_m13) + 1] = expanded_key[((i - AES_NK_m13) * AES_NB_m13) + 1] ^ temp[1];
+		expanded_key[(i * AES_NB_m13) + 2] = expanded_key[((i - AES_NK_m13) * AES_NB_m13) + 2] ^ temp[2];
+		expanded_key[(i * AES_NB_m13) + 3] = expanded_key[((i - AES_NK_m13) * AES_NB_m13) + 3] ^ temp[3];
+
 		i++;
 	}
 	
@@ -24435,7 +24455,7 @@ tern  CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scal
 
 tern  CMP_show_block_header_m13(LH_m13 *lh, CMP_FIXED_BH_m13 *bh)
 {
-	si1	hex_str[HEX_STR_BYTES_m13(CRC_BYTES_m13, 1)], time_str[TIME_STRING_BYTES_m13], bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
+	si1	hex_str[HEX_STR_BYTES_m13(UID_BYTES_m13, 1)], time_str[TIME_STRING_BYTES_m13], bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
 	ui4	i, mask;
 	
 #ifdef FT_DEBUG_m13
@@ -24443,19 +24463,20 @@ tern  CMP_show_block_header_m13(LH_m13 *lh, CMP_FIXED_BH_m13 *bh)
 #endif
 
 	printf_m13("--------------- CMP Fixed Block Header - START ---------------\n");
-	printf_m13("Block Start UID: 0x%lx\n", bh->block_start_UID);
+	STR_hex_m13(hex_str, (ui1 *) &bh->block_start_UID, UID_BYTES_m13, NULL, TRUE_m13);
+	printf_m13("Block Start UID: 0x%s\n", hex_str);
 	if (bh->block_CRC == CRC_NO_ENTRY_m13)
 		printf_m13("Block CRC: no entry\n");
 	else {
-		STR_hex_m13(hex_str, (ui1 *) &bh->block_CRC, CRC_BYTES_m13, ":");
-		printf_m13("Block CRC: %s\n", hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &bh->block_CRC, CRC_BYTES_m13, NULL, TRUE_m13);
+		printf_m13("Block CRC: 0x%s\n", hex_str);
 	}
 	printf_m13("Block Flag Bits: ");
 	for (i = 0, mask = 1; i < 32; ++i, mask <<= 1) {
 		if (bh->block_flags & mask)
 			printf_m13("%d ", i);
 	}
-	STR_bin_m13(bin_str, (void *) &bh->block_flags, sizeof(ui4), " - " );
+	STR_bin_m13(bin_str, (void *) &bh->block_flags, sizeof(ui4), " - ", TRUE_m13);
 	printf_m13(" (value: %s)\n", bin_str);
 	if (bh->start_time == UUTC_NO_ENTRY_m13)
 		printf_m13("Start Time: no entry\n");
@@ -24477,7 +24498,7 @@ tern  CMP_show_block_header_m13(LH_m13 *lh, CMP_FIXED_BH_m13 *bh)
 		if (bh->parameter_flags & mask)
 			printf_m13("%d ", i);
 	}
-	STR_bin_m13(bin_str, (void *) &bh->parameter_flags, sizeof(ui4), " - ");
+	STR_bin_m13(bin_str, (void *) &bh->parameter_flags, sizeof(ui4), " - ", TRUE_m13);
 	printf_m13(" (value: %s)\n", bin_str);
 	printf_m13("Parameter Region Bytes: %hu\n", bh->parameter_region_bytes);
 	printf_m13("Protected Region Bytes: %hu\n", bh->protected_region_bytes);
@@ -24543,7 +24564,7 @@ tern  CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (RED_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &RED_header->flags, sizeof(ui2), " - ");
+			STR_bin_m13(bin_str, (void *) &RED_header->flags, sizeof(ui2), " - ", TRUE_m13);
 			printf_m13(" (value: %s)\n", bin_str);
 			printf_m13("\n%sNumber of Statistics Bins: %hu  (counts are scaled)\n", indent, RED_header->n_statistics_bins);
 			// end fixed RED model fields
@@ -24578,7 +24599,7 @@ tern  CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (PRED_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &PRED_header->flags, sizeof(ui2), " - ");
+			STR_bin_m13(bin_str, (void *) &PRED_header->flags, sizeof(ui2), " - ", TRUE_m13);
 			printf_m13(" (value: %s)\n", bin_str);
 			// end fixed PRED model fields
 			counts = (ui2 *) (cps->params.model_region + CMP_PRED_MODEL_FIXED_HDR_BYTES_m13 + (PRED_header->derivative_level * 4));
@@ -24613,7 +24634,7 @@ tern  CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (MBE_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &MBE_header->flags, sizeof(ui2), " - ");
+			STR_bin_m13(bin_str, (void *) &MBE_header->flags, sizeof(ui2), " - ", TRUE_m13);
 			printf_m13(" (value: %s)\n", bin_str);
 			break;
 			
@@ -24666,7 +24687,7 @@ tern  CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 				if (VDS_header->flags & mask)
 					printf_m13("%d ", i);
 			}
-			STR_bin_m13(bin_str, (void *) &VDS_header->flags, sizeof(ui4), " - ");
+			STR_bin_m13(bin_str, (void *) &VDS_header->flags, sizeof(ui4), " - ", TRUE_m13);
 			printf_m13(" (value: %s)\n", bin_str);
 			// show amplitude model
 			printf_m13("\t============== VDS Amplitude Block Model - START =============\n");
@@ -28019,7 +28040,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		printf_m13("0x%x\n", fp->fid);
 	else
 		printf_m13("no entry\n");
-	STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), "-");
+	STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), " - ", TRUE_m13);
 	printf_m13("Flags (%s):\n", bin_str);
 	if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
 		printf_m13("\tstandard stream\n");
@@ -32248,9 +32269,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 	// create a file on the session volume
 	sprintf_m13(test_path, "%s/test_file-remove_me", test_path);
 	sprintf_m13(command, "echo x > \"%s\"", test_path);  // create non-empty file in case file system is cloud
-	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
-	ret_val = system_m13(NULL, command, TRUE_m13);
-	G_pop_behavior_m13();
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 	if (ret_val == 0) {
 		
 		// get volume block size
@@ -32275,9 +32294,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "del \"%s\"", test_path);
 		#endif
-		G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
-		ret_val = system_m13(NULL, command, TRUE_m13);
-		G_pop_behavior_m13();
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 	}
 	
 	if (mmap_block_bytes <= 0)
@@ -34607,7 +34624,7 @@ tern  NET_show_parameters_m13(NET_PARAMS_m13 *np)
 	else
 		printf_m13("unknown\n");
 	if (np->MAC_address_num) {
-		STR_hex_m13(hex_str, np->MAC_address_bytes, NET_MAC_ADDRESS_BYTES_m13, ":");
+		STR_hex_m13(hex_str, np->MAC_address_bytes, NET_MAC_ADDRESS_BYTES_m13, ":", FALSE_m13);
 		printf_m13("MAC_address_bytes: %s\n", hex_str);
 		printf_m13("MAC_address_string: %s\n", np->MAC_address_string);
 	} else {
@@ -34615,7 +34632,7 @@ tern  NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("MAC_address_string: unknown\n");
 	}
 	if (np->LAN_IPv4_address_num) {
-		STR_hex_m13(hex_str, np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":");
+		STR_hex_m13(hex_str, np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":", TRUE_m13);
 		printf_m13("LAN_IPv4_address_bytes: %s\n", hex_str);
 		printf_m13("LAN_IPv4_address_string: %s\n", np->LAN_IPv4_address_string);
 	} else {
@@ -34623,7 +34640,7 @@ tern  NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("LAN_IPv4_address_string: unknown\n");
 	}
 	if (np->LAN_IPv4_subnet_mask_num) {
-		STR_hex_m13(hex_str, np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":");
+		STR_hex_m13(hex_str, np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":", TRUE_m13);
 		printf_m13("LAN_IPv4_subnet_mask_bytes: %s\n", hex_str);
 		printf_m13("LAN_IPv4_subnet_mask_string: %s\n", np->LAN_IPv4_subnet_mask_string);
 	} else {
@@ -34631,7 +34648,7 @@ tern  NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("LAN_IPv4_subnet_mask_string: unknown\n");
 	}
 	if (np->WAN_IPv4_address_num) {
-		STR_hex_m13(hex_str, np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":");
+		STR_hex_m13(hex_str, np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":", TRUE_m13);
 		printf_m13("WAN_IPv4_address_bytes: %s\n", hex_str);
 		printf_m13("WAN_IPv4_address_string: %s\n", np->WAN_IPv4_address_string);
 	} else {
@@ -35406,22 +35423,19 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					sprintf_m13(command, "echo %s | sudo -S chown root %s", pw, full_exec_name);  // in case owner wasn't root
-					G_push_behavior_m13(SUPPRESS_OUTPUT_m13 | RETURN_ON_FAIL_m13);
-					sys_ret_val = system_m13(NULL, command, TRUE_m13);
+					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 					if (sys_ret_val) {  // just check for password failure once
-						G_pop_behavior_m13();
 						G_warning_message_m13("%s(): Invalid sudo password\n", __FUNCTION__);
 						return(FALSE_m13);
 					}
 					sprintf_m13(command, "echo %s | sudo -S chmod g+x %s", pw, full_exec_name);  // in case group didn't have execute permissions
-					system_m13(NULL, command, TRUE_m13);
+					system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 					sprintf_m13(command, "echo %s | sudo -S chmod ug+s %s", pw, full_exec_name);  // set the "set-user" bits (must do owner and group)
-					system_m13(NULL, command, TRUE_m13);
+					system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 					// renice in shell with sudo password (can't change current process priority from within process unless UID is root, or change kernel CAP_SETUID to true)
 					pid = getpid();
 					sprintf_m13(command, "echo %s | sudo -S renice %d -p %d", pw, PRIO_MIN, pid);
-					sys_ret_val = system_m13(NULL, command, TRUE_m13);
-					G_pop_behavior_m13();
+					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 					if (sys_ret_val)
 						return(FALSE_m13);
 					return(TRUE_m13);
@@ -38855,7 +38869,7 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 // MARK: STRING FUNCTIONS  (STR)
 //******************************//
 
-si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
+si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern numeric_order)
 {
 	ui1	*num, mask;
 	si1	*c, *c2;
@@ -38869,6 +38883,8 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 	// input presumed to be little endian
 	// displayed high bit => low bit, left to right
 	// pass NULL or "" for byte_separator for no separation between bytes
+	// if numeric_order is TRUE_m13, bytes & bits will be displayed high->low from left->right
+	// otherwise they will be displayed as they appear in memory (from low->high addresses & bit positions)
 
 	if (STR_empty_m13(byte_separator) == FALSE_m13) {
 		for (c = byte_separator - 1; *++c;);
@@ -38884,17 +38900,32 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator)
 		str = malloc_m13((size_t) str_len);
 	}
 	
-	num = (ui1 *) num_ptr + (num_bytes - 1);
-	c = str;
-	for (; num_bytes--; --num) {
-		for (mask = 1 << 7, byte_bits = 8; byte_bits--; mask >>= 1) {
-			if (*num & mask)
-				*c++ = '1';
-			else
-				*c++ = '0';
+	if (numeric_order == TRUE_m13) {
+		num = (ui1 *) num_ptr + (num_bytes - 1);
+		c = str;
+		for (; num_bytes--; --num) {
+			for (mask = 1 << 7, byte_bits = 8; byte_bits--; mask >>= 1) {
+				if (*num & mask)
+					*c++ = '1';
+				else
+					*c++ = '0';
+			}
+			if (sep_len && num_bytes)
+				for (c2 = byte_separator; *c2; *c++ = *c2++);
 		}
-		if (sep_len && num_bytes)
-			for (c2 = byte_separator; *c2; *c++ = *c2++);
+	} else {
+		num = (ui1 *) num_ptr;
+		c = str;
+		for (; num_bytes--; --num) {
+			for (mask = 1, byte_bits = 8; byte_bits--; mask <<= 1) {
+				if (*num & mask)
+					*c++ = '1';
+				else
+					*c++ = '0';
+			}
+			if (sep_len && num_bytes)
+				for (c2 = byte_separator; *c2; *c++ = *c2++);
+		}
 	}
 	*c = 0;
 
@@ -39330,7 +39361,7 @@ si1	*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number)
 }
 
 
-si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator)
+si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, tern numeric_order)
 {
 	tern	caps;
 	ui1	*byte;
@@ -39346,6 +39377,8 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator)
 	// displayed high byte => low byte, left to right
 	// pass NULL or "" for byte_separator for no separation between bytes
 	// pass negative num_bytes for capital letters
+	// if numeric_order is TRUE_m13, bytes will be displayed high->low from left->right
+	// otherwise bytes will be displayed as they appear in memory (from low->high addresses)
 
 	if (STR_empty_m13(byte_separator) == FALSE_m13) {
 		for (c = byte_separator - 1; *++c;);
@@ -39362,22 +39395,35 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator)
 	}
 
 	if (str == NULL) {  // caller responsible for freeing
-		str_len = (num_bytes << 4) + 1;  // 2 bytes per bit + terminal zero
+		str_len = (num_bytes << 1) + 1;  // 2 bytes per byte + terminal zero
 		if (sep_len)
 			str_len += (num_bytes - 1) * sep_len;
 		str = malloc_m13((size_t) str_len);
 	}
 	
 	c = str;
-	byte = (ui1 *) num_ptr + (num_bytes - 1);  // little endian - last byte is highest order
-	for (; num_bytes--; --byte) {
-		if (caps == TRUE_m13)
-			sprintf(c, "%02hhX", *byte);
-		else
-			sprintf(c, "%02hhx", *byte);
-		c += 2;
-		if (sep_len && num_bytes)
-			for (c2 = byte_separator; *c2; *c++ = *c2++);
+	if (numeric_order == TRUE_m13) {
+		byte = (ui1 *) num_ptr + (num_bytes - 1);  // little endian - last byte is highest order
+		for (; num_bytes--; --byte) {
+			if (caps == TRUE_m13)
+				sprintf(c, "%02hhX", *byte);
+			else
+				sprintf(c, "%02hhx", *byte);
+			c += 2;
+			if (sep_len && num_bytes)
+				for (c2 = byte_separator; *c2; *c++ = *c2++);
+		}
+	} else {
+		byte = (ui1 *) num_ptr;
+		for (; num_bytes--; ++byte) {
+			if (caps == TRUE_m13)
+				sprintf(c, "%02hhX", *byte);
+			else
+				sprintf(c, "%02hhx", *byte);
+			c += 2;
+			if (sep_len && num_bytes)
+				for (c2 = byte_separator; *c2; *c++ = *c2++);
+		}
 	}
 	*c = 0;
 	
@@ -41373,8 +41419,8 @@ tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 	if (header->crc == CRC_NO_ENTRY_m13) {
 		printf_m13("CRC: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (ui1 *) &header->crc, sizeof(ui4), ":");
-		printf_m13("CRC: %s (%s)\n", header->crc, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &header->crc, sizeof(ui4), NULL, TRUE_m13);
+		printf_m13("CRC: 0x%s\n", hex_str);
 	}
 	printf_m13("Packet Bytes: %hu\n", header->packet_bytes);
 	printf_m13("Flags (%hu): ", header->flags);
@@ -41411,8 +41457,8 @@ tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 	if (header->ID_code == TR_ID_CODE_NO_ENTRY_m13) {
 		printf_m13("ID String: no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (ui1 *) &header->ID_code, sizeof(ui4), ":");
-		printf_m13("ID String: %s (%s)\n", header->ID_string, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &header->ID_code, sizeof(ui4), NULL, TRUE_m13);
+		printf_m13("ID String: %s (0x%s)\n", header->ID_string, hex_str);
 	}
 	if (header->type == TR_TYPE_NO_ENTRY_m13)
 		printf_m13("Type: %hhu (no entry)\n", header->type);
@@ -42625,6 +42671,8 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns, TRUE_m13 on success, FALSE_m13 on failure, UNKNOWN_m13 if "path" does not exist
 
 	// condition paths
 	G_full_path_m13(path, tmp_path);
@@ -42642,13 +42690,11 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "copy \\/y \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
 			G_set_error_m13(E_UNSPEC_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
-		
-		return_m13(TRUE_m13);
 	} else if (fe == DIR_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
 		sprintf_m13(command, "cp -Rf \"%s\" \"%s\"" , path, new_path);
@@ -42656,16 +42702,16 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "xcopy \\/s \\/e \\/y \\/c \\/q \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
 			G_set_error_m13(E_UNSPEC_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
-
-		return_m13(TRUE_m13);
+	} else {
+		return_m13(UNKNOWN_m13);
 	}
 	
-	return_m13(UNKNOWN_m13);
+	return_m13(TRUE_m13);
 }
 
 
@@ -44634,6 +44680,7 @@ inline
 tern	mkdir_m13(const si1 *dir)
 {
 	si1	command[PATH_BYTES_m13 + 16], tmp_dir[PATH_BYTES_m13];
+	si4	ret_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44650,7 +44697,8 @@ tern	mkdir_m13(const si1 *dir)
 	sprintf_m13(command, "mkdir \"%s\"", dir);
 	#endif
 	
-	if (system_m13(NULL, command, TRUE_m13)) {
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	if (ret_val) {
 		G_set_error_m13(E_OPEN_m13, "cannot create path");
 		return_m13(FALSE_m13);
 	}
@@ -44841,7 +44889,7 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
 			G_set_error_m13(E_UNSPEC_m13, "could not move \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
@@ -45413,7 +45461,7 @@ tern	rm_m13(const si1 *path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "del \"%s\"", path);
 		#endif
-		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
 			G_set_error_m13(E_UNSPEC_m13, "could not remove file \"%s\"", path);
 			return_m13(FALSE_m13);
@@ -45427,7 +45475,7 @@ tern	rm_m13(const si1 *path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "rmdir \\/s \\/q \"%s\"", path);
 		#endif
-		ret_val = system_m13(command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
 		if (ret_val) {
 			G_set_error_m13(E_UNSPEC_m13, "could not remove directory \"%s\"", path);
 			return_m13(FALSE_m13);
@@ -45772,7 +45820,7 @@ si8	strncpy_m13(si1 *target, const si1 *source, size_t n_chars)
 }
 
 
-si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams;
+si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams, ui4 behavior;
 {
 	tern	null_std_streams;
 	ui4	behavior;
@@ -45790,10 +45838,13 @@ si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command
 		va_start(v_args, command);
 		command = va_arg(v_args, si1 *);
 		null_std_streams = (tern) va_arg(v_args, si4);
+		behavior = (tern) va_arg(v_args, ui4);
 		va_end(v_args);
+	} else {
+		behavior = CURRENT_BEHAVIOR_m13;
 	}
-	
-	behavior = G_current_behavior_m13();
+	if (behavior == CURRENT_BEHAVIOR_m13)
+		behavior = G_current_behavior_m13();
 	
 	if (null_std_streams == TRUE_m13) {
 		len = strlen(command);
@@ -46242,7 +46293,7 @@ SYSTEM_PIPE_FAIL_m13:
 		tmp_file = G_unique_temp_file_m13(NULL);
 		e_tmp_file = G_unique_temp_file_m13(NULL);
 		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command_p, tmp_file, e_tmp_file);
-		err = system_m13(NULL, tmp_command, TRUE_m13);
+		err = system_m13(tmp_command);
 		free((void *) tmp_command);
 		
 		fp = fopen_m13(tmp_file, "r");
@@ -46674,7 +46725,7 @@ SYSTEM_PIPE_FAIL_m13:
 		else
 			e_tmp_file = tmp_file;
 		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
-		err = system_m13(NULL, tmp_command, TRUE_m13);
+		err = system_m13(tmp_command);
 		free((void *) tmp_command);
 		fp = fopen_m13(tmp_file, "r");
 		bytes_in_buffer = flen_m13(fp);
@@ -46807,7 +46858,7 @@ si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 	ret_val = vsnprintf_m13(*target, PRINTF_BUF_LEN_m13, fmt, args);
 	G_pop_behavior_m13();
 	
-	// expand memory to required size
+	// release excess memory (OS may not), or expand memory to required size
 	*target = (si1 *) realloc((void *) *target, (size_t) (ret_val + 1));
 	if (ret_val >= PRINTF_BUF_LEN_m13)
 		ret_val = vsnprintf_m13(*target, ret_val + 1, fmt, args_copy);
