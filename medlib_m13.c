@@ -1208,7 +1208,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 }
 
 
-Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
+Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_type)
 {
 	tern			seek_mode, seg_exists;
 	si1			**seg_list, *metadata_ext, tmp_str[PATH_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
@@ -1238,46 +1238,39 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 	
 	// get proc globals
 	proc_globs = G_proc_globs_m13(lh);
-	
-	// get channel
+
 	sess = NULL;
 	ssr = NULL;
 	chan = NULL;
 	ri_fps = rd_fps = NULL;
+
+	// get channel
 	switch(lh->type_code) {
 		case SSR_TYPE_CODE_m13:
 		case SESS_TYPE_CODE_m13:
 			if (lh->type_code == SSR_TYPE_CODE_m13) {
 				ssr = (SSR_m13 *) lh;
-				sess = (SESS_m13 *) ssr->parent;
+				sess = (SESS_m13 *) lh->parent;
 			} else {
 				sess = (SESS_m13 *) lh;
 			}
 			chan = proc_globs->current_session.index_channel;
 			if (chan == NULL) {
-				G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
-				chan = proc_globs->current_session.index_channel;
+				chan = G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
 				if (chan == NULL)
 					return_m13(NULL);
 			}
 			break;
 		case TS_CHAN_TYPE_CODE_m13:
 		case VID_CHAN_TYPE_CODE_m13:
+			chan = (CHAN_m13 *) lh;
 			if (lh->parent->type_code == SESS_TYPE_CODE_m13)
 				sess = (SESS_m13 *) lh->parent;
-			else
-				sess = NULL;
-			chan = (CHAN_m13 *) lh;
 			break;
-		default:
-			G_set_error_m13(E_UNSPEC_m13, "level must be session or channel");
-			return_m13(NULL);
 	}
-	eprintf_m13();
 	
 	// get channel records
 	if (chan) {
-		eprintf_m13("using metadata");
 		ri_fps = chan->rec_inds_fps;
 		if (ri_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
@@ -1290,15 +1283,16 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
 				rd_fps = chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
 		}
+		*source_type = chan->type_code;
 	}
-	
+
 	// get session records
 	if (ri_fps == NULL || rd_fps == NULL) {
 		ri_fps = sess->rec_inds_fps;
 		if (ri_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.fs_name, REC_INDS_TYPE_STR_m13);
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-				sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			} else if (proc_globs->current_session.names_differ == TRUE_m13){
 				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_INDS_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
@@ -1309,15 +1303,16 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 		if (rd_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.fs_name, REC_DATA_TYPE_STR_m13);
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-				sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			} else if (proc_globs->current_session.names_differ == TRUE_m13){
 				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_DATA_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
 					rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_UH_ONLY_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
 		}
+		*source_type = NO_TYPE_CODE_m13;
 	}
-	
+
 	// use Sgmt records (preferred)
 	n_segs = 0;
 	if (ri_fps && rd_fps) {
@@ -1376,24 +1371,24 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 				}
 			}
 		}
-		
-		// check Sgmt records are sufficient
+
+		// check session Sgmt records are sufficient
 		if (search_mode == SAMPLE_SEARCH_m13) {
 			if (Sgmt_recs[0].start_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13) {
-				n_segs = 0;
+				n_segs = 0;  // force using metadata
 				free((void *) Sgmt_recs);
 			}
 		}
 	}
-	
+
 	// use metadata files (less efficient)
 	if (n_segs == 0) {
-		eprintf_m13("using metadata");
 		if (chan == NULL) {
-			G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
-			chan = proc_globs->current_session.index_channel;
-			if (chan == NULL)
+			chan = G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
+			if (chan == NULL) {
+				G_set_error_m13(E_UNSPEC_m13, "index channel not set");
 				return_m13(NULL);
+			}
 		}
 		seg_list = G_get_file_list_m13(NULL, &n_segs, chan->path, NULL, "?isd", GFL_FULL_PATH_m13);
 		if (n_segs == 0) {
@@ -1463,11 +1458,12 @@ Sgmt_REC_m13	*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode)
 				FPS_free_m13(&md_fps);
 		}
 		free_m13((void *) seg_list);
+		*source_type = chan->type_code;
 	}
 
-	// fill in global end fields
+	// fill in global Sgmt fields
 	proc_globs->current_session.end_time = Sgmt_recs[n_segs - 1].end_time;
-
+	
 	// set level Sgmt_record shortcuts
 	chan->Sgmt_recs = Sgmt_recs;
 	if (ssr)
@@ -2611,12 +2607,6 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
 	pwd = &proc_globs->password_data;
 	
-	eprintf_m13("");
-	G_show_password_data_m13(pwd, 0);
-	eprintf_m13("uh->encryption_2 = %hhd", uh->encryption_2);
-	eprintf_m13("uh->encryption_3 = %hhd", uh->encryption_3);
-	eprintf_m13("uh->encryption_rounds = %hhu", uh->encryption_rounds);
-
 	// section 2 decryption
 	if (uh->encryption_2 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= uh->encryption_2 ) {
@@ -2667,9 +2657,6 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 		proc_globs->time_constants.set = TRUE_m13;
 	}
 
-	eprintf_m13("");
-	G_show_proc_globs_m13((LH_m13 *) fps);
-	
 	return_m13(TRUE_m13);
 }
 
@@ -2889,7 +2876,7 @@ si4 G_DST_offset_m13(si8 uutc)
 		G_warning_message_m13("%s(): library time constants not set\n", __FUNCTION__);
 		return_m13(0);
 	}
-	if (proc_globs->time_constants.observe_DST < TRUE_m13)
+	if (proc_globs->time_constants.observe_DST != TRUE_m13)
 		return_m13(0);
 	if (proc_globs->time_constants.daylight_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 		G_warning_message_m13("%s(): daylight change data not available\n", __FUNCTION__);
@@ -2903,8 +2890,7 @@ si4 G_DST_offset_m13(si8 uutc)
 	if (proc_globs->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
 		local_utc = utc + (si8) proc_globs->time_constants.standard_UTC_offset;
 		gmtime_r(&local_utc, &time_info);
-	}
-	else {
+	} else {
 		gmtime_r(&utc, &time_info);
 	}
 #endif
@@ -2912,8 +2898,7 @@ si4 G_DST_offset_m13(si8 uutc)
 	if (proc_globs->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
 		local_utc = utc + (si8) proc_globs->time_constants.standard_UTC_offset;
 		time_info = *(gmtime(&local_utc));
-	}
-	else {
+	} else {
 		time_info = *(gmtime(&utc));
 	}
 #endif
@@ -2924,8 +2909,7 @@ si4 G_DST_offset_m13(si8 uutc)
 	if (DST_start_month < DST_end_month) {
 		first_DTCC = &proc_globs->time_constants.daylight_start_code;
 		last_DTCC = &proc_globs->time_constants.daylight_end_code;
-	}
-	else {
+	} else {
 		first_DTCC = &proc_globs->time_constants.daylight_end_code;
 		last_DTCC = &proc_globs->time_constants.daylight_start_code;
 	}
@@ -5214,10 +5198,20 @@ PATH_FROM_ROOT_EXIT_m13:
 
 void	G_function_stack_trap_m13(si4 sig_num)
 {
-	const si1	*error_type, *error_desc;
+	volatile static tern	called = FALSE_m13;
+	const si1		*error_type, *error_desc;
+	pid_t_m13		_id;
 	
 	
-	switch(sig_num) {
+	// just print first thread to get here
+	// other just wait for exit
+	if (called == TRUE_m13) {
+		while (1)
+			G_nap_m13("1 sec");
+	}
+	called = TRUE_m13;
+	
+	switch (sig_num) {
 		case SIGINT:
 			error_type = "SIGINT";
 			error_desc = "Process Interrupted";
@@ -5236,11 +5230,15 @@ void	G_function_stack_trap_m13(si4 sig_num)
 			break;
 		case SIGSEGV:
 			error_type = "SIGSEGV";
-			error_desc = "Memory Segment Violation";
+			error_desc = "Memory Access Violation";
 			break;
 		case SIGTERM:
 			error_type = "SIGTERM";
 			error_desc = "Terminate";
+			break;
+		case SIGTRAP:
+			error_type = "SIGTRAP";
+			error_desc = "Trace Trap";
 			break;
 		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
 		case SIGQUIT:
@@ -5268,10 +5266,17 @@ void	G_function_stack_trap_m13(si4 sig_num)
 			return;
 	}
 
+	_id = gettid_m13();  // main process pid == tid
 #ifdef MATLAB_m13
-	mexPrintf("\n\nSignal:\t%s [%s]\n\n", error_desc, error_type);
+	mexPrintf("\n\nSignal (thread %lu):\t%s [%s]\n", _id, error_desc, error_type);
+	if (sig_num == SIGTRAP)
+		mexPrintf("(it is possible this signal was triggered by another thread or a code breakpoint)\n");
+	mexPrintf("\n");
 #else
-	fprintf(stderr, "%c\n\n%sSignal%s:\t%s %s[%s]%s\n\n", 7, TC_RED_m13, TC_RESET_m13, error_desc, TC_BLUE_m13, error_type, TC_RESET_m13);
+	fprintf(stderr, "%c\n\n%sSignal (thread %llu)%s:\t%s %s[%s]%s\n", 7, TC_RED_m13, _id, TC_RESET_m13, error_desc, TC_BLUE_m13, error_type, TC_RESET_m13);
+	if (sig_num == SIGTRAP)
+		fprintf(stderr, "%s(it is possible this signal was triggered by another thread or a code breakpoint)%s\n", TC_GREEN_m13, TC_RESET_m13);
+	fprintf(stderr, "\n");
 #endif
 		
 	exit_m13(-1);  // exit_m13() shows function stack if FN_DEBUG_m13 defined
@@ -5941,60 +5946,68 @@ GFL_CONDITION_RETURN_DATA_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked)
+FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked, ...)  // varargs(locked != NULL): pid_t_m13 tid
 {
 	tern				got_lock;
 	si4				i, n_stacks;
-	pid_t_m13			_id;
+	pid_t_m13			_id, tid, pid;
 	FUNCTION_STACK_LIST_m13		*list;
 	FUNCTION_STACK_m13		*stack;
+	va_list				v_arg;
 	
 
 	// get function stacks mutex
 	// NOTE: the calling function is expected to release the mutex, unless it returns NULL
 	// pass address of lock to use non-blocking lock, status returned (useful where multiple threads may be in error simultaneously)
 	// pass NULL for "locked" to force lock
+	// if "locked" != NULL is passed, "tid" can be passed to return a specified function stack (if "tid" is zero, the current thread id will be used)
 	
+	
+	// get tid
+	tid = 0;
+	if (locked) {
+		va_start(v_arg, locked);
+		tid = va_arg(v_arg, pid_t_m13);
+		pid = 0;
+		va_end(v_arg);
+	}
+	if (tid == 0) {
+		pid = getpid_m13();
+		tid = gettid_m13();
+	}
+
+	// use trylock
 	list = globals_m13->function_stack_list;
 	got_lock = TRUE_m13;
 	if (locked) {
-		if (pthread_mutex_trylock_m13(&list->mutex)) {
-			G_warning_message_m13("%s(): function stack list is not locked\n", __FUNCTION__);
+		if (pthread_mutex_trylock_m13(&list->mutex))
 			*locked = got_lock = FALSE_m13;
-		} else {
+		else
 			*locked = TRUE_m13;
-		}
 	} else {
 		pthread_mutex_lock_m13(&list->mutex);
 	}
 
 	// find stack
-	_id = gettid_m13();  // in single thread process tid == pid
 	stack = list->stacks;
 	n_stacks = list->top_idx + 1;
-	for (i = n_stacks; i--; ++stack)
-		if (stack->_id == _id)
+	for (i = n_stacks; i--; ++stack) {
+		_id = stack->_id;
+		if (_id == pid || _id == tid)
 			break;
+	}
 		
-	if (i == -1) {  // thread stack not found, try process id (child pids are different from parent)
-		_id = getpid_m13();
-		stack = list->stacks;
-		for (i = n_stacks; i--; ++stack)
-			if (stack->_id == _id)
-				break;
-		
-		// new process, create a new stack
-		if (i == -1) {
-			if (got_lock == TRUE_m13) {
-				stack = G_add_function_stack_m13();
-				if (stack == NULL) {  // return with no change to function stacks
-					pthread_mutex_unlock_m13(&list->mutex);
-					return(NULL);
-				}
-			} else {
-				G_warning_message_m13("%s(): can't expand unlocked function stack list\n", __FUNCTION__);
+	// new process, create a new stack
+	if (i == -1) {
+		if (got_lock == TRUE_m13) {
+			stack = G_add_function_stack_m13();
+			if (stack == NULL) {  // return with no change to function stacks
+				pthread_mutex_unlock_m13(&list->mutex);
 				return(NULL);
 			}
+		} else {
+			G_warning_message_m13("%s(): can't expand unlocked function stack list\n", __FUNCTION__);
+			return(NULL);
 		}
 	}
 
@@ -6297,23 +6310,26 @@ si4 G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 	
 	// returns UNKNOWN_m13 on failure
 
+	// reset slice seg fields
 	if (slice->conditioned == FALSE_m13)
 		G_condition_slice_m13(slice, lh);
-
 	slice->start_seg_num = slice->end_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
 	slice->n_segs = UNKNOWN_m13;
 
-	// check for valid limit pair (time takes priority)
+	// check for valid limit pair (time takes priority if all parameters set)
 	if ((search_mode = G_get_search_mode_m13(slice)) == FALSE_m13)
 		return_m13(0);
-
-	proc_globs = G_proc_globs_m13(lh);
-	eprintf_m13();
+	
+	// get Sgmt records array
 	Sgmt_records = G_Sgmt_records_m13(lh, search_mode);
-	eprintf_m13();
-
-	// search Sgmt_records array for segments
+	if (Sgmt_records == NULL)
+		return_m13(0);
+	
+	// search Sgmt_records array
 	n_segs = G_search_Sgmt_records_m13(Sgmt_records, slice, search_mode);
+	
+	// set process globals
+	proc_globs = G_proc_globs_m13(lh);
 	if (n_segs) {
 		slice->n_segs = n_segs;
 		if (lh->flags & LH_MAP_ALL_SEGS_m13) {
@@ -6326,10 +6342,10 @@ si4 G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 	} else {
 		slice->n_segs = UNKNOWN_m13;
 		proc_globs->current_session.n_mapped_segments = 0;
-		proc_globs->current_session.first_mapped_segment_number = 0;
+		proc_globs->current_session.first_mapped_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;  // 0
 	}
 
-	start_time = Sgmt_records[0].start_time;
+	start_time = Sgmt_records->start_time;
 	if (slice->start_time == BEGINNING_OF_TIME_m13)
 		slice->start_time = start_time;
 	if (slice->start_time == start_time)
@@ -6473,6 +6489,44 @@ si1	*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS
 	}
 
 	return_m13(session_directory);
+}
+
+
+si8	G_get_session_samples_m13(LH_m13 *lh, sf8 rate)
+{
+	si4			i;
+	sf4			sf4_rate;
+	si8			n_samps;
+	PROC_GLOBS_m13		*proc_globs;
+	Sgmt_RECS_LIST_m13	*list;
+	Sgmt_RECS_ENTRY_m13 	*rec_entry;
+	Sgmt_REC_m13		*Sgmt_rec;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	proc_globs = G_proc_globs_m13(lh);
+	list = proc_globs->current_session.Sgmt_recs_list;
+	
+	// search for matching entry
+	pthread_mutex_lock_m13(&list->mutex);
+	rec_entry = list->entries;
+	sf4_rate = (sf4) rate;
+	for (i = list->top_idx + 1; i--; ++rec_entry) {
+		Sgmt_rec = (Sgmt_REC_m13 *) rec_entry->Sgmt_recs;
+		if (Sgmt_rec->rate == sf4_rate)
+			break;
+	}
+	
+	if (i == -1)
+		n_samps = SAMPLE_NUMBER_NO_ENTRY_m13;
+	else
+		n_samps = rec_entry->n_session_samples;
+
+	pthread_mutex_unlock_m13(&list->mutex);
+	
+	return_m13(n_samps);
 }
 
 
@@ -6922,27 +6976,26 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	globals_m13->record_filters = NULL;
 	
 	// miscellaneous
-	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
-	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
-	globals_m13->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
-	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
-	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
-	globals_m13->update_header_names = GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13;
-	globals_m13->update_file_version = GLOBALS_UPDATE_FILE_VERSION_DEFAULT_m13;
-	globals_m13->update_parity = GLOBALS_UPDATE_PARITY_DEFAULT_m13;
-
 	#if defined MACOS_m13 || defined LINUX_m13
 	strcpy(globals_m13->temp_dir, "/tmp");
 	strcpy(globals_m13->temp_file, "/tmp/MED_junk");
 	#endif
 	#ifdef WINDOWS_m13
 	si8	len;
-	
+
 	GetTempPathA(PATH_BYTES_m13, globals_m13->temp_dir);
 	sprintf(globals_m13->temp_file, "%sMED_junk", globals_m13->temp_dir);
 	len = strlen(globals_m13->temp_dir);
 	globals_m13->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
+	globals_m13->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
+	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
+	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
+	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
+	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
+	globals_m13->update_header_names = GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13;
+	globals_m13->update_file_version = GLOBALS_UPDATE_FILE_VERSION_DEFAULT_m13;
+	globals_m13->update_parity = GLOBALS_UPDATE_PARITY_DEFAULT_m13;
 		
 	pthread_mutex_unlock_m13(&globals_m13->mutex);
 	
@@ -6984,6 +7037,7 @@ tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path
 	signal(SIGINT, G_function_stack_trap_m13);  // Ctrl-C interrupt (often caught on Windows before gets here [b/c == "Copy"])
 	signal(SIGSEGV, G_function_stack_trap_m13);  // Segmentation violation
 	signal(SIGTERM, G_function_stack_trap_m13);  // Terminate
+	signal(SIGTRAP, G_function_stack_trap_m13);  // Trace Trap (unhandled exception, or debugger breakpoint)
 	#if defined MACOS_m13 || defined LINUX_m13  // supported on Unix-like OS's
 		signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
 		signal(SIGKILL, G_function_stack_trap_m13);  // Kill
@@ -8107,9 +8161,6 @@ void	G_nap_m13(const si1 *nap_str)
 	struct timespec nap;
 	si8 num;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	// string format: <number>[<space>]<unit letter(s)>
 	// e.g. to sleep for 1 millisecond:
@@ -8117,7 +8168,7 @@ void	G_nap_m13(const si1 *nap_str)
 
 	if (STR_empty_m13(nap_str) == TRUE_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "NULL input string");
-		return_void_m13;
+		return;
 	}
 
 	c = (si1 *) nap_str;
@@ -8168,7 +8219,7 @@ void	G_nap_m13(const si1 *nap_str)
 			break;
 		default:
 			G_set_error_m13(E_UNSPEC_m13, "\"%s\" is not a valid input string", nap_str);
-			return_void_m13;
+			return;
 	}
 	
 	// overflow
@@ -8185,7 +8236,7 @@ void	G_nap_m13(const si1 *nap_str)
 	WN_nap_m13(&nap);
 #endif
 
-	return_void_m13;
+	return;
 }
 
 
@@ -9050,7 +9101,6 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	
 	// set reference channel (before get segment range)
 	G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);
-	eprintf_m13();
 
 	// get segment range
 	n_segs = slice->n_segs;
@@ -9488,8 +9538,8 @@ inline
 #endif
 PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 {
-	si4			i, entries;
-	pid_t_m13		_id;
+	si4			i;
+	pid_t_m13		_id, pid, tid;
 	LH_m13			*orig_lh;
 	PROC_GLOBS_m13		**proc_globs_ptr, **first_empty, **new_ptrs;
 	PROC_GLOBS_LIST_m13	*list;
@@ -9498,7 +9548,10 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	G_push_function_m13();
 #endif
 	
+	// find process globals by local ref or linkage
 	if (lh) {
+		if (lh->type_code == PROC_GLOBS_TYPE_CODE_m13)
+			return_m13((PROC_GLOBS_m13 *) lh);
 		if (lh->proc_globs)
 			return_m13(lh->proc_globs);
 		orig_lh = lh;
@@ -9508,43 +9561,33 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 			orig_lh->proc_globs = (PROC_GLOBS_m13 *) lh;
 			return_m13((PROC_GLOBS_m13 *) lh);
 		}
-		first_empty = NULL;  // level passed, but no process globals => generate new (don't use _id)
 	}
 
 	// get mutex
 	list = globals_m13->proc_globs_list;
 	pthread_mutex_lock_m13(&list->mutex);
 			
-	// find proc globals by thread_id (first entry is main process globals)
-	if (lh == NULL) {
-		_id = gettid_m13();  // in single thread process tid == pid
-		entries = list->top_idx + 1;
-		proc_globs_ptr = list->proc_globs_ptrs;
-		for (i = entries; i--; ++proc_globs_ptr) {
+	// find process globals by process or thread id
+	// (first entry is main process globals)
+	first_empty = NULL;
+	proc_globs_ptr = list->proc_globs_ptrs;
+	if (first_empty == NULL) {
+		pid = getpid_m13();  // if child, pid is different from parent
+		tid = gettid_m13();  // in single thread process tid == pid
+		for (i = list->top_idx + 1; i--; ++proc_globs_ptr) {
 			if (*proc_globs_ptr) {
-				if ((*proc_globs_ptr)->_id == _id) {
+				_id = (*proc_globs_ptr)->_id;
+				if (_id == pid || _id == tid) {  // child pids are different from parent
 					pthread_mutex_unlock_m13(&list->mutex);
 					return_m13(*proc_globs_ptr);
 				}
-			}
-		}
-
-		// thread stack not found, try process id
-		_id = getpid_m13();  // child pids are different from parent
-		proc_globs_ptr = list->proc_globs_ptrs;
-		first_empty = NULL;
-		for (i = entries; i--; ++proc_globs_ptr) {
-			if (*proc_globs_ptr == NULL) {
-				if (first_empty == NULL)
-					first_empty = proc_globs_ptr;
-			} else if ((*proc_globs_ptr)->_id == _id) {
-				pthread_mutex_unlock_m13(&list->mutex);
-				return_m13(*proc_globs_ptr);
+			} else {
+				first_empty = proc_globs_ptr;
 			}
 		}
 	}
 	
-	// create new
+	// expand list
 	if (first_empty == NULL) {  // expand list
 		list->size += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
 		new_ptrs = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) list->size * sizeof(PROC_GLOBS_m13 *));
@@ -9555,7 +9598,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 			return_m13(NULL);
 		}
 		++list->top_idx;
-		proc_globs_ptr = new_ptrs + list->top_idx;
+		proc_globs_ptr = new_ptrs + list->top_idx;  // leave proc_globs_ptr at top of stack
 		list->proc_globs_ptrs = new_ptrs;
 		memset((void *) proc_globs_ptr, (si4) 0, (size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13 *));  // realloc() does not zero
 	} else {
@@ -9564,8 +9607,6 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	
 	// initialize
 	*proc_globs_ptr = G_proc_globs_init_m13(lh);
-	if (lh)
-		lh->proc_globs = *proc_globs_ptr;
 
 	// relase mutex
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -9720,12 +9761,10 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 	proc_globs->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
 	proc_globs->miscellaneous.proc_error_state = FALSE_m13;
 
-	// set parent
-	if (lh)
-		lh->parent = (LH_m13 *) proc_globs;
-	
-	// set child
-	proc_globs->child = lh;
+	if (lh) {
+		lh->parent = (LH_m13 *) proc_globs;  // set parent
+		proc_globs->child = lh;  // set child
+	}
 
 	return_m13(proc_globs);
 }
@@ -9767,7 +9806,6 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
 		return_m13(TRUE_m13);
 	
-	eprintf_m13("");
 	// copy password hints from metadata to pwd
 	md1 = NULL;
 	if (METADATA_CODE_m13(uh->type_code) == TRUE_m13) {
@@ -9784,7 +9822,6 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 			free_md1 = TRUE_m13;
 		}
 	}
-	eprintf_m13("");
 	pwd->hints_exist = FALSE_m13;
 	if (md1) {
 		if (*md1->level_1_password_hint) {
@@ -9799,14 +9836,10 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 			free((void *) md1);
 	}
 	
-	eprintf_m13("");
 	// condition password (check, extract terminal bytes, expand)
 	if (G_condition_password_m13(unspecified_pw, unspecified_pw_bytes, uh->expanded_passwords) == FALSE_m13)
 		G_show_password_hints_m13(pwd, 0);
 
-	eprintf_m13("unspecified_pw = %s", unspecified_pw);
-	eprintf_m13("unspecified_pw_bytes = %s", unspecified_pw_bytes);
-	
 	// check if data is encrypted (no need to check level 2, since for level 2 to exist, level 1 must exist)
 	if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
 		return_m13(TRUE_m13);
@@ -10816,8 +10849,11 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		password = va_arg(v_args, si1 *);
 		index_channel_name = va_arg(v_args, si1 *);
 		va_end(v_args);
+		
 		// open session
+		eprintf_m13("");
 		sess = G_open_session_m13(NULL, slice, file_list, list_len, flags, password, index_channel_name);
+		eprintf_m13("");
 		if (sess == NULL)
 			return_m13(NULL);
 		free_sess = TRUE_m13;
@@ -12408,6 +12444,7 @@ SET_GTC_TIMEZONE_MATCH_m13:
 Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 {
 	si1			md_path[PATH_BYTES_m13];
+	ui4 			source_type;
 	si4			i, seg_idx, n_segs;
 	sf4			rate;
 	PROC_GLOBS_m13		*proc_globs;
@@ -12429,28 +12466,29 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	sess = NULL;
 	ssr = NULL;
 	chan = NULL;
+	
 	if (search_mode == TIME_SEARCH_m13) {  // any Sgmt records will suffice
-		eprintf_m13();
 		pthread_mutex_lock_m13(&list->mutex);
 		if (list->top_idx >= 0) {
 			Sgmt_recs = (Sgmt_REC_m13 *) list->entries->Sgmt_recs;
 			pthread_mutex_unlock_m13(&list->mutex);
 			return_m13(Sgmt_recs);
 		}
-		i = -1;
+		chan = proc_globs->current_session.index_channel;
+		i = -1;  // no entries => create new entry
 	} else {  // SAMPLE_SEARCH_m13 - find by rate
 		switch (lh->type_code) {
 			case SESS_TYPE_CODE_m13:
 				sess = (SESS_m13 *) lh;
 				if (sess->Sgmt_recs)
-					if (sess->Sgmt_recs[0].rate != (sf4) RATE_NO_ENTRY_m13)
+					if (sess->Sgmt_recs->rate != (sf4) RATE_NO_ENTRY_m13)
 						return_m13(sess->Sgmt_recs);
 				chan = proc_globs->current_session.index_channel;
 				break;
 			case SSR_TYPE_CODE_m13:
 				ssr = (SSR_m13 *) lh;
 				if (ssr->Sgmt_recs)
-					if (ssr->Sgmt_recs[0].rate != (sf4) RATE_NO_ENTRY_m13)
+					if (ssr->Sgmt_recs->rate != (sf4) RATE_NO_ENTRY_m13)
 						return_m13(ssr->Sgmt_recs);
 				sess = (SESS_m13 *) ssr->parent;
 				chan = proc_globs->current_session.index_channel;
@@ -12512,8 +12550,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 
 	// add new entry
 	if (i == -1) {
-		eprintf_m13();
-		Sgmt_recs = G_build_Sgmt_records_array_m13((LH_m13 *) lh, search_mode);
+		Sgmt_recs = G_build_Sgmt_records_m13((LH_m13 *) lh, search_mode, &source_type);
 		if (++list->top_idx == list->size) {
 			list->size += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
 			new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list->entries, (size_t) list->size * sizeof(Sgmt_RECS_ENTRY_m13 *));
@@ -12524,21 +12561,17 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
-			rec_entry = new_entries + list->top_idx;
+			
 			list->entries = new_entries;
 			memset((void *) rec_entry, (si4) 0, (size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13 * sizeof(Sgmt_RECS_ENTRY_m13 *));  // realloc() does not zero
 		}
 		// fill new entry
-		if (chan) {
-			eprintf_m13("type = %s", chan->type_string);
-			rec_entry->source_type = chan->type_code;
-		} else {
-			eprintf_m13("type unknown");
-			rec_entry->source_type = NO_TYPE_CODE_m13;
-		}
-		rec_entry->rate = rate;
+		rec_entry = list->entries + list->top_idx;
+		rec_entry->source_type = source_type;
 		n_segs = proc_globs->current_session.n_segments;
-		rec_entry->n_session_samples = Sgmt_recs[n_segs - 1].end_num + 1;
+		rec_entry->n_session_samples = Sgmt_recs[n_segs - 1].end_num + 1;  // unioned with n_session_frames
+		rec_entry->rate = rate;
+		rec_entry->source_type = source_type;
 		rec_entry->Sgmt_recs = (struct Sgmt_REC_m13 *) Sgmt_recs;
 	} else {
 		Sgmt_recs = (Sgmt_REC_m13 *) rec_entry->Sgmt_recs;
@@ -12546,10 +12579,6 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 
 	pthread_mutex_unlock_m13(&list->mutex);  // unlock
 	
-	eprintf_m13();
-	G_show_Sgmt_records_m13(lh, Sgmt_recs);
-	eprintf_m13();
-
 	// set shortcuts
 	chan->Sgmt_recs = Sgmt_recs;
 	if (sess)
@@ -12557,43 +12586,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	if (ssr)
 		ssr->Sgmt_recs = Sgmt_recs;
 
-	eprintf_m13();
-	G_show_Sgmt_records_m13(NULL, Sgmt_recs);
-
 	return_m13(Sgmt_recs);
-}
-
-
-si8	G_Sgmt_records_session_samples_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
-{
-	si4			i;
-	si8			samps;
-	PROC_GLOBS_m13		*proc_globs;
-	Sgmt_RECS_LIST_m13	*list;
-	Sgmt_RECS_ENTRY_m13 	*rec_entry;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	proc_globs = G_proc_globs_m13(lh);
-	list = proc_globs->current_session.Sgmt_recs_list;
-	
-	// search for matching entry
-	pthread_mutex_lock_m13(&list->mutex);
-	rec_entry = list->entries;
-	for (i = list->top_idx + 1; i--; ++rec_entry)
-		if (rec_entry->Sgmt_recs == (struct Sgmt_REC_m13 *) Sgmt_recs)
-			break;
-	
-	if (i == -1)
-		samps = SAMPLE_NUMBER_NO_ENTRY_m13;
-	else
-		samps = rec_entry->n_session_samples;
-
-	pthread_mutex_unlock_m13(&list->mutex);
-	
-	return_m13(samps);
 }
 
 
@@ -12893,21 +12886,25 @@ void	G_show_function_stack_m13(void)
 	tern			locked;
 	si1			*c, thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si4			i;
-	pid_t_m13		tid;
+	pid_t_m13		_id;
 	FUNCTION_STACK_m13	*stack;
 
 	
 	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	tid = gettid_m13();
-
-	stack = G_get_function_stack_m13(&locked);
+	
+	if (globals_m13->error.code)
+		_id = globals_m13->error.thread_id;
+	else
+		_id = gettid_m13();
+	
+	stack = G_get_function_stack_m13(&locked, _id);
 	if (stack == NULL)
 		return;
 
 	if (*thread_name == '<')  // "<unnamed>"
-		sprintf_m13(thread_name, "Function Stack for Thread %lu:", tid);
+		sprintf_m13(thread_name, "Function Stack for Thread %lu:", _id);
 	else
-		sprintf_m13(thread_name, "Function Stack for Thread \"%s\" (id %lu):", thread_name, tid);
+		sprintf_m13(thread_name, "Function Stack for Thread \"%s\" (id %lu):", thread_name, _id);
 	printf_m13("\n%s", thread_name);
 	c = thread_name - 1;
 	while (*++c)
@@ -13596,17 +13593,16 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 tern	G_show_proc_globs_m13(LH_m13 *lh)
 {
-	si1 		hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
+	si1 		tim_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
 	PROC_GLOBS_m13	*proc_globs;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-
+	
 	proc_globs = G_proc_globs_m13(lh);
-
-	printf_m13("\nProcess Globals\n-----------\n-----------\n");
+	
+	printf_m13("\nProcess Globals\n------- -------\n------- -------\n");
 	printf_m13("\n_id: ");
 	if (proc_globs->_id == 0) {
 		printf_m13("no entry\n");
@@ -13614,46 +13610,53 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 		STR_hex_m13(hex_str, (ui1 *) &proc_globs->_id, sizeof(ui8), NULL, TRUE_m13);
 		printf_m13("%lu  (0x%s)\n", proc_globs->_id, hex_str);
 	}
-
+	
 	printf_m13("\nCurrent Session\n---------------\n");
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->current_session.UID, sizeof(ui8), NULL, TRUE_m13);
-	printf_m13("Session UID: %lu  (0x%s)\n", proc_globs->current_session.UID, hex_str);
-	printf_m13("Session Directory: %s\n", proc_globs->current_session.directory);  // path including file system session directory name
-	printf_m13("Session Start Time: ");
-	if (proc_globs->current_session.start_time == UUTC_NO_ENTRY_m13)
+	printf_m13("UID: 0x%s  (%lu)\n", hex_str, proc_globs->current_session.UID);
+	printf_m13("Directory: \"%s\"\n", proc_globs->current_session.directory);  // path including file system session directory name
+	printf_m13("Start Time: ");
+	if (proc_globs->current_session.start_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("no entry\n");
-	else if (proc_globs->current_session.start_time == BEGINNING_OF_TIME_m13)
+	} else if (proc_globs->current_session.start_time == BEGINNING_OF_TIME_m13) {
 		printf_m13("beginning of time\n");
-	else if (proc_globs->current_session.start_time == END_OF_TIME_m13)
+	} else if (proc_globs->current_session.start_time == END_OF_TIME_m13) {
 		printf_m13("end of time\n");
-	else
-		printf_m13("%ld\n", proc_globs->current_session.start_time);
-	printf_m13("Session End Time: ");
-	if (proc_globs->current_session.end_time == UUTC_NO_ENTRY_m13)
+	} else {
+		G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
+		STR_time_m13(NULL, proc_globs->current_session.start_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		G_pop_behavior_m13();
+		printf_m13("%ld (oUTC)  [%s]\n", proc_globs->current_session.start_time, tim_str);
+	}
+	printf_m13("End Time: ");
+	if (proc_globs->current_session.end_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("no entry\n");
-	else if (proc_globs->current_session.end_time == BEGINNING_OF_TIME_m13)
+	} else if (proc_globs->current_session.end_time == BEGINNING_OF_TIME_m13) {
 		printf_m13("beginning of time\n");
-	else if (proc_globs->current_session.end_time == END_OF_TIME_m13)
+	} else if (proc_globs->current_session.end_time == END_OF_TIME_m13) {
 		printf_m13("end of time\n");
-	else
-		printf_m13("%ld\n", proc_globs->current_session.end_time);
-	printf_m13("Session Name:\n");
+	} else {
+		G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
+		STR_time_m13(NULL, proc_globs->current_session.end_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		G_pop_behavior_m13();
+		printf_m13("%ld (oUTC)  [%s]\n", proc_globs->current_session.end_time, tim_str);
+	}
 	if (*proc_globs->current_session.fs_name)
-		printf_m13("\tfs_name: %s\n", proc_globs->current_session.fs_name);  // from file system
+		printf_m13("File System Name: \"%s\"\n", proc_globs->current_session.fs_name);  // from file system
 	else
-		printf_m13("\tfs_name: no entry\n");  // from file system
+		printf_m13("File System Name: no entry\n");  // from file system
 	if (*proc_globs->current_session.uh_name)
-		printf_m13("\tuh_name: %s\n", proc_globs->current_session.uh_name);  // from file system
+		printf_m13("Universal Header Name: \"%s\"\n", proc_globs->current_session.uh_name);  // from file system
 	else
-		printf_m13("\tuh_name: no entry\n");  // from file system
-	printf_m13("\tnames_differ: %s\n", STR_tern_m13(proc_globs->current_session.names_differ));
-	printf_m13("Number of Session Segments: ");
-	if (proc_globs->current_session.n_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
+		printf_m13("Universal Header Name: no entry\n");  // from file system
+	printf_m13("Names Differ: %s\n", STR_tern_m13(proc_globs->current_session.names_differ));
+	printf_m13("Number of Segments: ");
+	if (proc_globs->current_session.n_segments == 0)
 		printf_m13("no entry\n");
 	else
 		printf_m13("%d\n", proc_globs->current_session.n_segments);
 	printf_m13("Number of Mapped Segments: ");
-	if (proc_globs->current_session.n_mapped_segments == SEGMENT_NUMBER_NO_ENTRY_m13)
+	if (proc_globs->current_session.n_mapped_segments == 0)
 		printf_m13("no entry\n");
 	else
 		printf_m13("%d\n", proc_globs->current_session.n_mapped_segments);
@@ -13666,66 +13669,68 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	if (*proc_globs->current_session.index_channel_name == 0)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%s\n", proc_globs->current_session.index_channel_name);
+		printf_m13("\"%s\"\n", proc_globs->current_session.index_channel_name);
 	
 	printf_m13("\nActive Channels\n---------------\n");
-	printf_m13("Sampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary));
+	printf_m13("Time Series:\n");
+	printf_m13("\tSampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary));
 	if (proc_globs->active_channels.minimum_sampling_frequency == RATE_NO_ENTRY_m13)
-		printf_m13("Minimum Sampling Frequency: no entry\n");
+		printf_m13("\tMinimum Sampling Frequency: no entry\n");
 	else
-		printf_m13("Minimum Sampling Frequency: %lf\n", proc_globs->active_channels.minimum_sampling_frequency);
+		printf_m13("\tMinimum Sampling Frequency: %0.2lf Hz\n", proc_globs->active_channels.minimum_sampling_frequency);
 	if (proc_globs->active_channels.maximum_sampling_frequency == RATE_NO_ENTRY_m13)
-		printf_m13("Maximum Sampling Frequency: no entry\n");
+		printf_m13("\tMaximum Sampling Frequency: no entry\n");
 	else
-		printf_m13("Maximum Sampling Frequency: %lf\n", proc_globs->active_channels.maximum_sampling_frequency);
+		printf_m13("\tMaximum Sampling Frequency: %0.2lf Hz\n", proc_globs->active_channels.maximum_sampling_frequency);
 	if (proc_globs->active_channels.minimum_sampling_frequency_channel == NULL)
-		printf_m13("Minimum Sampling Frequency Channel: not set\n");
+		printf_m13("\tMinimum Sampling Frequency Channel: not set\n");
 	else
-		printf_m13("Minimum Sampling Frequency Channel Name: %s\n", proc_globs->active_channels.minimum_sampling_frequency_channel->name);
+		printf_m13("\tMinimum Sampling Frequency Channel Name: \"%s\"\n", proc_globs->active_channels.minimum_sampling_frequency_channel->name);
 	if (proc_globs->active_channels.maximum_sampling_frequency_channel == NULL)
-		printf_m13("Maximum Sampling Frequency Channel: not set\n");
+		printf_m13("\tMaximum Sampling Frequency Channel: not set\n");
 	else
-		printf_m13("Maximum Sampling Frequency Channel Name: %s\n", proc_globs->active_channels.maximum_sampling_frequency_channel->name);
-	printf_m13("Frame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary));
+		printf_m13("\tMaximum Sampling Frequency Channel Name: \"%s\"\n", proc_globs->active_channels.maximum_sampling_frequency_channel->name);
+	printf_m13("Video:\n");
+	printf_m13("\tFrame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary));
 	if (proc_globs->active_channels.minimum_frame_rate == RATE_NO_ENTRY_m13)
-		printf_m13("Minimum Frame Rate: no entry\n");
+		printf_m13("\tMinimum Frame Rate: no entry\n");
 	else
-		printf_m13("Minimum Frame Rate: %lf\n", proc_globs->active_channels.minimum_frame_rate);
+		printf_m13("\tMinimum Frame Rate: %0.2lf fps\n", proc_globs->active_channels.minimum_frame_rate);
 	if (proc_globs->active_channels.maximum_frame_rate == RATE_NO_ENTRY_m13)
-		printf_m13("Maximum Frame Rate: no entry\n");
+		printf_m13("\tMaximum Frame Rate: no entry\n");
 	else
-		printf_m13("Minimum Frame Rate: %lf\n", proc_globs->active_channels.maximum_frame_rate);
+		printf_m13("\tMinimum Frame Rate: %0.2lf fps\n", proc_globs->active_channels.maximum_frame_rate);
 	if (proc_globs->active_channels.minimum_frame_rate_channel == NULL)
-		printf_m13("Minimum Frame Rate Channel: not set\n");
+		printf_m13("\tMinimum Frame Rate Channel: not set\n");
 	else
-		printf_m13("Minimum Frame Rate Channel Name: %s\n", proc_globs->active_channels.minimum_frame_rate_channel->name);
+		printf_m13("\tMinimum Frame Rate Channel Name: \"%s\"\n", proc_globs->active_channels.minimum_frame_rate_channel->name);
 	if (proc_globs->active_channels.maximum_frame_rate_channel == NULL)
-		printf_m13("Maximum Frame Rate Channel: not set\n");
+		printf_m13("\tMaximum Frame Rate Channel: not set\n");
 	else
-		printf_m13("Maximum Frame Rate Channel Name: %s\n", proc_globs->active_channels.maximum_frame_rate_channel->name);
+		printf_m13("\tMaximum Frame Rate Channel Name: \"%s\"\n", proc_globs->active_channels.maximum_frame_rate_channel->name);
 
 	printf_m13("\nTime Constants\n--------------\n");
-	printf_m13("time_constants_set: %s\n", STR_tern_m13(proc_globs->time_constants.set));
-	printf_m13("RTO_known: %s\n", STR_tern_m13(proc_globs->time_constants.RTO_known));
-	printf_m13("observe_DST: %s\n", STR_tern_m13(proc_globs->time_constants.observe_DST));
-	printf_m13("recording_time_offset: %ld\n", proc_globs->time_constants.recording_time_offset);
-	printf_m13("standard_UTC_offset: %d\n", proc_globs->time_constants.standard_UTC_offset);
-	printf_m13("standard_timezone_acronym: %s\n", proc_globs->time_constants.standard_timezone_acronym);
-	printf_m13("standard_timezone_string: %s\n", proc_globs->time_constants.standard_timezone_string);
-	printf_m13("daylight_timezone_acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
-	printf_m13("daylight_timezone_string: %s\n", proc_globs->time_constants.daylight_timezone_string);
+	printf_m13("Time Constants Set: %s\n", STR_tern_m13(proc_globs->time_constants.set));
+	printf_m13("Recording Time Offset Known: %s\n", STR_tern_m13(proc_globs->time_constants.RTO_known));
+	printf_m13("Recording Time Offset: %ld (usecs)\n", proc_globs->time_constants.recording_time_offset);
+	printf_m13("Standard UTC Offset: %d (secs)\n", proc_globs->time_constants.standard_UTC_offset);
+	printf_m13("Standard Timezone Acronym: %s\n", proc_globs->time_constants.standard_timezone_acronym);
+	printf_m13("Standard Timezone String: %s\n", proc_globs->time_constants.standard_timezone_string);
+	printf_m13("Daylight Timezone Acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
+	printf_m13("Daylight Timezone String: %s\n", proc_globs->time_constants.daylight_timezone_string);
+	printf_m13("Observe Daylight Saving Time: %s\n", STR_tern_m13(proc_globs->time_constants.observe_DST));
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), "-", FALSE_m13);
-	printf_m13("daylight_time_start_code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_start_code.value);
+	printf_m13("Daylight Time Start Code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_start_code.value);
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), "-", FALSE_m13);
-	printf_m13("daylight_time_end_code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_end_code.value);
+	printf_m13("Daylight Time End Code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_end_code.value);
 		
 	printf_m13("\nMiscellaneous\n---------------\n");
-	printf_m13("mmap_block_bytes: ");
+	printf_m13("Memory Map Block Bytes: ");
 	if (proc_globs->miscellaneous.mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13)
 		printf_m13("no entry\n");
 	else
 		printf_m13("%d\n", proc_globs->miscellaneous.mmap_block_bytes);
-	printf_m13("proc_error_state: %s\n", STR_tern_m13(proc_globs->miscellaneous.proc_error_state));
+	printf_m13("Process Error State: %s\n", STR_tern_m13(proc_globs->miscellaneous.proc_error_state));
 
 	printf_m13("\n");
 	
@@ -13782,7 +13787,7 @@ tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 
 tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 {
-	si1	  		time_str[TIME_STRING_BYTES_m13];
+	si1	  		tim_str[TIME_STRING_BYTES_m13];
 	ui4			source;
 	si4			n_segs;
 	si8			i;
@@ -13793,16 +13798,14 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 	G_push_function_m13();
 #endif
 
-	if (lh) {
+	if (Sgmt_recs == NULL) {
 		Sgmt_recs = G_Sgmt_records_m13(lh, SAMPLE_SEARCH_m13);
-		source = G_Sgmt_records_source_m13(lh, Sgmt_recs);
-		if (Sgmt_recs == NULL)
+		if (Sgmt_recs == NULL) {
+			G_set_error_m13(E_UNSPEC_m13, "cannot get Sgmt records array");
 			return_m13(FALSE_m13);
-		eprintf_m13();
-	} else if (Sgmt_recs == NULL) {
-		G_set_error_m13(E_UNSPEC_m13, "both level header & Sgmt records are NULL");
-		return_m13(FALSE_m13);
+		}
 	}
+	source = G_Sgmt_records_source_m13(lh, Sgmt_recs);
 
 	proc_globs = G_proc_globs_m13(lh);
 	n_segs = proc_globs->current_session.n_segments;
@@ -13820,14 +13823,22 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 			printf_m13("Source: video channel\n");
 		else
 			printf_m13("Source: not specified\n");
-		if (Sgmt->start_time == REC_HDR_START_TIME_NO_ENTRY_m13)
+		if (Sgmt->start_time == UUTC_NO_ENTRY_m13) {
 			printf_m13("Start Time: no entry\n");
-		else {
-			STR_time_m13(lh, Sgmt->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-			printf_m13("Start Time: %ld (oUTC), %s\n", Sgmt->start_time, time_str);
+		}else {
+			G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
+			STR_time_m13(lh, Sgmt->start_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			G_pop_behavior_m13();
+			printf_m13("Start Time: %ld (oUTC)  [%s]\n", Sgmt->start_time, tim_str);
 		}
-		STR_time_m13(lh, Sgmt->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
-		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt->end_time, time_str);
+		if (Sgmt->end_time == UUTC_NO_ENTRY_m13) {
+			printf_m13("End Time: no entry\n");
+		} else {
+			G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
+			STR_time_m13(lh, Sgmt->end_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			printf_m13("End Time: %ld (oUTC)  [%s]\n", Sgmt->end_time, tim_str);
+			G_pop_behavior_m13();
+		}
 		if (source == TS_CHAN_TYPE_m13)
 			printf_m13("Start Sample Number:");
 		else if (source == VID_CHAN_TYPE_m13)
@@ -14604,16 +14615,12 @@ void	G_thread_exit_m13(void)
 	}
 	
 	#ifdef FT_DEBUG_m13
-	tern			locked;
 	FUNCTION_STACK_m13	*f_stack;
 	
-	f_stack = G_get_function_stack_m13(&locked);  // gets mutex
-	if (f_stack) {
+	f_stack = G_get_function_stack_m13(NULL);  // gets mutex
+	if (f_stack)
 		if (globals_m13->error.code != E_NONE_m13)  // causal error set - leave stack intact
 			f_stack->_id = 0;
-		if (locked == TRUE_m13)
-			pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
-	}
 	#endif
 	
 	return;
@@ -17216,11 +17223,11 @@ tern	ALCK_record_header_m13(ui1 *bytes)
 		goto REC_HDR_NOT_ALIGNED_m13;
 	if (&rh->start_time != (si8 *) (bytes + REC_HDR_START_TIME_OFFSET_m13))
 		goto REC_HDR_NOT_ALIGNED_m13;
-	if (rh->type_string != (si1 *) (bytes + REC_HDR_TYPE_STRING_OFFSET_m13))
+	if (rh->type_string != (si1 *) (bytes + REC_HDR_TYPE_STR_OFFSET_m13))
 		goto REC_HDR_NOT_ALIGNED_m13;
 	if (&rh->type_code != (ui4 *) (bytes + REC_HDR_TYPE_CODE_OFFSET_m13))
 		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->type_string_terminal_zero != (si1 *) (bytes + REC_HDR_TYPE_STRING_TERMINAL_ZERO_OFFSET_m13))
+	if (&rh->type_string_terminal_zero != (si1 *) (bytes + REC_HDR_TYPE_STR_TERMINAL_ZERO_OFFSET_m13))
 		goto REC_HDR_NOT_ALIGNED_m13;
 	if (&rh->version_major != (ui1 *) (bytes + REC_HDR_VERSION_MAJOR_OFFSET_m13))
 		goto REC_HDR_NOT_ALIGNED_m13;
@@ -17267,11 +17274,11 @@ tern	ALCK_record_indices_m13(ui1 *bytes)
 		goto REC_INDS_NOT_ALIGNED_m13;
 	if (&ri->start_time != (si8 *) (bytes + REC_IDX_START_TIME_OFFSET_m13))
 		goto REC_INDS_NOT_ALIGNED_m13;
-	if (ri->type_string != (si1 *) (bytes + REC_IDX_TYPE_STRING_OFFSET_m13))
+	if (ri->type_string != (si1 *) (bytes + REC_IDX_TYPE_STR_OFFSET_m13))
 		goto REC_INDS_NOT_ALIGNED_m13;
 	if (&ri->type_code != (ui4 *) (bytes + REC_IDX_TYPE_CODE_OFFSET_m13))
 		goto REC_INDS_NOT_ALIGNED_m13;
-	if (&ri->type_string_terminal_zero != (si1 *) (bytes + REC_IDX_TYPE_STRING_TERMINAL_ZERO_OFFSET_m13))
+	if (&ri->type_string_terminal_zero != (si1 *) (bytes + REC_IDX_TYPE_STR_TERMINAL_ZERO_OFFSET_m13))
 		goto REC_INDS_NOT_ALIGNED_m13;
 	if (&ri->version_major != (ui1 *) (bytes + REC_IDX_VERSION_MAJOR_OFFSET_m13))
 		goto REC_INDS_NOT_ALIGNED_m13;
@@ -17460,11 +17467,11 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->segment_number != (si4 *) (bytes + UH_SEGMENT_NUMBER_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
-	if (uh->type_string != (si1 *) (bytes + UH_TYPE_STRING_OFFSET_m13))
+	if (uh->type_string != (si1 *) (bytes + UH_TYPE_STR_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->type_code != (ui4 *) (bytes + UH_TYPE_CODE_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
-	if (&uh->type_string_terminal_zero != (si1 *) (bytes + UH_TYPE_STRING_TERMINAL_ZERO_OFFSET_m13))
+	if (&uh->type_string_terminal_zero != (si1 *) (bytes + UH_TYPE_STR_TERMINAL_ZERO_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->MED_version_major != (ui1 *) (bytes + UH_MED_VERSION_MAJOR_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
@@ -30980,30 +30987,47 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m1
 		fps->path = fps->local_path;
 		fps->name = fps->local_name;
 	}
-	FPS_init_params_m13(&fps->params);
-	FPS_init_direcs_m13(&fps->direcs);
 	
 	// set path
 	if (STR_empty_m13(path) == FALSE_m13) {
 		strcpy(fps->path, path);
 		G_path_parts_m13(path, NULL, fps->name, NULL);
+		fps->type_code = G_MED_type_code_from_string_m13(path);
+	} else if (STR_empty_m13(fps->path) == TRUE_m13) {
+		G_set_error_m13(E_UNSPEC_m13, "path is empty");
+		return_m13(NULL);
+	} else {  // path in fps->path
+		if (fps->type_code == NO_TYPE_CODE_m13)
+			fps->type_code = G_MED_type_code_from_string_m13(fps->path);
 	}
-	type_code = fps->type_code = G_MED_type_code_from_string_m13(fps->path);
+	type_code = fps->type_code;
+
+	// initialize directives & parameters
+	FPS_init_params_m13(&fps->params);
+	FPS_init_direcs_m13(&fps->direcs);
 
 	// set open mode
 	if (STR_empty_m13(mode_str) == TRUE_m13)
 		mode_str = FPS_OPEN_STRING_DEFAULT_m13;
+	eprintf_m13("");
 	FPS_set_open_flags_m13(fps, mode_str);
+	eprintf_m13("");
 
 	fp = fps->params.fp;
-	alloced_mask = fp->flags & FILE_FLAGS_ALLOCED_m13;
-	fp->flags = FILE_FLAGS_DEFAULT_m13 | alloced_mask;
 	fp->fd = FILE_FD_CLOSED_m13;
 	fp->perms = FILE_PERM_DEFAULT_m13;
 
+	// set parent & flags (use parent flags if passed)
+	alloced_mask = fp->flags & FILE_FLAGS_ALLOCED_m13;
 	if (parent) {
 		fps->parent = parent;
-		fps->flags = parent->flags;
+		if (alloced_mask)
+			fps->flags = parent->flags | FILE_FLAGS_ALLOCED_m13;
+		else
+			fps->flags = parent->flags & ~FILE_FLAGS_ALLOCED_m13;
+	} else {
+		fps->parent = NULL;
+		fp->flags = FILE_FLAGS_DEFAULT_m13 | alloced_mask;
 	}
 
 	// allocate
@@ -31902,6 +31926,7 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 	// returns FPS directive open flags
 	// if fps != NULL, flags are incorporated with other (non-open) flags & set in fps
 	
+	eprintf_m13("");
 	if (STR_empty_m13(mode_str) == TRUE_m13) {
 		mode_empty = TRUE_m13;
 		if (fps) {
@@ -31916,11 +31941,13 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 		strcpy(fps->params.mode_str, mode_str);
 	}
 
+	eprintf_m13("");
 	if (fps)
 		flags = fps->direcs.flags & ~FPS_OPEN_MODE_MASK_m13;
 	else
 		flags = FPS_DF_NO_FLAGS_m13;
 	
+	eprintf_m13("");
 	read_mode = write_mode = append_mode = plus_mode = UNKNOWN_m13;
 	c = (si1 *) mode_str - 1;
 	while (*++c) {
@@ -31950,12 +31977,14 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 		}
 	}
 	
+	eprintf_m13("");
 	mode_count = read_mode + write_mode + append_mode;
 	if (mode_count != 1) {
 		G_set_error_m13(E_UNSPEC_m13, "more than one, or no, primary mode selected");
 		return_m13(FPS_DF_NO_FLAGS_m13);
 	}
 		
+	eprintf_m13("");
 	if (plus_mode == TRUE_m13) {
 		if (read_mode == TRUE_m13)
 			flags |= FPS_DF_WRITE_MODE_m13;
@@ -31963,6 +31992,7 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 			flags |= FPS_DF_READ_MODE_m13;
 	}
 
+	eprintf_m13("");
 	if (fps)
 		fps->direcs.flags = flags;
 
@@ -35807,14 +35837,7 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 threa
 
 pthread_rval_m13	PROC_macos_named_thread_m13(void *arg)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
 #ifdef MACOS_m13
-	#ifdef FT_DEBUG_m13
-		G_push_function_m13();
-	#endif
 	
 	PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
 	si1					*thread_name;
@@ -35822,6 +35845,8 @@ pthread_rval_m13	PROC_macos_named_thread_m13(void *arg)
 	void					*thread_arg;
 	pthread_rval_m13			rval;
 
+	// in MacOS a thread can only be named from within itself
+	// this thread is substituted for the desired thread, names itself, & then calls desired thread as function
 
 	// break out (for readability)
 	named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) arg;
@@ -35840,7 +35865,7 @@ pthread_rval_m13	PROC_macos_named_thread_m13(void *arg)
 	
 	thread_return_m13(rval);
 #else
-	return_m13((pthread_rval_m13) 0);
+	return((pthread_rval_m13) 0);
 #endif
 }
 
@@ -39965,7 +39990,7 @@ const si1	*STR_tern_m13(tern val)
 		case -1:
 			return_m13("false");
 		case 0:
-			return_m13("not set / unknown");
+			return_m13("not set or unknown");
 		default:
 			return_m13("invalid");
 	}
@@ -42172,13 +42197,9 @@ si4  WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *
 
 void	WN_nap_m13(struct timespec *nap)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
 #ifdef WINDOWS_m13
 	static tern		use_ms = FALSE_m13;
-	si8			hns, ms;
+	si8			hns, ms, rounds;
 	LARGE_INTEGER		interval;
 	static NTDELAYEXECTYPE	NtDelayExecution = NULL;  // pointer higher resolution sleep function (static so find only once)
 
@@ -42226,7 +42247,7 @@ void	WN_nap_m13(struct timespec *nap)
 	interval.QuadPart = (LONGLONG) -hns;  // compiler complains without this cast & assignment
 	NtDelayExecution(0, &interval);
 
-	return_void_m13;
+	return;
 
 	G_WN_SLEEP_USE_MS:
 	
@@ -42235,15 +42256,17 @@ void	WN_nap_m13(struct timespec *nap)
 	if (ms == (si8) 0) {
 		ms = (si8) 1;  // limited to 1 ms rseolution
 	} else if (ms > (si8) 0x7FFFFFFF) {
-		G_warning_message_m13("%s(): millisecond overflow\n", __FUNCTION__);
-		ms = (si8) 0x7FFFFFFF;
+		rounds = ms / (si8) 0x7FFFFFFF;
+		while (rounds--)
+			Sleep((si4) 0x7FFFFFFF);  // standard Windows sleep function
+		ms %= (si8) 0x7FFFFFFF;  // leftovers
 	}
 	Sleep((si4) ms);  // standard Windows sleep function
 	
-	return_void_m13;
+	return;
 #endif
 	
-	return_void_m13;
+	return;
 }
 
 

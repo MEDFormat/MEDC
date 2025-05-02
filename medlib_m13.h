@@ -685,13 +685,13 @@ typedef struct {
 #define GLOBALS_SESSION_START_TIME_DEFAULT_m13			UUTC_NO_ENTRY_m13
 #define GLOBALS_SESSION_END_TIME_DEFAULT_m13			UUTC_NO_ENTRY_m13
 #define GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13		0
-#define GLOBALS_RECORDING_TIME_OFFSET_NO_ENTRY_m13		0
+#define GLOBALS_RECORDING_TIME_OFFSET_NO_ENTRY_m13		-1 // negative values are not valid
 #define GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13			0
-#define GLOBALS_STANDARD_UTC_OFFSET_NO_ENTRY_m13		STANDARD_UTC_OFFSET_NO_ENTRY_m13
+#define GLOBALS_STANDARD_UTC_OFFSET_NO_ENTRY_m13		86400 // 24 hours, in seconds (valid range -12 to +14 hours)
 #define GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m13		"oUTC"
-#define GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13		"offset Coordinated Universal Time"
-#define GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13		""
-#define GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13		""
+#define GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13		"Offset Coordinated Universal Time"
+#define GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13		"" // UTC does not observe DST
+#define GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13		"" // UTC does not observe DST
 
 // Hierarchy Type Constants
 #define NO_TYPE_CODE_m13			((ui4) 0x00000000) // ui4 (big & little endian)
@@ -800,9 +800,9 @@ typedef struct {
 #define UH_SEGMENT_LEVEL_CODE_m13				-1
 #define UH_CHANNEL_LEVEL_CODE_m13				-2
 #define UH_SESSION_LEVEL_CODE_m13				-3
-#define UH_TYPE_STRING_OFFSET_m13				32 // ascii[4]
-#define UH_TYPE_STRING_TERMINAL_ZERO_OFFSET_m13			(UH_TYPE_STRING_OFFSET_m13 + 4) // si1
-#define UH_TYPE_CODE_OFFSET_m13					UH_TYPE_STRING_OFFSET_m13 // ui4
+#define UH_TYPE_STR_OFFSET_m13				32 // ascii[4]
+#define UH_TYPE_STR_TERMINAL_ZERO_OFFSET_m13			(UH_TYPE_STR_OFFSET_m13 + 4) // si1
+#define UH_TYPE_CODE_OFFSET_m13					UH_TYPE_STR_OFFSET_m13 // ui4
 #define UH_TYPE_NO_ENTRY_m13					0 // zero as ui4 or zero-length string as ascii[4]
 #define UH_MED_VERSION_MAJOR_OFFSET_m13				37 // ui1
 #define UH_MED_VERSION_MAJOR_NO_ENTRY_m13			MED_VERSION_NO_ENTRY_m13
@@ -1010,9 +1010,9 @@ typedef struct {
 #define REC_HDR_CRC_START_OFFSET_m13			REC_HDR_TOTAL_RECORD_BYTES_OFFSET_m13
 #define REC_HDR_START_TIME_OFFSET_m13			8 // si8
 #define REC_HDR_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13 // si8
-#define REC_HDR_TYPE_STRING_OFFSET_m13			16	 // ascii[4]
-#define REC_HDR_TYPE_STRING_TERMINAL_ZERO_OFFSET_m13	(REC_HDR_TYPE_STRING_OFFSET_m13 + 4) // si1
-#define REC_HDR_TYPE_CODE_OFFSET_m13			REC_HDR_TYPE_STRING_OFFSET_m13  // ui4
+#define REC_HDR_TYPE_STR_OFFSET_m13			16	 // ascii[4]
+#define REC_HDR_TYPE_STR_TERMINAL_ZERO_OFFSET_m13	(REC_HDR_TYPE_STR_OFFSET_m13 + 4) // si1
+#define REC_HDR_TYPE_CODE_OFFSET_m13			REC_HDR_TYPE_STR_OFFSET_m13  // ui4
 #define REC_HDR_TYPE_CODE_NO_ENTRY_m13			0	 // ui4
 #define REC_HDR_VERSION_MAJOR_OFFSET_m13		21	 // ui1
 #define REC_HDR_VERSION_MAJOR_NO_ENTRY_m13		0xFF
@@ -1027,9 +1027,9 @@ typedef struct {
 #define REC_IDX_FILE_OFFSET_NO_ENTRY_m13		-1
 #define REC_IDX_START_TIME_OFFSET_m13			8 // si8
 #define REC_IDX_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
-#define REC_IDX_TYPE_STRING_OFFSET_m13			16 // ascii[4]
-#define REC_IDX_TYPE_STRING_TERMINAL_ZERO_OFFSET_m13	(REC_IDX_TYPE_STRING_OFFSET_m13 + 4) // si1
-#define REC_IDX_TYPE_CODE_OFFSET_m13			REC_IDX_TYPE_STRING_OFFSET_m13  // as ui4
+#define REC_IDX_TYPE_STR_OFFSET_m13			16 // ascii[4]
+#define REC_IDX_TYPE_STR_TERMINAL_ZERO_OFFSET_m13	(REC_IDX_TYPE_STR_OFFSET_m13 + 4) // si1
+#define REC_IDX_TYPE_CODE_OFFSET_m13			REC_IDX_TYPE_STR_OFFSET_m13  // as ui4
 #define REC_IDX_TYPE_CODE_NO_ENTRY_m13			0 // as ui4
 #define REC_IDX_VERSION_MAJOR_OFFSET_m13		21 // ui1
 #define REC_IDX_VERSION_MAJOR_NO_ENTRY_m13		0xFF
@@ -1861,7 +1861,10 @@ typedef struct {
 		sf4		frame_rate;
 		sf4		rate;
 	};
-	si8			n_session_samples;
+	union {
+		si8		n_session_samples;
+		si8		n_session_frames;
+	};
 	struct Sgmt_REC_m13	*Sgmt_recs; // defined below == record header + REC_Sgmt_v11_m13 body (session number of segments in length)
 } Sgmt_RECS_ENTRY_m13;
 
@@ -2936,7 +2939,7 @@ SESS_m13		*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si
 void 			G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 si1			*G_behavior_string_m13(ui4 behavior, si1 *behavior_string);
 si8			G_build_contigua_m13(LH_m13 *lh);
-Sgmt_REC_m13		*G_build_Sgmt_records_array_m13(LH_m13 *lh, si4 search_mode);
+Sgmt_REC_m13		*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_type);
 si8			G_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset);
 tern 			G_calculate_indices_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_metadata_CRC_m13(FPS_m13 *fps);
@@ -3005,7 +3008,7 @@ si1 			*G_get_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name);
 BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
 si1			**G_get_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
 #ifdef FT_DEBUG_m13
-FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked);
+FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked, ...); // varargs(locked != NULL): pid_t_m13 tid
 #endif
 ui4			G_get_level_m13(si1 *full_file_name, ui4 *input_type_code);
 tern			G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
@@ -3014,6 +3017,7 @@ si4			G_get_segment_index_m13(si4 segment_number, LH_m13 *lh);
 si4			G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice);
 ui4			*G_get_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
 si1			*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS_m13 *MED_fps);
+si8			G_get_session_samples_m13(LH_m13 *lh, sf8 rate);
 tern			G_get_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
 tern			G_init_global_tables_m13(tern init_all_tables);
@@ -3081,7 +3085,6 @@ void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *messag
 tern			G_set_session_globals_m13(si1 *MED_directory, LH_m13 *lh, si1 *password);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
-si8			G_Sgmt_records_session_samples_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
 ui4			G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
 tern			G_show_behavior_m13(ui4 mode);
 tern			G_show_contigua_m13(LH_m13 *lh);
