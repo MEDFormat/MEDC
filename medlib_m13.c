@@ -64,7 +64,7 @@
 // Tabs are tabs characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
-// The library contains some non-standard structures:
+// The library utilizes some non-standard structures:
 // 	required compiler option (gcc, clang): -fms-extensions
 // 	suppress warnings with: -Wno-microsoft-anon-tag
 
@@ -192,151 +192,42 @@ ADD_LEVEL_EXTENSION_MATCH_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 behavior_code)
+void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 code)
 {
+	si4			n_behaviors;
 	BEHAVIOR_m13		*behavior, *new_behaviors;
 	BEHAVIOR_STACK_m13	*stack;
 	
 
 	// ORs to current behavior & pushes to stack as new entry
 	
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
 		return;
 	
-	// realloc
-	if (stack->size == ++stack->top_idx) {
-		stack->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		new_behaviors = (BEHAVIOR_m13 *) realloc((void *) stack->behaviors, (size_t) stack->size * sizeof(BEHAVIOR_m13));
+	// expand stack
+	n_behaviors = stack->top_idx + 1;
+	if (n_behaviors == stack->size) {
+		n_behaviors += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+		new_behaviors = (BEHAVIOR_m13 *) realloc((void *) stack->behaviors, (size_t) n_behaviors * sizeof(BEHAVIOR_m13));
 		if (new_behaviors == NULL) {
-			stack->size -= GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-			--stack->top_idx;
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return;
 		}
 		stack->behaviors = new_behaviors;
+		stack->size = n_behaviors;
 	}
 	
-	// add to stack
-	behavior = stack->behaviors + stack->top_idx;
+	behavior = stack->behaviors + (++stack->top_idx);
 	behavior->function = function;
 	behavior->line = line;
-	behavior->code = (behavior - 1)->code | behavior_code;
-
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	if (stack->top_idx)
+		behavior->code = (behavior - 1)->code | code;
+	else
+		behavior->code = globals_m13->behavior_stack_list->default_behavior | code;
 
 	return;
 }
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-BEHAVIOR_STACK_m13	*G_add_behavior_stack_m13(void)
-{
-	si4			i, n_stacks;
-	BEHAVIOR_STACK_LIST_m13	*list;
-	BEHAVIOR_STACK_m13	*stack, *new_stacks;
-	BEHAVIOR_m13		*behavior, *behaviors;
-
-	
-	// NOTE: the calling function is expected to have the mutex
-
-	list = globals_m13->behavior_stack_list;
-	n_stacks = ++list->top_idx;
-	
-	// see if there's an empty stack
-	stack = list->stacks;
-	for (i = n_stacks; i--; ++stack)
-		if (stack->_id == 0)
-			break;
-	
-	// realloc
-	if (i == -1) {
-		++n_stacks;
-		new_stacks = (BEHAVIOR_STACK_m13 *) realloc((void *) list->stacks, (size_t) n_stacks * sizeof(BEHAVIOR_STACK_m13));
-		if (new_stacks == NULL) {  // return with no changes to globals
-			--list->top_idx;
-			return(NULL);
-		}
-		list->stacks = new_stacks;
-		list->size = n_stacks;
-		stack = list->stacks + list->top_idx;
-		memset((void *) stack, (si4) 0, sizeof(BEHAVIOR_STACK_m13));  // realloc doesn't zero new memory
-		
-		// allocate behaviors
-		behaviors = (BEHAVIOR_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_m13));
-		if (behaviors == NULL)
-			return(NULL);
-		stack->behaviors = behaviors;
-	}
-	
-	// set up stack
-	stack->_id = gettid_m13();
-	stack->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-	stack->top_idx = 0;  // if reusing stack, behaviors already allocated, just reset top idx
-	
-	// set first behavior to default
-	behavior = stack->behaviors;
-	behavior->function = __FUNCTION__;
-	behavior->line = __LINE__;
-	behavior->code = list->default_behavior;
-	
-	return(stack);
-}
-
-
-#ifdef FT_DEBUG_m13
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-FUNCTION_STACK_m13	*G_add_function_stack_m13(void)
-{
-	const si1			**functions;
-	si4				i, n_stacks;
-	FUNCTION_STACK_LIST_m13		*list;
-	FUNCTION_STACK_m13		*stack, *new_stacks;
-
-	
-	// NOTE: the calling function is expected to have the mutex
-
-	list = globals_m13->function_stack_list;
-	
-	// see if there's an empty stack
-	stack = list->stacks;
-	n_stacks = list->top_idx + 1;
-	for (i = n_stacks; i--; ++stack)
-		if (stack->_id == 0)
-			break;
-
-	// realloc
-	if (i == -1) {
-		++n_stacks;
-		new_stacks = (FUNCTION_STACK_m13 *) realloc((void *) list->stacks, (size_t) n_stacks * sizeof(BEHAVIOR_STACK_m13));
-		if (new_stacks == NULL) {  // return with no changes to globals
-			return(NULL);
-		}
-		list->stacks = new_stacks;
-		++list->size;
-		++list->top_idx;
-		stack = list->stacks + list->top_idx;
-		memset((void *) stack, (si4) 0, sizeof(FUNCTION_STACK_m13));  // realloc doesn't zero new memory
-		
-		// allocate behaviors
-		functions = (const si1 **) calloc((size_t) GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13, sizeof(const si1 *));
-		if (functions == NULL)
-			return(NULL);
-		stack->functions = functions;
-		stack->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-	}
-	
-	// set up stack
-	stack->_id = gettid_m13();
-	stack->top_idx = -1;  // if reusing stack, functions already allocated, just reset top idx
-	
-	return(stack);
-}
-#endif  // FT_DEBUG_m13
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
@@ -2473,20 +2364,16 @@ inline
 #endif
 ui4	G_current_behavior_m13(void)
 {
-	ui4			behavior;
 	BEHAVIOR_STACK_m13	*stack;
 	
 
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
-		behavior = DEFAULT_BEHAVIOR_m13;
-	else
-		behavior = stack->behaviors[stack->top_idx].code;
+		return(globals_m13->behavior_stack_list->default_behavior);
+	else if (stack->top_idx == -1)
+		return(globals_m13->behavior_stack_list->default_behavior);
 	
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
-
-	return(behavior);
+	return(stack->behaviors[stack->top_idx].code);
 }
 
 
@@ -2499,15 +2386,14 @@ BEHAVIOR_m13	*G_current_behavior_entry_m13(void)
 	BEHAVIOR_STACK_m13	*stack;
 	
 
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
+		behavior = NULL;
+	else if (stack->top_idx == -1)
 		behavior = NULL;
 	else
 		behavior = stack->behaviors + stack->top_idx;
 	
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
-
 	return(behavior);
 }
 
@@ -2807,21 +2693,18 @@ void	G_delete_behavior_stack_m13(void)
 	BEHAVIOR_STACK_m13		*stack;
 
 
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
 		return;
 	
 	// reduce list search extents
 	list = globals_m13->behavior_stack_list;
-	if (stack == list->stacks + list->top_idx)
+	if (stack == *(list->stack_ptrs + list->top_idx))
 		--list->top_idx;
 	
 	// reset stack for re-use (leave size intact, behaviors allocated)
 	stack->_id = 0;
 	stack->top_idx = -1;
-
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return;
 }
@@ -2836,21 +2719,18 @@ void	G_delete_function_stack_m13(void)
 	FUNCTION_STACK_m13		*stack;
 
 	
-	stack = G_get_function_stack_m13(NULL);  // gets mutex
+	stack = G_get_function_stack_m13(0);
 	if (stack == NULL)
 		return;
 	
 	// reduce list search extents
 	list = globals_m13->function_stack_list;
-	if (stack == list->stacks + list->top_idx)
+	if (stack == *(list->stack_ptrs + list->top_idx))
 		--list->top_idx;
 	
 	// reset stack for re-use (leave size intact, functions allocated)
 	stack->_id = 0;
 	stack->top_idx = -1;
-
-	// release function stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
 	return;
 }
@@ -4726,33 +4606,35 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	}
 			
 	if (globals_m13->behavior_stack_list) {
-		for (i = 0; i < globals_m13->behavior_stack_list->size; ++i)
-			free((void *) globals_m13->behavior_stack_list->stacks[i].behaviors);
-		free((void *) globals_m13->behavior_stack_list->stacks);
+		for (i = 0; i < globals_m13->behavior_stack_list->size; i += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13)
+			free((void *) globals_m13->behavior_stack_list->stack_ptrs[i]->behaviors);
+		free((void *) globals_m13->behavior_stack_list->stack_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->behavior_stack_list->mutex);
 		free((void *) globals_m13->behavior_stack_list);
 	}
 
 	if (globals_m13->file_lock_list) {
-		free((void *) globals_m13->file_lock_list->locks);
+		for (i = 0; i < globals_m13->file_lock_list->size; i += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13)
+			free((void *) globals_m13->file_lock_list->lock_ptrs[i]);
+		free((void *) globals_m13->file_lock_list->lock_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->mutex);
+		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->locks_mutex);
 		free((void *) globals_m13->file_lock_list);
 	}
 
 #ifdef FT_DEBUG_m13
 	if (globals_m13->function_stack_list) {
-		for (i = 0; i < globals_m13->function_stack_list->size; ++i)
-			free((void *) globals_m13->function_stack_list->stacks[i].functions);
-		free((void *) globals_m13->function_stack_list->stacks);
+		for (i = 0; i < globals_m13->function_stack_list->size; i += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13)
+			free((void *) globals_m13->function_stack_list->stack_ptrs[i]->functions[i]);
+		free((void *) globals_m13->function_stack_list->stack_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->function_stack_list->mutex);
 		free((void *) globals_m13->function_stack_list);
 	}
 #endif
 
 	if (globals_m13->proc_globs_list) {
-		for (i = 0; i < globals_m13->proc_globs_list-> size; ++i)
-			if (globals_m13->proc_globs_list->proc_globs_ptrs[i])
-				free((void *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
+		for (i = 0; i < globals_m13->proc_globs_list->size; i += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13)
+			free((void *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
 		free((void *) globals_m13->proc_globs_list->proc_globs_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->proc_globs_list->mutex);
 		free((void *) globals_m13->proc_globs_list);
@@ -4766,6 +4648,8 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		free((void *) globals_m13->AT_list);
 	}
 #endif
+	
+	pthread_mutex_destroy_m13(&globals_m13->error.mutex);
 	
 	G_free_global_tables_m13();
 
@@ -5198,87 +5082,120 @@ PATH_FROM_ROOT_EXIT_m13:
 
 void	G_function_stack_trap_m13(si4 sig_num)
 {
-	volatile static tern	called = FALSE_m13;
+	static volatile tern	trapped = FALSE_m13;
 	const si1		*error_type, *error_desc;
 	pid_t_m13		_id;
+	ERR_m13			*err;
+	FUNCTION_STACK_m13	*stack;
+
+		
+	// check if causal error set
+	_id = gettid_m13();
+	eprintf_m13("_id = %lu", _id);
+	err = &globals_m13->error;
+	pthread_mutex_lock_m13(&err->mutex);  // get error mutex
+	if (err->code)
+		if (err->thread_id != _id)
+			trapped = TRUE_m13;
 	
-	
-	// just print first thread to get here
-	// other just wait for exit
-	if (called == TRUE_m13) {
-		while (1)
-			G_nap_m13("1 sec");
+	// wait for error to clear or process to exit
+	if (trapped == TRUE_m13) {
+		while (1) {
+			pthread_mutex_unlock_m13(&err->mutex);  // release error mutex
+			G_nap_m13("100 ms");
+			pthread_mutex_lock_m13(&err->mutex);  // release error mutex
+			if (err->code == E_NONE_m13)
+				break;
+		}
 	}
-	called = TRUE_m13;
+	trapped = TRUE_m13;
 	
 	switch (sig_num) {
 		case SIGINT:
 			error_type = "SIGINT";
-			error_desc = "Process Interrupted";
+			error_desc = "process Interrupted";
 			break;
 		case SIGILL:
 			error_type = "SIGILL";
-			error_desc = "Illegal Hardware Instruction";
+			error_desc = "illegal hardware instruction";
 			break;
 		case SIGABRT:
 			error_type = "SIGABRT";
-			error_desc = "Abnormal Termination";
+			error_desc = "abnormal termination";
 			break;
 		case SIGFPE:
 			error_type = "SIGFPE";
-			error_desc = "Floating Point Exception";
+			error_desc = "floating point exception";
 			break;
 		case SIGSEGV:
 			error_type = "SIGSEGV";
-			error_desc = "Memory Access Violation";
+			error_desc = "memory segment violation";
 			break;
 		case SIGTERM:
 			error_type = "SIGTERM";
-			error_desc = "Terminate";
+			error_desc = "terminate";
 			break;
 		case SIGTRAP:
 			error_type = "SIGTRAP";
-			error_desc = "Trace Trap";
+			error_desc = "trace trap";
 			break;
 		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
-		case SIGQUIT:
-			error_type = "SIGQUIT";
-			error_desc = "Process Quit";
+		case SIGBUS:
+			error_type = "SIGBUS";
+			error_desc = "bus error";
 			break;
 		case SIGKILL:
 			error_type = "SIGKILL";
-			error_desc = "Process Killed";
+			error_desc = "process killed";
 			break;
-		case SIGBUS:
-			error_type = "SIGBUS";
-			error_desc = "Bus Error";
+		case SIGQUIT:
+			error_type = "SIGQUIT";
+			error_desc = "process quit";
+			break;
+		case SIGUSR1:
+			error_type = "SIGUSR1";
+			error_desc = "user defined signal #1";
+			break;
+		case SIGUSR2:
+			error_type = "SIGUSR2";
+			error_desc = "user defined signal #2";
 			break;
 		case SIGXCPU:
 			error_type = "SIGXCPU";
-			error_desc = "CPU Time Limit Exceeded";
+			error_desc = "CPU time limit exceeded";
 			break;
 		case SIGXFSZ:
 			error_type = "SIGXFSZ";
-			error_desc = "File Size Limit Exceeded";
+			error_desc = "file size limit exceeded";
 			break;
 		#endif
 		default:
+			error_type = "SIGUNKN";
+			error_desc = "unrecogized signal";
 			return;
 	}
-
-	_id = gettid_m13();  // main process pid == tid
+	
+	// set error
+	err->code = E_SIGNAL_m13;
+	err->signal = sig_num;
+	err->line = E_UNKNOWN_LINE_m13;
+	stack = G_get_function_stack_m13(0);
+	if (stack) {
+		eprintf_m13("stack->top_idx = %d", stack->top_idx);
+		err->function = stack->functions[stack->top_idx];
+		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);  // release function stack list mutex
+	} else {
+		err->function = (const si1 *) "<unknown>";
+	}
+	pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	err->thread_id = _id;
 #ifdef MATLAB_m13
-	mexPrintf("\n\nSignal (thread %lu):\t%s [%s]\n", _id, error_desc, error_type);
-	if (sig_num == SIGTRAP)
-		mexPrintf("(it is possible this signal was triggered by another thread or a code breakpoint)\n");
-	mexPrintf("\n");
+	sprintf(err->message, "%s  [%s (%d)]", error_desc, error_type, sig_num);
 #else
-	fprintf(stderr, "%c\n\n%sSignal (thread %llu)%s:\t%s %s[%s]%s\n", 7, TC_RED_m13, _id, TC_RESET_m13, error_desc, TC_BLUE_m13, error_type, TC_RESET_m13);
-	if (sig_num == SIGTRAP)
-		fprintf(stderr, "%s(it is possible this signal was triggered by another thread or a code breakpoint)%s\n", TC_GREEN_m13, TC_RESET_m13);
-	fprintf(stderr, "\n");
+	sprintf(err->message, "%s  %s[%s (%d)]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
 #endif
-		
+	pthread_mutex_unlock_m13(&err->mutex);  // release error mutex
+
 	exit_m13(-1);  // exit_m13() shows function stack if FN_DEBUG_m13 defined
 
 	return;
@@ -5659,41 +5576,73 @@ BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void)
 	si4				i, n_stacks;
 	pid_t_m13			_id;
 	BEHAVIOR_STACK_LIST_m13		*list;
-	BEHAVIOR_STACK_m13		*stack;
-	
+	BEHAVIOR_STACK_m13		**stack_ptr, *stack, *new_stack;
 
-	// get behavior stacks mutex
-	// NOTE: the calling function is expected to release the mutex, unless it returns NULL
-	
+
+	// get mutex
 	list = globals_m13->behavior_stack_list;
 	pthread_mutex_lock_m13(&list->mutex);
 
 	// find stack
-	_id = gettid_m13();  // in single thread process tid == pid
-	stack = list->stacks;
+	_id = gettid_m13();
+	stack_ptr = list->stack_ptrs;
 	n_stacks = list->top_idx + 1;
-	for (i = n_stacks; i--; ++stack)
-		if (stack->_id == _id)
+	stack = NULL;
+	for (i = n_stacks; i--; ++stack_ptr) {
+		if ((*stack_ptr)->_id == _id) {
+			stack = *stack_ptr;
 			break;
-	
-	if (i == -1) {  // thread stack not found, try process id (child pids are different from parent)
-		_id = getpid_m13();
-		stack = list->stacks;  // reset
-		for (i = n_stacks; i--; ++stack)
-			if (stack->_id == _id)
-				break;
-		
-		// new process, create a new stack (use tid)
-		if (i == -1) {
-			stack = G_add_behavior_stack_m13();
-			if (stack == NULL) {  // return with no changes to global stacks
-				pthread_mutex_unlock_m13(&list->mutex);
-				return(NULL);
-			}
 		}
+		if (stack)
+			continue;
+		if ((*stack_ptr)->top_idx == -1)  // first open stack
+			stack = *stack_ptr;
 	}
+	
+	// stack not found
+	if (i == -1) {
+		// create a new stack
+		if (stack == NULL) {
+			// expand list
+			if (list->size == n_stacks) {
+				n_stacks += GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13;
+				stack_ptr = (BEHAVIOR_STACK_m13 **) realloc((void *) list->stack_ptrs, (size_t) n_stacks * sizeof(BEHAVIOR_STACK_m13 *));
+				if (stack_ptr == NULL) {  // return with no changes to stacks
+					pthread_mutex_unlock_m13(&list->mutex);
+					G_set_error_m13(E_ALLOC_m13, NULL);
+					return(NULL);
+				}
 
-	return(stack);  // mutex still set
+				list->stack_ptrs = stack_ptr;
+				list->size = n_stacks;
+				++list->top_idx;
+				
+				// allocate & initialize new stacks (note: stacks allocated en bloc)
+				new_stack = (BEHAVIOR_STACK_m13 *) malloc((size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(BEHAVIOR_STACK_m13));
+				if (new_stack == NULL) {
+					G_set_error_m13(E_ALLOC_m13, NULL);
+					pthread_mutex_unlock_m13(&list->mutex);
+					return(NULL);
+				}
+				stack_ptr = list->stack_ptrs + list->top_idx;  // list->top_idx == old size at this point
+				for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
+					*stack_ptr++ = new_stack;  // assign stack pointer
+					// initialize new stacks (behaviors allocated as needed)
+					new_stack->top_idx = -1;
+					new_stack->size = 0;
+				}
+			}
+			stack = *(list->stack_ptrs + list->top_idx);
+		}
+	
+		// set up stack
+		stack->top_idx = -1;
+		stack->_id = gettid_m13();
+	}
+		
+	pthread_mutex_unlock_m13(&list->mutex);
+
+	return(stack);
 }
 
 
@@ -5942,78 +5891,88 @@ GFL_CONDITION_RETURN_DATA_m13:
 }
 
 
-#ifdef FT_DEBUG_m13
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-FUNCTION_STACK_m13	*G_get_function_stack_m13(tern *locked, ...)  // varargs(locked != NULL): pid_t_m13 tid
+FUNCTION_STACK_m13	*G_get_function_stack_m13(pid_t_m13 _id)
 {
-	tern				got_lock;
 	si4				i, n_stacks;
-	pid_t_m13			_id, tid, pid;
 	FUNCTION_STACK_LIST_m13		*list;
-	FUNCTION_STACK_m13		*stack;
-	va_list				v_arg;
-	
+	FUNCTION_STACK_m13		**stack_ptr, *stack, *new_stack;
 
-	// get function stacks mutex
-	// NOTE: the calling function is expected to release the mutex, unless it returns NULL
-	// pass address of lock to use non-blocking lock, status returned (useful where multiple threads may be in error simultaneously)
-	// pass NULL for "locked" to force lock
-	// if "locked" != NULL is passed, "tid" can be passed to return a specified function stack (if "tid" is zero, the current thread id will be used)
-	
-	
-	// get tid
-	tid = 0;
-	if (locked) {
-		va_start(v_arg, locked);
-		tid = va_arg(v_arg, pid_t_m13);
-		pid = 0;
-		va_end(v_arg);
-	}
-	if (tid == 0) {
-		pid = getpid_m13();
-		tid = gettid_m13();
-	}
 
-	// use trylock
+	// pass zero for current thread function stack
+	
+	// get arguments
+	if (_id == 0)
+		_id = gettid_m13();
+
+	// get mutex
 	list = globals_m13->function_stack_list;
-	got_lock = TRUE_m13;
-	if (locked) {
-		if (pthread_mutex_trylock_m13(&list->mutex))
-			*locked = got_lock = FALSE_m13;
-		else
-			*locked = TRUE_m13;
-	} else {
-		pthread_mutex_lock_m13(&list->mutex);
-	}
+	pthread_mutex_lock_m13(&list->mutex);
 
 	// find stack
-	stack = list->stacks;
+	_id = gettid_m13();
+	stack_ptr = list->stack_ptrs;
 	n_stacks = list->top_idx + 1;
-	for (i = n_stacks; i--; ++stack) {
-		_id = stack->_id;
-		if (_id == pid || _id == tid)
+	stack = NULL;
+	for (i = n_stacks; i--; ++stack_ptr) {
+		if ((*stack_ptr)->_id == _id) {
+			stack = *stack_ptr;
 			break;
+		}
+		if (stack)
+			continue;
+		if ((*stack_ptr)->top_idx == -1)  // first open stack
+			stack = *stack_ptr;
+	}
+	
+	// stack not found
+	if (i == -1) {
+		// create a new stack
+		if (stack == NULL) {
+			// expand list
+			if (list->size == n_stacks) {
+				n_stacks += GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13;
+				stack_ptr = (FUNCTION_STACK_m13 **) realloc((void *) list->stack_ptrs, (size_t) n_stacks * sizeof(FUNCTION_STACK_m13 *));
+				if (stack_ptr == NULL) {  // return with no changes to stacks
+					pthread_mutex_unlock_m13(&list->mutex);
+					G_set_error_m13(E_ALLOC_m13, NULL);
+					return(NULL);
+				}
+
+				list->stack_ptrs = stack_ptr;
+				stack_ptr = list->stack_ptrs + list->size;
+				list->size = n_stacks;
+				++list->top_idx;
+				
+				// allocate & initialize new stacks (note: stacks allocated en bloc)
+				new_stack = (FUNCTION_STACK_m13 *) malloc((size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(FUNCTION_STACK_m13));
+				if (new_stack == NULL) {
+					pthread_mutex_unlock_m13(&list->mutex);
+					G_set_error_m13(E_ALLOC_m13, NULL);
+					return(NULL);
+				}
+				stack_ptr = list->stack_ptrs + list->top_idx;  // list->top_idx == old size at this point
+				for (i = GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
+					*stack_ptr++ = new_stack;  // assign stack pointer
+					// initialize new stacks (functions allocated as needed)
+					new_stack->top_idx = -1;
+					new_stack->size = 0;
+				}
+			}
+			stack = *(list->stack_ptrs + list->top_idx);
+		}
+	
+		// set up stack
+		stack->top_idx = -1;
+		stack->_id = gettid_m13();
 	}
 		
-	// new process, create a new stack
-	if (i == -1) {
-		if (got_lock == TRUE_m13) {
-			stack = G_add_function_stack_m13();
-			if (stack == NULL) {  // return with no change to function stacks
-				pthread_mutex_unlock_m13(&list->mutex);
-				return(NULL);
-			}
-		} else {
-			G_warning_message_m13("%s(): can't expand unlocked function stack list\n", __FUNCTION__);
-			return(NULL);
-		}
-	}
+	pthread_mutex_unlock_m13(&list->mutex);
 
-	return(stack);  // mutex still set
+	return(stack);
 }
-#endif  // FT_DEBUG_m13
 
 
 ui4	G_get_level_m13(si1 *full_file_name, ui4 *type_code)
@@ -6820,7 +6779,7 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 }
 
 
-tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ... )  // varargs (app_path) ui4 version_major, ui4 version_minor
+tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (app_path) ui4 version_major, ui4 version_minor
 {
 	if (globals_m13)
 		return(TRUE_m13);
@@ -6882,7 +6841,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	globals_m13->function_stack_list->top_idx = -1;
 	pthread_mutex_init_m13(&globals_m13->function_stack_list->mutex, NULL);
 	G_push_function_exec_m13("main");  // main doesn't push itself because it has to initialize globals first
-	if (!(GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13)) {
+	if ((GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13) == 0) {
 		#ifdef MATLAB_m13
 		mexPrintf("Function tracking enabled\n");
 		#else
@@ -6906,7 +6865,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 		#endif
 	}
 	globals_m13->behavior_stack_list->top_idx = -1;
-	globals_m13->behavior_stack_list->default_behavior = default_behavior;
+	globals_m13->behavior_stack_list->default_behavior = DEFAULT_BEHAVIOR_m13;
 	pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
 	
 	// file locks
@@ -6920,17 +6879,9 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 			exit(-1);
 			#endif
 		}
-		globals_m13->file_lock_list->locks = (FLOCK_ENTRY_m13 *) calloc((size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13, sizeof(FLOCK_ENTRY_m13));
-		if (globals_m13->file_lock_list->locks == NULL) {
-			#ifdef MATLAB_m13
-			mexErrMsgTxt("G_init_globals_m13(): calloc() failure for file lock list => exiting\n");
-			#else
-			fprintf(stderr, "%s(): calloc() failure for file lock list => exiting\n", __FUNCTION__);
-			exit(-1);
-			#endif
-		}
-		globals_m13->file_lock_list->size = GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
+		globals_m13->file_lock_list->top_idx = -1;
 		pthread_mutex_init_m13(&globals_m13->file_lock_list->mutex, NULL);
+		pthread_mutex_init_m13(&globals_m13->file_lock_list->locks_mutex, NULL);
 	}
 	
 	// process globals
@@ -6976,6 +6927,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	globals_m13->record_filters = NULL;
 	
 	// miscellaneous
+	pthread_mutex_init_m13(&globals_m13->error.mutex, NULL);
 	#if defined MACOS_m13 || defined LINUX_m13
 	strcpy(globals_m13->temp_dir, "/tmp");
 	strcpy(globals_m13->temp_file, "/tmp/MED_junk");
@@ -6989,7 +6941,9 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 	globals_m13->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
 	globals_m13->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
+	globals_m13->main_tid = gettid_m13();
 	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
+	globals_m13->threading = GLOBALS_THREADING_DEFAULT_m13;  // used to set process_globals default
 	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
 	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
 	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
@@ -7003,8 +6957,7 @@ tern	G_init_globals_m13(tern init_all_tables, ui4 default_behavior, si1 *app_pat
 }
 
 
-// FALSE_m13, DEFAULT_BEHAVIOR_m13, argv[0], MED2RAW_PROD_VER_MAJOR, MED2RAW_PROD_VER_MINOR
-tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path, ...)  // varargs(app_path): ui4 version_major, ui4 version_minor
+tern	G_init_medlib_m13(tern init_all_tables, si1 *app_path, ...)  // varargs(app_path): ui4 version_major, ui4 version_minor
 {
 	tern	ret_val = TRUE_m13;
 	ui4	version_major, version_minor;
@@ -7024,7 +6977,7 @@ tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path
 
 	// set up globals
 	if (globals_m13 == NULL) {
-		if (G_init_globals_m13(init_all_tables, default_behavior, app_path, version_major, version_minor) == FALSE_m13) {
+		if (G_init_globals_m13(init_all_tables, app_path, version_major, version_minor) == FALSE_m13) {
 			printf_m13("%s(): error initializing globals\n", __FUNCTION__);
 			exit_m13(-1);
 		}
@@ -7039,9 +6992,11 @@ tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path
 	signal(SIGTERM, G_function_stack_trap_m13);  // Terminate
 	signal(SIGTRAP, G_function_stack_trap_m13);  // Trace Trap (unhandled exception, or debugger breakpoint)
 	#if defined MACOS_m13 || defined LINUX_m13  // supported on Unix-like OS's
-		signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
-		signal(SIGKILL, G_function_stack_trap_m13);  // Kill
 		signal(SIGBUS, G_function_stack_trap_m13);  // Bus error
+		signal(SIGKILL, G_function_stack_trap_m13);  // Kill
+		signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
+		signal(SIGUSR1, G_function_stack_trap_m13);  // User-defined signal 1
+		signal(SIGUSR2, G_function_stack_trap_m13);  // User-defined signal 2
 		signal(SIGXCPU, G_function_stack_trap_m13);  // CPU time limit
 		signal(SIGXFSZ, G_function_stack_trap_m13);  // File size limit
 	#endif
@@ -7076,7 +7031,7 @@ tern	G_init_medlib_m13(tern init_all_tables, ui4 default_behavior, si1 *app_path
 #endif
 
 #if defined WINDOWS_m13
-	#ifdef NEED_WIN_SOCKETS_m13  // initialize Windows sockets DLL
+	#ifdef WIN_SOCKETS_m13  // initialize Windows sockets DLL
 	if (WN_socket_startup_m13() == FALSE_m13)
 		ret_val = FALSE_m13;
 	#endif
@@ -8374,83 +8329,61 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 		}
 	}
 	
-	null_segment_cnt = 0;
-	threading = TRUE_m13;
+	threading = proc_globs->miscellaneous.threading;
 	if (n_segs == 1)  // no sense in overhead for one thread
 		threading = FALSE_m13;
 	else if (!(flags & LH_THREAD_SEG_READS_m13))
 		threading = FALSE_m13;
-	else if (flags & LH_NO_THREADING_m13)
-		threading = FALSE_m13;
-	if (threading == FALSE_m13) {  // this is most common scenario - no need for extra thread overhead
-		for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j) {
-			seg = chan->segs[j];
-			if (seg == NULL) {
-				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
-				if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
-					sprintf_m13(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
-				else  // VID_CHAN_TYPE_CODE_m13
-					sprintf_m13(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
-				if (G_exists_m13(tmp_str) == DIR_EXISTS_m13)  // not every segment may be present
-					seg = chan->segs[j] = G_open_segment_m13(NULL, slice, tmp_str, (LH_m13 *) chan, flags, NULL);
-			} else {
-				seg = G_open_segment_m13(seg, slice, NULL, (LH_m13 *) chan, flags, NULL);
-			}
-			if (seg == NULL)
-				++null_segment_cnt;
-			else
-				seg->parent = (LH_m13 *) chan;
-		}
-	} else {  // thread  out multiple segments
-		// set up thread infos
-		proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(PROC_THREAD_INFO_m13));
-		seg_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
-		// start read_segment threads
-		
-		thread_idx = 0;
-		for (i = slice->start_seg_num, j = seg_idx, k = 0; i <= slice->end_seg_num; ++i, ++j, ++k) {
-			seg = chan->segs[j];
-			if (seg == NULL) {
-				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
-				if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
-					sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
-				else  // VID_CHAN_TYPE_CODE_m13
-					sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
-				if (G_exists_m13(seg_thread_infos[k].MED_dir) != DIR_EXISTS_m13) {
-					// not every segment may be present
-					++null_segment_cnt;
-					continue;
-				}
-			} else {
-				seg_thread_infos[k].MED_struct = (LH_m13 *) seg;
-			}
-			seg_thread_infos[k].parent = (LH_m13 *) chan;
-			seg->slice = *slice;
-			proc_thread_infos[thread_idx].thread_f = G_open_segment_thread_m13;
-			proc_thread_infos[thread_idx].thread_label = "G_open_segment_thread_m13";
-			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-			proc_thread_infos[thread_idx].arg = (void *) (seg_thread_infos + thread_idx);
-			++thread_idx;
-		}
 
-		// thread out segment opens
-		ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, TRUE_m13);  // no reserved cores, wait for completion
-		
-		// check results
-		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			seg = (SEG_m13 *) seg_thread_infos[i].MED_struct;
-			if (seg == NULL)
-				ret_val = FALSE_m13;
-			else
-				chan->segs[j] = seg;
+	// set up thread infos
+	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(PROC_THREAD_INFO_m13));
+	seg_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
+	
+	// start read_segment threads
+	null_segment_cnt = 0;
+	thread_idx = 0;
+	for (i = slice->start_seg_num, j = seg_idx, k = 0; i <= slice->end_seg_num; ++i, ++j, ++k) {
+		seg = chan->segs[j];
+		if (seg == NULL) {
+			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
+			if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
+				sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
+			else  // VID_CHAN_TYPE_CODE_m13
+				sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
+			if (G_exists_m13(seg_thread_infos[k].MED_dir) != DIR_EXISTS_m13) {
+				// not every segment may be present
+				++null_segment_cnt;
+				continue;
+			}
+		} else {
+			seg_thread_infos[k].MED_struct = (LH_m13 *) seg;
 		}
-		free((void *) proc_thread_infos);
-		free((void *) seg_thread_infos);
-		if (ret_val == FALSE_m13) {
-			if (free_chan == TRUE_m13)
-				G_free_channel_m13(&chan);
-			return_m13(NULL);
-		}
+		seg_thread_infos[k].parent = (LH_m13 *) chan;
+		seg->slice = *slice;
+		proc_thread_infos[thread_idx].thread_f = G_open_segment_thread_m13;
+		proc_thread_infos[thread_idx].thread_label = "G_open_segment_thread_m13";
+		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[thread_idx].arg = (void *) (seg_thread_infos + thread_idx);
+		++thread_idx;
+	}
+
+	// thread out segment opens
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
+
+	// check results
+	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		seg = (SEG_m13 *) seg_thread_infos[i].MED_struct;
+		if (seg == NULL)
+			ret_val = FALSE_m13;
+		else
+			chan->segs[j] = seg;
+	}
+	free((void *) proc_thread_infos);
+	free((void *) seg_thread_infos);
+	if (ret_val == FALSE_m13) {
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(&chan);
+		return_m13(NULL);
 	}
 
 	// empty slice
@@ -8534,6 +8467,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 {
+	CHAN_m13			*ret_val;
 	PROC_THREAD_INFO_m13 		*pi;
 	READ_MED_THREAD_INFO_m13 	*rmi;
 
@@ -8545,13 +8479,19 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 	pi->status = PROC_THREAD_RUNNING_m13;  // volatile
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
-	rmi->MED_struct = (LH_m13 *) G_open_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
+	ret_val = G_open_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
 	
 	G_free_thread_local_storage_m13((LH_m13 *) rmi->MED_struct);
 
-	pi->status = PROC_THREAD_FINISHED_m13;  // volatile
+	if (ret_val) {
+		rmi->MED_struct = (LH_m13 *) ret_val;
+		pi->status = PROC_THREAD_SUCCEEDED_m13;  // volatile
+	} else {
+		rmi->MED_struct = NULL;
+		pi->status = PROC_THREAD_FAILED_m13;  // volatile
+	}
 	
-	thread_return_m13(0);
+	thread_return_null_m13;
 }
 
 
@@ -8790,6 +8730,7 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 {
+	SEG_m13				*ret_val;
 	PROC_THREAD_INFO_m13 		*pi;
 	READ_MED_THREAD_INFO_m13 	*rmi;
 
@@ -8801,13 +8742,19 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 	pi->status = PROC_THREAD_RUNNING_m13;  // volatile
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
-	rmi->MED_struct = (LH_m13 *) G_open_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
+	ret_val = G_open_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
 	
 	G_free_thread_local_storage_m13((LH_m13 *) rmi->MED_struct);
 
-	pi->status = PROC_THREAD_FINISHED_m13;  // volatile
+	if (ret_val) {
+		rmi->MED_struct = (LH_m13 *) ret_val;
+		pi->status = PROC_THREAD_SUCCEEDED_m13;  // volatile
+	} else {
+		rmi->MED_struct = NULL;
+		pi->status = PROC_THREAD_FAILED_m13;  // volatile
+	}
 	
-	thread_return_m13(0);
+	thread_return_null_m13;
 }
 
 
@@ -9113,79 +9060,55 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	}
 
 	// thread out channel opens
-	threading = TRUE_m13;
+	threading = proc_globs->miscellaneous.threading;
 	if (n_chans == 1)  // no sense in overhead for one thread
 		threading = FALSE_m13;
-	else if (flags & LH_NO_THREADING_m13)
-		threading = FALSE_m13;
-	if (threading == TRUE_m13) {
-		// set up thread infos
-		n_chans = n_ts_chans + n_vid_chans;
-		proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m13));
-		read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m13));
-		thread_idx = 0;
-		// set up time series channels
-		for (i = 0; i < n_ts_chans; ++i) {
-			chan = sess->ts_chans[i];
-			chan->slice = *slice;
-			proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m13;
-			proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m13";
-			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-			read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-			read_MED_thread_infos[thread_idx].parent = (LH_m13 *) sess;
-			++thread_idx;
-		}
-		// set up video channels
-		for (i = 0; i < n_vid_chans; ++i) {
-			chan = sess->vid_chans[i];
-			chan->slice = *slice;
-			proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m13;
-			proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m13";
-			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-			read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-			read_MED_thread_infos[thread_idx].parent = (LH_m13 *) sess;
-			++thread_idx;
-		}
-		
-		// thread out channel reads
-		ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_chans, 0, TRUE_m13);  // no reserved cores, wait for completion
-		
-		// check results
-		for (i = 0; i < n_chans; ++i)
-			if (read_MED_thread_infos[i].MED_struct == NULL)
-				ret_val = FALSE_m13;
-		free((void *) proc_thread_infos);
-		free((void *) read_MED_thread_infos);
-		if (ret_val == FALSE_m13) {
-			if (free_sess == TRUE_m13)
-				G_free_session_m13(&sess);
-			G_set_error_m13(E_UNSPEC_m13, "error reading session");
-			return_m13(NULL);
-		}
-	} else {
-		// open time series channels
-		for (i = 0; i < sess->n_ts_chans; ++i) {
-			chan = sess->ts_chans[i];
-			if (G_open_channel_m13(chan, slice, NULL, (LH_m13 *) sess, flags, password) == NULL) {
-				if (free_sess == TRUE_m13)
-					G_free_session_m13(&sess);
-				return_m13(NULL);
-			}
-			chan->parent = (LH_m13 *) sess;
-		}
-
-		// open video channels
-		for (i = 0; i < sess->n_vid_chans; ++i) {
-			chan = sess->vid_chans[i];
-			if (G_open_channel_m13(chan, slice, NULL, (LH_m13 *) sess, flags, password) == NULL) {
-				if (free_sess == TRUE_m13)
-					G_free_session_m13(&sess);
-				return_m13(NULL);
-			}
-			chan->parent = (LH_m13 *) sess;
-		}
+	
+	// set up thread infos
+	n_chans = n_ts_chans + n_vid_chans;
+	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m13));
+	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m13));
+	thread_idx = 0;
+	
+	// set up time series channels
+	for (i = 0; i < n_ts_chans; ++i) {
+		chan = sess->ts_chans[i];
+		chan->slice = *slice;
+		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m13;
+		proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m13";
+		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
+		read_MED_thread_infos[thread_idx].parent = (LH_m13 *) sess;
+		++thread_idx;
+	}
+	// set up video channels
+	for (i = 0; i < n_vid_chans; ++i) {
+		chan = sess->vid_chans[i];
+		chan->slice = *slice;
+		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m13;
+		proc_thread_infos[thread_idx].thread_label = "G_open_channel_thread_m13";
+		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
+		read_MED_thread_infos[thread_idx].parent = (LH_m13 *) sess;
+		++thread_idx;
+	}
+	
+	// thread out channel reads
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_chans, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
+	
+	// check results
+	for (i = 0; i < n_chans; ++i)
+		if (read_MED_thread_infos[i].MED_struct == NULL)
+			ret_val = FALSE_m13;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+	if (ret_val == FALSE_m13) {
+		if (free_sess == TRUE_m13)
+			G_free_session_m13(&sess);
+		G_set_error_m13(E_UNSPEC_m13, "error reading session");
+		return_m13(NULL);
 	}
 
 	// update session slice
@@ -9423,55 +9346,48 @@ void	G_pop_behavior_m13(void)
 	BEHAVIOR_STACK_m13	*stack;
 	
 
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
 		return;
 
-	--stack->top_idx;
-	if (stack->top_idx == -1)
-		stack->_id = 0;  // release stack (popping stack base), // G_behavior_m13 will return default behavior
-
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	if (stack->top_idx >= 0) {
+		--stack->top_idx;
+		if (stack->top_idx == -1)
+			stack->_id = 0;  // release stack (popping stack base); // G_current_behavior_m13 will return default behavior
+	}
 
 	return;
 }
 
 
-#ifdef FT_DEBUG_m13
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
 void	G_pop_function_exec_m13(const si1 *function)
 {
+#ifdef FT_DEBUG_m13
+	
 	FUNCTION_STACK_m13	*stack;
 	
 	
-	stack = G_get_function_stack_m13(NULL);  // get mutex
+	// causal error set => do not modify stack of causal thread
+	if (globals_m13->error.code)
+		if (globals_m13->error.thread_id == gettid_m13())
+			return;
+
+	stack = G_get_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-		
-	// causal error set => do not modify intact
-	if (globals_m13->error.code) {  // != E_NONE_m13
-		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
 
-		// at stack base (get exit code)
-		if (strcmp_m13(stack->functions[0], function) == 0)
-			exit_m13(globals_m13->error.code);  // call exit to show error & stack
-		
-		return;
+	if (stack->top_idx >= 0) {
+		--stack->top_idx;
+		if (stack->top_idx == -1)
+			stack->_id = 0;  // release stack (popping stack base);
 	}
-
-	--stack->top_idx;
-	if (stack->top_idx == -1)
-		stack->_id = 0;  // release stack (popping stack base)
-
-	// release function stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+#endif  // FT_DEBUG_m13
 
 	return;
 }
-#endif  // FT_DEBUG_m13
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
@@ -9538,10 +9454,10 @@ inline
 #endif
 PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 {
-	si4			i;
-	pid_t_m13		_id, pid, tid;
+	si4			i, n_proc_globs;
+	pid_t_m13		_id;
 	LH_m13			*orig_lh;
-	PROC_GLOBS_m13		**proc_globs_ptr, **first_empty, **new_ptrs;
+	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, *new_proc_globs;
 	PROC_GLOBS_LIST_m13	*list;
 	
 #ifdef FT_DEBUG_m13
@@ -9567,49 +9483,60 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	list = globals_m13->proc_globs_list;
 	pthread_mutex_lock_m13(&list->mutex);
 			
-	// find process globals by process or thread id
+	// find process globals by thread id
 	// (first entry is main process globals)
-	first_empty = NULL;
+	proc_globs = NULL;
 	proc_globs_ptr = list->proc_globs_ptrs;
-	if (first_empty == NULL) {
-		pid = getpid_m13();  // if child, pid is different from parent
-		tid = gettid_m13();  // in single thread process tid == pid
-		for (i = list->top_idx + 1; i--; ++proc_globs_ptr) {
-			if (*proc_globs_ptr) {
-				_id = (*proc_globs_ptr)->_id;
-				if (_id == pid || _id == tid) {  // child pids are different from parent
-					pthread_mutex_unlock_m13(&list->mutex);
-					return_m13(*proc_globs_ptr);
-				}
-			} else {
-				first_empty = proc_globs_ptr;
-			}
+	n_proc_globs = list->top_idx + 1;
+	_id = gettid_m13();
+	for (i = n_proc_globs; i--; ++proc_globs_ptr) {
+		if ((*proc_globs_ptr)->_id == _id) {
+			pthread_mutex_unlock_m13(&list->mutex);
+			return_m13(*proc_globs_ptr);
 		}
+		if (proc_globs)
+			continue;
+		if ((*proc_globs_ptr)->_id == 0)  // first empty
+			proc_globs = *proc_globs_ptr;
 	}
 	
 	// expand list
-	if (first_empty == NULL) {  // expand list
-		list->size += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-		new_ptrs = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) list->size * sizeof(PROC_GLOBS_m13 *));
-		if (new_ptrs == NULL) {
-			list->size -= GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-			pthread_mutex_unlock_m13(&list->mutex);
-			G_set_error_m13(E_ALLOC_m13, NULL);
-			return_m13(NULL);
+	if (i == -1) {
+		if (proc_globs == NULL) {  // expand list
+			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
+			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
+			if (proc_globs_ptr == NULL) {
+				pthread_mutex_unlock_m13(&list->mutex);
+				G_set_error_m13(E_ALLOC_m13, NULL);
+				return_m13(NULL);
+			}
+			
+			list->proc_globs_ptrs = proc_globs_ptr;
+			list->size = n_proc_globs;
+			++list->top_idx;
+			
+			// allocate & initialize new stacks (note: proc_globs allocated en bloc)
+			new_proc_globs = (PROC_GLOBS_m13 *) malloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13));
+			if (new_proc_globs == NULL) {
+				G_set_error_m13(E_ALLOC_m13, NULL);
+				pthread_mutex_unlock_m13(&list->mutex);
+				return(NULL);
+			}
+			proc_globs_ptr = list->proc_globs_ptrs + list->top_idx;  // list->top_idx == old size at this point
+			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_proc_globs) {
+				*proc_globs_ptr++ = new_proc_globs;  // assign stack pointer
+				// initialize proc_globs (behaviors allocated as needed)
+				new_proc_globs->_id = 0;
+			}
+			proc_globs = *(list->proc_globs_ptrs + list->top_idx);
 		}
-		++list->top_idx;
-		proc_globs_ptr = new_ptrs + list->top_idx;  // leave proc_globs_ptr at top of stack
-		list->proc_globs_ptrs = new_ptrs;
-		memset((void *) proc_globs_ptr, (si4) 0, (size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13 *));  // realloc() does not zero
-	} else {
-		proc_globs_ptr = first_empty;
 	}
 	
-	// initialize
-	*proc_globs_ptr = G_proc_globs_init_m13(lh);
-
 	// relase mutex
 	pthread_mutex_unlock_m13(&list->mutex);
+	
+	// initialize
+	G_proc_globs_init_m13(proc_globs, lh);
 
 	return_m13(*proc_globs_ptr);
 }
@@ -9620,9 +9547,8 @@ inline
 #endif
 void	G_proc_globs_delete_m13(LH_m13 *lh)
 {
-	si4			i, entries;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, **proc_globs_ptrs;
-	PROC_GLOBS_LIST_m13	*list;
+	si4			i;
+	PROC_GLOBS_m13		*proc_globs;
 	Sgmt_RECS_LIST_m13	*Sgmt_records_list;
 	Sgmt_RECS_ENTRY_m13	*Sgmt_records_entry;
 	
@@ -9630,16 +9556,9 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	G_push_function_m13();
 #endif
 
-	if (lh) {
-		while (lh->parent)  // top of hieracrchy
-			lh = lh->parent;
-		if (lh->type_code != PROC_GLOBS_TYPE_CODE_m13)
-			return_void_m13;
-	} else {
+	proc_globs = G_proc_globs_m13(lh);
+	if (proc_globs == NULL)
 		return_void_m13;
-	}
-
-	proc_globs = (PROC_GLOBS_m13 *) lh;
 	
 	// delete proc globals Sgmt_records_list
 	Sgmt_records_list = proc_globs->current_session.Sgmt_recs_list;
@@ -9649,54 +9568,19 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	free((void *) Sgmt_records_list->entries);
 	pthread_mutex_destroy_m13(&proc_globs->current_session.Sgmt_recs_list->mutex);
 	free((void *) Sgmt_records_list);
+	proc_globs->current_session.Sgmt_recs_list = NULL;
 
-	// get mutex
-	list = globals_m13->proc_globs_list;
-	pthread_mutex_lock_m13(&list->mutex);
-
-	// find globals
-	entries = list->top_idx + 1;
-	proc_globs_ptrs = list->proc_globs_ptrs;
-	proc_globs_ptr = proc_globs_ptrs;
-	for (i = entries; i--; ++proc_globs_ptr)
-		if (*proc_globs_ptr == proc_globs)
-			break;
-		
-	if (i == -1) {  // not found
-		pthread_mutex_unlock_m13(&list->mutex);
-		return_void_m13;
-	}
-	
-	free((void *) *proc_globs_ptr);
-	*proc_globs_ptr = NULL;
-	
-	// trim list search extents
-	if (proc_globs_ptr == proc_globs_ptrs + list->top_idx)
-		--list->top_idx;
-	
-	// relase mutex
-	pthread_mutex_unlock_m13(&list->mutex);
+	proc_globs->_id = 0;
 
 	return_void_m13;
 }
 
 
-PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
+PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs, LH_m13 *lh)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-	// function assumes list has mutex
-	PROC_GLOBS_m13	*proc_globs;
-	
-	// allocates & initializes PROC_GLOBS_m13 structure, returns pointer
-
-	proc_globs = (PROC_GLOBS_m13 *) calloc((size_t) 1, sizeof(PROC_GLOBS_m13));
-	if (proc_globs == NULL) {
-		G_set_error_m13(E_ALLOC_m13, NULL);
-		return_m13(NULL);
-	}
 	
 	// set header
 	proc_globs->type_code = PROC_GLOBS_TYPE_CODE_m13;
@@ -9759,11 +9643,14 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(LH_m13 *lh)
 	
 	// reset miscellaneous globals
 	proc_globs->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
+	proc_globs->miscellaneous.threading = globals_m13->threading;
 	proc_globs->miscellaneous.proc_error_state = FALSE_m13;
 
 	if (lh) {
-		lh->parent = (LH_m13 *) proc_globs;  // set parent
-		proc_globs->child = lh;  // set child
+		if (lh != (LH_m13 *) proc_globs) {
+			lh->parent = (LH_m13 *) proc_globs;  // set parent
+			proc_globs->child = lh;  // set child
+		}
 	}
 
 	return_m13(proc_globs);
@@ -9997,94 +9884,95 @@ tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior_code)
+void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 {
+	si4			n_behaviors;
 	BEHAVIOR_m13		*behavior, *new_behaviors;
 	BEHAVIOR_STACK_m13	*stack;
 	
 
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
 		return;
 	
-	// realloc
-	if (stack->size == ++stack->top_idx) {
-		stack->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		new_behaviors = (BEHAVIOR_m13 *) realloc((void *) stack->behaviors, (size_t) stack->size * sizeof(BEHAVIOR_m13));
-		if (new_behaviors == NULL) {
-			stack->size -= GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-			--stack->top_idx;
+	// expand stack
+	n_behaviors = stack->top_idx + 1;
+	if (n_behaviors == stack->size) {
+		n_behaviors += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+		new_behaviors = (BEHAVIOR_m13 *) realloc((void *) stack->behaviors, (size_t) n_behaviors * sizeof(BEHAVIOR_m13));
+		if (stack->behaviors == NULL) {
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return;
 		}
 		stack->behaviors = new_behaviors;
+		stack->size = n_behaviors;
 	}
 	
-	// add to stack
-	behavior = stack->behaviors + stack->top_idx;
+	behavior = stack->behaviors + (++stack->top_idx);
 	behavior->function = function;
 	behavior->line = line;
-	behavior->code = behavior_code;
-	
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
+		behavior->code = globals_m13->behavior_stack_list->default_behavior;
+	else
+		behavior->code = code;
 
 	return;
 }
 
 
-#ifdef FT_DEBUG_m13
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
 void	G_push_function_exec_m13(const si1 *function)
 {
+#ifdef FT_DEBUG_m13
+	
+	si4			n_functions;
 	const si1		**new_functions;
 	FUNCTION_STACK_m13	*stack;
 	
-
-	// causal error set => do not modify stack
-	if (globals_m13->error.code != E_NONE_m13)
-		return;
+	
+	// causal error set => do not modify stack of causal thread
+	if (globals_m13->error.code)
+		if (globals_m13->error.thread_id == gettid_m13())
+			return;
 
 	// get function stacks mutex
-	stack = G_get_function_stack_m13(NULL);
+	stack = G_get_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-
-	// realloc
-	if (stack->size == ++stack->top_idx) {
-		stack->size += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
-		new_functions = (const si1 **) realloc((void *) stack->functions, (size_t) stack->size * sizeof(const si1 *));
+	
+	// expand stack
+	n_functions = stack->top_idx + 1;
+	if (n_functions == stack->size) {
+		n_functions += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
+		new_functions = (const si1 **) realloc((void *) stack->functions, (size_t) n_functions * sizeof(const si1 *));
 		if (new_functions == NULL) {
-			stack->size -= GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
-			--stack->top_idx;
-			pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+			G_set_error_m13(E_ALLOC_m13, NULL);
 			return;
 		}
 		stack->functions = new_functions;
+		stack->size = n_functions;
 	}
 	
-	// add to stack
-	stack->functions[stack->top_idx] = function;
-		
-	// release mutex
-	pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+	stack->functions[++stack->top_idx] = function;
+#endif  // FT_DEBUG_m13
 
 	return;
 }
-#endif  // FT_DEBUG_m13
 
 
 CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs: si1 *chan_path, LH_m13 *parent, ui8 lh_flags, si1 *password
 {
 	tern				free_chan, threading, ret_val;
-	si1 				tmp_str[PATH_BYTES_m13], *chan_path, *password;
+	si1 				*chan_path, *password;
 	si1 				num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	ui8 				flags;
 	si4 				i, j, k, n_segs, seg_idx, thread_idx, null_segment_cnt;
 	va_list				v_args;
 	LH_m13				*parent;
 	SEG_m13				*seg;
+	PROC_GLOBS_m13			*proc_globs;
 	PROC_THREAD_INFO_m13		*proc_thread_infos;
 	READ_MED_THREAD_INFO_m13	*read_MED_thread_infos;
 
@@ -10138,85 +10026,64 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	}
 
 	// read segments
-	null_segment_cnt = 0;
-	threading = TRUE_m13;
+	proc_globs = G_proc_globs_m13((LH_m13 *) chan);
+	threading = proc_globs->miscellaneous.threading;
 	if (n_segs == 1)  // no sense in overhead for one thread
 		threading = FALSE_m13;
-	else if (!(flags & LH_THREAD_SEG_READS_m13))
+	else if ((flags & LH_THREAD_SEG_READS_m13) == 0)
 		threading = FALSE_m13;
-	else if (flags & LH_NO_THREADING_m13)
-		threading = FALSE_m13;
-	if (threading == FALSE_m13) {
-		for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j) {
-			seg = chan->segs[j];
-			if (seg == NULL) {
-				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
-				if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
-					sprintf_m13(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
-				else  // VID_CHAN_TYPE_CODE_m13
-					sprintf_m13(tmp_str, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
-				if (G_exists_m13(tmp_str) == DIR_EXISTS_m13)  // not every segment may be present
-					seg = chan->segs[j] = G_read_segment_m13(NULL, slice, tmp_str, chan->flags, NULL);
-			} else {
-				seg = G_read_segment_m13(seg, slice);
-			}
-			if (seg == NULL)
+
+	// set up thread infos
+	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(PROC_THREAD_INFO_m13));
+	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
+	
+	// start read_segment threads
+	null_segment_cnt = 0;
+	thread_idx = 0;
+	for (i = slice->start_seg_num, j = seg_idx, k = 0; i <= slice->end_seg_num; ++i, ++j, ++k) {
+		seg = chan->segs[j];
+		if (seg == NULL) {
+			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
+			if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
+				sprintf_m13(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
+			else  // VID_CHAN_TYPE_CODE_m13
+				sprintf_m13(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
+			if (G_exists_m13(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m13) {
+				// not every segment may be present
 				++null_segment_cnt;
-			else
-				seg->parent = (LH_m13 *) chan;
-		}
-	} else {  // thread out multiple segments
-		// set up thread infos
-		proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(PROC_THREAD_INFO_m13));
-		read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
-		// start read_segment threads
-		
-		thread_idx = 0;
-		for (i = slice->start_seg_num, j = seg_idx, k = 0; i <= slice->end_seg_num; ++i, ++j, ++k) {
-			seg = chan->segs[j];
-			if (seg == NULL) {
-				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
-				if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
-					sprintf_m13(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
-				else  // VID_CHAN_TYPE_CODE_m13
-					sprintf_m13(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
-				if (G_exists_m13(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m13) {
-					// not every segment may be present
-					++null_segment_cnt;
-					continue;
-				}
-			} else {
-				read_MED_thread_infos[k].MED_struct = (LH_m13 *) seg;
+				continue;
 			}
-			read_MED_thread_infos[k].parent = (LH_m13 *) chan;
-			seg->slice = *slice;
-			proc_thread_infos[thread_idx].thread_f = G_read_segment_thread_m13;
-			proc_thread_infos[thread_idx].thread_label = "G_read_segment_thread_m13";
-			proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-			proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-			++thread_idx;
+		} else {
+			read_MED_thread_infos[k].MED_struct = (LH_m13 *) seg;
 		}
-		
-		// thread out segment reads
-		ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, TRUE_m13);  // no reserved cores, wait for completion
-		
-		// check results
-		if (null_segment_cnt == n_segs)
+		read_MED_thread_infos[k].parent = (LH_m13 *) chan;
+		seg->slice = *slice;
+		proc_thread_infos[thread_idx].thread_f = G_read_segment_thread_m13;
+		proc_thread_infos[thread_idx].thread_label = "G_read_segment_thread_m13";
+		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		++thread_idx;
+	}
+	
+	// thread out segment reads
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
+	
+	// check results
+	if (null_segment_cnt == n_segs)
+		ret_val = FALSE_m13;
+	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		seg = (SEG_m13 *) read_MED_thread_infos[i].MED_struct;
+		if (seg == NULL)
 			ret_val = FALSE_m13;
-		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-			seg = (SEG_m13 *) read_MED_thread_infos[i].MED_struct;
-			if (seg == NULL)
-				ret_val = FALSE_m13;
-			else
-				chan->segs[j] = seg;
-		}
-		free((void *) proc_thread_infos);
-		free((void *) read_MED_thread_infos);
-		if (ret_val == FALSE_m13) {
-			if (free_chan == TRUE_m13)
-				G_free_channel_m13(&chan);
-			return_m13(NULL);
-		}
+		else
+			chan->segs[j] = seg;
+	}
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+	if (ret_val == FALSE_m13) {
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(&chan);
+		return_m13(NULL);
 	}
 
 	// empty slice
@@ -10479,18 +10346,31 @@ si4	G_read_channel_specification_file_m13(si1 *cs_file_name, si4 n_available_cha
 
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
 {
-	READ_MED_THREAD_INFO_m13 	*ti;
+	CHAN_m13			*ret_val;
+	PROC_THREAD_INFO_m13		*pi;
+	READ_MED_THREAD_INFO_m13 	*rmi;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	ti = (READ_MED_THREAD_INFO_m13 *) ptr;
-	ti->MED_struct = (LH_m13 *) G_read_channel_m13((CHAN_m13 *) ti->MED_struct, ti->slice, ti->MED_dir, (SESS_m13 *) ti->parent, ti->flags, ti->password);
+	pi = (PROC_THREAD_INFO_m13 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m13;  // volatile
 
-	G_free_thread_local_storage_m13((LH_m13 *) ti->MED_struct);
+	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
+	ret_val = G_read_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (SESS_m13 *) rmi->parent, rmi->flags, rmi->password);
 	
-	thread_return_m13(0);
+	G_free_thread_local_storage_m13((LH_m13 *) rmi->MED_struct);
+
+	if (ret_val) {
+		rmi->MED_struct = (LH_m13 *) ret_val;
+		pi->status = PROC_THREAD_SUCCEEDED_m13;  // volatile
+	} else {
+		rmi->MED_struct = NULL;
+		pi->status = PROC_THREAD_FAILED_m13;  // volatile
+	}
+	
+	thread_return_null_m13;
 }
 
 
@@ -10797,6 +10677,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs: si
 
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 {
+	SEG_m13				*ret_val;
 	PROC_THREAD_INFO_m13 		*pi;
 	READ_MED_THREAD_INFO_m13 	*rmi;
 
@@ -10808,13 +10689,19 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 	pi->status = PROC_THREAD_RUNNING_m13;  // volatile
 	
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
-	rmi->MED_struct = (LH_m13 *) G_read_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (CHAN_m13 *) rmi->parent, rmi->flags, rmi->password);
+	ret_val = G_read_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (CHAN_m13 *) rmi->parent, rmi->flags, rmi->password);
 	
 	G_free_thread_local_storage_m13((LH_m13 *) rmi->MED_struct);
+
+	if (ret_val) {
+		rmi->MED_struct = (LH_m13 *) ret_val;
+		pi->status = PROC_THREAD_SUCCEEDED_m13;  // volatile
+	} else {
+		rmi->MED_struct = NULL;
+		pi->status = PROC_THREAD_FAILED_m13;  // volatile
+	}
 	
-	pi->status = PROC_THREAD_FINISHED_m13;  // volatile
-	
-	thread_return_m13(0);
+	thread_return_null_m13;
 }
 
 
@@ -10851,9 +10738,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		va_end(v_args);
 		
 		// open session
-		eprintf_m13("");
 		sess = G_open_session_m13(NULL, slice, file_list, list_len, flags, password, index_channel_name);
-		eprintf_m13("");
 		if (sess == NULL)
 			return_m13(NULL);
 		free_sess = TRUE_m13;
@@ -10918,111 +10803,89 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	active_chans = active_ts_chans + active_vid_chans;
 
 	// thread out channel reads
-	threading = TRUE_m13;
-	if (active_chans == 1)  // no sense in overhead for one thread
+	threading = proc_globs->miscellaneous.threading;
+	if (active_chans == 1)  // no sense in thread overhead for one channel
 		threading = FALSE_m13;
-	else if (flags & LH_NO_THREADING_m13)
-		threading = FALSE_m13;
-	if (threading == TRUE_m13) {
-		proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) active_chans, sizeof(PROC_THREAD_INFO_m13));
-		read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m13));
-		search_mode = G_get_search_mode_m13(slice);
-		thread_idx = 0;
-		if (active_ts_chans) {
-			calculate_channel_indices = FALSE_m13;
-			if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13) {
-				if (proc_globs->current_session.index_channel->type_code == TS_CHAN_TYPE_m13) {
-					if (search_mode == SAMPLE_SEARCH_m13) {
-						calculate_channel_indices = TRUE_m13;
-						ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-					}
-				}
-			}
-			for (i = 0; i < sess->n_ts_chans; ++i) {
-				chan = sess->ts_chans[i];
-				if (chan->flags & LH_CHAN_ACTIVE_m13) {
-					if (calculate_channel_indices == TRUE_m13) {
-						sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
-						chan->slice.start_samp_num = (si8) round((sf8) slice->start_samp_num * sf_ratio);
-						chan->slice.end_samp_num = (si8) round((sf8) slice->end_samp_num * sf_ratio);
-						chan->slice.start_time = chan->slice.end_time = UUTC_NO_ENTRY_m13;
-					} else {
-						chan->slice = *slice;
-					}
-					proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m13;
-					proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m13";
-					proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-					proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-					read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-					++thread_idx;
-				}
-			}
-		}
-		if (active_vid_chans) {
-			calculate_channel_indices = FALSE_m13;
-			if (proc_globs->active_channels.frame_rates_vary == TRUE_m13) {
-				if (proc_globs->current_session.index_channel->type_code == VID_CHAN_TYPE_m13) {
-					if (search_mode == SAMPLE_SEARCH_m13) {
-						calculate_channel_indices = TRUE_m13;
-						ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
-					}
-				}
-			}
-			for (i = 0; i < sess->n_vid_chans; ++i) {
-				chan = sess->vid_chans[i];
-				if (chan->flags & LH_CHAN_ACTIVE_m13) {
-					if (calculate_channel_indices == TRUE_m13) {
-						sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
-						chan->slice.start_frame_num = (si8) round((sf8) slice->start_frame_num * sf_ratio);
-						chan->slice.end_frame_num = (si8) round((sf8) slice->end_frame_num * sf_ratio);
-						chan->slice.start_time = chan->slice.end_time = UUTC_NO_ENTRY_m13;
-					} else {
-						chan->slice = *slice;
-					}
-					proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m13;
-					proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m13";
-					proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-					proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-					read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-					++thread_idx;
-				}
-			}
-		}
-		
-		// thread out channel reads
-		ret_val = PROC_distribute_jobs_m13(proc_thread_infos, active_chans, 0, TRUE_m13);  // no reserved cores, wait for completion
-		
-		// check results
-		for (i = 0; i < active_chans; ++i)
-			if (read_MED_thread_infos[i].MED_struct == NULL)
-				ret_val = FALSE_m13;
-		free((void *) proc_thread_infos);
-		free((void *) read_MED_thread_infos);
-		if (ret_val == FALSE_m13) {
-			if (free_sess == TRUE_m13)
-				G_free_session_m13(&sess);
-			G_set_error_m13(E_UNSPEC_m13, "error reading session");
-			return_m13(NULL);
-		}
-	} else {  // no threading
-		if (active_ts_chans) {
-			for (i = 0; i < sess->n_ts_chans; ++i) {
-				chan = sess->ts_chans[i];
-				if (chan->flags & LH_CHAN_ACTIVE_m13)
-					break;
-			}
-		} else {  // video channel
-			for (i = 0; i < sess->n_vid_chans; ++i) {
-				chan = sess->vid_chans[i];
-				if (chan->flags & LH_CHAN_ACTIVE_m13)
-					break;
-			}
-		}
-		ret_val = TRUE_m13;
-		chan = G_read_channel_m13(chan, slice);
-		if (chan == NULL)
-			ret_val = FALSE_m13;
 
+	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) active_chans, sizeof(PROC_THREAD_INFO_m13));
+	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m13));
+	search_mode = G_get_search_mode_m13(slice);
+	thread_idx = 0;
+	if (active_ts_chans) {
+		calculate_channel_indices = FALSE_m13;
+		if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13) {
+			if (proc_globs->current_session.index_channel->type_code == TS_CHAN_TYPE_m13) {
+				if (search_mode == SAMPLE_SEARCH_m13) {
+					calculate_channel_indices = TRUE_m13;
+					ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+				}
+			}
+		}
+		for (i = 0; i < sess->n_ts_chans; ++i) {
+			chan = sess->ts_chans[i];
+			if (chan->flags & LH_CHAN_ACTIVE_m13) {
+				if (calculate_channel_indices == TRUE_m13) {
+					sf_ratio = chan->metadata_fps->metadata->time_series_section_2.sampling_frequency / ref_sf;
+					chan->slice.start_samp_num = (si8) round((sf8) slice->start_samp_num * sf_ratio);
+					chan->slice.end_samp_num = (si8) round((sf8) slice->end_samp_num * sf_ratio);
+					chan->slice.start_time = chan->slice.end_time = UUTC_NO_ENTRY_m13;
+				} else {
+					chan->slice = *slice;
+				}
+				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m13;
+				proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m13";
+				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
+				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+				read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
+				++thread_idx;
+			}
+		}
+	}
+	if (active_vid_chans) {
+		calculate_channel_indices = FALSE_m13;
+		if (proc_globs->active_channels.frame_rates_vary == TRUE_m13) {
+			if (proc_globs->current_session.index_channel->type_code == VID_CHAN_TYPE_m13) {
+				if (search_mode == SAMPLE_SEARCH_m13) {
+					calculate_channel_indices = TRUE_m13;
+					ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
+				}
+			}
+		}
+		for (i = 0; i < sess->n_vid_chans; ++i) {
+			chan = sess->vid_chans[i];
+			if (chan->flags & LH_CHAN_ACTIVE_m13) {
+				if (calculate_channel_indices == TRUE_m13) {
+					sf_ratio = chan->metadata_fps->metadata->video_section_2.frame_rate / ref_sf;
+					chan->slice.start_frame_num = (si8) round((sf8) slice->start_frame_num * sf_ratio);
+					chan->slice.end_frame_num = (si8) round((sf8) slice->end_frame_num * sf_ratio);
+					chan->slice.start_time = chan->slice.end_time = UUTC_NO_ENTRY_m13;
+				} else {
+					chan->slice = *slice;
+				}
+				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m13;
+				proc_thread_infos[thread_idx].thread_label = "G_read_channel_thread_m13";
+				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
+				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+				read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
+				++thread_idx;
+			}
+		}
+	}
+	
+	// thread out channel reads
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, active_chans, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
+	
+	// check results
+	for (i = 0; i < active_chans; ++i)
+		if (read_MED_thread_infos[i].MED_struct == NULL)
+			ret_val = FALSE_m13;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+	if (ret_val == FALSE_m13) {
+		if (free_sess == TRUE_m13)
+			G_free_session_m13(&sess);
+		G_set_error_m13(E_UNSPEC_m13, "error reading session");
+		return_m13(NULL);
 	}
  
 	// update session slice
@@ -11409,38 +11272,40 @@ tern  G_recover_passwords_m13(si1 *L3_password, UH_m13 *universal_header)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 behavior_code)
+void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 {
+	si4			n_behaviors;
 	BEHAVIOR_m13		*behavior, *new_behaviors;
 	BEHAVIOR_STACK_m13	*stack;
 	
 
 	// not ands to current behavior & pushes to stack as new entry
 	
-	stack = G_get_behavior_stack_m13();  // gets mutex
+	stack = G_get_behavior_stack_m13();
 	if (stack == NULL)
 		return;
 	
-	// realloc
-	if (stack->size == ++stack->top_idx) {
-		stack->size += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		new_behaviors = (BEHAVIOR_m13 *) realloc((void *) stack->behaviors, (size_t) stack->size * sizeof(BEHAVIOR_m13));
+	// expand stack
+	n_behaviors = stack->top_idx + 1;
+	if (n_behaviors == stack->size) {
+		n_behaviors += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+		new_behaviors = (BEHAVIOR_m13 *) realloc((void *) stack->behaviors, (size_t) n_behaviors * sizeof(BEHAVIOR_m13));
 		if (new_behaviors == NULL) {
-			stack->size -= GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-			--stack->top_idx;
+			G_set_error_m13(E_ALLOC_m13, NULL);
+			return;
 		}
 		stack->behaviors = new_behaviors;
+		stack->size = n_behaviors;
 	}
-
-	// add to stack
-	behavior = stack->behaviors + stack->top_idx;
+	
+	behavior = stack->behaviors + (++stack->top_idx);
 	behavior->function = function;
 	behavior->line = line;
-	behavior->code = (behavior - 1)->code & ~behavior_code;
+	if (stack->top_idx)
+		behavior->code = (behavior - 1)->code  & ~code;
+	else
+		behavior->code = globals_m13->behavior_stack_list->default_behavior & ~code;
 	
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
-
 	return;
 }
 
@@ -11460,35 +11325,30 @@ void	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 behavior_code)
+void	G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 code)
 {
 	BEHAVIOR_m13		*behavior;
 	BEHAVIOR_STACK_m13	*stack;
 
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
+
 	// reduces stack to one entry which is set to behavior
-	// pass DEFAULT_BEHAVIOR_m13 to set default behavior
+	// pass DEFAULT_BEHAVIOR_m13 to set to list default behavior
 	
 	stack = G_get_behavior_stack_m13();  // gets mutex
 	if (stack == NULL)
-		return_m13(FALSE_m13);
+		return;
 
-	if (behavior_code == DEFAULT_BEHAVIOR_m13)
-		behavior_code = globals_m13->behavior_stack_list->default_behavior;
 
 	stack->top_idx = 0;
 	behavior = stack->behaviors;
-	behavior->function = __FUNCTION__;
-	behavior->line = __LINE__;
-	behavior->code = behavior_code;
+	behavior->function = function;
+	behavior->line = line;
+	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
+		behavior->code = globals_m13->behavior_stack_list->default_behavior;
+	else
+		behavior->code = code;
 
-	// release behavior stacks mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
-
-	return_m13(TRUE_m13);
+	return;
 }
 
 
@@ -12139,25 +11999,48 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 {
 	ERR_m13			*err;
 	PROC_GLOBS_m13		*proc_globs;
+	pid_t_m13		_id;
+	pthread_t_m13		thread;
 	
 
 	// Call set_error for causal errors only.
 	// Return error local error condition for errors returned from functions, no messages necessary
 	
-	// set process globals error_state (for void functions)
-	// ideally calling function sets this because these are thread-local, not hierarchy-local globals, which can differ
-	proc_globs = G_proc_globs_m13(NULL);  // NULL => use process / thread ID
-	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
-
-	// check global error
+	// get mutex
+	_id = gettid_m13();  // thread id (main process thread id == process id)
 	err = &globals_m13->error;
-	if (err->code != E_NONE_m13)  // already set => keep causal error
-		return;
+	pthread_mutex_lock_m13(&err->mutex);  // get mutex
 	
+	eprintf_m13("_id = %lu", _id);
+
+	// check if main process
+	if (_id != globals_m13->main_tid) {  // main process always proceeds to exit
+		eprintf_m13("thread process");
+		// check global error
+		if (err->code) {  // already set
+			pthread_mutex_unlock_m13(&err->mutex);  // release mutex
+			
+			// return on fail
+			if (G_current_behavior_m13() & RETURN_ON_FAIL_m13) {
+				eprintf_m13("thread %lu returning", _id);
+				return;
+			}
+			
+			// kill thread
+			eprintf_m13("killing thread %lu", _id);
+			thread = PROC_thread_for_id_m13(0);  // zero gets current thread
+			pthread_kill_m13(thread, 0);  // zero kills without signal
+		}
+	}
+	
+	proc_globs = G_proc_globs_m13(NULL);  // NULL => use process / thread ID
+	proc_globs->miscellaneous.proc_error_state = TRUE_m13;  // set process globals error_state (for void functions)
+	
+	eprintf_m13("_id = %lu", _id);
 	// set error message
 	if (STR_empty_m13(message) == TRUE_m13) {
 		if (code == E_NONE_m13)  // no error specified in code or message
-			return_void_m13;
+			return;
 		if (code > E_NONE_m13 && code < E_STR_TABLE_ENTRIES_m13)  // use table message
 			strcpy_m13(err->message, (si1 *) globals_m13->tables->E_strings_table[code]);
 		else  // unspecified message, custom code
@@ -12173,18 +12056,46 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 			code = E_UNSPEC_m13;
 	}
 
+	eprintf_m13("_id = %lu", _id);
 	// set other error parameters
 	err->code = code;
 	err->line = line;
 	err->function = function;
 	pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	err->thread_id = gettid_m13();
-		
-	// exit
+	err->thread_id = _id;
+	
+	eprintf_m13("_id = %lu", _id);
+	// release mutex
+	pthread_mutex_unlock_m13(&err->mutex);
+	
+	eprintf_m13("showing error in thread _id = %lu", _id);
+	G_show_error_m13();
+	
+	// return
 	if (G_current_behavior_m13() & RETURN_ON_FAIL_m13)
 		return;
-		
+	
+	// exit
+	eprintf_m13("_id = %lu", _id);
 	exit_m13(-1);
+}
+
+
+void	G_set_function_stack_pid_m13(pid_t_m13 _id, pid_t_m13 _pid)
+{
+#ifdef FN_DEBUG_m13
+	FUNCTION_STACK_m13	*stack;
+	
+	// set _id stack's _pid
+	
+	stack = G_get_function_stack_m13(_id);
+	if (stack == NULL)
+		return;
+	
+	stack->_pid = _pid
+
+#endif
+	return;
 }
 
 
@@ -12820,7 +12731,7 @@ tern	G_show_error_m13(void)
 	
 	if (err->code == E_NONE_m13) {
 		#ifdef MATLAB_m13
-		mexPrintf("Error:\tno error\n\n");
+		mexPrintf("Error:\tno error set\n\n");
 		#else
 		fprintf(stderr, "%sError%s:\tno error set\n\n", TC_RED_m13, TC_RESET_m13);
 		#endif
@@ -12828,17 +12739,40 @@ tern	G_show_error_m13(void)
 	}
 
 #ifdef MATLAB_m13
-	if (*err->thread_name == '<')
-		mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread %lu]\n\n", err->message, err->code, err->function, err->line, (ui8) err->thread_id);
-	else
-		mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]\n\n", err->message, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id);
-	
+	if (*err->thread_name == '<') {
+		if (err->line == E_UNKNOWN_LINE_m13)
+			mexPrintf("Error:\t%s\n\t[code %d; set in %s(); in thread %lu]\n\n", err->message, err->code, err->function, (ui8) err->thread_id);
+		else
+			mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread %lu]\n\n", err->message, err->code, err->function, err->line, (ui8) err->thread_id);
+	} else {
+		if (err->line == E_UNKNOWN_LINE_m13)
+			mexPrintf("Error:\t%s\n\t[code %d; set in %s(); in thread \"%s\" (id %lu)]\n\n", err->message, err->code, err->function, err->thread_name, (ui8) err->thread_id);
+		else
+			mexPrintf("Error:\t%s\n\t[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]\n\n", err->message, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id);
+	}
 #else
-	if (*err->thread_name == '<')
-		printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread %lu]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, (ui8) err->thread_id, TC_RESET_m13);
-	else
-		printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]%s\n\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id, TC_RESET_m13);
+	if (*err->thread_name == '<') {
+		if (err->line == E_UNKNOWN_LINE_m13)
+			printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); in thread %lu]%s\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, (ui8) err->thread_id, TC_RESET_m13);
+		else
+			printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread %lu]%s\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, (ui8) err->thread_id, TC_RESET_m13);
+	} else {
+		if (err->line == E_UNKNOWN_LINE_m13)
+			printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); in thread \"%s\" (id %lu)]%s\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->thread_name, (ui8) err->thread_id, TC_RESET_m13);
+		else
+			printf_m13("%sError:%s\t%s\n\t%s[code %d; set in %s(); at line %d; in thread \"%s\" (id %lu)]%s\n", TC_RED_m13, TC_RESET_m13, err->message, TC_BLUE_m13, err->code, err->function, err->line, err->thread_name, (ui8) err->thread_id, TC_RESET_m13);
+	}
 #endif
+	
+	if (err->signal == SIGTRAP) {
+#ifdef MATLAB_m13
+		mexPrintf("\t(it is possible this signal was triggered by another thread or a code breakpoint)\n\n");
+#else
+		printf("\t%s(it is possible this signal was triggered by another thread or a code breakpoint)%s\n\n", TC_GREEN_m13, TC_RESET_m13);
+#endif
+	} else {
+		printf_m13("\n");
+	}
 
 	return(TRUE_m13);
 }
@@ -12883,40 +12817,48 @@ tern	G_show_file_times_m13(FILE_TIMES_m13 *ft)
 void	G_show_function_stack_m13(void)
 {
 #ifdef FT_DEBUG_m13
-	tern			locked;
+	
 	si1			*c, thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si4			i;
 	pid_t_m13		_id;
 	FUNCTION_STACK_m13	*stack;
 
 	
-	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	eprintf_m13("_id = %lu", gettid_m13());
 	
 	if (globals_m13->error.code)
 		_id = globals_m13->error.thread_id;
 	else
 		_id = gettid_m13();
 	
-	stack = G_get_function_stack_m13(&locked, _id);
+	stack = G_get_function_stack_m13(_id);
 	if (stack == NULL)
 		return;
+	
+	// recurse
+	while (stack->_pid) {
+		stack = G_get_function_stack_m13(stack->_pid);
+		if (stack == NULL)
+			return;
+	}
 
+	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 	if (*thread_name == '<')  // "<unnamed>"
 		sprintf_m13(thread_name, "Function Stack for Thread %lu:", _id);
 	else
 		sprintf_m13(thread_name, "Function Stack for Thread \"%s\" (id %lu):", thread_name, _id);
 	printf_m13("\n%s", thread_name);
+	
+	// replace string characters with '-' (terminal zero preserved)
 	c = thread_name - 1;
 	while (*++c)
 		*c = '-';
 	printf_m13("\n%s\n", thread_name);
+	
+	// print stack
 	for (i = 0; i <= stack->top_idx; ++i)
 		printf_m13("%d)\t%s()\n", i, stack->functions[i]);
-	printf_m13("\n");
-		
-	// release mutex
-	if (locked == TRUE_m13)
-		pthread_mutex_unlock_m13(&globals_m13->function_stack_list->mutex);
+	putchar_m13('\n');
 
 #endif  // FT_DEBUG_m13
 	
@@ -12948,26 +12890,27 @@ void  G_show_globals_m13(void)
 
 	printf_m13("\nMiscellaneous\n-------------\n");
 	if (*globals_m13->temp_dir)
-		printf_m13("temp_dir: %s\n", globals_m13->temp_dir);
+		printf_m13("Temporary File Directory: \"%s\"\n", globals_m13->temp_dir);
 	else
-		printf_m13("temp_dir: no entry\n");
+		printf_m13("Temporary File Directory: no entry\n");
 	if (*globals_m13->temp_file)
-		printf_m13("temp_file: %s\n", globals_m13->temp_file);
+		printf_m13("Temporary File: \"%s\"\n", globals_m13->temp_file);
 	else
-		printf_m13("temp_file: no entry\n");
-	printf_m13("file_creation_umask: %u\n", globals_m13->file_creation_umask);
+		printf_m13("Temporary File: no entry\n");
+	printf_m13("File Creation umask: %u\n", globals_m13->file_creation_umask);
 	if (globals_m13->file_lock_mode == FLOCK_MODE_NONE_m13)
-		printf_m13("file lock mode: none\n");
+		printf_m13("File Lock Mode: none\n");
 	else if (globals_m13->file_lock_mode == FLOCK_MODE_MED_m13)
-		printf_m13("file lock mode: MED files only\n");
+		printf_m13("File Lock Mode: MED files only\n");
 	else if (globals_m13->file_lock_mode == FLOCK_MODE_ALL_m13)
-		printf_m13("file lock mode: all files\n");
+		printf_m13("File Lock Mode: all files\n");
 	else
-		printf_m13("file lock mode: unrecognized (%hhd)\n", globals_m13->file_lock_mode);
-	printf_m13("CRC_mode: %u\n", globals_m13->CRC_mode);
-	printf_m13("write_sorted_records: %hhd\n", STR_tern_m13(globals_m13->write_sorted_records));
-	printf_m13("update_header_names: %hhd\n", STR_tern_m13(globals_m13->update_header_names));
-	printf_m13("update_file_version: %hhd\n", STR_tern_m13(globals_m13->update_file_version));
+		printf_m13("File Lock Mode: unrecognized (%hhd)\n", globals_m13->file_lock_mode);
+	printf_m13("Threading: %s\n", STR_tern_m13(globals_m13->threading));
+	printf_m13("CRC Mode: %u\n", globals_m13->CRC_mode);
+	printf_m13("Write Sorted Records: %s\n", STR_tern_m13(globals_m13->write_sorted_records));
+	printf_m13("Update Header Names: %s\n", STR_tern_m13(globals_m13->update_header_names));
+	printf_m13("Update File Version: %s\n", STR_tern_m13(globals_m13->update_file_version));
 
 	printf_m13("\n");
 	
@@ -13028,10 +12971,6 @@ tern	G_show_level_header_flags_m13(ui8 flags)
 		printf_m13("no level header flags set\n");
 		return_m13(FALSE_m13);
 	}
-	if (flags & LH_NO_THREADING_m13)
-		printf_m13("LH_NO_THREADING_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_NO_THREADING_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
 	if (flags & LH_GENERATE_EPHEMERAL_DATA_m13)
 		printf_m13("LH_GENERATE_EPHEMERAL_DATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
 	else
@@ -13730,6 +13669,7 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 		printf_m13("no entry\n");
 	else
 		printf_m13("%d\n", proc_globs->miscellaneous.mmap_block_bytes);
+	printf_m13("Threading: %s\n", STR_tern_m13(proc_globs->miscellaneous.threading));
 	printf_m13("Process Error State: %s\n", STR_tern_m13(proc_globs->miscellaneous.proc_error_state));
 
 	printf_m13("\n");
@@ -14603,24 +14543,30 @@ inline
 #endif
 void	G_thread_exit_m13(void)
 {
+	pid_t_m13		_id;
 	BEHAVIOR_STACK_m13	*b_stack;
 
 	
 	// called by return_thread_m13()
 	
-	b_stack = G_get_behavior_stack_m13();  // gets mutex
+	b_stack = G_get_behavior_stack_m13();
 	if (b_stack) {
 		b_stack->_id = 0;
-		pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
+		b_stack->top_idx = -1;
 	}
 	
 	#ifdef FT_DEBUG_m13
 	FUNCTION_STACK_m13	*f_stack;
 	
-	f_stack = G_get_function_stack_m13(NULL);  // gets mutex
-	if (f_stack)
-		if (globals_m13->error.code != E_NONE_m13)  // causal error set - leave stack intact
+	f_stack = G_get_function_stack_m13(0);
+	if (f_stack) {
+		// release stack
+		_id = gettid_m13();
+		if (globals_m13->error.thread_id != _id) {  // unless this thread set causal error set
 			f_stack->_id = 0;
+			f_stack->top_idx = -1;
+		}
+	}
 	#endif
 	
 	return;
@@ -26687,8 +26633,8 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 			default:
 				G_warning_message_m13("%s(): invalid element size => returning\n");
 				ci->dm = NULL;
-				pi->status = PROC_THREAD_FINISHED_m13;
-				thread_return_m13(0);
+				pi->status = PROC_THREAD_FAILED_m13;
+				thread_return_null_m13;
 		}
 	}
 
@@ -26851,9 +26797,9 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 			break;
 	}
 
-	pi->status = PROC_THREAD_FINISHED_m13;
+	pi->status = PROC_THREAD_SUCCEEDED_m13;
 	
-	thread_return_m13(0);
+	thread_return_null_m13;
 }
 
 
@@ -27325,14 +27271,9 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 			++pi; ++ci;
 		}
 	}
-	
-	// debug threads
-//	for (i = 0; i < matrix->channel_count; ++i)
-//		DM_channel_thread_m13((void *) (proc_thread_infos + i));
-//	ret_val = TRUE_m13;
-	
-	// launch channel threads; don't wait for completion
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, matrix->channel_count, 0, FALSE_m13);  // default reserved cores
+		
+	// launch channel threads; don't wait for completion (unless running with no threads)
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, matrix->channel_count, 0, FALSE_m13, proc_globs->miscellaneous.threading);  // default reserved cores
 	if (ret_val == FALSE_m13) {
 		G_set_error_m13(E_UNSPEC_m13, "channel thread error");
 		return_m13(NULL);
@@ -31009,9 +30950,7 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m1
 	// set open mode
 	if (STR_empty_m13(mode_str) == TRUE_m13)
 		mode_str = FPS_OPEN_STRING_DEFAULT_m13;
-	eprintf_m13("");
 	FPS_set_open_flags_m13(fps, mode_str);
-	eprintf_m13("");
 
 	fp = fps->params.fp;
 	fp->fd = FILE_FD_CLOSED_m13;
@@ -31048,6 +30987,7 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m1
 			min_bytes = 0;
 			break;
 	}
+
 	if (n_bytes == FPS_FULL_FILE_m13)
 		n_bytes = G_file_length_m13(NULL, fps->path) - FPS_UH_BYTES_m13;  // FPS_alloc assumes universal_header bytes
 	if (n_bytes < min_bytes)
@@ -31926,7 +31866,6 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 	// returns FPS directive open flags
 	// if fps != NULL, flags are incorporated with other (non-open) flags & set in fps
 	
-	eprintf_m13("");
 	if (STR_empty_m13(mode_str) == TRUE_m13) {
 		mode_empty = TRUE_m13;
 		if (fps) {
@@ -31941,13 +31880,11 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 		strcpy(fps->params.mode_str, mode_str);
 	}
 
-	eprintf_m13("");
 	if (fps)
 		flags = fps->direcs.flags & ~FPS_OPEN_MODE_MASK_m13;
 	else
 		flags = FPS_DF_NO_FLAGS_m13;
 	
-	eprintf_m13("");
 	read_mode = write_mode = append_mode = plus_mode = UNKNOWN_m13;
 	c = (si1 *) mode_str - 1;
 	while (*++c) {
@@ -31967,24 +31904,18 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 				append_mode = TRUE_m13;
 				flags |= FPS_DF_APPEND_MODE_m13;
 				break;
-			case 'C':
-			case 'c':
-				flags |= FPS_DF_CLOBBER_MODE_m13;
-				break;
 			case '+':
 				plus_mode = TRUE_m13;
 				break;
 		}
 	}
 	
-	eprintf_m13("");
 	mode_count = read_mode + write_mode + append_mode;
 	if (mode_count != 1) {
 		G_set_error_m13(E_UNSPEC_m13, "more than one, or no, primary mode selected");
 		return_m13(FPS_DF_NO_FLAGS_m13);
 	}
 		
-	eprintf_m13("");
 	if (plus_mode == TRUE_m13) {
 		if (read_mode == TRUE_m13)
 			flags |= FPS_DF_WRITE_MODE_m13;
@@ -31992,7 +31923,6 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 			flags |= FPS_DF_READ_MODE_m13;
 	}
 
-	eprintf_m13("");
 	if (fps)
 		fps->direcs.flags = flags;
 
@@ -35113,7 +35043,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	else {
 		G_warning_message_m13("%s(): can't match function => returning\n", __FUNCTION__);
 		par_info->status = PAR_FINISHED_m13;
-		thread_return_m13(0);
+		thread_return_null_m13;
 	}
 
 	// launch function
@@ -35195,7 +35125,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 
 	par_info->status = PAR_FINISHED_m13;
 	
-	thread_return_m13(0);
+	thread_return_null_m13;
 }
 
 
@@ -35262,12 +35192,13 @@ tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 }
 
 
-tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs)
+tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs, tern thread_jobs)
 {
 	si4			i, n_logical_cores, n_concurrent_jobs, new_job_idx;
 	cpu_set_t_m13		cpu_set;
 	HW_PARAMS_m13		*hw_params;
 	PROC_THREAD_INFO_m13	*job, *new_job;
+	PROC_GLOBS_m13		*proc_globs;
 	#if defined LINUX_m13 || defined WINDOWS_m13
 	si1			affinity[8];
 	si4			start_core, end_core;
@@ -35303,11 +35234,17 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	n_concurrent_jobs = n_logical_cores - n_reserved_cores;
 	if (n_concurrent_jobs > n_jobs)
 		n_concurrent_jobs = n_jobs;
+	
+	// check threading
+	if (thread_jobs == NOT_SET_m13) {
+		proc_globs = G_proc_globs_m13(NULL);
+		thread_jobs = proc_globs->miscellaneous.threading;  // current process specific
+		if (thread_jobs == NOT_SET_m13)
+			thread_jobs = globals_m13->threading;  // global
+	}
 
 	// build cpu set
 #if defined LINUX_m13 || defined WINDOWS_m13  // MacOS does not allow affinity assignment
-	
-
 	#ifdef LINUX_m13
 	start_core = n_reserved_cores;
 	#endif
@@ -35341,15 +35278,18 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	
 	// launch rest of jobs as others finish
 	new_job_idx = n_concurrent_jobs;
-	while (new_job_idx < n_jobs) {
+	while (1) {
 		for (i = 0, job = jobs; i < n_jobs; ++i, ++job) {
-			if (job->status == PROC_THREAD_FINISHED_m13) {
+			if (job->status & PROC_THREAD_FINISHED_m13) {
 				
 				new_job = jobs + new_job_idx;
 
 				// launch new job
-				PROC_launch_thread_m13(&new_job->thread_id, new_job->thread_f, (void *) new_job, new_job->priority, NULL, &cpu_set, TRUE_m13, new_job->thread_label);
-				
+				if (thread_jobs == TRUE_m13)
+					PROC_launch_thread_m13(&new_job->thread_id, new_job->thread_f, (void *) new_job, new_job->priority, NULL, &cpu_set, TRUE_m13, new_job->thread_label);
+				else  // UNKNOWN_m13 or FALSE_m13
+					new_job->thread_f((void *) new_job);  // launch in current thread; complete before return
+
 				// check if done
 				if (++new_job_idx == n_jobs)
 					break;
@@ -35358,8 +35298,10 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 				while (new_job->status == PROC_THREAD_WAITING_m13);
 			}
 		}
-		// don't peg this cpu
-		G_nap_m13("100 us");
+		if (new_job_idx < n_jobs)
+			G_nap_m13("100 us"); // don't peg this cpu
+		else
+			break;
 	}
 	
 	if (wait_jobs == TRUE_m13)
@@ -35511,34 +35453,31 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *passe
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-pid_t_m13	PROC_id_from_thread_m13(pthread_t_m13 thread)
+pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread)
 {
 	pid_t_m13	id;
 
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
-	// pass NULL for thread_p for current process id
+	// pass NULL for thread for current process id
 	
-	if (thread == 0)
+	if (thread == NULL)
 		return_m13(gettid_m13());
 
 #if defined MACOS_m13 || defined LINUX_m13
 	#ifdef MACOS_m13
-	pthread_threadid_np(thread, &id);
+	pthread_threadid_np(*thread, &id);
 	#endif
 	
 	#ifdef LINUX_m13
-	id = (pid_t_m13) thread;
+	id = (pid_t_m13) *thread;
 	#endif
 #endif
 	
 #ifdef WINDOWS_m13
-	id = (pid_t_m13) GetThreadId(thread);
+	id = (pid_t_m13) GetThreadId(*thread);
 #endif
 	
-	return_m13(id);
+	return(id);
 }
 
 
@@ -35648,10 +35587,11 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_id_ptr, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
+pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
 {
 	sf8			f_min_priority, f_max_priority;
-	pthread_t		*thread_id_p, local_thread_id_p;
+	pid_t_m13		_pid, _id = 0;
+	pthread_t		local_thread;
 	pthread_attr_t		thread_attributes;
 	struct sched_param	scheduling_parameters;
 	static si4		min_priority = PROC_UNDEFINED_PRIORITY_m13, low_priority, medium_priority, high_priority, max_priority;
@@ -35659,11 +35599,11 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_id_ptr, pthread_fn_m13 thread_
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns new thread's id, or zero for failure
 
-	if (thread_id_ptr == NULL)  // caller doesn't need thread_id - detached thread
-		thread_id_p = &local_thread_id_p;
-	else
-		thread_id_p = (pthread_t *) thread_id_ptr;
+	if (thread == NULL)  // caller doesn't need thread_id - detached thread
+		thread = &local_thread;
 	
 	pthread_attr_init(&thread_attributes);
 	
@@ -35738,7 +35678,10 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_id_ptr, pthread_fn_m13 thread_
 # endif  // MACOS_m13
 
 	// start thread
-	pthread_create(thread_id_p, &thread_attributes, thread_f, arg);
+	if (pthread_create(thread, &thread_attributes, thread_f, arg)) {
+		G_set_error_m13(E_UNSPEC_m13, "beginthreadex() error");
+		return_m13(_id);
+	}
 
 	// finished with attributes (destroy, or get memory leak)
 	pthread_attr_destroy(&thread_attributes);
@@ -35746,37 +35689,47 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_id_ptr, pthread_fn_m13 thread_
 # ifdef LINUX_m13
 	// set thread name (after thread created)
 	if (STR_empty_m13(thread_name) == FALSE_m13)
-		pthread_setname_np(*thread_id_p, thread_name);  // suffix _np is for "not posix" or "not portable"
+		pthread_setname_np(*thread, thread_name);  // suffix _np is for "not posix" or "not portable"
 # endif  // LINUX_m13
 	
-	return_m13(1);  // zero indicates failure (for compatibility with Windows version, which returns thread id)
+	_id = PROC_id_for_thread_m13(thread);  // new thread's tid
+
+#ifdef FT_DEBUG_m13
+	_pid = gettid_m13();  // new thread's parent id
+	G_set_function_stack_pid_m13(_id, _pid);
+#endif
+	
+	return_m13(_id);  // zero indicates failure (for compatibility with Windows version, which returns thread id)
 }
 #endif  // MACOS_m13 || LINUX_m13
 
 
 #ifdef WINDOWS_m13
-ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
+pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
 {
-	tern		free_cpu_set;
-	HANDLE		*thread_hp, local_thread_h;
-	ui4		thread_id;
-	wchar_t		w_thread_name[THREAD_NAME_BYTES_m13];
-	cpu_set_t_m13 	local_cpu_set_p;
+	tern			free_cpu_set;
+	pthread_t_m13		local_thread;
+	ui4			win_id;
+	pid_t_m13		_pid, _id = 0;
+	wchar_t			w_thread_name[THREAD_NAME_BYTES_m13];
+	cpu_set_t_m13 		local_cpu_set_p;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// returns thread id
-	if (thread_handle_p == NULL)  // caller doesn't need thread_id - detached thread
-		thread_hp = &local_thread_h;
-	else
-		thread_hp = thread_handle_p;
+	// returns new thread's id, or zero for failure
+
+	if (thread == NULL)  // caller doesn't need thread_id - detached thread
+		thread = &local_thread;
 
 	// Create thread in suspended state so can set attributes
-	thread_id = 0;  // zero indicates failure
-	*thread_hp = (HANDLE) _beginthreadex(NULL, 0, (LPTHREAD_START_ROUTINE) thread_f, arg, CREATE_SUSPENDED, &thread_id);
-	// _beginthreadex() is supposed to be better than CreateThread() for memory leaks & cleanup - called identically
+	*thread = (HANDLE) _beginthreadex(NULL, 0, (LPTHREAD_START_ROUTINE) thread_f, arg, CREATE_SUSPENDED, &win_id);
+	if (*thread == NULL || win_d == 0) {
+		G_set_error_m13(E_UNSPEC_m13, "beginthreadex() error");
+		return_m13(_id);
+	}
+	_id = (pid_t_m13) win_id;
 
 	// Set Priority
 	if (priority != PROC_DEFAULT_PRIORITY_m13) {
@@ -35799,7 +35752,7 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 threa
 			default: // caller passed priority value
 				break;
 		}
-		SetThreadPriority(*thread_hp, priority);
+		SetThreadPriority(*thread, priority);
 	}
 	
 	// Set Affinity
@@ -35812,7 +35765,7 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 threa
 		}
 	}
 	if (cpu_set_p) {
-		PROC_set_thread_affinity_m13(thread_hp, NULL, cpu_set_p, TRUE_m13);
+		PROC_set_thread_affinity_m13(thread, NULL, cpu_set_p, TRUE_m13);
 		if (free_cpu_set == TRUE_m13)
 			free((void *) cpu_set_p);
 	}
@@ -35820,16 +35773,21 @@ ui4  PROC_launch_thread_m13(pthread_t_m13 *thread_handle_p, pthread_fn_m13 threa
 	// set thread name
 	if (STR_empty_m13(thread_name) == FALSE_m13) {
 		STR_char2wchar_m13(w_thread_name, thread_name);
-		SetThreadDescription(*thread_hp, w_thread_name);
+		SetThreadDescription(*thread, w_thread_name);
 	}
 	
 	// start thread
-	ResumeThread(*thread_hp);
+	ResumeThread(*thread);
 
 	// detach thread
 	if (detached == TRUE_m13)
-		CloseHandle(*thread_hp);
+		CloseHandle(*thread);
 	
+#ifdef FT_DEBUG_m13
+	_pid = gettid_m13();  // new thread's parent id
+	G_set_function_stack_pid_m13(_id, _pid);
+#endif
+
 	return_m13(thread_id);  // zero indicates failure
 }
 #endif  // WINDOWS_m13
@@ -36094,7 +36052,7 @@ tern  PROC_show_thread_affinity_m13(pthread_t_m13 *thread_handle_p)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-pthread_t_m13	PROC_thread_from_id_m13(pid_t_m13 id)
+pthread_t_m13	PROC_thread_for_id_m13(pid_t_m13 id)
 {
 	pthread_t_m13 thread;
 
@@ -36128,16 +36086,23 @@ pthread_t_m13	PROC_thread_from_id_m13(pid_t_m13 id)
 
 tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 {
+	tern	ret_val;
 	si4	i, finished_jobs;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns FALSE_m13 if any of the jobs failed
 
+	ret_val = TRUE_m13;
 	while (1) {
 		for (i = finished_jobs = 0; i < n_jobs; ++i) {
-			if (jobs[i].status == PROC_THREAD_FINISHED_m13)
+			if (jobs[i].status & PROC_THREAD_FINISHED_m13) {
 				++finished_jobs;
+				if (jobs[i].status == PROC_THREAD_FAILED_m13)
+					ret_val = FALSE_m13;
+			}
 		}
 		if (finished_jobs == n_jobs)
 			break;
@@ -36150,7 +36115,7 @@ tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 	G_pop_behavior_m13();  // set in PROC_distribute_jobs_m13()
 	#endif
 	
-	return_m13(TRUE_m13);
+	return_m13(ret_val);
 }
 
 
@@ -41867,38 +41832,42 @@ tern	UTF8_valid_str_m13(si1 *s)
 // MARK: WINDOWS FUNCTIONS  (WN)
 //******************************//
 
-tern  WN_cleanup_m13(void)
-{
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
+tern	WN_cleanup_m13(void)
+{
 #ifdef WINDOWS_m13
-	#ifdef NEED_WIN_SOCKETS_m13
+	#ifdef FT_DEBUG_m13
+		G_push_function_m13();
+	#endif
+
+	#ifdef WIN_SOCKETS_m13
 		WSACleanup();
 	#endif
 	
 	#ifndef MATLAB_m13
 		WN_reset_terminal_m13();
 	#endif
-#endif
+	
 	return_m13(TRUE_m13);
+#endif
+	
+	return(FALSE_m13);
 }
 	
 
 tern	WN_clear_m13(void)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
 #ifdef WINDOWS_m13
+
 	HANDLE				hStdout;
 	CONSOLE_SCREEN_BUFFER_INFO	csbi;
 	SMALL_RECT			scrollRect;
 	COORD				scrollTarget;
 	CHAR_INFO			fill;
-	
+
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
 	
 	hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -41928,8 +41897,11 @@ tern	WN_clear_m13(void)
 	csbi.dwCursorPosition.Y = 0;
 	
 	SetConsoleCursorPosition(hStdout, csbi.dwCursorPosition);
-#endif
+	
 	return_m13(TRUE_m13);
+#endif
+	
+	return(FALSE_m13);
 }
 
 
@@ -41977,15 +41949,15 @@ si8	WN_filetime_to_uutc_m13(ui1 *win_filetime)  // pass pointer to beginning of 
 
 tern	WN_init_terminal_m13(void)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-#ifdef  WINDOWS_m13
+#if defined WINDOWS_m13 && !defined MATLAB_m13
+	
 	HANDLE	hOut;
 	DWORD	dwOriginalOutMode, dwRequestedOutModes, dwOutMode;
 	
-	
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+
 	// Set output mode to handle virtual terminal sequences
 	hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (hOut == INVALID_HANDLE_VALUE)
@@ -42004,17 +41976,16 @@ tern	WN_init_terminal_m13(void)
 	  if (!SetConsoleMode(hOut, dwOutMode))  // failed to set any VT mode, can't do anything here
 		  return_m13(FALSE_m13);
 	}
-#endif
+
 	return_m13(TRUE_m13);
+#endif
+	
+	return(FALSE_m13);
 }
 
 
-si4  WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer)  // replacement for unix "ls -1d (on a directory list)"
+si4	WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer)  // replacement for unix "ls -1d (on a directory list)"
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
 #ifdef WINDOWS_m13
 	si1			*file_name, *dir_name, enclosing_directory[PATH_BYTES_m13];
 	si1			tmp_dir[PATH_BYTES_m13];
@@ -42024,7 +41995,10 @@ si4  WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *
 	HANDLE 		  	find_h;
 	FILE			*fp;
 	
-	
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+
 	// returns number of files or -1 for error
 	// dir_strs can include "*" & "?" regex characters
 	// right now, *buffer should not be allocated
@@ -42104,16 +42078,12 @@ si4  WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *
 	return_m13(n_files);
 #endif
 	
-	return_m13(-1);
+	return(FALSE_m13);
 }
 
 
-si4  WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file)  // replacement for unix "ls -1d > temp_file (on a directory list)"
+si4	WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file)  // replacement for unix "ls -1d > temp_file (on a directory list)"
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
 #ifdef WINDOWS_m13
 	si1			*file_name, *dir_name, enclosing_directory[PATH_BYTES_m13];
 	si1			tmp_dir[PATH_BYTES_m13];
@@ -42123,7 +42093,10 @@ si4  WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *
 	HANDLE 		  	find_h;
 	FILE_m13		*fp;
 	
-	
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+
 	// returns number of files or -1 for error
 	// dir_strs can include "*" & "?" regex characters
 	
@@ -42191,13 +42164,14 @@ si4  WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *
 	return_m13(n_files);
 #endif
 	
-	return_m13(-1);
+	return(FALSE_m13);
 }
 
 
 void	WN_nap_m13(struct timespec *nap)
 {
 #ifdef WINDOWS_m13
+	
 	static tern		use_ms = FALSE_m13;
 	si8			hns, ms, rounds;
 	LARGE_INTEGER		interval;
@@ -42272,11 +42246,8 @@ void	WN_nap_m13(struct timespec *nap)
 
 void	*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
 #ifdef WINDOWS_m13
+	
 	tern				alloced;
 	size_t				ret_struct_size;
 	FILE				*real_fp;
@@ -42285,6 +42256,10 @@ void	*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi)
 	FILE_INFORMATION_CLASS		enum_class;
 	IO_STATUS_BLOCK 		iostatus;
 
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+	
 	if (fp == NULL) {
 		G_set_error_m13(E_UNSPEC_m13, "no file ponter passed");
 		return_m13(NULL);
@@ -42356,24 +42331,22 @@ void	*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi)
 	CloseHandle(file_h);
 
 	return_m13(fi);
-	
-#else // not WINDOWS_m13
-	return_m13(NULL);
 #endif
+	
+	return(NULL);
 }
 
 	
 tern	WN_reset_terminal_m13(void)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-#ifdef  WINDOWS_m13
+#if defined WINDOWS_m13 && !defined MATLAB_m13
 	HANDLE	hOut;
 	DWORD	dwOriginalOutMode;
 	
-	
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+
 	// Set output mode to handle virtual terminal sequences
 	hOut = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (hOut == INVALID_HANDLE_VALUE)
@@ -42382,23 +42355,26 @@ tern	WN_reset_terminal_m13(void)
 	dwOriginalOutMode = 3;
 	if (!SetConsoleMode(hOut, dwOriginalOutMode))
 		return_m13(FALSE_m13);
-#endif
+
 	return_m13(TRUE_m13);
+#endif
+	
+	return(FALSE_m13);
 }
 
 
 tern	WN_socket_startup_m13(void)
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
 #ifdef WINDOWS_m13
+	
 	WORD		wVersionRequested;
 	WSADATA		wsaData;
 	si4		err;
 	
-	
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+
 	wVersionRequested = MAKEWORD(2, 2);
 	err = WSAStartup(wVersionRequested, &wsaData);
 	if (err) {
@@ -42413,21 +42389,17 @@ tern	WN_socket_startup_m13(void)
 		return_m13(FALSE_m13);
 	}
 	
-#endif
 	return_m13(TRUE_m13);
+#endif
+	
+	return(FALSE_m13);
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 si4	WN_system_m13(const si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
 #ifdef WINDOWS_m13
+	
 	si1			*tmp_command;
 	si1			*cmd_exe_path;
 	si4			ret_val;
@@ -42435,7 +42407,10 @@ si4	WN_system_m13(const si1 *command)  // Windows has a system() function which 
 	PROCESS_INFORMATION	process_info = {0};
 	STARTUPINFOA		startup_info = {0};
 
-	
+	#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+	#endif
+
 	if (command == NULL)
 		return_m13(-1);
 	if (*command == 0)
@@ -42472,21 +42447,19 @@ si4	WN_system_m13(const si1 *command)  // Windows has a system() function which 
 	return_m13(ret_val);
 #endif
 	
-#if defined MACOS_m13 || defined LINUX_m13
-	return_m13(-1);
-#endif
+	return(FALSE_m13);
 }
 
 
-#ifdef WINDOWS_m13
+#ifdef WINDOWS_m13  // whole function included because FILETIME argument is unique to Windows
 si8	WN_time_to_uutc_m13(FILETIME win_time)
 {
 	si8	uutc, leftovers;
 	
-#ifdef FT_DEBUG_m13
+	#ifdef FT_DEBUG_m13
 	G_push_function_m13();
-#endif
-
+	#endif
+	
 	// A Windows time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
 	uutc = ((si8) win_time.dwHighDateTime << 32) + (si8) win_time.dwLowDateTime;
 	leftovers = uutc % (si8) WIN_TICKS_PER_USEC_m13;
@@ -42506,9 +42479,9 @@ sf8	WN_uutc_to_date_m13(si8 uutc)
 {
 	sf8	secs, days;
 	
-#ifdef FT_DEBUG_m13
+	#ifdef FT_DEBUG_m13
 	G_push_function_m13();
-#endif
+	#endif
 
 	// DATE == days since 29 Dec 1899 00:00:00 UTC
 	secs = ((sf8) uutc / (sf8) 1e6) + (sf8) 2209161600.0;
@@ -42518,19 +42491,19 @@ sf8	WN_uutc_to_date_m13(si8 uutc)
 }
 
 
-#ifdef WINDOWS_m13
+#ifdef WINDOWS_m13  // whole function included because FILETIME return value is unique to Windows
 FILETIME	WN_uutc_to_win_time_m13(si8 uutc)
 {
 	FILETIME ft;
 	
-#ifdef FT_DEBUG_m13
+	#ifdef FT_DEBUG_m13
 	G_push_function_m13();
-#endif
+	#endif
 
 	uutc += WIN_USECS_TO_EPOCH_m13;
 	uutc *= WIN_TICKS_PER_USEC_m13;
 	
-	ft.dwLowDateTime = (ui4) ((ui8) uutc & 0x00000000ffffffff);
+	ft.dwLowDateTime = (ui4) ((ui8) uutc & (ui8) 0x00000000ffffffff);
 	ft.dwHighDateTime = (ui4) ((ui8) uutc >> 32);
 	
 	return_m13(ft);
@@ -42540,7 +42513,6 @@ FILETIME	WN_uutc_to_win_time_m13(si8 uutc)
 
 tern	WN_windify_file_paths_m13(si1 *target, const si1 *source)
 {
-#ifdef WINDOWS_m13
 	si1		*c1, *c2;
 
 
@@ -42580,15 +42552,11 @@ tern	WN_windify_file_paths_m13(si1 *target, const si1 *source)
 	*c1 = 0;
 	
 	return(TRUE_m13);
-#endif
-	
-	return(FALSE_m13);
 }
 
 
 si1	*WN_windify_format_string_m13(const si1 *fmt)
 {
-#ifdef WINDOWS_m13
 	// changes ld, li, lo, lu, lx, lX to "ll" versions of the same
 	si1	*c, *new_c, *new_fmt;
 	si4	matches;
@@ -42607,6 +42575,8 @@ si1	*WN_windify_format_string_m13(const si1 *fmt)
 				++c;
 			if (*c == 'l') {
 				switch (*++c) {
+					case 'b':  // binary, supported in Gnu C Library from version 2.35
+					case 'B':  // binary, supported in Gnu C Library from version 2.35
 					case 'd':
 					case 'i':
 					case 'o':
@@ -42653,9 +42623,8 @@ si1	*WN_windify_format_string_m13(const si1 *fmt)
 	}
 		
 	return(new_fmt);
-#endif
-	return((si1 *) fmt);
 }
+
 
 
 //**********************************************//
@@ -42894,7 +42863,7 @@ si4	errno_m13(void)
 	if (err == 0)
 		err = (si4) GetLastError();  // WinAPI
 	
-	#ifdef NEED_WIN_SOCKETS_m13
+	#ifdef WIN_SOCKETS_m13
 	if (err == 0)
 		err = WSAGetLastError();  // Windows sockets
 	#endif
@@ -42921,7 +42890,7 @@ void	errno_reset_m13(void)
 #ifdef WINDOWS_m13
 	_set_errno((si4) 0);  // Windows runtime
 	SetLastError((DWORD) 0);  // WinAPI
-	#ifdef NEED_WIN_SOCKETS_m13
+	#ifdef WIN_SOCKETS_m13
 		WSASetLastError((si4) 0);  // Windows sockets
 	#endif
 #endif
@@ -42932,14 +42901,24 @@ void	errno_reset_m13(void)
 
 void	exit_m13(si4 status)
 {
-	si1	tmp_str[32];
-	ui4	behavior;
+	static volatile tern	running = FALSE_m13;
+	si1			tmp_str[32];
+	ui4			behavior;
 	
 #ifdef FT_DEBUG_m13
-	behavior = 0;  // if function tracking enabled, always want messages
+	behavior = E_BEHAVIOR_m13;  // display all messages if function tracking enabled
 #else
 	behavior = G_current_behavior_m13();
 #endif
+	
+	// exit_m13() was explicitly called so RETURN_ON_FAIL_m13 behavior is ignored
+	
+	eprintf_m13("_id = %lu", gettid_m13());
+	while (running == TRUE_m13) {
+		eprintf_m13("thread %lu waiting", gettid_m13());
+		G_nap_m13("100 ms");
+	}
+	running = TRUE_m13;
 	
 	if (behavior & SUPPRESS_ERROR_OUTPUT_m13) {
 		*tmp_str = 0;
@@ -42949,24 +42928,24 @@ void	exit_m13(si4 status)
 		#ifdef FT_DEBUG_m13
 		G_show_function_stack_m13();
 		#endif
-		
-		sprintf(tmp_str, "Exiting with status: %d\n\n", status);
-	}
-	
-	#ifdef WINDOWS_m13
-	WN_cleanup_m13();
-	#endif
 
-	if (behavior & SUPPRESS_ERROR_OUTPUT_m13) {
-		#ifdef MATLAB_m13
-		mexErrMsgTxt(tmp_str);  // Matlab exits here  (exit() kills Matlab itself)
-		#endif
+		sprintf(tmp_str, "Exiting with status %d\n\n", status);
 		
+		#ifndef MATLAB_m13
 		fprintf(stderr, "%s%s%s", TC_RED_m13, tmp_str, TC_RESET_m13);
 		fflush(stderr);
+		#endif
 	}
-	
+
+	#ifdef WINDOWS_m13
+	WN_cleanup_m13();  // reset terminal & sockets (as required)
+	#endif
+
+	#ifdef MATLAB_m13
+	mexErrMsgTxt(tmp_str);  // mex function exits here; exit() kills Matlab itself
+	#else
 	exit(status);
+	#endif
 }
 
 
@@ -43123,14 +43102,23 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 	tern			locked;
 	const si1		*nap_str;
 	ui4			file_id;
-	si4			i, n_locks, ret_val, lock_idx;
+	si4			i, n_locks;
 	FLOCK_LIST_m13		*list;
-	FLOCK_ENTRY_m13		*lock, *first_empty;
+	FLOCK_ENTRY_m13		*lock, **lock_ptr, *new_locks, **new_lock_ptrs;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
+	// fp must be FILE_m13 type
+	if (FILE_stream_m13(fp) != FALSE_m13) {
+		if (fp == NULL)
+			G_set_error_m13(E_LOCK_m13, "fp is NULL");
+		else
+			G_set_error_m13(E_LOCK_m13, "fp is a FILE pointer");
+		return_m13(FLOCK_ERR_m13);
+	}
+	
 	// see if locking enabled
 	if (!(fp->flags & FILE_FLAGS_LOCK_m13))
 		return_m13(FLOCK_SUCCESS_m13);
@@ -43146,69 +43134,97 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 		va_start(v_arg, operation);
 		nap_str = va_arg(v_arg, const si1 *);
 		va_end(v_arg);
+		
+		// use global default
+		if (STR_empty_m13(nap_str) == TRUE_m13)
+			nap_str = globals_m13->file_lock_timeout;
 	} else {
 		nap_str = "1 ms";
 	}
 	
-	// get mutex
+	// get list mutex
 	list = globals_m13->file_lock_list;
-	pthread_mutex_lock_m13(&list->mutex);
-
-	// set return value
-	ret_val = FLOCK_SUCCESS_m13;
-
+	pthread_mutex_lock_m13(&list->mutex);  // lock the list
+	
 	// see if file in lock table
 	n_locks = list->top_idx + 1;
 	file_id = fp->fid;
-	first_empty = NULL;
-	lock = list->locks;
-	for (i = n_locks; i--; ++lock) {
-		if (lock->file_id == file_id)
+	lock = NULL;
+	lock_ptr = list->lock_ptrs;
+	pthread_mutex_lock_m13(&list->locks_mutex);  // lock the open count
+	for (i = n_locks; i--; ++lock_ptr) {
+		if ((*lock_ptr)->file_id == file_id)
 			break;
-		if (first_empty == NULL)
-			if (lock->file_id == 0)
-				first_empty = lock;
+		if (lock)
+			continue;
+		if ((*lock_ptr)->file_id == 0)
+			lock = *lock_ptr;
 	}
-	
+	// increment open count to prevent lock from being deleted by another thread
+	if (lock)
+		++lock->opens;
+	pthread_mutex_lock_m13(&list->locks_mutex);  // unlock the open count
+
 	// not in list
 	if (i == -1) {
-		if (operation == FLOCK_UNLOCK_m13) {
-			goto FLOCK_RETURN_m13;
+		if (operation == FLOCK_UNLOCK_m13) {  // file to unlock is not locked
+			pthread_mutex_unlock_m13(&list->mutex);  // unlock the list
+			return_m13(FLOCK_SUCCESS_m13);
 		} else {  // operation == FLOCK_LOCK_m13, FLOCK_LOCK_NB_m13, or FLOCK_OPEN_m13
-			if (first_empty == NULL) {  // expand list
-				lock = flock_add_m13();
-				if (lock == NULL) {
-					ret_val = FLOCK_ERR_m13;
-					goto FLOCK_RETURN_m13;
+			if (lock == NULL) {  // expand list (note: allocated en bloc)
+				// reallocate lock pointers
+				n_locks += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
+				new_lock_ptrs = (FLOCK_ENTRY_m13 **) realloc((void *) list->lock_ptrs, (size_t) n_locks * sizeof(FLOCK_ENTRY_m13 *));
+				if (new_lock_ptrs == NULL) {
+					pthread_mutex_unlock_m13(&list->mutex);
+					G_set_error_m13(E_ALLOC_m13, NULL);
+					return_m13(FLOCK_ERR_m13);
 				}
-				first_empty = list->locks + list->top_idx;
+				// allocate new locks (calloc so all fields zeroed
+				new_locks = (FLOCK_ENTRY_m13 *) calloc((size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13, sizeof(FLOCK_ENTRY_m13));
+				if (new_locks == NULL) {
+					pthread_mutex_unlock_m13(&list->mutex);
+					G_set_error_m13(E_ALLOC_m13, NULL);
+					return_m13(FLOCK_ERR_m13);
+				}
+				// assign lock pointers
+				list->lock_ptrs = new_lock_ptrs;
+				new_lock_ptrs = list->lock_ptrs + list->size;  // new_lock_ptrs incremented in loop
+				lock = new_locks;  // new_locks incremented in loop
+				for (i = GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13; i--;)
+					*new_lock_ptrs++ = new_locks++;
+				list->size = n_locks;
+				if (operation == FLOCK_OPEN_m13)
+					lock->opens = 1;
+				else
+					lock->opens = 2;  // already open, add protective open from search
 			}
-			lock = first_empty;
 		}
 	}
-
-	// open (called by fopen_m13)
-	if (operation == FLOCK_OPEN_m13) {
-		++lock->opens;
-		lock->file_id = file_id;
-		goto FLOCK_RETURN_m13;
-	}
-		
+	
 	// close (called by fclose_m13)
 	if (operation & FLOCK_CLOSE_m13) {
-		if (lock->opens)
-			--lock->opens;  // release open link
-		if (lock->opens == 0) {
+		pthread_mutex_lock_m13(&list->locks_mutex);  // lock the opens count
+		lock->opens -= 2;  // release open real open & protective open from search
+		if (lock->opens <= 0) {
 			// set to empty
 			lock->file_id = 0;
 			lock->reads = 0;
 			lock->write_id = 0;
-			
-			// trim list search extents
-			if (lock == list->locks + list->top_idx)
-				--list->top_idx;
 		}
-		goto FLOCK_RETURN_m13;
+		pthread_mutex_unlock_m13(&list->locks_mutex);  // unlock the opens count
+		pthread_mutex_unlock_m13(&list->mutex);  // unlock the list
+		return_m13(FLOCK_SUCCESS_m13);
+	}
+	
+	// release list mutex
+	pthread_mutex_unlock_m13(&list->mutex);
+	
+	// open (called by fopen_m13)
+	if (operation == FLOCK_OPEN_m13) {
+		// open count already incremented
+		lock->file_id = file_id;
+		return_m13(FLOCK_SUCCESS_m13);
 	}
 	
 	// force
@@ -43221,15 +43237,18 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 	// unlock
 	if (operation & FLOCK_UNLOCK_m13) {
 		if (operation & FLOCK_WRITE_m13) { // write unlock
-			if (lock->write_id == gettid_m13())  // only owner can release write lock (unless forced)
+			if (lock->write_id == gettid_m13()) {  // only owner can release write lock (unless forced)
 				lock->write_id = 0;  // release ownership
-			else
-				ret_val = FLOCK_LOCKED_m13;
+			} else {
+				--lock->opens;  // release protective open from search
+				return_m13(FLOCK_LOCKED_m13);
+			}
 		} else if (operation & FLOCK_READ_m13) {  // read unlock
 			if (lock->reads)
 				--lock->reads;  // release a read lock
 		}  // else no unlock mode
-		goto FLOCK_RETURN_m13;
+		--lock->opens;  // release protective open from search
+		return_m13(FLOCK_SUCCESS_m13);
 	}
 	
 	// lock
@@ -43243,36 +43262,15 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 	if (locked == TRUE_m13) {
 		
 		// non-blocking
-		if (operation & FLOCK_NON_BLOCKING_m13) {
-			if (!(operation & FLOCK_TIMEOUT_m13)) {  // non-blocking timeout not set
-				ret_val = FLOCK_LOCKED_m13;
-				goto FLOCK_RETURN_m13;
-			}
-		}
+		if (operation & FLOCK_NON_BLOCKING_m13)
+			if (!(operation & FLOCK_TIMEOUT_m13))  // non-blocking timeout not set
+				return_m13(FLOCK_LOCKED_m13);
 		
 		// blocking
-		lock_idx = lock - list->locks;
 		do {
-			pthread_mutex_unlock_m13(&list->mutex);  // release mutex
-			G_nap_m13(nap_str);  // sleep
-			pthread_mutex_lock_m13(&list->mutex);  // get mutex
+			// sleep
+			G_nap_m13(nap_str);
 			
-			// use index - lock table may have been realloced in another process
-			lock = list->locks + lock_idx;
-			if (lock->file_id != file_id) {  // lock not in table
-				lock = list->locks;
-				n_locks = list->top_idx + 1;
-				for (i = n_locks; i--; ++lock)
-					if (lock->file_id == 0)  // first_empty
-						break;
-				if (i == -1) {  // expand list
-					lock = flock_add_m13();
-					if (lock == NULL) {
-						ret_val = FLOCK_ERR_m13;
-						goto FLOCK_RETURN_m13;
-					}
-				}
-			}
 			if (lock->write_id)
 				locked = TRUE_m13;
 			else if ((operation & FLOCK_WRITE_m13) && lock->reads)
@@ -43281,12 +43279,9 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 				locked = FALSE_m13;
 			
 			// non-blocking timeout set (single cycle)
-			if (operation & FLOCK_NON_BLOCKING_m13) {
-				if (locked == TRUE_m13) {
-					ret_val = FLOCK_LOCKED_m13;
-					goto FLOCK_RETURN_m13;
-				}
-			}
+			if (operation & FLOCK_NON_BLOCKING_m13)
+				if (locked == TRUE_m13)
+					return_m13(FLOCK_LOCKED_m13);
 		} while (locked == TRUE_m13);
 	}
 	
@@ -43295,45 +43290,11 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 		++lock->reads;
 	else if (operation & FLOCK_WRITE_m13)
 		lock->write_id = gettid_m13();
-	// else no lock mode
 	
-FLOCK_RETURN_m13:
-	
-	pthread_mutex_unlock_m13(&list->mutex);
+	// release protective open from search
+	--lock->opens;
 
-	return_m13(ret_val);
-}
-
-
-FLOCK_ENTRY_m13	*flock_add_m13(void)
-{
-	si4			n_locks;
-	FLOCK_LIST_m13		*list;
-	FLOCK_ENTRY_m13		*lock, *new_locks;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// increases list size & returns pointer to new lock
-	// assumes calling process has mutex
-	
-	list = globals_m13->file_lock_list;
-	n_locks = list->size;
-
-	list->size += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
-	new_locks = (FLOCK_ENTRY_m13 *) realloc((void *) list->locks, (size_t) list->size * sizeof(FLOCK_ENTRY_m13));
-	if (new_locks == NULL) {
-		list->size -= GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
-		G_set_error_m13(E_ALLOC_m13, NULL);
-		return_m13(NULL);
-	}
-	list->locks = new_locks;
-	lock = new_locks + n_locks;
-	list->top_idx = n_locks;
-	memset((void *) lock, (si4) 0, (size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13 * sizeof(FLOCK_ENTRY_m13));  // realloc() does not zero
-	
-	return_m13(lock);
+	return_m13(FLOCK_SUCCESS_m13);
 }
 
 
@@ -45151,6 +45112,35 @@ si4	pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+si4	pthread_kill_m13(pthread_t_m13 thread_id, si4 signal)
+{
+	si4	ret_val;
+
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	// (signal == zero): thread killed without calling thread-local traps
+	
+	ret_val = pthread_kill(thread_id, signal);
+#endif
+	
+#ifdef WINDOWS_m13
+	// (signal == zero): thread exits with exit value zero (error)
+	
+	errno_reset_m13();
+	ret_val = TerminateThread(thread_id, (DWORD) signal);
+	if (ret_val)  // no-zero == success
+		ret_val = 0;
+	else
+		ret_val = errno_m13();
+#endif
+	
+	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 si4	pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex)
 {
 	si4	ret_val;
@@ -45306,7 +45296,7 @@ si4	putch_m13(si4 c)
 		ret_val = _putch(c);
 	#endif
 	#if defined MACOS_m13 || defined LINUX_m13
-		ret_val = fputc_m13(c, stdout_m13);
+		ret_val = fputc(c, stdout);
 	#endif
 #endif
 	
@@ -45319,7 +45309,11 @@ inline
 #endif
 si4	putchar_m13(si4 c)
 {
+#ifdef MATLAB_m13
+	return(mexPrintf("%c", c));
+#else
 	return(fputc(c, stdout));
+#endif
 }
 
 
