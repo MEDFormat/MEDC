@@ -1633,18 +1633,18 @@ tern		NET_trim_address_m13(si1 *addr_str);
 
 // error codes
 #define	E_NONE_m13			0
-#define	E_UNSPEC_m13			1
-#define	E_SIGNAL_m13			2
+#define	E_UNK_m13			1
+#define	E_SIG_m13			2
 #define E_ALLOC_m13			3
 #define E_OPEN_m13			4
 #define E_READ_m13			5
 #define E_WRITE_m13			6
 #define E_LOCK_m13			7
-#define E_NO_FILE_m13			8
-#define E_NOT_MED_m13			9
-#define E_NO_ACCESS_m13			10
-#define E_ENCRYPT_m13			11
-#define E_NO_METADATA_m13		12
+#define E_FILE_m13			8
+#define E_MED_m13			9
+#define E_ACC_m13			10
+#define E_ENC_m13			11
+#define E_MET_m13			12
 #define	E_REC_m13			13
 #define	E_NET_m13			14
 #define E_CMP_m13			15
@@ -1654,10 +1654,11 @@ tern		NET_trim_address_m13(si1 *addr_str);
 // error string table
 #define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
 #define E_MESSAGE_LEN_m13		E_MAX_STR_LEN_m13
-#define E_STR_TABLE_ENTRIES_m13		17
+#define E_STR_TABLE_ENTRIES_m13		18
 #define E_STR_TABLE_m13 { \
 	"no errors", \
 	"unspecified error", \
+	"process signal error", \
 	"memory allocation error", \
 	"file open error", \
 	"file read error", \
@@ -1673,6 +1674,27 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"compression error", \
 	"filter error", \
 	"database error" \
+}
+#define E_TAG_TABLE_ENTRIES_m13		18
+#define E_TAG_TABLE_m13 { \
+	"E_NONE", \
+	"E_UNK", \
+	"E_SIG", \
+	"E_ALLOC", \
+	"E_OPEN", \
+	"E_READ", \
+	"E_WRITE", \
+	"E_LOCK", \
+	"E_FILE", \
+	"E_MED", \
+	"E_ACC", \
+	"E_ENC", \
+	"E_MET", \
+	"E_REC", \
+	"E_NET", \
+	"E_CMP", \
+	"E_FILT", \
+	"E_DB" \
 }
 
 typedef struct {
@@ -2038,6 +2060,7 @@ typedef struct {
 	NET_PARAMS_m13			NET_params; // parameters for default internet interface
 	HW_PARAMS_m13			HW_params;
 	const si1			**E_strings_table;
+	const si1			**E_tags_table;
 	#ifdef WINDOWS_m13
 	HINSTANCE			hNTdll; // handle to ntdll dylib (used by WN_nap_m13(); only loaded if used)
 	#endif
@@ -2104,7 +2127,6 @@ typedef struct {
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
-	pthread_mutex_t_m13	locks_mutex;
 	FLOCK_ENTRY_m13		**lock_ptrs; // secondary indirection to FLOCK_ENTRY_m13 *
 	volatile si4		size; // total allocated locks
 	volatile si4		top_idx; // last non-empty lock in list
@@ -3048,7 +3070,7 @@ void			G_proc_error_set_m13(LH_m13 *lh);
 tern			G_proc_error_state_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_m13(LH_m13 *lh);
 void			G_proc_globs_delete_m13(LH_m13 *lh);
-PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs, LH_m13 *lh);
+PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs);
 PROC_GLOBS_m13		*G_proc_globs_new_m13(LH_m13 *lh);
 tern			G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
 tern			G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags);
@@ -3091,7 +3113,7 @@ tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
 tern			G_show_error_m13(void);
 tern			G_show_file_times_m13(FILE_TIMES_m13 *ft);
-void			G_show_function_stack_m13(si4 recursed, ...);  // vararg(recursed (tern as si4) == TRUE_m13): pid_t_m13 _id
+void			G_show_function_stack_m13(si4 recursed, ...);  // vararg(recursed [tern as si4] == TRUE_m13): pid_t_m13 _id
 void			G_show_globals_m13(void);
 tern			G_show_level_header_m13(LH_m13 *lh);
 tern			G_show_level_header_flags_m13(ui8 flags);
@@ -4642,29 +4664,29 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 
 // Transmission Error Codes
 #define TR_E_NONE_m13			((si8) E_NONE_m13) // 0
-#define TR_E_UNSPEC_m13			((si8) FALSE_m13)
+#define TR_E_UNK_m13			((si8) FALSE_m13)
 #define TR_E_SOCK_FAILED_m13		((si8) -2)
-#define TR_E_SOCK_NO_OPEN_m13		((si8) -3)
+#define TR_E_SOCK_OPEN_m13		((si8) -3)
 #define TR_E_SOCK_CLOSED_m13		((si8) -4)
 #define TR_E_SOCK_TIMED_OUT_m13		((si8) -5)
-#define TR_E_NO_DATA_m13		((si8) -6)
-#define TR_E_ID_MISMATCH_m13		((si8) -7)
+#define TR_E_DATA_m13			((si8) -6)
+#define TR_E_ID_m13			((si8) -7)
 #define TR_E_TRANS_FAILED_m13		((si8) -8)
-#define TR_E_CRC_MISMATCH_m13		((si8) -9)
-#define TR_E_NO_ACK_m13			((si8) -10)
+#define TR_E_CRC_m13			((si8) -9)
+#define TR_E_ACK_m13			((si8) -10)
 
 // Transmission Error Strings
 #define	TR_E_NONE_STR_m13		"no error"
-#define	TR_E_UNSPEC_STR_m13		"unspecified transmission error"
+#define	TR_E_UNK_STR_m13		"unspecified transmission error"
 #define TR_E_SOCK_FAILED_STR_m13	"socket failed"
-#define TR_E_SOCK_NO_OPEN_STR_m13	"could not open socket"
+#define TR_E_SOCK_OPEN_STR_m13		"could not open socket"
 #define TR_E_SOCK_CLOSED_STR_m13	"socket closed"
 #define TR_E_SOCK_TIMED_OUT_STR_m13	"socket timed out"
-#define TR_E_NO_DATA_STR_m13		"no data available"
-#define TR_E_ID_MISMATCH_STR_m13	"transmission ID mismatch"
+#define TR_E_DATA_STR_m13		"no data available"
+#define TR_E_ID_STR_m13			"transmission ID mismatch"
 #define TR_E_TRANS_FAILED_STR_m13	"transmission failed"
-#define TR_E_CRC_MISMATCH_STR_m13	"checksum mismatch"
-#define TR_E_NO_ACK_STR_m13		"no acknowlegment"
+#define TR_E_CRC_STR_m13		"checksum mismatch"
+#define TR_E_ACK_STR_m13		"no acknowlegment"
 
 // Transmission Flags
 #define TR_FLAGS_DEFAULT_m13		((ui2) 0)
@@ -5323,9 +5345,9 @@ tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *ad
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 tern		mv_m13(const si1 *path, const si1 *new_path);  // move
-si1		*pthread_getname_m13(pthread_t_m13 thread_id, si1 *thread_name, size_t name_len);
-si4		pthread_join_m13(pthread_t_m13 thread_id, void **value_ptr);
-si4		pthread_kill_m13(pthread_t_m13 thread_id, si4 signal);
+si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
+si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
+si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
 si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
 si4		pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr);
 si4		pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
