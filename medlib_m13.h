@@ -676,7 +676,7 @@ typedef struct {
 #define GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13		128 // number of threads
 #define GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13			1024
 #define GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13			8
-#define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		128 // number of proc_globs (typically, but not necessarily, same as number of threads)
+#define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // usually only one, but mechanics in place to make this do more
 #define GLOBALS_REFERENCE_CHANNEL_IDX_NO_ENTRY_m13		-1
 #define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13			((ui4) 0)
 #define GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13			4096 // 4 KiB
@@ -2065,17 +2065,17 @@ typedef struct {
 } BEHAVIOR_STACK_LIST_m13;
 
 // call with "G_push_function_m13(ui4 behavior)" prototype
-#define G_add_behavior_m13(code)	G_add_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_add_behavior_m13(ui4 behavior)" prototype
-#define G_push_behavior_m13(code)	G_push_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_push_behavior_m13(ui4 behavior)" prototype
-#define G_remove_behavior_m13(code)	G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_remove_behavior_m13(ui4 behavior)" prototype
-#define G_reset_behavior_stack_m13()	G_reset_behavior_stack_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_reset_behavior_stack_m13(ui4 behavior)" prototype
+#define G_add_behavior_m13(code)		G_add_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_add_behavior_m13(ui4 behavior)" prototype
+#define G_push_behavior_m13(code)		G_push_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_push_behavior_m13(ui4 behavior)" prototype
+#define G_remove_behavior_m13(code)		G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_remove_behavior_m13(ui4 behavior)" prototype
+#define G_behavior_stack_reset_m13(code)	G_behavior_stack_reset_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_behavior_stack_reset_m13(ui4 behavior)" prototype
 
-#define G_push_function_m13() 		G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
-#define G_pop_function_m13(arg)		G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
+#define G_push_function_m13() 			G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
+#define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
 
 typedef struct {
 	pid_t_m13	_id; // thread id
-	pid_t_m13	_pid; // parent thread id (zero indicates no parent)  [not yet implemented]
+	pid_t_m13	_pid; // parent thread id (zero indicates no parent)
 	const si1	**functions;
 	volatile si4	size; // total allocated functions
 	volatile si4	top_idx; // top of function stack
@@ -2933,6 +2933,7 @@ typedef struct {
 
 
 // Prototypes
+CHAN_m13		*G_active_channel_m13(SESS_m13 *sess, si1 channel_type);
 void			G_add_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 ui4 			G_add_level_extension_m13(si1 *directory_name);
 tern			G_all_zeros_m13(ui1 *bytes, si4 field_length);
@@ -2940,6 +2941,9 @@ CHAN_m13		*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, si1 *path, LH
 SEG_m13			*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m13 *parent, si4 seg_num, tern seg_recs);
 SESS_m13		*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs);
 void 			G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
+si1 			*G_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name);
+BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void);
+void			G_behavior_stack_reset_exec_m13(const si1 *function, si4 line, ui4 code);
 si1			*G_behavior_string_m13(ui4 behavior, si1 *behavior_string);
 si8			G_build_contigua_m13(LH_m13 *lh);
 Sgmt_REC_m13		*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_type);
@@ -2983,6 +2987,7 @@ void 			G_error_message_m13(const si1 *fmt, ...);
 si1 			G_exists_m13(const si1 *path);
 tern			G_expand_password_m13(si1 *password_bytes);
 si8			G_file_length_m13(FILE_m13 *fp, si1 *path);
+si1			**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
 FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
 tern			G_fill_empty_password_bytes_m13(si1 *password_bytes);
 CONTIGUON_m13		*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua);
@@ -3000,26 +3005,14 @@ tern			G_free_session_m13(SESS_m13 **sess_ptr);
 tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
 tern			G_frequencies_vary_m13(SESS_m13 *sess);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
+FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
+void			G_function_stack_set_pid_m13(pid_t_m13 _id, pid_t_m13 _pid);
 void			G_function_stack_trap_m13(si4 sig_num);
 si1			**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 n_names);
 tern			G_generate_password_data_m13(FPS_m13 *fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_pw, si1 *L1_pw_hint, si1 *L2_pw_hint);
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
 si1			*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name);
 ui8			G_generate_UID_m13(ui8 *uid);
-CHAN_m13		*G_get_active_channel_m13(SESS_m13 *sess, si1 channel_type);
-si1 			*G_get_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name);
-BEHAVIOR_STACK_m13	*G_get_behavior_stack_m13(void);
-si1			**G_get_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
-FUNCTION_STACK_m13	*G_get_function_stack_m13(pid_t_m13 _id);
-ui4			G_get_level_m13(si1 *full_file_name, ui4 *input_type_code);
-tern			G_get_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
-si4			G_get_search_mode_m13(SLICE_m13 *slice);
-si4			G_get_segment_index_m13(si4 segment_number, LH_m13 *lh);
-si4			G_get_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice);
-ui4			*G_get_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
-si1			*G_get_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS_m13 *MED_fps);
-si8			G_get_session_samples_m13(LH_m13 *lh, sf8 rate);
-tern			G_get_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
 tern			G_init_global_tables_m13(tern init_all_tables);
 tern			G_init_globals_m13(tern init_all_tables, si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor
@@ -3030,6 +3023,8 @@ tern			G_init_timezone_tables_m13(void);
 tern			G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
 tern			G_is_level_header_m13(void *ptr);
 si8			G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
+ui4			G_level_m13(si1 *full_file_name, ui4 *input_type_code);
+tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
 ui4			G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1* MED_name);
 ui4			G_MED_type_code_from_string_m13(const si1 *string);
 const si1		*G_MED_type_string_from_code_m13(ui4 code);
@@ -3054,6 +3049,7 @@ tern			G_proc_error_state_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_m13(LH_m13 *lh);
 void			G_proc_globs_delete_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs, LH_m13 *lh);
+PROC_GLOBS_m13		*G_proc_globs_new_m13(LH_m13 *lh);
 tern			G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
 tern			G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags);
 void			G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
@@ -3070,18 +3066,22 @@ si8			G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice);
 tern			G_recover_passwords_m13(si1 *L3_password, UH_m13* universal_header);
 void			G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
-void			G_reset_behavior_stack_exec_m13(const si1 *function, si4 line, ui4 code);
 tern			G_reset_metadata_for_update_m13(FPS_m13 *fps);
 si8			G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...); // varargs(lh == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
+si4			G_search_mode_m13(SLICE_m13 *slice);
 si4			G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 search_mode);
 si4			G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_sample);
 si4			G_segment_for_path_m13(si1 *path);
 si4			G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample);
 si4			G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time);
+si4			G_segment_index_m13(si4 segment_number, LH_m13 *lh);
+si4			G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice);
+ui4			*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
 tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
+si1			*G_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS_m13 *MED_fps);
 si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
+si8			G_session_samples_m13(LH_m13 *lh, sf8 rate);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
-void			G_set_function_stack_pid_m13(pid_t_m13 _id, pid_t_m13 _pid);
 tern			G_set_session_globals_m13(si1 *MED_directory, LH_m13 *lh, si1 *password);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
@@ -3091,7 +3091,7 @@ tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
 tern			G_show_error_m13(void);
 tern			G_show_file_times_m13(FILE_TIMES_m13 *ft);
-void			G_show_function_stack_m13(void);
+void			G_show_function_stack_m13(si4 recursed, ...);  // vararg(recursed (tern as si4) == TRUE_m13): pid_t_m13 _id
 void			G_show_globals_m13(void);
 tern			G_show_level_header_m13(LH_m13 *lh);
 tern			G_show_level_header_flags_m13(ui8 flags);
@@ -3107,6 +3107,7 @@ tern			G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST
 tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
+tern			G_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern			G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
 tern			G_ternary_entry_m13(si1 *entry);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
