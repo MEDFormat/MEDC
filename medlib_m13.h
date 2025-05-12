@@ -668,7 +668,7 @@ typedef struct {
 #define GLOBALS_CRC_MODE_DEFAULT_m13				CRC_CALCULATE_m13
 #define GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13		TRUE_m13
 #define GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13			TRUE_m13
-#define GLOBALS_UPDATE_FILE_VERSION_DEFAULT_m13			TRUE_m13
+#define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
 #define GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13		128 // number of threads
@@ -1632,9 +1632,10 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define E_UNKNOWN_LINE_m13		((si4) -1) // signal errors have no line numbers
 
 // error codes
-#define	E_NONE_m13			0
-#define	E_UNK_m13			1
-#define	E_SIG_m13			2
+#define E_NUM_CODES_m13			18
+#define	E_NONE_m13			0 // no error
+#define	E_UNKN_m13			1 // unknown or unspecified error
+#define	E_SIG_m13			2 // system siganl
 #define E_ALLOC_m13			3
 #define E_OPEN_m13			4
 #define E_READ_m13			5
@@ -1654,7 +1655,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 // error string table
 #define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
 #define E_MESSAGE_LEN_m13		E_MAX_STR_LEN_m13
-#define E_STR_TABLE_ENTRIES_m13		18
+#define E_STR_TABLE_ENTRIES_m13		E_NUM_CODES_m13
 #define E_STR_TABLE_m13 { \
 	"no errors", \
 	"unspecified error", \
@@ -1675,10 +1676,10 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"filter error", \
 	"database error" \
 }
-#define E_TAG_TABLE_ENTRIES_m13		18
+#define E_TAG_TABLE_ENTRIES_m13		E_NUM_CODES_m13
 #define E_TAG_TABLE_m13 { \
 	"E_NONE", \
-	"E_UNK", \
+	"E_UNKN", \
 	"E_SIG", \
 	"E_ALLOC", \
 	"E_OPEN", \
@@ -1706,6 +1707,7 @@ typedef struct {
 	si1			thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	pid_t_m13		thread_id;
 	pthread_mutex_t_m13	mutex;
+	pthread_mutex_t_m13	exit_mutex;  // allow only one thread to call exit_m13();
 } ERR_m13;
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
@@ -1729,8 +1731,8 @@ typedef struct {
 #define SEGMENT_CODE_m13(x)			( (((x) == TS_SEG_TYPE_CODE_m13) || ((x) == VID_SEG_TYPE_CODE_m13)) ? TRUE_m13 : FALSE_m13 )
 #define PLURAL_m13(x) 				( ((x) == 1) ? "" : "s" )
 #define ABS_m13(x)				( ((x) >= 0) ? (x) : -(x) )  // do not increment/decrement in call to ABS (as x occurs thrice)
-#define HEX_STR_BYTES_m13(x, y) 		( ((x) * 2) + (((x) - 1) * (y)) + 1 ) // x numerical bytes with y-byte seperators plus termianl zero
-#define BIN_STR_BYTES_m13(x, y) 		( (x) + (((x) - 1) * (y)) + 1 )  // x numerical bytes with y-byte seperators plus termianl zero
+#define HEX_STR_BYTES_m13(x, y) 		( ((x) << 1) + (((x) - 1) * (y)) + 1 ) // x numerical bytes with y-byte seperators plus terminal zero
+#define BIN_STR_BYTES_m13(x, y) 		( ((x) << 3) + (((x) - 1) * (y)) + 1 )  // x numerical bytes with y-byte seperators plus terminal zero
 #define REMOVE_DISCONT_m13(x)			( ((x) >= 0) ? (x) : -(x) )  // do not increment/decrement in call to REMOVE_DISCONTINUITY (as x occurs thrice)
 #define APPLY_DISCONT_m13(x)			( ((x) <= 0) ? (x) : -(x) )  // do not increment/decrement in call to APPLY_DISCONTINUITY (as x occurs thrice)
 #define MAX_OPEN_FILES_m13(n_chans, n_segs)	( (5 * n_chans * n_segs) + (2 * n_segs) + (2 * n_chans) + 5 ) // Note: final +5 == 2 for session level records plus 3 for standard streams (stdin, stdout, & stderr)
@@ -1975,7 +1977,7 @@ typedef struct LH_m13 {
 	struct LH_m13 		*parent; // NULL in proc_globs
 	struct PROC_GLOBS_m13	*proc_globs; // self in proc_globs
 	ui8			flags;
-	volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+	volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 } LH_m13;
 
 // non-standard structure
@@ -2001,7 +2003,7 @@ typedef struct PROC_GLOBS_m13 {
 			LH_m13			*parent; // NULL in proc_globs
 			struct PROC_GLOBS_m13	*proc_globs; // self in proc_globs
 			ui8			flags;
-			si8			access_time; // uutc of last use of this structure by the calling program (updated by read, open, & write functions)
+			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
  // Password
@@ -2192,7 +2194,7 @@ typedef struct {
 	si1				temp_file[PATH_BYTES_m13]; // full path to temp file (i.e. incudes temp_dir)
 								  	// not thread safe => use G_unique_temp_file_m13() in threaded applications
 	ui4				file_creation_umask;
-	pid_t_m13			main_tid;  // process thread id (not necessarily same as process id)
+	pid_t_m13			main_id;  // process thread id (not necessarily same as process id)
 	ERR_m13				error; // causal error
 	tern				threading; // global default, used to set process globals default
 	si1				file_lock_mode; // enable global file locking
@@ -2201,8 +2203,9 @@ typedef struct {
 	tern				access_times; // record times of each structure & file access
 	tern				write_sorted_records; // if records unsorted, sort & re-write
 	tern				update_header_names; // if session or channel file system name differs from universal header, update all affected universal headers
-	tern				update_file_version; // if file MED version is not current, update the files
+	tern				update_MED_version; // if file MED version is not current, update the files
 	tern				update_parity; // update parity files if they exist, on write
+	pthread_mutex_t_m13		update_mutex;
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -2470,12 +2473,14 @@ typedef struct {
 #define FPS_FD_EPHEMERAL_m13			FILE_FD_EPHEMERAL_m13
 
 // Directives Flags
+// Open Mode Flags: "append" implies "write";
 #define FPS_DF_NO_FLAGS_m13			((ui8) 0)
 #define FPS_DF_READ_MODE_m13			((ui8) 1 << 0)
 #define FPS_DF_WRITE_MODE_m13			((ui8) 1 << 1)
-#define FPS_DF_APPEND_MODE_m13			((ui8) 1 << 2)
-#define FPS_DF_PLUS_MODE_m13			((ui8) 1 << 3)
-#define FPS_DF_CLOBBER_MODE_m13			((ui8) 1 << 4) // mode modifier is "c" or "C" ("clobber" == truncate on open)
+#define FPS_DF_APPEND_MODE_m13			(((ui8) 1 << 2) | FPS_DF_WRITE_MODE_m13)
+#define FPS_DF_CREATE_MODE_m13			((ui8) 1 << 3)
+#define FPS_DF_TRUNCATE_MODE_m13		((ui8) 1 << 4)
+// End Open Mode Flags
 #define FPS_DF_CLOSE_AFTER_OP_m13		((ui8) 1 << 5) // close after operation (read / write)
 #define FPS_DF_FLUSH_AFTER_WRITE_m13		((ui8) 1 << 6)
 #define FPS_DF_UPDATE_UH_m13			((ui8) 1 << 7) // update universal header with write
@@ -2485,33 +2490,36 @@ typedef struct {
 
 // Open Mode Flag Groups
 #define FPS_NO_OPEN_MODE_m13			((ui8) 0)
-#define FPS_R_OPEN_MODE_m13			FPS_DF_READ_MODE_m13 // "r"
-#define FPS_RP_OPEN_MODE_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "r+"
-#define FPS_W_OPEN_MODE_m13 			(FPS_DF_WRITE_MODE_m13 | FPS_DF_CLOBBER_MODE_m13) // "w" (default "w" behavior is to clobber)
-#define FPS_WP_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_PLUS_MODE_m13  | FPS_DF_CLOBBER_MODE_m13)
-#define FPS_WN_OPEN_MODE_m13			FPS_DF_WRITE_MODE_m13 // "wn"
-#define FPS_WNP_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "wn+" (most flexible random write mode)
-#define FPS_A_OPEN_MODE_m13			FPS_DF_APPEND_MODE_m13 // "a"
-#define FPS_AP_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "a+" (most flexible append write mode)
-#define FPS_AC_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_CLOBBER_MODE_m13 ) // "ac" (default "a" behavior is not to clobber)
-#define FPS_ACP_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_CLOBBER_MODE_m13 | FPS_DF_PLUS_MODE_m13 ) // "ac+"
-#define FPS_OPEN_MODE_MASK_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13 | FPS_DF_APPEND_MODE_m13 | FPS_DF_PLUS_MODE_m13 | FPS_DF_CLOBBER_MODE_m13 )
+#define FPS_R_OPEN_MODE_m13			FPS_DF_READ_MODE_m13
+#define FPS_RP_OPEN_MODE_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13 )
+#define FPS_W_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_CREATE_MODE_m13 | FPS_DF_TRUNCATE_MODE_m13 ) // open for writing, truncate if exists, create if does not
+#define FPS_WP_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_READ_MODE_m13 | FPS_DF_CREATE_MODE_m13 | FPS_DF_TRUNCATE_MODE_m13) // open for reading & random writing, truncate if exists, create if does not
+#define FPS_WN_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13  | FPS_DF_CREATE_MODE_m13 )// open for random writing, create if does not exist
+#define FPS_WNP_OPEN_MODE_m13			( FPS_DF_WRITE_MODE_m13 | FPS_DF_READ_MODE_m13  | FPS_DF_CREATE_MODE_m13 ) // open for reading & random writing, create if does not exist
+#define FPS_A_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13  | FPS_DF_CREATE_MODE_m13 ) // open for appending, create if does not exist
+#define FPS_AP_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_READ_MODE_m13 | FPS_DF_CREATE_MODE_m13 ) // open for reading & appending, create if does not exist
+#define FPS_AC_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_CREATE_MODE_m13 | FPS_DF_TRUNCATE_MODE_m13) // open for appending, truncate if exists, create if does not
+#define FPS_ACP_OPEN_MODE_m13			( FPS_DF_APPEND_MODE_m13 | FPS_DF_READ_MODE_m13 | FPS_DF_CREATE_MODE_m13 | FPS_DF_TRUNCATE_MODE_m13 ) // open for reading & appending, truncate if exists, create if does not
+
+#define FPS_OPEN_MODE_MASK_m13			( FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13 | FPS_DF_APPEND_MODE_m13 | FPS_DF_TRUNCATE_MODE_m13 )
 
 // Open Mode Strings
-#define FPS_NO_OPEN_STRING_m13			""
-#define FPS_R_OPEN_STRING_m13			"r"
-#define FPS_RP_OPEN_STRING_m13			"r+"
-#define FPS_W_OPEN_STRING_m13			"w"
-#define FPS_WP_OPEN_STRING_m13			"w+"
-#define FPS_WN_OPEN_STRING_m13			"wn"
-#define FPS_WNP_OPEN_STRING_m13			"wn+"
-#define FPS_A_OPEN_STRING_m13			"a"
-#define FPS_AP_OPEN_STRING_m13			"a+"
-#define FPS_AC_OPEN_STRING_m13			"ac"
-#define FPS_ACP_OPEN_STRING_m13			"ac+"
-#define FPS_READ_OPEN_STRING_DEFAULT_m13	FPS_R_OPEN_STRING_m13
-#define FPS_WRITE_OPEN_STRING_DEFAULT_m13	FPS_WN_OPEN_STRING_m13
-#define FPS_OPEN_STRING_DEFAULT_m13		FPS_READ_OPEN_STRING_DEFAULT_m13  // default to read open (safest)
+// ("c" is for "clobber"; "n" is for "no clobber")
+// ("clobber" == "truncate" => can't use 't' because Windows uses it for "text")
+#define FPS_R_OPEN_STR_m13			"r" // open for reading, fail if does not exist
+#define FPS_RP_OPEN_STR_m13			"r+" // open for reading & random writing, fail if does not exist
+#define FPS_W_OPEN_STR_m13			"w" // open for random writing, truncate if exists, create if does not
+#define FPS_WP_OPEN_STR_m13			"w+" // open for reading & random writing, truncate if exists, create if does not
+#define FPS_WN_OPEN_STR_m13			"wn" // open for random writing, create if does not exist  [truncate removed]
+#define FPS_WNP_OPEN_STR_m13			"wn+" // open for reading & random writing, create if does not exist  [truncate removed]
+#define FPS_A_OPEN_STR_m13			"a" // open for appending, create if does not exist
+#define FPS_AP_OPEN_STR_m13			"a+" // open for reading & appending, create if does not exist
+#define FPS_AC_OPEN_STR_m13			"ac" // open for appending, truncate if exists, create if does not  [truncate added]
+#define FPS_ACP_OPEN_STR_m13			"ac+" // open for reading & appending, truncate if exists, create if does not  [truncate added]
+
+#define FPS_READ_OPEN_STR_DEFAULT_m13		FPS_R_OPEN_STR_m13
+#define FPS_WRITE_OPEN_STR_DEFAULT_m13		FPS_WN_OPEN_STR_m13
+#define FPS_OPEN_STR_DEFAULT_m13		FPS_WNP_OPEN_STR_m13 // most flexible
 
 // Directive Defaults
 #define FPS_DIRECS_CLOSE_AFTER_OPERATION_DEFAULT_m13		FALSE_m13
@@ -2534,13 +2542,13 @@ typedef struct {
 
 // Parameters contain "mechanics" of FPS (mostly used internally by library functions)
 typedef struct {
-	si1			mode_str[6]; // open mode string (will include 'b' on Windows systems)
+	si1			mode_str[6]; // open mode string (Windows systems: 'b' added by fopen_m13(), but not included in this string)
 	tern			uh_read; // universal header has been read in
 	tern			full_file_read; // full file has been read in
 	si8			raw_data_bytes; // bytes in raw data array
 	ui1			*raw_data; // universal header followed by data (in standard read - just region requested, in full file & mem map - matches media)
 	struct CPS_m13		*cps; // for time series data FPSs
- // m13 file pointer (contains standard FILE pointer)
+ // FILE_m13 pointer (contains standard FILE pointer)
 	FILE_m13		*fp;
  // memory mapping
 	ui4			mmap_block_bytes; // read size for memory mapped files (size data may be on different volumes, or even files within the same volume)
@@ -2566,9 +2574,9 @@ typedef struct {
 			si1			*path; // points to local_path
 			si1			*name; // points to local_name
 			LH_m13			*parent; // parent structure, or PROC_GLOBS_m13 if created alone
-			struct PROC_GLOBS_m13	*proc_globs;
+			struct PROC_GLOBS_m13	*proc_globs; // shortcut to structure's process globals
 			ui8			flags;
-			si8			access_time; // uutc of last use of this structure by the calling program (updated by read, open, & write functions)
+			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
 	si1				local_path[PATH_BYTES_m13]; // full path from root including extension
@@ -2592,7 +2600,7 @@ typedef struct {
 typedef struct {
 	union {
 		LH_m13			header; // in case just want the level header (type == GENERIC_TYPE_CODE_m13 => use universal header to get specific type)
-		LH_m13; // anonymous LH_m13
+		LH_m13; 		// anonymous LH_m13
 	};
 	si1				local_path[PATH_BYTES_m13]; // full path to level (pointed to by level_header path)
 	si1				local_name[MAX_NAME_BYTES_m13]; // base name of level (pointed to by level_header name)
@@ -2732,7 +2740,7 @@ typedef struct {
 			LH_m13			*parent; // parent structure, channel or PROC_GLOBS_m13 if created alone
 			PROC_GLOBS_m13		*proc_globs;
 			ui8			flags;
-			si8			access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
 	FPS_m13			*metadata_fps; // also used as prototype
@@ -2797,7 +2805,7 @@ typedef struct CHAN_m13 {
 			LH_m13			*parent; // parent structure, session or PROC_GLOBS_m13 if created alone
 			PROC_GLOBS_m13		*proc_globs;
 			ui8			flags;
-			si8			access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
 	FPS_m13			*metadata_fps; // used as prototype or ephemeral file, does not correspond to stored data
@@ -2850,7 +2858,7 @@ typedef struct {
 			LH_m13			*parent; // parent structure, session or PROC_GLOBS_m13 if created alone
 			PROC_GLOBS_m13		*proc_globs;
 			ui8			flags;
-			si8			access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
 	FPS_m13		**rec_data_fps;
@@ -2893,7 +2901,7 @@ typedef struct {
 			LH_m13			*parent; // parent structure, PROC_GLOBS_m13 for session or if created alone
 			PROC_GLOBS_m13		*proc_globs;
 			ui8			flags;
-			si8			access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
 		};
 	};
 	FPS_m13			*ts_metadata_fps; // used as prototype or ephemeral file, does not correspond to stored data
@@ -3007,7 +3015,7 @@ tern 			G_encrypt_time_series_data_m13(FPS_m13 *fps);
 tern			G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
 void 			G_error_message_m13(const si1 *fmt, ...);
 si1 			G_exists_m13(const si1 *path);
-tern			G_expand_password_m13(si1 *password_bytes);
+tern			G_expand_password_m13(si1 *password, si1 *password_bytes);
 si8			G_file_length_m13(FILE_m13 *fp, si1 *path);
 si1			**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
 FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
@@ -3100,11 +3108,11 @@ si4			G_segment_index_m13(si4 segment_number, LH_m13 *lh);
 si4			G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice);
 ui4			*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
 tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
-si1			*G_session_directory_m13(si1 *session_directory, si1 *MED_file_name, FPS_m13 *MED_fps);
+tern			G_session_directory_m13(FPS_m13 *fps);
 si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 si8			G_session_samples_m13(LH_m13 *lh, sf8 rate);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
-tern			G_set_session_globals_m13(si1 *MED_directory, LH_m13 *lh, si1 *password);
+tern			G_set_session_globals_m13(si1 *MED_path, si1 *password, LH_m13 *lh);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
 ui4			G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
@@ -3138,10 +3146,11 @@ si1			*G_unique_temp_file_m13(si1 *temp_file);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
-tern			G_update_file_version_m13(FPS_m13 *fps);
 tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
-tern			G_update_session_name_m13(SESS_m13 *sess);
-tern			G_update_session_name_header_m13(si1 *fs_path, si1 *fs_name, si1 *uh_name); // used by G_update_session_name_m13
+tern			G_update_MED_type_m13(si1 *path); // used by G_update_MED_version_m13()
+tern			G_update_MED_version_m13(FPS_m13 *fps);
+tern			G_update_session_name_m13(FPS_m13 *fps);
+tern			G_update_session_name_header_m13(si1 *fs_path, si1 *fs_name, si1 *uh_name); // used by G_update_session_name_m13()
 si8			G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, ...); // varargs (lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8			G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode, ...); // varargs (lh == NULL): si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 tern			G_valid_file_code_m13(ui4 file_type_code);
@@ -4090,7 +4099,7 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps);
 tern	CMP_PRED2_encode_m13(CPS_m13 *cps);
 CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buff);
-ui1	CMP_random_byte_m13(ui4 *m_w, ui4 *m_z);
+ui4	CMP_random_ui4_m13(ui4 *m_w, ui4 *m_z);
 tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
 tern	CMP_RED1_decode_m13(CPS_m13 *cps);
 tern	CMP_RED2_decode_m13(CPS_m13 *cps);
@@ -4664,7 +4673,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 
 // Transmission Error Codes
 #define TR_E_NONE_m13			((si8) E_NONE_m13) // 0
-#define TR_E_UNK_m13			((si8) FALSE_m13)
+#define TR_E_UNKN_m13			((si8) FALSE_m13) // unknown or unspecified error
 #define TR_E_SOCK_FAILED_m13		((si8) -2)
 #define TR_E_SOCK_OPEN_m13		((si8) -3)
 #define TR_E_SOCK_CLOSED_m13		((si8) -4)
@@ -4677,7 +4686,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 
 // Transmission Error Strings
 #define	TR_E_NONE_STR_m13		"no error"
-#define	TR_E_UNK_STR_m13		"unspecified transmission error"
+#define	TR_E_UNKN_STR_m13		"unspecified transmission error"
 #define TR_E_SOCK_FAILED_STR_m13	"socket failed"
 #define TR_E_SOCK_OPEN_STR_m13		"could not open socket"
 #define TR_E_SOCK_CLOSED_STR_m13	"socket closed"
@@ -4823,7 +4832,7 @@ tern		TR_set_socket_reuse_port_m13(TR_INFO_m13 *trans_info, tern set);
 tern		TR_set_socket_timeout_m13(TR_INFO_m13 *trans_info);
 tern		TR_show_message_m13(TR_HDR_m13 *header);
 tern		TR_show_transmission_m13(TR_INFO_m13 *trans_info);
-si1		*TR_strerror(si4 err_num);
+si1		*TR_strerror_m13(si4 err_num);
 
 
 
@@ -5329,7 +5338,7 @@ size_t		fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...
 tern		freeable_m13(void *address);
 FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp);
 si4		fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...);
-si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence, ...); // vararg(whence negative): tern (as si4) non_blocking
+si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence);
 si4		fstat_m13(si4 fd, struct_stat_m13 *sb);
 si8		ftell_m13(FILE_m13 *fp);
 si4		ftruncate_m13(si4 fd, off_t len);
@@ -5339,7 +5348,7 @@ pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
 size_t		malloc_size_m13(void *address);
 tern		md_m13(const si1 *dir);  // synonym for mkdir()
-void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members < 0): const void *el_val (val == el_size)
+void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
 tern		mkdir_m13(const si1 *dir);
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
 si4		mprotect_m13(void *address, size_t len, si4 protection);
