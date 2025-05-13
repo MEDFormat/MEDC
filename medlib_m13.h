@@ -265,34 +265,33 @@ typedef long double	sf16;
 
 
 //**********************************************************************************//
-//******************************* MED Strings (mstr) *******************************//
+//***************************** Pascal Strings (pstr) ******************************//
 //**********************************************************************************//
 
 // Enhanced Pascal strings
-// Best for large strings, or strings whose length needs to be known often
+// Useful for large strings, or strings whose length needs to be known often
 // (eventually all medlib string functions will accept these)
 
-#define MSTR_TAG_m13		((ui1) 0x80)
-#define MSTR_MAX_LEN_m13	((ui4) 0xFFFFFFFF)
+#define PSTR_TAG_m13		((si1) 0x80)
+#define PSTR_MAX_LEN_m13	((ui4) 0xFFFFFFFF)
 
 // flags (bytes 1-3, byte 0 used for tag)
-#define MSTR_FLAG_ALLOCED_m13	((ui4) 1 << 8) // pstr structure was allocated
-#define MSTR_FLAG_CONST_m13	((ui4) 1 << 9) // string is const
-#define MSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is ascii (not sure if useful)
+#define PSTR_FLAG_ALLOCED_m13	((ui4) 1 << 8) // pstr structure was allocated
+#define PSTR_FLAG_CONST_m13	((ui4) 1 << 9) // string is const
+#define PSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is ascii (not sure if useful)
 
 // macros
-#define MSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((*((ui1 *) (x)) == MSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is an mstr
-#define CSTR_m13(x)		((MSTR_m13(x) == TRUE_m13) ? ((*(x->str + x->len)) == 0) ? TRUE_m13 : FALSE_m13) // TRUE_m13 if x is an mstr with a null terminated string
+#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((*((ui1 *) (x)) == PSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is a pstr
 
 // typedefs
 typedef struct {
 	union {
-		ui1	tag; // marker for *mstr vs *si1 (MSTR_TAG_m13 [== 0x80] is not valid as first byte of any utf8 character, including ascii)
+		si1	tag; // marker for pstr vs *si1 (PSTR_TAG_m13 [== 0x80] is not valid as first byte of any utf8 character, including ascii)
 		ui4	flags; // bytes 1-3 used for flags
 	};
-	ui4	len; // string length in bytes (not necessarily characters), not including terminal zero if present
-	si1	*str; // si1 string pointer (terminal zero not required)
-} mstr;  // (untagged & uncapitalized because it is treated as an elemental type)
+	ui4	len; // string length in bytes (not necessarily characters), not including terminal zero
+	si1	*str; // standard string pointer (terminal zero required)
+} pstr;  // (untagged & uncapitalized because it is treated as an elemental type)
 
 
 
@@ -1259,7 +1258,7 @@ typedef struct {
 // Prototypes
 FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...); // varargs(fp == stream): si1 *path  (create *FILE_m13 from *FILE + path)
 tern		FILE_show_m13(FILE_m13 *fp);
-tern		FILE_stream_m13(FILE_m13 *fp); // TRUE if fp is *FILE, FALSE if fp is *FILE_m13
+tern		FILE_stream_m13(void *fp); // TRUE if fp is *FILE, FALSE if fp is *FILE_m13, UNKNOWN if fp is null
 
 
 
@@ -1510,7 +1509,7 @@ tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
 tern	PRTY_restore_m13(si1 *MED_path);
 tern	PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, si1 *MED_path);
 tern	PRTY_show_pcrc_m13(si1 *file_path);
-tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes);
+tern	PRTY_update_m13(FILE_m13 *fp, si8 offset, ui1 *new_data, si8 n_bytes);
 tern	PRTY_validate_m13(si1 *file_path, ...); // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 tern	PRTY_validate_pcrc_m13(si1 *file_path, ...); // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 tern	PRTY_write_m13(si1 *sess_path, ui4 flags, si4 segment_number);
@@ -2198,7 +2197,7 @@ typedef struct {
 	ERR_m13				error; // causal error
 	tern				threading; // global default, used to set process globals default
 	si1				file_lock_mode; // enable global file locking
-	const si1			*file_lock_timeout; // blocking timeout (as string)  [G_nap_m13() form]
+	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
 	ui4				CRC_mode;
 	tern				access_times; // record times of each structure & file access
 	tern				write_sorted_records; // if records unsorted, sort & re-write
@@ -3061,7 +3060,6 @@ const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void 			G_message_m13(const si1 *fmt, ...);
-void 			G_nap_m13(const si1 *nap_str);
 CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
 SSR_m13			*G_open_seg_sess_recs_m13(SESS_m13 *sess);
@@ -3142,7 +3140,8 @@ tern			G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
 tern			G_ternary_entry_m13(si1 *entry);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void			G_thread_exit_m13(void);
-si1			*G_unique_temp_file_m13(si1 *temp_file);
+FILE_m13		*G_unique_temp_file_m13(void);
+si1			*G_unique_temp_file_name_m13(si1 *temp_file);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
@@ -5327,22 +5326,24 @@ tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
 si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_m13(si4 status);
-tern		fclose_m13(FILE_m13 *fp);
-si4		fileno_m13(FILE_m13 *fp);
-size_t		flen_m13(FILE_m13 *fp);
-si4		flock_m13(FILE_m13 *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to G_nap_m13())
+si4		fclose_m13(void *fp);  // pass FILE *, FILE_m13 *, or FILE_m13 ** (to null local variable)
+si4		fileno_m13(void *fp);
+tern		fisopen_m13(void *fp);
+size_t		flen_m13(void *fp);
+si4		flock_m13(void *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
+							 // varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
-si4		fprintf_m13(FILE_m13 *fp, const si1 *fmt, ...);
-si4		fputc_m13(si4 c, FILE_m13 *fp);
-size_t		fread_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
+si4		fprintf_m13(void *fp, const si1 *fmt, ...);
+si4		fputc_m13(si4 c, void *fp);
+size_t		fread_m13(void *ptr, size_t el_size, size_t n_members, void *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
 tern		freeable_m13(void *address);
-FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp);
-si4		fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...);
-si4		fseek_m13(FILE_m13 *fp, si8 offset, si4 whence);
+void		*freopen_m13(const si1 *path, const si1 *mode, void *fp);
+si4		fscanf_m13(void *fp, const si1 *fmt, ...);
+si4		fseek_m13(void *fp, si8 offset, si4 whence);
 si4		fstat_m13(si4 fd, struct_stat_m13 *sb);
-si8		ftell_m13(FILE_m13 *fp);
+si8		ftell_m13(void *fp);
 si4		ftruncate_m13(si4 fd, off_t len);
-size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, FILE_m13 *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
+size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, void *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
@@ -5354,6 +5355,7 @@ tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *ad
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 tern		mv_m13(const si1 *path, const si1 *new_path);  // move
+void		nap_m13(const si1 *nap_str);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
 si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
@@ -5364,7 +5366,7 @@ si4		pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex);
 si4		pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
 pthread_t_m13	pthread_self_m13(void);
 si4		printf_m13(const si1 *fmt, ...);
-si4		putc_m13(si4 c, FILE_m13 *fp);
+si4		putc_m13(si4 c, void *fp);
 si4		putch_m13(si4 c);
 si4		putchar_m13(si4 c);
 tern		rm_m13(const si1 *path);  // remove
@@ -5383,7 +5385,7 @@ si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *comma
 si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
 si4		truncate_m13(const si1 *path, off_t len);
 si4		vasprintf_m13(si1 **target, const si1 *fmt, va_list args);
-si4		vfprintf_m13(FILE_m13 *fp, const si1 *fmt, va_list args);
+si4		vfprintf_m13(void *fp, const si1 *fmt, va_list args);
 si4		vprintf_m13(const si1 *fmt, va_list args);
 si4		vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list args);
 si4		vsprintf_m13(si1 *target, const si1 *fmt, va_list args);

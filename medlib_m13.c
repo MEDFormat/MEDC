@@ -3955,7 +3955,7 @@ GFL_CONDITION_RETURN_DATA_m13:
 
 FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time)
 {
-	FILE	*real_fp;
+	FILE	*std_fp;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -3966,12 +3966,12 @@ FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, te
 		return_m13(NULL);
 	}
 
-	real_fp = NULL;
+	std_fp = NULL;
 	if (fp) {
 		if (FILE_stream_m13(fp) == TRUE_m13)
-			real_fp = (FILE *) fp;
+			std_fp = (FILE *) fp;
 		else
-			real_fp = fp->fp;
+			std_fp = fp->fp;
 	}
 
 	// caller must free
@@ -4002,10 +4002,10 @@ FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, te
 		}
 	}
 	
-	if (real_fp == NULL) {
+	if (std_fp == NULL) {
 		stat(path, &sb);
 	} else {
-		fd = fileno(real_fp);
+		fd = fileno(std_fp);
 		fstat(fd, &sb);
 	}
 
@@ -4059,13 +4059,13 @@ FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, te
 		}
 	}
 
-	if (real_fp == NULL) {
+	if (std_fp == NULL) {
 		if ((file_h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
 			G_set_error_m13(E_UNKN_m13, "CreateFile failed with error %d", GetLastError());
 			return_m13(NULL);
 		}
 	} else {
-		fd = _fileno(real_fp);
+		fd = _fileno(std_fp);
 		if ((file_h = (HANDLE) _get_osfhandle(fd)) == INVALID_HANDLE_VALUE) {
 			G_set_error_m13(E_UNKN_m13, "get_osfhandle failed with error %d", GetLastError());
 			return_m13(NULL);
@@ -4094,7 +4094,7 @@ FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, te
 	ft->access = WN_time_to_uutc_m13(win_access_time);
 	ft->modification = WN_time_to_uutc_m13(win_modify_time);
 	
-	if (real_fp == NULL)
+	if (std_fp == NULL)
 		CloseHandle(file_h);
 	
 	return_m13(ft);
@@ -5674,7 +5674,7 @@ void	G_function_stack_trap_m13(si4 sig_num)
 	if (trapped == TRUE_m13) {
 		while (1) {
 			pthread_mutex_unlock_m13(&err->mutex);  // release error mutex
-			G_nap_m13("100 ms");
+			nap_m13("100 ms");
 			pthread_mutex_lock_m13(&err->mutex);  // release error mutex
 			if (err->code == E_NONE_m13)
 				break;
@@ -7702,94 +7702,6 @@ void  G_message_m13(const si1 *fmt, ...)
 	}
 
 	return_void_m13;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	G_nap_m13(const si1 *nap_str)
-{
-	si1 *c;
-	struct timespec nap;
-	si8 num;
-	
-
-	// string format: <number>[<space>]<unit letter(s)>
-	// e.g. to sleep for 1 millisecond:
-	// "1 millisecond" == "1millisecond" == "1 ms" == "1ms" == "1 m" == "1m"
-
-	if (STR_empty_m13(nap_str) == TRUE_m13) {
-		G_set_error_m13(E_UNKN_m13, "NULL input string");
-		return;
-	}
-
-	c = (si1 *) nap_str;
-	num = *c++ - '0';
-	while (*c >= '0' && *c <= '9' && *c) {
-		num *= 10;
-		num += *c++ - '0';
-	}
-	
-	// optional space
-	if (*c == 32)
-		++c;
-
-	// units: ns, us (or microseconds), ms (or milliseconds), sec, min, hours
-	switch(*c) {
-		case 'h':  // hours
-			nap.tv_sec = num * (ui8) 3600;
-			nap.tv_nsec = 0;
-			break;
-		case 'm':  // microseconds, milliseconds (default), or minutes
-			if( *(c + 1) == 'i') {
-				if (*(c + 2) == 'c') {  // microseconds
-					nap.tv_sec = 0;
-					nap.tv_nsec = num * (ui8) 1e3;
-					break;
-				}
-				if (*(c + 2) == 'n') {  // minutes
-					nap.tv_sec = num * (ui8) 60;
-					nap.tv_nsec = 0;
-					break;
-				}
-			}
-			// milliseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num * (ui8) 1e6;
-			break;
-		case 'n':  // nanoseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num;
-			break;
-		case 's':  // seconds
-			nap.tv_sec = num;
-			nap.tv_nsec = 0;
-			break;
-		case 'u':  // microseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num * (ui8) 1e3;
-			break;
-		default:
-			G_set_error_m13(E_UNKN_m13, "\"%s\" is not a valid input string", nap_str);
-			return;
-	}
-	
-	// overflow
-	if (nap.tv_nsec >= (ui8) 1e9) {
-		nap.tv_sec = nap.tv_nsec / (ui8) 1e9;
-		nap.tv_nsec -= (nap.tv_sec * (ui8) 1e9);
-	}
-	
-	// sleep
-#if defined MACOS_m13 || defined LINUX_m13
-	nanosleep(&nap, NULL);
-#endif
-#ifdef WINDOWS_m13
-	WN_nap_m13(&nap);
-#endif
-
-	return;
 }
 
 
@@ -12035,7 +11947,7 @@ tern	G_set_session_globals_m13(si1 *MED_path, si1 *password, LH_m13 *lh)
 	
 	eprintf_m13("\nElective exit ...\n");
 	G_show_proc_globs_m13(lh);
-	exit_m13(-1);
+	exit_m13(0);
 	
 	return_m13(TRUE_m13);
 }
@@ -14656,9 +14568,26 @@ void	G_thread_exit_m13(void)
 }
 
 
-si1	*G_unique_temp_file_m13(si1 *temp_file)
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+FILE_m13	*G_unique_temp_file_m13(void)
 {
-	ui8			rand_val;
+	si1		temp_name[PATH_BYTES_m13];
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	G_unique_temp_file_name_m13(temp_name);
+	
+	return_m13(fopen_m13(temp_name, "w+"));
+}
+
+
+si1	*G_unique_temp_file_name_m13(si1 *temp_name)
+{
+	ui8	rand_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14667,27 +14596,31 @@ si1	*G_unique_temp_file_m13(si1 *temp_file)
 	// use instead of globals_m13->temp_file for anything that could be threaded
 	
 	// if NULL is passed, caller is responsible for freeing
-	if (temp_file == NULL)
-		temp_file = (si1 *) malloc_m13((size_t) PATH_BYTES_m13);
+	if (temp_name == NULL)
+		temp_name = (si1 *) malloc_m13((size_t) PATH_BYTES_m13);
 	
-#if defined MACOS_m13 || defined LINUX_m13
-	rand_val = (ui8) random();
-	rand_val <<= 32;
-	rand_val |= (ui8) random();
-#endif
-#ifdef WINDOWS_m13
-	rand_val = (ui8) rand();
-	rand_val <<= 16;
-	rand_val |= (ui8) rand();
-	rand_val <<= 16;
-	rand_val |= (ui8) rand();
-	rand_val <<= 16;
-	rand_val |= (ui8) rand();
-#endif
-
-	sprintf_m13(temp_file, "%s/MED_junk_%016lx", globals_m13->temp_dir, rand_val);
+	do {
+		#if defined MACOS_m13 || defined LINUX_m13
+		rand_val = (ui8) random();
+		rand_val <<= 32;
+		rand_val |= (ui8) random();
+		#endif
+		
+		#ifdef WINDOWS_m13
+		rand_val = (ui8) rand();
+		rand_val <<= 16;
+		rand_val |= (ui8) rand();
+		rand_val <<= 16;
+		rand_val |= (ui8) rand();
+		rand_val <<= 16;
+		rand_val |= (ui8) rand();
+		#endif
+		
+		sprintf_m13(temp_name, "%s/MED_junk_%016lx", globals_m13->temp_dir, rand_val);
+		
+	} while (G_exists_m13(temp_name) == TRUE_m13);
 	
-	return_m13(temp_file);
+	return_m13(temp_name);
 }
 
 
@@ -15018,12 +14951,12 @@ tern	G_update_MED_type_m13(si1 *path)
 	if (G_exists_m13(path) == FALSE_m13)
 		return_m13(FALSE_m13);
 
-	type_code = G_MED_type_code_from_string_m13(path);
 	fp = fopen_m13(path, "r+");
 	if (fp == NULL)
 		return_m13(FALSE_m13);
 
 	// metadata
+	type_code = G_MED_type_code_from_string_m13(path);
 	if (METADATA_CODE_m13(type_code) == TRUE_m13) {
 
 		// read in raw data
@@ -15082,7 +15015,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		fseek_m13(fp, 0, SEEK_SET);
 		bytes_to_write = bytes_to_read;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, 0, rd, bytes_to_write);
+			PRTY_update_m13(fp, 0, rd, bytes_to_write);
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15139,7 +15072,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		fseek_m13(fp, 0, SEEK_SET);
 		bytes_to_write = bytes_to_read;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, 0, rd, bytes_to_write);
+			PRTY_update_m13(fp, 0, rd, bytes_to_write);
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15241,7 +15174,7 @@ tern	G_update_MED_type_m13(si1 *path)
 				fseek_m13(fp, fpos, SEEK_SET);
 				bytes_to_write = bh->total_block_bytes;
 				if (globals_m13->update_parity == TRUE_m13)
-					PRTY_update_m13(fp->path, fpos, rd, bytes_to_write);
+					PRTY_update_m13(fp, fpos, rd, bytes_to_write);
 				nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 				if (nw != bytes_to_write) {
 					fclose_m13(fp);
@@ -15263,7 +15196,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		fseek_m13(fp, 0, SEEK_SET);
 		bytes_to_write = UH_BYTES_m13;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, 0, rd, bytes_to_write);
+			PRTY_update_m13(fp, 0, rd, bytes_to_write);
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15316,7 +15249,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		fseek_m13(fp, -UH_BYTES_m13, SEEK_END);
 		bytes_to_write = bytes_to_read;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, flen_m13(fp) - UH_BYTES_m13, rd, bytes_to_write);
+			PRTY_update_m13(fp, flen_m13(fp) - UH_BYTES_m13, rd, bytes_to_write);
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15390,7 +15323,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		fseek_m13(fp, 0, SEEK_SET);
 		bytes_to_write = bytes_to_read;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, 0, rd, bytes_to_write);
+			PRTY_update_m13(fp, 0, rd, bytes_to_write);
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15469,7 +15402,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		// write out new file universal header
 		bytes_to_write = UH_BYTES_m13;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, 0, rd, bytes_to_write);
+			PRTY_update_m13(fp, 0, rd, bytes_to_write);
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, tmp_fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15550,7 +15483,7 @@ tern	G_update_MED_type_m13(si1 *path)
 			// write out
 			bytes_to_write = rh->total_record_bytes;
 			if (globals_m13->update_parity == TRUE_m13) {
-				PRTY_update_m13(fp->path, fpos, rd, bytes_to_write);
+				PRTY_update_m13(fp, fpos, rd, bytes_to_write);
 				fpos += rh->total_record_bytes;
 			}
 			nw = fwrite_m13((void *) recd, sizeof(ui1), (size_t) bytes_to_write, tmp_fp);
@@ -15569,7 +15502,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		fseek_m13(tmp_fp, 0, SEEK_SET);
 		bytes_to_write = UH_BYTES_m13;
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, fpos, rd, bytes_to_write);  // note: parity file may be left with some extra bytes because of shrinking - that's OK
+			PRTY_update_m13(fp, fpos, rd, bytes_to_write);  // note: parity file may be left with some extra bytes because of shrinking - that's OK
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, tmp_fp);
 		if (nw != bytes_to_write) {
 			fclose_m13(fp);
@@ -15580,8 +15513,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		
 		// move new file into place
 		fclose_m13(tmp_fp);
-		fclose_m13(fp);  // close befor moving (safer)
-		fp = NULL;  // prevent double close below
+		fclose_m13(&fp);  // close before moving (passing address nulls local fp)
 		mv_m13(tmp_path, path);
 	}
 
@@ -15594,8 +15526,7 @@ tern	G_update_MED_type_m13(si1 *path)
 
 	// clean up
 	free_m13((void *) rd);
-	if (fp)
-		fclose_m13(fp);
+	fclose_m13(fp);
 	
 	return_m13(TRUE_m13);
 }
@@ -15850,16 +15781,12 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	}
 
 	// session record indices
-	eprintf_m13("start sess rec inds");
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, REC_INDS_TYPE_STR_m13);
 	G_update_session_name_header_m13(path, fs_name, uh_name);
-	eprintf_m13("end sess rec inds");
 
 	// session record data
-	eprintf_m13("start sess rec data");
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, REC_DATA_TYPE_STR_m13);
 	G_update_session_name_header_m13(path, fs_name, uh_name);
-	eprintf_m13("start sess rec data");
 
 	// segmented session records
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, SSR_TYPE_STR_m13);
@@ -16033,12 +15960,10 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 			return_m13(FALSE_m13);
 	}
 
-	eprintf_m13("open path = %s", path);
 	fp = fopen_m13(path, "r+");
 	if (fp == NULL)
 		return_m13(FALSE_m13);
 
-	eprintf_m13("read path = %s", path);
 	nrw = fread_m13((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 	if (nrw != UH_BYTES_m13) {
 		fclose_m13(fp);
@@ -16051,11 +15976,9 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 		// update header CRC
 		uh.header_CRC = CRC_calculate_m13((ui1 *) &uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 
-		eprintf_m13("updating parity for %s", path);
 		fseek_m13(fp, 0, SEEK_SET);
 		if (globals_m13->update_parity == TRUE_m13)
-			PRTY_update_m13(fp->path, 0, (void *) &uh, UH_BYTES_m13);
-		eprintf_m13("writing %s", path);
+			PRTY_update_m13(fp, 0, (void *) &uh, UH_BYTES_m13);
 		nrw = fwrite_m13((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 		if (nrw != UH_BYTES_m13) {
 			fclose_m13(fp);
@@ -16063,7 +15986,6 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 		}
 	}
 	
-	eprintf_m13("close path = %s", path);
 	fclose_m13(fp);
 
 	return_m13(TRUE_m13);
@@ -28519,7 +28441,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	FILE_stream_m13(FILE_m13 *fp)
+tern	FILE_stream_m13(void *fp)
 {
 	// returns TRUE_m13 if file pointer is actually a (FILE *)
 	
@@ -28534,7 +28456,7 @@ tern	FILE_stream_m13(FILE_m13 *fp)
 	if ((ui8) fp == (ui8) stderr)
 		return(TRUE_m13);
 	
-	if (fp->tag == FILE_TAG_m13)
+	if (((FILE_m13 *) fp)->tag == FILE_TAG_m13)
 		return(FALSE_m13);
 	
 	return(TRUE_m13);
@@ -32634,7 +32556,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	
 	// update parity
 	if (globals_m13->update_parity == TRUE_m13)
-		PRTY_update_m13(fps->path, offset, (ui1 *) source, n_bytes);
+		PRTY_update_m13(fps->params.fp, offset, (ui1 *) source, n_bytes);
 	
 	if (globals_m13->access_times == TRUE_m13)
 		G_update_access_time_m13((LH_m13 *) fps);
@@ -35262,7 +35184,7 @@ PAR_INFO_m13	*PAR_launch_m13(PAR_INFO_m13 *par_info, ...)  // varargs (par_info 
 
 	// wait for argument capture
 	while (par_info->status == PAR_LAUNCHING_m13)
-		G_nap_m13("10 us");
+		nap_m13("10 us");
 	va_end(par_t_info.args);
 	
 	if (unthreaded == TRUE_m13) {
@@ -35465,7 +35387,7 @@ tern	PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval)
 
 	// poll detached thread at interval
 	while (par_info->status == PAR_RUNNING_m13)
-		G_nap_m13(interval);
+		nap_m13(interval);
 	
 	return_m13(TRUE_m13);
 }
@@ -35619,7 +35541,7 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 			}
 		}
 		if (new_job_idx < n_jobs)
-			G_nap_m13("100 us"); // don't peg this cpu
+			nap_m13("100 us"); // don't peg this cpu
 		else
 			break;
 	}
@@ -36181,7 +36103,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 	
 	if (wait_for_lauch == TRUE_m13) {
 		for (attempts = MAX_ATTEMPTS; err == ESRCH && attempts--;) {  // ESRCH == "thread not found" => threads can take a beat to launch
-			G_nap_m13("1 ms");
+			nap_m13("1 ms");
 			if (use_attributes == TRUE_m13)
 				err = pthread_attr_setaffinity_np((pthread_attr_t *) attributes, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
 			else
@@ -36224,7 +36146,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 	
 	if (wait_for_lauch == TRUE_m13) {
 		for (attempts = MAX_ATTEMPTS; err == 0 && attempts--;) {  // zero == unspecified error => can take a beat to launch
-			G_nap_m13("1 ms");
+			nap_m13("1 ms");
 			err = SetThreadAffinityMask(thread_h, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - not used as pointer to ui4
 		}
 	}
@@ -36422,7 +36344,7 @@ tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 			break;
 		
 		// don't peg this cpu
-		G_nap_m13("100 us");
+		nap_m13("100 us");
 	}
 	
 	#ifdef MATLAB_m13
@@ -37381,15 +37303,14 @@ tern	PRTY_show_pcrc_m13(si1 *file_path)
 }
 
 
-tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
+tern	PRTY_update_m13(FILE_m13 *fp, si8 offset, ui1 *new_data, si8 n_bytes)
 {
-	tern			extending;
+	tern			was_open, extending;
 	ui1			*od, *nd, *pd, *td, *old_data, *par_data, *tmp_data;
-	si1			par_path[PATH_BYTES_m13], base_name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
+	si1			*path, par_path[PATH_BYTES_m13], base_name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
 	ui4			level_code, *crcs;
 	si8			i, j, pcrc_len, pcrc_offset, nrw, crc_bytes;
 	si8			start_block, start_byte, end_block, end_byte, bytes_to_read;
-	FILE_m13		*fp;
 	PRTY_CRC_DATA_m13	pcrc;
 	
 #ifdef FT_DEBUG_m13
@@ -37399,7 +37320,13 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 	// returns FALSE_m13 on true failure
 	// returns TRUE_m13 on success or no parity data exists
 	
+	if (FILE_stream_m13(fp) == TRUE_m13) {
+		G_set_error_m13(E_UNKN_m13, "fp must be a FILE_m13 *");
+		return_m13(FALSE_m13);
+	}
+	
 	// get parity path
+	path = fp->path;
 	level_code = G_level_m13(path, NULL);
 	if (level_code == SESS_TYPE_CODE_m13 || level_code == SSR_TYPE_CODE_m13) {
 		G_path_parts_m13(path, par_path, NULL, ext);
@@ -37416,11 +37343,13 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 		return_m13(TRUE_m13);
 
 	// open data file
-	fp = fopen_m13(path, "r+");
-	if (fp == NULL)
-		return_m13(FALSE_m13);
+	was_open = fisopen_m13(fp);
+	if (was_open == FALSE_m13) {
+		fp = (void *) fopen_m13(path, "r+");
+		if (fp == NULL)
+			return_m13(FALSE_m13);
+	}
 	
-	eprintf_m13("");
 	// allocate
 	old_data = (ui1 *) calloc((size_t) (n_bytes << 1), sizeof(ui1));  // calloc because need zeros if appending to file
 	if (old_data == NULL) {
@@ -37429,7 +37358,6 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 	}
 	par_data = old_data + n_bytes;
 	
-	eprintf_m13("");
 	// read data file
 	fseek_m13(fp, offset, SEEK_SET);
 	bytes_to_read = flen_m13(fp) - offset;
@@ -37439,7 +37367,6 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 	} else {
 		extending = TRUE_m13;  // extending => don't read past end of file
 	}
-	eprintf_m13("");
 	if (bytes_to_read) {
 		nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
 		if (nrw != bytes_to_read) {
@@ -37449,7 +37376,6 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 		}
 	}
 	
-	eprintf_m13("");
 	// update pcrc data, if exists
 	pcrc_offset = PRTY_pcrc_offset_m13(fp, NULL, &pcrc_len);
 	if (extending == FALSE_m13) {
@@ -37531,11 +37457,9 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 		G_warning_message_m13("%s(): pcrc data not updated for file \"%s\" because write extends file\n", __FUNCTION__, path);
 	}
 	
-	eprintf_m13("");
 	// close data file
 	fclose_m13(fp);
 	
-	eprintf_m13("");
 	// open parity file
 	fp = fopen_m13(par_path, "r+");
 	if (fp == NULL) {
@@ -37545,7 +37469,6 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 	}
 	fp->flags |= FILE_FLAGS_LOCK_m13;  // the parity file has to be locked - multiple threads may be trying to read & write
 	
-	eprintf_m13("");
 	// update parity
 	fseek_m13(fp, offset, SEEK_SET);
 	bytes_to_read = flen_m13(fp) - offset;
@@ -37558,7 +37481,6 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 		return_m13(FALSE_m13);
 	}
 	
-	eprintf_m13("");
 	// remove old & add new contributions
 	// (OK if extending => old data past end of file is zeros)
 	od = old_data;
@@ -37569,7 +37491,6 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 		*pd++ ^= *nd++;
 	}
 	
-	eprintf_m13("");
 	// update parity file
 	fseek_m13(fp, offset, SEEK_SET);
 	nrw = (si8) fwrite_m13((void *) par_data, sizeof(ui1), (size_t) n_bytes, fp);
@@ -37579,9 +37500,9 @@ tern	PRTY_update_m13(si1 *path, si8 offset, ui1 *new_data, si8 n_bytes)
 		return_m13(FALSE_m13);
 	}
 	
-	eprintf_m13("");
 	// close parity file
-	fclose_m13(fp);
+	if (was_open == FALSE_m13)
+		fclose_m13(fp);
 	
 	// clean up
 	free((void *) old_data);
@@ -42436,7 +42357,7 @@ si4	WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *t
 	if (temp_file == NULL)
 		temp_file = globals_m13->temp_file;  // not thread safe, but caller can use globals to know its name
 	else if (*temp_file == 0)  // generate a unique temp file
-		G_unique_temp_file_m13(temp_file);
+		G_unique_temp_file_name_m13(temp_file);
 	// else caller passed temp file name
 	
 	// open temp file
@@ -42570,13 +42491,13 @@ void	WN_nap_m13(struct timespec *nap)
 }
 
 
-void	*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi)
+void	*WN_query_information_file_m13(void *fp, si4 info_class, void *fi)
 {
 #ifdef WINDOWS_m13
 	
 	tern				alloced;
 	size_t				ret_struct_size;
-	FILE				*real_fp;
+	FILE				*std_fp;
 	HANDLE				file_h = NULL;
 	static NTQUERYINFOFILETYPE	NtQueryInformationFile = NULL;  // static so only find once
 	FILE_INFORMATION_CLASS		enum_class;
@@ -42591,10 +42512,10 @@ void	*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi)
 		return_m13(NULL);
 	}
 	if (FILE_stream_m13(fp) == TRUE_m13)
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	else
-		real_fp = fp->fp;
-	file_h = (HANDLE) _get_osfhandle(_fileno(real_fp));
+		std_fp = ((FILE_m13 *) fp)->fp;
+	file_h = (HANDLE) _get_osfhandle(_fileno(std_fp));
 	if (file_h == INVALID_HANDLE_VALUE) {
 		G_set_error_m13(E_UNKN_m13, "could not get file handle");
 		return_m13(NULL);
@@ -43275,73 +43196,73 @@ void	exit_m13(si4 status)
 }
 
 
-tern	fclose_m13(FILE_m13 *fp)
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	fclose_m13(void *fp)
 {
-	tern	is_stream, closed, ret_val;
-	FILE	*real_fp;
+	tern		closed;
+	si4		ret_val;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp, **m13_fp_ptr;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
-	// returns FALSE_m13 if error closing
-	// returns TRUE_m13 under all other circumstances (including already closed, or unclosable [e.g. standard streams])
+	// returns -1 if error closing
+	// returns 0 under all other circumstances (including already closed, or unclosable [e.g. standard streams])
+	// pass &fp to set local FILE_m13 pointer to NULL
 
-	if (fp == NULL)
-		return_m13(FALSE_m13);
-	
-	is_stream = FILE_stream_m13(fp);
-	if (is_stream) {  // fp != NULL
-		closed = FALSE_m13;
-		// get FILE pointer
-		if (is_stream == TRUE_m13) {
-			real_fp = (FILE *) fp;
-			#if defined MACOS_m13 || defined LINUX_m13
-			if (fileno(real_fp) == -1)
-				closed = TRUE_m13;
-			#endif
-			#ifdef WINDOWS_m13
-			if (_fileno(real_fp) == -1)
-				closed = TRUE_m13;
-			#endif
-		} else {
-			if (fp->fd == FILE_FD_CLOSED_m13)
-				closed = TRUE_m13;
-			else if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
-				closed = TRUE_m13;  // can't close standard streams => treat as closed
-			else
-				real_fp = fp->fp;
-		}
-	} else {
-		return_m13(TRUE_m13);  // NULL pointer, not error on close
-	}
-		
-	// close
-	ret_val = TRUE_m13;
-	if (closed == FALSE_m13) {
-		errno_reset_m13();
-		if (fclose(real_fp) == -1) {
-			if (is_stream == TRUE_m13)
+	switch (FILE_stream_m13(fp)) {
+		case FALSE_m13:
+			m13_fp = (FILE_m13 *) fp;
+			m13_fp_ptr = NULL;
+			break;
+		case TRUE_m13:
+			m13_fp_ptr = (FILE_m13 **) fp;
+			if (FILE_stream_m13(*m13_fp_ptr) == FALSE_m13) {  // address of FILE_m13 pointer passed
+				m13_fp = *m13_fp_ptr;
+				break;
+			}
+			std_fp = (FILE *) fp;
+			if (fileno_m13(std_fp) <= 2)  // already closed or standard stream
+				return_m13(0);
+			if (fclose(std_fp)) {
 				G_set_error_m13(E_UNKN_m13, "error closing file");
-			else
-				G_set_error_m13(E_UNKN_m13, "error closing file \"%s\"", fp->path);
-			ret_val = FALSE_m13;
+				return_m13(-1);
+			}  // else fall through to return(0)
+		case UNKNOWN_m13:  // fp == NULL
+			return_m13(0);
+	}
+
+	// close FILE_m13
+	if (m13_fp->fd == FILE_FD_CLOSED_m13)
+		closed = TRUE_m13;
+	else if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13)
+		closed = TRUE_m13;  // can't close standard streams => treat as closed
+	else
+		closed = FALSE_m13;
+	
+	ret_val = 0;
+	if (closed == FALSE_m13) {
+		if (fclose(m13_fp->fp)) {
+			G_set_error_m13(E_UNKN_m13, "error closing file \"%s\"", m13_fp->path);
+			ret_val = -1;
 		}
 	}
 
-	if (is_stream == TRUE_m13)
-		return_m13(ret_val);
-	
-	if (fp->flags & FILE_FLAGS_LOCK_m13)
+	if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
 		flock_m13(fp, FLOCK_CLOSE_m13);
 
-	if (fp->flags & FILE_FLAGS_ALLOCED_m13) {
-		free_m13((void *) fp);
+	if (m13_fp->flags & FILE_FLAGS_ALLOCED_m13) {
+		free_m13(m13_fp);
+		if (m13_fp_ptr)
+			*m13_fp_ptr = NULL;
 	} else {
-		fp->fp = NULL;
-		fp->fd = FILE_FD_CLOSED_m13;
+		m13_fp->fp = NULL;
+		m13_fp->fd = FILE_FD_CLOSED_m13;
 	}
-		
+
 	return_m13(ret_val);
 }
 
@@ -43349,35 +43270,34 @@ tern	fclose_m13(FILE_m13 *fp)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	fileno_m13(FILE_m13 *fp)
+si4	fileno_m13(void *fp)
 {
-	tern	is_stream;
 	si4	fd;
-	FILE	*real_fp;
+	FILE	*std_fp;
 
 	
-	is_stream = FILE_stream_m13(fp);
-	if (is_stream) {  // not NULL
-		if (is_stream == TRUE_m13) {
-			real_fp = (FILE *) fp;
-			errno_reset_m13();
-			#if defined MACOS_m13 || defined LINUX_m13
-			fd = fileno(real_fp);
-			#endif
-			#ifdef WINDOWS_m13
-			fd = _fileno(real_fp);
-			if (fd == -2) {  // stdout or stderr not associated with stream
-				G_warning_message_m13("%s(): stdout or stderr not associated with stream\n", __FUNCTION__);
-				fd = -1;
-			}
-			#endif
-		} else {
-			fd = fp->fd;
-		}
-	} else {
-		fd = -1;
+	switch (FILE_stream_m13(fp)) {
+		case TRUE_m13:
+			std_fp = (FILE *) fp;
+			break;
+		case FALSE_m13:
+			std_fp = ((FILE_m13 *) fp)->fp;
+			break;
+		default:
+			return(-1);
 	}
 	
+	#if defined MACOS_m13 || defined LINUX_m13
+	fd = fileno(std_fp);
+	#endif
+	#ifdef WINDOWS_m13
+	fd = _fileno(std_fp);
+	if (fd == -2) {
+		G_warning_message_m13("%s(): stdout or stderr not associated with stream\n", __FUNCTION__);
+		fd = -1;
+	}
+	#endif
+
 	return(fd);
 }
 
@@ -43385,10 +43305,54 @@ si4	fileno_m13(FILE_m13 *fp)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-size_t	flen_m13(FILE_m13 *fp)
+tern	fisopen_m13(void *fp)
+{
+	si4	fd;
+	FILE	*std_fp;
+	
+	// gets file descriptor to determine if file is open
+	// if fp is FILE_m13, uses standard fileno(), not fp->fd, in case fp->fd is zero, or not reset on close
+	
+	eprintf_m13("");
+	switch (FILE_stream_m13(fp)) {
+		case FALSE_m13:
+			eprintf_m13("");
+			std_fp = ((FILE_m13 *) fp)->fp;
+			break;
+		case TRUE_m13:
+			eprintf_m13("");
+			std_fp = (FILE *) fp;
+			break;
+		case UNKNOWN_m13:
+			eprintf_m13("");
+			return(FALSE_m13);
+	}
+
+#if defined MACOS_m13 || defined LINUX_m13
+	eprintf_m13("");
+	fd = fileno(std_fp);
+	eprintf_m13("");
+#endif
+#ifdef WINDOWS_m13
+	fd = _fileno(std_fp);
+#endif
+	eprintf_m13("");
+	if (fd < 0)  // Windows can return -2 under some circumstances
+		return(FALSE_m13);
+	
+	eprintf_m13("");
+	return(TRUE_m13);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+size_t	flen_m13(void *fp)
 {
 	tern			is_stream;
 	si4			fd;
+	FILE_m13		*m13_fp;
 	struct_stat_m13		sb;
 
 #ifdef FT_DEBUG_m13
@@ -43402,10 +43366,11 @@ size_t	flen_m13(FILE_m13 *fp)
 	
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LEN_m13) {
-			if (fp->flags & FILE_FLAGS_TIME_m13)
-				fp->acc = G_current_uutc_m13();
-			return_m13(fp->len);
+		m13_fp = (FILE_m13 *) fp;
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13) {
+			if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+				m13_fp->acc = G_current_uutc_m13();
+			return_m13(m13_fp->len);
 		}
 	}
 
@@ -43413,23 +43378,27 @@ size_t	flen_m13(FILE_m13 *fp)
 	fstat_m13(fd, &sb);
 	
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LEN_m13)
-			fp->len = (si8) sb.st_size;
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+			m13_fp->len = (si8) sb.st_size;
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 	}
 	
 	return_m13((size_t) sb.st_size);
 }
 		
 		
-si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to G_nap_m13())
+si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
+						// varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 {
-	tern			locked;
-	const si1		*nap_str;
+	tern			is_stream, locked;
+	const si1		*path, *nap_str;
 	ui4			file_id;
 	si4			i, n_locks;
+	si8			len;
+	va_list			v_args;
 	pid_t_m13		write_id;
+	FILE_m13		*m13_fp;
 	FLOCK_LIST_m13		*list;
 	FLOCK_ENTRY_m13		*lock, **lock_ptr, *new_locks, **new_lock_ptrs;
 	
@@ -43437,22 +43406,65 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 	G_push_function_m13();
 #endif
 	
-	// fp must be FILE_m13 type
-	if (FILE_stream_m13(fp) != FALSE_m13) {
-		if (fp == NULL)
-			G_set_error_m13(E_LOCK_m13, "fp is NULL");
-		else
-			G_set_error_m13(E_LOCK_m13, "fp is a FILE pointer");
+	// set up
+	nap_str = globals_m13->file_lock_timeout;
+	is_stream = FILE_stream_m13(fp);
+	if (is_stream == TRUE_m13) {
+		// get varargs
+		va_start(v_args, operation);
+		path = va_arg(v_args, const si1 *);
+		nap_str = va_arg(v_args, const si1 *);
+		va_end(v_args);
+		
+		// check path
+		if (STR_empty_m13(path) == TRUE_m13) {
+			G_set_error_m13(E_LOCK_m13, "path is empty");
+			return_m13(FLOCK_ERR_m13);
+		}
+		
+		// check nap string
+		if (STR_empty_m13(nap_str) == TRUE_m13)
+			nap_str = globals_m13->file_lock_timeout;
+		
+		// don't lock standard streams
+		if (fileno_m13(fp) <= 2)
+			return_m13(FLOCK_SUCCESS_m13);
+		
+		// get file id
+		len = (si8) strlen(path);
+		file_id = CRC_calculate_m13((ui1 *) path, len);
+	} else if (is_stream == FALSE_m13) {
+		// see if locking enabled
+		m13_fp = (FILE_m13 *) fp;
+		if (!(m13_fp->flags & FILE_FLAGS_LOCK_m13))
+			return_m13(FLOCK_SUCCESS_m13);
+		
+		// don't lock standard streams
+		if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13)
+			return_m13(FLOCK_SUCCESS_m13);
+
+		// get vararg
+		if (operation & FLOCK_TIMEOUT_m13) {
+			va_start(v_args, operation);
+			nap_str = va_arg(v_args, const si1 *);
+			va_end(v_args);
+			
+			// check nap string
+			if (STR_empty_m13(nap_str) == TRUE_m13)
+				nap_str = globals_m13->file_lock_timeout;
+		}
+		
+		// get file id
+		if (m13_fp->fid) {
+			file_id = m13_fp->fid;
+		} else {
+			len = (si8) strlen(m13_fp->path);
+			file_id = m13_fp->fid = CRC_calculate_m13((const ui1 *) m13_fp->path, len);
+		}
+	} else {
+		G_set_error_m13(E_LOCK_m13, "fp is NULL");
 		return_m13(FLOCK_ERR_m13);
 	}
-	
-	// see if locking enabled
-	if (!(fp->flags & FILE_FLAGS_LOCK_m13))
-		return_m13(FLOCK_SUCCESS_m13);
-	
-	// don't lock standard streams
-	if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
-		return_m13(FLOCK_SUCCESS_m13);
 	
 	// check operation
 	if (operation & (FLOCK_LOCK_m13 | FLOCK_UNLOCK_m13)) {
@@ -43464,28 +43476,12 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 			write_id = gettid_m13();
 	}
 	
-	// get varargs
-	if (operation & FLOCK_TIMEOUT_m13) {
-		va_list		v_arg;
-		
-		va_start(v_arg, operation);
-		nap_str = va_arg(v_arg, const si1 *);
-		va_end(v_arg);
-
-		// use global default
-		if (STR_empty_m13(nap_str) == TRUE_m13)
-			nap_str = globals_m13->file_lock_timeout;
-	} else {
-		nap_str = globals_m13->file_lock_timeout;
-	}
-	
 	// get list mutex
 	list = globals_m13->file_lock_list;
 	pthread_mutex_lock_m13(&list->mutex);  // lock the list
 	
 	// find lock in table
 	n_locks = list->top_idx + 1;
-	file_id = fp->fid;
 	lock = NULL;
 	lock_ptr = list->lock_ptrs;
 	for (i = n_locks; i--; ++lock_ptr) {
@@ -43608,7 +43604,7 @@ si4	flock_m13(FILE_m13 *fp, si4 operation, ...)  // varargs(FLOCK_TIMEOUT_m13 bi
 		// blocking
 		do {
 			// sleep
-			G_nap_m13(nap_str);
+			nap_m13(nap_str);
 			
 			if (lock->write_id)
 				locked = TRUE_m13;
@@ -43895,22 +43891,24 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	fprintf_m13(FILE_m13 *fp, const si1 *fmt, ...)
+si4	fprintf_m13(void *fp, const si1 *fmt, ...)
 {
 	tern		is_stream;
 	si1		*tmp_str;
 	si4		ret_val;
 	va_list		v_args;
-	FILE		*real_fp;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 
 
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_LOCK_m13);
-		real_fp = fp->fp;
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_LOCK_m13);
 	} else {
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	}
 
 	va_start(v_args, fmt);
@@ -43919,25 +43917,25 @@ si4	fprintf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 	
 	if (ret_val >= 0) {
 #ifdef MATLAB_m13
-		if (real_fp == stderr || real_fp == stdout)
+		if (std_fp == stderr || std_fp == stdout)
 			ret_val = mexPrintf("%s", tmp_str);
 		else
 #endif
-		ret_val = fprintf(real_fp, "%s", tmp_str);
+		ret_val = fprintf(std_fp, "%s", tmp_str);
 		free((void *) tmp_str);
 	} else {
 		G_set_error_m13(E_WRITE_m13, NULL);
 	}
 
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_POS_m13)
-			fp->pos = ftell_m13(fp);
-		if (fp->flags & FILE_FLAGS_LEN_m13)
-			fp->len = flen_m13(fp);
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)
+			m13_fp->pos = ftell_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+			m13_fp->len = flen_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13);
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 	}
 
 	return(ret_val);
@@ -43947,51 +43945,58 @@ si4	fprintf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	fputc_m13(si4 c, FILE_m13 *fp)
+si4	fputc_m13(si4 c, void *fp)
 {
-	tern	is_stream;
-	si4	ret_val;
-	FILE	*real_fp;
+	tern		is_stream;
+	si4		ret_val;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_LOCK_m13);
-		real_fp = fp->fp;
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_LOCK_m13);
 	} else {
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	}
 
 #ifdef MATLAB_m13
-	if (real_fp == stderr || real_fp == stdout)
+	if (std_fp == stderr || std_fp == stdout)
 		ret_val = mexPrintf("%c", c);
 	else
 #endif
-	ret_val = fputc(c, real_fp);
+	ret_val = fputc(c, std_fp);
 	
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_POS_m13)
-			fp->pos = ftell_m13(fp);
-		if (fp->flags & FILE_FLAGS_LEN_m13)
-			fp->len = flen_m13(fp);
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)
+			m13_fp->pos = ftell_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+			m13_fp->len = flen_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13);
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 	}
 
-	if (ret_val >= 0)
-		G_set_error_m13(E_WRITE_m13, NULL);
+	if (ret_val >= 0) {
+		if (is_stream == TRUE_m13)
+			G_set_error_m13(E_WRITE_m13, NULL);
+		else
+			G_set_error_m13(E_WRITE_m13, "error writing to file \"%s\"", m13_fp->path);
+	}
 	
 	return(ret_val);
 }
 
 
-size_t	fread_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ...)  // varargs(n_elements negative): tern (as si4) non_blocking
+size_t	fread_m13(void *ptr, size_t el_size, size_t n_elements, void *fp, ...)  // varargs(n_elements negative): tern (as si4) non_blocking
 {
-	tern	is_stream, non_blocking = FALSE_m13;
-	size_t	nr;
-	FILE	*real_fp;
+	tern		is_stream, non_blocking = FALSE_m13;
+	size_t		nr;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44009,33 +44014,34 @@ size_t	fread_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ...
 	
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == TRUE_m13) {
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	} else {
-		if (fp->flags & FILE_FLAGS_LOCK_m13) {
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
 			if (non_blocking == TRUE_m13) {
-				if (flock_m13(fp, FLOCK_READ_LOCK_NB_m13) == FLOCK_LOCKED_m13)
+				if (flock_m13(m13_fp, FLOCK_READ_LOCK_NB_m13) == FLOCK_LOCKED_m13)
 					return_m13((size_t) FLOCK_LOCKED_m13);  // negative (can distinguish from number of elements read)
 			} else {
-				flock_m13(fp, FLOCK_READ_LOCK_m13);
+				flock_m13(m13_fp, FLOCK_READ_LOCK_m13);
 			}
 		}
-		real_fp = fp->fp;
 	}
 	
-	nr = fread(ptr, el_size, n_elements, real_fp);
+	nr = fread(ptr, el_size, n_elements, std_fp);
 
 	if (is_stream == TRUE_m13) {
 		if (nr != n_elements)
 			G_set_error_m13(E_READ_m13, NULL);
 	} else {
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_READ_UNLOCK_m13);
-		if (fp->flags & FILE_FLAGS_POS_m13)
-			fp->pos += (el_size * n_elements);
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_READ_UNLOCK_m13);
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)
+			m13_fp->pos += (el_size * n_elements);
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 		if (nr != n_elements)
-			G_set_error_m13(E_READ_m13, "failed to read file \"%s\"", fp->path);
+			G_set_error_m13(E_READ_m13, "failed to read file \"%s\"", m13_fp->path);
 	}
 
 	return_m13(nr);
@@ -44206,13 +44212,14 @@ tern	freeable_m13(void *address)
 }
 
 
-FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
+void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 {
-	tern		is_stream, closed, mode_matches, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
+	tern		is_stream, mode_matches, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
 	si1		*c, tmp_path[PATH_BYTES_m13], sys_mode[8];
 	si4		fd, main_mode_total;
 	si8		len;
-	FILE		*real_fp;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 	struct_stat_m13	sb;
 	
 #ifdef FT_DEBUG_m13
@@ -44227,47 +44234,62 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 	
 	// get pointer type
 	is_stream = FILE_stream_m13(fp);
-	if (is_stream) {  // fp != NULL
-		// set path & real_fp
-		if (is_stream == TRUE_m13) {
-			real_fp = (FILE *) fp;
-		} else {
+	switch (is_stream) {
+		case FALSE_m13:
+			m13_fp = (FILE_m13 *) fp;
+			std_fp = m13_fp->fp;
 			if (STR_empty_m13(path) == FALSE_m13)  // passed path overrides
-				strcpy(fp->path, path);
+				strcpy(m13_fp->path, path);
 			else
-				path = fp->path;
-			if (fp->flags & FILE_FLAGS_LOCK_m13)
-				flock_m13(fp, FLOCK_CLOSE_m13);
-			real_fp = fp->fp;
-		}
-		// check if closed
-		if (fileno_m13(fp) == -1)
-			closed = TRUE_m13;
-		else
-			closed = FALSE_m13;
-	} else {
-		closed = TRUE_m13;
+				path = m13_fp->path;
+			if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+				flock_m13(m13_fp, FLOCK_CLOSE_m13);
+			break;
+		case TRUE_m13:
+			std_fp = (FILE *) fp;
+			break;
+		case UNKNOWN_m13:
+			G_set_error_m13(E_OPEN_m13, "fp is empty");
+			return_m13(NULL);
 	}
 
-	// check final path
-	if (STR_empty_m13(path) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "path is empty");
-		return_m13(NULL);
-	}
-	
 	// check mode
 	if (STR_empty_m13(mode) == TRUE_m13) {
 		G_set_error_m13(E_OPEN_m13, "mode is empty");
 		return_m13(NULL);
 	}
 	
-	// closed => standard open
-	if (closed == TRUE_m13) {
-		if (is_stream == FALSE_m13)
-			if (fp->flags & FILE_FLAGS_ALLOCED_m13)
-				free_m13((void *) fp);
-		return_m13(fopen_m13(path, mode));
+	// check path
+	if (STR_empty_m13(path) == TRUE_m13) {
+		G_set_error_m13(E_OPEN_m13, "path is empty");
+		return_m13(NULL);
 	}
+	
+	eprintf_m13("");
+	// check if closed
+	if (fisopen_m13(fp) == FALSE_m13) {
+		eprintf_m13("");
+		if (is_stream == TRUE_m13) {
+			eprintf_m13("");
+			std_fp = fopen(path, mode);
+			eprintf_m13("");
+			if (std_fp == NULL) {
+				G_set_error_m13(E_OPEN_m13, "error opening file \"%s\"", path);
+				return_m13(NULL);
+			}
+			eprintf_m13("");
+			return_m13(std_fp);  // if passed standard fp, return standard fp
+			eprintf_m13("");
+		} else if (is_stream == FALSE_m13) {
+			eprintf_m13("");
+			if (m13_fp->flags & FILE_FLAGS_ALLOCED_m13)
+				free_m13(fp);
+			eprintf_m13("");
+		}
+		eprintf_m13("");
+		return_m13(fopen_m13(path, mode));  // return m13 fp
+	}
+	eprintf_m13("");
 	
 	// parse mode
 	read_mode = write_mode = append_mode = plus_mode = trunc_mode = UNKNOWN_m13;
@@ -44303,7 +44325,7 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 	}
 	main_mode_total = read_mode + write_mode + append_mode;
 	if (main_mode_total != 1) {
-		free_m13((void *) fp);
+		free_m13(fp);
 		G_set_error_m13(E_OPEN_m13, "invalid mode: \"%s\"", mode);
 		return_m13(NULL);
 	}
@@ -44342,7 +44364,7 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 		FILE_ACCESS_INFORMATION	access_info;
 		ui8			curr_mode;
 
-		if (WN_query_information_file_m13(fp, (si4) FileAccessInformation, (void *) &access_info)) {
+		if (WN_query_information_file_m13(std_fp, (si4) FileAccessInformation, (void *) &access_info)) {
 			curr_mode = (ui8) access_info.AccessFlags;
 			mode_matches = TRUE_m13;
 			if (plus_mode == TRUE_m13) {
@@ -44367,19 +44389,19 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 		#endif
 	} else {  // FILE_m13
 		if (plus_mode == TRUE_m13) {
-			if ((fp->flags & FILE_FLAGS_READ_m13) == 0)
+			if ((m13_fp->flags & FILE_FLAGS_READ_m13) == 0)
 				mode_matches = FALSE_m13;
-			if ((fp->flags & FILE_FLAGS_WRITE_m13) == 0)
+			if ((m13_fp->flags & FILE_FLAGS_WRITE_m13) == 0)
 				mode_matches = FALSE_m13;
 		} else if (read_mode == TRUE_m13) {
-			if ((fp->flags & FILE_FLAGS_READ_m13) == 0)
+			if ((m13_fp->flags & FILE_FLAGS_READ_m13) == 0)
 				mode_matches = FALSE_m13;
 		} else if (write_mode == TRUE_m13) {
-			if ((fp->flags & FILE_FLAGS_WRITE_m13) == 0)
+			if ((m13_fp->flags & FILE_FLAGS_WRITE_m13) == 0)
 				mode_matches = FALSE_m13;
 		}
 		if (append_mode == TRUE_m13) {
-			if ((fp->flags & FILE_FLAGS_APPEND_m13) == 0)
+			if ((m13_fp->flags & FILE_FLAGS_APPEND_m13) == 0)
 				mode_matches = FALSE_m13;
 		}
 	}
@@ -44389,7 +44411,7 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 			if (ftruncate_m13(fd, 0))
 				return_m13(NULL);
 			if (is_stream == FALSE_m13)
-				fp->pos = fp->len = 0;
+				m13_fp->pos = m13_fp->len = 0;
 		} else {
 			fseek_m13(fp, 0, SEEK_SET);
 		}
@@ -44419,20 +44441,21 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 	}
 	*c = 0;
 	
+	eprintf_m13("sys_mode = %s", sys_mode);
 	// reopen
 	errno_reset_m13();
-	real_fp = freopen(path, sys_mode, real_fp);
-	if (real_fp == NULL) {
+	std_fp = freopen(path, sys_mode, std_fp);
+	if (std_fp == NULL) {
 		G_set_error_m13(E_OPEN_m13, "can't reopen file \"%s\" with mode \"%s\"", path, sys_mode);
 		return_m13(NULL);
 	}
 
 	// handle "ac" mode (done after because possible write permissions added in reopen)
 #if defined MACOS_m13 || defined LINUX_m13
-	fd = fileno(real_fp);
+	fd = fileno(std_fp);
 #endif
 #ifdef WINDOWS_m13
-	fd = _fileno(real_fp);
+	fd = _fileno(std_fp);
 #endif
 	if (append_mode == TRUE_m13 && trunc_mode == TRUE_m13)
 		if (ftruncate_m13(fd, 0))
@@ -44440,67 +44463,67 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 	
 	// rest of function sets FILE_m13 info
 	if (is_stream == TRUE_m13)
-		return_m13((FILE_m13 *) real_fp);
+		return_m13((void *) std_fp);
 	
 	// set FILE pointer & descriptor
-	fp->fp = real_fp;
-	fp->fd = fd;
+	m13_fp->fp = std_fp;
+	m13_fp->fd = fd;
 	
 	// update flags
-	fp->flags &= ~FILE_FLAGS_MODE_MASK_m13;
+	m13_fp->flags &= ~FILE_FLAGS_MODE_MASK_m13;
 	if (plus_mode == TRUE_m13)
-		fp->flags |= (FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13);
+		m13_fp->flags |= (FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13);
 	else if (read_mode == TRUE_m13)
-		fp->flags |= FILE_FLAGS_READ_m13;
+		m13_fp->flags |= FILE_FLAGS_READ_m13;
 	else if (write_mode == TRUE_m13)
-		fp->flags |= FILE_FLAGS_WRITE_m13;
+		m13_fp->flags |= FILE_FLAGS_WRITE_m13;
 	if (append_mode == TRUE_m13)
-		fp->flags |= FILE_FLAGS_APPEND_m13;
+		m13_fp->flags |= FILE_FLAGS_APPEND_m13;
 
 	// set permissions
-	fstat_m13(fp->fd, &sb);
+	fstat_m13(m13_fp->fd, &sb);
 	#if defined MACOS_m13 || defined LINUX_m13
-	fp->perms = (ui2) sb.st_mode & FILE_PERM_STAT_MASK_m13;
+	m13_fp->perms = (ui2) sb.st_mode & FILE_PERM_STAT_MASK_m13;
 	#endif
 	#ifdef WINDOWS_m13
 	if (sb.st_mode & _S_IREAD)
-		fp->perms = FILE_PERM_UGO_R_m13;
+		m13_fp->perms = FILE_PERM_UGO_R_m13;
 	if (sb.st_mode & _S_IWRITE)
-		fp->perms = FILE_PERM_UGO_W_m13;
+		m13_fp->perms = FILE_PERM_UGO_W_m13;
 	#endif
 	
 	// file length
-	if (fp->flags & FILE_FLAGS_LEN_m13)
-		fp->len = (si8) sb.st_size;
+	if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+		m13_fp->len = (si8) sb.st_size;
 	
 	// file position
-	if (fp->flags & FILE_FLAGS_POS_m13) {
+	if (m13_fp->flags & FILE_FLAGS_POS_m13) {
 		if (append_mode == TRUE_m13) {
-			if (fp->flags & FILE_FLAGS_LEN_m13)
-				fp->pos = fp->len;
+			if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+				m13_fp->pos = m13_fp->len;
 			else
-				fp->len = (si8) sb.st_size;
+				m13_fp->len = (si8) sb.st_size;
 		} else {
-			fp->pos = 0;
+			m13_fp->pos = 0;
 		}
 	}
 	
 	// locking
 	if (globals_m13->file_lock_mode == FLOCK_MODE_ALL_m13) {
-		fp->flags |= FILE_FLAGS_LOCK_m13;
+		m13_fp->flags |= FILE_FLAGS_LOCK_m13;
 	} else if (globals_m13->file_lock_mode == FLOCK_MODE_MED_m13) {
-		if (fp->flags & FILE_FLAGS_MED_m13)
-			fp->flags |= FILE_FLAGS_LOCK_m13;
+		if (m13_fp->flags & FILE_FLAGS_MED_m13)
+			m13_fp->flags |= FILE_FLAGS_LOCK_m13;
 	}
-	if (fp->flags & FILE_FLAGS_LOCK_m13) {
-		len = strlen(fp->path);
-		fp->fid = CRC_calculate_m13((const ui1 *) fp->path, len);
-		flock_m13(fp, FLOCK_OPEN_m13);  // create entry in locking table, don't lock
+	if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
+		len = strlen(m13_fp->path);
+		m13_fp->fid = CRC_calculate_m13((const ui1 *) m13_fp->path, len);
+		flock_m13(m13_fp, FLOCK_OPEN_m13);  // create entry in locking table, don't lock
 	}
 
 	// access time
-	if (fp->flags & FILE_FLAGS_TIME_m13)
-		fp->acc = G_current_uutc_m13();
+	if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+		m13_fp->acc = G_current_uutc_m13();
 			
 	return_m13(fp);
 }
@@ -44509,21 +44532,23 @@ FILE_m13	*freopen_m13(const si1 *path, const si1 *mode, FILE_m13 *fp)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...)
+si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 {
 	tern		is_stream;
 	si4		ret_val;
 	va_list		v_args;
-	FILE		*real_fp;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 	
 
 	is_stream = FILE_stream_m13(fp);
-	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_READ_LOCK_m13);
-		real_fp = fp->fp;
+	if (is_stream == TRUE_m13) {
+		std_fp = (FILE *) fp;
 	} else {
-		real_fp = (FILE *) fp;
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_READ_LOCK_m13);
 	}
 
 #ifdef WINDOWS_m13
@@ -44533,7 +44558,7 @@ si4	fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 	new_fmt = WN_windify_format_string_m13(fmt);
 	
 	va_start(v_args, fmt);
-	ret_val = vfscanf(real_fp, new_fmt, v_args);
+	ret_val = vfscanf(std_fp, new_fmt, v_args);
 	va_end(v_args);
 	
 	if (new_fmt != fmt)
@@ -44542,17 +44567,17 @@ si4	fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 	
 #if defined MACOS_m13 || defined LINUX_m13
 	va_start(v_args, fmt);
-	ret_val = vfscanf(real_fp, fmt, v_args);
+	ret_val = vfscanf(std_fp, fmt, v_args);
 	va_end(v_args);
 #endif
 	
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_POS_m13)  // ret_val is number of items converted
-			fp->pos = ftell_m13(fp);
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_READ_UNLOCK_m13);
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)  // ret_val is number of items converted
+			m13_fp->pos = ftell_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_READ_UNLOCK_m13);
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 	}
 	
 	if (ret_val <= 0)
@@ -44562,44 +44587,47 @@ si4	fscanf_m13(FILE_m13 *fp, const si1 *fmt, ...)
 }
 
 
-si4	fseek_m13(FILE_m13 *fp, si8 offset, si4 whence)
+si4	fseek_m13(void *fp, si8 offset, si4 whence)
 {
-	tern	is_stream;
-	si4	err;
-	FILE	*real_fp;
+	tern		is_stream;
+	si4		err;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	is_stream = FILE_stream_m13(fp);
-	if (is_stream == TRUE_m13)
-		real_fp = (FILE *) fp;
-	else
-		real_fp = fp->fp;
+	if (is_stream == TRUE_m13) {
+		std_fp = (FILE *) fp;
+	} else {
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+	}
 
 	errno_reset_m13();
 #if defined MACOS_m13 || defined LINUX_m13
-	err = fseek(real_fp, offset, whence);
+	err = fseek(std_fp, offset, whence);
 #endif
 #ifdef WINDOWS_m13
-	err = _fseeki64(real_fp, offset, whence);
+	err = _fseeki64(std_fp, offset, whence);
 #endif
 
 	if (err == 0) {
 		if (is_stream == FALSE_m13) {
-			if (fp->flags & FILE_FLAGS_POS_m13) {
+			if (m13_fp->flags & FILE_FLAGS_POS_m13) {
 				switch (whence) {
 					case SEEK_SET:
-						fp->pos = offset;
+						m13_fp->pos = offset;
 						break;
 					case SEEK_CUR:
-						fp->pos += offset;
+						m13_fp->pos += offset;
 						break;
 					case SEEK_END:
-						if ((fp->flags & FILE_FLAGS_LEN_m13) == 0)
-							fp->len = flen_m13(fp);
-						fp->pos = fp->len - offset;
+						if ((m13_fp->flags & FILE_FLAGS_LEN_m13) == 0)
+							m13_fp->len = flen_m13(m13_fp);
+						m13_fp->pos = m13_fp->len - offset;
 						break;
 				}
 			}
@@ -44630,11 +44658,12 @@ si4	fstat_m13(si4 fd, struct_stat_m13 *sb)
 }
 
 
-si8	ftell_m13(FILE_m13 *fp)
+si8	ftell_m13(void *fp)
 {
-	tern	is_stream;
-	si8	pos;
-	FILE	*real_fp;
+	tern		is_stream;
+	si8		pos;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44642,40 +44671,36 @@ si8	ftell_m13(FILE_m13 *fp)
 
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_POS_m13) {
-			if (fp->flags & FILE_FLAGS_TIME_m13)
-				fp->acc = G_current_uutc_m13();
-			return_m13(fp->pos);
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_POS_m13) {
+			if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+				m13_fp->acc = G_current_uutc_m13();
+			return_m13(m13_fp->pos);
 		}
-		real_fp = fp->fp;
 	} else {
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	}
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	pos = ftell(real_fp);
+	pos = ftell(std_fp);
 #endif
 #ifdef WINDOWS_m13
-	pos = _ftelli64(real_fp);
+	pos = _ftelli64(std_fp);
 #endif
 	
 	if (is_stream == FALSE_m13)
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 
 	// error
 	if (pos == -1) {
 		if (is_stream == TRUE_m13)
 			G_set_error_m13(E_UNKN_m13, "failed obtain the file current location");
 		else
-			G_set_error_m13(E_UNKN_m13, "failed obtain the current location in file \"%s\"", fp->path);
-		return_m13(-1);
+			G_set_error_m13(E_UNKN_m13, "failed obtain the current location in file \"%s\"", m13_fp->path);
 	}
 
-	if (is_stream == FALSE_m13)
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
-	
 	return_m13(pos);
 }
 		
@@ -44705,11 +44730,12 @@ si4	ftruncate_m13(si4 fd, off_t len)
 }
 
 
-size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ...)  // varargs(n_elements negative): si4 non_blocking
+size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_elements, void *fp, ...)  // varargs(n_elements negative): si4 non_blocking
 {
-	tern	is_stream, non_blocking = FALSE_m13;
-	size_t	nw;
-	FILE	*real_fp;
+	tern		is_stream, non_blocking = FALSE_m13;
+	size_t		nw;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44727,56 +44753,58 @@ size_t	fwrite_m13(void *ptr, size_t el_size, size_t n_elements, FILE_m13 *fp, ..
 
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LOCK_m13) {
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
 			if (non_blocking == TRUE_m13) {
-				if (flock_m13(fp, FLOCK_WRITE_LOCK_NB_m13) == FLOCK_LOCKED_m13)
+				if (flock_m13(m13_fp, FLOCK_WRITE_LOCK_NB_m13) == FLOCK_LOCKED_m13)
 					return_m13(FLOCK_LOCKED_m13);
 			} else {  // blocking
-				flock_m13(fp, FLOCK_WRITE_LOCK_m13);
+				flock_m13(m13_fp, FLOCK_WRITE_LOCK_m13);
 			}
 		}
-		real_fp = fp->fp;
 		
 		// get pos & len before write if needed
-		if (fp->flags & FILE_FLAGS_POS_m13)
-			if ((fp->flags & FILE_FLAGS_LEN_m13) == 0)
-				fp->len = flen_m13(fp);
-		if (fp->flags & FILE_FLAGS_LEN_m13)
-			if ((fp->flags & FILE_FLAGS_POS_m13) == 0)
-				fp->pos = ftell_m13(fp);
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)
+			if ((m13_fp->flags & FILE_FLAGS_LEN_m13) == 0)
+				m13_fp->len = flen_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+			if ((m13_fp->flags & FILE_FLAGS_POS_m13) == 0)
+				m13_fp->pos = ftell_m13(m13_fp);
 	} else {
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	}
 	
-	nw = fwrite(ptr, el_size, n_elements, real_fp);
+	nw = fwrite(ptr, el_size, n_elements, std_fp);
 	if (nw != n_elements) {
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
-		if (is_stream == TRUE_m13)
+		if (is_stream == TRUE_m13) {
 			G_set_error_m13(E_READ_m13, NULL);
-		else
-			G_set_error_m13(E_READ_m13, "failed to write file \"%s\"", fp->path);
+		} else {
+			if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+				flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13);
+			G_set_error_m13(E_READ_m13, "failed to write file \"%s\"", m13_fp->path);
+		}
 		return_m13(nw);
 	}
 
 	if (is_stream == FALSE_m13) {
-		if ((fp->flags & FILE_FLAGS_LEN_m13) || (fp->flags & FILE_FLAGS_LEN_m13)) {
-			if (fp->flags & FILE_FLAGS_APPEND_m13) {  // append mode always appends regardless of prior file pointer position
-				fp->len += (el_size * n_elements);
-				fp->pos = fp->len;
+		if ((m13_fp->flags & FILE_FLAGS_LEN_m13) || (m13_fp->flags & FILE_FLAGS_LEN_m13)) {
+			if (m13_fp->flags & FILE_FLAGS_APPEND_m13) {  // append mode always appends regardless of prior file pointer position
+				m13_fp->len += (el_size * n_elements);
+				m13_fp->pos = m13_fp->len;
 			} else {
-				fp->pos += (el_size * n_elements);
-				if (fp->pos > fp->len)
-					fp->len = fp->pos;
+				m13_fp->pos += (el_size * n_elements);
+				if (m13_fp->pos > m13_fp->len)
+					m13_fp->len = m13_fp->pos;
 			}
 		}
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13);
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 	}
 	
-	return_m13(n_elements);
+	return_m13(nw);
 }
 
 
@@ -45288,7 +45316,7 @@ inline
 #endif
 tern	mv_m13(const si1 *path, const si1 *new_path)
 {
-	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
+	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13], enc_dir[PATH_BYTES_m13];
 	si4	fe, ret_val;
 	
 #ifdef FT_DEBUG_m13
@@ -45301,25 +45329,124 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 	G_full_path_m13(new_path, tmp_new_path);
 	new_path = (const si1 *) tmp_new_path;
 
+	// check source exists
 	fe = G_exists_m13(path);
-	
-	if (fe & (FILE_EXISTS_m13 | DIR_EXISTS_m13)) {
-		#if defined MACOS_m13 || defined LINUX_m13
-		sprintf_m13(command, "mv -f \"%s\" \"%s\"", path, new_path);
-		#endif
-		#ifdef WINDOWS_m13
-		sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
-		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
-		if (ret_val) {
-			G_set_error_m13(E_UNKN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
-			return_m13(FALSE_m13);
-		}
-		
-		return_m13(TRUE_m13);
+	if (fe == FALSE_m13) {
+		G_set_error_m13(E_UNKN_m13, "\"%s\" does not exist", path);
+		return_m13(FALSE_m13);
 	}
 	
-	return_m13(UNKNOWN_m13);
+	// make target enclosing directory
+	G_path_parts_m13(new_path, enc_dir, NULL, NULL);
+	if (G_exists_m13(enc_dir) == FALSE_m13) {
+		if (md_m13(enc_dir) == FALSE_m13) {
+			G_set_error_m13(E_UNKN_m13, "could not create \"%s\"", enc_dir);
+			return_m13(FALSE_m13);
+		}
+	}
+	
+	// move (use system() rather tha rename() so works across different file systems)
+	#if defined MACOS_m13 || defined LINUX_m13
+	sprintf_m13(command, "mv -f \"%s\" \"%s\"", path, new_path);
+	#endif
+	#ifdef WINDOWS_m13
+	sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
+	#endif
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	if (ret_val) {
+		G_set_error_m13(E_UNKN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
+		return_m13(FALSE_m13);
+	}
+	
+	return_m13(TRUE_m13);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	nap_m13(const si1 *nap_str)
+{
+	si1 *c;
+	struct timespec nap;
+	si8 num;
+	
+
+	// string format: <number>[<space>]<unit letter(s)>
+	// e.g. to sleep for 1 millisecond:
+	// "1 millisecond" == "1millisecond" == "1 ms" == "1ms" == "1 m" == "1m"
+
+	if (STR_empty_m13(nap_str) == TRUE_m13) {
+		G_set_error_m13(E_UNKN_m13, "NULL input string");
+		return;
+	}
+
+	c = (si1 *) nap_str;
+	num = *c++ - '0';
+	while (*c >= '0' && *c <= '9' && *c) {
+		num *= 10;
+		num += *c++ - '0';
+	}
+	
+	// optional space
+	if (*c == 32)
+		++c;
+
+	// units: ns, us (or microseconds), ms (or milliseconds), sec, min, hours
+	switch(*c) {
+		case 'h':  // hours
+			nap.tv_sec = num * (ui8) 3600;
+			nap.tv_nsec = 0;
+			break;
+		case 'm':  // microseconds, milliseconds (default), or minutes
+			if( *(c + 1) == 'i') {
+				if (*(c + 2) == 'c') {  // microseconds
+					nap.tv_sec = 0;
+					nap.tv_nsec = num * (ui8) 1e3;
+					break;
+				}
+				if (*(c + 2) == 'n') {  // minutes
+					nap.tv_sec = num * (ui8) 60;
+					nap.tv_nsec = 0;
+					break;
+				}
+			}
+			// milliseconds
+			nap.tv_sec = 0;
+			nap.tv_nsec = num * (ui8) 1e6;
+			break;
+		case 'n':  // nanoseconds
+			nap.tv_sec = 0;
+			nap.tv_nsec = num;
+			break;
+		case 's':  // seconds
+			nap.tv_sec = num;
+			nap.tv_nsec = 0;
+			break;
+		case 'u':  // microseconds
+			nap.tv_sec = 0;
+			nap.tv_nsec = num * (ui8) 1e3;
+			break;
+		default:
+			G_set_error_m13(E_UNKN_m13, "\"%s\" is not a valid input string", nap_str);
+			return;
+	}
+	
+	// overflow
+	if (nap.tv_nsec >= (ui8) 1e9) {
+		nap.tv_sec = nap.tv_nsec / (ui8) 1e9;
+		nap.tv_nsec -= (nap.tv_sec * (ui8) 1e9);
+	}
+	
+	// sleep
+#if defined MACOS_m13 || defined LINUX_m13
+	nanosleep(&nap, NULL);
+#endif
+#ifdef WINDOWS_m13
+	WN_nap_m13(&nap);
+#endif
+
+	return;
 }
 
 
@@ -45594,7 +45721,7 @@ pthread_t_m13	pthread_self_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	putc_m13(si4 c, FILE_m13 *fp)
+si4	putc_m13(si4 c, void *fp)
 {
 	return(fputc_m13(c, fp));
 }
@@ -45924,19 +46051,11 @@ tern	rm_m13(const si1 *path)
 	fe = G_exists_m13(path);
 	
 	if (fe == FILE_EXISTS_m13) {
-		
-		#if defined MACOS_m13 || defined LINUX_m13
-		sprintf_m13(command, "rm -f \"%s\"", path);
-		#endif
-		#ifdef WINDOWS_m13
-		sprintf_m13(command, "del \"%s\"", path);
-		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = remove(path);
 		if (ret_val) {
 			G_set_error_m13(E_UNKN_m13, "could not remove file \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
-		
 		return_m13(TRUE_m13);
 	} else if (fe == DIR_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
@@ -45950,7 +46069,6 @@ tern	rm_m13(const si1 *path)
 			G_set_error_m13(E_UNKN_m13, "could not remove directory \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
-
 		return_m13(TRUE_m13);
 	}
 	
@@ -46339,7 +46457,7 @@ si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command
 #endif
 	if (ret_val) {
 		if (behavior & RETRY_ONCE_m13) {
-			G_nap_m13("1 ms");  // wait 1 ms
+			nap_m13("1 ms");  // wait 1 ms
 			errno_reset_m13();
 			#if defined MACOS_m13 || defined LINUX_m13
 			ret_val = system(command);
@@ -46742,7 +46860,7 @@ SYSTEM_PIPE_FAIL_m13:
 		close(stderr_pipe[READ_END_m13]);
 
 	if (retry_count) {
-		G_nap_m13("1 ms");  // wait 1 ms
+		nap_m13("1 ms");  // wait 1 ms
 		--retry_count;
 		G_warning_message_m13("%s(): initial attempt failed => retrying\n", __FUNCTION__);
 		goto SYSTEM_PIPE_RETRY_m13;
@@ -46760,8 +46878,8 @@ SYSTEM_PIPE_FAIL_m13:
 
 		len = strlen(command_p) + (2 * PATH_BYTES_m13) + 16;
 		tmp_command = (si1 *) malloc_m13(len);
-		tmp_file = G_unique_temp_file_m13(NULL);
-		e_tmp_file = G_unique_temp_file_m13(NULL);
+		tmp_file = G_unique_temp_file_name_m13(NULL);
+		e_tmp_file = G_unique_temp_file_name_m13(NULL);
 		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command_p, tmp_file, e_tmp_file);
 		err = system_m13(tmp_command);
 		free((void *) tmp_command);
@@ -46894,7 +47012,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 	// 		the output will still be read, so if SP_TEE_TO_TERMINAL_m13 is set, output still be displayed
 	// returns system result code (0 on success or error code)
 
-	if (G_empty_string_m13(command) == TRUE_m13) {
+	if (STR_empty_m13(command) == TRUE_m13) {
 		G_set_error_m13(E_UNKN_m13, "no command");
 		return_m13(-1);
 	}
@@ -47174,7 +47292,7 @@ SYSTEM_PIPE_FAIL_m13:
 		CloseHandle(process_info.hThread);
 
 	if (retry_count) {
-		G_nap_m13("1 ms");  // wait 1 ms
+		nap_m13("1 ms");  // wait 1 ms
 		--retry_count;
 		G_warning_message_m13("%s(): initial attempt failed => retrying\n", __FUNCTION__);
 		goto SYSTEM_PIPE_RETRY_m13;
@@ -47189,9 +47307,9 @@ SYSTEM_PIPE_FAIL_m13:
 
 		len = strlen(command_p) + (2 * PATH_BYTES_m13) + 16;
 		tmp_command = (si1 *) malloc((size_t) len);
-		tmp_file = G_unique_temp_file_m13(NULL);
+		tmp_file = G_unique_temp_file_name_m13(NULL);
 		if (flags & SP_SEPARATE_STREAMS_m13)
-			e_tmp_file = G_unique_temp_file_m13(NULL);
+			e_tmp_file = G_unique_temp_file_name_m13(NULL);
 		else
 			e_tmp_file = tmp_file;
 		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
@@ -47345,21 +47463,23 @@ si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	vfprintf_m13(FILE_m13 *fp, const si1 *fmt, va_list args)
+si4	vfprintf_m13(void *fp, const si1 *fmt, va_list args)
 {
-	tern	is_stream;
-	si1	*tmp_str;
-	si4	ret_val;
-	FILE	*real_fp;
-	
+	tern		is_stream;
+	si1		*tmp_str;
+	si4		ret_val;
+	FILE		*std_fp;
+	FILE_m13	*m13_fp;
+
 
 	is_stream = FILE_stream_m13(fp);
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_LOCK_m13);
-		real_fp = fp->fp;
+		m13_fp = (FILE_m13 *) fp;
+		std_fp = m13_fp->fp;
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_LOCK_m13);
 	} else {
-		real_fp = (FILE *) fp;
+		std_fp = (FILE *) fp;
 	}
 
 	ret_val = vasprintf_m13(&tmp_str, fmt, args);
@@ -47370,19 +47490,19 @@ si4	vfprintf_m13(FILE_m13 *fp, const si1 *fmt, va_list args)
 			ret_val = mexPrintf("%s", tmp_str);
 		else
 #endif
-		ret_val = fprintf(real_fp, "%s", tmp_str);
+		ret_val = fprintf(std_fp, "%s", tmp_str);
 		free((void *) tmp_str);
 	}
 
 	if (is_stream == FALSE_m13) {
-		if (fp->flags & FILE_FLAGS_POS_m13)
-			fp->pos = ftell_m13(fp);
-		if (fp->flags & FILE_FLAGS_LEN_m13)
-			fp->len = flen_m13(fp);
-		if (fp->flags & FILE_FLAGS_LOCK_m13)
-			flock_m13(fp, FLOCK_WRITE_UNLOCK_m13);
-		if (fp->flags & FILE_FLAGS_TIME_m13)
-			fp->acc = G_current_uutc_m13();
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)
+			m13_fp->pos = ftell_m13(fp);
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+			m13_fp->len = flen_m13(m13_fp);
+		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13);
+		if (m13_fp->flags & FILE_FLAGS_TIME_m13)
+			m13_fp->acc = G_current_uutc_m13();
 	}
 	
 	return(ret_val);
