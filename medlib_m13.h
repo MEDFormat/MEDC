@@ -1156,7 +1156,10 @@ typedef struct {
 //************************** File Functions (FILE & FLOCK) *************************//
 //**********************************************************************************//
 
-// Replaces standard FILE pointer in medlib functions
+// FILE_m13 is an enhanced FILE pointer for use in medlib functions
+// Note: functions requiring FILE pointers accept either, FILE_m13 * or FILE * wherevere appropriate
+// These arguments are declared as void pointers use of either without casting or compiler warnings
+
 
 // Defines
 #define FILE_TAG_m13			((ui4) 0x87654321) // ui4 (decimal 2,271,560,481)
@@ -1194,12 +1197,13 @@ typedef struct {
 #define FILE_FLAGS_LOCK_m13		((ui2) 1 << 1) // file is subject to locking
 #define FILE_FLAGS_STD_STREAM_m13	((ui2) 1 << 2) // file is a standard stream (stdin, stdout, stderr converted to FILE_m13)
 #define FILE_FLAGS_MED_m13		((ui2) 1 << 3) // file is a MED file
-#define FILE_FLAGS_READ_m13		((ui2) 1 << 4) // file is open for reading
-#define FILE_FLAGS_WRITE_m13		((ui2) 1 << 5) // file is open for writing
-#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 6) // file is open in append mode (all writes will append regardless of fp; "append" is treated as a modifier of "write" mode)
-#define FILE_FLAGS_LEN_m13		((ui2) 1 << 7) // update len with each operation
-#define FILE_FLAGS_POS_m13		((ui2) 1 << 8) // update pos with each operation
-#define FILE_FLAGS_TIME_m13		((ui2) 1 << 9) // update access time with each operation (global sets flag here, but flag supersedes global in execution)
+#define FILE_FLAGS_PARITY_m13		((ui2) 1 << 4) // file is a parity file
+#define FILE_FLAGS_READ_m13		((ui2) 1 << 5) // file is open for reading
+#define FILE_FLAGS_WRITE_m13		((ui2) 1 << 6) // file is open for writing
+#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 7) // file is open in append mode (all writes will append regardless of fp; "append" is treated as a modifier of "write" mode)
+#define FILE_FLAGS_LEN_m13		((ui2) 1 << 8) // update len with each operation
+#define FILE_FLAGS_POS_m13		((ui2) 1 << 9) // update pos with each operation
+#define FILE_FLAGS_TIME_m13		((ui2) 1 << 10) // update access time with each operation (global sets flag here, but flag supersedes global in execution)
 #define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
 #define FILE_FLAGS_MODE_MASK_m13	( FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13 | FILE_FLAGS_APPEND_m13 )
 
@@ -1252,13 +1256,15 @@ typedef struct {
 	FILE	*fp; // system FILE pointer
 	si8	len; // current file length
 	si8	pos; // file pointer position (relative to start)
-	si8	acc; // uutc of last file access (open, seek, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
+	si8	acc; // uutc of last file access (open, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
 } FILE_m13;
 
 // Prototypes
-FILE_m13	*FILE_init_m13(FILE_m13 *fp, ...); // varargs(fp == stream): si1 *path  (create *FILE_m13 from *FILE + path)
+FILE_m13 	*FILE_from_std_m13(FILE *std_fp, si1 *path);
+FILE_m13	*FILE_init_m13(void *fp, ...); // varargs(fp == stream): si1 *path
+tern		FILE_is_std_m13(void *fp);
 tern		FILE_show_m13(FILE_m13 *fp);
-tern		FILE_stream_m13(void *fp); // TRUE if fp is *FILE, FALSE if fp is *FILE_m13, UNKNOWN if fp is null
+FILE 		*FILE_to_std_m13(void *fp, si1 *path);
 
 
 
@@ -1503,13 +1509,14 @@ tern	PRTY_build_m13(PRTY_m13 *parity_ps);
 si4	PRTY_file_compare_m13(const void *a, const void *b);
 si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files);
 ui4	PRTY_flag_for_path_m13(si1 *path);
+tern	PRTY_is_parity_m13(si1 *path);
 si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, si1 *file_path, si8 *pcrc_len);
 tern	PRTY_recover_segment_header_fields_m13(si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
 tern	PRTY_restore_m13(si1 *MED_path);
 tern	PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, si1 *MED_path);
 tern	PRTY_show_pcrc_m13(si1 *file_path);
-tern	PRTY_update_m13(FILE_m13 *fp, si8 offset, ui1 *new_data, si8 n_bytes);
+tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): si1 *path
 tern	PRTY_validate_m13(si1 *file_path, ...); // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 tern	PRTY_validate_pcrc_m13(si1 *file_path, ...); // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 tern	PRTY_write_m13(si1 *sess_path, ui4 flags, si4 segment_number);
@@ -3140,8 +3147,6 @@ tern			G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
 tern			G_ternary_entry_m13(si1 *entry);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void			G_thread_exit_m13(void);
-FILE_m13		*G_unique_temp_file_m13(void);
-si1			*G_unique_temp_file_name_m13(si1 *temp_file);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
@@ -3297,7 +3302,7 @@ si4 		WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 
 si4		WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file);
 tern		WN_init_terminal_m13(void);
 void		WN_nap_m13(struct timespec *nap);
-void		*WN_query_information_file_m13(FILE_m13 *fp, si4 info_class, void *fi);
+void		*WN_query_information_file_m13(void *fp, si4 info_class, void *fi);
 tern		WN_reset_terminal_m13(void);
 tern		WN_socket_startup_m13(void);
 si4		WN_system_m13(const si1 *command);
@@ -3391,10 +3396,10 @@ si4		STR_compare_m13(const void *a, const void *b);
 tern		STR_contains_formatting_m13(const si1 *string, si1 *plain_string);
 tern		STR_contains_regex_m13(const si1 *string);
 si1 		*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_level);
-tern		STR_empty_m13(const si1 *string);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number);
 si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, tern numeric_order);
+tern		STR_is_empty_m13(const si1 *string);
 si1		*STR_match_end_m13(si1 *pattern, si1 *buffer);
 si1		*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
 si1		*STR_match_line_end_m13(si1 *pattern, si1 *buffer);
@@ -5311,6 +5316,7 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 // in a few cases return values are modified to be more useful
 // see function definition comments for specific changes
 // a few non-standard functions that are closely related to standard functions are also included here
+// note FILE * types have been changed to void *, where appropriate, to allow use of either FILE * or FILE_m13 * types without casts or compiler warnings
 
 #if defined MACOS_m13 || defined LINUX_m13
 	typedef	struct stat		struct_stat_m13;
@@ -5326,7 +5332,7 @@ tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
 si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_m13(si4 status);
-si4		fclose_m13(void *fp);  // pass FILE *, FILE_m13 *, or FILE_m13 ** (to null local variable)
+si4		fclose_m13(void *fp);  // pass FILE *, FILE_m13 *, or to null local variable, FILE_m13 **
 si4		fileno_m13(void *fp);
 tern		fisopen_m13(void *fp);
 size_t		flen_m13(void *fp);
@@ -5342,7 +5348,7 @@ si4		fscanf_m13(void *fp, const si1 *fmt, ...);
 si4		fseek_m13(void *fp, si8 offset, si4 whence);
 si4		fstat_m13(si4 fd, struct_stat_m13 *sb);
 si8		ftell_m13(void *fp);
-si4		ftruncate_m13(si4 fd, off_t len);
+si4		ftruncate_m13(void *fp, off_t len);
 size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, void *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
@@ -5383,6 +5389,9 @@ si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams, ui4 behavior;
 si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
+void		tempclean_m13(void);
+FILE_m13	*tempfile_m13(void);
+si1		*tempnam_m13(si1 *path);
 si4		truncate_m13(const si1 *path, off_t len);
 si4		vasprintf_m13(si1 **target, const si1 *fmt, va_list args);
 si4		vfprintf_m13(void *fp, const si1 *fmt, va_list args);
