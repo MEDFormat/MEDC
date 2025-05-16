@@ -64,7 +64,7 @@
 // Tabs are tabs characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
-// The library contains some non-standard structures:
+// The library utilizes some non-standard structures:
 // 	required compiler option (gcc, clang): -fms-extensions
 // 	suppress warnings with: -Wno-microsoft-anon-tag
 
@@ -83,7 +83,7 @@
 // MED_LIBRARY_TAG == "<MED_VERSION_MAJOR_m13>.<MED_LIBRARY_VERSION_m13>"
 
 // Examples:
-// "_m13" indicates "MED format major version 1, library version 1"
+// "_m13" indicates "MED format major version 1, library version 3"
 // "_m21" indicates "MED format major version 2, library version 1" (for MED 2)
 // "_m213" indicates "MED format major version 2, library version 13" (for MED 2)
 
@@ -296,24 +296,18 @@ tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes);
 
 // Structures
 // (none)
-// Annotation follows header - aribitrary length array of si1s padded to 16 byte alignment
+// Annotation follows header - aribitrary length array of si1s padded to 8 byte alignment
 
 // Version 1.1
-#define REC_Note_v11_BYTES_m13			16
+#define REC_Note_v11_BYTES_m13			8
 #define REC_Note_v11_END_TIME_OFFSET_m13	0
-#define REC_Note_v11_TEXT_OFFSET_m13		8  // beginning of pad
-#define REC_Note_v11_PAD_BYTES_m13		8
+#define REC_Note_v11_TEXT_OFFSET_m13		REC_Note_v11_BYTES_m13
 
 // Structures
 typedef struct {
 	si8     end_time;  // time when note entered into record (header start time is time when note initiated)
-	union {
-		si1     pad[REC_Note_v11_PAD_BYTES_m13];
-		si1     text[REC_Note_v11_PAD_BYTES_m13];  // first 8 bytes of note, can extend beyondend of structure
-	};
 } REC_Note_v11_m13;
-
-// Annotation begins in structure, but may extend beyond it - aribitrary length array of si1s padded to 16 byte alignment (struct plus excess text)
+// Annotation follows structure - aribitrary length array of si1s padded to 8 byte alignment (struct plus text)
 
 
 // Prototypes

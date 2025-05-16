@@ -1191,7 +1191,6 @@ typedef struct {
 	#define WN_PERM_MODE_DEFAULT_m13	( (si4) (_S_IREAD | _S_IWRITE) ) // read & write for all (no "other" in Windows); does not replace FILE_PERM_DEFAULT_m13, but should match it
 #endif
 
-
 #define FILE_FLAGS_NONE_m13		((ui2) 0)
 #define FILE_FLAGS_ALLOCED_m13		((ui2) 1 << 0) // file structure was allocated
 #define FILE_FLAGS_LOCK_m13		((ui2) 1 << 1) // file is subject to locking
@@ -1254,8 +1253,8 @@ typedef struct {
 	ui2	perms; // system file permissions (lower 9 bits of "st_mode" element of stat structure)
 	si4	fd; // system file descriptor
 	FILE	*fp; // system FILE pointer
-	si8	len; // current file length
-	si8	pos; // file pointer position (relative to start)
+	si8	len; // current file length (-1 indicates not known)
+	si8	pos; // file pointer position (relative to start)  (-1 indicates not known)
 	si8	acc; // uutc of last file access (open, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
 } FILE_m13;
 
@@ -3347,7 +3346,7 @@ tern	ALCK_video_metadata_section_2_m13(ui1 *bytes);
 ui8	AT_actual_size_m13(void *address);
 void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t requested_bytes);
 tern	AT_freeable_m13(void *address);
-tern	AT_remove_entry_m13(void *address, const si1 *function, si4 line);
+tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address);
 ui8	AT_requested_size_m13(void *address);
 void	AT_show_entries_m13(void);
 void	AT_show_entry_m13(void *address);
@@ -4102,7 +4101,7 @@ tern	CMP_PRED2_decode_m13(CPS_m13 *cps);
 tern	CMP_PRED1_encode_m13(CPS_m13 *cps);
 tern	CMP_PRED2_encode_m13(CPS_m13 *cps);
 CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
-sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buff);
+sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buf);
 ui4	CMP_random_ui4_m13(ui4 *m_w, ui4 *m_z);
 tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
 tern	CMP_RED1_decode_m13(CPS_m13 *cps);
@@ -4193,14 +4192,15 @@ tern	CRC_validate_m13(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_validate
 //************************************ UTF-8 *************************************//
 //**********************************************************************************//
 
-tern		UTF8_1_byte_char_m13(si1 *c);
-tern		UTF8_2_byte_char_m13(si1 *c);
-tern		UTF8_3_byte_char_m13(si1 *c);
-tern		UTF8_4_byte_char_m13(si1 *c);
-si4		UTF8_char_bytes_m13(si1 *c);
-size_t		UTF8_strlen_m13(si1 *s);
-tern		UTF8_valid_char_m13(si1 *c);
-tern		UTF8_valid_str_m13(si1 *s);
+tern		UTF8_1_byte_char_m13(const si1 *c);
+tern		UTF8_2_byte_char_m13(const si1 *c);
+tern		UTF8_3_byte_char_m13(const si1 *c);
+tern		UTF8_4_byte_char_m13(const si1 *c);
+si4		UTF8_char_bytes_m13(const si1 *c);
+size_t		UTF8_strchar_m13(const si1 *s);
+size_t		UTF8_strlen_m13(const si1 *s);
+tern		UTF8_valid_char_m13(const si1 *c);
+tern		UTF8_valid_str_m13(const si1 *s);
 
 
 
@@ -5335,13 +5335,13 @@ void		exit_m13(si4 status);
 si4		fclose_m13(void *fp);  // pass FILE *, FILE_m13 *, or to null local variable, FILE_m13 **
 si4		fileno_m13(void *fp);
 tern		fisopen_m13(void *fp);
-size_t		flen_m13(void *fp);
+si8		flen_m13(void *fp);
 si4		flock_m13(void *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 							 // varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
 si4		fprintf_m13(void *fp, const si1 *fmt, ...);
 si4		fputc_m13(si4 c, void *fp);
-size_t		fread_m13(void *ptr, size_t el_size, size_t n_members, void *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
+size_t		fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...); // (el_size negative): non_blocking read
 tern		freeable_m13(void *address);
 void		*freopen_m13(const si1 *path, const si1 *mode, void *fp);
 si4		fscanf_m13(void *fp, const si1 *fmt, ...);
@@ -5349,7 +5349,7 @@ si4		fseek_m13(void *fp, si8 offset, si4 whence);
 si4		fstat_m13(si4 fd, struct_stat_m13 *sb);
 si8		ftell_m13(void *fp);
 si4		ftruncate_m13(void *fp, off_t len);
-size_t		fwrite_m13(void *ptr, size_t el_size, size_t n_members, void *fp, ...); // varargs(n_members negative): tern (as si4) non_blocking
+size_t		fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...);   // (el_size negative): non-blocking write; varargs(fp == NULL): FILE *fp (as void *), si1 *path
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
@@ -5382,6 +5382,7 @@ si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
 si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
 si4		stat_m13(const si1 *path, struct_stat_m13 *sb);
 si8		strcat_m13(si1 *target, const si1 *source);
+size_t		strchar_m13(const si1 *string);
 si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
 si8		strcpy_m13(si1 *target, const si1 *source);
 si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
@@ -5401,16 +5402,16 @@ si4		vsprintf_m13(si1 *target, const si1 *fmt, va_list args);
 
 // standard functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13 // use these protoypes in all cases, defines will convert if needed
-void	*calloc_m13(size_t n_members, si8 el_size); // flag level header with negative el_size
-void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size); // flag level header with negative el_size
+void	*calloc_m13(size_t n_members, si8 el_size); // (el_size negative): level headers flag
+void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size); // (el_size negative): level header flag
 void	free_m13(void *ptr);
 void	free_2D_m13(void **ptr, size_t dim1);
-void	*malloc_m13(si8 n_bytes);
-void	**malloc_2D_m13(size_t dim1, si8 dim2_bytes); // flag level header with negative dim2_bytes
-void	*realloc_m13(void *ptr, si8 n_bytes); // flag level header with negative n_bytes
-void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2_bytes, si8 new_dim2_bytes); // flag level header with negative new_dim2_bytes
-void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, si8 el_size); // flag level header with negative el_size
-void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size); // flag level header with negative el_size
+void	*malloc_m13(si8 n_bytes); // (n_bytes negative): level header flag
+void	**malloc_2D_m13(size_t dim1, si8 dim2_bytes); // (dim2_bytes negative): level headers flag
+void	*realloc_m13(void *ptr, si8 n_bytes); // (n_bytes negative): level header flag
+void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2_bytes, si8 new_dim2_bytes); // (new_dim2_bytes negative): level headers flag
+void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, si8 el_size); // (el_size negative): level header flag
+void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size); // (el_size negative): level header flag
 #endif // AT_DEBUG_m13
 
 #ifdef FT_DEBUG_m13

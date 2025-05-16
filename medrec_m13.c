@@ -64,7 +64,7 @@
 // Tabs are tabs characters, not spaces.
 // Set your editor preferences to these for intended alignment.
 
-// The library contains some non-standard structures:
+// The library utilizes some non-standard structures:
 // 	required compiler option (gcc, clang): -fms-extensions
 // 	suppress warnings with: -Wno-microsoft-anon-tag
 
@@ -83,7 +83,7 @@
 // MED_LIBRARY_TAG == "<MED_VERSION_MAJOR_m13>.<MED_LIBRARY_VERSION_m13>"
 
 // Examples:
-// "_m13" indicates "MED format major version 1, library version 1"
+// "_m13" indicates "MED format major version 1, library version 3"
 // "_m21" indicates "MED format major version 2, library version 1" (for MED 2)
 // "_m213" indicates "MED format major version 2, library version 13" (for MED 2)
 
@@ -635,8 +635,6 @@ tern        REC_check_Note_type_alignment_m13(ui1 *bytes)
 	}
 	note = (REC_Note_v11_m13 *) bytes;
 	if (&note->end_time != (si8 *) (bytes + REC_Note_v11_END_TIME_OFFSET_m13))
-		goto REC_NOTE_NOT_ALIGNED_m13;
-	if (note->text != (si1 *) (bytes + REC_Note_v11_TEXT_OFFSET_m13))
 		goto REC_NOTE_NOT_ALIGNED_m13;
 
 	// aligned
