@@ -1,4 +1,4 @@
-
+	
 #ifndef MEDLIB_IN_m13
 #define MEDLIB_IN_m13
 
@@ -159,6 +159,7 @@
 	#include <malloc/malloc.h>
 	#include <sys/sysctl.h>
 	#include <util.h>
+	#include <mach/thread_act.h>
 #endif // MACOS_m13
 #ifdef LINUX_m13
 	#include <sys/statfs.h>
@@ -817,7 +818,7 @@ typedef struct {
 #define UH_FILE_START_TIME_OFFSET_m13				48 // si8
 #define UH_SESSION_NAME_OFFSET_m13				56 // utf8[63]
 #define UH_CHANNEL_NAME_OFFSET_m13				312 // utf8[63]
-#define UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13		568 // Anonymized Subjcet ID in MED 1.0
+#define UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13		568 // Anonymized Subject ID in MED 1.0
 #define UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13		256
 #define UH_SESSION_UID_OFFSET_m13				824 // ui8
 #define UH_CHANNEL_UID_OFFSET_m13				832 // ui8
@@ -1221,7 +1222,8 @@ typedef struct {
 #define FLOCK_WRITE_m13			((si4) 1 << 5) // write lock mode
 #define FLOCK_NON_BLOCKING_m13		((si4) 1 << 6) // do not block for lock, return FLOCK_LOCKED_m13 immediately
 #define FLOCK_TIMEOUT_m13		((si4) 1 << 7) // blocking (looped) or non-blocking (once) sleep time (as nap string) included as vararg
-#define FLOCK_FORCE_m13			((si4) 1 << 8) // unlock or lock regardless of lock status
+#define FLOCK_FORCE_m13			((si4) 1 << 8) // lock, regardless of status; write lock transfers ownership to current thread if owned by another
+							// (use judiciously => if another thread is writing, it will finish its write)
 // Return values
 #define FLOCK_SUCCESS_m13		((si4) 0) // locking operation succeeded
 #define FLOCK_ERR_m13			((si4) -1) // locking operation generated error
@@ -1297,7 +1299,10 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 
 #if defined MACOS_m13 || defined LINUX_m13
 	#ifdef MACOS_m13
-	typedef	ui4			cpu_set_t_m13; // max 32 logical cores
+	typedef	struct {
+		si4	cpu_array[64]; // cpu numbers (from zero); cast cpu_array to thread_policy_t  (arbitrarily set to max of 64 cpus)
+		ui4	cpu_count; // number of cpus in cpu_array; cast to mach_msg_type_number_t
+	}				cpu_set_t_m13; // max 32 logical cores
 	#endif // MACOS_m13
 	#ifdef LINUX_m13
 	typedef	cpu_set_t		cpu_set_t_m13; // opaque type (unknown logical cores)
@@ -1319,6 +1324,13 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 	typedef	HANDLE			pthread_mutex_t_m13;
 	typedef	SECURITY_ATTRIBUTES	pthread_mutexattr_t_m13;
 #endif // WINDOWS_m13
+
+// The prototypes of these two functions are commented out in mach/thread_policy.h, so declared here
+
+#if defined MACOS_m13
+	kern_return_t	thread_policy_set(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t count);
+	kern_return_t	thread_policy_get(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t *count, boolean_t *get_default);
+#endif // MACOS_m13
 
 typedef struct {
 	pthread_fn_m13	thread_f; // the thread function pointer
@@ -1639,7 +1651,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 // error codes
 #define E_NUM_CODES_m13			18
 #define	E_NONE_m13			0 // no error
-#define	E_UNKN_m13			1 // unknown or unspecified error
+#define	E_GEN_m13			1 // unknown or unspecified error
 #define	E_SIG_m13			2 // system siganl
 #define E_ALLOC_m13			3
 #define E_OPEN_m13			4
@@ -2126,14 +2138,15 @@ typedef struct {
 } PROC_GLOBS_LIST_m13;
 
 typedef struct {
-	pid_t_m13	write_id; // thread id when writing, zero otherwise (only current owner can unlock write)
-	ui4		file_id; // CRC of full path
-	volatile ui2	opens; // number of processes that have file open
-	volatile ui2	reads; // number of processes currently reading file (writes locked)
+	volatile pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
+	volatile ui2		opens; // number of processes that have file open
+	volatile ui2		reads; // number of processes currently reading file (writes locked)
+	ui4			file_id; // CRC of full path
 } FLOCK_ENTRY_m13;
 
 typedef struct {
-	pthread_mutex_t_m13	mutex;
+	pthread_mutex_t_m13	list_mutex;
+	pthread_mutex_t_m13	lock_mutex; // single lock mutex => may have to be changed to individual lock mutices in future
 	FLOCK_ENTRY_m13		**lock_ptrs; // secondary indirection to FLOCK_ENTRY_m13 *
 	volatile si4		size; // total allocated locks
 	volatile si4		top_idx; // last non-empty lock in list
@@ -3130,6 +3143,7 @@ void			G_show_globals_m13(void);
 tern			G_show_level_header_m13(LH_m13 *lh);
 tern			G_show_level_header_flags_m13(ui8 flags);
 tern			G_show_location_info_m13(LOCATION_INFO_m13 *li);
+void			G_show_lock_m13(FLOCK_ENTRY_m13 *lock);
 tern			G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code);
 tern			G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level);
 tern			G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level);
@@ -4676,8 +4690,8 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_MESSAGE_TYPE_m13	TR_TYPE_MESSAGE_m13
 
 // Transmission Error Codes
-#define TR_E_NONE_m13			((si8) E_NONE_m13) // 0
-#define TR_E_UNKN_m13			((si8) FALSE_m13) // unknown or unspecified error
+#define TR_E_NONE_m13			((si8) E_NONE_m13) // zero (0)
+#define TR_E_GEN_m13			((si8) FALSE_m13) // unknown or unspecified error
 #define TR_E_SOCK_FAILED_m13		((si8) -2)
 #define TR_E_SOCK_OPEN_m13		((si8) -3)
 #define TR_E_SOCK_CLOSED_m13		((si8) -4)
