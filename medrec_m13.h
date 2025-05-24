@@ -161,14 +161,10 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // Version 1.0 (for compatibility)
 #define REC_Sgmt_v10_BYTES_m13				48
 #define REC_Sgmt_v10_END_TIME_OFFSET_m13		0						// si8
-#define REC_Sgmt_v10_START_SAMP_NUM_OFFSET_m13		8						// si8
-#define REC_Sgmt_v10_START_SAMP_NUM_NO_ENTRY_m13	SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_START_FRAME_NUM_OFFSET_m13		REC_Sgmt_v10_START_SAMP_NUM_OFFSET_m13		// si8
-#define REC_Sgmt_v10_START_FRAME_NUM_NO_ENTRY_m13	FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_END_SAMP_NUM_OFFSET_m13		16						// si8
-#define REC_Sgmt_v10_END_SAMP_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v10_END_FRAME_NUM_OFFSET_m13		REC_Sgmt_v10_END_SAMP_NUM_OFFSET_m13		// si8
-#define REC_Sgmt_v10_END_FRAME_NUM_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_START_IDX_OFFSET_m13		8						// si8
+#define REC_Sgmt_v10_START_IDX_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v10_END_IDX_OFFSET_m13			16						// si8
+#define REC_Sgmt_v10_END_IDX_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v10_SEG_UID_OFFSET_m13			24						// ui8
 #define REC_Sgmt_v10_SEG_NUM_OFFSET_m13			32						// si4
 #define REC_Sgmt_v10_SEG_NUM_NO_ENTRY_m13		SEGMENT_NUMBER_NO_ENTRY_m13
@@ -188,18 +184,10 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 // Version 1.1
 #define REC_Sgmt_v11_BYTES_m13				32
 #define REC_Sgmt_v11_END_TIME_OFFSET_m13		0						// si8
-#define REC_Sgmt_v11_START_NUM_OFFSET_m13		8						// si8
-#define REC_Sgmt_v11_START_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13		REC_Sgmt_v11_START_NUM_OFFSET_m13		// si8
-#define REC_Sgmt_v11_START_SAMP_NUM_NO_ENTRY_m13	SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_START_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_START_NUM_OFFSET_m13		// si8
-#define REC_Sgmt_v11_START_FRAME_NUM_NO_ENTRY_m13	FRAME_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_NUM_OFFSET_m13			16						// si8
-#define REC_Sgmt_v11_END_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13		REC_Sgmt_v11_END_NUM_OFFSET_m13			// si8
-#define REC_Sgmt_v11_END_SAMP_NUM_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define REC_Sgmt_v11_END_FRAME_NUM_OFFSET_m13		REC_Sgmt_v11_END_NUM_OFFSET_m13			// si8
-#define REC_Sgmt_v11_END_FRAME_NUM_NO_ENTRY_m13		FRAME_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_START_IDX_OFFSET_m13		8						// si8
+#define REC_Sgmt_v11_START_IDX_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define REC_Sgmt_v11_END_IDX_OFFSET_m13			16						// si8
+#define REC_Sgmt_v11_END_IDX_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_SEG_NUM_OFFSET_m13			24						// si4
 #define REC_Sgmt_v11_SEG_NUM_NO_ENTRY_m13		SEGMENT_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v11_RATE_OFFSET_m13			28						// sf4

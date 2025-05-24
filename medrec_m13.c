@@ -295,14 +295,14 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 
 		STR_time_m13(NULL, Sgmt_v10->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v10->end_time, time_str);
-		if (Sgmt_v10->start_samp_num == REC_Sgmt_v10_START_SAMP_NUM_NO_ENTRY_m13)
-			printf_m13("Start Sample Number: no entry\n");
+		if (Sgmt_v10->start_idx == REC_Sgmt_v10_START_IDX_NO_ENTRY_m13)
+			printf_m13("Start Index: no entry\n");
 		else
-			printf_m13("Start Sample Number: %ld\n", Sgmt_v10->start_samp_num);
-		if (Sgmt_v10->end_samp_num == REC_Sgmt_v10_END_SAMP_NUM_NO_ENTRY_m13)
-			printf_m13("End Sample Number: no entry\n");
+			printf_m13("Start Index: %ld\n", Sgmt_v10->start_idx);
+		if (Sgmt_v10->end_idx == REC_Sgmt_v10_END_IDX_NO_ENTRY_m13)
+			printf_m13("End Index: no entry\n");
 		else
-			printf_m13("End Sample Number: %ld\n", Sgmt_v10->end_samp_num);
+			printf_m13("End Index: %ld\n", Sgmt_v10->end_idx);
 		STR_hex_m13(hex_str, (ui1 *) &Sgmt_v10->seg_UID, sizeof(si8), NULL, TRUE_m13);
 		printf_m13("Segment UID: 0x%s\n", hex_str);
 		if (Sgmt_v10->seg_num == REC_Sgmt_v10_SEG_NUM_NO_ENTRY_m13)
@@ -339,14 +339,14 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 
 		STR_time_m13(NULL, Sgmt_v11->end_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		printf_m13("End Time: %ld (oUTC), %s\n", Sgmt_v11->end_time, time_str);
-		if (Sgmt_v11->start_samp_num == REC_Sgmt_v11_START_SAMP_NUM_NO_ENTRY_m13)
-			printf_m13("Start Sample Number: no entry\n");
+		if (Sgmt_v11->start_idx == REC_Sgmt_v11_START_IDX_NO_ENTRY_m13)
+			printf_m13("Start Index: no entry\n");
 		else
-			printf_m13("Start Sample Number: %ld\n", Sgmt_v11->start_samp_num);
-		if (Sgmt_v11->end_samp_num == REC_Sgmt_v11_END_SAMP_NUM_NO_ENTRY_m13)
-			printf_m13("End Sample Number: no entry\n");
+			printf_m13("Start Index: %ld\n", Sgmt_v11->start_idx);
+		if (Sgmt_v11->end_idx == REC_Sgmt_v11_END_IDX_NO_ENTRY_m13)
+			printf_m13("End Index: no entry\n");
 		else
-			printf_m13("End Sample Number: %ld\n", Sgmt_v11->end_samp_num);
+			printf_m13("End Index: %ld\n", Sgmt_v11->end_idx);
 		if (Sgmt_v11->seg_num == REC_Sgmt_v11_SEG_NUM_NO_ENTRY_m13)
 			printf_m13("Segment Number: no entry\n");
 		else
@@ -401,9 +401,9 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->end_time != (si8 *) (bytes + REC_Sgmt_v10_END_TIME_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->start_samp_num != (si8 *) (bytes + REC_Sgmt_v10_START_SAMP_NUM_OFFSET_m13))
+	if (&Sgmt_v10->start_idx != (si8 *) (bytes + REC_Sgmt_v10_START_IDX_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->end_samp_num != (si8 *) (bytes + REC_Sgmt_v10_END_SAMP_NUM_OFFSET_m13))
+	if (&Sgmt_v10->end_idx != (si8 *) (bytes + REC_Sgmt_v10_END_IDX_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->seg_UID != (ui8 *) (bytes + REC_Sgmt_v10_SEG_UID_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
@@ -421,9 +421,9 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->end_time != (si8 *) (bytes + REC_Sgmt_v11_END_TIME_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->start_samp_num != (si8 *) (bytes + REC_Sgmt_v11_START_SAMP_NUM_OFFSET_m13))
+	if (&Sgmt_v11->start_idx != (si8 *) (bytes + REC_Sgmt_v11_START_IDX_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->end_samp_num != (si8 *) (bytes + REC_Sgmt_v11_END_SAMP_NUM_OFFSET_m13))
+	if (&Sgmt_v11->end_idx != (si8 *) (bytes + REC_Sgmt_v11_END_IDX_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->seg_num != (si4 *) (bytes + REC_Sgmt_v11_SEG_NUM_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;

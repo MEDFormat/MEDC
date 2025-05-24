@@ -315,12 +315,12 @@ typedef struct {
 	union {
 		si8	start_samp_num; // session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 		si8	start_frame_num; // session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
-		si8	start_num; // generic sample / frame number
+		si8	start_idx; // generic sample / frame number
 	};
 	union {
 		si8	end_samp_num; // session-relative (global indexing) (SAMPLE_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
 		si8	end_frame_num; // session-relative (global indexing) (FRAME_NUMBER_NO_ENTRY_m13 for variable frequency, session level entries)
-		si8	end_num; // generic sample / frame number
+		si8	end_idx; // generic sample / frame number
 	};
 	si4	seg_num;
 	union {
@@ -337,12 +337,12 @@ typedef struct {
 	union {
 		si8	start_samp_num; // session-relative (global indexing)
 		si8	start_frame_num; // session-relative (global indexing)
-		si8	start_num; // generic sample / frame number
+		si8	start_idx; // generic sample / frame number
 	};
 	union {
 		si8	end_samp_num; // session-relative (global indexing)
 		si8	end_frame_num; // session-relative (global indexing)
-		si8	end_num; // generic sample / frame number
+		si8	end_idx; // generic sample / frame number
 	};
 	ui8	seg_UID;
 	si4	seg_num;
@@ -671,11 +671,12 @@ typedef struct {
 #define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
-#define GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13		128 // number of threads
+#define GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13		32 // number of threads
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13		16 // number of functions
-#define GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13		128 // number of threads
-#define GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13			1024
-#define GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13			8
+#define GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13		32 // number of threads
+#define GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13			512 // number of open files
+#define GLOBALS_THREAD_LIST_SIZE_INCREMENT_m13			32 // number of threads
+#define GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13			8 // number of rates
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // usually only one, but mechanics in place to make this do more
 #define GLOBALS_REFERENCE_CHANNEL_IDX_NO_ENTRY_m13		-1
 #define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13			((ui4) 0)
@@ -1300,14 +1301,14 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 #if defined MACOS_m13 || defined LINUX_m13
 	#ifdef MACOS_m13
 	typedef	struct {
-		si4	cpu_array[64]; // cpu numbers (from zero); cast cpu_array to thread_policy_t  (arbitrarily set to max of 64 cpus)
+		si4	cpu_array[64]; // selected cpu numbers (from zero); cast cpu_array to thread_policy_t
 		ui4	cpu_count; // number of cpus in cpu_array; cast to mach_msg_type_number_t
-	}				cpu_set_t_m13; // max 32 logical cores
+	}				cpu_set_t_m13; // max 64 logical cores (in this implementation, no actual limit)
 	#endif // MACOS_m13
 	#ifdef LINUX_m13
-	typedef	cpu_set_t		cpu_set_t_m13; // opaque type (unknown logical cores)
+	typedef	cpu_set_t		cpu_set_t_m13; // opaque type (unclear if there is a logical core count limit)
 	#endif // LINUX_m13
-	typedef	pthread_t		pthread_t_m13;
+	typedef	pthread_t		pthread_t_m13; // opaque type (appears to be large structure: 4-8 KB)
 	typedef pthread_attr_t		pthread_attr_t_m13;
 	typedef void *			pthread_rval_m13;
 	typedef pthread_rval_m13 	(*pthread_fn_m13)(void *);
@@ -1317,7 +1318,7 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 
 #ifdef WINDOWS_m13
 	typedef	ui8			cpu_set_t_m13; // max 64 logical cores (defined as DWORD_PTR in Windows, but not used as a pointer; used as ui8)
-	typedef	HANDLE			pthread_t_m13;
+	typedef	HANDLE			pthread_t_m13; // == void * (opaque type)
 	typedef void *			pthread_attr_t_m13;
 	typedef ui4 			pthread_rval_m13;
 	typedef pthread_rval_m13 	(*pthread_fn_m13)(void *);
@@ -1333,19 +1334,18 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 #endif // MACOS_m13
 
 typedef struct {
-	pthread_fn_m13	thread_f; // the thread function pointer
-	si1		*thread_label;
+	pthread_t_m13	thread;
+	si1		*thread_name;
+	pthread_fn_m13	thread_f; // thread function pointer
 	void		*arg; // function-specific info structure, set by calling function
 	si4		priority; // typically PROC_HIGH_PRIORITY_m13
 	volatile ui4	status;
-	pthread_t_m13	thread_id;
 } PROC_THREAD_INFO_m13;
 
 typedef struct {
-	si1			*thread_name;
-	pthread_fn_m13		thread_f;
-	void			*thread_arg;
-	pthread_rval_m13	rval;
+	si1		*thread_name;
+	pthread_fn_m13	thread_f; // the thread function pointer
+	void		*arg; // function-specific info structure, set by calling function
 } PROC_MACOS_NAMED_THREAD_INFO_m13;
 
 
@@ -1360,7 +1360,9 @@ pid_t_m13		PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f
 pthread_rval_m13	PROC_macos_named_thread_m13(void *arg);
 tern			PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
 tern			PROC_show_thread_affinity_m13(pthread_t_m13 *thread);
-pthread_t_m13		PROC_thread_for_id_m13(pid_t_m13 tid);
+pthread_t_m13		*PROC_thread_for_id_m13(pid_t_m13 _id);
+void			PROC_thread_list_add_m13(pthread_t_m13 *thread);
+void			PROC_thread_list_remove_m13(pid_t_m13 _id);
 tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
 
@@ -1649,25 +1651,26 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define E_UNKNOWN_LINE_m13		((si4) -1) // signal errors have no line numbers
 
 // error codes
-#define E_NUM_CODES_m13			18
+#define E_NUM_CODES_m13			19
 #define	E_NONE_m13			0 // no error
 #define	E_GEN_m13			1 // unknown or unspecified error
 #define	E_SIG_m13			2 // system siganl
 #define E_ALLOC_m13			3
-#define E_OPEN_m13			4
-#define E_READ_m13			5
-#define E_WRITE_m13			6
-#define E_LOCK_m13			7
-#define E_FILE_m13			8
+#define E_FILE_m13			4
+#define E_OPEN_m13			5
+#define E_READ_m13			6
+#define E_WRITE_m13			7
+#define E_LOCK_m13			8
 #define E_MED_m13			9
 #define E_ACC_m13			10
-#define E_ENC_m13			11
+#define E_CRYP_m13			11
 #define E_MET_m13			12
 #define	E_REC_m13			13
 #define	E_NET_m13			14
 #define E_CMP_m13			15
-#define E_FILT_m13			16
-#define E_DB_m13			17
+#define E_PROC_m13			16
+#define E_FILT_m13			17
+#define E_DB_m13			18
 
 // error string table
 #define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
@@ -1678,25 +1681,26 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"unspecified error", \
 	"process signal error", \
 	"memory allocation error", \
+	"file not found", \
 	"file open error", \
 	"file read error", \
 	"file write error", \
 	"file lock error", \
-	"file not found", \
 	"not a MED file or directory", \
 	"access denied", \
 	"encryption error", \
 	"metadata not found", \
 	"record error", \
 	"network error", \
-	"compression error", \
+	"compression, computation error", \
+	"process, thread error", \
 	"filter error", \
 	"database error" \
 }
 #define E_TAG_TABLE_ENTRIES_m13		E_NUM_CODES_m13
 #define E_TAG_TABLE_m13 { \
 	"E_NONE", \
-	"E_UNKN", \
+	"E_GEN", \
 	"E_SIG", \
 	"E_ALLOC", \
 	"E_OPEN", \
@@ -1706,7 +1710,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"E_FILE", \
 	"E_MED", \
 	"E_ACC", \
-	"E_ENC", \
+	"E_CRYP", \
 	"E_MET", \
 	"E_REC", \
 	"E_NET", \
@@ -1756,10 +1760,8 @@ typedef struct {
 // "S" versions are for slice structures (not pointers)
 #define MED_VER_1_0_m13(x)			( (x->MED_version_major == 1 && x->MED_version_minor == 0) ? TRUE_m13 : FALSE_m13 )
 #define MED_VER_1_0_S_m13(x)			( (x.MED_version_major == 1 && x.MED_version_minor == 0) ? TRUE_m13 : FALSE_m13 )
-#define SLICE_SAMP_COUNT_m13(x)			( ((x)->end_samp_num - (x)->start_samp_num) + 1 )
-#define SLICE_SAMP_COUNT_S_m13(x)		( ((x).end_samp_num - (x).start_samp_num) + 1 )
-#define SLICE_FRAME_COUNT_m13(x)		( ((x)->end_frame_num - (x)->start_frame_num) + 1 )
-#define SLICE_FRAME_COUNT_S_m13(x)		( ((x).end_frame_num - (x).start_frame_num) + 1 )
+#define SLICE_IDX_COUNT_m13(x)			( ((x)->end_idx - (x)->start_idx) + 1 )
+#define SLICE_IDX_COUNT_S_m13(x)		( ((x).end_idx - (x).start_idx) + 1 )
 #define SLICE_SEG_COUNT_m13(x)			( ((x)->end_seg_num - (x)->start_seg_num) + 1 )
 #define SLICE_SEG_COUNT_S_m13(x)		( ((x).end_seg_num - (x).start_seg_num) + 1 )
 #define SLICE_DUR_m13(x)			( ((x)->end_time - (x)->start_time) + 1 ) // time in usecs
@@ -1862,12 +1864,12 @@ typedef struct {
 	union { // session-relative (global indexing)
 		si8	start_samp_num;
 		si8	start_frame_num;
-		sf4	start_num; // generic
+		sf4	start_idx; // generic
 	};
 	union { // session-relative (global indexing)
 		si8	end_samp_num;
 		si8	end_frame_num;
-		sf4	end_num; // generic
+		sf4	end_idx; // generic
 	};
 	si4 	start_seg_num;
 	si4 	end_seg_num;
@@ -1879,12 +1881,12 @@ typedef struct {
 	union { // session-relative (global indexing)
 		si8	start_samp_num;
 		si8	start_frame_num;
-		sf4	start_num; // generic
+		sf4	start_idx; // generic
 	};
 	union { // session-relative (global indexing)
 		si8	end_samp_num;
 		si8	end_frame_num;
-		sf4	end_num; // generic
+		sf4	end_idx; // generic
 	};
 	si4 	start_seg_num;
 	si4 	end_seg_num;
@@ -2160,8 +2162,8 @@ typedef struct {
 	const si1	*free_function;
 	si4		alloc_line;
 	si4		free_line;
-	si1		alloc_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
-	si1		free_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si1		alloc_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
+	si1		free_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
 	ui8		alloc_thread_id;
 	ui8		free_thread_id;
 } AT_ENTRY_m13;
@@ -2174,6 +2176,18 @@ typedef struct {
 } AT_LIST_m13;
 
 typedef struct {
+	pid_t_m13		_id;
+	pthread_t_m13 		thread;  // would prefer pointer as sizeof(pthread_t_m13) can be a few kB, but there's no guarantee the original entity still exists
+} THREAD_ENTRY_m13;
+
+typedef struct {
+	pthread_mutex_t_m13	mutex;
+	THREAD_ENTRY_m13	*entries; // no secondary indirection
+	volatile si8		size; // total allocated entries
+	volatile si4		top_idx; // last non-empty entry in list
+} THREAD_LIST_m13;
+
+typedef struct {
 	si1		path[PATH_BYTES_m13];
 	si1		name[NAME_BYTES_m13];
 	ui1		version_major;
@@ -2183,19 +2197,23 @@ typedef struct {
 
 typedef struct {
 	pthread_mutex_t_m13		mutex;
- // Application Info
+// Application Info
 	APP_INFO_m13			*app_info;
- // Tables
+// Tables
 	GLOBAL_TABLES_m13		*tables;
- // Behavior Stacks (thread local)
+// Behavior Stacks (thread local)
 	BEHAVIOR_STACK_LIST_m13		*behavior_stack_list;
- // Function Stacks (thread local)
+// Function Stacks (thread local)
 	FUNCTION_STACK_LIST_m13		*function_stack_list;
- // Process Globals (thread local)
+// Process Globals (thread local)
 	PROC_GLOBS_LIST_m13		*proc_globs_list;
- // File Locking (global)
+// File Locking (global)
 	FLOCK_LIST_m13			*file_lock_list;
- // Record Filters (global default)
+// Allocation Tracking (global)
+	THREAD_LIST_m13			*thread_list;
+// Allocation Tracking (global)
+	AT_LIST_m13			*AT_list;
+// Record Filters (global default)
 	si4 				*record_filters; // signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
 						  // The terminal entry is NO_TYPE_CODE_m13 (== zero). NULL or no filter codes includes all records (== no filters).
 						  // filter modes: match positive: include
@@ -2204,8 +2222,6 @@ typedef struct {
 						  //			all filters positive: exclude
 						  //			else: include
 						  // Note: as type codes are composed of ascii bytes values (< 0x80), it is always possible to make them negative without promotion.
- // Allocation Tracking (global)
-	AT_LIST_m13			*AT_list;
  // Miscellaneous
 	si1				cwd[PATH_BYTES_m13]; // current working directory (periodically auto-cleared)
 	si1				temp_dir[PATH_BYTES_m13]; // system temp directory (periodically auto-cleared)
@@ -3047,7 +3063,6 @@ si8 			G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...); 
 tern			G_free_channel_m13(CHAN_m13 **chan_ptr);
 void			G_free_global_tables_m13(void);
 void			G_free_globals_m13(tern cleanup_for_exit);
-void			G_free_thread_local_storage_m13(LH_m13 *lh);
 tern			G_free_segment_m13(SEG_m13 **seg_ptr);
 tern			G_free_session_m13(SESS_m13 **sess_ptr);
 tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
@@ -3138,7 +3153,7 @@ tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
 tern			G_show_error_m13(void);
 tern			G_show_file_times_m13(FILE_TIMES_m13 *ft);
-void			G_show_function_stack_m13(si4 recursed, ...);  // vararg(recursed [tern as si4] == TRUE_m13): pid_t_m13 _id
+si4			G_show_function_stack_m13(pid_t_m13 _id);
 void			G_show_globals_m13(void);
 tern			G_show_level_header_m13(LH_m13 *lh);
 tern			G_show_level_header_flags_m13(ui8 flags);
@@ -4704,7 +4719,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 
 // Transmission Error Strings
 #define	TR_E_NONE_STR_m13		"no error"
-#define	TR_E_UNKN_STR_m13		"unspecified transmission error"
+#define	TR_E_GEN_STR_m13		"unspecified transmission error"
 #define TR_E_SOCK_FAILED_STR_m13	"socket failed"
 #define TR_E_SOCK_OPEN_STR_m13		"could not open socket"
 #define TR_E_SOCK_CLOSED_STR_m13	"socket closed"
@@ -5376,6 +5391,7 @@ si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 tern		mv_m13(const si1 *path, const si1 *new_path);  // move
 void		nap_m13(const si1 *nap_str);
+si4		pthread_equal_m13(pthread_t_m13 t1, pthread_t_m13 t2);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
 si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
@@ -5428,15 +5444,18 @@ void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, si8 el_si
 void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size); // (el_size negative): level header flag
 #endif // AT_DEBUG_m13
 
+// "loop"s below deal with terminal semicolon (optimized out on compile)
 #ifdef FT_DEBUG_m13
-	#define return_m13(arg)		do { G_pop_function_m13(); return(arg); } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
-	#define return_void_m13		do { G_pop_function_m13(); return; } while(0) // "loop" to deal with terminal semicolon (optimized out on compile)
+	#define return_m13(arg)		do { G_pop_function_m13(); return(arg); } while(0)
+	#define return_void_m13		do { G_pop_function_m13(); return; } while(0)
+	#define thread_return_m13(arg)	do { G_pop_function_m13(); G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0) // clears behavior stack & function stack, if it exists
+	#define thread_return_null_m13	do { G_pop_function_m13(); G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0) // clears behavior stack & function stack, if it exists
 #else
 	#define return_m13(arg)		return(arg)
-	#define return_void_m13		return // the only void library functions are low level & not added to function stacks (they use standard returns)
+	#define return_void_m13		return
+	#define thread_return_m13(arg)	do { G_thread_exit_m13(); return((pthread_rval_m13) arg); } while(0) // clears behavior stack & function stack, if it exists
+	#define thread_return_null_m13	do { G_thread_exit_m13(); return((pthread_rval_m13) 0); } while(0) // clears behavior stack & function stack, if it exists
 #endif // FT_DEBUG_m13
-#define thread_return_m13(arg)		do { G_thread_exit_m13(); G_pop_function_m13(); return((pthread_rval_m13) arg); } while(0) // clears behavior stack & function stack, if it exists
-#define thread_return_null_m13 		do { G_thread_exit_m13(); G_pop_function_m13(); return((pthread_rval_m13) 0); } while(0) // clears behavior stack & function stack, if it exists
 
 
 
