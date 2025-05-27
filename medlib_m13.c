@@ -46662,6 +46662,17 @@ si4	scanf_m13(const si1 *fmt, ...)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+void	sem_dec_m13(sem_t_m13 *sem)
+{
+	sem_trywait_m13(sem);
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 si4	sem_destroy_m13(sem_t_m13 *sem)
 {
 	si4	r_val = 0;
@@ -46690,6 +46701,17 @@ si4	sem_destroy_m13(sem_t_m13 *sem)
 		G_set_error_m13(E_PROC_m13, "sem_destroy_m13() error");
 		
 	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	sem_inc_m13(sem_t_m13 *sem)
+{
+	sem_post_m13(sem);
+	
+	return;
 }
 
 
@@ -46906,22 +46928,32 @@ inline
 #endif
 si4	sem_wait_zero_m13(sem_t_m13 *sem)
 {
+	static pthread_mutex_t_m13	mutex;
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// blocks the calling thread until the count in the semaphore pointed to by sem becomes zero, then atomically increments it
 	// returns 0 on success; -1 on failure
-	// threads using this mechanism should post at start, trywait at end & initialize semaphore count to zero
-	
-	while (sem_trywait_m13(sem) == 0) {
-		sem_post_m13(sem);  // replace count that was removed
-		nap_m13("100 us");
+	// generally the semaphore count should be initialized to zero in this scenario
+	// threads using this mechanism should use sem_inc_m13() [== sem_post] & sem_dec_m13() [== sem_trywait] to increment & decrement count
+
+	if (pthread_mutex_lock_m13(&mutex)) {
+		pthread_mutex_init_m13(&mutex, NULL);
+		pthread_mutex_lock_m13(&mutex);
 	}
 	
-	// add count for this thread
-	sem_post_m13(sem);
-		
+	while (sem_trywait_m13(sem) == 0) {
+		sem_inc_m13(sem);  // replace count that was removed
+		nap_m13("100 us");  // don't peg cpu
+	}
+	
+	// add a count to prevent race before releasing mutex
+	// calling function sould call sem_dec_m13() when finished with lock
+	sem_inc_m13(sem);
+	
+	pthread_mutex_unlock_m13(&mutex);
+	
 	return_m13(0);
 }
 
