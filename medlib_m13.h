@@ -1379,6 +1379,7 @@ tern			PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *a
 tern			PROC_show_thread_affinity_m13(pthread_t_m13 *thread);
 pthread_t_m13		*PROC_thread_for_id_m13(pid_t_m13 _id);
 void			PROC_thread_list_add_m13(pthread_t_m13 *thread);
+pid_t_m13		PROC_thread_list_parent_m13(pid_t_m13 _id);
 void			PROC_thread_list_remove_m13(pid_t_m13 _id);
 tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
@@ -2142,7 +2143,6 @@ typedef struct {
 
 typedef struct {
 	pid_t_m13	_id; // thread id
-	pid_t_m13	_pid; // parent thread id (zero indicates no parent)
 	const si1	**functions;
 	si4		size; // total allocated functions
 	si4		top_idx; // top of function stack
@@ -2199,8 +2199,9 @@ typedef struct {
 } AT_LIST_m13; // global
 
 typedef struct {
-	pid_t_m13		_id;
-	pthread_t_m13 		thread; // would prefer pointer because sizeof(pthread_t_m13) can be a few kB, but there's no guarantee the original entity still exists
+	pid_t_m13		_id; // thread id
+	pid_t_m13		_pid; // parent thread id
+	pthread_t_m13 		thread; // pthread_t_m13 (pointer would have been preferable because a pthread_t can be a few kB on Linux/MacOs, but can't guarantee the original structure still exists)
 } THREAD_ENTRY_m13; // thread-local
 
 typedef struct {
@@ -3097,7 +3098,6 @@ tern			G_free_session_m13(SESS_m13 **sess_ptr);
 tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
-void			G_function_stack_set_pid_m13(pid_t_m13 _id, pid_t_m13 _pid);
 void			G_function_stack_trap_m13(si4 sig_num);
 si1			**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 n_names);
 tern			G_generate_password_data_m13(FPS_m13 *fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_pw, si1 *L1_pw_hint, si1 *L2_pw_hint);
@@ -5446,6 +5446,7 @@ sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o
 si4		sem_post_m13(sem_t_m13 *sem);
 si4		sem_trywait_m13(sem_t_m13 *sem);
 si4		sem_wait_m13(sem_t_m13 *sem);
+si4		sem_wait_zero_m13(sem_t_m13 *sem);  // inverse semaphore - count of zero unblocks
 si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
 void		srand_med_m13(ui4 seed, ui4 *m_w, ui4 *m_z); // seed medlib random number generator

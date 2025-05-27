@@ -2969,7 +2969,7 @@ void	G_delete_function_stack_m13(void)
 		--list->top_idx;
 	
 	// reset stack for re-use (leave size intact, functions already allocated)
-	stack->_id = stack->_pid = 0;
+	stack->_id = 0;
 	stack->top_idx = -1;
 	
 	return;
@@ -2991,6 +2991,7 @@ si4 G_DST_offset_m13(si8 uutc)
 #endif
 
 	// returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
+	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);  // find proc globals by process id
 	if (proc_globs->time_constants.set == FALSE_m13) {
 		G_warning_message_m13("%s(): library time constants not set\n", __FUNCTION__);
@@ -5488,7 +5489,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 
 	// find stack
 	stack_ptr = list->stack_ptrs;
-	n_stacks = list->top_idx + 1;
+	n_stacks = list_top_idx + 1;
 	stack = NULL;
 	for (i = n_stacks; i--; ++stack_ptr) {
 		if ((*stack_ptr)->_id == _id) {
@@ -5505,7 +5506,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	if (i == -1) {
 		// create a new stack
 		if (stack == NULL) {
-			if (list->size == n_stacks) { // expand list
+			if (list_size == n_stacks) { // expand list
 				n_stacks += GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13;
 				stack_ptr = (FUNCTION_STACK_m13 **) realloc((void *) list->stack_ptrs, (size_t) n_stacks * sizeof(FUNCTION_STACK_m13 *));
 				if (stack_ptr == NULL) {  // return with no changes to stacks
@@ -5528,9 +5529,9 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 					*stack_ptr++ = new_stack;  // assign stack pointer
 					new_stack->size = 0;  // malloc() doesn't zero
 				}
-				list->size = n_stacks;
+				list_size = n_stacks;
 			}
-			stack = list->stack_ptrs[++list->top_idx];
+			stack = list->stack_ptrs[++list_top_idx];
 		}
 	
 		// setup or reset stack
@@ -5546,24 +5547,6 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	pthread_mutex_unlock_m13(&list->mutex);
 		
 	return(stack);
-}
-
-
-void	G_function_stack_set_pid_m13(pid_t_m13 _id, pid_t_m13 _pid)
-{
-#ifdef FT_DEBUG_m13
-	FUNCTION_STACK_m13	*stack;
-	
-	// set _id stack's _pid
-	
-	stack = G_function_stack_m13(_id);
-	if (stack == NULL)
-		return;
-	
-	stack->_pid = _pid;
-
-#endif
-	return;
 }
 
 
@@ -6036,16 +6019,22 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 		if (G_init_error_tables_m13() == FALSE_m13)
 			ret_val = FALSE_m13;
 	} else {
+		eprintf_m13("");
 		if (HW_get_endianness_m13() == FALSE_m13)  // the library is only written for little endian machines right now, so always done
 			ret_val = FALSE_m13;
+		eprintf_m13("");
 		if (HW_get_memory_info_m13() == FALSE_m13)  // this is needed for alloc operations, so always done
 			ret_val = FALSE_m13;
+		eprintf_m13("");
 		if (G_init_error_tables_m13() == FALSE_m13)  // standard MED error strings - always done
 			ret_val = FALSE_m13;
+		eprintf_m13("");
 		if (GLOBALS_FILE_LOCK_MODE_DEFAULT_m13)  // file locking requires CRCs
 			if (CRC_init_tables_m13() == FALSE_m13)
 				ret_val = FALSE_m13;
+		eprintf_m13("");
 	}
+	eprintf_m13("");
 
 	// NT dylib loaded by WN_nap_m13() if used
 	#ifdef WINDOWS_m13
@@ -6129,8 +6118,10 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 #endif
 
 	// tables
+	eprintf_m13("");
 	if (globals_m13->tables == NULL)
 		G_init_global_tables_m13(init_all_tables);
+	eprintf_m13("");
 
 	// behavior stacks
 	globals_m13->behavior_stack_list = (BEHAVIOR_STACK_LIST_m13 *) calloc((size_t) 1, sizeof(BEHAVIOR_STACK_LIST_m13));
@@ -6248,6 +6239,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		
 	pthread_mutex_unlock_m13(&globals_m13->mutex);
 	
+	eprintf_m13("");
 	return(TRUE_m13);
 }
 
@@ -8767,9 +8759,7 @@ void	G_pop_function_exec_m13(const si1 *function)
 	
 	FUNCTION_STACK_m13	*stack;
 	
-	
-	eprintf_m13("popping %s for %lu", function, gettid_m13());
-	
+		
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
 		return;
@@ -8791,9 +8781,9 @@ void	G_pop_function_exec_m13(const si1 *function)
 	if (stack->top_idx >= 0) {
 		--stack->top_idx;
 		if (stack->top_idx == -1)
-			stack->_id = stack->_pid = 0;  // release stack (popping stack base);
+			stack->_id = 0;  // release stack (popping stack base);
 	}
-	
+
 #endif  // FT_DEBUG_m13
 
 	return;
@@ -8862,7 +8852,7 @@ tern	G_proc_error_state_m13(LH_m13 *lh)
 PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 {
 	si4			i, n_proc_globs;
-	pid_t_m13		_id;
+	pid_t_m13		_id, tmp_id;
 	LH_m13			*top_lh;
 	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, *new_proc_globs;
 	PROC_GLOBS_LIST_m13	*list;
@@ -8892,29 +8882,36 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	list = globals_m13->proc_globs_list;
 	pthread_mutex_lock_m13(&list->mutex);
 			
-	// find by thread id
+	// find by thread id (recursing up ancestral tree as necessary)
 	proc_globs = NULL;
-	proc_globs_ptr = list->proc_globs_ptrs;
-	n_proc_globs = list->top_idx + 1;
-	_id = gettid_m13();
-	for (i = n_proc_globs; i--; ++proc_globs_ptr) {
-		if ((*proc_globs_ptr)->_id == _id) {
-			proc_globs = *proc_globs_ptr;
-			pthread_mutex_unlock_m13(&list->mutex);
-			if (lh)  // set shortcut
-				lh->proc_globs = proc_globs;
-			eprintf_m13("found by id");
-			return_m13(proc_globs);
+	_id = tmp_id = gettid_m13();
+	do {
+		proc_globs_ptr = list->proc_globs_ptrs;
+		n_proc_globs = list->top_idx + 1;
+		for (i = n_proc_globs; i--; ++proc_globs_ptr) {
+			if ((*proc_globs_ptr)->_id == tmp_id) {
+				proc_globs = *proc_globs_ptr;
+				pthread_mutex_unlock_m13(&list->mutex);
+				if (lh) // set shortcut
+					lh->proc_globs = proc_globs;
+				eprintf_m13("found by id");
+				return_m13(proc_globs);
+			}
+			if (proc_globs)
+				continue;
+			if ((*proc_globs_ptr)->_id == 0)  // store first empty
+				proc_globs = *proc_globs_ptr;
 		}
-		if (proc_globs)
-			continue;
-		if ((*proc_globs_ptr)->_id == 0)  // first empty
-			proc_globs = *proc_globs_ptr;
-	}
+		
+		// get ancestral predecessor
+		tmp_id = PROC_thread_list_parent_m13(tmp_id);
+	} while (tmp_id);
 	
 	// expand list
 	if (proc_globs == NULL) {
 		eprintf_m13("creating new: n_proc_globs = %d, list->size = %d", n_proc_globs, list->size);
+		if (list->size == 1)
+			exit_m13(-1);
 		if (n_proc_globs == list->size) {
 			eprintf_m13("expanding list");
 			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
@@ -9175,7 +9172,7 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 
 	// initialize
 	G_proc_globs_init_m13(proc_globs);
-	proc_globs->_id = gettid_m13();  // note this probably is a duplicate entry, shortcuts will leads to correct proc_globs
+	proc_globs->_id = gettid_m13();  // note this may be a duplicate entry by _id, but linkage will lead to correct proc_globs
 
 	return_m13(proc_globs);
 }
@@ -9459,8 +9456,6 @@ void	G_push_function_exec_m13(const si1 *function)
 	FUNCTION_STACK_m13	*stack;
 	
 	
-	eprintf_m13("pushing %s for %lu", function, gettid_m13());
-
 	// causal error set => do not modify stack of causal thread
 	if (globals_m13->error.code)
 		if (globals_m13->error.thread_id == gettid_m13())
@@ -11200,6 +11195,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
+	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);  // use proc_globs from current thread
 	
 	if (search_mode == TIME_SEARCH_m13) {
@@ -11916,6 +11912,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	}
 	
 	// set proc error state (for void functions)
+	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);  // use thread ID
 	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
 
@@ -12007,6 +12004,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	if (globals_m13->tables->timezone_table == NULL)
 		G_init_timezone_tables_m13();
 	
+	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);
 	
 	// reset
@@ -12702,6 +12700,7 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	si1			*c, thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13], title[PROC_THREAD_NAME_LEN_DEFAULT_m13 + 48];
 	si4			i, j, func_start_num;
 	FUNCTION_STACK_m13	*stack;
+	pid_t_m13		_pid;
 	pthread_t		*thread;
 
 	
@@ -12720,8 +12719,9 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 		return(-1);
 	
 	// recurse
-	if (stack->_pid) {
-		func_start_num = G_show_function_stack_m13(stack->_pid);
+	_pid = PROC_thread_list_parent_m13(_id);
+	if (_pid) {
+		func_start_num = G_show_function_stack_m13(_pid);
 		if (func_start_num == -1)
 			return(-1);
 	} else {
@@ -13372,6 +13372,7 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 	// use G_message_m13() because show_password_data_m13() is used in normal (no programming) functions => so allow output to be suppressed easily
 	if (pwd == NULL) {
+		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		pwd = &proc_globs->password_data;
 	}
@@ -13408,6 +13409,7 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	// use G_message_m13() because show_password_data_m13() is used in normal (not programming) functions => so allow output to be suppressed easily
 	
 	if (pwd == NULL) {
+		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		pwd = &proc_globs->password_data;
 	}
@@ -15317,6 +15319,7 @@ tern	G_update_MED_type_m13(si1 *path)
 		recd = rd + UH_BYTES_m13;
 		rh = (REC_HDR_m13 *) recd;
 
+		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		pwd = &proc_globs->password_data;
 		
@@ -32610,6 +32613,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		volume_path = tmp_path;
 	}
 	
+	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);
 	mmap_block_bytes = 0;
 	
@@ -35483,6 +35487,7 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	
 	// check threading
 	if (thread_jobs == NOT_SET_m13) {
+		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		thread_jobs = proc_globs->miscellaneous.threading;  // process specific
 		if (thread_jobs == NOT_SET_m13) {
@@ -35990,13 +35995,6 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 	
 	// get thread's tid
 	_id = PROC_id_for_thread_m13(thread);
-
-#ifdef FT_DEBUG_m13
-	pid_t_m13	_pid;
-
-	_pid = gettid_m13();  // new thread's parent id
-	G_function_stack_set_pid_m13(_id, _pid);
-#endif
 	
 	return_m13(_id);  // zero indicates failure (for compatibility with Windows version, which returns thread id)
 }
@@ -36086,13 +36084,6 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 
 	// get thread's tid
 	_id = (pid_t_m13) win_id;
-
-#ifdef FT_DEBUG_m13
-	pid_t_m13	_pid;
-
-	_pid = gettid_m13();  // new thread's parent id
-	G_function_stack_set_pid_m13(_id, _pid);
-#endif
 
 	return_m13(_id);  // zero indicates failure
 }
@@ -36439,13 +36430,14 @@ pthread_t_m13	*PROC_thread_for_id_m13(pid_t_m13 _id)
 void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 {
 	si4			i, n_entries;
-	pid_t_m13		_id;
+	pid_t_m13		_id, _pid;
 	pthread_t		local_thread;
 	THREAD_ENTRY_m13	*entry;
 	THREAD_LIST_m13		*list;
 	
 	
-	// pass NULL to add current thread
+	// this typically called by parent so _pid == current thread id
+	// pass NULL to add current thread (self - parent set to zero)
 	
 	if (thread == NULL) {
 		local_thread = pthread_self_m13();
@@ -36463,6 +36455,11 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 	#ifdef WINDOWS_m13
 	_id = (pid_t_m13) GetThreadId(*thread);
 	#endif
+	
+	_pid = gettid_m13();
+	
+	if (_id == _pid)
+		_pid = 0;  // self
 	
 	// get mutex
 	list = globals_m13->thread_list;
@@ -36488,12 +36485,50 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 	}
 	
 	entry->_id = _id;
+	entry->_pid = _pid;
 	entry->thread = *thread;
 	
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 
 	return;
+}
+
+
+pid_t_m13	PROC_thread_list_parent_m13(pid_t_m13 _id)
+{
+	si4			i, n_entries;
+	pid_t_m13		_pid;
+	THREAD_ENTRY_m13	*entry;
+	THREAD_LIST_m13		*list;
+	
+	
+	// returns parent id for _id, or zero on failure
+	// pass _id == 0 for current thread
+	
+	if (_id == 0)   // self
+		_id = gettid_m13();
+		
+	// get mutex
+	list = globals_m13->thread_list;
+	pthread_mutex_lock_m13(&list->mutex);
+
+	// find first empty thread entry
+	n_entries = list->top_idx + 1;
+	entry = list->entries;
+	for (i = n_entries; i--; ++entry)
+		if (entry->_id == _id)
+			break;
+
+	if (i == -1)  // no matches
+		_pid = 0;
+	else
+		_pid = entry->_pid;
+	
+	// return mutex
+	pthread_mutex_unlock_m13(&list->mutex);
+
+	return(_pid);
 }
 
 
@@ -46863,6 +46898,31 @@ si4	sem_wait_m13(sem_t_m13 *sem)
 		G_set_error_m13(E_PROC_m13, "sem_wait_m13() error");
 		
 	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	sem_wait_zero_m13(sem_t_m13 *sem)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// blocks the calling thread until the count in the semaphore pointed to by sem becomes zero, then atomically increments it
+	// returns 0 on success; -1 on failure
+	// threads using this mechanism should post at start, trywait at end & initialize semaphore count to zero
+	
+	while (sem_trywait_m13(sem) == 0) {
+		sem_post_m13(sem);  // replace count that was removed
+		nap_m13("100 us");
+	}
+	
+	// add count for this thread
+	sem_post_m13(sem);
+		
+	return_m13(0);
 }
 
 
