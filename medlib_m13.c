@@ -46892,6 +46892,43 @@ si4	sem_trywait_m13(sem_t_m13 *sem)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+si4	sem_trywait_zero_m13(sem_t_m13 *sem)
+{
+	si4				r_val;
+	static pthread_mutex_t_m13	mutex;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// checks if the count is zero, & if then atomically increments it, & returns 0
+	// else returns -1 immediately
+	// generally the semaphore count should be initialized to zero in this scenario
+	// threads using this mechanism should use sem_inc_m13() [== sem_post] & sem_dec_m13() [== sem_trywait] to increment & decrement count
+
+	if (pthread_mutex_lock_m13(&mutex)) {
+		pthread_mutex_init_m13(&mutex, NULL);
+		pthread_mutex_lock_m13(&mutex);
+	}
+	
+	if (sem_trywait_m13(sem) == 0)
+		r_val = -1;
+	else
+		r_val = 0;
+	
+	// replace count that was removed or
+	// add a count to prevent race before releasing mutex
+	sem_inc_m13(sem);
+
+	pthread_mutex_unlock_m13(&mutex);
+	
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 si4	sem_wait_m13(sem_t_m13 *sem)
 {
 	si4	r_val = 0;
@@ -46929,6 +46966,7 @@ inline
 si4	sem_wait_zero_m13(sem_t_m13 *sem)
 {
 	static pthread_mutex_t_m13	mutex;
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
