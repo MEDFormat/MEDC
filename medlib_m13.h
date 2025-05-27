@@ -139,7 +139,6 @@
 	#include <dirent.h>
 	#include <sys/time.h>
 	#include <sys/resource.h>
-	#include <stdatomic.h>
 	#include <sys/mman.h>
 	#include <pthread.h>
 	#include <sched.h>
@@ -154,6 +153,7 @@
 	#include <termios.h>
 	#include <sys/wait.h>
 	#include <poll.h>
+	#include <semaphore.h>
 #endif // MACOS_m13 || LINUX_m13
 #ifdef MACOS_m13
 	#include <malloc/malloc.h>
@@ -182,6 +182,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <errno.h>
 #ifdef MATLAB_m13
 	#include "mex.h"
@@ -505,6 +506,7 @@ typedef struct {
 #define SAMPLE_NUMBER_EPS_m13			((sf8) 0.001)
 #define FRAME_NUMBER_EPS_m13			((sf8) 0.01)
 #define UNMAPPED_CHAN_m13			((si4) -1)
+#define NO_FLAGS_m13				((ui8) 0)
 
 #if defined MACOS_m13 || defined LINUX_m13
 	#define NULL_DEVICE_m13					"/dev/null"
@@ -625,10 +627,15 @@ typedef struct {
 #define NUMBER_OF_SAMPLES_NO_ENTRY_m13		-1
 #define NUMBER_OF_FRAMES_NO_ENTRY_m13		NUMBER_OF_SAMPLES_NO_ENTRY_m13
 #define EMPTY_SLICE_m13				-1
-#define SAMPLE_NUMBER_NO_ENTRY_m13		((si8) 0x8000000000000000)
-#define FRAME_NUMBER_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
-#define BEGINNING_OF_SAMPLE_NUMBERS_m13		((si8) 0x0000000000000000)
-#define END_OF_SAMPLE_NUMBERS_m13		((si8) 0x7FFFFFFFFFFFFFFF)
+#define INDEX_NO_ENTRY_m13			((si8) 0x8000000000000000)
+#define SAMPLE_NUMBER_NO_ENTRY_m13		INDEX_NO_ENTRY_m13
+#define FRAME_NUMBER_NO_ENTRY_m13		INDEX_NO_ENTRY_m13
+#define BEGINNING_OF_INDICES_m13		((si8) 0x0000000000000000)
+#define BEGINNING_OF_SAMPLE_NUMBERS_m13		BEGINNING_OF_INDICES_m13
+#define BEGINNING_OF_FRAME_NUMBERS_m13		BEGINNING_OF_INDICES_m13
+#define END_OF_INDICES_m13			((si8) 0x7FFFFFFFFFFFFFFF)
+#define END_OF_SAMPLE_NUMBERS_m13		END_OF_INDICES_m13
+#define END_OF_FRAME_NUMBERS_m13		END_OF_INDICES_m13
 #define UUTC_NO_ENTRY_m13			((si8) 0x8000000000000000)
 #define UUTC_EARLIEST_TIME_m13			((si8) 0x0000000000000000) // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
 #define UUTC_LATEST_TIME_m13			((si8) 0x7FFFFFFFFFFFFFFF) // 04:00:54.775808 Sunday, 10 Jan 29424, UTC
@@ -1087,10 +1094,10 @@ typedef struct {
 //	It then sets it's bit to trigger update at the session level. After updating, the session will clear the channel level bit.
 
 // all levels
-#define LH_NO_FLAGS_m13				((ui8) 0)
-#define LH_ALLOCATED_m13			((ui8) 1 << 1) // level header was allocated independently (not en bloc) on heap
-#define LH_GENERATE_EPHEMERAL_DATA_m13		((ui8) 1 << 2) // implies all level involvement
-#define LH_UPDATE_EPHEMERAL_DATA_m13		((ui8) 1 << 3) // signal to higher level from lower level (reset by higher level after update)
+#define LH_NO_FLAGS_SET_m13			NO_FLAGS_m13
+#define LH_FLAGS_SET_m13			((ui8) 1 << 0) // flags have been set
+#define LH_GENERATE_EPHEMERAL_DATA_m13		((ui8) 1 << 1) // implies all level involvement
+#define LH_UPDATE_EPHEMERAL_DATA_m13		((ui8) 1 << 2) // signal to higher level from lower level (reset by higher level after update)
 
 // session level
 #define LH_EXCLUDE_TS_CHANS_m13			((ui8) 1 << 8) // useful when session directory passed, but don't want time series channels
@@ -1308,27 +1315,37 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 	#ifdef LINUX_m13
 	typedef	cpu_set_t		cpu_set_t_m13; // opaque type (unclear if there is a logical core count limit)
 	#endif // LINUX_m13
+
+// pthreads
 	typedef	pthread_t		pthread_t_m13; // opaque type (appears to be large structure: 4-8 KB)
 	typedef pthread_attr_t		pthread_attr_t_m13;
 	typedef void *			pthread_rval_m13;
 	typedef pthread_rval_m13 	(*pthread_fn_m13)(void *);
 	typedef	pthread_mutex_t		pthread_mutex_t_m13;
 	typedef	pthread_mutexattr_t	pthread_mutexattr_t_m13;
+
+// semaphores
+	typedef sem_t			sem_t_m13;
 #endif // MACOS_m13 || LINUX_m13
 
 #ifdef WINDOWS_m13
 	typedef	ui8			cpu_set_t_m13; // max 64 logical cores (defined as DWORD_PTR in Windows, but not used as a pointer; used as ui8)
+
+// pthreads
 	typedef	HANDLE			pthread_t_m13; // == void * (opaque type)
 	typedef void *			pthread_attr_t_m13;
 	typedef ui4 			pthread_rval_m13;
 	typedef pthread_rval_m13 	(*pthread_fn_m13)(void *);
 	typedef	HANDLE			pthread_mutex_t_m13;
 	typedef	SECURITY_ATTRIBUTES	pthread_mutexattr_t_m13;
+
+// semaphores
+	typedef	HANDLE			sem_t_m13;
 #endif // WINDOWS_m13
 
-// The prototypes of these two functions are commented out in mach/thread_policy.h, so declared here
 
 #if defined MACOS_m13
+	// The prototypes of these two functions are commented out in mach/thread_policy.h, so declared here
 	kern_return_t	thread_policy_set(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t count);
 	kern_return_t	thread_policy_get(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t *count, boolean_t *get_default);
 #endif // MACOS_m13
@@ -1650,18 +1667,21 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define E_BEHAVIOR_m13			((ui4) 0) // exit on fail, observe system errors, do not retry, show all output
 #define E_UNKNOWN_LINE_m13		((si4) -1) // signal errors have no line numbers
 
+// convenience
+#define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 )
+
 // error codes
 #define E_NUM_CODES_m13			19
 #define	E_NONE_m13			0 // no error
 #define	E_GEN_m13			1 // unknown or unspecified error
 #define	E_SIG_m13			2 // system siganl
 #define E_ALLOC_m13			3
-#define E_FILE_m13			4
-#define E_OPEN_m13			5
-#define E_READ_m13			6
-#define E_WRITE_m13			7
-#define E_LOCK_m13			8
-#define E_MED_m13			9
+#define E_FEXIST_m13			4
+#define E_FOPEN_m13			5
+#define E_FREAD_m13			6
+#define E_FWRITE_m13			7
+#define E_FLOCK_m13			8
+#define E_FMED_m13			9
 #define E_ACC_m13			10
 #define E_CRYP_m13			11
 #define E_MET_m13			12
@@ -1681,19 +1701,19 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"unspecified error", \
 	"process signal error", \
 	"memory allocation error", \
-	"file not found", \
+	"file or directory not found", \
 	"file open error", \
 	"file read error", \
 	"file write error", \
 	"file lock error", \
-	"not a MED file or directory", \
+	"not MED file or directory", \
 	"access denied", \
-	"encryption error", \
+	"cryptographic error", \
 	"metadata not found", \
 	"record error", \
 	"network error", \
-	"compression, computation error", \
-	"process, thread error", \
+	"compression or computation error", \
+	"process error", \
 	"filter error", \
 	"database error" \
 }
@@ -1703,18 +1723,19 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"E_GEN", \
 	"E_SIG", \
 	"E_ALLOC", \
-	"E_OPEN", \
-	"E_READ", \
-	"E_WRITE", \
-	"E_LOCK", \
-	"E_FILE", \
-	"E_MED", \
+	"E_FEXIST", \
+	"E_FOPEN", \
+	"E_FREAD", \
+	"E_FWRITE", \
+	"E_FLOCK", \
+	"E_FMED", \
 	"E_ACC", \
 	"E_CRYP", \
 	"E_MET", \
 	"E_REC", \
 	"E_NET", \
 	"E_CMP", \
+	"E_PROC", \
 	"E_FILT", \
 	"E_DB" \
 }
@@ -1731,11 +1752,11 @@ typedef struct {
 	pthread_mutex_t_m13	exit_mutex;  // allow only one thread to call exit_m13();
 } ERR_m13;
 
-#define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__)
+#define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__) // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
 #ifdef MATLAB_m13
 	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
-	#define eprintf_m13(fmt, ...)		printf_m13("%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__)
+#define eprintf_m13(fmt, ...)			do { fprintf_m13(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
 #endif
 
 
@@ -1864,12 +1885,12 @@ typedef struct {
 	union { // session-relative (global indexing)
 		si8	start_samp_num;
 		si8	start_frame_num;
-		sf4	start_idx; // generic
+		si8	start_idx; // generic
 	};
 	union { // session-relative (global indexing)
 		si8	end_samp_num;
 		si8	end_frame_num;
-		sf4	end_idx; // generic
+		si8	end_idx; // generic
 	};
 	si4 	start_seg_num;
 	si4 	end_seg_num;
@@ -1881,12 +1902,12 @@ typedef struct {
 	union { // session-relative (global indexing)
 		si8	start_samp_num;
 		si8	start_frame_num;
-		sf4	start_idx; // generic
+		si8	start_idx; // generic
 	};
 	union { // session-relative (global indexing)
 		si8	end_samp_num;
 		si8	end_frame_num;
-		sf4	end_idx; // generic
+		si8	end_idx; // generic
 	};
 	si4 	start_seg_num;
 	si4 	end_seg_num;
@@ -1925,8 +1946,8 @@ typedef struct {
 typedef struct {
 	pthread_mutex_t_m13	mutex;
 	Sgmt_RECS_ENTRY_m13	*entries;
-	volatile si4		size; // total allocated Sgmt_RECORD_ENTRYs
-	volatile si4		top_idx; // last non-empty Sgmt_RECORD_ENTRY in list
+	si4			size; // total allocated Sgmt_RECORD_ENTRYs
+	si4			top_idx; // last non-empty Sgmt_RECORD_ENTRY in list
 } Sgmt_RECS_LIST_m13;
 
 typedef struct {
@@ -1989,6 +2010,7 @@ typedef struct LH_m13 {
 		struct {
 			ui4 	type_code;
 			si1	type_string_terminal_zero; // not used - here for clarity
+			tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 		};
 	};
 	si1			*path; // NULL in proc_globs
@@ -2015,6 +2037,7 @@ typedef struct PROC_GLOBS_m13 {
 				struct {
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
+					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
 			si1			*path; // NULL in proc_globs
@@ -2096,16 +2119,15 @@ typedef struct {
 typedef struct {
 	pid_t_m13	_id; // thread id
 	BEHAVIOR_m13	*behaviors; // current behavior at top of stack (last entry)
-	volatile si4	size; // total allocated behaviors
-	volatile si4	top_idx; // top of behavior stack
+	si4		size; // total allocated behaviors
+	si4		top_idx; // top of behavior stack
 } BEHAVIOR_STACK_m13;
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
 	BEHAVIOR_STACK_m13	**stack_ptrs; // secondary indirection to BEHAVIOR_STACK_m13 *
-	ui4			default_behavior;
-	volatile si4		size; // total allocated behavior_stacks
-	volatile si4		top_idx; // last non-empty behavior_stack in list
+	si4			size; // total allocated behavior_stacks
+	si4			top_idx; // last non-empty behavior_stack in list
 } BEHAVIOR_STACK_LIST_m13;
 
 // call with "G_push_function_m13(ui4 behavior)" prototype
@@ -2117,42 +2139,43 @@ typedef struct {
 #define G_push_function_m13() 			G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
 #define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
 
+
 typedef struct {
 	pid_t_m13	_id; // thread id
 	pid_t_m13	_pid; // parent thread id (zero indicates no parent)
 	const si1	**functions;
-	volatile si4	size; // total allocated functions
-	volatile si4	top_idx; // top of function stack
-} FUNCTION_STACK_m13;
+	si4		size; // total allocated functions
+	si4		top_idx; // top of function stack
+} FUNCTION_STACK_m13; // thread-local
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
-	FUNCTION_STACK_m13	**stack_ptrs; // secondary indirection to FUNCTION_STACK_m13 *
-	volatile si4		size; // total allocated function_stacks
-	volatile si4		top_idx; // last non-empty function_stack in list
-} FUNCTION_STACK_LIST_m13;
+	FUNCTION_STACK_m13	**stack_ptrs; // secondary indirection to function stacks
+	_Atomic si4		size; // total allocated function_stacks
+	_Atomic si4		top_idx; // last non-empty function_stack in list
+} FUNCTION_STACK_LIST_m13; // global
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
-	PROC_GLOBS_m13		**proc_globs_ptrs; // secondary indirection to PROC_GLOBS_m13 *
-	volatile si4		size; // total allocated proc_globs
-	volatile si4		top_idx; // last non-empty function_stack in list
-} PROC_GLOBS_LIST_m13;
+	PROC_GLOBS_m13		**proc_globs_ptrs; // secondary indirection to process globals
+	si4			size; // total allocated proc_globs
+	si4			top_idx; // last non-empty function_stack in list
+} PROC_GLOBS_LIST_m13; // global
 
 typedef struct {
-	volatile pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
-	volatile ui2		opens; // number of processes that have file open
-	volatile ui2		reads; // number of processes currently reading file (writes locked)
-	ui4			file_id; // CRC of full path
-} FLOCK_ENTRY_m13;
+	pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
+	ui2		opens; // number of processes that have file open
+	ui2		reads; // number of processes currently reading file (writes locked)
+	ui4		file_id; // CRC of full path
+} FLOCK_ENTRY_m13; // global
 
 typedef struct {
 	pthread_mutex_t_m13	list_mutex;
 	pthread_mutex_t_m13	lock_mutex; // single lock mutex => may have to be changed to individual lock mutices in future
 	FLOCK_ENTRY_m13		**lock_ptrs; // secondary indirection to FLOCK_ENTRY_m13 *
-	volatile si4		size; // total allocated locks
-	volatile si4		top_idx; // last non-empty lock in list
-} FLOCK_LIST_m13;
+	si4			size; // total allocated locks
+	si4			top_idx; // last non-empty lock in list
+} FLOCK_LIST_m13; // global
 
 typedef struct {
 	void 		*address;
@@ -2166,26 +2189,26 @@ typedef struct {
 	si1		free_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
 	ui8		alloc_thread_id;
 	ui8		free_thread_id;
-} AT_ENTRY_m13;
+} AT_ENTRY_m13; // global
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
 	AT_ENTRY_m13		*entries; // no secondary indirection
-	volatile si8		size; // total allocated entries
-	volatile si4		top_idx; // last non-empty entry in list
-} AT_LIST_m13;
+	si8			size; // total allocated entries
+	si4			top_idx; // last non-empty entry in list
+} AT_LIST_m13; // global
 
 typedef struct {
 	pid_t_m13		_id;
-	pthread_t_m13 		thread;  // would prefer pointer as sizeof(pthread_t_m13) can be a few kB, but there's no guarantee the original entity still exists
-} THREAD_ENTRY_m13;
+	pthread_t_m13 		thread; // would prefer pointer because sizeof(pthread_t_m13) can be a few kB, but there's no guarantee the original entity still exists
+} THREAD_ENTRY_m13; // thread-local
 
 typedef struct {
 	pthread_mutex_t_m13	mutex;
 	THREAD_ENTRY_m13	*entries; // no secondary indirection
-	volatile si8		size; // total allocated entries
-	volatile si4		top_idx; // last non-empty entry in list
-} THREAD_LIST_m13;
+	si8			size; // total allocated entries
+	si4			top_idx; // last non-empty entry in list
+} THREAD_LIST_m13; // global
 
 typedef struct {
 	si1		path[PATH_BYTES_m13];
@@ -2231,6 +2254,7 @@ typedef struct {
 	pid_t_m13			main_id;  // process thread id (not necessarily same as process id)
 	ERR_m13				error; // causal error
 	tern				threading; // global default, used to set process globals default
+	ui4				default_behavior;
 	si1				file_lock_mode; // enable global file locking
 	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
 	ui4				CRC_mode;
@@ -2508,7 +2532,7 @@ typedef struct {
 
 // Directives Flags
 // Open Mode Flags: "append" implies "write";
-#define FPS_DF_NO_FLAGS_m13			((ui8) 0)
+#define FPS_DF_NO_FLAGS_m13			NO_FLAGS_m13
 #define FPS_DF_READ_MODE_m13			((ui8) 1 << 0)
 #define FPS_DF_WRITE_MODE_m13			((ui8) 1 << 1)
 #define FPS_DF_APPEND_MODE_m13			(((ui8) 1 << 2) | FPS_DF_WRITE_MODE_m13)
@@ -2603,6 +2627,7 @@ typedef struct {
 				struct {
 					ui4	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
+					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
 			si1			*path; // points to local_path
@@ -2767,6 +2792,7 @@ typedef struct {
 				struct {
 					ui4	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
+					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
 			si1			*path; // points to local_path
@@ -2832,6 +2858,7 @@ typedef struct CHAN_m13 {
 				struct {
 					ui4	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
+					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
 			si1			*path; // points to local_path
@@ -2885,6 +2912,7 @@ typedef struct {
 				struct {
 					ui4	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
+					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
 			si1			*path; // points to local_path
@@ -2928,6 +2956,7 @@ typedef struct {
 				struct {
 					ui4	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
+					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
 			si1			*path; // points to proc globals current_session.directory
@@ -3066,7 +3095,6 @@ void			G_free_globals_m13(tern cleanup_for_exit);
 tern			G_free_segment_m13(SEG_m13 **seg_ptr);
 tern			G_free_session_m13(SESS_m13 **sess_ptr);
 tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
-tern			G_frequencies_vary_m13(SESS_m13 *sess);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
 void			G_function_stack_set_pid_m13(pid_t_m13 _id, pid_t_m13 _pid);
@@ -3116,9 +3144,10 @@ tern			G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
 tern			G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags);
 void			G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_push_function_exec_m13(const si1 *function);
+tern			G_rates_vary_m13(SESS_m13 *sess);
 CHAN_m13		*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...); // varargs(chan == NULL): si1 *chan_path, LH_m13 *parent, ui8 lh_flags, si1 *password, si1 *index_channel_name
-si4			G_read_channel_specification_file_m13(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
+si4			G_read_cs_file_m13(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
 LH_m13			*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(lh == NULL): si1 *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
 si8			G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(level->type_code == LH_SSR_m13): si4 seg_num
 SEG_m13			*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...); // varargs(seg == NULL): si1 *seg_path, LH_m13 *parent, ui8 lh_flags, si1 *password
@@ -3143,7 +3172,7 @@ tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1
 tern			G_session_directory_m13(FPS_m13 *fps);
 si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
 si8			G_session_samples_m13(LH_m13 *lh, sf8 rate);
-void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...);
+void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...); // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
 tern			G_set_session_globals_m13(si1 *MED_path, si1 *password, LH_m13 *lh);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
@@ -3440,7 +3469,7 @@ si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *
 si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);
-const si1	*STR_tern_m13(tern val);
+const si1	*STR_tern_m13(tern val, tern colored);
 si1		*STR_time_m13(LH_m13 *lh , si8 uutc_time, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...);
 tern		STR_to_lower_m13(si1 *s);
 tern		STR_to_title_m13(si1 *s);
@@ -4131,7 +4160,6 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps);
 tern	CMP_PRED2_encode_m13(CPS_m13 *cps);
 CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buf);
-ui4	CMP_random_ui4_m13(ui4 *m_w, ui4 *m_z);
 tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
 tern	CMP_RED1_decode_m13(CPS_m13 *cps);
 tern	CMP_RED2_decode_m13(CPS_m13 *cps);
@@ -4565,7 +4593,7 @@ tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 
 
 // Flag Definitions:
-#define DM_NO_FLAGS_m13				((ui8) 0)
+#define DM_NO_FLAGS_m13				NO_FLAGS_m13
 #define DM_TYPE_SI2_m13				((ui8) 1 << 1)
 #define DM_TYPE_SI4_m13				((ui8) 1 << 2)
 #define DM_TYPE_SF4_m13				((ui8) 1 << 3)
@@ -5405,10 +5433,23 @@ si4		printf_m13(const si1 *fmt, ...);
 si4		putc_m13(si4 c, void *fp);
 si4		putch_m13(si4 c);
 si4		putchar_m13(si4 c);
+si4		random_m13(void); // 31-bit random number using system generator (posix standard)
+ui4		rand32_m13(void); // 32-bit random number using system generator
+ui4		rand32_med_m13(ui4 *m_w, ui4 *m_z); // 32-bit random number using medlib generator (replicable sequences across platforms)
+ui8		rand64_m13(void); // 64-bit random number using system random number generator
+ui8		rand64_med_m13(ui4 *m_w, ui4 *m_z); // 64-bit random number using medlib generator (replicable sequences across platforms)
 tern		rm_m13(const si1 *path);  // remove
 si4		scanf_m13(const si1 *fmt, ...);
+si4		sem_destroy_m13(sem_t_m13 *sem);
+si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
+sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
+si4		sem_post_m13(sem_t_m13 *sem);
+si4		sem_trywait_m13(sem_t_m13 *sem);
+si4		sem_wait_m13(sem_t_m13 *sem);
 si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
+void		srand_med_m13(ui4 seed, ui4 *m_w, ui4 *m_z); // seed medlib random number generator
+void		srandom_m13(ui4 seed); // seed system random number generator
 si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
 si4		stat_m13(const si1 *path, struct_stat_m13 *sb);
 si8		strcat_m13(si1 *target, const si1 *source);

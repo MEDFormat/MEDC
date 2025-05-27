@@ -259,7 +259,7 @@ void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 code)
 	if (stack->top_idx)
 		behavior->code = (behavior - 1)->code | code;
 	else
-		behavior->code = globals_m13->behavior_stack_list->default_behavior | code;
+		behavior->code = globals_m13->default_behavior | code;
 
 	return;
 }
@@ -329,7 +329,7 @@ CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, si1 *path, LH_
 			seg_type_str = VID_SEG_TYPE_STR_m13;
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
+			G_set_error_m13(E_FMED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
 			return_m13(NULL);
 	}
 	
@@ -513,7 +513,7 @@ SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m13
 			}
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
+			G_set_error_m13(E_FMED_m13, "unrecognized channel type code \"0x%08x\"", type_code);
 			return_m13(NULL);
 	}
 	
@@ -850,7 +850,7 @@ si1 	*G_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name)
 			}
 			if (free_base_name == TRUE_m13)
 				free_m13((void *) base_name);
-			G_set_error_m13(E_MED_m13, NULL);
+			G_set_error_m13(E_FMED_m13, NULL);
 			return_m13(NULL);
 	}
 
@@ -902,6 +902,7 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return(NULL);
 				}
+				memset((void *) (stack_ptr + list->size), 0, (size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(BEHAVIOR_STACK_m13 *));  // null new pointers - realloc does not zero
 
 				list->stack_ptrs = stack_ptr;
 				list->size = n_stacks;
@@ -918,16 +919,14 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 				for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
 					*stack_ptr++ = new_stack;  // assign stack pointer
 					new_stack->top_idx = -1;  // initialize new stacks (behaviors allocated as needed)
-
 					new_stack->size = 0;
 				}
 			}
 			stack = *(list->stack_ptrs + list->top_idx);
 		}
 	
-		// set up stack
-		stack->top_idx = -1;
-		stack->_id = gettid_m13();
+		// assign stack
+		stack->_id = _id;
 	}
 		
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -958,7 +957,7 @@ void	G_behavior_stack_exec_reset_m13(const si1 *function, si4 line, ui4 code)
 	behavior->function = function;
 	behavior->line = line;
 	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
-		behavior->code = globals_m13->behavior_stack_list->default_behavior;
+		behavior->code = globals_m13->default_behavior;
 	else
 		behavior->code = code;
 
@@ -2031,9 +2030,9 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 
 	// check write ability on file system
 	sprintf_m13(command, "echo x > \"%s/test_file-remove_me\"", full_path);  // create non-empty file in case file system is cloud
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (ret_val) {
-		G_set_error_m13(E_WRITE_m13, "cannot create files on \"%s\"", full_path);
+		G_set_error_m13(E_FWRITE_m13, "cannot create files on \"%s\"", full_path);
 		return_m13(FALSE_m13);
 	}
 
@@ -2052,14 +2051,14 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 		
 		// copy file system test file to cloud
 		sprintf(command, "%scp %s/test_file-remove_me %s/test_file-remove_me", cloud_prefix, file_system_path, cloud_directory);
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (ret_val) {
-			G_set_error_m13(E_WRITE_m13, "cannot create files on \"%s\"", cloud_directory);
+			G_set_error_m13(E_FWRITE_m13, "cannot create files on \"%s\"", cloud_directory);
 			return_m13(FALSE_m13);
 		} else {
 			// clean up
 			sprintf(command, "%srm %s/test_file-remove_me", cloud_prefix, cloud_directory);
-			ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+			ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		}
 	}
 	
@@ -2189,14 +2188,19 @@ void	G_clear_error_m13(LH_m13 *lh)
 	// set thread specific flag for void functions
 	proc_globs = G_proc_globs_m13(lh);
 	proc_globs->miscellaneous.proc_error_state = FALSE_m13;  // should always be set if there is an error, but can be cleared
-
+	
 	// check global error
 	err = &globals_m13->error;
-	err->code = E_NONE_m13;
-	*err->message = 0;
-	err->line = 0;
-	err->function = NULL;
-		
+	pthread_mutex_lock(&err->mutex);
+	if (err->code) {
+		err->code = E_NONE_m13;
+		err->signal = 0;
+		*err->message = 0;
+		err->line = 0;
+		err->function = NULL;
+	}
+	pthread_mutex_unlock(&err->mutex);
+
 	return_void_m13;
 }
 
@@ -2213,7 +2217,7 @@ tern	G_clear_terminal_m13(void)
 #endif
 
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = system_m13(NULL, "clear", TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_m13(NULL, "clear", TRUE_m13, RETURN_QUIETLY_m13);
 #endif
 #ifdef WINDOWS_m13
 	ret_val = (WN_clear_m13() == TRUE_m13) ? 0 : FALSE_m13;  // change to system_m13() convention
@@ -2469,7 +2473,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 			} else {  // try using file name
 				G_path_parts_m13(fps->path, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, TS_INDS_TYPE_STR_m13);
-				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+				G_push_behavior_m13(RETURN_QUIETLY_m13);
 				fps2 = FPS_read_m13(fps2, 0, FPS_UH_ONLY_m13, 0, NULL, path, "r", NULL, fps->parent);
 				if (fps2)
 					free_fps2 = TRUE_m13;
@@ -2488,7 +2492,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 			if (n_entries > 0) {  // read second block header for maximum entry size (CPS will reallocate if needed, but first block often truncated)
 				// read first block header
 				file_offset = FPS_UH_BYTES_m13;
-				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+				G_push_behavior_m13(RETURN_QUIETLY_m13);
 				if (fseek_m13(fps->params.fp, file_offset, SEEK_SET) == -1) {
 					G_pop_behavior_m13();
 					break;
@@ -2542,7 +2546,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 			if (fps2 == NULL) {  // try using file name
 				G_path_parts_m13(fps->path, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, REC_INDS_TYPE_STR_m13);
-				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+				G_push_behavior_m13(RETURN_QUIETLY_m13);
 				fps2 = FPS_read_m13(fps2, 0, FPS_UH_ONLY_m13, 0, NULL, path, "r", NULL, fps->parent);
 				if (fps2)
 					free_fps2 = TRUE_m13;
@@ -2563,7 +2567,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 			// the only other option would be to read full record data file counting records - will add this if need arises, but for now, just fail
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, NULL);
+			G_set_error_m13(E_FMED_m13, NULL);
 			return_m13(FALSE_m13);
 	}
 	
@@ -2589,9 +2593,9 @@ ui4	G_current_behavior_m13(void)
 
 	stack = G_behavior_stack_m13();
 	if (stack == NULL)
-		return(globals_m13->behavior_stack_list->default_behavior);
+		return(globals_m13->default_behavior);
 	else if (stack->top_idx == -1)
-		return(globals_m13->behavior_stack_list->default_behavior);
+		return(globals_m13->default_behavior);
 	
 	return(stack->behaviors[stack->top_idx].code);
 }
@@ -3597,7 +3601,6 @@ void  G_error_message_m13(const si1 *fmt, ...)
 si1	G_exists_m13(const si1 *path)
 {
 	si1			tmp_path[PATH_BYTES_m13];
-	si4 			err;
 	struct_stat_m13 	sb;
 	
 #ifdef FT_DEBUG_m13
@@ -3616,10 +3619,8 @@ si1	G_exists_m13(const si1 *path)
 	G_full_path_m13(path, tmp_path);
 	
 	errno_reset_m13();
-	err = stat_m13(tmp_path, &sb);
-	if (err == -1) {
-		err = errno_m13();
-		if (err == ENOENT)
+	if (stat_m13(tmp_path, &sb) == -1) {
+		if (errno_m13() == ENOENT)
 			return_m13(DOES_NOT_EXIST_m13);
 		G_set_error_m13(E_GEN_m13, "passed path \"%s\" resulted in error", path);
 		return_m13(EXISTS_ERR_m13);
@@ -3648,18 +3649,19 @@ tern	G_expand_password_m13(si1 *password, si1 *password_bytes)
 	G_push_function_m13();
 #endif
 
-	// initialize random number generator with password bytes
-	// fill password with replicable random values
-	// (does not require G_termimal_password_bytes_m13())
+	// initialize medlib random number generator using password bytes
+	// fill password with cross-platform replicable random values
+	// does not require G_termimal_password_bytes_m13() to have been called
 	
-	// seed generator
+	// generate medlib generator seed from password bytes
 	for (c = password - 1, ui4_val = 0; *++c; ui4_val += (ui4) *c);
+	
 	m_w = (ui4) 0x80000000 + ui4_val;
 	m_z = (ui4) 0x7FFFFFFF - ui4_val;
 
-	// fill password bytes
+	// fill password bytes with random numbers
 	for (c = password_bytes, i = PASSWORD_BYTES_m13; i--;) {
-		ui4_val = CMP_random_ui4_m13(&m_w, &m_z);
+		ui4_val = rand32_med_m13(&m_w, &m_z);
 		*c++ = (si1) (ui4_val & (ui4) 0x000000FF);
 	}
 	
@@ -4438,7 +4440,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		case VID_SEG_TYPE_CODE_m13:
 			goto FIND_MDF_SEG_LEVEL_m13;
 		default:
-			G_set_error_m13(E_MED_m13, "input path must be a MED session, channel, or segment directory");  // global error
+			G_set_error_m13(E_FMED_m13, "input path must be a MED session, channel, or segment directory");  // global error
 			return_m13(NULL);
 	}
 	
@@ -4610,7 +4612,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 		case VID_SEG_TYPE_CODE_m13:
 			goto WIN_FIND_MDF_SEG_LEVEL_m13;
 		default:
-			G_set_error_m13(E_MED_m13, "input path must be a MED session, channel, or segment directory");  // global error
+			G_set_error_m13(E_FMED_m13, "input path must be a MED session, channel, or segment directory");  // global error
 			return_m13(NULL);
 	}
 	
@@ -4787,7 +4789,7 @@ si8	G_find_record_index_m13(FPS_m13 *rec_inds_fps, si8 target_time, ui4 mode, si
 }
 
 
-si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
+si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // varargs(lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
 	tern			terminal_index;
 	si1			tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -4988,7 +4990,7 @@ tern	G_free_channel_m13(CHAN_m13 **chan_ptr)
 	
 	// can't set stack addresses to NULL
 	// shouldn't set en_bloc addresses to NULL
-	if (chan->flags & LH_ALLOCATED_m13) {
+	if (chan->allocated == TRUE_m13) {
 		free_m13((void *) chan);
 		*chan_ptr = NULL;
 	} else {
@@ -5080,14 +5082,20 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	}
 			
 	if (globals_m13->behavior_stack_list) {
+		// behaviors allocated for each stack
+		for (i = 0; i < globals_m13->behavior_stack_list->size; ++i)
+			if (globals_m13->behavior_stack_list->stack_ptrs[i]->size)
+				free((void *) globals_m13->behavior_stack_list->stack_ptrs[i]->behaviors);
+		// stacks allocated in blocks of GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13
 		for (i = 0; i < globals_m13->behavior_stack_list->size; i += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13)
-			free((void *) globals_m13->behavior_stack_list->stack_ptrs[i]->behaviors);
+			free((void *) globals_m13->behavior_stack_list->stack_ptrs[i]);
 		free((void *) globals_m13->behavior_stack_list->stack_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->behavior_stack_list->mutex);
 		free((void *) globals_m13->behavior_stack_list);
 	}
 
 	if (globals_m13->file_lock_list) {
+		// file locks allocated in blocks of GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13
 		for (i = 0; i < globals_m13->file_lock_list->size; i += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13)
 			free((void *) globals_m13->file_lock_list->lock_ptrs[i]);
 		free((void *) globals_m13->file_lock_list->lock_ptrs);
@@ -5098,8 +5106,13 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 
 #ifdef FT_DEBUG_m13
 	if (globals_m13->function_stack_list) {
+		// functions allocated for each stack
+		for (i = 0; i < globals_m13->function_stack_list->size; ++i)
+			if (globals_m13->function_stack_list->stack_ptrs[i]->size)
+				free((void *) globals_m13->function_stack_list->stack_ptrs[i]->functions);
+		// stacks allocated in blocks of GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13
 		for (i = 0; i < globals_m13->function_stack_list->size; i += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13)
-			free((void *) globals_m13->function_stack_list->stack_ptrs[i]->functions[i]);
+			free((void *) globals_m13->function_stack_list->stack_ptrs[i]);
 		free((void *) globals_m13->function_stack_list->stack_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->function_stack_list->mutex);
 		free((void *) globals_m13->function_stack_list);
@@ -5107,6 +5120,11 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 #endif
 
 	if (globals_m13->proc_globs_list) {
+		// Sgmt_recs_list allocated for each proc_glob
+		for (i = 0; i < globals_m13->proc_globs_list->size; ++i)
+			if (globals_m13->proc_globs_list->proc_globs_ptrs[i])
+				G_proc_globs_delete_m13((LH_m13 *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
+		// proc_globs allocated in blocks of GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13
 		for (i = 0; i < globals_m13->proc_globs_list->size; i += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13)
 			free((void *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
 		free((void *) globals_m13->proc_globs_list->proc_globs_ptrs);
@@ -5130,7 +5148,8 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 #endif
 	
 	pthread_mutex_destroy_m13(&globals_m13->error.mutex);
-	
+	pthread_mutex_destroy_m13(&globals_m13->error.exit_mutex);
+
 	G_free_global_tables_m13();
 
 	free((void *) globals_m13);
@@ -5179,7 +5198,7 @@ tern	G_free_segment_m13(SEG_m13 **seg_ptr)
 	
 	// can't set stack addresses to NULL
 	// shouldn't set en_bloc addresses to NULL
-	if (seg->flags & LH_ALLOCATED_m13) {
+	if (seg->allocated == TRUE_m13) {
 		free_m13((void *) seg);
 		*seg_ptr = NULL;
 	} else {
@@ -5247,7 +5266,7 @@ tern	G_free_session_m13(SESS_m13 **sess_ptr)
 
 	// can't set stack addresses to NULL
 	// shouldn't set en_bloc addresses to NULL
-	if (sess->flags & LH_ALLOCATED_m13) {
+	if (sess->allocated == TRUE_m13) {
 		free_m13((void *) sess);
 		*sess_ptr = NULL;
 	} else {
@@ -5298,7 +5317,7 @@ tern	G_free_ssr_m13(SSR_m13 **ssr_ptr)
 		if (ssr->parent->type_code == PROC_GLOBS_TYPE_CODE_m13)
 			G_proc_globs_delete_m13((LH_m13 *) ssr);
 
-	if (ssr->flags & LH_ALLOCATED_m13) {
+	if (ssr->allocated == TRUE_m13) {
 		free_m13((void *) ssr);
 		*ssr_ptr = NULL;
 	} else {
@@ -5306,111 +5325,6 @@ tern	G_free_ssr_m13(SSR_m13 **ssr_ptr)
 	}
 
 	return_m13(TRUE_m13);
-}
-
-
-tern	G_frequencies_vary_m13(SESS_m13 *sess)
-{
-	si4			i, n_chans, seg_idx;
-	sf8			rate, min_rate, max_rate;
-	PROC_GLOBS_m13	*proc_globs;
-	CHAN_m13		*chan, *max_chan, *min_chan;
-	SEG_m13		*seg;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// sets proc globals values
-	// returns TRUE_m13 if any frequencies vary
-	
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
-	
-	// check time series channels
-	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
-	n_chans = sess->n_ts_chans;
-	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_sampling_frequency = proc_globs->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.minimum_sampling_frequency_channel = proc_globs->active_channels.maximum_sampling_frequency_channel = NULL;
-	if (n_chans) {
-		for (i = 0; i < n_chans; ++i) {
-			chan = sess->ts_chans[i];
-			if (chan->flags & LH_CHAN_ACTIVE_m13)
-				break;
-		}
-		if (i < n_chans) {
-			min_chan = max_chan = chan;
-			seg = chan->segs[seg_idx];
-			min_rate = max_rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-			for (++i; i < n_chans; ++i) {
-				chan = sess->ts_chans[i];
-				if (chan->flags & LH_CHAN_ACTIVE_m13) {
-					seg = chan->segs[seg_idx];
-					rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
-					if (min_rate > rate) {
-						min_rate = rate;
-						min_chan = chan;
-					} else if (max_rate < rate) {
-						max_rate = rate;
-						max_chan = chan;
-					}
-				}
-			}
-			if (min_rate == max_rate)
-				proc_globs->active_channels.sampling_frequencies_vary = FALSE_m13;
-			else
-				proc_globs->active_channels.sampling_frequencies_vary = TRUE_m13;
-			proc_globs->active_channels.minimum_sampling_frequency = min_rate;
-			proc_globs->active_channels.maximum_sampling_frequency = max_rate;
-			proc_globs->active_channels.minimum_sampling_frequency_channel = min_chan;
-			proc_globs->active_channels.maximum_sampling_frequency_channel = max_chan;
-		}
-	}
-
-	// check video channels
-	n_chans = sess->n_vid_chans;
-	proc_globs->active_channels.frame_rates_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_frame_rate = proc_globs->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.minimum_frame_rate_channel = proc_globs->active_channels.maximum_frame_rate_channel = NULL;
-	if (n_chans) {
-		for (i = 0; i < n_chans; ++i) {
-			chan = sess->vid_chans[i];
-			if (chan->flags & LH_CHAN_ACTIVE_m13)
-				break;
-		}
-		if (i < n_chans) {
-			min_chan = max_chan = chan;
-			seg = chan->segs[seg_idx];
-			min_rate = max_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
-			for (++i; i < n_chans; ++i) {
-				chan = sess->vid_chans[i];
-				if (chan->flags & LH_CHAN_ACTIVE_m13) {
-					seg = chan->segs[seg_idx];
-					rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
-					if (min_rate > rate) {
-						min_rate = rate;
-						min_chan = chan;
-					} else if (max_rate < rate) {
-						max_rate = rate;
-						max_chan = chan;
-					}
-				}
-				if (min_rate == max_rate)
-					proc_globs->active_channels.frame_rates_vary = FALSE_m13;
-				else
-					proc_globs->active_channels.frame_rates_vary = TRUE_m13;
-				proc_globs->active_channels.minimum_frame_rate = min_rate;
-				proc_globs->active_channels.maximum_frame_rate = max_rate;
-				proc_globs->active_channels.minimum_frame_rate_channel = min_chan;
-				proc_globs->active_channels.maximum_frame_rate_channel = max_chan;
-			}
-		}
-	}
-	
-	if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globs->active_channels.frame_rates_vary == TRUE_m13)
-		return_m13(TRUE_m13);
-
-	return_m13(FALSE_m13);
 }
 
 
@@ -5544,20 +5458,33 @@ inline
 #endif
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 {
-	si4				i, n_stacks;
+	si4				i, n_stacks, list_top_idx, list_size;
 	FUNCTION_STACK_LIST_m13		*list;
-	FUNCTION_STACK_m13		**stack_ptr, *stack, *new_stack;
+	FUNCTION_STACK_m13 		*stack, **stack_ptr, *new_stack;
 
 
 	// pass zero for current thread function stack
 	
-	// get arguments
+	// get _id
 	if (_id == 0)
 		_id = gettid_m13();
-
+	
 	// get mutex
 	list = globals_m13->function_stack_list;
 	pthread_mutex_lock_m13(&list->mutex);
+//	eprintf_m13("getting stack %lu", _id);
+	
+	// get atomics locally (have mutex at this point
+	list_top_idx = atomic_load(&list->top_idx);
+	list_size = atomic_load(&list->size);
+	
+	// adding this gets rid of problem that list->top_idx not always updated before next thread gets to it
+	// tried atomics - same result; tried local static variable - same result
+	// semaphore storage of top_idx might work, but no way to get semaphore value in MacOS
+	// so ... wait for flush to memory from other thread's registers
+	// this is a terrible solution, but only thing I've found that works consistently
+	// works consistently at 10 & usually at 1 us on my Mac, but can't count on that across systems, so set to 100 us
+//	nap_m13("100 us");
 
 	// find stack
 	stack_ptr = list->stack_ptrs;
@@ -5596,7 +5523,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 					return(NULL);
 				}
 				// initialize new stacks (functions allocated as needed)
-				stack_ptr = list->stack_ptrs + list->size;  // list->size == old size at this point
+				stack_ptr += list->size;  // stack_ptr pointing to base of reallocated array; list->size == old size at this point
 				for (i = GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
 					*stack_ptr++ = new_stack;  // assign stack pointer
 					new_stack->size = 0;  // malloc() doesn't zero
@@ -5610,9 +5537,14 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 		stack->top_idx = -1;
 		stack->_id = _id;
 	}
-		
-	pthread_mutex_unlock_m13(&list->mutex);
+	
+	// update atomics (still have mutex)
+	atomic_store(&list->top_idx, list_top_idx);
+	atomic_store(&list->size, list_size);
 
+//	eprintf_m13("got stack %lu", _id);
+	pthread_mutex_unlock_m13(&list->mutex);
+		
 	return(stack);
 }
 
@@ -5637,32 +5569,8 @@ void	G_function_stack_set_pid_m13(pid_t_m13 _id, pid_t_m13 _pid)
 
 void	G_function_stack_trap_m13(si4 sig_num)
 {
-	static volatile tern	trapped = FALSE_m13;
-	const si1		*error_type, *error_desc;
-	pid_t_m13		_id;
-	ERR_m13			*err;
-	FUNCTION_STACK_m13	*stack;
-
-		
-	// check if causal error set
-	_id = gettid_m13();
-	err = &globals_m13->error;
-	pthread_mutex_lock_m13(&err->mutex);  // get error mutex
-	if (err->code)
-		if (err->thread_id != _id)
-			trapped = TRUE_m13;
+	const si1	*error_type, *error_desc;
 	
-	// wait for error to clear or process to exit
-	if (trapped == TRUE_m13) {
-		while (1) {
-			pthread_mutex_unlock_m13(&err->mutex);  // release error mutex
-			nap_m13("100 ms");
-			pthread_mutex_lock_m13(&err->mutex);  // release error mutex
-			if (err->code == E_NONE_m13)
-				break;
-		}
-	}
-	trapped = TRUE_m13;
 	
 	switch (sig_num) {
 		case SIGINT:
@@ -5734,29 +5642,15 @@ void	G_function_stack_trap_m13(si4 sig_num)
 			return;
 	}
 	
-	// set error
-	err->code = E_SIG_m13;
-	err->signal = sig_num;
-	err->line = E_UNKNOWN_LINE_m13;
-	stack = G_function_stack_m13(0);
-	if (stack)
-		err->function = stack->functions[stack->top_idx];
-	else
-		err->function = (const si1 *) "<unknown>";
-	pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	err->thread_id = _id;
-#ifdef MATLAB_m13
-	sprintf(err->message, "%s  [%s (%d)]", error_desc, error_type, sig_num);
-#else
-	sprintf(err->message, "%s  %s[%s (%d)]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
-#endif
 	
-	// release error mutex
-	pthread_mutex_unlock_m13(&err->mutex);
-
-	exit_m13(E_SIG_m13);  // exit_m13() shows function stack if FT_DEBUG_m13 defined
-
-	return;
+	// set error
+	#ifdef MATLAB_m13
+	G_set_error_m13(E_SIG_m13, "%s  [%s (%d)]", sig_num, error_desc, error_type, sig_num);
+	#else
+	G_set_error_m13(E_SIG_m13, "%s  %s[%s (%d)]%s", sig_num, error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
+	#endif
+	
+	exit_m13(E_SIG_m13);  // exit_m13() shows error & function stack
 }
 
 
@@ -5979,31 +5873,21 @@ si1	*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name)
 
 ui8	G_generate_UID_m13(ui8 *uid)
 {
-	si4	  i;
-	ui1		*ui1_p;
-	static ui8  local_UID;
+	ui8	local_UID;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// Note if NULL is passed for uid, this function is not thread-safe
 	if (uid == NULL)
 		uid = (ui8 *) &local_UID;
-	ui1_p = (ui1 *) uid;
 	
 RESERVED_UID_VALUE_m13:
-#if defined MACOS_m13 || defined LINUX_m13
-	for (i = 0; i < UID_BYTES_m13; ++i)
-		ui1_p[i] = (ui1) (random() % (ui8) 0x100);
-#endif
-#ifdef WINDOWS_m13
-	for (i = 0; i < UID_BYTES_m13; ++i)
-		ui1_p[i] = (ui1) ((ui4) rand() % (ui4) 0x100);
-#endif
+	
+	*uid = rand64_m13();
+
 	switch (*uid) {
 		case UID_NO_ENTRY_m13:
-			goto RESERVED_UID_VALUE_m13;
 		case CMP_BLOCK_START_UID_m13:
 			goto RESERVED_UID_VALUE_m13;
 	}
@@ -6259,7 +6143,6 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		#endif
 	}
 	globals_m13->behavior_stack_list->top_idx = -1;
-	globals_m13->behavior_stack_list->default_behavior = DEFAULT_BEHAVIOR_m13;
 	pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
 	
 	// file locking
@@ -6352,6 +6235,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 #endif
 	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
 	globals_m13->threading = GLOBALS_THREADING_DEFAULT_m13;  // used to set process_globals default (process values can be set independently)
+	globals_m13->default_behavior = DEFAULT_BEHAVIOR_m13;
 	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
 	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
 	globals_m13->file_lock_timeout = GLOBALS_FILE_LOCK_TIMEOUT_DEFAULT_m13;
@@ -6433,13 +6317,8 @@ tern	G_init_medlib_m13(tern init_all_tables, si1 *app_path, ...)  // varargs(app
 	_umask(globals_m13->file_creation_umask);
 #endif
 
-	// seed random number generator
-#if defined MACOS_m13 || defined LINUX_m13
-	srandom((ui4) time(NULL));
-#endif
-#ifdef WINDOWS_m13
-	srand((ui4) time(NULL));
-#endif
+	// seed system random number generator
+	srandom_m13((ui4) time(NULL));
 
 #if defined WINDOWS_m13
 	#ifdef WIN_SOCKETS_m13  // initialize Windows sockets DLL
@@ -6549,7 +6428,7 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 			}
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, "unrecognized metadata section 2 type in file \"%s\"", fps->path);
+			G_set_error_m13(E_FMED_m13, "unrecognized metadata section 2 type in file \"%s\"", fps->path);
 			break;
 	}
 	
@@ -6595,9 +6474,9 @@ SLICE_m13	*G_init_slice_m13(SLICE_m13 *slice)
 	slice->conditioned = FALSE_m13;
 	slice->n_segs = UNKNOWN_m13;  // n_segments == 0
 	slice->start_time = slice->end_time = UUTC_NO_ENTRY_m13;
-	slice->start_samp_num = slice->end_samp_num = SAMPLE_NUMBER_NO_ENTRY_m13;
+	slice->start_idx = slice->end_idx = INDEX_NO_ENTRY_m13;
 	slice->start_seg_num = slice->end_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
-
+	
 	return_m13(slice);
 }
 
@@ -7119,7 +6998,7 @@ ui4  G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1 *MED_name)
 			name_bytes = SEG_NAME_BYTES_m13;
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, "passed path \"%s\" is not a MED directory\n", local_MED_dir);
+			G_set_error_m13(E_FMED_m13, "passed path \"%s\" is not a MED directory\n", local_MED_dir);
 			return_m13(NO_TYPE_CODE_m13);
 	}
 
@@ -7279,7 +7158,7 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 		case VID_METADATA_TYPE_CODE_m13:
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, "unrecognized type code (0x%08x)", type_code);
+			G_set_error_m13(E_FMED_m13, "unrecognized type code (0x%08x)", type_code);
 			return_m13(UNKNOWN_m13);
 	}
 	equal = TRUE_m13;
@@ -7708,7 +7587,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 {
 	tern				free_chan, threading, ret_val;
 	si1				tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1], *type_str;
-	si4				i, j, k, seg_idx, thread_idx, n_segs, mapped_segs, null_segment_cnt;
+	si4				i, j, k, seg_idx, thread_cnt, n_segs, mapped_segs, null_segment_cnt;
 	PROC_GLOBS_m13			*proc_globs;
 	SEG_m13				*seg;
 	UH_m13				*uh;
@@ -7737,19 +7616,19 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 	if (STR_is_empty_m13(chan->path) == TRUE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
-		G_set_error_m13(E_MED_m13, "empty channel path");
+		G_set_error_m13(E_FMED_m13, "empty channel path");
 		return_m13(NULL);
 	}
 	if (G_exists_m13(chan->path) == FALSE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
-		G_set_error_m13(E_MED_m13, "channel does not exist");
+		G_set_error_m13(E_FMED_m13, "channel does not exist");
 		return_m13(NULL);
 	}
 	if (CHANNEL_CODE_m13(chan->type_code) == FALSE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
-		G_set_error_m13(E_MED_m13, "unrecognized channel type");
+		G_set_error_m13(E_FMED_m13, "unrecognized channel type");
 		return_m13(NULL);
 	}
 	if (slice)  // passed slice supersedes structure slice
@@ -7762,6 +7641,10 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 	else
 		flags = chan->flags;
 	chan->parent = parent;
+	if (flags == LH_NO_FLAGS_SET_m13) {
+		flags = chan->flags = parent->flags;
+		flags |= LH_FLAGS_SET_m13;
+	}
 
 	// set session globals (password, time constants, session directory/name)
 	proc_globs = G_proc_globs_m13((LH_m13 *) chan);
@@ -7785,7 +7668,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 			return_m13(NULL);
 		}
 	}
-	
+
 	// channel records
 	// Note: open records before opening segments because that may be threaded, so preferable to change channel names now
 	if (chan->flags & LH_READ_CHAN_RECS_MASK_m13) {
@@ -7793,7 +7676,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 		if (chan->rec_inds_fps == NULL) {  // may already be read from get_segment_range()
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
 			if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-				chan->rec_inds_fps = FPS_read_m13(chan->rec_inds_fps, 0, FPS_FULL_FILE_m13, 0, (LH_m13 *) chan, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+				chan->rec_inds_fps = FPS_read_m13(chan->rec_inds_fps, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
 				if (chan->rec_inds_fps == NULL) {
 					if (free_chan == TRUE_m13)
 						G_free_channel_m13(&chan);
@@ -7842,8 +7725,8 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 	seg_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
 	
 	null_segment_cnt = 0;
-	thread_idx = 0;
-	for (i = slice->start_seg_num, j = seg_idx, k = 0; i <= slice->end_seg_num; ++i, ++j, ++k) {
+	thread_cnt = 0;
+	for (i = slice->start_seg_num, j = seg_idx, k = 0; k < n_segs; ++i, ++j, ++k) {
 		seg = chan->segs[j];
 		if (seg == NULL) {
 			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
@@ -7851,7 +7734,9 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 				sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
 			else  // VID_CHAN_TYPE_CODE_m13
 				sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
-			if (G_exists_m13(seg_thread_infos[k].MED_dir) != DIR_EXISTS_m13) {
+			si1 e;
+			e = G_exists_m13(seg_thread_infos[k].MED_dir);
+			if (e != DIR_EXISTS_m13) {
 				++null_segment_cnt;  // not every segment may exist
 				continue;
 			}
@@ -7860,13 +7745,22 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 			seg->slice = *slice;
 		}
 		seg_thread_infos[k].parent = (LH_m13 *) chan;
-		proc_thread_infos[thread_idx].thread_f = G_open_segment_thread_m13;
-		proc_thread_infos[thread_idx].thread_name = "G_open_segment_thread_m13";
-		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-		proc_thread_infos[thread_idx].arg = (void *) (seg_thread_infos + thread_idx);
-		++thread_idx;
+		proc_thread_infos[thread_cnt].thread_f = G_open_segment_thread_m13;
+		proc_thread_infos[thread_cnt].thread_name = "G_open_segment_thread_m13";
+		proc_thread_infos[thread_cnt].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[thread_cnt].arg = (void *) (seg_thread_infos + k);
+		++thread_cnt;
 	}
 	
+	// empty slice
+	if (null_segment_cnt == n_segs) {
+		slice->n_segs = EMPTY_SLICE_m13;
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(&chan);
+		G_set_error_m13(E_FMED_m13, "no segments found");
+		return_m13(NULL);
+	}
+
 	// thread out segment opens
 	if (n_segs == 1) {  // no sense in thread overhead for one segment
 		threading = FALSE_m13;
@@ -7880,10 +7774,12 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 				threading = GLOBALS_THREADING_DEFAULT_m13;  // default
 		}
 	}
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, thread_cnt, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
 
 	// check results
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		if (seg_thread_infos[i].parent == NULL)  // absent segment
+			continue;
 		seg = (SEG_m13 *) seg_thread_infos[i].MED_struct;
 		if (seg == NULL)
 			ret_val = FALSE_m13;
@@ -7893,14 +7789,6 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 	free((void *) proc_thread_infos);
 	free((void *) seg_thread_infos);
 	if (ret_val == FALSE_m13) {
-		if (free_chan == TRUE_m13)
-			G_free_channel_m13(&chan);
-		return_m13(NULL);
-	}
-
-	// empty slice
-	if (null_segment_cnt == n_segs) {
-		slice->n_segs = EMPTY_SLICE_m13;
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
 		return_m13(NULL);
@@ -7979,7 +7867,6 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 {
-	CHAN_m13			*ret_val;
 	PROC_THREAD_INFO_m13 		*pi;
 	READ_MED_THREAD_INFO_m13 	*rmi;
 
@@ -7996,15 +7883,12 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
 
-	ret_val = G_open_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
+	rmi->MED_struct = (LH_m13 *) G_open_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
 	
-	if (ret_val) {
-		rmi->MED_struct = (LH_m13 *) ret_val;
+	if (rmi->MED_struct)
 		pi->status = PROC_THREAD_SUCCEEDED_m13;
-	} else {
-		rmi->MED_struct = NULL;
+	else
 		pi->status = PROC_THREAD_FAILED_m13;
-	}
 	
 	thread_return_null_m13;
 }
@@ -8121,19 +8005,19 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 	if (STR_is_empty_m13(seg->path) == TRUE_m13) {
 		if (free_seg == TRUE_m13)
 			G_free_segment_m13((void *) seg);
-		G_set_error_m13(E_MED_m13, "empty segment path");
+		G_set_error_m13(E_FMED_m13, "empty segment path");
 		return_m13(NULL);
 	}
 	if (G_exists_m13(seg->path) == FALSE_m13) {
 		if (free_seg == TRUE_m13)
 			G_free_segment_m13((void *) seg);
-		G_set_error_m13(E_MED_m13, "segment does not exist");
+		G_set_error_m13(E_FMED_m13, "segment does not exist");
 		return_m13(NULL);
 	}
 	if (SEGMENT_CODE_m13(seg->type_code) == FALSE_m13) {
 		if (free_seg == TRUE_m13)
 			G_free_segment_m13(&seg);
-		G_set_error_m13(E_MED_m13, "unrecognized segment type");
+		G_set_error_m13(E_FMED_m13, "unrecognized segment type");
 		return_m13(NULL);
 	}
 	if (slice)  // passed slice supersedes structure slice
@@ -8146,7 +8030,11 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 	else
 		flags = seg->flags;
 	seg->parent = parent;
-	
+	if (flags == LH_NO_FLAGS_SET_m13) {
+		flags = seg->flags = parent->flags;
+		flags |= LH_FLAGS_SET_m13;
+	}
+
 	// set session globals (password, time constants, session directory/name)
 	proc_globs = G_proc_globs_m13((LH_m13 *) seg);
 	if (proc_globs->time_constants.set != TRUE_m13) {
@@ -8244,7 +8132,6 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 {
-	SEG_m13				*ret_val;
 	PROC_THREAD_INFO_m13 		*pi;
 	READ_MED_THREAD_INFO_m13 	*rmi;
 
@@ -8260,15 +8147,12 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 	pi->status = PROC_THREAD_RUNNING_m13;
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
-	ret_val = G_open_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
-	
-	if (ret_val) {
-		rmi->MED_struct = (LH_m13 *) ret_val;
+	rmi->MED_struct = (LH_m13 *) G_open_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
+
+	if (rmi->MED_struct)
 		pi->status = PROC_THREAD_SUCCEEDED_m13;
-	} else {
-		rmi->MED_struct = NULL;
+	else
 		pi->status = PROC_THREAD_FAILED_m13;
-	}
 	
 	thread_return_null_m13;
 }
@@ -8315,6 +8199,8 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		sess->flags = flags;
 	else
 		flags = sess->flags;
+	flags |= LH_FLAGS_SET_m13;
+	
 	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
 	sess->path = proc_globs->current_session.directory;
 	sess->name = proc_globs->current_session.fs_name;  // default to fs_name
@@ -8353,7 +8239,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 					n_chans = 1;
 					break;
 				default:
-					G_set_error_m13(E_MED_m13, "invalid file type");
+					G_set_error_m13(E_FMED_m13, "invalid file type");
 					G_free_session_m13(&sess);
 					return_m13(NULL);
 			}
@@ -8417,7 +8303,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			default:
 				if (free_sess == TRUE_m13)
 					G_free_session_m13(&sess);
-				G_set_error_m13(E_MED_m13, "channels must be MED channel directories");
+				G_set_error_m13(E_FMED_m13, "channels must be MED channel directories");
 				return_m13(NULL);
 		}
 	}
@@ -8882,10 +8768,12 @@ void	G_pop_function_exec_m13(const si1 *function)
 	FUNCTION_STACK_m13	*stack;
 	
 	
+	eprintf_m13("popping %s for %lu", function, gettid_m13());
+	
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-	
+		
 	// causal error set => do not modify stack of causal thread
 	if (globals_m13->error.code) {
 		if (globals_m13->error.thread_id == gettid_m13()) {
@@ -8995,6 +8883,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 		proc_globs = (PROC_GLOBS_m13 *) top_lh;
 		if (proc_globs->type_code == PROC_GLOBS_TYPE_CODE_m13) {
 			lh->proc_globs = proc_globs;  // set shortcut
+			eprintf_m13("found by linkage");
 			return_m13(proc_globs);
 		}
 	}
@@ -9014,6 +8903,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 			pthread_mutex_unlock_m13(&list->mutex);
 			if (lh)  // set shortcut
 				lh->proc_globs = proc_globs;
+			eprintf_m13("found by id");
 			return_m13(proc_globs);
 		}
 		if (proc_globs)
@@ -9024,7 +8914,9 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	
 	// expand list
 	if (proc_globs == NULL) {
+		eprintf_m13("creating new: n_proc_globs = %d, list->size = %d", n_proc_globs, list->size);
 		if (n_proc_globs == list->size) {
+			eprintf_m13("expanding list");
 			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
 			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
 			if (proc_globs_ptr == NULL) {
@@ -9032,6 +8924,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
+			memset((void *) (proc_globs_ptr + list->size), 0, (size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13 *));  // realloc doesn't zero
 
 			list->proc_globs_ptrs = proc_globs_ptr;
 			list->size = n_proc_globs;
@@ -9044,8 +8937,10 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 				return_m13(NULL);
 			}
 			proc_globs_ptr = list->proc_globs_ptrs + list->top_idx;  // list->top_idx == old size at this point
-			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--;)
-				*proc_globs_ptr++ = new_proc_globs++;  // assign stack pointer
+			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_proc_globs) {
+				*proc_globs_ptr++ = new_proc_globs;  // assign stack pointer
+				new_proc_globs->_id = 0;
+			}
 		}
 		proc_globs = list->proc_globs_ptrs[++list->top_idx];
 	}
@@ -9535,6 +9430,7 @@ void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 			G_set_error_m13(E_ALLOC_m13, NULL);
 			return;
 		}
+		memset((void *) (new_behaviors + stack->size), 0, (size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13 * sizeof(BEHAVIOR_m13));  // realloc does not zero
 		stack->behaviors = new_behaviors;
 		stack->size = n_behaviors;
 	}
@@ -9543,7 +9439,7 @@ void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 	behavior->function = function;
 	behavior->line = line;
 	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
-		behavior->code = globals_m13->behavior_stack_list->default_behavior;
+		behavior->code = globals_m13->default_behavior;
 	else
 		behavior->code = code;
 
@@ -9563,6 +9459,8 @@ void	G_push_function_exec_m13(const si1 *function)
 	FUNCTION_STACK_m13	*stack;
 	
 	
+	eprintf_m13("pushing %s for %lu", function, gettid_m13());
+
 	// causal error set => do not modify stack of causal thread
 	if (globals_m13->error.code)
 		if (globals_m13->error.thread_id == gettid_m13())
@@ -9587,10 +9485,115 @@ void	G_push_function_exec_m13(const si1 *function)
 	}
 	
 	stack->functions[++stack->top_idx] = function;
-	
+		
 #endif  // FT_DEBUG_m13
 
 	return;
+}
+
+
+tern	G_rates_vary_m13(SESS_m13 *sess)
+{
+	si4			i, n_chans, seg_idx;
+	sf8			rate, min_rate, max_rate;
+	PROC_GLOBS_m13	*proc_globs;
+	CHAN_m13		*chan, *max_chan, *min_chan;
+	SEG_m13		*seg;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// sets proc globals values
+	// returns TRUE_m13 if any frequencies vary
+	
+	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
+	
+	// check time series channels
+	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	n_chans = sess->n_ts_chans;
+	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
+	proc_globs->active_channels.minimum_sampling_frequency = proc_globs->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
+	proc_globs->active_channels.minimum_sampling_frequency_channel = proc_globs->active_channels.maximum_sampling_frequency_channel = NULL;
+	if (n_chans) {
+		for (i = 0; i < n_chans; ++i) {
+			chan = sess->ts_chans[i];
+			if (chan->flags & LH_CHAN_ACTIVE_m13)
+				break;
+		}
+		if (i < n_chans) {
+			min_chan = max_chan = chan;
+			seg = chan->segs[seg_idx];
+			min_rate = max_rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+			for (++i; i < n_chans; ++i) {
+				chan = sess->ts_chans[i];
+				if (chan->flags & LH_CHAN_ACTIVE_m13) {
+					seg = chan->segs[seg_idx];
+					rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+					if (min_rate > rate) {
+						min_rate = rate;
+						min_chan = chan;
+					} else if (max_rate < rate) {
+						max_rate = rate;
+						max_chan = chan;
+					}
+				}
+			}
+			if (min_rate == max_rate)
+				proc_globs->active_channels.sampling_frequencies_vary = FALSE_m13;
+			else
+				proc_globs->active_channels.sampling_frequencies_vary = TRUE_m13;
+			proc_globs->active_channels.minimum_sampling_frequency = min_rate;
+			proc_globs->active_channels.maximum_sampling_frequency = max_rate;
+			proc_globs->active_channels.minimum_sampling_frequency_channel = min_chan;
+			proc_globs->active_channels.maximum_sampling_frequency_channel = max_chan;
+		}
+	}
+	
+	// check video channels
+	n_chans = sess->n_vid_chans;
+	proc_globs->active_channels.frame_rates_vary = UNKNOWN_m13;
+	proc_globs->active_channels.minimum_frame_rate = proc_globs->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
+	proc_globs->active_channels.minimum_frame_rate_channel = proc_globs->active_channels.maximum_frame_rate_channel = NULL;
+	if (n_chans) {
+		for (i = 0; i < n_chans; ++i) {
+			chan = sess->vid_chans[i];
+			if (chan->flags & LH_CHAN_ACTIVE_m13)
+				break;
+		}
+		if (i < n_chans) {
+			min_chan = max_chan = chan;
+			seg = chan->segs[seg_idx];
+			min_rate = max_rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
+			for (++i; i < n_chans; ++i) {
+				chan = sess->vid_chans[i];
+				if (chan->flags & LH_CHAN_ACTIVE_m13) {
+					seg = chan->segs[seg_idx];
+					rate = seg->metadata_fps->metadata->video_section_2.frame_rate;
+					if (min_rate > rate) {
+						min_rate = rate;
+						min_chan = chan;
+					} else if (max_rate < rate) {
+						max_rate = rate;
+						max_chan = chan;
+					}
+				}
+				if (min_rate == max_rate)
+					proc_globs->active_channels.frame_rates_vary = FALSE_m13;
+				else
+					proc_globs->active_channels.frame_rates_vary = TRUE_m13;
+				proc_globs->active_channels.minimum_frame_rate = min_rate;
+				proc_globs->active_channels.maximum_frame_rate = max_rate;
+				proc_globs->active_channels.minimum_frame_rate_channel = min_chan;
+				proc_globs->active_channels.maximum_frame_rate_channel = max_chan;
+			}
+		}
+	}
+	
+	if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globs->active_channels.frame_rates_vary == TRUE_m13)
+		return_m13(TRUE_m13);
+
+	return_m13(FALSE_m13);
 }
 
 
@@ -9600,7 +9603,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	si1 				*chan_path, *password;
 	si1 				num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	ui8 				flags;
-	si4 				i, j, k, n_segs, seg_idx, thread_idx, null_segment_cnt;
+	si4 				i, j, k, n_segs, seg_idx, thread_cnt, null_segment_cnt;
 	va_list				v_args;
 	LH_m13				*parent;
 	SEG_m13				*seg;
@@ -9662,8 +9665,8 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
 	
 	null_segment_cnt = 0;
-	thread_idx = 0;
-	for (i = slice->start_seg_num, j = seg_idx, k = 0; i <= slice->end_seg_num; ++i, ++j, ++k) {
+	thread_cnt = 0;
+	for (i = slice->start_seg_num, j = seg_idx, k = 0; k <= n_segs; ++i, ++j, ++k) {
 		seg = chan->segs[j];
 		if (seg == NULL) {
 			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
@@ -9680,13 +9683,21 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 			seg->slice = *slice;
 		}
 		read_MED_thread_infos[k].parent = (LH_m13 *) chan;
-		proc_thread_infos[thread_idx].thread_f = G_read_segment_thread_m13;
-		proc_thread_infos[thread_idx].thread_name = "G_read_segment_thread_m13";
-		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-		++thread_idx;
+		proc_thread_infos[thread_cnt].thread_f = G_read_segment_thread_m13;
+		proc_thread_infos[thread_cnt].thread_name = "G_read_segment_thread_m13";
+		proc_thread_infos[thread_cnt].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[thread_cnt].arg = (void *) (read_MED_thread_infos + k);
+		++thread_cnt;
 	}
 	
+	// empty slice
+	if (null_segment_cnt == n_segs) {
+		slice->n_segs = EMPTY_SLICE_m13;
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(&chan);
+		return_m13(NULL);
+	}
+
 	// thread out segment reads
 	proc_globs = G_proc_globs_m13((LH_m13 *) chan);
 	if (n_segs == 1) {  // no sense in thread overhead for one segment
@@ -9703,12 +9714,12 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 			}
 		}
 	}
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, thread_cnt, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
 	
 	// check results
-	if (null_segment_cnt == n_segs)
-		ret_val = FALSE_m13;
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		if (read_MED_thread_infos[i].parent == NULL)  // absent segment
+			continue;
 		seg = (SEG_m13 *) read_MED_thread_infos[i].MED_struct;
 		if (seg == NULL)
 			ret_val = FALSE_m13;
@@ -9718,14 +9729,6 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	free((void *) proc_thread_infos);
 	free((void *) read_MED_thread_infos);
 	if (ret_val == FALSE_m13) {
-		if (free_chan == TRUE_m13)
-			G_free_channel_m13(&chan);
-		return_m13(NULL);
-	}
-
-	// empty slice
-	if (null_segment_cnt == n_segs) {
-		slice->n_segs = EMPTY_SLICE_m13;
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
 		return_m13(NULL);
@@ -9782,7 +9785,35 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 }
 
 
-si4	G_read_channel_specification_file_m13(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions)
+pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
+{
+	PROC_THREAD_INFO_m13		*pi;
+	READ_MED_THREAD_INFO_m13 	*rmi;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// a thread function that can call the underlying function from the info in pi->arg
+	// form required by PROC_distribute_jobs_m13()
+	// also sets PROC_THREAD_RUNNING_m13, PROC_THREAD_SUCCEEDED_m13 or PROC_THREAD_FAILED_m13
+	
+	pi = (PROC_THREAD_INFO_m13 *) ptr;
+	pi->status = PROC_THREAD_RUNNING_m13;
+
+	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
+	rmi->MED_struct = (LH_m13 *) G_read_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (SESS_m13 *) rmi->parent, rmi->flags, rmi->password);
+	
+	if (rmi->MED_struct)
+		pi->status = PROC_THREAD_SUCCEEDED_m13;
+	else
+		pi->status = PROC_THREAD_FAILED_m13;
+	
+	thread_return_null_m13;
+}
+
+
+si4	G_read_cs_file_m13(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions)
 {
 	tern		outside_range_warning_given;
 	si1		*buffer, *next_line, len, *c1, *c2, *c3, tmp_str[1024], *end_ptr;
@@ -9978,38 +10009,6 @@ si4	G_read_channel_specification_file_m13(si1 *cs_file_name, si4 n_available_cha
 	free((void *) buffer);
 
 	return_m13(n_channels);
-}
-
-
-pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
-{
-	CHAN_m13			*ret_val;
-	PROC_THREAD_INFO_m13		*pi;
-	READ_MED_THREAD_INFO_m13 	*rmi;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// a thread function that can call the underlying function from the info in pi->arg
-	// form required by PROC_distribute_jobs_m13()
-	// also sets PROC_THREAD_RUNNING_m13, PROC_THREAD_SUCCEEDED_m13 or PROC_THREAD_FAILED_m13
-	
-	pi = (PROC_THREAD_INFO_m13 *) ptr;
-	pi->status = PROC_THREAD_RUNNING_m13;
-
-	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
-	ret_val = G_read_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (SESS_m13 *) rmi->parent, rmi->flags, rmi->password);
-	
-	if (ret_val) {
-		rmi->MED_struct = (LH_m13 *) ret_val;
-		pi->status = PROC_THREAD_SUCCEEDED_m13;
-	} else {
-		rmi->MED_struct = NULL;
-		pi->status = PROC_THREAD_FAILED_m13;
-	}
-	
-	thread_return_null_m13;
 }
 
 
@@ -10293,7 +10292,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs: si
 					if (chan->flags & LH_IDX_CHAN_INACTIVE_m13)
 						inactive_ref = TRUE_m13;
 				}
-				if (inactive_ref == TRUE_m13)
+				if (inactive_ref == TRUE_m13)  // don't read data
 					seg->flags &= ~LH_IDX_CHAN_INACTIVE_m13;  // reset segment level flag in case propogated during call
 				else  // read data
 					G_read_time_series_data_m13(seg, slice);
@@ -10316,7 +10315,6 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs: si
 
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 {
-	SEG_m13				*ret_val;
 	PROC_THREAD_INFO_m13 		*pi;
 	READ_MED_THREAD_INFO_m13 	*rmi;
 
@@ -10332,15 +10330,12 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 	pi->status = PROC_THREAD_RUNNING_m13;
 	
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
-	ret_val = G_read_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (CHAN_m13 *) rmi->parent, rmi->flags, rmi->password);
+	rmi->MED_struct = (LH_m13 *) G_read_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (CHAN_m13 *) rmi->parent, rmi->flags, rmi->password);
 	
-	if (ret_val) {
-		rmi->MED_struct = (LH_m13 *) ret_val;
+	if (rmi->MED_struct)
 		pi->status = PROC_THREAD_SUCCEEDED_m13;
-	} else {
-		rmi->MED_struct = NULL;
+	else
 		pi->status = PROC_THREAD_FAILED_m13;
-	}
 	
 	thread_return_null_m13;
 }
@@ -10431,7 +10426,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	}
 	
 	// update for variable frequencies on active channel set
-	G_frequencies_vary_m13(sess);
+	G_rates_vary_m13(sess);
 	
 	// count active channels
 	active_ts_chans = active_vid_chans = 0;
@@ -10948,9 +10943,9 @@ void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 	behavior->function = function;
 	behavior->line = line;
 	if (stack->top_idx)
-		behavior->code = (behavior - 1)->code  & ~code;
+		behavior->code = (behavior - 1)->code & ~code;
 	else
-		behavior->code = globals_m13->behavior_stack_list->default_behavior & ~code;
+		behavior->code = globals_m13->default_behavior & ~code;
 	
 	return;
 }
@@ -11006,7 +11001,7 @@ tern  G_reset_metadata_for_update_m13(FPS_m13 *fps)
 			vmd2->maximum_contiguous_frames = 0;
 			break;
 		default:
-			G_set_error_m13(E_MED_m13, "unrecognized metadata type in file \"%s\"", fps->path);
+			G_set_error_m13(E_FMED_m13, "unrecognized metadata type in file \"%s\"", fps->path);
 			break;
 	}
 	
@@ -11014,7 +11009,7 @@ tern  G_reset_metadata_for_update_m13(FPS_m13 *fps)
 }
 
 
-si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
+si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // varargs(lh == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 {
 	tern			terminal_index;
 	si1			tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -11882,14 +11877,17 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 }
 
 
-void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...)
+void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...)  // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
 {
 	tern			exit_on_fail;
+	si4			mutex_status;
 	ERR_m13			*err;
 	PROC_GLOBS_m13		*proc_globs;
 	pid_t_m13		_id;
 	pthread_t_m13		*thread;
-	
+	va_list			v_args;
+	FUNCTION_STACK_m13	*stack;
+
 
 	// Call set_error for causal errors only.
 	// Return error local error condition for errors returned from functions, no messages necessary
@@ -11906,34 +11904,44 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 
 	// get mutex
 	err = &globals_m13->error;
-	pthread_mutex_lock_m13(&err->mutex);
-	
-	// error already set
-	if (err->code) {  // != E_NONE_m13
-		pthread_mutex_unlock_m13(&err->mutex);
-		if (_id != globals_m13->main_id) {  // main process always proceeds to exit
-			if (exit_on_fail == TRUE_m13) {  // kill thread
-				thread = PROC_thread_for_id_m13(0);  // zero gets current thread
-				pthread_kill_m13(*thread, 0);  // zero kills without signal
-			}
+	mutex_status = pthread_mutex_trylock_m13(&err->mutex);
+
+	// error already set or currently being set by another thread
+	if (mutex_status || err->code) {
+		if (_id != globals_m13->main_id && exit_on_fail == TRUE_m13) {  // kill thread unless main process
+			thread = PROC_thread_for_id_m13(_id);
+			pthread_kill_m13(*thread, 0);  // zero kills without signal
 		}
 		return;
 	}
 	
-	// set error
+	// set proc error state (for void functions)
 	proc_globs = G_proc_globs_m13(NULL);  // use thread ID
-	proc_globs->miscellaneous.proc_error_state = TRUE_m13;  // set process globals error_state (for void functions)
+	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
 
+	// special handling for E_SIG_m13
+	if (code == E_SIG_m13) {
+		va_start(v_args, message);
+		err->signal = va_arg(v_args, si4);
+		line = E_UNKNOWN_LINE_m13;
+		stack = G_function_stack_m13(0);
+		if (stack)
+			function = stack->functions[stack->top_idx];
+		else
+			function = (const si1 *) "<unknown>";
+	}
+	
 	// message
 	if (STR_is_empty_m13(message) == TRUE_m13) {
 		if (code >= E_NONE_m13 && code < E_NUM_CODES_m13)  // use table message
 			strcpy_m13(err->message, globals_m13->tables->E_strings_table[code]);
 		else  // unspecified message, custom code
 			strcpy_m13(err->message, globals_m13->tables->E_strings_table[E_GEN_m13]);
+		if (code == E_SIG_m13)  // sig_num only vararg
+			va_end(v_args);
 	} else {
-		va_list		v_args;
-
-		va_start(v_args, message);
+		if (code != E_SIG_m13) // varargs started above to retrieve function argument
+			va_start(v_args, message);
 		vsnprintf_m13(err->message, E_MESSAGE_LEN_m13, message, v_args);
 		va_end(v_args);
 		
@@ -12790,11 +12798,11 @@ void  G_show_globals_m13(void)
 		printf_m13("File Lock Mode: all files\n");
 	else
 		printf_m13("File Lock Mode: unrecognized (%hhd)\n", globals_m13->file_lock_mode);
-	printf_m13("Threading: %s\n", STR_tern_m13(globals_m13->threading));
+	printf_m13("Threading: %s\n", STR_tern_m13(globals_m13->threading, TRUE_m13));
 	printf_m13("CRC Mode: %u\n", globals_m13->CRC_mode);
-	printf_m13("Write Sorted Records: %s\n", STR_tern_m13(globals_m13->write_sorted_records));
-	printf_m13("Update Header Names: %s\n", STR_tern_m13(globals_m13->update_header_names));
-	printf_m13("Update MED Version: %s\n", STR_tern_m13(globals_m13->update_MED_version));
+	printf_m13("Write Sorted Records: %s\n", STR_tern_m13(globals_m13->write_sorted_records, TRUE_m13));
+	printf_m13("Update Header Names: %s\n", STR_tern_m13(globals_m13->update_header_names, TRUE_m13));
+	printf_m13("Update MED Version: %s\n", STR_tern_m13(globals_m13->update_MED_version, TRUE_m13));
 
 	printf_m13("\n");
 	
@@ -12845,6 +12853,7 @@ tern	G_show_level_header_m13(LH_m13 *lh)
 
 tern	G_show_level_header_flags_m13(ui8 flags)
 {
+	tern	tern_val;
 	si1	bin_str[BIN_STR_BYTES_m13(sizeof(ui8), 3)];
 	
 #ifdef FT_DEBUG_m13
@@ -12852,120 +12861,99 @@ tern	G_show_level_header_flags_m13(ui8 flags)
 #endif
 
 	printf_m13("\nLevel Header Flags:\n------------------\n");
-	if (flags == LH_NO_FLAGS_m13) {
+	if (flags == LH_NO_FLAGS_SET_m13) {
 		printf_m13("no level header flags set\n");
 		return_m13(FALSE_m13);
 	}
-	if (flags & LH_GENERATE_EPHEMERAL_DATA_m13)
-		printf_m13("LH_GENERATE_EPHEMERAL_DATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_GENERATE_EPHEMERAL_DATA_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_UPDATE_EPHEMERAL_DATA_m13)
-		printf_m13("LH_UPDATE_EPHEMERAL_DATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_UPDATE_EPHEMERAL_DATA_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_EXCLUDE_TS_CHANS_m13)
-		printf_m13("LH_EXCLUDE_TS_CHANS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_EXCLUDE_TS_CHANS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_EXCLUDE_VID_CHANS_m13)
-		printf_m13("LH_EXCLUDE_VID_CHANS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_EXCLUDE_VID_CHANS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MAP_ALL_TS_CHANS_m13)
-		printf_m13("LH_MAP_ALL_TS_CHANS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MAP_ALL_TS_CHANS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MAP_ALL_VID_CHANS_m13)
-		printf_m13("LH_MAP_ALL_VID_CHANS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MAP_ALL_VID_CHANS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_SLICE_SESS_RECS_m13)
-		printf_m13("LH_READ_SLICE_SESS_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_SLICE_SESS_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_FULL_SESS_RECS_m13)
-		printf_m13("LH_READ_FULL_SESS_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_FULL_SESS_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MMAP_SESS_RECS_m13)
-		printf_m13("LH_MMAP_SESS_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MMAP_SESS_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_SLICE_SEG_SESS_RECS_m13)
-		printf_m13("LH_READ_SLICE_SEG_SESS_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_SLICE_SEG_SESS_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_FULL_SEG_SESS_RECS_m13)
-		printf_m13("LH_READ_FULL_SEG_SESS_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_FULL_SEG_SESS_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MMAP_SEG_SESS_RECS_m13)
-		printf_m13("LH_MMAP_SEG_SESS_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MMAP_SEG_SESS_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_CHAN_ACTIVE_m13)
-		printf_m13("LH_CHAN_ACTIVE_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_CHAN_ACTIVE_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MAP_ALL_SEGS_m13)
-		printf_m13("LH_MAP_ALL_SEGS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MAP_ALL_SEGS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_THREAD_SEG_READS_m13)
-		printf_m13("LH_THREAD_SEG_READS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_THREAD_SEG_READS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_SLICE_CHAN_RECS_m13)
-		printf_m13("LH_READ_SLICE_CHAN_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_SLICE_CHAN_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_FULL_CHAN_RECS_m13)
-		printf_m13("LH_READ_FULL_CHAN_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_FULL_CHAN_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MMAP_CHAN_RECS_m13)
-		printf_m13("LH_MMAP_CHAN_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MMAP_CHAN_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_NO_CPS_PTR_RESET_m13)
-		printf_m13("LH_NO_CPS_PTR_RESET_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_NO_CPS_PTR_RESET_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_NO_CPS_CACHING_m13)
-		printf_m13("LH_NO_CPS_CACHING_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_NO_CPS_CACHING_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_SLICE_SEG_DATA_m13)
-		printf_m13("LH_READ_SLICE_SEG_DATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_SLICE_SEG_DATA_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_FULL_SEG_DATA_m13)
-		printf_m13("LH_READ_FULL_SEG_DATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_FULL_SEG_DATA_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MMAP_SEG_DATA_m13)
-		printf_m13("LH_MMAP_SEG_DATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MMAP_SEG_DATA_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_SEG_METADATA_m13)
-		printf_m13("LH_READ_SEG_METADATA_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_SEG_METADATA_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_SLICE_SEG_RECS_m13)
-		printf_m13("LH_READ_SLICE_SEG_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_SLICE_SEG_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_READ_FULL_SEG_RECS_m13)
-		printf_m13("LH_READ_FULL_SEG_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_READ_FULL_SEG_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
-	if (flags & LH_MMAP_SEG_RECS_m13)
-		printf_m13("LH_MMAP_SEG_RECS_m13: %strue%s\n", TC_RED_m13, TC_RESET_m13);
-	else
-		printf_m13("LH_MMAP_SEG_RECS_m13: %sfalse%s\n", TC_BLUE_m13, TC_RESET_m13);
+		
+	tern_val = (flags & LH_FLAGS_SET_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_FLAGS_SET: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_GENERATE_EPHEMERAL_DATA_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_GENERATE_EPHEMERAL_DATA: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_UPDATE_EPHEMERAL_DATA_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_UPDATE_EPHEMERAL_DATA: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_EXCLUDE_TS_CHANS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_EXCLUDE_TS_CHANS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_EXCLUDE_VID_CHANS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_EXCLUDE_VID_CHANS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MAP_ALL_TS_CHANS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MAP_ALL_TS_CHANS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MAP_ALL_VID_CHANS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MAP_ALL_VID_CHANS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_SLICE_SESS_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_SLICE_SESS_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_FULL_SESS_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_FULL_SESS_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MMAP_SESS_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MMAP_SESS_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_SLICE_SEG_SESS_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_SLICE_SEG_SESS_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_FULL_SEG_SESS_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_FULL_SEG_SESS_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MMAP_SEG_SESS_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MMAP_SEG_SESS_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_CHAN_ACTIVE_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_CHAN_ACTIVE: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_IDX_CHAN_INACTIVE_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_IDX_CHAN_INACTIVE: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MAP_ALL_SEGS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MAP_ALL_SEGS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_THREAD_SEG_READS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_THREAD_SEG_READS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_SLICE_CHAN_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_SLICE_CHAN_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_FULL_CHAN_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_FULL_CHAN_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MMAP_CHAN_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MMAP_CHAN_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_NO_CPS_PTR_RESET_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_NO_CPS_PTR_RESET: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_NO_CPS_CACHING_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_NO_CPS_CACHING: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_SLICE_SEG_DATA_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_SLICE_SEG_DATA: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_FULL_SEG_DATA_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_FULL_SEG_DATA: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MMAP_SEG_DATA_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MMAP_SEG_DATA: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_SEG_METADATA_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_SEG_METADATA: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_SLICE_SEG_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_SLICE_SEG_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_READ_FULL_SEG_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_READ_FULL_SEG_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
+
+	tern_val = (flags & LH_MMAP_SEG_RECS_m13) ? TRUE_m13 : FALSE_m13;
+	printf_m13("LH_MMAP_SEG_RECS: %s\n", STR_tern_m13(tern_val, TRUE_m13));
 	
-	STR_bin_m13(bin_str, (void *) &flags, sizeof(ui8), " - ", TRUE_m13);
+	STR_bin_m13(bin_str, (void *) &flags, sizeof(ui8), "-", TRUE_m13);
 	printf_m13("\n(value: %s)\n\n", bin_str);
 	
 	return_m13(TRUE_m13);
@@ -13400,8 +13388,8 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	if (pwd->hints_exist == TRUE_m13)
 		G_show_password_hints_m13(pwd, 0);
 	G_message_m13("Access Level: %hhu\n", pwd->access_level);
-	G_message_m13("Processed: %s\n", STR_tern_m13(BOOL_TO_TERN_m13(pwd->processed)));  // "processed" often treated as boolean in this structure
-	G_message_m13("Hints Exist: %s\n", STR_tern_m13(pwd->hints_exist));
+	G_message_m13("Processed: %s\n", STR_tern_m13(BOOL_TO_TERN_m13(pwd->processed), TRUE_m13));  // "processed" often treated as boolean in this structure
+	G_message_m13("Hints Exist: %s\n", STR_tern_m13(pwd->hints_exist, TRUE_m13));
 	G_message_m13("------------------- Password Data - END ------------------\n\n");
 	
 	return_m13(TRUE_m13);
@@ -13502,7 +13490,7 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 		printf_m13("Universal Header Name: \"%s\"\n", proc_globs->current_session.uh_name);  // from file system
 	else
 		printf_m13("Universal Header Name: no entry\n");  // from file system
-	printf_m13("Names Differ: %s\n", STR_tern_m13(proc_globs->current_session.names_differ));
+	printf_m13("Names Differ: %s\n", STR_tern_m13(proc_globs->current_session.names_differ, TRUE_m13));
 	printf_m13("Number of Segments: ");
 	if (proc_globs->current_session.n_segments == 0)
 		printf_m13("no entry\n");
@@ -13526,7 +13514,7 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	
 	printf_m13("\nActive Channels\n---------------\n");
 	printf_m13("Time Series:\n");
-	printf_m13("\tSampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary));
+	printf_m13("\tSampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary, TRUE_m13));
 	if (proc_globs->active_channels.minimum_sampling_frequency == RATE_NO_ENTRY_m13)
 		printf_m13("\tMinimum Sampling Frequency: no entry\n");
 	else
@@ -13544,7 +13532,7 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("\tMaximum Sampling Frequency Channel Name: \"%s\"\n", proc_globs->active_channels.maximum_sampling_frequency_channel->name);
 	printf_m13("Video:\n");
-	printf_m13("\tFrame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary));
+	printf_m13("\tFrame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary, TRUE_m13));
 	if (proc_globs->active_channels.minimum_frame_rate == RATE_NO_ENTRY_m13)
 		printf_m13("\tMinimum Frame Rate: no entry\n");
 	else
@@ -13563,15 +13551,15 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 		printf_m13("\tMaximum Frame Rate Channel Name: \"%s\"\n", proc_globs->active_channels.maximum_frame_rate_channel->name);
 
 	printf_m13("\nTime Constants\n--------------\n");
-	printf_m13("Time Constants Set: %s\n", STR_tern_m13(proc_globs->time_constants.set));
-	printf_m13("Recording Time Offset Known: %s\n", STR_tern_m13(proc_globs->time_constants.RTO_known));
+	printf_m13("Time Constants Set: %s\n", STR_tern_m13(proc_globs->time_constants.set, TRUE_m13));
+	printf_m13("Recording Time Offset Known: %s\n", STR_tern_m13(proc_globs->time_constants.RTO_known, TRUE_m13));
 	printf_m13("Recording Time Offset: %ld (usecs)\n", proc_globs->time_constants.recording_time_offset);
 	printf_m13("Standard UTC Offset: %d (secs)\n", proc_globs->time_constants.standard_UTC_offset);
 	printf_m13("Standard Timezone Acronym: %s\n", proc_globs->time_constants.standard_timezone_acronym);
 	printf_m13("Standard Timezone String: %s\n", proc_globs->time_constants.standard_timezone_string);
 	printf_m13("Daylight Timezone Acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
 	printf_m13("Daylight Timezone String: %s\n", proc_globs->time_constants.daylight_timezone_string);
-	printf_m13("Observe Daylight Saving Time: %s\n", STR_tern_m13(proc_globs->time_constants.observe_DST));
+	printf_m13("Observe Daylight Saving Time: %s\n", STR_tern_m13(proc_globs->time_constants.observe_DST, TRUE_m13));
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), "-", FALSE_m13);
 	printf_m13("Daylight Time Start Code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_start_code.value);
 	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), "-", FALSE_m13);
@@ -13583,8 +13571,8 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 		printf_m13("no entry\n");
 	else
 		printf_m13("%d\n", proc_globs->miscellaneous.mmap_block_bytes);
-	printf_m13("Threading: %s\n", STR_tern_m13(proc_globs->miscellaneous.threading));
-	printf_m13("Process Error State: %s\n", STR_tern_m13(proc_globs->miscellaneous.proc_error_state));
+	printf_m13("Threading: %s\n", STR_tern_m13(proc_globs->miscellaneous.threading, TRUE_m13));
+	printf_m13("Process Error State: %s\n", STR_tern_m13(proc_globs->miscellaneous.proc_error_state, TRUE_m13));
 
 	printf_m13("\n");
 	
@@ -13753,7 +13741,7 @@ tern  G_show_slice_m13(SLICE_m13 *slice)
 		return_m13(FALSE_m13);
 	}
 	
-	printf_m13("Conditioned: %s\n", STR_tern_m13(slice->conditioned));
+	printf_m13("Conditioned: %s\n", STR_tern_m13(slice->conditioned, FALSE_m13));
 	
 	if (slice->n_segs == UNKNOWN_m13)
 		printf_m13("Number of Segments: unknown\n");
@@ -13782,21 +13770,21 @@ tern  G_show_slice_m13(SLICE_m13 *slice)
 	else
 		printf_m13("%ld\n", slice->end_time);
 	
-	printf_m13("Start Index Number: ");
-	if (slice->start_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13)
+	printf_m13("Start Index: ");
+	if (slice->start_idx == INDEX_NO_ENTRY_m13)
 		printf_m13("no entry\n");
-	else if (slice->start_samp_num == END_OF_SAMPLE_NUMBERS_m13)
-		printf_m13("end of samples/frames\n");
+	else if (slice->start_idx == BEGINNING_OF_INDICES_m13)
+		printf_m13("start of indices\n");
 	else
-		printf_m13("%ld\n", slice->start_samp_num);
+		printf_m13("%ld\n", slice->start_idx);
 	
-	printf_m13("End Index Number: ");
-	if (slice->end_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13)
+	printf_m13("End Index: ");
+	if (slice->end_idx == INDEX_NO_ENTRY_m13)
 		printf_m13("no entry\n");
-	else if (slice->end_samp_num == END_OF_SAMPLE_NUMBERS_m13)
-		printf_m13("end of samples/frames\n");
+	else if (slice->end_idx == END_OF_INDICES_m13)
+		printf_m13("end of indices\n");
 	else
-		printf_m13("%ld\n", slice->end_samp_num);
+		printf_m13("%ld\n", slice->end_idx);
 	
 	printf_m13("Start Segment Number: ");
 	if (slice->start_seg_num == SEGMENT_NUMBER_NO_ENTRY_m13)
@@ -14079,8 +14067,8 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		printf_m13("Level 3 Password Validation Field: 0x %s\n", hex_str);
 	}
 	if (MED_VER_1_0_m13(uh) == FALSE_m13) {
-		printf_m13("Ordered: %s\n", STR_tern_m13(uh->ordered));
-		printf_m13("Expanded Passwords: %s\n", STR_tern_m13(uh->expanded_passwords));
+		printf_m13("Ordered: %s\n", STR_tern_m13(uh->ordered, TRUE_m13));
+		printf_m13("Expanded Passwords: %s\n", STR_tern_m13(uh->expanded_passwords, TRUE_m13));
 		printf_m13("Encryption Rounds: %hhu\n", uh->encryption_rounds);
 		printf_m13("Encryption 1: %hhd ", uh->encryption_1);
 		if (uh->encryption_1 == NO_ENCRYPTION_m13)
@@ -14677,11 +14665,13 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 		return_m13(FALSE_m13);
 	}
 	
+	
 	if (message_given == FALSE_m13) {  // don't want message given for every channel - could be a lot
 		G_message_m13("Updating channel names ...\n");
 		message_given = TRUE_m13;
 	}
 	
+	// get fs name from channel directory
 	G_path_parts_m13(chan->path, NULL, fs_name, NULL);
 	strcpy(chan->name, fs_name);
 	
@@ -14715,13 +14705,13 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			// rename directory
 			G_path_parts_m13(seg_list[i], NULL, name, NULL);
 			len = strlen(name);
-			name[len - 5] = 0;
+			name[len - 6] = 0;
 			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
 			}
-			name[len - 5] = '_';
+			name[len - 6] = '_';
 			
 			// time series metadata
 			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, TS_METADATA_TYPE_STR_m13);
@@ -14775,12 +14765,13 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			G_path_parts_m13(seg_list[i], NULL, name, NULL);
 			len = strlen(name);
 			strcpy(sufx, name + (len - 5));
-			name[len - 5] = 0;
+			name[len - 6] = 0;
 			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
 			}
+			name[len - 6] = '_';
 			
 			// video metadata
 			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, VID_METADATA_TYPE_STR_m13);
@@ -14851,13 +14842,13 @@ tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_upd
 	fp = fopen(path, "rb+");
 #endif
 	if (fp == NULL) {
-		G_set_error_m13(E_OPEN_m13, NULL);
+		G_set_error_m13(E_FOPEN_m13, NULL);
 		return_m13(FALSE_m13);
 	}
 	nr = fread((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 	if (nr != UH_BYTES_m13) {
 		fclose(fp);
-		G_set_error_m13(E_READ_m13, NULL);
+		G_set_error_m13(E_FREAD_m13, NULL);
 		return_m13(FALSE_m13);
 	}
 	if (strcmp_m13(uh.channel_name, fs_name)) {
@@ -14872,7 +14863,7 @@ tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_upd
 		nw = fwrite((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 		if (nw != UH_BYTES_m13) {
 			fclose(fp);
-			G_set_error_m13(E_WRITE_m13, NULL);
+			G_set_error_m13(E_FWRITE_m13, NULL);
 			return_m13(FALSE_m13);
 		}
 	}
@@ -15459,7 +15450,7 @@ tern	G_update_MED_type_m13(si1 *path)
 
 	// unknown file type
 	else {
-		G_set_error_m13(E_MED_m13, NULL);
+		G_set_error_m13(E_FMED_m13, NULL);
 		goto UPDATE_MED_TYPE_FAIL_m13;
 
 	}
@@ -23216,10 +23207,10 @@ CMP_REALLOC_CPS_FAIL_m13:
 // Code here is adapted from code by Nicolas Devillard. Public domain.
 sf8 CMP_quantval_m13(sf8 *x, si8 len, sf8 quantile, tern preserve_input, sf8 *buf)
 {
-	tern		free_buf;
-	sf8		q, fk, lo_p, lo_v, *lp, *mp, *last_mp, *lo_kp, *hi_kp;
-	si8		lo_k;
-	register sf8	v, t, *xip, *xjp;
+	tern	free_buf;
+	sf8	q, fk, lo_p, lo_v, *lp, *mp, *last_mp, *lo_kp, *hi_kp;
+	si8	lo_k;
+	sf8	v, t, *xip, *xjp;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -23307,33 +23298,6 @@ sf8 CMP_quantval_m13(sf8 *x, si8 len, sf8 quantile, tern preserve_input, sf8 *bu
 		free((void *) buf);
 	
 	return_m13(q);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-ui4	CMP_random_ui4_m13(ui4 *m_w, ui4 *m_z)
-{
-	ui4	rv;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// see G_expand_password_m13() for initialization & usage
-	
-	*m_w = (ui4) 0x00004650 * (*m_w & (ui4) 0x0000FFFF) + (*m_w >> (ui4) 0x10);
-	if (*m_w == (ui4) 0 || *m_w == (ui4) 0x464FFFFF)  // bad values
-		*m_w = (ui4) 0x01020304;  // good value
-
-	*m_z = (ui4) 0x00009069 * (*m_z & (ui4) 0x0000FFFF) + (*m_z >> 0x10);
-	if (*m_z == (ui4) 0 || *m_z == (ui4) 0x9068FFFF)  // bad values
-		*m_z = (ui4) 0x05060708;  // good value
-	
-	rv = (*m_z << (ui4) 0x10) + *m_w;
-	
-	return_m13(rv);
 }
 
 
@@ -26304,8 +26268,8 @@ inline
 #endif
 ui4	CRC_update_m13(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc)
 {
-	register ui4  		c;
-	register const ui4	**crc_table, *ui4_buf;
+	const ui4	**crc_table, *ui4_buf;
+	ui4  		c;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -30060,10 +30024,10 @@ sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option
 
 sf8  *FILT_noise_floor_filter_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers)
 {
-	register si8	i, j, k;
+	si8	i, j, k;
 	tern	free_buffers;
-	si8		n_peaks, n_troughs, *peak_xs, *trough_xs, x, xm1, dlm1;
-	sf8		*peak_env, *trough_env, *mean_env, *env_diffs, base, baseline, dy, step, *quantval_buf, thresh;
+	si8	n_peaks, n_troughs, *peak_xs, *trough_xs, x, xm1, dlm1;
+	sf8	*peak_env, *trough_env, *mean_env, *env_diffs, base, baseline, dy, step, *quantval_buf, thresh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -31049,7 +31013,7 @@ FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_byte
 			break;
 		default:
 			FPS_free_m13(&fps);
-			G_set_error_m13(E_MED_m13, "unrecognized file type code (code = 0x%08x)", type_code);
+			G_set_error_m13(E_FMED_m13, "unrecognized file type code (code = 0x%08x)", type_code);
 			return_m13(NULL);
 	}
 	
@@ -31145,7 +31109,7 @@ tern	FPS_free_m13(FPS_m13 **fps_ptr)
 	
 	// free heap addresses & to NULL
 	// stack & en_bloc addresses zeroed
-	if (fps->flags & LH_ALLOCATED_m13) {
+	if (fps->allocated == TRUE_m13) {
 		free_m13((void *) fps);
 		*fps_ptr = NULL;
 	} else {
@@ -31483,7 +31447,7 @@ FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...
 		va_start(v_arg, parent);
 		fps->direcs.flags = va_arg(v_arg, ui8);
 		va_end(v_arg);
-		FPS_set_open_string_m13(fps, LH_NO_FLAGS_m13);
+		FPS_set_open_string_m13(fps, FPS_DF_NO_FLAGS_m13);
 	} else {
 		FPS_set_open_flags_m13(fps, mode_str);
 	}
@@ -31557,6 +31521,8 @@ FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...
 }
 
 
+// FPS_read_m13(chan->rec_inds_fps, 0, FPS_FULL_FILE_m13, 0, (LH_m13 *) chan, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+
 FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...)  // varargs(fps invalid): si1 *path, si1 *mode_str, si1 *password, LH *parent
 											    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 {
@@ -31581,7 +31547,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	if (fps == NULL)
 		free_fps = TRUE_m13;
 	else
-		valid_fps = G_valid_level_code_m13(fps->type_code);  // pre-allocated, but uninitialized FPS
+		valid_fps = G_valid_level_code_m13(fps->type_code);  // NULL or pre-allocated, but uninitialized FPS
 
 	// get varargs
 	path = password = mode_str = NULL;
@@ -31628,9 +31594,9 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 				*fps = *tmp_fps;  // copy base structure to passed pointer
 				free_m13(tmp_fps);  // free temporary base structure (i.e. don't use FPS_free_m13)
 				if (fps_alloced == TRUE_m13)
-					fps->flags |= LH_ALLOCATED_m13;
+					fps->allocated = TRUE_m13;
 				else
-					fps->flags &= ~LH_ALLOCATED_m13;
+					fps->allocated = FALSE_m13;
 			} else if (FPS_reopen_m13(fps, FPS_OPEN_STR_DEFAULT_m13) == FALSE_m13) {
 				return_m13(NULL);
 			}
@@ -31657,7 +31623,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	
 	// get n_bytes
 	if (n_bytes == FPS_AUTO_BYTES_m13)
-		n_bytes = FPS_set_direcs_from_lh_flags_m13(fps, LH_NO_FLAGS_m13);
+		n_bytes = FPS_set_direcs_from_lh_flags_m13(fps, LH_NO_FLAGS_SET_m13);
 	switch (n_bytes) {
 		case FPS_BYTES_NO_ENTRY_m13:
 			if (n_items) {
@@ -31665,7 +31631,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 				if (DATA_CODE_m13(type_code) == TRUE_m13)
 					data_read = TRUE_m13;  // don't read data, but still read in universal header if needed
 			} else {
-				G_set_error_m13(E_READ_m13, "both n_bytes & n_items are zero");
+				G_set_error_m13(E_FREAD_m13, "both n_bytes & n_items are zero");
 				goto FPS_READ_FAIL_m13;
 			}
 			break;
@@ -31773,7 +31739,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		else
 			bytes_read = fread_m13(dest, sizeof(ui1), (size_t) n_bytes, fps->params.fp);
 		if (bytes_read != n_bytes)
-			G_set_error_m13(E_READ_m13, NULL);
+			G_set_error_m13(E_FREAD_m13, NULL);
 	}
 	
 	// get n_items (preferably this is passed)
@@ -31836,7 +31802,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 			break;
 	}
 	if (readable == FALSE_m13) {
-		G_set_error_m13(E_READ_m13, NULL);
+		G_set_error_m13(E_FREAD_m13, NULL);
 		goto FPS_READ_FAIL_m13;
 	}
 
@@ -32029,7 +31995,7 @@ si8	FPS_set_direcs_from_lh_flags_m13(FPS_m13 *fps, ui8 lh_flags)
 	// does not require universal header to be read in
 	
 	n_bytes = FPS_BYTES_NO_ENTRY_m13;
-	if (lh_flags == LH_NO_FLAGS_m13)
+	if (lh_flags == LH_NO_FLAGS_SET_m13)
 		lh_flags = fps->flags;
 	else
 		fps->flags = lh_flags;
@@ -32139,7 +32105,7 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 		}
 		if (mode_empty == TRUE_m13) {
 			G_set_error_m13(E_GEN_m13, "no mode string available");
-			return_m13(LH_NO_FLAGS_m13);
+			return_m13(FPS_DF_NO_FLAGS_m13);
 		}
 	} else if (fps) {
 		strcpy_m13(fps->params.mode_str, mode_str);  // trace trap if use system strcpy() here - need to figure out why
@@ -32226,7 +32192,7 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 	else
 		mode_str = (si1 *) calloc_m13((size_t) 8, sizeof(si1));  // caller takes ownership
 	
-	if (flags == LH_NO_FLAGS_m13)
+	if (flags == FPS_DF_NO_FLAGS_m13)
 		if (fps)
 			flags = fps->direcs.flags;
 	flags &= FPS_OPEN_MODE_MASK_m13;
@@ -32381,8 +32347,8 @@ tern	FPS_show_params_m13(FPS_m13 *fps)
 	
 	printf_m13("---------------- FPS Parameters - START ----------------\n");
 	printf_m13("mode string: \"%s\"\n", params->mode_str);
-	printf_m13("universal header read: %s\n", STR_tern_m13(params->uh_read));
-	printf_m13("full file read: %s\n", STR_tern_m13(params->full_file_read));
+	printf_m13("universal header read: %s\n", STR_tern_m13(params->uh_read, TRUE_m13));
+	printf_m13("full file read: %s\n", STR_tern_m13(params->full_file_read, TRUE_m13));
 	printf_m13("raw data bytes: %ld\n", params->raw_data_bytes);
 	if (params->raw_data)
 		printf_m13("raw data: allocated\n");
@@ -32480,7 +32446,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		FPS_seek_m13(fps, FPS_UH_OFFSET_m13);
 		nw = fwrite_m13((void *) uh, sizeof(ui1), (size_t) FPS_UH_BYTES_m13, fps->params.fp);
 		if (nw != (size_t) FPS_UH_BYTES_m13) {
-			G_set_error_m13(E_WRITE_m13, "error writing universal header");
+			G_set_error_m13(E_FWRITE_m13, "error writing universal header");
 			return_m13((si8) FALSE_m13);
 		}
 
@@ -32496,7 +32462,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		}
 	}
 	if (n_bytes == 0 && n_items == 0) {
-		G_set_error_m13(E_WRITE_m13, "must specify either n_bytes or n_items");
+		G_set_error_m13(E_FWRITE_m13, "must specify either n_bytes or n_items");
 		return_m13((si8) FALSE_m13);
 	}
 
@@ -32650,7 +32616,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 	// create a file on the session volume
 	sprintf_m13(test_path, "%s/test_file-remove_me", test_path);
 	sprintf_m13(command, "echo x > \"%s\"", test_path);  // create non-empty file in case file system is cloud
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (ret_val == 0) {
 		
 		// get volume block size
@@ -32675,7 +32641,7 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "del \"%s\"", test_path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	}
 	
 	if (mmap_block_bytes <= 0)
@@ -33119,16 +33085,11 @@ tern	HW_get_performance_specs_m13(tern get_current)
 	p1 = test_arr1;
 	p2 = test_arr2;
 	for (i = ROUNDS; i--; ++p1, ++p2) {
-#if defined MACOS_m13 || defined LINUX_m13
-		*p1 = ((ui8) random()) << 16;
-		*p1 ^= (ui8) random();  // 48 bit number
-		*p2 = ((ui8) random() >> 16) + 1;  // 16 bit non-zero number
-#endif
-#ifdef WINDOWS_m13
-		*p1 = ((ui8) rand()) << 16;
-		*p1 ^= (ui8) rand();  // 48 bit number
-		*p2 = ((ui8) rand() >> 16) + 1;  // 16 bit non-zero number
-#endif
+		*p1 = ((ui8) random_m13()) << 17;  // (random_m13() generates 31 bit number so shift 17 bits)
+		*p1 ^= (ui8) random_m13();  // create 48 bit number
+		do {  // 16 bit non-zero number
+			*p2 = ((ui8) random_m13() & 0xFFFF);
+		} while (*p2 == 0);
 	}
 
 	// multiplication
@@ -33391,7 +33352,7 @@ tern	HW_show_info_m13(void)
 	else
 		printf_m13("physical_cores = %d\n", hw_params->physical_cores);
 	
-	printf_m13("hyperthreading = %s\n", STR_tern_m13(hw_params->hyperthreading));
+	printf_m13("hyperthreading = %s\n", STR_tern_m13(hw_params->hyperthreading, TRUE_m13));
 	
 	if (hw_params->minimum_speed == 0.0)
 		printf_m13("minimum_speed = unknown\n");
@@ -34310,7 +34271,7 @@ tern	NET_get_ethtool_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// Note: ethtool() doesn't seem to work on WiFi networks
 	buffer = NULL;
 	sprintf_m13(tmp_str, "/usr/sbin/ethtool %s", np->interface_name);
-	ret_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13, RETURN_QUIETLY_m13);
 	if (ret_val < 0) {  // don't return false => this is typically superfluous info
 		G_warning_message_m13("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__);
 	} else {
@@ -35515,6 +35476,7 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	
 	if (n_reserved_cores >= n_logical_cores)
 		n_reserved_cores = n_logical_cores - 1;
+	// todo: make n_concurrent_jobs a semaphore
 	n_concurrent_jobs = n_logical_cores - n_reserved_cores;
 	if (n_concurrent_jobs > n_jobs)
 		n_concurrent_jobs = n_jobs;
@@ -35561,7 +35523,7 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 
 	// launch initial job set (all jobs detached)
 	for (i = 0, job = jobs; i < n_concurrent_jobs; ++i, ++job)
-		if (PROC_launch_thread_m13(&job->thread, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m13, job->thread_name))
+		if (PROC_launch_thread_m13(&job->thread, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m13, job->thread_name) == 0)  // returns 0 on failure
 			return_m13(FALSE_m13);  // PROC_launch_thread_m13() sets causal error
 
 	// wait for status in initial job set
@@ -35578,7 +35540,7 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 				new_job = jobs + new_job_idx;
 
 				// launch new job
-				if (PROC_launch_thread_m13(&new_job->thread, new_job->thread_f, (void *) new_job, new_job->priority, NULL, &cpu_set, TRUE_m13, new_job->thread_name))
+				if (PROC_launch_thread_m13(&new_job->thread, new_job->thread_f, (void *) new_job, new_job->priority, NULL, &cpu_set, TRUE_m13, new_job->thread_name) == 0)  // returns 0 on failure
 					return_m13(FALSE_m13);  // PROC_launch_thread_m13() sets causal error
 
 				// check if done
@@ -35832,19 +35794,19 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					sprintf_m13(command, "echo %s | sudo -S chown root %s", pw, full_exec_name);  // in case owner wasn't root
-					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 					if (sys_ret_val) {  // just check for password failure once
 						G_warning_message_m13("%s(): Invalid sudo password\n", __FUNCTION__);
 						return(FALSE_m13);
 					}
 					sprintf_m13(command, "echo %s | sudo -S chmod g+x %s", pw, full_exec_name);  // in case group didn't have execute permissions
-					system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+					system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 					sprintf_m13(command, "echo %s | sudo -S chmod ug+s %s", pw, full_exec_name);  // set the "set-user" bits (must do owner and group)
-					system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+					system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 					// renice in shell with sudo password (can't change current process priority from within process unless UID is root, or change kernel CAP_SETUID to true)
 					pid = getpid();
 					sprintf_m13(command, "echo %s | sudo -S renice %d -p %d", pw, PRIO_MIN, pid);
-					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 					if (sys_ret_val)
 						return(FALSE_m13);
 					return(TRUE_m13);
@@ -35906,7 +35868,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 	G_push_function_m13();
 #endif
 	
-	// returns new thread's id, or zero for failure
+	// returns new thread's id, or zero on failure
 
 	if (thread == NULL)  // caller doesn't need thread_id - detached thread
 		thread = &local_thread;
@@ -35960,8 +35922,6 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 #endif
 	
 # ifdef MACOS_m13
-	// NOTE: MacOS stopped supporting thread affinity => leaving code in case they change this back in future (all code is in place if returns)
-	cpu_set_p = NULL;
 	
 	// in MacOS pthread_setname_np must be run from within the thread itself, so launch thread to name & then run code from within that thread
 	if (STR_is_empty_m13(thread_name) == FALSE_m13) {
@@ -35976,6 +35936,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 	}
 
 	// start thread
+	cpu_set_p = NULL;  // MacOS stopped supporting thread affinity => leaving code in case they change this back in future (all code is in place if they do)
 	if (cpu_set_p) {
 		mach_port_t	mach_thread;
 
@@ -36056,7 +36017,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 	G_push_function_m13();
 #endif
 
-	// returns new thread's id, or zero for failure
+	// returns new thread's id, or zero on failure
 
 	if (thread == NULL)  // caller doesn't need thread_id - detached thread
 		thread = &local_thread;
@@ -40484,20 +40445,30 @@ tern  STR_strip_character_m13(si1 *s, si1 character)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-const si1	*STR_tern_m13(tern val)
+const si1	*STR_tern_m13(tern val, tern colored)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// colored == TRUE_m13: true in red, false in blue, unknown in green, invalid in yellow
+	
 	switch(val) {
 		case 1:
+			if (colored == TRUE_m13)
+				return_m13(TC_RED_m13 "true" TC_RESET_m13);
 			return_m13("true");
 		case -1:
+			if (colored == TRUE_m13)
+				return_m13(TC_BLUE_m13 "false" TC_RESET_m13);
 			return_m13("false");
 		case 0:
+			if (colored == TRUE_m13)
+				return_m13(TC_GREEN_m13 "not set or unknown" TC_RESET_m13);
 			return_m13("not set or unknown");
 		default:
+			if (colored == TRUE_m13)
+				return_m13(TC_YELLOW_m13 "invalid" TC_RESET_m13);
 			return_m13("invalid");
 	}
 }
@@ -43251,7 +43222,7 @@ void	*calloc_m13(size_t n_members, si8 el_size)  // (el_size negative): level he
 #endif
 
 	if (is_level_header == TRUE_m13)
-		((LH_m13 *) ptr)->flags |= LH_ALLOCATED_m13;
+		((LH_m13 *) ptr)->allocated = TRUE_m13;
 	
 	return_m13(ptr);
 }
@@ -43315,7 +43286,7 @@ void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size)  // (el_size negativ
 	if (is_level_header == TRUE_m13) {
 		for (i = 0; i < dim1; ++i) {
 			lh = (LH_m13 *) ptr[i];
-			lh->flags &= ~LH_ALLOCATED_m13;
+			lh->allocated = FALSE_m13;
 		}
 	}
 			
@@ -43366,7 +43337,7 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "copy \\/y \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (ret_val) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
@@ -43378,7 +43349,7 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "xcopy \\/s \\/e \\/y \\/c \\/q \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (ret_val) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
@@ -43458,6 +43429,7 @@ void	exit_m13(si4 status)
 	behavior = G_current_behavior_m13();
 #endif
 		
+
 	// hold other exiting threads here
 	pthread_mutex_lock_m13(&globals_m13->error.exit_mutex);
 
@@ -43530,7 +43502,7 @@ si4	fclose_m13(void *fp)
 			if (fileno_m13(std_fp) <= 2)  // already closed or standard stream
 				return_m13(0);
 			if (fclose(std_fp)) {
-				G_set_error_m13(E_OPEN_m13, "error closing file");
+				G_set_error_m13(E_FOPEN_m13, "error closing file");
 				return_m13(-1);
 			}  // else fall through to return(0)
 		case UNKNOWN_m13:  // fp == NULL
@@ -43548,7 +43520,7 @@ si4	fclose_m13(void *fp)
 	ret_val = 0;
 	if (closed == FALSE_m13) {
 		if (fclose(m13_fp->fp)) {
-			G_set_error_m13(E_OPEN_m13, "error closing file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FOPEN_m13, "error closing file \"%s\"", m13_fp->path);
 			ret_val = -1;
 		}
 	}
@@ -43726,7 +43698,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 		
 		// check path
 		if (STR_is_empty_m13(path) == TRUE_m13) {
-			G_set_error_m13(E_LOCK_m13, "path is empty");
+			G_set_error_m13(E_FLOCK_m13, "path is empty");
 			return_m13(FLOCK_ERR_m13);
 		}
 		
@@ -43775,7 +43747,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	// check operation
 	if (operation & (FLOCK_LOCK_m13 | FLOCK_UNLOCK_m13)) {
 		if (!(operation & (FLOCK_READ_m13 | FLOCK_WRITE_m13))) {
-			G_set_error_m13(E_LOCK_m13, "locking operations require a mode");
+			G_set_error_m13(E_FLOCK_m13, "locking operations require a mode");
 			return_m13(FLOCK_ERR_m13);
 		}
 		if (operation & FLOCK_WRITE_m13)
@@ -43967,7 +43939,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	// function will create path if it does not exist in write modes
 	
 	if (STR_is_empty_m13(path) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "path is empty");
+		G_set_error_m13(E_FOPEN_m13, "path is empty");
 		return_m13(NULL);
 	}
 	G_full_path_m13(path, tmp_path);
@@ -43986,7 +43958,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	}
 	
 	if (STR_is_empty_m13(mode) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "mode is empty");
+		G_set_error_m13(E_FOPEN_m13, "mode is empty");
 		return_m13(NULL);
 	}
 	
@@ -44006,7 +43978,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 
 	// check mode
 	if (STR_is_empty_m13(mode) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "mode is empty");
+		G_set_error_m13(E_FOPEN_m13, "mode is empty");
 		return_m13(NULL);
 	}
 	read_mode = write_mode = append_mode = plus_mode = trunc_mode = UNKNOWN_m13;
@@ -44045,7 +44017,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	main_mode_total = read_mode + write_mode + append_mode;
 	if (main_mode_total != 1) {
 		free_m13((void *) fp);
-		G_set_error_m13(E_OPEN_m13, "invalid mode: \"%s\"", mode);
+		G_set_error_m13(E_FOPEN_m13, "invalid mode: \"%s\"", mode);
 		return_m13(NULL);
 	}
 	if (write_mode == TRUE_m13) {
@@ -44139,14 +44111,14 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		fexists = G_exists_m13(path);
 		if (read_mode == TRUE_m13) {
 			if (fexists == TRUE_m13)
-				G_set_error_m13(E_OPEN_m13, "failed to open file \"%s\"", path);
+				G_set_error_m13(E_FOPEN_m13, "failed to open file \"%s\"", path);
 			else
-				G_set_error_m13(E_OPEN_m13, "file \"%s\" does not exist", path);
+				G_set_error_m13(E_FOPEN_m13, "file \"%s\" does not exist", path);
 		} else {  // write & append modes
 			if (fexists == TRUE_m13)
-				G_set_error_m13(E_OPEN_m13, "failed to open file \"%s\"", path);
+				G_set_error_m13(E_FOPEN_m13, "failed to open file \"%s\"", path);
 			else
-				G_set_error_m13(E_OPEN_m13, "failed to create file \"%s\"", path);
+				G_set_error_m13(E_FOPEN_m13, "failed to create file \"%s\"", path);
 		}
 		return_m13(NULL);
 	}
@@ -44243,7 +44215,7 @@ si4	fprintf_m13(void *fp, const si1 *fmt, ...)
 		ret_val = fprintf(std_fp, "%s", tmp_str);  // ret_val == bytes, not characters (utf8)
 		free((void *) tmp_str);
 	} else {
-		G_set_error_m13(E_WRITE_m13, NULL);
+		G_set_error_m13(E_FWRITE_m13, NULL);
 	}
 
 	if (is_std == FALSE_m13) {
@@ -44316,9 +44288,9 @@ si4	fputc_m13(si4 c, void *fp)
 
 	if (ret_val == EOF) {
 		if (is_std == TRUE_m13)
-			G_set_error_m13(E_WRITE_m13, NULL);
+			G_set_error_m13(E_FWRITE_m13, NULL);
 		else
-			G_set_error_m13(E_WRITE_m13, "error writing to file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FWRITE_m13, "error writing to file \"%s\"", m13_fp->path);
 	}
 	
 	return(ret_val);
@@ -44375,10 +44347,10 @@ size_t	fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // (
 			if (m13_fp->flags & FILE_FLAGS_TIME_m13)
 				m13_fp->acc = G_current_uutc_m13();
 		} else {
-			G_set_error_m13(E_READ_m13, "failed to read file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FREAD_m13, "failed to read file \"%s\"", m13_fp->path);
 		}
 	} else if (nr != n_elements) {
-		G_set_error_m13(E_READ_m13, NULL);
+		G_set_error_m13(E_FREAD_m13, NULL);
 	}
 	
 	return_m13(nr);
@@ -44586,19 +44558,19 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 			std_fp = (FILE *) fp;
 			break;
 		case UNKNOWN_m13:
-			G_set_error_m13(E_OPEN_m13, "fp is empty");
+			G_set_error_m13(E_FOPEN_m13, "fp is empty");
 			return_m13(NULL);
 	}
 
 	// check mode
 	if (STR_is_empty_m13(mode) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "mode is empty");
+		G_set_error_m13(E_FOPEN_m13, "mode is empty");
 		return_m13(NULL);
 	}
 	
 	// check path
 	if (STR_is_empty_m13(path) == TRUE_m13) {
-		G_set_error_m13(E_OPEN_m13, "path is empty");
+		G_set_error_m13(E_FOPEN_m13, "path is empty");
 		return_m13(NULL);
 	}
 	
@@ -44607,7 +44579,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 		if (is_std == TRUE_m13) {
 			std_fp = fopen(path, mode);
 			if (std_fp == NULL) {
-				G_set_error_m13(E_OPEN_m13, "error opening file \"%s\"", path);
+				G_set_error_m13(E_FOPEN_m13, "error opening file \"%s\"", path);
 				return_m13(NULL);
 			}
 			return_m13(std_fp);  // if passed standard fp, return standard fp
@@ -44653,7 +44625,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 	main_mode_total = read_mode + write_mode + append_mode;
 	if (main_mode_total != 1) {
 		free_m13(fp);
-		G_set_error_m13(E_OPEN_m13, "invalid mode: \"%s\"", mode);
+		G_set_error_m13(E_FOPEN_m13, "invalid mode: \"%s\"", mode);
 		return_m13(NULL);
 	}
 	if (write_mode == TRUE_m13) {
@@ -44772,7 +44744,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 	errno_reset_m13();
 	std_fp = freopen(path, sys_mode, std_fp);
 	if (std_fp == NULL) {
-		G_set_error_m13(E_OPEN_m13, "can't reopen file \"%s\" with mode \"%s\"", path, sys_mode);
+		G_set_error_m13(E_FOPEN_m13, "can't reopen file \"%s\" with mode \"%s\"", path, sys_mode);
 		return_m13(NULL);
 	}
 
@@ -44908,9 +44880,9 @@ si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 	
 	if (ret_val <= 0) {  // no conversions, or EOF (-1)
 		if (is_std == TRUE_m13)
-			G_set_error_m13(E_READ_m13, NULL);
+			G_set_error_m13(E_FREAD_m13, NULL);
 		else
-			G_set_error_m13(E_READ_m13, "error reading file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FREAD_m13, "error reading file \"%s\"", m13_fp->path);
 	}
 
 	return(ret_val);
@@ -45059,7 +45031,7 @@ si4	ftruncate_m13(void *fp, off_t len)
 	// note: the interface differs from the standard, subsituting a file pointer for a file descriptor (more convenient)
 	
 	if (len < 0) {
-		G_set_error_m13(E_READ_m13, "len must be positive");
+		G_set_error_m13(E_FREAD_m13, "len must be positive");
 		return_m13(-1);
 	}
 
@@ -45075,9 +45047,9 @@ si4	ftruncate_m13(void *fp, off_t len)
 	// check open
 	if (fisopen_m13(fp) != TRUE_m13) {
 		if (is_std == FALSE_m13)
-			G_set_error_m13(E_READ_m13, "file \"%s\" is closed", m13_fp->path);
+			G_set_error_m13(E_FREAD_m13, "file \"%s\" is closed", m13_fp->path);
 		else
-			G_set_error_m13(E_READ_m13, "file is closed");
+			G_set_error_m13(E_FREAD_m13, "file is closed");
 		return_m13(-1);
 	}
 	
@@ -45085,7 +45057,7 @@ si4	ftruncate_m13(void *fp, off_t len)
 	if (is_std == FALSE_m13) {
 		// check write privileges
 		if (!(m13_fp->flags & FILE_FLAGS_WRITE_m13)) {
-			G_set_error_m13(E_READ_m13, "file \"%s\" is not open for writing", m13_fp->path);
+			G_set_error_m13(E_FREAD_m13, "file \"%s\" is not open for writing", m13_fp->path);
 			return_m13(-1);
 		}
 		// lock
@@ -45113,9 +45085,9 @@ si4	ftruncate_m13(void *fp, off_t len)
 
 	if (err) {
 		if (is_std == FALSE_m13)
-			G_set_error_m13(E_READ_m13, "error truncating file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FREAD_m13, "error truncating file \"%s\"", m13_fp->path);
 		else
-			G_set_error_m13(E_READ_m13, "error truncating file");
+			G_set_error_m13(E_FREAD_m13, "error truncating file");
 		return_m13(-1);
 	}
 	
@@ -45222,10 +45194,10 @@ size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // 
 			if (m13_fp->flags & FILE_FLAGS_TIME_m13)
 				m13_fp->acc = G_current_uutc_m13();
 		} else {
-			G_set_error_m13(E_READ_m13, "failed to write file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FREAD_m13, "failed to write file \"%s\"", m13_fp->path);
 		}
 	} else if (nw != n_elements) {
-		G_set_error_m13(E_READ_m13, NULL);
+		G_set_error_m13(E_FREAD_m13, NULL);
 	}
 	
 	return_m13(nw);
@@ -45343,7 +45315,7 @@ void	*malloc_m13(si8 n_bytes)  // (n_bytes negative): level header flag
 #endif
 
 	if (is_level_header == TRUE_m13)
-		((LH_m13 *) ptr)->flags |= LH_ALLOCATED_m13;
+		((LH_m13 *) ptr)->allocated = TRUE_m13;
 	
 	return_m13(ptr);
 }
@@ -45408,7 +45380,7 @@ void	**malloc_2D_m13(size_t dim1, si8 dim2_bytes)  // (dim2_bytes negative): lev
 	if (is_level_header == TRUE_m13) {
 		for (i = 0; i < dim1; ++i) {
 			lh = (LH_m13 *) ptr[i];
-			lh->flags &= ~LH_ALLOCATED_m13;
+			lh->allocated = FALSE_m13;
 		}
 	}
 
@@ -45565,9 +45537,9 @@ tern	mkdir_m13(const si1 *dir)
 	sprintf_m13(command, "mkdir \"%s\"", dir);
 	#endif
 	
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (ret_val) {
-		G_set_error_m13(E_OPEN_m13, "cannot create path");
+		G_set_error_m13(E_FOPEN_m13, "cannot create path");
 		return_m13(FALSE_m13);
 	}
 	
@@ -45771,7 +45743,7 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 	#ifdef WINDOWS_m13
 	sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
 	#endif
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (ret_val) {
 		G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
 		return_m13(FALSE_m13);
@@ -46202,6 +46174,126 @@ si4	putchar_m13(si4 c)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	random_m13(void)
+{
+	// returns pseudo-random numbers in the range [0, (2^31 − 1)]
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	return(random());
+#endif
+	
+#ifdef WINDOWS_m13
+	ui4	r;
+	
+	// rand() generates pseudo-random numbers in the range [0, (2^15 − 1)]
+	// low 12 bits of rand() can cycle
+	
+	r = (ui4) (rand() << 16);  // bits 16-30
+	r |= (ui4) (rand() << 1);  // bits 1-15
+	r |= (ui4) (rand() >> 14); // bit 0 (using new 15th bit, so not from cycling range)
+
+	return((si4) r);
+#endif
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui4	rand32_m13(void)
+{
+	ui4	r;
+	
+	
+	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
+	// seed with srandom_m13()
+	
+	r = (ui4) (random_m13() << 1);  // bits 1-32
+	r |= (ui4) (random_m13() & 1);  // bit 0
+	
+	return(r);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui4	rand32_med_m13(ui4 *m_w, ui4 *m_z)
+{
+	ui4	rv;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
+	// replicable sequences across platforms
+	// indepenedent sequnces possible with different coefficients
+	// seed & get initial coefficients with with srand_med_m13()
+
+	// not seeded
+	if (*m_w == 0 && *m_z == 0)
+		srand_med_m13((ui4) time(NULL), m_w, m_z);
+	
+	*m_w = (ui4) 0x00004650 * (*m_w & (ui4) 0x0000FFFF) + (*m_w >> (ui4) 0x10);
+	if (*m_w == (ui4) 0 || *m_w == (ui4) 0x464FFFFF)  // bad values
+		*m_w = (ui4) 0x01020304;  // good value
+	
+	*m_z = (ui4) 0x00009069 * (*m_z & (ui4) 0x0000FFFF) + (*m_z >> 0x10);
+	if (*m_z == (ui4) 0 || *m_z == (ui4) 0x9068FFFF)  // bad values
+		*m_z = (ui4) 0x05060708;  // good value
+	
+	rv = (*m_z << (ui4) 0x10) + *m_w;
+	
+	return_m13(rv);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui8	rand64_m13(void)
+{
+	ui8	r;
+	
+	
+	// returns pseudo-random numbers in the range [0, (2^64 − 1)]
+	// seed with srandom_m13()
+	
+	r = (ui8) random_m13() << 33;  // bits 33-64
+	r |= (ui8) random_m13() << 2;  // bits 2 - 32
+	r |= (ui8) random_m13() & 3;  // bits 0-1
+	
+	return(r);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui8	rand64_med_m13(ui4 *m_w, ui4 *m_z)
+{
+	ui8	rv;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// returns pseudo-random numbers in the range [0, (2^64 − 1)]
+	// replicable sequences across platforms
+	// indepenedent sequnces possible with different coefficients
+	// seed & get initial coefficients with with srand_med_m13()
+
+	rv = (ui8) rand32_med_m13(m_w, m_z) << 32;  // bits 32-63
+	rv |= (ui8) rand32_med_m13(m_w, m_z);  // bits 0-31
+	
+	return_m13(rv);
+}
+
+
 #ifdef AT_DEBUG_m13
 void	*AT_realloc_m13(const si1 *function, si4 line, void *ptr, si8 n_bytes)
 #else
@@ -46257,7 +46349,7 @@ void	*realloc_m13(void *ptr, si8 n_bytes)  // (n_bytes negative): level header f
 #endif
 	
 	if (is_level_header == TRUE_m13)
-		((LH_m13 *) new_ptr)->flags |= LH_ALLOCATED_m13;
+		((LH_m13 *) new_ptr)->allocated = TRUE_m13;
 	
 	return_m13(new_ptr);
 }
@@ -46319,7 +46411,7 @@ void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr
 	if (is_level_header == TRUE_m13) {
 		for (i = curr_dim1; i < new_dim1; ++i) {
 			lh = (LH_m13 *) ptr[i];
-			lh->flags &= ~LH_ALLOCATED_m13;
+			lh->allocated = FALSE_m13;
 		}
 	}
 
@@ -46369,7 +46461,7 @@ void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, si8 el_si
 		memset((ui1 *) new_ptr + curr_bytes, 0, new_bytes - curr_bytes);
 		
 	if (is_level_header == TRUE_m13)
-		((LH_m13 *) new_ptr)->flags |= LH_ALLOCATED_m13;
+		((LH_m13 *) new_ptr)->allocated = TRUE_m13;
 	
 	return_m13(new_ptr);
 }
@@ -46448,7 +46540,7 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 	if (is_level_header == TRUE_m13) {
 		for (i = curr_dim1; i < new_dim1; ++i) {
 			lh = (LH_m13 *) ptr[i];
-			lh->flags &= ~LH_ALLOCATED_m13;
+			lh->allocated = FALSE_m13;
 		}
 	}
 
@@ -46488,7 +46580,7 @@ tern	rm_m13(const si1 *path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "rmdir \\/s \\/q \"%s\"", path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (ret_val) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
 			return_m13(FALSE_m13);
@@ -46535,6 +46627,248 @@ si4	scanf_m13(const si1 *fmt, ...)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+si4	sem_destroy_m13(sem_t_m13 *sem)
+{
+	si4	r_val = 0;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// destroy any state associated with the semaphore. The space for storing the semaphore is freed (except in Linux)
+	// returns 0 on success; -1 on failure
+	
+#ifdef MACOS_m13
+	r_val = sem_close(sem);
+#endif
+
+#ifdef LINUX_m13
+	r_val = sem_destroy(sem);
+#endif
+
+#ifdef WINDOWS_m13
+	if (CloseHandle(sem) == 0)
+		r_val = -1;
+#endif
+
+	if (r_val == -1)
+		G_set_error_m13(E_PROC_m13, "sem_destroy_m13() error");
+		
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val)
+{
+	si4	r_val = 0;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// Initializes the unnamed semaphore at the address pointed to by sem
+	// "init_val" specifies the initial value for the semaphore
+	// "shared" indicates whether this semaphore is to be shared between the threads of a process, or between processes
+	// If "shared" == 0, then the semaphore is shared between the threads of a process, and should be located at some address
+	// that is visible to all threads (e.g. a global variable, or a variable allocated dynamically on the heap)
+	// If "shared" is non-zero, then the semaphore is can be shared between processes, and should be located in a region of shared memory
+	// Initializing a semaphore that has already been initialized results in undefined behavior
+	// Returns 0 on success; -1 on failure
+	
+	if (sem == NULL) {
+		G_set_error_m13(E_PROC_m13, "passed semaphore is null");
+		return_m13(-1);
+	}
+	
+#ifdef MACOS_m13
+	// NOTE: if convenient, better to use sem_open_m13() to allocate & initialize semaphore on MacOS
+	
+	sem = sem_open(NULL,  0, 0, init_val);  // get "unnamed" semaphore with default values
+	if (sem == NULL)
+		r_val = -1;
+#endif
+	
+#ifdef LINUX_m13
+	r_val = sem_init(sem, shared, init_val);
+#endif
+	
+#ifdef WINDOWS_m13
+	sem_t_m13	*tr_val;
+
+	tr_val = CreateSemaphoreA(NULL, (si4) init_val, (si4) 0x7FFFFFFF, NULL);
+	if (tr_val == NULL)
+		r_val = -1;
+	else
+		*sem = *tr_val;
+#endif
+	
+	if (r_val == -1)
+		G_set_error_m13(E_PROC_m13, "sem_init_m13() error");
+
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...)  // varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// sem_open() on MacOS with some defaults
+	// returns sytem allocated semaphore pointer, or NULL on failure
+
+#ifdef MACOS_m13
+	si1		local_name[16];
+	ui4		init_val;
+	mode_t		mode;
+	sem_t_m13	*sem;
+	va_list		v_args;
+	
+	
+	if (STR_is_empty_m13(name) == TRUE_m13) {
+		name = local_name;
+		sprintf(name, "%x", random_m13());
+	}
+	
+	if (o_flags & O_CREAT) {
+		// get varargs
+		va_start(v_args, o_flags);
+		mode = (mode_t) va_arg(v_args, ui4);
+		init_val = va_arg(v_args, ui4);
+		va_end(v_args);
+		
+		// set defaults
+		if (o_flags == 0)
+			o_flags = O_CREAT | O_EXCL;  // create or error if already exists
+		if (mode == 0)
+			mode =  S_IRWXU | S_IRWXG;  // rwx for user & group (may be modified by process umask)
+		
+		sem = sem_open(name, o_flags, mode, init_val);
+	} else {
+		sem = sem_open(name, o_flags);
+	}
+	
+	if (sem == SEM_FAILED) {
+		G_set_error_m13(E_PROC_m13, "sem_open_m13() error");
+		return_m13(NULL);
+	}
+
+	return_m13(sem);
+#endif
+	
+	return_m13(NULL);
+}
+	
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	sem_post_m13(sem_t_m13 *sem)
+{
+	si4	r_val = 0;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// atomically increments the semaphore pointed to by sem
+	// if any threads are blocked on the semaphore, one of them is unblocked
+	// returns 0 on success; -1 on failure
+
+#if defined MACOS_m13 || defined LINUX_m13
+	r_val = sem_post(sem);
+#endif
+
+#ifdef WINDOWS_m13
+	if (ReleaseSemaphore(sem, (si4) 1, NULL) == 0)
+		r_val = -1;
+#endif
+	
+	if (r_val == -1)
+		G_set_error_m13(E_PROC_m13, "sem_post_m13() error");
+		
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	sem_trywait_m13(sem_t_m13 *sem)
+{
+	si4	r_val = 0;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// blocks the calling thread until the count in the semaphore pointed to by sem becomes greater than zero, then atomically decrements it
+	// returns 0 on success; -1 on failure
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	r_val = sem_wait(sem);
+#endif
+
+#ifdef WINDOWS_m13
+	DWORD	wait_res;
+	
+	wait_res = WaitForSingleObject(sem, (si4) 0);  // since object is semaphore, count is decremented on return if successful
+
+	if (wait_res != WAIT_OBJECT_0)
+		r_val = -1;
+#endif
+
+	if (r_val == -1)
+		G_set_error_m13(E_PROC_m13, "sem_trywait_m13() error");
+		
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	sem_wait_m13(sem_t_m13 *sem)
+{
+	si4	r_val = 0;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// blocks the calling thread until the count in the semaphore pointed to by sem becomes greater than zero, then atomically decrements it
+	// returns 0 on success; -1 on failure
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	r_val = sem_wait(sem);
+#endif
+
+#ifdef WINDOWS_m13
+	DWORD	wait_res;
+	
+	wait_res = WaitForSingleObject(sem, INFINITE);  // since object is semaphore, count is decremented upon return
+
+	if (wait_res != WAIT_OBJECT_0)
+		r_val = -1;
+#endif
+
+	if (r_val == -1)
+		G_set_error_m13(E_PROC_m13, "sem_wait_m13() error");
+		
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 si4	snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...)
 {
 	si4		ret_val;
@@ -46570,6 +46904,44 @@ si4	sprintf_m13(si1 *target, const si1 *fmt, ...)
 	free((void *) tmp_str);
 
 	return(ret_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	srand_med_m13(ui4 seed, ui4 *m_w, ui4 *m_z)
+{
+	// seed medlib generator & recieve initial coefficients
+	
+	
+	if (seed >= (ui4) 0x7FFFFFFF)
+		seed >>= 1; // avoid overflow below
+	
+	*m_w = (ui4) 0x80000000 + seed;
+	*m_z = (ui4) 0x7FFFFFFF - seed;
+
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	srandom_m13(ui4 seed)
+{
+	// seed system generator
+	// produces replicable sequences on same system
+	
+#if defined MACOS_m13 || defined LINUX_m13
+	srandom(seed);
+#endif
+	
+#ifdef WINDOWS_m13
+	srand(seed);
+#endif
+	return;
+
 }
 
 
@@ -47901,22 +48273,7 @@ si1	*tempnam_m13(si1 *path)
 		path = (si1 *) malloc_m13((size_t) PATH_BYTES_m13);
 	
 	do {
-		#if defined MACOS_m13 || defined LINUX_m13
-		rand_val = (ui8) random();
-		rand_val <<= 32;
-		rand_val |= (ui8) random();
-		#endif
-		
-		#ifdef WINDOWS_m13
-		rand_val = (ui8) rand();
-		rand_val <<= 16;
-		rand_val |= (ui8) rand();
-		rand_val <<= 16;
-		rand_val |= (ui8) rand();
-		rand_val <<= 16;
-		rand_val |= (ui8) rand();
-		#endif
-		
+		rand_val = rand64_m13();
 		sprintf_m13(path, "%s/MED_junk_%016lx.tmp", globals_m13->temp_dir, rand_val);
 		
 	} while (G_exists_m13(path) == TRUE_m13);
@@ -47964,7 +48321,7 @@ si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 	
 	*target = (si1 *) calloc((size_t) PRINTF_BUF_LEN_m13, sizeof(si1));
 	va_copy(args_copy, args);  // save a copy before use in case need to realloc
-	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);
+	G_push_behavior_m13(RETURN_QUIETLY_m13);
 	ret_val = vsnprintf_m13(*target, PRINTF_BUF_LEN_m13, fmt, args);
 	G_pop_behavior_m13();
 	
