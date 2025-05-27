@@ -5440,11 +5440,14 @@ ui8		rand64_m13(void); // 64-bit random number using system random number genera
 ui8		rand64_med_m13(ui4 *m_w, ui4 *m_z); // 64-bit random number using medlib generator (replicable sequences across platforms)
 tern		rm_m13(const si1 *path);  // remove
 si4		scanf_m13(const si1 *fmt, ...);
+void		sem_dec_m13(sem_t_m13 *sem);
 si4		sem_destroy_m13(sem_t_m13 *sem);
+void		sem_inc_m13(sem_t_m13 *sem);
 si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
 sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
 si4		sem_post_m13(sem_t_m13 *sem);
 si4		sem_trywait_m13(sem_t_m13 *sem);
+si4		sem_trywait_zero_m13(sem_t_m13 *sem);
 si4		sem_wait_m13(sem_t_m13 *sem);
 si4		sem_wait_zero_m13(sem_t_m13 *sem);  // inverse semaphore - count of zero unblocks
 si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
