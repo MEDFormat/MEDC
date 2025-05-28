@@ -875,7 +875,7 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 
 	// find stack
 	_id = gettid_m13();
-	stack_ptr = list->stack_ptrs;
+	stack_ptr = atomic_load(&list->stack_ptrs);
 	n_stacks = list->top_idx + 1;
 	stack = NULL;
 	for (i = n_stacks; i--; ++stack_ptr) {
@@ -5100,8 +5100,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		for (i = 0; i < globals_m13->file_lock_list->size; i += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13)
 			free((void *) globals_m13->file_lock_list->lock_ptrs[i]);
 		free((void *) globals_m13->file_lock_list->lock_ptrs);
-		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->list_mutex);
-		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->lock_mutex);
+		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->mutex);
 		free((void *) globals_m13->file_lock_list);
 	}
 
@@ -5459,9 +5458,10 @@ inline
 #endif
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 {
-	si4				i, n_stacks, list_top_idx, list_size;
+	si4				i, n_stacks, list_top_idx, stack_top_idx, list_size;
+	pid_t_m13			stack_id;
 	FUNCTION_STACK_LIST_m13		*list;
-	FUNCTION_STACK_m13 		*stack, **stack_ptr, *new_stack;
+	FUNCTION_STACK_m13 		*stack, **list_stack_ptrs, **stack_ptr, *new_stack;
 
 
 	// pass zero for current thread function stack
@@ -5475,30 +5475,22 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	pthread_mutex_lock_m13(&list->mutex);
 //	eprintf_m13("getting stack %lu", _id);
 	
-	// get atomics locally (have mutex at this point
-	list_top_idx = atomic_load(&list->top_idx);
-	list_size = atomic_load(&list->size);
-	
-	// adding this gets rid of problem that list->top_idx not always updated before next thread gets to it
-	// tried atomics - same result; tried local static variable - same result
-	// semaphore storage of top_idx might work, but no way to get semaphore value in MacOS
-	// so ... wait for flush to memory from other thread's registers
-	// this is a terrible solution, but only thing I've found that works consistently
-	// works consistently at 10 & usually at 1 us on my Mac, but can't count on that across systems, so set to 100 us
-//	nap_m13("100 us");
-
 	// find stack
-	stack_ptr = list->stack_ptrs;
+	list_top_idx = atomic_load(&list->top_idx);
+	list_stack_ptrs = atomic_load(&list->stack_ptrs);
+	stack_ptr = list_stack_ptrs;
 	n_stacks = list_top_idx + 1;
 	stack = NULL;
 	for (i = n_stacks; i--; ++stack_ptr) {
-		if ((*stack_ptr)->_id == _id) {
+		stack_id = atomic_load(&(*stack_ptr)->_id);
+		if (stack_id == _id) {
 			stack = *stack_ptr;
 			break;
 		}
 		if (stack)
 			continue;
-		if ((*stack_ptr)->top_idx == -1)  // first open stack
+		stack_top_idx = atomic_load(&(*stack_ptr)->top_idx);
+		if (stack_top_idx == -1)  // first open stack
 			stack = *stack_ptr;
 	}
 	
@@ -5506,6 +5498,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	if (i == -1) {
 		// create a new stack
 		if (stack == NULL) {
+			list_size = atomic_load(&list->size);
 			if (list_size == n_stacks) { // expand list
 				n_stacks += GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13;
 				stack_ptr = (FUNCTION_STACK_m13 **) realloc((void *) list->stack_ptrs, (size_t) n_stacks * sizeof(FUNCTION_STACK_m13 *));
@@ -5514,7 +5507,8 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return(NULL);
 				}
-				list->stack_ptrs = stack_ptr;
+				list_stack_ptrs = stack_ptr;
+				atomic_store(&list->stack_ptrs, list_stack_ptrs);
 
 				// allocate & initialize new stacks (note: stacks allocated en bloc)
 				new_stack = (FUNCTION_STACK_m13 *) malloc((size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(FUNCTION_STACK_m13));
@@ -5524,25 +5518,22 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 					return(NULL);
 				}
 				// initialize new stacks (functions allocated as needed)
-				stack_ptr += list->size;  // stack_ptr pointing to base of reallocated array; list->size == old size at this point
+				stack_ptr += list_size;  // stack_ptr pointing to base of reallocated array; list->size == old size at this point
 				for (i = GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
 					*stack_ptr++ = new_stack;  // assign stack pointer
 					new_stack->size = 0;  // malloc() doesn't zero
 				}
-				list_size = n_stacks;
+				atomic_store(&list->size, n_stacks);
 			}
-			stack = list->stack_ptrs[++list_top_idx];
+			stack = list_stack_ptrs[++list_top_idx];
+			atomic_store(&list->top_idx, list_top_idx);
 		}
 	
 		// setup or reset stack
-		stack->top_idx = -1;
-		stack->_id = _id;
+		atomic_store(&stack->top_idx, (si4) -1);
+		atomic_store(&stack->_id, _id);
 	}
 	
-	// update atomics (still have mutex)
-	atomic_store(&list->top_idx, list_top_idx);
-	atomic_store(&list->size, list_size);
-
 //	eprintf_m13("got stack %lu", _id);
 	pthread_mutex_unlock_m13(&list->mutex);
 		
@@ -6019,22 +6010,16 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 		if (G_init_error_tables_m13() == FALSE_m13)
 			ret_val = FALSE_m13;
 	} else {
-		eprintf_m13("");
 		if (HW_get_endianness_m13() == FALSE_m13)  // the library is only written for little endian machines right now, so always done
 			ret_val = FALSE_m13;
-		eprintf_m13("");
 		if (HW_get_memory_info_m13() == FALSE_m13)  // this is needed for alloc operations, so always done
 			ret_val = FALSE_m13;
-		eprintf_m13("");
 		if (G_init_error_tables_m13() == FALSE_m13)  // standard MED error strings - always done
 			ret_val = FALSE_m13;
-		eprintf_m13("");
 		if (GLOBALS_FILE_LOCK_MODE_DEFAULT_m13)  // file locking requires CRCs
 			if (CRC_init_tables_m13() == FALSE_m13)
 				ret_val = FALSE_m13;
-		eprintf_m13("");
 	}
-	eprintf_m13("");
 
 	// NT dylib loaded by WN_nap_m13() if used
 	#ifdef WINDOWS_m13
@@ -6118,10 +6103,8 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 #endif
 
 	// tables
-	eprintf_m13("");
 	if (globals_m13->tables == NULL)
 		G_init_global_tables_m13(init_all_tables);
-	eprintf_m13("");
 
 	// behavior stacks
 	globals_m13->behavior_stack_list = (BEHAVIOR_STACK_LIST_m13 *) calloc((size_t) 1, sizeof(BEHAVIOR_STACK_LIST_m13));
@@ -6147,8 +6130,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		#endif
 	}
 	globals_m13->file_lock_list->top_idx = -1;
-	pthread_mutex_init_m13(&globals_m13->file_lock_list->list_mutex, NULL);
-	pthread_mutex_init_m13(&globals_m13->file_lock_list->lock_mutex, NULL);
+	pthread_mutex_init_m13(&globals_m13->file_lock_list->mutex, NULL);
 
 	// process globals
 	globals_m13->proc_globs_list = (PROC_GLOBS_LIST_m13 *) calloc((size_t) 1, sizeof(PROC_GLOBS_LIST_m13));
@@ -6239,7 +6221,6 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		
 	pthread_mutex_unlock_m13(&globals_m13->mutex);
 	
-	eprintf_m13("");
 	return(TRUE_m13);
 }
 
@@ -7754,18 +7735,12 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 	}
 
 	// thread out segment opens
-	if (n_segs == 1) {  // no sense in thread overhead for one segment
+	if (n_segs == 1)  // no sense in thread overhead for one segment
 		threading = FALSE_m13;
-	} else if ((flags & LH_THREAD_SEG_READS_m13) == 0) {
+	else if ((flags & LH_THREAD_SEG_READS_m13) == 0)
 		threading = FALSE_m13;
-	} else {
-		threading = proc_globs->miscellaneous.threading;  // process specific
-		if (threading == NOT_SET_m13) {
-			threading = globals_m13->threading;  // global
-			if (threading == NOT_SET_m13)
-				threading = GLOBALS_THREADING_DEFAULT_m13;  // default
-		}
-	}
+	else
+		threading = PROC_default_threading_m13(chan);
 	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, thread_cnt, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
 
 	// check results
@@ -8479,16 +8454,10 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	}
 	
 	// thread out channel opens
-	if (n_chans == 1) {  // no sense in thread overhead for one channel
+	if (n_chans == 1)  // no sense in thread overhead for one channel
 		threading = FALSE_m13;
-	} else {
-		threading = proc_globs->miscellaneous.threading;  // process specific
-		if (threading == NOT_SET_m13) {
-			threading = globals_m13->threading;  // global
-			if (threading == NOT_SET_m13)
-				threading = GLOBALS_THREADING_DEFAULT_m13;  // default
-		}
-	}
+	else
+		threading = PROC_default_threading_m13(sess);
 	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_chans, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
 	free((void *) proc_thread_infos);
 	free((void *) read_MED_thread_infos);
@@ -8981,7 +8950,7 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	
 	// delete proc globals Sgmt_records_list
 	Sgmt_records_list = proc_globs->current_session.Sgmt_recs_list;
-	Sgmt_records_entry = Sgmt_records_list->entries;
+	Sgmt_records_entry = atomic_load(&Sgmt_records_list->entries);
 	for (i = Sgmt_records_list->top_idx + 1; i--; ++Sgmt_records_entry)
 		free((void *) Sgmt_records_entry->Sgmt_recs);
 	free((void *) Sgmt_records_list->entries);
@@ -9602,7 +9571,6 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	va_list				v_args;
 	LH_m13				*parent;
 	SEG_m13				*seg;
-	PROC_GLOBS_m13			*proc_globs;
 	PROC_THREAD_INFO_m13		*proc_thread_infos;
 	READ_MED_THREAD_INFO_m13	*read_MED_thread_infos;
 
@@ -9694,21 +9662,12 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	}
 
 	// thread out segment reads
-	proc_globs = G_proc_globs_m13((LH_m13 *) chan);
-	if (n_segs == 1) {  // no sense in thread overhead for one segment
+	if (n_segs == 1)  // no sense in thread overhead for one segment
 		threading = FALSE_m13;
-	} else {
-		if ((flags & LH_THREAD_SEG_READS_m13) == 0) {
-			threading = FALSE_m13;
-		} else {
-			threading = proc_globs->miscellaneous.threading;  // process specific
-			if (threading == NOT_SET_m13) {
-				threading = globals_m13->threading;  // global
-				if (threading == NOT_SET_m13)
-					threading = GLOBALS_THREADING_DEFAULT_m13;  // default
-			}
-		}
-	}
+	else if ((flags & LH_THREAD_SEG_READS_m13) == 0)
+		threading = FALSE_m13;
+	else
+		threading = PROC_default_threading_m13(chan);
 	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, thread_cnt, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
 	
 	// check results
@@ -10499,16 +10458,10 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	}
 	
 	// thread out channel reads
-	if (active_chans == 1) {  // no sense in thread overhead for one channel
+	if (active_chans == 1)  // no sense in thread overhead for one channel
 		threading = FALSE_m13;
-	} else {
-		threading = proc_globs->miscellaneous.threading;  // process specific
-		if (threading == NOT_SET_m13) {
-			threading = globals_m13->threading;  // global
-			if (threading == NOT_SET_m13)
-				threading = GLOBALS_THREADING_DEFAULT_m13;  // default
-		}
-	}
+	else
+		threading = PROC_default_threading_m13(sess);
 	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, active_chans, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
 	
 	// check results
@@ -12983,26 +12936,26 @@ inline
 #endif
 void	G_show_lock_m13(FLOCK_ENTRY_m13 *lock)
 {
-	pthread_mutex_t_m13	*lock_mutex;
+	ui4			file_id;
+	pid_t_m13		owner_id;
 
-	
-	lock_mutex = &globals_m13->file_lock_list->lock_mutex;
-	pthread_mutex_lock_m13(lock_mutex);
 
-	if (lock) {
-		printf_m13("lock address: %lu\n", (ui8) lock);
-		if (lock->owner_id)
-			printf_m13("owner id: 0x%016x\n", lock->owner_id);
-		else
-			printf_m13("owner id: none\n");
-		printf_m13("open count: %hu\n", lock->opens);
-		printf_m13("read count: %hu\n", lock->reads);
-		printf_m13("file id: 0x%08x\n", lock->file_id);
-	} else {
+	if (lock == NULL) {
 		printf_m13("lock address: null\n");
+		return;
 	}
-
-	pthread_mutex_unlock_m13(lock_mutex);
+	
+	printf_m13("lock address: %lu\n", (ui8) lock);
+	owner_id = atomic_load(&lock->owner_id);
+	if (owner_id)
+		printf_m13("owner id: 0x%016x\n", owner_id);
+	else
+		printf_m13("owner id: none\n");
+	printf_m13("open count: %u\n", isem_getcount_m13(lock->opens));
+	printf_m13("read count: %hu\n", isem_getcount_m13(lock->reads));
+	printf_m13("write count: %hu\n", isem_getcount_m13(lock->writes));
+	file_id = atomic_load(&lock->file_id);
+	printf_m13("file id: 0x%08x\n", file_id);
 	
 	return;
 }
@@ -26998,7 +26951,7 @@ tern	DM_free_matrix_m13(DATA_MATRIX_m13 **matrix_ptr)
 
 DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLICE_m13 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
 {
-	tern				changed_to_absolute_time, padding_required, ret_val;
+	tern				changed_to_absolute_time, padding_required, ret_val, threading;
 	ui1				*data_base, *minima_base, *maxima_base;
 	si2				si2_pad;
 	si4				search_mode, seg_idx, si4_pad;
@@ -27402,7 +27355,11 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	}
 		
 	// launch channel threads; don't wait for completion (unless running with no threads)
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, matrix->channel_count, 0, FALSE_m13, proc_globs->miscellaneous.threading);  // default reserved cores
+	if (matrix->channel_count == 1)  // no sense in thread overhead for one channel
+		threading = FALSE_m13;
+	else
+		threading = PROC_default_threading_m13(sess);
+	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, matrix->channel_count, 0, FALSE_m13, threading);  // default reserved cores
 	if (ret_val == FALSE_m13) {
 		G_set_error_m13(E_GEN_m13, "channel thread error");
 		return_m13(NULL);
@@ -35056,6 +35013,10 @@ tern	NET_trim_address_m13(si1 *address)
 // MARK: PARALLEL FUNCTIONS  (PAR)
 //********************************//
 
+// ******************************************************************************************************** //
+// Note: the PAR functions have not yet been updated for PROC_GLOBS_m13 & will not as is in the m13 library
+// ******************************************************************************************************** //
+
 tern	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)  // frees thread globals & par itself - sets par pointer to NULL
 {
 	extern GLOBALS_m13		**globals_list_m13;
@@ -35440,6 +35401,31 @@ tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 	}
 
 	return(ret_val);
+}
+
+
+tern	PROC_default_threading_m13(void *lh)
+{
+	tern		threading;
+	PROC_GLOBS_m13	*proc_globs;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// pass null for lh for current thread proc_globs
+	// lh is a level header pointer (LH_m13 *), only void because LH_m13 defined after PROC functions in header (will eventaully fix this)
+	
+	proc_globs = G_proc_globs_m13((LH_m13 *) lh);
+	threading = proc_globs->miscellaneous.threading;  // process specific
+	
+	if (threading == NOT_SET_m13) {
+		threading = globals_m13->threading;  // global
+		if (threading == NOT_SET_m13)
+			threading = GLOBALS_THREADING_DEFAULT_m13;  // default
+	}
+
+	return_m13(threading);
 }
 
 
@@ -43709,7 +43695,6 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	FILE_m13			*m13_fp;
 	FLOCK_LIST_m13			*list;
 	FLOCK_ENTRY_m13			*lock, **lock_ptr, *new_locks, **new_lock_ptrs;
-	pthread_mutex_t_m13		*lock_mutex;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -43793,7 +43778,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	
 	// get list mutex
 	list = globals_m13->file_lock_list;
-	pthread_mutex_lock_m13(&list->list_mutex);  // lock the list
+	pthread_mutex_lock_m13(&list->mutex);  // lock the list
 	
 	// find lock in table
 	n_locks = list->top_idx + 1;
@@ -43813,7 +43798,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	// not in list
 	if (i == -1) {
 		if (operation & (FLOCK_UNLOCK_m13 | FLOCK_CLOSE_m13)) {  // file to unlock or close is not in list
-			pthread_mutex_unlock_m13(&list->list_mutex);  // unlock the list
+			pthread_mutex_unlock_m13(&list->mutex);  // unlock the list
 			return_m13(FLOCK_SUCCESS_m13);
 		}
 		if (lock == NULL) {
@@ -43822,7 +43807,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 				n_locks += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
 				new_lock_ptrs = (FLOCK_ENTRY_m13 **) realloc((void *) list->lock_ptrs, (size_t) n_locks * sizeof(FLOCK_ENTRY_m13 *));
 				if (new_lock_ptrs == NULL) {
-					pthread_mutex_unlock_m13(&list->list_mutex);
+					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return_m13(FLOCK_ERR_m13);
 				}
@@ -43830,7 +43815,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 				// allocate new locks (calloc so all fields zeroed)
 				new_locks = (FLOCK_ENTRY_m13 *) calloc((size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13, sizeof(FLOCK_ENTRY_m13));
 				if (new_locks == NULL) {
-					pthread_mutex_unlock_m13(&list->list_mutex);
+					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return_m13(FLOCK_ERR_m13);
 				}
@@ -43847,7 +43832,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 		}
 		lock->file_id = file_id;  // assign lock
 		if ((operation & FLOCK_OPEN_m13) == 0)  // lock operation called without initial call to fopen_m13()
-			lock->opens = 1;
+			isem_setcount_m13(lock->opens, (ui4) 1);
 	}
 
 	// open (called by fopen_m13)
@@ -43866,21 +43851,23 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	}
 	
 	// release list mutex
-	pthread_mutex_unlock_m13(&list->list_mutex);
+	pthread_mutex_unlock_m13(&list->mutex);
 	
 	if (operation & (FLOCK_OPEN_m13 | FLOCK_CLOSE_m13))
 		return_m13(FLOCK_SUCCESS_m13);
 
 	// force (use judiciously => current writing thread, if there is one, will finish current write)
-	lock_mutex = &list->lock_mutex;
+	// force write locks must be paired with force write unlocks because ownership is not transferred
+	// force read locks can be unlocked without the force flag
 	if (operation & FLOCK_FORCE_m13) {
 		if (operation & FLOCK_LOCK_m13) {  // force lock
-			pthread_mutex_lock_m13(lock_mutex);  // needs lock mutex
 			if (operation & FLOCK_WRITE_m13)  // force write lock
-				lock->owner_id = owner_id;  // transfer ownnership
-			else  // force read lock
-				++lock->reads;
-			pthread_mutex_unlock_m13(lock_mutex);
+				isem_inc_m13(lock->writes);  // increase write count
+			else // increase read count
+				isem_inc_m13(lock->reads);
+		} else if (operation & FLOCK_UNLOCK_m13) {  // force unlock
+			if (operation & FLOCK_WRITE_m13)  // force write lock
+				isem_dec_m13(lock->writes);  // decrease write count
 		}
 		return_m13(FLOCK_SUCCESS_m13);
 	}
@@ -43888,7 +43875,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	// unlock (does not need lock mutex)
 	if (operation & FLOCK_UNLOCK_m13) {
 		if (operation & FLOCK_WRITE_m13) { // write unlock
-			if (lock->owner_id == owner_id)  // only owning thread can release write lock (unless forced)
+			if (lock->owner_id == owner_id)  // only owning thread can release ownership
 				lock->owner_id = 0;  // release write lock
 			else  // can't unlock - not owner
 				return_m13(FLOCK_LOCKED_m13);
@@ -43913,7 +43900,6 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	while (1) {
 		
 		// check lock
-		pthread_mutex_lock_m13(lock_mutex);
 		if (lock->owner_id == 0) {  // all locks require no concurrent writes
 			if (operation & FLOCK_READ_m13) {
 				++lock->reads;  // read lock aqcuired
@@ -43925,7 +43911,6 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 			if (lock->reads == 0)
 				break;  // write lock acquired
 		}
-		pthread_mutex_unlock_m13(lock_mutex);
 
 		// non-blocking
 		if (operation & FLOCK_NON_BLOCKING_m13) {
@@ -43949,9 +43934,6 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 			}
 		}
 	}
-
-	// release lock mutex
-	pthread_mutex_unlock_m13(lock_mutex);
 
 	return_m13(FLOCK_SUCCESS_m13);
 }
@@ -45304,6 +45286,197 @@ pid_t_m13	gettid_m13(void)
 #ifdef WINDOWS_m13
 	return(GetCurrentThreadId());
 #endif
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_dec_m13(isem_t_m13 *isem)
+{
+	ui4	count;
+	
+	// decrements the count
+	// returns 0 on success; -1 on failure
+
+	if (pthread_mutex_lock_m13(&isem->mutex)) {
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	count = atomic_load(&isem->count);
+	if (count)
+		atomic_store(&isem->count, --count);
+	
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_destroy_m13(isem_t_m13 *isem)
+{
+	// destroys the inverse semaphore
+	// deallocates, if allocted
+	
+	if (isem == NULL)
+		return;
+	
+	pthread_mutex_destroy_m13(&isem->mutex);
+	
+	if (isem->alloced == TRUE_m13)
+		free_m13((void *) isem);
+		
+	return;
+}
+	
+	
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui4	isem_getcount_m13(isem_t_m13 *isem)
+{
+	ui4	count;
+	
+	// returns the count
+	// does not need mutex
+
+	count = atomic_load(&isem->count);
+	
+	return(count);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val)
+{
+	// Initializes the inverse semaphore to the initial value
+	// pass isem == NULL to allocate
+	// returns NULL on failure
+	
+	if (isem == NULL) {  // caller takes ownerhsip
+		isem = (isem_t_m13 *) malloc_m13(sizeof(isem_t_m13));
+		if (isem == NULL)
+			return(NULL);
+		isem->alloced = TRUE_m13;
+	} else if (isem->alloced < FALSE_m13 || isem->alloced > TRUE_m13) {  // ensure alloced is a valid tern value (i.e. uninitialized isem)
+		isem->alloced = UNKNOWN_m13;
+	}
+	
+	pthread_mutex_init_m13(&isem->mutex, NULL);
+	pthread_mutex_lock_m13(&isem->mutex);
+	
+	atomic_store(&isem->count, init_val);
+	
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return(isem);
+}
+	
+	
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_inc_m13(isem_t_m13 *isem)
+{
+	// increments the count
+
+	if (pthread_mutex_lock_m13(&isem->mutex)) {
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+	
+	atomic_fetch_add(&isem->count, (ui4) 1);
+	
+	pthread_mutex_unlock_m13(&isem->mutex);
+
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_setcount_m13(isem_t_m13 *isem, ui4 count)
+{
+	// sets the count
+
+	if (pthread_mutex_lock_m13(&isem->mutex)) {
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	atomic_store(&isem->count, count);
+	
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	isem_trywait_m13(isem_t_m13 *isem)
+{
+	ui4	count;
+	si4	r_val;
+	
+	// if count == 0, sets count == 1 & returns 0 (count of at least 1 ensures blocking of other threads until finished)
+	// calling function should call isem_release_m13() when finished
+	// if count > 0, returns -1
+	
+	if (pthread_mutex_lock_m13(&isem->mutex)) {
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+	
+	count = atomic_load(&isem->count);
+	if (count) {
+		r_val = -1;
+	} else {
+		atomic_store(&isem->count, (ui4) 1);  // incremement count
+		r_val = 0;
+	}
+
+	pthread_mutex_unlock_m13(&isem->mutex);
+
+	return_m13(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_wait_m13(isem_t_m13 *isem)
+{
+	ui4	count;
+	
+	// blocks until count == 0, then increments count & returns
+	
+	if (pthread_mutex_lock_m13(&isem->mutex)) {
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+	
+	count = atomic_load(&isem->count);
+	while (count) {
+		pthread_mutex_unlock_m13(&isem->mutex);
+		nap_m13("100 us");
+		pthread_mutex_lock_m13(&isem->mutex);
+		count = atomic_load(&isem->count);
+	}
+	
+	atomic_store(&isem->count, (ui4) 1);
+
+	pthread_mutex_unlock_m13(&isem->mutex);
+
+	return;
 }
 
 
@@ -46870,7 +47043,7 @@ si4	sem_trywait_m13(sem_t_m13 *sem)
 	// returns 0 on success; -1 on failure
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	r_val = sem_wait(sem);
+	r_val = sem_trywait(sem);
 #endif
 
 #ifdef WINDOWS_m13
@@ -46885,43 +47058,6 @@ si4	sem_trywait_m13(sem_t_m13 *sem)
 	if (r_val == -1)
 		G_set_error_m13(E_PROC_m13, "sem_trywait_m13() error");
 		
-	return_m13(r_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	sem_trywait_zero_m13(sem_t_m13 *sem)
-{
-	si4				r_val;
-	static pthread_mutex_t_m13	mutex;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// checks if the count is zero, & if then atomically increments it, & returns 0
-	// else returns -1 immediately
-	// generally the semaphore count should be initialized to zero in this scenario
-	// threads using this mechanism should use sem_inc_m13() [== sem_post] & sem_dec_m13() [== sem_trywait] to increment & decrement count
-
-	if (pthread_mutex_lock_m13(&mutex)) {
-		pthread_mutex_init_m13(&mutex, NULL);
-		pthread_mutex_lock_m13(&mutex);
-	}
-	
-	if (sem_trywait_m13(sem) == 0)
-		r_val = -1;
-	else
-		r_val = 0;
-	
-	// replace count that was removed or
-	// add a count to prevent race before releasing mutex
-	sem_inc_m13(sem);
-
-	pthread_mutex_unlock_m13(&mutex);
-	
 	return_m13(r_val);
 }
 
@@ -46957,42 +47093,6 @@ si4	sem_wait_m13(sem_t_m13 *sem)
 		G_set_error_m13(E_PROC_m13, "sem_wait_m13() error");
 		
 	return_m13(r_val);
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-si4	sem_wait_zero_m13(sem_t_m13 *sem)
-{
-	static pthread_mutex_t_m13	mutex;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// blocks the calling thread until the count in the semaphore pointed to by sem becomes zero, then atomically increments it
-	// returns 0 on success; -1 on failure
-	// generally the semaphore count should be initialized to zero in this scenario
-	// threads using this mechanism should use sem_inc_m13() [== sem_post] & sem_dec_m13() [== sem_trywait] to increment & decrement count
-
-	if (pthread_mutex_lock_m13(&mutex)) {
-		pthread_mutex_init_m13(&mutex, NULL);
-		pthread_mutex_lock_m13(&mutex);
-	}
-	
-	while (sem_trywait_m13(sem) == 0) {
-		sem_inc_m13(sem);  // replace count that was removed
-		nap_m13("100 us");  // don't peg cpu
-	}
-	
-	// add a count to prevent race before releasing mutex
-	// calling function sould call sem_dec_m13() when finished with lock
-	sem_inc_m13(sem);
-	
-	pthread_mutex_unlock_m13(&mutex);
-	
-	return_m13(0);
 }
 
 

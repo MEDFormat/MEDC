@@ -1343,6 +1343,17 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 	typedef	HANDLE			sem_t_m13;
 #endif // WINDOWS_m13
 
+// inverse semaphores
+// function as semaphores that block when count > 0
+// implemented with mutex because atomic alone can't guarantee no change between accesses in isem functions
+// implemented with atomic because mutex alone can't guarantee global value updated between thread accesses
+// example usage: flock reader count => write request blocks in isem until reader count == 0
+typedef struct {
+	pthread_mutex_t_m13	mutex;
+	_Atomic ui4		count;
+	tern			alloced; // TRUE_m13 if heap_allocated
+} isem_t_m13;
+
 
 #if defined MACOS_m13
 	// The prototypes of these two functions are commented out in mach/thread_policy.h, so declared here
@@ -1356,7 +1367,7 @@ typedef struct {
 	pthread_fn_m13	thread_f; // thread function pointer
 	void		*arg; // function-specific info structure, set by calling function
 	si4		priority; // typically PROC_HIGH_PRIORITY_m13
-	volatile ui4	status;
+	_Atomic ui4	status;
 } PROC_THREAD_INFO_m13;
 
 typedef struct {
@@ -1369,6 +1380,7 @@ typedef struct {
 // Prototypes
 // Note: medlib versions of standard pthread functions are prototyped with other standard function versions
 tern			PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
+tern			PROC_default_threading_m13(void *lh); // lh is an LH_m13 *
 tern			PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *thread_infos, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs, tern thread_jobs);
 cpu_set_t_m13		*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
 pid_t_m13		PROC_id_for_thread_m13(pthread_t_m13 *thread);
@@ -1742,7 +1754,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 }
 
 typedef struct {
-	volatile si4		code;
+	_Atomic si4		code;
 	si4			signal;
 	si4			line;
 	const si1		*function;
@@ -1944,11 +1956,11 @@ typedef struct {
 	struct Sgmt_REC_m13	*Sgmt_recs; // defined below == record header + REC_Sgmt_v11_m13 body (session number of segments in length)
 } Sgmt_RECS_ENTRY_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	mutex;
-	Sgmt_RECS_ENTRY_m13	*entries;
-	si4			size; // total allocated Sgmt_RECORD_ENTRYs
-	si4			top_idx; // last non-empty Sgmt_RECORD_ENTRY in list
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13			mutex;
+	_Atomic(Sgmt_RECS_ENTRY_m13 *)		entries;
+	_Atomic si4				size; // total allocated Sgmt_RECORD_ENTRYs
+	_Atomic si4				top_idx; // last non-empty Sgmt_RECORD_ENTRY in list
 } Sgmt_RECS_LIST_m13;
 
 typedef struct {
@@ -1997,12 +2009,12 @@ typedef struct {
 typedef struct {
 	ui4		mmap_block_bytes; // read size for memory mapped files (process data may be on different volumes)
 					 // if files are on different volumes, use/set mmap_block_bytes in FILE_m13 structure
-	volatile tern	threading; // TRUE_m13 == thread processing where appropriate
-	volatile tern	proc_error_state; // flag for void functions, not global error state
+	_Atomic tern	threading; // TRUE_m13 == thread processing where appropriate
+	_Atomic tern	proc_error_state; // flag for void functions, not global error state
 } MISCELLANEOUS_m13; // PROC_GLOBS_m13 element
 
 // All MED File Structures begin with a level header structure
-typedef struct LH_m13 {
+typedef struct LH_m13 { // multiple thread access
 	union { // anonymous union
 		struct {
 			si1 	type_string[TYPE_BYTES_m13];
@@ -2014,23 +2026,23 @@ typedef struct LH_m13 {
 			tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 		};
 	};
-	si1			*path; // NULL in proc_globs
-	si1			*name; // NULL in proc_globs
-	struct LH_m13 		*parent; // NULL in proc_globs
-	struct PROC_GLOBS_m13	*proc_globs; // self in proc_globs
-	ui8			flags;
-	volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
+	si1					*path; // NULL in proc_globs
+	si1					*name; // NULL in proc_globs
+	_Atomic(struct LH_m13 *)		parent; // NULL in proc_globs
+	_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+	ui8					flags;
+	_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 } LH_m13;
 
 // non-standard structure
 // required compiler option (gcc, clang): -fms-extensions
 // suppress warnings: -Wno-microsoft-anon-tag
 #ifdef __cplusplus
-typedef struct PROC_GLOBS_m13 {
+typedef struct PROC_GLOBS_m13 { // multiple thread access
 	union {
 		LH_m13 	header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 in C++
-			union { // anonymous union
+			union {
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
 					ui1 	pad[3]; // enforce 8-byte alignment
@@ -2041,12 +2053,12 @@ typedef struct PROC_GLOBS_m13 {
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1			*path; // NULL in proc_globs
-			si1			*name; // NULL in proc_globs
-			LH_m13			*parent; // NULL in proc_globs
-			struct PROC_GLOBS_m13	*proc_globs; // self in proc_globs
-			ui8			flags;
-			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
+			si1					*path; // NULL in proc_globs
+			si1					*name; // NULL in proc_globs
+			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			ui8					flags;
+			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
  // Password
@@ -2118,17 +2130,17 @@ typedef struct {
 } BEHAVIOR_m13;
 
 typedef struct {
-	pid_t_m13	_id; // thread id
-	BEHAVIOR_m13	*behaviors; // current behavior at top of stack (last entry)
-	si4		size; // total allocated behaviors
-	si4		top_idx; // top of behavior stack
+	pid_t_m13		_id; // thread id
+	BEHAVIOR_m13		*behaviors; // current behavior at top of stack (last entry)
+	si4			size; // total allocated behaviors
+	si4			top_idx; // top of behavior stack
 } BEHAVIOR_STACK_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	mutex;
-	BEHAVIOR_STACK_m13	**stack_ptrs; // secondary indirection to BEHAVIOR_STACK_m13 *
-	si4			size; // total allocated behavior_stacks
-	si4			top_idx; // last non-empty behavior_stack in list
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13		mutex;
+	_Atomic(BEHAVIOR_STACK_m13 **)	stack_ptrs; // secondary indirection to BEHAVIOR_STACK_m13 *
+	_Atomic si4			size; // total allocated behavior_stacks
+	_Atomic si4			top_idx; // last non-empty behavior_stack in list
 } BEHAVIOR_STACK_LIST_m13;
 
 // call with "G_push_function_m13(ui4 behavior)" prototype
@@ -2141,75 +2153,75 @@ typedef struct {
 #define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
 
 
-typedef struct {
-	pid_t_m13	_id; // thread id
-	const si1	**functions;
-	si4		size; // total allocated functions
-	si4		top_idx; // top of function stack
-} FUNCTION_STACK_m13; // thread-local
+typedef struct { // multiple thread access
+	_Atomic pid_t_m13	_id; // thread id
+	const si1		**functions;
+	si4			size; // total allocated functions
+	_Atomic si4		top_idx; // top of function stack
+} FUNCTION_STACK_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	mutex;
-	FUNCTION_STACK_m13	**stack_ptrs; // secondary indirection to function stacks
-	_Atomic si4		size; // total allocated function_stacks
-	_Atomic si4		top_idx; // last non-empty function_stack in list
-} FUNCTION_STACK_LIST_m13; // global
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13		mutex;
+	_Atomic(FUNCTION_STACK_m13 **)	stack_ptrs; // secondary indirection to function stacks
+	_Atomic si4			size; // total allocated function_stacks
+	_Atomic si4			top_idx; // last non-empty function_stack in list
+} FUNCTION_STACK_LIST_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	mutex;
-	PROC_GLOBS_m13		**proc_globs_ptrs; // secondary indirection to process globals
-	si4			size; // total allocated proc_globs
-	si4			top_idx; // last non-empty function_stack in list
-} PROC_GLOBS_LIST_m13; // global
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13		mutex;
+	_Atomic(PROC_GLOBS_m13 **)	proc_globs_ptrs; // secondary indirection to process globals
+	_Atomic si4			size; // total allocated proc_globs
+	_Atomic si4			top_idx; // last non-empty function_stack in list
+} PROC_GLOBS_LIST_m13;
 
-typedef struct {
-	pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
-	ui2		opens; // number of processes that have file open
-	ui2		reads; // number of processes currently reading file (writes locked)
-	ui4		file_id; // CRC of full path
-} FLOCK_ENTRY_m13; // global
+typedef struct { // multiple thread access
+	_Atomic pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
+	isem_t_m13		*opens; // number of processes that have file open
+	isem_t_m13		*reads; // number of processes currently reading file
+	isem_t_m13		*writes; // number of processes currently writing file (0 or 1)
+	_Atomic ui4		file_id; // CRC of full path
+} FLOCK_ENTRY_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	list_mutex;
-	pthread_mutex_t_m13	lock_mutex; // single lock mutex => may have to be changed to individual lock mutices in future
-	FLOCK_ENTRY_m13		**lock_ptrs; // secondary indirection to FLOCK_ENTRY_m13 *
-	si4			size; // total allocated locks
-	si4			top_idx; // last non-empty lock in list
-} FLOCK_LIST_m13; // global
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13		mutex;
+	_Atomic(FLOCK_ENTRY_m13	**)	lock_ptrs; // secondary indirection to FLOCK_ENTRY_m13 *
+	_Atomic si4			size; // total allocated locks
+	_Atomic si4			top_idx; // last non-empty lock in list
+} FLOCK_LIST_m13;
 
-typedef struct {
-	void 		*address;
-	ui8		requested_bytes;
-	ui8		actual_bytes; // actual bytes allocated => may be more than were requested
-	const si1	*alloc_function;
-	const si1	*free_function;
-	si4		alloc_line;
-	si4		free_line;
-	si1		alloc_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
-	si1		free_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
-	ui8		alloc_thread_id;
-	ui8		free_thread_id;
-} AT_ENTRY_m13; // global
+typedef struct { // multiple thread access
+	_Atomic(void *)		address;
+	_Atomic ui8		requested_bytes;
+	_Atomic ui8		actual_bytes; // actual bytes allocated => may be more than were requested
+	const si1		*alloc_function;
+	const si1		*free_function;
+	si4			alloc_line;
+	si4			free_line;
+	si1			alloc_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
+	si1			free_thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];  // keep name because thread may be gone
+	ui8			alloc_thread_id;
+	ui8			free_thread_id;
+} AT_ENTRY_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	mutex;
-	AT_ENTRY_m13		*entries; // no secondary indirection
-	si8			size; // total allocated entries
-	si4			top_idx; // last non-empty entry in list
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13		mutex;
+	_Atomic(AT_ENTRY_m13 *)		entries; // no secondary indirection
+	_Atomic si8			size; // total allocated entries
+	_Atomic si4			top_idx; // last non-empty entry in list
 } AT_LIST_m13; // global
 
-typedef struct {
-	pid_t_m13		_id; // thread id
-	pid_t_m13		_pid; // parent thread id
+typedef struct { // multiple thread access
+	_Atomic pid_t_m13	_id; // thread id
+	_Atomic pid_t_m13	_pid; // parent thread id
 	pthread_t_m13 		thread; // pthread_t_m13 (pointer would have been preferable because a pthread_t can be a few kB on Linux/MacOs, but can't guarantee the original structure still exists)
-} THREAD_ENTRY_m13; // thread-local
+} THREAD_ENTRY_m13;
 
-typedef struct {
-	pthread_mutex_t_m13	mutex;
-	THREAD_ENTRY_m13	*entries; // no secondary indirection
-	si8			size; // total allocated entries
-	si4			top_idx; // last non-empty entry in list
-} THREAD_LIST_m13; // global
+typedef struct { // multiple thread access
+	pthread_mutex_t_m13		mutex;
+	_Atomic(THREAD_ENTRY_m13 *)	entries; // no secondary indirection
+	_Atomic si8			size; // total allocated entries
+	_Atomic si4			top_idx; // last non-empty entry in list
+} THREAD_LIST_m13;
 
 typedef struct {
 	si1		path[PATH_BYTES_m13];
@@ -2620,23 +2632,23 @@ typedef struct {
 	union {
 		LH_m13			header; // in case just want the level header (type == GENERIC_TYPE_CODE_m13 => use universal header to get specific type)
 		struct { // this struct replaces anonymous LH_m13 for C++
-			union { // anonymous union
+			union {
 				struct {
-					si1	type_string[TYPE_BYTES_m13];
-					ui1	pad[3]; // enforce 8-byte alignment
+					si1 	type_string[TYPE_BYTES_m13];
+					ui1 	pad[3]; // enforce 8-byte alignment
 				};
 				struct {
-					ui4	type_code;
+					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1			*path; // points to local_path
-			si1			*name; // points to local_name
-			LH_m13			*parent; // parent structure, or PROC_GLOBS_m13 if created alone
-			struct PROC_GLOBS_m13	*proc_globs; // shortcut to structure's process globals
-			ui8			flags;
-			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
+			si1					*path; // NULL in proc_globs
+			si1					*name; // NULL in proc_globs
+			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			ui8					flags;
+			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
 	si1				local_path[PATH_BYTES_m13]; // full path from root including extension
@@ -2785,23 +2797,23 @@ typedef struct {
 	union {
 		LH_m13		header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 for C++
-			union { // anonymous union
+			union {
 				struct {
-					si1	type_string[TYPE_BYTES_m13];
-					ui1	pad[3]; // enforce 8-byte alignment
+					si1 	type_string[TYPE_BYTES_m13];
+					ui1 	pad[3]; // enforce 8-byte alignment
 				};
 				struct {
-					ui4	type_code;
+					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1			*path; // points to local_path
-			si1			*name; // points to local_name
-			LH_m13			*parent; // parent structure, channel or PROC_GLOBS_m13 if created alone
-			PROC_GLOBS_m13		*proc_globs;
-			ui8			flags;
-			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			si1					*path; // NULL in proc_globs
+			si1					*name; // NULL in proc_globs
+			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			ui8					flags;
+			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
 	FPS_m13			*metadata_fps; // also used as prototype
@@ -2851,23 +2863,23 @@ typedef struct CHAN_m13 {
 	union {
 		LH_m13		header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 for C++
-			union { // anonymous union
+			union {
 				struct {
-					si1	type_string[TYPE_BYTES_m13];
-					ui1	pad[3]; // enforce 8-byte alignment
+					si1 	type_string[TYPE_BYTES_m13];
+					ui1 	pad[3]; // enforce 8-byte alignment
 				};
 				struct {
-					ui4	type_code;
+					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1			*path; // points to local_path
-			si1			*name; // points to local_name
-			LH_m13			*parent; // parent structure, session or PROC_GLOBS_m13 if created alone
-			PROC_GLOBS_m13		*proc_globs;
-			ui8			flags;
-			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			si1					*path; // NULL in proc_globs
+			si1					*name; // NULL in proc_globs
+			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			ui8					flags;
+			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
 	FPS_m13			*metadata_fps; // used as prototype or ephemeral file, does not correspond to stored data
@@ -2905,23 +2917,23 @@ typedef struct {
 	union {
 		LH_m13	header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 in C++
-			union { // anonymous union
+			union {
 				struct {
-					si1	type_string[TYPE_BYTES_m13];
-					ui1	pad[3]; // enforce 8-byte alignment
+					si1 	type_string[TYPE_BYTES_m13];
+					ui1 	pad[3]; // enforce 8-byte alignment
 				};
 				struct {
-					ui4	type_code;
+					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1			*path; // points to local_path
-			si1			*name; // points to proc globals current_session.name
-			LH_m13			*parent; // parent structure, session or PROC_GLOBS_m13 if created alone
-			PROC_GLOBS_m13		*proc_globs;
-			ui8			flags;
-			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			si1					*path; // NULL in proc_globs
+			si1					*name; // NULL in proc_globs
+			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			ui8					flags;
+			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
 	FPS_m13		**rec_data_fps;
@@ -2949,23 +2961,23 @@ typedef struct {
 	union {
 		LH_m13		header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 in C++
-			union { // anonymous union
+			union {
 				struct {
-					si1	type_string[TYPE_BYTES_m13];
-					ui1	pad[3]; // enforce 8-byte alignment
+					si1 	type_string[TYPE_BYTES_m13];
+					ui1 	pad[3]; // enforce 8-byte alignment
 				};
 				struct {
-					ui4	type_code;
+					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1			*path; // points to proc globals current_session.directory
-			si1			*name; // points to proc globals current_session.namee
-			LH_m13			*parent; // parent structure, PROC_GLOBS_m13 for session or if created alone
-			PROC_GLOBS_m13		*proc_globs;
-			ui8			flags;
-			volatile si8		access_time; // uutc of last use of this structure by the calling program (updated by read & open functions)
+			si1					*path; // NULL in proc_globs
+			si1					*name; // NULL in proc_globs
+			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			ui8					flags;
+			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
 	};
 	FPS_m13			*ts_metadata_fps; // used as prototype or ephemeral file, does not correspond to stored data
@@ -5410,6 +5422,14 @@ size_t		fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...);   
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
+void		isem_dec_m13(isem_t_m13 *sem);  // decrement count
+void		isem_destroy_m13(isem_t_m13 *isem);
+ui4		isem_getcount_m13(isem_t_m13 *isem);
+void		isem_inc_m13(isem_t_m13 *sem);  // increment count
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val);
+void		isem_setcount_m13(isem_t_m13 *isem, ui4 count);
+si4		isem_trywait_m13(isem_t_m13 *sem);
+void		isem_wait_m13(isem_t_m13 *sem);
 size_t		malloc_size_m13(void *address);
 tern		md_m13(const si1 *dir);  // synonym for mkdir()
 void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
@@ -5440,16 +5460,11 @@ ui8		rand64_m13(void); // 64-bit random number using system random number genera
 ui8		rand64_med_m13(ui4 *m_w, ui4 *m_z); // 64-bit random number using medlib generator (replicable sequences across platforms)
 tern		rm_m13(const si1 *path);  // remove
 si4		scanf_m13(const si1 *fmt, ...);
-void		sem_dec_m13(sem_t_m13 *sem);
-si4		sem_destroy_m13(sem_t_m13 *sem);
-void		sem_inc_m13(sem_t_m13 *sem);
 si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
 sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
 si4		sem_post_m13(sem_t_m13 *sem);
 si4		sem_trywait_m13(sem_t_m13 *sem);
-si4		sem_trywait_zero_m13(sem_t_m13 *sem);
 si4		sem_wait_m13(sem_t_m13 *sem);
-si4		sem_wait_zero_m13(sem_t_m13 *sem);  // inverse semaphore - count of zero unblocks
 si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
 void		srand_med_m13(ui4 seed, ui4 *m_w, ui4 *m_z); // seed medlib random number generator
