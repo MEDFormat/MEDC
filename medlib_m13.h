@@ -1222,6 +1222,7 @@ typedef struct {
 #define FILE_FD_STDERR_m13		((si4) 2)
 
 // Locking operations (si4 to match standard flock)
+// NOTE: locking only possible with FILE_m13 file pointers
 #define FLOCK_OPEN_m13			((si4) 1 << 0) // increment open count +/- create lock
 #define FLOCK_CLOSE_m13			((si4) 1 << 1) // decrement open count +/- destroy lock
 #define FLOCK_LOCK_m13			((si4) 1 << 2) // lock (with mode)
@@ -1230,8 +1231,7 @@ typedef struct {
 #define FLOCK_WRITE_m13			((si4) 1 << 5) // write lock mode
 #define FLOCK_NON_BLOCKING_m13		((si4) 1 << 6) // do not block for lock, return FLOCK_LOCKED_m13 immediately
 #define FLOCK_TIMEOUT_m13		((si4) 1 << 7) // blocking (looped) or non-blocking (once) sleep time (as nap string) included as vararg
-#define FLOCK_FORCE_m13			((si4) 1 << 8) // lock, regardless of status; write lock transfers ownership to current thread if owned by another
-							// (use judiciously => if another thread is writing, it will finish its write)
+
 // Return values
 #define FLOCK_SUCCESS_m13		((si4) 0) // locking operation succeeded
 #define FLOCK_ERR_m13			((si4) -1) // locking operation generated error
@@ -1245,6 +1245,8 @@ typedef struct {
 #define FLOCK_READ_UNLOCK_m13		( FLOCK_UNLOCK_m13 | FLOCK_READ_m13 )
 #define FLOCK_WRITE_UNLOCK_m13		( FLOCK_UNLOCK_m13 | FLOCK_WRITE_m13 )
 
+// global default locking modes
+// NOTE: individual files can be locked by setting FLOCK_LOCK_m13 bit regardless global mode
 #define FLOCK_MODE_NONE_m13		((si1) 0) // do not lock any files
 #define FLOCK_MODE_MED_m13		((si1) 1) // lock MED files only
 #define FLOCK_MODE_ALL_m13		((si1) 2) // lock all files
@@ -1270,8 +1272,10 @@ typedef struct {
 
 // Prototypes
 FILE_m13 	*FILE_from_std_m13(FILE *std_fp, si1 *path);
+ui4		FILE_id_m13(const si1 *path);
 FILE_m13	*FILE_init_m13(void *fp, ...); // varargs(fp == stream): si1 *path
 tern		FILE_is_std_m13(void *fp);
+tern		FILE_locking_m13(void *fp, tern heed);  // turn locking on or off for a file (heed or ignore locks on fp)
 tern		FILE_show_m13(FILE_m13 *fp);
 FILE 		*FILE_to_std_m13(void *fp, si1 *path);
 
@@ -1343,23 +1347,19 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 	typedef	HANDLE			sem_t_m13;
 #endif // WINDOWS_m13
 
-// inverse semaphores
+// Inverse Semaphores
 // function as semaphores that block when count > 0
-// implemented with mutex because atomic alone can't guarantee no change between accesses in isem functions
-// implemented with atomic because mutex alone can't guarantee global value updated between thread accesses
+// function interfaces resemble, but are not the same as sempahore function interfaces
+// (implemented with mutex because atomic alone can't guarantee no change between accesses in isem functions)
+// (implemented with atomic because mutex alone can't guarantee global value updated between thread accesses)
 // example usage: flock reader count => write request blocks in isem until reader count == 0
 typedef struct {
 	pthread_mutex_t_m13	mutex;
 	_Atomic ui4		count;
-	tern			alloced; // TRUE_m13 if heap_allocated
+	si1 			*name;
+	_Atomic tern		mutex_initialized;
+	tern			free_on_destroy;
 } isem_t_m13;
-
-
-#if defined MACOS_m13
-	// The prototypes of these two functions are commented out in mach/thread_policy.h, so declared here
-	kern_return_t	thread_policy_set(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t count);
-	kern_return_t	thread_policy_get(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t *count, boolean_t *get_default);
-#endif // MACOS_m13
 
 typedef struct {
 	pthread_t_m13	thread;
@@ -1394,6 +1394,13 @@ void			PROC_thread_list_add_m13(pthread_t_m13 *thread);
 pid_t_m13		PROC_thread_list_parent_m13(pid_t_m13 _id);
 void			PROC_thread_list_remove_m13(pid_t_m13 _id);
 tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
+
+#if defined MACOS_m13
+	// The prototypes of these two functions are commented out in mach/thread_policy.h, so declared here
+	kern_return_t	thread_policy_set(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t count);
+	kern_return_t	thread_policy_get(thread_t thread, thread_policy_flavor_t flavor, thread_policy_t policy_info, mach_msg_type_number_t *count, boolean_t *get_default);
+#endif // MACOS_m13
+
 
 
 //**********************************************************************************//
@@ -1438,7 +1445,7 @@ typedef struct {
 tern			PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
 PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...); // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, si1 *affinity, si4 detached
 PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...); // varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, si4 detached, <function arguments>
-							  // varargs (par_info != NULL): <function arguments>
+								      // varargs (par_info != NULL): <function arguments>
 tern			PAR_show_info_m13(PAR_INFO_m13 *par_info);
 pthread_rval_m13	PAR_thread_m13(void *arg);
 tern			PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
@@ -1684,26 +1691,27 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 )
 
 // error codes
-#define E_NUM_CODES_m13			19
+#define E_NUM_CODES_m13			20
 #define	E_NONE_m13			0 // no error
 #define	E_GEN_m13			1 // unknown or unspecified error
 #define	E_SIG_m13			2 // system siganl
 #define E_ALLOC_m13			3
-#define E_FEXIST_m13			4
-#define E_FOPEN_m13			5
-#define E_FREAD_m13			6
-#define E_FWRITE_m13			7
-#define E_FLOCK_m13			8
-#define E_FMED_m13			9
-#define E_ACC_m13			10
-#define E_CRYP_m13			11
-#define E_MET_m13			12
-#define	E_REC_m13			13
-#define	E_NET_m13			14
-#define E_CMP_m13			15
-#define E_PROC_m13			16
-#define E_FILT_m13			17
-#define E_DB_m13			18
+#define E_FGEN_m13			4
+#define E_FEXIST_m13			5
+#define E_FOPEN_m13			6
+#define E_FREAD_m13			7
+#define E_FWRITE_m13			8
+#define E_FLOCK_m13			9
+#define E_FMED_m13			10
+#define E_ACC_m13			11
+#define E_CRYP_m13			12
+#define E_MET_m13			13
+#define	E_REC_m13			14
+#define	E_NET_m13			15
+#define E_CMP_m13			16
+#define E_PROC_m13			17
+#define E_FILT_m13			18
+#define E_DB_m13			19
 
 // error string table
 #define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
@@ -1714,6 +1722,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"unspecified error", \
 	"process signal error", \
 	"memory allocation error", \
+	"file error", \
 	"file or directory not found", \
 	"file open error", \
 	"file read error", \
@@ -1736,6 +1745,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"E_GEN", \
 	"E_SIG", \
 	"E_ALLOC", \
+	"E_FGEN", \
 	"E_FEXIST", \
 	"E_FOPEN", \
 	"E_FREAD", \
@@ -2176,9 +2186,9 @@ typedef struct { // multiple thread access
 
 typedef struct { // multiple thread access
 	_Atomic pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
-	isem_t_m13		*opens; // number of processes that have file open
-	isem_t_m13		*reads; // number of processes currently reading file
-	isem_t_m13		*writes; // number of processes currently writing file (0 or 1)
+	isem_t_m13		read_cnt; // number of processes currently reading file
+	isem_t_m13		write_cnt; // number of processes currently writing file (0 or 1)
+	_Atomic ui4		open_cnt; // number of processes that have file open
 	_Atomic ui4		file_id; // CRC of full path
 } FLOCK_ENTRY_m13;
 
@@ -3228,6 +3238,7 @@ si8			G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode,
 si8			G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode, ...); // varargs (lh == NULL): si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 tern			G_valid_file_code_m13(ui4 file_type_code);
 tern			G_valid_level_code_m13(ui4 level_code);
+tern			G_valid_tern_m13(tern *val);
 tern			G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_video_data_CRCs_m13(FPS_m13 *fps);
@@ -5424,17 +5435,21 @@ pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
 void		isem_dec_m13(isem_t_m13 *sem);  // decrement count
 void		isem_destroy_m13(isem_t_m13 *isem);
-ui4		isem_getcount_m13(isem_t_m13 *isem);
+ui4		isem_getcnt_m13(isem_t_m13 *isem);
 void		isem_inc_m13(isem_t_m13 *sem);  // increment count
-isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val);
-void		isem_setcount_m13(isem_t_m13 *isem, ui4 count);
-si4		isem_trywait_m13(isem_t_m13 *sem);
-void		isem_wait_m13(isem_t_m13 *sem);
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *name, tern free_on_destroy);
+void		isem_setcnt_m13(isem_t_m13 *isem, ui4 count);
+tern		isem_trywait_m13(isem_t_m13 *sem, const si1 *nap_str);
+tern		isem_trywait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str);
+void		isem_wait_m13(isem_t_m13 *sem, const si1 *nap_str);
+void		isem_wait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str);
 size_t		malloc_size_m13(void *address);
 tern		md_m13(const si1 *dir);  // synonym for mkdir()
 void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
 tern		mkdir_m13(const si1 *dir);
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
+void		*memcpy_m13(void *target, const void *source, size_t n_bytes);
+void		*memmove_m13(void *target, const void *source, size_t n_bytes);
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 tern		mv_m13(const si1 *path, const si1 *new_path);  // move

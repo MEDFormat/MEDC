@@ -7846,16 +7846,16 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 	// also sets PROC_THREAD_RUNNING_m13, PROC_THREAD_SUCCEEDED_m13 or PROC_THREAD_FAILED_m13
 	
 	pi = (PROC_THREAD_INFO_m13 *) ptr;
-	pi->status = PROC_THREAD_RUNNING_m13;
+	atomic_store(&pi->status, PROC_THREAD_RUNNING_m13);
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
 
 	rmi->MED_struct = (LH_m13 *) G_open_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
 	
 	if (rmi->MED_struct)
-		pi->status = PROC_THREAD_SUCCEEDED_m13;
+		atomic_store(&pi->status, PROC_THREAD_SUCCEEDED_m13);
 	else
-		pi->status = PROC_THREAD_FAILED_m13;
+		atomic_store(&pi->status, PROC_THREAD_FAILED_m13);
 	
 	thread_return_null_m13;
 }
@@ -8111,15 +8111,15 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 	// also sets PROC_THREAD_RUNNING_m13, PROC_THREAD_SUCCEEDED_m13 or PROC_THREAD_FAILED_m13
 	
 	pi = (PROC_THREAD_INFO_m13 *) ptr;
-	pi->status = PROC_THREAD_RUNNING_m13;
+	atomic_store(&pi->status, PROC_THREAD_RUNNING_m13);
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
 	rmi->MED_struct = (LH_m13 *) G_open_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
 
 	if (rmi->MED_struct)
-		pi->status = PROC_THREAD_SUCCEEDED_m13;
+		atomic_store(&pi->status, PROC_THREAD_SUCCEEDED_m13);
 	else
-		pi->status = PROC_THREAD_FAILED_m13;
+		atomic_store(&pi->status, PROC_THREAD_FAILED_m13);
 	
 	thread_return_null_m13;
 }
@@ -9753,15 +9753,15 @@ pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
 	// also sets PROC_THREAD_RUNNING_m13, PROC_THREAD_SUCCEEDED_m13 or PROC_THREAD_FAILED_m13
 	
 	pi = (PROC_THREAD_INFO_m13 *) ptr;
-	pi->status = PROC_THREAD_RUNNING_m13;
+	atomic_store(&pi->status, PROC_THREAD_RUNNING_m13);
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
 	rmi->MED_struct = (LH_m13 *) G_read_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (SESS_m13 *) rmi->parent, rmi->flags, rmi->password);
 	
 	if (rmi->MED_struct)
-		pi->status = PROC_THREAD_SUCCEEDED_m13;
+		atomic_store(&pi->status, PROC_THREAD_SUCCEEDED_m13);
 	else
-		pi->status = PROC_THREAD_FAILED_m13;
+		atomic_store(&pi->status, PROC_THREAD_FAILED_m13);
 	
 	thread_return_null_m13;
 }
@@ -10281,15 +10281,15 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 	// also sets PROC_THREAD_RUNNING_m13, PROC_THREAD_SUCCEEDED_m13 or PROC_THREAD_FAILED_m13
 	
 	pi = (PROC_THREAD_INFO_m13 *) ptr;
-	pi->status = PROC_THREAD_RUNNING_m13;
-	
+	atomic_store(&pi->status, PROC_THREAD_RUNNING_m13);
+
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
 	rmi->MED_struct = (LH_m13 *) G_read_segment_m13((SEG_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (CHAN_m13 *) rmi->parent, rmi->flags, rmi->password);
 	
 	if (rmi->MED_struct)
-		pi->status = PROC_THREAD_SUCCEEDED_m13;
+		atomic_store(&pi->status, PROC_THREAD_SUCCEEDED_m13);
 	else
-		pi->status = PROC_THREAD_FAILED_m13;
+		atomic_store(&pi->status, PROC_THREAD_FAILED_m13);
 	
 	thread_return_null_m13;
 }
@@ -12936,7 +12936,6 @@ inline
 #endif
 void	G_show_lock_m13(FLOCK_ENTRY_m13 *lock)
 {
-	ui4			file_id;
 	pid_t_m13		owner_id;
 
 
@@ -12951,11 +12950,10 @@ void	G_show_lock_m13(FLOCK_ENTRY_m13 *lock)
 		printf_m13("owner id: 0x%016x\n", owner_id);
 	else
 		printf_m13("owner id: none\n");
-	printf_m13("open count: %u\n", isem_getcount_m13(lock->opens));
-	printf_m13("read count: %hu\n", isem_getcount_m13(lock->reads));
-	printf_m13("write count: %hu\n", isem_getcount_m13(lock->writes));
-	file_id = atomic_load(&lock->file_id);
-	printf_m13("file id: 0x%08x\n", file_id);
+	printf_m13("open count: %u\n", atomic_load(&lock->open_cnt));
+	printf_m13("read count: %hu\n", isem_getcnt_m13(&lock->read_cnt));
+	printf_m13("write count: %hu\n", isem_getcnt_m13(&lock->write_cnt));
+	printf_m13("file id: 0x%08x\n", atomic_load(&lock->file_id));
 	
 	return;
 }
@@ -15427,7 +15425,7 @@ UPDATE_MED_TYPE_FAIL_m13:
 
 tern	G_update_MED_version_m13(FPS_m13 *fps)
 {
-	volatile static tern	updated = FALSE_m13;
+	static _Atomic tern	updated = FALSE_m13;
 	si1			**file_list, **chan_list, **seg_list, **vid_list;
 	si1			*sess_path, path[SEG_NAME_BYTES_m13], *fs_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
@@ -15446,13 +15444,14 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 		G_set_error_m13(E_GEN_m13, "FPS is NULL");
 		return_m13(FALSE_m13);
 	}
-	
+
 	pthread_mutex_lock_m13(&globals_m13->update_mutex);
-	if (updated == TRUE_m13) {
+	if (atomic_load(&updated) == TRUE_m13) {
 		pthread_mutex_unlock_m13(&globals_m13->update_mutex);
 		return_m13(TRUE_m13);
 	}
-	updated = TRUE_m13;
+	atomic_store(&updated, TRUE_m13);
+
 	G_message_m13("Updating to MED version %d.%d ...\n", MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
 	
 	// set up
@@ -16232,6 +16231,23 @@ tern	G_valid_level_code_m13(ui4 level_code)
 	}
 	
 	return_m13(FALSE_m13);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+tern	G_valid_tern_m13(tern *val)
+{
+	// if valid tern value, returns TRUE_m13
+	// if not valid, changes value to UNKNOWN_m13 & returns FALSE_m13
+	
+	if (*val < FALSE_m13 || *val > TRUE_m13) {
+		*val = UNKNOWN_m13;
+		return(FALSE_m13);
+	}
+	
+	return(TRUE_m13);
 }
 
 
@@ -26417,8 +26433,8 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 #endif
 	
 	pi = (PROC_THREAD_INFO_m13 *) ptr;
-	pi->status = PROC_THREAD_RUNNING_m13;
-	
+	atomic_store(&pi->status, PROC_THREAD_RUNNING_m13);
+
 	ci = (DM_CHANNEL_THREAD_INFO_m13 *) (pi->arg);
 	dm = ci->dm;
 	chan = ci->chan;
@@ -26715,7 +26731,7 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 			default:
 				G_warning_message_m13("%s(): invalid element size => returning\n");
 				ci->dm = NULL;
-				pi->status = PROC_THREAD_FAILED_m13;
+				atomic_store(&pi->status, PROC_THREAD_FAILED_m13);
 				thread_return_null_m13;
 		}
 	}
@@ -26879,8 +26895,8 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 			break;
 	}
 
-	pi->status = PROC_THREAD_SUCCEEDED_m13;
-	
+	atomic_store(&pi->status, PROC_THREAD_SUCCEEDED_m13);
+
 	thread_return_null_m13;
 }
 
@@ -28016,13 +28032,38 @@ FILE_m13 	*FILE_from_std_m13(FILE *std_fp, si1 *path)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui4	FILE_id_m13(const si1 *path)
+{
+	ui4	file_id;
+	si8	len;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// returns zero on failure
+	
+	if (STR_is_empty_m13(path)) {
+		G_set_error_m13(E_FGEN_m13, "path is empty");
+		return_m13(0);
+	}
+
+	len = (si8) strlen(path);
+	file_id = CRC_calculate_m13((const ui1 *) path, len);
+
+	return_m13(file_id);
+}
+
+
 FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 {
 	tern			is_std;
 	si1			*path;
 	ui2			alloced_flag;
 	si4			fd;
-	si8			len;
 	struct_stat_m13		sb;
 	va_list			v_args;
 	FILE			*std_fp;
@@ -28184,10 +28225,8 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 				if (m13_fp->flags & FILE_FLAGS_MED_m13)
 					m13_fp->flags |= FILE_FLAGS_LOCK_m13;
 			}
-			if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
-				len = strlen(path);
-				m13_fp->fid = CRC_calculate_m13((const ui1 *) path, len);
-			}
+			if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+				m13_fp->fid = FILE_id_m13(path);
 		}
 	}
 	
@@ -28224,8 +28263,10 @@ inline
 #endif
 tern	FILE_is_std_m13(void *fp)
 {
-	// returns TRUE_m13 if file pointer is actually a (FILE *)
-	
+	// returns TRUE_m13 if pf is a standard FILE *
+	// returns UNKNOWN_m13 if file pointer is NULL
+	// returns FALSE_m13 if pf is a FILE_m13 *
+
 	if (fp == NULL)
 		return(UNKNOWN_m13);
 	
@@ -28236,11 +28277,48 @@ tern	FILE_is_std_m13(void *fp)
 		return(TRUE_m13);
 	if ((ui8) fp == (ui8) stderr)
 		return(TRUE_m13);
-	
+
 	if (((FILE_m13 *) fp)->tag == FILE_TAG_m13)
 		return(FALSE_m13);
 	
 	return(TRUE_m13);
+}
+
+
+tern	FILE_locking_m13(void *fp, tern heed)
+{
+	FILE_m13	*m13_fp;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// heed == TRUE_m13: turn locking on (returns TRUE_m13)
+	// heed == FALSE_m13: turn locking off (returns FALSE_m13)
+	// heed == UNKNOWN_m13: return TRUE_m13 if locking set on file, FALSE_m13 if not (no changes made)
+	// returns UNKNOWN_m13 if fp is a standard FILE *
+	// can be used to force read or write files that may be locked from other threads
+	
+	if (FILE_is_std_m13(fp) != FALSE_m13)
+		return_m13(UNKNOWN_m13);
+	
+	m13_fp = (FILE_m13 *) fp;
+	
+	if (heed == TRUE_m13) {
+		m13_fp->flags |= FILE_FLAGS_LOCK_m13;
+		return_m13(TRUE_m13);
+	}
+	
+	if (heed == FALSE_m13) {
+		m13_fp->flags &= ~FILE_FLAGS_LOCK_m13;
+		return_m13(FALSE_m13);
+	}
+	
+	// UNKNOWN_m13
+	if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+		return_m13(TRUE_m13);
+
+	return_m13(FALSE_m13);
 }
 
 
@@ -35432,10 +35510,11 @@ tern	PROC_default_threading_m13(void *lh)
 tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs, tern thread_jobs)
 {
 	si1			affinity[8];
-	si4			i, n_logical_cores, n_concurrent_jobs, start_core, end_core, new_job_idx;
+	ui4			job_status;
+	si4			i, n_logical_cores, n_concurrent_jobs, currently_running, finished_jobs, start_core, end_core;
 	cpu_set_t_m13		cpu_set;
 	HW_PARAMS_m13		*hw_params;
-	PROC_THREAD_INFO_m13	*job, *new_job;
+	PROC_THREAD_INFO_m13	*job;
 	PROC_GLOBS_m13		*proc_globs;
 	
 #ifdef FT_DEBUG_m13
@@ -35484,8 +35563,8 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	}
 	
 	// set all jobs to waiting state
-	for (i = 0; i < n_jobs; ++i)
-		jobs[i].status = PROC_THREAD_WAITING_m13;
+	for (job = jobs, i = n_jobs; i--; ++job)
+		atomic_store(&job->status, PROC_THREAD_WAITING_m13);
 
 	// build cpu set
 	if (thread_jobs == TRUE_m13) {
@@ -35500,9 +35579,9 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 		sprintf(affinity, "%d-%d", start_core, end_core);
 		PROC_generate_cpu_set_m13(affinity, &cpu_set);
 	} else {
-		for (i = n_jobs, job = jobs; i--; ++job) {
+		for (job = jobs, i = n_jobs; i--; ++job) {
 			job->thread_f((void *) job);  // launch in current thread; job completes before loop continues
-			if (job->status == PROC_THREAD_FAILED_m13)
+			if (atomic_load(&job->status) == PROC_THREAD_FAILED_m13)
 				return_m13(FALSE_m13); // job should set causal error
 		}
 		return_m13(TRUE_m13);
@@ -35513,45 +35592,46 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	#endif
 
 	// launch initial job set (all jobs detached)
-	for (i = 0, job = jobs; i < n_concurrent_jobs; ++i, ++job)
+	for (job = jobs, i = n_concurrent_jobs; i--; ++job)
 		if (PROC_launch_thread_m13(&job->thread, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m13, job->thread_name) == 0)  // returns 0 on failure
-			return_m13(FALSE_m13);  // PROC_launch_thread_m13() sets causal error
+			return_m13(FALSE_m13);
 
-	// wait for status in initial job set
-	for (i = 0, job = jobs; i < n_concurrent_jobs; ++i, ++job)
-		while (job->status == PROC_THREAD_WAITING_m13)  // changed to PROC_THREAD_RUNNING_m13 or PROC_THREAD_FINISHED_m13
+	// wait for status change in initial job set
+	for (job = jobs, i = n_concurrent_jobs; i--; ++job)
+		while (atomic_load(&job->status) == PROC_THREAD_WAITING_m13)  // changed to PROC_THREAD_RUNNING_m13 or PROC_THREAD_FINISHED_m13
 			nap_m13("1 us");  // this should happen fast
 	
 	// launch rest of jobs as others finish
-	new_job_idx = n_concurrent_jobs;
 	while (1) {
-		for (i = 0, job = jobs; i < n_jobs; ++i, ++job) {
-			if (job->status & PROC_THREAD_FINISHED_m13) {
-				
-				new_job = jobs + new_job_idx;
-
+		for (currently_running = 0, job = jobs, i = n_jobs; i--; ++job)
+			if (atomic_load(&job->status) == PROC_THREAD_RUNNING_m13)
+				++currently_running;
+		for (finished_jobs = 0, job = jobs, i = n_jobs; i--; ++job) {
+			if (currently_running == n_concurrent_jobs)
+				break;  // to while loop
+			job_status = atomic_load(&job->status);
+			if (job_status == PROC_THREAD_WAITING_m13) {
 				// launch new job
-				if (PROC_launch_thread_m13(&new_job->thread, new_job->thread_f, (void *) new_job, new_job->priority, NULL, &cpu_set, TRUE_m13, new_job->thread_name) == 0)  // returns 0 on failure
-					return_m13(FALSE_m13);  // PROC_launch_thread_m13() sets causal error
-
-				// check if done
-				if (++new_job_idx == n_jobs)
-					break;
+				if (PROC_launch_thread_m13(&job->thread, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m13, job->thread_name) == 0)  // returns 0 on failure
+					return_m13(FALSE_m13);
 				
-				// make sure status set in thread (volatile)
-				while (new_job->status == PROC_THREAD_WAITING_m13);
+				// make sure status set in thread
+				while (atomic_load(&job->status) == PROC_THREAD_WAITING_m13)
+					nap_m13("1 us");  // don't peg cpu on this
+				++currently_running;
+			} else if (job_status & PROC_THREAD_FINISHED_m13) {
+				++finished_jobs;
 			}
 		}
-		if (new_job_idx < n_jobs)
-			nap_m13("100 us");  // don't peg this cpu
-		else
+		if (finished_jobs == n_jobs)
 			break;
+		nap_m13("100 us");  // don't peg this cpu
 	}
 	
 	if (wait_jobs == TRUE_m13)
 		return_m13(PROC_wait_jobs_m13(jobs, n_jobs));
-	else
-		return_m13(TRUE_m13);
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -36557,8 +36637,10 @@ void	PROC_thread_list_remove_m13(pid_t_m13 _id)
 
 tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 {
-	tern	ret_val;
-	si4	i, finished_jobs;
+	tern			ret_val;
+	ui4			status;
+	si4			i, finished_jobs;
+	PROC_THREAD_INFO_m13	*job;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -36568,11 +36650,14 @@ tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 
 	ret_val = TRUE_m13;
 	while (1) {
-		for (i = finished_jobs = 0; i < n_jobs; ++i) {
-			if (jobs[i].status & PROC_THREAD_FINISHED_m13) {
+		for (job = jobs, finished_jobs = 0, i = n_jobs; i--; ++job) {
+			status = atomic_load(&job->status);
+			if (status & PROC_THREAD_FINISHED_m13) {
 				++finished_jobs;
-				if (jobs[i].status == PROC_THREAD_FAILED_m13)
+				if (status == PROC_THREAD_FAILED_m13) {
 					ret_val = FALSE_m13;  // job should set causal error
+					break;  // to while loop
+				}
 			}
 		}
 		if (finished_jobs == n_jobs || ret_val == FALSE_m13)
@@ -38950,7 +39035,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 					G_set_error_m13(E_GEN_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", field_value_str, type_str, field_name);
 					return_m13(RC_ERR_m13);
 				}
-				if (*TERN_val < FALSE_m13 || *TERN_val > TRUE_m13) {
+				if (G_valid_tern_m13(TERN_val) == FALSE_m13) {
 					G_set_error_m13(E_GEN_m13, "invalid value for type \"%s\" in field \"%s\" of rc file", type_str, field_name);
 					return_m13(RC_ERR_m13);
 				}
@@ -39263,7 +39348,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 					G_set_error_m13(E_GEN_m13, "could not convert string \"%s\" to type \"%s\" in field \"%s\" of rc file", str_val, type_str, field_name);
 					return_m13(RC_ERR_m13);
 				}
-				if (*tern_val < FALSE_m13 || *tern_val > TRUE_m13) {
+				if (G_valid_tern_m13(tern_val) == FALSE_m13) {
 					G_set_error_m13(E_GEN_m13, "invalid value for type \"%s\" in field \"%s\" of rc file", type_str, field_name);
 					return_m13(RC_ERR_m13);
 				}
@@ -43685,16 +43770,15 @@ si8	flen_m13(void *fp)
 si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 						// varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 {
-	tern				is_std, waited;
+	tern				is_std;
 	const si1			*path, *nap_str;
-	ui4				file_id, wait_warning;
-	si4				i, n_locks;
-	si8				len, wait_time, wait_time_base;
+	ui4				file_id;
+	si4				i, list_top_idx, list_size, n_locks;
 	va_list				v_args;
-	pid_t_m13			owner_id;
+	pid_t_m13			owner_id, lock_file_id, lock_owner_id;
 	FILE_m13			*m13_fp;
 	FLOCK_LIST_m13			*list;
-	FLOCK_ENTRY_m13			*lock, **lock_ptr, *new_locks, **new_lock_ptrs;
+	FLOCK_ENTRY_m13			*lock, **list_lock_ptrs, **lock_ptr, *new_locks, **new_lock_ptrs;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -43704,64 +43788,44 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	// set the current behavior to suppress warning messages
 	
 	if (fp == NULL)
-	       return_m13(FLOCK_SUCCESS_m13);
-
+		return_m13(FLOCK_ERR_m13);
+	
+	is_std = FILE_is_std_m13(fp);
+	if (is_std == TRUE_m13)
+		return_m13(FLOCK_ERR_m13);
+	
+	m13_fp = (FILE_m13 *) fp;
+	
+	// locking disabled
+	if (!(m13_fp->flags & FILE_FLAGS_LOCK_m13))
+		return_m13(FLOCK_SUCCESS_m13);  // not considered an error
+	
+	// don't lock standard streams
+	if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13)
+		return_m13(FLOCK_SUCCESS_m13);  // not considered an error
+	
 	// set up
 	nap_str = globals_m13->file_lock_timeout;
-	is_std = FILE_is_std_m13(fp);
-	if (is_std == TRUE_m13) {
-		// get varargs
+	path = m13_fp->path;
+	
+	// get vararg
+	if (operation & FLOCK_TIMEOUT_m13) {
 		va_start(v_args, operation);
-		path = va_arg(v_args, const si1 *);
 		nap_str = va_arg(v_args, const si1 *);
 		va_end(v_args);
-		
-		// check path
-		if (STR_is_empty_m13(path) == TRUE_m13) {
-			G_set_error_m13(E_FLOCK_m13, "path is empty");
-			return_m13(FLOCK_ERR_m13);
-		}
 		
 		// check nap string
 		if (STR_is_empty_m13(nap_str) == TRUE_m13)
 			nap_str = globals_m13->file_lock_timeout;
-		
-		// don't lock standard streams
-		if (fileno_m13(fp) <= 2)
-			return_m13(FLOCK_SUCCESS_m13);
-		
-		// get file id
-		len = (si8) strlen(path);
-		file_id = CRC_calculate_m13((ui1 *) path, len);
-	} else {  // is_std == FALSE_m13
-		// see if locking enabled
-		m13_fp = (FILE_m13 *) fp;
-		if (!(m13_fp->flags & FILE_FLAGS_LOCK_m13))
-			return_m13(FLOCK_SUCCESS_m13);
-		path = m13_fp->path;
-		
-		// don't lock standard streams
-		if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13)
-			return_m13(FLOCK_SUCCESS_m13);
-
-		// get vararg
-		if (operation & FLOCK_TIMEOUT_m13) {
-			va_start(v_args, operation);
-			nap_str = va_arg(v_args, const si1 *);
-			va_end(v_args);
-			
-			// check nap string
-			if (STR_is_empty_m13(nap_str) == TRUE_m13)
-				nap_str = globals_m13->file_lock_timeout;
-		}
-		
-		// get file id
-		if (m13_fp->fid) {
-			file_id = m13_fp->fid;
-		} else {
-			len = (si8) strlen(m13_fp->path);
-			file_id = m13_fp->fid = CRC_calculate_m13((const ui1 *) path, len);
-		}
+	}
+	
+	// get file id
+	if (m13_fp->fid) {
+		file_id = m13_fp->fid;
+	} else {
+		file_id = m13_fp->fid = FILE_id_m13(m13_fp->path);
+		if (file_id == 0)
+			return_m13(FLOCK_ERR_m13);
 	}
 	
 	// check operation
@@ -43780,21 +43844,24 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	list = globals_m13->file_lock_list;
 	pthread_mutex_lock_m13(&list->mutex);  // lock the list
 	
-	// find lock in table
-	n_locks = list->top_idx + 1;
+	// find lock
+	list_top_idx = atomic_load(&list->top_idx);
+	n_locks = list_top_idx + 1;
 	lock = NULL;
-	lock_ptr = list->lock_ptrs;
-	for (i = list->top_idx + 1; i--; ++lock_ptr) {
-		if ((*lock_ptr)->file_id == file_id) {
+	list_lock_ptrs = atomic_load(&list->lock_ptrs);
+	lock_ptr = list_lock_ptrs;
+	for (i = n_locks + 1; i--; ++lock_ptr) {
+		lock_file_id = atomic_load(&((*lock_ptr)->file_id));
+		if (lock_file_id == file_id) {
 			lock = *lock_ptr;
 			break;
 		}
 		if (lock)
 			continue;
-		if ((*lock_ptr)->file_id == 0)
+		if (lock_file_id == 0)
 			lock = *lock_ptr;
 	}
-
+	
 	// not in list
 	if (i == -1) {
 		if (operation & (FLOCK_UNLOCK_m13 | FLOCK_CLOSE_m13)) {  // file to unlock or close is not in list
@@ -43802,7 +43869,8 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 			return_m13(FLOCK_SUCCESS_m13);
 		}
 		if (lock == NULL) {
-			if (n_locks == list->size) {  // expand list (note: allocated en bloc)
+			list_size = atomic_load(&list->size);
+			if (n_locks == list_size) {  // expand list (note: allocated en bloc)
 				// reallocate lock pointers
 				n_locks += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
 				new_lock_ptrs = (FLOCK_ENTRY_m13 **) realloc((void *) list->lock_ptrs, (size_t) n_locks * sizeof(FLOCK_ENTRY_m13 *));
@@ -43811,6 +43879,8 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return_m13(FLOCK_ERR_m13);
 				}
+				list_lock_ptrs = new_lock_ptrs;
+				atomic_store(&list->lock_ptrs, list_lock_ptrs);
 				
 				// allocate new locks (calloc so all fields zeroed)
 				new_locks = (FLOCK_ENTRY_m13 *) calloc((size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13, sizeof(FLOCK_ENTRY_m13));
@@ -43821,33 +43891,42 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 				}
 				
 				// assign lock pointers
-				list->lock_ptrs = new_lock_ptrs;
-				new_lock_ptrs = list->lock_ptrs + list->size;  // new_lock_ptrs incremented in loop
+				new_lock_ptrs = list_lock_ptrs + list_size;  // new_lock_ptrs incremented in loop (list_size still old size)
 				lock = new_locks;  // new_locks incremented in loop
 				for (i = GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13; i--;)
 					*new_lock_ptrs++ = new_locks++;
-				list->size = n_locks;
+				list_size = n_locks;
+				atomic_store(&list->size, list_size);
 			}
-			lock = list->lock_ptrs[++list->top_idx];
+			++list_top_idx;
+			atomic_store(&list->top_idx, list_top_idx);
+			lock = list_lock_ptrs[list_top_idx];
 		}
-		lock->file_id = file_id;  // assign lock
-		if ((operation & FLOCK_OPEN_m13) == 0)  // lock operation called without initial call to fopen_m13()
-			isem_setcount_m13(lock->opens, (ui4) 1);
+		
+		// initialize lock
+		atomic_store(&lock->owner_id, (pid_t_m13) 0);
+		isem_init_m13(&lock->read_cnt, 0, path, FALSE_m13);
+		isem_init_m13(&lock->write_cnt, 0, path, FALSE_m13);
+		atomic_store(&lock->file_id, file_id);  // assign lock
+		if (operation & FLOCK_OPEN_m13)
+			atomic_store(&lock->open_cnt, (ui4) 1);
+		else
+			atomic_store(&lock->open_cnt, (ui4) 0);  // lock operation called without initial call to fopen_m13()
 	}
-
+	
 	// open (called by fopen_m13)
 	if (operation & FLOCK_OPEN_m13) {
-		++lock->opens;
+		atomic_fetch_add(&lock->open_cnt, (ui4) 1);
 	} else if (operation & FLOCK_CLOSE_m13) {  // close (called by fclose_m13)
-		// reset lock
-		if (--lock->opens == 0) {
-			lock->file_id = 0;
-			lock->owner_id = 0;
-			lock->opens = lock->reads = 0;
+		// unassign lock
+		if (atomic_load(&lock->open_cnt) == 1) {
+			atomic_store(&lock->file_id, (ui4) 0);
+			isem_destroy_m13(&lock->read_cnt);
+			isem_destroy_m13(&lock->write_cnt);
 		}
 		// trim search extents
-		if (lock == list->lock_ptrs[list->top_idx])
-			--list->top_idx;
+		if (lock == list_lock_ptrs[list_top_idx])
+			atomic_store(&list->top_idx, --list_top_idx);
 	}
 	
 	// release list mutex
@@ -43855,86 +43934,53 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	
 	if (operation & (FLOCK_OPEN_m13 | FLOCK_CLOSE_m13))
 		return_m13(FLOCK_SUCCESS_m13);
-
-	// force (use judiciously => current writing thread, if there is one, will finish current write)
-	// force write locks must be paired with force write unlocks because ownership is not transferred
-	// force read locks can be unlocked without the force flag
-	if (operation & FLOCK_FORCE_m13) {
-		if (operation & FLOCK_LOCK_m13) {  // force lock
-			if (operation & FLOCK_WRITE_m13)  // force write lock
-				isem_inc_m13(lock->writes);  // increase write count
-			else // increase read count
-				isem_inc_m13(lock->reads);
-		} else if (operation & FLOCK_UNLOCK_m13) {  // force unlock
-			if (operation & FLOCK_WRITE_m13)  // force write lock
-				isem_dec_m13(lock->writes);  // decrease write count
-		}
-		return_m13(FLOCK_SUCCESS_m13);
-	}
-
-	// unlock (does not need lock mutex)
+	
+	// unlock
+	lock_owner_id = atomic_load(&lock->owner_id);
 	if (operation & FLOCK_UNLOCK_m13) {
 		if (operation & FLOCK_WRITE_m13) { // write unlock
-			if (lock->owner_id == owner_id)  // only owning thread can release ownership
-				lock->owner_id = 0;  // release write lock
-			else  // can't unlock - not owner
+			if (lock_owner_id == owner_id) { // only owning thread can release ownership
+				atomic_store(&lock->owner_id, (pid_t_m13) 0); // release ownership
+				isem_dec_m13(&lock->write_cnt); // release write lock
+			} else {  // can't unlock - not owner
 				return_m13(FLOCK_LOCKED_m13);
+			}
 		} else {
-			--lock->reads;  // release a read lock
+			isem_dec_m13(&lock->read_cnt); // release a read lock
 		}
 		return_m13(FLOCK_SUCCESS_m13);
 	}
-		
-	// lock set up
-	wait_warning = !(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13);
-	if (wait_warning)
-		wait_time_base = G_current_uutc_m13();
+	
+	// non-blocking lock
 	if (operation & FLOCK_NON_BLOCKING_m13) {
-		if (operation & FLOCK_TIMEOUT_m13)  // non-blocking wait single cycle
-			waited = FALSE_m13;
-		else
-			waited = TRUE_m13;  // non-blocking immediate return
+		if (operation & FLOCK_WRITE_m13) { // write lock
+			if (isem_trywait_m13(&lock->write_cnt, nap_str) == TRUE_m13) {  // get write lock
+				if (isem_trywait_noinc_m13(&lock->read_cnt, nap_str) == TRUE_m13) {  // wait for reads to drop to zero (but don't increment count - have write lock)
+					atomic_store(&lock->owner_id, owner_id);  // take ownership
+					return_m13(FLOCK_SUCCESS_m13);
+				}
+			}
+		} else {  // read lock
+			if (isem_trywait_m13(&lock->write_cnt, nap_str) == TRUE_m13) {  // get write lock (wait until no writing, then hold write lock temporarily while add read lock)
+				isem_inc_m13(&lock->read_cnt);  // add a read lock
+				isem_dec_m13(&lock->write_cnt); // release write lock
+				return_m13(FLOCK_SUCCESS_m13);
+			}
+		}
+		return_m13(FLOCK_LOCKED_m13);
 	}
 	
-	// lock wait loop
-	while (1) {
-		
-		// check lock
-		if (lock->owner_id == 0) {  // all locks require no concurrent writes
-			if (operation & FLOCK_READ_m13) {
-				++lock->reads;  // read lock aqcuired
-				break;
-			}
-			lock->owner_id = owner_id;  // take write ownership of lock while wait for raed locks ro expire
-		}
-		if (lock->owner_id == owner_id) {
-			if (lock->reads == 0)
-				break;  // write lock acquired
-		}
-
-		// non-blocking
-		if (operation & FLOCK_NON_BLOCKING_m13) {
-			if (operation & FLOCK_TIMEOUT_m13) {
-				if (waited == TRUE_m13)
-					return_m13(FLOCK_LOCKED_m13);
-				else
-					waited = TRUE_m13;
-			}
-		}
-		
-		// wait
-		nap_m13(nap_str);
-
-		// warn
-		if (wait_warning) {
-			wait_time = G_current_uutc_m13() - wait_time_base;
-			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("file %s still locked ...\n", path);
-				wait_time_base = G_current_uutc_m13();
-			}
-		}
+	// blocking lock
+	if (operation & FLOCK_WRITE_m13) { // write lock
+		isem_wait_m13(&lock->write_cnt, nap_str); // get write lock
+		isem_wait_noinc_m13(&lock->read_cnt, nap_str); // wait for reads to drop to zero (don't increment count - have write lock)
+		atomic_store(&lock->owner_id, owner_id); // take ownership
+	} else {  // read lock
+		isem_wait_m13(&lock->write_cnt, nap_str); // get write lock (wait until no writing, then hold write lock temporarily while add read lock)
+		isem_inc_m13(&lock->read_cnt); // add a read lock
+		isem_dec_m13(&lock->write_cnt); // release write lock
 	}
-
+	
 	return_m13(FLOCK_SUCCESS_m13);
 }
 
@@ -44163,7 +44209,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 			fp->flags |= FILE_FLAGS_LOCK_m13;
 	}
 	if (fp->flags & FILE_FLAGS_LOCK_m13) {
-		fp->fid = CRC_calculate_m13((const ui1 *) fp->path, name_len);
+		fp->fid = FILE_id_m13(fp->path);
 		flock_m13(fp, FLOCK_OPEN_m13);  // create entry in locking table, don't lock
 	}
 
@@ -44543,7 +44589,6 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 	tern		is_std, mode_matches, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
 	si1		*c, tmp_path[PATH_BYTES_m13], sys_mode[8];
 	si4		fd, main_mode_total;
-	si8		len;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
 	struct_stat_m13	sb;
@@ -44831,8 +44876,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 			m13_fp->flags |= FILE_FLAGS_LOCK_m13;
 	}
 	if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
-		len = strlen(m13_fp->path);
-		m13_fp->fid = CRC_calculate_m13((const ui1 *) m13_fp->path, len);
+		m13_fp->fid = FILE_id_m13(m13_fp->path);
 		flock_m13(m13_fp, FLOCK_OPEN_m13);  // create entry in locking table, don't lock
 	}
 
@@ -45299,10 +45343,10 @@ void	isem_dec_m13(isem_t_m13 *isem)
 	// decrements the count
 	// returns 0 on success; -1 on failure
 
-	if (pthread_mutex_lock_m13(&isem->mutex)) {
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
-		pthread_mutex_lock_m13(&isem->mutex);
-	}
+	
+	pthread_mutex_lock_m13(&isem->mutex);
 
 	count = atomic_load(&isem->count);
 	if (count)
@@ -45325,10 +45369,16 @@ void	isem_destroy_m13(isem_t_m13 *isem)
 	if (isem == NULL)
 		return;
 	
-	pthread_mutex_destroy_m13(&isem->mutex);
-	
-	if (isem->alloced == TRUE_m13)
+	if (isem->name)
+		free_m13((void *) isem->name);
+
+	if (isem->free_on_destroy == TRUE_m13) {
+		pthread_mutex_destroy_m13(&isem->mutex);
 		free_m13((void *) isem);
+	} else {
+		atomic_store(&isem->count, (ui4) 0);
+		isem->name = NULL;
+	}
 		
 	return;
 }
@@ -45337,7 +45387,7 @@ void	isem_destroy_m13(isem_t_m13 *isem)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-ui4	isem_getcount_m13(isem_t_m13 *isem)
+ui4	isem_getcnt_m13(isem_t_m13 *isem)
 {
 	ui4	count;
 	
@@ -45353,22 +45403,44 @@ ui4	isem_getcount_m13(isem_t_m13 *isem)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val)
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *name, tern free_on_destroy)
 {
+	size_t	len;
+	
 	// Initializes the inverse semaphore to the initial value
 	// pass isem == NULL to allocate
+	// free_on_destroy == TRUE_m13 indicates isem should be freed by isem_destroy_m13()
 	// returns NULL on failure
 	
 	if (isem == NULL) {  // caller takes ownerhsip
-		isem = (isem_t_m13 *) malloc_m13(sizeof(isem_t_m13));
+		isem = (isem_t_m13 *) calloc_m13((size_t) 1, sizeof(isem_t_m13));
 		if (isem == NULL)
 			return(NULL);
-		isem->alloced = TRUE_m13;
-	} else if (isem->alloced < FALSE_m13 || isem->alloced > TRUE_m13) {  // ensure alloced is a valid tern value (i.e. uninitialized isem)
-		isem->alloced = UNKNOWN_m13;
+		
+	} else {
+		if (isem->name) {
+			free_m13((void *) isem->name);
+			isem->name = NULL;
+		}
 	}
 	
-	pthread_mutex_init_m13(&isem->mutex, NULL);
+	// ensure free_on_destroy is a valid tern value
+	if (G_valid_tern_m13(&free_on_destroy) == FALSE_m13) {
+		free_on_destroy = isem->free_on_destroy;  // use existing value
+		G_valid_tern_m13(&free_on_destroy);
+	}
+	isem->free_on_destroy = free_on_destroy;
+
+	if (STR_is_empty_m13(name) == TRUE_m13) {
+		isem->name = NULL;
+	} else {
+		len = strlen(name) + 1;
+		isem->name = (si1 *) memcpy_m13((void *) isem->name, (void *) name, len);
+	}
+	
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+
 	pthread_mutex_lock_m13(&isem->mutex);
 	
 	atomic_store(&isem->count, init_val);
@@ -45386,11 +45458,11 @@ void	isem_inc_m13(isem_t_m13 *isem)
 {
 	// increments the count
 
-	if (pthread_mutex_lock_m13(&isem->mutex)) {
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
-		pthread_mutex_lock_m13(&isem->mutex);
-	}
 	
+	pthread_mutex_lock_m13(&isem->mutex);
+
 	atomic_fetch_add(&isem->count, (ui4) 1);
 	
 	pthread_mutex_unlock_m13(&isem->mutex);
@@ -45402,14 +45474,14 @@ void	isem_inc_m13(isem_t_m13 *isem)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	isem_setcount_m13(isem_t_m13 *isem, ui4 count)
+void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 {
 	// sets the count
 
-	if (pthread_mutex_lock_m13(&isem->mutex)) {
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
-		pthread_mutex_lock_m13(&isem->mutex);
-	}
+	
+	pthread_mutex_lock_m13(&isem->mutex);
 
 	atomic_store(&isem->count, count);
 	
@@ -45422,26 +45494,87 @@ void	isem_setcount_m13(isem_t_m13 *isem, ui4 count)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	isem_trywait_m13(isem_t_m13 *isem)
+tern	isem_trywait_m13(isem_t_m13 *isem, const si1 *nap_str)
 {
+	tern	waited;
 	ui4	count;
 	si4	r_val;
 	
-	// if count == 0, sets count == 1 & returns 0 (count of at least 1 ensures blocking of other threads until finished)
-	// calling function should call isem_release_m13() when finished
-	// if count > 0, returns -1
+	// if count == 0, sets count == 1 & returns TRUE_m13
+	// if count > 0, returns FALSE_m13
+	// if nap_str is not empty, it will check once more after a nap
+	// calling function should call isem_dec_m13() when finished
+
+	if (STR_is_empty_m13(nap_str) == TRUE_m13)
+		waited = TRUE_m13;
+	else
+		waited = FALSE_m13;
 	
-	if (pthread_mutex_lock_m13(&isem->mutex)) {
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
-		pthread_mutex_lock_m13(&isem->mutex);
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	while (1) {
+		count = atomic_load(&isem->count);
+		if (count) {
+			r_val = FALSE_m13;
+		} else {
+			atomic_store(&isem->count, (ui4) 1);  // incremement count
+			r_val = TRUE_m13;
+		}
+		
+		if (waited == FALSE_m13) {
+			pthread_mutex_unlock_m13(&isem->mutex);
+			nap_m13(nap_str);
+			pthread_mutex_lock_m13(&isem->mutex);
+			waited = TRUE_m13;
+			continue;
+		}
+		break;
 	}
 	
-	count = atomic_load(&isem->count);
-	if (count) {
-		r_val = -1;
-	} else {
-		atomic_store(&isem->count, (ui4) 1);  // incremement count
-		r_val = 0;
+	pthread_mutex_unlock_m13(&isem->mutex);
+
+	return_m13(r_val);
+}
+
+
+tern	isem_trywait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str)
+{
+	tern	waited;
+	ui4	count;
+	si4	r_val;
+	
+	// if count == 0, returns TRUE_m13
+	// if count > 0, returns FALSE_m13
+	// if nap_str is not empty, it will check once more after a nap
+
+	if (STR_is_empty_m13(nap_str) == TRUE_m13)
+		waited = TRUE_m13;
+	else
+		waited = FALSE_m13;
+	
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	while (1) {
+		count = atomic_load(&isem->count);
+		if (count)
+			r_val = FALSE_m13;
+		else
+			r_val = TRUE_m13;
+		
+		if (waited == FALSE_m13) {
+			pthread_mutex_unlock_m13(&isem->mutex);
+			nap_m13(nap_str);
+			pthread_mutex_lock_m13(&isem->mutex);
+			waited = TRUE_m13;
+			continue;
+		}
+		break;
 	}
 
 	pthread_mutex_unlock_m13(&isem->mutex);
@@ -45453,27 +45586,103 @@ si4	isem_trywait_m13(isem_t_m13 *isem)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	isem_wait_m13(isem_t_m13 *isem)
+void	isem_wait_m13(isem_t_m13 *isem, const si1 *nap_str)
 {
-	ui4	count;
+	tern		wait_warning;
+	const si1	*name;
+	ui4		count;
+	si8		wait_time_base, wait_time, tmp_time;
 	
 	// blocks until count == 0, then increments count & returns
+	// if nap_str is not empty, it will use this as the checking period
+
+	if (STR_is_empty_m13(nap_str) == TRUE_m13)
+		nap_str = "100 us";
 	
-	if (pthread_mutex_lock_m13(&isem->mutex)) {
-		pthread_mutex_init_m13(&isem->mutex, NULL);
-		pthread_mutex_lock_m13(&isem->mutex);
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = isem->name;
 	}
+
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
 	
+	pthread_mutex_lock_m13(&isem->mutex);
+
 	count = atomic_load(&isem->count);
 	while (count) {
 		pthread_mutex_unlock_m13(&isem->mutex);
-		nap_m13("100 us");
+		nap_m13(nap_str);
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still locked ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
 		pthread_mutex_lock_m13(&isem->mutex);
 		count = atomic_load(&isem->count);
 	}
 	
-	atomic_store(&isem->count, (ui4) 1);
+	atomic_store(&isem->count, (ui4) 1);  // increment isem
 
+	pthread_mutex_unlock_m13(&isem->mutex);
+
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_wait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str)
+{
+	tern		wait_warning;
+	const si1	*name;
+	ui4		count;
+	si8		wait_time_base, wait_time, tmp_time;
+
+	// blocks until count == 0, then returns
+	// if nap_str is not empty, it will use this as the checking period
+
+	if (STR_is_empty_m13(nap_str) == TRUE_m13)
+		nap_str = "100 us";
+	
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = (const si1 *) isem->name;
+	}
+
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	count = atomic_load(&isem->count);
+	while (count) {
+		pthread_mutex_unlock_m13(&isem->mutex);
+		nap_m13(nap_str);
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still locked ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
+		pthread_mutex_lock_m13(&isem->mutex);
+		count = atomic_load(&isem->count);
+	}
+	
 	pthread_mutex_unlock_m13(&isem->mutex);
 
 	return;
@@ -45646,6 +45855,74 @@ tern	md_m13(const si1 *dir)
 #endif
 
 	return_m13(mkdir_m13(dir));
+}
+
+
+void	*memcpy_m13(void *target, const void *source, size_t n_bytes)
+{
+	// differs from standard memcpy in that if target is NULL, it is allocated
+	// returns NULL on failure
+	
+	if (source == NULL) {
+		G_set_error_m13(E_GEN_m13, "source is null");
+		return(NULL);
+	}
+	
+	if (target == NULL) {  // caller takes ownership
+		target = malloc_m13(n_bytes);
+		if (target == NULL)
+			return(NULL);
+	}
+	
+	target = memcpy(target, source, n_bytes);
+
+	if (target == NULL)
+		G_set_error_m13(E_GEN_m13, NULL);
+
+	return(target);
+}
+
+
+void	*memmove_m13(void *target, const void *source, size_t n_bytes)
+{
+	tern	overlap;
+	ui1	*target_start, *target_end, *source_start, *source_end;
+	
+	
+	// differs from standard memmove in that if target is NULL, it is allocated
+	// determines if target & source overlap => if not, uses memcpy()
+	// returns NULL on failure
+	
+	if (source == NULL) {
+		G_set_error_m13(E_GEN_m13, "source is null");
+		return(NULL);
+	}
+	
+	overlap = FALSE_m13;
+	if (target == NULL) {  // caller takes ownership, no overlap
+		target = malloc_m13(n_bytes);
+		if (target == NULL)
+			return(NULL);
+	} else {  // may overlap
+		target_start = (ui1 *) target;
+		target_end = target_start + n_bytes - 1;
+		source_start = (ui1 *) source;
+		source_end = source_start + n_bytes - 1;
+		if (target_start >= source_start && target_start <= source_end)
+			overlap = TRUE_m13;
+		else if (target_end >= source_start && target_end <= source_end)
+			overlap = TRUE_m13;
+	}
+	
+	if (overlap == TRUE_m13)
+		target = memmove(target, source, n_bytes);
+	else
+		target = memcpy(target, source, n_bytes);  // don't overlap - memcpy faster
+
+	if (target == NULL)
+		G_set_error_m13(E_GEN_m13, NULL);
+
+	return(target);
 }
 
 
