@@ -1348,15 +1348,23 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 #endif // WINDOWS_m13
 
 // Inverse Semaphores
+
 // function as semaphores that block when count > 0
 // function interfaces resemble, but are not the same as sempahore function interfaces
 // (implemented with mutex because atomic alone can't guarantee no change between accesses in isem functions)
 // (implemented with atomic because mutex alone can't guarantee global value updated between thread accesses)
+
+// if an isem is owned by another thread, accesses that would change the count will block
+// (or fail in try functions) until ownership is released or transferred to the calling thread
+
 // example usage: flock reader count => write request blocks in isem until reader count == 0
+
 typedef struct {
-	pthread_mutex_t_m13	mutex;
 	_Atomic ui4		count;
+	ui4			period;  // checking period, in nanoseconds (max ~4.3 secs); 0 indicates no wait in try functions, default  (10 us) in non-try functions
 	si1 			*name;
+	_Atomic pid_t_m13	owner;  // thread id of owning thread, zero when unowned (normal state)
+	pthread_mutex_t_m13	mutex;
 	_Atomic tern		mutex_initialized;
 	tern			free_on_destroy;
 } isem_t_m13;
@@ -5433,16 +5441,21 @@ size_t		fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...);   
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
-void		isem_dec_m13(isem_t_m13 *sem);  // decrement count
+void		isem_dec_m13(isem_t_m13 *sem);
 void		isem_destroy_m13(isem_t_m13 *isem);
 ui4		isem_getcnt_m13(isem_t_m13 *isem);
-void		isem_inc_m13(isem_t_m13 *sem);  // increment count
-isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *name, tern free_on_destroy);
+void		isem_inc_m13(isem_t_m13 *sem);
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, const si1 *name, tern free_on_destroy);
+void		isem_own_m13(isem_t_m13 *isem, tern own);
 void		isem_setcnt_m13(isem_t_m13 *isem, ui4 count);
-tern		isem_trywait_m13(isem_t_m13 *sem, const si1 *nap_str);
-tern		isem_trywait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str);
-void		isem_wait_m13(isem_t_m13 *sem, const si1 *nap_str);
-void		isem_wait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str);
+tern		isem_trydec_m13(isem_t_m13 *sem);
+tern		isem_tryinc_m13(isem_t_m13 *sem);
+tern		isem_tryown_m13(isem_t_m13 *isem, tern own);
+tern		isem_trysetcnt_m13(isem_t_m13 *isem, ui4 count);
+tern		isem_trywait_m13(isem_t_m13 *sem);
+tern		isem_trywait_noinc_m13(isem_t_m13 *isem);
+void		isem_wait_m13(isem_t_m13 *sem);
+void		isem_wait_noinc_m13(isem_t_m13 *isem);
 size_t		malloc_size_m13(void *address);
 tern		md_m13(const si1 *dir);  // synonym for mkdir()
 void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
@@ -5453,7 +5466,9 @@ void		*memmove_m13(void *target, const void *source, size_t n_bytes);
 si4		mprotect_m13(void *address, size_t len, si4 protection);
 tern		munlock_m13(void *addr, size_t len);
 tern		mv_m13(const si1 *path, const si1 *new_path);  // move
+void		nanosleep_m13(struct timespec *tv);
 void		nap_m13(const si1 *nap_str);
+struct timespec	*nap_timespec_m13(const si1 *nap_str, struct timespec *nap);
 si4		pthread_equal_m13(pthread_t_m13 t1, pthread_t_m13 t2);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);

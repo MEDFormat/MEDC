@@ -2192,8 +2192,8 @@ void	G_clear_error_m13(LH_m13 *lh)
 	// check global error
 	err = &globals_m13->error;
 	pthread_mutex_lock(&err->mutex);
-	if (err->code) {
-		err->code = E_NONE_m13;
+	if (atomic_load(&err->code)) {
+		atomic_store(&err->code, E_NONE_m13);
 		err->signal = 0;
 		*err->message = 0;
 		err->line = 0;
@@ -2955,7 +2955,7 @@ void	G_delete_function_stack_m13(void)
 
 	
 	// causal error set => do not delete stack of causal thread
-	if (globals_m13->error.code)
+	if (atomic_load(&globals_m13->error.code))
 		if (globals_m13->error.thread_id == gettid_m13())
 			return;
 
@@ -8724,6 +8724,7 @@ inline
 #endif
 void	G_pop_function_exec_m13(const si1 *function)
 {
+	si4	err_code;
 #ifdef FT_DEBUG_m13
 	
 	FUNCTION_STACK_m13	*stack;
@@ -8734,17 +8735,18 @@ void	G_pop_function_exec_m13(const si1 *function)
 		return;
 		
 	// causal error set => do not modify stack of causal thread
-	if (globals_m13->error.code) {
+	err_code = atomic_load(&globals_m13->error.code);
+	if (err_code) {
 		if (globals_m13->error.thread_id == gettid_m13()) {
 			if (strcmp_m13(stack->functions[0], function) == 0)  // stack at base
-				exit_m13(globals_m13->error.code);  // call exit to show error & stack
+				exit_m13(err_code);  // call exit to show error & stack
 			return;
 		}
 	}
 
 	if (strcmp(function, stack->functions[stack->top_idx])) {
 		G_set_error_m13(E_GEN_m13, "unbalanced function stack push/pops: attempting to pop %s(), but stack top is %s()", function, stack->functions[stack->top_idx]);
-		exit_m13(globals_m13->error.code);  // call exit to show error & stack
+		exit_m13(E_GEN_m13);  // call exit to show error & stack
 	}
 	
 	if (stack->top_idx >= 0) {
@@ -9426,7 +9428,7 @@ void	G_push_function_exec_m13(const si1 *function)
 	
 	
 	// causal error set => do not modify stack of causal thread
-	if (globals_m13->error.code)
+	if (atomic_load(&globals_m13->error.code))
 		if (globals_m13->error.thread_id == gettid_m13())
 			return;
 
@@ -11856,7 +11858,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	mutex_status = pthread_mutex_trylock_m13(&err->mutex);
 
 	// error already set or currently being set by another thread
-	if (mutex_status || err->code) {
+	if (mutex_status || atomic_load(&err->code)) {
 		if (_id != globals_m13->main_id && exit_on_fail == TRUE_m13) {  // kill thread unless main process
 			thread = PROC_thread_for_id_m13(_id);
 			pthread_kill_m13(*thread, 0);  // zero kills without signal
@@ -11900,7 +11902,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	}
 
 	// error parameters
-	err->code = code;
+	atomic_store(&err->code, code);
 	err->line = line;
 	err->function = function;
 	pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
@@ -12552,7 +12554,7 @@ tern	G_show_error_m13(void)
 	func = err->function;
 	line = err->line;
 	
-	if (err->code == E_NONE_m13) {
+	if (atomic_load(&err->code) == E_NONE_m13) {
 		#ifdef MATLAB_m13
 		mexPrintf("\nError:\tno error set\n\n");
 		#else
@@ -12661,7 +12663,7 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	// returns -1 on failure
 	
 	if (_id == 0) {
-		if (globals_m13->error.code)
+		if (atomic_load(&globals_m13->error.code))
 			_id = globals_m13->error.thread_id;
 		else
 			_id = gettid_m13();
@@ -43805,15 +43807,15 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 		return_m13(FLOCK_SUCCESS_m13);  // not considered an error
 	
 	// set up
-	nap_str = globals_m13->file_lock_timeout;
 	path = m13_fp->path;
 	
 	// get vararg
+	nap_str = globals_m13->file_lock_timeout;
 	if (operation & FLOCK_TIMEOUT_m13) {
 		va_start(v_args, operation);
 		nap_str = va_arg(v_args, const si1 *);
 		va_end(v_args);
-		
+
 		// check nap string
 		if (STR_is_empty_m13(nap_str) == TRUE_m13)
 			nap_str = globals_m13->file_lock_timeout;
@@ -43905,8 +43907,8 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 		
 		// initialize lock
 		atomic_store(&lock->owner_id, (pid_t_m13) 0);
-		isem_init_m13(&lock->read_cnt, 0, path, FALSE_m13);
-		isem_init_m13(&lock->write_cnt, 0, path, FALSE_m13);
+		isem_init_m13(&lock->read_cnt, 0, nap_str, path, FALSE_m13);  // statically allocated - don't free on destroy
+		isem_init_m13(&lock->write_cnt, 0, nap_str, path, FALSE_m13);  // statically allocated - don't free on destroy
 		atomic_store(&lock->file_id, file_id);  // assign lock
 		if (operation & FLOCK_OPEN_m13)
 			atomic_store(&lock->open_cnt, (ui4) 1);
@@ -43954,29 +43956,28 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	// non-blocking lock
 	if (operation & FLOCK_NON_BLOCKING_m13) {
 		if (operation & FLOCK_WRITE_m13) { // write lock
-			if (isem_trywait_m13(&lock->write_cnt, nap_str) == TRUE_m13) {  // get write lock
-				if (isem_trywait_noinc_m13(&lock->read_cnt, nap_str) == TRUE_m13) {  // wait for reads to drop to zero (but don't increment count - have write lock)
+			if (isem_trywait_m13(&lock->write_cnt) == TRUE_m13) {  // get write lock
+				if (isem_trywait_noinc_m13(&lock->read_cnt) == TRUE_m13) {  // wait for reads to drop to zero (but don't increment count - have write lock)
 					atomic_store(&lock->owner_id, owner_id);  // take ownership
 					return_m13(FLOCK_SUCCESS_m13);
 				}
 			}
 		} else {  // read lock
-			if (isem_trywait_m13(&lock->write_cnt, nap_str) == TRUE_m13) {  // get write lock (wait until no writing, then hold write lock temporarily while add read lock)
-				isem_inc_m13(&lock->read_cnt);  // add a read lock
-				isem_dec_m13(&lock->write_cnt); // release write lock
-				return_m13(FLOCK_SUCCESS_m13);
-			}
+			if (isem_trywait_m13(&lock->write_cnt) == TRUE_m13)  // get write lock (wait until no writing, then hold write lock temporarily while add read lock)
+				if (isem_tryinc_m13(&lock->read_cnt) == TRUE_m13)  // add a read lock
+					if (isem_trydec_m13(&lock->write_cnt) == TRUE_m13) // release write lock
+						return_m13(FLOCK_SUCCESS_m13);
 		}
 		return_m13(FLOCK_LOCKED_m13);
 	}
 	
 	// blocking lock
 	if (operation & FLOCK_WRITE_m13) { // write lock
-		isem_wait_m13(&lock->write_cnt, nap_str); // get write lock
-		isem_wait_noinc_m13(&lock->read_cnt, nap_str); // wait for reads to drop to zero (don't increment count - have write lock)
+		isem_wait_m13(&lock->write_cnt); // get write lock
+		isem_wait_noinc_m13(&lock->read_cnt); // wait for reads to drop to zero (don't increment count - have write lock)
 		atomic_store(&lock->owner_id, owner_id); // take ownership
 	} else {  // read lock
-		isem_wait_m13(&lock->write_cnt, nap_str); // get write lock (wait until no writing, then hold write lock temporarily while add read lock)
+		isem_wait_m13(&lock->write_cnt); // get write lock (wait until no writing, then hold write lock temporarily while add read lock)
 		isem_inc_m13(&lock->read_cnt); // add a read lock
 		isem_dec_m13(&lock->write_cnt); // release write lock
 	}
@@ -45333,20 +45334,60 @@ pid_t_m13	gettid_m13(void)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	isem_dec_m13(isem_t_m13 *isem)
 {
-	ui4	count;
+	tern			wait_warning;
+	const si1		*name;
+	ui4			count;
+	si8			wait_time_base, wait_time, tmp_time;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
+	// decrements the count (unless already zero)
+	// if owned by another thread, blocks until unowned
+
+	tv.tv_sec = (si8) 0;
+	if (isem->period)
+		tv.tv_nsec = (si8) isem->period;
+	else
+		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
-	// decrements the count
-	// returns 0 on success; -1 on failure
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = (const si1 *) isem->name;
+	}
 
 	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
 	
+	tid = gettid_m13();
+	
 	pthread_mutex_lock_m13(&isem->mutex);
+	
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
+		
+		nanosleep_m13(&tv);
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
 
 	count = atomic_load(&isem->count);
 	if (count)
@@ -45358,13 +45399,11 @@ void	isem_dec_m13(isem_t_m13 *isem)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	isem_destroy_m13(isem_t_m13 *isem)
 {
 	// destroys the inverse semaphore
-	// deallocates, if allocted
+	// free_on_destroy == TRUE_m13: deallocates
+	// free_on_destroy == FALSE_m13: resets to initialized state (mutex left in current state of initialization)
 	
 	if (isem == NULL)
 		return;
@@ -45377,7 +45416,11 @@ void	isem_destroy_m13(isem_t_m13 *isem)
 		free_m13((void *) isem);
 	} else {
 		atomic_store(&isem->count, (ui4) 0);
+		isem->period = (ui4) 0;
+		atomic_store(&isem->owner, (pid_t_m13) 0);
 		isem->name = NULL;
+		isem->free_on_destroy = UNKNOWN_m13;
+		// leave mutex in in current state of initialization for reuse
 	}
 		
 	return;
@@ -45392,7 +45435,7 @@ ui4	isem_getcnt_m13(isem_t_m13 *isem)
 	ui4	count;
 	
 	// returns the count
-	// does not need mutex
+	// does not need mutex or ownership
 
 	count = atomic_load(&isem->count);
 	
@@ -45400,28 +45443,49 @@ ui4	isem_getcnt_m13(isem_t_m13 *isem)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *name, tern free_on_destroy)
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, const si1 *name, tern free_on_destroy)
 {
-	size_t	len;
+	si8		period;
+	size_t		len;
+	struct timespec	tv;
 	
 	// Initializes the inverse semaphore to the initial value
 	// pass isem == NULL to allocate
 	// free_on_destroy == TRUE_m13 indicates isem should be freed by isem_destroy_m13()
 	// returns NULL on failure
 	
+	// check nap
+	if (STR_is_empty_m13(nap_str) == FALSE_m13) {
+		nap_timespec_m13(nap_str, &tv);
+		period = ((si8) tv.tv_sec * (si8) 1e9) + (si8) tv.tv_nsec;
+		if (period > (si8) 0xFFFFFFFF) {
+			G_set_error_m13(E_PROC_m13, "nap cannot be more than 4.29 seconds");
+			return(NULL);
+		}
+	} else {
+		period = (si8) 0;
+	}
+
 	if (isem == NULL) {  // caller takes ownerhsip
 		isem = (isem_t_m13 *) calloc_m13((size_t) 1, sizeof(isem_t_m13));
 		if (isem == NULL)
 			return(NULL);
-		
 	} else {
+		// clear name
 		if (isem->name) {
 			free_m13((void *) isem->name);
 			isem->name = NULL;
 		}
+		// clear ownership
+		atomic_store(&isem->owner, (pid_t_m13) 0);
+	}
+	
+	// set period (needed it to be allocated)
+	isem->period = (ui4) period;
+	
+	if (STR_is_empty_m13(name) == FALSE_m13) {
+		len = strlen(name) + 1;
+		isem->name = (si1 *) memcpy_m13((void *) isem->name, (void *) name, len);
 	}
 	
 	// ensure free_on_destroy is a valid tern value
@@ -45431,13 +45495,6 @@ isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *name, tern 
 	}
 	isem->free_on_destroy = free_on_destroy;
 
-	if (STR_is_empty_m13(name) == TRUE_m13) {
-		isem->name = NULL;
-	} else {
-		len = strlen(name) + 1;
-		isem->name = (si1 *) memcpy_m13((void *) isem->name, (void *) name, len);
-	}
-	
 	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
 
@@ -45451,37 +45508,201 @@ isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *name, tern 
 }
 	
 	
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	isem_inc_m13(isem_t_m13 *isem)
 {
+	tern			wait_warning;
+	const si1		*name;
+	si8			wait_time_base, wait_time, tmp_time;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
 	// increments the count
+	// if owned by another thread, blocks until unowned
+
+	tv.tv_sec = (si8) 0;
+	if (isem->period)
+		tv.tv_nsec = (si8) isem->period;
+	else
+		tv.tv_nsec = (si8) 10000;  // default (10 us)
+	
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = isem->name;
+	}
 
 	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
 	
+	tid = gettid_m13();
+	
 	pthread_mutex_lock_m13(&isem->mutex);
+	
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
+		
+		nanosleep_m13(&tv);
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
 
 	atomic_fetch_add(&isem->count, (ui4) 1);
 	
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return;
+}
+
+
+void	isem_own_m13(isem_t_m13 *isem, tern own)
+{
+	tern			wait_warning;
+	const si1		*name;
+	si8			wait_time_base, wait_time, tmp_time;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
+	
+	// own == TRUE_m13: if unowned takes ownership, if owned blocks until takes ownership
+	// own == FALSE_m13: if owner, releases ownership; if not owner, blocks until ownership released
+
+	// ensure own is TRUE_m13 or FALSE_m13
+	if (G_valid_tern_m13(&own) == FALSE_m13 || own == UNKNOWN_m13) {
+		G_set_error_m13(E_PROC_m13, "own must be true or false");
+		return;
+	}
+
+	tv.tv_sec = (si8) 0;
+	if (isem->period)
+		tv.tv_nsec = (si8) isem->period;
+	else
+		tv.tv_nsec = (si8) 10000;  // default (10 us)
+
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = isem->name;
+	}
+
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	tid = gettid_m13();
+
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (own == TRUE_m13) {
+			if (owner == 0) {
+				atomic_store(&isem->owner, tid);  // take ownership
+				break;
+			} else if (tid == owner) {  // aleady owner
+				break;
+			} // else owned & not owner
+		} else { // own == FALSE_m13
+			if (owner == 0) {  // no owner
+				break;
+			} else if (tid == owner) {  // aleady owner
+				atomic_store(&isem->owner, (pid_t_m13) 0);  // release ownership
+				break;
+			} // else owned & not owner
+		}
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
+		
+		nanosleep_m13(&tv);
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
 	pthread_mutex_unlock_m13(&isem->mutex);
 
 	return;
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 {
-	// sets the count
+	tern			wait_warning;
+	si8			wait_time_base, wait_time, tmp_time;
+	pid_t_m13		tid, owner;
+	const si1		*name;
+	struct timespec		tv;
+
+	// set the isem count to count
+	// if owned by another thread, blocks until unowned
+
+	tv.tv_sec = (si8) 0;
+	if (isem->period)
+		tv.tv_nsec = (si8) isem->period;
+	else
+		tv.tv_nsec = (si8) 10000;  // default (10 us)
+	
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = isem->name;
+	}
 
 	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
 	
+	tid = gettid_m13();
+	
 	pthread_mutex_lock_m13(&isem->mutex);
+	
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
+		
+		nanosleep_m13(&tv);
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
 
 	atomic_store(&isem->count, count);
 	
@@ -45491,47 +45712,283 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-tern	isem_trywait_m13(isem_t_m13 *isem, const si1 *nap_str)
+tern	isem_trydec_m13(isem_t_m13 *isem)
 {
-	tern	waited;
-	ui4	count;
-	si4	r_val;
+	tern			waited, r_val;
+	ui4			count;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
+
+	// if unowned or owner: decrements the count (unless already zero), returns TRUE_m13
+	// if owned & not owner: returns FALSE_m13
+	// if period > 0, it will check once more after a nap
+
+	if (isem->period) {
+		waited = FALSE_m13;
+		tv.tv_sec = (si8) 0;
+		tv.tv_nsec = (si8) isem->period;
+	} else {
+		waited = TRUE_m13;
+	}
 	
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	tid = gettid_m13();
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+	
+	r_val = FALSE_m13;
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0) {
+			count = atomic_load(&isem->count);
+			if (count)
+				atomic_store(&isem->count, --count);
+			r_val = TRUE_m13;
+			break;
+		}
+		if (waited == TRUE_m13)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		nanosleep_m13(&tv);
+		waited = TRUE_m13;
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return(r_val);
+}
+
+
+tern	isem_tryinc_m13(isem_t_m13 *isem)
+{
+	tern			waited, r_val;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
+
+	// if unowned or owner: increments the count, returns TRUE_m13
+	// if owned & not owner: returns FALSE_m13
+	// if period > 0, it will check once more after a nap
+
+	if (isem->period) {
+		waited = FALSE_m13;
+		tv.tv_sec = (si8) 0;
+		tv.tv_nsec = (si8) isem->period;
+	} else {
+		waited = TRUE_m13;
+	}
+	
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	tid = gettid_m13();
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+	
+	r_val = FALSE_m13;
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0) {
+			atomic_fetch_add(&isem->count, (ui4) 1);
+			r_val = TRUE_m13;
+			break;
+		}
+		if (waited == TRUE_m13)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		nanosleep_m13(&tv);
+		waited = TRUE_m13;
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return(r_val);
+}
+
+
+tern	isem_tryown_m13(isem_t_m13 *isem, tern own)
+{
+	tern			waited, r_val;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
+	// own == TRUE_m13: if unowned takes ownership & returns TRUE_m13, if owned by another thread returns FALSE_m13
+	// own == FALSE_m13: if owner, releases ownership & returns TRUE_m13; if not owner, returns FALSE_m13
+	// if owned subsequent accesses by non-owners that would change the count will block (or fail in try functions) until ownership released
+	// if period > 0, it will check once more after a nap
+	// returns UNKNOWN_m13 on error
+
+	// ensure own is TRUE_m13 or FALSE_m13
+	if (G_valid_tern_m13(&own) == FALSE_m13 || own == UNKNOWN_m13) {
+		G_set_error_m13(E_PROC_m13, "own must be true or false");
+		return(UNKNOWN_m13);
+	}
+
+	if (isem->period) {
+		waited = FALSE_m13;
+		tv.tv_sec = (si8) 0;
+		tv.tv_nsec = (si8) isem->period;
+	} else {
+		waited = TRUE_m13;
+	}
+
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	tid = gettid_m13();
+
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	r_val = FALSE_m13;
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		
+		if (own == TRUE_m13) {
+			if (owner == 0) {
+				atomic_store(&isem->owner, tid);  // take ownership
+				r_val = TRUE_m13;
+				break;
+			} else if (tid == owner) {  // aleady owner
+				r_val = TRUE_m13;
+				break;
+			} // else owned & not owner
+		} else { // own == FALSE_m13
+			if (owner == 0) {  // no owner
+				r_val = TRUE_m13;
+				break;
+			} else if (tid == owner) {  // aleady owner
+				atomic_store(&isem->owner, (pid_t_m13) 0);  // release ownership
+				r_val = TRUE_m13;
+				break;
+			} // else owned & not owner
+		}
+		
+		if (waited == TRUE_m13)
+			break;
+	
+		pthread_mutex_unlock_m13(&isem->mutex);
+
+		nanosleep_m13(&tv);
+		waited = TRUE_m13;
+		
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	pthread_mutex_unlock_m13(&isem->mutex);
+
+	return(r_val);
+}
+
+
+tern	isem_trysetcnt_m13(isem_t_m13 *isem, ui4 count)
+{
+	tern			waited, r_val;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
+
+	// if unowned or owner: sets the isem count to count, returns TRUE_m13
+	// if owned & not owner: returns FALSE_m13
+	// if period > 0, it will check once more after a nap
+
+	if (isem->period) {
+		waited = FALSE_m13;
+		tv.tv_sec = (si8) 0;
+		tv.tv_nsec = (si8) isem->period;
+	} else {
+		waited = TRUE_m13;
+	}
+	
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	tid = gettid_m13();
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+	
+	r_val = FALSE_m13;
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0) {
+			atomic_store(&isem->count, count);
+			r_val = TRUE_m13;
+			break;
+		}
+		if (waited == TRUE_m13)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		nanosleep_m13(&tv);
+		waited = TRUE_m13;
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return(r_val);
+}
+
+
+tern	isem_trywait_m13(isem_t_m13 *isem)
+{
+	tern			waited, r_val;
+	ui4			count;
+	pid_t_m13		tid, owner;
+	struct timespec		tv;
+
 	// if count == 0, sets count == 1 & returns TRUE_m13
 	// if count > 0, returns FALSE_m13
-	// if nap_str is not empty, it will check once more after a nap
+	// if period > 0, it will check once more after a nap
 	// calling function should call isem_dec_m13() when finished
 
-	if (STR_is_empty_m13(nap_str) == TRUE_m13)
-		waited = TRUE_m13;
-	else
+	if (isem->period) {
 		waited = FALSE_m13;
-	
+		tv.tv_sec = (si8) 0;
+		tv.tv_nsec = (si8) isem->period;
+	} else {
+		waited = TRUE_m13;
+	}
+
 	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
 		pthread_mutex_init_m13(&isem->mutex, NULL);
-	
+
+	tid = gettid_m13();
+
 	pthread_mutex_lock_m13(&isem->mutex);
 
+	r_val = FALSE_m13;
 	while (1) {
-		count = atomic_load(&isem->count);
-		if (count) {
-			r_val = FALSE_m13;
-		} else {
-			atomic_store(&isem->count, (ui4) 1);  // incremement count
-			r_val = TRUE_m13;
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0) {
+			count = atomic_load(&isem->count);
+			if (count == 0) {
+				atomic_store(&isem->count, (ui4) 1);  // incremement count
+				r_val = TRUE_m13;
+				break;
+			}
 		}
+		if (waited == TRUE_m13)
+			break;
 		
-		if (waited == FALSE_m13) {
-			pthread_mutex_unlock_m13(&isem->mutex);
-			nap_m13(nap_str);
-			pthread_mutex_lock_m13(&isem->mutex);
-			waited = TRUE_m13;
-			continue;
-		}
-		break;
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		nanosleep_m13(&tv);
+		waited = TRUE_m13;
+		
+		pthread_mutex_lock_m13(&isem->mutex);
 	}
 	
 	pthread_mutex_unlock_m13(&isem->mutex);
@@ -45540,64 +45997,136 @@ tern	isem_trywait_m13(isem_t_m13 *isem, const si1 *nap_str)
 }
 
 
-tern	isem_trywait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str)
+tern	isem_trywait_noinc_m13(isem_t_m13 *isem)
 {
-	tern	waited;
-	ui4	count;
-	si4	r_val;
-	
+	tern			waited, r_val;
+	ui4			count;
+	struct timespec		tv;
+
 	// if count == 0, returns TRUE_m13
 	// if count > 0, returns FALSE_m13
-	// if nap_str is not empty, it will check once more after a nap
+	// if period > 0, it will check once more after a nap
 
-	if (STR_is_empty_m13(nap_str) == TRUE_m13)
-		waited = TRUE_m13;
-	else
+	if (isem->period) {
 		waited = FALSE_m13;
-	
-	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
-		pthread_mutex_init_m13(&isem->mutex, NULL);
-	
-	pthread_mutex_lock_m13(&isem->mutex);
-
-	while (1) {
-		count = atomic_load(&isem->count);
-		if (count)
-			r_val = FALSE_m13;
-		else
-			r_val = TRUE_m13;
-		
-		if (waited == FALSE_m13) {
-			pthread_mutex_unlock_m13(&isem->mutex);
-			nap_m13(nap_str);
-			pthread_mutex_lock_m13(&isem->mutex);
-			waited = TRUE_m13;
-			continue;
-		}
-		break;
+		tv.tv_sec = (si8) 0;
+		tv.tv_nsec = (si8) isem->period;
+	} else {
+		waited = TRUE_m13;
 	}
 
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	r_val = FALSE_m13;
+	while (1) {
+		count = atomic_load(&isem->count);
+		if (count == 0) {
+			r_val = TRUE_m13;
+			break;
+		}
+		if (waited == TRUE_m13)
+			break;
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		nanosleep_m13(&tv);
+		waited = TRUE_m13;
+		
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+	
 	pthread_mutex_unlock_m13(&isem->mutex);
 
 	return_m13(r_val);
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	isem_wait_m13(isem_t_m13 *isem, const si1 *nap_str)
+void	isem_wait_m13(isem_t_m13 *isem)
 {
-	tern		wait_warning;
-	const si1	*name;
-	ui4		count;
-	si8		wait_time_base, wait_time, tmp_time;
-	
-	// blocks until count == 0, then increments count & returns
-	// if nap_str is not empty, it will use this as the checking period
+	tern			wait_warning;
+	ui4			count;
+	si8			wait_time_base, wait_time, tmp_time;
+	pid_t_m13		tid, owner;
+	const si1		*name;
+	struct timespec		tv;
 
-	if (STR_is_empty_m13(nap_str) == TRUE_m13)
-		nap_str = "100 us";
+	
+	// blocks until unowned & count == 0, sets count == 1
+	// calling function should call isem_dec_m13() when finished
+
+	tv.tv_sec = (si8) 0;
+	if (isem->period)
+		tv.tv_nsec = (si8) isem->period;
+	else
+		tv.tv_nsec = (si8) 10000;  // default (10 us)
+	
+	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
+	if (wait_warning == TRUE_m13) {
+		wait_time_base = G_current_uutc_m13();
+		if (STR_is_empty_m13(isem->name) == TRUE_m13)
+			name = "<unnamed>";
+		else
+			name = isem->name;
+	}
+
+	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+	
+	tid = gettid_m13();
+	
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	while (1) {
+		owner = atomic_load(&isem->owner);
+		if (tid == owner || owner == 0) {
+			count = atomic_load(&isem->count);
+			if (count == 0)
+				break;
+		}
+		
+		pthread_mutex_unlock_m13(&isem->mutex);
+		
+		if (wait_warning == TRUE_m13) {
+			tmp_time = G_current_uutc_m13();
+			wait_time = tmp_time - wait_time_base;
+			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
+				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				wait_time_base = tmp_time;
+			}
+		}
+		
+		nanosleep_m13(&tv);
+
+		pthread_mutex_lock_m13(&isem->mutex);
+	}
+
+	atomic_store(&isem->count, (ui4) 1);
+
+	pthread_mutex_lock_m13(&isem->mutex);
+
+	return;
+}
+
+
+void	isem_wait_noinc_m13(isem_t_m13 *isem)
+{
+	tern			wait_warning;
+	ui4			count;
+	si8			wait_time_base, wait_time, tmp_time;
+	const si1		*name;
+	struct timespec		tv;
+
+	
+	// blocks until count == 0
+
+	tv.tv_sec = (si8) 0;
+	if (isem->period)
+		tv.tv_nsec = (si8) isem->period;
+	else
+		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
 	if (wait_warning == TRUE_m13) {
@@ -45613,77 +46142,28 @@ void	isem_wait_m13(isem_t_m13 *isem, const si1 *nap_str)
 	
 	pthread_mutex_lock_m13(&isem->mutex);
 
-	count = atomic_load(&isem->count);
-	while (count) {
+	while (1) {
+		count = atomic_load(&isem->count);
+		if (count == 0)
+			break;
+		
 		pthread_mutex_unlock_m13(&isem->mutex);
-		nap_m13(nap_str);
+		
 		if (wait_warning == TRUE_m13) {
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still locked ...\n", name);
+				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
 				wait_time_base = tmp_time;
 			}
 		}
+		
+		nanosleep_m13(&tv);
+
 		pthread_mutex_lock_m13(&isem->mutex);
-		count = atomic_load(&isem->count);
-	}
-	
-	atomic_store(&isem->count, (ui4) 1);  // increment isem
-
-	pthread_mutex_unlock_m13(&isem->mutex);
-
-	return;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	isem_wait_noinc_m13(isem_t_m13 *isem, const si1 *nap_str)
-{
-	tern		wait_warning;
-	const si1	*name;
-	ui4		count;
-	si8		wait_time_base, wait_time, tmp_time;
-
-	// blocks until count == 0, then returns
-	// if nap_str is not empty, it will use this as the checking period
-
-	if (STR_is_empty_m13(nap_str) == TRUE_m13)
-		nap_str = "100 us";
-	
-	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
-		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = (const si1 *) isem->name;
 	}
 
-	if (atomic_exchange(&isem->mutex_initialized, TRUE_m13) != TRUE_m13)
-		pthread_mutex_init_m13(&isem->mutex, NULL);
-	
 	pthread_mutex_lock_m13(&isem->mutex);
-
-	count = atomic_load(&isem->count);
-	while (count) {
-		pthread_mutex_unlock_m13(&isem->mutex);
-		nap_m13(nap_str);
-		if (wait_warning == TRUE_m13) {
-			tmp_time = G_current_uutc_m13();
-			wait_time = tmp_time - wait_time_base;
-			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still locked ...\n", name);
-				wait_time_base = tmp_time;
-			}
-		}
-		pthread_mutex_lock_m13(&isem->mutex);
-		count = atomic_load(&isem->count);
-	}
-	
-	pthread_mutex_unlock_m13(&isem->mutex);
 
 	return;
 }
@@ -46241,11 +46721,25 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+void	nanosleep_m13(struct timespec *tv)
+{
+	#if defined MACOS_m13 || defined LINUX_m13
+	nanosleep(tv, NULL);
+	#endif
+	#ifdef WINDOWS_m13
+	WN_nap_m13(tv);
+	#endif
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 void	nap_m13(const si1 *nap_str)
 {
-	si1 *c;
-	struct timespec nap;
-	si8 num;
+	struct timespec	nap;
 	
 
 	// string format: <number>[<space>]<unit letter(s)>
@@ -46255,6 +46749,36 @@ void	nap_m13(const si1 *nap_str)
 	if (STR_is_empty_m13(nap_str) == TRUE_m13) {
 		G_set_error_m13(E_GEN_m13, "NULL input string");
 		return;
+	}
+
+	// get timespec
+	nap_timespec_m13(nap_str, &nap);
+	
+	// sleep
+	nanosleep_m13(&nap);
+
+	return;
+}
+
+
+struct timespec	*nap_timespec_m13(const si1 *nap_str, struct timespec *nap)
+{
+	si1	*c;
+	si8	num;
+	
+
+	// string format: <number>[<space>]<unit letter(s)>
+	// e.g. to sleep for 1 millisecond:
+	// "1 millisecond" == "1millisecond" == "1 ms" == "1ms" == "1 m" == "1m"
+
+	if (STR_is_empty_m13(nap_str) == TRUE_m13) {
+		G_set_error_m13(E_GEN_m13, "NULL input string");
+		return(NULL);
+	}
+	if (nap == NULL) {  // caller takes ownership
+		nap = (struct timespec *) malloc_m13(sizeof(struct timespec));
+		if (nap == NULL)
+			return(NULL);
 	}
 
 	c = (si1 *) nap_str;
@@ -46271,58 +46795,51 @@ void	nap_m13(const si1 *nap_str)
 	// units: ns, us (or microseconds), ms (or milliseconds), sec, min, hours
 	switch(*c) {
 		case 'h':  // hours
-			nap.tv_sec = num * (ui8) 3600;
-			nap.tv_nsec = 0;
+			nap->tv_sec = num * (ui8) 3600;
+			nap->tv_nsec = 0;
 			break;
 		case 'm':  // microseconds, milliseconds (default), or minutes
 			if( *(c + 1) == 'i') {
 				if (*(c + 2) == 'c') {  // microseconds
-					nap.tv_sec = 0;
-					nap.tv_nsec = num * (ui8) 1e3;
+					nap->tv_sec = 0;
+					nap->tv_nsec = num * (ui8) 1e3;
 					break;
 				}
 				if (*(c + 2) == 'n') {  // minutes
-					nap.tv_sec = num * (ui8) 60;
-					nap.tv_nsec = 0;
+					nap->tv_sec = num * (ui8) 60;
+					nap->tv_nsec = 0;
 					break;
 				}
 			}
 			// milliseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num * (ui8) 1e6;
+			nap->tv_sec = 0;
+			nap->tv_nsec = num * (ui8) 1e6;
 			break;
 		case 'n':  // nanoseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num;
+			nap->tv_sec = 0;
+			nap->tv_nsec = num;
 			break;
 		case 's':  // seconds
-			nap.tv_sec = num;
-			nap.tv_nsec = 0;
+			nap->tv_sec = num;
+			nap->tv_nsec = 0;
 			break;
 		case 'u':  // microseconds
-			nap.tv_sec = 0;
-			nap.tv_nsec = num * (ui8) 1e3;
+			nap->tv_sec = 0;
+			nap->tv_nsec = num * (ui8) 1e3;
 			break;
 		default:
 			G_set_error_m13(E_GEN_m13, "\"%s\" is not a valid input string", nap_str);
-			return;
+			return(NULL);
 	}
 	
 	// overflow
-	if (nap.tv_nsec >= (ui8) 1e9) {
-		nap.tv_sec = nap.tv_nsec / (ui8) 1e9;
-		nap.tv_nsec -= (nap.tv_sec * (ui8) 1e9);
+	if (nap->tv_nsec >= (ui8) 1e9) {
+		nap->tv_sec = nap->tv_nsec / (ui8) 1e9;
+		nap->tv_nsec -= (nap->tv_sec * (ui8) 1e9);
 	}
 	
 	// sleep
-#if defined MACOS_m13 || defined LINUX_m13
-	nanosleep(&nap, NULL);
-#endif
-#ifdef WINDOWS_m13
-	WN_nap_m13(&nap);
-#endif
-
-	return;
+	return(nap);
 }
 
 
