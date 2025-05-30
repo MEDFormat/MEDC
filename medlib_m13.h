@@ -1265,8 +1265,8 @@ typedef struct {
 	ui2	perms; // system file permissions (lower 9 bits of "st_mode" element of stat structure)
 	si4	fd; // system file descriptor
 	FILE	*fp; // system FILE pointer
-	si8	len; // current file length (-1 indicates not known)
-	si8	pos; // file pointer position (relative to start)  (-1 indicates not known)
+	si8	len; // current file length (-1 indicates not set)
+	si8	pos; // file pointer position (relative to start)  (-1 indicates not set)
 	si8	acc; // uutc of last file access (open, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
 } FILE_m13;
 
@@ -2033,7 +2033,7 @@ typedef struct {
 
 // All MED File Structures begin with a level header structure
 typedef struct LH_m13 { // multiple thread access
-	union { // anonymous union
+	union {
 		struct {
 			si1 	type_string[TYPE_BYTES_m13];
 			ui1 	pad[3]; // enforce 8-byte alignment
@@ -2147,7 +2147,7 @@ typedef struct {
 	ui4		code; // behavior code
 } BEHAVIOR_m13;
 
-typedef struct {
+typedef struct { // single thread access
 	pid_t_m13		_id; // thread id
 	BEHAVIOR_m13		*behaviors; // current behavior at top of stack (last entry)
 	si4			size; // total allocated behaviors
@@ -2171,11 +2171,11 @@ typedef struct { // multiple thread access
 #define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
 
 
-typedef struct { // multiple thread access
-	_Atomic pid_t_m13	_id; // thread id
-	const si1		**functions;
-	si4			size; // total allocated functions
-	_Atomic si4		top_idx; // top of function stack
+typedef struct { // single thread access
+	 pid_t_m13	_id; // thread id
+	const si1	**functions;
+	si4		size; // total allocated functions
+	si4		top_idx; // top of function stack
 } FUNCTION_STACK_m13;
 
 typedef struct { // multiple thread access

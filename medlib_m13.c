@@ -863,10 +863,10 @@ inline
 #endif
 BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 {
-	si4				i, n_stacks;
+	si4				i, n_stacks, list_top_idx, list_size;
 	pid_t_m13			_id;
 	BEHAVIOR_STACK_LIST_m13		*list;
-	BEHAVIOR_STACK_m13		**stack_ptr, *stack, *new_stack;
+	BEHAVIOR_STACK_m13		**list_stack_ptrs, **stack_ptr, *stack, *new_stack;
 
 
 	// get mutex
@@ -875,8 +875,10 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 
 	// find stack
 	_id = gettid_m13();
-	stack_ptr = atomic_load(&list->stack_ptrs);
-	n_stacks = list->top_idx + 1;
+	list_stack_ptrs = atomic_load(&list->stack_ptrs);
+	list_top_idx = atomic_load(&list->top_idx);
+	n_stacks = list_top_idx + 1;
+	stack_ptr = list_stack_ptrs;
 	stack = NULL;
 	for (i = n_stacks; i--; ++stack_ptr) {
 		if ((*stack_ptr)->_id == _id) {
@@ -894,20 +896,21 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 		// create a new stack
 		if (stack == NULL) {
 			// expand list
+			list_size = atomic_load(&list->size);
 			if (list->size == n_stacks) {
 				n_stacks += GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13;
-				stack_ptr = (BEHAVIOR_STACK_m13 **) realloc((void *) list->stack_ptrs, (size_t) n_stacks * sizeof(BEHAVIOR_STACK_m13 *));
+				stack_ptr = (BEHAVIOR_STACK_m13 **) realloc((void *) list_stack_ptrs, (size_t) n_stacks * sizeof(BEHAVIOR_STACK_m13 *));
 				if (stack_ptr == NULL) {  // return with no changes to stacks
 					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return(NULL);
 				}
-				memset((void *) (stack_ptr + list->size), 0, (size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(BEHAVIOR_STACK_m13 *));  // null new pointers - realloc does not zero
 
-				list->stack_ptrs = stack_ptr;
-				list->size = n_stacks;
-				++list->top_idx;
-				
+				list_stack_ptrs = stack_ptr;
+				atomic_store(&list->stack_ptrs, list_stack_ptrs);
+				list_size = n_stacks;
+				atomic_store(&list->size, list_size);
+
 				// allocate & initialize new stacks (note: stacks allocated en bloc)
 				new_stack = (BEHAVIOR_STACK_m13 *) malloc((size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(BEHAVIOR_STACK_m13));
 				if (new_stack == NULL) {
@@ -915,16 +918,16 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 					pthread_mutex_unlock_m13(&list->mutex);
 					return(NULL);
 				}
-				stack_ptr = list->stack_ptrs + list->top_idx;  // list->top_idx == old size at this point
+				stack_ptr = list_stack_ptrs + list_top_idx;  // list->top_idx == old size at this point
 				for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
 					*stack_ptr++ = new_stack;  // assign stack pointer
 					new_stack->top_idx = -1;  // initialize new stacks (behaviors allocated as needed)
 					new_stack->size = 0;
 				}
 			}
-			stack = *(list->stack_ptrs + list->top_idx);
+			stack = list_stack_ptrs[++list_top_idx];
+			atomic_store(&list->top_idx, list_top_idx);
 		}
-	
 		// assign stack
 		stack->_id = _id;
 	}
@@ -2991,7 +2994,6 @@ si4 G_DST_offset_m13(si8 uutc)
 #endif
 
 	// returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
-	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);  // find proc globals by process id
 	if (proc_globs->time_constants.set == FALSE_m13) {
 		G_warning_message_m13("%s(): library time constants not set\n", __FUNCTION__);
@@ -5064,7 +5066,13 @@ void	G_free_global_tables_m13(void)
 
 void  G_free_globals_m13(tern cleanup_for_exit)
 {
-	si4	i;
+	si4			i, list_size;
+	BEHAVIOR_STACK_m13	**behavior_stack_ptrs;
+	FUNCTION_STACK_m13	**function_stack_ptrs;
+	FLOCK_ENTRY_m13		**lock_ptrs;
+	PROC_GLOBS_m13		**proc_globs_ptrs;
+	THREAD_ENTRY_m13	*thread_entries;
+	AT_ENTRY_m13		*AT_entries;
 	
 	
 	if (cleanup_for_exit == TRUE_m13) {
@@ -5084,22 +5092,26 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 			
 	if (globals_m13->behavior_stack_list) {
 		// behaviors allocated for each stack
-		for (i = 0; i < globals_m13->behavior_stack_list->size; ++i)
-			if (globals_m13->behavior_stack_list->stack_ptrs[i]->size)
-				free((void *) globals_m13->behavior_stack_list->stack_ptrs[i]->behaviors);
+		list_size = atomic_load(&globals_m13->behavior_stack_list->size);
+		behavior_stack_ptrs = atomic_load(&globals_m13->behavior_stack_list->stack_ptrs);
+		for (i = 0; i < list_size; ++i)
+			if (behavior_stack_ptrs[i]->size)
+				free((void *) behavior_stack_ptrs[i]->behaviors);
 		// stacks allocated in blocks of GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13
-		for (i = 0; i < globals_m13->behavior_stack_list->size; i += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13)
-			free((void *) globals_m13->behavior_stack_list->stack_ptrs[i]);
-		free((void *) globals_m13->behavior_stack_list->stack_ptrs);
+		for (i = 0; i < list_size; i += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13)
+			free((void *) behavior_stack_ptrs[i]);
+		free((void *) behavior_stack_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->behavior_stack_list->mutex);
 		free((void *) globals_m13->behavior_stack_list);
 	}
 
 	if (globals_m13->file_lock_list) {
 		// file locks allocated in blocks of GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13
-		for (i = 0; i < globals_m13->file_lock_list->size; i += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13)
-			free((void *) globals_m13->file_lock_list->lock_ptrs[i]);
-		free((void *) globals_m13->file_lock_list->lock_ptrs);
+		list_size = atomic_load(&globals_m13->file_lock_list->size);
+		lock_ptrs = atomic_load(& globals_m13->file_lock_list->lock_ptrs);
+		for (i = 0; i < list_size; i += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13)
+			free((void *) lock_ptrs[i]);
+		free((void *) lock_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->file_lock_list->mutex);
 		free((void *) globals_m13->file_lock_list);
 	}
@@ -5107,13 +5119,15 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 #ifdef FT_DEBUG_m13
 	if (globals_m13->function_stack_list) {
 		// functions allocated for each stack
-		for (i = 0; i < globals_m13->function_stack_list->size; ++i)
-			if (globals_m13->function_stack_list->stack_ptrs[i]->size)
-				free((void *) globals_m13->function_stack_list->stack_ptrs[i]->functions);
+		list_size = atomic_load(&globals_m13->function_stack_list->size);
+		function_stack_ptrs = atomic_load(&globals_m13->function_stack_list->stack_ptrs);
+		for (i = 0; i < list_size; ++i)
+			if (function_stack_ptrs[i]->size)
+				free((void *) function_stack_ptrs[i]->functions);
 		// stacks allocated in blocks of GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13
-		for (i = 0; i < globals_m13->function_stack_list->size; i += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13)
-			free((void *) globals_m13->function_stack_list->stack_ptrs[i]);
-		free((void *) globals_m13->function_stack_list->stack_ptrs);
+		for (i = 0; i < list_size; i += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13)
+			free((void *) function_stack_ptrs[i]);
+		free((void *) function_stack_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->function_stack_list->mutex);
 		free((void *) globals_m13->function_stack_list);
 	}
@@ -5121,19 +5135,22 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 
 	if (globals_m13->proc_globs_list) {
 		// Sgmt_recs_list allocated for each proc_glob
-		for (i = 0; i < globals_m13->proc_globs_list->size; ++i)
-			if (globals_m13->proc_globs_list->proc_globs_ptrs[i])
-				G_proc_globs_delete_m13((LH_m13 *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
+		list_size = atomic_load(&globals_m13->proc_globs_list->size);
+		proc_globs_ptrs = atomic_load(&globals_m13->proc_globs_list->proc_globs_ptrs);
+		for (i = 0; i < list_size; ++i)
+			if (proc_globs_ptrs[i]->_id)
+				G_proc_globs_delete_m13((LH_m13 *) proc_globs_ptrs[i]);
 		// proc_globs allocated in blocks of GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13
-		for (i = 0; i < globals_m13->proc_globs_list->size; i += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13)
-			free((void *) globals_m13->proc_globs_list->proc_globs_ptrs[i]);
-		free((void *) globals_m13->proc_globs_list->proc_globs_ptrs);
+		for (i = 0; i < list_size; i += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13)
+			free((void *) proc_globs_ptrs[i]);
+		free((void *) proc_globs_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->proc_globs_list->mutex);
 		free((void *) globals_m13->proc_globs_list);
 	}
 	
 	if (globals_m13->thread_list) {
-		free((void *) globals_m13->thread_list->entries);
+		thread_entries = atomic_load(&globals_m13->thread_list->entries);
+		free((void *) thread_entries);
 		pthread_mutex_destroy_m13(&globals_m13->thread_list->mutex);
 		free((void *) globals_m13->thread_list);
 	}
@@ -5141,7 +5158,8 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 #ifdef AT_DEBUG_m13
 	if (globals_m13->AT_list) {
 		free_all_m13();  // display memory still allocated & free it
-		free((void *) globals_m13->AT_list->entries);
+		AT_entries = atomic_load(&globals_m13->AT_list->entries);
+		free((void *) AT_entries);
 		pthread_mutex_destroy_m13(&globals_m13->AT_list->mutex);
 		free((void *) globals_m13->AT_list);
 	}
@@ -5458,8 +5476,7 @@ inline
 #endif
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 {
-	si4				i, n_stacks, list_top_idx, stack_top_idx, list_size;
-	pid_t_m13			stack_id;
+	si4				i, n_stacks, list_top_idx, list_size;
 	FUNCTION_STACK_LIST_m13		*list;
 	FUNCTION_STACK_m13 		*stack, **list_stack_ptrs, **stack_ptr, *new_stack;
 
@@ -5473,7 +5490,6 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	// get mutex
 	list = globals_m13->function_stack_list;
 	pthread_mutex_lock_m13(&list->mutex);
-//	eprintf_m13("getting stack %lu", _id);
 	
 	// find stack
 	list_top_idx = atomic_load(&list->top_idx);
@@ -5482,15 +5498,13 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	n_stacks = list_top_idx + 1;
 	stack = NULL;
 	for (i = n_stacks; i--; ++stack_ptr) {
-		stack_id = atomic_load(&(*stack_ptr)->_id);
-		if (stack_id == _id) {
+		if ((*stack_ptr)->_id == _id) {
 			stack = *stack_ptr;
 			break;
 		}
 		if (stack)
 			continue;
-		stack_top_idx = atomic_load(&(*stack_ptr)->top_idx);
-		if (stack_top_idx == -1)  // first open stack
+		if ((*stack_ptr)->top_idx == -1)  // first open stack
 			stack = *stack_ptr;
 	}
 	
@@ -5501,7 +5515,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 			list_size = atomic_load(&list->size);
 			if (list_size == n_stacks) { // expand list
 				n_stacks += GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13;
-				stack_ptr = (FUNCTION_STACK_m13 **) realloc((void *) list->stack_ptrs, (size_t) n_stacks * sizeof(FUNCTION_STACK_m13 *));
+				stack_ptr = (FUNCTION_STACK_m13 **) realloc((void *) list_stack_ptrs, (size_t) n_stacks * sizeof(FUNCTION_STACK_m13 *));
 				if (stack_ptr == NULL) {  // return with no changes to stacks
 					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
@@ -5518,7 +5532,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 					return(NULL);
 				}
 				// initialize new stacks (functions allocated as needed)
-				stack_ptr += list_size;  // stack_ptr pointing to base of reallocated array; list->size == old size at this point
+				stack_ptr = list_stack_ptrs + list_size;  // stack_ptr pointing to base of reallocated array; list->size == old size at this point
 				for (i = GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_stack) {
 					*stack_ptr++ = new_stack;  // assign stack pointer
 					new_stack->size = 0;  // malloc() doesn't zero
@@ -5530,11 +5544,10 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 		}
 	
 		// setup or reset stack
-		atomic_store(&stack->top_idx, (si4) -1);
-		atomic_store(&stack->_id, _id);
+		stack->top_idx = (si4) -1;
+		stack->_id = _id;
 	}
 	
-//	eprintf_m13("got stack %lu", _id);
 	pthread_mutex_unlock_m13(&list->mutex);
 		
 	return(stack);
@@ -6032,6 +6045,9 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 
 tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (app_path) ui4 version_major, ui4 version_minor
 {
+	AT_ENTRY_m13		*AT_entries;
+
+	
 	if (globals_m13)
 		return(TRUE_m13);
 	globals_m13 = (GLOBALS_m13 *) calloc((size_t) 1, sizeof(GLOBALS_m13));
@@ -6057,8 +6073,8 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->AT_list->entries = (AT_ENTRY_m13 *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, sizeof(AT_ENTRY_m13));
-	if (globals_m13->AT_list->entries == NULL) {
+	AT_entries = (AT_ENTRY_m13 *) calloc((size_t) GLOBALS_AT_LIST_SIZE_INCREMENT_m13, sizeof(AT_ENTRY_m13));
+	if (AT_entries == NULL) {
 		#ifdef MATLAB_m13
 		mexErrMsgTxt("G_init_globals_m13(): calloc() failure for AT list => exiting\n");
 		#else
@@ -6066,8 +6082,9 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->AT_list->top_idx = -1;
-	globals_m13->AT_list->size = GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
+	atomic_store(&globals_m13->AT_list->entries, AT_entries);
+	atomic_store(&globals_m13->AT_list->top_idx, (si4) -1);
+	atomic_store(&globals_m13->AT_list->size, (si4) GLOBALS_AT_LIST_SIZE_INCREMENT_m13);
 	pthread_mutex_init_m13(&globals_m13->AT_list->mutex, NULL);
 	if (!(GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 		#ifdef MATLAB_m13
@@ -6089,9 +6106,9 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->function_stack_list->top_idx = -1;
+	atomic_store(&globals_m13->function_stack_list->top_idx, (si4) -1);
 	pthread_mutex_init_m13(&globals_m13->function_stack_list->mutex, NULL);
-	globals_m13->main_id = gettid_m13();  // do this here so main process function stack get named
+	globals_m13->main_id = gettid_m13();  // do this here so main process function stack gets named
 	G_push_function_exec_m13("main");  // main doesn't push itself because it has to initialize globals first
 	if ((GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13) == 0) {
 		#ifdef MATLAB_m13
@@ -6116,7 +6133,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->behavior_stack_list->top_idx = -1;
+	atomic_store(&globals_m13->behavior_stack_list->top_idx, (si4) -1);
 	pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
 	
 	// file locking
@@ -6129,7 +6146,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->file_lock_list->top_idx = -1;
+	atomic_store(&globals_m13->file_lock_list->top_idx, (si4) -1);
 	pthread_mutex_init_m13(&globals_m13->file_lock_list->mutex, NULL);
 
 	// process globals
@@ -6142,7 +6159,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->proc_globs_list->top_idx = -1;
+	atomic_store(&globals_m13->proc_globs_list->top_idx, (si4) -1);
 	pthread_mutex_init_m13(&globals_m13->proc_globs_list->mutex, NULL);
 
 	// thread list
@@ -6155,7 +6172,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 		exit(-1);
 		#endif
 	}
-	globals_m13->thread_list->top_idx = -1;
+	atomic_store(&globals_m13->thread_list->top_idx, (si4) -1);
 	pthread_mutex_init_m13(&globals_m13->thread_list->mutex, NULL);
 	PROC_thread_list_add_m13(NULL);  // add main process
 
@@ -7948,6 +7965,7 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 	tern		free_seg;
 	si1		tmp_str[PATH_BYTES_m13], *type_str;
 	si8		len;
+	CHAN_m13	*chan;
 	PROC_GLOBS_m13	*proc_globs;
 	
 #ifdef FT_DEBUG_m13
@@ -8032,10 +8050,12 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 			// check for rename
 			len = strlen(seg->name);
 			seg->name[len - 5] = 0;
-			if (strcmp_m13(tmp_str, seg->metadata_fps->uh->channel_name))
-				if (seg->parent)  // can be null
-					if (CHANNEL_CODE_m13(seg->parent->type_code) == TRUE_m13)  // can be proc_globs
-						G_update_channel_name_m13((CHAN_m13 *) seg->parent);
+			if (strcmp_m13(seg->name, seg->metadata_fps->uh->channel_name)) {
+				chan = (CHAN_m13 *) seg->parent;
+				if (chan)   // can be null
+					if (CHANNEL_CODE_m13(chan->type_code) == TRUE_m13)  // can be proc_globs
+						G_update_channel_name_m13(chan);
+			}
 			seg->name[len - 5] = '-';
 		}
 	}
@@ -8822,10 +8842,10 @@ tern	G_proc_error_state_m13(LH_m13 *lh)
 
 PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 {
-	si4			i, n_proc_globs;
+	si4			i, n_proc_globs, list_top_idx, list_size;
 	pid_t_m13		_id, tmp_id;
 	LH_m13			*top_lh;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, *new_proc_globs;
+	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptrs, **proc_globs_ptr, *new_proc_globs;
 	PROC_GLOBS_LIST_m13	*list;
 	
 #ifdef FT_DEBUG_m13
@@ -8844,7 +8864,6 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 		proc_globs = (PROC_GLOBS_m13 *) top_lh;
 		if (proc_globs->type_code == PROC_GLOBS_TYPE_CODE_m13) {
 			lh->proc_globs = proc_globs;  // set shortcut
-			eprintf_m13("found by linkage");
 			return_m13(proc_globs);
 		}
 	}
@@ -8857,15 +8876,16 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	proc_globs = NULL;
 	_id = tmp_id = gettid_m13();
 	do {
-		proc_globs_ptr = list->proc_globs_ptrs;
-		n_proc_globs = list->top_idx + 1;
+		proc_globs_ptrs = atomic_load(&list->proc_globs_ptrs);
+		proc_globs_ptr = proc_globs_ptrs;
+		list_top_idx = atomic_load(&list->top_idx);
+		n_proc_globs = list_top_idx + 1;
 		for (i = n_proc_globs; i--; ++proc_globs_ptr) {
 			if ((*proc_globs_ptr)->_id == tmp_id) {
 				proc_globs = *proc_globs_ptr;
 				pthread_mutex_unlock_m13(&list->mutex);
 				if (lh) // set shortcut
 					lh->proc_globs = proc_globs;
-				eprintf_m13("found by id");
 				return_m13(proc_globs);
 			}
 			if (proc_globs)
@@ -8881,22 +8901,21 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	// expand list
 	if (proc_globs == NULL) {
 		eprintf_m13("creating new: n_proc_globs = %d, list->size = %d", n_proc_globs, list->size);
-		if (list->size == 1)
-			exit_m13(-1);
-		if (n_proc_globs == list->size) {
-			eprintf_m13("expanding list");
+		list_size = atomic_load(&list->size);
+		if (n_proc_globs == list_size) {
 			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
+			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
 			if (proc_globs_ptr == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
-			memset((void *) (proc_globs_ptr + list->size), 0, (size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13 *));  // realloc doesn't zero
 
-			list->proc_globs_ptrs = proc_globs_ptr;
-			list->size = n_proc_globs;
-			
+			proc_globs_ptrs = proc_globs_ptr;
+			atomic_store(&list->proc_globs_ptrs, proc_globs_ptrs);
+			list_size = n_proc_globs;
+			atomic_store(&list->size, list_size);
+
 			// allocate & initialize new stacks (note: proc_globs allocated en bloc)
 			new_proc_globs = (PROC_GLOBS_m13 *) calloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13, sizeof(PROC_GLOBS_m13));
 			if (new_proc_globs == NULL) {
@@ -8904,13 +8923,14 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 				pthread_mutex_unlock_m13(&list->mutex);
 				return_m13(NULL);
 			}
-			proc_globs_ptr = list->proc_globs_ptrs + list->top_idx;  // list->top_idx == old size at this point
+			proc_globs_ptr = proc_globs_ptrs + list_top_idx;  // list->top_idx == old size at this point
 			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--; ++new_proc_globs) {
 				*proc_globs_ptr++ = new_proc_globs;  // assign stack pointer
 				new_proc_globs->_id = 0;
 			}
 		}
-		proc_globs = list->proc_globs_ptrs[++list->top_idx];
+		proc_globs = proc_globs_ptrs[++list_top_idx];
+		atomic_store(&list->top_idx, list_top_idx);
 	}
 
 	// relase mutex
@@ -8975,7 +8995,9 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 
 PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs)
 {
-	tern	free_proc_globs;
+	tern			free_proc_globs;
+	Sgmt_RECS_ENTRY_m13	*list_entries;
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -9046,18 +9068,19 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs)
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return_m13(NULL);
 	}
-	proc_globs->current_session.Sgmt_recs_list->entries = (Sgmt_RECS_ENTRY_m13 *) calloc((size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13, sizeof(Sgmt_RECS_ENTRY_m13));
-	if (proc_globs->current_session.Sgmt_recs_list->entries == NULL) {
+	list_entries = (Sgmt_RECS_ENTRY_m13 *) calloc((size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13, sizeof(Sgmt_RECS_ENTRY_m13));
+	if (list_entries == NULL) {
 		if (free_proc_globs == TRUE_m13)
 			free((void *) proc_globs);
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return_m13(NULL);
 	}
-	proc_globs->current_session.Sgmt_recs_list->size = GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-	proc_globs->current_session.Sgmt_recs_list->top_idx = -1;
+	atomic_store(&proc_globs->current_session.Sgmt_recs_list->entries, list_entries);
+	atomic_store(&proc_globs->current_session.Sgmt_recs_list->size, (si4) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13);
+	atomic_store(&proc_globs->current_session.Sgmt_recs_list->top_idx, (si4) -1);
 	pthread_mutex_init_m13(&proc_globs->current_session.Sgmt_recs_list->mutex, NULL);
 	
-	// reset miscellaneous globals
+	// reset miscellaneous process globals
 	proc_globs->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
 	proc_globs->miscellaneous.threading = globals_m13->threading;
 	proc_globs->miscellaneous.proc_error_state = FALSE_m13;
@@ -9068,9 +9091,9 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs)
 
 PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 {
-	si4			i, n_proc_globs;
+	si4			i, n_proc_globs, list_top_idx, list_size;
 	LH_m13			*top_lh;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, *new_proc_globs;
+	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptrs, **proc_globs_ptr, *new_proc_globs;
 	PROC_GLOBS_LIST_m13	*list;
 	
 #ifdef FT_DEBUG_m13
@@ -9095,8 +9118,10 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 			
 	// find first empty entry
 	proc_globs = NULL;
-	proc_globs_ptr = list->proc_globs_ptrs;
-	n_proc_globs = list->top_idx + 1;
+	proc_globs_ptrs = atomic_load(&list->proc_globs_ptrs);
+	list_top_idx = atomic_load(&list->top_idx);
+	n_proc_globs = list_top_idx + 1;
+	proc_globs_ptr = proc_globs_ptrs;
 	for (i = n_proc_globs; i--; ++proc_globs_ptr) {
 		if ((*proc_globs_ptr)->_id == 0) {
 			proc_globs = *proc_globs_ptr;
@@ -9106,18 +9131,20 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 	
 	// expand list
 	if (proc_globs == NULL) {
-		if (n_proc_globs == list->size) {
+		list_size = atomic_load(&list->size);
+		if (n_proc_globs == list_size) {
 			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
+			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
 			if (proc_globs_ptr == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
+			proc_globs_ptrs = proc_globs_ptr;
+			atomic_store(&list->proc_globs_ptrs, proc_globs_ptrs);
+			list_size = n_proc_globs;
+			atomic_store(&list->size, list_size);
 
-			list->proc_globs_ptrs = proc_globs_ptr;
-			list->size = n_proc_globs;
-			
 			// allocate & initialize new stacks (note: proc_globs allocated en bloc)
 			new_proc_globs = (PROC_GLOBS_m13 *) calloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13, sizeof(PROC_GLOBS_m13));
 			if (new_proc_globs == NULL) {
@@ -9125,11 +9152,12 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 				pthread_mutex_unlock_m13(&list->mutex);
 				return_m13(NULL);
 			}
-			proc_globs_ptr = list->proc_globs_ptrs + list->top_idx;  // list->top_idx == old size at this point
+			proc_globs_ptr = proc_globs_ptrs + list_top_idx;  // list->top_idx == old size at this point
 			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--;)
 				*proc_globs_ptr++ = new_proc_globs++;  // assign stack pointer
 		}
-		proc_globs = list->proc_globs_ptrs[++list->top_idx];
+		proc_globs = proc_globs_ptrs[++list_top_idx];
+		atomic_store(&list->top_idx, list_top_idx);
 	}
 
 	// relase mutex
@@ -11150,7 +11178,6 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
-	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);  // use proc_globs from current thread
 	
 	if (search_mode == TIME_SEARCH_m13) {
@@ -11867,7 +11894,6 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	}
 	
 	// set proc error state (for void functions)
-	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);  // use thread ID
 	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
 
@@ -11959,7 +11985,6 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	if (globals_m13->tables->timezone_table == NULL)
 		G_init_timezone_tables_m13();
 	
-	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);
 	
 	// reset
@@ -12170,7 +12195,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 {
 	si1			md_path[PATH_BYTES_m13];
 	ui4 			source_type;
-	si4			i, n_entries, seg_idx, n_segs;
+	si4			i, n_entries, list_top_idx, list_size, seg_idx, n_segs;
 	sf4			rate;
 	PROC_GLOBS_m13		*proc_globs;
 	SESS_m13		*sess;
@@ -12179,7 +12204,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	SEG_m13			*seg;
 	FPS_m13			*md_fps;
 	Sgmt_RECS_LIST_m13	*list;
-	Sgmt_RECS_ENTRY_m13 	*rec_entry, *new_entries;
+	Sgmt_RECS_ENTRY_m13 	*list_entries, *rec_entry, *new_entries;
 	Sgmt_REC_m13		*Sgmt_recs;
 	
 #ifdef FT_DEBUG_m13
@@ -12192,16 +12217,18 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	chan = NULL;
 	list = proc_globs->current_session.Sgmt_recs_list;
 	pthread_mutex_lock_m13(&list->mutex);
+	list_top_idx = atomic_load(&list->top_idx);
+	list_entries = atomic_load(&list->entries);
 
 	if (search_mode == TIME_SEARCH_m13) {  // any Sgmt records will suffice
-		if (list->top_idx >= 0) {
-			Sgmt_recs = (Sgmt_REC_m13 *) list->entries->Sgmt_recs;
+		if (list_top_idx >= 0) {
+			Sgmt_recs = (Sgmt_REC_m13 *) list_entries->Sgmt_recs;
 			pthread_mutex_unlock_m13(&list->mutex);
 			return_m13(Sgmt_recs);
 		}
 		chan = proc_globs->current_session.index_channel;
 		i = -1;  // no entries => create new entry
-		n_entries = list->top_idx + 1;
+		n_entries = list_top_idx + 1;
 	} else {  // SAMPLE_SEARCH_m13 - find by rate
 		switch (lh->type_code) {
 			case SESS_TYPE_CODE_m13:
@@ -12267,8 +12294,8 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 		}
 		
 		// search for matching entry
-		rec_entry = list->entries;
-		n_entries = list->top_idx + 1;
+		rec_entry = list_entries;
+		n_entries = list_top_idx + 1;
 		for (i = n_entries; i--; ++rec_entry)
 			if (rec_entry->rate == rate)
 				break;
@@ -12277,23 +12304,27 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	// add new entry
 	if (i == -1) {
 		Sgmt_recs = G_build_Sgmt_records_m13((LH_m13 *) lh, search_mode, &source_type);
-		if (n_entries == list->size) {
+		list_size = atomic_load(&list->size);
+		if (n_entries == list_size) {
 			n_entries += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-			new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list->entries, (size_t) n_entries * sizeof(Sgmt_RECS_ENTRY_m13));
+			new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list_entries, (size_t) n_entries * sizeof(Sgmt_RECS_ENTRY_m13));
 			if (new_entries == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
 			// realloc does not zero
-			rec_entry = new_entries + list->size;
+			rec_entry = new_entries + list_size;
 			for (i = GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13; i--; ++rec_entry)
 				rec_entry->rate = (sf4) 0.0;
-			list->size = n_entries;
-			list->entries = new_entries;
+			list_size = n_entries;
+			atomic_store(&list->size, list_size);
+			list_entries = new_entries;
+			atomic_store(&list->entries, list_entries);
 		}
 		// fill new entry
-		rec_entry = list->entries + (++list->top_idx);
+		rec_entry = list_entries + (++list_top_idx);
+		atomic_store(&list->top_idx, list_top_idx);
 		rec_entry->source_type = source_type;
 		n_segs = proc_globs->current_session.n_segments;
 		rec_entry->n_session_samples = Sgmt_recs[n_segs - 1].end_idx + 1;
@@ -13325,7 +13356,6 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 	// use G_message_m13() because show_password_data_m13() is used in normal (no programming) functions => so allow output to be suppressed easily
 	if (pwd == NULL) {
-		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		pwd = &proc_globs->password_data;
 	}
@@ -13362,7 +13392,6 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	// use G_message_m13() because show_password_data_m13() is used in normal (not programming) functions => so allow output to be suppressed easily
 	
 	if (pwd == NULL) {
-		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		pwd = &proc_globs->password_data;
 	}
@@ -14615,14 +14644,16 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 	G_push_function_m13();
 #endif
 	
+	if (globals_m13->update_header_names == FALSE_m13)
+		return_m13(FALSE_m13);
+
 	if (chan == NULL) {
 		G_set_error_m13(E_GEN_m13, "channel is NULL");
 		return_m13(FALSE_m13);
 	}
 	
-	
 	if (message_given == FALSE_m13) {  // don't want message given for every channel - could be a lot
-		G_message_m13("Updating channel names ...\n");
+		G_message_m13("Updating channel name ...\n");
 		message_given = TRUE_m13;
 	}
 	
@@ -15272,7 +15303,6 @@ tern	G_update_MED_type_m13(si1 *path)
 		recd = rd + UH_BYTES_m13;
 		rh = (REC_HDR_m13 *) recd;
 
-		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		pwd = &proc_globs->password_data;
 		
@@ -17742,6 +17772,7 @@ VID_METADATA_SECTION_2_NOT_ALIGNED_m13:
 #ifdef AT_DEBUG_m13
 ui8	AT_actual_size_m13(void *address)
 {
+	si4		list_top_idx;
 	si8		i;
 	ui8		actual_bytes;
 	AT_ENTRY_m13	*ate;
@@ -17755,19 +17786,20 @@ ui8	AT_actual_size_m13(void *address)
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
-	ate = globals_m13->AT_list->entries;
-	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
-		if (ate->address == address) {
-			actual_bytes = ate->actual_bytes;
+	list_top_idx = atomic_load(&globals_m13->AT_list->top_idx);
+	ate = atomic_load(&globals_m13->AT_list->entries);
+	for (i = list_top_idx + 1; i--; ++ate) {
+		if (atomic_load(&ate->address) == address) {
+			actual_bytes = atomic_load(&ate->actual_bytes);
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return_m13(actual_bytes);
 		}
 	}
 	
-	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-	
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
+	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
+	
 	return_m13(0);
 }
 
@@ -17775,10 +17807,10 @@ ui8	AT_actual_size_m13(void *address)
 void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t requested_bytes)
 {
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
-	si4		i, n_entries;
+	si4		i, n_entries, list_top_idx, list_size;
 	pid_t_m13	tid;
 	AT_LIST_m13	*list;
-	AT_ENTRY_m13	*ate;
+	AT_ENTRY_m13	*ate, *list_entries;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -17800,22 +17832,28 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	pthread_mutex_lock_m13(&list->mutex);
 
 	// find first freed address
-	n_entries = list->top_idx + 1;
-	ate = list->entries;
+	list_top_idx = atomic_load(&list->top_idx);
+	n_entries = list_top_idx + 1;
+	list_entries = atomic_load(&list->entries);
+	ate = list_entries;
 	for (i = n_entries; i--; ++ate)
 		if (ate->free_function)
 			break;
 
 	if (i == -1) {  // new address
-		if (n_entries == list->size) {  // expand list
-			list->size += GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
-			list->entries = (AT_ENTRY_m13 *) realloc((void *) list->entries, list->size * sizeof(AT_ENTRY_m13));
-			if (list->entries == NULL) {
+		list_size = atomic_load(&list->size);
+		if (n_entries == list_size) {  // expand list
+			list_size += GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
+			list_entries = (AT_ENTRY_m13 *) realloc((void *) list_entries, list_size * sizeof(AT_ENTRY_m13));
+			if (list_entries == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				exit_m13(-1);
 			}
+			atomic_store(&list->entries, list_entries);
+			atomic_store(&list->size, list_size);
 		}
-		ate = list->entries + (++list->top_idx);
+		ate = list_entries + (++list_top_idx);
+		atomic_store(&list->top_idx, list_top_idx);
 	}
 	
 	ate->free_function = NULL;
@@ -17824,17 +17862,17 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	ate->free_thread_id = 0;
 	
 	// fill in
-	ate->address = address;
+	atomic_store(&ate->address, address);
 	#ifdef MACOS_m13 // call native functions (malloc_size_m13() calls AT routine which returns zero at this point)
-	ate->actual_bytes = (ui8) malloc_size(address);
+	atomic_store(&ate->actual_bytes, (ui8) malloc_size(address));
 	#endif
 	#ifdef LINUX_m13
-	ate->actual_bytes = (ui8) malloc_usable_size(address);
+	atomic_store(&ate->actual_bytes, (ui8) malloc_usable_size(address));
 	#endif
 	#ifdef WINDOWS_m13
-	ate->actual_bytes = (ui8) _msize(address);
+	atomic_store(&ate->actual_bytes, (ui8) _msize(address));
 	#endif
-	ate->requested_bytes = requested_bytes;
+	atomic_store(&ate->requested_bytes, requested_bytes);
 	ate->alloc_function = function;
 	ate->alloc_line = line;
 	strcpy(ate->alloc_thread_name, thread_name);
@@ -17851,10 +17889,12 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 {
 	const si1	*plural_str;
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si4		list_top_idx;
 	si8		i, alloced_entries;
+	void		*ate_address;
 	pid_t_m13	tid;
 	AT_LIST_m13	*list;
-	AT_ENTRY_m13	*ate;
+	AT_ENTRY_m13	*ate, *list_entries;
 	
 	
 	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
@@ -17864,8 +17904,10 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 
 	alloced_entries = 0;
 	list = globals_m13->AT_list;
-	ate = list->entries;
-	for (i = list->top_idx + 1; i--; ++ate)
+	list_top_idx = atomic_load(&list->top_idx);
+	list_entries = atomic_load(&list->entries);
+	ate = list_entries;
+	for (i = list_top_idx + 1; i--; ++ate)
 		if (ate->free_function == NULL)
 			++alloced_entries;
 
@@ -17880,16 +17922,17 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 			printf_m13("\n%s(): freeing %ld entr%s:\n", __FUNCTION__, alloced_entries, plural_str);
 		#endif
 
-		ate = list->entries;
-		for (i = list->top_idx + 1; i--; ++ate) {
+		ate = list_entries;
+		for (i = list_top_idx + 1; i--; ++ate) {
 			if (ate->free_function == NULL) {
 				pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);  // release mutex for AT_show_entry_m13()
-				AT_show_entry_m13(ate->address);
+				ate_address = atomic_load(&ate->address);
+				AT_show_entry_m13(ate_address);
 				pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);  // reclaim mutex
 				#ifdef MATLAB_PERSISTENT_m13
-				mxFree(ate->address);
+				mxFree(ate_address);
 				#else
-				free(ate->address);
+				free(ate_address);
 				#endif
 				ate->free_function = function;
 				ate->free_line = line;
@@ -17908,6 +17951,7 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 tern	AT_freeable_m13(void *address)
 {
 	tern		freeable;
+	si4		list_top_idx;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	
@@ -17926,9 +17970,10 @@ tern	AT_freeable_m13(void *address)
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
 	// look for match entry
-	ate = globals_m13->AT_list->entries;
-	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate)
-		if (ate->address == address)
+	list_top_idx = atomic_load(&globals_m13->AT_list->top_idx);
+	ate = atomic_load(&globals_m13->AT_list->entries);
+	for (i = list_top_idx + 1; i--; ++ate)
+		if (atomic_load(&ate->address) == address)
 			break;
 
 	// no entry
@@ -17953,10 +17998,11 @@ AT_FREEABLE_UNLOCK_m13:
 tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 {
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
-	pid_t_m13	_id;
+	si4		list_top_idx;
 	si8		i;
+	pid_t_m13	_id;
 	AT_LIST_m13	*list;
-	AT_ENTRY_m13	*ate;
+	AT_ENTRY_m13	*ate, *list_entries;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -17981,9 +18027,11 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	
 	// look for match entry
 	list = globals_m13->AT_list;
-	ate = list->entries;
-	for (i = list->top_idx + 1; i--; ++ate)
-		if (ate->address == address)
+	list_top_idx = atomic_load(&list->top_idx);
+	list_entries = atomic_load(&list->entries);
+	ate = list_entries;
+	for (i = list_top_idx + 1; i--; ++ate)
+		if (atomic_load(&ate->address) == address)
 			break;
 
 	// no entry
@@ -18022,8 +18070,8 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	ate->free_thread_id = _id;
 	
 	// trim search extents
-	if (ate == list->entries + list->top_idx)
-		--list->top_idx;
+	if (ate == list_entries + list_top_idx)
+		atomic_store(&list->top_idx, --list_top_idx);
 
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
@@ -18034,6 +18082,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 ui8	AT_requested_size_m13(void *address)
 {
+	si4		list_top_idx;
 	si8		i;
 	ui8		requested_bytes;
 	AT_ENTRY_m13	*ate;
@@ -18049,10 +18098,11 @@ ui8	AT_requested_size_m13(void *address)
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
-	ate = globals_m13->AT_list->entries;
-	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
-		if (ate->address == address) {
-			requested_bytes = ate->requested_bytes;
+	list_top_idx = atomic_load(&globals_m13->AT_list->top_idx);
+	ate = atomic_load(&globals_m13->AT_list->entries);
+	for (i = list_top_idx + 1; i--; ++ate) {
+		if (atomic_load(&ate->address) == address) {
+			requested_bytes = atomic_load(&ate->requested_bytes);
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return_m13(requested_bytes);
 		}
@@ -18068,6 +18118,7 @@ ui8	AT_requested_size_m13(void *address)
 
 void	AT_show_entries_m13(void)
 {
+	si4		list_top_idx;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	si8		alloced_entries = 0;
@@ -18078,12 +18129,13 @@ void	AT_show_entries_m13(void)
 
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
-	ate = globals_m13->AT_list->entries;
-	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
+	ate = atomic_load(&globals_m13->AT_list->entries);
+	list_top_idx = atomic_load(&globals_m13->AT_list->top_idx);
+	for (i = list_top_idx + 1; i--; ++ate) {
 		if (ate->free_function == NULL) {
-			printf_m13("\naddress: %lu\n", (ui8) ate->address);
-			printf_m13("requested bytes: %lu\n", ate->requested_bytes);
-			printf_m13("actual bytes: %lu\n", ate->actual_bytes);
+			printf_m13("\naddress: %lu\n", (ui8) atomic_load(&ate->address));
+			printf_m13("requested bytes: %lu\n", atomic_load(&ate->requested_bytes));
+			printf_m13("actual bytes: %lu\n", atomic_load(&ate->actual_bytes));
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
 			printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
@@ -18102,6 +18154,7 @@ void	AT_show_entries_m13(void)
 
 void	AT_show_entry_m13(void *address)
 {
+	si4		list_top_idx;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	
@@ -18116,12 +18169,13 @@ void	AT_show_entry_m13(void *address)
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
-	ate = globals_m13->AT_list->entries;
-	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
-		if (ate->address == address) {
-			printf_m13("\naddress: %lu\n", (ui8) ate->address);
-			printf_m13("requested bytes: %lu\n", ate->requested_bytes);
-			printf_m13("actual bytes: %lu\n", ate->actual_bytes);
+	ate = atomic_load(&globals_m13->AT_list->entries);
+	list_top_idx = atomic_load(&globals_m13->AT_list->top_idx);
+	for (i = list_top_idx + 1; i--; ++ate) {
+		if (atomic_load(&ate->address) == address) {
+			printf_m13("\naddress: %lu\n", (ui8) atomic_load(&ate->address));
+			printf_m13("requested bytes: %lu\n", atomic_load(&ate->requested_bytes));
+			printf_m13("actual bytes: %lu\n", atomic_load(&ate->actual_bytes));
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
 			printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
@@ -18148,6 +18202,7 @@ void	AT_show_entry_m13(void *address)
 tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void *new_address, size_t requested_bytes)
 {
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si4		list_top_idx;
 	pid_t_m13	tid;
 	si8		i;
 	AT_ENTRY_m13	*ate;
@@ -18175,9 +18230,10 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
 	// look for match entry
-	ate = globals_m13->AT_list->entries;
-	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate)
-		if (ate->address == orig_address)
+	list_top_idx = atomic_load(&globals_m13->AT_list->top_idx);
+	ate = atomic_load(&globals_m13->AT_list->entries);
+	for (i = list_top_idx + 1; i--; ++ate)
+		if (atomic_load(&ate->address) == orig_address)
 			break;
 	
 	// no entry
@@ -18199,15 +18255,15 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	// update
 	ate->address = new_address;
 #ifdef MACOS_m13
-	ate->actual_bytes = (ui8) malloc_size(new_address);
+	atomic_store(&ate->actual_bytes, (ui8) malloc_size(new_address));
 #endif
 #ifdef LINUX_m13
-	ate->actual_bytes = (ui8) malloc_usable_size(new_address);
+	atomic_store(&ate->actual_bytes, (ui8) malloc_usable_size(new_address));
 #endif
 #ifdef WINDOWS_m13
-	ate->actual_bytes = (ui8) _msize(new_address);
+	atomic_store(&ate->actual_bytes, (ui8) _msize(new_address));
 #endif
-	ate->requested_bytes = requested_bytes;
+	atomic_store(&ate->requested_bytes, requested_bytes);
 	ate->alloc_function = function;
 	ate->alloc_line = line;
 	strcpy(ate->alloc_thread_name, thread_name);
@@ -28080,7 +28136,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 	// pass a standard FILE * and it's path to convert to create FILE_m13 from the FILE; the FILE_m13 will assume FILE's current state
 	
 	if (fp == NULL) {
-		m13_fp = (FILE_m13 *) calloc_m13((size_t) 1, sizeof(FILE_m13));
+		m13_fp = (FILE_m13 *) calloc_m13((size_t) 1, sizeof(FILE_m13));  // zeroed structure
 		if (m13_fp == NULL)
 			return_m13(NULL);
 		alloced_flag = FILE_FLAGS_ALLOCED_m13;
@@ -28099,6 +28155,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 			alloced_flag = m13_fp->flags & FILE_FLAGS_ALLOCED_m13;
 			if (fisopen_m13(std_fp) == TRUE_m13)
 				fclose_m13(std_fp);  // use std fp so do not free FILE_m13
+			memset((void *) m13_fp, (si4) 0, sizeof(FILE_m13));  // zero structure
 		}
 	}
 	
@@ -28227,8 +28284,11 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 				if (m13_fp->flags & FILE_FLAGS_MED_m13)
 					m13_fp->flags |= FILE_FLAGS_LOCK_m13;
 			}
-			if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
 				m13_fp->fid = FILE_id_m13(path);
+				if (m13_fp->fid == 0)
+					return_m13(NULL);
+			}
 		}
 	}
 	
@@ -28238,7 +28298,6 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 		m13_fp->flags = FILE_FLAGS_DEFAULT_m13;
 			
 		// set other non-zero defaults
-		m13_fp->fp = NULL;
 		m13_fp->fd = FILE_FD_CLOSED_m13;
 		m13_fp->perms = FILE_PERM_DEFAULT_m13;
 		
@@ -32650,7 +32709,6 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		volume_path = tmp_path;
 	}
 	
-	eprintf_m13("getting null pgs");
 	proc_globs = G_proc_globs_m13(NULL);
 	mmap_block_bytes = 0;
 	
@@ -35554,7 +35612,6 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	
 	// check threading
 	if (thread_jobs == NOT_SET_m13) {
-		eprintf_m13("getting null pgs");
 		proc_globs = G_proc_globs_m13(NULL);
 		thread_jobs = proc_globs->miscellaneous.threading;  // process specific
 		if (thread_jobs == NOT_SET_m13) {
@@ -36497,10 +36554,10 @@ pthread_t_m13	*PROC_thread_for_id_m13(pid_t_m13 _id)
 
 void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 {
-	si4			i, n_entries;
+	si4			i, n_entries, list_top_idx, list_size;
 	pid_t_m13		_id, _pid;
 	pthread_t		local_thread;
-	THREAD_ENTRY_m13	*entry;
+	THREAD_ENTRY_m13	*list_entries, *entry;
 	THREAD_LIST_m13		*list;
 	
 	
@@ -36534,22 +36591,28 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 	pthread_mutex_lock_m13(&list->mutex);
 
 	// find first empty thread entry
-	n_entries = list->top_idx + 1;
-	entry = list->entries;
+	list_top_idx = atomic_load(&list->top_idx);
+	n_entries = list_top_idx + 1;
+	list_entries =  atomic_load(&list->entries);
+	entry = list_entries;
 	for (i = n_entries; i--; ++entry)
 		if (entry->_id == 0)
 			break;
 
 	if (i == -1) {  // no empty entries <= top idx
-		if (n_entries == list->size) {  // no room above top_idx - expand list
-			list->size += GLOBALS_THREAD_LIST_SIZE_INCREMENT_m13;
-			list->entries = (THREAD_ENTRY_m13 *) realloc((void *) list->entries, list->size * sizeof(THREAD_ENTRY_m13));
-			if (list->entries == NULL) {
+		list_size = atomic_load(&list->size);
+		if (n_entries == list_size) {  // no room above top_idx - expand list
+			list_size += GLOBALS_THREAD_LIST_SIZE_INCREMENT_m13;
+			list_entries = (THREAD_ENTRY_m13 *) realloc((void *) list_entries, list_size * sizeof(THREAD_ENTRY_m13));
+			if (list_entries == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				exit_m13(-1);
 			}
+			atomic_store(&list->size, list_size);
+			atomic_store(&list->entries, list_entries);
 		}
-		entry = list->entries + (++list->top_idx);
+		entry = list_entries + (++list_top_idx);
+		atomic_store(&list->top_idx, list_top_idx);
 	}
 	
 	entry->_id = _id;
@@ -43875,7 +43938,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 			if (n_locks == list_size) {  // expand list (note: allocated en bloc)
 				// reallocate lock pointers
 				n_locks += GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13;
-				new_lock_ptrs = (FLOCK_ENTRY_m13 **) realloc((void *) list->lock_ptrs, (size_t) n_locks * sizeof(FLOCK_ENTRY_m13 *));
+				new_lock_ptrs = (FLOCK_ENTRY_m13 **) realloc((void *) list_lock_ptrs, (size_t) n_locks * sizeof(FLOCK_ENTRY_m13 *));
 				if (new_lock_ptrs == NULL) {
 					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
@@ -43900,9 +43963,8 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 				list_size = n_locks;
 				atomic_store(&list->size, list_size);
 			}
-			++list_top_idx;
+			lock = list_lock_ptrs[++list_top_idx];
 			atomic_store(&list->top_idx, list_top_idx);
-			lock = list_lock_ptrs[list_top_idx];
 		}
 		
 		// initialize lock
@@ -44211,6 +44273,8 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	}
 	if (fp->flags & FILE_FLAGS_LOCK_m13) {
 		fp->fid = FILE_id_m13(fp->path);
+		if (fp->fid == 0)
+			return_m13(NULL);
 		flock_m13(fp, FLOCK_OPEN_m13);  // create entry in locking table, don't lock
 	}
 
@@ -44878,6 +44942,8 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 	}
 	if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
 		m13_fp->fid = FILE_id_m13(m13_fp->path);
+		if (m13_fp->fid == 0)
+			return_m13(NULL);
 		flock_m13(m13_fp, FLOCK_OPEN_m13);  // create entry in locking table, don't lock
 	}
 
