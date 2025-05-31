@@ -2168,14 +2168,21 @@ typedef struct { // multiple thread access
 #define G_behavior_stack_reset_m13(code)	G_behavior_stack_reset_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_behavior_stack_reset_m13(ui4 behavior)" prototype
 
 #define G_push_function_m13() 			G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
-#define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__) // call with "G_pop_function_m13(void)" prototype
+#define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__, __LINE__) // call with "G_pop_function_m13(void)" prototype
 
+
+typedef struct {
+	const si1	*name;
+	si4		return_line;
+} FUNCTION_ENTRY_m13;
 
 typedef struct { // single thread access
-	 pid_t_m13	_id; // thread id
-	const si1	**functions;
-	si4		size; // total allocated functions
-	si4		top_idx; // top of function stack
+	pid_t_m13		_id; // thread id
+	FUNCTION_ENTRY_m13	*entries;
+	si4			size; // total allocated functions
+	si4			top_idx; // top of function stack
+	si4			err_top_idx; // position in stack on error recursion
+	tern			err_chain;  // TRUE_m13 if element of thread chain leading to causal error
 } FUNCTION_STACK_m13;
 
 typedef struct { // multiple thread access
@@ -2285,7 +2292,7 @@ typedef struct {
 	pid_t_m13			main_id;  // process thread id (not necessarily same as process id)
 	ERR_m13				error; // causal error
 	tern				threading; // global default, used to set process globals default
-	ui4				default_behavior;
+	BEHAVIOR_m13			default_behavior;
 	si1				file_lock_mode; // enable global file locking
 	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
 	ui4				CRC_mode;
@@ -3162,7 +3169,7 @@ tern			G_open_session_records_m13(SESS_m13 *sess);
 si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern			G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void			G_pop_behavior_m13(void);
-void			G_pop_function_exec_m13(const si1 *function);
+void			G_pop_function_exec_m13(const si1 *function, const si4 line);
 void			G_proc_error_clear_m13(LH_m13 *lh);
 void			G_proc_error_set_m13(LH_m13 *lh);
 tern			G_proc_error_state_m13(LH_m13 *lh);
@@ -5419,7 +5426,7 @@ size_t		calloc_size_m13(void *address, size_t el_size);
 tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
 si4		errno_m13(void);
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
-void		exit_m13(si4 status);
+void		exit_exec_m13(const si1 *function, const si4 line, si4 status);
 si4		fclose_m13(void *fp);  // pass FILE *, FILE_m13 *, or to null local variable, FILE_m13 **
 si4		fileno_m13(void *fp);
 tern		fisopen_m13(void *fp);
@@ -5533,6 +5540,8 @@ void	**realloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr
 void	*recalloc_m13(void *ptr, size_t curr_members, size_t new_members, si8 el_size); // (el_size negative): level header flag
 void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size); // (el_size negative): level header flag
 #endif // AT_DEBUG_m13
+
+#define exit_m13(arg)			exit_exec_m13(__FUNCTION__, __LINE__, arg) // call with "G_pop_function_m13(void)" prototype
 
 // "loop"s below deal with terminal semicolon (optimized out on compile)
 #ifdef FT_DEBUG_m13

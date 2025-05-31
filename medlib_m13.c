@@ -229,6 +229,7 @@ inline
 #endif
 void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 code)
 {
+	ui4			prev_code;
 	si4			n_behaviors;
 	BEHAVIOR_m13		*behavior, *new_behaviors;
 	BEHAVIOR_STACK_m13	*stack;
@@ -253,13 +254,15 @@ void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 code)
 		stack->size = n_behaviors;
 	}
 	
-	behavior = stack->behaviors + (++stack->top_idx);
-	behavior->function = function;
-	behavior->line = line;
+	behavior = stack->behaviors + stack->top_idx;
 	if (stack->top_idx)
-		behavior->code = (behavior - 1)->code | code;
+		prev_code = behavior->code;
 	else
-		behavior->code = globals_m13->default_behavior | code;
+		prev_code = globals_m13->default_behavior.code;
+	++stack->top_idx;
+	++behavior;
+	behavior->line = line;
+	behavior->code = prev_code | code;
 
 	return;
 }
@@ -953,7 +956,7 @@ void	G_behavior_stack_exec_reset_m13(const si1 *function, si4 line, ui4 code)
 	behavior->function = function;
 	behavior->line = line;
 	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
-		behavior->code = globals_m13->default_behavior;
+		behavior->code = globals_m13->default_behavior.code;
 	else
 		behavior->code = code;
 
@@ -2589,9 +2592,9 @@ ui4	G_current_behavior_m13(void)
 
 	stack = G_behavior_stack_m13();
 	if (stack == NULL)
-		return(globals_m13->default_behavior);
+		return(globals_m13->default_behavior.code);
 	else if (stack->top_idx == -1)
-		return(globals_m13->default_behavior);
+		return(globals_m13->default_behavior.code);
 	
 	return(stack->behaviors[stack->top_idx].code);
 }
@@ -4489,7 +4492,8 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 	md_path[len++] = '/';
 	strcpy(md_path + len, name);
 	closedir(dir);
-	
+	eprintf_m13("md_path = %s", md_path);
+
 FIND_MDF_CHAN_LEVEL_m13:
 	dir = opendir(md_path);
 	if (dir == NULL) {
@@ -4531,6 +4535,7 @@ FIND_MDF_CHAN_LEVEL_m13:
 	md_path[len++] = '/';
 	strcpy(md_path + len, name);
 	closedir(dir);
+	eprintf_m13("md_path = %s", md_path);
 
 FIND_MDF_SEG_LEVEL_m13:
 	dir = opendir(md_path); // open the path
@@ -4563,7 +4568,8 @@ FIND_MDF_SEG_LEVEL_m13:
 			}
 		}
 	}
-	
+	eprintf_m13("md_path = %s", md_path);
+
 	if (match == FALSE_m13) {
 		G_set_error_m13(E_MET_m13, NULL);  // global error
 		return_m13(NULL);
@@ -5122,7 +5128,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		function_stack_ptrs = globals_m13->function_stack_list->stack_ptrs;
 		for (i = 0; i < list_size; ++i)
 			if (function_stack_ptrs[i]->size)
-				free((void *) function_stack_ptrs[i]->functions);
+				free((void *) function_stack_ptrs[i]->entries);
 		// stacks allocated in blocks of GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13
 		for (i = 0; i < list_size; i += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13)
 			free((void *) function_stack_ptrs[i]);
@@ -5625,9 +5631,9 @@ void	G_function_stack_trap_m13(si4 sig_num)
 	
 	// set error
 	#ifdef MATLAB_m13
-	G_set_error_m13(E_SIG_m13, "%s  [%s (%d)]", sig_num, error_desc, error_type, sig_num);
+	G_set_error_m13(E_SIG_m13, "%s  [%s (code %d)]", sig_num, error_desc, error_type, sig_num);
 	#else
-	G_set_error_m13(E_SIG_m13, "%s  %s[%s (%d)]%s", sig_num, error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
+	G_set_error_m13(E_SIG_m13, "%s  %s[%s (code %d)]%s", sig_num, error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
 	#endif
 	
 	exit_m13(E_SIG_m13);  // exit_m13() shows error & function stack
@@ -6081,9 +6087,9 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 	pthread_mutex_init_m13(&globals_m13->AT_list->mutex, NULL);
 	if (!(GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13)) {
 		#ifdef MATLAB_m13
-		mexPrintf("Allocation tracking enabled\n");
+		mexPrintf("Allocation Tracking enabled\n");
 		#else
-		printf("%sAllocation tracking enabled%s\n", TC_BLUE_m13, TC_RESET_m13);
+		printf("%sAllocation Tracking enabled%s\n", TC_BLUE_m13, TC_RESET_m13);
 		#endif
 	}
 #endif
@@ -6105,9 +6111,9 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 	G_push_function_exec_m13("main");  // main doesn't push itself because it has to initialize globals first
 	if ((GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13) == 0) {
 		#ifdef MATLAB_m13
-		mexPrintf("Function tracking enabled\n");
+		mexPrintf("Function Tracking enabled\n");
 		#else
-		printf("%sFunction tracking enabled%s\n", TC_BLUE_m13, TC_RESET_m13);
+		printf("%sFunction Tracking enabled%s\n", TC_BLUE_m13, TC_RESET_m13);
 		#endif
 	}
 #endif
@@ -6218,7 +6224,9 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 #endif
 	globals_m13->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
 	globals_m13->threading = GLOBALS_THREADING_DEFAULT_m13;  // used to set process_globals default (process values can be set independently)
-	globals_m13->default_behavior = DEFAULT_BEHAVIOR_m13;
+	globals_m13->default_behavior.code = DEFAULT_BEHAVIOR_m13;
+	globals_m13->default_behavior.function = "main";
+	globals_m13->default_behavior.line = 0;
 	globals_m13->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
 	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
 	globals_m13->file_lock_timeout = GLOBALS_FILE_LOCK_TIMEOUT_DEFAULT_m13;
@@ -8715,6 +8723,7 @@ inline
 #endif
 void	G_pop_behavior_m13(void)
 {
+	ui4			code;
 	BEHAVIOR_STACK_m13	*stack;
 	
 
@@ -8725,6 +8734,13 @@ void	G_pop_behavior_m13(void)
 	if (stack->top_idx >= 0)
 		if (--(stack->top_idx) == -1)
 			stack->_id = 0;  // release stack (popping stack base); // G_current_behavior_m13 will return default behavior
+	
+	// if popped back to an exit on fail => exit
+	if (globals_m13->error.code) {
+		code = G_current_behavior_m13();
+		if ((code & RETURN_ON_FAIL_m13) == 0)
+			exit_m13(globals_m13->error.code);
+	}
 
 	return;
 }
@@ -8733,30 +8749,34 @@ void	G_pop_behavior_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_pop_function_exec_m13(const si1 *function)
+void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 {
-	si4	err_code;
 #ifdef FT_DEBUG_m13
-	
+	si4			err_code;
 	FUNCTION_STACK_m13	*stack;
 	
 		
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-		
+	
 	// causal error set => do not modify stack of causal thread
 	err_code = globals_m13->error.code;
-	if (err_code) {
-		if (globals_m13->error.thread_id == gettid_m13()) {
-			if (strcmp_m13(stack->functions[0], function) == 0)  // stack at base
-				exit_m13(err_code);  // call exit to show error & stack
-			return;
-		}
-	}
+	if (err_code && stack->err_chain == TRUE_m13) {
+		// don't pop anything that wasn't pushed after error set
+		if (strcmp(function, stack->entries[stack->err_top_idx].name) == 0)
+			stack->entries[stack->err_top_idx--].return_line = line;
 
-	if (strcmp(function, stack->functions[stack->top_idx])) {
-		G_set_error_m13(E_GEN_m13, "unbalanced function stack push/pops: attempting to pop %s(), but stack top is %s()", function, stack->functions[stack->top_idx]);
+		// exit if at base
+		if (stack->_id == globals_m13->main_id)
+			if (stack->err_top_idx == -1)
+				exit_m13(err_code);
+		
+		return;
+	}
+	
+	if (strcmp(function, stack->entries[stack->top_idx].name)) {
+		G_set_error_m13(E_GEN_m13, "unbalanced function stack push/pops: attempting to pop %s(), but stack top is %s()", function, stack->entries[stack->top_idx].name);
 		exit_m13(E_GEN_m13);  // call exit to show error & stack
 	}
 	
@@ -9423,7 +9443,7 @@ void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 	behavior->function = function;
 	behavior->line = line;
 	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
-		behavior->code = globals_m13->default_behavior;
+		behavior->code = globals_m13->default_behavior.code;
 	else
 		behavior->code = code;
 
@@ -9439,7 +9459,7 @@ void	G_push_function_exec_m13(const si1 *function)
 #ifdef FT_DEBUG_m13
 	
 	si4			n_functions;
-	const si1		**new_functions;
+	FUNCTION_ENTRY_m13	*new_functions;
 	FUNCTION_STACK_m13	*stack;
 	
 	
@@ -9457,16 +9477,17 @@ void	G_push_function_exec_m13(const si1 *function)
 	n_functions = stack->top_idx + 1;
 	if (n_functions == stack->size) {
 		n_functions += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
-		new_functions = (const si1 **) realloc((void *) stack->functions, (size_t) n_functions * sizeof(const si1 *));
+		new_functions = (FUNCTION_ENTRY_m13 *) realloc((void *) stack->entries, (size_t) n_functions * sizeof(FUNCTION_ENTRY_m13));
 		if (new_functions == NULL) {
 			G_set_error_m13(E_ALLOC_m13, NULL);
 			return;
 		}
-		stack->functions = new_functions;
+		stack->entries = new_functions;
 		stack->size = n_functions;
 	}
 	
-	stack->functions[++stack->top_idx] = function;
+	stack->entries[++stack->top_idx].name = function;
+	stack->entries[stack->top_idx].return_line = -1;
 		
 #endif  // FT_DEBUG_m13
 
@@ -10881,6 +10902,7 @@ inline
 #endif
 void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 {
+	ui4			prev_code;
 	si4			n_behaviors;
 	BEHAVIOR_m13		*behavior, *new_behaviors;
 	BEHAVIOR_STACK_m13	*stack;
@@ -10905,13 +10927,15 @@ void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 		stack->size = n_behaviors;
 	}
 	
-	behavior = stack->behaviors + (++stack->top_idx);
-	behavior->function = function;
-	behavior->line = line;
+	behavior = stack->behaviors + stack->top_idx;
 	if (stack->top_idx)
-		behavior->code = (behavior - 1)->code & ~code;
+		prev_code = behavior->code;
 	else
-		behavior->code = globals_m13->default_behavior & ~code;
+		prev_code = globals_m13->default_behavior.code;
+	++stack->top_idx;
+	++behavior;
+	behavior->line = line;
+	behavior->code = prev_code & ~code;
 	
 	return;
 }
@@ -11853,7 +11877,6 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	pid_t_m13		_id;
 	pthread_t_m13		*thread;
 	va_list			v_args;
-	FUNCTION_STACK_m13	*stack;
 
 
 	// Call set_error for causal errors only.
@@ -11886,16 +11909,32 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	proc_globs = G_proc_globs_m13(NULL);  // use thread ID
 	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
 
-	// special handling for E_SIG_m13
+#ifdef FT_DEBUG_m13
+	pid_t_m13		parent_id;
+	FUNCTION_STACK_m13	*stack, *tmp_stack;
+
+	// setup error function stack chain
+	parent_id = 0;
+	do {
+		tmp_stack = G_function_stack_m13(parent_id);
+		if (parent_id == 0)
+			stack = tmp_stack;  // save causal stack - may need below
+		tmp_stack->err_chain = TRUE_m13;
+		tmp_stack->err_top_idx = tmp_stack->top_idx;
+		parent_id = PROC_thread_list_parent_m13(tmp_stack->_id);
+	} while (parent_id);
+#endif
+	
+	// special handling for E_SIG_m13 (line & function arguments invalid)
 	if (code == E_SIG_m13) {
 		va_start(v_args, message);
 		err->signal = va_arg(v_args, si4);
 		line = E_UNKNOWN_LINE_m13;
-		stack = G_function_stack_m13(0);
-		if (stack)
-			function = stack->functions[stack->top_idx];
-		else
-			function = (const si1 *) "<unknown>";
+#ifdef FT_DEBUG_m13
+		function = stack->entries[stack->top_idx].name;  // stack found above
+#else
+		function = (const si1 *) "<unknown>";
+#endif
 	}
 	
 	// message
@@ -11922,7 +11961,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	err->function = function;
 	pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 	err->thread_id = _id;
-	
+		
 	// release mutex
 	pthread_mutex_unlock_m13(&err->mutex);
 	
@@ -12379,17 +12418,23 @@ tern	G_show_behavior_m13(ui4 mode)
 	
 	if (mode & SHOW_CURRENT_BEHAVIOR_m13) {
 		printf_m13("\nCurrent Process Behavior:\n------------------------\n");
-		behavior = stack->behaviors + stack->top_idx;
+		if (stack->top_idx >= 0)
+			behavior = stack->behaviors + stack->top_idx;
+		else
+			behavior = &globals_m13->default_behavior;
 		G_behavior_string_m13(behavior->code, behavior_string);
-		printf_m13("%s%s%s (code %u)%s  [set in %s(), line %d]\n\n",  TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
+		printf_m13("%s%s%s (code %u)%s\n[set at %s(%d)]\n\n",  TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
 	}
 	
 	if (mode & SHOW_BEHAVIOR_STACK_m13) {
-		printf_m13("Current Process Behavior Stack:\n-----------------------\n");
+		printf_m13("Current Process Behavior Stack:\n-------------------------------\n");
+		behavior = &globals_m13->default_behavior;
+		G_behavior_string_m13(behavior->code, behavior_string);
+		printf_m13("0) %s%s%s (code %u)%s  [set at %s(%d)]\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
 		behavior = stack->behaviors;
-		for (i = 0; i <= stack->top_idx; ++i, ++behavior) {
+		for (i = 1; i <= (stack->top_idx + 1); ++i, ++behavior) {
 			G_behavior_string_m13(behavior->code, behavior_string);
-			printf_m13("%d) %s%s%s (code %u)%s  [set in %s(), line %d]\n", i, TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
+			printf_m13("%d) %s%s%s (code %u)%s  [set at %s(%d)]\n", i, TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
 		}
 		printf_m13("\n");
 	}
@@ -12580,34 +12625,34 @@ tern	G_show_error_m13(void)
 		if (err->line == E_UNKNOWN_LINE_m13)
 			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread %lu]\n", mess, func, _id);
 		else
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); at line %d; in thread %lu]\n", mess, func, line, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
 	} else if (_id == globals_m13->main_id) {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in \"%s\" (id %lu)]\n", mess, func, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id %lu)]\n", mess, func, name, _id);
 		else
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); at line %d; in \"%s\" (id %lu)]\n", mess, func, line, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id %lu)]\n", mess, func, line, name, _id);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread \"%s\" (id %lu)]\n", mess, func, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id %lu)]\n", mess, func, name, _id);
 		else
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); at line %d; in thread \"%s\" (id %lu)]\n", mess, func, line, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id %lu)]\n", mess, func, line, name, _id);
 	}
 #else
 	if (*err->thread_name == '<') {
 		if (err->line == E_UNKNOWN_LINE_m13)
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
 		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); at line %d; in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
 	} else if (_id == globals_m13->main_id){
 		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in \"%s\" (id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
 		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); at line %d; in \"%s\" (id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread \"%s\" (id %lu)]\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
 		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); at line %d; in thread \"%s\" (id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
 	}
 #endif
 	
@@ -12696,16 +12741,12 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	}
 
 	// print thread name
-	if (_id == globals_m13->main_id) { // "main process"
-		sprintf_m13(title, "Function Stack for \"main process\" (id %lu):", _id);
-	} else {
-		thread = PROC_thread_for_id_m13(stack->_id);
-		pthread_getname_m13(*thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-		if (*thread_name == '<')  // "<unnamed>"
-			sprintf_m13(title, "Function Stack for Thread %lu:", _id);
-		else
-			sprintf_m13(title, "Function Stack for Thread \"%s\" (id %lu):", thread_name, _id);
-	}
+	thread = PROC_thread_for_id_m13(stack->_id);
+	pthread_getname_m13(*thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+	if (*thread_name == '<')  // "<unnamed>"
+		sprintf_m13(title, "Function Stack for Thread %lu:", _id);
+	else
+		sprintf_m13(title, "Function Stack for %s(id %lu)", thread_name, _id);
 	printf_m13("%s\n", title);
 
 	// replace string characters with '-' (terminal zero preserved)
@@ -12715,8 +12756,20 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	printf_m13("%s\n", title);
 	
 	// print stack
-	for (i = 0, j = func_start_num; i <= stack->top_idx; ++i, ++j)
-		printf_m13("%d)\t%s()\n", j, stack->functions[i]);
+	for (i = 0, j = func_start_num; i <= stack->top_idx; ++i, ++j) {
+		if (stack->entries[i].return_line == -1)
+			#ifdef MATLAB_m13
+			mexPrintf("%d)\t%s(~)\n", j, stack->entries[i].name);
+			#else
+			printf_m13("%d)\t%s(%s~%s)\n", j, stack->entries[i].name, TC_BLUE_m13, TC_RESET_m13);
+			#endif
+		else
+			#ifdef MATLAB_m13
+			mexPrintf("%d)\t%s(%d)\n", j, stack->entries[i].name, stack->entries[i].return_line);
+			#else
+			printf_m13("%d)\t%s(%s%d%s)\n", j, stack->entries[i].name, TC_BLUE_m13, stack->entries[i].return_line, TC_RESET_m13);
+			#endif
+	}
 	putchar_m13('\n');
 
 #endif  // FT_DEBUG_m13
@@ -14731,14 +14784,14 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			// rename directory
 			G_path_parts_m13(seg_list[i], NULL, name, NULL);
 			len = strlen(name);
-			strcpy(sufx, name + (len - 5));
-			name[len - 6] = 0;
+			strcpy(sufx, name + (len - 5));  // "sxxxx"
+			name[len - 6] = 0;  // trim of "_sxxxx"
 			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
 			}
-			name[len - 6] = '_';
+			name[len - 6] = '_';  // restore full name
 			
 			// video metadata
 			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, VID_METADATA_TYPE_STR_m13);
@@ -28061,7 +28114,7 @@ ui4	FILE_id_m13(const si1 *path)
 	
 	// returns zero on failure
 	
-	if (STR_is_empty_m13(path)) {
+	if (STR_is_empty_m13(path) == TRUE_m13) {
 		G_set_error_m13(E_FGEN_m13, "path is empty");
 		return_m13(0);
 	}
@@ -31535,10 +31588,8 @@ FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...
 			return_m13(NULL);
 	}
 	
-	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
 	flags = fps->params.fp->flags | (FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 | FILE_FLAGS_MED_m13); // MED library functions depend on len & pos fields being maintained
 	fp = fps->params.fp = fopen_m13(fps->path, NULL, fps->params.mode_str, (si4) flags, (si4) permissions);
-	G_pop_behavior_m13();
 	if (fp == NULL) {
 		FPS_free_m13(&fps);
 		return_m13(NULL);
@@ -43533,7 +43584,7 @@ void	errno_reset_m13(void)
 }
 
 
-void	exit_m13(si4 status)
+void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 {
 	ui4			behavior;
 	
@@ -43560,16 +43611,20 @@ void	exit_m13(si4 status)
 			mexPrintf("Exit Status: %d  [%s]\n\n", status, globals_m13->tables->E_tags_table[status]);
 			#else
 			fprintf(stderr, "%sExit Status:%s %d  %s[%s]%s\n\n", TC_RED_m13, TC_RESET_m13, status, TC_YELLOW_m13, globals_m13->tables->E_tags_table[status], TC_RESET_m13);
-			fflush(stderr);
 			#endif
 		} else {
 			#ifdef MATLAB_m13
-			mexPrintf("Exit Status: %d\n\n", status);
+			mexPrintf("Exit Status: %d\n", status);
 			#else
 			fprintf(stderr, "%sExit Status:%s %d\n\n", TC_RED_m13, TC_RESET_m13, status);
-			fflush(stderr);
 			#endif
 		}
+		#ifdef MATLAB_m13
+		mexPrintf("[exited at %s(%d)]\n\n", function, line);
+		#else
+		fprintf(stderr, "[exited at %s(%s%d%s)]\n\n", function, TC_BLUE_m13, line, TC_RESET_m13);
+		fflush(stderr);
+		#endif
 	}
 
 	#ifdef WINDOWS_m13
@@ -43856,7 +43911,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 	n_locks = list->top_idx + 1;
 	lock = NULL;
 	lock_ptr = list->lock_ptrs;
-	for (i = n_locks + 1; i--; ++lock_ptr) {
+	for (i = n_locks; i--; ++lock_ptr) {
 		lock_file_id = (*lock_ptr)->file_id;
 		if (lock_file_id == file_id) {
 			lock = *lock_ptr;
@@ -46105,7 +46160,7 @@ void	isem_wait_m13(isem_t_m13 *isem)
 
 	isem->count = (ui4) 1;
 
-	pthread_mutex_lock_m13(&isem->mutex);
+	pthread_mutex_unlock_m13(&isem->mutex);
 
 	return;
 }
@@ -46163,7 +46218,7 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 		pthread_mutex_lock_m13(&isem->mutex);
 	}
 
-	pthread_mutex_lock_m13(&isem->mutex);
+	pthread_mutex_unlock_m13(&isem->mutex);
 
 	return;
 }
@@ -46931,7 +46986,7 @@ si1	*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len
 	
 	// name main process
 	if (_id == globals_m13->main_id) {
-		strncpy_m13(thread_name, "main process", name_len);
+		strncpy_m13(thread_name, "main", name_len);
 		return(thread_name);
 	}
 
