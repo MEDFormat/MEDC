@@ -1682,21 +1682,21 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define SHOW_CURRENT_BEHAVIOR_m13	((ui4) 1 << 0)
 #define SHOW_BEHAVIOR_STACK_m13		((ui4) 1 << 1)
 
-// Behaviors Constants
+// Behaviors Codes
 #define RETURN_ON_FAIL_m13		((ui4) 1 << 0) // if not set, exit program
 #define SUPPRESS_ERROR_OUTPUT_m13	((ui4) 1 << 1)
 #define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 2)
 #define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 3)
 #define RETRY_ONCE_m13			((ui4) 1 << 4)
-#define IGNORE_SYSTEM_ERRORS_m13	((ui4) 1 << 5) // ignore errors from standard library functions
-#define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
+#define IGNORE_ERRORS_m13		((ui4) 1 << 5) // do no set global error (typically used in conjunction with RETURN_ON_FAIL_m13, where error can be handled)
 
-#define DEFAULT_BEHAVIOR_m13		RETURN_ON_FAIL_m13 // return on fail, observe system errors, do not retry, show all output
-#define E_BEHAVIOR_m13			((ui4) 0) // exit on fail, observe system errors, do not retry, show all output
-#define E_UNKNOWN_LINE_m13		((si4) -1) // signal errors have no line numbers
+#define DEFAULT_BEHAVIOR_m13		RETURN_ON_FAIL_m13 // (code) return on fail, observe system errors, do not retry, show all output
+#define E_BEHAVIOR_m13			((ui4) 0) // (code) exit on fail, observe system errors, do not retry, show all output
+#define E_UNKNOWN_LINE_m13		((si4) -1) // usied in signal errors that have no line numbers
 
 // convenience
-#define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 )
+#define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
+#define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | IGNORE_ERRORS_m13 | SUPPRESS_OUTPUT_m13 )
 
 // error codes
 #define E_NUM_CODES_m13			20
@@ -2028,7 +2028,6 @@ typedef struct {
 	ui4		mmap_block_bytes; // read size for memory mapped files (process data may be on different volumes)
 					 // if files are on different volumes, use/set mmap_block_bytes in FILE_m13 structure
 	_Atomic tern	threading; // TRUE_m13 == thread processing where appropriate
-	_Atomic tern	proc_error_state; // flag for void functions, not global error state
 } MISCELLANEOUS_m13; // PROC_GLOBS_m13 element
 
 // All MED File Structures begin with a level header structure
@@ -3091,7 +3090,6 @@ tern			G_check_file_list_m13(si1 **file_list, si4 n_files);
 tern			G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...); // varargs (is_cloud == TRUE_m13): si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
 tern 			G_check_password_m13(si1 *password);
 si4			G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess);
-void			G_clear_error_m13(LH_m13 *lh);
 tern			G_clear_terminal_m13(void);
 si4			G_compare_acq_nums_m13(const void *a, const void *b);
 si4 			G_compare_record_index_times(const void *a, const void *b);
@@ -3114,6 +3112,8 @@ tern			G_encrypt_metadata_m13(FPS_m13 *fps);
 tern			G_encrypt_record_data_m13(FPS_m13 *fps);
 tern 			G_encrypt_time_series_data_m13(FPS_m13 *fps);
 tern			G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
+void			G_error_clear_m13(void);
+tern			G_error_is_set_m13(void);
 void 			G_error_message_m13(const si1 *fmt, ...);
 si1 			G_exists_m13(const si1 *path);
 tern			G_expand_password_m13(si1 *password, si1 *password_bytes);
@@ -3170,9 +3170,6 @@ si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern			G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void			G_pop_behavior_m13(void);
 void			G_pop_function_exec_m13(const si1 *function, const si4 line);
-void			G_proc_error_clear_m13(LH_m13 *lh);
-void			G_proc_error_set_m13(LH_m13 *lh);
-tern			G_proc_error_state_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_m13(LH_m13 *lh);
 void			G_proc_globs_delete_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs);
@@ -5478,6 +5475,7 @@ void		nap_m13(const si1 *nap_str);
 struct timespec	*nap_timespec_m13(const si1 *nap_str, struct timespec *nap);
 si4		pthread_equal_m13(pthread_t_m13 t1, pthread_t_m13 t2);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
+si1		*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
 si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
 si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);

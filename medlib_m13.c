@@ -996,10 +996,10 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 		strcat(behavior_string, "RETRY ONCE | ");
 	else
 		strcat(behavior_string, "DO NOT RETRY | ");
-	if (behavior & IGNORE_SYSTEM_ERRORS_m13)
-		strcat(behavior_string, "IGNORE SYSTEM ERRORS | ");
+	if (behavior & IGNORE_ERRORS_m13)
+		strcat(behavior_string, "IGNORE ERRORS | ");
 	else
-		strcat(behavior_string, "HEED SYSTEM ERRORS | ");
+		strcat(behavior_string, "HEED ERRORS | ");
 
 	len = strlen(behavior_string);
 	if (len)
@@ -2169,38 +2169,6 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 	seg_idx = first_mapped_seg - remapped_start_seg;
 
 	return_m13(seg_idx);
-}
-
-
-void	G_clear_error_m13(LH_m13 *lh)
-{
-	ERR_m13		*err;
-	PROC_GLOBS_m13	*proc_globs;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// call G_set_error_m13() for causal errors only
-	// return error local error condition for errors returned from functions, no messages necessary
-	
-	// set thread specific flag for void functions
-	proc_globs = G_proc_globs_m13(lh);
-	proc_globs->miscellaneous.proc_error_state = FALSE_m13;  // should always be set if there is an error, but can be cleared
-	
-	// check global error
-	err = &globals_m13->error;
-	pthread_mutex_lock(&err->mutex);
-	if (err->code) {
-		err->code = E_NONE_m13;
-		err->signal = 0;
-		*err->message = 0;
-		err->line = 0;
-		err->function = NULL;
-	}
-	pthread_mutex_unlock(&err->mutex);
-
-	return_void_m13;
 }
 
 
@@ -3568,7 +3536,49 @@ tern	G_enter_ascii_password_m13(si1* password, si1* prompt, tern confirm_no_entr
 #endif  // WINDOWS_m13
 
 
-void  G_error_message_m13(const si1 *fmt, ...)
+void	G_error_clear_m13(void)
+{
+	ERR_m13		*err;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// call G_set_error_m13() for causal errors only
+	// return error local error condition for errors returned from functions, no messages necessary
+	
+	// check global error
+	err = &globals_m13->error;
+	pthread_mutex_lock(&err->mutex);
+	if (err->code) {
+		err->code = E_NONE_m13;
+		err->signal = 0;
+		*err->message = 0;
+		err->line = 0;
+		err->function = NULL;
+	}
+	pthread_mutex_unlock(&err->mutex);
+
+	return_void_m13;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+tern	G_error_is_set_m13(void)
+{
+	// use to check if void function set an error
+	// beacuse they have no return value to check
+	
+	if (globals_m13->error.code)
+		return(TRUE_m13);
+	
+	return(FALSE_m13);
+}
+
+
+void	G_error_message_m13(const si1 *fmt, ...)
 {
 	ui4		behavior;
 	va_list		v_args;
@@ -3859,7 +3869,7 @@ si1	**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_direct
 		free_2D_m13((void **) file_list, n_in_files);
 
 		buffer = NULL;
-		G_push_behavior_m13(SUPPRESS_ERROR_OUTPUT_m13 | IGNORE_SYSTEM_ERRORS_m13 | RETURN_ON_FAIL_m13);
+		G_push_behavior_m13(RETURN_QUIETLY_m13);
 		ret_val = system_pipe_m13(&buffer, 0, command, SP_SEPARATE_STREAMS_m13, NULL, 0);  // NULL because don't actually want error output
 		G_pop_behavior_m13();
 		free((void *) command);
@@ -4492,7 +4502,6 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 	md_path[len++] = '/';
 	strcpy(md_path + len, name);
 	closedir(dir);
-	eprintf_m13("md_path = %s", md_path);
 
 FIND_MDF_CHAN_LEVEL_m13:
 	dir = opendir(md_path);
@@ -4535,7 +4544,6 @@ FIND_MDF_CHAN_LEVEL_m13:
 	md_path[len++] = '/';
 	strcpy(md_path + len, name);
 	closedir(dir);
-	eprintf_m13("md_path = %s", md_path);
 
 FIND_MDF_SEG_LEVEL_m13:
 	dir = opendir(md_path); // open the path
@@ -4568,10 +4576,9 @@ FIND_MDF_SEG_LEVEL_m13:
 			}
 		}
 	}
-	eprintf_m13("md_path = %s", md_path);
 
 	if (match == FALSE_m13) {
-		G_set_error_m13(E_MET_m13, NULL);  // global error
+		G_set_error_m13(E_MET_m13, "no metadata found in \"%s\"", md_path);
 		return_m13(NULL);
 	}
 	
@@ -4592,7 +4599,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 	ui4			code;
 	size_t			len;
 	WIN32_FIND_DATAA 	ffd;
-	HANDLE 		  find_h;
+	HANDLE			find_h;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -4617,10 +4624,10 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 			break;
 		case TS_CHAN_TYPE_CODE_m13:
 		case VID_CHAN_TYPE_CODE_m13:
-			goto WIN_FIND_MDF_CHAN_LEVEL_m13;
+			goto WN_FIND_MDF_CHAN_LEVEL_m13;
 		case TS_SEG_TYPE_CODE_m13:
 		case VID_SEG_TYPE_CODE_m13:
-			goto WIN_FIND_MDF_SEG_LEVEL_m13;
+			goto WN_FIND_MDF_SEG_LEVEL_m13;
 		default:
 			G_set_error_m13(E_FMED_m13, "input path must be a MED session, channel, or segment directory");  // global error
 			return_m13(NULL);
@@ -4644,7 +4651,7 @@ si1	*G_find_metadata_file_m13(si1 *path, si1 *md_path)
 	FindClose(find_h);
 	
 	// channel level
-WIN_FIND_MDF_CHAN_LEVEL_m13:
+WN_FIND_MDF_CHAN_LEVEL_m13:
 	len = strlen(md_path);
 	strcpy(md_path + len, "\\*.?isd");
 	find_h = FindFirstFileA((LPCSTR) md_path, &ffd);
@@ -4662,12 +4669,12 @@ WIN_FIND_MDF_CHAN_LEVEL_m13:
 	FindClose(find_h);
 
 	// segment level
-WIN_FIND_MDF_SEG_LEVEL_m13:
+WN_FIND_MDF_SEG_LEVEL_m13:
 	len = strlen(md_path);
 	strcpy(md_path + len, "\\*.?met");
 	find_h = FindFirstFileA((LPCSTR) md_path, &ffd);
 	if (find_h == INVALID_HANDLE_VALUE) {
-		G_set_error_m13(E_GEN_m13, "FindFirstFileA() failed");
+		G_set_error_m13(E_MET_m13, "no metadata found in \"%s\"", md_path);
 		return_m13(NULL);
 	}
 	name = ffd.cFileName;
@@ -7687,9 +7694,6 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 				}
 			}
 		}
-		// check for rename
-		if (strcmp_m13(chan->name, chan->rec_inds_fps->uh->channel_name))
-			G_update_channel_name_m13(chan);
 	}
 	
 	// open segments
@@ -7965,7 +7969,6 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 {
 	tern		free_seg;
 	si1		tmp_str[PATH_BYTES_m13], *type_str;
-	si8		len;
 	CHAN_m13	*chan;
 	PROC_GLOBS_m13	*proc_globs;
 	
@@ -8049,15 +8052,13 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 				return_m13(NULL);
 			}
 			// check for rename
-			len = strlen(seg->name);
-			seg->name[len - 5] = 0;
-			if (strcmp_m13(seg->name, seg->metadata_fps->uh->channel_name)) {
+			if (globals_m13->update_header_names == TRUE_m13) {
 				chan = (CHAN_m13 *) seg->parent;
-				if (chan)   // can be null
-					if (CHANNEL_CODE_m13(chan->type_code) == TRUE_m13)  // can be proc_globs
-						G_update_channel_name_m13(chan);
+				if (chan)  // can be null
+					if (strcmp_m13(chan->name, seg->metadata_fps->uh->channel_name))
+						if (CHANNEL_CODE_m13(chan->type_code) == TRUE_m13)  // can be proc_globs
+							G_update_channel_name_m13(chan);
 			}
-			seg->name[len - 5] = '-';
 		}
 	}
 	
@@ -8792,65 +8793,6 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	G_proc_error_clear_m13(LH_m13 *lh)
-{
-	PROC_GLOBS_m13	*proc_globs;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// level header can be NULL - will use process / thread ID
-	
-	proc_globs = G_proc_globs_m13(lh);
-	proc_globs->miscellaneous.proc_error_state = FALSE_m13;
-	
-	return_void_m13;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-void	G_proc_error_set_m13(LH_m13 *lh)
-{
-	PROC_GLOBS_m13	*proc_globs;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// level header can be NULL - will use process / thread ID
-	
-	proc_globs = G_proc_globs_m13(lh);
-	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
-	
-	return_void_m13;
-}
-
-
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
-tern	G_proc_error_state_m13(LH_m13 *lh)
-{
-	PROC_GLOBS_m13	*proc_globs;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// level header can be NULL - will use process / thread ID
-	
-	proc_globs = G_proc_globs_m13(lh);
-	
-	return_m13(proc_globs->miscellaneous.proc_error_state);
-}
-
-
 PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 {
 	si4			i, n_proc_globs;
@@ -9095,7 +9037,6 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs)
 	// reset miscellaneous process globals
 	proc_globs->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
 	proc_globs->miscellaneous.threading = globals_m13->threading;
-	proc_globs->miscellaneous.proc_error_state = FALSE_m13;
 
 	return_m13(proc_globs);
 }
@@ -9458,14 +9399,13 @@ void	G_push_function_exec_m13(const si1 *function)
 {
 #ifdef FT_DEBUG_m13
 	
-	si4			n_functions;
-	FUNCTION_ENTRY_m13	*new_functions;
+	si4			n_entries;
+	FUNCTION_ENTRY_m13	*new_entries;
 	FUNCTION_STACK_m13	*stack;
 	
-	
-	// causal error set => do not modify stack of causal thread
-	if (globals_m13->error.code)
-		if (globals_m13->error.thread_id == gettid_m13())
+		
+	if (globals_m13->error.code) // causal error already set
+		if (globals_m13->error.thread_id == gettid_m13()) // do not modify function stack of causal thread
 			return;
 
 	// get function stacks mutex
@@ -9474,20 +9414,20 @@ void	G_push_function_exec_m13(const si1 *function)
 		return;
 	
 	// expand stack
-	n_functions = stack->top_idx + 1;
-	if (n_functions == stack->size) {
-		n_functions += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
-		new_functions = (FUNCTION_ENTRY_m13 *) realloc((void *) stack->entries, (size_t) n_functions * sizeof(FUNCTION_ENTRY_m13));
-		if (new_functions == NULL) {
+	n_entries = stack->top_idx + 1;
+	if (n_entries == stack->size) {
+		n_entries += GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13;
+		new_entries = (FUNCTION_ENTRY_m13 *) realloc((void *) stack->entries, (size_t) n_entries * sizeof(FUNCTION_ENTRY_m13));
+		if (new_entries == NULL) {
 			G_set_error_m13(E_ALLOC_m13, NULL);
 			return;
 		}
-		stack->entries = new_functions;
-		stack->size = n_functions;
+		stack->entries = new_entries;
+		stack->size = n_entries;
 	}
 	
 	stack->entries[++stack->top_idx].name = function;
-	stack->entries[stack->top_idx].return_line = -1;
+	stack->entries[stack->top_idx].return_line = E_UNKNOWN_LINE_m13;
 		
 #endif  // FT_DEBUG_m13
 
@@ -11870,10 +11810,10 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 
 void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...)  // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
 {
-	tern			exit_on_fail;
+	tern			exit_on_fail, set_error;
+	ui4			behavior;
 	si4			mutex_status;
 	ERR_m13			*err;
-	PROC_GLOBS_m13		*proc_globs;
 	pid_t_m13		_id;
 	pthread_t_m13		*thread;
 	va_list			v_args;
@@ -11883,13 +11823,18 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 	// Return error local error condition for errors returned from functions, no messages necessary
 	
 
+	// get behavior
+	behavior = G_current_behavior_m13();
+	set_error = (behavior & IGNORE_ERRORS_m13) ? FALSE_m13 : TRUE_m13;
+	if (set_error == FALSE_m13)
+		return;
+	exit_on_fail = (behavior & RETURN_ON_FAIL_m13) ? FALSE_m13 : TRUE_m13;
+
 	// no error specified in code or message
 	if (code == E_NONE_m13)
 		if (STR_is_empty_m13(message) == TRUE_m13)
 			return;
 
-	// get behavior
-	exit_on_fail = (G_current_behavior_m13() & RETURN_ON_FAIL_m13) ? FALSE_m13 : TRUE_m13;
 	_id = gettid_m13();
 
 	// get mutex
@@ -11905,10 +11850,6 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 		return;
 	}
 	
-	// set proc error state (for void functions)
-	proc_globs = G_proc_globs_m13(NULL);  // use thread ID
-	proc_globs->miscellaneous.proc_error_state = TRUE_m13;
-
 #ifdef FT_DEBUG_m13
 	pid_t_m13		parent_id;
 	FUNCTION_STACK_m13	*stack, *tmp_stack;
@@ -11937,7 +11878,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message,
 #endif
 	}
 	
-	// message
+	// error message
 	if (STR_is_empty_m13(message) == TRUE_m13) {
 		if (code >= E_NONE_m13 && code < E_NUM_CODES_m13)  // use table message
 			strcpy_m13(err->message, globals_m13->tables->E_strings_table[code]);
@@ -12600,12 +12541,11 @@ tern	G_show_error_m13(void)
 	const si1	*func;
 	si1		*mess, *name;
 	si4		line;
-	ui8		_id;
 	ERR_m13		*err;
+	pid_t_m13	_id;
 	
 
 	err = &globals_m13->error;
-	_id = (ui8) err->thread_id;
 	mess = err->message;
 	name = err->thread_name;
 	func = err->function;
@@ -12620,39 +12560,31 @@ tern	G_show_error_m13(void)
 		return(TRUE_m13);
 	}
 
+	_id = gettid_m13();
+	
 #ifdef MATLAB_m13
-	if (*err->thread_name == '<') {
+	if (*err->thread_name) {
+		if (err->line == E_UNKNOWN_LINE_m13)
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id %lu)]\n", mess, func, name, _id);
+		else
+			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id %lu)]\n", mess, func, line, name, _id);
+	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
 			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread %lu]\n", mess, func, _id);
 		else
 			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
-	} else if (_id == globals_m13->main_id) {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id %lu)]\n", mess, func, name, _id);
-		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id %lu)]\n", mess, func, line, name, _id);
-	} else {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id %lu)]\n", mess, func, name, _id);
-		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id %lu)]\n", mess, func, line, name, _id);
 	}
 #else
-	if (*err->thread_name == '<') {
+	if (*err->thread_name) {
+		if (err->line == E_UNKNOWN_LINE_m13)
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
+		else
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
+	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
 		else
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
-	} else if (_id == globals_m13->main_id){
-		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
-		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
-	} else {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
-		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
 	}
 #endif
 	
@@ -12743,10 +12675,10 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	// print thread name
 	thread = PROC_thread_for_id_m13(stack->_id);
 	pthread_getname_m13(*thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	if (*thread_name == '<')  // "<unnamed>"
-		sprintf_m13(title, "Function Stack for Thread %lu:", _id);
-	else
+	if (*thread_name)
 		sprintf_m13(title, "Function Stack for %s(id %lu)", thread_name, _id);
+	else
+		sprintf_m13(title, "Function Stack for Thread %lu:", _id);
 	printf_m13("%s\n", title);
 
 	// replace string characters with '-' (terminal zero preserved)
@@ -12756,8 +12688,10 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	printf_m13("%s\n", title);
 	
 	// print stack
+	eprintf_m13("stack->top_idx = %d for %lu", stack->top_idx, _id);
+	
 	for (i = 0, j = func_start_num; i <= stack->top_idx; ++i, ++j) {
-		if (stack->entries[i].return_line == -1)
+		if (stack->entries[i].return_line <= 0)
 			#ifdef MATLAB_m13
 			mexPrintf("%d)\t%s(~)\n", j, stack->entries[i].name);
 			#else
@@ -13590,7 +13524,6 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	else
 		printf_m13("%d\n", proc_globs->miscellaneous.mmap_block_bytes);
 	printf_m13("Threading: %s\n", STR_tern_m13(proc_globs->miscellaneous.threading, TRUE_m13));
-	printf_m13("Process Error State: %s\n", STR_tern_m13(proc_globs->miscellaneous.proc_error_state, TRUE_m13));
 
 	printf_m13("\n");
 	
@@ -14725,13 +14658,12 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			// rename directory
 			G_path_parts_m13(seg_list[i], NULL, name, NULL);
 			len = strlen(name);
-			name[len - 6] = 0;
+			name[len - 6] = 0;  // trim off "_sxxxx"
 			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
 			}
-			name[len - 6] = '_';
 			
 			// time series metadata
 			sprintf_m13(path, "%s/%s.%s", seg_list[i], name, TS_METADATA_TYPE_STR_m13);
@@ -14784,14 +14716,13 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 			// rename directory
 			G_path_parts_m13(seg_list[i], NULL, name, NULL);
 			len = strlen(name);
-			strcpy(sufx, name + (len - 5));  // "sxxxx"
-			name[len - 6] = 0;  // trim of "_sxxxx"
+			strcpy(sufx, name + (len - 5));  // == "sxxxx"
+			name[len - 6] = 0;  // trim off "_sxxxx"
 			if (strcmp_m13(fs_name, name)) {
 				STR_replace_pattern_m13(name, fs_name, seg_list[i], path);
 				mv_m13(seg_list[i], path);
 				strcpy(seg_list[i], path);
 			}
-			name[len - 6] = '_';  // restore full name
 			
 			// video metadata
 			sprintf_m13(tmp_path, "%s/%s%s.%s", seg_list[i], name, sufx, VID_METADATA_TYPE_STR_m13);
@@ -17840,7 +17771,7 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 {
 	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si4		i, n_entries;
-	pid_t_m13	tid;
+	pid_t_m13	_id;
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
 
@@ -17849,13 +17780,13 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 #endif
 
 	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	tid = gettid_m13();
+	_id = gettid_m13();
 
 	if (address == NULL) {
-		if (*thread_name == '<')
-			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called from %s(); at line %d; in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, tid);
+		if (*thread_name)
+			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in %s(id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
-			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called from %s(); at line %d; in thread \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, tid);
+			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
 		return_void_m13;
 	}
 	
@@ -18034,11 +17965,11 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	_id = gettid_m13();
 	
 	if (address == NULL) {
-		if (*thread_name == '<')
-			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called from %s(); at line %d; in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
+		if (*thread_name)
+			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in %s(id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
-			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called from %s(); at line %d; in thread \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
-		
+			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
+
 		return_m13(FALSE_m13);
 	}
 
@@ -18054,11 +17985,11 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 	// no entry
 	if (i < 0) {
-		if (*thread_name == '<')
-			G_warning_message_m13("%s(): %saddress was not allocated%s  [called from %s(); at line; %d in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
+		if (*thread_name)
+			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in %s(id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
-			G_warning_message_m13("%s(): %saddress was not allocated%s  [called from %s() at line %d; in thread \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
-		
+			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
+
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 		return_m13(FALSE_m13);
@@ -18067,14 +17998,14 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	// already freed
 	else if (ate->free_function) {
 		G_warning_message_m13("%s(): %sDouble Free%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-		if (*ate->free_thread_name == '<')
-			G_warning_message_m13("\tPrior free: called from %s(); at line %d; in thread %lu.\n", ate->free_function, ate->free_line, ate->free_thread_id);
+		if (*ate->free_thread_name)
+			G_warning_message_m13("\tPrior free: called at %s(%d); in %s(id %lu)\n", ate->free_function, ate->free_line, ate->free_thread_name, ate->free_thread_id);
 		else
-			G_warning_message_m13("\tPrior free: called from %s(); at line %d; in thread \"%s\" (id %lu).\n", ate->free_function, ate->free_line, ate->free_thread_name, ate->free_thread_id);
-		if (*thread_name == '<')
-			G_warning_message_m13("\tThis free: called from %s(); at line %d; in thread %lu.\n", function, line, _id);
+			G_warning_message_m13("\tPrior free: called at %s(%d); in thread %lu\n", ate->free_function, ate->free_line, ate->free_thread_id);
+		if (*thread_name)
+			G_warning_message_m13("\tThis free: called at %s(%d); in %s(id %lu)\n", function, line, thread_name, _id);
 		else
-			G_warning_message_m13("\tThis free: called from %s(); at line %d; in thread \"%s\" (id %lu).\n", function, line, thread_name, _id);
+			G_warning_message_m13("\tThis free: called at %s(%d); in thread %lu\n", function, line, _id);
 
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		
@@ -45395,7 +45326,6 @@ pid_t_m13	gettid_m13(void)
 void	isem_dec_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
-	const si1		*name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -45410,13 +45340,8 @@ void	isem_dec_m13(isem_t_m13 *isem)
 		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
+	if (wait_warning == TRUE_m13)
 		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = (const si1 *) isem->name;
-	}
 
 	if (isem->mutex_initialized != TRUE_m13) {
 		pthread_mutex_init_m13(&isem->mutex, NULL);
@@ -45437,7 +45362,10 @@ void	isem_dec_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				if (*isem->name)
+					G_warning_message_m13("isem \"%s\" still owned  by thread %lu ...\n", isem->name, isem->owner);
+				else
+					G_warning_message_m13("isem still owned  by thread %lu ...\n", isem->owner);
 				wait_time_base = tmp_time;
 			}
 		}
@@ -45566,7 +45494,6 @@ isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, co
 void	isem_inc_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
-	const si1		*name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -45581,13 +45508,8 @@ void	isem_inc_m13(isem_t_m13 *isem)
 		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
+	if (wait_warning == TRUE_m13)
 		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = isem->name;
-	}
 
 	if (isem->mutex_initialized != TRUE_m13) {
 		pthread_mutex_init_m13(&isem->mutex, NULL);
@@ -45608,7 +45530,10 @@ void	isem_inc_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				if (*isem->name)
+					G_warning_message_m13("isem \"%s\" still owned  by thread %lu ...\n", isem->name, isem->owner);
+				else
+					G_warning_message_m13("isem still owned  by thread %lu ...\n", isem->owner);
 				wait_time_base = tmp_time;
 			}
 		}
@@ -45629,7 +45554,6 @@ void	isem_inc_m13(isem_t_m13 *isem)
 void	isem_own_m13(isem_t_m13 *isem, tern own)
 {
 	tern			wait_warning;
-	const si1		*name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -45651,13 +45575,8 @@ void	isem_own_m13(isem_t_m13 *isem, tern own)
 		tv.tv_nsec = (si8) 10000;  // default (10 us)
 
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
+	if (wait_warning == TRUE_m13)
 		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = isem->name;
-	}
 
 	if (isem->mutex_initialized != TRUE_m13) {
 		pthread_mutex_init_m13(&isem->mutex, NULL);
@@ -45691,7 +45610,10 @@ void	isem_own_m13(isem_t_m13 *isem, tern own)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				if (*isem->name)
+					G_warning_message_m13("isem \"%s\" still owned  by thread %lu ...\n", isem->name, isem->owner);
+				else
+					G_warning_message_m13("isem still owned  by thread %lu ...\n", isem->owner);
 				wait_time_base = tmp_time;
 			}
 		}
@@ -45712,7 +45634,6 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 	tern			wait_warning;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
-	const si1		*name;
 	struct timespec		tv;
 
 	// set the isem count to count
@@ -45725,13 +45646,8 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
+	if (wait_warning == TRUE_m13)
 		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = isem->name;
-	}
 
 	if (isem->mutex_initialized != TRUE_m13) {
 		pthread_mutex_init_m13(&isem->mutex, NULL);
@@ -45752,7 +45668,10 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				if (*isem->name)
+					G_warning_message_m13("isem \"%s\" still owned  by thread %lu ...\n", isem->name, isem->owner);
+				else
+					G_warning_message_m13("isem still owned  by thread %lu ...\n", isem->owner);
 				wait_time_base = tmp_time;
 			}
 		}
@@ -46106,7 +46025,6 @@ void	isem_wait_m13(isem_t_m13 *isem)
 	tern			wait_warning;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
-	const si1		*name;
 	struct timespec		tv;
 
 	
@@ -46120,13 +46038,8 @@ void	isem_wait_m13(isem_t_m13 *isem)
 		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
+	if (wait_warning == TRUE_m13)
 		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = isem->name;
-	}
 
 	if (isem->mutex_initialized != TRUE_m13) {
 		pthread_mutex_init_m13(&isem->mutex, NULL);
@@ -46148,7 +46061,10 @@ void	isem_wait_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				if (*isem->name)
+					G_warning_message_m13("isem \"%s\" still owned  by thread %lu ...\n", isem->name, isem->owner);
+				else
+					G_warning_message_m13("isem still owned  by thread %lu ...\n", isem->owner);
 				wait_time_base = tmp_time;
 			}
 		}
@@ -46170,7 +46086,6 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
 	si8			wait_time_base, wait_time, tmp_time;
-	const si1		*name;
 	struct timespec		tv;
 
 	
@@ -46183,13 +46098,8 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 		tv.tv_nsec = (si8) 10000;  // default (10 us)
 	
 	wait_warning = (G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13) ? FALSE_m13 : TRUE_m13;
-	if (wait_warning == TRUE_m13) {
+	if (wait_warning == TRUE_m13)
 		wait_time_base = G_current_uutc_m13();
-		if (STR_is_empty_m13(isem->name) == TRUE_m13)
-			name = "<unnamed>";
-		else
-			name = isem->name;
-	}
 
 	if (isem->mutex_initialized != TRUE_m13) {
 		pthread_mutex_init_m13(&isem->mutex, NULL);
@@ -46208,7 +46118,10 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				G_warning_message_m13("isem \"%s\" still owned ...\n", name);
+				if (*isem->name)
+					G_warning_message_m13("isem \"%s\" still owned  by thread %lu ...\n", isem->name, isem->owner);
+				else
+					G_warning_message_m13("isem still owned  by thread %lu ...\n", isem->owner);
 				wait_time_base = tmp_time;
 			}
 		}
@@ -47002,9 +46915,54 @@ si1	*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len
 		STR_wchar2char_m13(thread_name, (wchar_t *) thread_name);
 # endif
 	
-	if (*thread_name == 0)
-		strncpy_m13(thread_name, "<unnamed>", name_len);
+	return(thread_name);
+}
 
+
+si1	*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len)
+{
+	pthread_t_m13	*thread;
+	
+	// get thread name from thread id (non-standard)
+	// pass zero for _id to get name of calling thread
+	// pass null thread_name to allocate
+	
+	if (thread_name == NULL) {
+		name_len = (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13;
+		thread_name = (si1 *) malloc(name_len * sizeof(si1));
+		if (thread_name == NULL) {
+			G_error_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
+			return(NULL);
+		}
+		#ifdef AT_DEBUG_m13
+			G_warning_message_m13("%s(): allocated thread name will not be tracked\n", __FUNCTION__);
+		#endif
+	}
+	*thread_name = 0;
+	
+	if (_id == (pid_t_m13) 0)
+		_id = gettid_m13();
+		
+	// name main process
+	if (_id == globals_m13->main_id) {
+		strncpy_m13(thread_name, "main", name_len);
+		return(thread_name);
+	}
+
+	thread = PROC_thread_for_id_m13(_id);
+	
+# if defined MACOS_m13 || defined LINUX_m13
+	pthread_getname_np(*thread, thread_name, name_len);
+# endif
+		
+# ifdef WINDOWS_m13
+	HRESULT		res;
+	
+	res = GetThreadDescription(*thread, (PWSTR *) &thread_name);
+	if (SUCCEEDED(res))
+		STR_wchar2char_m13(thread_name, (wchar_t *) thread_name);
+# endif
+	
 	return(thread_name);
 }
 
@@ -47036,27 +46994,39 @@ inline
 #endif
 si4	pthread_kill_m13(pthread_t_m13 thread, si4 signal)
 {
-	si4	ret_val;
+	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	si4		r_val, err;
+	pid_t_m13	_id;
 
 	
-#if defined MACOS_m13 || defined LINUX_m13
-	// (signal == zero): thread killed without calling thread-local traps
-	
-	ret_val = pthread_kill(thread, signal);
-#endif
-	
-#ifdef WINDOWS_m13
-	// (signal == zero): thread exits with exit value zero (error)
-	
+	if (!(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13)) {
+		pthread_getname_m13(thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+		_id = PROC_id_for_thread_m13(&thread);
+		if (*thread_name)
+			G_warning_message_m13("%s(): killing %s(id %lu)", thread_name, _id);
+		else
+			G_warning_message_m13("%s(): killing thread %lu)", _id);
+	}
+
 	errno_reset_m13();
-	ret_val = TerminateThread(thread, (DWORD) signal);
-	if (ret_val)  // no-zero == success
-		ret_val = 0;
-	else
-		ret_val = errno_m13();
+
+#if defined MACOS_m13 || defined LINUX_m13
+	r_val = pthread_kill(thread, signal);  // (signal == zero): thread killed without calling thread-local traps
 #endif
 	
-	return(ret_val);
+#ifdef WINDOWS_m13// (signal == zero): thread exits with exit value zero (error)
+	r_val = TerminateThread(thread, (DWORD) signal);
+	if (r_val == 0)  // there was an error
+		r_val = -1;
+#endif
+	
+	if (r_val) {
+		err = errno_m13();
+		if (err)
+			r_val = err;  // replace r_val with errno if set
+	}
+		
+	return(r_val);
 }
 
 
@@ -48307,10 +48277,10 @@ si8	strncpy_m13(si1 *target, const si1 *source, size_t n_chars)
 
 si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams, ui4 behavior;
 {
-	tern	null_std_streams;
+	tern	null_std_streams, retried;
 	ui4	behavior;
 	si1	*temp_command;
-	si4	ret_val, len, err;
+	si4	len, err;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -48337,45 +48307,38 @@ si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command
 		sprintf(temp_command, "%s 1> %s 2> %s", command, NULL_DEVICE_m13, NULL_DEVICE_m13);  // don't use sprintf_m13() here - can screw up Windows options
 		command = temp_command;
 	}
+
+	retried = FALSE_m13;
+	
+SYSTEM_RETRY_m13:
 	
 	err = 0;
 	errno_reset_m13();
+	
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = system(command);
-	if (ret_val) {  // shell can return values in bytes 2-4 that do not indicate error
-		err = errno_m13();
-		if (err == 0)
-			ret_val = 0;
-	}
+	system(command);
 #endif
 #ifdef WINDOWS_m13
-	ret_val = WN_system_m13(command);
-	err = errno_m13();
+	WN_system_m13(command);
 #endif
-	if (ret_val) {
+	
+	err = errno_m13();  // errno is better for detecting errors because system() may return non-error info in higher bytes
+	
+	if (err) {
 		if (behavior & RETRY_ONCE_m13) {
-			nap_m13("1 ms");  // wait 1 ms
-			errno_reset_m13();
-			#if defined MACOS_m13 || defined LINUX_m13
-			ret_val = system(command);
-			if (ret_val) {  // shell can return values in bytes 2-4 that do not indicate error
-				err = errno_m13();
-				if (err == 0)
-					ret_val = 0;
+			if (retried == FALSE_m13) {
+				nap_m13("1 ms");  // wait 1 ms
+				retried = TRUE_m13;
+				goto SYSTEM_RETRY_m13;
 			}
-			#endif
-			#ifdef WINDOWS_m13
-			ret_val = WN_system_m13(command);
-			err = errno_m13();
-			#endif
 		}
 	}
+	
 	if (null_std_streams == TRUE_m13)
 		free((void *) temp_command);
 	
-	if (ret_val)
-		if (!(behavior & IGNORE_SYSTEM_ERRORS_m13))
-			G_set_error_m13(E_GEN_m13, "command: \"%s\" failed", command);
+	if (err)
+		G_set_error_m13(E_GEN_m13, "command: \"%s\" failed", command);
 	
 	return_m13(err);
 }
@@ -48819,11 +48782,9 @@ SYSTEM_PIPE_FAIL_m13:
 	
 	// errors (may not be if redirection worked)
 	if (err) {
-		if (!(behavior & IGNORE_SYSTEM_ERRORS_m13)) {
-			G_set_error_m13(E_GEN_m13, "command failed with message \"%s\" (err #%d)", strerror(err), err);
-			if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
-				flags |= SP_TEE_TO_TERMINAL_m13;
-		}
+		G_set_error_m13(E_GEN_m13, "command failed with message \"%s\" (err #%d)", strerror(err), err);
+		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
+			flags |= SP_TEE_TO_TERMINAL_m13;
 	}
 	
 	// tee
@@ -49246,11 +49207,9 @@ SYSTEM_PIPE_FAIL_m13:
 	
 	// errors (may not be if redirection worked)
 	if (err) {
-		if (!(behavior & IGNORE_SYSTEM_ERRORS_m13)) {
-			G_set_error_m13(E_GEN_m13, "command failed with message \"%s\" (err #%d)", strerror(err), err);
-			if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
-				flags |= SP_TEE_TO_TERMINAL_m13;
-		}
+		G_set_error_m13(E_GEN_m13, "command failed with message \"%s\" (err #%d)", strerror(err), err);
+		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
+			flags |= SP_TEE_TO_TERMINAL_m13;
 	}
 
 	// tee
