@@ -1699,27 +1699,29 @@ tern		NET_trim_address_m13(si1 *addr_str);
 #define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | IGNORE_ERRORS_m13 | SUPPRESS_OUTPUT_m13 )
 
 // error codes
-#define E_NUM_CODES_m13			20
-#define	E_NONE_m13			0 // no error
-#define	E_GEN_m13			1 // unknown or unspecified error
-#define	E_SIG_m13			2 // system siganl
-#define E_ALLOC_m13			3
-#define E_FGEN_m13			4
-#define E_FEXIST_m13			5
-#define E_FOPEN_m13			6
-#define E_FREAD_m13			7
-#define E_FWRITE_m13			8
-#define E_FLOCK_m13			9
-#define E_FMED_m13			10
-#define E_ACC_m13			11
-#define E_CRYP_m13			12
-#define E_MET_m13			13
-#define	E_REC_m13			14
-#define	E_NET_m13			15
-#define E_CMP_m13			16
-#define E_PROC_m13			17
-#define E_FILT_m13			18
-#define E_DB_m13			19
+#define E_NUM_CODES_m13		20
+typedef enum {
+	E_NONE_m13,		// 0, no error
+	E_GEN_m13,		// 1, general / unspecified error
+	E_SIG_m13,		// 2, system signal
+	E_ALLOC_m13,		// 3, allocation error
+	E_FGEN_m13,		// 4, general file error
+	E_FEXIST_m13,		// 5, file exists error
+	E_FOPEN_m13,		// 6, file open error
+	E_FREAD_m13,		// 7, file read error
+	E_FWRITE_m13,		// 8, file write error
+	E_FLOCK_m13,		// 9, file lock error
+	E_FMED_m13,		// 10, not med file error
+	E_FACC_m13,		// 11, file access / password error
+	E_CRYP_m13,		// 12, cryptographic error
+	E_MET_m13,		// 13, metadata error
+	E_REC_m13,		// 14, records error
+	E_NET_m13,		// 15, network error
+	E_CMP_m13,		// 16, compression / computational error
+	E_PROC_m13,		// 17, process control error
+	E_FILT_m13,		// 18, filter error
+	E_DB_m13		// 19, database error
+} E_MED_CODES_m13;
 
 // error string table
 #define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
@@ -1760,7 +1762,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 	"E_FWRITE", \
 	"E_FLOCK", \
 	"E_FMED", \
-	"E_ACC", \
+	"E_FACC", \
 	"E_CRYP", \
 	"E_MET", \
 	"E_REC", \
@@ -1787,7 +1789,7 @@ typedef struct {
 #ifdef MATLAB_m13
 	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
-#define eprintf_m13(fmt, ...)			do { fprintf_m13(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
+	#define eprintf_m13(fmt, ...)		do { fprintf_m13(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
 #endif
 
 
@@ -2300,7 +2302,6 @@ typedef struct {
 	tern				update_header_names; // if session or channel file system name differs from universal header, update all affected universal headers
 	tern				update_MED_version; // if file MED version is not current, update the files
 	tern				update_parity; // update parity files if they exist, on write
-	pthread_mutex_t_m13		update_mutex;
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -3124,7 +3125,7 @@ tern			G_fill_empty_password_bytes_m13(si1 *password_bytes);
 CONTIGUON_m13		*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua);
 si8			G_find_index_m13(SEG_m13 *seg, si8 target, ui4 mode);
 si1			*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
-si1			*G_find_metadata_file_m13(si1 *path, si1 *md_path);
+si1			*G_find_metadata_file_m13(const si1 *path, si1 *md_path);
 si8			G_find_record_index_m13(FPS_m13 *rec_inds_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8 			G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...); // varargs (lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 tern			G_free_channel_m13(CHAN_m13 **chan_ptr);
@@ -3188,6 +3189,7 @@ SEG_m13			*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...); // varargs(s
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
 SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password
 si8			G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice);
+UH_m13			*G_read_universal_header_m13(const si1 *path, UH_m13 *uh);
 tern			G_recover_passwords_m13(si1 *L3_password, UH_m13* universal_header);
 void			G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
@@ -3239,7 +3241,7 @@ tern			G_ternary_entry_m13(si1 *entry);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void			G_thread_exit_m13(void);
 void			G_update_access_time_m13(LH_m13 *lh);
-tern			G_update_channel_name_m13(CHAN_m13 *chan);
+tern			G_update_channel_name_m13(CHAN_m13 *chan, const si1 *uh_name);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
 tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
 tern			G_update_MED_type_m13(si1 *path); // used by G_update_MED_version_m13()
@@ -4767,7 +4769,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_SUCCESS_TYPE_m13	TR_TYPE_OPERATION_SUCCEEDED_WITH_MESSAGE_m13
 #define TR_MESSAGE_TYPE_m13	TR_TYPE_MESSAGE_m13
 
-// Transmission Error Codes
+// Transmission Error Codes (not enum so can make si8s)
 #define TR_E_NONE_m13			((si8) E_NONE_m13) // zero (0)
 #define TR_E_GEN_m13			((si8) FALSE_m13) // unknown or unspecified error
 #define TR_E_SOCK_FAILED_m13		((si8) -2)
@@ -4792,6 +4794,19 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_E_TRANS_FAILED_STR_m13	"transmission failed"
 #define TR_E_CRC_STR_m13		"checksum mismatch"
 #define TR_E_ACK_STR_m13		"no acknowlegment"
+
+// Transmission Error Tags
+#define	TR_E_NONE_TAG_m13		"TR_E_NONE"
+#define	TR_E_GEN_TAG_m13		"TR_E_GEN"
+#define TR_E_SOCK_FAILED_TAG_m13	"TR_E_SOCK_FAILED"
+#define TR_E_SOCK_OPEN_TAG_m13		"TR_E_SOCK_OPEN"
+#define TR_E_SOCK_CLOSED_TAG_m13	"TR_E_SOCK_CLOSED"
+#define TR_E_SOCK_TIMED_OUT_TAG_m13	"TR_E_SOCK_TIMED_OUT"
+#define TR_E_DATA_TAG_m13		"TR_E_DATA"
+#define TR_E_ID_TAG_m13			"TR_E_ID"
+#define TR_E_TRANS_FAILED_TAG_m13	"TR_E_TRANS_FAILED"
+#define TR_E_CRC_TAG_m13		"TR_E_CRC"
+#define TR_E_ACK_TAG_m13		"TR_E_ACK"
 
 // Transmission Flags
 #define TR_FLAGS_DEFAULT_m13		((ui2) 0)
