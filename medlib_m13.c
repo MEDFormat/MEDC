@@ -49145,6 +49145,7 @@ SYSTEM_PIPE_RETRY_m13:
 		}
 	}
 	buffer[bytes_in_buffer] = 0;  // set terminal zero
+	STR_strip_character_m13(buffer, (si1) 13);  // remove carriage returns
 
 	bytes_in_e_buffer = 0;
 	bytes_avail = e_buf_len;
@@ -49162,7 +49163,8 @@ SYSTEM_PIPE_RETRY_m13:
 			}
 		}
 	}
-	buffer[bytes_in_e_buffer] = 0;  // set terminal zero
+	e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
+	STR_strip_character_m13(e_buffer, (si1) 13);  // remove carriage returns
 
 	// check process
 	if (GetExitCodeProcess(process_info.hProcess, &exit_code))  // call to GetExitCodeProcess() succeeded, not the process itself
