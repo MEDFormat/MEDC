@@ -496,8 +496,7 @@ typedef struct {
 #define SIZE_STRING_BYTES_m13			32
 #define UNKNOWN_SEARCH_m13			0
 #define TIME_SEARCH_m13				1
-#define SAMPLE_SEARCH_m13			2
-#define FRAME_SEARCH_m13			SAMPLE_SEARCH_m13
+#define INDEX_SEARCH_m13			2
 #define NO_OVERFLOWS_m13			4 // e.g. in find_index_m13(), restrict returned index to valid segment values
 #define IPV4_ADDRESS_BYTES_m13			4
 #define POSTAL_CODE_BYTES_m13			16
@@ -674,6 +673,7 @@ typedef struct {
 #define GLOBALS_ACCESS_TIMES_DEFAULT_m13			FALSE_m13
 #define GLOBALS_CRC_MODE_DEFAULT_m13				CRC_CALCULATE_m13
 #define GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13		TRUE_m13
+#define GLOBALS_UPDATE_FILE_SYSTEM_NAMES_DEFAULT_m13		TRUE_m13
 #define GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
@@ -787,7 +787,8 @@ typedef struct {
 // System Pipe flags
 #define SP_DEFAULT_m13			0 // no flags set (default)
 #define SP_TEE_TO_TERMINAL_m13		1 // print buffer(s) to terminal in addition to returning
-#define SP_SEPARATE_STREAMS_m13		2 // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
+#define SP_BEHAVIOR_PASSED_m13		2 // behavior passed as first vararg
+#define SP_SEPARATE_STREAMS_m13		4 // return seprate "stdout" & "stderr" buffers (buffer = stdout, e_buffer = stderr), otherwise ganged
 
 // Spaces Constants
 #define NO_SPACES_m13			((ui4) 0)
@@ -1986,9 +1987,8 @@ typedef struct { // multiple thread access
 typedef struct {
 	ui8			UID;
 	si1			directory[PATH_BYTES_m13]; // path including file system session directory name
-	si1			fs_name[NAME_BYTES_m13];	 // name from file system (if differs from header & update names global set, headers changed)
-	si1			uh_name[NAME_BYTES_m13];	 // name from universal_headers (if differs from header & update names global set, headers changed)
-	tern			names_differ; // fs & uh names differ
+	si1			fs_name[NAME_BYTES_m13]; // name from file system
+	si1			uh_name[NAME_BYTES_m13]; // name from universal_header (if differs from file system, otherwise empty)
 	si8			start_time;
 	si8			end_time;
 	si4			n_segments; // number of segments in the session, regardless of whether they are mapped
@@ -2299,9 +2299,10 @@ typedef struct {
 	ui4				CRC_mode;
 	tern				access_times; // record times of each structure & file access
 	tern				write_sorted_records; // if records unsorted, sort & re-write
-	tern				update_header_names; // if session or channel file system name differs from universal header, update all affected universal headers
-	tern				update_MED_version; // if file MED version is not current, update the files
-	tern				update_parity; // update parity files if they exist, on write
+	tern				update_file_system_names; // if session or channel file system name differ from higher level names, rename lower level files & directories
+	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
+	tern				update_MED_version; // if file MED version is not current, update affected files
+	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -2855,7 +2856,8 @@ typedef struct {
 	si8			n_contigua;
 	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to segment directory (including segment directory itself)
-	si1			local_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
+	si1			fs_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
+	si1			uh_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
 	SLICE_m13		slice;
 } SEG_m13;
 #else // __cplusplus
@@ -2878,7 +2880,8 @@ typedef struct {
 	si8			n_contigua;
 	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to segment directory (including segment directory itself)
-	si1			local_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
+	si1			fs_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
+	si1			uh_name[SEG_NAME_BYTES_m13]; // stored here, no segment_name field in universal header
 	SLICE_m13		slice;
 } SEG_m13;
 #endif // standard C
@@ -2899,10 +2902,10 @@ typedef struct CHAN_m13 {
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 				};
 			};
-			si1					*path; // NULL in proc_globs
-			si1					*name; // NULL in proc_globs
-			_Atomic(LH_m13 *)			parent; // NULL in proc_globs
-			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs; // self in proc_globs
+			si1					*path; //  points to local_path
+			si1					*name; // points to local_fs_name or local_uh_name
+			_Atomic(LH_m13 *)			parent;
+			_Atomic(struct PROC_GLOBS_m13 *)	proc_globs;
 			ui8					flags;
 			_Atomic si8				access_time; // uutc of last use of this structure by the calling program (updated by open, read, & write functions)
 		};
@@ -2915,7 +2918,8 @@ typedef struct CHAN_m13 {
 	si8			n_contigua;
 	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to channel directory (including channel directory itself)
-	si1			local_name[NAME_BYTES_m13]; // name from file system (if differs from header & update names global set, headers changed)
+	si1			fs_name[NAME_BYTES_m13]; // name from file system
+	si1			uh_name[NAME_BYTES_m13]; // name from universal header (if differs from file system name)
 	SLICE_m13		slice;
 } CHAN_m13;
 #else // __cplusplus
@@ -2932,7 +2936,8 @@ typedef struct CHAN_m13 {
 	si8			n_contigua;
 	CONTIGUON_m13		*contigua;
 	si1			local_path[PATH_BYTES_m13]; // full path to channel directory (including channel directory itself)
-	si1			local_name[NAME_BYTES_m13]; // name from file system (if differs from header & update names global set, headers changed)
+	si1			fs_name[NAME_BYTES_m13]; // name from file system
+	si1			uh_name[NAME_BYTES_m13]; // name from universal header (if differs from file system name, otherwise empty)
 	SLICE_m13		slice;
 } CHAN_m13;
 #endif // standard C
@@ -3154,6 +3159,7 @@ tern			G_is_level_header_m13(void *ptr);
 si8			G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
 ui4			G_level_m13(si1 *full_file_name, ui4 *input_type_code);
 tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
+tern			G_MED_file_m13(ui4 type_code);
 ui4			G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1* MED_name);
 ui4			G_MED_type_code_from_string_m13(const si1 *string);
 const si1		*G_MED_type_string_from_code_m13(ui4 code);
@@ -3162,11 +3168,11 @@ tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *me
 void 			G_message_m13(const si1 *fmt, ...);
 CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
+tern			G_open_level_records_m13(LH_m13 *lh, ...);  // varagrgs(level == ssr): si4 segment_number
 SSR_m13			*G_open_seg_sess_recs_m13(SESS_m13 *sess);
 SEG_m13			*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m13 *parent, ui8 flags, si1 *password);
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr);
 SESS_m13		*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
-tern			G_open_session_records_m13(SESS_m13 *sess);
 si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern			G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
 void			G_pop_behavior_m13(void);
@@ -3235,13 +3241,14 @@ tern			G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST
 tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
+tern			G_swap_names_m13(LH_m13 *lh);
 tern			G_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern			G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
 tern			G_ternary_entry_m13(si1 *entry);
 tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
 void			G_thread_exit_m13(void);
 void			G_update_access_time_m13(LH_m13 *lh);
-tern			G_update_channel_name_m13(CHAN_m13 *chan, const si1 *uh_name);
+tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
 tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
 tern			G_update_MED_type_m13(si1 *path); // used by G_update_MED_version_m13()
@@ -5529,7 +5536,9 @@ si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams, ui4 behavior;
-si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_SEPERATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 *e_buf_len
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(BEHAVIOR_PASSED_m13 set): ui4 behavior)
+												    // varargs(SP_SEPARATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
+												    // note if both passed, behavior is first argument
 void		tempclean_m13(void);
 FILE_m13	*tempfile_m13(void);
 si1		*tempnam_m13(si1 *path);
