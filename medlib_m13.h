@@ -486,7 +486,7 @@ typedef struct {
 #define FRAME_RATE_VARIABLE_m13			RATE_VARIABLE_m13
 #define UNKNOWN_NUMBER_OF_ENTRIES_m13		-1
 #define SEGMENT_NUMBER_NO_ENTRY_m13		0 // segments number from one
-#define FIRST_OPEN_SEG_m13			-2
+#define FIRST_OPEN_SEG_m13			-1
 #define CHANNEL_NUMBER_NO_ENTRY_m13		-1
 #define CHANNEL_NUMBER_ALL_CHANNELS_m13		-2
 #define DOES_NOT_EXIST_m13			FALSE_m13 // -1
@@ -677,6 +677,7 @@ typedef struct {
 #define GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
+#define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
 #define GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13		32 // number of threads
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13		16 // number of functions
@@ -1096,7 +1097,7 @@ typedef struct {
 
 // all levels
 #define LH_NO_FLAGS_SET_m13			NO_FLAGS_m13
-#define LH_FLAGS_SET_m13			((ui8) 1 << 0) // flags have been set
+#define LH_FLAGS_SET_m13			((ui8) 1 << 0) // flags have been set (distinguishes empty flags from flags not set)
 #define LH_GENERATE_EPHEMERAL_DATA_m13		((ui8) 1 << 1) // implies all level involvement
 #define LH_UPDATE_EPHEMERAL_DATA_m13		((ui8) 1 << 2) // signal to higher level from lower level (reset by higher level after update)
 
@@ -1272,12 +1273,13 @@ typedef struct {
 } FILE_m13;
 
 // Prototypes
-FILE_m13 	*FILE_from_std_m13(FILE *std_fp, si1 *path);
+FILE_m13 	*FILE_from_std_m13(FILE *std_fp, const si1 *path);
 ui4		FILE_id_m13(const si1 *path);
-FILE_m13	*FILE_init_m13(void *fp, ...); // varargs(fp == stream): si1 *path
+FILE_m13	*FILE_init_m13(void *fp, ...); // varargs(fp == stream): const si1 *path
 tern		FILE_is_std_m13(void *fp);
 tern		FILE_locking_m13(void *fp, tern heed);  // turn locking on or off for a file (heed or ignore locks on fp)
 tern		FILE_show_m13(FILE_m13 *fp);
+FILE 		*FILE_std_m13(void *fp);
 FILE 		*FILE_to_std_m13(void *fp, si1 *path);
 
 
@@ -1300,7 +1302,8 @@ FILE 		*FILE_to_std_m13(void *fp, si1 *path);
 #define PROC_THREAD_RUNNING_m13			((ui4) 1)
 #define PROC_THREAD_SUCCEEDED_m13		((ui4) 2)
 #define PROC_THREAD_FAILED_m13			((ui4) 4)
-#define PROC_THREAD_FINISHED_m13		( PROC_THREAD_SUCCEEDED_m13 | PROC_THREAD_FAILED_m13 )
+#define PROC_THREAD_SKIPPED_m13			((ui4) 8)
+#define PROC_THREAD_FINISHED_m13		( PROC_THREAD_SUCCEEDED_m13 | PROC_THREAD_FAILED_m13 | PROC_THREAD_SKIPPED_m13 )
 
 #define PROC_THREAD_NAME_LEN_DEFAULT_m13	64
 
@@ -1360,10 +1363,12 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 
 // example usage: flock reader count => write request blocks in isem until reader count == 0
 
+#define ISEM_SELF_m13		((pid_t_m13) 0xFFFFFFFFFFFFFFFF)
+
 typedef struct {
 	_Atomic ui4		count;
 	ui4			period;  // checking period, in nanoseconds (max ~4.3 secs); 0 indicates no wait in try functions, default  (10 us) in non-try functions
-	si1 			*name;
+	const si1 		*name;
 	_Atomic pid_t_m13	owner;  // thread id of owning thread, zero when unowned (normal state)
 	pthread_mutex_t_m13	mutex;
 	_Atomic tern		mutex_initialized;
@@ -1372,15 +1377,17 @@ typedef struct {
 
 typedef struct {
 	pthread_t_m13	thread;
-	si1		*thread_name;
+	const si1	*thread_name;
 	pthread_fn_m13	thread_f; // thread function pointer
 	void		*arg; // function-specific info structure, set by calling function
 	si4		priority; // typically PROC_HIGH_PRIORITY_m13
 	_Atomic ui4	status;
+	_Atomic tern	thread_job; // if FALSE_m13, run in current thread as function
+	tern		skip_job;  // if TRUE_m13, don't run this thread (b/c e.g. file missing)
 } PROC_THREAD_INFO_m13;
 
 typedef struct {
-	si1		*thread_name;
+	const si1	*thread_name;
 	pthread_fn_m13	thread_f; // the thread function pointer
 	void		*arg; // function-specific info structure, set by calling function
 } PROC_MACOS_NAMED_THREAD_INFO_m13;
@@ -1391,17 +1398,18 @@ typedef struct {
 tern			PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
 tern			PROC_default_threading_m13(void *lh); // lh is an LH_m13 *
 tern			PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *thread_infos, si4 n_jobs, si4 n_reserved_cores, tern wait_jobs, tern thread_jobs);
-cpu_set_t_m13		*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
-pid_t_m13		PROC_id_for_thread_m13(pthread_t_m13 *thread);
-tern			PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...); // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs
-pid_t_m13		PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name);
+cpu_set_t_m13		*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
+pid_t_m13		PROC_id_for_thread_m13(pthread_t_m13 *thread_p);
+tern			PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...); // varargs (sudo_prompt_flag == TRUE_m13): const si1 *exec_name, sf8 timeout_secs
+pid_t_m13		PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_f, void *arg, si4 priority, const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, const si1 *thread_name);
 pthread_rval_m13	PROC_macos_named_thread_m13(void *arg);
-tern			PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
-tern			PROC_show_thread_affinity_m13(pthread_t_m13 *thread);
+tern			PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch);
+tern			PROC_show_thread_affinity_m13(pthread_t_m13 *thread_p);
+void			PROC_show_thread_list_m13(void);
 pthread_t_m13		*PROC_thread_for_id_m13(pid_t_m13 _id);
-void			PROC_thread_list_add_m13(pthread_t_m13 *thread);
-pid_t_m13		PROC_thread_list_parent_m13(pid_t_m13 _id);
+void			PROC_thread_list_add_m13(pthread_t_m13 *thread_p);
 void			PROC_thread_list_remove_m13(pid_t_m13 _id);
+pid_t_m13		PROC_thread_parent_id_m13(pid_t_m13 _id);
 tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 
 #if defined MACOS_m13
@@ -1436,7 +1444,7 @@ tern			PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs);
 typedef struct {
 	si1		label[64];
 	si1		function[64];
-	void		*ret_val; // pointer to returned data
+	void		*r_val; // pointer to returned data
 	pid_t_m13	tid;
 	pthread_t_m13	thread_id;
 	si4		priority;
@@ -1452,12 +1460,12 @@ typedef struct {
 
 // Protoypes
 tern			PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
-PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...); // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, si1 *affinity, si4 detached
-PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...); // varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, si4 detached, <function arguments>
+PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, const si1 *function, const si1 *label, ...); // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, const si1 *affinity, si4 detached
+PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...); // varargs (par_info == NULL): const si1 *function, const si1 *label, si4 priority, const si1 *affinity, si4 detached, <function arguments>
 								      // varargs (par_info != NULL): <function arguments>
 tern			PAR_show_info_m13(PAR_INFO_m13 *par_info);
 pthread_rval_m13	PAR_thread_m13(void *arg);
-tern			PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval);
+tern			PAR_wait_m13(PAR_INFO_m13 *par_info, const si1 *interval);
 
 
 
@@ -1566,20 +1574,21 @@ typedef struct {
 // Prototypes
 tern	PRTY_build_m13(PRTY_m13 *parity_ps);
 si4	PRTY_file_compare_m13(const void *a, const void *b);
-si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files);
-ui4	PRTY_flag_for_path_m13(si1 *path);
-tern	PRTY_is_parity_m13(si1 *path);
-si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, si1 *file_path, si8 *pcrc_len);
-tern	PRTY_recover_segment_header_fields_m13(si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
+si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files);
+ui4	PRTY_flag_for_path_m13(const si1 *path);
+tern	PRTY_is_parity_m13(const si1 *path, tern MED_file);
+si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len);
+tern	PRTY_recover_segment_header_fields_m13(const si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
-tern	PRTY_restore_m13(si1 *MED_path);
-tern	PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, si1 *MED_path);
-tern	PRTY_show_pcrc_m13(si1 *file_path);
-tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): si1 *path
-tern	PRTY_validate_m13(si1 *file_path, ...); // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
-tern	PRTY_validate_pcrc_m13(si1 *file_path, ...); // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
-tern	PRTY_write_m13(si1 *sess_path, ui4 flags, si4 segment_number);
-tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes);
+tern	PRTY_restore_m13(const si1 *MED_path);
+tern	PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path);
+tern	PRTY_show_pcrc_m13(const si1 *file_path);
+tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path
+tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path)
+tern	PRTY_validate_m13(const si1 *file_path, ...); // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+tern	PRTY_validate_pcrc_m13(const si1 *file_path, ...); // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+tern	PRTY_write_m13(const si1 *sess_path, ui4 flags, si4 segment_number);
+tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes);
 
 
 
@@ -1601,8 +1610,8 @@ tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes);
 
 
 // Prototypes
-si4	RC_read_field_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, tern *TERN_val);
-si4	RC_read_field_2_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, void *val, si4 val_type, ...); // vararg (val_type == RC_UNKNOWN_m13): *returned_val_type
+si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, tern *TERN_val);
+si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, void *val, si4 val_type, ...); // vararg (val_type == RC_UNKNOWN_m13): *returned_val_type
 
 
 //**********************************************************************************//
@@ -1649,7 +1658,7 @@ typedef struct {
 
 // Prototypes
 tern		NET_check_internet_connection_m13(void);
-tern		NET_domain_to_ip_m13(si1 *domain_name, si1 *ip);
+tern		NET_domain_to_ip_m13(const si1 *domain_name, si1 *ip);
 NET_PARAMS_m13	*NET_get_active_m13(si1 *iface, NET_PARAMS_m13 *np);
 tern		NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global);
 tern		NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global);
@@ -1665,7 +1674,7 @@ NET_PARAMS_m13	*NET_get_mtu_m13(si1 *iface, NET_PARAMS_m13 *np);
 NET_PARAMS_m13	*NET_get_parameters_m13(si1 *iface, NET_PARAMS_m13 *np);
 NET_PARAMS_m13	*NET_get_plugged_in_m13(si1 *iface, NET_PARAMS_m13 *np);
 NET_PARAMS_m13	*NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np);
-si1		*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr);
+si1		*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr);
 tern		NET_init_tables_m13(void); // set global NET_PARAMS for default internet interface
 tern		NET_reset_parameters_m13(NET_PARAMS_m13 *np);
 tern		NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *free_params);
@@ -1680,16 +1689,16 @@ tern		NET_trim_address_m13(si1 *addr_str);
 
 // Behavior constants
 #define CURRENT_BEHAVIOR_m13		((ui4) 0xFFFFFFFF) // get behavior from stack
-#define SHOW_CURRENT_BEHAVIOR_m13	((ui4) 1 << 0)
-#define SHOW_BEHAVIOR_STACK_m13		((ui4) 1 << 1)
+#define SHOW_CURRENT_BEHAVIOR_m13	((ui4) 1 << 0) //  (passing CURRENT_BEHAVIOR_m13 will also cover this)
+#define SHOW_BEHAVIOR_STACK_m13		((ui4) 1 << 1) //  (passing CURRENT_BEHAVIOR_m13 will also cover this)
 
 // Behaviors Codes
-#define RETURN_ON_FAIL_m13		((ui4) 1 << 0) // if not set, exit program
-#define SUPPRESS_ERROR_OUTPUT_m13	((ui4) 1 << 1)
-#define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 2)
-#define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 3)
-#define RETRY_ONCE_m13			((ui4) 1 << 4)
-#define IGNORE_ERRORS_m13		((ui4) 1 << 5) // do no set global error (typically used in conjunction with RETURN_ON_FAIL_m13, where error can be handled)
+#define RETURN_ON_FAIL_m13		((ui4) 1 << 0) // return on error; if not set, exit on error
+#define IGNORE_ERROR_m13		((ui4) 1 << 1) // do not set error & return
+#define SUPPRESS_ERROR_OUTPUT_m13	((ui4) 1 << 2)
+#define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 3)
+#define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 4)
+#define RETRY_ONCE_m13			((ui4) 1 << 5)
 
 #define DEFAULT_BEHAVIOR_m13		RETURN_ON_FAIL_m13 // (code) return on fail, observe system errors, do not retry, show all output
 #define E_BEHAVIOR_m13			((ui4) 0) // (code) exit on fail, observe system errors, do not retry, show all output
@@ -1697,10 +1706,10 @@ tern		NET_trim_address_m13(si1 *addr_str);
 
 // convenience
 #define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
-#define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | IGNORE_ERRORS_m13 | SUPPRESS_OUTPUT_m13 )
+#define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | IGNORE_ERROR_m13 | SUPPRESS_OUTPUT_m13 )  // generally used with handleable or acceptable errors
 
 // error codes
-#define E_NUM_CODES_m13		20
+#define E_NUM_CODES_m13		21
 typedef enum {
 	E_NONE_m13,		// 0, no error
 	E_GEN_m13,		// 1, general / unspecified error
@@ -1721,7 +1730,8 @@ typedef enum {
 	E_CMP_m13,		// 16, compression / computational error
 	E_PROC_m13,		// 17, process control error
 	E_FILT_m13,		// 18, filter error
-	E_DB_m13		// 19, database error
+	E_DB_m13,		// 19, database error
+	E_PRTY_m13		// 20, parity error
 } E_MED_CODES_m13;
 
 // error string table
@@ -1730,10 +1740,10 @@ typedef enum {
 #define E_STR_TABLE_ENTRIES_m13		E_NUM_CODES_m13
 #define E_STR_TABLE_m13 { \
 	"no errors", \
-	"unspecified error", \
-	"process signal error", \
+	"general error", \
+	"system signal", \
 	"memory allocation error", \
-	"file error", \
+	"general file error", \
 	"file or directory not found", \
 	"file open error", \
 	"file read error", \
@@ -1745,10 +1755,11 @@ typedef enum {
 	"metadata not found", \
 	"record error", \
 	"network error", \
-	"compression or computation error", \
+	"compression / computation error", \
 	"process error", \
 	"filter error", \
-	"database error" \
+	"database error", \
+	"parity error" \
 }
 #define E_TAG_TABLE_ENTRIES_m13		E_NUM_CODES_m13
 #define E_TAG_TABLE_m13 { \
@@ -1771,7 +1782,8 @@ typedef enum {
 	"E_CMP", \
 	"E_PROC", \
 	"E_FILT", \
-	"E_DB" \
+	"E_DB", \
+	"E_PRTY" \
 }
 
 typedef struct {
@@ -1781,9 +1793,9 @@ typedef struct {
 	const si1		*function;
 	si1			message[E_MAX_STR_LEN_m13];
 	si1			thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
-	pid_t_m13		thread_id;
-	pthread_mutex_t_m13	mutex;
-	pthread_mutex_t_m13	exit_mutex;  // allow only one thread to call exit_m13();
+	_Atomic pid_t_m13	thread_id;
+	pthread_mutex_t_m13	mutex; // prevent access while being modified (does not duplicate role of isem)
+	isem_t_m13		isem; // inverse semaphore
 } ERR_m13;
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__) // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
@@ -1844,6 +1856,7 @@ typedef struct {
 	sf8				minimum_speed;
 	sf8				maximum_speed;
 	sf8				current_speed;
+	si8				current_speed_uutc;
 	HW_PERFORMANCE_SPECS_m13	performance_specs;
 	ui8				system_memory_size; // system physical RAM (in bytes)
 	ui4				system_page_size; // memory page (in bytes)
@@ -1851,12 +1864,12 @@ typedef struct {
 	ui8				heap_max_address;
 	si1				cpu_manufacturer[64];
 	si1				cpu_model[64];
-	si1				serial_number[56]; // maximum serial number length is 50 characters
+	si1				machine_serial[56]; // maximum serial number length is 50 characters
 	ui4				machine_code; // code based on serial number
 } HW_PARAMS_m13;
 
 // Prototypes
-ui4	HW_get_block_size_m13(si1 *volume_path);
+ui4	HW_get_block_size_m13(const si1 *volume_path);
 tern	HW_get_core_info_m13(void);
 tern	HW_get_endianness_m13(void);
 tern	HW_get_info_m13(void); // fill whole HW_PARAMS_m13 structure
@@ -1986,7 +1999,7 @@ typedef struct { // multiple thread access
 
 typedef struct {
 	ui8			UID;
-	si1			directory[PATH_BYTES_m13]; // path including file system session directory name
+	si1			path[PATH_BYTES_m13]; // path including file system session directory name
 	si1			fs_name[NAME_BYTES_m13]; // name from file system
 	si1			uh_name[NAME_BYTES_m13]; // name from universal_header (if differs from file system, otherwise empty)
 	si8			start_time;
@@ -2029,7 +2042,10 @@ typedef struct {
 typedef struct {
 	ui4		mmap_block_bytes; // read size for memory mapped files (process data may be on different volumes)
 					 // if files are on different volumes, use/set mmap_block_bytes in FILE_m13 structure
-	_Atomic tern	threading; // TRUE_m13 == thread processing where appropriate
+	volatile ui4	med_rand_w; // volatile because, while thread-local, multiple functions access & compiler cannot optimize with local copy
+	volatile ui4	med_rand_z; // volatile because, while thread-local, multiple functions access & compiler cannot optimize with local copy
+	_Atomic tern	threading; // TRUE_m13 == thread processing where appropriate (atomic b/c other threads may access)
+	_Atomic tern	proc_error; // thread-local mechanism for void functions to indicate that an error occurred (can also set global error (atomic b/c other threads may access)
 } MISCELLANEOUS_m13; // PROC_GLOBS_m13 element
 
 // All MED File Structures begin with a level header structure
@@ -2164,6 +2180,7 @@ typedef struct { // multiple thread access
 
 // call with "G_push_function_m13(ui4 behavior)" prototype
 #define G_add_behavior_m13(code)		G_add_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_add_behavior_m13(ui4 behavior)" prototype
+#define G_pop_behavior_m13()			G_pop_behavior_exec_m13(__FUNCTION__, __LINE__) // call with "G_pop_behavior_m13(ui4 behavior)" prototype
 #define G_push_behavior_m13(code)		G_push_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_push_behavior_m13(ui4 behavior)" prototype
 #define G_remove_behavior_m13(code)		G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_remove_behavior_m13(ui4 behavior)" prototype
 #define G_behavior_stack_reset_m13(code)	G_behavior_stack_reset_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_behavior_stack_reset_m13(ui4 behavior)" prototype
@@ -2303,6 +2320,7 @@ typedef struct {
 	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
 	tern				update_MED_version; // if file MED version is not current, update affected files
 	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
+	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -2720,20 +2738,20 @@ typedef struct {
 #endif // standard C
 
 // Prototypes
-FPS_m13		*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13 *parent);
+FPS_m13		*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13 *parent);
 tern		FPS_close_m13(FPS_m13 *fps);
 si4		FPS_compare_times_m13(const void *a, const void *b);
 tern		FPS_free_m13(FPS_m13 **fps);
-FPS_m13		*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent);
+FPS_m13		*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent);
 FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
 FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes);
-FPS_m13		*FPS_open_m13(si1 *path, si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): si1 *mode, ui8 fd_flags
-FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): si1 *path, si1 *mode, si1 *password, LH *parent
+FPS_m13		*FPS_open_m13(const si1 *path, const si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): const si1 *mode, ui8 fd_flags
+FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent
 												    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 tern		FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes);
-tern		FPS_reopen_m13(FPS_m13 *fps, si1 *mode);
+tern		FPS_reopen_m13(FPS_m13 *fps, const si1 *mode);
 si8		FPS_resolve_offset_m13(FPS_m13 *fps, si8 offset, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 si8		FPS_seek_m13(FPS_m13 *fps, si8 offset, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 si8		FPS_set_direcs_from_lh_flags_m13(FPS_m13 *fps, ui8 lh_flags);
@@ -3053,7 +3071,7 @@ typedef struct {
 	LH_m13			*MED_struct; // SESS_m13, SSR_m13, CHAN_m13, or SEG_m13 pointer (used to pass & return)
 	LH_m13			*parent; // SESS_m13 or CHAN_m13 pointer
 	SLICE_m13		*slice;
-	si1			*password;
+	const si1		*password;
 } READ_MED_THREAD_INFO_m13;
 
 typedef struct {
@@ -3073,9 +3091,9 @@ CHAN_m13		*G_active_channel_m13(SESS_m13 *sess, si1 channel_type);
 void			G_add_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 ui4 			G_add_level_extension_m13(si1 *directory_name);
 tern			G_all_zeros_m13(ui1 *bytes, si4 field_length);
-CHAN_m13		*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, si1 *path, LH_m13 *parent, si4 n_segs, tern chan_recs, tern seg_recs);
-SEG_m13			*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m13 *parent, si4 seg_num, tern seg_recs);
-SESS_m13		*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs);
+CHAN_m13		*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, const si1 *path, LH_m13 *parent, si4 n_segs, tern chan_recs, tern seg_recs);
+SEG_m13			*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, const si1 *path, LH_m13 *parent, si4 seg_num, tern seg_recs);
+SESS_m13		*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs);
 void 			G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 si1 			*G_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name);
 BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void);
@@ -3089,17 +3107,18 @@ tern			G_calculate_metadata_CRC_m13(FPS_m13 *fps);
 tern			G_calculate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_video_data_CRCs_m13(FPS_m13 *fps);
-CHAN_m13		*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name, si1 chan_type);
-ui4			G_channel_type_from_path_m13(si1 *path);
+CHAN_m13		*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, const si1 *chan_name, si1 chan_type);
+ui4			G_channel_type_from_path_m13(const si1 *path);
 tern			G_check_char_type_m13(void);
 tern			G_check_file_list_m13(si1 **file_list, si4 n_files);
-tern			G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...); // varargs (is_cloud == TRUE_m13): si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
-tern 			G_check_password_m13(si1 *password);
+tern			G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...); // varargs (is_cloud == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
+tern 			G_check_password_m13(const si1 *password);
 si4			G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess);
+void			G_clear_error_m13(void);
 tern			G_clear_terminal_m13(void);
 si4			G_compare_acq_nums_m13(const void *a, const void *b);
 si4 			G_compare_record_index_times(const void *a, const void *b);
-tern			G_condition_password_m13(si1 *password, si1 *password_bytes, tern expand_password);
+tern			G_condition_password_m13(const si1 *password, si1 *password_bytes, tern expand_password);
 tern			G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh);
 tern			G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
 tern			G_correct_universal_header_m13(FPS_m13 *fps);
@@ -3117,15 +3136,15 @@ si4			G_DST_offset_m13(si8 uutc);
 tern			G_encrypt_metadata_m13(FPS_m13 *fps);
 tern			G_encrypt_record_data_m13(FPS_m13 *fps);
 tern 			G_encrypt_time_series_data_m13(FPS_m13 *fps);
-tern			G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
+tern			G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
 void			G_error_clear_m13(void);
-tern			G_error_is_set_m13(void);
+si4			G_error_code_m13(void);
 void 			G_error_message_m13(const si1 *fmt, ...);
 si1 			G_exists_m13(const si1 *path);
-tern			G_expand_password_m13(si1 *password, si1 *password_bytes);
-si8			G_file_length_m13(FILE_m13 *fp, si1 *path);
+tern			G_expand_password_m13(const si1 *password, si1 *password_bytes);
+si8			G_file_length_m13(FILE_m13 *fp, const si1 *path);
 si1			**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
-FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time);
+FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, const si1 *path, FILE_TIMES_m13 *ft, tern set_time);
 tern			G_fill_empty_password_bytes_m13(si1 *password_bytes);
 CONTIGUON_m13		*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua);
 si8			G_find_index_m13(SEG_m13 *seg, si8 target, ui4 mode);
@@ -3142,23 +3161,23 @@ tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
 void			G_function_stack_trap_m13(si4 sig_num);
-si1			**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 n_names);
-tern			G_generate_password_data_m13(FPS_m13 *fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_pw, si1 *L1_pw_hint, si1 *L2_pw_hint);
+si1			**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names);
+tern			G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint);
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
 si1			*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name);
 ui8			G_generate_UID_m13(ui8 *uid);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
 tern			G_init_global_tables_m13(tern init_all_tables);
-tern			G_init_globals_m13(tern init_all_tables, si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor
-tern			G_init_medlib_m13(tern init_all_tables, si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor;
+tern			G_init_globals_m13(tern init_all_tables, const si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor
+tern			G_init_medlib_m13(tern init_all_tables, const si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor;
 tern			G_init_metadata_m13(FPS_m13 *fps, tern init_for_update);
 SLICE_m13		*G_init_slice_m13(SLICE_m13 *slice);
 tern			G_init_timezone_tables_m13(void);
 tern			G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
 tern			G_is_level_header_m13(void *ptr);
 si8			G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
-ui4			G_level_m13(si1 *full_file_name, ui4 *input_type_code);
-tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
+ui4			G_level_m13(const si1 *full_file_name, ui4 *input_type_code);
+tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, const si1 *ip_str, const si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
 tern			G_MED_file_m13(ui4 type_code);
 ui4			G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1* MED_name);
 ui4			G_MED_type_code_from_string_m13(const si1 *string);
@@ -3166,37 +3185,39 @@ const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void 			G_message_m13(const si1 *fmt, ...);
-CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password);
+CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_path, LH_m13 *parent, ui8 flags, const si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
-tern			G_open_level_records_m13(LH_m13 *lh, ...);  // varagrgs(level == ssr): si4 segment_number
+tern			G_open_records_m13(LH_m13 *lh, ...);  // varagrgs(level == ssr): si4 seg_num
 SSR_m13			*G_open_seg_sess_recs_m13(SESS_m13 *sess);
-SEG_m13			*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m13 *parent, ui8 flags, si1 *password);
+SEG_m13			*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path, LH_m13 *parent, ui8 flags, const si1 *password);
 pthread_rval_m13	G_open_segment_thread_m13(void *ptr);
-SESS_m13		*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name);
+SESS_m13		*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, const si1 *password, const si1 *index_channel_name);
 si8			G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment);
 tern			G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *extension);
-void			G_pop_behavior_m13(void);
+void			G_pop_behavior_exec_m13(const si1 *function, const si4 line);
 void			G_pop_function_exec_m13(const si1 *function, const si4 line);
+tern			G_proc_error_get_m13(LH_m13 *lh);
+void			G_proc_error_set_m13(LH_m13 *lh, tern state);
 PROC_GLOBS_m13		*G_proc_globs_m13(LH_m13 *lh);
 void			G_proc_globs_delete_m13(LH_m13 *lh);
-PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs);
+PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg);
 PROC_GLOBS_m13		*G_proc_globs_new_m13(LH_m13 *lh);
-tern			G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw);
+tern			G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw);
 tern			G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags);
 void			G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_push_function_exec_m13(const si1 *function);
 tern			G_rates_vary_m13(SESS_m13 *sess);
-CHAN_m13		*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...); // varargs(chan == NULL): si1 *chan_path, LH_m13 *parent, ui8 lh_flags, si1 *password, si1 *index_channel_name
+CHAN_m13		*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...); // varargs(chan == NULL): const si1 *chan_path, LH_m13 *parent, ui8 lh_flags, const si1 *password, const si1 *index_channel_name
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
-si4			G_read_cs_file_m13(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
-LH_m13			*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(lh == NULL): si1 *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
-si8			G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(level->type_code == LH_SSR_m13): si4 seg_num
-SEG_m13			*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...); // varargs(seg == NULL): si1 *seg_path, LH_m13 *parent, ui8 lh_flags, si1 *password
+si4			G_read_cs_file_m13(const si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
+LH_m13			*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(lh == NULL): const si1 *file_list, si4 list_len, ui8 lh_flags, const si1 *password, const si1 *index_channel_name
+si8			G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(level->type_code == LH_SSR_m13): si4 seg_num
+SEG_m13			*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...); // varargs(seg == NULL): const si1 *seg_path, LH_m13 *parent, ui8 lh_flags, const si1 *password
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
-SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password
+SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, const si1 *password
 si8			G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice);
 UH_m13			*G_read_universal_header_m13(const si1 *path, UH_m13 *uh);
-tern			G_recover_passwords_m13(si1 *L3_password, UH_m13* universal_header);
+tern			G_recover_passwords_m13(const si1 *L3_password, UH_m13* universal_header);
 void			G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 tern			G_reset_metadata_for_update_m13(FPS_m13 *fps);
@@ -3204,24 +3225,24 @@ si8			G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...); 
 si4			G_search_mode_m13(SLICE_m13 *slice);
 si4			G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 search_mode);
 si4			G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_sample);
-si4			G_segment_for_path_m13(si1 *path);
+si4			G_segment_for_path_m13(const si1 *path);
 si4			G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample);
 si4			G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time);
 si4			G_segment_index_m13(si4 segment_number, LH_m13 *lh);
 si4			G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice);
 ui4			*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
-tern			G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name);
+tern			G_sendgrid_email_m13(const si1 *sendgrid_key, const si1 *to_email, const si1 *cc_email, const si1 *to_name, const si1 *subject, const si1 *content, const si1 *from_email, const si1 *from_name, const si1 *reply_to_email, const si1 *reply_to_name);
 tern			G_session_directory_m13(FPS_m13 *fps);
-si1			*G_session_path_for_path_m13(si1 *path, si1 *sess_path);
+si1			*G_session_path_for_path_m13(const si1 *path, si1 *sess_path);
 si8			G_session_samples_m13(LH_m13 *lh, sf8 rate);
-void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...); // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
-tern			G_set_session_globals_m13(si1 *MED_path, si1 *password, LH_m13 *lh);
+void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *message, ...); // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
+tern			G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m13 *lh);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
 ui4			G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
 tern			G_show_behavior_m13(ui4 mode);
 tern			G_show_contigua_m13(LH_m13 *lh);
-tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix);
+tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, const si1 *prefix);
 tern			G_show_error_m13(void);
 tern			G_show_file_times_m13(FILE_TIMES_m13 *ft);
 si4			G_show_function_stack_m13(pid_t_m13 _id);
@@ -3242,19 +3263,19 @@ tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
 tern			G_swap_names_m13(LH_m13 *lh);
-tern			G_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
-tern			G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes);
-tern			G_ternary_entry_m13(si1 *entry);
-tern			G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key);
+tern			G_terminal_entry_m13(const si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
+tern			G_terminal_password_bytes_m13(const si1 *password, si1 *password_bytes);
+tern			G_ternary_entry_m13(const si1 *entry);
+tern			G_textbelt_text_m13(const si1 *phone_number, const si1 *content, const si1 *textbelt_key);
 void			G_thread_exit_m13(void);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
-tern			G_update_channel_name_header_m13(si1 *path, si1 *fs_name);
+tern			G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name);
 tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
-tern			G_update_MED_type_m13(si1 *path); // used by G_update_MED_version_m13()
+tern			G_update_MED_type_m13(const si1 *path); // used by G_update_MED_version_m13()
 tern			G_update_MED_version_m13(FPS_m13 *fps);
 tern			G_update_session_name_m13(FPS_m13 *fps);
-tern			G_update_session_name_header_m13(si1 *fs_path, si1 *fs_name, si1 *uh_name); // used by G_update_session_name_m13()
+tern			G_update_session_name_header_m13(const si1 *fs_path, const si1 *fs_name, const si1 *uh_name); // used by G_update_session_name_m13()
 si8			G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, ...); // varargs (lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 si8			G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode, ...); // varargs (lh == NULL): si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 tern			G_valid_file_code_m13(ui4 file_type_code);
@@ -3489,27 +3510,27 @@ void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr
 //**********************************************************************************//
 
 // Prototypes
-si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern numeric_order);
+si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_separator, tern numeric_order);
 const si1	*STR_bool_m13(ui8 val);
-wchar_t		*STR_char2wchar_m13(wchar_t *target, si1 *source);
-ui4		STR_check_spaces_m13(si1 *string);
+wchar_t		*STR_char2wchar_m13(wchar_t *target, const si1 *source);
+ui4		STR_check_spaces_m13(const si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
 tern		STR_contains_formatting_m13(const si1 *string, si1 *plain_string);
 tern		STR_contains_regex_m13(const si1 *string);
 si1 		*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_level);
 tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
 si1		*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number);
-si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, tern numeric_order);
+si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separator, tern numeric_order);
 tern		STR_is_empty_m13(const si1 *string);
-si1		*STR_match_end_m13(si1 *pattern, si1 *buffer);
-si1		*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
-si1		*STR_match_line_end_m13(si1 *pattern, si1 *buffer);
-si1		*STR_match_line_start_m13(si1 *pattern, si1 *buffer);
-si1		*STR_match_start_m13(si1 *pattern, si1 *buffer);
-si1		*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len);
-si1 		*STR_re_escape_m13(si1 *str, si1 *esc_str);
+si1		*STR_match_end_m13(const si1 *pattern, const si1 *buffer);
+si1		*STR_match_end_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len);
+si1		*STR_match_line_end_m13(const si1 *pattern, const si1 *buffer);
+si1		*STR_match_line_start_m13(const si1 *pattern, const si1 *buffer);
+si1		*STR_match_start_m13(const si1 *pattern, const si1 *buffer);
+si1		*STR_match_start_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len);
+si1 		*STR_re_escape_m13(const si1 *str, si1 *esc_str);
 tern 		STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
-si1		*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *new_buffer);
+si1		*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, const si1 *buffer, si1 *new_buffer);
 si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);
@@ -3519,7 +3540,7 @@ tern		STR_to_lower_m13(si1 *s);
 tern		STR_to_title_m13(si1 *s);
 tern		STR_to_upper_m13(si1 *s);
 tern		STR_unescape_chars_m13(si1 *string, si1 target_char);
-si1		*STR_wchar2char_m13(si1 *target, wchar_t *source);
+si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 
 
 
@@ -4398,14 +4419,14 @@ tern		UTF8_valid_str_m13(const si1 *s);
 // Function Prototypes
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key);
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
-void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds);
-void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds);
+void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds);
+void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds);
 tern	AES_init_tables_m13(void);
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_inv_mix_columns_m13(ui1 state[][4]);
 void	AES_inv_shift_rows_m13(ui1 state[][4]);
 void	AES_inv_sub_bytes_m13(ui1 state[][4]);
-ui1	*AES_key_expansion_m13(ui1 *round_key, si1 *key);
+ui1	*AES_key_expansion_m13(ui1 *round_key, const si1 *key);
 void	AES_mix_columns_m13(ui1 state[][4]);
 void	AES_partial_decrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key); // (round_key == NULL) => keyless decryption
 void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key); // (round_key == NULL) => keyless encryption
@@ -4930,18 +4951,18 @@ typedef struct {
 
 
 // Prototypes
-TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, si1 *password);
+TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, const si1 *password);
 tern		TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port);
-tern		TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, si1 *message_text);
+tern		TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, const si1 *message_text);
 tern		TR_check_transmission_header_alignment_m13(ui1 *bytes);
 tern		TR_close_transmission_m13(TR_INFO_m13 *trans_info);
-tern		TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port);
-tern		TR_connect_to_server_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port);
+tern		TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port);
+tern		TR_connect_to_server_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port);
 tern		TR_create_socket_m13(TR_INFO_m13 *trans_info);
 tern		TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr);
 tern		TR_realloc_trans_info_m13(TR_INFO_m13 *trans_info, si8 buffer_bytes, TR_HDR_m13 **caller_header);
 si8		TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header); // receive may reallocate, pass caller header to have function set local variable, otherwise pass NULL, can do manually
-tern		TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, si1 *fmt, ...);
+tern		TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, const si1 *fmt, ...);
 si8		TR_send_transmission_m13(TR_INFO_m13 *trans_info);
 tern		TR_set_socket_blocking_m13(TR_INFO_m13 *trans_info, tern set);
 tern		TR_set_socket_broadcast_m13(TR_INFO_m13 *trans_info, tern set);
@@ -5414,7 +5435,7 @@ si1		*TR_strerror_m13(si4 err_num);
 
 // Prototypes
 tern		DB_check_result_m13(PGresult *result);
-PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expected_rows);
+PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si4 expected_rows);
 
 #endif // DATABASE_m13
 
@@ -5467,6 +5488,7 @@ size_t		fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...);   
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
+void		isem_chown_m13(isem_t_m13 *isem, pid_t_m13 tid);
 void		isem_dec_m13(isem_t_m13 *sem);
 void		isem_destroy_m13(isem_t_m13 *isem);
 ui4		isem_getcnt_m13(isem_t_m13 *isem);
@@ -5495,7 +5517,8 @@ tern		mv_m13(const si1 *path, const si1 *new_path);  // move
 void		nanosleep_m13(struct timespec *tv);
 void		nap_m13(const si1 *nap_str);
 struct timespec	*nap_timespec_m13(const si1 *nap_str, struct timespec *nap);
-si4		pthread_equal_m13(pthread_t_m13 t1, pthread_t_m13 t2);
+si4		pthread_equal_m13(pthread_t_m13 thread_1, pthread_t_m13 thread_2);
+void		pthread_exit_m13(void *ptr);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
 si1		*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len);
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
@@ -5512,19 +5535,22 @@ si4		putch_m13(si4 c);
 si4		putchar_m13(si4 c);
 si4		random_m13(void); // 31-bit random number using system generator (posix standard)
 ui4		rand32_m13(void); // 32-bit random number using system generator
-ui4		rand32_med_m13(ui4 *m_w, ui4 *m_z); // 32-bit random number using medlib generator (replicable sequences across platforms)
+ui4		rand32_med_m13(void); // 32-bit random number using medlib generator (replicable sequences across platforms)
+ui4		rand32_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of rand32_med_m13()
 ui8		rand64_m13(void); // 64-bit random number using system random number generator
-ui8		rand64_med_m13(ui4 *m_w, ui4 *m_z); // 64-bit random number using medlib generator (replicable sequences across platforms)
+ui8		rand64_med_m13(void); // 64-bit random number using medlib generator (replicable sequences across platforms)
+ui8		rand64_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of rand64_med_m13()
 tern		rm_m13(const si1 *path);  // remove
 si4		scanf_m13(const si1 *fmt, ...);
 si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
-sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
+sem_t_m13	*sem_open_m13(const si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
 si4		sem_post_m13(sem_t_m13 *sem);
 si4		sem_trywait_m13(sem_t_m13 *sem);
 si4		sem_wait_m13(sem_t_m13 *sem);
 si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
 si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
-void		srand_med_m13(ui4 seed, ui4 *m_w, ui4 *m_z); // seed medlib random number generator
+void		srand_med_m13(ui4 seed); // seed medlib random number generator
+void		srand_med_wz_m13(ui4 seed, volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of srand_med_m13()
 void		srandom_m13(ui4 seed); // seed system random number generator
 si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
 si4		stat_m13(const si1 *path, struct_stat_m13 *sb);
@@ -5535,7 +5561,7 @@ si8		strcpy_m13(si1 *target, const si1 *source);
 si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
-si4		system_m13(const si1 *command, ...); // varargs(command = NULL): si1 *command, tern (as si4) null_std_streams, ui4 behavior;
+si4		system_m13(const si1 *command, ...); // varargs(command = NULL): const si1 *command, tern (as si4) null_std_streams, ui4 behavior;
 si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(BEHAVIOR_PASSED_m13 set): ui4 behavior)
 												    // varargs(SP_SEPARATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
 												    // note if both passed, behavior is first argument

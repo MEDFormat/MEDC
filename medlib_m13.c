@@ -285,14 +285,14 @@ tern	G_all_zeros_m13(ui1 *bytes, si4 field_length)
 }
 
 
-CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, si1 *path, LH_m13  *parent, si4 n_segs, tern chan_recs, tern seg_recs)
+CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, const si1 *path, LH_m13 *parent, si4 n_segs, tern chan_recs, tern seg_recs)
 {
 	si1			*seg_type_str, tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	ui4			type_code;
 	si8			i;
 	UH_m13	*uh;
 	SEG_m13		*seg;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -337,9 +337,9 @@ CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, si1 *path, LH_
 	}
 	
 	// set parent
-	chan->parent = parent;
-	proc_globs = G_proc_globs_m13((LH_m13 *) chan);
-	proc_globs->current_session.n_mapped_segments = n_segs;
+	chan->parent = parent;  // set parent before getting proc_globs
+	pg = G_proc_globs_m13((LH_m13 *) chan);
+	pg->current_session.n_mapped_segments = n_segs;
 	
 	// make new prototype fps (don't modify original)
 	if (proto_fps)
@@ -408,7 +408,7 @@ CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, si1 *path, LH_
 }
 
 
-SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m13  *parent, si4 seg_num, tern seg_recs)
+SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, const si1 *path, LH_m13 *parent, si4 seg_num, tern seg_recs)
 {
 	si1 tmp_str[PATH_BYTES_m13];
 	ui4			type_code;
@@ -445,7 +445,7 @@ SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m13
 	seg->type_code = TS_SEG_TYPE_CODE_m13;
 	
 	// set parent
-	seg->parent = parent;
+	seg->parent = parent;  // set parent before getting proc_globs
 	
 	// make new prototype fps (don't modify original)
 	if (proto_fps)
@@ -550,7 +550,7 @@ SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, si1 *path, LH_m13
 }
 
 
-SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs)
+SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs)
 {
 	si1		free_names, tmp_str[PATH_BYTES_m13], number_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	si8		i;
@@ -559,7 +559,7 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4
 	FPS_m13		*gen_fps;
 	SSR_m13		*ssr;
 	CHAN_m13	*chan;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 
 	
 #ifdef FT_DEBUG_m13
@@ -578,14 +578,13 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4
 	sess = (SESS_m13 *) calloc_m13((size_t) 1, sizeof(SESS_m13));
 	if (sess == NULL)
 		return_m13(NULL);
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
-	proc_globs->current_session.n_mapped_segments = n_segs;
-	sess->parent = (LH_m13 *) proc_globs;
-	sess->path = proc_globs->current_session.directory;
-	sess->name = proc_globs->current_session.fs_name;
+	pg = G_proc_globs_m13((LH_m13 *) sess);
+	sess->path = pg->current_session.path;
+	sess->name = pg->current_session.fs_name;
+	pg->current_session.n_mapped_segments = n_segs;
 	G_path_parts_m13(path, sess->path, sess->name, NULL);
-	strcpy(proc_globs->current_session.uh_name, sess->name);  // alloc for writing, so fs & uh names should be the same
-	proc_globs->current_session.n_mapped_segments = n_segs;
+	strcpy(pg->current_session.uh_name, sess->name);  // alloc for writing, so fs & uh names should be the same
+	pg->current_session.n_mapped_segments = n_segs;
 	sess->type_code = SESS_TYPE_CODE_m13;
 	sess->n_ts_chans = n_ts_chans;
 	sess->n_vid_chans = n_vid_chans;
@@ -711,7 +710,7 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, si1 *path, si4 n_ts_chans, si4
 		ssr->name = sess->name;
 		ssr->type_code = SSR_TYPE_CODE_m13;
 		ssr->flags = sess->flags;
-		ssr->parent = (LH_m13 *) sess;
+		ssr->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
 
 		// record indices fps array
 		ssr->rec_inds_fps = (FPS_m13 **) calloc_2D_m13((size_t) n_segs, 1, -sizeof(FPS_m13));
@@ -980,6 +979,10 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 		strcat(behavior_string, "RETURN ON FAIL | ");
 	else
 		strcat(behavior_string, "EXIT ON FAIL | ");
+	if (behavior & IGNORE_ERROR_m13)
+		strcat(behavior_string, "IGNORE ERROR | ");
+	else
+		strcat(behavior_string, "REGISTER ERROR | ");
 	if (behavior & SUPPRESS_ERROR_OUTPUT_m13)
 		strcat(behavior_string, "SUPPRESS ERROR OUTPUT | ");
 	else
@@ -996,10 +999,6 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 		strcat(behavior_string, "RETRY ONCE | ");
 	else
 		strcat(behavior_string, "DO NOT RETRY | ");
-	if (behavior & IGNORE_ERRORS_m13)
-		strcat(behavior_string, "IGNORE ERRORS | ");
-	else
-		strcat(behavior_string, "HEED ERRORS | ");
 
 	len = strlen(behavior_string);
 	if (len)
@@ -1019,7 +1018,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 	si8				last_block_usecs, new_bytes, absolute_numbering_offset;
 	si8				last_segment_end_sample_number, last_segment_end_frame_number, last_segment_end_time, last_segment_number;
 	sf8				samp_freq, frame_rate;
-	PROC_GLOBS_m13			*proc_globs;
+	PROC_GLOBS_m13			*pg;
 	SEG_m13				*seg;
 	CHAN_m13			*chan;
 	SESS_m13			*sess;
@@ -1041,7 +1040,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 		return_m13(FALSE_m13);
 	}
 
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	switch (lh->type_code) {
 		case TS_SEG_TYPE_CODE_m13:
 		case VID_SEG_TYPE_CODE_m13:
@@ -1070,7 +1069,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 				G_set_error_m13(E_GEN_m13, "session is not open");
 				return_m13(FALSE_m13);
 			}
-			chan = proc_globs->current_session.index_channel;
+			chan = pg->current_session.index_channel;
 			slice = &sess->slice;
 			type_code = chan->type_code;  // use ref channel type for session
 			break;
@@ -1281,9 +1280,9 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 	// set sample/frame numbers to NO ENTRY for variable frequency sessions
 	if (lh->type_code == SESS_TYPE_CODE_m13) {
 		null_sample_numbers = FALSE_m13;
-		if (type_code == TS_CHAN_TYPE_CODE_m13 && proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13)
+		if (type_code == TS_CHAN_TYPE_CODE_m13 && pg->active_channels.sampling_frequencies_vary == TRUE_m13)
 			null_sample_numbers = TRUE_m13;
-		else if (type_code == VID_CHAN_TYPE_CODE_m13 && proc_globs->active_channels.frame_rates_vary == TRUE_m13)
+		else if (type_code == VID_CHAN_TYPE_CODE_m13 && pg->active_channels.frame_rates_vary == TRUE_m13)
 			null_sample_numbers = TRUE_m13;
 		if (null_sample_numbers == TRUE_m13) {
 			for (i = 0; i < n_contigua; ++i)
@@ -1333,7 +1332,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	FPS_m13			*ri_fps, *rd_fps, *md_fps;
 	REC_IDX_m13		*ri;
 	Sgmt_REC_m13		*Sgmt_recs, *Sgmt_rec;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 
 	
 #ifdef FT_DEBUG_m13
@@ -1348,7 +1347,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	}
 	
 	// get proc globals
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 
 	sess = NULL;
 	ssr = NULL;
@@ -1365,7 +1364,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 			} else {
 				sess = (SESS_m13 *) lh;
 			}
-			chan = proc_globs->current_session.index_channel;
+			chan = pg->current_session.index_channel;
 			if (chan == NULL) {
 				chan = G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);  // set reference channel
 				if (chan == NULL)
@@ -1399,20 +1398,20 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	if ((ri_fps == NULL || rd_fps == NULL) && sess) {
 		ri_fps = sess->rec_inds_fps;
 		if (ri_fps == NULL) {
-			sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.fs_name, REC_INDS_TYPE_STR_m13);
+			sprintf_m13(tmp_str, "%s/%s.%s", pg->current_session.path, pg->current_session.fs_name, REC_INDS_TYPE_STR_m13);
 			ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
-			if (ri_fps == NULL && *proc_globs->current_session.uh_name) {
-				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_INDS_TYPE_STR_m13);
+			if (ri_fps == NULL && *pg->current_session.uh_name) {
+				sprintf_m13(tmp_str, "%s/%s.%s", pg->current_session.path, pg->current_session.uh_name, REC_INDS_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == TRUE_m13)
 					ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
 		}
 		rd_fps = sess->rec_data_fps;
 		if (rd_fps == NULL) {
-			sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.fs_name, REC_DATA_TYPE_STR_m13);
+			sprintf_m13(tmp_str, "%s/%s.%s", pg->current_session.path, pg->current_session.fs_name, REC_DATA_TYPE_STR_m13);
 			rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
-			if (rd_fps == NULL && *proc_globs->current_session.uh_name) {
-				sprintf_m13(tmp_str, "%s/%s.%s", proc_globs->current_session.directory, proc_globs->current_session.uh_name, REC_DATA_TYPE_STR_m13);
+			if (rd_fps == NULL && *pg->current_session.uh_name) {
+				sprintf_m13(tmp_str, "%s/%s.%s", pg->current_session.path, pg->current_session.uh_name, REC_DATA_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == TRUE_m13)
 					rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
@@ -1425,14 +1424,14 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	if (ri_fps && rd_fps) {
 		// full record index file already read in
 		n_recs = rd_fps->uh->n_entries;
-		if (proc_globs->current_session.n_segments == SEGMENT_NUMBER_NO_ENTRY_m13) {
+		if (pg->current_session.n_segments == SEGMENT_NUMBER_NO_ENTRY_m13) {
 			ri = ri_fps->rec_inds;
 			for (n_segs = 0, i = n_recs; i--; ++ri)
 				if (ri->type_code == REC_Sgmt_TYPE_CODE_m13)
 					++n_segs;
-			proc_globs->current_session.n_segments = n_segs;
+			pg->current_session.n_segments = n_segs;
 		} else {
-			n_segs = proc_globs->current_session.n_segments;
+			n_segs = pg->current_session.n_segments;
 		}
 		
 		// allocate Sgmt_recs array
@@ -1502,7 +1501,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 			G_set_error_m13(E_GEN_m13, "no segments found");
 			return_m13(NULL);
 		}
-		proc_globs->current_session.n_segments = n_segs;
+		pg->current_session.n_segments = n_segs;
 		
 		// allocate Sgmt_recs array
 		Sgmt_recs = (Sgmt_REC_m13 *) calloc((size_t) n_segs, sizeof(Sgmt_REC_m13));
@@ -1569,7 +1568,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	}
 
 	// fill in global Sgmt fields
-	proc_globs->current_session.end_time = Sgmt_recs[n_segs - 1].end_time;
+	pg->current_session.end_time = Sgmt_recs[n_segs - 1].end_time;
 	
 	// set level Sgmt_record shortcuts
 	chan->Sgmt_recs = Sgmt_recs;
@@ -1787,12 +1786,12 @@ tern	G_calculate_video_data_CRCs_m13(FPS_m13 *fps)
 }
 	
 
-CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name, si1 chan_type)
+CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, const si1 *chan_name, si1 chan_type)
 {
 	tern			use_default_channel;
 	si8			i, n_chans;
 	CHAN_m13		*tmp_chan;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -1802,9 +1801,9 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 	// if both NULL, use channel_type
 	
 	if (sess) {
-		proc_globs = G_proc_globs_m13((LH_m13 *) sess);
+		pg = G_proc_globs_m13((LH_m13 *) sess);
 	} else if (chan) {
-		proc_globs = G_proc_globs_m13((LH_m13 *) chan);
+		pg = G_proc_globs_m13((LH_m13 *) chan);
 	} else {
 		G_set_error_m13(E_GEN_m13, "both session and channel are NULL");
 		return_m13(NULL);
@@ -1812,17 +1811,17 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 
 	// index channel passed
 	if (chan) {
-		proc_globs->current_session.index_channel = chan;
-		if (*proc_globs->current_session.index_channel_name == 0)
-			strcpy(proc_globs->current_session.index_channel_name, chan->name);
+		pg->current_session.index_channel = chan;
+		if (*pg->current_session.index_channel_name == 0)
+			strcpy(pg->current_session.index_channel_name, chan->name);
 		return_m13(chan);
 	}
 
 	use_default_channel = FALSE_m13;
 	if (chan == NULL) {
 		if (STR_is_empty_m13(chan_name) == TRUE_m13) {
-			if (*proc_globs->current_session.index_channel_name)
-				chan_name = proc_globs->current_session.index_channel_name;
+			if (*pg->current_session.index_channel_name)
+				chan_name = pg->current_session.index_channel_name;
 			else
 				use_default_channel = TRUE_m13;
 		}
@@ -1837,19 +1836,19 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 			case DEFAULT_VID_CHAN_m13:
 				break;
 			case HIGHEST_RATE_TS_CHAN_m13:
-				chan = proc_globs->active_channels.maximum_sampling_frequency_channel;
+				chan = pg->active_channels.maximum_sampling_frequency_channel;
 				chan_type = DEFAULT_TS_CHAN_m13;
 				break;
 			case LOWEST_RATE_TS_CHAN_m13:
-				chan = proc_globs->active_channels.minimum_sampling_frequency_channel;
+				chan = pg->active_channels.minimum_sampling_frequency_channel;
 				chan_type = DEFAULT_TS_CHAN_m13;
 				break;
 			case HIGHEST_RATE_VID_CHAN_m13:
-				chan = proc_globs->active_channels.maximum_frame_rate_channel;
+				chan = pg->active_channels.maximum_frame_rate_channel;
 				chan_type = DEFAULT_VID_CHAN_m13;
 				break;
 			case LOWEST_RATE_VID_CHAN_m13:
-				chan = proc_globs->active_channels.minimum_frame_rate_channel;
+				chan = pg->active_channels.minimum_frame_rate_channel;
 				chan_type = DEFAULT_VID_CHAN_m13;
 				break;
 			default:
@@ -1859,7 +1858,7 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 	}
 	
 	// find channel from name
-	proc_globs->current_session.index_channel = NULL;
+	pg->current_session.index_channel = NULL;
 	if (chan == NULL) {
 		if (use_default_channel == TRUE_m13) {
 			chan = G_active_channel_m13(sess, chan_type);
@@ -1904,17 +1903,18 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, si1 *chan_name
 	
 CHANGE_REF_MATCH_m13:
 	
-	proc_globs->current_session.index_channel = chan;
-	strcpy(proc_globs->current_session.index_channel_name, chan->name);
+	pg->current_session.index_channel = chan;
+	strcpy(pg->current_session.index_channel_name, chan->name);
 
 	return_m13(chan);
 }
 
 
-ui4	G_channel_type_from_path_m13(si1 *path)
+ui4	G_channel_type_from_path_m13(const si1 *path)
 {
-	si1	*c, temp_path[PATH_BYTES_m13], extension[TYPE_BYTES_m13];
-	ui4	type_code;
+	const si1	*c;
+	si1		temp_path[PATH_BYTES_m13], extension[TYPE_BYTES_m13];
+	ui4		type_code;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2004,12 +2004,12 @@ tern	G_check_file_list_m13(si1 **file_list, si4 n_files)
 }
 
 
-tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varargs (is_could == TRUE_m13): si1 *cloud_directory, si1 *cloud_service_name, si1 *cloud_utilities_directory
+tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  // varargs (is_could == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
 {
+	const si1	*cloud_directory, *cloud_service_name, *cloud_utilities_directory;
 	si1		command[PATH_BYTES_m13 + 64], cloud_prefix[PATH_BYTES_m13];
 	si1		full_path[PATH_BYTES_m13];
-	si1		*cloud_directory, *cloud_service_name, *cloud_utilities_directory;
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 #ifdef FT_DEBUG_m13
@@ -2025,8 +2025,8 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 
 	// check write ability on file system
 	sprintf_m13(command, "echo x > \"%s/test_file-remove_me\"", full_path);  // create non-empty file in case file system is cloud
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-	if (ret_val) {
+	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+	if (r_val) {
 		G_set_error_m13(E_FWRITE_m13, "cannot create files on \"%s\"", full_path);
 		return_m13(FALSE_m13);
 	}
@@ -2034,9 +2034,9 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 	// check write ability on cloud
 	if (is_cloud == TRUE_m13) {
 		va_start(v_args, is_cloud);
-		cloud_directory = va_arg(v_args, si1 *);
-		cloud_service_name = va_arg(v_args, si1 *);
-		cloud_utilities_directory = va_arg(v_args, si1 *);
+		cloud_directory = va_arg(v_args, const si1 *);
+		cloud_service_name = va_arg(v_args, const si1 *);
+		cloud_utilities_directory = va_arg(v_args, const si1 *);
 		va_end(v_args);
 		
 		if (strcmp_m13(cloud_service_name, "amazon") == 0)
@@ -2046,14 +2046,14 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 		
 		// copy file system test file to cloud
 		sprintf(command, "%scp %s/test_file-remove_me %s/test_file-remove_me", cloud_prefix, file_system_path, cloud_directory);
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-		if (ret_val) {
+		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+		if (r_val) {
 			G_set_error_m13(E_FWRITE_m13, "cannot create files on \"%s\"", cloud_directory);
 			return_m13(FALSE_m13);
 		} else {
 			// clean up
 			sprintf(command, "%srm %s/test_file-remove_me", cloud_prefix, cloud_directory);
-			ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+			r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		}
 	}
 	
@@ -2064,7 +2064,7 @@ tern	G_check_file_system_m13(si1 *file_system_path, si4 is_cloud, ...)  // varar
 }
 
 
-tern	G_check_password_m13(si1 *password)
+tern	G_check_password_m13(const si1 *password)
 {
 	si4	pw_len;
 	
@@ -2101,7 +2101,7 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 	si4			i, j, offset, mapped_segs, sess_segs;
 	CHAN_m13		*chan;
 	SEG_m13		**remapped_segs;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2119,20 +2119,20 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 		return_m13((si4) FALSE_m13);
 	}
 	
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
-	sess_segs = proc_globs->current_session.n_segments;
+	pg = G_proc_globs_m13((LH_m13 *) sess);
+	sess_segs = pg->current_session.n_segments;
 	if (start_seg < 1 || end_seg > sess_segs) {
 		G_set_error_m13(E_GEN_m13, "segment range not valid");
 		return_m13((si4) FALSE_m13);
 	}
 
 	// all segments mapped
-	mapped_segs = proc_globs->current_session.n_mapped_segments;
+	mapped_segs = pg->current_session.n_mapped_segments;
 	if (mapped_segs == sess_segs)
 		if (start_seg >= 1 && end_seg <= sess_segs)
 			return_m13(start_seg - 1);
 	
-	first_mapped_seg = proc_globs->current_session.first_mapped_segment_number;
+	first_mapped_seg = pg->current_session.first_mapped_segment_number;
 	last_mapped_seg = (first_mapped_seg + mapped_segs) - 1;
 	if (start_seg >= first_mapped_seg && end_seg <= last_mapped_seg)
 		return_m13(start_seg - first_mapped_seg);
@@ -2160,8 +2160,8 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 		chan->segs = remapped_segs;
 	}
 
-	proc_globs->current_session.first_mapped_segment_number = remapped_start_seg;
-	proc_globs->current_session.n_mapped_segments = remapped_seg_cnt;
+	pg->current_session.first_mapped_segment_number = remapped_start_seg;
+	pg->current_session.n_mapped_segments = remapped_seg_cnt;
 	seg_idx = first_mapped_seg - remapped_start_seg;
 
 	return_m13(seg_idx);
@@ -2171,22 +2171,52 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+void	G_clear_error_m13(void)
+{
+	ERR_m13	*err;
+	
+	
+	// super function - can be called by any thread
+	
+	err = &globals_m13->error;
+	
+	isem_chown_m13(&err->isem, ISEM_SELF_m13);  // change owner to current thread temprarily
+	pthread_mutex_lock_m13(&err->mutex);
+	
+	err->code = E_NONE_m13;
+	err->signal = 0;
+	err->line = 0;
+	err->function = NULL;
+	*err->message = 0;
+	*err->thread_name = 0;
+	err->thread_id = 0;
+	
+	pthread_mutex_unlock_m13(&err->mutex);
+	isem_chown_m13(&err->isem, 0);  // release isem ownership
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 tern	G_clear_terminal_m13(void)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = system_m13(NULL, "clear", TRUE_m13, RETURN_QUIETLY_m13);
+	r_val = system_m13(NULL, "clear", TRUE_m13, RETURN_QUIETLY_m13);
 #endif
 #ifdef WINDOWS_m13
-	ret_val = (WN_clear_m13() == TRUE_m13) ? 0 : FALSE_m13;  // change to system_m13() convention
+	r_val = (WN_clear_m13() == TRUE_m13) ? 0 : FALSE_m13;  // change to system_m13() convention
 #endif
 	
-	if (ret_val)
+	if (r_val)
 		return_m13(FALSE_m13);
 	
 	return_m13(TRUE_m13);
@@ -2227,7 +2257,7 @@ si4	G_compare_record_index_times(const void *a, const void *b)
 }
 
 
-tern	G_condition_password_m13(si1 *password, si1 *password_bytes, tern expand_password)
+tern	G_condition_password_m13(const si1 *password, si1 *password_bytes, tern expand_password)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2255,7 +2285,7 @@ tern	G_condition_password_m13(si1 *password, si1 *password_bytes, tern expand_pa
 tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
 {
 	si8		test_time;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2266,12 +2296,12 @@ tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
 		return_m13(FALSE_m13);
 	}
 	
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	
-	if (proc_globs->time_constants.recording_time_offset == FALSE_m13) {
-		proc_globs->time_constants.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;  // == 0
-		if (proc_globs->current_session.start_time == UUTC_NO_ENTRY_m13)
-			proc_globs->current_session.start_time = BEGINNING_OF_TIME_m13;
+	if (pg->time_constants.recording_time_offset == FALSE_m13) {
+		pg->time_constants.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;  // == 0
+		if (pg->current_session.start_time == UUTC_NO_ENTRY_m13)
+			pg->current_session.start_time = BEGINNING_OF_TIME_m13;
 	}
 	
 	if (slice->start_time <= 0) {
@@ -2279,10 +2309,10 @@ tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
 			if (slice->start_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13)
 				slice->start_time = BEGINNING_OF_TIME_m13;
 		} else {  // relative time
-			slice->start_time = proc_globs->current_session.start_time - slice->start_time;
+			slice->start_time = pg->current_session.start_time - slice->start_time;
 		}
 	} else {  // ? unoffset time
-		test_time = slice->start_time - proc_globs->time_constants.recording_time_offset;
+		test_time = slice->start_time - pg->time_constants.recording_time_offset;
 		if (test_time > 0)  // start time is not offset
 			slice->start_time = test_time;
 	}
@@ -2292,10 +2322,10 @@ tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
 			if (slice->end_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13)
 				slice->end_time = END_OF_TIME_m13;
 		} else {  // relative time
-			slice->end_time = proc_globs->current_session.start_time - slice->end_time;
+			slice->end_time = pg->current_session.start_time - slice->end_time;
 		}
 	} else {  // ? unoffset time
-		test_time = slice->end_time - proc_globs->time_constants.recording_time_offset;
+		test_time = slice->end_time - pg->time_constants.recording_time_offset;
 		if (test_time > 0 && slice->end_time != END_OF_TIME_m13)  // end time is not offset
 			slice->end_time = test_time;
 	}
@@ -2663,7 +2693,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 {
 	ui1			*decryption_key, encryption_rounds;
 	si1			*encryption_2, *encryption_3;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	PASSWORD_DATA_m13	*pwd;
 	METADATA_SECTION_3_m13	*section_3;
 	UH_m13			*uh;
@@ -2688,8 +2718,8 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 		encryption_rounds = uh->encryption_rounds;
 	}
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	
 	// decrypt section 2
 	if (*encryption_2 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
@@ -2717,28 +2747,28 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 			AES_decrypt_m13(fps->params.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, NULL, decryption_key, encryption_rounds);
 			*encryption_3 = -(*encryption_3);  // mark as currently decrypted
 		} else {
-			proc_globs->time_constants.RTO_known = FALSE_m13;
-			proc_globs->time_constants.set = TRUE_m13;  // set to defaults
+			pg->time_constants.RTO_known = FALSE_m13;
+			pg->time_constants.set = TRUE_m13;  // set to defaults
 			return_m13(TRUE_m13);  // MED functions without section 3, so return TRUE_m13
 		}
 	}
 	
 	// set global time data (section 3 unencrypted if get here)
-	if (proc_globs->time_constants.set == FALSE_m13) {
+	if (pg->time_constants.set == FALSE_m13) {
 		section_3 = &fps->metadata->section_3;
-		proc_globs->time_constants.recording_time_offset = section_3->recording_time_offset;
-		proc_globs->time_constants.standard_UTC_offset = section_3->standard_UTC_offset;
-		strncpy_m13(proc_globs->time_constants.standard_timezone_acronym, section_3->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-		strncpy_m13(proc_globs->time_constants.standard_timezone_string, section_3->standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
-		strncpy_m13(proc_globs->time_constants.daylight_timezone_acronym, section_3->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-		strncpy_m13(proc_globs->time_constants.daylight_timezone_string, section_3->daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
-		if ((proc_globs->time_constants.daylight_start_code.value = section_3->daylight_time_start_code.value) == DTCC_VALUE_NOT_OBSERVED_m13)
-			proc_globs->time_constants.observe_DST = FALSE_m13;
+		pg->time_constants.recording_time_offset = section_3->recording_time_offset;
+		pg->time_constants.standard_UTC_offset = section_3->standard_UTC_offset;
+		strncpy_m13(pg->time_constants.standard_timezone_acronym, section_3->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+		strncpy_m13(pg->time_constants.standard_timezone_string, section_3->standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
+		strncpy_m13(pg->time_constants.daylight_timezone_acronym, section_3->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+		strncpy_m13(pg->time_constants.daylight_timezone_string, section_3->daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
+		if ((pg->time_constants.daylight_start_code.value = section_3->daylight_time_start_code.value) == DTCC_VALUE_NOT_OBSERVED_m13)
+			pg->time_constants.observe_DST = FALSE_m13;
 		else
-			proc_globs->time_constants.observe_DST = TRUE_m13;
-		proc_globs->time_constants.RTO_known = TRUE_m13;
-		proc_globs->time_constants.daylight_end_code.value = section_3->daylight_time_end_code.value;
-		proc_globs->time_constants.set = TRUE_m13;
+			pg->time_constants.observe_DST = TRUE_m13;
+		pg->time_constants.RTO_known = TRUE_m13;
+		pg->time_constants.daylight_end_code.value = section_3->daylight_time_end_code.value;
+		pg->time_constants.set = TRUE_m13;
 	}
 
 	return_m13(TRUE_m13);
@@ -2752,7 +2782,7 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 	va_list			v_args;
 	REC_HDR_m13		*rh;
 	PASSWORD_DATA_m13	*pwd;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2772,8 +2802,8 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 	if (n_records == 0)  // failure == all records unreadable, not no records
 		return_m13(TRUE_m13);
 	
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	encryption_rounds = fps->uh->encryption_rounds;
 
 	for (i = 0; i < n_records; ++i) {
@@ -2803,7 +2833,7 @@ tern G_decrypt_time_series_data_m13(FPS_m13 *fps)
 	CPS_m13				*cps;
 	CMP_FIXED_BH_m13	*bh;
 	PASSWORD_DATA_m13		*pwd;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	UH_m13		*uh;
 
 #ifdef FT_DEBUG_m13
@@ -2820,8 +2850,8 @@ tern G_decrypt_time_series_data_m13(FPS_m13 *fps)
 		return_m13(TRUE_m13);
 	
 	cps = fps->params.cps;
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	if (pwd->access_level >= enc_level) {
 		if (enc_level == LEVEL_1_ENCRYPTION_m13)
 			key = pwd->level_1_encryption_key;
@@ -2922,7 +2952,7 @@ void	G_delete_function_stack_m13(void)
 
 	
 	// causal error set => do not delete stack of causal thread
-	if (globals_m13->error.code)
+	if (G_error_code_m13())
 		if (globals_m13->error.thread_id == gettid_m13())
 			return;
 
@@ -2955,21 +2985,21 @@ si4 G_DST_offset_m13(si8 uutc)
 	time_t  utc, local_utc, change_utc;
 	struct tm time_info = { 0 }, change_time_info = { 0 };
 	DAYLIGHT_TIME_CHANGE_CODE_m13	*first_DTCC, *last_DTCC, *change_DTCC;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns seconds to add to standard time (as UUTC) to adjust for DST on that date, in the globally specified timezone
-	proc_globs = G_proc_globs_m13(NULL);  // find proc globals by process id
-	if (proc_globs->time_constants.set == FALSE_m13) {
+	pg = G_proc_globs_m13(NULL);  // find proc globals by process id
+	if (pg->time_constants.set == FALSE_m13) {
 		G_warning_message_m13("%s(): library time constants not set\n", __FUNCTION__);
 		return_m13(0);
 	}
-	if (proc_globs->time_constants.observe_DST != TRUE_m13)
+	if (pg->time_constants.observe_DST != TRUE_m13)
 		return_m13(0);
-	if (proc_globs->time_constants.daylight_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
+	if (pg->time_constants.daylight_start_code.value == DTCC_VALUE_NO_ENTRY_m13) {
 		G_warning_message_m13("%s(): daylight change data not available\n", __FUNCTION__);
 		return_m13(0);
 	}
@@ -2978,16 +3008,16 @@ si4 G_DST_offset_m13(si8 uutc)
 	
 	// get broken out time info
 #if defined MACOS_m13 || defined LINUX_m13
-	if (proc_globs->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
-		local_utc = utc + (si8) proc_globs->time_constants.standard_UTC_offset;
+	if (pg->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
+		local_utc = utc + (si8) pg->time_constants.standard_UTC_offset;
 		gmtime_r(&local_utc, &time_info);
 	} else {
 		gmtime_r(&utc, &time_info);
 	}
 #endif
 #ifdef WINDOWS_m13
-	if (proc_globs->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
-		local_utc = utc + (si8) proc_globs->time_constants.standard_UTC_offset;
+	if (pg->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME) {
+		local_utc = utc + (si8) pg->time_constants.standard_UTC_offset;
 		time_info = *(gmtime(&local_utc));
 	} else {
 		time_info = *(gmtime(&utc));
@@ -2995,14 +3025,14 @@ si4 G_DST_offset_m13(si8 uutc)
 #endif
 	
 	month = time_info.tm_mon;
-	DST_start_month = proc_globs->time_constants.daylight_start_code.month;
-	DST_end_month = proc_globs->time_constants.daylight_end_code.month;
+	DST_start_month = pg->time_constants.daylight_start_code.month;
+	DST_end_month = pg->time_constants.daylight_end_code.month;
 	if (DST_start_month < DST_end_month) {
-		first_DTCC = &proc_globs->time_constants.daylight_start_code;
-		last_DTCC = &proc_globs->time_constants.daylight_end_code;
+		first_DTCC = &pg->time_constants.daylight_start_code;
+		last_DTCC = &pg->time_constants.daylight_end_code;
 	} else {
-		first_DTCC = &proc_globs->time_constants.daylight_end_code;
-		last_DTCC = &proc_globs->time_constants.daylight_start_code;
+		first_DTCC = &pg->time_constants.daylight_end_code;
+		last_DTCC = &pg->time_constants.daylight_start_code;
 	}
 	
 	// take care of dates not in change months
@@ -3060,8 +3090,8 @@ si4 G_DST_offset_m13(si8 uutc)
 #ifdef WINDOWS_m13
 	change_utc = _mkgmtime(&change_time_info);
 #endif
-	if (proc_globs->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME)
-		change_utc -= proc_globs->time_constants.standard_UTC_offset;
+	if (pg->time_constants.daylight_start_code.reference_time == DTCC_LOCAL_REFERENCE_TIME)
+		change_utc -= pg->time_constants.standard_UTC_offset;
 	
 	if (change_DTCC->month == DST_start_month) {
 		if (utc >= change_utc)
@@ -3084,15 +3114,15 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	ui1			*encryption_key;
 	PASSWORD_DATA_m13	*pwd;
 	METADATA_m13		*md;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	UH_m13	*uh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	md = fps->metadata;
 	uh = fps->uh;
 
@@ -3130,15 +3160,15 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 	si8			i;
 	PASSWORD_DATA_m13	*pwd;
 	REC_HDR_m13	*rh;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	UH_m13	*uh;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	rh = (REC_HDR_m13 *) fps->rec_data;
 	uh = fps->uh;
 
@@ -3166,7 +3196,7 @@ tern G_encrypt_time_series_data_m13(FPS_m13 *fps)
 	si8			i, encryptable_bytes, encryption_bytes;
 	PASSWORD_DATA_m13	*pwd;
 	CMP_FIXED_BH_m13	*bh;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	UH_m13			*uh;
 	
 #ifdef FT_DEBUG_m13
@@ -3183,8 +3213,8 @@ tern G_encrypt_time_series_data_m13(FPS_m13 *fps)
 	if (enc_level == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	if (pwd->access_level >= enc_level) {
 		if (enc_level == LEVEL_1_ENCRYPTION_m13)
 			key = pwd->level_1_encryption_key;
@@ -3243,7 +3273,7 @@ tern  	G_encrypt_video_data_m13(FPS_m13 *fps)
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-tern	G_enter_ascii_password_m13(si1 *password, si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password)
+tern	G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password)
 {
 	si1		pw_copy[MAX_ASCII_PASSWORD_STRING_BYTES_m13], dc[8];
 	const si4	MAX_ATTEMPTS = 3;
@@ -3376,7 +3406,7 @@ ENTER_ASCII_PASSWORD_RETRY_1_m13:
 
 
 #ifdef WINDOWS_m13
-tern	G_enter_ascii_password_m13(si1* password, si1* prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password)
+tern	G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password)
 {
 	si1		pw_copy[MAX_ASCII_PASSWORD_STRING_BYTES_m13];
 	const si4	MAX_ATTEMPTS = 3;
@@ -3542,18 +3572,21 @@ void	G_error_clear_m13(void)
 
 	// call G_set_error_m13() for causal errors only
 	// return error local error condition for errors returned from functions, no messages necessary
+	// superuser function - any thread can call
 	
-	// check global error
+	// clear error
+
 	err = &globals_m13->error;
-	pthread_mutex_lock(&err->mutex);
-	if (err->code) {
-		err->code = E_NONE_m13;
-		err->signal = 0;
-		*err->message = 0;
-		err->line = 0;
-		err->function = NULL;
-	}
-	pthread_mutex_unlock(&err->mutex);
+	pthread_mutex_lock_m13(&err->mutex);
+
+	err->code = E_NONE_m13;
+	err->signal = 0;
+	*err->message = 0;
+	err->line = 0;
+	err->function = NULL;
+	isem_chown_m13(&err->isem, 0);
+	
+	pthread_mutex_unlock_m13(&err->mutex);
 
 	return_void_m13;
 }
@@ -3562,15 +3595,20 @@ void	G_error_clear_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	G_error_is_set_m13(void)
+si4	G_error_code_m13(void)
 {
-	// use to check if void function set an error
-	// beacuse they have no return value to check
+	si4		code;
+	ERR_m13		*err;
 	
-	if (globals_m13->error.code)
-		return(TRUE_m13);
+	err = &globals_m13->error;
 	
-	return(FALSE_m13);
+	pthread_mutex_lock_m13(&err->mutex);
+	
+	code = err->code;
+	
+	pthread_mutex_unlock_m13(&err->mutex);
+
+	return(code);
 }
 
 
@@ -3598,16 +3636,10 @@ void	G_error_message_m13(const si1 *fmt, ...)
 		#endif
 	}
 	
-	if (behavior & RETURN_ON_FAIL_m13) {
-		#ifdef MATLAB_m13
-		mexPrintf("Exiting.\n\n");
-		#else
-		fprintf(stderr, "Exiting.\n\n");
-		#endif
+	if (behavior & RETURN_ON_FAIL_m13)
 		return;
-	}
 	
-	exit_m13(-1);
+	exit_m13(E_GEN_m13);
 }
 
 
@@ -3652,11 +3684,12 @@ si1	G_exists_m13(const si1 *path)
 }
 
 
-tern	G_expand_password_m13(si1 *password, si1 *password_bytes)
+tern	G_expand_password_m13(const si1 *password, si1 *password_bytes)
 {
-	si1	*c;
-	ui4	ui4_val, m_w, m_z;
-	si4	i;
+	const si1	*cc;
+	si1		*c;
+	ui4		ui4_val, w, z;
+	si4		i;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -3667,14 +3700,14 @@ tern	G_expand_password_m13(si1 *password, si1 *password_bytes)
 	// does not require G_termimal_password_bytes_m13() to have been called
 	
 	// generate medlib generator seed from password bytes
-	for (c = password - 1, ui4_val = 0; *++c; ui4_val += (ui4) *c);
+	for (cc = password - 1, ui4_val = 0; *++cc; ui4_val += (ui4) *cc);
 	
-	m_w = (ui4) 0x80000000 + ui4_val;
-	m_z = (ui4) 0x7FFFFFFF - ui4_val;
+	w = (ui4) 0x80000000 + ui4_val;
+	z = (ui4) 0x7FFFFFFF - ui4_val;
 
 	// fill password bytes with random numbers
 	for (c = password_bytes, i = PASSWORD_BYTES_m13; i--;) {
-		ui4_val = rand32_med_m13(&m_w, &m_z);
+		ui4_val = rand32_med_wz_m13(&w, &z);
 		*c++ = (si1) (ui4_val & (ui4) 0x000000FF);
 	}
 	
@@ -3685,7 +3718,7 @@ tern	G_expand_password_m13(si1 *password, si1 *password_bytes)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si8	G_file_length_m13(FILE_m13 *fp, si1 *path)
+si8	G_file_length_m13(FILE_m13 *fp, const si1 *path)
 {
 	si4			fd;
 	tern			is_std;
@@ -3836,7 +3869,7 @@ si1	**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_direct
 		
 	#if defined MACOS_m13 || defined LINUX_m13
 		si1		*command;
-		si4		ret_val;
+		si4		r_val;
 		size_t		len;
 
 		len = n_in_files * PATH_BYTES_m13;
@@ -3866,10 +3899,10 @@ si1	**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_direct
 
 		buffer = NULL;
 		G_push_behavior_m13(RETURN_QUIETLY_m13);
-		ret_val = system_pipe_m13(&buffer, 0, command, SP_SEPARATE_STREAMS_m13, NULL, 0);  // NULL because don't actually want error output
+		r_val = system_pipe_m13(&buffer, 0, command, SP_SEPARATE_STREAMS_m13, NULL, 0);  // NULL because don't actually want error output
 		G_pop_behavior_m13();
 		free((void *) command);
-		if (ret_val || STR_is_empty_m13(buffer) == TRUE_m13) {
+		if (r_val || STR_is_empty_m13(buffer) == TRUE_m13) {
 			*n_out_files = 0;
 			if (buffer)
 				free_m13((void *) buffer);
@@ -3970,7 +4003,7 @@ GFL_CONDITION_RETURN_DATA_m13:
 }
 
 
-FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, si1 *path, FILE_TIMES_m13 *ft, tern set_time)
+FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, const si1 *path, FILE_TIMES_m13 *ft, tern set_time)
 {
 	FILE	*std_fp;
 	
@@ -4126,7 +4159,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 	si8					j, k, nc, n_indices, *sample_offsets;
 	sf8					samp_period, sf8_samps;
 	FPS_m13					**tsi_fps;
-	PROC_GLOBS_m13			*proc_globs;
+	PROC_GLOBS_m13			*pg;
 	TS_IDX_m13			*tsi, *last_tsi;
 	TS_METADATA_SECTION_2_m13	*md2;
 	SEG_m13				*seg;
@@ -4149,18 +4182,18 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 			break;
 		case TS_CHAN_TYPE_CODE_m13:
 		case SESS_TYPE_CODE_m13:
-			proc_globs = G_proc_globs_m13(lh);
+			pg = G_proc_globs_m13(lh);
 			if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
 				chan = (CHAN_m13 *) lh;
 			} else {
-				chan = proc_globs->current_session.index_channel;
+				chan = pg->current_session.index_channel;
 				if (chan->type_code != TS_CHAN_TYPE_CODE_m13) {
 					sess = (SESS_m13 *) lh;
 					chan = sess->ts_chans[0];
 				}
 			}
 			start_seg_num = 1;
-			end_seg_num = proc_globs->current_session.n_segments;
+			end_seg_num = pg->current_session.n_segments;
 			break;
 		case VID_CHAN_TYPE_CODE_m13:
 		case VID_SEG_TYPE_CODE_m13:
@@ -4177,6 +4210,8 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 	
 	// get time series indices & sample offsets
 	seg_idx = G_segment_index_m13(start_seg_num, lh);
+	if (seg_idx == FALSE_m13)
+		return_m13(NULL);
 	samp_period = (sf8) 0.0;
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 		if (chan) {
@@ -4812,7 +4847,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 	sf8			tmp_sf8, frame_rate, rounded_frame_num, frame_num_eps;
 	ui4			mask;
 	va_list			v_args;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
 	SESS_m13		*sess;
@@ -4844,7 +4879,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 		absolute_numbering_offset = 0;
 		vi = NULL;
 	} else {  // level header passed
-		proc_globs = G_proc_globs_m13(lh);
+		pg = G_proc_globs_m13(lh);
 		switch (lh->type_code) {
 			case VID_SEG_TYPE_CODE_m13:
 				seg = (SEG_m13 *) lh;
@@ -4858,7 +4893,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 				if (lh->type_code == VID_CHAN_TYPE_CODE_m13) {
 					chan = (CHAN_m13 *) lh;
 				} else {
-					chan = proc_globs->current_session.index_channel;
+					chan = pg->current_session.index_channel;
 					if (chan->type_code != VID_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->vid_chans[0];
@@ -4900,8 +4935,8 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 
 		// condition target
 		if (target_uutc < 0)  // relative time
-			target_uutc = proc_globs->current_session.start_time - target_uutc;
-		test_time = target_uutc - proc_globs->time_constants.recording_time_offset;
+			target_uutc = pg->current_session.start_time - target_uutc;
+		test_time = target_uutc - pg->time_constants.recording_time_offset;
 		if (test_time > 0 && target_uutc != END_OF_TIME_m13)  // end time is not offset
 			target_uutc = test_time;
 
@@ -4958,7 +4993,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 tern	G_free_channel_m13(CHAN_m13 **chan_ptr)
 {
 	si4			i;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	CHAN_m13		*chan;
 	SEG_m13			*seg;
 	
@@ -4979,8 +5014,8 @@ tern	G_free_channel_m13(CHAN_m13 **chan_ptr)
 	}
 
 	if (chan->segs) {
-		proc_globs = G_proc_globs_m13((LH_m13 *) chan);
-		for (i = 0; i < proc_globs->current_session.n_mapped_segments; ++i) {
+		pg = G_proc_globs_m13((LH_m13 *) chan);
+		for (i = 0; i < pg->current_session.n_mapped_segments; ++i) {
 			seg = chan->segs[i];
 			if (seg)
 				G_free_segment_m13(&seg);
@@ -5080,7 +5115,8 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	BEHAVIOR_STACK_m13	**behavior_stack_ptrs;
 	FUNCTION_STACK_m13	**function_stack_ptrs;
 	FLOCK_ENTRY_m13		**lock_ptrs;
-	PROC_GLOBS_m13		**proc_globs_ptrs;
+	PROC_GLOBS_m13		**pg_ptrs;
+	ERR_m13			*err;
 	
 	
 	if (cleanup_for_exit == TRUE_m13) {
@@ -5093,7 +5129,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	if (globals_m13->record_filters) {
 		// often statically allocated, so can't just free()
 		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m13, REC_Note_TYPE_CODE_m13, NO_TYPE_CODE_m13 };
-		// proc_globs->record_filters = rec_filts;
+		// pg->record_filters = rec_filts;
 		if (freeable_m13(globals_m13->record_filters) == TRUE_m13)
 			free_m13((void *) globals_m13->record_filters);
 	}
@@ -5144,14 +5180,14 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	if (globals_m13->proc_globs_list) {
 		// Sgmt_recs_list allocated for each proc_glob
 		list_size = globals_m13->proc_globs_list->size;
-		proc_globs_ptrs = globals_m13->proc_globs_list->proc_globs_ptrs;
+		pg_ptrs = globals_m13->proc_globs_list->proc_globs_ptrs;
 		for (i = 0; i < list_size; ++i)
-			if (proc_globs_ptrs[i]->_id)
-				G_proc_globs_delete_m13((LH_m13 *) proc_globs_ptrs[i]);
+			if (pg_ptrs[i]->_id)
+				G_proc_globs_delete_m13((LH_m13 *) pg_ptrs[i]);
 		// proc_globs allocated in blocks of GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13
 		for (i = 0; i < list_size; i += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13)
-			free((void *) proc_globs_ptrs[i]);
-		free((void *) proc_globs_ptrs);
+			free((void *) pg_ptrs[i]);
+		free((void *) pg_ptrs);
 		pthread_mutex_destroy_m13(&globals_m13->proc_globs_list->mutex);
 		free((void *) globals_m13->proc_globs_list);
 	}
@@ -5171,8 +5207,9 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	}
 #endif
 	
-	pthread_mutex_destroy_m13(&globals_m13->error.mutex);
-	pthread_mutex_destroy_m13(&globals_m13->error.exit_mutex);
+	err = &globals_m13->error;
+	pthread_mutex_destroy_m13(&err->mutex);
+	isem_destroy_m13(&err->isem);
 
 	G_free_global_tables_m13();
 
@@ -5306,7 +5343,7 @@ tern	G_free_ssr_m13(SSR_m13 **ssr_ptr)
 	si4			i, n_segs;
 	FPS_m13			*gen_fps;
 	SSR_m13	*ssr;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5324,8 +5361,8 @@ tern	G_free_ssr_m13(SSR_m13 **ssr_ptr)
 		return_m13(FALSE_m13);
 	}
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) ssr);
-	n_segs = proc_globs->current_session.n_mapped_segments;
+	pg = G_proc_globs_m13((LH_m13 *) ssr);
+	n_segs = pg->current_session.n_mapped_segments;
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->rec_inds_fps[i];
 		if (gen_fps)
@@ -5488,7 +5525,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 
 
 	// pass zero for current thread function stack
-	
+
 	// get _id
 	if (_id == 0)
 		_id = gettid_m13();
@@ -5527,7 +5564,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 				list->stack_ptrs = stack_ptr;
 
 				// allocate & initialize new stacks (note: stacks allocated en bloc)
-				new_stack = (FUNCTION_STACK_m13 *) malloc((size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(FUNCTION_STACK_m13));
+				new_stack = (FUNCTION_STACK_m13 *) malloc((size_t) GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13 * sizeof(FUNCTION_STACK_m13));
 				if (new_stack == NULL) {
 					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
@@ -5558,9 +5595,11 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 
 void	G_function_stack_trap_m13(si4 sig_num)
 {
-	const si1	*error_type, *error_desc;
+	const si1		*error_type, *error_desc, *function;
+	FUNCTION_STACK_m13	*stack;
 	
-	
+	isem_own_m13(&globals_m13->error.isem, TRUE_m13);  // hold non-owners here
+
 	switch (sig_num) {
 		case SIGINT:
 			error_type = "SIGINT";
@@ -5591,10 +5630,6 @@ void	G_function_stack_trap_m13(si4 sig_num)
 			error_type = "SIGBUS";
 			error_desc = "bus error";
 			break;
-		case SIGKILL:
-			error_type = "SIGKILL";
-			error_desc = "process killed";
-			break;
 		case SIGQUIT:
 			error_type = "SIGQUIT";
 			error_desc = "process quit";
@@ -5606,14 +5641,6 @@ void	G_function_stack_trap_m13(si4 sig_num)
 		case SIGTRAP:
 			error_type = "SIGTRAP";
 			error_desc = "trace trap";
-			break;
-		case SIGUSR1:
-			error_type = "SIGUSR1";
-			error_desc = "user defined signal #1";
-			break;
-		case SIGUSR2:
-			error_type = "SIGUSR2";
-			error_desc = "user defined signal #2";
 			break;
 		case SIGXCPU:
 			error_type = "SIGXCPU";
@@ -5631,19 +5658,27 @@ void	G_function_stack_trap_m13(si4 sig_num)
 			return;
 	}
 	
-	
-	// set error
+	// set error (put sigal number in line argument & call G_set_error_exec_m13(() directly)
+	stack = G_function_stack_m13(0);
+	if (stack) {
+		if (G_error_code_m13())
+			function = stack->entries[stack->err_top_idx].name;
+		else
+			function = stack->entries[stack->top_idx].name;
+	} else {
+		function = __FUNCTION__;
+	}
 	#ifdef MATLAB_m13
-	G_set_error_m13(E_SIG_m13, "%s  [%s, sys code %d]", sig_num, error_desc, error_type, sig_num);
+	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "[%s, sys code %d]", error_desc, error_type, sig_num);
 	#else
-	G_set_error_m13(E_SIG_m13, "%s  %s[%s, sys code %d]%s", sig_num, error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
+	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "%s  %s[%s, sys code %d]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
 	#endif
 	
-	exit_m13(E_SIG_m13);  // exit_m13() shows error & function stack
+	return;  // never gets here - G_set_error_m13() will always exit on a signal error
 }
 
 
-si1	**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 n_names)
+si1	**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names)
 {
 	si8 i;
 	si1 number_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -5667,14 +5702,14 @@ si1	**G_generate_numbered_names_m13(si1 **names, si1 *prefix, si4 n_names)
 }
 
 
-tern	G_generate_password_data_m13(FPS_m13* fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_pw, si1 *L1_pw_hint, si1 *L2_pw_hint)
+tern	G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint)
 {
 	tern			expand_passwords;
 	PASSWORD_DATA_m13	*pwd;
 	ui1			hash[SHA_HASH_BYTES_m13];
 	si1			L1_pw_bytes[PASSWORD_BYTES_m13] = { 0 }, L2_pw_bytes[PASSWORD_BYTES_m13] = { 0 }, L3_pw_bytes[PASSWORD_BYTES_m13] = { 0 };
 	si4			i;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	METADATA_SECTION_1_m13	*md1;
 	UH_m13	*uh;
 
@@ -5695,8 +5730,8 @@ tern	G_generate_password_data_m13(FPS_m13* fps, si1 *L1_pw, si1 *L2_pw, si1 *L3_
 	if (STR_is_empty_m13(L2_pw_hint) == TRUE_m13)
 		L2_pw_hint = NULL;
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	memset((void *) pwd, 0, sizeof(PASSWORD_DATA_m13));
 	pwd->processed = TRUE_m13;
 
@@ -5783,7 +5818,7 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 {
 	time_t			recording_start_time_utc, offset_utc_time, UTC_offset, secs_since_midnight;
 	struct tm		time_info;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5792,7 +5827,7 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 	// receives UNOFFSET recording start time (or CURRENT_TIME_m13)
 	// returns OFFSET recording start time
 	
-	proc_globs = G_proc_globs_m13(NULL);
+	pg = G_proc_globs_m13(NULL);
 	
 	if (recording_start_time_uutc == CURRENT_TIME_m13) // use current system time
 		recording_start_time_uutc = G_current_uutc_m13();
@@ -5801,8 +5836,8 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 	
 	// convert to same time of day in GMT
 	// (can't just use localtime() because might system may not be in timezone of recording, as in conversions)
-	if (proc_globs->time_constants.set == TRUE_m13) {
-		UTC_offset = proc_globs->time_constants.standard_UTC_offset;
+	if (pg->time_constants.set == TRUE_m13) {
+		UTC_offset = pg->time_constants.standard_UTC_offset;
 	} else {
 		G_warning_message_m13("%s(): global time constants not set, using local UTC offset\n", __FUNCTION__);
 #if defined MACOS_m13 || defined LINUX_m13
@@ -5831,13 +5866,13 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 	secs_since_midnight = (time_info.tm_hour * 3600) + (time_info.tm_min * 60) + time_info.tm_sec;
 
 	// set global offset
-	proc_globs->time_constants.recording_time_offset = (recording_start_time_utc - secs_since_midnight) * (si8) 1000000;
+	pg->time_constants.recording_time_offset = (recording_start_time_utc - secs_since_midnight) * (si8) 1000000;
 		
-	if (recording_start_time_uutc == proc_globs->time_constants.recording_time_offset)	// recording started at exactly midnight local standard time
-		--proc_globs->time_constants.recording_time_offset;				// this can cause problems with oUTC and BEGINNING_OF_TIME_m13 (== 0)
-	proc_globs->time_constants.RTO_known = TRUE_m13;
+	if (recording_start_time_uutc == pg->time_constants.recording_time_offset)	// recording started at exactly midnight local standard time
+		--pg->time_constants.recording_time_offset;				// this can cause problems with oUTC and BEGINNING_OF_TIME_m13 (== 0)
+	pg->time_constants.RTO_known = TRUE_m13;
 
-	return_m13(recording_start_time_uutc - proc_globs->time_constants.recording_time_offset);
+	return_m13(recording_start_time_uutc - pg->time_constants.recording_time_offset);
 }
 
 
@@ -5991,11 +6026,11 @@ tern	G_init_error_tables_m13(void)
 
 tern	G_init_global_tables_m13(tern init_all_tables)
 {
-	tern			ret_val;
+	tern			r_val;
 	GLOBAL_TABLES_m13	*tables;
 	
 
-	ret_val = TRUE_m13;
+	r_val = TRUE_m13;
 	
 	if (globals_m13->tables == NULL) {
 		globals_m13->tables = (GLOBAL_TABLES_m13 *) calloc((size_t) 1, sizeof(GLOBAL_TABLES_m13));
@@ -6009,31 +6044,31 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 
 	if (init_all_tables == TRUE_m13) {  // otherwise load on demand
 		if (CRC_init_tables_m13() == FALSE_m13)  // do this before initializing hardware tables (CRC used to get machine code)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (HW_init_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (NET_init_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (AES_init_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (SHA_init_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (CMP_init_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (G_init_timezone_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (G_init_error_tables_m13() == FALSE_m13)
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 	} else {
 		if (HW_get_endianness_m13() == FALSE_m13)  // the library is only written for little endian machines right now, so always done
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (HW_get_memory_info_m13() == FALSE_m13)  // this is needed for alloc operations, so always done
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (G_init_error_tables_m13() == FALSE_m13)  // standard MED error strings - always done
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		if (GLOBALS_FILE_LOCK_MODE_DEFAULT_m13)  // file locking requires CRCs
 			if (CRC_init_tables_m13() == FALSE_m13)
-				ret_val = FALSE_m13;
+				r_val = FALSE_m13;
 	}
 
 	// NT dylib loaded by WN_nap_m13() if used
@@ -6041,13 +6076,14 @@ tern	G_init_global_tables_m13(tern init_all_tables)
 	tables->hNTdll = NULL;
 	#endif
 
-	return(ret_val);
+	return(r_val);
 }
 
 
-tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (app_path) ui4 version_major, ui4 version_minor
+tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // varargs (app_path) ui4 version_major, ui4 version_minor
 {
-	AT_ENTRY_m13		*AT_entries;
+	ERR_m13		*err;
+	AT_ENTRY_m13	*AT_entries;
 
 	
 	if (globals_m13)
@@ -6207,17 +6243,19 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 	globals_m13->record_filters = NULL;
 	
 	// miscellaneous
-	pthread_mutex_init_m13(&globals_m13->error.mutex, NULL);
-	pthread_mutex_init_m13(&globals_m13->error.exit_mutex, NULL);
+	err = &globals_m13->error;
+	pthread_mutex_init_m13(&err->mutex, NULL);
+	isem_init_m13(&err->isem, 0, "1 ms", "error isem", FALSE_m13);
+	
 	#if defined MACOS_m13 || defined LINUX_m13
 	strcpy(globals_m13->temp_dir, "/tmp");
-	strcpy(globals_m13->temp_file, "/tmp/MED_junk");
+	strcpy(globals_m13->temp_file, "/tmp/MED_junk.tmp");
 	#endif
 	#ifdef WINDOWS_m13
 	si8	len;
 
 	GetTempPathA(PATH_BYTES_m13, globals_m13->temp_dir);
-	sprintf(globals_m13->temp_file, "%sMED_junk", globals_m13->temp_dir);
+	sprintf(globals_m13->temp_file, "%sMED_junk.tmp", globals_m13->temp_dir);
 	len = strlen(globals_m13->temp_dir);
 	globals_m13->temp_dir[len] = 0;  // remove trailing '\'
 	#endif
@@ -6238,6 +6276,7 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 	globals_m13->update_header_names = GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13;
 	globals_m13->update_MED_version = GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13;
 	globals_m13->update_parity = GLOBALS_UPDATE_PARITY_DEFAULT_m13;
+	globals_m13->increase_priority = GLOBALS_INCREASE_PRIORITY_DEFAULT_m13;
 		
 	pthread_mutex_unlock_m13(&globals_m13->mutex);
 	
@@ -6245,9 +6284,9 @@ tern	G_init_globals_m13(tern init_all_tables, si1 *app_path, ... )  // varargs (
 }
 
 
-tern	G_init_medlib_m13(tern init_all_tables, si1 *app_path, ...)  // varargs(app_path): ui4 version_major, ui4 version_minor
+tern	G_init_medlib_m13(tern init_all_tables, const si1 *app_path, ...)  // varargs(app_path): ui4 version_major, ui4 version_minor
 {
-	tern	ret_val = TRUE_m13;
+	tern	r_val = TRUE_m13;
 	ui4	version_major, version_minor;
 
 
@@ -6282,9 +6321,8 @@ tern	G_init_medlib_m13(tern init_all_tables, si1 *app_path, ...)  // varargs(app
 		signal(SIGBUS, G_function_stack_trap_m13);  // Bus error
 		signal(SIGKILL, G_function_stack_trap_m13);  // Kill
 		signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
+	signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
 		signal(SIGTRAP, G_function_stack_trap_m13);  // Trace Trap (unhandled exception, or debugger breakpoint)
-		signal(SIGUSR1, G_function_stack_trap_m13);  // User-defined signal 1
-		signal(SIGUSR2, G_function_stack_trap_m13);  // User-defined signal 2
 		signal(SIGXCPU, G_function_stack_trap_m13);  // CPU time limit
 		signal(SIGXFSZ, G_function_stack_trap_m13);  // File size limit
 	#endif
@@ -6316,21 +6354,21 @@ tern	G_init_medlib_m13(tern init_all_tables, si1 *app_path, ...)  // varargs(app
 #if defined WINDOWS_m13
 	#ifdef WIN_SOCKETS_m13  // initialize Windows sockets DLL
 	if (WN_socket_startup_m13() == FALSE_m13)
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	#endif
 	#ifndef MATLAB_m13  // initialize Windows terminal
 	if (WN_initialize_terminal_m13() == FALSE_m13)
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	#endif
 #endif
 
-	return(ret_val);
+	return(r_val);
 }
 
 
 tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 {
-	PROC_GLOBS_m13			*proc_globs;
+	PROC_GLOBS_m13			*pg;
 	TS_METADATA_SECTION_2_m13	*tmd2;
 	VID_METADATA_SECTION_2_m13		*vmd2;
 	METADATA_SECTION_3_m13			*md3;
@@ -6426,14 +6464,14 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	}
 	
 	// section 3 fields
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	md3->recording_time_offset = proc_globs->time_constants.recording_time_offset;
-	md3->daylight_time_start_code = proc_globs->time_constants.daylight_start_code;
-	md3->daylight_time_end_code = proc_globs->time_constants.daylight_end_code;
-	strncpy_m13(md3->standard_timezone_acronym, proc_globs->time_constants.standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-	strncpy_m13(md3->standard_timezone_string, proc_globs->time_constants.standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
-	strncpy_m13(md3->daylight_timezone_acronym, proc_globs->time_constants.daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-	strncpy_m13(md3->daylight_timezone_string, proc_globs->time_constants.daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	md3->recording_time_offset = pg->time_constants.recording_time_offset;
+	md3->daylight_time_start_code = pg->time_constants.daylight_start_code;
+	md3->daylight_time_end_code = pg->time_constants.daylight_end_code;
+	strncpy_m13(md3->standard_timezone_acronym, pg->time_constants.standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+	strncpy_m13(md3->standard_timezone_string, pg->time_constants.standard_timezone_string, TIMEZONE_STRING_BYTES_m13);
+	strncpy_m13(md3->daylight_timezone_acronym, pg->time_constants.daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+	strncpy_m13(md3->daylight_timezone_string, pg->time_constants.daylight_timezone_string, TIMEZONE_STRING_BYTES_m13);
 	memset(md3->subject_name_1, 0, METADATA_SUBJECT_NAME_BYTES_m13);
 	memset(md3->subject_name_2, 0, METADATA_SUBJECT_NAME_BYTES_m13);
 	memset(md3->subject_name_3, 0, METADATA_SUBJECT_NAME_BYTES_m13);
@@ -6444,7 +6482,7 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	memset(md3->recording_institution, 0, METADATA_RECORDING_LOCATION_BYTES_m13);
 	memset(md3->geotag_format, 0, METADATA_GEOTAG_FORMAT_BYTES_m13);
 	memset(md3->geotag_data, 0, METADATA_GEOTAG_DATA_BYTES_m13);
-	md3->standard_UTC_offset = proc_globs->time_constants.standard_UTC_offset;
+	md3->standard_UTC_offset = pg->time_constants.standard_UTC_offset;
 	
 	return_m13(TRUE_m13);
 }
@@ -6668,7 +6706,7 @@ si8	G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes)
 }
 
 
-ui4	G_level_m13(si1 *full_file_name, ui4 *type_code)
+ui4	G_level_m13(const si1 *full_file_name, ui4 *type_code)
 {
 	si1	enclosing_directory[PATH_BYTES_m13];
 	ui4	code;
@@ -6807,11 +6845,11 @@ ui4	G_level_from_base_name_m13(si1 *path, si1 *level_path)
 }
 
 
-tern	G_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_token, tern set_timezone_globals, tern prompt)
+tern	G_location_info_m13(LOCATION_INFO_m13 *loc_info, const si1 *ip_str, const si1 *ipinfo_token, tern set_timezone_globals, tern prompt)
 {
 	tern		free_loc_info = FALSE_m13, local_ip = FALSE_m13;
 	si1		command[256], *buffer, *pattern, *c;
-	si4		ret_val;
+	si4		r_val;
 	size_t		len;
 	time_t 		curr_time;
 	struct tm 	loc_time;
@@ -6873,8 +6911,8 @@ tern	G_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_t
 		sprintf(command + len, "?token=%s", ipinfo_token);
 	
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
-	if (ret_val < 0)
+	r_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+	if (r_val < 0)
 		return_m13(FALSE_m13);
 	
 	// condition output
@@ -6925,18 +6963,18 @@ tern	G_location_info_m13(LOCATION_INFO_m13 *loc_info, si1 *ip_str, si1 *ipinfo_t
 	
 	free((void *) buffer);
 	
-	ret_val = TRUE_m13;
+	r_val = TRUE_m13;
 	if (set_timezone_globals == TRUE_m13) {
 		if (G_set_time_constants_m13(&loc_info->timezone_info, 0, prompt) == FALSE_m13) {
 			G_warning_message_m13("%s(): could not set timezone globals => returning NULL\n", __FUNCTION__);
-			ret_val = FALSE_m13;
+			r_val = FALSE_m13;
 		}
 	}
 	
 	if (free_loc_info == TRUE_m13)
 		free((void *) loc_info);
 
-	return_m13((tern) ret_val);
+	return_m13((tern) r_val);
 }
 
 
@@ -6995,19 +7033,19 @@ ui4  G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1 *MED_name)
 		*(MED_name = local_MED_name) = 0;
 	
 	// copy & condition path
-	strcpy(local_MED_dir, path);
+	G_full_path_m13(path, local_MED_dir);
+
 	// escaped characters can happen if string with escaped chars is also quoted (e.g. by a shell script) => pretty uncommon
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x20);  // spaces
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x27);  // apostrophes
 	STR_unescape_chars_m13(local_MED_dir, (si1) 0x60);  // graves
-	G_full_path_m13(local_MED_dir, local_MED_dir);
 
 	// check path: if file passed, get enclosing directory
 	fe = G_exists_m13(local_MED_dir);
 	if (fe == FILE_EXISTS_m13) {
 		G_path_parts_m13(local_MED_dir, local_MED_dir, NULL, NULL);
-	} else if (fe == DOES_NOT_EXIST_m13) {
-		G_set_error_m13(E_GEN_m13, "passed path \"%s\" does not exist", local_MED_dir);
+	} else if (fe == FALSE_m13) {
+		G_set_error_m13(E_GEN_m13, "path \"%s\" does not exist", local_MED_dir);
 		return_m13(NO_TYPE_CODE_m13);
 	} else if (fe == EXISTS_ERR_m13) {  // G_exists_m13() sets error
 		return_m13(NO_TYPE_CODE_m13);
@@ -7614,14 +7652,14 @@ void  G_message_m13(const si1 *fmt, ...)
 }
 
 
-CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, LH_m13 *parent, ui8 flags, si1 *password)
+CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_path, LH_m13 *parent, ui8 flags, const si1 *password)
 {
-	tern				free_chan, threading, ret_val;
+	tern				free_chan, threading, r_val;
 	const si1			*ext;
 	si1				tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1], *type_str;
-	si4				i, j, k, seg_idx, thread_cnt, n_segs, mapped_segs, null_segment_cnt;
-	PROC_GLOBS_m13			*proc_globs;
-	SEG_m13				*seg;
+	si4				i, j, k, seg_idx, n_segs, mapped_segs, null_segment_cnt;
+	PROC_GLOBS_m13			*pg;
+	SEG_m13				*seg, *first_seg, *last_seg;
 	UH_m13				*uh;
 	PROC_THREAD_INFO_m13		*proc_thread_infos;
 	READ_MED_THREAD_INFO_m13	*seg_thread_infos;
@@ -7672,15 +7710,15 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 		chan->flags = flags;
 	else
 		flags = chan->flags;
-	chan->parent = parent;
+	chan->parent = parent;  // set parent before getting proc_globs
 	if (flags == LH_NO_FLAGS_SET_m13) {
 		flags = chan->flags = parent->flags;
 		flags |= LH_FLAGS_SET_m13;
 	}
 
 	// set session globals (password, time constants, session directory/name)
-	proc_globs = G_proc_globs_m13((LH_m13 *) chan);
-	if (proc_globs->time_constants.set != TRUE_m13) {
+	pg = G_proc_globs_m13((LH_m13 *) chan);
+	if (pg->time_constants.set != TRUE_m13) {
 		if (G_set_session_globals_m13(chan->path, password, (LH_m13 *) chan) == FALSE_m13) {
 			if (free_chan == TRUE_m13)
 				G_free_channel_m13(&chan);
@@ -7709,7 +7747,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 		return_m13(NULL);
 	}
 	n_segs = slice->n_segs;
-	mapped_segs = proc_globs->current_session.n_mapped_segments;
+	mapped_segs = pg->current_session.n_mapped_segments;
 
 	if (chan->segs == NULL) {
 		chan->segs = (SEG_m13 **) calloc_m13((size_t) mapped_segs, sizeof(SEG_m13 *));  // map segments
@@ -7725,7 +7763,6 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 	seg_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
 	
 	null_segment_cnt = 0;
-	thread_cnt = 0;
 	for (i = slice->start_seg_num, j = seg_idx, k = 0; k < n_segs; ++i, ++j, ++k) {
 		seg = chan->segs[j];
 		if (seg == NULL) {
@@ -7736,7 +7773,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 				ext = VID_SEG_TYPE_STR_m13;
 			sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, ext);
 			if (G_exists_m13(seg_thread_infos[k].MED_dir) == FALSE_m13) {
-				if (*chan->uh_name == 0) {  // read a channel metadata file uh to get uh_name
+				if (*chan->uh_name == 0) {  // read a segment metadata file uh to get uh_name
 					uh = G_read_universal_header_m13(chan->path, NULL);
 					if (strcmp(chan->fs_name, uh->channel_name)) {
 						strcpy(chan->uh_name, uh->channel_name);
@@ -7748,6 +7785,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 				if (G_swap_names_m13((LH_m13 *) chan) == TRUE_m13) {
 					sprintf_m13(seg_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, ext);
 					if (G_exists_m13(seg_thread_infos[k].MED_dir) == FALSE_m13) {
+						proc_thread_infos[k].skip_job = TRUE_m13;
 						++null_segment_cnt;  // not every segment may exist
 						continue;
 					}
@@ -7758,18 +7796,20 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 			seg->slice = *slice;
 		}
 		seg_thread_infos[k].parent = (LH_m13 *) chan;
-		proc_thread_infos[thread_cnt].thread_f = G_open_segment_thread_m13;
-		proc_thread_infos[thread_cnt].thread_name = "G_open_segment_thread_m13";
-		proc_thread_infos[thread_cnt].priority = PROC_HIGH_PRIORITY_m13;
-		proc_thread_infos[thread_cnt].arg = (void *) (seg_thread_infos + k);
-		++thread_cnt;
+		proc_thread_infos[k].thread_f = G_open_segment_thread_m13;
+		proc_thread_infos[k].thread_name = "G_open_segment_thread_m13";
+		proc_thread_infos[k].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[k].arg = (void *) (seg_thread_infos + k);
+		proc_thread_infos[k].skip_job = FALSE_m13;
 	}
-	
+		
 	// empty slice
 	if (null_segment_cnt == n_segs) {
 		slice->n_segs = EMPTY_SLICE_m13;
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
+		free((void *) proc_thread_infos);
+		free((void *) seg_thread_infos);
 		G_set_error_m13(E_FMED_m13, "no segments found");
 		return_m13(NULL);
 	}
@@ -7781,48 +7821,51 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(chan);
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, thread_cnt, 0, FALSE_m13, threading);  // no reserved cores, don't wait for completion
-
-	// channel records
-	if (chan->flags & LH_READ_CHAN_RECS_MASK_m13)
-		G_open_level_records_m13((LH_m13 *) chan);
-
-	// check results
-	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		if (seg_thread_infos[i].parent == NULL)  // absent segment
-			continue;
-		seg = (SEG_m13 *) seg_thread_infos[i].MED_struct;
-		if (seg == NULL)
-			ret_val = FALSE_m13;
-		else
-			chan->segs[j] = seg;
-	}
-	free((void *) proc_thread_infos);
-	free((void *) seg_thread_infos);
-	if (ret_val == FALSE_m13) {
+	if (PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, FALSE_m13, threading) == FALSE_m13) {  // no reserved cores, don't wait for completion
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
+		free((void *) proc_thread_infos);
+		free((void *) seg_thread_infos);
 		return_m13(NULL);
 	}
 
-	// update slice
-	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		seg = chan->segs[j];
-		if (seg)
-			break;
-	}
-	slice->start_time = seg->slice.start_time;
-	slice->start_samp_num = seg->slice.start_samp_num;
-	slice->start_seg_num = seg->slice.start_seg_num;
-	for (++i, ++j; i < n_segs; ++i, ++j) {
-		if (chan->segs[j])
-			seg = chan->segs[j];
-	}
-	slice->end_time = seg->slice.end_time;
-	slice->end_samp_num = seg->slice.end_samp_num;
-	slice->end_seg_num = seg->slice.end_seg_num;
-	slice->n_segs = SLICE_SEG_COUNT_m13(slice);
+	// open channel records
+	if (chan->flags & LH_READ_CHAN_RECS_MASK_m13)
+		G_open_records_m13((LH_m13 *) chan);
 
+	// wait for channel threads
+	r_val = PROC_wait_jobs_m13(proc_thread_infos, n_segs);
+
+	// check results
+	if (r_val == FALSE_m13) {
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(&chan);
+		free((void *) proc_thread_infos);
+		free((void *) seg_thread_infos);
+		return_m13(NULL);
+	}
+
+	// assign results (& keep first & last segments)
+	first_seg = NULL;
+	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
+		if (proc_thread_infos[i].skip_job == FALSE_m13) {
+			last_seg = chan->segs[j] = (SEG_m13 *) seg_thread_infos[j].MED_struct;
+			if (first_seg == NULL)
+				first_seg = last_seg;
+		}
+	}
+	free((void *) proc_thread_infos);
+	free((void *) seg_thread_infos);
+
+	// update slice
+	slice->start_time = first_seg->slice.start_time;
+	slice->start_samp_num = first_seg->slice.start_samp_num;
+	slice->start_seg_num = first_seg->slice.start_seg_num;
+	slice->end_time = last_seg->slice.end_time;
+	slice->end_samp_num = last_seg->slice.end_samp_num;
+	slice->end_seg_num = last_seg->slice.end_seg_num;
+	slice->n_segs = SLICE_SEG_COUNT_m13(slice);
+	
 	// ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		if (chan->metadata_fps)
@@ -7865,7 +7908,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, si1 *chan_path, L
 		else if (chan->type_code == VID_CHAN_TYPE_CODE_m13)  // level code
 			uh->type_code = VID_METADATA_TYPE_CODE_m13;
 		uh->segment_number = UH_CHANNEL_LEVEL_CODE_m13;
-		uh->session_UID = proc_globs->current_session.UID;
+		uh->session_UID = pg->current_session.UID;
 		uh->channel_UID = seg->metadata_fps->uh->channel_UID;;
 		uh->segment_UID = UID_NO_ENTRY_m13;
 		chan->metadata_fps->params.fp->fd = FPS_FD_EPHEMERAL_m13;
@@ -7895,20 +7938,23 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 	rmi = (READ_MED_THREAD_INFO_m13 *) (pi->arg);
 
 	rmi->MED_struct = (LH_m13 *) G_open_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, rmi->parent, rmi->flags, rmi->password);
-	
+
 	if (rmi->MED_struct)
 		pi->status = PROC_THREAD_SUCCEEDED_m13;
 	else
 		pi->status = PROC_THREAD_FAILED_m13;
 	
+	if (pi->thread_job == FALSE_m13)
+		return_m13((pthread_rval_m13) 0);
+
 	thread_return_null_m13;
 }
 
 
-tern	G_open_level_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 segment_number
+tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 {
-	si1		tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];;
-	si4		seg_idx, segment_number;
+	si1		tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
+	si4		seg_idx;
 	FPS_m13		*ri_fps, *rd_fps;
 	SESS_m13	*sess;
 	SSR_m13		*ssr;
@@ -7935,17 +7981,26 @@ tern	G_open_level_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 s
 			rd_fps = sess->rec_data_fps;
 			break;
 		case SSR_TYPE_CODE_m13:
-			va_list		v_arg;
-			
-			va_start(v_arg, lh);
-			segment_number = va_arg(v_arg, si4);
-			va_end(v_arg);
-			
 			ssr = (SSR_m13 *) lh;
-			seg_idx = G_segment_index_m13(segment_number, lh);
-			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, segment_number);
-			ri_fps = ssr->rec_inds_fps[seg_idx];
-			rd_fps = ssr->rec_data_fps[seg_idx];
+			if (ssr->rec_inds_fps && ssr->rec_data_fps) {
+				si4		seg_num;
+				va_list		v_arg;
+				
+				va_start(v_arg, lh);
+				seg_num = va_arg(v_arg, si4);
+				va_end(v_arg);
+				
+				seg_idx = G_segment_index_m13(seg_num, lh);
+				if (seg_idx == FALSE_m13)
+					return_m13(FALSE_m13);
+				
+				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, seg_num);
+				ri_fps = ssr->rec_inds_fps[seg_idx];
+				rd_fps = ssr->rec_data_fps[seg_idx];
+			} else {
+				G_set_error_m13(E_GEN_m13, "ssr arrays not allocated");
+				return_m13(UNKNOWN_m13);
+			}
 			break;
 		case TS_CHAN_TYPE_CODE_m13:
 		case VID_CHAN_TYPE_CODE_m13:
@@ -7969,25 +8024,18 @@ tern	G_open_level_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 s
 	
 	// record indices
 	if (ri_fps == NULL) {
-		eprintf_m13("type_str = %s", lh->type_string);
 		if (lh->type_code == SSR_TYPE_CODE_m13)
 			sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_INDS_TYPE_STR_m13);
-		else {
-			eprintf_m13("lh->path = %lu", (ui8) lh->path);
-			eprintf_m13("lh->path[0] = %c", (ui8) lh->path[0]);
-			eprintf_m13("lh->path = %s", lh->path);
-			eprintf_m13("lh->name = %s", lh->name);
+		else
 			sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_INDS_TYPE_STR_m13);
-		}
-		eprintf_m13("");
-		ri_fps = FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+		ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 		if (ri_fps == NULL) {  // lh->name defaults to fs_name
 			if (G_swap_names_m13(lh) == TRUE_m13) {
 				if (lh->type_code == SSR_TYPE_CODE_m13)
 					sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_INDS_TYPE_STR_m13);
 				else
 					sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_INDS_TYPE_STR_m13);
-				ri_fps = FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
 		}
 	}
@@ -7998,14 +8046,14 @@ tern	G_open_level_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 s
 			sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_DATA_TYPE_STR_m13);
 		else
 			sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_DATA_TYPE_STR_m13);
-		rd_fps = FPS_read_m13(rd_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+		rd_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 		if (rd_fps == NULL) {  // lh->name defaults to fs_name
 			if (G_swap_names_m13(lh) == TRUE_m13) {
 				if (lh->type_code == SSR_TYPE_CODE_m13)
 					sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_DATA_TYPE_STR_m13);
 				else
 					sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_DATA_TYPE_STR_m13);
-				rd_fps = FPS_read_m13(rd_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				rd_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
 			}
 		}
 	}
@@ -8013,9 +8061,15 @@ tern	G_open_level_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 s
 	// reset behavior
 	G_pop_behavior_m13();
 
-	if (ri_fps == NULL || rd_fps  == NULL)
+	if (ri_fps == NULL || rd_fps  == NULL) {
+		if (ri_fps)  // unpaired
+			FPS_free_m13(&ri_fps);
+		if (rd_fps)  // unpaired
+			FPS_free_m13(&rd_fps);
 		return_m13(FALSE_m13);
+	}
 
+	// assign
 	switch (lh->type_code) {
 		case SESS_TYPE_CODE_m13:
 			sess->rec_inds_fps = ri_fps;
@@ -8046,7 +8100,7 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	si1		tmp_str[PATH_BYTES_m13];
 	si4		i, j, mapped_segs, first_seg_num;
 	SSR_m13		*ssr;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -8074,27 +8128,27 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	
 	ssr->type_code = SSR_TYPE_CODE_m13;
 	ssr->flags = sess->flags;
-	ssr->parent = (LH_m13 *) sess;
-	proc_globs = G_proc_globs_m13((LH_m13 *) ssr);
-	mapped_segs = proc_globs->current_session.n_mapped_segments;
-	first_seg_num = proc_globs->current_session.first_mapped_segment_number;
+	ssr->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
+	pg = G_proc_globs_m13((LH_m13 *) ssr);
+	mapped_segs = pg->current_session.n_mapped_segments;
+	first_seg_num = pg->current_session.first_mapped_segment_number;
 	ssr->rec_data_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
 	ssr->rec_inds_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
 	
 	for (i = first_seg_num, j = 0; j < mapped_segs; ++i, ++j)
-		G_open_level_records_m13((LH_m13 *) ssr, i);
+		G_open_records_m13((LH_m13 *) ssr, i);
 	
 		
 	return_m13(ssr);
 }
 
 
-SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m13 *parent, ui8 flags, si1 *password)
+SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path, LH_m13 *parent, ui8 flags, const si1 *password)
 {
 	tern		free_seg;
 	si1		tmp_str[PATH_BYTES_m13], *ext;
 	CHAN_m13	*chan;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -8136,7 +8190,7 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 		seg->flags = flags;
 	else
 		flags = seg->flags;
-	seg->parent = parent;
+	seg->parent = parent;  // set parent before getting proc_globs
 	if (flags == LH_NO_FLAGS_SET_m13) {
 		flags = seg->flags = parent->flags;
 		flags |= LH_FLAGS_SET_m13;
@@ -8164,8 +8218,8 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 	}
 
 	// set session globals (password, time constants, session directory/name)
-	proc_globs = G_proc_globs_m13((LH_m13 *) seg);
-	if (proc_globs->time_constants.set != TRUE_m13) {
+	pg = G_proc_globs_m13((LH_m13 *) seg);
+	if (pg->time_constants.set != TRUE_m13) {
 		if (G_set_session_globals_m13(seg->path, password, (LH_m13 *) seg) == FALSE_m13) {
 			if (free_seg == TRUE_m13)
 				G_free_segment_m13(&seg);
@@ -8191,7 +8245,8 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 				seg->metadata_fps = FPS_read_m13(seg->metadata_fps, 0, FPS_FULL_FILE_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
 			}
 			if (seg->metadata_fps == NULL) {
-				G_free_segment_m13(&seg);
+				if (free_seg == TRUE_m13)
+					G_free_segment_m13(&seg);
 				return_m13(NULL);
 			}
 		}
@@ -8213,7 +8268,8 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 				seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
 			}
 			if (seg->ts_inds_fps == NULL) {
-				G_free_segment_m13(&seg);
+				if (free_seg == TRUE_m13)
+					G_free_segment_m13(&seg);
 				return_m13(NULL);
 			}
 		}
@@ -8228,7 +8284,8 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 					seg->ts_data_fps = FPS_read_m13(seg->ts_inds_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
 				}
 				if (seg->ts_data_fps == NULL) {
-					G_free_segment_m13(&seg);
+					if (free_seg == TRUE_m13)
+						G_free_segment_m13(&seg);
 					return_m13(NULL);
 				}
 			}
@@ -8237,7 +8294,7 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, si1 *seg_path, LH_m1
 
 	// segment records
 	if (seg->flags & LH_READ_SEG_RECS_MASK_m13)
-		G_open_level_records_m13((LH_m13 *) seg);
+		G_open_records_m13((LH_m13 *) seg);
 	
 	if (seg->flags & LH_GENERATE_EPHEMERAL_DATA_m13)
 		seg->flags |= LH_UPDATE_EPHEMERAL_DATA_m13;
@@ -8270,19 +8327,22 @@ pthread_rval_m13	G_open_segment_thread_m13(void *ptr)
 	else
 		pi->status = PROC_THREAD_FAILED_m13;
 	
+	if (pi->thread_job == FALSE_m13)
+		return_m13((pthread_rval_m13) 0);
+
 	thread_return_null_m13;
 }
 
 
-SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, si1 *password, si1 *index_channel_name)
+SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, si4 list_len, ui8 flags, const si1 *password, const si1 *index_channel_name)
 {
-	tern				free_sess, all_channels_selected, include_ts_chans, include_vid_chans, threading, ret_val;
+	tern				free_sess, all_channels_selected, include_ts_chans, include_vid_chans, threading, r_val;
 	si1				*sess_dir, **chan_list, **ts_chan_list, **vid_chan_list, tmp_str[PATH_BYTES_m13], *tmp_str_ptr;
 	si1				**full_ts_chan_list, **full_vid_chan_list, *regex_str;
 	ui4				type_code;
-	si4				i, j, n_chans, n_segs, seg_idx, thread_idx;
-	si4				n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
-	PROC_GLOBS_m13			*proc_globs;
+	si4				i, j, n_segs, seg_idx;
+	si4				n_chans, n_ts_chans, n_vid_chans, all_ts_chans, all_vid_chans;
+	PROC_GLOBS_m13			*pg;
 	CHAN_m13			*chan;
 	UH_m13				*uh;
 	PROC_THREAD_INFO_m13		*proc_thread_infos;
@@ -8316,12 +8376,6 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	else
 		flags = sess->flags;
 	flags |= LH_FLAGS_SET_m13;
-	
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
-	sess->path = proc_globs->current_session.directory;
-	sess->name = proc_globs->current_session.fs_name;  // default to fs_name
-	if (*index_channel_name)
-		strcpy(proc_globs->current_session.index_channel_name, index_channel_name);
 	
 	// generate channel list
 	all_channels_selected = FALSE_m13;
@@ -8377,15 +8431,18 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		G_set_error_m13(E_GEN_m13, "no channels in file list");  // list len == 0 is not an error for G_file_list_m13(), so this is causal error
 		return_m13(NULL);
 	}
-
-	// set session globals (password, time constants, session directory/name)
-	if (proc_globs->time_constants.set == FALSE_m13) {
-		if (G_set_session_globals_m13(chan_list[0], password, (LH_m13 *) sess) == FALSE_m13) {
-			if (free_sess == TRUE_m13)
-				G_free_session_m13(&sess);
-			return_m13(NULL);
-		}
+	
+	// set session globals (directory, name, password, time constants)
+	if (G_set_session_globals_m13(chan_list[0], password, (LH_m13 *) sess) == FALSE_m13) {
+		if (free_sess == TRUE_m13)
+			G_free_session_m13(&sess);
+		return_m13(NULL);
 	}
+	pg = G_proc_globs_m13((LH_m13 *) sess);
+	sess->path = pg->current_session.path;
+	sess->name = pg->current_session.fs_name;  // default to fs_name
+	if (*index_channel_name)
+		strcpy(pg->current_session.index_channel_name, index_channel_name);
 
 	// divide channel lists
 	if (flags & LH_EXCLUDE_TS_CHANS_m13) {
@@ -8451,7 +8508,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 				chan->name = chan->fs_name;
 				chan->type_code = TS_CHAN_TYPE_CODE_m13;
 				chan->flags = flags;
-				chan->parent = (LH_m13 *) sess;
+				chan->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
 				G_MED_path_components_m13(full_ts_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8484,7 +8541,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			chan->name = chan->fs_name;
 			chan->type_code = TS_CHAN_TYPE_CODE_m13;  // opened channels are always set to active
 			chan->flags = flags | LH_CHAN_ACTIVE_m13;
-			chan->parent = (LH_m13 *) sess;
+			chan->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
 			G_MED_path_components_m13(ts_chan_list[i], chan->path, chan->name);
 		}
 		free_m13((void *) ts_chan_list);
@@ -8517,7 +8574,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 				chan->name = chan->fs_name;
 				chan->type_code = VID_CHAN_TYPE_CODE_m13;
 				chan->flags = flags;
-				chan->parent = (LH_m13 *) sess;
+				chan->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
 				G_MED_path_components_m13(full_vid_chan_list[i], chan->path, chan->name);
 			}
 			// match passed list to full list to mark as active
@@ -8550,7 +8607,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			chan->name = chan->fs_name;
 			chan->type_code = VID_CHAN_TYPE_CODE_m13;
 			chan->flags = flags | LH_CHAN_ACTIVE_m13;
-			chan->parent = (LH_m13 *) sess;
+			chan->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
 			G_MED_path_components_m13(vid_chan_list[i], chan->path, chan->name);
 		}
 		free_m13((void *) vid_chan_list);
@@ -8580,47 +8637,74 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m13));
 	
 	// set up time series channels
-	for (thread_idx = i = 0; i < n_ts_chans; ++i, ++thread_idx) {
+	for (i = j = 0; i < n_ts_chans; ++i, ++j) {
 		chan = sess->ts_chans[i];
 		chan->slice = *slice;
-		read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-		read_MED_thread_infos[thread_idx].parent = (LH_m13 *) sess;
-		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m13;
-		proc_thread_infos[thread_idx].thread_name = "G_open_channel_thread_m13";
-		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		read_MED_thread_infos[j].MED_struct = (LH_m13 *) chan;
+		read_MED_thread_infos[j].parent = (LH_m13 *) sess;
+		proc_thread_infos[j].thread_f = G_open_channel_thread_m13;
+		proc_thread_infos[j].thread_name = "G_open_channel_thread_m13";
+		proc_thread_infos[j].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[j].arg = (void *) (read_MED_thread_infos + j);
+		proc_thread_infos[j].skip_job = FALSE_m13;
 	}
 	// set up video channels
-	for (i = 0; i < n_vid_chans; ++i, ++thread_idx) {
+	for (i = 0; i < n_vid_chans; ++i, ++j) {
 		chan = sess->vid_chans[i];
 		chan->slice = *slice;
-		read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-		read_MED_thread_infos[thread_idx].parent = (LH_m13 *) sess;
-		proc_thread_infos[thread_idx].thread_f = G_open_channel_thread_m13;
-		proc_thread_infos[thread_idx].thread_name = "G_open_channel_thread_m13";
-		proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-		proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
+		read_MED_thread_infos[j].MED_struct = (LH_m13 *) chan;
+		read_MED_thread_infos[j].parent = (LH_m13 *) sess;
+		proc_thread_infos[j].thread_f = G_open_channel_thread_m13;
+		proc_thread_infos[j].thread_name = "G_open_channel_thread_m13";
+		proc_thread_infos[j].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[j].arg = (void *) (read_MED_thread_infos + j);
+		proc_thread_infos[j].skip_job = FALSE_m13;
 	}
-	
+
 	// thread out channel opens
 	if (n_chans == 1)  // no sense in thread overhead for one channel
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(sess);
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, n_chans, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
-	free((void *) proc_thread_infos);
-	free((void *) read_MED_thread_infos);
-
-	// check results
-	if (ret_val == FALSE_m13) {
+	if (PROC_distribute_jobs_m13(proc_thread_infos, n_chans, 0, FALSE_m13, threading) == FALSE_m13) {  // no reserved cores, don't wait for completion
 		if (free_sess == TRUE_m13)
 			G_free_session_m13(&sess);
-		G_set_error_m13(E_GEN_m13, "error opening session");
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
 		return_m13(NULL);
 	}
 
+	// open session records
+	if (sess->flags & LH_READ_SESS_RECS_MASK_m13)
+		G_open_records_m13((LH_m13 *) sess);
+
+	// open segmented session records
+	if (sess->flags & LH_READ_SEG_SESS_RECS_MASK_m13)
+		G_open_seg_sess_recs_m13(sess);
+		
+	// wait for channel threads
+	r_val = PROC_wait_jobs_m13(proc_thread_infos, n_chans);
+
+	// check results
+	if (r_val == FALSE_m13) {
+		if (free_sess == TRUE_m13)
+			G_free_session_m13(&sess);
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+		G_set_error_m13(E_GEN_m13, "error opening session");
+		return_m13(NULL);
+	}
+	
+	// assign results
+	for (i = j = 0; i < n_ts_chans; ++i, ++j)
+		sess->ts_chans[i] = (CHAN_m13 *) read_MED_thread_infos[j].MED_struct;
+	for (i = 0; i < n_vid_chans; ++i, ++j)
+		sess->vid_chans[i] = (CHAN_m13 *) read_MED_thread_infos[j].MED_struct;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+
 	// update session slice
-	chan = proc_globs->current_session.index_channel;
+	chan = pg->current_session.index_channel;
 	if ((chan->flags & LH_CHAN_ACTIVE_m13) == 0)
 		chan = G_active_channel_m13(sess, DEFAULT_CHAN_m13);
 	slice->start_time = chan->slice.start_time;
@@ -8630,20 +8714,12 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	slice->n_segs = SLICE_SEG_COUNT_m13(slice);
 		
 	// sort channels
-	G_sort_channels_by_acq_num_m13(sess);
-	
-	// session records
-	if (sess->flags & LH_READ_SESS_RECS_MASK_m13) {
-		eprintf_m13("opening recs");
-		G_open_level_records_m13((LH_m13 *) sess);
-		eprintf_m13("opened recs");
+	if (G_sort_channels_by_acq_num_m13(sess) == FALSE_m13) {
+		if (free_sess == TRUE_m13)
+			G_free_session_m13(&sess);
+		return_m13(NULL);
 	}
-
-	// segmented session records level
-	if (sess->flags & LH_READ_SEG_SESS_RECS_MASK_m13)
-		G_open_seg_sess_recs_m13(sess);
-		
-	
+			
 	// ephemeral data
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		if (sess->n_ts_chans) {
@@ -8667,6 +8743,11 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			ssr = sess->ssr;
 			if (ssr) {
 				seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) sess);
+				if (seg_idx == FALSE_m13) {
+					if (free_sess == TRUE_m13)
+						G_free_session_m13(&sess);
+					return_m13(NULL);
+				}
 				for (i = 0, j = seg_idx; i < n_segs; ++i, ++j)
 					if (ssr->rec_inds_fps[j] && ssr->rec_data_fps[j])
 						G_merge_universal_headers_m13(sess->ts_metadata_fps, ssr->rec_data_fps[j], NULL);
@@ -8675,7 +8756,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			uh = sess->ts_metadata_fps->uh;
 			uh->type_code = TS_METADATA_TYPE_CODE_m13;
 			uh->segment_number = UH_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globs->current_session.UID;
+			uh->session_UID = pg->current_session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 		if (sess->n_vid_chans) {
@@ -8705,7 +8786,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			uh = sess->vid_metadata_fps->uh;
 			uh->type_code = VID_METADATA_TYPE_CODE_m13;
 			uh->segment_number = UH_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globs->current_session.UID;
+			uh->session_UID = pg->current_session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 	}
@@ -8794,9 +8875,10 @@ tern	G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_pop_behavior_m13(void)
+void	G_pop_behavior_exec_m13(const si1 *function, const si4 line)
 {
 	ui4			code;
+	si4			err_code;
 	BEHAVIOR_STACK_m13	*stack;
 	
 
@@ -8808,11 +8890,12 @@ void	G_pop_behavior_m13(void)
 		if (--(stack->top_idx) == -1)
 			stack->_id = 0;  // release stack (popping stack base); // G_current_behavior_m13 will return default behavior
 	
-	// if popped back to an exit on fail => exit
-	if (globals_m13->error.code) {
-		code = G_current_behavior_m13();
+	// exit if popped back to an exit on fail & error is set
+	err_code = G_error_code_m13();
+	if (err_code) {
+		code = stack->behaviors[stack->top_idx].code;
 		if ((code & RETURN_ON_FAIL_m13) == 0)
-			exit_m13(globals_m13->error.code);
+			exit_exec_m13(function, line, err_code);
 	}
 
 	return;
@@ -8834,18 +8917,19 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 		return;
 	
 	// causal error set => do not modify stack of causal thread
-	err_code = globals_m13->error.code;
-	if (err_code && stack->err_chain == TRUE_m13) {
-		// don't pop anything that wasn't pushed after error set
-		if (strcmp(function, stack->entries[stack->err_top_idx].name) == 0)
-			stack->entries[stack->err_top_idx--].return_line = line;
-
-		// exit if at base
-		if (stack->_id == globals_m13->main_id)
-			if (stack->err_top_idx == -1)
-				exit_m13(err_code);
-		
-		return;
+	err_code = G_error_code_m13();
+	if (err_code) {
+		if (stack->err_chain == TRUE_m13) {  // this thread is in the error chain
+			// don't pop anything that wasn't pushed after error set
+			if (strcmp(function, stack->entries[stack->err_top_idx].name) == 0)
+				stack->entries[stack->err_top_idx--].return_line = line;
+			
+			// exit if at base
+			if (stack->_id == globals_m13->main_id)
+				if (stack->err_top_idx == -1)
+					exit_exec_m13(function, line, err_code);
+			return;
+		}
 	}
 	
 	if (strcmp(function, stack->entries[stack->top_idx].name)) {
@@ -8865,42 +8949,73 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+tern	G_proc_error_get_m13(LH_m13 *lh)
+{
+	PROC_GLOBS_m13	*pg;
+	
+	// returns TRUE_m13 if set
+	// returns FALSE_m13 if clear
+
+	pg = G_proc_globs_m13(lh);
+	
+	return(pg->miscellaneous.proc_error);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	G_proc_error_set_m13(LH_m13 *lh, tern state)
+{
+	PROC_GLOBS_m13	*pg;
+	
+	// pass TRUE_m13 to set
+	// pass FALSE_m13 to clear
+		
+	pg = G_proc_globs_m13(lh);
+	pg->miscellaneous.proc_error = state;
+	
+	return;
+}
+
+
 PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 {
-	si4			i, n_proc_globs;
+	si4			i, n_pg;
 	ui8			sess_uid;
-	pid_t_m13		_id, tmp_id;
-	LH_m13			*top_lh;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, *new_proc_globs;
+	pid_t_m13		_id;
+	LH_m13			*tmp_lh;
+	PROC_GLOBS_m13		*pg, **pg_ptr, *new_pg;
 	PROC_GLOBS_LIST_m13	*list;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	proc_globs = NULL;
+	pg = NULL;
 
-	// find process globals by local ref or linkage
+	// find process globals by shortcut or linkage
 	if (lh) {
 		// found by shortcut
 		if (lh->proc_globs)
 			return_m13(lh->proc_globs);
 		
 		// find by linkage
-		top_lh = lh;
-		while (top_lh->parent)  { // top of hierarchy is proc_globs
-			top_lh = top_lh->parent;
-			if (top_lh->proc_globs) {
-				proc_globs = (PROC_GLOBS_m13 *) top_lh->proc_globs;  // found a shortcut
+		tmp_lh = lh;  // don't change lh - possibly needed again
+		while (tmp_lh->parent)  {  // top of hierarchy is pg; pg->parent == NULL
+			tmp_lh = tmp_lh->parent;
+			if (tmp_lh->proc_globs) {
+				pg = (PROC_GLOBS_m13 *) tmp_lh->proc_globs;  // found shortcut
 				break;
 			}
 		}
-		if (proc_globs == NULL) {
-			proc_globs = (PROC_GLOBS_m13 *) top_lh;
-			if (proc_globs->type_code != PROC_GLOBS_TYPE_CODE_m13)
-				proc_globs = NULL;  // reset
-		}
-		if (proc_globs)
+		if (pg == NULL)
+			if (tmp_lh->type_code == PROC_GLOBS_TYPE_CODE_m13)
+				pg = (PROC_GLOBS_m13 *) tmp_lh;
+		if (pg)
 			goto PROC_GLOBS_FOUND_m13;
 	}
 
@@ -8913,11 +9028,11 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 		if (G_MED_file_m13(lh->type_code) == TRUE_m13) {
 			sess_uid = ((FPS_m13 *) lh)->uh->session_UID;
 			if (sess_uid) {
-				proc_globs_ptr = list->proc_globs_ptrs;
-				n_proc_globs = list->top_idx + 1;
-				for (i = n_proc_globs; i--; ++proc_globs_ptr) {
-					if ((*proc_globs_ptr)->current_session.UID == sess_uid) {
-						proc_globs = *proc_globs_ptr;
+				pg_ptr = list->proc_globs_ptrs;
+				n_pg = list->top_idx + 1;
+				for (i = n_pg; i--; ++pg_ptr) {
+					if ((*pg_ptr)->current_session.UID == sess_uid) {
+						pg = *pg_ptr;
 						pthread_mutex_unlock_m13(&list->mutex);
 						goto PROC_GLOBS_FOUND_m13;
 					}
@@ -8927,82 +9042,82 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	}
 
 	// find by thread id (recursing up thread ancestral tree as necessary)
-	_id = tmp_id = gettid_m13();
+	_id = gettid_m13();
 	do {
-		proc_globs_ptr = list->proc_globs_ptrs;
-		n_proc_globs = list->top_idx + 1;
-		for (i = n_proc_globs; i--; ++proc_globs_ptr) {
-			if ((*proc_globs_ptr)->_id == tmp_id) {
-				proc_globs = *proc_globs_ptr;
+		pg_ptr = list->proc_globs_ptrs;
+		n_pg = list->top_idx + 1;
+		for (i = n_pg; i--; ++pg_ptr) {
+			if ((*pg_ptr)->_id == _id) {
+				pg = *pg_ptr;
 				pthread_mutex_unlock_m13(&list->mutex);
 				goto PROC_GLOBS_FOUND_m13;
 			}
-			if (proc_globs)
+			if (pg)
 				continue;
-			if ((*proc_globs_ptr)->_id == 0)  // store first empty
-				proc_globs = *proc_globs_ptr;
+			if ((*pg_ptr)->_id == 0)  // store first empty
+				pg = *pg_ptr;
 		}
 		
 		// get thread predecessor
-		tmp_id = PROC_thread_list_parent_m13(tmp_id);
+		_id = PROC_thread_parent_id_m13(_id);
 		
-	} while (tmp_id);
+	} while (_id);
 	
 	// expand list
-	if (proc_globs == NULL) {
-		eprintf_m13("creating new: n_proc_globs = %d, list->size = %d", n_proc_globs, list->size);
-		if (n_proc_globs == list->size) {
-			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
-			if (proc_globs_ptr == NULL) {
+	if (pg == NULL) {
+		if (n_pg == list->size) {
+			n_pg += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
+			pg_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_pg * sizeof(PROC_GLOBS_m13 *));
+			if (pg_ptr == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
-			list->proc_globs_ptrs = proc_globs_ptr;
+			list->proc_globs_ptrs = pg_ptr;
 
 			// allocate new proc_globs
-			new_proc_globs = (PROC_GLOBS_m13 *) malloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13));
-			if (new_proc_globs == NULL) {
+			new_pg = (PROC_GLOBS_m13 *) malloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13));
+			if (new_pg == NULL) {
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				pthread_mutex_unlock_m13(&list->mutex);
 				return_m13(NULL);
 			}
 
 			// allocate new proc_globs pointers (note: proc_globs allocated en bloc)
-			proc_globs_ptr = list->proc_globs_ptrs + list->size;  // list->size == old size at this point
+			pg_ptr = list->proc_globs_ptrs + list->size;  // list->size == old size at this point
 			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--;)
-				*proc_globs_ptr++ = new_proc_globs++;  // assign stack pointer
-			list->size = n_proc_globs;
+				*pg_ptr++ = new_pg++;  // assign stack pointer
+			list->size = n_pg;
 		}
-		proc_globs = list->proc_globs_ptrs[++list->top_idx];
+		pg = list->proc_globs_ptrs[++list->top_idx];
 	}
 
 	// relase mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 	
 	// initialize
-	G_proc_globs_init_m13(proc_globs);
-	proc_globs->_id = _id;
+	G_proc_globs_init_m13(pg);
 
-	// set top links
-	if (lh) {
-		top_lh->parent = (LH_m13 *) proc_globs;
-		proc_globs->child = top_lh;
-	}
-		
 PROC_GLOBS_FOUND_m13:
 	
-	// set shortcuts
 	if (lh) {
-		lh->proc_globs = proc_globs;
+		// set shortcuts
+		lh->proc_globs = pg;
 		while (lh->parent) {
+			if (lh->parent->type_code == PROC_GLOBS_TYPE_CODE_m13)
+				break;
 			lh = lh->parent;
-			lh->proc_globs = proc_globs;
+			if (lh->proc_globs)  // all higher links already set, just return
+				return_m13(pg);
+			lh->proc_globs = pg;
 		}
+		
+		// set top links
+		lh->parent = (LH_m13 *) pg;
+		pg->child = lh;  // lh is top of hierarchy
 	}
 	
-	return_m13(proc_globs);
+	return_m13(pg);
 }
 	
 
@@ -9012,8 +9127,8 @@ inline
 void	G_proc_globs_delete_m13(LH_m13 *lh)
 {
 	si4			i;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptrs;
-	PROC_GLOBS_LIST_m13	*proc_globs_list;
+	PROC_GLOBS_m13		*pg, **pg_ptrs;
+	PROC_GLOBS_LIST_m13	*pg_list;
 	Sgmt_RECS_LIST_m13	*Sgmt_records_list;
 	Sgmt_RECS_ENTRY_m13	*Sgmt_records_entry;
 	
@@ -9021,12 +9136,12 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13(lh);
-	if (proc_globs == NULL)
+	pg = G_proc_globs_m13(lh);
+	if (pg == NULL)
 		return_void_m13;
 	
 	// delete proc globals Sgmt_records_list
-	Sgmt_records_list = proc_globs->current_session.Sgmt_recs_list;
+	Sgmt_records_list = pg->current_session.Sgmt_recs_list;
 	pthread_mutex_lock_m13(&Sgmt_records_list->mutex);
 	
 	Sgmt_records_entry = Sgmt_records_list->entries;
@@ -9038,27 +9153,27 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	pthread_mutex_destroy_m13(&Sgmt_records_list->mutex);
 	
 	free((void *) Sgmt_records_list);
-	proc_globs->current_session.Sgmt_recs_list = NULL;
+	pg->current_session.Sgmt_recs_list = NULL;
 
-	proc_globs->_id = 0;
+	pg->_id = 0;
 	
 	// trim search extents
-	proc_globs_list = globals_m13->proc_globs_list;
-	pthread_mutex_lock_m13(&proc_globs_list->mutex);
+	pg_list = globals_m13->proc_globs_list;
+	pthread_mutex_lock_m13(&pg_list->mutex);
 	
-	proc_globs_ptrs = proc_globs_list->proc_globs_ptrs;
-	if (proc_globs == proc_globs_ptrs[proc_globs_list->top_idx])
-		--proc_globs_list->top_idx;
+	pg_ptrs = pg_list->proc_globs_ptrs;
+	if (pg == pg_ptrs[pg_list->top_idx])
+		--pg_list->top_idx;
 	
-	pthread_mutex_unlock_m13(&proc_globs_list->mutex);
+	pthread_mutex_unlock_m13(&pg_list->mutex);
 
 	return_void_m13;
 }
 
 
-PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs)
+PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg)
 {
-	tern			free_proc_globs;
+	tern			free_pg;
 	Sgmt_RECS_ENTRY_m13	*list_entries;
 	
 #ifdef FT_DEBUG_m13
@@ -9066,95 +9181,98 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *proc_globs)
 #endif
 	
 	// allocate - caller takes ownership
-	if (proc_globs == NULL) {
-		proc_globs = (PROC_GLOBS_m13 *) calloc((size_t) 1, sizeof(PROC_GLOBS_m13));
-		if (proc_globs == NULL) {
+	if (pg == NULL) {
+		pg = (PROC_GLOBS_m13 *) calloc((size_t) 1, sizeof(PROC_GLOBS_m13));
+		if (pg == NULL) {
 			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(NULL);
 		}
-		free_proc_globs = TRUE_m13;
+		free_pg = TRUE_m13;
 	} else {
-		free_proc_globs = FALSE_m13;
+		free_pg = FALSE_m13;
 	}
 	
+	// set _id
+	pg->_id = gettid_m13();  // note this may be a duplicate entry by _id, but linkage will lead to correct proc_globs
+
 	// set header
-	proc_globs->type_code = PROC_GLOBS_TYPE_CODE_m13;
+	pg->type_code = PROC_GLOBS_TYPE_CODE_m13;
 	
 	// password data
-	proc_globs->password_data.processed = FALSE_m13;
+	pg->password_data.processed = FALSE_m13;
 	
 	// current session constants
-	proc_globs->current_session.UID = UID_NO_ENTRY_m13;
-	*proc_globs->current_session.directory = 0;
-	proc_globs->current_session.start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m13;
-	proc_globs->current_session.end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m13;
-	*proc_globs->current_session.uh_name = 0;
-	*proc_globs->current_session.fs_name = 0;
-	proc_globs->current_session.start_time = UUTC_NO_ENTRY_m13;
-	proc_globs->current_session.end_time = UUTC_NO_ENTRY_m13;
-	proc_globs->current_session.n_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	proc_globs->current_session.n_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
-	proc_globs->current_session.index_channel = NULL;
-	*proc_globs->current_session.index_channel_name = 0;
+	pg->current_session.UID = UID_NO_ENTRY_m13;
+	*pg->current_session.path = 0;
+	pg->current_session.start_time = GLOBALS_SESSION_START_TIME_DEFAULT_m13;
+	pg->current_session.end_time = GLOBALS_SESSION_END_TIME_DEFAULT_m13;
+	*pg->current_session.uh_name = 0;
+	*pg->current_session.fs_name = 0;
+	pg->current_session.start_time = UUTC_NO_ENTRY_m13;
+	pg->current_session.end_time = UUTC_NO_ENTRY_m13;
+	pg->current_session.n_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
+	pg->current_session.n_mapped_segments = SEGMENT_NUMBER_NO_ENTRY_m13;
+	pg->current_session.index_channel = NULL;
+	*pg->current_session.index_channel_name = 0;
 	
 	// active channel constants
-	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_sampling_frequency = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.minimum_sampling_frequency_channel = NULL;
-	proc_globs->active_channels.maximum_sampling_frequency_channel = NULL;
-	proc_globs->active_channels.frame_rates_vary = UNKNOWN_m13;;
-	proc_globs->active_channels.minimum_frame_rate = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.minimum_frame_rate_channel = NULL;
-	proc_globs->active_channels.maximum_frame_rate_channel = NULL;
+	pg->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
+	pg->active_channels.minimum_sampling_frequency = RATE_NO_ENTRY_m13;
+	pg->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
+	pg->active_channels.minimum_sampling_frequency_channel = NULL;
+	pg->active_channels.maximum_sampling_frequency_channel = NULL;
+	pg->active_channels.frame_rates_vary = UNKNOWN_m13;;
+	pg->active_channels.minimum_frame_rate = RATE_NO_ENTRY_m13;
+	pg->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
+	pg->active_channels.minimum_frame_rate_channel = NULL;
+	pg->active_channels.maximum_frame_rate_channel = NULL;
 	
 	// time Constants
-	proc_globs->time_constants.set = FALSE_m13;
-	proc_globs->time_constants.RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m13;
-	proc_globs->time_constants.observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m13;
-	proc_globs->time_constants.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;
-	proc_globs->time_constants.standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13;
-	proc_globs->time_constants.daylight_start_code.value = DTCC_VALUE_NO_ENTRY_m13;
-	proc_globs->time_constants.daylight_end_code.value = DTCC_VALUE_NO_ENTRY_m13;
-	strcpy(proc_globs->time_constants.standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m13);
-	strcpy(proc_globs->time_constants.standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13);
-	strcpy(proc_globs->time_constants.daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13);
-	strcpy(proc_globs->time_constants.daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13);
+	pg->time_constants.set = FALSE_m13;
+	pg->time_constants.RTO_known = GLOBALS_RTO_KNOWN_DEFAULT_m13;
+	pg->time_constants.observe_DST = GLOBALS_OBSERVE_DST_DEFAULT_m13;
+	pg->time_constants.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;
+	pg->time_constants.standard_UTC_offset = GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13;
+	pg->time_constants.daylight_start_code.value = DTCC_VALUE_NO_ENTRY_m13;
+	pg->time_constants.daylight_end_code.value = DTCC_VALUE_NO_ENTRY_m13;
+	strcpy(pg->time_constants.standard_timezone_acronym, GLOBALS_STANDARD_TIMEZONE_ACRONYM_DEFAULT_m13);
+	strcpy(pg->time_constants.standard_timezone_string, GLOBALS_STANDARD_TIMEZONE_STRING_DEFAULT_m13);
+	strcpy(pg->time_constants.daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13);
+	strcpy(pg->time_constants.daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13);
 	
 	// set up Sgmt_record_list
-	proc_globs->current_session.Sgmt_recs_list = (Sgmt_RECS_LIST_m13 *) calloc((size_t) 1, sizeof(Sgmt_RECS_LIST_m13));
-	if (proc_globs->current_session.Sgmt_recs_list == NULL) {
-		if (free_proc_globs == TRUE_m13)
-			free((void *) proc_globs);
+	pg->current_session.Sgmt_recs_list = (Sgmt_RECS_LIST_m13 *) calloc((size_t) 1, sizeof(Sgmt_RECS_LIST_m13));
+	if (pg->current_session.Sgmt_recs_list == NULL) {
+		if (free_pg == TRUE_m13)
+			free((void *) pg);
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return_m13(NULL);
 	}
 	list_entries = (Sgmt_RECS_ENTRY_m13 *) calloc((size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13, sizeof(Sgmt_RECS_ENTRY_m13));
 	if (list_entries == NULL) {
-		if (free_proc_globs == TRUE_m13)
-			free((void *) proc_globs);
+		if (free_pg == TRUE_m13)
+			free((void *) pg);
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		return_m13(NULL);
 	}
-	proc_globs->current_session.Sgmt_recs_list->entries = list_entries;
-	proc_globs->current_session.Sgmt_recs_list->size = (si4) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-	proc_globs->current_session.Sgmt_recs_list->top_idx = (si4) -1;
-	pthread_mutex_init_m13(&proc_globs->current_session.Sgmt_recs_list->mutex, NULL);
+	pg->current_session.Sgmt_recs_list->entries = list_entries;
+	pg->current_session.Sgmt_recs_list->size = (si4) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
+	pg->current_session.Sgmt_recs_list->top_idx = (si4) -1;
+	pthread_mutex_init_m13(&pg->current_session.Sgmt_recs_list->mutex, NULL);
 	
 	// reset miscellaneous process globals
-	proc_globs->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
-	proc_globs->miscellaneous.threading = globals_m13->threading;
+	pg->miscellaneous.proc_error = FALSE_m13;
+	pg->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
+	pg->miscellaneous.threading = globals_m13->threading;
 
-	return_m13(proc_globs);
+	return_m13(pg);
 }
 
 
 PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 {
-	si4			i, n_proc_globs;
-	LH_m13			*top_lh;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr, *new_proc_globs;
+	si4			i, n_pg;
+	PROC_GLOBS_m13		*pg, **pg_ptr, *new_pg;
 	PROC_GLOBS_LIST_m13	*list;
 	
 #ifdef FT_DEBUG_m13
@@ -9178,63 +9296,71 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 	pthread_mutex_lock_m13(&list->mutex);
 			
 	// find first empty entry
-	proc_globs = NULL;
-	n_proc_globs = list->top_idx + 1;
-	proc_globs_ptr = list->proc_globs_ptrs;
-	for (i = n_proc_globs; i--; ++proc_globs_ptr) {
-		if ((*proc_globs_ptr)->_id == 0) {
-			proc_globs = *proc_globs_ptr;
+	pg = NULL;
+	n_pg = list->top_idx + 1;
+	pg_ptr = list->proc_globs_ptrs;
+	for (i = n_pg; i--; ++pg_ptr) {
+		if ((*pg_ptr)->_id == 0) {
+			pg = *pg_ptr;
 			break;
 		}
 	}
 	
 	// expand list
-	if (proc_globs == NULL) {
-		if (n_proc_globs == list->size) {
-			n_proc_globs += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
-			proc_globs_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_proc_globs * sizeof(PROC_GLOBS_m13 *));
-			if (proc_globs_ptr == NULL) {
+	if (pg == NULL) {
+		if (n_pg == list->size) {
+			n_pg += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
+			pg_ptr = (PROC_GLOBS_m13 **) realloc((void *) list->proc_globs_ptrs, (size_t) n_pg * sizeof(PROC_GLOBS_m13 *));
+			if (pg_ptr == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
-			list->proc_globs_ptrs = proc_globs_ptr;
+			list->proc_globs_ptrs = pg_ptr;
 
 			// allocate proc_globs (note: proc_globs allocated en bloc)
-			new_proc_globs = (PROC_GLOBS_m13 *) malloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13));
-			if (new_proc_globs == NULL) {
+			new_pg = (PROC_GLOBS_m13 *) malloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13));
+			if (new_pg == NULL) {
 				G_set_error_m13(E_ALLOC_m13, NULL);
 				pthread_mutex_unlock_m13(&list->mutex);
 				return_m13(NULL);
 			}
 			
 			// assign pointers (note: proc_globs allocated en bloc)
-			proc_globs_ptr = list->proc_globs_ptrs + list->size;  // list->size == old size at this point
+			pg_ptr = list->proc_globs_ptrs + list->size;  // list->size == old size at this point
 			for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--;)
-				*proc_globs_ptr++ = new_proc_globs++;  // assign stack pointer
-			list->size = n_proc_globs;
+				*pg_ptr++ = new_pg++;  // assign stack pointer
+			list->size = n_pg;
 		}
-		proc_globs = list->proc_globs_ptrs[++list->top_idx];
+		pg = list->proc_globs_ptrs[++list->top_idx];
 	}
 
 	// relase mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 	
-	// set links
-	lh->proc_globs = proc_globs;  // set shortcut
-	for (top_lh = lh; top_lh->parent; top_lh = top_lh->parent);
-	proc_globs->child = top_lh;
-	top_lh->parent = (LH_m13 *) proc_globs;
-
 	// initialize
-	G_proc_globs_init_m13(proc_globs);
-	proc_globs->_id = gettid_m13();  // note this may be a duplicate entry by _id, but linkage will lead to correct proc_globs
+	G_proc_globs_init_m13(pg);
 
-	return_m13(proc_globs);
+	// set shortcuts
+	lh->proc_globs = pg;
+	while (lh->parent) {
+		if (lh->parent->type_code == PROC_GLOBS_TYPE_CODE_m13)  // unlikely with new proc_globs, but possible
+			break;
+		lh = lh->parent;
+		if (lh->proc_globs)  // all higher links already set, just return
+			return_m13(pg);
+		lh->proc_globs = pg;
+	}
+	
+	// set top links
+	lh->parent = (LH_m13 *) pg;
+	pg->child = lh;
+
+	return_m13(pg);
 }
 	
 
-tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
+tern	G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw)
 {
 	tern			free_md1, LEVEL_1_valid;
 	PASSWORD_DATA_m13	*pwd;
@@ -9242,7 +9368,7 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 	si1			unspecified_pw_bytes[PASSWORD_BYTES_m13] = {0}, putative_L1_pw_bytes[PASSWORD_BYTES_m13] = {0};
 	si1			md_dir[PATH_BYTES_m13], md_file[PATH_BYTES_m13];
 	si4			i;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	METADATA_SECTION_1_m13	*md1;
 	UH_m13			*uh;
 	FILE_m13		*fp;
@@ -9260,8 +9386,8 @@ tern	G_process_password_data_m13(FPS_m13 *fps, si1 *unspecified_pw)
 		G_set_error_m13(E_GEN_m13, "fps is NULL");
 		return_m13(FALSE_m13);
 	}
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	memset((void *) pwd, 0, sizeof(PASSWORD_DATA_m13));
 	pwd->processed = TRUE_m13;
 	
@@ -9354,7 +9480,7 @@ tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
 {
 	si4		i, j, n_ts_chans, n_vid_chans, n_segs;
 	ui8		active_status;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	SEG_m13		*seg;
 	CHAN_m13	*chan;
 	CHAN_m13	**ts_chans;
@@ -9366,7 +9492,7 @@ tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	switch (lh->type_code) {
 		case TS_SEG_TYPE_CODE_m13:
 			seg = (SEG_m13 *) lh;
@@ -9391,14 +9517,14 @@ tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
 			ts_chans =  &chan;
 			n_ts_chans = 1;
 			n_vid_chans = 0;
-			n_segs = proc_globs->current_session.n_mapped_segments;
+			n_segs = pg->current_session.n_mapped_segments;
 			break;
 		case VID_CHAN_TYPE_CODE_m13:
 			chan = (CHAN_m13 *) lh;
 			vid_chans = &chan;
 			n_ts_chans = 0;
 			n_vid_chans = 1;
-			n_segs = proc_globs->current_session.n_mapped_segments;
+			n_segs = pg->current_session.n_mapped_segments;
 			break;
 		case SESS_TYPE_CODE_m13:
 			sess = (SESS_m13 *) lh;
@@ -9406,12 +9532,12 @@ tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
 			n_ts_chans = sess->n_ts_chans;
 			vid_chans = sess->vid_chans;
 			n_vid_chans = sess->n_vid_chans;
-			n_segs = proc_globs->current_session.n_mapped_segments;
+			n_segs = pg->current_session.n_mapped_segments;
 			break;
 		case SSR_TYPE_CODE_m13:
 			ssr = (SSR_m13 *) lh;
 			n_ts_chans = n_vid_chans = 0;
-			n_segs = proc_globs->current_session.n_mapped_segments;
+			n_segs = pg->current_session.n_mapped_segments;
 			break;
 		default:
 			G_set_error_m13(E_GEN_m13, "invalid level type");
@@ -9512,7 +9638,8 @@ void	G_push_function_exec_m13(const si1 *function)
 	FUNCTION_STACK_m13	*stack;
 	
 		
-	if (globals_m13->error.code) // causal error already set
+	
+	if (G_error_code_m13()) // causal error already set
 		if (globals_m13->error.thread_id == gettid_m13()) // do not modify function stack of causal thread
 			return;
 
@@ -9520,7 +9647,7 @@ void	G_push_function_exec_m13(const si1 *function)
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-	
+
 	// expand stack
 	n_entries = stack->top_idx + 1;
 	if (n_entries == stack->size) {
@@ -9536,7 +9663,7 @@ void	G_push_function_exec_m13(const si1 *function)
 	
 	stack->entries[++stack->top_idx].name = function;
 	stack->entries[stack->top_idx].return_line = E_UNKNOWN_LINE_m13;
-		
+			
 #endif  // FT_DEBUG_m13
 
 	return;
@@ -9547,7 +9674,7 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 {
 	si4			i, n_chans, seg_idx;
 	sf8			rate, min_rate, max_rate;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	CHAN_m13		*chan, *max_chan, *min_chan;
 	SEG_m13		*seg;
 	
@@ -9558,14 +9685,16 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 	// sets proc globals values
 	// returns TRUE_m13 if any frequencies vary
 	
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13((LH_m13 *) sess);
 	
 	// check time series channels
 	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	if (seg_idx == FALSE_m13)
+		return_m13(FALSE_m13);
 	n_chans = sess->n_ts_chans;
-	proc_globs->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_sampling_frequency = proc_globs->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.minimum_sampling_frequency_channel = proc_globs->active_channels.maximum_sampling_frequency_channel = NULL;
+	pg->active_channels.sampling_frequencies_vary = UNKNOWN_m13;
+	pg->active_channels.minimum_sampling_frequency = pg->active_channels.maximum_sampling_frequency = RATE_NO_ENTRY_m13;
+	pg->active_channels.minimum_sampling_frequency_channel = pg->active_channels.maximum_sampling_frequency_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->ts_chans[i];
@@ -9591,21 +9720,21 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 				}
 			}
 			if (min_rate == max_rate)
-				proc_globs->active_channels.sampling_frequencies_vary = FALSE_m13;
+				pg->active_channels.sampling_frequencies_vary = FALSE_m13;
 			else
-				proc_globs->active_channels.sampling_frequencies_vary = TRUE_m13;
-			proc_globs->active_channels.minimum_sampling_frequency = min_rate;
-			proc_globs->active_channels.maximum_sampling_frequency = max_rate;
-			proc_globs->active_channels.minimum_sampling_frequency_channel = min_chan;
-			proc_globs->active_channels.maximum_sampling_frequency_channel = max_chan;
+				pg->active_channels.sampling_frequencies_vary = TRUE_m13;
+			pg->active_channels.minimum_sampling_frequency = min_rate;
+			pg->active_channels.maximum_sampling_frequency = max_rate;
+			pg->active_channels.minimum_sampling_frequency_channel = min_chan;
+			pg->active_channels.maximum_sampling_frequency_channel = max_chan;
 		}
 	}
 	
 	// check video channels
 	n_chans = sess->n_vid_chans;
-	proc_globs->active_channels.frame_rates_vary = UNKNOWN_m13;
-	proc_globs->active_channels.minimum_frame_rate = proc_globs->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
-	proc_globs->active_channels.minimum_frame_rate_channel = proc_globs->active_channels.maximum_frame_rate_channel = NULL;
+	pg->active_channels.frame_rates_vary = UNKNOWN_m13;
+	pg->active_channels.minimum_frame_rate = pg->active_channels.maximum_frame_rate = RATE_NO_ENTRY_m13;
+	pg->active_channels.minimum_frame_rate_channel = pg->active_channels.maximum_frame_rate_channel = NULL;
 	if (n_chans) {
 		for (i = 0; i < n_chans; ++i) {
 			chan = sess->vid_chans[i];
@@ -9630,18 +9759,18 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 					}
 				}
 				if (min_rate == max_rate)
-					proc_globs->active_channels.frame_rates_vary = FALSE_m13;
+					pg->active_channels.frame_rates_vary = FALSE_m13;
 				else
-					proc_globs->active_channels.frame_rates_vary = TRUE_m13;
-				proc_globs->active_channels.minimum_frame_rate = min_rate;
-				proc_globs->active_channels.maximum_frame_rate = max_rate;
-				proc_globs->active_channels.minimum_frame_rate_channel = min_chan;
-				proc_globs->active_channels.maximum_frame_rate_channel = max_chan;
+					pg->active_channels.frame_rates_vary = TRUE_m13;
+				pg->active_channels.minimum_frame_rate = min_rate;
+				pg->active_channels.maximum_frame_rate = max_rate;
+				pg->active_channels.minimum_frame_rate_channel = min_chan;
+				pg->active_channels.maximum_frame_rate_channel = max_chan;
 			}
 		}
 	}
 	
-	if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globs->active_channels.frame_rates_vary == TRUE_m13)
+	if (pg->active_channels.sampling_frequencies_vary == TRUE_m13 || pg->active_channels.frame_rates_vary == TRUE_m13)
 		return_m13(TRUE_m13);
 
 	return_m13(FALSE_m13);
@@ -9650,14 +9779,14 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 
 CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs: si1 *chan_path, LH_m13 *parent, ui8 lh_flags, si1 *password
 {
-	tern				free_chan, threading, ret_val;
+	tern				free_chan, threading, r_val;
 	si1 				*chan_path, *password;
 	si1 				num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	ui8 				flags;
-	si4 				i, j, k, n_segs, seg_idx, thread_cnt, null_segment_cnt;
+	si4 				i, j, k, n_segs, seg_idx, null_segment_cnt;
 	va_list				v_args;
 	LH_m13				*parent;
-	SEG_m13				*seg;
+	SEG_m13				*seg, *first_seg, *last_seg;
 	PROC_THREAD_INFO_m13		*proc_thread_infos;
 	READ_MED_THREAD_INFO_m13	*read_MED_thread_infos;
 
@@ -9715,8 +9844,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
 	
 	null_segment_cnt = 0;
-	thread_cnt = 0;
-	for (i = slice->start_seg_num, j = seg_idx, k = 0; k <= n_segs; ++i, ++j, ++k) {
+	for (i = slice->start_seg_num, j = seg_idx, k = 0; k < n_segs; ++i, ++j, ++k) {
 		seg = chan->segs[j];
 		if (seg == NULL) {
 			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
@@ -9725,6 +9853,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 			else  // VID_CHAN_TYPE_CODE_m13
 				sprintf_m13(read_MED_thread_infos[k].MED_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, VID_SEG_TYPE_STR_m13);
 			if (G_exists_m13(read_MED_thread_infos[k].MED_dir) != DIR_EXISTS_m13) {
+				proc_thread_infos[k].skip_job = TRUE_m13;
 				++null_segment_cnt;  // not every segment may exist
 				continue;
 			}
@@ -9733,11 +9862,11 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 			seg->slice = *slice;
 		}
 		read_MED_thread_infos[k].parent = (LH_m13 *) chan;
-		proc_thread_infos[thread_cnt].thread_f = G_read_segment_thread_m13;
-		proc_thread_infos[thread_cnt].thread_name = "G_read_segment_thread_m13";
-		proc_thread_infos[thread_cnt].priority = PROC_HIGH_PRIORITY_m13;
-		proc_thread_infos[thread_cnt].arg = (void *) (read_MED_thread_infos + k);
-		++thread_cnt;
+		proc_thread_infos[k].thread_f = G_read_segment_thread_m13;
+		proc_thread_infos[k].thread_name = "G_read_segment_thread_m13";
+		proc_thread_infos[k].priority = PROC_HIGH_PRIORITY_m13;
+		proc_thread_infos[k].arg = (void *) (read_MED_thread_infos + k);
+		proc_thread_infos[k].skip_job = FALSE_m13;
 	}
 	
 	// empty slice
@@ -9745,6 +9874,8 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 		slice->n_segs = EMPTY_SLICE_m13;
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
 		return_m13(NULL);
 	}
 
@@ -9755,46 +9886,49 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(chan);
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, thread_cnt, 0, FALSE_m13, threading);  // no reserved cores, don't wait for completion
-	
-	// channel records
-	if (chan->flags & LH_READ_CHAN_RECS_MASK_m13)
-		G_read_record_data_m13((LH_m13 *) chan, slice, 0);
-	
-	// check results
-	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		if (read_MED_thread_infos[i].parent == NULL)  // absent segment
-			continue;
-		seg = (SEG_m13 *) read_MED_thread_infos[i].MED_struct;
-		if (seg == NULL)
-			ret_val = FALSE_m13;
-		else
-			chan->segs[j] = seg;
-	}
-	free((void *) proc_thread_infos);
-	free((void *) read_MED_thread_infos);
-	if (ret_val == FALSE_m13) {
+	if (PROC_distribute_jobs_m13(proc_thread_infos, n_segs, 0, FALSE_m13, threading) == FALSE_m13) {  // no reserved cores, don't wait for completion
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(&chan);
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+		return_m13(NULL);
+	}
+	
+	// read channel records
+	if (chan->flags & LH_READ_CHAN_RECS_MASK_m13)
+		G_read_records_m13((LH_m13 *) chan, slice, 0);
+
+	// wait for segment threads
+	r_val = PROC_wait_jobs_m13(proc_thread_infos, n_segs);
+
+	// check results
+	if (r_val == FALSE_m13) {
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(&chan);
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
 		return_m13(NULL);
 	}
 
-	// update slice
+	// assign results (& keep first & last segments)
+	first_seg = NULL;
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
-		seg = chan->segs[j];
-		if (seg)
-			break;
+		if (proc_thread_infos[i].skip_job == FALSE_m13) {
+			last_seg = chan->segs[j] = (SEG_m13 *) read_MED_thread_infos[j].MED_struct;
+			if (first_seg == NULL)
+				first_seg = last_seg;
+		}
 	}
-	slice->start_time = seg->slice.start_time;
-	slice->start_samp_num = seg->slice.start_samp_num;
-	slice->start_seg_num = seg->slice.start_seg_num;
-	for (++i, ++j; i < n_segs; ++i, ++j) {
-		if (chan->segs[j])
-			seg = chan->segs[j];
-	}
-	slice->end_time = seg->slice.end_time;
-	slice->end_samp_num = seg->slice.end_samp_num;
-	slice->end_seg_num = seg->slice.end_seg_num;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+
+	// update slice
+	slice->start_time = first_seg->slice.start_time;
+	slice->start_samp_num = first_seg->slice.start_samp_num;
+	slice->start_seg_num = first_seg->slice.start_seg_num;
+	slice->end_time = last_seg->slice.end_time;
+	slice->end_samp_num = last_seg->slice.end_samp_num;
+	slice->end_seg_num = last_seg->slice.end_seg_num;
 	slice->n_segs = SLICE_SEG_COUNT_m13(slice);
 
 	// update ephemeral data
@@ -9850,11 +9984,14 @@ pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
 	else
 		pi->status = PROC_THREAD_FAILED_m13;
 	
+	if (pi->thread_job == FALSE_m13)
+		return_m13((pthread_rval_m13) 0);
+
 	thread_return_null_m13;
 }
 
 
-si4	G_read_cs_file_m13(si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions)
+si4	G_read_cs_file_m13(const si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions)
 {
 	tern		outside_range_warning_given;
 	si1		*buffer, *next_line, len, *c1, *c2, *c3, tmp_str[1024], *end_ptr;
@@ -10155,9 +10292,8 @@ LH_m13 	*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varargs (level_h
 }
 
 
-si8 G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type_code == SSR_TYPE_CODE_m13): si4 seg_num
+si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type_code == SSR_TYPE_CODE_m13): si4 seg_num
 {
-	si4		seg_num;
 	si8		start_idx, end_idx, n_recs, bytes_to_read, offset;
 	FPS_m13		*ri_fps, *rd_fps;
 	REC_IDX_m13	*ri;
@@ -10165,13 +10301,21 @@ si8 G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->
 	SSR_m13		*ssr;
 	CHAN_m13	*chan;
 	SEG_m13		*seg;
-	va_list		v_args;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	seg_num = 0;  // seg_num only reqired for segmented session records levels
+	// returns TRUE_m13 if read
+	// returns FALSE_m13 if not read because don't exist
+	// returns UNKNOWN_m13 on error
+	
+
+	if (lh == NULL) {
+		G_set_error_m13(E_GEN_m13, "level is null");
+		return_m13(UNKNOWN_m13);
+	}
+	
 	switch (lh->type_code) {
 		case SESS_TYPE_CODE_m13:
 			sess = (SESS_m13 *) lh;
@@ -10179,16 +10323,24 @@ si8 G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->
 			rd_fps = sess->rec_data_fps;
 			break;
 		case SSR_TYPE_CODE_m13:
-			va_start(v_args, slice);
-			seg_num = va_arg(v_args, si4);
-			va_end(v_args);
 			ssr = (SSR_m13 *) lh;
-			if (ssr->flags & LH_MAP_ALL_SEGS_m13)
-				--seg_num;
-			else
-				seg_num -= slice->start_seg_num;
-			ri_fps = ssr->rec_inds_fps[seg_num];
-			rd_fps = ssr->rec_data_fps[seg_num];
+			if (ssr->rec_inds_fps && ssr->rec_data_fps) {
+				si4		seg_num, seg_idx;
+				va_list		v_args;
+
+				va_start(v_args, slice);
+				seg_num = va_arg(v_args, si4);
+				va_end(v_args);
+				
+				seg_idx = G_segment_index_m13(seg_num, lh);
+				if (seg_idx == FALSE_m13)
+					return_m13(FALSE_m13);
+				ri_fps = ssr->rec_inds_fps[seg_idx];
+				rd_fps = ssr->rec_data_fps[seg_idx];
+			} else {
+				G_set_error_m13(E_GEN_m13, "ssr arrays not allocated");
+				return_m13(UNKNOWN_m13);
+			}
 			break;
 		case TS_CHAN_TYPE_CODE_m13:
 		case VID_CHAN_TYPE_CODE_m13:
@@ -10204,9 +10356,13 @@ si8 G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->
 			break;
 	}
 
+	if (ri_fps == NULL || rd_fps  == NULL)
+		return_m13(FALSE_m13);
+
 	// sort records
-	if (globals_m13->write_sorted_records == TRUE_m13 && ri_fps->uh->ordered != TRUE_m13)
-		G_sort_records_m13(ri_fps, rd_fps);
+	if (globals_m13->write_sorted_records)
+		if (ri_fps->uh->ordered != TRUE_m13 || rd_fps->uh->ordered != TRUE_m13 )
+			G_sort_records_m13(ri_fps, rd_fps);
 
 	start_idx = G_find_record_index_m13(ri_fps, slice->start_time, FIND_FIRST_ON_OR_AFTER_m13, 0);
 	if (start_idx == NO_IDX_m13) {  // no records "on or after" slice beginning
@@ -10221,7 +10377,7 @@ si8 G_read_record_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->
 		return_m13(0);
 	}
 	end_idx = G_find_record_index_m13(ri_fps, slice->end_time, FIND_FIRST_AFTER_m13, start_idx);
-	if (end_idx == NO_IDX_m13) // no records after slice end, but some in slice => use terminal index
+	if (end_idx == NO_IDX_m13)  // no records after slice end, but some in slice => use terminal index
 		end_idx = ri_fps->uh->n_entries - 1;
 	n_recs = end_idx - start_idx;
 	offset = ri_fps->rec_inds[start_idx].file_offset;
@@ -10348,7 +10504,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs: si
 	if (seg->flags & LH_READ_SEG_RECS_MASK_m13)
 		if (seg->rec_inds_fps && seg->rec_data_fps)
 			if (inactive_ref == FALSE_m13)  // don't read records either
-				G_read_record_data_m13((LH_m13 *) seg, slice);
+				G_read_records_m13((LH_m13 *) seg, slice);
 
 	return_m13(seg);
 }
@@ -10378,21 +10534,23 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 	else
 		pi->status = PROC_THREAD_FAILED_m13;
 	
+	if (pi->thread_job == FALSE_m13)
+		return_m13((pthread_rval_m13) 0);
+
 	thread_return_null_m13;
 }
 
 
 SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
 {
-	tern				free_sess, threading, calculate_channel_indices, ret_val;
-	si1 				*password, num_str[FILE_NUMBERING_DIGITS_m13 + 1], *index_channel_name;
-	si1				tmp_str[PATH_BYTES_m13];
+	tern				free_sess, threading, calculate_channel_indices, r_val;
+	si1 				*password, *index_channel_name;
 	ui8 				flags;
-	si4 				i, j, list_len, seg_idx, thread_idx, active_chans, active_ts_chans, active_vid_chans, search_mode;
+	si4 				i, j, list_len, seg_idx, n_chans, search_mode;
 	sf8				ref_sf, sf_ratio;
 	void				*file_list;
 	va_list				v_args;
-	PROC_GLOBS_m13			*proc_globs;
+	PROC_GLOBS_m13			*pg;
 	UH_m13				*uh;
 	CHAN_m13			*chan;
 	PROC_THREAD_INFO_m13		*proc_thread_infos;
@@ -10439,10 +10597,9 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	if (slice->conditioned == FALSE_m13)
 		G_condition_slice_m13(slice, (LH_m13 *) sess);
 
-
 	// get segment range
 	if (slice->n_segs == UNKNOWN_m13) {
-		if (G_segment_range_m13((LH_m13 *) sess, slice) == 0) {
+		if (G_segment_range_m13((LH_m13 *) sess, slice) == UNKNOWN_m13) {
 			if (free_sess == TRUE_m13)
 				G_free_session_m13(&sess);
 			return_m13(NULL);
@@ -10454,10 +10611,10 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 			G_free_session_m13(&sess);
 		return_m13(NULL);
 	}
-
+	
 	// set inactive reference flags
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
-	chan = proc_globs->current_session.index_channel;
+	pg = G_proc_globs_m13((LH_m13 *) sess);
+	chan = pg->current_session.index_channel;
 	if ((chan->flags & LH_CHAN_ACTIVE_m13) == 0) {
 		if (chan->flags & LH_READ_SEG_DATA_MASK_m13) {
 			chan->flags |= LH_IDX_CHAN_INACTIVE_m13;
@@ -10469,31 +10626,22 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	// update for variable frequencies on active channel set
 	G_rates_vary_m13(sess);
 	
-	// count active channels
-	active_ts_chans = active_vid_chans = 0;
-	for (i = 0; i < sess->n_ts_chans; ++i)
-		if (sess->ts_chans[i]->flags & LH_CHAN_ACTIVE_m13)
-			++active_ts_chans;
-	for (i = 0; i < sess->n_vid_chans; ++i)
-		if (sess->vid_chans[i]->flags & LH_CHAN_ACTIVE_m13)
-			++active_vid_chans;
-	active_chans = active_ts_chans + active_vid_chans;
-
-	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) active_chans, sizeof(PROC_THREAD_INFO_m13));
-	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) active_ts_chans, sizeof(READ_MED_THREAD_INFO_m13));
+	n_chans = sess->n_ts_chans + sess->n_vid_chans;
+	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m13));
+	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m13));
 	search_mode = G_search_mode_m13(slice);
-	thread_idx = 0;
-	if (active_ts_chans) {
+	j = 0;
+	if (sess->n_ts_chans) {
 		calculate_channel_indices = FALSE_m13;
-		if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13) {
-			if (proc_globs->current_session.index_channel->type_code == TS_CHAN_TYPE_m13) {
+		if (pg->active_channels.sampling_frequencies_vary == TRUE_m13) {
+			if (pg->current_session.index_channel->type_code == TS_CHAN_TYPE_m13) {
 				if (search_mode == INDEX_SEARCH_m13) {
 					calculate_channel_indices = TRUE_m13;
-					ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
+					ref_sf = pg->current_session.index_channel->metadata_fps->metadata->time_series_section_2.sampling_frequency;
 				}
 			}
 		}
-		for (i = 0; i < sess->n_ts_chans; ++i) {
+		for (i = 0; i < sess->n_ts_chans; ++i, ++j) {
 			chan = sess->ts_chans[i];
 			if (chan->flags & LH_CHAN_ACTIVE_m13) {
 				if (calculate_channel_indices == TRUE_m13) {
@@ -10504,26 +10652,28 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 				} else {
 					chan->slice = *slice;
 				}
-				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m13;
-				proc_thread_infos[thread_idx].thread_name = "G_read_channel_thread_m13";
-				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-				read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-				++thread_idx;
+				proc_thread_infos[j].thread_f = G_read_channel_thread_m13;
+				proc_thread_infos[j].thread_name = "G_read_channel_thread_m13";
+				proc_thread_infos[j].priority = PROC_HIGH_PRIORITY_m13;
+				proc_thread_infos[j].arg = (void *) (read_MED_thread_infos + j);
+				proc_thread_infos[i].skip_job = FALSE_m13;
+				read_MED_thread_infos[j].MED_struct = (LH_m13 *) chan;
+			} else {
+				proc_thread_infos[j].skip_job = TRUE_m13;
 			}
 		}
 	}
-	if (active_vid_chans) {
+	if (sess->n_ts_chans) {
 		calculate_channel_indices = FALSE_m13;
-		if (proc_globs->active_channels.frame_rates_vary == TRUE_m13) {
-			if (proc_globs->current_session.index_channel->type_code == VID_CHAN_TYPE_m13) {
+		if (pg->active_channels.frame_rates_vary == TRUE_m13) {
+			if (pg->current_session.index_channel->type_code == VID_CHAN_TYPE_m13) {
 				if (search_mode == INDEX_SEARCH_m13) {
 					calculate_channel_indices = TRUE_m13;
-					ref_sf = proc_globs->current_session.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
+					ref_sf = pg->current_session.index_channel->metadata_fps->metadata->video_section_2.frame_rate;
 				}
 			}
 		}
-		for (i = 0; i < sess->n_vid_chans; ++i) {
+		for (i = 0; i < sess->n_vid_chans; ++i, ++j) {
 			chan = sess->vid_chans[i];
 			if (chan->flags & LH_CHAN_ACTIVE_m13) {
 				if (calculate_channel_indices == TRUE_m13) {
@@ -10534,47 +10684,37 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 				} else {
 					chan->slice = *slice;
 				}
-				proc_thread_infos[thread_idx].thread_f = G_read_channel_thread_m13;
-				proc_thread_infos[thread_idx].thread_name = "G_read_channel_thread_m13";
-				proc_thread_infos[thread_idx].priority = PROC_HIGH_PRIORITY_m13;
-				proc_thread_infos[thread_idx].arg = (void *) (read_MED_thread_infos + thread_idx);
-				read_MED_thread_infos[thread_idx].MED_struct = (LH_m13 *) chan;
-				++thread_idx;
+				proc_thread_infos[j].thread_f = G_read_channel_thread_m13;
+				proc_thread_infos[j].thread_name = "G_read_channel_thread_m13";
+				proc_thread_infos[j].priority = PROC_HIGH_PRIORITY_m13;
+				proc_thread_infos[j].arg = (void *) (read_MED_thread_infos + j);
+				proc_thread_infos[j].skip_job = FALSE_m13;
+				read_MED_thread_infos[j].MED_struct = (LH_m13 *) chan;
+			} else {
+				proc_thread_infos[j].skip_job = TRUE_m13;
 			}
 		}
 	}
 	
 	// thread out channel reads
-	if (active_chans == 1)  // no sense in thread overhead for one channel
+	if (n_chans == 1)  // no sense in thread overhead for one channel
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(sess);
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, active_chans, 0, TRUE_m13, threading);  // no reserved cores, wait for completion
-	
-	// check results
-	for (i = 0; i < active_chans; ++i)
-		if (read_MED_thread_infos[i].MED_struct == NULL)
-			ret_val = FALSE_m13;
-	free((void *) proc_thread_infos);
-	free((void *) read_MED_thread_infos);
-	if (ret_val == FALSE_m13) {
+	if (PROC_distribute_jobs_m13(proc_thread_infos, n_chans, 0, FALSE_m13, threading) == FALSE_m13) {  // no reserved cores, don't wait for completion
 		if (free_sess == TRUE_m13)
 			G_free_session_m13(&sess);
-		G_set_error_m13(E_GEN_m13, "error reading session");
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
 		return_m13(NULL);
 	}
- 
-	// update session slice
-	*slice = proc_globs->current_session.index_channel->slice;
-	if (proc_globs->active_channels.sampling_frequencies_vary == TRUE_m13 || proc_globs->active_channels.frame_rates_vary == TRUE_m13)
-		slice->start_samp_num = slice->end_samp_num = SAMPLE_NUMBER_NO_ENTRY_m13;  // unioned with video fields
-
-	// read session record data
+	
+	// read session records
 	if (sess->flags & LH_READ_SESS_RECS_MASK_m13)
 		if (sess->rec_inds_fps && sess->rec_data_fps)
-			G_read_record_data_m13((LH_m13 *) sess, slice);
+			G_read_records_m13((LH_m13 *) sess, slice);
 
-	// read segmented session record data
+	// read segmented session records
 	if (sess->flags & LH_READ_SEG_SESS_RECS_MASK_m13) {
 		ssr = sess->ssr;
 		if (ssr == NULL)
@@ -10582,29 +10722,53 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		if (ssr) {
 			for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j)
 				if (ssr->rec_inds_fps[j] && ssr->rec_data_fps[j])
-					G_read_record_data_m13((LH_m13 *) ssr, slice, i);
+					G_read_records_m13((LH_m13 *) ssr, slice, i);
 		}
 	}
 
-	ssr = sess->ssr;
-	seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) sess);
-	if ((sess->flags & LH_READ_SEG_SESS_RECS_MASK_m13) && ssr) {
-		for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j) {
-			// allocate new segment records
-			if (ssr->rec_inds_fps[j] == NULL && ssr->rec_data_fps[j] == NULL) {
-				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
-				sprintf_m13(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, REC_INDS_TYPE_STR_m13);
-				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
-					ssr->rec_inds_fps[j] = FPS_read_m13(ssr->rec_inds_fps[j], 0, FPS_FULL_FILE_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) ssr);
-				sprintf_m13(tmp_str, "%s/%s_s%s.%s", ssr->path, ssr->name, num_str, REC_DATA_TYPE_STR_m13);
-				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13)
-					ssr->rec_data_fps[j] = FPS_read_m13(ssr->rec_data_fps[j], 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) ssr);
-			}
-			if (ssr->rec_inds_fps[j] && ssr->rec_data_fps[j])
-				G_read_record_data_m13((LH_m13 *) ssr, slice, i);
+	// wait for channel threads
+	r_val = PROC_wait_jobs_m13(proc_thread_infos, n_chans);
+
+	// check results
+	if (r_val == FALSE_m13) {
+		if (free_sess == TRUE_m13)
+			G_free_session_m13(&sess);
+		free((void *) proc_thread_infos);
+		free((void *) read_MED_thread_infos);
+		G_set_error_m13(E_GEN_m13, "error reading session");
+		return_m13(NULL);
+	}
+ 
+	// assign results
+	for (i = j = 0; i < sess->n_ts_chans; ++i, ++j)
+		sess->ts_chans[i] = (CHAN_m13 *) read_MED_thread_infos[j].MED_struct;
+	for (i = 0; i < sess->n_vid_chans; ++i, ++j)
+		sess->vid_chans[i] = (CHAN_m13 *) read_MED_thread_infos[j].MED_struct;
+	free((void *) proc_thread_infos);
+	free((void *) read_MED_thread_infos);
+
+	// update session slice
+	*slice = pg->current_session.index_channel->slice;
+	if (pg->active_channels.sampling_frequencies_vary == TRUE_m13 || pg->active_channels.frame_rates_vary == TRUE_m13)
+		slice->start_samp_num = slice->end_samp_num = SAMPLE_NUMBER_NO_ENTRY_m13;  // unioned with video fields
+
+	// read session records
+	if (sess->flags & LH_READ_SESS_RECS_MASK_m13)
+		if (sess->rec_inds_fps && sess->rec_data_fps)
+			G_read_records_m13((LH_m13 *) sess, slice);
+
+	// read segmented session records
+	if (sess->flags & LH_READ_SEG_SESS_RECS_MASK_m13) {
+		ssr = sess->ssr;
+		if (ssr == NULL)
+			ssr = G_open_seg_sess_recs_m13(sess);
+		if (ssr) {
+			for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j)
+				if (ssr->rec_inds_fps[j] && ssr->rec_data_fps[j])
+					G_read_records_m13((LH_m13 *) ssr, slice, i);
 		}
 	}
-	
+
 	// update ephemeral data  (session record ephemeral data updated on session / segment open)
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		// time series ephemeral data
@@ -10630,14 +10794,14 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 			uh = sess->ts_metadata_fps->uh;
 			uh->type_code = TS_METADATA_TYPE_CODE_m13;
 			uh->segment_number = UH_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globs->current_session.UID;
+			uh->session_UID = pg->current_session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 		if (sess->n_vid_chans) {
 			uh = sess->vid_metadata_fps->uh;
 			uh->type_code = VID_METADATA_TYPE_CODE_m13;
 			uh->segment_number = UH_SESSION_LEVEL_CODE_m13;
-			uh->session_UID = proc_globs->current_session.UID;
+			uh->session_UID = pg->current_session.UID;
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 	}
@@ -10933,7 +11097,7 @@ UH_m13	*G_read_universal_header_m13(const si1 *path, UH_m13 *uh)
 }
 
 
-tern  G_recover_passwords_m13(si1 *L3_password, UH_m13 *universal_header)
+tern  G_recover_passwords_m13(const si1 *L3_password, UH_m13 *universal_header)
 {
 	tern	level_1_valid;
 	ui1 	hash[SHA_HASH_BYTES_m13], L3_hash[SHA_HASH_BYTES_m13];
@@ -11111,7 +11275,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 	sf8			tmp_sf8, sampling_frequency, rounded_samp_num, samp_num_eps;
 	ui4			mask;
 	va_list			v_args;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	TS_IDX_m13		*tsi;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
@@ -11143,7 +11307,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 		absolute_numbering_offset = 0;
 		tsi = NULL;
 	} else {  // level header passed
-		proc_globs = G_proc_globs_m13(lh);
+		pg = G_proc_globs_m13(lh);
 		switch (lh->type_code) {
 			case TS_SEG_TYPE_CODE_m13:
 				seg = (SEG_m13 *) lh;
@@ -11157,7 +11321,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 				if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
 					chan = (CHAN_m13 *) lh;
 				} else {  // SESS_m13
-					chan = proc_globs->current_session.index_channel;
+					chan = pg->current_session.index_channel;
 					if (chan->type_code != TS_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->ts_chans[0];
@@ -11198,8 +11362,8 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 		
 		// condition target
 		if (target_uutc < 0)  // relative time
-			target_uutc = proc_globs->current_session.start_time - target_uutc;
-		test_time = target_uutc - proc_globs->time_constants.recording_time_offset;
+			target_uutc = pg->current_session.start_time - target_uutc;
+		test_time = target_uutc - pg->time_constants.recording_time_offset;
 		if (test_time > 0 && target_uutc != END_OF_TIME_m13)  // END_OF_TIME_m13 is not offset
 			target_uutc = test_time;
 
@@ -11280,7 +11444,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	si1				seg_name[SEG_NAME_BYTES_m13], md_file[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	si4				i, idx, low_idx, high_idx;
 	si8				target;
-	PROC_GLOBS_m13			*proc_globs;
+	PROC_GLOBS_m13			*pg;
 	TS_METADATA_SECTION_2_m13	*md2;
 	CHAN_m13			*chan;
 	FPS_m13				*md_fps;
@@ -11292,13 +11456,13 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
-	proc_globs = G_proc_globs_m13(NULL);  // use proc_globs from current thread
+	pg = G_proc_globs_m13(NULL);  // use proc_globs from current thread
 	
 	if (search_mode == TIME_SEARCH_m13) {
 		// start segment
 		target = slice->start_time;
 		low_idx = 0;
-		high_idx = proc_globs->current_session.n_segments - 1;
+		high_idx = pg->current_session.n_segments - 1;
 		if (target > Sgmt_records[high_idx].end_time) {
 			slice->start_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested start time is after session end\n", __FUNCTION__);
@@ -11325,7 +11489,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 		// end segment
 		target = slice->end_time;
 		low_idx = idx;
-		high_idx = proc_globs->current_session.n_segments - 1;
+		high_idx = pg->current_session.n_segments - 1;
 		if (target < Sgmt_records[low_idx].start_time) {
 			slice->end_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested end time precedes requested start time\n", __FUNCTION__);
@@ -11352,8 +11516,8 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 		
 		// sample search required, but no sample data in Sgmt_records => fill it in (e.g from session records in variable frequency session)
 		if (Sgmt_records[0].start_samp_num == SAMPLE_NUMBER_NO_ENTRY_m13) {
-			chan = proc_globs->current_session.index_channel;
-			for (i = 0; i < proc_globs->current_session.n_segments; ++i) {
+			chan = pg->current_session.index_channel;
+			for (i = 0; i < pg->current_session.n_segments; ++i) {
 				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, Sgmt_records[i].seg_num);
 				sprintf_m13(seg_name, "%s_s%s", chan->name, num_str);
 				sprintf_m13(md_file, "%s/%s.%s/%s.%s", chan->path, seg_name, TS_SEG_TYPE_STR_m13, seg_name, TS_METADATA_TYPE_STR_m13);
@@ -11370,7 +11534,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 		// start segment
 		target = slice->start_samp_num;
 		low_idx = 0;
-		high_idx = proc_globs->current_session.n_segments - 1;
+		high_idx = pg->current_session.n_segments - 1;
 		if (target > Sgmt_records[high_idx].end_samp_num) {
 			slice->start_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested start sample is after session end\n", __FUNCTION__);
@@ -11397,7 +11561,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 		// end segment
 		target = slice->end_samp_num;
 		low_idx = idx;
-		high_idx = proc_globs->current_session.n_segments - 1;
+		high_idx = pg->current_session.n_segments - 1;
 		if (target < Sgmt_records[low_idx].start_samp_num) {
 			slice->end_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
 			G_warning_message_m13("%s(): requested end sample precedes requested start sample\n", __FUNCTION__);
@@ -11432,7 +11596,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
 {
 	si4			idx, low_idx, high_idx;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 	
 #ifdef FT_DEBUG_m13
@@ -11442,7 +11606,7 @@ si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	
 	switch (lh->type_code) {
 		case TS_CHAN_TYPE_CODE_m13:
@@ -11458,7 +11622,7 @@ si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
 	}
 
 	low_idx = 0;
-	high_idx = proc_globs->current_session.n_segments - 1;
+	high_idx = pg->current_session.n_segments - 1;
 	if (target_frame <= Sgmt_records[0].start_frame_num)
 		return_m13(1);  // return first segment if requested frame number <= session start
 	if (target_frame >= Sgmt_records[high_idx].end_frame_num)
@@ -11481,7 +11645,7 @@ si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
 }
 
 
-si4	G_segment_for_path_m13(si1 *path)
+si4	G_segment_for_path_m13(const si1 *path)
 {
 	tern	video_data;
 	si1	*c, name[VID_NAME_BYTES_m13];
@@ -11492,6 +11656,8 @@ si4	G_segment_for_path_m13(si1 *path)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns SEGMENT_NUMBER_NO_ENTRY_m13 (zero) on failure
 
 	level_code = G_level_m13(path, &type_code);
 	video_data = FALSE_m13;
@@ -11502,7 +11668,7 @@ si4	G_segment_for_path_m13(si1 *path)
 				case VID_CHAN_TYPE_CODE_m13:
 				case TS_CHAN_TYPE_CODE_m13:
 				case SESS_TYPE_CODE_m13:
-					return_m13((si4) FALSE_m13);
+					return_m13(SEGMENT_NUMBER_NO_ENTRY_m13);
 				case SSR_TYPE_CODE_m13:
 				case TS_SEG_TYPE_CODE_m13:
 				case VID_SEG_TYPE_CODE_m13:
@@ -11536,7 +11702,7 @@ si4	G_segment_for_path_m13(si1 *path)
 si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 {
 	si4			idx, low_idx, high_idx;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 
 #ifdef FT_DEBUG_m13
@@ -11546,7 +11712,7 @@ si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	
 	switch (lh->type_code) {
 		case VID_CHAN_TYPE_CODE_m13:
@@ -11562,7 +11728,7 @@ si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 	}
 	
 	low_idx = 0;
-	high_idx = proc_globs->current_session.n_segments - 1;
+	high_idx = pg->current_session.n_segments - 1;
 	if (target_sample <= Sgmt_records[0].start_samp_num)
 		return_m13(1);  // return first segment if requested sample number <= session start
 	if (target_sample >= Sgmt_records[high_idx].end_samp_num)
@@ -11588,7 +11754,7 @@ si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
 {
 	si4			idx, low_idx, high_idx;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 	
 #ifdef FT_DEBUG_m13
@@ -11598,7 +11764,7 @@ si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	
 	switch (lh->type_code) {
 		case VID_CHAN_TYPE_CODE_m13:
@@ -11612,7 +11778,7 @@ si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
 	}
 	
 	low_idx = 0;
-	high_idx = proc_globs->current_session.n_segments - 1;
+	high_idx = pg->current_session.n_segments - 1;
 	if (target_time <= Sgmt_records[0].start_time)
 		return_m13(1);  // return first segment if requested time <= session start
 	if (target_time >= Sgmt_records[high_idx].end_time)
@@ -11641,9 +11807,8 @@ inline
 si4	G_segment_index_m13(si4 segment_number, LH_m13 *lh)
 {
 	si4		i, mapped_segs, sess_segs, first_seg, seg_idx;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	CHAN_m13	*chan;
-	SEG_m13		*seg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -11652,38 +11817,44 @@ si4	G_segment_index_m13(si4 segment_number, LH_m13 *lh)
 	// returns offset of segment_number into segments array
 	// FIRST_OPEN_SEG_m13 returns the first open segment in the reference channel
 	// pass NULL for level header to get main process proc_globs
-	// returns FALSE_m13 on error
+	// returns FALSE_m13 (as si4) on error
 	
-	proc_globs = G_proc_globs_m13(lh);
-
-	mapped_segs = proc_globs->current_session.n_mapped_segments;
+	if (segment_number < FIRST_OPEN_SEG_m13) {
+		G_set_error_m13(E_GEN_m13, "bad segment number: %d", segment_number);
+		return_m13(FALSE_m13);
+	}
+	
+	pg = G_proc_globs_m13(lh);
+	
+	mapped_segs = pg->current_session.n_mapped_segments;
 	if (mapped_segs == 0) {
 		G_set_error_m13(E_GEN_m13, "no mapped segments");
-		return_m13((si4) FALSE_m13);
+		return_m13(FALSE_m13);
 	}
 
 	if (segment_number == FIRST_OPEN_SEG_m13 || segment_number == SEGMENT_NUMBER_NO_ENTRY_m13) {
-		chan = proc_globs->current_session.index_channel;
+		chan = pg->current_session.index_channel;
 		if (chan == NULL) {
 			G_set_error_m13(E_GEN_m13, "reference channel not set");
-			return_m13((si4) FALSE_m13);
+			return_m13(FALSE_m13);
 		}
-		for (i = 0; i < mapped_segs; ++i) {
-			seg = chan->segs[i];
-			if (seg)
+		if (chan->segs == NULL) {
+			G_set_error_m13(E_GEN_m13, "segments not allcated on reference channel \"%s\"", chan->name);
+			return_m13(FALSE_m13);
+		}
+		for (i = 0; i < mapped_segs; ++i)
+			if (chan->segs[i])
 				break;
-					
-		}
 		if (i == mapped_segs) {
-			G_set_error_m13(E_GEN_m13, "no open segments");
-			return_m13((si4) FALSE_m13);
+			G_set_error_m13(E_GEN_m13, "no open segments on reference channel \"%s\"", chan->name);
+			return_m13(FALSE_m13);
 		}
 		if (segment_number == SEGMENT_NUMBER_NO_ENTRY_m13)
-			G_warning_message_m13("%s(): segment not specified => returning first open segment from reference channel\n", __FUNCTION__);
+			G_warning_message_m13("%s(): segment not specified => returning first open segment on reference channel \"%s\"\n", __FUNCTION__, chan->name);
 		return_m13(i);
 	}
 	
-	sess_segs = proc_globs->current_session.n_segments;
+	sess_segs = pg->current_session.n_segments;
 	
 	// all segments mapped
 	if (mapped_segs == sess_segs) {
@@ -11691,16 +11862,16 @@ si4	G_segment_index_m13(si4 segment_number, LH_m13 *lh)
 			return_m13(segment_number - 1);
 		} else {
 			G_set_error_m13(E_GEN_m13, "invalid segment number");
-			return_m13((si4) FALSE_m13);
+			return_m13(FALSE_m13);
 		}
 	}
 	
 	// slice segments mapped
-	first_seg = proc_globs->current_session.first_mapped_segment_number;
+	first_seg = pg->current_session.first_mapped_segment_number;
 	seg_idx = segment_number - first_seg;
 	if (seg_idx < 0 || seg_idx >= mapped_segs) {
 		G_set_error_m13(E_GEN_m13, "unmapped segment");
-		return_m13((si4) FALSE_m13);
+		return_m13(FALSE_m13);
 	}
 	
 	return_m13(seg_idx);
@@ -11711,7 +11882,7 @@ si4 G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 {
 	si4			search_mode, n_segs;
 	si8			start_time, end_time, last_seg_idx;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 	
 #ifdef FT_DEBUG_m13
@@ -11728,31 +11899,31 @@ si4 G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 
 	// check for valid limit pair (time takes priority if all parameters set)
 	if ((search_mode = G_search_mode_m13(slice)) == FALSE_m13)
-		return_m13(0);
+		return_m13(UNKNOWN_m13);
 	
 	// get Sgmt records array
 	Sgmt_records = G_Sgmt_records_m13(lh, search_mode);
 	if (Sgmt_records == NULL)
-		return_m13(0);
+		return_m13(UNKNOWN_m13);
 	
 	// search Sgmt_records array
 	n_segs = G_search_Sgmt_records_m13(Sgmt_records, slice, search_mode);
 	
 	// set process globals
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	if (n_segs) {
 		slice->n_segs = n_segs;
 		if (lh->flags & LH_MAP_ALL_SEGS_m13) {
-			proc_globs->current_session.n_mapped_segments = proc_globs->current_session.n_segments;
-			proc_globs->current_session.first_mapped_segment_number = 1;
+			pg->current_session.n_mapped_segments = pg->current_session.n_segments;
+			pg->current_session.first_mapped_segment_number = 1;
 		} else {
-			proc_globs->current_session.n_mapped_segments = n_segs;
-			proc_globs->current_session.first_mapped_segment_number = slice->start_seg_num;
+			pg->current_session.n_mapped_segments = n_segs;
+			pg->current_session.first_mapped_segment_number = slice->start_seg_num;
 		}
 	} else {
 		slice->n_segs = UNKNOWN_m13;
-		proc_globs->current_session.n_mapped_segments = 0;
-		proc_globs->current_session.first_mapped_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;  // 0
+		pg->current_session.n_mapped_segments = 0;
+		pg->current_session.first_mapped_segment_number = SEGMENT_NUMBER_NO_ENTRY_m13;  // 0
 	}
 
 	start_time = Sgmt_records->start_time;
@@ -11760,7 +11931,7 @@ si4 G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 		slice->start_time = start_time;
 	if (slice->start_time == start_time)
 		slice->start_samp_num = Sgmt_records[0].start_samp_num;
-	last_seg_idx = proc_globs->current_session.n_segments - 1;
+	last_seg_idx = pg->current_session.n_segments - 1;
 	end_time = Sgmt_records[last_seg_idx].end_time;
 	if (slice->end_time == END_OF_TIME_m13)
 		slice->end_time = end_time;
@@ -11803,7 +11974,7 @@ ui4	*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files)
 }
 
 
-tern  G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 *to_name, si1 *subject, si1 *content, si1 *from_email, si1 *from_name, si1 *reply_to_email, si1 *reply_to_name)
+tern  G_sendgrid_email_m13(const si1 *sendgrid_key, const si1 *to_email, const si1 *cc_email, const si1 *to_name, const si1 *subject, const si1 *content, const si1 *from_email, const si1 *from_name, const si1 *reply_to_email, const si1 *reply_to_name)
 {
 	tern	exclude_cc;
 	si1 	command[2048], escaped_content[2048];
@@ -11864,7 +12035,7 @@ tern  G_sendgrid_email_m13(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si1 
 tern	G_session_directory_m13(FPS_m13 *fps)
 {
 	si1		*pg_sess_dir;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -11883,26 +12054,26 @@ tern	G_session_directory_m13(FPS_m13 *fps)
 		return_m13(FALSE_m13);
 	}
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13((LH_m13 *) fps);
 
 	// set session path & names
-	pg_sess_dir = proc_globs->current_session.directory;
+	pg_sess_dir = pg->current_session.path;
 	G_session_path_for_path_m13(fps->path, pg_sess_dir);
-	G_path_parts_m13(pg_sess_dir, NULL, proc_globs->current_session.fs_name, NULL);  // set proc_globs fs_name
-	if (strcmp_m13(proc_globs->current_session.fs_name, fps->uh->session_name))
-		strcpy(proc_globs->current_session.uh_name, fps->uh->session_name);  // copy uh_name if different from fs_name
+	G_path_parts_m13(pg_sess_dir, NULL, pg->current_session.fs_name, NULL);  // set proc_globs fs_name
+	if (strcmp_m13(pg->current_session.fs_name, fps->uh->session_name))
+		strcpy(pg->current_session.uh_name, fps->uh->session_name);  // copy uh_name if different from fs_name
 	else
-		*proc_globs->current_session.uh_name = 0;  // uh_name empty if same as fs_name
+		*pg->current_session.uh_name = 0;  // uh_name empty if same as fs_name
 
 	// set other proc_globs
-	proc_globs->current_session.UID = fps->uh->session_UID;
-	proc_globs->current_session.start_time = fps->uh->session_start_time;
+	pg->current_session.UID = fps->uh->session_UID;
+	pg->current_session.start_time = fps->uh->session_start_time;
 
 	return_m13(TRUE_m13);
 }
 
 
-si1	*G_session_path_for_path_m13(si1 *path, si1 *sess_path)
+si1	*G_session_path_for_path_m13(const si1 *path, si1 *sess_path)
 {
 	si1		tmp_path[PATH_BYTES_m13];
 	EXT_CODE_m13	type;
@@ -11932,7 +12103,7 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 	si4			i;
 	sf4			sf4_rate;
 	si8			n_samps;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_RECS_LIST_m13	*list;
 	Sgmt_RECS_ENTRY_m13 	*rec_entry;
 	Sgmt_REC_m13		*Sgmt_rec;
@@ -11941,8 +12112,8 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13(lh);
-	list = proc_globs->current_session.Sgmt_recs_list;
+	pg = G_proc_globs_m13(lh);
+	list = pg->current_session.Sgmt_recs_list;
 	
 	// search for matching entry
 	pthread_mutex_lock_m13(&list->mutex);
@@ -11966,118 +12137,105 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 }
 
 
-void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, si1 *message, ...)  // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
+void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *message, ...)
 {
-	tern			exit_on_fail;
-	ui4			behavior;
-	si4			mutex_status;
-	ERR_m13			*err;
-	pid_t_m13		_id;
-	pthread_t_m13		*thread;
-	va_list			v_args;
+	ui4		behavior, message_exists;
+	ERR_m13		*err;
+	va_list		v_args;
 
 
 	// Call set_error for causal errors only.
 	// Return error local error condition for errors returned from functions, no messages necessary
-	
+	// if code == E_SIG_m13 (called from function_stack_trap_m13), line is signal number
 
+	
 	// get behavior
 	behavior = G_current_behavior_m13();
-	if (behavior & IGNORE_ERRORS_m13) {
-		eprintf_m13("ignoring (called at %s(%d)", function, line);
+	if (code == E_SIG_m13) // always exit on signal
+		behavior &= ~(IGNORE_ERROR_m13 | RETURN_ON_FAIL_m13);
+	if (behavior & IGNORE_ERROR_m13)
 		return;
-	}
-	eprintf_m13("not ignoring (called at %s(%d)", function, line);
-	exit_on_fail = (behavior & RETURN_ON_FAIL_m13) ? FALSE_m13 : TRUE_m13;
 
 	// no error specified in code or message
-	if (code == E_NONE_m13)
-		if (STR_is_empty_m13(message) == TRUE_m13)
-			return;
-
-	_id = gettid_m13();
-
-	// get mutex
-	err = &globals_m13->error;
-	mutex_status = pthread_mutex_trylock_m13(&err->mutex);
-
-	// error already set or currently being set by another thread
-	if (mutex_status || err->code) {
-		if (_id != globals_m13->main_id && exit_on_fail == TRUE_m13) {  // kill thread unless main process
-			thread = PROC_thread_for_id_m13(_id);
-			pthread_kill_m13(*thread, 0);  // zero kills without signal
-		}
+	message_exists = (STR_is_empty_m13(message) == TRUE_m13) ? FALSE_m13 : TRUE_m13;
+	if (code == E_NONE_m13 && message_exists == FALSE_m13)
 		return;
-	}
-	
-#ifdef FT_DEBUG_m13
-	pid_t_m13		parent_id;
-	FUNCTION_STACK_m13	*stack, *tmp_stack;
 
-	// setup error function stack chain
-	parent_id = 0;
-	do {
-		tmp_stack = G_function_stack_m13(parent_id);
-		if (parent_id == 0)
-			stack = tmp_stack;  // save causal stack - may need below
-		tmp_stack->err_chain = TRUE_m13;
-		tmp_stack->err_top_idx = tmp_stack->top_idx;
-		parent_id = PROC_thread_list_parent_m13(tmp_stack->_id);
-	} while (parent_id);
-#endif
+	err = &globals_m13->error;
 	
-	// special handling for E_SIG_m13 (line & function arguments invalid)
-	if (code == E_SIG_m13) {
-		va_start(v_args, message);
-		err->signal = va_arg(v_args, si4);
-		line = E_UNKNOWN_LINE_m13;
-#ifdef FT_DEBUG_m13
-		function = stack->entries[stack->top_idx].name;  // stack found above
-#else
-		function = (const si1 *) "<unknown>";
-#endif
-	}
+	// hold subsequent threads here
+	isem_own_m13(&err->isem, TRUE_m13);
 	
-	// error message
-	if (STR_is_empty_m13(message) == TRUE_m13) {
-		if (code >= E_NONE_m13 && code < E_NUM_CODES_m13)  // use table message
-			strcpy_m13(err->message, globals_m13->tables->E_strings_table[code]);
-		else  // unspecified message, custom code
-			strcpy_m13(err->message, globals_m13->tables->E_strings_table[E_GEN_m13]);
-		if (code == E_SIG_m13)  // sig_num only vararg
+	// hold error (other threads wait  (to get values) while values being set)
+	pthread_mutex_lock_m13(&err->mutex);
+	
+	// don't overwrite existing causal error
+	if (err->code == E_NONE_m13) {
+		
+		#ifdef FT_DEBUG_m13
+		pid_t_m13		parent_id;
+		FUNCTION_STACK_m13	*stack, *tmp_stack;
+		
+		// setup error function stack chain
+		parent_id = 0;
+		do {
+			tmp_stack = G_function_stack_m13(parent_id);
+			if (parent_id == 0)
+				stack = tmp_stack;  // save causal stack - may need below
+			tmp_stack->err_chain = TRUE_m13;
+			tmp_stack->err_top_idx = tmp_stack->top_idx;
+			parent_id = PROC_thread_parent_id_m13(tmp_stack->_id);
+		} while (parent_id);
+		#endif
+		
+		// special handling for E_SIG_m13 (line & function arguments invalid)
+		if (code == E_SIG_m13) {
+			err->signal = line;  // system siganl number passed in line argument since no line available in signal trap
+			line = E_UNKNOWN_LINE_m13;
+			function = "<unknown>";
+			#ifdef FT_DEBUG_m13
+			if (stack->top_idx >= 0)
+				function = stack->entries[stack->top_idx].name;  // stack found above
+			#endif
+		}
+		
+		// error message
+		if (message_exists == TRUE_m13) {
+			if (code == E_NONE_m13)  // caller passed an error message, but did not set code
+				code = E_GEN_m13;
+			
+			va_start(v_args, message);  // get varargs
+			vsnprintf_m13(err->message, E_MESSAGE_LEN_m13, message, v_args);  // set message
 			va_end(v_args);
-	} else {
-		if (code != E_SIG_m13) // varargs started above to retrieve function argument
-			va_start(v_args, message);
-		vsnprintf_m13(err->message, E_MESSAGE_LEN_m13, message, v_args);
-		va_end(v_args);
+		} else {
+			if (code >= E_NONE_m13 && code < E_NUM_CODES_m13)  // use table message
+				strcpy_m13(err->message, globals_m13->tables->E_strings_table[code]);
+			else  // unspecified message, custom code
+				strcpy_m13(err->message, globals_m13->tables->E_strings_table[E_GEN_m13]);
+		}
 		
-		if (code == E_NONE_m13)  // caller passed an error message, but did not set code
-			code = E_GEN_m13;
+		// error parameters
+		err->code = code;
+		err->line = line;
+		err->function = function;
+		pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+		err->thread_id = gettid_m13();
 	}
-
-	// error parameters
-	err->code = code;
-	err->line = line;
-	err->function = function;
-	pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	err->thread_id = _id;
-		
-	// release mutex
-	pthread_mutex_unlock_m13(&err->mutex);
 	
-	// exit
-	if (exit_on_fail == TRUE_m13)
-		exit_m13((si4) code);
+	// relase error hold
+	pthread_mutex_unlock_m13(&err->mutex);
 
-	return;
+	if (behavior & RETURN_ON_FAIL_m13)
+		return;
+	
+	exit_exec_m13(function, line, (si4) code);
 }
 
 
-tern	G_set_session_globals_m13(si1 *MED_path, si1 *password, LH_m13 *lh)
+tern	G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m13 *lh)
 {
-	si1			md_file[PATH_BYTES_m13];
-	FPS_m13			*fps;
+	si1		md_file[PATH_BYTES_m13];
+	FPS_m13		*fps;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12089,8 +12247,8 @@ tern	G_set_session_globals_m13(si1 *MED_path, si1 *password, LH_m13 *lh)
 	// find metadata file from path
 	if (G_find_metadata_file_m13(MED_path, md_file) == NULL)
 		return_m13(FALSE_m13);
-
-	fps = FPS_read_m13(NULL, 0, METADATA_BYTES_m13, 1, NULL, md_file, "r+", password, lh);
+	
+	fps = FPS_read_m13(NULL, 0, METADATA_BYTES_m13, 1, NULL, md_file, "r", password, lh);
 	if (fps == NULL)
 		return_m13(FALSE_m13);
 	
@@ -12104,7 +12262,7 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 {
 	si4 n_potential_timezones, potential_timezone_entries[TZ_TABLE_ENTRIES_m13];
 	si4 i, j, response_num, items;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	TIMEZONE_INFO_m13	*tz_table;
 	
 #ifdef FT_DEBUG_m13
@@ -12114,10 +12272,10 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	if (globals_m13->tables->timezone_table == NULL)
 		G_init_timezone_tables_m13();
 	
-	proc_globs = G_proc_globs_m13(NULL);
+	pg = G_proc_globs_m13(NULL);
 	
 	// reset
-	proc_globs->time_constants.set = FALSE_m13;
+	pg->time_constants.set = FALSE_m13;
 	
 	// capitalize & check aliases
 	G_condition_timezone_info_m13(timezone_info);  // modified if alias found
@@ -12293,25 +12451,25 @@ tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_sta
 	
 SET_GTC_TIMEZONE_MATCH_m13:
 	*timezone_info = tz_table[potential_timezone_entries[0]];
-	proc_globs->time_constants.standard_UTC_offset = timezone_info->standard_UTC_offset;
-	strncpy_m13(proc_globs->time_constants.standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-	strncpy_m13(proc_globs->time_constants.standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m13);
-	STR_to_title_m13(proc_globs->time_constants.standard_timezone_string);  // beautify
+	pg->time_constants.standard_UTC_offset = timezone_info->standard_UTC_offset;
+	strncpy_m13(pg->time_constants.standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+	strncpy_m13(pg->time_constants.standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m13);
+	STR_to_title_m13(pg->time_constants.standard_timezone_string);  // beautify
 	if (timezone_info->daylight_time_start_code) {
 		if (timezone_info->daylight_time_start_code == DTCC_VALUE_NO_ENTRY_m13) {
-			proc_globs->time_constants.observe_DST = UNKNOWN_m13;
+			pg->time_constants.observe_DST = UNKNOWN_m13;
 		} else {
-			proc_globs->time_constants.observe_DST = TRUE_m13;
-			strncpy_m13(proc_globs->time_constants.daylight_timezone_acronym, timezone_info->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
-			strncpy_m13(proc_globs->time_constants.daylight_timezone_string, timezone_info->daylight_timezone, TIMEZONE_STRING_BYTES_m13);
-			STR_to_title_m13(proc_globs->time_constants.daylight_timezone_string);  // beautify
-			proc_globs->time_constants.daylight_start_code.value = timezone_info->daylight_time_start_code;
-			proc_globs->time_constants.daylight_end_code.value = timezone_info->daylight_time_end_code;
+			pg->time_constants.observe_DST = TRUE_m13;
+			strncpy_m13(pg->time_constants.daylight_timezone_acronym, timezone_info->daylight_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13);
+			strncpy_m13(pg->time_constants.daylight_timezone_string, timezone_info->daylight_timezone, TIMEZONE_STRING_BYTES_m13);
+			STR_to_title_m13(pg->time_constants.daylight_timezone_string);  // beautify
+			pg->time_constants.daylight_start_code.value = timezone_info->daylight_time_start_code;
+			pg->time_constants.daylight_end_code.value = timezone_info->daylight_time_end_code;
 		}
 	} else {
-		proc_globs->time_constants.observe_DST = FALSE_m13;
+		pg->time_constants.observe_DST = FALSE_m13;
 	}
-	proc_globs->time_constants.set = TRUE_m13;
+	pg->time_constants.set = TRUE_m13;
 
 	if (session_start_time)  // pass CURRENT_TIME_m13 for session starting now; pass zero if just need to get timezone_info for a locale
 		G_generate_recording_time_offset_m13(session_start_time);
@@ -12326,7 +12484,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	ui4 			source_type;
 	si4			i, n_entries, seg_idx, n_segs;
 	sf4			rate;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	SESS_m13		*sess;
 	SSR_m13			*ssr;
 	CHAN_m13		*chan;
@@ -12340,11 +12498,11 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13(lh);
 	sess = NULL;
 	ssr = NULL;
 	chan = NULL;
-	list = proc_globs->current_session.Sgmt_recs_list;
+	pg = G_proc_globs_m13(lh);
+	list = pg->current_session.Sgmt_recs_list;
 	pthread_mutex_lock_m13(&list->mutex);
 
 	if (search_mode == TIME_SEARCH_m13) {  // any Sgmt records will suffice
@@ -12353,7 +12511,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 			pthread_mutex_unlock_m13(&list->mutex);
 			return_m13(Sgmt_recs);
 		}
-		chan = proc_globs->current_session.index_channel;
+		chan = pg->current_session.index_channel;
 		i = -1;  // no entries => create new entry
 		n_entries = list->top_idx + 1;
 	} else {  // INDEX_SEARCH_m13 - find by rate
@@ -12363,7 +12521,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 				if (sess->Sgmt_recs)
 					if (sess->Sgmt_recs->rate != (sf4) RATE_NO_ENTRY_m13)
 						return_m13(sess->Sgmt_recs);
-				chan = proc_globs->current_session.index_channel;
+				chan = pg->current_session.index_channel;
 				break;
 			case SSR_TYPE_CODE_m13:
 				ssr = (SSR_m13 *) lh;
@@ -12371,7 +12529,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 					if (ssr->Sgmt_recs->rate != (sf4) RATE_NO_ENTRY_m13)
 						return_m13(ssr->Sgmt_recs);
 				sess = (SESS_m13 *) ssr->parent;
-				chan = proc_globs->current_session.index_channel;
+				chan = pg->current_session.index_channel;
 				break;
 			case TS_CHAN_TYPE_CODE_m13:
 			case VID_CHAN_TYPE_CODE_m13:
@@ -12397,6 +12555,8 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 		if (chan) {
 			if (chan->segs) {
 				seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) chan);
+				if (seg_idx == FALSE_m13)
+					return_m13(NULL);
 				seg = chan->segs[seg_idx];
 				if (seg) {
 					if (seg->metadata_fps) {
@@ -12430,24 +12590,22 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 
 	// add new entry
 	if (i == -1) {
-		if (n_entries == list->size) {
-			n_entries += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
-			new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list->entries, (size_t) n_entries * sizeof(Sgmt_RECS_ENTRY_m13));
-			if (new_entries == NULL) {
-				pthread_mutex_unlock_m13(&list->mutex);
-				G_set_error_m13(E_ALLOC_m13, NULL);
-				return_m13(NULL);
-			}
-			list->entries = new_entries;
-			list->size = n_entries;
+		n_entries += GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
+		new_entries = (Sgmt_RECS_ENTRY_m13 *) realloc((void *) list->entries, (size_t) n_entries * sizeof(Sgmt_RECS_ENTRY_m13));
+		if (new_entries == NULL) {
+			pthread_mutex_unlock_m13(&list->mutex);
+			G_set_error_m13(E_ALLOC_m13, NULL);
+			return_m13(NULL);
 		}
+		list->entries = new_entries;
+		list->size = n_entries;
 		
 		// fill new entry
 		Sgmt_recs = G_build_Sgmt_records_m13((LH_m13 *) lh, search_mode, &source_type);
-		n_segs = proc_globs->current_session.n_segments;
+		n_segs = pg->current_session.n_segments;
 		
-		rec_entry->n_session_samples = Sgmt_recs[n_segs - 1].end_idx + 1;
 		rec_entry = list->entries + (++list->top_idx);
+		rec_entry->n_session_samples = Sgmt_recs[n_segs - 1].end_idx + 1;
 		rec_entry->rate = rate;
 		rec_entry->source_type = source_type;
 		rec_entry->Sgmt_recs = (struct Sgmt_REC_m13 *) Sgmt_recs;
@@ -12472,7 +12630,7 @@ ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 {
 	ui4			source;
 	si4			i;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_RECS_LIST_m13	*list;
 	Sgmt_RECS_ENTRY_m13 	*rec_entry;
 	
@@ -12480,8 +12638,8 @@ ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 	G_push_function_m13();
 #endif
 
-	proc_globs = G_proc_globs_m13(lh);
-	list = proc_globs->current_session.Sgmt_recs_list;
+	pg = G_proc_globs_m13(lh);
+	list = pg->current_session.Sgmt_recs_list;
 	
 	// search for matching entry
 	pthread_mutex_lock_m13(&list->mutex);
@@ -12513,7 +12671,7 @@ tern	G_show_behavior_m13(ui4 mode)
 	G_push_function_m13();
 #endif
 
-	// mode == SHOW_CURRENT_BEHAVIOR_m13, or SHOW_BEHAVIOR_STACK_m13, or (SHOW_CURRENT_BEHAVIOR_m13 | SHOW_BEHAVIOR_STACK_m13) for both
+	// mode == SHOW_CURRENT_BEHAVIOR_m13, or SHOW_BEHAVIOR_STACK_m13, or CURRENT_BEHAVIOR_m13 for both
 	
 	stack = G_behavior_stack_m13();  // gets mutex
 	
@@ -12623,7 +12781,7 @@ tern	G_show_contigua_m13(LH_m13 *lh)
 }
 
 
-tern  G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, si1 *prefix)
+tern  G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, const si1 *prefix)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12700,23 +12858,29 @@ tern	G_show_error_m13(void)
 {
 	const si1	*func;
 	si1		*mess, *name;
-	si4		line;
+	si4		code, line;
 	ERR_m13		*err;
 	pid_t_m13	_id;
 	
 
 	err = &globals_m13->error;
+	pthread_mutex_lock_m13(&err->mutex);
+
+	code = err->code;
 	mess = err->message;
 	name = err->thread_name;
 	func = err->function;
 	line = err->line;
 	
-	if (err->code == E_NONE_m13) {
+	if (code == E_NONE_m13) {
 		#ifdef MATLAB_m13
 		mexPrintf("\nError:\tno error set\n\n");
 		#else
 		fprintf(stderr, "\n%sError%s:\tno error set\n\n", TC_RED_m13, TC_RESET_m13);
 		#endif
+
+		pthread_mutex_unlock_m13(&err->mutex);
+
 		return(TRUE_m13);
 	}
 
@@ -12725,24 +12889,24 @@ tern	G_show_error_m13(void)
 #ifdef MATLAB_m13
 	if (*err->thread_name) {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id %lu)]\n", mess, func, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(~); in %s(id: %lu)]\n", mess, func, name, _id);
 		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id %lu)]\n", mess, func, line, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, name, _id);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread %lu]\n", mess, func, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(~); in thread %lu]\n", mess, func, _id);
 		else
 			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
 	}
 #else
 	if (*err->thread_name) {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(~); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
 		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(~); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
 		else
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
 	}
@@ -12756,6 +12920,8 @@ tern	G_show_error_m13(void)
 		#endif
 	}
 	putchar_m13('\n');
+
+	pthread_mutex_unlock_m13(&err->mutex);
 
 	return(TRUE_m13);
 }
@@ -12805,14 +12971,14 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	si4			i, j, func_start_num;
 	FUNCTION_STACK_m13	*stack;
 	pid_t_m13		_pid;
-	pthread_t		*thread;
+	pthread_t		*thread_p;
 
 	
 	// pass _id == 0 for error or local thread call
 	// returns -1 on failure
-	
+
 	if (_id == 0) {
-		if (globals_m13->error.code)
+		if (G_error_code_m13())
 			_id = globals_m13->error.thread_id;
 		else
 			_id = gettid_m13();
@@ -12823,7 +12989,7 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 		return(-1);
 	
 	// recurse
-	_pid = PROC_thread_list_parent_m13(_id);
+	_pid = PROC_thread_parent_id_m13(_id);
 	if (_pid) {
 		func_start_num = G_show_function_stack_m13(_pid);
 		if (func_start_num == -1)
@@ -12833,13 +12999,15 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	}
 
 	// print thread name
-	thread = PROC_thread_for_id_m13(stack->_id);
-	pthread_getname_m13(*thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	if (*thread_name)
-		sprintf_m13(title, "Function Stack for %s(id %lu)", thread_name, _id);
-	else
-		sprintf_m13(title, "Function Stack for Thread %lu:", _id);
-	printf_m13("%s\n", title);
+	thread_p = PROC_thread_for_id_m13(stack->_id);
+	if (thread_p) {
+		pthread_getname_m13(*thread_p, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+		if (*thread_name)
+			sprintf_m13(title, "Function Stack for %s(id: %lu)", thread_name, _id);
+		else
+			sprintf_m13(title, "Function Stack for Thread %lu:", _id);
+		printf_m13("%s\n", title);
+	}
 
 	// replace string characters with '-' (terminal zero preserved)
 	c = title - 1;
@@ -12875,7 +13043,7 @@ void  G_show_globals_m13(void)
 	si4	i;
 	
 
-	printf_m13("\nGlobals\n-----------\n-----------\n");
+	printf_m13("\nGlobals\n=======\n");
 
 	printf_m13("\nRecord Filters\n--------------\n");
 	if (globals_m13->record_filters == NULL) {
@@ -12889,7 +13057,7 @@ void  G_show_globals_m13(void)
 		printf_m13("\n");
 	}
 
-	printf_m13("\nError\n--------------\n");
+	printf_m13("\nError\n-----");
 	G_show_error_m13();
 
 	printf_m13("\nMiscellaneous\n-------------\n");
@@ -12915,9 +13083,7 @@ void  G_show_globals_m13(void)
 	printf_m13("Write Sorted Records: %s\n", STR_tern_m13(globals_m13->write_sorted_records, TRUE_m13));
 	printf_m13("Update File System Names: %s\n", STR_tern_m13(globals_m13->update_file_system_names, TRUE_m13));
 	printf_m13("Update Header Names: %s\n", STR_tern_m13(globals_m13->update_header_names, TRUE_m13));
-	printf_m13("Update MED Version: %s\n", STR_tern_m13(globals_m13->update_MED_version, TRUE_m13));
-
-	printf_m13("\n");
+	printf_m13("Update MED Version: %s\n\n", STR_tern_m13(globals_m13->update_MED_version, TRUE_m13));
 	
 	return;
 }
@@ -13475,7 +13641,7 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 {
 	si1			hex_str[HEX_STR_BYTES_m13(ENCRYPTION_KEY_BYTES_m13, 1)];
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -13483,8 +13649,8 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 	// use G_message_m13() because show_password_data_m13() is used in normal (no programming) functions => so allow output to be suppressed easily
 	if (pwd == NULL) {
-		proc_globs = G_proc_globs_m13(NULL);
-		pwd = &proc_globs->password_data;
+		pg = G_proc_globs_m13(NULL);
+		pwd = &pg->password_data;
 	}
 	
 	G_message_m13("\n------------------ Password Data - START -----------------\n");
@@ -13509,7 +13675,7 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 {
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -13519,8 +13685,8 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 	// use G_message_m13() because show_password_data_m13() is used in normal (not programming) functions => so allow output to be suppressed easily
 	
 	if (pwd == NULL) {
-		proc_globs = G_proc_globs_m13(NULL);
-		pwd = &proc_globs->password_data;
+		pg = G_proc_globs_m13(NULL);
+		pwd = &pg->password_data;
 	}
 
 	if (pw_level == 1 || pw_level == 0) {
@@ -13543,145 +13709,145 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 tern	G_show_proc_globs_m13(LH_m13 *lh)
 {
 	si1 		tim_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	
 	printf_m13("\nProcess Globals\n===============\n");
 	printf_m13("\n_id: ");
-	if (proc_globs->_id == 0) {
+	if (pg->_id == 0) {
 		printf_m13("no entry\n");
 	} else {
-		STR_hex_m13(hex_str, (ui1 *) &proc_globs->_id, sizeof(ui8), NULL, TRUE_m13);
-		printf_m13("%lu  (0x%s)\n", proc_globs->_id, hex_str);
+		STR_hex_m13(hex_str, (ui1 *) &pg->_id, sizeof(ui8), NULL, TRUE_m13);
+		printf_m13("%lu  (0x%s)\n", pg->_id, hex_str);
 	}
 	
 	printf_m13("\nCurrent Session\n---------------\n");
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->current_session.UID, sizeof(ui8), NULL, TRUE_m13);
-	printf_m13("UID: 0x%s  (%lu)\n", hex_str, proc_globs->current_session.UID);
-	if (*proc_globs->current_session.directory)
-		printf_m13("Directory: \"%s\"\n", proc_globs->current_session.directory);
+	STR_hex_m13(hex_str, (ui1 *) &pg->current_session.UID, sizeof(ui8), NULL, TRUE_m13);
+	printf_m13("UID: 0x%s  (%lu)\n", hex_str, pg->current_session.UID);
+	if (*pg->current_session.path)
+		printf_m13("Directory: \"%s\"\n", pg->current_session.path);
 	else
 		printf_m13("Directory: not set\n");
 	printf_m13("Start Time: ");
-	if (proc_globs->current_session.start_time == UUTC_NO_ENTRY_m13) {
+	if (pg->current_session.start_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("no entry\n");
-	} else if (proc_globs->current_session.start_time == BEGINNING_OF_TIME_m13) {
+	} else if (pg->current_session.start_time == BEGINNING_OF_TIME_m13) {
 		printf_m13("beginning of time\n");
-	} else if (proc_globs->current_session.start_time == END_OF_TIME_m13) {
+	} else if (pg->current_session.start_time == END_OF_TIME_m13) {
 		printf_m13("end of time\n");
 	} else {
 		G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
-		STR_time_m13(NULL, proc_globs->current_session.start_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		STR_time_m13(NULL, pg->current_session.start_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		G_pop_behavior_m13();
-		printf_m13("%ld (oUTC)  [%s]\n", proc_globs->current_session.start_time, tim_str);
+		printf_m13("%ld (oUTC)  [%s]\n", pg->current_session.start_time, tim_str);
 	}
 	printf_m13("End Time: ");
-	if (proc_globs->current_session.end_time == UUTC_NO_ENTRY_m13) {
+	if (pg->current_session.end_time == UUTC_NO_ENTRY_m13) {
 		printf_m13("no entry\n");
-	} else if (proc_globs->current_session.end_time == BEGINNING_OF_TIME_m13) {
+	} else if (pg->current_session.end_time == BEGINNING_OF_TIME_m13) {
 		printf_m13("beginning of time\n");
-	} else if (proc_globs->current_session.end_time == END_OF_TIME_m13) {
+	} else if (pg->current_session.end_time == END_OF_TIME_m13) {
 		printf_m13("end of time\n");
 	} else {
 		G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
-		STR_time_m13(NULL, proc_globs->current_session.end_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		STR_time_m13(NULL, pg->current_session.end_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
 		G_pop_behavior_m13();
-		printf_m13("%ld (oUTC)  [%s]\n", proc_globs->current_session.end_time, tim_str);
+		printf_m13("%ld (oUTC)  [%s]\n", pg->current_session.end_time, tim_str);
 	}
-	if (*proc_globs->current_session.fs_name)
-		printf_m13("File System Name: \"%s\"\n", proc_globs->current_session.fs_name);  // from file system
+	if (*pg->current_session.fs_name)
+		printf_m13("File System Name: \"%s\"\n", pg->current_session.fs_name);  // from file system
 	else
 		printf_m13("File System Name: no entry\n");  // from file system
-	if (*proc_globs->current_session.uh_name)
-		printf_m13("Universal Header Name: \"%s\"\n", proc_globs->current_session.uh_name);  // from universal header
+	if (*pg->current_session.uh_name)
+		printf_m13("Universal Header Name: \"%s\"\n", pg->current_session.uh_name);  // from universal header
 	else
-		printf_m13("Universal Header Name: <same as file system name>\n");  // from file system
+		printf_m13("Universal Header Name: <file system name>\n");  // same as file system name
 	printf_m13("Number of Segments: ");
-	if (proc_globs->current_session.n_segments == 0)
+	if (pg->current_session.n_segments == 0)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%d\n", proc_globs->current_session.n_segments);
+		printf_m13("%d\n", pg->current_session.n_segments);
 	printf_m13("Number of Mapped Segments: ");
-	if (proc_globs->current_session.n_mapped_segments == 0)
+	if (pg->current_session.n_mapped_segments == 0)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%d\n", proc_globs->current_session.n_mapped_segments);
+		printf_m13("%d\n", pg->current_session.n_mapped_segments);
 	printf_m13("Index Channel: ");
-	if (proc_globs->current_session.index_channel == NULL)
+	if (pg->current_session.index_channel == NULL)
 		printf_m13("not set\n");
 	else
 		printf_m13("set\n");
 	printf_m13("Index Channel Name: ");
-	if (*proc_globs->current_session.index_channel_name == 0)
+	if (*pg->current_session.index_channel_name == 0)
 		printf_m13("no entry\n");
 	else
-		printf_m13("\"%s\"\n", proc_globs->current_session.index_channel_name);
+		printf_m13("\"%s\"\n", pg->current_session.index_channel_name);
 	
 	printf_m13("\nActive Channels\n---------------\n");
 	printf_m13("Time Series:\n");
-	printf_m13("\tSampling Frequencies Vary: %s\n", STR_tern_m13(proc_globs->active_channels.sampling_frequencies_vary, TRUE_m13));
-	if (proc_globs->active_channels.minimum_sampling_frequency == RATE_NO_ENTRY_m13)
+	printf_m13("\tSampling Frequencies Vary: %s\n", STR_tern_m13(pg->active_channels.sampling_frequencies_vary, TRUE_m13));
+	if (pg->active_channels.minimum_sampling_frequency == RATE_NO_ENTRY_m13)
 		printf_m13("\tMinimum Sampling Frequency: no entry\n");
 	else
-		printf_m13("\tMinimum Sampling Frequency: %0.2lf Hz\n", proc_globs->active_channels.minimum_sampling_frequency);
-	if (proc_globs->active_channels.maximum_sampling_frequency == RATE_NO_ENTRY_m13)
+		printf_m13("\tMinimum Sampling Frequency: %0.2lf Hz\n", pg->active_channels.minimum_sampling_frequency);
+	if (pg->active_channels.maximum_sampling_frequency == RATE_NO_ENTRY_m13)
 		printf_m13("\tMaximum Sampling Frequency: no entry\n");
 	else
-		printf_m13("\tMaximum Sampling Frequency: %0.2lf Hz\n", proc_globs->active_channels.maximum_sampling_frequency);
-	if (proc_globs->active_channels.minimum_sampling_frequency_channel == NULL)
+		printf_m13("\tMaximum Sampling Frequency: %0.2lf Hz\n", pg->active_channels.maximum_sampling_frequency);
+	if (pg->active_channels.minimum_sampling_frequency_channel == NULL)
 		printf_m13("\tMinimum Sampling Frequency Channel: not set\n");
 	else
-		printf_m13("\tMinimum Sampling Frequency Channel Name: \"%s\"\n", proc_globs->active_channels.minimum_sampling_frequency_channel->name);
-	if (proc_globs->active_channels.maximum_sampling_frequency_channel == NULL)
+		printf_m13("\tMinimum Sampling Frequency Channel Name: \"%s\"\n", pg->active_channels.minimum_sampling_frequency_channel->name);
+	if (pg->active_channels.maximum_sampling_frequency_channel == NULL)
 		printf_m13("\tMaximum Sampling Frequency Channel: not set\n");
 	else
-		printf_m13("\tMaximum Sampling Frequency Channel Name: \"%s\"\n", proc_globs->active_channels.maximum_sampling_frequency_channel->name);
+		printf_m13("\tMaximum Sampling Frequency Channel Name: \"%s\"\n", pg->active_channels.maximum_sampling_frequency_channel->name);
 	printf_m13("Video:\n");
-	printf_m13("\tFrame Rates Vary: %s\n", STR_tern_m13(proc_globs->active_channels.frame_rates_vary, TRUE_m13));
-	if (proc_globs->active_channels.minimum_frame_rate == RATE_NO_ENTRY_m13)
+	printf_m13("\tFrame Rates Vary: %s\n", STR_tern_m13(pg->active_channels.frame_rates_vary, TRUE_m13));
+	if (pg->active_channels.minimum_frame_rate == RATE_NO_ENTRY_m13)
 		printf_m13("\tMinimum Frame Rate: no entry\n");
 	else
-		printf_m13("\tMinimum Frame Rate: %0.2lf fps\n", proc_globs->active_channels.minimum_frame_rate);
-	if (proc_globs->active_channels.maximum_frame_rate == RATE_NO_ENTRY_m13)
+		printf_m13("\tMinimum Frame Rate: %0.2lf fps\n", pg->active_channels.minimum_frame_rate);
+	if (pg->active_channels.maximum_frame_rate == RATE_NO_ENTRY_m13)
 		printf_m13("\tMaximum Frame Rate: no entry\n");
 	else
-		printf_m13("\tMinimum Frame Rate: %0.2lf fps\n", proc_globs->active_channels.maximum_frame_rate);
-	if (proc_globs->active_channels.minimum_frame_rate_channel == NULL)
+		printf_m13("\tMinimum Frame Rate: %0.2lf fps\n", pg->active_channels.maximum_frame_rate);
+	if (pg->active_channels.minimum_frame_rate_channel == NULL)
 		printf_m13("\tMinimum Frame Rate Channel: not set\n");
 	else
-		printf_m13("\tMinimum Frame Rate Channel Name: \"%s\"\n", proc_globs->active_channels.minimum_frame_rate_channel->name);
-	if (proc_globs->active_channels.maximum_frame_rate_channel == NULL)
+		printf_m13("\tMinimum Frame Rate Channel Name: \"%s\"\n", pg->active_channels.minimum_frame_rate_channel->name);
+	if (pg->active_channels.maximum_frame_rate_channel == NULL)
 		printf_m13("\tMaximum Frame Rate Channel: not set\n");
 	else
-		printf_m13("\tMaximum Frame Rate Channel Name: \"%s\"\n", proc_globs->active_channels.maximum_frame_rate_channel->name);
+		printf_m13("\tMaximum Frame Rate Channel Name: \"%s\"\n", pg->active_channels.maximum_frame_rate_channel->name);
 
 	printf_m13("\nTime Constants\n--------------\n");
-	printf_m13("Time Constants Set: %s\n", STR_tern_m13(proc_globs->time_constants.set, TRUE_m13));
-	printf_m13("Recording Time Offset Known: %s\n", STR_tern_m13(proc_globs->time_constants.RTO_known, TRUE_m13));
-	printf_m13("Recording Time Offset: %ld (usecs)\n", proc_globs->time_constants.recording_time_offset);
-	printf_m13("Standard UTC Offset: %d (secs)\n", proc_globs->time_constants.standard_UTC_offset);
-	printf_m13("Standard Timezone Acronym: %s\n", proc_globs->time_constants.standard_timezone_acronym);
-	printf_m13("Standard Timezone String: %s\n", proc_globs->time_constants.standard_timezone_string);
-	printf_m13("Daylight Timezone Acronym: %s\n", proc_globs->time_constants.daylight_timezone_acronym);
-	printf_m13("Daylight Timezone String: %s\n", proc_globs->time_constants.daylight_timezone_string);
-	printf_m13("Observe Daylight Saving Time: %s\n", STR_tern_m13(proc_globs->time_constants.observe_DST, TRUE_m13));
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_start_code.value, sizeof(si8), "-", FALSE_m13);
-	printf_m13("Daylight Time Start Code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_start_code.value);
-	STR_hex_m13(hex_str, (ui1 *) &proc_globs->time_constants.daylight_end_code.value, sizeof(si8), "-", FALSE_m13);
-	printf_m13("Daylight Time End Code: 0x %s  (%ld)\n", hex_str, proc_globs->time_constants.daylight_end_code.value);
+	printf_m13("Time Constants Set: %s\n", STR_tern_m13(pg->time_constants.set, TRUE_m13));
+	printf_m13("Recording Time Offset Known: %s\n", STR_tern_m13(pg->time_constants.RTO_known, TRUE_m13));
+	printf_m13("Recording Time Offset: %ld (usecs)\n", pg->time_constants.recording_time_offset);
+	printf_m13("Standard UTC Offset: %d (secs)\n", pg->time_constants.standard_UTC_offset);
+	printf_m13("Standard Timezone Acronym: %s\n", pg->time_constants.standard_timezone_acronym);
+	printf_m13("Standard Timezone String: %s\n", pg->time_constants.standard_timezone_string);
+	printf_m13("Daylight Timezone Acronym: %s\n", pg->time_constants.daylight_timezone_acronym);
+	printf_m13("Daylight Timezone String: %s\n", pg->time_constants.daylight_timezone_string);
+	printf_m13("Observe Daylight Saving Time: %s\n", STR_tern_m13(pg->time_constants.observe_DST, TRUE_m13));
+	STR_hex_m13(hex_str, (ui1 *) &pg->time_constants.daylight_start_code.value, sizeof(si8), "-", FALSE_m13);
+	printf_m13("Daylight Time Start Code: 0x %s  (%ld)\n", hex_str, pg->time_constants.daylight_start_code.value);
+	STR_hex_m13(hex_str, (ui1 *) &pg->time_constants.daylight_end_code.value, sizeof(si8), "-", FALSE_m13);
+	printf_m13("Daylight Time End Code: 0x %s  (%ld)\n", hex_str, pg->time_constants.daylight_end_code.value);
 		
 	printf_m13("\nMiscellaneous\n---------------\n");
 	printf_m13("Memory Map Block Bytes: ");
-	if (proc_globs->miscellaneous.mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13)
+	if (pg->miscellaneous.mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13)
 		printf_m13("no entry\n");
 	else
-		printf_m13("%d\n", proc_globs->miscellaneous.mmap_block_bytes);
-	printf_m13("Threading: %s\n", STR_tern_m13(proc_globs->miscellaneous.threading, TRUE_m13));
+		printf_m13("%d\n", pg->miscellaneous.mmap_block_bytes);
+	printf_m13("Threading: %s\n", STR_tern_m13(pg->miscellaneous.threading, TRUE_m13));
 
 	printf_m13("\n");
 	
@@ -13691,8 +13857,8 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 
 tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 {
-	ui1			*ui1_p;
-	si8			i, n_recs, r_cnt;
+	ui1		*ui1_p;
+	si8		i, n_recs, r_cnt;
 	REC_HDR_m13	*rh;
 	
 #ifdef FT_DEBUG_m13
@@ -13715,14 +13881,12 @@ tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 	// If record_filters is a "zero-length" array (i.e. record_filters = { NO_TYPE_CODE_m13 }), all records will be accepted.
 	// record_filters
 	
-	
 	if (record_filters == NULL)
 		record_filters = globals_m13->record_filters;	// if these too are NULL, no filters applied
-	else if (*record_filters == NO_TYPE_CODE_m13)	// Note: if G_read_record_data_m13() with these filters was used to get records, filtering is already done
+	else if (*record_filters == NO_TYPE_CODE_m13)	// Note: if G_read_records_m13() with these filters was used to get records, filtering is already done
 		record_filters = NULL;			// show all types, even if global filters are not NULL
 
 	
-	// show records
 	n_recs = rec_data_fps->n_items;
 	ui1_p = (void *) rec_data_fps->rec_data;
 	for (i = r_cnt = 0; i < n_recs; ++i) {
@@ -13742,7 +13906,7 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 	ui4			source;
 	si4			n_segs;
 	si8			i;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_REC_m13		*Sgmt;
 	
 #ifdef FT_DEBUG_m13
@@ -13758,8 +13922,8 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 	}
 	source = G_Sgmt_records_source_m13(lh, Sgmt_recs);
 
-	proc_globs = G_proc_globs_m13(lh);
-	n_segs = proc_globs->current_session.n_segments;
+	pg = G_proc_globs_m13(lh);
+	n_segs = pg->current_session.n_segments;
 	if (n_segs == SEGMENT_NUMBER_NO_ENTRY_m13) {  // == 0
 		G_set_error_m13(E_GEN_m13, "empty Sgmt records array");
 		return_m13(FALSE_m13);
@@ -14262,6 +14426,8 @@ tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 	// build ACQ_NUM_SORT_m13 array
 	acq_idxs = (ACQ_NUM_SORT_m13 *) malloc(n_chans * sizeof(ACQ_NUM_SORT_m13));
 	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	if (seg_idx == FALSE_m13)
+		return_m13(FALSE_m13);
 	*num_str = 0;
 	for (i = 0; i < n_chans; ++i) {
 		chan = sess->ts_chans[i];
@@ -14288,7 +14454,7 @@ tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 				}
 			} else {
 				free((void *) acq_idxs);
-				G_set_error_m13(E_GEN_m13, "metadata file \"%s\" is missing\n", md_file);
+				G_set_error_m13(E_FEXIST_m13, "metadata file \"%s\" is missing\n", md_file);
 				return_m13(FALSE_m13);
 			}
 			acq_idxs[i].acq_num = md_fps->metadata->time_series_section_2.acquisition_channel_number;
@@ -14326,8 +14492,7 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 {
 	static tern		message_given = FALSE_m13;
 	tern			ri_open, rd_open;
-	ui1			*tmp_rec_data;
-	si1			path[PATH_BYTES_m13], name[SEG_NAME_BYTES_m13];
+	ui1			*rd;
 	si8			i, n_recs, file_start_time;
 	FPS_m13			*ri_fps, *rd_fps;
 	REC_IDX_m13		*ri;
@@ -14337,43 +14502,30 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	G_push_function_m13();
 #endif
 
-	// call with either rec_inds_fps or rec_data_fps, other can be NULL, but both will be processed
-	// this process is not terribly efficient, but should only need to be done once
-	
-	
+	// inefficient, but should not need to be done frequently
+
 	if (globals_m13->write_sorted_records == FALSE_m13)
 		return_m13(FALSE_m13);
 
-	ri_fps = rec_inds_fps;
-	rd_fps = rec_data_fps;
-	ri_open = FPS_is_open_m13(ri_fps);
-	rd_open = FPS_is_open_m13(ri_fps);
-	if (ri_fps) {
-		FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0, NULL, NULL);
-		if (rd_fps == NULL) {
-			G_path_parts_m13(ri_fps->path, path, name, NULL);
-			sprintf_m13(path, "%s/%s.%s", path, name, REC_DATA_TYPE_STR_m13);
-			rd_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, path, "r", NULL, NULL);
-		} else {
-			rd_fps = FPS_read_m13(rd_fps, 0, FPS_FULL_FILE_m13, 0, NULL);
-		}
-	} else if (rd_fps) {
-		FPS_read_m13(rd_fps, 0, FPS_FULL_FILE_m13, 0, NULL, NULL);
-		if (ri_fps == NULL) {
-			ri_open = FALSE_m13;
-			G_path_parts_m13(rd_fps->path, path, name, NULL);
-			sprintf_m13(path, "%s/%s.%s", path, name, REC_INDS_TYPE_STR_m13);
-			ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, NULL, path, "r", NULL, NULL);
-		} else {
-			ri_fps = FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0, NULL);
-		}
-	} else {
-		G_set_error_m13(E_GEN_m13, "both FPSs are NULL");
+	if (rec_inds_fps == NULL || rec_data_fps == NULL) {
+		G_set_error_m13(E_FGEN_m13, "rec_inds_fps or rec_data_fps is null");
 		return_m13(FALSE_m13);
 	}
-	if (ri_fps == NULL || ri_fps == NULL)
-		return_m13(FALSE_m13);
+	
+	// get local copy of pointers
+	ri_fps = rec_inds_fps;
+	rd_fps = rec_data_fps;
 
+	// save passed state
+	ri_open = FPS_is_open_m13(ri_fps);
+	rd_open = FPS_is_open_m13(rd_fps);
+
+	// read full files
+	ri_fps = FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0, NULL, NULL);
+	rd_fps = FPS_read_m13(rd_fps, 0, FPS_FULL_FILE_m13, 0, NULL, NULL);
+	if (ri_fps == NULL || rd_fps == NULL)
+		return_m13(FALSE_m13);
+	
 	// check if already sorted
 	if (ri_fps->uh->ordered == TRUE_m13 && rd_fps->uh->ordered == TRUE_m13)
 		return_m13(TRUE_m13);
@@ -14383,7 +14535,7 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 		message_given = TRUE_m13;
 	}
 		
-	// fix any no-entry start times
+	// fix any no-entry start times (e.g. global, non-timed records)
 	n_recs = rd_fps->n_items;
 	ri = ri_fps->rec_inds;
 	file_start_time = ri_fps->uh->file_start_time;
@@ -14397,13 +14549,13 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	// sort indices (leave file offsets intact)
 	qsort((void *) ri_fps->rec_inds, (size_t) n_recs, sizeof(REC_IDX_m13), G_compare_record_index_times);  // leave terminal index where it is
 	
-	// copy record data before writing
-	tmp_rec_data = (ui1 *) malloc((size_t) rd_fps->params.raw_data_bytes);
-	memcpy((void *) tmp_rec_data, (void *) rd_fps->params.raw_data, (size_t) rd_fps->params.raw_data_bytes);
-			
-	// reopen files for reading & writing
-	freopen_m13(NULL, "r+", ri_fps->params.fp);
-	freopen_m13(NULL, "r+", rd_fps->params.fp);
+	// reopen files for writing (files closed after full file read)
+	ri_fps->params.fp = fopen_m13(ri_fps->path, "r+");
+	rd_fps->params.fp = fopen_m13(rd_fps->path, "r+");
+	
+	// reset universal headers
+	ri_fps->uh->n_entries = rd_fps->uh->n_entries = (si8) 0;
+	ri_fps->uh->maximum_entry_size = rd_fps->uh->maximum_entry_size = (ui4) 0;  // probaly unnecessary - should stay same, but just in case not filled in
 
 	// set file pointers to start of entries
 	FPS_seek_m13(ri_fps, UH_BYTES_m13);
@@ -14413,19 +14565,27 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 
 	// write out sorted records
 	ri = ri_fps->rec_inds;
-	for (i = n_recs; i--; ++ri) {
-		rh = (REC_HDR_m13 *) (tmp_rec_data + ri->file_offset);
-		ri->file_offset = rd_fps->params.fp->len;
-		FPS_write_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri);
-		FPS_write_m13(rd_fps, FPS_APPEND_m13, rh->total_record_bytes, 1, (void *) rh);
-	}
+	rd = rd_fps->params.raw_data;
 	
+	eprintf_m13("rd_fps->params.fp = %lu", (ui8) rd_fps->params.fp);
+	FILE_show_m13(rd_fps->params.fp);
+	
+	for (i = n_recs; i--; ++ri) {
+		rh = (REC_HDR_m13 *) (rd + ri->file_offset);
+		ri->file_offset = rd_fps->params.fp->len;
+
+		if (FPS_write_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri) == FALSE_m13)
+			return_m13(FALSE_m13);
+		if (FPS_write_m13(rd_fps, FPS_APPEND_m13, rh->total_record_bytes, 1, (void *) rh) == FALSE_m13)
+			return_m13(FALSE_m13);
+	}
+
 	// update record data universal header
 	rd_fps->uh->ordered = TRUE_m13;
-	rd_fps->direcs.flags |= FPS_DF_UPDATE_UH_m13;
-	if (rd_open == FALSE_m13)
-		rd_fps->direcs.flags |= FPS_DF_CLOSE_AFTER_OP_m13;
-	FPS_write_m13(rd_fps, 0, FPS_UH_ONLY_m13, 0, NULL);
+	rd_fps->direcs.flags |= (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13);
+	FILE_show_m13(rd_fps->params.fp);
+	if (FPS_write_m13(rd_fps, 0, FPS_UH_ONLY_m13, 0, NULL) == FALSE_m13)
+		return_m13(FALSE_m13);
 
 	// write terminal index
 	ri->file_offset = rd_fps->params.fp->len;
@@ -14437,13 +14597,15 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	
 	// write out terminal index & update universal header
 	ri_fps->uh->ordered = TRUE_m13;
-	ri_fps->direcs.flags |= FPS_DF_UPDATE_UH_m13;
-	if (ri_open == FALSE_m13)
-		ri_fps->direcs.flags |= FPS_DF_CLOSE_AFTER_OP_m13;
-	FPS_write_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri);
+	ri_fps->direcs.flags |= (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13);
+	if (FPS_write_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri) == FALSE_m13)
+		return_m13(FALSE_m13);
 
 	// clean up
-	free((void *) tmp_rec_data);
+	if (ri_open)
+		FPS_read_m13(ri_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, NULL);
+	if (rd_open)
+		FPS_read_m13(rd_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, NULL);
 		
 	return_m13(TRUE_m13);
 }
@@ -14456,7 +14618,7 @@ tern	G_swap_names_m13(LH_m13 *lh)
 {
 	CHAN_m13	*chan;
 	SEG_m13		*seg;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14474,12 +14636,12 @@ tern	G_swap_names_m13(LH_m13 *lh)
 	switch (lh->type_code) {
 		case SESS_TYPE_CODE_m13:
 		case SSR_TYPE_CODE_m13:
-			proc_globs = G_proc_globs_m13(lh);
-			if (*proc_globs->current_session.uh_name) {  // uh_name is empty if == fs_name
-				if (lh->name == proc_globs->current_session.fs_name)
-					lh->name = proc_globs->current_session.uh_name;
+			pg = G_proc_globs_m13(lh);
+			if (*pg->current_session.uh_name) {  // uh_name is empty if == fs_name
+				if (lh->name == pg->current_session.fs_name)
+					lh->name = pg->current_session.uh_name;
 				else
-					lh->name = proc_globs->current_session.fs_name;
+					lh->name = pg->current_session.fs_name;
 				return_m13(TRUE_m13);
 			}
 			return_m13(FALSE_m13);
@@ -14515,7 +14677,7 @@ tern	G_swap_names_m13(LH_m13 *lh)
 }
 
 
-tern	G_terminal_entry_m13(si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate)
+tern	G_terminal_entry_m13(const si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate)
 {
 	si8	items;
 	si1	local_buffer[128], local_prompt[128];
@@ -14656,10 +14818,10 @@ GET_TERMINAL_ENTRY_RETRY_m13:
 }
 
 
-tern	G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes)
+tern	G_terminal_password_bytes_m13(const si1 *password, si1 *password_bytes)
 {
-	si1	*s;
-	si4	i, cb;
+	const si1	*c;
+	si4		i, cb;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14667,12 +14829,12 @@ tern	G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes)
 	
 	// get terminal (most unique) bytes of UTF-8 password characters
 
-	s = password;
-	for (i = 0; *s; ++i) {
-		cb = UTF8_char_bytes_m13(s);
+	c = password;
+	for (i = 0; *c; ++i) {
+		cb = UTF8_char_bytes_m13(c);
 		if (cb) {
-			password_bytes[i] = *(s + (cb - 1));
-			s += cb;
+			password_bytes[i] = *(c + (cb - 1));
+			c += cb;
 		} else {
 			G_set_error_m13(E_GEN_m13, "invalid character");
 			return_m13(FALSE_m13);
@@ -14690,7 +14852,7 @@ tern	G_terminal_password_bytes_m13(si1 *password, si1 *password_bytes)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	G_ternary_entry_m13(si1 *entry)
+tern	G_ternary_entry_m13(const si1 *entry)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14732,7 +14894,7 @@ tern	G_ternary_entry_m13(si1 *entry)
 }
 
 
-tern  G_textbelt_text_m13(si1 *phone_number, si1 *content, si1 *textbelt_key)
+tern	G_textbelt_text_m13(const si1 *phone_number, const si1 *content, const si1 *textbelt_key)
 {
 	si1 command[1024];
 	
@@ -14772,6 +14934,7 @@ inline
 void	G_thread_exit_m13(void)
 {
 	pid_t_m13	_id;
+	ERR_m13		*err;
 	
 	// Call this function to release thread-local memory when leaving a thread.
 	// If not done, memory will be released by G_free_globals_m13(), or program termination.
@@ -14789,13 +14952,23 @@ void	G_thread_exit_m13(void)
 	// release thread behavior stack
 	G_delete_behavior_stack_m13();
 	
-	#ifdef FT_DEBUG_m13
-	// release thread function stack
-	G_delete_function_stack_m13();
-	#endif
+	err = &globals_m13->error;
+	pthread_mutex_lock_m13(&err->mutex);
 	
-	// remove thread from thread list
-	PROC_thread_list_remove_m13(_id);
+	if (err->code) {
+		pthread_mutex_lock_m13(&err->isem.mutex);
+		
+		if (err->isem.owner == _id) {
+			_id = PROC_thread_parent_id_m13(_id);
+			isem_chown_m13(&err->isem, _id);  // change error isem owner to parent
+		}
+		
+		pthread_mutex_unlock_m13(&err->isem.mutex);
+	} else {
+		PROC_thread_list_remove_m13(_id);
+	}
+	
+	pthread_mutex_unlock_m13(&err->mutex);
 
 	return;
 }
@@ -15004,7 +15177,7 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 }
 
 
-tern	G_update_channel_name_header_m13(si1 *path, si1 *fs_name)  // used by G_update_chan_name_m13
+tern	G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name)  // used by G_update_chan_name_m13
 {
 	size_t		nr, nw;
 	FILE		*fp;
@@ -15114,26 +15287,19 @@ tern	G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8
 }
 
 
-tern	G_update_MED_type_m13(si1 *path)
+tern	G_update_MED_type_m13(const si1 *path)
 {
-	tern				ret_val;
-	ui1				*rd, *encryption_key, *block, *ts_block, *recd;
-	si1				*text, *text2;
-	ui4				type_code, bh_clear_mask, temp_CRC, full_CRC;
-	si8				i, bytes_to_read, bytes_to_write, n_blocks;
-	si8				body_bytes, text_bytes, r_pos, w_pos, rw_pos;
-	size_t				nr, nw;
-	PROC_GLOBS_m13			*proc_globs;
-	FILE_m13			*fp;
-	UH_m13				*uh;
-	METADATA_SECTION_1_m13		*md1;
-	CMP_FIXED_BH_m13		*bh;
-	REC_IDX_m13			*ri;
-	REC_HDR_m13			*rh;
-	REC_Sgmt_v10_m13		Sgmt_v10;
-	REC_Sgmt_v11_m13		*Sgmt_v11;
-	REC_Note_v11_m13		*Note_v11;
-	PASSWORD_DATA_m13		*pwd;
+	tern			r_val;
+	ui1			*rd, *rd2, *encryption_key, *block, *ts_block;
+	si1			*text;
+	ui4			type_code, bh_clear_mask, temp_CRC, full_CRC;
+	si8			i, bytes_to_read, bytes_to_write, n_blocks;
+	si8			body_bytes, text_bytes, r_pos, w_pos, rw_pos;
+	size_t			nr, nw;
+	FILE_m13		*fp, *fp2;
+	UH_m13			*uh;
+	PASSWORD_DATA_m13	*pwd;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -15145,13 +15311,18 @@ tern	G_update_MED_type_m13(si1 *path)
 	fp = fopen_m13(path, "r+");
 	if (fp == NULL)
 		return_m13(FALSE_m13);
+	fp2 = NULL;
 
-	ret_val = FALSE_m13;
-	ts_block = rd = NULL;
+	r_val = FALSE_m13;
+	ts_block = rd = rd2 = NULL;
+	
+	pg = G_proc_globs_m13(NULL);
+	pwd = &pg->password_data;
 	
 	// metadata
 	type_code = G_MED_type_code_from_string_m13(path);
 	if (METADATA_CODE_m13(type_code) == TRUE_m13) {
+		METADATA_SECTION_1_m13		*md1;
 
 		// read in raw data
 		bytes_to_read = METADATA_FILE_BYTES_m13;
@@ -15256,6 +15427,7 @@ tern	G_update_MED_type_m13(si1 *path)
 	
 	// time series data
 	else if (type_code == TS_DATA_TYPE_CODE_m13) {
+		CMP_FIXED_BH_m13		*bh;
 
 		// read in universal header & first block header (for encryption flags)
 		bytes_to_read = UH_BYTES_m13 + CMP_BLOCK_FIXED_HDR_BYTES_m13;
@@ -15395,241 +15567,214 @@ tern	G_update_MED_type_m13(si1 *path)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 	}
 		
-	// record indices
-	else if (type_code == REC_INDS_TYPE_CODE_m13) {
-
-		// read in raw data
-		bytes_to_read = flen_m13(fp);
-		rd = (ui1 *) malloc((size_t) bytes_to_read);
-		if (rd == NULL)
-			goto UPDATE_MED_TYPE_FAIL_m13;
-		fseek_m13(fp, 0, SEEK_SET);
-		nr = fread_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-		if (nr != bytes_to_read)
-			goto UPDATE_MED_TYPE_FAIL_m13;
-
-		// set up
-		uh = (UH_m13 *) rd;
-
-		// update version
-		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
-		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
-
-		// update fields: no overlaps, no encryption
+	// record data & indices (have to be done together)
+	else if (type_code == REC_INDS_TYPE_CODE_m13 || type_code == REC_DATA_TYPE_CODE_m13) {
+		FILE_m13		*ri_fp, *rd_fp;
+		ui1			*ri_rd, *rd_rd;
+		si1			tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13];
+		UH_m13			*ri_uh, *rd_uh;
+		REC_IDX_m13		*ri;
+		REC_HDR_m13		r_rh, *w_rh;
+		REC_Sgmt_v10_m13	Sgmt_v10;
+		REC_Sgmt_v11_m13	*Sgmt_v11;
+		REC_Note_v11_m13	r_Note_v11, *w_Note_v11;
 		
-		// ordered
-		uh->ordered = FALSE_m13;  // may not be true in MED 1.0
-		
-		// encryption
-		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
-		uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
-		uh->encryption_1 = ENCRYPTION_VARIABLE_m13;
-		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
-		
-		// anonymized subject
-		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
-		
-		// loop over blocks
-		n_blocks = uh->n_entries;
-		ri = (REC_IDX_m13 *) (rd + UH_BYTES_m13);
-		
-		// write out new file universal header
-		fseek_m13(fp, UH_BYTES_m13, SEEK_SET);
-
-		// update Sgmt index versions (data will be done also as always used as a pair)
-		uh->body_CRC = CRC_START_VALUE_m13;
-		for (i = 0; i < n_blocks; ++i, ++ri) {
-			// update Sgmt record idex versions
-			if (ri->type_code == REC_Sgmt_TYPE_CODE_m13)
-				if (ri->version_major == 1 && ri->version_minor == 0)
-					ri->version_minor = 1;
-				
-			// update header body CRC
-			uh->body_CRC = CRC_update_m13((ui1 *) ri, REC_IDX_BYTES_m13, uh->body_CRC);
+		G_path_parts_m13(path, tmp_path, tmp_name, NULL);
+		if (type_code == REC_INDS_TYPE_CODE_m13) {
+			ri_fp = fp;
+			sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, REC_DATA_TYPE_STR_m13);
+			rd_fp = fp2 = fopen_m13(tmp_path, "r+");
+			if (rd_fp == NULL)
+				goto UPDATE_MED_TYPE_FAIL_m13;
+		} else {
+			rd_fp = fp;
+			sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, REC_INDS_TYPE_STR_m13);
+			ri_fp = fp2 = fopen_m13(tmp_path, "r+");
+			if (ri_fp == NULL)
+				goto UPDATE_MED_TYPE_FAIL_m13;
 		}
 
-		// update header CRC
-		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
-
-		// write out
-		fseek_m13(fp, 0, SEEK_SET);
-		bytes_to_write = bytes_to_read;
-		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
-		if (nw != bytes_to_write)
+		// read in record indices raw data
+		bytes_to_read = flen_m13(ri_fp);
+		ri_rd = rd = (ui1 *) malloc((size_t) bytes_to_read);  // rd freed below
+		if (ri_rd == NULL)
 			goto UPDATE_MED_TYPE_FAIL_m13;
-	}
-	
-	// record data (new Sgmt & Note record sizes - read & write pointers may end up in different places)
-	else if (type_code == REC_DATA_TYPE_CODE_m13) {
-
-		// set up differential read & write locations
-		r_pos = w_pos = 0;
-
-		// read in raw data
-		bytes_to_read = UH_BYTES_m13;
-		rd = (ui1 *) malloc((size_t) (UH_BYTES_m13 + REC_LARGEST_RECORD_BYTES_m13));
-		if (rd == NULL)
+		nr = fread_m13((void *) ri_rd, sizeof(ui1), (size_t) bytes_to_read, ri_fp);
+		if (nr != bytes_to_read)
 			goto UPDATE_MED_TYPE_FAIL_m13;
-		nr = fread_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-		r_pos += bytes_to_read;
+
+		// read in record data raw data
+		bytes_to_read = flen_m13(rd_fp);
+		rd_rd = rd2 = (ui1 *) malloc((size_t) bytes_to_read);  // not freed at end
+		if (rd_rd == NULL)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		nr = fread_m13((void *) rd_rd, sizeof(ui1), (size_t) bytes_to_read, rd_fp);
 		if (nr != bytes_to_read)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 
 		// set up
-		uh = (UH_m13 *) rd;
+		ri_uh = (UH_m13 *) ri_rd;
+		rd_uh = (UH_m13 *) rd_rd;
 
-		// update version
-		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
-		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
+		// already done
+		if (ri_uh->MED_version_major == MED_FORMAT_VERSION_MAJOR_m13 && ri_uh->MED_version_minor == MED_FORMAT_VERSION_MINOR_m13) {
+			if (rd_uh->MED_version_major == MED_FORMAT_VERSION_MAJOR_m13 && rd_uh->MED_version_minor == MED_FORMAT_VERSION_MINOR_m13) {
+				r_val = TRUE_m13;
+				goto UPDATE_MED_TYPE_FAIL_m13;
+			}
+		}
+
+		// update versions
+		ri_uh->MED_version_major = rd_uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
+		ri_uh->MED_version_minor = rd_uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
 
 		// update fields: no overlaps, no encryption
 		
 		// ordered
-		uh->ordered = FALSE_m13;  // may not be true in MED 1.0
+		ri_uh->ordered = rd_uh->ordered = FALSE_m13;  // may not be true in MED 1.0
 		
 		// encryption
-		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
-		uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
-		uh->encryption_1 = ENCRYPTION_VARIABLE_m13;
-		uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;
-		
+		ri_uh->expanded_passwords = rd_uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
+		ri_uh->encryption_rounds = rd_uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
+		ri_uh->encryption_1 = rd_uh->encryption_1 = ENCRYPTION_VARIABLE_m13;  // encryption of record data
+		ri_uh->encryption_2 = ri_uh->encryption_3 = rd_uh->encryption_2 = rd_uh->encryption_3 = NO_ENCRYPTION_m13;
+
 		// anonymized subject
-		memset((void *) uh->supplementary_protected_region, 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero MED 1.0 anonymized subject
-		
+		memset((void *) (ri_rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);
+		memset((void *) (rd_rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);
+
+		// set up differential data read & write locations
+		r_pos = w_pos = UH_BYTES_m13;
+
 		// loop over blocks
-		n_blocks = uh->n_entries;
-		recd = rd + UH_BYTES_m13;
-		rh = (REC_HDR_m13 *) recd;
+		ri = (REC_IDX_m13 *) (ri_rd + UH_BYTES_m13);
+		ri_uh->body_CRC = rd_uh->body_CRC = CRC_START_VALUE_m13;
+		n_blocks = rd_uh->n_entries;
 
-		proc_globs = G_proc_globs_m13(NULL);
-		pwd = &proc_globs->password_data;
-		
-		uh->body_CRC = CRC_START_VALUE_m13;
-		
-		w_pos = UH_BYTES_m13;  // first write starts after universal header
-		for (i = 0; i < n_blocks; ++i) {
-			bytes_to_read = REC_HDR_BYTES_m13;
-			fseek_m13(fp, r_pos, SEEK_SET);
-			nr = fread_m13((void *) recd, sizeof(ui1), (size_t) bytes_to_read, fp);
-			r_pos += bytes_to_read;
-			if (nr != bytes_to_read)
-				goto UPDATE_MED_TYPE_FAIL_m13;
+		// update Sgmt index versions (data will be done also as always used as a pair)
+		for (i = 0; i < n_blocks; ++i, ++ri) {
+			r_rh = *((REC_HDR_m13 *) (rd_rd + r_pos));  // copy
+			w_rh = (REC_HDR_m13 *) (rd_rd + w_pos);  // pointer
+			*w_rh = r_rh;  // copy to new loaction
 
-			bytes_to_read = rh->total_record_bytes - REC_HDR_BYTES_m13;
-			// immediately subsequent read => no need to seek
-			nr = fread_m13((void *) (recd + REC_HDR_BYTES_m13), sizeof(ui1), (size_t) bytes_to_read, fp);
-			r_pos += bytes_to_read;
-			if (nr != bytes_to_read)
-				goto UPDATE_MED_TYPE_FAIL_m13;
-
-			// update record bodies (Sgmt & Note types)
-			if (rh->type_code == REC_Sgmt_TYPE_CODE_m13 || rh->type_code == REC_Note_TYPE_CODE_m13) {
+			// update Sgmt record index versions
+			if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13 || r_rh.type_code == REC_Note_TYPE_CODE_m13) {
 				
-				// decrypt
-				if (rh->encryption_level > NO_ENCRYPTION_m13) {
-					if (rh->encryption_level == LEVEL_1_ENCRYPTION_m13)
+				// decrypt (both)
+				if (r_rh.encryption_level > NO_ENCRYPTION_m13) {
+					if (r_rh.encryption_level == LEVEL_1_ENCRYPTION_m13)
 						encryption_key = pwd->level_1_encryption_key;
 					else
 						encryption_key = pwd->level_2_encryption_key;
-					AES_decrypt_m13(rd + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+					AES_decrypt_m13(rd_rd + r_pos + REC_HDR_BYTES_m13, r_rh.total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
 				}
 				
-				if (rh->type_code == REC_Sgmt_TYPE_CODE_m13) {
-					if (rh->version_major == 1 && rh->version_minor == 0) {
+				if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13) {
+					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
 						
-						Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (recd + REC_HDR_BYTES_m13));  // copy
-						Sgmt_v11 = (REC_Sgmt_v11_m13 *) (recd + REC_HDR_BYTES_m13);  // pointer
+						// update structure
+						Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (rd_rd + r_pos + REC_HDR_BYTES_m13));  // copy
+						Sgmt_v11 = (REC_Sgmt_v11_m13 *) (rd_rd + w_pos + REC_HDR_BYTES_m13);  // pointer
 						Sgmt_v11->end_time = Sgmt_v10.end_time;
 						Sgmt_v11->start_samp_num = Sgmt_v10.start_samp_num;
 						Sgmt_v11->end_samp_num = Sgmt_v10.end_samp_num;
 						Sgmt_v11->seg_num = Sgmt_v10.seg_num;
 						Sgmt_v11->samp_freq = (sf4) Sgmt_v10.samp_freq;
-						text_bytes = (si8) (rh->total_record_bytes - (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13));
+						text_bytes = (si8) (r_rh.total_record_bytes - (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13));
 						if (text_bytes) {
-							text = (si1 *) (Sgmt_v11 + 1);
-							text2 = (si1 *) recd + REC_HDR_BYTES_m13 + REC_Sgmt_v10_DESCRIPTION_OFFSET_m13;
-							text_bytes = strcpy_m13(text, text2) + 1;  // account for terminal zero
-						}
-						body_bytes = REC_Sgmt_v11_BYTES_m13 + text_bytes;
-						if (text_bytes)
-							rh->total_record_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13;
-						else
-							rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
-						
-						// update version
-						rh->version_minor = 1;
-					}
-				}
-			
-				// update Note records(just reduce alignment requirement from 16 to 8 bytes)
-				else if (rh->type_code == REC_Note_TYPE_CODE_m13) {
-					// Note version 1.0
-					if (rh->version_major == 1 && rh->version_minor == 0) {
-						text_bytes = (si8) (rh->total_record_bytes - REC_HDR_BYTES_m13);
-						if (text_bytes) {
-							text = (si1 *) recd + REC_HDR_BYTES_m13;
+							text = (si1 *) (rd_rd + r_pos + REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13);
 							text_bytes = strlen(text) + 1;  // account for terminal zero
 						}
 						body_bytes = REC_Sgmt_v11_BYTES_m13 + text_bytes;
-						if (text_bytes)
-							rh->total_record_bytes = G_pad_m13((ui1 *) text, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13;
-						else
-							rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
+						if (text_bytes) {
+							memmove_m13((void *) (rd_rd + w_pos + REC_HDR_BYTES_m13 + REC_Sgmt_v11_BYTES_m13), (void *) text, (size_t) text_bytes);
+							body_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13);
+						}
+						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
+						
+						// update version
+						ri->version_minor = w_rh->version_minor = 1;
+					}
+				} else {  // rh->type_code == REC_Note_TYPE_CODE_m13 (just reduce alignment requirement from 16 to 8 bytes)
+					// Note version 1.0
+					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
+						text_bytes = (si8) (r_rh.total_record_bytes - REC_HDR_BYTES_m13);
+						if (text_bytes) {
+							text = (si1 *) rd_rd + r_pos + REC_HDR_BYTES_m13;
+							text_bytes = strlen(text) + 1;  // account for terminal zero
+						}
+						body_bytes = text_bytes;
+						if (text_bytes) {
+							memmove_m13((void *) (rd_rd + w_pos + REC_HDR_BYTES_m13), (void *) text, (size_t) text_bytes);
+							body_bytes = G_pad_m13((ui1 *) text, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13);
+						}
+						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
 					}
 					// Note version 1.1
-					else if (rh->version_major == 1 && rh->version_minor == 1) {
+					else if (r_rh.version_major == 1 && r_rh.version_minor == 1) {
 						
-						Note_v11 = (REC_Note_v11_m13 *) (recd + REC_HDR_BYTES_m13);  // pointer
-						text_bytes = (si8) (rh->total_record_bytes - (REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13));
+						r_Note_v11 = *((REC_Note_v11_m13 *) (rd_rd + r_pos + REC_HDR_BYTES_m13));  // copy
+						w_Note_v11 = (REC_Note_v11_m13 *) (rd_rd + w_pos + REC_HDR_BYTES_m13);  // pointer
+						*w_Note_v11 = r_Note_v11;
+						text_bytes = (si8) (r_rh.total_record_bytes - (REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13));
 						if (text_bytes) {
-							text = (si1 *) recd + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13;
+							text = (si1 *) rd_rd + r_pos + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13;
 							text_bytes = strlen(text) + 1;  // account for terminal zero
 						}
 						body_bytes = REC_Note_v11_BYTES_m13 + text_bytes;
-						if (text_bytes)
-							rh->total_record_bytes = G_pad_m13((ui1 *) Note_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13;
-						else
-							rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
+						if (text_bytes) {
+							memmove_m13((void *) (rd_rd + w_pos + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13), (void *) text, (size_t) text_bytes);
+							body_bytes = G_pad_m13((ui1 *) w_Note_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13;
+						}
+						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
 					}
 				}
 				
-				// encrypt record
-				if (rh->encryption_level > NO_ENCRYPTION_m13)
-					AES_encrypt_m13(recd + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+				// re-encrypt record
+				if (r_rh.encryption_level > NO_ENCRYPTION_m13)
+					AES_encrypt_m13(rd_rd + w_pos + REC_HDR_BYTES_m13, w_rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
 
 				// calculate record crc
-				rh->record_CRC = CRC_calculate_m13((ui1 *) rh + REC_HDR_CRC_START_OFFSET_m13, rh->total_record_bytes - REC_HDR_CRC_START_OFFSET_m13);
+				w_rh->record_CRC = CRC_calculate_m13((ui1 *) rd_rd + w_pos + REC_HDR_CRC_START_OFFSET_m13, w_rh->total_record_bytes - REC_HDR_CRC_START_OFFSET_m13);
 			}
+			
+			// update record data header body CRC
+			temp_CRC = CRC_calculate_m13((ui1 *) w_rh, REC_HDR_CRC_START_OFFSET_m13);  // record CRC bytes
+			full_CRC = CRC_combine_m13(temp_CRC, w_rh->record_CRC, w_rh->total_record_bytes - REC_HDR_CRC_START_OFFSET_m13);  // full record CRC
+			rd_uh->body_CRC = CRC_combine_m13(rd_uh->body_CRC, full_CRC, w_rh->total_record_bytes);
 
-			// update header body CRC
-			temp_CRC = CRC_calculate_m13((ui1 *) rh, REC_HDR_CRC_START_OFFSET_m13);
-			full_CRC = CRC_combine_m13(temp_CRC, rh->record_CRC, rh->total_record_bytes - REC_HDR_CRC_START_OFFSET_m13);
-			uh->body_CRC = CRC_combine_m13(uh->body_CRC, full_CRC, rh->total_record_bytes);
-
-			// write out
-			bytes_to_write = rh->total_record_bytes;
-			if (r_pos > (w_pos + bytes_to_write)) {
-				fseek_m13(fp, w_pos, SEEK_SET);
-				nw = fwrite_m13((void *) recd, sizeof(ui1), (size_t) bytes_to_write, fp);
-				if (nw != bytes_to_write)
-					goto UPDATE_MED_TYPE_FAIL_m13;
-			}
-			w_pos += bytes_to_write;
+			// update indices header body CRC
+			ri->file_offset = w_pos;
+			ri_uh->body_CRC = CRC_update_m13((ui1 *) ri, REC_IDX_BYTES_m13, ri_uh->body_CRC);
+			
+			r_pos += r_rh.total_record_bytes;
+			w_pos += w_rh->total_record_bytes;
 		}
+		
+		// terminal index
+		ri->file_offset = w_pos;
+		ri_uh->body_CRC = CRC_update_m13((ui1 *) ri, REC_IDX_BYTES_m13, ri_uh->body_CRC);
 
 		// update header CRC
-		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+		ri_uh->header_CRC = CRC_calculate_m13((ui1 *) ri_uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
+		rd_uh->header_CRC = CRC_calculate_m13((ui1 *) rd_uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 
-		// write out universal header
-		bytes_to_write = UH_BYTES_m13;
-		fseek_m13(fp, 0, SEEK_SET);
-		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
+		// write out
+		fseek_m13(ri_fp, 0, SEEK_SET);
+		bytes_to_write = flen_m13(ri_fp);
+		nw = fwrite_m13((void *) ri_rd, sizeof(ui1), (size_t) bytes_to_write, ri_fp);
+		if (nw != bytes_to_write)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+
+		fseek_m13(rd_fp, 0, SEEK_SET);
+		bytes_to_write = w_pos;
+		nw = fwrite_m13((void *) rd_rd, sizeof(ui1), (size_t) bytes_to_write, rd_fp);
 		if (nw != bytes_to_write)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 
 		// truncate if shrunk
 		if (w_pos < r_pos)
-			ftruncate_m13(fp, w_pos);
+			ftruncate_m13(rd_fp, w_pos);
 	}
 
 	// unknown file type
@@ -15639,17 +15784,21 @@ tern	G_update_MED_type_m13(si1 *path)
 
 	}
 
-	ret_val = TRUE_m13;
+	r_val = TRUE_m13;
 	
 UPDATE_MED_TYPE_FAIL_m13:
 	
 	if (rd)
 		free((void *) rd);
+	if (rd2)
+		free((void *) rd2);
 	if (ts_block)
 		free((void *) ts_block);
 	fclose_m13(fp);
+	if (fp2)
+		fclose_m13(fp2);
 
-	return_m13(ret_val);
+	return_m13(r_val);
 }
 
 
@@ -15660,7 +15809,7 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 	si1			*sess_path, path[SEG_NAME_BYTES_m13], *fs_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
 	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	size_t			fps_bytes_to_read;
 
 #ifdef FT_DEBUG_m13
@@ -15680,9 +15829,9 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 	updated = TRUE_m13;
 
 	// set up
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	G_message_m13("Updating session \"%s\" to MED version %d.%d ...\n", proc_globs->current_session.fs_name, MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
-	sess_path = proc_globs->current_session.directory;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	G_message_m13("Updating session \"%s\" to MED version %d.%d ...\n", pg->current_session.fs_name, MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
+	sess_path = pg->current_session.path;
 	if (STR_is_empty_m13(sess_path) == TRUE_m13) {
 		G_session_directory_m13(fps);
 		if (STR_is_empty_m13(sess_path) == TRUE_m13) {
@@ -15690,7 +15839,7 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 			return_m13(FALSE_m13);
 		}
 	}
-	fs_name = proc_globs->current_session.fs_name;
+	fs_name = pg->current_session.fs_name;
 
 	if (FPS_is_open_m13(fps) == TRUE_m13) {
 		fps_bytes_to_read = ftell_m13(fps->params.fp);
@@ -15699,12 +15848,8 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 		fps_bytes_to_read = 0;
 	}
 	
-	// session record indices
+	// session record indices (will do data)
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, REC_INDS_TYPE_STR_m13);
-	G_update_MED_type_m13(path);
-
-	// session record data
-	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, REC_DATA_TYPE_STR_m13);
 	G_update_MED_type_m13(path);
 
 	// segmented session records
@@ -15730,16 +15875,11 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 	for (i = 0; i < n_chans; ++i) {
 		G_path_parts_m13(chan_list[i], NULL, chan_name, NULL);
 		
-		// channel record indices
+		// channel record indices (will do data)
 		sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, REC_INDS_TYPE_STR_m13);
 		if (G_exists_m13(path) == TRUE_m13)
 			G_update_MED_type_m13(path);
 		
-		// channel record data
-		sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, REC_DATA_TYPE_STR_m13);
-		if (G_exists_m13(path) == TRUE_m13)
-			G_update_MED_type_m13(path);
-
 		// time series segments
 		seg_list = G_file_list_m13(NULL, &n_segs, chan_list[i], NULL, TS_SEG_TYPE_STR_m13, GFL_FULL_PATH_m13);
 		for (j = 0; j < n_segs; ++j) {
@@ -15760,13 +15900,8 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 			if (G_exists_m13(path) == TRUE_m13)
 				G_update_MED_type_m13(path);
 
-			// segment record indices
+			// segment record indices (will do data)
 			sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, REC_INDS_TYPE_STR_m13);
-			if (G_exists_m13(path) == TRUE_m13)
-				G_update_MED_type_m13(path);
-
-			// segment record data
-			sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, REC_DATA_TYPE_STR_m13);
 			if (G_exists_m13(path) == TRUE_m13)
 				G_update_MED_type_m13(path);
 		}
@@ -15781,13 +15916,8 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 	for (i = 0; i < n_chans; ++i) {
 		G_path_parts_m13(chan_list[i], NULL, chan_name, NULL);
 		
-		// channel record indices
+		// channel record indices (will do data)
 		sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, REC_INDS_TYPE_STR_m13);
-		if (G_exists_m13(path) == DIR_EXISTS_m13)
-			G_update_MED_type_m13(path);
-
-		// channel record data
-		sprintf_m13(path, "%s/%s.%s", chan_list[i], chan_name, REC_DATA_TYPE_STR_m13);
 		if (G_exists_m13(path) == DIR_EXISTS_m13)
 			G_update_MED_type_m13(path);
 
@@ -15814,13 +15944,8 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 				free_m13((void *) vid_list);
 			}
 			
-			// segment record indices
+			// segment record indices (will do data)
 			sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, REC_INDS_TYPE_STR_m13);
-			if (G_exists_m13(path) == TRUE_m13)
-				G_update_MED_type_m13(path);
-
-			// segment record data
-			sprintf_m13(path, "%s/%s.%s", seg_list[j], seg_name, REC_DATA_TYPE_STR_m13);
 			if (G_exists_m13(path) == TRUE_m13)
 				G_update_MED_type_m13(path);
 		}
@@ -15843,13 +15968,13 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 tern	G_update_session_name_m13(FPS_m13 *fps)
 {
 	volatile static tern	updated = FALSE_m13;
-	tern			path_exists;
+	tern			path_exists, changed;
 	si1			**file_list, **chan_list, **seg_list, **vid_list, *sufx;
 	si1			*sess_path, path[SEG_NAME_BYTES_m13], tmp_path[SEG_NAME_BYTES_m13], *fs_name, *uh_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
 	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
-	si8			len;
-	PROC_GLOBS_m13		*proc_globs;
+	si8			len, nr;
+	PROC_GLOBS_m13		*pg;
 	size_t			fps_bytes_to_read;
 
 #ifdef FT_DEBUG_m13
@@ -15871,8 +15996,8 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 		return_m13(TRUE_m13);
 	updated = TRUE_m13;
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	sess_path = proc_globs->current_session.directory;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	sess_path = pg->current_session.path;
 	if (STR_is_empty_m13(sess_path) == TRUE_m13) {
 		G_session_directory_m13(fps);
 		if (STR_is_empty_m13(sess_path) == TRUE_m13) {
@@ -15880,8 +16005,8 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 			return_m13(FALSE_m13);
 		}
 	}
-	fs_name = proc_globs->current_session.fs_name;
-	uh_name = proc_globs->current_session.uh_name;
+	fs_name = pg->current_session.fs_name;
+	uh_name = pg->current_session.uh_name;
 
 	G_message_m13("Updating session name from \"%s\" to \"%s\" ...\n", uh_name, fs_name);
 
@@ -15895,12 +16020,16 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 
 	// session record indices
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, REC_INDS_TYPE_STR_m13);
-	G_update_session_name_header_m13(path, fs_name, uh_name);
+	changed = G_update_session_name_header_m13(path, fs_name, uh_name);
+	if (changed == FALSE_m13)
+		return_m13(FALSE_m13);
 
 	// session record data
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, REC_DATA_TYPE_STR_m13);
-	G_update_session_name_header_m13(path, fs_name, uh_name);
-
+	changed = G_update_session_name_header_m13(path, fs_name, uh_name);
+	if (changed == FALSE_m13)
+		return_m13(FALSE_m13);
+ 
 	// segmented session records
 	sprintf_m13(path, "%s/%s.%s", sess_path, fs_name, SSR_TYPE_STR_m13);
 	path_exists = FALSE_m13;
@@ -15922,7 +16051,11 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 			sufx = seg_name + (len - 5);
 			sprintf_m13(tmp_path, "%s/%s_%s.%s", tmp_path, fs_name, sufx, REC_INDS_TYPE_STR_m13);
 			mv_m13(file_list[i], tmp_path);
-			G_update_session_name_header_m13(tmp_path, fs_name, uh_name);
+			changed = G_update_session_name_header_m13(tmp_path, fs_name, uh_name);
+			if (changed == FALSE_m13) {
+				free_m13((void *) file_list);
+				return_m13(FALSE_m13);
+			}
 		}
 		if (file_list)
 			free_m13((void *) file_list);
@@ -15935,7 +16068,11 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 			sufx = seg_name + (len - 5);
 			sprintf_m13(tmp_path, "%s/%s_%s.%s", tmp_path, fs_name, sufx, REC_DATA_TYPE_STR_m13);
 			mv_m13(file_list[i], tmp_path);
-			G_update_session_name_header_m13(tmp_path, fs_name, uh_name);
+			changed = G_update_session_name_header_m13(tmp_path, fs_name, uh_name);
+			if (changed == FALSE_m13) {
+				free_m13((void *) file_list);
+				return_m13(FALSE_m13);
+			}
 		}
 		if (n_files)
 			free_m13((void *) file_list);
@@ -15946,15 +16083,19 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	for (i = 0; i < n_chans; ++i) {
 		file_list = G_file_list_m13(NULL, &n_files, chan_list[i], NULL, REC_INDS_TYPE_STR_m13, GFL_FULL_PATH_m13);
 		if (n_files) {
-			G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+			changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 			free_m13((void *) file_list);
+			if (changed == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 					
 		// channel record data
 		file_list = G_file_list_m13(NULL, &n_files, chan_list[i], NULL, REC_DATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 		if (n_files) {
-			G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+			changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 			free_m13((void *) file_list);
+			if (changed == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 
 		// time series segments
@@ -15965,36 +16106,46 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 			// time series metadata
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, TS_METADATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 
 			// time series indices
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, TS_INDS_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 
 			// time series data
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, TS_DATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 			
 			// segment record indices
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, REC_INDS_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 
 			// segment record data
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, REC_DATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 		}
 		if (seg_list)
@@ -16011,15 +16162,19 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 		// channel record indices
 		file_list = G_file_list_m13(NULL, &n_files, chan_list[i], NULL, REC_INDS_TYPE_STR_m13, GFL_FULL_PATH_m13);
 		if (n_files) {
-			G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+			changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 			free_m13((void *) file_list);
+			if (changed == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 		
 		// channel record data
 		file_list = G_file_list_m13(NULL, &n_files, chan_list[i], NULL, REC_DATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 		if (n_files) {
-			G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+			changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 			free_m13((void *) file_list);
+			if (changed == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 		
 		// video segments
@@ -16030,21 +16185,30 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 			// video metadata
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, VID_METADATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 
 			// video indices
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, VID_INDS_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 
 			// video data
 			vid_list = G_file_list_m13(NULL, &n_vids, seg_list[j], "*_n????", NULL, GFL_FULL_PATH_m13);
-			for (k = 0; k < n_vids; ++k)
-				G_update_session_name_header_m13(vid_list[k], fs_name, uh_name);
+			for (k = 0; k < n_vids; ++k) {
+				changed = G_update_session_name_header_m13(vid_list[k], fs_name, uh_name);
+				if (changed == FALSE_m13) {
+					free_m13((void *) vid_list);
+					return_m13(FALSE_m13);
+				}
+			}
 			if (n_vids)
 				free_m13((void *) vid_list);
 		
@@ -16052,15 +16216,19 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 			// segment record indices
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, REC_INDS_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 
 			// segment record data
 			file_list = G_file_list_m13(NULL, &n_files, seg_list[j], NULL, REC_DATA_TYPE_STR_m13, GFL_FULL_PATH_m13);
 			if (n_files) {
-				G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
+				changed = G_update_session_name_header_m13(file_list[0], fs_name, uh_name);
 				free_m13((void *) file_list);
+				if (changed == FALSE_m13)
+					return_m13(FALSE_m13);
 			}
 		}
 		if (seg_list)
@@ -16070,19 +16238,21 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 		free_m13((void *) chan_list);
 	
 	// update process globals
-	*proc_globs->current_session.uh_name = 0;
+	*pg->current_session.uh_name = 0;
 	
 	// reopen fps
 	if (fps_bytes_to_read) {
 		FPS_reopen_m13(fps, fps->params.mode_str);
-		fread_m13((void *) fps->params.raw_data, sizeof(ui1), fps_bytes_to_read, fps->params.fp);
+		nr = fread_m13((void *) fps->params.raw_data, sizeof(ui1), fps_bytes_to_read, fps->params.fp);
+		if (nr != fps_bytes_to_read)
+			return_m13(FALSE_m13);
 	}
-	
+
 	return_m13(TRUE_m13);
 }
 
 
-tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  // used by G_update_sess_name_m13()
+tern	G_update_session_name_header_m13(const si1 *path, const si1 *fs_name, const si1 *uh_name)  // used by G_update_sess_name_m13()
 {
 	si1		tmp_path[PATH_BYTES_m13], tmp_name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
 	FILE_m13	*fp;
@@ -16102,10 +16272,12 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 		G_path_parts_m13(path, tmp_path, tmp_name, ext);
 		STR_replace_pattern_m13(fs_name, uh_name, tmp_name, tmp_name);
 		sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, ext);
-		if (G_exists_m13(tmp_path) == TRUE_m13)
-			mv_m13(tmp_path, path);  // rename to form of fs_name
-		else
+		if (G_exists_m13(tmp_path) == TRUE_m13) {
+			if (mv_m13(tmp_path, path) == FALSE_m13)  // rename to form of fs_name
+				return_m13(FALSE_m13);
+		} else {
 			return_m13(FALSE_m13);
+		}
 	}
 
 	fp = fopen_m13(path, "r+");
@@ -16125,11 +16297,13 @@ tern	G_update_session_name_header_m13(si1 *path, si1 *fs_name, si1 *uh_name)  //
 		uh.header_CRC = CRC_calculate_m13((ui1 *) &uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 
 		// rewind
-		fseek_m13(fp, 0, SEEK_SET);
+		if (fseek_m13(fp, 0, SEEK_SET)) {
+			fclose_m13(fp);
+			return_m13(FALSE_m13);
+		}
 		
 		// write
 		nrw = fwrite_m13((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
-		
 		if (nrw != UH_BYTES_m13) {
 			fclose_m13(fp);
 			return_m13(FALSE_m13);
@@ -16152,7 +16326,7 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 	sf8 			tmp_sf8, frame_rate;
 	ui4			mask;
 	va_list			v_args;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
 	SESS_m13		*sess;
@@ -16196,8 +16370,8 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 				if (lh->type_code == VID_CHAN_TYPE_CODE_m13) {
 					chan = (CHAN_m13 *) lh;
 				} else {
-					proc_globs = G_proc_globs_m13(lh);
-					chan = proc_globs->current_session.index_channel;
+					pg = G_proc_globs_m13(lh);
+					chan = pg->current_session.index_channel;
 					if (chan->type_code != VID_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->vid_chans[0];
@@ -16301,7 +16475,7 @@ si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode,
 	sf8			tmp_sf8, sampling_frequency;
 	ui4			mask;
 	va_list			v_args;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
 	SESS_m13		*sess;
@@ -16345,8 +16519,8 @@ si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode,
 				if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
 					chan = (CHAN_m13 *) lh;
 				} else {
-					proc_globs = G_proc_globs_m13(lh);
-					chan = proc_globs->current_session.index_channel;
+					pg = G_proc_globs_m13(lh);
+					chan = pg->current_session.index_channel;
 					if (chan->type_code != TS_CHAN_TYPE_CODE_m13) {
 						sess = (SESS_m13 *) lh;
 						chan = sess->ts_chans[0];
@@ -16737,7 +16911,7 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 // "len" is bytes to be decrypted
 // if decrypting multiple times with the same encryption key, pass in expanded key
 // decryption is done in place
-void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
+void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds)
 {
 	ui1	state[4][4];
 	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_m13];
@@ -16812,7 +16986,7 @@ void	AES_decrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 r
 // "len" is bytes to be encrypted
 // if encrypting multiple times with the same encryption key, pass in expanded key
 // encryption is done in place
-void	AES_encrypt_m13(ui1 *data, si8 len, si1 *password, ui1 *expanded_key, ui1 rounds)
+void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds)
 {
 	ui1	state[AES_NK_m13][AES_NB_m13];
 	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_m13];
@@ -17069,11 +17243,12 @@ void	AES_inv_sub_bytes_m13(ui1 state[][4])
 // the key expansion function produces AES_NB * (AES_NR + 1) round keys
 // the round keys are used in each round to encrypt the states
 // NOTE: ensure any terminal unused bytes in key array (password) are zeroed
-ui1	*AES_key_expansion_m13(ui1 *expanded_key, si1 *key)
+ui1	*AES_key_expansion_m13(ui1 *expanded_key, const si1 *key)
 {
-	ui1	*rcon_table, *sbox_table, temp[4], k;
-	si1	*si1_p1, *si1_p2, conditioned_key[AES_KEY_BYTES_m13];
-	si4	i, j;
+	ui1		*rcon_table, *sbox_table, temp[4], k;
+	const si1	*si1_p1;
+	si1		*si1_p2, conditioned_key[AES_KEY_BYTES_m13];
+	si4		i, j;
 	
 
 	// the round constant word array, rcon[i], contains the values given by
@@ -18046,7 +18221,7 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 
 	if (address == NULL) {
 		if (*thread_name)
-			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in %s(id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
+			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
 		return_void_m13;
@@ -18228,7 +18403,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	
 	if (address == NULL) {
 		if (*thread_name)
-			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in %s(id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
+			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
 
@@ -18248,7 +18423,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	// no entry
 	if (i < 0) {
 		if (*thread_name)
-			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in %s(id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
+			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
 
@@ -18261,11 +18436,11 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	else if (ate->free_function) {
 		G_warning_message_m13("%s(): %sDouble Free%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 		if (*ate->free_thread_name)
-			G_warning_message_m13("\tPrior free: called at %s(%d); in %s(id %lu)\n", ate->free_function, ate->free_line, ate->free_thread_name, ate->free_thread_id);
+			G_warning_message_m13("\tPrior free: called at %s(%d); in %s(id: %lu)\n", ate->free_function, ate->free_line, ate->free_thread_name, ate->free_thread_id);
 		else
 			G_warning_message_m13("\tPrior free: called at %s(%d); in thread %lu\n", ate->free_function, ate->free_line, ate->free_thread_id);
 		if (*thread_name)
-			G_warning_message_m13("\tThis free: called at %s(%d); in %s(id %lu)\n", function, line, thread_name, _id);
+			G_warning_message_m13("\tThis free: called at %s(%d); in %s(id: %lu)\n", function, line, thread_name, _id);
 		else
 			G_warning_message_m13("\tThis free: called at %s(%d); in thread %lu\n", function, line, _id);
 
@@ -18426,7 +18601,7 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	tid = gettid_m13();
 
 	if (new_address == NULL) {
-		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called from %s() at line %d in \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
+		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
 		return_m13(FALSE_m13);
 	}
 	
@@ -18442,13 +18617,13 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	// no entry
 	if (i == -1) {
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-		G_warning_message_m13("%s(): %saddress is not allocated%s  [called from %s() at line %d in \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
+		G_warning_message_m13("%s(): %saddress is not allocated%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
 		return_m13(FALSE_m13);
 	}
 	
 	if (ate->free_function) {
-		G_warning_message_m13("%s(): %saddress %lu was already freed%s  [called from %s() at line %d in \"%s\" (id %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) tid);
-		G_warning_message_m13("[previously freed in %s() at line %d in \"%s\" (id %lu)]\n=> replacing with new data\n", ate->free_function, ate->free_line, ate->free_thread_name, (ui8) ate->free_thread_id);
+		G_warning_message_m13("%s(): %saddress %lu was already freed%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) tid);
+		G_warning_message_m13("[previously freed in %s() at line %d in \"%s\" (id: %lu)]\n=> replacing with new data\n", ate->free_function, ate->free_line, ate->free_thread_name, (ui8) ate->free_thread_id);
 		ate->free_function = NULL;
 		ate->free_line = 0;
 		*ate->free_thread_name = 0;
@@ -19264,7 +19439,7 @@ CMP_BLOCK_HDR_NOT_ALIGNED_m13:
 
 tern CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 {
-	tern	ret_val = TRUE_m13;
+	tern	r_val = TRUE_m13;
 	si1		need_compressed_data = FALSE_m13;
 	si1		need_decompressed_data = FALSE_m13;
 	si1		need_original_data = FALSE_m13;
@@ -19318,100 +19493,100 @@ tern CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 	// check compressed_data
 	if (need_compressed_data == TRUE_m13 && fps->ts_data == NULL) {
 		G_warning_message_m13("%s(): \"compressed_data\" is not allocated in the FILE_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check keysample_buffer
 	if (need_keysample_buffer == TRUE_m13 && cps->params.keysample_buffer == NULL) {
 		G_warning_message_m13("%s(): \"keysample_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check original_data
 	if (need_original_data == TRUE_m13 && cps->original_data == NULL) {
 		G_warning_message_m13("%s(): \"original_data\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_original_data == FALSE_m13 && cps->original_data) {
 		G_warning_message_m13("%s(): \"original_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m13((void *) cps->original_data);
 		cps->original_ptr = cps->original_data = NULL;
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check decompressed_data
 	if (need_decompressed_data == TRUE_m13 && cps->decompressed_data == NULL) {
 		G_warning_message_m13("%s(): \"decompressed_data\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_decompressed_data == FALSE_m13 && cps->decompressed_data) {
 		G_warning_message_m13("%s(): \"decompressed_data\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m13((void *) cps->decompressed_data);
 		cps->decompressed_ptr = cps->decompressed_data = NULL;
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check detrended_buffer
 	if (need_detrended_buffer == TRUE_m13 && cps->params.detrended_buffer == NULL) {
 		G_warning_message_m13("%s(): \"detrended_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_detrended_buffer == FALSE_m13 && cps->params.detrended_buffer) {
 		G_warning_message_m13("%s(): \"detrended_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m13((void *) cps->params.detrended_buffer);
 		cps->params.detrended_buffer = NULL;
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check derivative_buffer
 	if (need_derivative_buffer == TRUE_m13 && cps->params.derivative_buffer == NULL) {
 		G_warning_message_m13("%s(): \"derivative_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_derivative_buffer == FALSE_m13 && cps->params.derivative_buffer) {
 		G_warning_message_m13("%s(): \"derivative_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m13((void *) cps->params.derivative_buffer);
 		cps->params.derivative_buffer = NULL;
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check scaled_amplitude_buffer
 	if (need_scaled_amplitude_buffer == TRUE_m13 && cps->params.scaled_amplitude_buffer == NULL) {
 		G_warning_message_m13("%s(): \"scaled_amplitude_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_scaled_amplitude_buffer == FALSE_m13 && cps->params.scaled_amplitude_buffer) {
 		G_warning_message_m13("%s(): \"scaled_amplitude_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m13((void *) cps->params.scaled_amplitude_buffer);
 		cps->params.scaled_amplitude_buffer = NULL;
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check scaled_frequency_buffer
 	if (need_scaled_frequency_buffer == TRUE_m13 && cps->params.scaled_frequency_buffer == NULL) {
 		G_warning_message_m13("%s(): \"scaled_frequency_buffer\" is not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_scaled_frequency_buffer == FALSE_m13 && cps->params.scaled_frequency_buffer) {
 		G_warning_message_m13("%s(): \"scaled_frequency_buffer\" is needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		free_m13((void *) cps->params.scaled_frequency_buffer);
 		cps->params.scaled_frequency_buffer = NULL;
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
 	// check VDS buffers
 	if (need_VDS_buffers == TRUE_m13 && (cps->params.VDS_input_buffers == NULL || cps->params.VDS_output_buffers == NULL)) {
 		G_warning_message_m13("%s(): \"VDS_buffers\" are not allocated in the CMP_PROCESSING_STRUCT\n", __FUNCTION__);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	if (need_VDS_buffers == FALSE_m13 && (cps->params.VDS_input_buffers || cps->params.VDS_output_buffers)) {
 		G_warning_message_m13("%s(): \"VDS_buffers\" are needlessly allocated in the CMP_PROCESSING_STRUCT => freeing\n", __FUNCTION__);
 		CMP_free_buffers_m13(&cps->params.VDS_input_buffers);
 		CMP_free_buffers_m13(&cps->params.VDS_output_buffers);
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	}
 	
-	return_m13(ret_val);
+	return_m13(r_val);
 }
 
 
@@ -19664,7 +19839,7 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 	ui1			*key;
 	si1			enc_level;
 	si8			encryption_bytes, encryptable_bytes;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	UH_m13			*uh;
 	CMP_FIXED_BH_m13	*bh;
 	PASSWORD_DATA_m13	*pwd;
@@ -19686,8 +19861,8 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 		return_m13(TRUE_m13);
 
 	// get decryption key
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	uh = fps->uh;
 	enc_level = uh->encryption_1;
 	if (pwd->access_level >= enc_level) {
@@ -20066,7 +20241,7 @@ tern CMP_encrypt_m13(FPS_m13 *fps)
 	ui1				*key;
 	si1				enc_level;
 	ui4				encryption_bytes, encryptable_bytes;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	UH_m13		*uh;
 	PASSWORD_DATA_m13		*pwd;
 	CMP_FIXED_BH_m13	*bh;
@@ -20085,8 +20260,8 @@ tern CMP_encrypt_m13(FPS_m13 *fps)
 	if (enc_level == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
 
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	bh = fps->params.cps->block_header;
 	
 	// block already encrypted
@@ -22476,7 +22651,7 @@ tern  CMP_PRED1_decode_m13(CPS_m13 *cps)
 }
 
 
-tern  CMP_PRED2_decode_m13(CPS_m13 *cps)
+tern	CMP_PRED2_decode_m13(CPS_m13 *cps)
 {
 	tern				no_zero_counts, multiply_method;
 	ui1				*comp_p, *ui1_p, prev_cat, overflow_bytes;
@@ -22488,7 +22663,7 @@ tern  CMP_PRED2_decode_m13(CPS_m13 *cps)
 	si4				*si4_p, *init_val_p, overflow_val;
 	ui8				**minimum_range, **cumulative_count, *cc;
 	ui8				low_bound, high_bound, prev_high_bound, goal_bound, range, target_cc;
-	si8				i, j;
+	si8				i, j, se;
 	sf8				average_steps, multiply_time;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_PRED_MODEL_FIXED_HDR_m13	*PRED_header;
@@ -22563,7 +22738,8 @@ tern  CMP_PRED2_decode_m13(CPS_m13 *cps)
 		HW_get_performance_specs_m13(FALSE_m13);
 	for (average_steps = (sf8) 0.0, i = 0; i < CMP_PRED_CATS_m13; ++i) {
 		tc = count[i];
-		for (j = 0; j < stats_entries[i]; ++j)
+		se = (si8) stats_entries[i];
+		for (j = 0; j < se; ++j)
 			average_steps += (sf8) (j * (si8) tc[j]);
 	}
 	average_steps /= (sf8) (CMP_RED_TOTAL_COUNTS_m13 * CMP_PRED_CATS_m13);
@@ -22702,7 +22878,7 @@ tern  CMP_PRED2_decode_m13(CPS_m13 *cps)
 }
 
 
-tern  CMP_PRED1_encode_m13(CPS_m13 *cps)
+tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 {
 	tern				no_zero_counts, use_raw;
 	ui1				*low_bound_high_byte_p, *high_bound_high_byte_p, *ui1_p, prev_cat, n_derivs;
@@ -22985,7 +23161,7 @@ tern  CMP_PRED1_encode_m13(CPS_m13 *cps)
 }
 
 
-tern  CMP_PRED2_encode_m13(CPS_m13 *cps)
+tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 {
 	tern				no_zero_counts, use_raw;
 	ui1				*low_bound_high_byte_p, *high_bound_high_byte_p, *ui1_p, prev_cat, n_derivs;
@@ -23199,7 +23375,7 @@ tern  CMP_PRED2_encode_m13(CPS_m13 *cps)
 				break;
 			prev_cat = CMP_PRED_CAT_m13(*key_p);
 		}
-		// full dump
+		// full dump (all 6 bytes)
 		if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p || !i) {
 			--high_bound;  // ensure goal < high bound on decode
 			ui1_p = high_bound_high_byte_p;
@@ -23207,7 +23383,7 @@ tern  CMP_PRED2_encode_m13(CPS_m13 *cps)
 			*comp_p++ = *ui1_p--; *comp_p++ = *ui1_p--; *comp_p++ = *ui1_p--;
 			range = CMP_RED_MAXIMUM_RANGE_m13;
 			low_bound = 0;
-		} else {  // partial dump
+		} else {  // partial dump (until bounds high bytes differ)
 			do {
 				*comp_p++ = *high_bound_high_byte_p;
 				low_bound <<= 8;
@@ -23279,7 +23455,7 @@ CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sample
 	si8			new_compressed_bytes, new_keysample_bytes, new_decompressed_samples;
 	si8			mem_units_used, mem_units_avail, pad_samples;
 	CPS_m13			*cps;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	CHAN_m13		*chan;
 	SESS_m13		*sess;
 	
@@ -23410,8 +23586,8 @@ CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sample
 CMP_REALLOC_CPS_FAIL_m13:
 
 	// try freeing caches on inactive channels
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	chan = proc_globs->current_session.index_channel;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	chan = pg->current_session.index_channel;
 	freed = FALSE_m13;
 	if (chan) {
 		sess = (SESS_m13 *) chan;
@@ -24233,7 +24409,7 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 }
 
 
-tern  CMP_RED2_encode_m13(CPS_m13 *cps)
+tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 {
 	tern				pos_derivs, no_zero_counts, use_raw;
 	ui1				*low_bound_high_byte_p, *high_bound_high_byte_p, *ui1_p, ks_flag;
@@ -26668,7 +26844,7 @@ PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expe
 
 pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 {
-	tern			filter, trace_ranges;
+	tern				filter, trace_ranges;
 	ui1				*data_base, *min_base, *max_base;
 	si2				*si2_p1, *si2_p2, *si2_p3;
 	si4				i, seg_idx, filt_type, *seg_samps, n_cutoffs, order, filt_poles, pad_samps, bint_mode;
@@ -26681,10 +26857,10 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 	sf8				fc1, fc2, *sf8_p1, *sf8_p2, *sf8_p3, *sf8_p4, *sf8_p5, *sf8_p6, x, inc;
 	sf8				*out_buf, *out_mins, *out_maxs, *unfiltered_raw_samps, trace_min, trace_max;
 	CHAN_m13			*chan;
-	SEG_m13			*seg;
+	SEG_m13				*seg;
 	SLICE_m13			*slice;
-	CPS_m13	*cps;
-	FILTPS_m13  *filtps;
+	CPS_m13				*cps;
+	FILTPS_m13			*filtps;
 	DATA_MATRIX_m13			*dm;
 	PROC_THREAD_INFO_m13		*pi;
 	DM_CHANNEL_THREAD_INFO_m13	*ci;
@@ -26702,6 +26878,10 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 	chan_idx = ci->chan_idx;
 	slice = &chan->slice;
 	seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) chan);
+	if (seg_idx == FALSE_m13) {
+		pi->status = PROC_THREAD_FAILED_m13;
+		goto DM_CHANNEL_THREAD_RETURN_m13;
+	}
 	raw_samp_freq = chan->segs[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
 	n_raw_samps = SLICE_IDX_COUNT_m13(slice);
 	
@@ -26993,7 +27173,7 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 				G_warning_message_m13("%s(): invalid element size => returning\n");
 				ci->dm = NULL;
 				pi->status = PROC_THREAD_FAILED_m13;
-				thread_return_null_m13;
+				goto DM_CHANNEL_THREAD_RETURN_m13;
 		}
 	}
 
@@ -27158,6 +27338,11 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 
 	pi->status = PROC_THREAD_SUCCEEDED_m13;
 
+DM_CHANNEL_THREAD_RETURN_m13:
+	
+	if (pi->thread_job == FALSE_m13)
+		return_m13((pthread_rval_m13) 0);
+
 	thread_return_null_m13;
 }
 
@@ -27228,7 +27413,7 @@ tern	DM_free_matrix_m13(DATA_MATRIX_m13 **matrix_ptr)
 
 DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLICE_m13 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
 {
-	tern				changed_to_absolute_time, padding_required, ret_val, threading;
+	tern				changed_to_absolute_time, padding_required, r_val, threading;
 	ui1				*data_base, *minima_base, *maxima_base;
 	si2				si2_pad;
 	si4				search_mode, seg_idx, si4_pad;
@@ -27243,7 +27428,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	void				*pattern;
 	size_t				new_data_bytes, trace_extrema_bytes, n_elements, pattern_sz, bytes_to_move;
 	va_list				v_args;
-	PROC_GLOBS_m13			*proc_globs;
+	PROC_GLOBS_m13			*pg;
 	CHAN_m13			*chan, *ref_chan;
 	SLICE_m13			passed_slice_copy, *req_slice, *sess_slice;
 	PROC_THREAD_INFO_m13		*proc_thread_infos, *pi;
@@ -27289,7 +27474,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	if ((search_mode = G_search_mode_m13(slice)) == FALSE_m13)  // ensure there's a valid limit pair
 		return_m13(NULL);
 	
-	proc_globs = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13((LH_m13 *) sess);
 
 	// allocate matrix structure
 	if (matrix == NULL)
@@ -27318,7 +27503,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	old_el_size = matrix->el_size;
 	
 	// clear contigua, if present
-	ref_chan = proc_globs->current_session.index_channel;
+	ref_chan = pg->current_session.index_channel;
 	if (ref_chan->contigua) {
 		free_m13((void *) ref_chan->contigua);
 		ref_chan->contigua = NULL;
@@ -27337,7 +27522,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 			matrix->flags |= DM_EXTMD_SAMP_FREQ_m13;
 			matrix->sample_count = 0;
 		}
-		matrix->sampling_frequency = proc_globs->active_channels.maximum_sampling_frequency;
+		matrix->sampling_frequency = pg->active_channels.maximum_sampling_frequency;
 	}
 		
 	switch (matrix->flags & DM_EXTMD_MASK_m13) {
@@ -27375,14 +27560,16 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	if (req_slice->conditioned == FALSE_m13)
 		G_condition_slice_m13(req_slice, (LH_m13 *) sess);
 	if (req_slice->start_time == BEGINNING_OF_TIME_m13)
-		req_slice->start_time = proc_globs->current_session.start_time;
+		req_slice->start_time = pg->current_session.start_time;
 	if (req_slice->end_time == END_OF_TIME_m13)
-		req_slice->end_time = proc_globs->current_session.end_time;
+		req_slice->end_time = pg->current_session.end_time;
 	if (search_mode == TIME_SEARCH_m13)
 		req_samp_secs = (sf8) SLICE_DUR_m13(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == INDEX_SEARCH_m13
 		req_num_samps = SLICE_IDX_COUNT_m13(req_slice);  // requested samples read (on reference channel)
 	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	if (seg_idx == FALSE_m13)
+		return_m13(NULL);
 	ref_samp_freq = ref_chan->segs[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
 	
 	// change all limits to time
@@ -27624,6 +27811,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 			pi->thread_name = "DM_channel_thread_m13";
 			pi->priority = PROC_HIGH_PRIORITY_m13;
 			pi->arg = (void *) ci;
+			pi->skip_job = FALSE_m13;
 			ci->dm = matrix;
 			ci->chan = chan;
 			ci->chan_idx = i++;
@@ -27631,16 +27819,14 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		}
 	}
 		
-	// launch channel threads; don't wait for completion (unless running with no threads)
+	// launch channel threads
 	if (matrix->channel_count == 1)  // no sense in thread overhead for one channel
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(sess);
-	ret_val = PROC_distribute_jobs_m13(proc_thread_infos, matrix->channel_count, 0, FALSE_m13, threading);  // default reserved cores
-	if (ret_val == FALSE_m13) {
-		G_set_error_m13(E_GEN_m13, "channel thread error");
+	r_val = PROC_distribute_jobs_m13(proc_thread_infos, matrix->channel_count, 0, FALSE_m13, threading);  // default reserved cores, don't wait for completion
+	if (r_val == FALSE_m13)
 		return_m13(NULL);
-	}
 
 	// contigua
 	if (matrix->flags & (DM_DSCNT_MASK_m13 | DM_PAD_MASK_m13)) {
@@ -27674,12 +27860,12 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	}
 
 	// wait for channel threads
-	ret_val = PROC_wait_jobs_m13(proc_thread_infos, matrix->channel_count);
+	r_val = PROC_wait_jobs_m13(proc_thread_infos, matrix->channel_count);
 	free((void *) proc_thread_infos);
 	free((void *) chan_thread_infos);
 
 	// check results
-	if (ret_val == FALSE_m13) {
+	if (r_val == FALSE_m13) {
 		G_set_error_m13(E_GEN_m13, "channel thread error");
 		return_m13(NULL);
 	}
@@ -28282,7 +28468,7 @@ tern	DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13 *
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-FILE_m13 	*FILE_from_std_m13(FILE *std_fp, si1 *path)
+FILE_m13 	*FILE_from_std_m13(FILE *std_fp, const si1 *path)
 {
 	FILE_m13	*m13_fp;
 	
@@ -28465,14 +28651,6 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 			}
 			#endif
 			
-			// set MED flag
-			if (G_MED_type_code_from_string_m13(path) != NO_TYPE_CODE_m13)
-				m13_fp->flags |= FILE_FLAGS_MED_m13;
-			
-			// set parity flag
-			if (PRTY_is_parity_m13(path) == TRUE_m13)
-				m13_fp->flags |= FILE_FLAGS_PARITY_m13;
-			
 			// set length & position (default for MED files)
 			if (m13_fp->flags & FILE_FLAGS_MED_m13) {
 				m13_fp->flags |= (FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13);
@@ -28617,12 +28795,16 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		printf_m13("no entry\n");
 	STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), " ", TRUE_m13);
 	printf_m13("Flags (%s):\n", bin_str);
-	if (fp->flags & FILE_FLAGS_STD_STREAM_m13)
+	if (fp->flags & FILE_FLAGS_STD_STREAM_m13) {
 		printf_m13("\tstandard stream\n");
-	else if (fp->flags & FILE_FLAGS_MED_m13)
-		printf_m13("\tMED file\n");
-	else
+	} else if (fp->flags & FILE_FLAGS_MED_m13) {
+		if (fp->flags & FILE_FLAGS_PARITY_m13)
+			printf_m13("\tMED file (parity)\n");
+		else
+			printf_m13("\tMED file (data)\n");
+	} else {
 		printf_m13("\tstandard file\n");
+	}
 	if (fp->flags & FILE_FLAGS_ALLOCED_m13)
 		printf_m13("\theap allocated\n");
 	else
@@ -28721,6 +28903,20 @@ tern	FILE_show_m13(FILE_m13 *fp)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+FILE 	*FILE_std_m13(void *fp)
+{
+	// returns standard file pointer for eithe FILE or FILE_m13 pointer
+	
+	if (FILE_is_std_m13(fp) == TRUE_m13)
+		return((FILE *) fp);
+	
+	return(((FILE_m13 *) fp)->fp);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
 FILE 	*FILE_to_std_m13(void *fp, si1 *path)
 {
 	tern		is_std;
@@ -28729,6 +28925,8 @@ FILE 	*FILE_to_std_m13(void *fp, si1 *path)
 	
 	
 	// fp can be FILE_m13 * or FILE_m13 ** (to null local pointer)
+	// passed FILE_m13 * is freed
+	// if FILE_m13 ** is passed local vaiable is set to NULL
 	// if path != NULL, path copied before deletion, adequate space is presumed
 	
 	m13_fp_ptr = NULL;
@@ -31198,7 +31396,7 @@ tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs)
 // MARK: FILE PROCESSING FUNCTIONS  (FPS)
 //***************************************//
 
-FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13  *parent)
+FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13  *parent)
 {
 	ui4		type_code;
 	si8		min_bytes;
@@ -31246,7 +31444,7 @@ FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, si1 *path, si8 n_bytes, si8 copy_byte
 	type_code = fps->type_code = G_MED_type_code_from_string_m13(fps->path);
 	
 	// set parent
-	fps->parent = parent;
+	fps->parent = parent;  // set parent before getting proc_globs
 	
 	// allocate
 	n_bytes += FPS_UH_BYTES_m13;  // passed value does not invclude universal header
@@ -31422,7 +31620,7 @@ tern	FPS_free_m13(FPS_m13 **fps_ptr)
 }
 
 
-FPS_m13	*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent)
+FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent)
 {
 	ui2		alloced_mask;
 	ui4		type_code;
@@ -31479,14 +31677,13 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, si1 *path, si1 *mode_str, si8 n_bytes, LH_m1
 
 	// set parent & flags (use parent flags if passed)
 	alloced_mask = fp->flags & FILE_FLAGS_ALLOCED_m13;
+	fps->parent = parent;  // set parent before getting proc_globs
 	if (parent) {
-		fps->parent = parent;
 		if (alloced_mask)
 			fps->flags = parent->flags | FILE_FLAGS_ALLOCED_m13;
 		else
 			fps->flags = parent->flags & ~FILE_FLAGS_ALLOCED_m13;
 	} else {
-		fps->parent = NULL;
 		fp->flags = FILE_FLAGS_DEFAULT_m13 | alloced_mask;
 	}
 
@@ -31626,7 +31823,7 @@ si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 	ui4			start_block, end_block;
 	ui8			bit_mask, *bit_word, read_start, read_bytes;
 	si8			i, len, offset, remaining_bytes, block_bytes;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	FPS_PARAMS_m13		*params;
 	FILE_m13		*fp;
 	
@@ -31660,8 +31857,8 @@ si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 	if (n_bytes > remaining_bytes)
 		n_bytes = remaining_bytes;
 		
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	block_bytes = (si8) proc_globs->miscellaneous.mmap_block_bytes;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	block_bytes = (si8) pg->miscellaneous.mmap_block_bytes;
 	start_block = offset / block_bytes;
 	end_block = (offset + n_bytes - 1) / block_bytes;
 	offset = start_block * block_bytes;
@@ -31720,13 +31917,13 @@ si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 }
 
 
-FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...)  // varargs(mode empty): ui8 fd_flags
+FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...)  // varargs(mode empty): ui8 fd_flags
 {
 	ui2			flags, permissions;
 	ui4			mmap_block_bytes;
 	ui8			fd_flags;
 	FPS_m13			*fps;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	FILE_m13		*fp;
 	va_list			v_arg;
 	struct_stat_m13		sb;
@@ -31792,8 +31989,8 @@ FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...
 
 	// memory mapping
 	if (fps->direcs.flags & FPS_DF_MMAP_m13) {
-		proc_globs = G_proc_globs_m13(parent);
-		mmap_block_bytes = proc_globs->miscellaneous.mmap_block_bytes;
+		pg = G_proc_globs_m13(parent);
+		mmap_block_bytes = pg->miscellaneous.mmap_block_bytes;
 		if (mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
 			#if defined MACOS_m13 || defined LINUX_m13
 			mmap_block_bytes = (ui4) sb.st_blksize;
@@ -31807,7 +32004,7 @@ FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...
 			#endif
 			if (mmap_block_bytes <= 0)
 				mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13;
-			proc_globs->miscellaneous.mmap_block_bytes = mmap_block_bytes;
+			pg->miscellaneous.mmap_block_bytes = mmap_block_bytes;
 		}
 		fps->params.mmap_block_bytes = mmap_block_bytes;
 		fps->params.mmap_n_blocks = (ui4) ((fp->len + (si8) (mmap_block_bytes - 1)) / (si8) mmap_block_bytes);
@@ -31821,8 +32018,6 @@ FPS_m13	*FPS_open_m13(si1 *path, si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...
 }
 
 
-// FPS_read_m13(chan->rec_inds_fps, 0, FPS_FULL_FILE_m13, 0, (LH_m13 *) chan, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
-
 FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...)  // varargs(fps invalid): si1 *path, si1 *mode_str, si1 *password, LH *parent
 											    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 {
@@ -31834,7 +32029,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	LH_m13			*parent;
 	FPS_m13			*tmp_fps;
 	PASSWORD_DATA_m13	*pwd;
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	UH_m13			*uh;
 	va_list			v_args;
 	
@@ -31962,10 +32157,10 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		G_set_error_m13(E_ALLOC_m13, "destination is too small for read");
 		goto FPS_READ_FAIL_m13;
 	}
-
+	
 	// read in universal header
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	pwd = &proc_globs->password_data;
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pwd = &pg->password_data;
 	uh = fps->uh;
 	if (fps->params.uh_read == FALSE_m13) {
 		if (header_only == TRUE_m13 || full_file == TRUE_m13 || file_opened == TRUE_m13) {
@@ -31995,15 +32190,14 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 					G_process_password_data_m13(fps, password);
 
 			// current session directory globals
-			if (proc_globs->current_session.UID != uh->session_UID) {
-				if (proc_globs->current_session.UID) {  // != 0 => new session, need new proc_globs
-					
-				}
+			if (pg->current_session.UID != uh->session_UID) {
+				if (pg->current_session.UID)  // != 0 => new session, need new proc_globs (in same thread)
+					pg = G_proc_globs_new_m13((LH_m13 *) fps);
 				G_session_directory_m13(fps);
 			}
 			
 			// update session name
-			if (*proc_globs->current_session.uh_name)
+			if (*pg->current_session.uh_name)
 				G_update_session_name_m13(fps);
 			
 			// update MED version
@@ -32014,11 +32208,11 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 			if (uh->n_entries == 0)
 				if (G_correct_universal_header_m13(fps) == FALSE_m13)
 					goto FPS_READ_FAIL_m13;
-			
+
 			fps->params.uh_read = TRUE_m13;
 		}
 	}
-	
+
 	if (header_only == TRUE_m13) {
 		if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
 			FPS_close_m13(fps);
@@ -32034,7 +32228,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 
 	// set memory pointers
 	FPS_set_pointers_m13(fps, offset);
-		
+
 	// read
 	if (data_read == FALSE_m13) {
 		FPS_seek_m13(fps, offset);
@@ -32162,7 +32356,7 @@ tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 	if (fps->uh->type_code == TS_DATA_TYPE_CODE_m13) {
 		cps = fps->params.cps;
 		if (cps == NULL)
-			fps->params.cps = (CPS_m13 *) calloc_m13((size_t) 1, sizeof(CPS_m13));
+			cps = fps->params.cps = (CPS_m13 *) calloc_m13((size_t) 1, sizeof(CPS_m13));
 		cps->block_header = (CMP_FIXED_BH_m13 *) fps->data_ptrs;
 		cps->params.allocated_compressed_bytes = n_bytes - FPS_UH_BYTES_m13;
 	}
@@ -32171,7 +32365,7 @@ tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 }
 
 
-tern	FPS_reopen_m13(FPS_m13 *fps, si1 *mode_str)
+tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str)
 {
 	FILE_m13	*fp;
 	
@@ -32207,24 +32401,35 @@ tern	FPS_reopen_m13(FPS_m13 *fps, si1 *mode_str)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
 si8	FPS_resolve_offset_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 {
-	si8		len, rel_bytes;
+	tern		is_open;
+	si8		len, pos, rel_bytes;
 	va_list		v_arg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	if (FPS_is_open_m13(fps) == FALSE_m13) {
-		G_set_error_m13(E_GEN_m13, "FPS is not open");
+	if (fps == NULL) {
+		G_set_error_m13(E_GEN_m13, "FPS is null");
 		return_m13((si8) FALSE_m13);
 	}
+	
+	is_open = FPS_is_open_m13(fps);
+	if (is_open == TRUE_m13) {
+		len = flen_m13(fps->params.fp);
+		pos = ftell_m13(fps->params.fp);
+	} else {
+		if (STR_is_empty_m13( fps->path) == FALSE_m13) {
+			len = G_file_length_m13(NULL, fps->path);
+			pos = 0;
+		} else {
+			G_set_error_m13(E_GEN_m13, "FPS path is empty");
+			return_m13((si8) FALSE_m13);
+		}
+	}
 
-	len = fps->params.fp->len;
 	if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
 
 		va_start(v_arg, offset);
@@ -32239,7 +32444,7 @@ si8	FPS_resolve_offset_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == 
 				offset = rel_bytes;
 				break;
 			case FPS_REL_CURR_m13:
-				offset = fps->params.fp->pos + rel_bytes;
+				offset = pos + rel_bytes;
 				break;
 			case FPS_REL_END_m13:
 				offset = len + rel_bytes;
@@ -32266,7 +32471,13 @@ si8	FPS_seek_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_*)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
+	// returns FALSE_m13 ((si8) -1) on error
+	if (fps == NULL) {
+		G_set_error_m13(E_FGEN_m13, "FPS is null");
+		return_m13((si8) FALSE_m13);
+	}
+	
 	if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
 		va_start(v_arg, offset);
 		rel_bytes = va_arg(v_arg, si8);
@@ -32275,12 +32486,21 @@ si8	FPS_seek_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_*)
 	} else {
 		offset = REMOVE_DISCONT_m13(offset);
 	}
+	
+	if (fps->params.fp == NULL) {
+		if (fps->params.full_file_read == TRUE_m13) {  // file close, but full file already read
+			FPS_set_pointers_m13(fps, offset);  // offset must be resolved for FPS_set_pointers_m13()
+			return_m13(offset);
+		}
+		G_set_error_m13(E_FGEN_m13, "FPS file pointer is null");
+		return_m13((si8) FALSE_m13);
+	}
 
 	if (fps->params.fp->pos == offset)
 		return_m13(offset);
 	
 	fseek_m13(fps->params.fp, offset, SEEK_SET);
-	
+
 	return_m13(offset);
 }
 
@@ -32557,16 +32777,16 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	FPS_set_pointers_m13(FPS_m13 *fps, si8 offset)  // offset is presumed to be absolute
+tern	FPS_set_pointers_m13(FPS_m13 *fps, si8 offset)  // offset is presumed to be absolute & relative to file
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
 	if (fps->params.full_file_read == TRUE_m13 || fps->direcs.flags & FPS_DF_MMAP_m13) {
-		fps->data_ptrs = fps->params.raw_data + offset;  // uh is at end of file
-		if (fps->type_code == VID_DATA_TYPE_CODE_m13)
-			fps->data_ptrs += FPS_UH_BYTES_m13;  // vid universal header read into beginning of raw data, but exists at end of file
+		if (offset == 0)
+			offset = FPS_UH_BYTES_m13;
+		fps->data_ptrs = fps->params.raw_data + offset;
 	} else {
 		fps->data_ptrs = fps->params.raw_data + FPS_UH_BYTES_m13;
 	}
@@ -32699,7 +32919,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	tern		write_uh, header_only, update_maximum_entry_size;
 	void		*encrypted_data;
 	si8		rel_bytes, nw, in_flen;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	UH_m13		*uh;
 	va_list		v_arg;
 
@@ -32709,6 +32929,11 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	
 	// n_bytes does not include universal header bytes
 	
+	if (FPS_is_open_m13(fps) == FALSE_m13) {
+		G_set_error_m13(E_FWRITE_m13, "FPS is not open");
+		return_m13((si8) FALSE_m13);
+	}
+
 	rel_bytes = 0;
 	if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
 		va_start(v_arg, source);
@@ -32720,12 +32945,11 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	write_uh = header_only = FALSE_m13;
 	if (offset == FPS_APPEND_m13) {
 		offset = in_flen;
+	} else if (n_bytes == FPS_UH_ONLY_m13) {
+		offset = FPS_UH_OFFSET_m13;
+		n_bytes = 0;
+		header_only = write_uh = TRUE_m13;
 	} else {
-		if (n_bytes == FPS_UH_ONLY_m13) {
-			offset = FPS_UH_OFFSET_m13;
-			n_bytes = 0;
-			header_only = write_uh = TRUE_m13;
-		}
 		offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
 	}
 	if (fps->direcs.flags & (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13) || n_bytes == FPS_FULL_FILE_m13)  // always update universal header on close write
@@ -32751,7 +32975,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		nw = fwrite_m13((void *) uh, sizeof(ui1), (size_t) FPS_UH_BYTES_m13, fps->params.fp);
 		if (nw != (size_t) FPS_UH_BYTES_m13) {
 			G_set_error_m13(E_FWRITE_m13, "error writing universal header");
-			return_m13((si8) FALSE_m13);
+			return_m13(FALSE_m13);
 		}
 
 		// write universal header only
@@ -32767,7 +32991,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	}
 	if (n_bytes == 0 && n_items == 0) {
 		G_set_error_m13(E_FWRITE_m13, "must specify either n_bytes or n_items");
-		return_m13((si8) FALSE_m13);
+		return_m13(FALSE_m13);
 	}
 
 	if (n_bytes == FPS_FULL_FILE_m13) {
@@ -32810,8 +33034,8 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		}
 	}
 	
-	proc_globs = G_proc_globs_m13((LH_m13 *) fps);
-	if (proc_globs->password_data.processed != TRUE_m13) {
+	pg = G_proc_globs_m13((LH_m13 *) fps);
+	if (pg->password_data.processed != TRUE_m13) {
 		G_set_error_m13(E_CRYP_m13, "password not processed");
 		return_m13(FALSE_m13);
 	}
@@ -32858,8 +33082,8 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	FPS_seek_m13(fps, offset);
 	nw = fwrite_m13(source, sizeof(ui1), (size_t) n_bytes, fps->params.fp);
 	if (nw != n_bytes)
-		G_warning_message_m13("%s(): write error\n", __FUNCTION__);
-	
+		return_m13(FALSE_m13);
+
 	// leave decrypted directive
 	if (encrypted_data)
 		free_m13(encrypted_data);
@@ -32884,14 +33108,14 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 // MARK: HARDWARE FUNCTIONS  (HW)
 //*******************************//
 
-ui4	HW_get_block_size_m13(si1 *volume_path)
+ui4	HW_get_block_size_m13(const si1 *volume_path)
 {
 	si1			test_path[PATH_BYTES_m13], command[PATH_BYTES_m13 + 64];
 	si1			tmp_path[PATH_BYTES_m13];
 	ui4			mmap_block_bytes;
-	si4			ret_val;
+	si4			r_val;
 	FILE_m13		*test_fp;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 #if defined MACOS_m13 || defined LINUX_m13
 	struct stat		sb;
 #endif
@@ -32914,14 +33138,14 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		volume_path = tmp_path;
 	}
 	
-	proc_globs = G_proc_globs_m13(NULL);
+	pg = G_proc_globs_m13(NULL);
 	mmap_block_bytes = 0;
 	
 	// create a file on the session volume
 	sprintf_m13(test_path, "%s/test_file-remove_me", test_path);
 	sprintf_m13(command, "echo x > \"%s\"", test_path);  // create non-empty file in case file system is cloud
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-	if (ret_val == 0) {
+	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+	if (r_val == 0) {
 		
 		// get volume block size
 		test_fp = fopen_m13(test_path, "r");
@@ -32945,13 +33169,13 @@ ui4	HW_get_block_size_m13(si1 *volume_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "del \"%s\"", test_path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	}
 	
 	if (mmap_block_bytes <= 0)
 		mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13;
 	
-	proc_globs->miscellaneous.mmap_block_bytes = mmap_block_bytes;
+	pg->miscellaneous.mmap_block_bytes = mmap_block_bytes;
 
 	return_m13(mmap_block_bytes);
 }
@@ -33070,9 +33294,9 @@ tern	HW_get_core_info_m13()
 #endif  // LINUX_m13
 	
 #ifdef MACOS_m13
-	size_t	len;
 	si1	brand_string[128], *c;
-	si8	max_speed;
+	si8	speed;
+	size_t	len;
 	
 	len = sizeof(si4);
 	
@@ -33086,7 +33310,18 @@ tern	HW_get_core_info_m13()
 	sysctlbyname("machdep.cpu.brand_string", brand_string, &len, NULL, 0);
 	c = STR_match_end_m13("(TM)", brand_string);
 	if (c == NULL) {
-		strncpy_m13(hw_params->cpu_manufacturer, brand_string, 64);
+		if (strncmp_m13(brand_string, "Apple", 5)) {
+			strncpy_m13(hw_params->cpu_manufacturer, brand_string, 64);
+		} else {
+			strcpy_m13(hw_params->cpu_manufacturer, "Apple");
+			c = brand_string + 5;
+			while (*c == ' ' && *c)
+				++c;
+			if (*c)
+				strcpy_m13(hw_params->cpu_model, c);
+			else
+				*hw_params->cpu_model = 0;
+		}
 	} else {
 		*c = 0;
 		strcpy_m13(hw_params->cpu_manufacturer, brand_string);
@@ -33095,14 +33330,33 @@ tern	HW_get_core_info_m13()
 			++c;
 		strcpy_m13(hw_params->cpu_model, c);
 	}
+	
+	// unfortunately these fields unreliable in Apple silicon, but they do sometimes work
+	hw_params->current_speed = hw_params->minimum_speed = hw_params->maximum_speed = (sf8) 0.0;
 	len = sizeof(si8);
-	sysctlbyname("hw.cpufrequency", &max_speed, &len, NULL, 0);
-	hw_params->maximum_speed = (sf8) max_speed / (sf8) 1000000000.0;
+	if (sysctlbyname("hw.cpufrequency", &speed, &len, NULL, 0) == 0) {
+		hw_params->current_speed = (sf8) speed / (sf8) 1000000000.0;
+		if (hw_params->current_speed > (sf8) 100.0)
+			hw_params->current_speed = (sf8) 0.0;  // can give crazy numbers;
+	}
+	if (sysctlbyname("hw.cpufrequency_min", &speed, &len, NULL, 0) == 0) {
+		hw_params->minimum_speed = (sf8) speed / (sf8) 1000000000.0;
+		if (hw_params->minimum_speed > (sf8) 100.0)
+			hw_params->minimum_speed = (sf8) 0.0;  // can give crazy numbers;
+	}
+	if (sysctlbyname("hw.cpufrequency_max", &speed, &len, NULL, 0) == 0) {
+		hw_params->maximum_speed = (sf8) speed / (sf8) 1000000000.0;
+		if (hw_params->maximum_speed > (sf8) 100.0)
+			hw_params->maximum_speed = (sf8) 0.0;  // can give crazy numbers;
+	}
 #endif  // MACOS_m13
 	
 #ifdef WINDOWS_m13
+	si1		*buf = NULL, *c;
+	si4		cur_mhz, max_mhz;
+	si8		buf_len;
 	SYSTEM_INFO	sys_info;
-	
+
 	GetSystemInfo(&sys_info);  // returns logical cores
 	hw_params->logical_cores = (si4) sys_info.dwNumberOfProcessors;
 	hw_params->physical_cores = 0;  // unknown
@@ -33133,6 +33387,90 @@ tern	HW_get_core_info_m13()
 		default:
 			*hw_params->cpu_manufacturer = *hw_params->cpu_model = 0;
 			break;
+	}
+	
+	buf_len = system_pipe_m13(&buf, 0, "wmic cpu get currentclockspeed, maxclockspeed", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+	if (buf) {
+		c = buf;
+		while (*c++ != '\n');
+		sscanf_m13(c, "%d%d", cur_mhz, max_mhz);
+		free((void *) buf);
+
+		hw_params->current_speed = (sf8) cur_mhz / (sf8) 1000.0;
+		hw_params->maximum_speed = (sf8) max_mhz / (sf8) 1000.0;
+	} else {
+		hw_params->current_speed = hw_params->maximum_speed = (sf8) 0.0;
+	}
+	hw_params->minimum_speed = (sf8) 0.0;  // haven't found a way to get this
+
+#endif  // WINDOWS_m13
+
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+
+	return_m13(TRUE_m13);
+}
+
+
+tern	HW_get_current_core_speed_m13()
+{
+	HW_PARAMS_m13	*hw_params;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	hw_params = &globals_m13->tables->HW_params;
+	if (hw_params->maximum_speed == (sf8) 0.0)
+		return_m13(HW_get_core_info_m13());
+
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	
+#ifdef LINUX_m13
+	si1	*c, *buf = NULL;
+	si8	buf_len;
+	sf8	scaling;
+
+	buf_len = system_pipe_m13(&buf, 0, "/usr/bin/lscpu", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+	if (buf) {
+		
+		scaling = (sf8) 0.0;
+		
+		c = STR_match_end_m13("CPU(s) scaling MHz:", buf);
+		if (c) {
+			while (*c == ' ')
+				++c;
+			sscanf_m13(c, "%lf", &scaling);
+		}
+		free((void *) buf);
+		hw_params->current_speed = hw_params->maximum_speed * (scaling / (sf8) 100.0);
+	}
+#endif  // LINUX_m13
+	
+#ifdef MACOS_m13
+	si8	speed;
+	size_t	len;
+
+	len = sizeof(si8);
+	sysctlbyname("hw.cpufrequency", &speed, &len, NULL, 0);
+	hw_params->current_speed = (sf8) speed / (sf8) 1000000000.0;
+	if (hw_params->current_speed > (sf8) 100.0)
+		hw_params->current_speed = (sf8) 0.0;  // can give crazy numbers;
+#endif  // MACOS_m13
+	
+#ifdef WINDOWS_m13
+	si1		*buf = NULL, *c;
+	si4		cur_mhz;
+
+	buf_len = system_pipe_m13(&buf, 0, "wmic cpu get currentclockspeed", SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+	if (buf) {
+		c = buf;
+		while (*c++ != '\n');
+		sscanf_m13(c, "%d", cur_mhz);
+		free((void *) buf);
+
+		hw_params->current_speed = (sf8) cur_mhz / (sf8) 1000.0;
+	} else {
+		hw_params->current_speed = (sf8) 0.0;
 	}
 #endif  // WINDOWS_m13
 
@@ -33186,7 +33524,7 @@ tern	HW_get_machine_code_m13(void)
 		return_m13(TRUE_m13);
 
 	// get machine serial number
-	if (*hw_params->serial_number == 0)
+	if (*hw_params->machine_serial == 0)
 		HW_get_machine_serial_m13();
 
 	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
@@ -33196,7 +33534,7 @@ tern	HW_get_machine_code_m13(void)
 	}
 
 	// get CRC of machine serial number
-	hw_params->machine_code = CRC_calculate_m13((ui1 *) hw_params->serial_number, strlen(hw_params->serial_number));
+	hw_params->machine_code = CRC_calculate_m13((ui1 *) hw_params->machine_serial, strlen(hw_params->machine_serial));
 	
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
@@ -33206,6 +33544,7 @@ tern	HW_get_machine_code_m13(void)
 
 tern	HW_get_machine_serial_m13(void)
 {
+	si1		*command, *buf, *machine_sn;
 	HW_PARAMS_m13	*hw_params;
 
 #ifdef FT_DEBUG_m13
@@ -33213,66 +33552,72 @@ tern	HW_get_machine_serial_m13(void)
 #endif
 
 	hw_params = &globals_m13->tables->HW_params;
-	if (*hw_params->serial_number)
+	if (*hw_params->machine_serial)
 		return_m13(TRUE_m13);
 
 	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
-	if (*hw_params->serial_number) {  // may have been set by another thread while waiting
+	if (*hw_params->machine_serial) {  // may have been set by another thread while waiting
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(TRUE_m13);
 	}
 	
 	// get machine serial number
-#ifdef LINUX_m13
-	// Linux makes it impossible to get product serial from within program, even with sudo password. Using default interface MAC.
-	if (*globals_m13->tables->NET_params.MAC_address_string == 0)
-		NET_get_mac_address_m13(NULL, &globals_m13->tables->NET_params);
-	strcpy(hw_params->serial_number, globals_m13->tables->NET_params.MAC_address_string);
-	STR_strip_character_m13(hw_params->serial_number, ':');
-	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
-	
-	return_m13(TRUE_m13);
-#endif
-#if defined MACOS_m13 || defined WINDOWS_m13
-	si1		*command, *buf, *machine_sn;
-	si8		buf_len;
-
 	#ifdef MACOS_m13
-	// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output
+	// out example: "IOPlatformSerialNumber" = "C02XK4D2JGH6"  // quotes are part of output plus variable number of line feeds
 	command = "ioreg -l | grep IOPlatformSerialNumber";
 	#endif
 	
+	#ifdef LINUX_m13
+	// out example: 111e157e322f47c79119cfc8de1de11c
+	// Linux makes it impossible to get true product serial from within program, even with sudo password. Use /etc/machine-id
+	command = "/usr/bin/cat /etc/machine-id";
+	#endif
+
 	#ifdef WINDOWS_m13
-	// out example: SerialNumber\nC02RP18FG8WM
+	// out example: SerialNumber  \r\nC02RP18FG8WM
 	command = "wmic bios get serialnumber";
 	#endif
 	
 	buf = NULL;
-	buf_len = system_pipe_m13(&buf, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
-	if (buf_len < 0)
+	system_pipe_m13(&buf, 0, command, SP_DEFAULT_m13, CURRENT_BEHAVIOR_m13);
+	if (buf == NULL) {
+		*hw_params->machine_serial = 0;
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
+	}
 	
-#ifdef MACOS_m13
+	#ifdef MACOS_m13
+	si1	*c;
+	
 	machine_sn = STR_match_end_m13("IOPlatformSerialNumber\" = \"", buf);
-	buf[buf_len - 3] = 0;  // <quote><lf>
-#endif
-	
-#ifdef WINDOWS_m13
-	buf[buf_len - 7] = buf[buf_len - 8] = 0;  // <cr><lf>
+	c = machine_sn;
+	while (*++c != '"');  // ends in <quote> plus variable number of <lf>
+	*c = 0;
+	#endif
+
+	#ifdef LINUX_m12
+	machine_sn = buf;
+	#endif
+
+	#ifdef WINDOWS_m13
+	si1	*c;
+
 	STR_wchar2char_m13(buf, (wchar_t *) buf);
 	machine_sn = STR_match_end_m13("SerialNumber  \r\n", buf);
-#endif
+	c = machine_sn;
+	while (*++c != '\r');  // ends in <cr><lf>
+	*c = 0;
+	#endif
 
 	// copy machine serial number
 	if (machine_sn)
-		strcpy(hw_params->serial_number, machine_sn);
+		strcpy(hw_params->machine_serial, machine_sn);
 
 	free((void *) buf);
 	
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 
 	return_m13(TRUE_m13);
-#endif
 }
 
 
@@ -33328,7 +33673,7 @@ tern	HW_get_memory_info_m13(void)
 #endif
 	
 	hw_params->heap_base_address = (ui8) globals_m13;  // first thing allocated by init_medlib_m13()
-	hw_params->heap_max_address = (hw_params->heap_base_address + hw_params->system_memory_size) - 1;
+	hw_params->heap_max_address = (hw_params->heap_base_address + hw_params->system_memory_size) - 1;  // address space is virtual so addresses can in theory be larger than physical system memory size
 	
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	
@@ -33445,6 +33790,8 @@ tern	HW_get_performance_specs_m13(tern get_current)
 		fprintf_m13(fp, "nsecs per integer division: %0.6lf\n", perf_specs->nsecs_per_integer_division);
 		fclose_m13(fp);
 	}
+	HW_show_info_m13();
+
 	
 	return_m13(TRUE_m13);
 }
@@ -33500,7 +33847,6 @@ tern	HW_get_performance_specs_from_file_m13(void)
 	ui4				file_machine_code;
 	si8				flen, items;
 	FILE_m13			*fp;
-	FILE_TIMES_m13			hw_specs_file_time;
 	HW_PARAMS_m13			*hw_params;
 	HW_PERFORMANCE_SPECS_m13	*perf_specs;
 	
@@ -33514,14 +33860,6 @@ tern	HW_get_performance_specs_from_file_m13(void)
 	if (G_exists_m13(file) == DOES_NOT_EXIST_m13)
 		return_m13(FALSE_m13);
 
-	// read in file
-	fp = fopen_m13(file, "r");
-	G_file_times_m13(fp, NULL, &hw_specs_file_time, FALSE_m13); // app newer than specs => create new specs file
-	if (globals_m13->app_info->file_times.modification > hw_specs_file_time.modification) {
-		fclose_m13(fp);
-		return_m13(FALSE_m13);
-	}
-	
 	hw_params = &globals_m13->tables->HW_params;
 	if (hw_params->machine_code == 0)
 		HW_get_machine_code_m13();
@@ -33531,10 +33869,11 @@ tern	HW_get_performance_specs_from_file_m13(void)
 	pthread_mutex_lock_m13(&globals_m13->tables->mutex);  // delay getting mutex until machine code known
 	if (perf_specs->integer_multiplications_per_sec != 0.0) {  // may have been done by another thread while waiting
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
-		fclose_m13(fp);
 		return_m13(TRUE_m13);
 	}
 
+	// read in file
+	fp = fopen_m13(file, "r");
 	flen = flen_m13(fp);
 	buffer = (si1 *) malloc((size_t) (flen + 1));
 	fread_m13((void *) buffer, sizeof(si1), (size_t) flen, fp);
@@ -33609,7 +33948,7 @@ tern	HW_init_tables_m13(void)
 	if (hw_params->logical_cores == 0)
 		HW_get_core_info_m13();
 
-	if (*hw_params->serial_number == 0)  // do this before getting machine code
+	if (*hw_params->machine_serial == 0)  // do this before getting machine code
 		HW_get_machine_serial_m13();
 
 	if (hw_params->machine_code == 0)  // do this before getting performance specs
@@ -33661,17 +34000,17 @@ tern	HW_show_info_m13(void)
 	if (hw_params->minimum_speed == 0.0)
 		printf_m13("minimum_speed = unknown\n");
 	else
-		printf_m13("minimum_speed = %lf GHz\n", hw_params->minimum_speed);
+		printf_m13("minimum_speed = %0.2lf GHz  (per core)\n", hw_params->minimum_speed);
 	
 	if (hw_params->maximum_speed == 0.0)
 		printf_m13("maximum_speed = unknown\n");
 	else
-		printf_m13("maximum_speed = %lf GHz\n", hw_params->maximum_speed);
+		printf_m13("maximum_speed = %0.2lf GHz  (per core)\n", hw_params->maximum_speed);
 	
 	if (hw_params->current_speed == 0.0)
 		printf_m13("current_speed = unknown\n");
 	else
-		printf_m13("current_speed = %lf GHz  (average across logical cores)\n", hw_params->current_speed);
+		printf_m13("current_speed = %0.2lf GHz  (logical core average)\n", hw_params->current_speed);
 	
 	if (hw_params->performance_specs.integer_multiplications_per_sec == 0.0)
 		printf_m13("integer_multiplications_per_sec = unknown\n");
@@ -33724,10 +34063,10 @@ tern	HW_show_info_m13(void)
 	else
 		printf_m13("cpu_model = \"%s\"\n", hw_params->cpu_model);
 	
-	if (*hw_params->serial_number == 0)
-		printf_m13("serial_number = unknown\n");
+	if (*hw_params->machine_serial == 0)
+		printf_m13("machine_serial = unknown\n");
 	else
-		printf_m13("serial_number = %s\n", hw_params->serial_number);
+		printf_m13("machine_serial = %s\n", hw_params->machine_serial);
 	
 	if (hw_params->machine_code == 0)
 		printf_m13("machine_code = unknown\n");
@@ -33779,7 +34118,7 @@ tern	NET_check_internet_connection_m13(void)
 }
 
 
-tern	NET_domain_to_ip_m13(si1 *domain_name, si1 *ip)
+tern	NET_domain_to_ip_m13(const si1 *domain_name, si1 *ip)
 {
 	si4			rv;
 	struct addrinfo		hints, *servinfo;
@@ -33857,7 +34196,7 @@ tern	NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global)
 #else
 	tern		global_np;
 	si1 	tmp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
-	si4 	i, ret_val, attempts;
+	si4 	i, r_val, attempts;
 	DWORD 			dwSize, dwRetVal;
 	ULONG			flags, family, outBufLen;
 	LPVOID 			lpMsgBuf;
@@ -33978,7 +34317,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 {
 	tern	global_np;
 	si1		tmp_str[256], *buffer, *c, *pattern;
-	si4		ret_val;
+	si4		r_val;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -34010,9 +34349,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	sprintf_m13(tmp_str, "/usr/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	ret_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13);
+	r_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13);
 	G_pop_behavior_m13();
-	if (ret_val) {
+	if (r_val) {
 		if (global_np == TRUE_m13)
 			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
@@ -34104,7 +34443,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 {
 	tern	global_np;
 	si1		tmp_str[256], *buffer, *c, *pattern;
-	si4		ret_val;
+	si4		r_val;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -34136,9 +34475,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	sprintf_m13(tmp_str, "/sbin/ifconfig %s", np->interface_name);
 	buffer = NULL;
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	ret_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13);
+	r_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13);
 	G_pop_behavior_m13();
-	if (ret_val) {
+	if (r_val) {
 		if (global_np == TRUE_m13)
 			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
@@ -34242,7 +34581,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 {
 	tern		global_np;
 	si1 	tmp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
-	si4 	i, ret_val, attempts;
+	si4 	i, r_val, attempts;
 	DWORD 			dwSize, dwRetVal;
 	ULONG			flags, family, outBufLen;
 	LPVOID 			lpMsgBuf;
@@ -34277,9 +34616,9 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// get ipconfig() output
 	buffer = NULL;
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	ret_val = system_pipe_m13(&buffer, 0, "ipconfig /all", SP_DEFAULT_m13);
+	r_val = system_pipe_m13(&buffer, 0, "ipconfig /all", SP_DEFAULT_m13);
 	G_pop_behavior_m13();
-	if (ret_val) {
+	if (r_val) {
 		if (global_np == TRUE_m13)
 			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
@@ -34397,7 +34736,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 {
 	tern	global_np, free_np;
 	si1		*command, *buffer, *c;
-	si4		ret_val;
+	si4		r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -34432,9 +34771,9 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	#endif
 	buffer = NULL;
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
+	r_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
 	G_pop_behavior_m13();
-	if (ret_val) {  // probably no internet connection, otherwise route() error
+	if (r_val) {  // probably no internet connection, otherwise route() error
 		if (global_np == TRUE_m13)
 			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		if (free_np == TRUE_m13)
@@ -34481,7 +34820,7 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 			#endif
 		}
 	} else {
-		G_warning_message_m13("%s(): no default interface (error %d)\n", __FUNCTION__, ret_val);
+		G_warning_message_m13("%s(): no default interface (error %d)\n", __FUNCTION__, r_val);
 		*np->LAN_IPv4_address_string = 0;
 		np->LAN_IPv4_address_num = 0;
 		if (free_np == TRUE_m13)
@@ -34549,7 +34888,7 @@ tern	NET_get_ethtool_m13(NET_PARAMS_m13 *np, tern copy_global)
 
 	tern	global_np;
 	si1		tmp_str[256], *buffer, *c, *pattern;
-	si4		ret_val;
+	si4		r_val;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -34575,8 +34914,8 @@ tern	NET_get_ethtool_m13(NET_PARAMS_m13 *np, tern copy_global)
 	// Note: ethtool() doesn't seem to work on WiFi networks
 	buffer = NULL;
 	sprintf_m13(tmp_str, "/usr/sbin/ethtool %s", np->interface_name);
-	ret_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13, RETURN_QUIETLY_m13);
-	if (ret_val < 0) {  // don't return false => this is typically superfluous info
+	r_val = system_pipe_m13(&buffer, 0, tmp_str, SP_DEFAULT_m13, RETURN_QUIETLY_m13);
+	if (r_val < 0) {  // don't return false => this is typically superfluous info
 		G_warning_message_m13("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__);
 	} else {
 		pattern = "Speed: ";
@@ -34909,7 +35248,7 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 {
 	tern	global_np;
 	si1		*command, *buffer, *pattern, *c;
-	si4		ret_val;
+	si4		r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -34951,9 +35290,9 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 	
 	buffer = NULL;
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13 | RETRY_ONCE_m13);
-	ret_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13);
+	r_val = system_pipe_m13(&buffer, 0, command, SP_DEFAULT_m13);
 	G_pop_behavior_m13();
-	if (ret_val || buffer == NULL) {  // curl can fail without output, in which case buffer is NULL
+	if (r_val || buffer == NULL) {  // curl can fail without output, in which case buffer is NULL
 		if (NET_get_lan_ipv4_address_m13(NULL, np) == NULL)
 			G_warning_message_m13("%s(): no internet connection\n", __FUNCTION__);
 		else
@@ -34991,9 +35330,9 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
+si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 {
-	si1 			local_iface_name[NI_MAXHOST], tmp_addr[INET6_ADDRSTRLEN];
+	si1 			tmp_addr[INET6_ADDRSTRLEN];
 	si4 			fam;
 	struct ifaddrs		*if_addr_list, *ifa;
 	socklen_t		si_len;
@@ -35003,12 +35342,12 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 #endif
 
 	if (getifaddrs(&if_addr_list)) {
-		G_warning_message_m13("%s(): getifaddrs() error\n", __FUNCTION__);
+		G_set_error_m13(E_NET_m13, "getifaddrs() error");
 		return_m13(NULL);
 	}
 	
 	if (iface_name == NULL)
-		iface_name = local_iface_name;  // not thread safe
+		iface_name = (si1 *) calloc_m13 ((size_t) NI_MAXHOST, sizeof(si1));  // caller takes ownership
 
 	for (ifa = if_addr_list; ifa; ifa = ifa->ifa_next) {
 		if (ifa->ifa_addr == NULL)
@@ -35024,7 +35363,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 		
 		// get ip address of interface
 		if (getnameinfo(ifa->ifa_addr, si_len, tmp_addr, NI_MAXHOST, NULL, 0, NI_NUMERICHOST)) {
-			G_warning_message_m13("%s(): getnameinfo() error\n", __FUNCTION__);
+			G_set_error_m13(E_NET_m13, "getnameinfo() error");
 			freeifaddrs(if_addr_list);
 			return_m13(NULL);
 		}
@@ -35034,7 +35373,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 			break;
 	}
 	if (ifa == NULL) {
-		G_warning_message_m13("%s(): could not match ip address to interface\n", __FUNCTION__);
+		G_set_error_m13(E_NET_m13, "could not match ip address to interface");
 		freeifaddrs(if_addr_list);
 		return_m13(NULL);
 	}
@@ -35051,7 +35390,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 {
 	si1			local_iface_name[64], *buffer, *c, *c2;
-	si4			ret_val;
+	si4			r_val;
 	si8			sz;
 	FILE			*fp;
 	
@@ -35064,9 +35403,9 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 
 	// get interface name (aka connection name in Windows)
 	buffer = NULL;
-	ret_val = system_pipe_m13(&buffer, 0, "ipconfig", SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
+	r_val = system_pipe_m13(&buffer, 0, "ipconfig", SP_DEFAULT_m13, RETURN_ON_FAIL_m13);
 	*iface_name = 0;
-	if (ret_val > 0) {  // parse ipconfig() output to find internet ip address
+	if (r_val > 0) {  // parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m13(iface_addr, buffer))) {
 			// find "LAN adapter" backwards fromm here
 			while (c >= buffer) {
@@ -35172,11 +35511,10 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 	// returns "copy global" (if global value known, just copy to np, else get & copy to global)
 	// UNKNOWN_m13 indicates failure
 
-	
-	if (iface) {
+	if (iface)
 		if (*iface == 0)
 			iface = NULL;
-	}
+	
 	if (params_ptr == NULL)
 		params = NULL;
 	else
@@ -35382,17 +35720,17 @@ tern	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)  // frees thread globals & par it
 	}
 
 	// free par & set to NULL
-	free((void *) par_info);  // caller responsible for disposing of anything in par_info->ret_val, if neceessary
+	free((void *) par_info);  // caller responsible for disposing of anything in par_info->r_val, if neceessary
 	*par_info_ptr = NULL;
 
 	return_m13(TRUE_m13);;
 }
 
 
-PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ...) // varargs(label != "PAR_DEFAULTS_m13" or NULL): si4 priority, si1 *affinity, si4 detached
+PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, const si1 *function, const si1 *label, ...) // varargs(label != "PAR_DEFAULTS_m13" or NULL): si4 priority, const si1 *affinity, si4 detached
 {
-	tern	defaults;
-	si1 		*affinity;
+	tern		defaults;
+	const si1 	*affinity;
 	si4 		priority, detached;
 	va_list		v_args;
 	
@@ -35421,7 +35759,7 @@ PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, si1 *function, si1 *label, ..
 	} else {
 		va_start(v_args, label);
 		priority = va_arg(v_args, si4);
-		affinity = va_arg(v_args, si1 *);
+		affinity = va_arg(v_args, const si1 *);
 		detached = va_arg(v_args, si4);
 		va_end(v_args);
 	}
@@ -35517,10 +35855,10 @@ tern	PAR_show_info_m13(PAR_INFO_m13 *par_info)
 
 	printf_m13("\nlabel: \"%s\"\n", par_info->label);
 	printf_m13("function: \"%s\"\n", par_info->function);
-	if (par_info->ret_val == NULL)
-		printf_m13("ret_val: not set\n");
+	if (par_info->r_val == NULL)
+		printf_m13("r_val: not set\n");
 	else
-		printf_m13("ret_val: set\n");
+		printf_m13("r_val: set\n");
 	printf_m13("tid: %d\n", par_info->tid);
 	printf_m13("priority: 0x%08x\n", par_info->priority);
 	printf_m13("affinity: \"%s\"\n", par_info->affinity);
@@ -35533,22 +35871,22 @@ tern	PAR_show_info_m13(PAR_INFO_m13 *par_info)
 
 pthread_rval_m13	PAR_thread_m13(void *arg)
 {
-	si1				*function, *path, *password, *index_channel_name;
-	si4				i, fn, list_len, varargs, entries;
-	ui8				flags;
-	si8 				sample_count;
-	sf8 				sampling_frequency, scale, fc1, fc2;
-	void				*file_list;
-	pid_t_m13			_id;
-	PROC_GLOBS_LIST_m13		*list;
-	PROC_GLOBS_m13		*proc_globs, **proc_globs_ptr;
-	PAR_THREAD_INFO_m13		*par_t_info;
-	PAR_INFO_m13 			*par_info;
-	SESS_m13			*sess;
-	CHAN_m13			*chan;
+	si1			*function, *path, *password, *index_channel_name;
+	si4			i, fn, list_len, varargs, entries;
+	ui8			flags;
+	si8 			sample_count;
+	sf8 			sampling_frequency, scale, fc1, fc2;
+	void			*file_list;
+	pid_t_m13		_id;
+	PROC_GLOBS_LIST_m13	*list;
+	PROC_GLOBS_m13		*pg, **pg_ptr;
+	PAR_THREAD_INFO_m13	*par_t_info;
+	PAR_INFO_m13 		*par_info;
+	SESS_m13		*sess;
+	CHAN_m13		*chan;
 	SEG_m13			*seg;
-	SLICE_m13			*slice;
-	DATA_MATRIX_m13 		*mat;
+	SLICE_m13		*slice;
+	DATA_MATRIX_m13 	*mat;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -35563,22 +35901,22 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 	list = globals_m13->proc_globs_list;
 	pthread_mutex_lock_m13(&list->mutex);  // get mutex
 	entries = list->top_idx + 1;
-	proc_globs_ptr = list->proc_globs_ptrs;
-	proc_globs = NULL;
-	for (i = entries; i--; ++proc_globs_ptr) {
-		if (*proc_globs_ptr) {
-			proc_globs = *proc_globs_ptr;
-			if (proc_globs->_id == _id)
+	pg_ptr = list->proc_globs_ptrs;
+	pg = NULL;
+	for (i = entries; i--; ++pg_ptr) {
+		if (*pg_ptr) {
+			pg = *pg_ptr;
+			if (pg->_id == _id)
 				break;
 		}
 	}
 	pthread_mutex_unlock_m13(&list->mutex);  // relase mutex
 
 	if (i == -1)  // proc_globs not found, create new
-		proc_globs = G_proc_globs_m13(NULL);
+		pg = G_proc_globs_m13(NULL);
 	else
-		proc_globs->_id = gettid_m13();  // set to current thread id
-	par_info->tid = proc_globs->_id;
+		pg->_id = gettid_m13();  // set to current thread id
+	par_info->tid = pg->_id;
 
 	// get function
 	if (strcmp_m13(function, "G_open_session_m13") == 0)
@@ -35609,7 +35947,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 			sess = va_arg(par_t_info->args, SESS_m13 *);
 			slice = va_arg(par_t_info->args, SLICE_m13 *);
 			if (fn == PAR_READ_SESSION_M13 && sess) {
-				par_info->ret_val = (void *) G_read_session_m13(sess, slice);
+				par_info->r_val = (void *) G_read_session_m13(sess, slice);
 			} else {
 				file_list = va_arg(par_t_info->args, void *);
 				list_len = va_arg(par_t_info->args, si4);
@@ -35618,10 +35956,10 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				index_channel_name = va_arg(par_t_info->args, si1 *);
 				switch (fn) {
 					case PAR_OPEN_SESSION_M13:
-						par_info->ret_val = (void *) G_open_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);
+						par_info->r_val = (void *) G_open_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);
 						break;
 					case PAR_READ_SESSION_M13:
-						par_info->ret_val = (void *) G_read_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);
+						par_info->r_val = (void *) G_read_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);
 						break;
 				}
 			}
@@ -35636,25 +35974,25 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				chan = va_arg(par_t_info->args, CHAN_m13 *);
 			slice = va_arg(par_t_info->args, SLICE_m13 *);
 			if (fn == PAR_READ_CHANNEL_M13 && chan) {
-				par_info->ret_val = (void *) G_read_channel_m13(chan, slice);
+				par_info->r_val = (void *) G_read_channel_m13(chan, slice);
 			} else if (fn == PAR_READ_SEGMENT_M13 && seg) {
-				par_info->ret_val = (void *) G_read_segment_m13(seg, slice);
+				par_info->r_val = (void *) G_read_segment_m13(seg, slice);
 			} else {
 				path = va_arg(par_t_info->args, void *);
 				flags = va_arg(par_t_info->args, ui8);
 				password = va_arg(par_t_info->args, si1 *);
 				switch (fn) {
 					case PAR_OPEN_CHANNEL_M13:
-						par_info->ret_val = (void *) G_open_channel_m13(chan, slice, path, NULL, flags, password);
+						par_info->r_val = (void *) G_open_channel_m13(chan, slice, path, NULL, flags, password);
 						break;
 					case PAR_READ_CHANNEL_M13:
-						par_info->ret_val = (void *) G_read_channel_m13(chan, slice, path, NULL, flags, password);
+						par_info->r_val = (void *) G_read_channel_m13(chan, slice, path, NULL, flags, password);
 						break;
 					case PAR_OPEN_SEGMENT_M13:
-						par_info->ret_val = (void *) G_open_segment_m13(seg, slice, path, NULL, flags, password);
+						par_info->r_val = (void *) G_open_segment_m13(seg, slice, path, NULL, flags, password);
 						break;
 					case PAR_READ_SEGMENT_M13:
-						par_info->ret_val = (void *) G_read_segment_m13(seg, slice, path, NULL, flags, password);
+						par_info->r_val = (void *) G_read_segment_m13(seg, slice, path, NULL, flags, password);
 						break;
 				}
 			}
@@ -35665,7 +36003,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 			slice = va_arg(par_t_info->args, SLICE_m13 *);
 			varargs = va_arg(par_t_info->args, si4);
 			if (varargs == FALSE_m13) {
-				par_info->ret_val = (void *) DM_get_matrix_m13(mat, sess, slice, varargs);
+				par_info->r_val = (void *) DM_get_matrix_m13(mat, sess, slice, varargs);
 			} else {
 				sample_count = va_arg(par_t_info->args, si8);
 				sampling_frequency = va_arg(par_t_info->args, sf8);
@@ -35673,7 +36011,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 				scale = va_arg(par_t_info->args, sf8);
 				fc1 = va_arg(par_t_info->args, sf8);
 				fc2 = va_arg(par_t_info->args, sf8);
-				par_info->ret_val = (void *) DM_get_matrix_m13(mat, sess, slice, varargs, sample_count, sampling_frequency, flags, scale, fc1, fc2);
+				par_info->r_val = (void *) DM_get_matrix_m13(mat, sess, slice, varargs, sample_count, sampling_frequency, flags, scale, fc1, fc2);
 			}
 			break;
 	}
@@ -35684,7 +36022,7 @@ pthread_rval_m13	PAR_thread_m13(void *arg)
 }
 
 
-tern	PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval)
+tern	PAR_wait_m13(PAR_INFO_m13 *par_info, const si1 *interval)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -35713,7 +36051,7 @@ tern	PAR_wait_m13(PAR_INFO_m13 *par_info, si1 *interval)
 
 tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 {
-	tern	ret_val = TRUE_m13;
+	tern	r_val = TRUE_m13;
 #if defined MACOS_m13 || defined LINUX_m13
 	struct rlimit	resource_limit;
 #endif
@@ -35725,15 +36063,15 @@ tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 	getrlimit(RLIMIT_NOFILE, &resource_limit);  // get existing limit set
 	resource_limit.rlim_cur = (rlim_t) new_limit;  // change open file limit
 	if (setrlimit(RLIMIT_NOFILE, &resource_limit) == -1)  // set limit set
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	#endif
 
 	#ifdef WINDOWS_m13
 	if (_setmaxstdio((int) new_limit) == -1)  // change open file limit
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	#endif
 
-	if (ret_val == FALSE_m13) {
+	if (r_val == FALSE_m13) {
 		if (verbose_flag == TRUE_m13) {
 			#ifdef MATLAB_m13
 			mexPrintf("%s(): could not adjust process open file limit\n", __FUNCTION__);
@@ -35743,14 +36081,14 @@ tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 		}
 	}
 
-	return(ret_val);
+	return(r_val);
 }
 
 
 tern	PROC_default_threading_m13(void *lh)
 {
 	tern		threading;
-	PROC_GLOBS_m13	*proc_globs;
+	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -35759,8 +36097,8 @@ tern	PROC_default_threading_m13(void *lh)
 	// pass null for lh for current thread proc_globs
 	// lh is a level header pointer (LH_m13 *), only void because LH_m13 defined after PROC functions in header (will eventaully fix this)
 	
-	proc_globs = G_proc_globs_m13((LH_m13 *) lh);
-	threading = proc_globs->miscellaneous.threading;  // process specific
+	pg = G_proc_globs_m13((LH_m13 *) lh);
+	threading = pg->miscellaneous.threading;  // process specific
 	
 	if (threading == NOT_SET_m13) {
 		threading = globals_m13->threading;  // global
@@ -35779,12 +36117,11 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	cpu_set_t_m13		cpu_set;
 	HW_PARAMS_m13		*hw_params;
 	PROC_THREAD_INFO_m13	*job;
-	PROC_GLOBS_m13		*proc_globs;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
 	// calling function sets up thread_info structures
 	// thread_info thread_f() launches underlying function to be threaded in unthreaded fashion & sets status in thread_info structure
 	// n_reserved_cores = number of cores to leave unassigned (typically zero). When needed this will be adjusted for the task & OS
@@ -35799,13 +36136,13 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 	n_logical_cores = hw_params->logical_cores;
 	
 	// set reserved cores & concurrent jobs
-	#ifdef WINDOWS_m13
+#ifdef WINDOWS_m13
 	// Windows performs better with at least 1 reserved core (if possible)
 	if (n_logical_cores <= 3)
 		n_reserved_cores = n_logical_cores - 1;
 	else if (n_reserved_cores < 3)
 		n_reserved_cores = 3;
-	#endif
+#endif
 	
 	if (n_reserved_cores >= n_logical_cores)
 		n_reserved_cores = n_logical_cores - 1;
@@ -35815,34 +36152,35 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 		n_concurrent_jobs = n_jobs;
 	
 	// check threading
-	if (thread_jobs == NOT_SET_m13) {
-		proc_globs = G_proc_globs_m13(NULL);
-		thread_jobs = proc_globs->miscellaneous.threading;  // process specific
-		if (thread_jobs == NOT_SET_m13) {
-			thread_jobs = globals_m13->threading;  // global
-			if (thread_jobs == NOT_SET_m13)
-				thread_jobs = GLOBALS_THREADING_DEFAULT_m13;  // default
+	if (thread_jobs == NOT_SET_m13)
+		thread_jobs = PROC_default_threading_m13(NULL);
+	
+	// set all jobs to waiting state & set threading
+	for (job = jobs, i = n_jobs; i--; ++job) {
+		if (job->skip_job == TRUE_m13) {
+			job->status = PROC_THREAD_SKIPPED_m13;
+		} else {
+			job->status = PROC_THREAD_WAITING_m13;
+			job->thread_job = thread_jobs;
 		}
 	}
 	
-	// set all jobs to waiting state
-	for (job = jobs, i = n_jobs; i--; ++job)
-		job->status = PROC_THREAD_WAITING_m13;
-
 	// build cpu set
 	if (thread_jobs == TRUE_m13) {
-		#if defined MACOS_m13 || defined LINUX_m13
+#if defined MACOS_m13 || defined LINUX_m13
 		start_core = n_reserved_cores;
-		#endif
-		#ifdef WINDOWS_m13  // Windows prefers first and terminal cores
+#endif
+#ifdef WINDOWS_m13  // Windows prefers first and terminal cores
 		start_core = 1;
-		#endif
+#endif
 		end_core = start_core + (n_concurrent_jobs - 1);
 		
 		sprintf(affinity, "%d-%d", start_core, end_core);
 		PROC_generate_cpu_set_m13(affinity, &cpu_set);
 	} else {
 		for (job = jobs, i = n_jobs; i--; ++job) {
+			if (job->skip_job == TRUE_m13)
+				continue;
 			job->thread_f((void *) job);  // launch in current thread; job completes before loop continues
 			if (job->status == PROC_THREAD_FAILED_m13)
 				return_m13(FALSE_m13); // job should set causal error
@@ -35850,20 +36188,27 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 		return_m13(TRUE_m13);
 	}
 	
-	#ifdef MATLAB_m13
+#ifdef MATLAB_m13
 	G_push_behavior_m13(SUPPRESS_OUTPUT_m13);  // can't have output from threads in mex functions
-	#endif
-
+#endif
+	
 	// launch initial job set (all jobs detached)
-	for (job = jobs, i = n_concurrent_jobs; i--; ++job)
+	for (currently_running = 0, job = jobs, i = n_jobs; i--; ++job) {
+		if (job->skip_job == TRUE_m13)
+			continue;
+
+		// launch job
 		if (PROC_launch_thread_m13(&job->thread, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m13, job->thread_name) == 0)  // returns 0 on failure
 			return_m13(FALSE_m13);
 
-	// wait for status change in initial job set
-	for (job = jobs, i = n_concurrent_jobs; i--; ++job)
-		while (job->status == PROC_THREAD_WAITING_m13)  // changed to PROC_THREAD_RUNNING_m13 or PROC_THREAD_FINISHED_m13
-			nap_m13("1 us");  // this should happen fast
-	
+		// make sure status changed in thread
+		while (job->status == PROC_THREAD_WAITING_m13)
+			nap_m13("1 us");  // don't peg cpu on this
+
+		if (++currently_running == n_concurrent_jobs)
+			break;
+	}
+
 	// launch rest of jobs as others finish
 	while (1) {
 		for (currently_running = 0, job = jobs, i = n_jobs; i--; ++job)
@@ -35871,15 +36216,17 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 				++currently_running;
 		for (finished_jobs = 0, job = jobs, i = n_jobs; i--; ++job) {
 			if (currently_running == n_concurrent_jobs)
-				break;  // to while loop
+				break;
 			if (job->status == PROC_THREAD_WAITING_m13) {
-				// launch new job
+
+				// launch job
 				if (PROC_launch_thread_m13(&job->thread, job->thread_f, (void *) job, job->priority, NULL, &cpu_set, TRUE_m13, job->thread_name) == 0)  // returns 0 on failure
 					return_m13(FALSE_m13);
-				
-				// make sure status set in thread
+
+				// make sure status changed in thread
 				while (job->status == PROC_THREAD_WAITING_m13)
 					nap_m13("1 us");  // don't peg cpu on this
+
 				++currently_running;
 			} else if (job->status & PROC_THREAD_FINISHED_m13) {
 				++finished_jobs;
@@ -35897,10 +36244,10 @@ tern	PROC_distribute_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs, si4 n_rese
 }
 
 
-cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *passed_cpu_set_p)
+cpu_set_t_m13	*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 *passed_cpu_set_p)
 {
 	tern  			not_flag, lessthan_flag, greaterthan_flag;
-	si1 			*aff_str;
+	const si1 		*aff_str;
 	si4 			i, n_cpus, start_num, end_num, cpus_set;
 	cpu_set_t_m13 		*cpu_set_p;
 	
@@ -36050,7 +36397,7 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(si1 *affinity_str, cpu_set_t_m13 *passe
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread)
+pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread_p)
 {
 	si4			i;
 	THREAD_ENTRY_m13	*entry;
@@ -36059,7 +36406,7 @@ pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread)
 
 	// pass NULL for current process id
 
-	if (thread == NULL)
+	if (thread_p == NULL)
 		return(gettid_m13());
 
 	// get mutex
@@ -36069,7 +36416,7 @@ pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread)
 	// find thread _id in list
 	entry = list->entries;
 	for (i = list->top_idx + 1; i--; ++entry)
-		if (pthread_equal_m13(entry->thread, *thread) == 1)
+		if (pthread_equal_m13(entry->thread, *thread_p) == 1)
 			break;
 	
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -36083,13 +36430,18 @@ pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread)
 
 tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...)  // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs;
 {
-	tern	ret_val;
-	si4	sys_ret_val;
+	tern	r_val;
+	si4	sys_r_val;
 	
 
 	// verbose_flag passed because this function is usually called before the MED libraries are initialized
 	// no printf_m13() calls for the same reason
 	
+	// medlib must be initialized to use this bypass
+	if (globals_m13)
+		if (globals_m13->increase_priority == FALSE_m13)
+			return(FALSE_m13);
+		
 	#if (defined MACOS_m13 || defined LINUX_m13) && !defined MATLAB_m13
 	if (sudo_prompt_flag == TRUE_m13) {
 		
@@ -36127,8 +36479,8 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 					// change executable's permissions (for subsequent runs)
 					// (changing permissions may fail silently if executable is on a network file system, or NOSUID bit set on volume)
 					sprintf_m13(command, "echo %s | sudo -S chown root %s", pw, full_exec_name);  // in case owner wasn't root
-					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-					if (sys_ret_val) {  // just check for password failure once
+					sys_r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+					if (sys_r_val) {  // just check for password failure once
 						G_warning_message_m13("%s(): Invalid sudo password\n", __FUNCTION__);
 						return(FALSE_m13);
 					}
@@ -36139,8 +36491,8 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 					// renice in shell with sudo password (can't change current process priority from within process unless UID is root, or change kernel CAP_SETUID to true)
 					pid = getpid();
 					sprintf_m13(command, "echo %s | sudo -S renice %d -p %d", pw, PRIO_MIN, pid);
-					sys_ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-					if (sys_ret_val)
+					sys_r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+					if (sys_r_val)
 						return(FALSE_m13);
 					return(TRUE_m13);
 				} else {
@@ -36153,18 +36505,18 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 	}
 	#endif
 
-	ret_val = TRUE_m13;
+	r_val = TRUE_m13;
 	#if defined MACOS_m13 || defined LINUX_m13
 	if (setpriority(PRIO_PROCESS, 0, PRIO_MIN))
-		ret_val = FALSE_m13;
+		r_val = FALSE_m13;
 	#endif
 
 	#ifdef WINDOWS_m13
-	if ((ret_val = SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS)) == 0)  // zero indicates failure in Windows
-		ret_val = FALSE_m13;
+	if ((r_val = SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS)) == 0)  // zero indicates failure in Windows
+		r_val = FALSE_m13;
 	#endif
 	
-	if (ret_val == FALSE_m13 && verbose_flag == TRUE_m13) {
+	if (r_val == FALSE_m13 && verbose_flag == TRUE_m13) {
 	#if defined MACOS_m13 || defined LINUX_m13
 		#ifdef MATLAB_m13
 		mexPrintf("%s(): could not increase priority\nTo run with high priority, in a terminal type: \"sudo chown root <mex file>; sudo chmod ug+s <mex file>\"\n", __FUNCTION__);
@@ -36182,12 +36534,12 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 	#endif
 	}
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
+pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_f, void *arg, si4 priority, const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, const si1 *thread_name)
 {
 	tern			free_cpu_set = FALSE_m13;
 	sf8			f_min_priority, f_max_priority;
@@ -36203,8 +36555,8 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 	
 	// returns new thread's id, or zero on failure
 
-	if (thread == NULL)  // caller doesn't need thread_id - detached thread
-		thread = &local_thread;
+	if (thread_p == NULL)  // caller doesn't need thread_id - detached thread
+		thread_p = &local_thread;
 	
 	pthread_attr_init(&thread_attributes);
 	
@@ -36274,22 +36626,22 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 		mach_port_t	mach_thread;
 
 		// create thread (suspended)
-		if (pthread_create_suspended_np(thread, &thread_attributes, thread_f, arg)) {
+		if (pthread_create_suspended_np(thread_p, &thread_attributes, thread_f, arg)) {
 			G_set_error_m13(E_PROC_m13, "pthread_create_suspended_np() error");
 			return_m13((pid_t_m13) 0);
 		}
 		
 		// set affinity (in Mac OS thread must be created first)
-		PROC_set_thread_affinity_m13(thread, NULL, cpu_set_p, TRUE_m13);
+		PROC_set_thread_affinity_m13(thread_p, NULL, cpu_set_p, TRUE_m13);
 
 		// resume thread
-		mach_thread = pthread_mach_thread_np(*thread);
+		mach_thread = pthread_mach_thread_np(*thread_p);
 		if (thread_resume((thread_read_t) mach_thread)) {
 			G_set_error_m13(E_PROC_m13, "thread_resume() error");
 			return_m13((pid_t_m13) 0);
 		}
 	} else {  // always comes here while no MacOS support for affinity
-		if (pthread_create(thread, &thread_attributes, thread_f, arg)) {
+		if (pthread_create(thread_p, &thread_attributes, thread_f, arg)) {
 			G_set_error_m13(E_PROC_m13, "pthread_create() error");
 			return_m13((pid_t_m13) 0);
 		}
@@ -36302,14 +36654,14 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 		PROC_set_thread_affinity_m13(NULL, &thread_attributes, cpu_set_p, TRUE_m13);
 	
 	// start thread
-	if (pthread_create(thread, &thread_attributes, thread_f, arg)) {
+	if (pthread_create(thread_p, &thread_attributes, thread_f, arg)) {
 		G_set_error_m13(E_PROC_m13, "pthread_create() error");
 		return_m13((pid_t_m13) 0);
 	}
 
 	// set thread name (after thread created)
 	if (STR_is_empty_m13(thread_name) == FALSE_m13)
-		pthread_setname_np(*thread, thread_name);  // suffix _np is for "not posix" or "not portable"
+		pthread_setname_np(*thread_p, thread_name);  // suffix _np is for "not posix" or "not portable"
 # endif  // LINUX_m13
 
 	// finished with attributes (destroy or memory leak)
@@ -36319,10 +36671,10 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 		free((void *) cpu_set_p);
 
 	// add thread to thread list
-	PROC_thread_list_add_m13(thread);
+	PROC_thread_list_add_m13(thread_p);
 	
 	// get thread's tid
-	_id = PROC_id_for_thread_m13(thread);
+	_id = PROC_id_for_thread_m13(thread_p);
 	
 	return_m13(_id);  // zero indicates failure (for compatibility with Windows version, which returns thread id)
 }
@@ -36330,7 +36682,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 
 
 #ifdef WINDOWS_m13
-pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f, void *arg, si4 priority, si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, si1 *thread_name)
+pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_f, void *arg, si4 priority, const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, const si1 *thread_name)
 {
 	tern			free_cpu_set;
 	pthread_t_m13		local_thread;
@@ -36345,12 +36697,12 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 
 	// returns new thread's id, or zero on failure
 
-	if (thread == NULL)  // caller doesn't need thread_id - detached thread
-		thread = &local_thread;
+	if (thread_p == NULL)  // caller doesn't need thread_id - detached thread
+		thread_p = &local_thread;
 
 	// Create thread in suspended state so can set attributes
-	*thread = (HANDLE) _beginthreadex(NULL, 0, (LPTHREAD_START_ROUTINE) thread_f, arg, CREATE_SUSPENDED, &win_id);
-	if (*thread == NULL || win_id == 0) {
+	*thread_p = (HANDLE) _beginthreadex(NULL, 0, (LPTHREAD_START_ROUTINE) thread_f, arg, CREATE_SUSPENDED, &win_id);
+	if (*thread_p == NULL || win_id == 0) {
 		G_set_error_m13(E_GEN_m13, "beginthreadex() error");
 		return_m13((pid_t_m13) 0);
 	}
@@ -36376,7 +36728,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 			default: // caller passed priority value
 				break;
 		}
-		SetThreadPriority(*thread, priority);
+		SetThreadPriority(*thread_p, priority);
 	}
 	
 	// Set Affinity
@@ -36389,7 +36741,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 		}
 	}
 	if (cpu_set_p) {
-		PROC_set_thread_affinity_m13(thread, NULL, cpu_set_p, TRUE_m13);
+		PROC_set_thread_affinity_m13(thread_p, NULL, cpu_set_p, TRUE_m13);
 		if (free_cpu_set == TRUE_m13)
 			free((void *) cpu_set_p);
 	}
@@ -36397,18 +36749,18 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread, pthread_fn_m13 thread_f,
 	// set thread name
 	if (STR_is_empty_m13(thread_name) == FALSE_m13) {
 		STR_char2wchar_m13(w_thread_name, thread_name);
-		SetThreadDescription(*thread, w_thread_name);
+		SetThreadDescription(*thread_p, w_thread_name);
 	}
 	
 	// start thread
-	ResumeThread(*thread);
+	ResumeThread(*thread_p);
 
 	// detach thread
 	if (detached == TRUE_m13)
-		CloseHandle(*thread);
+		CloseHandle(*thread_p);
 	
 	// add thread to thread list
-	PROC_thread_list_add_m13(thread);
+	PROC_thread_list_add_m13(thread_p);
 
 	// get thread's tid
 	_id = (pid_t_m13) win_id;
@@ -36423,7 +36775,7 @@ pthread_rval_m13	PROC_macos_named_thread_m13(void *named_info_arg)
 #ifdef MACOS_m13
 	
 	PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
-	si1					*thread_name;
+	const si1				*thread_name;
 	pthread_fn_m13				thread_f;
 	void					*thread_arg;
 	pthread_rval_m13			rval;
@@ -36446,15 +36798,14 @@ pthread_rval_m13	PROC_macos_named_thread_m13(void *named_info_arg)
 	// release named_thread_info structure (allocated by calling function)
 	free(named_info_arg);
 	
-	thread_return_m13(rval);
-#else
-	return((pthread_rval_m13) 0);
+	return(rval);
 #endif
+	return((pthread_rval_m13) 0);
 }
 
 
 #ifdef MACOS_m13
-tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
+tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
 {
 	si1		thread_name[THREAD_NAME_BYTES_m13];
 	const si4	MAX_ATTEMPTS = 100;
@@ -36471,7 +36822,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 	else
 		attempts = 0;
 	do {
-		mach_thread = pthread_mach_thread_np(*thread);
+		mach_thread = pthread_mach_thread_np(*thread_p);
 		errno = 0;
 		err = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY, (thread_policy_t) &cpu_set_p->cpu_array, (mach_msg_type_number_t) cpu_set_p->cpu_count);
 		if (err == KERN_NOT_SUPPORTED)
@@ -36481,7 +36832,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 	} while (err && attempts--);
 	
 	if (err) {
-		pthread_getname_m13(*thread, thread_name, (size_t) THREAD_NAME_BYTES_m13);
+		pthread_getname_m13(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13);
 		if (*thread_name)
 			G_warning_message_m13("%s(): error setting affinity for thread \"%s\" => not set\n", __FUNCTION__, thread_name);
 		else
@@ -36495,7 +36846,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 
 
 #ifdef LINUX_m13
-tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
+tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
 {
 	const si4	MAX_ATTEMPTS = 10;
 	tern		use_attributes;
@@ -36511,8 +36862,8 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 	// attributes allow affinity to be set before thread is launched
 	// thread_id can be used to change affinity while thread is running
 	
-	if (thread) {
-		err = pthread_setaffinity_np(*thread, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
+	if (thread_p) {
+		err = pthread_setaffinity_np(*thread_p, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
 		use_attributes = FALSE_m13;
 	} else {
 		if (attributes == NULL)
@@ -36527,14 +36878,14 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 			if (use_attributes == TRUE_m13)
 				err = pthread_attr_setaffinity_np((pthread_attr_t *) attributes, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
 			else
-				err = pthread_setaffinity_np(*thread, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
+				err = pthread_setaffinity_np(*thread_p, sizeof(cpu_set_t), cpu_set_p);  // _np is for "not portable"
 		}
 	}
 	
 	if (err) {
 		*thread_name = 0;
-		if (thread)
-			pthread_getname_np(*thread, thread_name, (size_t) THREAD_NAME_BYTES_m13);  // _np is for "not posix" or "not portable"
+		if (thread_p)
+			pthread_getname_np(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13);  // _np is for "not posix" or "not portable"
 		if (*thread_name)
 			G_warning_message_m13("%s(): error setting affinity for thread \"%s\" => not set\n", __FUNCTION__, thread_name);
 		else
@@ -36548,7 +36899,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 
 
 #ifdef WINDOWS_m13
-tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
+tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
 {
 	si1		thread_name[THREAD_NAME_BYTES_m13];
 	const si4	MAX_ATTEMPTS = 100;
@@ -36567,13 +36918,13 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 	else
 		attempts = 0;
 	do {
-		err = SetThreadAffinityMask(*thread, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - it is not used as pointer to ui4
+		err = SetThreadAffinityMask(*thread_p, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - it is not used as pointer to ui4
 		if (err)
 			nap_m13("1 ms");
 	} while (err && attempts--);
 	
 	if (err == 0) {
-		pthread_getname_m13(*thread, thread_name, (size_t) THREAD_NAME_BYTES_m13)
+		pthread_getname_m13(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13)
 		if (*thread_name)
 			G_warning_message_m13("%s(): error setting affinity for thread \"%s\" => not set\n", __FUNCTION__, thread_name);
 		else
@@ -36587,7 +36938,7 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *att
 
 
 #ifdef MACOS_m13
-tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
+tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread_p)
 {
 	si1		thread_name[THREAD_NAME_BYTES_m13];
 	si4 		i, err, n_cpus, show_arr[64] = {0};
@@ -36600,11 +36951,11 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 #endif
 
 	*thread_name = 0;
-	pthread_getname_np(*thread, thread_name, (size_t) THREAD_NAME_BYTES_m13);  // _np is for "not portable"
+	pthread_getname_np(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13);  // _np is for "not portable"
 	if (*thread_name)
 		printf_m13("thread \"%s()\": ", thread_name);
 	
-	mach_thread = pthread_mach_thread_np(*thread);
+	mach_thread = pthread_mach_thread_np(*thread_p);
 	get_default = 0;  // FALSE
 	err = thread_policy_get(mach_thread, THREAD_AFFINITY_POLICY, (thread_policy_t) &cpu_set.cpu_array, (mach_msg_type_number_t* ) &cpu_set.cpu_count, &get_default);
 
@@ -36636,7 +36987,7 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 
 
 #ifdef LINUX_m13
-tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
+tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread_p)
 {
 	si1		thread_name[THREAD_NAME_BYTES_m13];
 	si4 		i, n_cpus;
@@ -36647,11 +36998,11 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 #endif
 
 	*thread_name = 0;
-	pthread_getname_np(*thread, thread_name, (size_t) THREAD_NAME_BYTES_m13);  // _np is for "not portable"
+	pthread_getname_np(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13);  // _np is for "not portable"
 	if (*thread_name)
 		printf_m13("thread \"%s()\": ", thread_name);
 	
-	pthread_getaffinity_np(*thread, sizeof(cpu_set_t), &cpu_set);  // _np is for "not portable"
+	pthread_getaffinity_np(*thread_p, sizeof(cpu_set_t), &cpu_set);  // _np is for "not portable"
 	
 	if (globals_m13->tables->HW_params.logical_cores == 0)
 		HW_get_core_info_m13();
@@ -36670,7 +37021,7 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 
 
 #ifdef WINDOWS_m13
-tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
+tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread_p)
 {
 	si1		thread_name[THREAD_NAME_BYTES_m13];
 	wchar_t		*w_thread_name;
@@ -36682,11 +37033,11 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 	G_push_function_m13();
 #endif
 
-	SuspendThread(*thread);  // suspend thread to get current cpu set
+	SuspendThread(*thread_p);  // suspend thread to get current cpu set
 	tmp_cpu_set = ~((cpu_set_t_m13) 0);
-	cpu_set = (cpu_set_t_m13) SetThreadAffinityMask(*thread, (DWORD_PTR) tmp_cpu_set);  // use SetThreadAffinityMask() to return existing cpu set
-	tmp_cpu_set = (cpu_set_t_m13) SetThreadAffinityMask(*thread, (DWORD_PTR) cpu_set);  // reset to existing cpu set
-	ResumeThread(thread_h);
+	cpu_set = (cpu_set_t_m13) SetThreadAffinityMask(*thread_p, (DWORD_PTR) tmp_cpu_set);  // use SetThreadAffinityMask() to return existing cpu set
+	tmp_cpu_set = (cpu_set_t_m13) SetThreadAffinityMask(*thread_p, (DWORD_PTR) cpu_set);  // reset to existing cpu set
+	ResumeThread(*thread_p);
 
 	if (tmp_cpu_set == 0) {
 		G_warning_message_m13("%s(): error %d from SetThreadAffinityMask()\n", __FUNCTION__, GetLastError());
@@ -36694,7 +37045,7 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 	}
 
 	*thread_name = 0;
-	hr = GetThreadDescription(*thread, (PWSTR *) &w_thread_name);
+	hr = GetThreadDescription(*thread_p, (PWSTR *) &w_thread_name);
 	if (SUCCEEDED(hr)) {
 		STR_wchar2char_m13(thread_name, w_thread_name);
 		free((void *) w_thread_name);
@@ -36719,6 +37070,34 @@ tern	PROC_show_thread_affinity_m13(pthread_t_m13 *thread)
 	return_m13(TRUE_m13);
 }
 #endif  // WINDOWS
+
+
+void	PROC_show_thread_list_m13(void)
+{
+	si4			i, n_entries;
+	THREAD_ENTRY_m13	*entry;
+	THREAD_LIST_m13		*list;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// get mutex
+	list = globals_m13->thread_list;
+	pthread_mutex_lock_m13(&list->mutex);
+
+	// find thread _id in list
+	printf_m13("\nThread List:\n------------\n");
+	n_entries = list->top_idx + 1;
+	entry = list->entries;
+	for (i = 0; i < n_entries; ++i, ++entry)
+		printf_m13("%d) _id = %lu, _pid = %lu, thread = %lu (as ui8)\n", i, entry->_id, entry->_pid, (ui8) entry->thread);
+	putchar_m13('\n');
+	
+	pthread_mutex_unlock_m13(&list->mutex);
+	
+	return_void_m13;
+}
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
@@ -36755,7 +37134,7 @@ pthread_t_m13	*PROC_thread_for_id_m13(pid_t_m13 _id)
 }
 
 
-void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
+void	PROC_thread_list_add_m13(pthread_t_m13 *thread_p)
 {
 	si4			i, n_entries;
 	pid_t_m13		_id, _pid;
@@ -36767,21 +37146,21 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 	// this typically called by parent so _pid == current thread id
 	// pass NULL to add current thread (self - parent set to zero)
 	
-	if (thread == NULL) {
+	if (thread_p == NULL) {
 		local_thread = pthread_self_m13();
-		thread = &local_thread;
+		thread_p = &local_thread;
 	}
 		
 	#ifdef MACOS_m13
-	pthread_threadid_np(*thread, &_id);
+	pthread_threadid_np(*thread_p, &_id);
 	#endif
 	
 	#ifdef LINUX_m13
-	_id = (pid_t_m13) *thread;
+	_id = (pid_t_m13) *thread_p;
 	#endif
 		
 	#ifdef WINDOWS_m13
-	_id = (pid_t_m13) GetThreadId(*thread);
+	_id = (pid_t_m13) GetThreadId(*thread_p);
 	#endif
 	
 	_pid = gettid_m13();
@@ -36816,7 +37195,7 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 	
 	entry->_id = _id;
 	entry->_pid = _pid;
-	entry->thread = *thread;
+	entry->thread = *thread_p;
 	
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -36825,7 +37204,7 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread)
 }
 
 
-pid_t_m13	PROC_thread_list_parent_m13(pid_t_m13 _id)
+pid_t_m13	PROC_thread_parent_id_m13(pid_t_m13 _id)
 {
 	si4			i;
 	pid_t_m13		_pid;
@@ -36884,8 +37263,14 @@ void	PROC_thread_list_remove_m13(pid_t_m13 _id)
 			break;
 	
 	if (i >= 0) {
+		
 		// reset
+		#ifdef FT_DEBUG_m13  // zeroing everything helpful for debugging
+		entry->_id = entry->_pid = 0;
+		entry->thread = (pthread_t_m13) 0;
+		#else  // only need to do _id for functionality
 		entry->_id = 0;
+		#endif
 		
 		// trim search extents
 		if (entry == list->entries + list->top_idx)
@@ -36900,28 +37285,37 @@ void	PROC_thread_list_remove_m13(pid_t_m13 _id)
 
 tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 {
-	tern			ret_val;
+	tern			r_val;
 	si4			i, finished_jobs;
+	ERR_m13			*err;
 	PROC_THREAD_INFO_m13	*job;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	// returns FALSE_m13 if any of the jobs failed
+	// returns FALSE_m13 if any of the jobs failed, or if any of the jobs set an error
 
-	ret_val = TRUE_m13;
+	err = &globals_m13->error;
+	r_val = TRUE_m13;
 	while (1) {
+		
+		if (err->code) {  // global error set (don't need error mutex - this can wait until set if being set)
+			r_val = FALSE_m13;
+			break;
+		}
+		
 		for (job = jobs, finished_jobs = 0, i = n_jobs; i--; ++job) {
 			if (job->status & PROC_THREAD_FINISHED_m13) {
 				++finished_jobs;
 				if (job->status == PROC_THREAD_FAILED_m13) {
-					ret_val = FALSE_m13;  // job should set causal error
+					r_val = FALSE_m13;  // job should set causal error
 					break;  // to while loop
 				}
 			}
 		}
-		if (finished_jobs == n_jobs || ret_val == FALSE_m13)
+		
+		if (finished_jobs == n_jobs || r_val == FALSE_m13)
 			break;
 		
 		// don't peg this cpu
@@ -36932,7 +37326,7 @@ tern	PROC_wait_jobs_m13(PROC_THREAD_INFO_m13 *jobs, si4 n_jobs)
 	G_pop_behavior_m13();  // set in PROC_distribute_jobs_m13()
 	#endif
 	
-	return_m13(ret_val);
+	return_m13(r_val);
 }
 
 
@@ -37085,7 +37479,7 @@ si4	PRTY_file_compare_m13(const void *a, const void *b)
 }
 
 
-si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files)  // MED_path is MED file or directory
+si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files)  // MED_path is MED file or directory
 {
 	tern	sess_files, ssr_files, chan_files, all_segs;
 	si1	sess_path[PATH_BYTES_m13] = { 0 };
@@ -37255,7 +37649,7 @@ si1	**PRTY_file_list_m13(si1 *MED_path, si4 *n_files)  // MED_path is MED file o
 }
 
 
-ui4	PRTY_flag_for_path_m13(si1 *path)
+ui4	PRTY_flag_for_path_m13(const si1 *path)
 {
 	ui4	type_code, level_code, flag;
 	
@@ -37336,7 +37730,7 @@ ui4	PRTY_flag_for_path_m13(si1 *path)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	PRTY_is_parity_m13(si1 *path)
+tern	PRTY_is_parity_m13(const si1 *path, tern MED_file)
 {
 	si1		name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
 	
@@ -37345,15 +37739,21 @@ tern	PRTY_is_parity_m13(si1 *path)
 #endif
 
 	// returns TRUE_m13 if path is to a MED parity file
+	// MED_file == TRUE_m13: file is MED file
+	// MED_file == FALSE_m13: file is not a MED file
+	// MED_file == UNKNOWN_m13: check if file is a MED file
 	
+	if (MED_file == FALSE_m13)
+		return_m13(FALSE_m13);
 	if (STR_is_empty_m13(path))
 		return_m13(FALSE_m13);
 	    
 	G_path_parts_m13(path, NULL, name, ext);
 	
-	// check MED file
-	if (G_MED_type_code_from_string_m13(ext) == NO_TYPE_CODE_m13)
-		return_m13(FALSE_m13);
+	// check if MED file
+	if (MED_file == UNKNOWN_m13)
+		if (G_MED_type_code_from_string_m13(ext) == NO_TYPE_CODE_m13)
+			return_m13(FALSE_m13);
 	
 	// check name starts with "parity"
 	if (strncmp_m13(name, "parity", 6))
@@ -37363,7 +37763,7 @@ tern	PRTY_is_parity_m13(si1 *path)
 }
 
 
-si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, si1 *file_path, si8 *pcrc_len)
+si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len)
 {
 	tern			vid_data;
 	si8			nr, in_offset, pcrc_offset;
@@ -37659,7 +38059,7 @@ PRTY_REPAIR_EXIT_m13:
 }
 
 
-tern	PRTY_restore_m13(si1 *MED_path)
+tern	PRTY_restore_m13(const si1 *MED_path)
 {
 	tern			success, valid, video_data, unlock_parity, unlock_data;
 	si1			sess_path[PATH_BYTES_m13], sess_name[NAME_BYTES_m13], base_name[SEG_NAME_BYTES_m13];
@@ -37882,7 +38282,7 @@ tern	PRTY_restore_m13(si1 *MED_path)
 }
 
 
-tern	PRTY_show_pcrc_m13(si1 *file_path)
+tern	PRTY_show_pcrc_m13(const si1 *file_path)
 {
 	si8			pcrc_offset;
 	FILE_m13		*fp;
@@ -37916,17 +38316,16 @@ tern	PRTY_show_pcrc_m13(si1 *file_path)
 }
 
 
-tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vararg(fp == FILE *): si1 *path
+tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vararg(fp == FILE *): const si1 *path
 {
-	tern			was_open, extending, prty_fail;
-	ui1			*od, *nd, *pd, *td, *old_data, *new_data, *par_data, *tmp_data;
-	si1			*path, par_path[PATH_BYTES_m13], base_name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
+	tern			is_std, was_open, pcrc_updated, r_val;
+	ui1			*od, *nd, *pd, *old_data, *new_data, *par_data, *tmp_data;
+	const si1		*path;
+	si1			par_path[PATH_BYTES_m13], base_name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
 	ui4			level_code, *crcs;
-	si8			i, j, pcrc_len, pcrc_offset, nrw, crc_bytes;
-	si8			start_block, start_byte, end_block, end_byte, bytes_to_read;
+	si8			i, nrw, bytes_to_read;
 	va_list			v_arg;
 	FILE_m13		*pfp;
-	PRTY_CRC_DATA_m13	pcrc;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37941,13 +38340,14 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	}
 
 	// get vararg
-	if (FILE_is_std_m13(fp) == TRUE_m13) {
+	is_std = FILE_is_std_m13(fp);
+	if (is_std == TRUE_m13) {
 		va_start(v_arg, fp);
-		path = va_arg(v_arg, si1 *);
+		path = va_arg(v_arg, const si1 *);
 		va_end(v_arg);
 		
 		// check if parity file (don't update parity on these)
-		if (PRTY_is_parity_m13(path) == TRUE_m13)
+		if (PRTY_is_parity_m13(path, UNKNOWN_m13) == TRUE_m13)
 			return_m13(FALSE_m13);  // considered failure because shouldn't be called with parity file
 	} else {
 		path = ((FILE_m13 *) fp)->path;
@@ -37988,8 +38388,8 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 			return_m13(FALSE_m13);
 	}
 	
-	// set up for failure
-	prty_fail = TRUE_m13;
+	// set up
+	r_val = FALSE_m13;
 	old_data = NULL;
 	pfp = NULL;
 	crcs = NULL;
@@ -38005,73 +38405,25 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	// read data file
 	fseek_m13(fp, offset, SEEK_SET);
 	bytes_to_read = flen_m13(fp) - offset;
-	if (bytes_to_read >= n_bytes) {
-		extending = FALSE_m13;
-		bytes_to_read = n_bytes;
-	} else {
-		extending = TRUE_m13;  // extending => don't read past end of file
-	}
-	if (bytes_to_read) {
-		nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
-		if (nrw != bytes_to_read)
-			goto PRTY_UPDATE_FAIL_m13;
-	}
+	if (bytes_to_read >= n_bytes)
+		bytes_to_read = n_bytes; // don't read past end of file
+	if (bytes_to_read == 0)
+		return_m13(TRUE_m13);
+	
+	// read in existing data
+	nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
+	if (nrw != bytes_to_read)
+		goto PRTY_UPDATE_FAIL_m13;
 	
 	// update file pcrc data, if exists
-	pcrc_offset = PRTY_pcrc_offset_m13(fp, NULL, &pcrc_len);
-	if (extending == FALSE_m13) {
-		if (pcrc_len) {
+	if (is_std == TRUE_m13)
+		pcrc_updated = PRTY_update_pcrc_m13(ptr, n_bytes, offset, fp, path);
+	else
+		pcrc_updated = PRTY_update_pcrc_m13(ptr, n_bytes, offset, fp);
+	if (pcrc_updated == FALSE_m13)
+		goto PRTY_UPDATE_FAIL_m13;
 
-			// read in pcrc
-			fseek_m13(fp, pcrc_offset, SEEK_SET);
-			nrw = fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
-			if (nrw != 1)
-				goto PRTY_UPDATE_FAIL_m13;
-			crc_bytes = pcrc.n_blocks * sizeof(ui4);
-			crcs = (ui4 *) malloc((size_t) crc_bytes);
-			if (crcs == NULL)
-				goto PRTY_UPDATE_FAIL_m13;
-			fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET);
-			nrw = fread_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, fp);
-			if (nrw != crc_bytes)
-				goto PRTY_UPDATE_FAIL_m13;
-
-			// find where offset falls in pcrc blocks
-			start_block = offset / pcrc.block_bytes;
-			end_block = (offset + n_bytes) / pcrc.block_bytes;
-			
-			// read in data
-			start_byte = start_block * pcrc.block_bytes;
-			end_byte = (end_block + 1) * pcrc.block_bytes;
-			bytes_to_read = end_byte - start_byte;
-			tmp_data = (ui1 *) malloc((size_t) bytes_to_read);
-			if (tmp_data == NULL)
-				goto PRTY_UPDATE_FAIL_m13;
-			fseek_m13(fp, start_byte, SEEK_SET);
-			nrw = fread_m13((void *) tmp_data, sizeof(ui1), (size_t) bytes_to_read, fp);
-			if (nrw != bytes_to_read)
-				goto PRTY_UPDATE_FAIL_m13;
-
-			// replace with old with new data
-			start_byte -= offset;
-			for (i = start_byte, j = 0; j < bytes_to_read; ++i, ++j)
-				tmp_data[i] = new_data[j];
-
-			// update those values in pcrc crc array
-			for (i = start_block, td = tmp_data; i <= end_block; ++i, td += pcrc.block_bytes)
-				crcs[i] = CRC_calculate_m13(td, pcrc.block_bytes);
-			
-			// write out update values
-			fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET);
-			nrw = fwrite_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, fp);
-			if (nrw != crc_bytes)
-				goto PRTY_UPDATE_FAIL_m13;
-		}
-	} else if (pcrc_len) {
-		G_warning_message_m13("%s(): pcrc data not updated for file \"%s\" because write extends file\n", __FUNCTION__, path);
-	}
-	
-	// open parity file
+	// open parity file (needs FILE_m13 for locking & parity flags)
 	pfp = fopen_m13(par_path, "r+");
 	if (pfp == NULL)
 		goto PRTY_UPDATE_FAIL_m13;
@@ -38096,13 +38448,17 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		*pd++ ^= *nd++;  // add new contribution
 	}
 	
+	// update parity file pcrc (before writing new parity)
+	if (PRTY_update_pcrc_m13(par_data, n_bytes, offset, pfp) == FALSE_m13)
+		goto PRTY_UPDATE_FAIL_m13;
+
 	// update parity file
 	fseek_m13(pfp, offset, SEEK_SET);
 	nrw = (si8) fwrite_m13((void *) par_data, sizeof(ui1), (size_t) n_bytes, pfp);
 	if (nrw != n_bytes)
 		goto PRTY_UPDATE_FAIL_m13;
-
-	prty_fail = FALSE_m13;
+	
+	r_val = TRUE_m13;
 	
 PRTY_UPDATE_FAIL_m13:
 	
@@ -38119,21 +38475,165 @@ PRTY_UPDATE_FAIL_m13:
 		fclose_m13(fp);
 	else
 		fseek_m13(fp, offset, SEEK_SET);  // reset to incoming file position
-	// failure
-	if (prty_fail == TRUE_m13) {
-		if (pfp)
-			fclose_m13(pfp);
-		G_set_error_m13(E_GEN_m13, NULL);
-		return_m13(FALSE_m13);
-	}
-	
-	return_m13(TRUE_m13);
+
+	return_m13(r_val);
 }
 
 
-tern  PRTY_validate_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks)
+tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vararg(fp == FILE *): const si1 *path)
 {
-	tern			ret_val, valid, header_valid, body_valid, return_bb, localizing_crcs;
+	tern			r_val, was_open;
+	ui1			*new_data, *tmp_data, *td;
+	const si1		*path;
+	ui4			*crcs;
+	si8			i, j, pcrc_offset, pcrc_len, bytes_remaining, crc_bytes;
+	si8			nrw, start_block, start_byte, end_block, end_byte, bytes_to_read;
+	FILE			*std_fp;
+	PRTY_CRC_DATA_m13	pcrc;
+	va_list			v_arg;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// update pcrc data in file if present
+	// offset presumed to be absolute
+	// returns TRUE_m13 on success or no pcrc data exists
+	// retruns TRUE_m13 with warning pcrc cannot be updated due to function limitation
+	// returns FALSE_m13 on true failure
+	
+	// check fp
+	if (fp == NULL) {
+		G_set_error_m13(E_GEN_m13, "fp is null");
+		return_m13(FALSE_m13);
+	}
+
+	// get vararg
+	if (FILE_is_std_m13(fp) == TRUE_m13) {
+		va_start(v_arg, fp);
+		path = va_arg(v_arg, const si1 *);
+		va_end(v_arg);
+	} else {
+		path = ((FILE_m13 *) fp)->path;
+	}
+	
+	// check path
+	if (STR_is_empty_m13(path) == TRUE_m13) {
+		G_set_error_m13(E_GEN_m13, "path is empty");
+		return_m13(FALSE_m13);
+	}
+	
+	// no pcrc data
+	pcrc_offset = PRTY_pcrc_offset_m13(fp, NULL, &pcrc_len);
+	if (pcrc_len == 0)
+		return_m13(TRUE_m13);
+		
+	// file extension not handled => warn, but do not set error
+	bytes_remaining = flen_m13(fp) - offset;
+	if (bytes_remaining < n_bytes) {
+		G_warning_message_m13("%s(), file extension not currently handled, rebuild pcrc data after files written\n", __FUNCTION__);
+		return_m13(TRUE_m13);
+	}
+
+	// open data file
+	was_open = fisopen_m13(fp);
+	if (was_open == FALSE_m13) {
+		fp = (void *) fopen_m13(path, "r+");
+		if (fp == NULL)
+			return_m13(FALSE_m13);
+	}
+	eprintf_m13("");
+	FILE_show_m13(fp);
+	
+	// set up
+	r_val = FALSE_m13;
+	crcs = NULL;
+	tmp_data = NULL;
+
+	// read in pcrc
+	fseek_m13(fp, pcrc_offset, SEEK_SET);
+	nrw = fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
+	if (nrw != 1)
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	crc_bytes = pcrc.n_blocks * sizeof(ui4);
+	crcs = (ui4 *) malloc((size_t) crc_bytes);
+	if (crcs == NULL)
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	eprintf_m13("before seeking crcs %s", path);
+	if (fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET)) {
+		eprintf_m13("seek crcs failed");
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	}
+	eprintf_m13("seek succeeded; before reading crcs %s", path);
+	nrw = fread_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, fp);
+	if (nrw != crc_bytes) {
+		eprintf_m13("read crcs failed");
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	}
+	eprintf_m13("read crcs succeeded");
+
+	// find where offset falls in pcrc blocks
+	start_block = offset / pcrc.block_bytes;
+	end_block = (offset + n_bytes) / pcrc.block_bytes;
+	
+	// read in affected blocks
+	start_byte = start_block * pcrc.block_bytes;
+	end_byte = (end_block + 1) * pcrc.block_bytes;
+	bytes_to_read = end_byte - start_byte;
+	tmp_data = (ui1 *) malloc((size_t) bytes_to_read);
+	if (tmp_data == NULL)
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	eprintf_m13("before seeking data %s", path);
+	if (fseek_m13(fp, start_byte, SEEK_SET)) {
+		eprintf_m13("seek data failed");
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	}
+	eprintf_m13("seek succeeded; before reading data %s", path);
+	nrw = fread_m13((void *) tmp_data, sizeof(ui1), (size_t) bytes_to_read, fp);
+	if (nrw != bytes_to_read) {
+		eprintf_m13("read data failed");
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	}
+	eprintf_m13("read data succeeded");
+
+	// replace with old with new data
+	start_byte -= offset;
+	new_data = (ui1 *) ptr;
+	for (i = start_byte, j = 0; j < bytes_to_read; ++i, ++j)
+		tmp_data[i] = new_data[j];
+
+	// update those values in pcrc crc array
+	for (i = start_block, td = tmp_data; i <= end_block; ++i, td += pcrc.block_bytes)
+		crcs[i] = CRC_calculate_m13(td, pcrc.block_bytes);
+
+	// write out updated values
+	fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET);
+	std_fp = FILE_std_m13(fp); // get standard fp to avoid recurrence in fwrite_m13()
+	nrw = fwrite_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, std_fp);
+	if (nrw != crc_bytes)
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	
+	r_val = TRUE_m13;
+	
+PRTY_PCRC_UPDATE_FAIL_m13:
+	
+	// clean up
+	if (crcs)
+		free((void *) crcs);
+	if (tmp_data)
+		free((void *) tmp_data);
+	if (was_open == FALSE_m13)
+		fclose_m13(fp);
+	else
+		fseek_m13(fp, offset, SEEK_SET);  // reset to incoming file position
+	
+	return_m13(r_val);
+}
+
+
+tern  PRTY_validate_m13(const si1 *file_path, ...)  // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks)
+{
+	tern			r_val, valid, header_valid, body_valid, return_bb, localizing_crcs;
 	ui1			*bytes, *idx_bytes;
 	si1			idx_path[PATH_BYTES_m13];
 	ui4			n_b, *n_blocks, type_code;
@@ -38163,7 +38663,7 @@ tern  PRTY_validate_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1
 		n_bad_blocks = NULL;
 		if (file_path == NULL) {
 			va_start(v_args, file_path);
-			file_path = va_arg(v_args, si1 *);
+			file_path = va_arg(v_args, const si1 *);
 			bad_blocks = va_arg(v_args, PRTY_BLOCK_m13 **);
 			n_bad_blocks = va_arg(v_args, si4 *);
 			n_blocks = va_arg(v_args, ui4 *);
@@ -38304,8 +38804,8 @@ tern  PRTY_validate_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1
 				offset = idx->file_offset;
 				rh = (REC_HDR_m13 *) (bytes + offset);
 				record_bytes = (idx + 1)->file_offset - offset;  // no discontinuities in record indices
-				ret_val = CRC_validate_m13((ui1 *) rh + REC_HDR_CRC_START_OFFSET_m13, record_bytes - REC_HDR_CRC_START_OFFSET_m13, rh->record_CRC);
-				if (ret_val == FALSE_m13) {
+				r_val = CRC_validate_m13((ui1 *) rh + REC_HDR_CRC_START_OFFSET_m13, record_bytes - REC_HDR_CRC_START_OFFSET_m13, rh->record_CRC);
+				if (r_val == FALSE_m13) {
 					if (return_bb == TRUE_m13) {
 						if (n_bb == bb_size) {
 							bb_size += BAD_BLOCK_INCREMENT;
@@ -38342,8 +38842,8 @@ tern  PRTY_validate_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1
 				offset = REMOVE_DISCONT_m13(idx->file_offset);  // discontinuities possible in time series indices
 				bh = (CMP_FIXED_BH_m13 *) (bytes + offset);
 				block_bytes = REMOVE_DISCONT_m13((idx + 1)->file_offset) - offset;
-				ret_val = CRC_validate_m13((ui1 *) bh + CMP_BLOCK_CRC_START_OFFSET_m13, block_bytes - CMP_BLOCK_CRC_START_OFFSET_m13, bh->block_CRC);
-				if (ret_val == FALSE_m13) {
+				r_val = CRC_validate_m13((ui1 *) bh + CMP_BLOCK_CRC_START_OFFSET_m13, block_bytes - CMP_BLOCK_CRC_START_OFFSET_m13, bh->block_CRC);
+				if (r_val == FALSE_m13) {
 					if (return_bb == TRUE_m13) {
 						if (n_bb == bb_size) {
 							bb_size += BAD_BLOCK_INCREMENT;
@@ -38389,7 +38889,7 @@ PRTY_VALIDATE_EXIT_m13:
 }
 
 
-tern	PRTY_validate_pcrc_m13(si1 *file_path, ...)  // varargs(file_path == NULL): si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
+tern	PRTY_validate_pcrc_m13(const si1 *file_path, ...)  // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
 {
 	tern			return_bb;
 	ui1			*block;
@@ -38416,7 +38916,7 @@ tern	PRTY_validate_pcrc_m13(si1 *file_path, ...)  // varargs(file_path == NULL):
 		n_bad_blocks = NULL;
 		if (file_path == NULL) {
 			va_start(v_args, file_path);
-			file_path = va_arg(v_args, si1 *);
+			file_path = va_arg(v_args, const si1 *);
 			bad_blocks = va_arg(v_args, PRTY_BLOCK_m13 **);
 			n_bad_blocks = va_arg(v_args, si4 *);
 			n_blocks = va_arg(v_args, ui4 *);
@@ -38512,7 +39012,7 @@ tern	PRTY_validate_pcrc_m13(si1 *file_path, ...)  // varargs(file_path == NULL):
 }
 
 
-tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
+tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 {
 	tern			unlock_parity, unlock_data, unlock_files;
 	si1			sess_path[PATH_BYTES_m13];
@@ -38970,7 +39470,7 @@ tern	PRTY_write_m13(si1 *session_path, ui4 flags, si4 segment_number)
 }
 
 
-tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes)
+tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes)
 {
 	tern			vid_data;
 	ui1			*bytes;
@@ -38987,18 +39487,16 @@ tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes)
 	
 	// function expects file to be closed
 	// pass zero for blocks_bytes to use default
-	// if file_path can be any file, typically used for files that have no CRCs such as parity data and video data
+	// file_path can be any file, typically used for files that have no CRCs such as parity data and video data
 	// can be used to enhance localization in any file that has only one crc for the entire body, such as record or time series index files
 	
-	if (G_exists_m13(file_path) != FILE_EXISTS_m13) {
+	if (G_exists_m13(file_path) != TRUE_m13) {  // might be directory
 		G_warning_message_m13("%s(): parity file \"%s\" does not exist\n", __FUNCTION__, file_path);
 		return_m13(FALSE_m13);
 	}
 
 	// open file
 	fp = fopen_m13(file_path, "r+");
-	if (PRTY_is_parity_m13(file_path) == TRUE_m13)  // check if parity file
-		fp->flags |= FILE_FLAGS_PARITY_m13;
 	len = PRTY_pcrc_offset_m13(fp, NULL, NULL);
 	
 	vid_data = G_video_data_m13(fp->path);  // preserve video universal header
@@ -39053,7 +39551,7 @@ tern	PRTY_write_pcrc_m13(si1 *file_path, ui4 block_bytes)
 // MARK: RUNTIME CONFIGURATION FUNCTIONS  (RC)
 //********************************************//
 
-si4	RC_read_field_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, tern *TERN_val)
+si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, tern *TERN_val)
 {
 	tern  option_selected, free_field_value_str, local_TERN_val, options_only;
 	si1 *c, tmp_str[256], *temp_si1_ptr, *field_title_ptr;
@@ -39321,7 +39819,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 }
 
 
-si4	RC_read_field_2_m13(si1 *field_name, si1 **buffer, tern update_buffer_ptr, void *val, si4 val_type, ...)  // vararg (val_type == RC_UNKNOWN_m13): si4 *returned_val_type
+si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, void *val, si4 val_type, ...)  // vararg (val_type == RC_UNKNOWN_m13): si4 *returned_val_type
 {
 	tern	*tern_val, option_selected, options_only;
 	si1	*str_val, *c, tmp_str[RC_STRING_BYTES_m13], *temp_si1_ptr, *field_title_ptr, local_str_val[RC_STRING_BYTES_m13];
@@ -39858,11 +40356,12 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 // MARK: STRING FUNCTIONS  (STR)
 //******************************//
 
-si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator, tern numeric_order)
+si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_separator, tern numeric_order)
 {
-	ui1	*num, mask;
-	si1	*c, *c2;
-	si4	str_len, sep_len, byte_bits;
+	ui1		*num, mask;
+	const si1	*cc;
+	si1		*c;
+	si4		str_len, sep_len, byte_bits;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -39876,8 +40375,8 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator,
 	// otherwise they will be displayed as they appear in memory (from low->high addresses & bit positions)
 
 	if (STR_is_empty_m13(byte_separator) == FALSE_m13) {
-		for (c = byte_separator - 1; *++c;);
-		sep_len = (c - byte_separator);
+		for (cc = byte_separator - 1; *++cc;);
+		sep_len = (cc - byte_separator);
 	} else {
 		sep_len = 0;
 	}
@@ -39900,7 +40399,7 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator,
 					*c++ = '0';
 			}
 			if (sep_len && num_bytes)
-				for (c2 = byte_separator; *c2; *c++ = *c2++);
+				for (cc = byte_separator; *cc; *c++ = *cc++);
 		}
 	} else {
 		num = (ui1 *) num_ptr;
@@ -39913,7 +40412,7 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, si1 *byte_separator,
 					*c++ = '0';
 			}
 			if (sep_len && num_bytes)
-				for (c2 = byte_separator; *c2; *c++ = *c2++);
+				for (cc = byte_separator; *cc; *c++ = *cc++);
 		}
 	}
 	*c = 0;
@@ -39941,10 +40440,11 @@ const si1	*STR_bool_m13(ui8 val)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-wchar_t	*STR_char2wchar_m13(wchar_t *target, si1 *source)
+wchar_t	*STR_char2wchar_m13(wchar_t *target, const si1 *source)
 {
-	si1	*c, *c2, *tmp_source = NULL;
-	si8	len, wsz;
+	const si1	*cc, *tmp_source = NULL;
+	si1		*c;
+	si8		len, wsz;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -39956,18 +40456,18 @@ wchar_t	*STR_char2wchar_m13(wchar_t *target, si1 *source)
 	
 	wsz = sizeof(wchar_t);  // 2 or 4 => varies by OS & compiler
 	c = (si1 *) target - wsz;
-	len = strlen(source);
+	len = strlen(source) + 1;
 	if ((void *) source == (void *) target) {
-		tmp_source = (si1 *) malloc((size_t) len + 1);
-		memcpy((void *) tmp_source, (void *)  source, (size_t)len + 1);
-		c2 = tmp_source;
+		tmp_source = (const si1 *) malloc((size_t) len);
+		memcpy((void *) tmp_source, (void *) source, (size_t) len);
+		cc = tmp_source;
 	} else {
-		c2 = source;
+		cc = source;
 	}
-	memset((void *) target, 0, wsz * (len + 1));
+	memset((void *) target, 0, wsz * len);
 	
-	while (len--)
-		*(c += wsz) = *c2++;  // little endian version
+	while (--len)
+		*(c += wsz) = *cc++;  // little endian version
 	
 	if (tmp_source)
 		free((void *) tmp_source);
@@ -39976,10 +40476,10 @@ wchar_t	*STR_char2wchar_m13(wchar_t *target, si1 *source)
 }
 
 
-ui4 STR_check_spaces_m13(si1 *string)
+ui4	STR_check_spaces_m13(const si1 *string)
 {
-	ui4 spaces;
-	si1 *c;
+	ui4	spaces;
+	const si1	*c;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40335,12 +40835,13 @@ si1	*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number)
 }
 
 
-si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, tern numeric_order)
+si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separator, tern numeric_order)
 {
-	tern	caps;
-	ui1	*byte;
-	si4	sep_len, str_len;
-	si1	*c, *c2;
+	tern		caps;
+	ui1		*byte;
+	si4		sep_len, str_len;
+	const si1	*cc;
+	si1		*c;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40355,8 +40856,8 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, te
 	// otherwise bytes will be displayed as they appear in memory (from low->high addresses)
 
 	if (STR_is_empty_m13(byte_separator) == FALSE_m13) {
-		for (c = byte_separator - 1; *++c;);
-		sep_len = (c - byte_separator);
+		for (cc = byte_separator - 1; *++cc;);
+		sep_len = (cc - byte_separator);
 	} else {
 		sep_len = 0;
 	}
@@ -40385,7 +40886,7 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, te
 				sprintf(c, "%02hhx", *byte);
 			c += 2;
 			if (sep_len && num_bytes)
-				for (c2 = byte_separator; *c2; *c++ = *c2++);
+				for (cc = byte_separator; *cc; *c++ = *cc++);
 		}
 	} else {
 		byte = (ui1 *) num_ptr;
@@ -40396,7 +40897,7 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, si1 *byte_separator, te
 				sprintf(c, "%02hhx", *byte);
 			c += 2;
 			if (sep_len && num_bytes)
-				for (c2 = byte_separator; *c2; *c++ = *c2++);
+				for (cc = byte_separator; *cc; *c++ = *cc++);
 		}
 	}
 	*c = 0;
@@ -40420,10 +40921,10 @@ tern	STR_is_empty_m13(const si1 *string)
 }
 
 
-si1	*STR_match_end_m13(si1 *pattern, si1 *buffer)
+si1	*STR_match_end_m13(const si1 *pattern, const si1 *buffer)
 {
-	si1	*pat_p, *buf_p;
-	si4	pat_len, buf_len;
+	const si1	*pat_p, *buf_p;
+	si4		pat_len, buf_len;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40441,17 +40942,17 @@ si1	*STR_match_end_m13(si1 *pattern, si1 *buffer)
 		buf_p = buffer++;
 		while (*buf_p++ == *pat_p++)
 			if (!*pat_p)
-				return_m13(buf_p);
+				return_m13((si1 *) buf_p);
 	} while (*buf_p);
 	
 	return_m13(NULL);
 }
 
 
-si1	*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
+si1	*STR_match_end_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len)
 {
-	si1	*pat_p, *buf_p, *buf_end;
-	si8	pat_len;
+	const si1	*pat_p, *buf_p, *buf_end;
+	si8		pat_len;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40471,10 +40972,10 @@ si1	*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
 		buf_p = buffer++;
 		while (*buf_p++ == *pat_p++)
 			if (!*pat_p)
-				return_m13(buf_p);
+				return_m13((si1 *) buf_p);
 		if (!*pat_p) {
 			if (buf_p <= buf_end)
-				return_m13(buf_p);
+				return_m13((si1 *) buf_p);
 			return_m13(NULL);
 		}
 	} while (buffer < buf_end);
@@ -40483,34 +40984,36 @@ si1	*STR_match_end_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
 }
 
 
-si1	*STR_match_line_end_m13(si1 *pattern, si1 *buffer)
+si1	*STR_match_line_end_m13(const si1 *pattern, const si1 *buffer)
 {
+	si1	*buf_p;
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to beginning of the line following the line with first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
 	
-	buffer = STR_match_end_m13(pattern, buffer);
-	if (buffer == NULL)
+	buf_p = STR_match_end_m13(pattern, buffer);
+	if (buf_p == NULL)
 		return_m13(NULL);
 	
-	while (*buffer != '\n' && *buffer != '\r' && *buffer != 0)
-		++buffer;
-	if (*buffer == 0)
+	while (*buf_p != '\n' && *buf_p != '\r' && *buf_p != 0)
+		++buf_p;
+	if (*buf_p == 0)
 		return_m13(NULL);
 	
-	while (*buffer == '\n' || *buffer != '\r')
-		++buffer;
+	while (*buf_p == '\n' || *buf_p != '\r')
+		++buf_p;
 	
-	if (*buffer == 0)
+	if (*buf_p == 0)
 		return_m13(NULL);
 	
-	return_m13(buffer);
+	return_m13(buf_p);
 }
 
 
-si1	*STR_match_line_start_m13(si1 *pattern, si1 *buffer)
+si1	*STR_match_line_start_m13(const si1 *pattern, const si1 *buffer)
 {
 	si1	*buf_p;
 	
@@ -40528,16 +41031,16 @@ si1	*STR_match_line_start_m13(si1 *pattern, si1 *buffer)
 		--buf_p;
 	
 	if (buf_p == buffer)
-		return_m13(buffer);
+		return_m13(buf_p);
 	
 	return_m13(++buf_p);
 }
 
 
-si1	*STR_match_start_m13(si1 *pattern, si1 *buffer)
+si1	*STR_match_start_m13(const si1 *pattern, const si1 *buffer)
 {
-	si1	*pat_p, *buf_p;
-	si4	pat_len, buf_len;
+	const si1	*pat_p, *buf_p;
+	si4		pat_len, buf_len;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40555,17 +41058,17 @@ si1	*STR_match_start_m13(si1 *pattern, si1 *buffer)
 		buf_p = buffer++;
 		while (*buf_p++ == *pat_p++)
 		if (!*pat_p)
-			return_m13(--buffer);
+			return_m13((si1 *) --buffer);
 	} while (*buf_p);
 	
 	return_m13(NULL);
 }
 
 
-si1	*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
+si1	*STR_match_start_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len)
 {
-	si1	*pat_p, *buf_p, *buf_end;
-	si8	pat_len;
+	const si1	*pat_p, *buf_p, *buf_end;
+	si8		pat_len;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40585,13 +41088,13 @@ si1	*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
 		buf_p = buffer++;
 		while (*buf_p++ == *pat_p++) {
 			if (!*pat_p)
-				return_m13(--buffer);
+				return_m13((si1 *) --buffer);
 			if (buf_p == buf_end)
 				return_m13(NULL);
 		}
 		if (!*pat_p) {
 			if (buf_p <= buf_end)
-				return_m13(--buffer);
+				return_m13((si1 *) --buffer);
 			return_m13(NULL);
 		}
 	} while (buffer < buf_end);
@@ -40600,40 +41103,47 @@ si1	*STR_match_start_bin_m13(si1 *pattern, si1 *buffer, si8 buf_len)
 }
 
 
-si1	*STR_re_escape_m13(si1 *str, si1 *esc_str)
+si1	*STR_re_escape_m13(const si1 *str, si1 *esc_str)
 {
-	si8 len;
-	si1 *c1, *c2;
+	const si1	*cc;
+	si1		*c;
+	si8		len;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	c1 = str;
-	while (*c1++);
-	len = c1 - str;
+	cc = str;
+	while (*cc++);
+	len = cc - str;
 	if (esc_str == NULL)  // up to caller to free
 		esc_str = (si1 *) calloc((size_t) (len * 2), sizeof(si1));
 	strcpy(esc_str, str);
-	c1 = esc_str;
-	c2 = str - 1;
-	while (*++c2) {
-		switch (*c2) {
+	c = esc_str;
+	cc = str - 1;
+	while (*++cc) {
+		switch (*cc) {
 			case '\n':
-				*c1++ = '\\'; *c1++ = 'n'; break;
+				*c++ = '\\'; *c++ = 'n';
+				break;
 			case '\r':
-				*c1++ = '\\'; *c1++ = 'r'; break;
+				*c++ = '\\'; *c++ = 'r';
+				break;
 			case '\t':
-				*c1++ = '\\'; *c1++ = 't'; break;
+				*c++ = '\\'; *c++ = 't';
+				break;
 			case '\7':
-				*c1++ = '\\'; *c1++ = '7'; break;
+				*c++ = '\\'; *c++ = '7';
+				break;
 			case '\\':
-				*c1++ = '\\'; *c1++ = '\\'; break;
+				*c++ = '\\'; *c++ = '\\';
+				break;
 			default:
-				*c1++ = *c2; break;
+				*c++ = *cc;
+				break;
 		}
 	}
-	*c1 = 0;
+	*c = 0;
 	
 	return_m13(esc_str);
 }
@@ -40663,12 +41173,13 @@ tern	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer)
 }
 
 
-si1	*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *new_buffer)
+si1	*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, const si1 *buffer, si1 *new_buffer)
 {
-	tern	in_place = FALSE_m13;
-	si1	*c, *last_c, *new_c, *c2;
-	si4	char_diff, extra_chars, matches;
-	si8	len, pat_len, new_pat_len;
+	tern		in_place = FALSE_m13;
+	const si1	*cc, *cc2, *last_c;
+	si1		*new_c;
+	si4		char_diff, extra_chars, matches;
+	si8		len, pat_len, new_pat_len;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40687,15 +41198,15 @@ si1	*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *n
 	char_diff = new_pat_len - pat_len;
 	
 	matches = 0;
-	c = buffer;
+	cc = buffer;
 	while (1) {
-		c = STR_match_end_m13(pattern, c);
-		if (c == NULL)
+		cc = (const si1 *) STR_match_end_m13(pattern, cc);
+		if (cc == NULL)
 			break;
 		++matches;
 	}
 	if (!matches)
-		return_m13(buffer);
+		return_m13((si1 *) buffer);
 	
 	extra_chars = matches * char_diff;
 	len = strlen(buffer) + extra_chars + 1;  // extra byte for terminal zero
@@ -40707,19 +41218,19 @@ si1	*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *n
 		new_buffer = (si1 *) calloc_m13((size_t)len, sizeof(ui1));
 	strcpy(new_buffer, buffer);
 	
-	last_c = c = buffer;
+	last_c = cc = buffer;
 	new_c = new_buffer;
 	extra_chars = 0;
 	while (1) {
-		c = STR_match_start_m13(pattern, c);
-		if (c == NULL)
+		cc = (const si1 *) STR_match_start_m13(pattern, cc);
+		if (cc == NULL)
 			break;
-		while (last_c < c)
+		while (last_c < cc)
 			*new_c++ = *last_c++;
-		c2 = new_pattern;
-		while (*c2)
-			*new_c++ = *c2++;
-		last_c = (c += pat_len);
+		cc2 = new_pattern;
+		while (*cc2)
+			*new_c++ = *cc2++;
+		last_c = (cc += pat_len);
 	}
 	while (*last_c)
 		*new_c++ = *last_c++;
@@ -40728,7 +41239,7 @@ si1	*STR_replace_pattern_m13(si1 *pattern, si1 *new_pattern, si1 *buffer, si1 *n
 	if (in_place == TRUE_m13) {
 		memcpy((void *) buffer, (void *) new_buffer, (size_t) len);
 		free_m13((void *) new_buffer);
-		new_buffer = buffer;
+		new_buffer = (si1 *) buffer;
 	}
 
 	return_m13(new_buffer);
@@ -40815,22 +41326,27 @@ const si1	*STR_tern_m13(tern val, tern colored)
 
 	// colored == TRUE_m13: true in red, false in blue, unknown in green, invalid in yellow
 	
+	if (colored == TRUE_m13) {
+		switch(val) {
+			case 1:
+				return_m13(TC_BLUE_m13 "true" TC_RESET_m13);
+			case -1:
+				return_m13(TC_RED_m13 "false" TC_RESET_m13);
+			case 0:
+				return_m13(TC_GREEN_m13 "not set / unknown" TC_RESET_m13);
+			default:
+				return_m13(TC_YELLOW_m13 "invalid" TC_RESET_m13);
+		}
+	}
+
 	switch(val) {
 		case 1:
-			if (colored == TRUE_m13)
-				return_m13(TC_RED_m13 "true" TC_RESET_m13);
 			return_m13("true");
 		case -1:
-			if (colored == TRUE_m13)
-				return_m13(TC_BLUE_m13 "false" TC_RESET_m13);
 			return_m13("false");
 		case 0:
-			if (colored == TRUE_m13)
-				return_m13(TC_GREEN_m13 "not set / unknown" TC_RESET_m13);
 			return_m13("not set / unknown");
 		default:
-			if (colored == TRUE_m13)
-				return_m13(TC_YELLOW_m13 "invalid" TC_RESET_m13);
 			return_m13("invalid");
 	}
 }
@@ -40852,7 +41368,7 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 	va_list 		arg_p;
 	struct tm 		ti;
 	LOCATION_INFO_m13	loc_info = {0};
-	PROC_GLOBS_m13		*proc_globs;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40867,7 +41383,7 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 			return_m13(NULL);
 	}
 	
-	proc_globs = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(lh);
 	switch (uutc) {
 		case UUTC_NO_ENTRY_m13:
 			strcpy(time_str, "no entry");
@@ -40880,31 +41396,31 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 			return_m13(time_str);
 		case CURRENT_TIME_m13:
 			uutc = G_current_uutc_m13();
-			if (proc_globs->time_constants.set == FALSE_m13)  // set global time constants to location of machine
+			if (pg->time_constants.set == FALSE_m13)  // set global time constants to location of machine
 				if (G_location_info_m13(&loc_info, NULL, NULL, TRUE_m13, FALSE_m13) == FALSE_m13)
 					G_warning_message_m13("%s(): daylight change data not available\n", __FUNCTION__);
 			break;
 	}
 	
-	if (proc_globs->time_constants.RTO_known == FALSE_m13) {  // FALSE_m13 used to mean unknown and relevant.
+	if (pg->time_constants.RTO_known == FALSE_m13) {  // FALSE_m13 used to mean unknown and relevant.
 		relative_days = offset = TRUE_m13;  // force relative days if using oUTC - nobody needs to know the 1970 date
 	} else {  // use UNKNOWN_m13 (0) for cases in which recording time offset is irrelevant (e.g. times not associated with MED files)
-		test_time = uutc - proc_globs->time_constants.recording_time_offset;
+		test_time = uutc - pg->time_constants.recording_time_offset;
 		if (test_time < 0)  // time is offset
-			uutc += proc_globs->time_constants.recording_time_offset;
+			uutc += pg->time_constants.recording_time_offset;
 		offset = FALSE_m13;
 	}
 	DST_offset = G_DST_offset_m13(uutc);
 	
-	standard_timezone_acronym = proc_globs->time_constants.standard_timezone_acronym;
-	standard_timezone_string = proc_globs->time_constants.standard_timezone_string;
+	standard_timezone_acronym = pg->time_constants.standard_timezone_acronym;
+	standard_timezone_string = pg->time_constants.standard_timezone_string;
 	if (offset == FALSE_m13) {
 		if (strncmp_m13(standard_timezone_string, "offset", 6) == 0) {
 			standard_timezone_acronym = "UTC";
 			standard_timezone_string = "Coordinated Universal Time";
 		}
 	}
-	local_time = (si8) (uutc / (si8) 1000000) + (si8) (proc_globs->time_constants.standard_UTC_offset + DST_offset);
+	local_time = (si8) (uutc / (si8) 1000000) + (si8) (pg->time_constants.standard_UTC_offset + DST_offset);
 	microseconds = (si4) (uutc % (si8) 1000000);
 #if defined MACOS_m13 || defined LINUX_m13
 	gmtime_r(&local_time, &ti);
@@ -40924,21 +41440,21 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 		date_color = time_color = color_reset = "";
 	}
 	if (relative_days == TRUE_m13) {
-		uutc -= proc_globs->time_constants.recording_time_offset;
+		uutc -= pg->time_constants.recording_time_offset;
 		day_num = (si4)(uutc / TWENTY_FOURS_HOURS_m13) + 1;
 	}
 	
 	if (fixed_width == TRUE_m13) {
-		UTC_offset_hours = (sf8)(DST_offset + proc_globs->time_constants.standard_UTC_offset) / (sf8)3600.0;
+		UTC_offset_hours = (sf8)(DST_offset + pg->time_constants.standard_UTC_offset) / (sf8)3600.0;
 		if (relative_days == TRUE_m13)
 			sprintf_m13(time_str, "%sDay %04d  %s%02d:%02d:%02d.%06d", date_color, day_num, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
 		else
 			sprintf_m13(time_str, "%s%s %02d %s %d  %s%02d:%02d:%02d.%06d", date_color, wdays[ti.tm_wday], ti.tm_mday, mos[ti.tm_mon], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, microseconds);
 		if (DST_offset) {
 			if (UTC_offset_hours >= 0.0)
-				sprintf_m13(time_str, "%s %s (UTC +%0.2lf)%s", time_str, proc_globs->time_constants.daylight_timezone_acronym, UTC_offset_hours, color_reset);
+				sprintf_m13(time_str, "%s %s (UTC +%0.2lf)%s", time_str, pg->time_constants.daylight_timezone_acronym, UTC_offset_hours, color_reset);
 			else
-				sprintf_m13(time_str, "%s %s (UTC %0.2lf)%s", time_str, proc_globs->time_constants.daylight_timezone_acronym, UTC_offset_hours, color_reset);
+				sprintf_m13(time_str, "%s %s (UTC %0.2lf)%s", time_str, pg->time_constants.daylight_timezone_acronym, UTC_offset_hours, color_reset);
 		} else {
 			if (offset == TRUE_m13)  // no UTC offset displayed
 				sprintf_m13(time_str, "%s %s%s", time_str, standard_timezone_acronym, color_reset);
@@ -40964,7 +41480,7 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 		else
 			sprintf_m13(time_str, "%s%s, %s %d%s, %d  %s%d:%02d:%02d %s,", date_color, weekdays[ti.tm_wday], months[ti.tm_mon], ti.tm_mday, mday_num_sufs[ti.tm_mday], ti.tm_year, time_color, ti.tm_hour, ti.tm_min, ti.tm_sec, meridian);
 		if (DST_offset)
-			sprintf_m13(time_str, "%s %s%s", time_str, proc_globs->time_constants.daylight_timezone_string, color_reset);
+			sprintf_m13(time_str, "%s %s%s", time_str, pg->time_constants.daylight_timezone_string, color_reset);
 		else
 				sprintf_m13(time_str, "%s %s%s", time_str, standard_timezone_string, color_reset);
 	}
@@ -41137,7 +41653,7 @@ tern	STR_unescape_chars_m13(si1 *string, si1 target_char)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si1	*STR_wchar2char_m13(si1 *target, wchar_t *source)
+si1	*STR_wchar2char_m13(si1 *target, const wchar_t *source)
 {
 	si1	*c, *c2;
 	si8	len, wsz;
@@ -41167,7 +41683,7 @@ si1	*STR_wchar2char_m13(si1 *target, wchar_t *source)
 // MARK: TRANSMISSION FUNCTIONS  (TR)
 //***********************************//
 
-TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, si1 *password)
+TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, const si1 *password)
 {
 	TR_INFO_m13	*trans_info;
 	TR_HDR_m13	*header;
@@ -41294,7 +41810,7 @@ tern	TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port)
 }
 
 
-tern	TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, si1 *message_text)
+tern	TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, const si1 *message_text)
 {
 	si4	encrpyption_blocks;
 
@@ -41397,11 +41913,11 @@ tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)
 }
 
 
-tern	TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port)
+tern	TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port)
 {
 	tern		blocking, connected;
 	si2			sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
-	si4			sock_fd, err, ret_val, timeout_ms;
+	si4			sock_fd, err, r_val, timeout_ms;
 	struct sockaddr_in	sock_addr = { 0 };
 #if defined MACOS_m13 || defined LINUX_m13
 	struct pollfd		fds;
@@ -41452,8 +41968,8 @@ tern	TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port)
 	// try to connect
 	connected = TRUE_m13;
 	errno_reset_m13();
-	ret_val = connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in));
-	if (ret_val == -1) {
+	r_val = connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in));
+	if (r_val == -1) {
 		err = errno_m13();
 		// see if just not connected yet
 		if (errno == EINPROGRESS) {
@@ -41474,22 +41990,22 @@ tern	TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port)
 			fds.events = POLLOUT;
 			errno_reset_m13();
 #if defined MACOS_m13 || defined LINUX_m13
-			ret_val = poll(&fds, (nfds_t) 1, timeout_ms);
+			r_val = poll(&fds, (nfds_t) 1, timeout_ms);
 #endif
 #ifdef WINDOWS_m13
-			ret_val = WSAPoll(&fds, (ULONG) 1, timeout_ms);
+			r_val = WSAPoll(&fds, (ULONG) 1, timeout_ms);
 #endif
-			if (ret_val == -1) {
+			if (r_val == -1) {
 				err = errno_m13();
-			} else if (ret_val == 0) {
+			} else if (r_val == 0) {
 				err = ETIMEDOUT;  // timed out
-				ret_val = -1;
+				r_val = -1;
 			} else if (fds.revents != POLLOUT) {
 				err = EACCES;  // socket not writable
-				ret_val = -1;
+				r_val = -1;
 			}
 		}
-		if (ret_val == -1) {
+		if (r_val == -1) {
 			connected = FALSE_m13;
 			G_warning_message_m13("%s(): socket connect error: #%d: %s\n", __FUNCTION__, err, strerror(err));
 			TR_close_transmission_m13(trans_info);
@@ -41504,7 +42020,7 @@ tern	TR_connect_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port)
 }
 
 
-tern	TR_connect_to_server_m13(TR_INFO_m13 *trans_info, si1 *dest_addr, ui2 dest_port)
+tern	TR_connect_to_server_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -41622,7 +42138,7 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 	ui4		ID_code;
 	si4		sock_fd, attempts, err;
 	sf4		curr_timeout;
-	si8		data_bytes, data_bytes_received, ret_val, packet_bytes_remaining;
+	si8		data_bytes, data_bytes_received, r_val, packet_bytes_remaining;
 	TR_HDR_m13	*header, *pkt_header, *ack_header, saved_data;
 	TR_INFO_m13	*ack_trans_info;
 
@@ -41660,14 +42176,14 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 			
 		// recv
 		errno_reset_m13();
-		ret_val = recv(sock_fd, (void *) pkt_header, max_pkt_bytes, 0);
+		r_val = recv(sock_fd, (void *) pkt_header, max_pkt_bytes, 0);
 				
 		// receive checks
-		if (ret_val < TR_HDR_BYTES_m13 && data_bytes_received == 0) {
-			if (ret_val == 0) {
+		if (r_val < TR_HDR_BYTES_m13 && data_bytes_received == 0) {
+			if (r_val == 0) {
 				data_bytes_received = TR_E_SOCK_CLOSED_m13;
 				G_warning_message_m13("%s(%s:%hu <- %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror_m13(data_bytes_received));
-			} else if (ret_val < 0) {
+			} else if (r_val < 0) {
 				err = errno_m13();
 				if (TR_set_socket_blocking_m13(trans_info, UNKNOWN_m13) == FALSE_m13)
 					if (err == EAGAIN || err == EWOULDBLOCK)  // no data available on non-blocking socket (on most OS implementations these are the same number)
@@ -41681,7 +42197,7 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 				}
 			} else {
 				data_bytes_received = TR_E_GEN_m13;
-				G_warning_message_m13("%s(%s:%hu <- %s:%hu): receive too small for header (%ld bytes)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, ret_val);
+				G_warning_message_m13("%s(%s:%hu <- %s:%hu): receive too small for header (%ld bytes)\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, r_val);
 			}
 			goto TR_RECV_FAIL_m13;
 		}
@@ -41712,19 +42228,19 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 			}
 		}
 
-		if (ret_val < (si8) pkt_header->packet_bytes) {
+		if (r_val < (si8) pkt_header->packet_bytes) {
 			// first try to receive rest of packet (shouldn't happen often: inet mss chosen to avoid this)
 			partial_pkt = (ui1 *) pkt_header;
-			packet_bytes_remaining = (si8) pkt_header->packet_bytes - ret_val;
+			packet_bytes_remaining = (si8) pkt_header->packet_bytes - r_val;
 			curr_timeout = trans_info->timeout;
 			trans_info->timeout = (sf4) 2.0;  // wait no more than 2 seconds for subsequent sends
 			TR_set_socket_timeout_m13(trans_info);
 			attempts = 0; do {
-				partial_pkt += ret_val;
-				ret_val = recv(sock_fd, (void *) partial_pkt, max_pkt_bytes, 0);
-				if (ret_val <= 0)
+				partial_pkt += r_val;
+				r_val = recv(sock_fd, (void *) partial_pkt, max_pkt_bytes, 0);
+				if (r_val <= 0)
 					break;
-				packet_bytes_remaining -= ret_val;
+				packet_bytes_remaining -= r_val;
 			} while (packet_bytes_remaining > 0 && attempts++ < 3);
 			trans_info->timeout = curr_timeout;  // reset timeout
 			TR_set_socket_timeout_m13(trans_info);
@@ -41833,7 +42349,7 @@ TR_RECV_FAIL_m13:
 }
 
 
-tern	TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, si1 *fmt, ...)
+tern	TR_send_message_m13(TR_INFO_m13 *trans_info, ui1 type, tern encrypt, const si1 *fmt, ...)
 {
 	si1			*message_text;
 	si8			bytes_sent;
@@ -41888,7 +42404,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	ui2		data_bytes, packet_bytes;
 	ui4		ID_code;
 	si4		sock_fd, attempts, err;
-	si8		ret_val, data_bytes_sent, data_bytes_remaining, bytes_received, actual_data_bytes;
+	si8		r_val, data_bytes_sent, data_bytes_remaining, bytes_received, actual_data_bytes;
 	TR_HDR_m13	*header, *pkt_header, *ack_header, saved_data;
 	TR_INFO_m13	*ack_trans_info;
 	
@@ -41996,9 +42512,9 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 		// send
 	TR_SEND_RETRANSMIT_m13:
 		errno_reset_m13();
-		ret_val = send(sock_fd, (void *) pkt_header, packet_bytes, 0);
-		if (ret_val <= 0) {
-			if (ret_val == 0) {
+		r_val = send(sock_fd, (void *) pkt_header, packet_bytes, 0);
+		if (r_val <= 0) {
+			if (r_val == 0) {
 				data_bytes_sent = TR_E_SOCK_CLOSED_m13;
 				G_warning_message_m13("%s(%s:%hu -> %s:%hu): %s\n", __FUNCTION__, trans_info->iface_addr, trans_info->iface_port, trans_info->dest_addr, trans_info->dest_port, TR_strerror_m13(data_bytes_sent));
 			} else {
@@ -42009,7 +42525,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 			header->flags |= TR_FLAGS_CLOSE_m13;
 			goto TR_SEND_FAIL_m13;
 		}
-		if (ret_val != (si8) packet_bytes) {
+		if (r_val != (si8) packet_bytes) {
 			G_warning_message_m13("%s(): packet size error\n", __FUNCTION__);
 			header->flags |= TR_FLAGS_CLOSE_m13;
 			data_bytes_sent = TR_E_TRANS_FAILED_m13;
@@ -43290,7 +43806,7 @@ si4	WN_system_m13(const si1 *command)  // Windows has a system() function which 
 	
 	si1			*tmp_command;
 	si1			*cmd_exe_path;
-	si4			ret_val;
+	si4			r_val;
 	si8			len;
 	PROCESS_INFORMATION	process_info = {0};
 	STARTUPINFOA		startup_info = {0};
@@ -43325,14 +43841,14 @@ si4	WN_system_m13(const si1 *command)  // Windows has a system() function which 
 
 	if (CreateProcessA(cmd_exe_path, tmp_command, NULL, NULL, 0, CREATE_NO_WINDOW, NULL, NULL, &startup_info, &process_info)) {
 		WaitForSingleObject(process_info.hProcess, INFINITE);
-		GetExitCodeProcess(process_info.hProcess, &ret_val);
+		GetExitCodeProcess(process_info.hProcess, &r_val);
 		CloseHandle(process_info.hProcess);
 		CloseHandle(process_info.hThread);
 	}
 	
 	free((void *) tmp_command);
 	
-	return_m13(ret_val);
+	return_m13(r_val);
 #endif
 	
 	return(FALSE_m13);
@@ -43533,17 +44049,17 @@ inline
 #endif
 si4  asprintf_m13(si1 **target, const si1 *fmt, ...)
 {
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 
 	// Note: this function returns a system allocated string whose ownership is transfered to the caller
 	// if using AT_DEBUG functions, this memory is not entered into the allocation list, and should be freed with free(), not free_m13()
 	
 	va_start(v_args, fmt);
-	ret_val = vasprintf_m13(target, fmt, v_args);
+	r_val = vasprintf_m13(target, fmt, v_args);
 	va_end(v_args);
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -43682,7 +44198,7 @@ inline
 tern	cp_m13(const si1 *path, const si1 *new_path)
 {
 	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
-	si4	fe, ret_val;
+	si4	fe, r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -43706,8 +44222,8 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "copy \\/y \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-		if (ret_val) {
+		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
@@ -43718,8 +44234,8 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "xcopy \\/s \\/e \\/y \\/c \\/q \"%s\" \"%s\"", path, new_path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-		if (ret_val) {
+		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
@@ -43797,23 +44313,45 @@ void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 #else
 	behavior = G_current_behavior_m13();
 #endif
-		
-
-	// hold other exiting threads here
-	pthread_mutex_lock_m13(&globals_m13->error.exit_mutex);
+	
+	isem_own_m13(&globals_m13->error.isem, TRUE_m13);  // hold non-owners here
+	
+	// reset default signal handlers (? exit() sends signals to threads - infinite loop)
+//#ifdef FT_DEBUG_m13
+//	signal(SIGABRT, SIG_DFL);  // Abnormal termination
+//	signal(SIGFPE, SIG_DFL);  // Floating point exception
+//	signal(SIGILL, SIG_DFL);  // Illegal instruction
+//	signal(SIGINT, SIG_DFL);  // Ctrl-C interrupt (often caught on Windows before gets here [b/c == "Copy"])
+//	signal(SIGSEGV, SIG_DFL);  // Segmentation violation
+//	signal(SIGTERM, SIG_DFL);  // Terminate
+//	#if defined MACOS_m13 || defined LINUX_m13  // supported on Unix-like OS's
+//		signal(SIGBUS, SIG_DFL);  // Bus error
+//		signal(SIGQUIT, SIG_DFL);  // Quit
+//		signal(SIGSYS, SIG_DFL);  // System Call error
+//		signal(SIGTRAP, SIG_DFL);  // Trace Trap (unhandled exception, or debugger breakpoint)
+//		signal(SIGXCPU, SIG_DFL);  // CPU time limit
+//		signal(SIGXFSZ, SIG_DFL);  // File size limit
+//	#endif
+//#endif
 
 	if ((behavior & SUPPRESS_ERROR_OUTPUT_m13) == 0) {
 
 		G_show_error_m13();
 		
 		#ifdef FT_DEBUG_m13
-		G_show_function_stack_m13(0);
+		G_show_function_stack_m13(globals_m13->error.thread_id);
 		#endif
 
 		#ifdef MATLAB_m13
-		mexPrintf("[exited at %s(%d)]\n\n", function, line);
+		if (line == E_UNKNOWN_LINE_m13)
+			mexPrintf("[exited at %s(~)]\n\n", function);
+		else
+			mexPrintf("[exited at %s(%d)]\n\n", function, line);
 		#else
-		fprintf(stderr, "[exited at %s(%s%d%s)]\n\n", function, TC_BLUE_m13, line, TC_RESET_m13);
+		if (line == E_UNKNOWN_LINE_m13)
+			fprintf(stderr, "[exited at %s(%s~%s)]\n\n", function, TC_BLUE_m13, TC_RESET_m13);
+		else
+			fprintf(stderr, "[exited at %s(%s%d%s)]\n\n", function, TC_BLUE_m13, line, TC_RESET_m13);
 		#endif
 		
 		if (status >= E_NONE_m13 && status < E_NUM_CODES_m13) {
@@ -43839,9 +44377,9 @@ void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 
 	#ifdef MATLAB_m13
 	mexErrMsgTxt("");  // mex function exits here; message printed above; exit() kills Matlab itself
-	#else
-	exit(status);
 	#endif
+	
+	exit(status);  // standard exit() gets stuck here sometimes
 }
 
 
@@ -43851,7 +44389,7 @@ inline
 si4	fclose_m13(void *fp)
 {
 	tern		closed;
-	si4		ret_val;
+	si4		r_val;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp, **m13_fp_ptr;
 
@@ -43892,11 +44430,11 @@ si4	fclose_m13(void *fp)
 	else
 		closed = FALSE_m13;
 	
-	ret_val = 0;
+	r_val = 0;
 	if (closed == FALSE_m13) {
 		if (fclose(m13_fp->fp)) {
 			G_set_error_m13(E_FOPEN_m13, "error closing file \"%s\"", m13_fp->path);
-			ret_val = -1;
+			r_val = -1;
 		}
 	}
 
@@ -43912,7 +44450,7 @@ si4	fclose_m13(void *fp)
 		m13_fp->fd = FILE_FD_CLOSED_m13;
 	}
 
-	return_m13(ret_val);
+	return_m13(r_val);
 }
 
 
@@ -44297,8 +44835,11 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		fp->perms = permissions = FILE_PERM_DEFAULT_m13;  // default permissions (may be modified by process umask or system)
 	if (flags)
 		fp->flags = flags | FILE_FLAGS_ALLOCED_m13;  // set alloced flag, but otherwise override default flags with passed flags
-	if (G_MED_type_code_from_string_m13((si1 *) path + (name_len - 4)) != NO_TYPE_CODE_m13)
+	if (G_MED_type_code_from_string_m13((si1 *) path + (name_len - 4)) != NO_TYPE_CODE_m13) {
 		fp->flags |= FILE_FLAGS_MED_m13;
+		if (PRTY_is_parity_m13(path, TRUE_m13) == TRUE_m13)
+			fp->flags |= FILE_FLAGS_PARITY_m13;
+	}
 
 	// check mode
 	if (STR_is_empty_m13(mode) == TRUE_m13) {
@@ -44512,7 +45053,7 @@ si4	fprintf_m13(void *fp, const si1 *fmt, ...)
 {
 	tern		is_std;
 	si1		*tmp_str;
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
@@ -44529,16 +45070,16 @@ si4	fprintf_m13(void *fp, const si1 *fmt, ...)
 	}
 
 	va_start(v_args, fmt);
-	ret_val = vasprintf_m13(&tmp_str, fmt, v_args);  // could just call vfprintf_m13() here & be done, but it's hardly any extra code, so duplicate & skip extra function call
+	r_val = vasprintf_m13(&tmp_str, fmt, v_args);  // could just call vfprintf_m13() here & be done, but it's hardly any extra code, so duplicate & skip extra function call
 	va_end(v_args);
 	
-	if (ret_val >= 0) {
+	if (r_val >= 0) {
 #ifdef MATLAB_m13
 		if (std_fp == stderr || std_fp == stdout)
-			ret_val = mexPrintf("%s", tmp_str);
+			r_val = mexPrintf("%s", tmp_str);
 		else
 #endif
-		ret_val = fprintf(std_fp, "%s", tmp_str);  // ret_val == bytes, not characters (utf8)
+		r_val = fprintf(std_fp, "%s", tmp_str);  // r_val == bytes, not characters (utf8)
 		free((void *) tmp_str);
 	} else {
 		G_set_error_m13(E_FWRITE_m13, NULL);
@@ -44546,7 +45087,7 @@ si4	fprintf_m13(void *fp, const si1 *fmt, ...)
 
 	if (is_std == FALSE_m13) {
 		if (m13_fp->flags & FILE_FLAGS_POS_m13)
-			m13_fp->pos += ret_val;
+			m13_fp->pos += r_val;
 		if (m13_fp->flags & FILE_FLAGS_LEN_m13) {
 			if (m13_fp->flags & FILE_FLAGS_POS_m13) {
 				if (m13_fp->pos > m13_fp->len)
@@ -44561,7 +45102,7 @@ si4	fprintf_m13(void *fp, const si1 *fmt, ...)
 			m13_fp->acc = G_current_uutc_m13();
 	}
 
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -44571,7 +45112,7 @@ inline
 si4	fputc_m13(si4 c, void *fp)
 {
 	tern		is_std;
-	si4		ret_val, char_bytes;
+	si4		r_val, char_bytes;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
 
@@ -44588,10 +45129,10 @@ si4	fputc_m13(si4 c, void *fp)
 
 #ifdef MATLAB_m13
 	if (std_fp == stderr || std_fp == stdout)
-		ret_val = mexPrintf("%c", c);
+		r_val = mexPrintf("%c", c);
 	else
 #endif
-	ret_val = fputc(c, std_fp);  // ret_val is character value printed
+	r_val = fputc(c, std_fp);  // r_val is character value printed
 	
 	if (is_std == FALSE_m13) {
 		if (m13_fp->flags & FILE_FLAGS_POS_m13) {
@@ -44612,14 +45153,14 @@ si4	fputc_m13(si4 c, void *fp)
 			m13_fp->acc = G_current_uutc_m13();
 	}
 
-	if (ret_val == EOF) {
+	if (r_val == EOF) {
 		if (is_std == TRUE_m13)
 			G_set_error_m13(E_FWRITE_m13, NULL);
 		else
 			G_set_error_m13(E_FWRITE_m13, "error writing to file \"%s\"", m13_fp->path);
 	}
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -45159,7 +45700,7 @@ inline
 si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 {
 	tern		is_std;
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
@@ -45182,7 +45723,7 @@ si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 	new_fmt = WN_windify_format_string_m13(fmt);
 	
 	va_start(v_args, fmt);
-	ret_val = vfscanf(std_fp, new_fmt, v_args);
+	r_val = vfscanf(std_fp, new_fmt, v_args);
 	va_end(v_args);
 	
 	if (new_fmt != fmt)
@@ -45191,12 +45732,12 @@ si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 	
 #if defined MACOS_m13 || defined LINUX_m13
 	va_start(v_args, fmt);
-	ret_val = vfscanf(std_fp, fmt, v_args);
+	r_val = vfscanf(std_fp, fmt, v_args);
 	va_end(v_args);
 #endif
 	
 	if (is_std == FALSE_m13) {
-		if (m13_fp->flags & FILE_FLAGS_POS_m13)  // ret_val is number of items converted
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)  // r_val is number of items converted
 			m13_fp->pos = ftell_m13(std_fp);  // force full get length with standard FILE pointer
 		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
 			flock_m13(m13_fp, FLOCK_READ_UNLOCK_m13);
@@ -45204,14 +45745,14 @@ si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 			m13_fp->acc = G_current_uutc_m13();
 	}
 	
-	if (ret_val <= 0) {  // no conversions, or EOF (-1)
+	if (r_val <= 0) {  // no conversions, or EOF (-1)
 		if (is_std == TRUE_m13)
 			G_set_error_m13(E_FREAD_m13, NULL);
 		else
 			G_set_error_m13(E_FREAD_m13, "error reading file \"%s\"", m13_fp->path);
 	}
 
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -45242,28 +45783,34 @@ si4	fseek_m13(void *fp, si8 offset, si4 whence)
 	err = _fseeki64(std_fp, offset, whence);
 #endif
 
-	if (err == 0) {
-		if (is_std == FALSE_m13) {
-			if (m13_fp->flags & FILE_FLAGS_POS_m13) {
-				switch (whence) {
-					case SEEK_SET:
-						m13_fp->pos = offset;
-						break;
-					case SEEK_CUR:
-						m13_fp->pos += offset;
-						break;
-					case SEEK_END:
-						if ((m13_fp->flags & FILE_FLAGS_LEN_m13) == 0)
-							m13_fp->len = flen_m13(m13_fp);
-						m13_fp->pos = m13_fp->len - offset;
-						break;
-				}
+	if (err) {
+		err = errno_m13();
+		if (is_std == TRUE_m13)
+			G_set_error_m13(E_FGEN_m13, "fseek error");
+		else
+			G_set_error_m13(E_FGEN_m13, "fseek error in %s", m13_fp->path);
+		return_m13(err);
+	}
+
+	if (is_std == FALSE_m13) {
+		if (m13_fp->flags & FILE_FLAGS_POS_m13) {
+			switch (whence) {
+				case SEEK_SET:
+					m13_fp->pos = offset;
+					break;
+				case SEEK_CUR:
+					m13_fp->pos += offset;
+					break;
+				case SEEK_END:
+					if ((m13_fp->flags & FILE_FLAGS_LEN_m13) == 0)
+						m13_fp->len = flen_m13(m13_fp);
+					m13_fp->pos = m13_fp->len - offset;
+					break;
 			}
 		}
-		return_m13(0);
 	}
 	
-	return_m13(-1);
+	return_m13(0);
 }
 		
 	
@@ -45272,17 +45819,17 @@ inline
 #endif
 si4	fstat_m13(si4 fd, struct_stat_m13 *sb)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = fstat(fd, sb);
+	r_val = fstat(fd, sb);
 #endif
 #ifdef WINDOWS_m13
-	ret_val = _fstat64(fd, sb);
+	r_val = _fstat64(fd, sb);
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -45426,7 +45973,7 @@ si4	ftruncate_m13(void *fp, off_t len)
 
 size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // (el_size negative): non-blocking write; varargs(fp == NULL): FILE *fp (as void *), si1 *path
 {
-	tern		is_std, non_blocking, update_parity;
+	tern		is_std, update_parity, non_blocking;
 	si1		*path;
 	si8		offset;
 	size_t		nw;
@@ -45468,25 +46015,28 @@ size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // 
 				m13_fp->len = flen_m13(m13_fp);
 			if (m13_fp->pos == -1)  // pos possibly used to update len
 				m13_fp->pos = ftell_m13(m13_fp);
+			offset = m13_fp->pos;
 		}
 	} else {
 		std_fp = (FILE *) fp;
+		offset = ftell_m13(std_fp);
 	}
 		
 	// update parity
 	if (globals_m13->update_parity == TRUE_m13) {
-		if (is_std == TRUE_m13 && PRTY_is_parity_m13(path) == TRUE_m13)
+		update_parity = FALSE_m13;
+		if (is_std == TRUE_m13) {
+			if (PRTY_is_parity_m13(path, UNKNOWN_m13) == FALSE_m13)
+				update_parity = TRUE_m13;
+		} else if ((m13_fp->flags & FILE_FLAGS_PARITY_m13) == 0) {
 			update_parity = TRUE_m13;
-		else if (!(m13_fp->flags & FILE_FLAGS_PARITY_m13))
-			update_parity = TRUE_m13;
-		else
-			update_parity = FALSE_m13;
-		if (update_parity == TRUE_m13) {
-			offset = ftell_m13(fp);
-			PRTY_update_m13(ptr, (si8) (el_size * n_elements), offset, fp, path);
 		}
+			
+		eprintf_m13("update_parity = %hhd, is_std = %hhd, path = %lu", update_parity, is_std, (ui8) path);
+		if (update_parity == TRUE_m13)
+			PRTY_update_m13(ptr, (si8) (el_size * n_elements), offset, fp, path);
 	}
-
+	
 	// lock
 	if (is_std == FALSE_m13) {
 		if (m13_fp->flags & FILE_FLAGS_LOCK_m13) {
@@ -45520,10 +46070,10 @@ size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // 
 			if (m13_fp->flags & FILE_FLAGS_TIME_m13)
 				m13_fp->acc = G_current_uutc_m13();
 		} else {
-			G_set_error_m13(E_FREAD_m13, "failed to write file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FWRITE_m13, "failed to write file \"%s\"", m13_fp->path);
 		}
 	} else if (nw != n_elements) {
-		G_set_error_m13(E_FREAD_m13, NULL);
+		G_set_error_m13(E_FWRITE_m13, NULL);
 	}
 	
 	return_m13(nw);
@@ -45598,6 +46148,25 @@ pid_t_m13	gettid_m13(void)
 }
 
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	isem_chown_m13(isem_t_m13 *isem, pid_t_m13 tid)
+{
+	// change isem thread ownership
+	// pass zero to clear ownership
+	// pass ISEM_SELF_m13 to change ownership to current thread
+	// superfunction - any thread can call
+
+	if (tid == ISEM_SELF_m13)
+		tid = gettid_m13();
+	
+	isem->owner = tid;
+	
+	return;
+}
+
+
 void	isem_dec_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
@@ -45605,6 +46174,7 @@ void	isem_dec_m13(isem_t_m13 *isem)
 	pid_t_m13		tid;
 	struct timespec		tv;
 
+	
 	// decrements the count (unless already zero)
 	// if owned by another thread, blocks until unowned
 
@@ -46736,7 +47306,7 @@ inline
 tern	mkdir_m13(const si1 *dir)
 {
 	si1	command[PATH_BYTES_m13 + 16], tmp_dir[PATH_BYTES_m13];
-	si4	ret_val;
+	si4	r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -46753,8 +47323,8 @@ tern	mkdir_m13(const si1 *dir)
 	sprintf_m13(command, "mkdir \"%s\"", dir);
 	#endif
 	
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-	if (ret_val) {
+	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+	if (r_val) {
 		G_set_error_m13(E_FOPEN_m13, "cannot create path");
 		return_m13(FALSE_m13);
 	}
@@ -46769,7 +47339,7 @@ inline
 tern	mlock_m13(void *addr, size_t len, ...)  // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
 {
 	tern		zero_data;
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 #ifdef FT_DEBUG_m13
@@ -46788,17 +47358,17 @@ tern	mlock_m13(void *addr, size_t len, ...)  // varargs(addr == NULL): void *add
 	errno_reset_m13();
 
 	#if defined MACOS_m13 || defined LINUX_m13
-	ret_val = mlock(addr, len);
+	r_val = mlock(addr, len);
 	#endif
 	
 	#ifdef WINDOWS_m13
 	if (VirtualLock(addr, len))
-		ret_val = 0;
+		r_val = 0;
 	else
-		ret_val = -1;
+		r_val = -1;
 	#endif
 	
-	if (ret_val == 0) {
+	if (r_val == 0) {
 		if (zero_data == TRUE_m13)
 			memset(addr, 0, len);  // force OS to give real memory before return (otherwise there can be a lag)
 		return_m13(TRUE_m13);
@@ -46813,7 +47383,7 @@ inline
 #endif
 si4	mprotect_m13(void *address, size_t len, si4 protection)
 {
-	si4	ret_val, err;
+	si4	r_val, err;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -46833,14 +47403,14 @@ si4	mprotect_m13(void *address, size_t len, si4 protection)
 	// ENOMEM: specified address range is outside of the address range of the process or includes an unmapped page
 	// ENOTSUP: the combination of accesses requested in protection is not supported
 	
-	ret_val = 0;
+	r_val = 0;
 	errno_reset_m13();
 
 #if defined MACOS_m13 || defined LINUX_m13
 	err = mprotect(address, len, protection);
 	if (err) {
 		G_set_error_m13(E_GEN_m13, NULL);
-		ret_val = errno_m13();
+		r_val = errno_m13();
 	}
 #endif
 
@@ -46873,11 +47443,11 @@ si4	mprotect_m13(void *address, size_t len, si4 protection)
 	err = (si4) VirtualProtect(address, len, (DWORD) protection, NULL);
 	
 	if (err == 0) {
-		ret_val = errno_m13();
-		switch(ret_val) {
+		r_val = errno_m13();
+		switch(r_val) {
 			case ERROR_INVALID_ADDRESS:
 				G_set_error_m13(E_GEN_m13, "invalid address");
-				ret_val = EINVAL;
+				r_val = EINVAL;
 				break;
 			// the following need to be figured out for Windows
 			// case EACCES:
@@ -46885,13 +47455,13 @@ si4	mprotect_m13(void *address, size_t len, si4 protection)
 			// case ENOTSUP:
 			default:
 				G_set_error_m13(E_GEN_m13, NULL);
-				ret_val = EINVAL;
+				r_val = EINVAL;
 				break;
 		}
 	}
 #endif
 
-	return_m13(ret_val);
+	return_m13(r_val);
 }
 
 
@@ -46924,7 +47494,7 @@ inline
 tern	mv_m13(const si1 *path, const si1 *new_path)
 {
 	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13], enc_dir[PATH_BYTES_m13];
-	si4	fe, ret_val;
+	si4	fe, r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -46959,8 +47529,8 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 	#ifdef WINDOWS_m13
 	sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
 	#endif
-	ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-	if (ret_val) {
+	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+	if (r_val) {
 		G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
 		return_m13(FALSE_m13);
 	}
@@ -47100,24 +47670,24 @@ inline
 si4	printf_m13(const si1 *fmt, ...)
 {
 	si1		*tmp_str;
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 
 	va_start(v_args, fmt);
-	ret_val = vasprintf_m13(&tmp_str, fmt, v_args);  // could just call vprintf_m13() here & be done, but it's hardly any extra code, so duplicate & skip extra function call
+	r_val = vasprintf_m13(&tmp_str, fmt, v_args);  // could just call vprintf_m13() here & be done, but it's hardly any extra code, so duplicate & skip extra function call
 	va_end(v_args);
 
-	if (ret_val >= 0) {
+	if (r_val >= 0) {
 #ifdef MATLAB_m13
-		ret_val = mexPrintf("%s", tmp_str);
+		r_val = mexPrintf("%s", tmp_str);
 #else
-		ret_val = printf("%s", tmp_str);
+		r_val = printf("%s", tmp_str);
 #endif
 		free((void *) tmp_str);
 	}
 		
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -47133,7 +47703,7 @@ si4	pthread_equal_m13(pthread_t_m13 t1, pthread_t_m13 t2)
 #endif
 	
 #ifdef WINDOWS_m13
-	if (t1 == t2)  // pointers to opaque system data, so if equal, threads must be same
+	if (t1 == t2)  // pointers to opaque system data, if equal threads must be same
 		return(1);
 	
 	// not sure this is necessary, but since opaque, don't know whether system may have multiple copies of thread info
@@ -47142,6 +47712,40 @@ si4	pthread_equal_m13(pthread_t_m13 t1, pthread_t_m13 t2)
 	
 	return(0);
 #endif
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	pthread_exit_m13(void *ptr)
+{
+	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	pid_t_m13	_id;
+	pthread_t	thread;
+
+	
+	if (!(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13)) {
+		_id = gettid_m13();
+		thread = pthread_self_m13();
+		pthread_getname_m13(thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
+		if (*thread_name)
+			G_warning_message_m13("%s(): exiting %s(id: %lu)", thread_name, _id);
+		else
+			G_warning_message_m13("%s(): exit thread %lu)", _id);
+	}
+
+	errno_reset_m13();
+
+#if defined MACOS_m13 || defined LINUX_m13
+	pthread_exit(ptr);
+#endif
+	
+#ifdef WINDOWS_m13
+	ExitThread((DWORD) -1);
+#endif
+		
+	return;
 }
 
 
@@ -47196,7 +47800,7 @@ si1	*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len
 
 si1	*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len)
 {
-	pthread_t_m13	*thread;
+	pthread_t_m13	*thread_p;
 	
 	// get thread name from thread id (non-standard)
 	// pass zero for _id to get name of calling thread
@@ -47224,16 +47828,16 @@ si1	*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len)
 		return(thread_name);
 	}
 
-	thread = PROC_thread_for_id_m13(_id);
+	thread_p = PROC_thread_for_id_m13(_id);
 	
 # if defined MACOS_m13 || defined LINUX_m13
-	pthread_getname_np(*thread, thread_name, name_len);
+	pthread_getname_np(*thread_p, thread_name, name_len);
 # endif
 		
 # ifdef WINDOWS_m13
 	HRESULT		res;
 	
-	res = GetThreadDescription(*thread, (PWSTR *) &thread_name);
+	res = GetThreadDescription(*thread_p, (PWSTR *) &thread_name);
 	if (SUCCEEDED(res))
 		STR_wchar2char_m13(thread_name, (wchar_t *) thread_name);
 # endif
@@ -47247,20 +47851,20 @@ inline
 #endif
 si4	pthread_join_m13(pthread_t_m13 thread, void **value_ptr)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_join(thread, value_ptr);
+	r_val = pthread_join(thread, value_ptr);
 #endif
 #ifdef WINDOWS_m13
 	if (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0)
-		ret_val = 0;
+		r_val = 0;
 	else
-		ret_val = -1;
+		r_val = -1;
 #endif
 
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -47275,12 +47879,13 @@ si4	pthread_kill_m13(pthread_t_m13 thread, si4 signal)
 
 	
 	if (!(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13)) {
+		*thread_name = 0;
 		pthread_getname_m13(thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 		_id = PROC_id_for_thread_m13(&thread);
 		if (*thread_name)
-			G_warning_message_m13("%s(): killing %s(id %lu)", thread_name, _id);
+			G_warning_message_m13("%s(): killing %s(id: %lu)\n", thread_name, _id);
 		else
-			G_warning_message_m13("%s(): killing thread %lu)", _id);
+			G_warning_message_m13("%s(): killing thread %lu)\n", _id);
 	}
 
 	errno_reset_m13();
@@ -47310,16 +47915,17 @@ inline
 #endif
 si4	pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex)
 {
-	si4	ret_val;
+	si4	r_val;
 
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_destroy(mutex);
-#endif
-#ifdef WINDOWS_m13
-	ret_val = (si4) CloseHandle(*mutex) - (si4) 1;  // CloseHandle returns zero on fail
+	r_val = pthread_mutex_destroy(mutex);
 #endif
 	
-	return(ret_val);
+#ifdef WINDOWS_m13
+	r_val = (si4) CloseHandle(*mutex) - (si4) 1;  // CloseHandle returns zero on fail
+#endif
+	
+	return(r_val);
 }
 
 
@@ -47328,19 +47934,19 @@ inline
 #endif
 si4	pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_init(mutex, attr);
+	r_val = pthread_mutex_init(mutex, attr);
 #endif
 #ifdef WINDOWS_m13
 	if ((*mutex = CreateMutex(attr, 0, NULL)) == NULL)
-		ret_val = -1;
+		r_val = -1;
 	else
-		ret_val = 0;
+		r_val = 0;
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -47349,19 +47955,20 @@ inline
 #endif
 si4	pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_lock(mutex);
-#endif
-#ifdef WINDOWS_m13
-	if (WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0)
-		ret_val = 0;
-	else
-		ret_val = -1;
+	r_val = pthread_mutex_lock(mutex);
 #endif
 	
-	return(ret_val);
+#ifdef WINDOWS_m13
+	if (WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0)
+		r_val = 0;
+	else
+		r_val = -1;
+#endif
+	
+	return(r_val);
 }
 
 
@@ -47370,7 +47977,7 @@ inline
 #endif
 si4	pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 	// Non-blocking version of pthread_mutex_lock_m13()
 	// If the mutex is valid & unlocked: locks the mutex & returns zero
@@ -47378,29 +47985,29 @@ si4	pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex)
 	// If the mutex is invalid: returns EINVAL
 
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_trylock(mutex);
+	r_val = pthread_mutex_trylock(mutex);
 #endif
 	 
 #ifdef WINDOWS_m13
-	DWORD	win_ret_val;
+	DWORD	win_r_val;
 	
-	win_ret_val = WaitForSingleObject(mutex, (DWORD) 0);
-	switch (win_ret_val) {
+	win_r_val = WaitForSingleObject(mutex, (DWORD) 0);
+	switch (win_r_val) {
 		case WAIT_ABANDONED:  // owning thread terminated - mutex given to calling thread
 		case WAIT_OBJECT_0:  // mutex not owned - given to calling thread
-			ret_val = 0;
+			r_val = 0;
 			break;
 		case WAIT_TIMEOUT:
-			ret_val = EBUSY;
+			r_val = EBUSY;
 			break;
 		case WAIT_FAILED:
 		default:
-			ret_val = EINVAL;
+			r_val = EINVAL;
 			break;
 	}
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -47409,19 +48016,19 @@ inline
 #endif
 si4	pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = pthread_mutex_unlock(mutex);
+	r_val = pthread_mutex_unlock(mutex);
 #endif
 #ifdef WINDOWS_m13
 	if (ReleaseMutex(*mutex) == 0)
-		ret_val = -1;
+		r_val = -1;
 	else
-		ret_val = 0;
+		r_val = 0;
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -47454,20 +48061,20 @@ inline
 #endif
 si4	putch_m13(si4 c)
 {
-	si4	ret_val;
+	si4	r_val;
 
 #ifdef MATLAB_m13
-	ret_val = mexPrintf("%c", c);
+	r_val = mexPrintf("%c", c);
 #else
 	#ifdef WINDOWS_m13
-		ret_val = _putch(c);
+		r_val = _putch(c);
 	#endif
 	#if defined MACOS_m13 || defined LINUX_m13
-		ret_val = fputc(c, stdout);
+		r_val = fputc(c, stdout);
 	#endif
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -47531,13 +48138,36 @@ ui4	rand32_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-ui4	rand32_med_m13(ui4 *m_w, ui4 *m_z)
+ui4	rand32_med_m13(void)
+{
+	volatile ui4		*w, *z;
+	PROC_GLOBS_m13		*pg;
+	
+	
+	// uses thread-local globals for w & z
+	// slower, but more convenient than rand32_med_wz_m13()
+	
+	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
+	// replicable sequences across platforms
+	// indepenedent sequnces possible with different coefficients
+	// seed & get initial coefficients with with srand_med_m13()
+
+	pg = G_proc_globs_m13(NULL);
+	
+	w = &pg->miscellaneous.med_rand_w;
+	z = &pg->miscellaneous.med_rand_z;
+	
+	return(rand32_med_wz_m13(w, z));
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui4	rand32_med_wz_m13(volatile ui4 *w, volatile ui4 *z)
 {
 	ui4	rv;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 	
 	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
 	// replicable sequences across platforms
@@ -47545,20 +48175,20 @@ ui4	rand32_med_m13(ui4 *m_w, ui4 *m_z)
 	// seed & get initial coefficients with with srand_med_m13()
 
 	// not seeded
-	if (*m_w == 0 && *m_z == 0)
-		srand_med_m13((ui4) time(NULL), m_w, m_z);
+	if (*w == 0 && *z == 0)
+		srand_med_wz_m13(0, w, z);  // seed with current time
 	
-	*m_w = (ui4) 0x00004650 * (*m_w & (ui4) 0x0000FFFF) + (*m_w >> (ui4) 0x10);
-	if (*m_w == (ui4) 0 || *m_w == (ui4) 0x464FFFFF)  // bad values
-		*m_w = (ui4) 0x01020304;  // good value
+	*w = (ui4) 0x00004650 * (*w & (ui4) 0x0000FFFF) + (*w >> (ui4) 0x10);
+	if (*w == (ui4) 0 || *w == (ui4) 0x464FFFFF)  // bad values
+		*w = (ui4) 0x01020304;  // good value
 	
-	*m_z = (ui4) 0x00009069 * (*m_z & (ui4) 0x0000FFFF) + (*m_z >> 0x10);
-	if (*m_z == (ui4) 0 || *m_z == (ui4) 0x9068FFFF)  // bad values
-		*m_z = (ui4) 0x05060708;  // good value
+	*z = (ui4) 0x00009069 * (*z & (ui4) 0x0000FFFF) + (*z >> 0x10);
+	if (*z == (ui4) 0 || *z == (ui4) 0x9068FFFF)  // bad values
+		*z = (ui4) 0x05060708;  // good value
 	
-	rv = (*m_z << (ui4) 0x10) + *m_w;
+	rv = (*z << (ui4) 0x10) + *w;
 	
-	return_m13(rv);
+	return(rv);
 }
 
 
@@ -47584,23 +48214,46 @@ ui8	rand64_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-ui8	rand64_med_m13(ui4 *m_w, ui4 *m_z)
+ui8	rand64_med_m13(void)
+{
+	volatile ui4		*w, *z;
+	PROC_GLOBS_m13		*pg;
+	
+	
+	// uses thread-local globals for w & z
+	// slower, but more convenient than rand32_med_wz_m13()
+	
+	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
+	// replicable sequences across platforms
+	// indepenedent sequnces possible with different coefficients
+	// seed & get initial coefficients with with srand_med_m13()
+
+	pg = G_proc_globs_m13(NULL);
+	
+	w = &pg->miscellaneous.med_rand_w;
+	z = &pg->miscellaneous.med_rand_z;
+	
+	return(rand64_med_wz_m13(w, z));
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui8	rand64_med_wz_m13(volatile ui4 *w, volatile ui4 *z)
 {
 	ui8	rv;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 	
 	// returns pseudo-random numbers in the range [0, (2^64 − 1)]
 	// replicable sequences across platforms
 	// indepenedent sequnces possible with different coefficients
 	// seed & get initial coefficients with with srand_med_m13()
 
-	rv = (ui8) rand32_med_m13(m_w, m_z) << 32;  // bits 32-63
-	rv |= (ui8) rand32_med_m13(m_w, m_z);  // bits 0-31
+	rv = (ui8) rand32_med_wz_m13(w, z) << 32;  // bits 32-63
+	rv |= (ui8) rand32_med_wz_m13(w, z);  // bits 0-31
 	
-	return_m13(rv);
+	return(rv);
 }
 
 
@@ -47864,7 +48517,7 @@ inline
 tern	rm_m13(const si1 *path)
 {
 	si1	command[PATH_BYTES_m13 + 16], tmp_path[PATH_BYTES_m13];
-	si4	fe, ret_val;
+	si4	fe, r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -47877,8 +48530,8 @@ tern	rm_m13(const si1 *path)
 	fe = G_exists_m13(path);
 	
 	if (fe == FILE_EXISTS_m13) {
-		ret_val = remove(path);
-		if (ret_val) {
+		r_val = remove(path);
+		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not remove file \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
@@ -47890,8 +48543,8 @@ tern	rm_m13(const si1 *path)
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "rmdir \\/s \\/q \"%s\"", path);
 		#endif
-		ret_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-		if (ret_val) {
+		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
+		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
@@ -47907,7 +48560,7 @@ inline
 #endif
 si4	scanf_m13(const si1 *fmt, ...)
 {
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 #ifdef WINDOWS_m13
@@ -47917,7 +48570,7 @@ si4	scanf_m13(const si1 *fmt, ...)
 	new_fmt = WN_windify_format_string_m13(fmt);
 	
 	va_start(v_args, fmt);
-	ret_val = vscanf(new_fmt, v_args);
+	r_val = vscanf(new_fmt, v_args);
 	va_end(v_args);
 	
 	if (new_fmt != fmt)
@@ -47926,11 +48579,11 @@ si4	scanf_m13(const si1 *fmt, ...)
 	
 #if defined MACOS_m13 || defined LINUX_m13
 	va_start(v_args, fmt);
-	ret_val = vscanf(fmt, v_args);
+	r_val = vscanf(fmt, v_args);
 	va_end(v_args);
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -48047,7 +48700,7 @@ si4	sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...)  // varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
+sem_t_m13	*sem_open_m13(const si1 *name, si4 o_flags, ...)  // varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -48065,8 +48718,8 @@ sem_t_m13	*sem_open_m13(si1 *name, si4 o_flags, ...)  // varargs(o_flags & O_CRE
 	
 	
 	if (STR_is_empty_m13(name) == TRUE_m13) {
+		sprintf(local_name, "%x", random_m13());
 		name = local_name;
-		sprintf(name, "%x", random_m13());
 	}
 	
 	if (o_flags & O_CREAT) {
@@ -48203,16 +48856,16 @@ inline
 #endif
 si4	snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...)
 {
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 	// as opposed to standard snprintf(), snprintf_m13() allows source & target strings to overlap
 	
 	va_start(v_args, fmt);
-	ret_val = vsnprintf_m13(target, target_field_bytes, fmt, v_args);
+	r_val = vsnprintf_m13(target, target_field_bytes, fmt, v_args);
 	va_end(v_args);
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -48222,36 +48875,70 @@ inline
 si4	sprintf_m13(si1 *target, const si1 *fmt, ...)
 {
 	si1		*tmp_str;
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 
 	// as opposed to standard sprintf(), sprintf_m13() allows source & target strings to overlap
 		
 	va_start(v_args, fmt);
-	ret_val = vasprintf_m13(&tmp_str, fmt, v_args);  	// could just call vsprintf_m13() here & be done, but it's hardly any extra code, so duplicate & skip extra function call
+	r_val = vasprintf_m13(&tmp_str, fmt, v_args);  	// could just call vsprintf_m13() here & be done, but it's hardly any extra code, so duplicate & skip extra function call
 	va_end(v_args);
 	
-	memcpy(target, tmp_str, ret_val + 1);
+	memcpy(target, tmp_str, r_val + 1);
 	free((void *) tmp_str);
 
-	return(ret_val);
+	return(r_val);
 }
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	srand_med_m13(ui4 seed, ui4 *m_w, ui4 *m_z)
+void	srand_med_m13(ui4 seed)
+{
+	volatile ui4		*w, *z;
+	PROC_GLOBS_m13		*pg;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// uses thread-local globals for w & z
+	// slower, but more convenient than rand32_med_wz_m13()
+	
+	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
+	// replicable sequences across platforms
+	// indepenedent sequnces possible with different coefficients
+	// seed & get initial coefficients with with srand_med_m13()
+
+	pg = G_proc_globs_m13(NULL);
+	
+	w = &pg->miscellaneous.med_rand_w;
+	z = &pg->miscellaneous.med_rand_z;
+	
+	srand_med_wz_m13(seed, w, z);
+	
+	return;
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+void	srand_med_wz_m13(ui4 seed, volatile ui4 *w, volatile ui4 *z)
 {
 	// seed medlib generator & recieve initial coefficients
+	// pass seed == zero to seed with current time
 	
+	if (seed == 0)
+		seed = (ui4) time(NULL);
 	
 	if (seed >= (ui4) 0x7FFFFFFF)
 		seed >>= 1; // avoid overflow below
 	
-	*m_w = (ui4) 0x80000000 + seed;
-	*m_z = (ui4) 0x7FFFFFFF - seed;
+	*w = (ui4) 0x80000000 + seed;
+	*z = (ui4) 0x7FFFFFFF - seed;
 
 	return;
 }
@@ -48282,7 +48969,7 @@ inline
 #endif
 si4	sscanf_m13(si1 *target, const si1 *fmt, ...)
 {
-	si4		ret_val;
+	si4		r_val;
 	va_list		v_args;
 	
 #ifdef WINDOWS_m13
@@ -48292,7 +48979,7 @@ si4	sscanf_m13(si1 *target, const si1 *fmt, ...)
 	new_fmt = WN_windify_format_string_m13(fmt);
 	
 	va_start(v_args, fmt);
-	ret_val = vsscanf(target, new_fmt, v_args);
+	r_val = vsscanf(target, new_fmt, v_args);
 	va_end(v_args);
 	
 	if (new_fmt != fmt)
@@ -48301,11 +48988,11 @@ si4	sscanf_m13(si1 *target, const si1 *fmt, ...)
 	
 #if defined MACOS_m13 || defined LINUX_m13
 	va_start(v_args, fmt);
-	ret_val = vsscanf(target, fmt, v_args);
+	r_val = vsscanf(target, fmt, v_args);
 	va_end(v_args);
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -48314,15 +49001,15 @@ inline
 #endif
 si4	stat_m13(const si1 *path, struct_stat_m13 *sb)
 {
-	si4	ret_val;
+	si4	r_val;
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = stat(path, sb);
+	r_val = stat(path, sb);
 #endif
 #ifdef WINDOWS_m13
-	ret_val = _stat64(path, sb);
+	r_val = _stat64(path, sb);
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -48636,7 +49323,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 	tern	free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
 	si1	**e_buffer_ptr, *buffer, *e_buffer, *c, *command_p;
 	ui4	behavior;
-	si4	ret_val, status, err, BUFFER_SIZE_INC, stdout_pipe[2], stderr_pipe[2], retry_count;
+	si4	r_val, status, err, BUFFER_SIZE_INC, stdout_pipe[2], stderr_pipe[2], retry_count;
 	si8	bytes_in_buffer, bytes_in_e_buffer, bytes_avail, e_buf_len, tot_buf_len;
 	pid_t	child_pid;
 
@@ -48915,11 +49602,11 @@ SYSTEM_PIPE_RETRY_m13:
 	bytes_in_buffer = 0;
 	bytes_avail = buf_len;
 	while (bytes_avail > 1) {
-		ret_val = read(stdout_pipe[READ_END_m13], buffer + bytes_in_buffer, bytes_avail - 1);  // leave room for terminal zero
-		if (ret_val <= 0)
+		r_val = read(stdout_pipe[READ_END_m13], buffer + bytes_in_buffer, bytes_avail - 1);  // leave room for terminal zero
+		if (r_val <= 0)
 			break;
-		bytes_in_buffer += ret_val;
-		bytes_avail -= ret_val;
+		bytes_in_buffer += r_val;
+		bytes_avail -= r_val;
 		if (realloc_buffer == TRUE_m13) {
 			if (bytes_avail < 2) {
 				buf_len += BUFFER_SIZE_INC;
@@ -48934,11 +49621,11 @@ SYSTEM_PIPE_RETRY_m13:
 	bytes_in_e_buffer = 0;
 	bytes_avail = e_buf_len;
 	while (bytes_avail > 1) {
-		ret_val = read(stderr_pipe[READ_END_m13], e_buffer + bytes_in_e_buffer, bytes_avail - 1);  // leave room for terminal zero
-		if (ret_val <= 0)
+		r_val = read(stderr_pipe[READ_END_m13], e_buffer + bytes_in_e_buffer, bytes_avail - 1);  // leave room for terminal zero
+		if (r_val <= 0)
 			break;
-		bytes_in_e_buffer += ret_val;
-		bytes_avail -= ret_val;
+		bytes_in_e_buffer += r_val;
+		bytes_avail -= r_val;
 		if (realloc_e_buffer == TRUE_m13) {
 			if (bytes_avail < 2) {
 				e_buf_len += BUFFER_SIZE_INC;
@@ -49676,7 +50363,7 @@ inline
 #endif
 si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 {
-	si4	ret_val;
+	si4	r_val;
 	
 
 	// Note: this function returns a system allocated string whose ownership is transfered to the caller
@@ -49688,20 +50375,20 @@ si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 	*target = (si1 *) calloc((size_t) PRINTF_BUF_LEN_m13, sizeof(si1));
 	va_copy(args_copy, args);  // save a copy before use in case need to realloc
 	G_push_behavior_m13(RETURN_QUIETLY_m13);
-	ret_val = vsnprintf_m13(*target, PRINTF_BUF_LEN_m13, fmt, args);
+	r_val = vsnprintf_m13(*target, PRINTF_BUF_LEN_m13, fmt, args);
 	G_pop_behavior_m13();
 	
 	// release excess memory (OS may not), or expand memory to required size
-	*target = (si1 *) realloc((void *) *target, (size_t) (ret_val + 1));
-	if (ret_val >= PRINTF_BUF_LEN_m13)
-		ret_val = vsnprintf_m13(*target, ret_val + 1, fmt, args_copy);
+	*target = (si1 *) realloc((void *) *target, (size_t) (r_val + 1));
+	if (r_val >= PRINTF_BUF_LEN_m13)
+		r_val = vsnprintf_m13(*target, r_val + 1, fmt, args_copy);
 #endif
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	ret_val = vasprintf(target, fmt, args);
+	r_val = vasprintf(target, fmt, args);
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -49712,7 +50399,7 @@ si4	vfprintf_m13(void *fp, const si1 *fmt, va_list args)
 {
 	tern		is_std;
 	si1		*tmp_str;
-	si4		ret_val;
+	si4		r_val;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
 
@@ -49727,21 +50414,21 @@ si4	vfprintf_m13(void *fp, const si1 *fmt, va_list args)
 			flock_m13(m13_fp, FLOCK_WRITE_LOCK_m13);
 	}
 
-	ret_val = vasprintf_m13(&tmp_str, fmt, args);  // ret_val is in bytes, not characters (utf8)
+	r_val = vasprintf_m13(&tmp_str, fmt, args);  // r_val is in bytes, not characters (utf8)
 	
-	if (ret_val >= 0) {
+	if (r_val >= 0) {
 #ifdef MATLAB_m13
 		if (stream == stderr || stream == stdout)
-			ret_val = mexPrintf("%s", tmp_str);
+			r_val = mexPrintf("%s", tmp_str);
 		else
 #endif
-		ret_val = fprintf(std_fp, "%s", tmp_str);
+		r_val = fprintf(std_fp, "%s", tmp_str);
 		free((void *) tmp_str);
 	}
 
 	if (is_std == FALSE_m13) {
 		if (m13_fp->flags & FILE_FLAGS_POS_m13)
-			m13_fp->pos += ret_val;
+			m13_fp->pos += r_val;
 		if (m13_fp->flags & FILE_FLAGS_LEN_m13) {
 			if (m13_fp->flags & FILE_FLAGS_POS_m13) {
 				if (m13_fp->pos > m13_fp->len)
@@ -49756,7 +50443,7 @@ si4	vfprintf_m13(void *fp, const si1 *fmt, va_list args)
 			m13_fp->acc = G_current_uutc_m13();
 	}
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -49766,21 +50453,21 @@ inline
 si4	vprintf_m13(const si1 *fmt, va_list args)
 {
 	si1	*tmp_str;
-	si4	ret_val;
+	si4	r_val;
 	
 
-	ret_val = vasprintf_m13(&tmp_str, fmt, args);
+	r_val = vasprintf_m13(&tmp_str, fmt, args);
 	
-	if (ret_val >= 0) {
+	if (r_val >= 0) {
 #ifdef MATLAB_m13
-		ret_val = mexPrintf("%s", tmp_str);
+		r_val = mexPrintf("%s", tmp_str);
 #else
-		ret_val = printf("%s", tmp_str);
+		r_val = printf("%s", tmp_str);
 #endif
 		free((void *) tmp_str);
 	}
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -49789,7 +50476,7 @@ inline
 #endif
 si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list args)
 {
-	si4	ret_val;
+	si4	r_val;
 	si1	*tmp_str;
 	
 
@@ -49804,7 +50491,7 @@ si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list a
 		}
 		return(-1);
 	}
-	
+
 #ifdef WINDOWS_m13
 	tern	free_fmt = FALSE_m13;
 	si1	*new_fmt;
@@ -49819,10 +50506,10 @@ si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list a
 #endif
 	// Guarantee zeros in unused bytes per MED requirements
 	tmp_str = (si1 *) calloc((size_t) target_field_bytes, sizeof(si1));
-	ret_val = vsnprintf(tmp_str, target_field_bytes, fmt, args);
+	r_val = vsnprintf(tmp_str, target_field_bytes, fmt, args);
 	
 	// Guarantee terminal zero on overflow (not done in Linux & Windows)
-	if (ret_val >= target_field_bytes) {
+	if (r_val >= target_field_bytes) {
 		tmp_str[target_field_bytes - 1] = 0;
 		G_warning_message_m13("%s(): target string truncated\n", __FUNCTION__);
 	}
@@ -49830,7 +50517,8 @@ si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list a
 	free((void *) tmp_str);
 	
 #ifdef WINDOWS_m13
-	// convert file system paths
+	
+	// convert file system paths to windows paths
 	WN_windify_file_paths_m13(NULL, target);
 
 	// clean up
@@ -49838,7 +50526,7 @@ si4	vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list a
 		free((void *) new_fmt);
 #endif
 	
-	return(ret_val);
+	return(r_val);
 }
 
 
@@ -49848,16 +50536,16 @@ inline
 si4	vsprintf_m13(si1 *target, const si1 *fmt, va_list args)
 {
 	si1		*tmp_str;
-	si4		ret_val;
+	si4		r_val;
 	
 
 	// as opposed to standard vsprintf(), vsprintf_m13() allows source & target strings to overlap
 	
-	ret_val = vasprintf_m13(&tmp_str, fmt, args);
+	r_val = vasprintf_m13(&tmp_str, fmt, args);
 	
-	memcpy(target, tmp_str, ret_val + 1);
+	memcpy(target, tmp_str, r_val + 1);
 	free((void *) tmp_str);
 
-	return(ret_val);
+	return(r_val);
 }
 
