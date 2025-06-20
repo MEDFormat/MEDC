@@ -14567,7 +14567,6 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	ri = ri_fps->rec_inds;
 	rd = rd_fps->params.raw_data;
 	
-	eprintf_m13("rd_fps->params.fp = %lu", (ui8) rd_fps->params.fp);
 	FILE_show_m13(rd_fps->params.fp);
 	
 	for (i = n_recs; i--; ++ri) {
@@ -37745,20 +37744,20 @@ tern	PRTY_is_parity_m13(const si1 *path, tern MED_file)
 	
 	if (MED_file == FALSE_m13)
 		return_m13(FALSE_m13);
-	if (STR_is_empty_m13(path))
+	if (STR_is_empty_m13(path) == TRUE_m13)
 		return_m13(FALSE_m13);
-	    
+
 	G_path_parts_m13(path, NULL, name, ext);
 	
 	// check if MED file
 	if (MED_file == UNKNOWN_m13)
 		if (G_MED_type_code_from_string_m13(ext) == NO_TYPE_CODE_m13)
 			return_m13(FALSE_m13);
-	
+
 	// check name starts with "parity"
 	if (strncmp_m13(name, "parity", 6))
 		return_m13(FALSE_m13);
-	
+
 	return_m13(TRUE_m13);
 }
 
@@ -38334,11 +38333,18 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	// returns FALSE_m13 on true failure
 	// returns TRUE_m13 on success or no parity data exists
 
+	// basic checks
+	if (n_bytes == 0)
+		return_m13(TRUE_m13);
 	if (fp == NULL) {
 		G_set_error_m13(E_GEN_m13, "fp is null");
 		return_m13(FALSE_m13);
 	}
-
+	if (ptr == NULL) {
+		G_set_error_m13(E_GEN_m13, "pointer is null");
+		return_m13(FALSE_m13);
+	}
+	
 	// get vararg
 	is_std = FILE_is_std_m13(fp);
 	if (is_std == TRUE_m13) {
@@ -38386,6 +38392,9 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		fp = (void *) fopen_m13(path, "r+");
 		if (fp == NULL)
 			return_m13(FALSE_m13);
+	} else {
+		if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)
+			return_m13(FALSE_m13);
 	}
 	
 	// set up
@@ -38403,14 +38412,15 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	new_data = (ui1 *) ptr;
 
 	// read data file
-	fseek_m13(fp, offset, SEEK_SET);
-	bytes_to_read = flen_m13(fp) - offset;
+	bytes_to_read = flen_m13(fp) - offset;  // don't read past end of data file
 	if (bytes_to_read >= n_bytes)
-		bytes_to_read = n_bytes; // don't read past end of file
+		bytes_to_read = n_bytes;
 	if (bytes_to_read == 0)
 		return_m13(TRUE_m13);
 	
 	// read in existing data
+	if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)
+		goto PRTY_UPDATE_FAIL_m13;
 	nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
 	if (nrw != bytes_to_read)
 		goto PRTY_UPDATE_FAIL_m13;
@@ -38423,17 +38433,18 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	if (pcrc_updated == FALSE_m13)
 		goto PRTY_UPDATE_FAIL_m13;
 
-	// open parity file (needs FILE_m13 for locking & parity flags)
+	// open parity file
 	pfp = fopen_m13(par_path, "r+");
 	if (pfp == NULL)
 		goto PRTY_UPDATE_FAIL_m13;
-	pfp->flags |= (FILE_FLAGS_LOCK_m13 | FILE_FLAGS_PARITY_m13);  // the parity file has to be locked - multiple threads may be trying to read & write
+	pfp->flags |= FILE_FLAGS_LOCK_m13;  // the parity file has to be locked - multiple threads may be trying to read & write
 	
 	// read existing parity data
-	fseek_m13(pfp, offset, SEEK_SET);
-	bytes_to_read = flen_m13(pfp) - offset;
+	bytes_to_read = flen_m13(pfp) - offset;  // don't read past end of parity file
 	if (bytes_to_read >= n_bytes)
-		bytes_to_read = n_bytes;  // don't read past end of parity file
+		bytes_to_read = n_bytes;
+	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
+		goto PRTY_UPDATE_FAIL_m13;
 	nrw = (si8) fread_m13((void *) par_data, sizeof(ui1), (size_t) bytes_to_read, pfp);
 	if (nrw != bytes_to_read)
 		goto PRTY_UPDATE_FAIL_m13;
@@ -38453,7 +38464,8 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		goto PRTY_UPDATE_FAIL_m13;
 
 	// update parity file
-	fseek_m13(pfp, offset, SEEK_SET);
+	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
+		goto PRTY_UPDATE_FAIL_m13;
 	nrw = (si8) fwrite_m13((void *) par_data, sizeof(ui1), (size_t) n_bytes, pfp);
 	if (nrw != n_bytes)
 		goto PRTY_UPDATE_FAIL_m13;
@@ -38473,8 +38485,8 @@ PRTY_UPDATE_FAIL_m13:
 		free((void *) tmp_data);
 	if (was_open == FALSE_m13)
 		fclose_m13(fp);
-	else
-		fseek_m13(fp, offset, SEEK_SET);  // reset to incoming file position
+	else if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)  // reset to incoming file position
+		r_val = FALSE_m13;
 
 	return_m13(r_val);
 }
@@ -38482,13 +38494,13 @@ PRTY_UPDATE_FAIL_m13:
 
 tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vararg(fp == FILE *): const si1 *path)
 {
-	tern			r_val, was_open;
+	tern			r_val, is_std, was_open, unset_parity_flag;
 	ui1			*new_data, *tmp_data, *td;
 	const si1		*path;
 	ui4			*crcs;
 	si8			i, j, pcrc_offset, pcrc_len, bytes_remaining, crc_bytes;
 	si8			nrw, start_block, start_byte, end_block, end_byte, bytes_to_read;
-	FILE			*std_fp;
+	FILE_m13		*m13_fp;
 	PRTY_CRC_DATA_m13	pcrc;
 	va_list			v_arg;
 
@@ -38509,12 +38521,14 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	}
 
 	// get vararg
-	if (FILE_is_std_m13(fp) == TRUE_m13) {
+	is_std = FILE_is_std_m13(fp);
+	if (is_std == TRUE_m13) {
 		va_start(v_arg, fp);
 		path = va_arg(v_arg, const si1 *);
 		va_end(v_arg);
 	} else {
-		path = ((FILE_m13 *) fp)->path;
+		m13_fp = (FILE_m13 *) fp;
+		path = m13_fp->path;
 	}
 	
 	// check path
@@ -38542,13 +38556,12 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 		if (fp == NULL)
 			return_m13(FALSE_m13);
 	}
-	eprintf_m13("");
-	FILE_show_m13(fp);
 	
 	// set up
 	r_val = FALSE_m13;
 	crcs = NULL;
 	tmp_data = NULL;
+	unset_parity_flag = FALSE_m13;
 
 	// read in pcrc
 	fseek_m13(fp, pcrc_offset, SEEK_SET);
@@ -38559,18 +38572,11 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	crcs = (ui4 *) malloc((size_t) crc_bytes);
 	if (crcs == NULL)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	eprintf_m13("before seeking crcs %s", path);
-	if (fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET)) {
-		eprintf_m13("seek crcs failed");
+	if (fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET))
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	}
-	eprintf_m13("seek succeeded; before reading crcs %s", path);
 	nrw = fread_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, fp);
-	if (nrw != crc_bytes) {
-		eprintf_m13("read crcs failed");
+	if (nrw != crc_bytes)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	}
-	eprintf_m13("read crcs succeeded");
 
 	// find where offset falls in pcrc blocks
 	start_block = offset / pcrc.block_bytes;
@@ -38583,18 +38589,11 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	tmp_data = (ui1 *) malloc((size_t) bytes_to_read);
 	if (tmp_data == NULL)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	eprintf_m13("before seeking data %s", path);
-	if (fseek_m13(fp, start_byte, SEEK_SET)) {
-		eprintf_m13("seek data failed");
+	if (fseek_m13(fp, start_byte, SEEK_SET))
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	}
-	eprintf_m13("seek succeeded; before reading data %s", path);
 	nrw = fread_m13((void *) tmp_data, sizeof(ui1), (size_t) bytes_to_read, fp);
-	if (nrw != bytes_to_read) {
-		eprintf_m13("read data failed");
+	if (nrw != bytes_to_read)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	}
-	eprintf_m13("read data succeeded");
 
 	// replace with old with new data
 	start_byte -= offset;
@@ -38607,9 +38606,16 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 		crcs[i] = CRC_calculate_m13(td, pcrc.block_bytes);
 
 	// write out updated values
-	fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET);
-	std_fp = FILE_std_m13(fp); // get standard fp to avoid recurrence in fwrite_m13()
-	nrw = fwrite_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, std_fp);
+	if (fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET) == FALSE_m13)
+		goto PRTY_PCRC_UPDATE_FAIL_m13;
+
+	if (is_std == FALSE_m13) {
+		if ((m13_fp->flags & FILE_FLAGS_PARITY_m13) == 0) {
+			unset_parity_flag = TRUE_m13;
+			m13_fp->flags |= FILE_FLAGS_PARITY_m13;  // this function can be run with parity & non-parity files, don't want fwrite to call PRTY_update_m13() on this write
+		}  // if std file & not call frwite_m13 with path, PRTY_update_m13() won't be called
+	}
+	nrw = fwrite_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, fp);
 	if (nrw != crc_bytes)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
 	
@@ -38626,6 +38632,8 @@ PRTY_PCRC_UPDATE_FAIL_m13:
 		fclose_m13(fp);
 	else
 		fseek_m13(fp, offset, SEEK_SET);  // reset to incoming file position
+	if (unset_parity_flag == TRUE_m13)
+		m13_fp->flags &= ~FILE_FLAGS_PARITY_m13;
 	
 	return_m13(r_val);
 }
@@ -44786,12 +44794,12 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FLOCK_TIMEOUT_m13 bit set
 
 FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == NULL): si1 *mode, ui2 flags (as si4), ui2 permissions (as si4)
 {
-	tern		fexists, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
-	si1		*c, main_mode_total, tmp_path[PATH_BYTES_m13];
+	tern		read_mode, write_mode, append_mode, plus_mode, trunc_mode;
+	si1		exists, *c, main_mode_total, tmp_path[PATH_BYTES_m13];
 	ui2 		flags, permissions;
 	FILE_m13	*fp;
 	si4		sys_mode_flags;
-	si8		name_len;
+	si8		path_len;
 	struct_stat_m13	sb;
 
 #ifdef FT_DEBUG_m13
@@ -44828,14 +44836,14 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	fp = FILE_init_m13(NULL);
 	if (fp == NULL)
 		return_m13(NULL);
-	name_len = strcpy_m13(fp->path, path);
+	path_len = strcpy_m13(fp->path, path);
 	if (permissions)
 		fp->perms = permissions;  // custom permissions (may be modified by process umask or system)
 	else
 		fp->perms = permissions = FILE_PERM_DEFAULT_m13;  // default permissions (may be modified by process umask or system)
 	if (flags)
 		fp->flags = flags | FILE_FLAGS_ALLOCED_m13;  // set alloced flag, but otherwise override default flags with passed flags
-	if (G_MED_type_code_from_string_m13((si1 *) path + (name_len - 4)) != NO_TYPE_CODE_m13) {
+	if (G_MED_type_code_from_string_m13(path + (path_len - 4)) != NO_TYPE_CODE_m13) {
 		fp->flags |= FILE_FLAGS_MED_m13;
 		if (PRTY_is_parity_m13(path, TRUE_m13) == TRUE_m13)
 			fp->flags |= FILE_FLAGS_PARITY_m13;
@@ -44925,9 +44933,8 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 			sys_mode_flags |= O_TRUNC;  // clobber if exists
 	}
 	fp->fd = open(path, sys_mode_flags, (mode_t) permissions);
-	if (fp->fd >= 0)
+	if (fp->fd > FILE_FD_STDERR_m13)
 		fp->fp = fdopen(fp->fd, mode);
-		
 #endif
 #ifdef WINDOWS_m13
 	si1 	local_mode[8];  // don't modify passed mode & make sure room for 'b' component
@@ -44966,25 +44973,22 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	*c = 0;
 
 	fp->fd = _open(path, sys_mode_flags, perm_mode);
-	if (fp->fd >= 0)
+	if (fp->fd > FILE_FD_STDERR_m13)
 		fp->fp = _fdopen(fp->fd, local_mode);
 #endif
 	
 	// handle open error
 	if (fp->fp == NULL) {
 		free_m13((void *) fp);
-		fexists = G_exists_m13(path);
-		if (read_mode == TRUE_m13) {
-			if (fexists == TRUE_m13)
-				G_set_error_m13(E_FOPEN_m13, "failed to open file \"%s\"", path);
-			else
-				G_set_error_m13(E_FOPEN_m13, "file \"%s\" does not exist", path);
-		} else {  // write & append modes
-			if (fexists == TRUE_m13)
-				G_set_error_m13(E_FOPEN_m13, "failed to open file \"%s\"", path);
-			else
-				G_set_error_m13(E_FOPEN_m13, "failed to create file \"%s\"", path);
-		}
+		exists = G_exists_m13(path);
+		if (exists == DIR_EXISTS_m13)
+			G_set_error_m13(E_FOPEN_m13, "path \"%s\" is a directory", path);
+		else if (exists == FILE_EXISTS_m13)
+			G_set_error_m13(E_FOPEN_m13, "failed to open file \"%s\"", path);
+		else if (read_mode == TRUE_m13)
+			G_set_error_m13(E_FOPEN_m13, "file \"%s\" does not exist", path);
+		else  // write modes
+			G_set_error_m13(E_FOPEN_m13, "failed to create file \"%s\"", path);
 		return_m13(NULL);
 	}
 	
@@ -45199,7 +45203,8 @@ size_t	fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // (
 		}
 	}
 	
-	nr = fread(ptr, (size_t) el_size, n_elements, std_fp);
+	// read
+	nr = fread(ptr, el_size, n_elements, std_fp);
 
 	if (is_std == FALSE_m13) {
 		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)  // unlock before setting error
@@ -46031,8 +46036,6 @@ size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // 
 		} else if ((m13_fp->flags & FILE_FLAGS_PARITY_m13) == 0) {
 			update_parity = TRUE_m13;
 		}
-			
-		eprintf_m13("update_parity = %hhd, is_std = %hhd, path = %lu", update_parity, is_std, (ui8) path);
 		if (update_parity == TRUE_m13)
 			PRTY_update_m13(ptr, (si8) (el_size * n_elements), offset, fp, path);
 	}
@@ -49170,17 +49173,17 @@ si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars)
 		return((si4) 0);
 	
 	if (string_1 == NULL || string_2 == NULL)
-		return((si4) -1);
+		return((si4) FALSE_m13);
 
 	len = (si8) n_chars;  // (size_t is unsigned)
 	while (*string_1 && *string_2 && len--)
 		if (*string_1++ != *string_2++)
-			return((si4) -1);
+			return((si4) FALSE_m13);
 	
 	// fewer than n_chars matched
 	if (len > 0)
 		if (*string_1 || *string_2)  // one of strings did not terminate
-			return((si4) -1);
+			return((si4) FALSE_m13);
 	
 	return((si4) 0);  // both strings terminated
 }
@@ -49278,9 +49281,7 @@ si4	system_m13(const si1 *command, ...) // varargs(command = NULL): si1 *command
 	
 SYSTEM_RETRY_m13:
 	
-	err = 0;
 	errno_reset_m13();
-	
 #if defined MACOS_m13 || defined LINUX_m13
 	system(command);
 #endif
@@ -49289,7 +49290,6 @@ SYSTEM_RETRY_m13:
 #endif
 	
 	err = errno_m13();  // errno is better for detecting errors because system() may return non-error info in higher bytes
-	
 	if (err) {
 		if (behavior & RETRY_ONCE_m13) {
 			if (retried == FALSE_m13) {
@@ -49315,8 +49315,8 @@ SYSTEM_RETRY_m13:
 
 // not a standard function, but closely related
 #if defined MACOS_m13 || defined LINUX_m13
-si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...)  // varargs(BEHAVIOR_PASSED_m13 set): ui4 behavior)
-											    // varargs(SP_SEPARATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
+si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...)  // varargs(BEHAVIOR_PASSED_m13 flag set): ui4 behavior)
+											    // varargs(SP_SEPARATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 e_buf_len
 											    // note if both passed, behavior is first argument
 {
 	tern	command_needs_shell, pipe_failure, buffer_initially_null, e_buffer_initially_null, pop_behavior;
@@ -49356,7 +49356,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 	// see if shell required
 	command_p = (si1 *) command;
 	command_needs_shell = FALSE_m13;
-	c = --command_p;  // (command re-incremented below)
+	c = --command_p;  // (command_p re-incremented below)
 	while (*++c) {
 		switch (*c) {
 			case '>':
