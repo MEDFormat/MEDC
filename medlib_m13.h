@@ -1577,6 +1577,7 @@ si4	PRTY_file_compare_m13(const void *a, const void *b);
 si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files);
 ui4	PRTY_flag_for_path_m13(const si1 *path);
 tern	PRTY_is_parity_m13(const si1 *path, tern MED_file);
+si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path);
 si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len);
 tern	PRTY_recover_segment_header_fields_m13(const si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
@@ -1687,18 +1688,18 @@ tern		NET_trim_address_m13(si1 *addr_str);
 //********************************** MED Errors **********************************//
 //**********************************************************************************//
 
-// Behavior constants
-#define CURRENT_BEHAVIOR_m13		((ui4) 0xFFFFFFFF) // get behavior from stack
-#define SHOW_CURRENT_BEHAVIOR_m13	((ui4) 1 << 0) //  (passing CURRENT_BEHAVIOR_m13 will also cover this)
-#define SHOW_BEHAVIOR_STACK_m13		((ui4) 1 << 1) //  (passing CURRENT_BEHAVIOR_m13 will also cover this)
 
 // Behaviors Codes
 #define RETURN_ON_FAIL_m13		((ui4) 1 << 0) // return on error; if not set, exit on error
-#define IGNORE_ERROR_m13		((ui4) 1 << 1) // do not set error & return
+#define IGNORE_ERROR_m13		((ui4) 1 << 1) // do not set error & return (even if RETURN_ON_FAIL_m13 is not set)
 #define SUPPRESS_ERROR_OUTPUT_m13	((ui4) 1 << 2)
 #define SUPPRESS_WARNING_OUTPUT_m13	((ui4) 1 << 3)
 #define SUPPRESS_MESSAGE_OUTPUT_m13	((ui4) 1 << 4)
 #define RETRY_ONCE_m13			((ui4) 1 << 5)
+
+// Behavior constants (can't overlap with codes)
+#define CURRENT_BEHAVIOR_STACK_m13	((ui4) 1 << 30)
+#define CURRENT_BEHAVIOR_m13		((ui4) 1 << 31)
 
 #define DEFAULT_BEHAVIOR_m13		RETURN_ON_FAIL_m13 // (code) return on fail, observe system errors, do not retry, show all output
 #define E_BEHAVIOR_m13			((ui4) 0) // (code) exit on fail, observe system errors, do not retry, show all output
@@ -1706,7 +1707,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 
 // convenience
 #define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
-#define RETURN_QUIETLY_m13		( RETURN_ON_FAIL_m13 | IGNORE_ERROR_m13 | SUPPRESS_OUTPUT_m13 )  // generally used with handleable or acceptable errors
+#define RETURN_QUIETLY_m13		( IGNORE_ERROR_m13 | SUPPRESS_OUTPUT_m13 )  // generally used with handleable or acceptable errors
 
 // error codes
 #define E_NUM_CODES_m13		21
@@ -3098,7 +3099,7 @@ void 			G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 si1 			*G_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name);
 BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void);
 void			G_behavior_stack_reset_exec_m13(const si1 *function, si4 line, ui4 code);
-si1			*G_behavior_string_m13(ui4 behavior, si1 *behavior_string);
+si1			*G_behavior_string_m13(ui4 behavior_code, si1 *behavior_string);
 si8			G_build_contigua_m13(LH_m13 *lh);
 Sgmt_REC_m13		*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_type);
 si8			G_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset);
@@ -3211,6 +3212,7 @@ CHAN_m13		*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...); // varargs
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
 si4			G_read_cs_file_m13(const si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
 LH_m13			*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(lh == NULL): const si1 *file_list, si4 list_len, ui8 lh_flags, const si1 *password, const si1 *index_channel_name
+void			G_read_medlibrc_m13(const si1 *app_path);
 si8			G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...); // varargs(level->type_code == LH_SSR_m13): si4 seg_num
 SEG_m13			*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...); // varargs(seg == NULL): const si1 *seg_path, LH_m13 *parent, ui8 lh_flags, const si1 *password
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
@@ -3286,6 +3288,7 @@ tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_video_data_CRCs_m13(FPS_m13 *fps);
 tern			G_video_data_m13(const si1 *string);
 void			G_warning_message_m13(const si1 *fmt, ...);
+void			G_write_medlibrc_m13(const si1 *path);
 
 
 

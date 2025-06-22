@@ -963,10 +963,19 @@ void	G_behavior_stack_exec_reset_m13(const si1 *function, si4 line, ui4 code)
 }
 
 
-si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
+si1	*G_behavior_string_m13(ui4 behavior_code, si1 *behavior_string)
 {
 	si8	len;
 	
+	
+	// NOTE:
+	// if IGNORE_ERROR_m13 is set, RETURN_ON_FAIL_m13 & SUPPRESS_ERROR_OUTPUT_m13 will be shown as set in the string, even if they are not
+	// because they code will behave this way. This may not be the true behavior code (also shown), but is less confusing, I think
+	// RETURN_ON_FAIL_m13 is not automtically set with IGNORE_ERROR_m13 because G_remove_behavior_m13()
+	// would not know what to set it to if IGNORE_ERROR_m13 was removed
+
+	if (behavior_code & IGNORE_ERROR_m13)
+		behavior_code |= (RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
 
 	if (behavior_string == NULL) {  // caller takes ownership
 		behavior_string = malloc_m13(256);
@@ -975,34 +984,34 @@ si1	*G_behavior_string_m13(ui4 behavior, si1 *behavior_string)
 	}
 	*behavior_string = 0;
 		
-	if (behavior & RETURN_ON_FAIL_m13)
-		strcat(behavior_string, "RETURN ON FAIL | ");
+	if (behavior_code & RETURN_ON_FAIL_m13)
+		strcat(behavior_string, "RETURN ON FAIL; ");
 	else
-		strcat(behavior_string, "EXIT ON FAIL | ");
-	if (behavior & IGNORE_ERROR_m13)
-		strcat(behavior_string, "IGNORE ERROR | ");
+		strcat(behavior_string, "EXIT ON FAIL; ");
+	if (behavior_code & IGNORE_ERROR_m13)
+		strcat(behavior_string, "IGNORE ERROR; ");
 	else
-		strcat(behavior_string, "REGISTER ERROR | ");
-	if (behavior & SUPPRESS_ERROR_OUTPUT_m13)
-		strcat(behavior_string, "SUPPRESS ERROR OUTPUT | ");
+		strcat(behavior_string, "REGISTER ERROR; ");
+	if (behavior_code & SUPPRESS_MESSAGE_OUTPUT_m13)
+		strcat(behavior_string, "SUPPRESS MESSAGE OUTPUT; ");
 	else
-		strcat(behavior_string, "SHOW ERROR OUTPUT | ");
-	if (behavior & SUPPRESS_WARNING_OUTPUT_m13)
-		strcat(behavior_string, "SUPPRESS WARNING OUTPUT | ");
+		strcat(behavior_string, "SHOW MESSAGE OUTPUT; ");
+	if (behavior_code & SUPPRESS_WARNING_OUTPUT_m13)
+		strcat(behavior_string, "SUPPRESS WARNING OUTPUT; ");
 	else
-		strcat(behavior_string, "SHOW WARNING OUTPUT | ");
-	if (behavior & SUPPRESS_MESSAGE_OUTPUT_m13)
-		strcat(behavior_string, "SUPPRESS MESSAGE OUTPUT | ");
+		strcat(behavior_string, "SHOW WARNING OUTPUT; ");
+	if (behavior_code & SUPPRESS_ERROR_OUTPUT_m13)
+		strcat(behavior_string, "SUPPRESS ERROR OUTPUT; ");
 	else
-		strcat(behavior_string, "SHOW MESSAGE OUTPUT | ");
-	if (behavior & RETRY_ONCE_m13)
-		strcat(behavior_string, "RETRY ONCE | ");
+		strcat(behavior_string, "SHOW ERROR OUTPUT; ");
+	if (behavior_code & RETRY_ONCE_m13)
+		strcat(behavior_string, "RETRY ONCE; ");
 	else
-		strcat(behavior_string, "DO NOT RETRY | ");
+		strcat(behavior_string, "DO NOT RETRY; ");
 
 	len = strlen(behavior_string);
 	if (len)
-		behavior_string[len - 3] = 0;
+		behavior_string[len - 2] = 0;
 		
 	return(behavior_string);
 }
@@ -3619,6 +3628,9 @@ void	G_error_message_m13(const si1 *fmt, ...)
 	
 
 	behavior = G_current_behavior_m13();
+	
+	if (behavior & IGNORE_ERROR_m13)
+		return;
 	
 	// RED suppressible text to stderr with option to exit program
 	if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13)) {
@@ -6278,6 +6290,9 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	globals_m13->update_parity = GLOBALS_UPDATE_PARITY_DEFAULT_m13;
 	globals_m13->increase_priority = GLOBALS_INCREASE_PRIORITY_DEFAULT_m13;
 		
+	// get user preferences
+	G_read_medlibrc_m13(app_path);
+	
 	pthread_mutex_unlock_m13(&globals_m13->mutex);
 	
 	return(TRUE_m13);
@@ -10292,6 +10307,169 @@ LH_m13 	*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varargs (level_h
 }
 
 
+void	G_read_medlibrc_m13(const si1 *app_path)
+{
+	tern		fexists, tern_val, failed;
+	const si1	*field_name;
+	si1		*path, str_val[PATH_BYTES_m13], message[PATH_BYTES_m13 + RC_STRING_BYTES_m13], *buffer;
+	si4             option_number;
+	si8		file_len, nr, int_val;
+	sf8		float_val;
+	FILE_m13	*fp;
+	
+	// override medlib global defaults with user settings in ".medlibrc"
+	// not all globals, only globals users should have ability to choose
+	// library defaults used on failure
+	// assumes caller has globals_m13->mutex
+	
+	// setup
+	G_push_behavior_m13(IGNORE_ERROR_m13 | RETURN_ON_FAIL_m13);  // no errors set in this function
+	failed = TRUE_m13;
+	buffer = NULL;
+	fp = NULL;
+	
+	// get file
+	path = str_val;
+	
+	// try app directory first (for customized app settings)
+	if (STR_is_empty_m13(app_path) == FALSE_m13) {
+		G_full_path_m13(app_path, path);
+		G_path_parts_m13(path, path, NULL, NULL);
+		sprintf_m13(path, "%s/.medlibrc", path);
+		fexists = G_exists_m13(path);
+	} else {
+		fexists = FALSE_m13;
+	}
+	
+	// try default location
+	if (fexists == FALSE_m13) {
+		#if defined MACOS_m13 || defined LINUX_m13
+		si1		*env_var;
+		
+		env_var = getenv("HOME");
+		if (env_var == NULL) {
+			sprintf_m13(message, "\"HOME\" is not defined in the environment");
+			goto READ_MEDLIBRC_FAIL;
+		}
+		sprintf_m13(path, "%s/.medlibrc", env_var);
+		#endif
+		#ifdef WINDOWS_m13
+		si1	*home_drive, *home_path;
+		
+		home_drive = getenv("HOMEDRIVE");
+		home_path = getenv("HOMEPATH");
+		if (home_path == NULL || home_drive == NULL) {
+			sprintf_m13(message, "either \"HOMEDRIVE\" or \"HOMEPATH\" is not defined in the environment");
+			goto READ_MEDLIBRC_FAIL;
+		}
+		sprintf_m13(path, "%s%s/.medlibrc", home_drive, home_path);
+		#endif
+		
+		fexists = G_exists_m13(path);
+	}
+	
+	// can't find => create in default location (no message)
+	if (fexists == FALSE_m13) {
+		G_write_medlibrc_m13(path);
+		failed = FALSE_m13;
+		goto READ_MEDLIBRC_FAIL;
+	}
+	
+	// read file
+	fp = fopen_m13(path, "r");
+	if (fp == NULL) {
+		sprintf_m13(message, "could not open the file \"%s\", writing default RC file", path);
+		G_write_medlibrc_m13(path);
+		goto READ_MEDLIBRC_FAIL;
+	}
+
+	// read in rc file
+	file_len = flen_m13(fp);
+	buffer = malloc((size_t) (file_len + 1));  // include room for terminal zero
+	if (buffer == NULL) {
+		sprintf_m13(message, "alloc error");
+		goto READ_MEDLIBRC_FAIL;
+	}
+	nr = fread_m13(buffer, sizeof(si1), (size_t) file_len, fp);
+	fclose_m13(&fp);
+	if (nr != file_len) {
+		sprintf_m13(message, "could not read the file \"%s\", writing default RC file", path);
+		G_write_medlibrc_m13(path);
+		goto READ_MEDLIBRC_FAIL;
+	}
+	buffer[file_len] = 0;
+
+	// read fields
+	field_name = "MED Library Version";
+	if ((option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val)))  {
+		if (strcmp_m13(str_val, "1.1.3")) {  // only supported version at this time
+			sprintf_m13(message, "unsupported library version, writing default RC file");
+			G_write_medlibrc_m13(path);
+			goto READ_MEDLIBRC_FAIL;
+		}
+	}
+
+	field_name = "Update File System Names";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13)
+		globals_m13->update_file_system_names = tern_val;
+	
+	field_name = "Update Header Names";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13)
+		globals_m13->update_header_names = tern_val;
+
+	field_name = "Update MED Version";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13)
+		globals_m13->update_MED_version = tern_val;
+
+	field_name = "Update Parity";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13)
+		globals_m13->update_parity = tern_val;
+
+	field_name = "Sort Records";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13)
+		globals_m13->write_sorted_records = tern_val;
+
+	field_name = "Chattiness";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13) {
+		globals_m13->default_behavior.code &= ~SUPPRESS_OUTPUT_m13;  // BLATHERING option (& clear library behavior for other options)
+		// DEMURE, TACITURN
+		if (strcmp(str_val, "DEMURE") == 0)
+			globals_m13->default_behavior.code |= SUPPRESS_WARNING_OUTPUT_m13;
+		else if (strcmp(str_val, "TACITURN") == 0)
+			globals_m13->default_behavior.code |= (SUPPRESS_MESSAGE_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13);
+		else if (strcmp(str_val, "APHASIC") == 0)
+			globals_m13->default_behavior.code |= SUPPRESS_OUTPUT_m13;
+	}
+
+	field_name = "Increase Priority";
+	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
+	if (option_number != RC_ERR_m13)
+		globals_m13->increase_priority = tern_val;
+
+	failed = FALSE_m13;
+	
+READ_MEDLIBRC_FAIL:
+	
+	G_pop_behavior_m13();
+		
+	if (buffer)
+		free((void *) buffer);
+	if (fp)
+		fclose_m13(fp);
+	
+	if (failed == TRUE_m13)
+		G_warning_message_m13("\nRuntime Configuration: %s\n\n", message);
+	
+	return;
+}
+
+
 si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type_code == SSR_TYPE_CODE_m13): si4 seg_num
 {
 	si8		start_idx, end_idx, n_recs, bytes_to_read, offset;
@@ -10360,9 +10538,8 @@ si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type
 		return_m13(FALSE_m13);
 
 	// sort records
-	if (globals_m13->write_sorted_records)
-		if (ri_fps->uh->ordered != TRUE_m13 || rd_fps->uh->ordered != TRUE_m13 )
-			G_sort_records_m13(ri_fps, rd_fps);
+	if (ri_fps->uh->ordered != TRUE_m13 || rd_fps->uh->ordered != TRUE_m13 )
+		G_sort_records_m13(ri_fps, rd_fps);
 
 	start_idx = G_find_record_index_m13(ri_fps, slice->start_time, FIND_FIRST_ON_OR_AFTER_m13, 0);
 	if (start_idx == NO_IDX_m13) {  // no records "on or after" slice beginning
@@ -12663,41 +12840,43 @@ ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 tern	G_show_behavior_m13(ui4 mode)
 {
 	si1			behavior_string[256];
-	BEHAVIOR_m13		*behavior;
 	si4			i;
+	BEHAVIOR_m13		*behavior;
 	BEHAVIOR_STACK_m13	*stack;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// mode == SHOW_CURRENT_BEHAVIOR_m13, or SHOW_BEHAVIOR_STACK_m13, or CURRENT_BEHAVIOR_m13 for both
+	// mode == CURRENT_BEHAVIOR_m13, or CURRENT_BEHAVIOR_STACK_m13  (or CURRENT_BEHAVIOR_m13 | CURRENT_BEHAVIOR_STACK_m13 for both)
 	
 	stack = G_behavior_stack_m13();  // gets mutex
 	
-	if (mode & SHOW_CURRENT_BEHAVIOR_m13) {
+	if (mode & CURRENT_BEHAVIOR_m13) {
 		printf_m13("\nCurrent Process Behavior:\n------------------------\n");
 		if (stack->top_idx >= 0)
 			behavior = stack->behaviors + stack->top_idx;
 		else
 			behavior = &globals_m13->default_behavior;
 		G_behavior_string_m13(behavior->code, behavior_string);
-		printf_m13("%s%s%s (code %u)%s\n[set at %s(%d)]\n\n",  TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
+		if (stack->top_idx < 0)
+			printf_m13("%s%s%s  [code %u, default behavior]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13);
+		else
+			printf_m13("%s%s%s  [code %u, set at %s(%d)]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, behavior->function, behavior->line, TC_RESET_m13);
 	}
 	
-	if (mode & SHOW_BEHAVIOR_STACK_m13) {
+	if (mode & CURRENT_BEHAVIOR_STACK_m13) {
 		printf_m13("Current Process Behavior Stack:\n-------------------------------\n");
 		behavior = &globals_m13->default_behavior;
 		G_behavior_string_m13(behavior->code, behavior_string);
-		printf_m13("0) %s%s%s (code %u)%s  [set at %s(%d)]\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
+		printf_m13("0) %s%s%s  [code %u, default behavior]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13);
 		behavior = stack->behaviors;
 		for (i = 1; i <= (stack->top_idx + 1); ++i, ++behavior) {
 			G_behavior_string_m13(behavior->code, behavior_string);
-			printf_m13("%d) %s%s%s (code %u)%s  [set at %s(%d)]\n", i, TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13, behavior->function, behavior->line);
+			printf_m13("%d) %s%s%s  [code %u, set at %s(%d)]%s\n", i, TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, behavior->function, behavior->line, TC_RESET_m13);
 		}
-		printf_m13("\n");
 	}
-	
+
 	// release mutex
 	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
@@ -14491,34 +14670,26 @@ tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 {
 	static tern		message_given = FALSE_m13;
-	tern			ri_open, rd_open;
-	ui1			*rd;
-	si8			i, n_recs, file_start_time;
+	ui1			*old_rd, *new_rd;
+	si8			i, n_recs, file_start_time, new_rd_offset;
 	FPS_m13			*ri_fps, *rd_fps;
 	REC_IDX_m13		*ri;
-	REC_HDR_m13		*rh;
+	REC_HDR_m13		*old_rh, *new_rh;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// inefficient, but should not need to be done frequently
-
-	if (globals_m13->write_sorted_records == FALSE_m13)
-		return_m13(FALSE_m13);
+	// inefficient, but should be infrequent if write out sorted
 
 	if (rec_inds_fps == NULL || rec_data_fps == NULL) {
 		G_set_error_m13(E_FGEN_m13, "rec_inds_fps or rec_data_fps is null");
 		return_m13(FALSE_m13);
 	}
 	
-	// get local copy of pointers
+	// get local copy of pointers (easier to code)
 	ri_fps = rec_inds_fps;
 	rd_fps = rec_data_fps;
-
-	// save passed state
-	ri_open = FPS_is_open_m13(ri_fps);
-	rd_open = FPS_is_open_m13(rd_fps);
 
 	// read full files
 	ri_fps = FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0, NULL, NULL);
@@ -14526,10 +14697,7 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	if (ri_fps == NULL || rd_fps == NULL)
 		return_m13(FALSE_m13);
 	
-	// check if already sorted
-	if (ri_fps->uh->ordered == TRUE_m13 && rd_fps->uh->ordered == TRUE_m13)
-		return_m13(TRUE_m13);
-
+	// only give this message once
 	if (message_given == FALSE_m13) {
 		G_message_m13("Sorting records ...\n");
 		message_given = TRUE_m13;
@@ -14541,71 +14709,54 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	file_start_time = ri_fps->uh->file_start_time;
 	for (i = n_recs; i--; ++ri) {
 		if (ri->start_time == UUTC_NO_ENTRY_m13) {
-			rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + ri->file_offset);
-			ri->start_time = rh->start_time = file_start_time;
+			old_rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + ri->file_offset);
+			ri->start_time = old_rh->start_time = file_start_time;
 		}
 	}
 	
-	// sort indices (leave file offsets intact)
+	// sort indices (leave file offsets alone for now)
 	qsort((void *) ri_fps->rec_inds, (size_t) n_recs, sizeof(REC_IDX_m13), G_compare_record_index_times);  // leave terminal index where it is
 	
-	// reopen files for writing (files closed after full file read)
-	ri_fps->params.fp = fopen_m13(ri_fps->path, "r+");
-	rd_fps->params.fp = fopen_m13(rd_fps->path, "r+");
+	new_rd = (ui1 *) malloc_m13((size_t) rd_fps->params.raw_data_bytes);
+	if (new_rd == NULL)
+		return_m13(FALSE_m13);
 	
-	// reset universal headers
-	ri_fps->uh->n_entries = rd_fps->uh->n_entries = (si8) 0;
-	ri_fps->uh->maximum_entry_size = rd_fps->uh->maximum_entry_size = (ui4) 0;  // probaly unnecessary - should stay same, but just in case not filled in
+	// swap data
+	old_rd = rd_fps->params.raw_data;
+	rd_fps->params.raw_data = new_rd;
+	memcpy((void *) new_rd, (void *) old_rd, (size_t) UH_BYTES_m13);
 
-	// set file pointers to start of entries
-	FPS_seek_m13(ri_fps, UH_BYTES_m13);
-	ri_fps->params.fp->len = UH_BYTES_m13;
-	FPS_seek_m13(rd_fps, UH_BYTES_m13);
-	rd_fps->params.fp->len = UH_BYTES_m13;
+	// set fps pointers to new data
+	rd_fps->uh = (UH_m13 *) rd_fps->params.raw_data;
+	rd_fps->rec_data = rd_fps->params.raw_data + UH_BYTES_m13;
 
-	// write out sorted records
+	// move records
 	ri = ri_fps->rec_inds;
-	rd = rd_fps->params.raw_data;
-	
-	FILE_show_m13(rd_fps->params.fp);
-	
+	new_rd = rd_fps->params.raw_data;
+	new_rd_offset = UH_BYTES_m13;
 	for (i = n_recs; i--; ++ri) {
-		rh = (REC_HDR_m13 *) (rd + ri->file_offset);
-		ri->file_offset = rd_fps->params.fp->len;
+		old_rh = (REC_HDR_m13 *) (old_rd + ri->file_offset);
+		new_rh = (REC_HDR_m13 *) (new_rd + new_rd_offset);
+		memcpy((void *) new_rh, (void *) old_rh, old_rh->total_record_bytes);
+		ri->file_offset = new_rd_offset;
+		new_rd_offset += old_rh->total_record_bytes;
+	}
+	free_m13((void *) old_rd);
+	
+	// update universal headers
+	ri_fps->uh->ordered = rd_fps->uh->ordered = TRUE_m13;
 
-		if (FPS_write_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri) == FALSE_m13)
+	// write out sorted files
+	if (globals_m13->write_sorted_records == TRUE_m13) {
+		ri_fps->uh->body_CRC = rd_fps->uh->body_CRC = CRC_NO_ENTRY_m13;  // force recalculation of crcs (b/c crcs order sensitive)
+		ri_fps->params.fp = fopen_m13(ri_fps->path, "r+");  // closed after full file read above
+		if (FPS_write_m13(ri_fps, 0, FPS_FULL_FILE_m13, ri_fps->uh->n_entries, NULL) == FALSE_m13)
 			return_m13(FALSE_m13);
-		if (FPS_write_m13(rd_fps, FPS_APPEND_m13, rh->total_record_bytes, 1, (void *) rh) == FALSE_m13)
+		rd_fps->params.fp = fopen_m13(rd_fps->path, "r+");  // closed after full file read above
+		if (FPS_write_m13(rd_fps, 0, FPS_FULL_FILE_m13, rd_fps->uh->n_entries, NULL) == FALSE_m13)
 			return_m13(FALSE_m13);
 	}
 
-	// update record data universal header
-	rd_fps->uh->ordered = TRUE_m13;
-	rd_fps->direcs.flags |= (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13);
-	FILE_show_m13(rd_fps->params.fp);
-	if (FPS_write_m13(rd_fps, 0, FPS_UH_ONLY_m13, 0, NULL) == FALSE_m13)
-		return_m13(FALSE_m13);
-
-	// write terminal index
-	ri->file_offset = rd_fps->params.fp->len;
-	ri->start_time = ri_fps->uh->segment_end_time + 1;
-	ri->type_code = REC_Term_TYPE_CODE_m13;
-	ri->version_major = 0xFF;
-	ri->version_minor = 0xFF;
-	ri->encryption_level = NO_ENCRYPTION_m13;
-	
-	// write out terminal index & update universal header
-	ri_fps->uh->ordered = TRUE_m13;
-	ri_fps->direcs.flags |= (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13);
-	if (FPS_write_m13(ri_fps, FPS_APPEND_m13, INDEX_BYTES_m13, 1, (void *) ri) == FALSE_m13)
-		return_m13(FALSE_m13);
-
-	// clean up
-	if (ri_open)
-		FPS_read_m13(ri_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, NULL);
-	if (rd_open)
-		FPS_read_m13(rd_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, NULL);
-		
 	return_m13(TRUE_m13);
 }
 
@@ -16302,6 +16453,7 @@ tern	G_update_session_name_header_m13(const si1 *path, const si1 *fs_name, const
 		}
 		
 		// write
+		eprintf_m13("%s open = %hhd", fp->path, fisopen_m13(fp));
 		nrw = fwrite_m13((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 		if (nrw != UH_BYTES_m13) {
 			fclose_m13(fp);
@@ -16818,6 +16970,38 @@ void  G_warning_message_m13(const si1 *fmt, ...)
 		fflush(stderr);
 #endif
 	}
+	
+	return;
+}
+
+
+void	G_write_medlibrc_m13(const si1 *path)
+{
+	const si1	*buffer;
+	si8		len, nw;
+	FILE_m13	*fp;
+	
+	
+	// open file
+	fp = fopen_m13(path, "w");
+	if (fp == NULL) {
+		G_error_message_m13("%s(): could not create the file \"%s\"", __FUNCTION__, path);
+		return;
+	}
+
+	// write out rc file
+	buffer = "\nRC Format:\n----------\n\nAny line not beginning with \"%%\" is ignored.\n\nEntry \"TYPE\"s are one of the following: string, float, integer, ternary.\n\nThe string \"NO ENTRY\" can be entered as a DEFAULT or VALUE where appropriate.\n\n\"DEFAULT\" values are used when there is no text in the value label or the word \"DEFAULT\" is specified as the value.\n\n\"PROMPT\" will ask the user for input and present the OPTIONS and DEFAULT.\n\nVALUEs can be \"DEFAULT\", \"NO ENTRY\", any of the defined OPTION strings, or free text if the field permits.\n\n\"PROMPT\" and \"NO ENTRY\" can serve as values or defaults, but are not considered OPTIONs.\n\nIf the \"OPTIONS\" label is \"OPTIONS ONLY\", only the listed options are permitted as values (\"PROMPT\", & \"DEFAULT\" are permitted also).\nOtherwise the \"OPTIONS\" are just options, and custom values are permitted.\n\n\nMED Library RC Fields:\n----------------------\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: Increase process priority at startup (if application requests)\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: NO\n%% VALUE: DEFAULT\n\n";
+
+	len = strlen(buffer);
+	nw = fwrite_m13((si1 *) buffer, sizeof(si1), (size_t) len, fp);
+	fclose_m13(&fp);
+	if (nw != len) {
+		G_error_message_m13("%s(): could not write the file \"%s\"", __FUNCTION__, path);
+		fclose_m13(fp);
+		return;
+	}
+	
+	fclose_m13(fp);
 	
 	return;
 }
@@ -28813,9 +28997,9 @@ tern	FILE_show_m13(FILE_m13 *fp)
 	else
 		printf_m13("\treading disabled\n");
 	if (fp->flags & FILE_FLAGS_WRITE_m13)
-		printf_m13("\twriting enabled (random)\n");
+		printf_m13("\twriting enabled (nonsequential)\n");
 	else if (fp->flags & FILE_FLAGS_APPEND_m13)
-		printf_m13("\twriting enabled (append)\n");
+		printf_m13("\twriting enabled (sequential)\n");
 	else
 		printf_m13("\twriting disabled\n");
 	if (fp->flags & FILE_FLAGS_LOCK_m13)
@@ -32915,9 +33099,9 @@ tern	FPS_sort_m13(FPS_m13 **fps_array, si4 n_fps)
 
 tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *source, ...)  // varargs(offset == FPS_REL_*): si8 rel_bytes
 {
-	tern		write_uh, header_only, update_maximum_entry_size;
+	tern		write_uh, header_only, full_file, update_maximum_entry_size;
+	si8		rel_bytes, nw;
 	void		*encrypted_data;
-	si8		rel_bytes, nw, in_flen;
 	PROC_GLOBS_m13	*pg;
 	UH_m13		*uh;
 	va_list		v_arg;
@@ -32940,33 +33124,122 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		va_end(v_arg);
 	}
 
-	in_flen = fps->params.fp->len;
-	write_uh = header_only = FALSE_m13;
+	write_uh = header_only = full_file = FALSE_m13;
+	uh = fps->uh;
 	if (offset == FPS_APPEND_m13) {
-		offset = in_flen;
+		offset = fps->params.fp->len;;
 	} else if (n_bytes == FPS_UH_ONLY_m13) {
-		offset = FPS_UH_OFFSET_m13;
-		n_bytes = 0;
+		n_bytes = n_items = 0;
 		header_only = write_uh = TRUE_m13;
+	} else if (n_bytes == FPS_FULL_FILE_m13) {
+		offset = FPS_UH_BYTES_m13;
+		if (n_items == 0)
+			n_items = fps->uh->n_entries;
+		uh->n_entries = n_items;
+		n_bytes = 0;
+		fps->direcs.flags |= FPS_DF_CLOSE_AFTER_OP_m13;  // automatically close after full file write
+		full_file = TRUE_m13;  // write_uh set below b/c of FPS_DF_CLOSE_AFTER_OP_m13
 	} else {
 		offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
 	}
-	if (fps->direcs.flags & (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13) || n_bytes == FPS_FULL_FILE_m13)  // always update universal header on close write
+	if (fps->direcs.flags & (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13))  // always update universal header on close write
 		write_uh = TRUE_m13;
 	
-	if (source == NULL)
-		source = (void *) fps->data_ptrs;
+	if (header_only == FALSE_m13) {
+		if (source == NULL)
+			source = (void *) fps->data_ptrs;  // note source does not apply to universal header which is always in the FPS
 			
-	// update universal header, if requested
-	if (write_uh == TRUE_m13) {
-		uh = fps->uh;
+		// get n_bytes && n_items
+		if (n_bytes == 0 && n_items == 0) {
+			G_set_error_m13(E_FWRITE_m13, "must specify either n_bytes or n_items");
+			return_m13(FALSE_m13);
+		}
 		
-		// update universal_header->body_CRC
-		if (uh->body_CRC == CRC_NO_ENTRY_m13)  // otherwise this has been done with CRC_combine() in other functions
-			if (n_bytes || n_items)  // this is first write: only calculate if writing some data
+		update_maximum_entry_size = TRUE_m13;
+		if (n_items == 0) {
+			n_items = G_items_for_bytes_m13(fps, &n_bytes);
+			update_maximum_entry_size = FALSE_m13;  // updated in G_items_for_bytes_m13()
+		} else if (n_bytes == 0) {
+			n_bytes = G_bytes_for_items_m13(fps, &n_items, 0);
+			update_maximum_entry_size = FALSE_m13;  // updated in G_bytes_for_items_m13()
+		}
+		
+		if (update_maximum_entry_size == TRUE_m13)
+			G_update_maximum_entry_size_m13(fps, n_items, n_bytes, offset);
+		
+		if (offset == fps->params.fp->len)
+			uh->n_entries += n_items;
+
+		// leave decrypted directive
+		encrypted_data = NULL;
+		if (fps->direcs.flags & FPS_DF_LEAVE_DECRYPTED_m13) {
+			switch (uh->type_code) {
+				case TS_DATA_TYPE_CODE_m13:
+				case TS_METADATA_TYPE_CODE_m13:
+				case VID_DATA_TYPE_CODE_m13:
+				case VID_METADATA_TYPE_CODE_m13:
+				case REC_DATA_TYPE_CODE_m13:  // this mechanism assumes copying is faster than decrypting, but possible it's not
+					encrypted_data = malloc_m13(n_bytes);
+					memcpy(encrypted_data, source, (size_t) n_bytes);  // encrypted below
+					source = encrypted_data;
+					break;
+			}
+		}
+	
+		// get password
+		pg = G_proc_globs_m13((LH_m13 *) fps);
+		if (pg->password_data.processed != TRUE_m13) {
+			G_set_error_m13(E_CRYP_m13, "password not processed");
+			return_m13(FALSE_m13);
+		}
+	
+		// encrypt
+		switch (uh->type_code) {
+			case TS_DATA_TYPE_CODE_m13:
+				G_encrypt_time_series_data_m13(fps);
+				break;
+			case REC_DATA_TYPE_CODE_m13:
+				G_encrypt_record_data_m13(fps);
+				break;
+			case TS_METADATA_TYPE_CODE_m13:
+			case VID_METADATA_TYPE_CODE_m13:
+				G_encrypt_metadata_m13(fps);
+				break;
+		}
+		
+		// Calculate CRCs
+		// IMPORTANT: if the file is written non-sequentially (not FPS_APPEND_m13 or FPS_FULL_FILE_m13), the CRCs will be invalid
+		if (globals_m13->CRC_mode & CRC_CALCULATE_m13) {
+			if (full_file == TRUE_m13) {  // calculate crcs as whole - the piecemeal combining mechanism is inefficient for full file
 				uh->body_CRC = CRC_calculate_m13((ui1 *) fps->data_ptrs, n_bytes);
-			
-		// update universal_header->header_CRC
+			} else {
+				switch (uh->type_code) {
+					case TS_DATA_TYPE_CODE_m13:
+						G_calculate_time_series_data_CRCs_m13(fps);
+						break;
+					case VID_DATA_TYPE_CODE_m13:
+						G_calculate_video_data_CRCs_m13(fps);
+						break;
+					case REC_DATA_TYPE_CODE_m13:
+						G_calculate_record_data_CRCs_m13(fps);
+						break;
+					case TS_INDS_TYPE_CODE_m13:
+					case VID_INDS_TYPE_CODE_m13:
+					case REC_INDS_TYPE_CODE_m13:
+						G_calculate_indices_CRCs_m13(fps);
+						break;
+					case TS_METADATA_TYPE_CODE_m13:
+					case VID_METADATA_TYPE_CODE_m13:
+						G_calculate_metadata_CRC_m13(fps);
+						break;
+				}
+			}
+		}
+	}
+
+	// update universal header
+	if (write_uh == TRUE_m13) {
+		// update header CRC
 		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, FPS_UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 		
 		// write universal header
@@ -32976,116 +33249,20 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 			G_set_error_m13(E_FWRITE_m13, "error writing universal header");
 			return_m13(FALSE_m13);
 		}
-
-		// write universal header only
-		if (header_only == TRUE_m13) {
-			if (fps->direcs.flags & FPS_DF_FLUSH_AFTER_WRITE_m13)
-				fflush(fps->params.fp->fp);
-			fps->n_items = 0;  // universal header does not count as an item
-			if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
-				FPS_close_m13(fps);
-			
-			return_m13(TRUE_m13);
-		}
-	}
-	if (n_bytes == 0 && n_items == 0) {
-		G_set_error_m13(E_FWRITE_m13, "must specify either n_bytes or n_items");
-		return_m13(FALSE_m13);
 	}
 
-	if (n_bytes == FPS_FULL_FILE_m13) {
-		n_bytes = fps->params.fp->len - FPS_UH_BYTES_m13;
-		offset = UH_BYTES_m13;  // universal header written above
-		fps->direcs.flags |= FPS_DF_CLOSE_AFTER_OP_m13;  // update universal header automatically done with close
-	}
-	
-	update_maximum_entry_size = TRUE_m13;
-	if (n_items == 0) {
-		n_items = G_items_for_bytes_m13(fps, &n_bytes);
-		update_maximum_entry_size = FALSE_m13;  // updated in G_items_for_bytes_m13()
-	}
-	fps->n_items = n_items;
-	
-	if (n_bytes == 0) {
-		n_bytes = G_bytes_for_items_m13(fps, &n_items, 0);
-		update_maximum_entry_size = FALSE_m13;  // updated in G_bytes_for_items_m13()
-	}
-	
-	if (update_maximum_entry_size == TRUE_m13)
-		G_update_maximum_entry_size_m13(fps, n_items, n_bytes, offset);
-	
-	if (offset == FPS_APPEND_m13 || offset == fps->params.fp->len)
-		uh->n_entries += n_items;
-	
-	// leave decrypted directive
-	encrypted_data = NULL;
-	if (fps->direcs.flags & FPS_DF_LEAVE_DECRYPTED_m13) {
-		switch (uh->type_code) {
-			case TS_DATA_TYPE_CODE_m13:
-			case TS_METADATA_TYPE_CODE_m13:
-			case VID_DATA_TYPE_CODE_m13:
-			case VID_METADATA_TYPE_CODE_m13:
-			case REC_DATA_TYPE_CODE_m13:  // this mechanism assumes copying is faster than decrypting, but possible it's not
-				encrypted_data = malloc_m13(n_bytes);
-				memcpy(encrypted_data, source, (size_t) n_bytes);  // encrypted below
-				source = encrypted_data;
-				break;
-		}
-	}
-	
-	pg = G_proc_globs_m13((LH_m13 *) fps);
-	if (pg->password_data.processed != TRUE_m13) {
-		G_set_error_m13(E_CRYP_m13, "password not processed");
-		return_m13(FALSE_m13);
-	}
-	
-	// encrypt
-	switch (uh->type_code) {
-		case TS_DATA_TYPE_CODE_m13:
-			G_encrypt_time_series_data_m13(fps);
-			break;
-		case REC_DATA_TYPE_CODE_m13:
-			G_encrypt_record_data_m13(fps);
-			break;
-		case TS_METADATA_TYPE_CODE_m13:
-		case VID_METADATA_TYPE_CODE_m13:
-			G_encrypt_metadata_m13(fps);
-			break;
-	}
-	
-	// Calculate CRCs
-	// IMPORTANT: if the file is written non-sequentially (not FPS_APPEND_m13 or FPS_FULL_FILE_m13), the CRCs will be invalid
-	if (globals_m13->CRC_mode & CRC_CALCULATE_m13) {
-		switch (uh->type_code) {
-			case TS_DATA_TYPE_CODE_m13:
-				G_calculate_time_series_data_CRCs_m13(fps);
-				break;
-			case VID_DATA_TYPE_CODE_m13:
-				G_calculate_video_data_CRCs_m13(fps);
-				break;
-			case REC_DATA_TYPE_CODE_m13:
-				G_calculate_record_data_CRCs_m13(fps);
-				break;
-			case TS_INDS_TYPE_CODE_m13:
-			case VID_INDS_TYPE_CODE_m13:
-			case REC_INDS_TYPE_CODE_m13:
-				G_calculate_indices_CRCs_m13(fps);
-				break;
-			case TS_METADATA_TYPE_CODE_m13:
-			case VID_METADATA_TYPE_CODE_m13:
-				G_calculate_metadata_CRC_m13(fps);
-				break;
-		}
-	}
+	// write data
+	if (header_only == FALSE_m13) {
+		FPS_seek_m13(fps, offset);
+		nw = fwrite_m13(source, sizeof(ui1), (size_t) n_bytes, fps->params.fp);
+		if (nw != n_bytes)
+			return_m13(FALSE_m13);
 		
-	FPS_seek_m13(fps, offset);
-	nw = fwrite_m13(source, sizeof(ui1), (size_t) n_bytes, fps->params.fp);
-	if (nw != n_bytes)
-		return_m13(FALSE_m13);
-
-	// leave decrypted directive
-	if (encrypted_data)
-		free_m13(encrypted_data);
+		// leave decrypted directive
+		if (encrypted_data)
+			free_m13(encrypted_data);
+	}
+	fps->n_items = n_items;  // here so set to zero for header_only == TRUE_m13
 
 	// flush
 	if (fps->direcs.flags & (FPS_DF_FLUSH_AFTER_WRITE_m13 | FPS_DF_UPDATE_UH_m13))
@@ -37762,20 +37939,22 @@ tern	PRTY_is_parity_m13(const si1 *path, tern MED_file)
 }
 
 
-si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len)
+si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path)
 {
 	tern			vid_data;
-	si8			nr, in_offset, pcrc_offset;
+	si8			nr, block_len, in_offset, pcrc_offset;
 	PRTY_CRC_DATA_m13	pcrc;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	// returns offset of pcrc structure, file length (+/- pcrc_len == 0) indicates no pcrc data
+	// returns block length of pcrc structure or default length if no pcrc data exists
 	// if fp passed: assumes file is open with read priveleges, returns fp to where it was when called
 	// if path passed: file is opened & closed
-	// pass address of pcrc_len to return pcrc length (struct + crcs), NULL if not needed
+	
+	
+	// PRTY_BLOCK_BYTES_DEFAULT_m13
 	
 	in_offset = -1;
 	if (fp == NULL) {
@@ -37802,19 +37981,95 @@ si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len)
 		return_m13(0);
 	}
 		
-	if (pcrc.pcrc_tag == PRTY_PCRC_TAG_m13) {
-		if (pcrc_len)
-			*pcrc_len = (pcrc.n_blocks * sizeof(ui4)) + sizeof(PRTY_CRC_DATA_m13);
-	} else {
-		pcrc_offset = flen_m13(fp);  // return file length
-		if (pcrc_len)
-			*pcrc_len = 0;
-	}
+	if (pcrc.pcrc_tag == PRTY_PCRC_TAG_m13)
+		block_len = pcrc.block_bytes;
+	else
+		block_len = PRTY_BLOCK_BYTES_DEFAULT_m13;
 
 	if (in_offset > 0)
 		fseek_m13(fp, in_offset, SEEK_SET);
 	else
 		fclose_m13(fp);
+
+	return_m13(block_len);
+}
+
+
+si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len)
+{
+	tern			vid_data, close_fp;
+	si8			nr, flen, in_offset, pcrc_offset;
+	PRTY_CRC_DATA_m13	pcrc;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// returns offset of pcrc structure (+/- pcrc_len == sizeof structure + crcs)
+	// returns 0 if no pcrc data exists
+	// returns -1 on failure
+	// if fp passed: assumes file is open with read privileges, returns fp to where it was when called
+	// if path passed: file is opened & closed
+	// pass address of pcrc_len to return pcrc length (struct + crcs), NULL if not needed
+	
+	// set error conditions
+	pcrc_offset = -1;
+	if (pcrc_len)
+		*pcrc_len = 0;
+	
+	if (fp == NULL) {
+		vid_data = G_video_data_m13(file_path);
+		fp = fopen_m13(file_path, "r");
+		if (fp == NULL)
+			goto PCRC_OFFSET_FAIL;
+		close_fp = TRUE_m13;
+	} else {
+		vid_data = G_video_data_m13(fp->path);
+		in_offset = ftell_m13(fp);
+		close_fp = FALSE_m13;
+	}
+	
+	// flen holds pcrc_offset until past points of failure
+	flen = flen_m13(fp) -  sizeof(PRTY_CRC_DATA_m13);
+	if (vid_data == TRUE_m13)
+		flen -= UH_BYTES_m13;  // universal header after pcrc in video data
+	
+	// no pcrc data
+	if (flen <= 0) {
+		pcrc_offset = 0;  // not error
+		goto PCRC_OFFSET_FAIL;
+	}
+	
+	if (fseek_m13(fp, (size_t) flen, SEEK_SET) == FALSE_m13)
+		goto PCRC_OFFSET_FAIL;
+	nr = fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
+	if (nr != 1)
+		goto PCRC_OFFSET_FAIL;
+		
+	// no pcrc data
+	if (pcrc.pcrc_tag != PRTY_PCRC_TAG_m13) {
+		pcrc_offset = 0;  // not error
+		goto PCRC_OFFSET_FAIL;
+	}
+
+	// success
+	pcrc_offset = flen;
+	if (pcrc_len)
+		*pcrc_len = (pcrc.n_blocks * sizeof(ui4)) + sizeof(PRTY_CRC_DATA_m13);
+
+PCRC_OFFSET_FAIL:
+
+	if (fp) {
+		if (close_fp == TRUE_m13) {
+			fclose_m13(fp);
+		} else {
+			if (fseek_m13(fp, in_offset, SEEK_SET) == FALSE_m13) {  // reset error contitions in case got here successfully
+				pcrc_offset = -1;
+				if (pcrc_len)
+					*pcrc_len = 0;
+			}
+		}
+	}
 
 	return_m13(pcrc_offset);
 }
@@ -38317,12 +38572,12 @@ tern	PRTY_show_pcrc_m13(const si1 *file_path)
 
 tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vararg(fp == FILE *): const si1 *path
 {
-	tern			is_std, was_open, pcrc_updated, r_val;
+	tern			is_std, was_open, extending, pcrc_updated, r_val;
 	ui1			*od, *nd, *pd, *old_data, *new_data, *par_data, *tmp_data;
 	const si1		*path;
 	si1			par_path[PATH_BYTES_m13], base_name[MAX_NAME_BYTES_m13], ext[TYPE_BYTES_m13];
-	ui4			level_code, *crcs;
-	si8			i, nrw, bytes_to_read;
+	ui4			level_code, *crcs, pcrc_block_bytes;
+	si8			i, nrw, bytes_to_read, pcrc_len, pcrc_offset, flen;
 	va_list			v_arg;
 	FILE_m13		*pfp;
 	
@@ -38362,7 +38617,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		if (((FILE_m13 *) fp)->flags & FILE_FLAGS_PARITY_m13)
 			return_m13(FALSE_m13);  // considered failure because shouldn't be called with parity file
 	}
-	
+
 	// check path
 	if (STR_is_empty_m13(path) == TRUE_m13) {
 		G_set_error_m13(E_GEN_m13, "path is empty");
@@ -38392,9 +38647,9 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		fp = (void *) fopen_m13(path, "r+");
 		if (fp == NULL)
 			return_m13(FALSE_m13);
-	} else {
-		if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)
-			return_m13(FALSE_m13);
+	} else if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13) {
+		eprintf_m13("fseek failed");
+		return_m13(FALSE_m13);
 	}
 	
 	// set up
@@ -38411,36 +38666,60 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	par_data = old_data + n_bytes;
 	new_data = (ui1 *) ptr;
 
+	// see file file has pcrc data
+	eprintf_m13("%s open = %hhd", path, fisopen_m13(fp));
+	pcrc_offset = PRTY_pcrc_offset_m13(fp, path, &pcrc_len);
+	eprintf_m13("%s open = %hhd", path, fisopen_m13(fp));
+	if (pcrc_len)
+		flen = pcrc_offset;
+	else
+		flen = flen_m13(fp);
+	
 	// read data file
-	bytes_to_read = flen_m13(fp) - offset;  // don't read past end of data file
-	if (bytes_to_read >= n_bytes)
+	bytes_to_read = flen - offset;  // don't read past end of data
+	eprintf_m13("%s: flen = %ld, offset = %ld", path, flen, offset);
+	eprintf_m13("%s: bytes_to_read = %ld, n_bytes = %ld", path, bytes_to_read, n_bytes);
+	if (bytes_to_read < n_bytes) {
+		eprintf_m13("extending %s", path);
+		extending = TRUE_m13;
+	} else {
 		bytes_to_read = n_bytes;
-	if (bytes_to_read == 0)
-		return_m13(TRUE_m13);
+		extending = FALSE_m13;
+	}
 	
 	// read in existing data
-	if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13) {
+		eprintf_m13("fseek failed");
 		goto PRTY_UPDATE_FAIL_m13;
+	}
 	nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
 	if (nrw != bytes_to_read)
 		goto PRTY_UPDATE_FAIL_m13;
 	
-	// update file pcrc data, if exists
-	if (is_std == TRUE_m13)
-		pcrc_updated = PRTY_update_pcrc_m13(ptr, n_bytes, offset, fp, path);
-	else
-		pcrc_updated = PRTY_update_pcrc_m13(ptr, n_bytes, offset, fp);
-	if (pcrc_updated == FALSE_m13)
-		goto PRTY_UPDATE_FAIL_m13;
+	eprintf_m13("");
+	// update file pcrc data, if exists (& not extending)
+	if (pcrc_len) {
+		if (extending == FALSE_m13) {  // if extending, pcrc data needs to be rebuilt (handled below, after file written)
+			if (is_std == TRUE_m13)
+				pcrc_updated = PRTY_update_pcrc_m13(ptr, n_bytes, offset, fp, path);
+			else
+				pcrc_updated = PRTY_update_pcrc_m13(ptr, n_bytes, offset, fp);
+			if (pcrc_updated == FALSE_m13)
+				goto PRTY_UPDATE_FAIL_m13;
+		}
+	}
 
+	eprintf_m13("");
 	// open parity file
 	pfp = fopen_m13(par_path, "r+");
 	if (pfp == NULL)
 		goto PRTY_UPDATE_FAIL_m13;
-	pfp->flags |= FILE_FLAGS_LOCK_m13;  // the parity file has to be locked - multiple threads may be trying to read & write
+	pfp->flags |= FILE_FLAGS_LOCK_m13;  // the parity file needs locking - multiple threads may be reading & writing
 	
-	// read existing parity data
-	bytes_to_read = flen_m13(pfp) - offset;  // don't read past end of parity file
+	eprintf_m13("");
+	// read existing parity data (parity data always has pcrc data)
+	pcrc_offset = PRTY_pcrc_offset_m13(pfp, par_path, &pcrc_len);
+	bytes_to_read = pcrc_offset - offset;  // don't read past end of parity file
 	if (bytes_to_read >= n_bytes)
 		bytes_to_read = n_bytes;
 	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
@@ -38449,6 +38728,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	if (nrw != bytes_to_read)
 		goto PRTY_UPDATE_FAIL_m13;
 
+	eprintf_m13("");
 	// remove old & add new contributions
 	// (OK if extending => old data past end of file is zeros)
 	od = old_data;
@@ -38459,10 +38739,13 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		*pd++ ^= *nd++;  // add new contribution
 	}
 	
-	// update parity file pcrc (before writing new parity)
-	if (PRTY_update_pcrc_m13(par_data, n_bytes, offset, pfp) == FALSE_m13)
-		goto PRTY_UPDATE_FAIL_m13;
-
+	// update parity file pcrc (not extending)
+	if (extending == FALSE_m13) {
+		if (PRTY_update_pcrc_m13(par_data, n_bytes, offset, pfp) == FALSE_m13)
+			goto PRTY_UPDATE_FAIL_m13;
+	}
+	
+	eprintf_m13("");
 	// update parity file
 	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
 		goto PRTY_UPDATE_FAIL_m13;
@@ -38470,6 +38753,19 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	if (nrw != n_bytes)
 		goto PRTY_UPDATE_FAIL_m13;
 	
+	eprintf_m13("");
+	// update parity file pcrc (extending)
+	if (extending == TRUE_m13) {
+		pcrc_block_bytes = PRTY_pcrc_block_bytes_m13(pfp, NULL);
+		fclose_m13(&pfp);  // PRTY_write_pcrc_m13() expects closed file (set to NULL)
+		eprintf_m13("calling PRTY_write_pcrc_m13()");
+		pcrc_updated = PRTY_write_pcrc_m13(par_path, pcrc_block_bytes);
+		eprintf_m13("back from PRTY_write_pcrc_m13()");
+		if (pcrc_updated == FALSE_m13)
+			goto PRTY_UPDATE_FAIL_m13;
+	}
+	
+	eprintf_m13("");
 	r_val = TRUE_m13;
 	
 PRTY_UPDATE_FAIL_m13:
@@ -38542,8 +38838,8 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	if (pcrc_len == 0)
 		return_m13(TRUE_m13);
 		
-	// file extension not handled => warn, but do not set error
-	bytes_remaining = flen_m13(fp) - offset;
+	// file extension not handled => warn, but do not set error (PRTY_update_m13() handles this)
+	bytes_remaining = pcrc_offset - offset;
 	if (bytes_remaining < n_bytes) {
 		G_warning_message_m13("%s(), file extension not currently handled, rebuild pcrc data after files written\n", __FUNCTION__);
 		return_m13(TRUE_m13);
@@ -38586,14 +38882,22 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	start_byte = start_block * pcrc.block_bytes;
 	end_byte = (end_block + 1) * pcrc.block_bytes;
 	bytes_to_read = end_byte - start_byte;
+	bytes_remaining = pcrc_offset - start_byte;
+	if (bytes_to_read > bytes_remaining)
+		bytes_to_read = bytes_remaining;
 	tmp_data = (ui1 *) malloc((size_t) bytes_to_read);
 	if (tmp_data == NULL)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
 	if (fseek_m13(fp, start_byte, SEEK_SET))
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	eprintf_m13("before read");
 	nrw = fread_m13((void *) tmp_data, sizeof(ui1), (size_t) bytes_to_read, fp);
-	if (nrw != bytes_to_read)
+	eprintf_m13("nrw = %lu, bytes_to_read = %lu", nrw, bytes_to_read);
+	if (nrw != bytes_to_read) {
+		eprintf_m13("read failed on %s", m13_fp->path);
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
+	}
+	eprintf_m13("after read");
 
 	// replace with old with new data
 	start_byte -= offset;
@@ -38602,8 +38906,14 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 		tmp_data[i] = new_data[j];
 
 	// update those values in pcrc crc array
-	for (i = start_block, td = tmp_data; i <= end_block; ++i, td += pcrc.block_bytes)
-		crcs[i] = CRC_calculate_m13(td, pcrc.block_bytes);
+	for (i = start_block, td = tmp_data; i <= end_block; ++i, td += pcrc.block_bytes) {
+		if (bytes_remaining > pcrc.block_bytes)
+			bytes_to_read = pcrc.block_bytes;
+		else
+			bytes_to_read = bytes_remaining;
+		crcs[i] = CRC_calculate_m13(td, bytes_to_read);
+		bytes_remaining -= pcrc.block_bytes;
+	}
 
 	// write out updated values
 	if (fseek_m13(fp, pcrc_offset - crc_bytes, SEEK_SET) == FALSE_m13)
@@ -38623,6 +38933,12 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	
 PRTY_PCRC_UPDATE_FAIL_m13:
 	
+	if (r_val == FALSE_m13) {
+		eprintf_m13("FAIL FAIL FAIL - should be backing up function stack");
+		G_show_behavior_m13(CURRENT_BEHAVIOR_STACK_m13);
+		G_show_error_m13();
+	}
+
 	// clean up
 	if (crcs)
 		free((void *) crcs);
@@ -38919,26 +39235,24 @@ tern	PRTY_validate_pcrc_m13(const si1 *file_path, ...)  // varargs(file_path == 
 		
 	// get varargs
 	return_bb = FALSE_m13;
+	bad_blocks = NULL;
+	n_bad_blocks = NULL;
 	if (file_path == NULL) {
-		bad_blocks = NULL;
-		n_bad_blocks = NULL;
-		if (file_path == NULL) {
-			va_start(v_args, file_path);
-			file_path = va_arg(v_args, const si1 *);
-			bad_blocks = va_arg(v_args, PRTY_BLOCK_m13 **);
-			n_bad_blocks = va_arg(v_args, si4 *);
-			n_blocks = va_arg(v_args, ui4 *);
-			va_end(v_args);
-			
-			if (bad_blocks && n_bad_blocks) {
-				return_bb = TRUE_m13;
-				*bad_blocks = NULL;
-				*n_bad_blocks = 0;
-				if (n_blocks)
-					*n_blocks = 0;
+		va_start(v_args, file_path);
+		file_path = va_arg(v_args, const si1 *);
+		bad_blocks = va_arg(v_args, PRTY_BLOCK_m13 **);
+		n_bad_blocks = va_arg(v_args, si4 *);
+		n_blocks = va_arg(v_args, ui4 *);
+		va_end(v_args);
+		
+		if (bad_blocks && n_bad_blocks) {
+			return_bb = TRUE_m13;
+			*bad_blocks = NULL;
+			*n_bad_blocks = 0;
+			if (n_blocks)
+				*n_blocks = 0;
 
-				BAD_BLOCK_INCREMENT = 5;
-			}
+			BAD_BLOCK_INCREMENT = 5;
 		}
 	}
 	bb = NULL;
@@ -44420,12 +44734,12 @@ si4	fclose_m13(void *fp)
 				break;
 			}
 			std_fp = (FILE *) fp;
-			if (fileno_m13(std_fp) <= 2)  // already closed or standard stream
-				return_m13(0);
-			if (fclose(std_fp)) {
-				G_set_error_m13(E_FOPEN_m13, "error closing file");
-				return_m13(-1);
-			}  // else fall through to return(0)
+			if (fileno_m13(std_fp) > FILE_FD_STDERR_m13) {  // else already closed or standard stream - fall through to return(0)
+				if (fclose(std_fp)) {
+					G_set_error_m13(E_FOPEN_m13, "error closing file");
+					return_m13(-1);
+				}  // closed - fall through to return(0)
+			}
 		case UNKNOWN_m13:  // fp == NULL
 			return_m13(0);
 	}
@@ -44442,7 +44756,7 @@ si4	fclose_m13(void *fp)
 	if (closed == FALSE_m13) {
 		if (fclose(m13_fp->fp)) {
 			G_set_error_m13(E_FOPEN_m13, "error closing file \"%s\"", m13_fp->path);
-			r_val = -1;
+			r_val = E_FOPEN_m13;
 		}
 	}
 
@@ -44548,7 +44862,7 @@ inline
 si8	flen_m13(void *fp)
 {
 	tern			is_std;
-	si4			fd;
+	si4			fd, err;
 	si8			len;
 	FILE_m13		*m13_fp;
 	struct_stat_m13		sb;
@@ -44556,6 +44870,8 @@ si8	flen_m13(void *fp)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns -1 on failure (not open or no path)
 
 	if (fp == NULL) {
 		G_set_error_m13(E_GEN_m13, "fp is NULL");
@@ -44571,13 +44887,30 @@ si8	flen_m13(void *fp)
 	}
 
 	fd = fileno_m13(fp);
-	fstat_m13(fd, &sb);
-	len = (si8) sb.st_size;
+	if (fd > 2)
+		err = fstat_m13(fd, &sb);
+	else if (is_std == FALSE_m13)
+		err = stat_m13(m13_fp->path, &sb);
+	else
+		err = -1;  // not open or no path
 	
-	if (is_std == FALSE_m13)
-		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+	// error
+	if (err == -1) {
+		if (is_std == TRUE_m13) {
+			if (fisopen_m13(fp) == FALSE_m13)
+				G_set_error_m13(E_FOPEN_m13, "file is closed");
+			else
+				G_set_error_m13(E_FGEN_m13, "failed obtain the file length");
+		} else {
+			G_set_error_m13(E_FGEN_m13, "failed obtain the lengtg of file \"%s\"", m13_fp->path);
+		}
+		len = (si8) -1;
+	} else {
+		len = (si8) sb.st_size;
+		if (is_std == FALSE_m13)
 			m13_fp->len = len;
-	
+	}
+
 	return_m13(len);
 }
 		
@@ -45763,7 +46096,7 @@ si4	fscanf_m13(void *fp, const si1 *fmt, ...)
 
 si4	fseek_m13(void *fp, si8 offset, si4 whence)
 {
-	tern		is_std;
+	tern		is_std, is_open;
 	si4		err;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
@@ -45790,10 +46123,18 @@ si4	fseek_m13(void *fp, si8 offset, si4 whence)
 
 	if (err) {
 		err = errno_m13();
-		if (is_std == TRUE_m13)
-			G_set_error_m13(E_FGEN_m13, "fseek error");
-		else
-			G_set_error_m13(E_FGEN_m13, "fseek error in %s", m13_fp->path);
+		is_open = fisopen_m13(fp);
+		if (is_std == TRUE_m13) {
+			if (is_open == FALSE_m13)
+				G_set_error_m13(E_FOPEN_m13, "file is closed");
+			else
+				G_set_error_m13(E_FGEN_m13, "fseek error");
+		} else {
+			if (is_open == FALSE_m13)
+				G_set_error_m13(E_FGEN_m13, "file \"%s\" is closed", m13_fp->path);
+			else
+				G_set_error_m13(E_FGEN_m13, "fseek error in \"%s\"", m13_fp->path);
+		}
 		return_m13(err);
 	}
 
@@ -45840,7 +46181,7 @@ si4	fstat_m13(si4 fd, struct_stat_m13 *sb)
 
 si8	ftell_m13(void *fp)
 {
-	tern		is_std;
+	tern		is_std, is_open;
 	si8		pos;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp;
@@ -45849,6 +46190,8 @@ si8	ftell_m13(void *fp)
 	G_push_function_m13();
 #endif
 
+	// returns -1 on fail (not open)
+	
 	if (fp == NULL) {
 		G_set_error_m13(E_GEN_m13, "fp is NULL");
 		return_m13(-1);
@@ -45875,15 +46218,22 @@ si8	ftell_m13(void *fp)
 
 	// error
 	if (pos == -1) {
-		if (is_std == TRUE_m13)
-			G_set_error_m13(E_GEN_m13, "failed obtain the file current location");
-		else
-			G_set_error_m13(E_GEN_m13, "failed obtain the current location in file \"%s\"", m13_fp->path);
+		is_open = fisopen_m13(fp);
+		if (is_std == TRUE_m13) {
+			if (is_open == FALSE_m13)
+				G_set_error_m13(E_FOPEN_m13, "file is closed");
+			else
+				G_set_error_m13(E_FGEN_m13, "failed obtain the file current location");
+		} else {
+			if (is_open == FALSE_m13)
+				G_set_error_m13(E_FOPEN_m13, "file \"%s\" is closed", m13_fp->path);
+			else
+				G_set_error_m13(E_FGEN_m13, "failed obtain the current location in file \"%s\"", m13_fp->path);
+		}
 	}
 
 	if (is_std == FALSE_m13)
-		if (m13_fp->flags & FILE_FLAGS_POS_m13)
-			m13_fp->pos = pos;
+		m13_fp->pos = pos;
 	
 	return_m13(pos);
 }
@@ -46037,7 +46387,8 @@ size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // 
 			update_parity = TRUE_m13;
 		}
 		if (update_parity == TRUE_m13)
-			PRTY_update_m13(ptr, (si8) (el_size * n_elements), offset, fp, path);
+			if (PRTY_update_m13(ptr, (si8) (el_size * n_elements), offset, fp, path) == FALSE_m13)
+				return_m13(0);  // error condition
 	}
 	
 	// lock
