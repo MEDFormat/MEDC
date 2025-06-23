@@ -2060,6 +2060,7 @@ typedef struct LH_m13 { // multiple thread access
 			ui4 	type_code;
 			si1	type_string_terminal_zero; // not used - here for clarity
 			tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+			tern	names_differ;
 		};
 	};
 	si1					*path; // NULL in proc_globs
@@ -2087,6 +2088,7 @@ typedef struct PROC_GLOBS_m13 { // multiple thread access
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+					tern	names_differ;
 				};
 			};
 			si1					*path; // NULL in proc_globs
@@ -2686,6 +2688,7 @@ typedef struct {
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+					tern	names_differ;
 				};
 			};
 			si1					*path; // NULL in proc_globs
@@ -2851,6 +2854,7 @@ typedef struct {
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+					tern	names_differ;
 				};
 			};
 			si1					*path; // NULL in proc_globs
@@ -2919,6 +2923,7 @@ typedef struct CHAN_m13 {
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+					tern	names_differ;
 				};
 			};
 			si1					*path; //  points to local_path
@@ -2975,6 +2980,7 @@ typedef struct {
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+					tern	names_differ;
 				};
 			};
 			si1					*path; // NULL in proc_globs
@@ -3000,7 +3006,9 @@ typedef struct {
 	FPS_m13		**rec_data_fps;
 	FPS_m13		**rec_inds_fps;
 	Sgmt_REC_m13	*Sgmt_recs;
-	si1		local_path[PATH_BYTES_m13]; // full path to segmented session records directory (including directory itself)
+	si1		local_path[PATH_BYTES_m13]; // full path to channel directory (including channel directory itself)
+	si1		fs_name[NAME_BYTES_m13]; // name from file system
+	si1		uh_name[NAME_BYTES_m13]; // name from universal header (if differs from file system name)
 	SLICE_m13	slice;
 } SSR_m13;
 #endif // standard C
@@ -3019,6 +3027,7 @@ typedef struct {
 					ui4 	type_code;
 					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
+					tern	names_differ;
 				};
 			};
 			si1					*path; // NULL in proc_globs
@@ -3165,7 +3174,7 @@ void			G_function_stack_trap_m13(si4 sig_num);
 si1			**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names);
 tern			G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint);
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
-si1			*G_generate_segment_name_m13(FPS_m13 *fps, si1 *segment_name);
+si1			*G_generate_segment_name_m13(si1 *segment_name, FPS_m13 *fps);
 ui8			G_generate_UID_m13(ui8 *uid);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
 tern			G_init_global_tables_m13(tern init_all_tables);
