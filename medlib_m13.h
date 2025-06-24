@@ -673,6 +673,7 @@ typedef struct {
 #define GLOBALS_ACCESS_TIMES_DEFAULT_m13			FALSE_m13
 #define GLOBALS_CRC_MODE_DEFAULT_m13				CRC_CALCULATE_m13
 #define GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13		TRUE_m13
+#define GLOBALS_WRITE_CORRECTED_HEADERS_DEFAULT_m13		TRUE_m13
 #define GLOBALS_UPDATE_FILE_SYSTEM_NAMES_DEFAULT_m13		TRUE_m13
 #define GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13			TRUE_m13
 #define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			TRUE_m13
@@ -839,14 +840,15 @@ typedef struct {
 #define UH_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13		880 // ui1
 #define UH_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13		896 // ui1
 #define UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13 			912 // ui4, MED 1.1 & above
-#define UH_ORDERED_OFFSET_m13					916 // tern, MED 1.1 & above
-#define UH_EXPANDED_PASSWORDS_OFFSET_m13			917 // tern, MED 1.1 & above
-#define UH_ENCRYPTION_ROUNDS_OFFSET_m13				918 // ui1, MED 1.1 & above
-#define UH_ENCRYPTION_1_OFFSET_m13				919 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_2_OFFSET_m13				920 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_3_OFFSET_m13				921 // si1, MED 1.1 & above
-#define UH_PROTECTED_REGION_OFFSET_m13				922
-#define UH_PROTECTED_REGION_BYTES_m13				54
+#define UH_LIVE_OFFSET_m13					916 // tern, MED 1.1 & above
+#define UH_ORDERED_OFFSET_m13					917 // tern, MED 1.1 & above
+#define UH_EXPANDED_PASSWORDS_OFFSET_m13			918 // tern, MED 1.1 & above
+#define UH_ENCRYPTION_ROUNDS_OFFSET_m13				919 // ui1, MED 1.1 & above
+#define UH_ENCRYPTION_1_OFFSET_m13				920 // si1, MED 1.1 & above
+#define UH_ENCRYPTION_2_OFFSET_m13				921 // si1, MED 1.1 & above
+#define UH_ENCRYPTION_3_OFFSET_m13				922 // si1, MED 1.1 & above
+#define UH_PROTECTED_REGION_OFFSET_m13				923
+#define UH_PROTECTED_REGION_BYTES_m13				53
 #define UH_DISCRETIONARY_REGION_OFFSET_m13			976
 #define UH_DISCRETIONARY_REGION_BYTES_m13			48
 
@@ -2319,6 +2321,7 @@ typedef struct {
 	ui4				CRC_mode;
 	tern				access_times; // record times of each structure & file access
 	tern				write_sorted_records; // if records unsorted, sort & re-write
+	tern				write_corrected_headers; // if files closed without header update, n_entries may be zero (if TRUE_m13, write corrected header when encountered)
 	tern				update_file_system_names; // if session or channel file system name differ from higher level names, rename lower level files & directories
 	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
 	tern				update_MED_version; // if file MED version is not current, update affected files
@@ -2368,6 +2371,7 @@ typedef struct {
 	ui1		level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1		level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui4		video_data_file_number; // MED 1.1 and above
+	tern		live; // file currently being acquired
 	tern		ordered; // MED 1.1 and above
 	tern		expanded_passwords; // MED 1.1 and above
 	ui1		encryption_rounds; // MED 1.1 and above
@@ -2572,12 +2576,12 @@ typedef struct {
 
 // Constants
 #define FPS_UH_BYTES_m13			((si8) UH_BYTES_m13) // passed as n_bytes
-#define FPS_UH_OFFSET_m13			((si8) 0) // passed as offset
 #define FPS_BYTES_NO_ENTRY_m13			((si8) 0) // passed as n_bytes
 #define FPS_ITEMS_NO_ENTRY_m13			((si8) 0) // passed as n_items
-#define FPS_AUTO_BYTES_m13			((si8) -1) // passed as n_bytes (use level header flags to determine n_bytes)
-#define FPS_FULL_FILE_m13			((si8) -2) // passed as n_bytes
-#define FPS_UH_ONLY_m13				((si8) -3) // passed as n_bytes
+#define FPS_UH_OFFSET_m13			((si8) -1) // passed as offset, if video data, will resolve to uh at end of file (NOTE: different than UH_OFFSET_m13 which is just zero)
+#define FPS_AUTO_BYTES_m13			((si8) -2) // passed as n_bytes (use level header flags to determine n_bytes)
+#define FPS_FULL_FILE_m13			((si8) -3) // passed as n_bytes
+#define FPS_UH_ONLY_m13				((si8) -4) // passed as n_bytes
 #define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset (Note: value positive so not treated as discontinuity)
 #define FPS_REL_START_m13			((si8) 0x7FFFFFFFFFFFFFFD) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
 #define FPS_REL_CURR_m13			((si8) 0x7FFFFFFFFFFFFFFE) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
@@ -2752,7 +2756,7 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes);
 FPS_m13		*FPS_open_m13(const si1 *path, const si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): const si1 *mode, ui8 fd_flags
-FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent
+FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent, ui8 lh_flags
 												    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 tern		FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes);
 tern		FPS_reopen_m13(FPS_m13 *fps, const si1 *mode);
@@ -3170,7 +3174,6 @@ tern			G_free_session_m13(SESS_m13 **sess_ptr);
 tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
-void			G_function_stack_trap_m13(si4 sig_num);
 si1			**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names);
 tern			G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint);
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
@@ -3251,7 +3254,7 @@ tern			G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m1
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
 Sgmt_REC_m13		*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode);
 ui4			G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs);
-tern			G_show_behavior_m13(ui4 mode);
+tern			G_show_behavior_m13(ui4 behavior_code);
 tern			G_show_contigua_m13(LH_m13 *lh);
 tern			G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, const si1 *prefix);
 tern			G_show_error_m13(void);
@@ -3271,6 +3274,7 @@ tern			G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt);
 tern 			G_show_slice_m13(SLICE_m13 *slice);
 tern			G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail);
 tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
+void			G_signal_trap_m13(si4 sig_num);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
 tern			G_swap_names_m13(LH_m13 *lh);

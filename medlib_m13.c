@@ -1111,7 +1111,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 			if (seg->metadata_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_METADATA_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					seg->metadata_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+					seg->metadata_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 					if (seg->metadata_fps == NULL)
 						return_m13(FALSE_m13);
 				} else {
@@ -1126,7 +1126,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 			// get indices
 			if (seg->ts_inds_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_INDS_TYPE_STR_m13);
-				seg->ts_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+				seg->ts_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 				if (seg->ts_inds_fps == NULL) {
 						return_m13(FALSE_m13);
 				} else {
@@ -1196,7 +1196,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 			if (seg->metadata_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VID_METADATA_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					seg->metadata_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, NULL, "r", (LH_m13 *) seg);
+					seg->metadata_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, NULL, "r", (LH_m13 *) seg, 0);
 					if (seg->metadata_fps == NULL)
 						return_m13(FALSE_m13);
 				} else {
@@ -1212,7 +1212,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 			if (seg->ts_inds_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VID_INDS_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					seg->vid_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, NULL, "r", (LH_m13 *) seg);
+					seg->vid_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, NULL, "r", (LH_m13 *) seg, 0);
 					if (seg->vid_inds_fps == NULL)
 						return_m13(FALSE_m13);
 				} else {
@@ -1390,32 +1390,36 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 
 	// get channel records (generally preferred)
 	if (chan) {
+		G_add_behavior_m13(RETURN_QUIETLY_m13);
 		ri_fps = chan->rec_inds_fps;
 		if (ri_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_INDS_TYPE_STR_m13);
-			ri_fps = chan->rec_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+			ri_fps = chan->rec_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan, 0);
 		}
 		rd_fps = chan->rec_data_fps;
 		if (rd_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", chan->path, chan->name, REC_DATA_TYPE_STR_m13);
-			rd_fps = chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan);
+			rd_fps = chan->rec_data_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) chan, 0);
 		}
 		if (ri_fps && rd_fps)
 			*source_type = chan->type_code;
+		G_pop_behavior_m13();
 	}
 
 	// get session records
 	if ((ri_fps == NULL || rd_fps == NULL) && sess) {
+		G_add_behavior_m13(RETURN_QUIETLY_m13);
 		ri_fps = sess->rec_inds_fps;
 		if (ri_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", pg->current_session.path, pg->current_session.fs_name, REC_INDS_TYPE_STR_m13);
-			ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+			ri_fps = sess->rec_inds_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 		}
 		rd_fps = sess->rec_data_fps;
 		if (rd_fps == NULL) {
 			sprintf_m13(tmp_str, "%s/%s.%s", pg->current_session.path, pg->current_session.fs_name, REC_DATA_TYPE_STR_m13);
-			rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+			rd_fps = sess->rec_data_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 		}
+		G_pop_behavior_m13();
 	}
 
 	// use Sgmt records (preferred)
@@ -1529,9 +1533,11 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 			if (seg_exists == FALSE_m13) {
 				G_path_parts_m13(seg_list[i], NULL, seg_name, NULL);
 				sprintf_m13(tmp_str, "%s/%s.%s", seg_list[i], seg_name, metadata_ext);
+				if (G_exists_m13(tmp_str) == FALSE_m13)
+					continue;
 			}
 			if (md_fps == NULL) {
-				md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, NULL);
+				md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, NULL, 0);
 				if (md_fps == NULL) {
 					free((void *) Sgmt_recs);
 					return_m13(NULL);
@@ -2421,33 +2427,40 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 
 tern	G_correct_universal_header_m13(FPS_m13 *fps)
 {
-	static tern			warning_given = FALSE_m13;
-	tern				free_fps2;
-	si1				path[PATH_BYTES_m13], name[SEG_NAME_BYTES_m13];
-	si8				n_entries, file_offset, idx;
-	ui4				maximum_entry_size;
-	FPS_m13				*fps2;
-	UH_m13		*uh, *uh2;
+	static tern		warning_given = FALSE_m13;
+	tern			free_fps2, live, reopen;
+	si1			path[PATH_BYTES_m13], name[SEG_NAME_BYTES_m13], mode_str[6];
+	si8			n_entries, file_offset, idx, offset;
+	ui4			maximum_entry_size;
+	FPS_m13			*fps2;
+	UH_m13			*uh, *uh2;
 	SEG_m13			*seg;
-	SSR_m13		*ssr;
-	LH_m13 				*lh;
+	SSR_m13			*ssr;
+	LH_m13 			*lh;
 	CMP_FIXED_BH_m13	bh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
-	// called if uh->n_entries == 0 in live recording or improperly closed file
+	// called if uh->n_entries == 0 (e.g. in live recording or improperly closed file)
 		
 	if (fps->params.fp->len == UH_BYTES_m13)  // no actual entries, zero is correct
 		return_m13(TRUE_m13);
 	
+	// warning
+	uh = fps->uh;
 	if (warning_given == FALSE_m13) {  // don't give this warning for every file
-		G_warning_message_m13("%s(): file header not complete.\nThis can occur if the file is still being recorded, or was not closed properly.\n", __FUNCTION__);
-		warning_given = TRUE_m13;
+		live = FALSE_m13;
+		if (MED_VER_1_0_m13(uh) == FALSE_m13)
+			if (uh->live == TRUE_m13)
+				live = TRUE_m13;
+		if (live == FALSE_m13) {  // don't give this warning for live files (if we can tell)
+			G_warning_message_m13("%s(): file header not complete.\nThis can occur if the file is still being recorded, or was not closed properly.\n", __FUNCTION__);
+			warning_given = TRUE_m13;
+		}
 	}
 	
-	uh = fps->uh;
 	n_entries = 0;
 	maximum_entry_size = 0;
 	free_fps2 = FALSE_m13;
@@ -2468,7 +2481,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 				G_path_parts_m13(fps->path, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, TS_INDS_TYPE_STR_m13);
 				G_push_behavior_m13(RETURN_QUIETLY_m13);
-				fps2 = FPS_read_m13(fps2, FPS_UH_ONLY_m13, 0, 0, NULL, path, "r", NULL, fps->parent);
+				fps2 = FPS_read_m13(fps2, FPS_UH_ONLY_m13, 0, 0, NULL, path, "r", NULL, fps->parent, 0);
 				if (fps2)
 					free_fps2 = TRUE_m13;
 				G_pop_behavior_m13();
@@ -2510,7 +2523,9 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 			break;
 		case VID_METADATA_TYPE_CODE_m13:
 		case TS_METADATA_TYPE_CODE_m13:
-			break;  // these are wirtten on close - there won't be anything to read except universal header
+			n_entries = 1;
+			maximum_entry_size = METADATA_BYTES_m13;
+			break;
 		case REC_DATA_TYPE_CODE_m13:
 			// see if indices known
 			lh = fps->parent;  // try using parent
@@ -2541,7 +2556,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 				G_path_parts_m13(fps->path, path, name, NULL);
 				sprintf_m13(path, "%s/%s.%s", path, name, REC_INDS_TYPE_STR_m13);
 				G_push_behavior_m13(RETURN_QUIETLY_m13);
-				fps2 = FPS_read_m13(fps2, FPS_UH_ONLY_m13, 0, 0, NULL, path, "r", NULL, fps->parent);
+				fps2 = FPS_read_m13(fps2, FPS_UH_ONLY_m13, 0, 0, NULL, path, "r", NULL, fps->parent, 0);
 				if (fps2)
 					free_fps2 = TRUE_m13;
 				G_pop_behavior_m13();
@@ -2572,6 +2587,25 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 
 	uh->n_entries = n_entries;
 	uh->maximum_entry_size = maximum_entry_size;
+	
+	// write out corrected header
+	if (globals_m13->write_corrected_headers == TRUE_m13) {
+		if (live == FALSE_m13) {
+			strcpy(mode_str, fps->params.mode_str);
+			offset = fps->params.fp->pos;
+			reopen = FALSE_m13;
+			if (strcmp_m13(mode_str, "r+")) {
+				reopen = TRUE_m13;
+				if (FPS_reopen_m13(fps, "r+") == FALSE_m13)
+					return_m13(FALSE_m13);
+			}
+			FPS_write_m13(fps, FPS_UH_ONLY_m13, 0, 0, NULL);
+			if (reopen == TRUE_m13)
+				if (FPS_reopen_m13(fps, mode_str) == FALSE_m13)
+					return_m13(FALSE_m13);
+			FPS_seek_m13(fps, offset);
+		}
+	}
 	
 	return_m13(TRUE_m13);
 }
@@ -4221,9 +4255,9 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 		if (chan) {
 			seg = chan->segs[j];
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_INDS_TYPE_STR_m13);
-			seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, NULL);
+			seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, NULL, 0);
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_INDS_TYPE_STR_m13);
-			seg->metadata_fps = FPS_read_m13(seg->metadata_fps, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, NULL);
+			seg->metadata_fps = FPS_read_m13(seg->metadata_fps, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, NULL, 0);
 		}
 		tsi_fps[i] = seg->ts_inds_fps;
 		md2 = &seg->metadata_fps->metadata->time_series_section_2;
@@ -5597,91 +5631,6 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 }
 
 
-void	G_function_stack_trap_m13(si4 sig_num)
-{
-	const si1		*error_type, *error_desc, *function;
-	FUNCTION_STACK_m13	*stack;
-	
-	isem_own_m13(&globals_m13->error.isem, TRUE_m13);  // hold non-owners here
-
-	switch (sig_num) {
-		case SIGINT:
-			error_type = "SIGINT";
-			error_desc = "user interrupt";
-			break;
-		case SIGILL:
-			error_type = "SIGILL";
-			error_desc = "illegal hardware instruction";
-			break;
-		case SIGABRT:
-			error_type = "SIGABRT";
-			error_desc = "abnormal termination";
-			break;
-		case SIGFPE:
-			error_type = "SIGFPE";
-			error_desc = "floating point exception";
-			break;
-		case SIGSEGV:
-			error_type = "SIGSEGV";
-			error_desc = "memory segment violation";
-			break;
-		case SIGTERM:
-			error_type = "SIGTERM";
-			error_desc = "terminate";
-			break;
-		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
-		case SIGBUS:
-			error_type = "SIGBUS";
-			error_desc = "bus error";
-			break;
-		case SIGQUIT:
-			error_type = "SIGQUIT";
-			error_desc = "process quit";
-			break;
-		case SIGSYS:
-			error_type = "SIGSYS";
-			error_desc = "system call error";
-			break;
-		case SIGTRAP:
-			error_type = "SIGTRAP";
-			error_desc = "trace trap";
-			break;
-		case SIGXCPU:
-			error_type = "SIGXCPU";
-			error_desc = "CPU time limit exceeded";
-			break;
-		case SIGXFSZ:
-			error_type = "SIGXFSZ";
-			error_desc = "file size limit exceeded";
-			break;
-		#endif
-		default:
-			sig_num = -1;
-			error_type = "SIGUNKN";
-			error_desc = "unrecogized signal";
-			return;
-	}
-	
-	// set error (put sigal number in line argument & call G_set_error_exec_m13(() directly)
-	stack = G_function_stack_m13(0);
-	if (stack) {
-		if (G_error_code_m13())
-			function = stack->entries[stack->err_top_idx].name;
-		else
-			function = stack->entries[stack->top_idx].name;
-	} else {
-		function = __FUNCTION__;
-	}
-	#ifdef MATLAB_m13
-	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "[%s, sys code %d]", error_desc, error_type, sig_num);
-	#else
-	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "%s  %s[%s, sys code %d]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
-	#endif
-	
-	return;  // never gets here - G_set_error_m13() will always exit on a signal error
-}
-
-
 si1	**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names)
 {
 	si8 i;
@@ -6276,6 +6225,7 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	globals_m13->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
 	globals_m13->file_lock_timeout = GLOBALS_FILE_LOCK_TIMEOUT_DEFAULT_m13;
 	globals_m13->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
+	globals_m13->write_corrected_headers = GLOBALS_WRITE_CORRECTED_HEADERS_DEFAULT_m13;
 	globals_m13->update_file_system_names = GLOBALS_UPDATE_FILE_SYSTEM_NAMES_DEFAULT_m13;
 	globals_m13->update_header_names = GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13;
 	globals_m13->update_MED_version = GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13;
@@ -6317,23 +6267,20 @@ tern	G_init_medlib_m13(tern init_all_tables, const si1 *app_path, ...)  // varar
 		}
 	}
 
-#ifdef FT_DEBUG_m13
-	signal(SIGABRT, G_function_stack_trap_m13);  // Abnormal termination
-	signal(SIGFPE, G_function_stack_trap_m13);  // Floating point exception
-	signal(SIGILL, G_function_stack_trap_m13);  // Illegal instruction
-	signal(SIGINT, G_function_stack_trap_m13);  // Ctrl-C interrupt (often caught on Windows before gets here [b/c == "Copy"])
-	signal(SIGSEGV, G_function_stack_trap_m13);  // Segmentation violation
-	signal(SIGTERM, G_function_stack_trap_m13);  // Terminate
+	signal(SIGABRT, G_signal_trap_m13);  // Abnormal termination
+	signal(SIGFPE, G_signal_trap_m13);  // Floating point exception
+	signal(SIGILL, G_signal_trap_m13);  // Illegal instruction
+	signal(SIGINT, G_signal_trap_m13);  // Ctrl-C interrupt (often caught on Windows before gets here [b/c == "Copy"])
+	signal(SIGSEGV, G_signal_trap_m13);  // Memory segment violation
+	signal(SIGTERM, G_signal_trap_m13);  // Terminate
 	#if defined MACOS_m13 || defined LINUX_m13  // supported on Unix-like OS's
-		signal(SIGBUS, G_function_stack_trap_m13);  // Bus error
-		signal(SIGKILL, G_function_stack_trap_m13);  // Kill
-		signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
-	signal(SIGQUIT, G_function_stack_trap_m13);  // Quit
-		signal(SIGTRAP, G_function_stack_trap_m13);  // Trace Trap (unhandled exception, or debugger breakpoint)
-		signal(SIGXCPU, G_function_stack_trap_m13);  // CPU time limit
-		signal(SIGXFSZ, G_function_stack_trap_m13);  // File size limit
+		signal(SIGBUS, G_signal_trap_m13);  // Bus error
+		signal(SIGKILL, G_signal_trap_m13);  // Kill
+		signal(SIGQUIT, G_signal_trap_m13);  // Quit
+		signal(SIGTRAP, G_signal_trap_m13);  // Trace Trap (unhandled exception, or debugger breakpoint)
+		signal(SIGXCPU, G_signal_trap_m13);  // CPU time limit
+		signal(SIGXFSZ, G_signal_trap_m13);  // File size limit
 	#endif
-#endif
 
 	// check cpu endianness
 	if (globals_m13->tables->HW_params.endianness != LITTLE_ENDIAN_m13) {
@@ -6594,6 +6541,7 @@ tern	G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file
 	uh->segment_end_time = UUTC_NO_ENTRY_m13;
 	uh->n_entries = 0;
 	uh->maximum_entry_size = 0;
+	uh->live = FALSE_m13;  // while live, this should be set acquisition code
 	uh->ordered = TRUE_m13;  // empty, so inherently ordered
 	uh->expanded_passwords = UH_EXPANDED_PASSWORDS_DEFAULT_m13;
 	uh->encryption_rounds = UH_ENCRYPTION_ROUNDS_DEFAULT_m13;
@@ -8038,14 +7986,14 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 			sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_INDS_TYPE_STR_m13);
 		else
 			sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_INDS_TYPE_STR_m13);
-		ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+		ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 		if (ri_fps == NULL) {
 			if (G_swap_names_m13(lh) == TRUE_m13) {
 				if (lh->type_code == SSR_TYPE_CODE_m13)
 					sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_INDS_TYPE_STR_m13);
 				else
 					sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_INDS_TYPE_STR_m13);
-				ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 			}
 		}
 	}
@@ -8056,14 +8004,14 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 			sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_DATA_TYPE_STR_m13);
 		else
 			sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_DATA_TYPE_STR_m13);
-		rd_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+		rd_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 		if (rd_fps == NULL) {
 			if (G_swap_names_m13(lh) == TRUE_m13) {
 				if (lh->type_code == SSR_TYPE_CODE_m13)
 					sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_DATA_TYPE_STR_m13);
 				else
 					sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_DATA_TYPE_STR_m13);
-				rd_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess);
+				rd_fps = FPS_read_m13(NULL, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 			}
 		}
 	}
@@ -8240,11 +8188,11 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 		else // seg->type_code == VID_SEG_TYPE_CODE_m13
 			ext = VID_METADATA_TYPE_STR_m13;
 		sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, ext);
-		seg->metadata_fps = FPS_read_m13(seg->metadata_fps, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+		seg->metadata_fps = FPS_read_m13(seg->metadata_fps, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 		if (seg->metadata_fps == NULL) {
 			if (G_swap_names_m13((LH_m13 *) seg) == TRUE_m13) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, ext);
-				seg->metadata_fps = FPS_read_m13(seg->metadata_fps, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+				seg->metadata_fps = FPS_read_m13(seg->metadata_fps, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 			}
 			if (seg->metadata_fps == NULL) {
 				if (free_seg == TRUE_m13)
@@ -8263,11 +8211,11 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 		else // seg->type_code == VID_SEG_TYPE_CODE_m13
 			ext = VID_INDS_TYPE_STR_m13;
 		sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, ext);
-		seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+		seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 		if (seg->ts_inds_fps == NULL) {  // note seg->vid_inds_fps is the same pointer, so works for either
 			if (G_swap_names_m13((LH_m13 *) seg) == TRUE_m13) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, ext);
-				seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+				seg->ts_inds_fps = FPS_read_m13(seg->ts_inds_fps, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 			}
 			if (seg->ts_inds_fps == NULL) {
 				if (free_seg == TRUE_m13)
@@ -8279,11 +8227,11 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 		// data (time series data only)
 		if (seg->type_code == TS_SEG_TYPE_CODE_m13) {
 			sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_DATA_TYPE_STR_m13);
-			seg->ts_data_fps = FPS_read_m13(seg->ts_data_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+			seg->ts_data_fps = FPS_read_m13(seg->ts_data_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 			if (seg->ts_data_fps == NULL) {
 				if (G_swap_names_m13((LH_m13 *) seg) == TRUE_m13) {
 					sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_DATA_TYPE_STR_m13);
-					seg->ts_data_fps = FPS_read_m13(seg->ts_inds_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg);
+					seg->ts_data_fps = FPS_read_m13(seg->ts_inds_fps, 0, FPS_AUTO_BYTES_m13, 0, NULL, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 				}
 				if (seg->ts_data_fps == NULL) {
 					if (free_seg == TRUE_m13)
@@ -10310,7 +10258,7 @@ void	G_read_medlibrc_m13(const si1 *app_path)
 	// assumes caller has globals_m13->mutex
 	
 	// setup
-	G_push_behavior_m13(IGNORE_ERROR_m13 | RETURN_ON_FAIL_m13);  // no errors set in this function
+	G_push_behavior_m13(RETURN_QUIETLY_m13);  // no errors set in this function
 	failed = TRUE_m13;
 	buffer = NULL;
 	fp = NULL;
@@ -11685,7 +11633,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 				STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, Sgmt_records[i].seg_num);
 				sprintf_m13(seg_name, "%s_s%s", chan->name, num_str);
 				sprintf_m13(md_file, "%s/%s.%s/%s.%s", chan->path, seg_name, TS_SEG_TYPE_STR_m13, seg_name, TS_METADATA_TYPE_STR_m13);
-				md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_file, "r", NULL, NULL);
+				md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_file, "r", NULL, NULL, 0);
 				if (md_fps == NULL)
 					continue;
 				md2 = &md_fps->metadata->time_series_section_2;
@@ -12315,8 +12263,10 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 	
 	// get behavior
 	behavior = G_current_behavior_m13();
-	if (code == E_SIG_m13) // always exit on signal
-		behavior &= ~(IGNORE_ERROR_m13 | RETURN_ON_FAIL_m13);
+	if (code == E_SIG_m13) { // always exit on signal
+		behavior &= ~(RETURN_QUIETLY_m13);
+		G_add_behavior_m13(RETURN_QUIETLY_m13);  // in case error in functions called below
+	}
 	if (behavior & IGNORE_ERROR_m13)
 		return;
 
@@ -12330,12 +12280,13 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 	// hold subsequent threads here
 	isem_own_m13(&err->isem, TRUE_m13);
 	
-	// hold error (other threads wait  (to get values) while values being set)
+	// hold error (other threads wait (to get values) while values being set)
 	pthread_mutex_lock_m13(&err->mutex);
 	
 	// don't overwrite existing causal error
 	if (err->code == E_NONE_m13) {
-		
+		eprintf_m13("got here the first time from %s %d", function, line);
+
 		#ifdef FT_DEBUG_m13
 		pid_t_m13		parent_id;
 		FUNCTION_STACK_m13	*stack, *tmp_stack;
@@ -12384,6 +12335,9 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 		err->function = function;
 		pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 		err->thread_id = gettid_m13();
+	} else {  // debug
+		eprintf_m13("got here again from %s %d", function, line);
+		exit(-1);
 	}
 	
 	// relase error hold
@@ -12412,7 +12366,7 @@ tern	G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m13 
 	if (G_find_metadata_file_m13(MED_path, md_file) == NULL)
 		return_m13(FALSE_m13);
 	
-	fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_file, "r", password, lh);
+	fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_file, "r", password, lh, 0);
 	if (fps == NULL)
 		return_m13(FALSE_m13);
 	
@@ -12734,7 +12688,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 		}
 		if (rate == RATE_NO_ENTRY_m13) {
 			G_find_metadata_file_m13(chan->path, md_path);
-			md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_path, "r", NULL, (LH_m13 *) chan);
+			md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_path, "r", NULL, (LH_m13 *) chan, 0);
 			if (md_fps == NULL)
 				return_m13(NULL);
 			if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
@@ -12824,9 +12778,10 @@ ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 }
 
 
-tern	G_show_behavior_m13(ui4 mode)
+tern	G_show_behavior_m13(ui4 behavior_code)
 {
 	si1			behavior_string[256];
+	ui4			mode;
 	si4			i;
 	BEHAVIOR_m13		*behavior;
 	BEHAVIOR_STACK_m13	*stack;
@@ -12835,21 +12790,28 @@ tern	G_show_behavior_m13(ui4 mode)
 	G_push_function_m13();
 #endif
 
-	// mode == CURRENT_BEHAVIOR_m13, or CURRENT_BEHAVIOR_STACK_m13  (or CURRENT_BEHAVIOR_m13 | CURRENT_BEHAVIOR_STACK_m13 for both)
+	// behavior_code == CURRENT_BEHAVIOR_m13, or CURRENT_BEHAVIOR_STACK_m13: use stack
 	
-	stack = G_behavior_stack_m13();  // gets mutex
+	if (behavior_code & (CURRENT_BEHAVIOR_m13 | CURRENT_BEHAVIOR_STACK_m13)) {
+		stack = G_behavior_stack_m13();  // gets mutex
+		mode = behavior_code;
+	} else {  // passed code
+		G_behavior_string_m13(behavior_code, behavior_string);
+		printf_m13("%s%s%s  [code %u]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior_code, TC_RESET_m13);
+		return_m13(TRUE_m13);
+	}
 	
 	if (mode & CURRENT_BEHAVIOR_m13) {
 		printf_m13("\nCurrent Process Behavior:\n------------------------\n");
-		if (stack->top_idx >= 0)
+		if (stack->top_idx >= 0) {
 			behavior = stack->behaviors + stack->top_idx;
-		else
-			behavior = &globals_m13->default_behavior;
-		G_behavior_string_m13(behavior->code, behavior_string);
-		if (stack->top_idx < 0)
-			printf_m13("%s%s%s  [code %u, default behavior]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13);
-		else
+			G_behavior_string_m13(behavior->code, behavior_string);
 			printf_m13("%s%s%s  [code %u, set at %s(%d)]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, behavior->function, behavior->line, TC_RESET_m13);
+		} else {
+			behavior = &globals_m13->default_behavior;
+			G_behavior_string_m13(behavior->code, behavior_string);
+			printf_m13("%s%s%s  [code %u, default behavior]%s\n", TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, TC_RESET_m13);
+		}
 	}
 	
 	if (mode & CURRENT_BEHAVIOR_STACK_m13) {
@@ -12863,9 +12825,6 @@ tern	G_show_behavior_m13(ui4 mode)
 			printf_m13("%d) %s%s%s  [code %u, set at %s(%d)]%s\n", i, TC_RED_m13, behavior_string, TC_BLUE_m13, behavior->code, behavior->function, behavior->line, TC_RESET_m13);
 		}
 	}
-
-	// release mutex
-	pthread_mutex_unlock_m13(&globals_m13->behavior_stack_list->mutex);
 
 	return_m13(TRUE_m13);
 }
@@ -13247,6 +13206,7 @@ void  G_show_globals_m13(void)
 	printf_m13("Threading: %s\n", STR_tern_m13(globals_m13->threading, TRUE_m13));
 	printf_m13("CRC Mode: %u\n", globals_m13->CRC_mode);
 	printf_m13("Write Sorted Records: %s\n", STR_tern_m13(globals_m13->write_sorted_records, TRUE_m13));
+	printf_m13("Write Corrected Headers: %s\n", STR_tern_m13(globals_m13->write_corrected_headers, TRUE_m13));
 	printf_m13("Update File System Names: %s\n", STR_tern_m13(globals_m13->update_file_system_names, TRUE_m13));
 	printf_m13("Update Header Names: %s\n", STR_tern_m13(globals_m13->update_header_names, TRUE_m13));
 	printf_m13("Update MED Version: %s\n\n", STR_tern_m13(globals_m13->update_MED_version, TRUE_m13));
@@ -14506,6 +14466,7 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		printf_m13("Level 3 Password Validation Field: 0x %s\n", hex_str);
 	}
 	if (MED_VER_1_0_m13(uh) == FALSE_m13) {
+		printf_m13("Live: %s\n", STR_tern_m13(uh->live, FALSE_m13));
 		printf_m13("Ordered: %s\n", STR_tern_m13(uh->ordered, FALSE_m13));
 		printf_m13("Expanded Passwords: %s\n", STR_tern_m13(uh->expanded_passwords, FALSE_m13));
 		printf_m13("Encryption Rounds: %hhu\n", uh->encryption_rounds);
@@ -14566,6 +14527,96 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 }
 
 
+void	G_signal_trap_m13(si4 sig_num)
+{
+	const si1		*error_type, *error_desc, *function;
+	FUNCTION_STACK_m13	*stack;
+	
+	isem_own_m13(&globals_m13->error.isem, TRUE_m13);  // hold non-owners here
+
+	switch (sig_num) {
+		case SIGINT:
+			error_type = "SIGINT";
+			error_desc = "user interrupt";
+			break;
+		case SIGILL:
+			error_type = "SIGILL";
+			error_desc = "illegal hardware instruction";
+			break;
+		case SIGABRT:
+			error_type = "SIGABRT";
+			error_desc = "abnormal termination";
+			break;
+		case SIGFPE:
+			error_type = "SIGFPE";
+			error_desc = "floating point exception";
+			break;
+		case SIGSEGV:
+			error_type = "SIGSEGV";
+			error_desc = "memory segment violation";
+			break;
+		case SIGTERM:
+			error_type = "SIGTERM";
+			error_desc = "terminate";
+			break;
+		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
+		case SIGBUS:
+			error_type = "SIGBUS";
+			error_desc = "bus error";
+			break;
+		case SIGQUIT:
+			error_type = "SIGQUIT";
+			error_desc = "process quit";
+			break;
+		case SIGSYS:
+			error_type = "SIGSYS";
+			error_desc = "system call error";
+			break;
+		case SIGTRAP:
+			error_type = "SIGTRAP";
+			error_desc = "trace trap";
+			break;
+		case SIGXCPU:
+			error_type = "SIGXCPU";
+			error_desc = "CPU time limit exceeded";
+			break;
+		case SIGXFSZ:
+			error_type = "SIGXFSZ";
+			error_desc = "file size limit exceeded";
+			break;
+		#endif
+		default:
+			sig_num = -1;
+			error_type = "SIGUNKN";
+			error_desc = "unrecogized signal";
+			return;
+	}
+	
+	// set error (put sigal number in line argument & call G_set_error_exec_m13(() directly)
+	#ifdef FT_DEBUG_m13
+	stack = G_function_stack_m13(0);
+	if (stack) {
+		if (G_error_code_m13())
+			function = stack->entries[stack->err_top_idx].name;
+		else
+			function = stack->entries[stack->top_idx].name;
+	} else {
+		function = __FUNCTION__;
+	}
+	#else
+	function = __FUNCTION__;
+	#endif
+	
+	#ifdef MATLAB_m13
+	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "[%s, sys code %d]", error_desc, error_type, sig_num);
+	#else
+	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "%s  %s[%s, sys code %d]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
+	#endif
+	
+	return;  // never gets here - G_set_error_m13() will always exit on a signal error
+}
+
+
 tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 {
 	tern			read_metadata;
@@ -14613,7 +14664,7 @@ tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 			sprintf_m13(seg_dir, "%s/%s_s%s.%s", chan->path, chan->name, num_str, TS_SEG_TYPE_STR_m13);
 			sprintf_m13(md_file, "%s/%s_s%s.%s", seg_dir, chan->name, num_str, TS_METADATA_TYPE_STR_m13);
 			if (G_exists_m13(md_file) == FILE_EXISTS_m13) {
-				md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_file, "r", NULL, NULL);
+				md_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, NULL, md_file, "r", NULL, NULL, 0);
 				if (md_fps == NULL) {
 					free((void *) acq_idxs);
 					return_m13(FALSE_m13);
@@ -14679,8 +14730,8 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	rd_fps = rec_data_fps;
 
 	// read full files
-	ri_fps = FPS_read_m13(ri_fps, FPS_FULL_FILE_m13, 0, 0, NULL, NULL);
-	rd_fps = FPS_read_m13(rd_fps, FPS_FULL_FILE_m13, 0, 0, NULL, NULL);
+	ri_fps = FPS_read_m13(ri_fps, FPS_FULL_FILE_m13, 0, 0, NULL, NULL, 0);
+	rd_fps = FPS_read_m13(rd_fps, FPS_FULL_FILE_m13, 0, 0, NULL, NULL, 0);
 	if (ri_fps == NULL || rd_fps == NULL)
 		return_m13(FALSE_m13);
 	
@@ -15490,18 +15541,21 @@ tern	G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8
 tern	G_update_MED_type_m13(const si1 *path)
 {
 	tern			r_val;
-	ui1			*rd, *rd2, *encryption_key, *block, *ts_block;
-	si1			*text;
-	ui4			type_code, bh_clear_mask, temp_CRC, full_CRC;
-	si8			i, bytes_to_read, bytes_to_write, n_blocks;
-	si8			body_bytes, text_bytes, r_pos, w_pos, rw_pos;
+	ui1			*rd, *r_rd;
+	si1			*text, tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13];
+	ui4			type_code;
+	si8			i, bytes_to_read, bytes_to_write, n_blocks, header_offset;
+	si8			body_bytes, text_bytes, r_pos, w_pos;
 	size_t			nr, nw;
 	FILE_m13		*fp;
 	FPS_m13			*ri_fps, *rd_fps;
-	UH_m13			*uh;
-	PASSWORD_DATA_m13	*pwd;
-	PROC_GLOBS_m13		*pg;
-	
+	UH_m13			*uh, *ri_uh, *rd_uh;
+	REC_IDX_m13		*ri;
+	REC_HDR_m13		r_rh, *w_rh;
+	REC_Sgmt_v10_m13	Sgmt_v10;
+	REC_Sgmt_v11_m13	*Sgmt_v11;
+	REC_Note_v11_m13	r_Note_v11, *w_Note_v11;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -15510,13 +15564,11 @@ tern	G_update_MED_type_m13(const si1 *path)
 		return_m13(FALSE_m13);
 
 	r_val = FALSE_m13;
-	ts_block = rd = rd2 = NULL;
+	rd = NULL;
 	fp = NULL;
 	ri_fps = rd_fps = NULL;
-
-	pg = G_proc_globs_m13(NULL);
-	pwd = &pg->password_data;
 	
+	eprintf_m13("starting %s", path);
 	// metadata (uh only)
 	type_code = G_MED_type_code_from_string_m13(path);
 	if (METADATA_CODE_m13(type_code) == TRUE_m13) {
@@ -15581,14 +15633,22 @@ tern	G_update_MED_type_m13(const si1 *path)
 	
 	// time series data, time series indices & video indices (uh only)
 	// time series data: does not update blocks because no one has used data encyption in MED 1.0
-	else if (type_code == TS_INDS_TYPE_CODE_m13  || type_code == TS_DATA_TYPE_CODE_m13 || type_code == VID_INDS_TYPE_CODE_m13) {
+	else if (type_code == TS_INDS_TYPE_CODE_m13  || type_code == TS_DATA_TYPE_CODE_m13 || type_code == VID_INDS_TYPE_CODE_m13 || type_code == VID_DATA_TYPE_CODE_m13) {
 
 		fp = fopen_m13(path, "r+");
 		if (fp == NULL)
 			return_m13(FALSE_m13);
  
+		if (type_code == VID_DATA_TYPE_CODE_m13) {
+			header_offset = flen_m13(fp) - UH_BYTES_m13;
+			fseek_m13(fp, header_offset, SEEK_SET);
+		} else {
+			header_offset = 0;
+		}
+		
 		// read in raw data
 		bytes_to_read = UH_BYTES_m13;
+		fseek_m13(fp, header_offset, SEEK_SET);
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL)
 			goto UPDATE_MED_TYPE_FAIL_m13;
@@ -15598,7 +15658,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 
 		// set up
 		uh = (UH_m13 *) rd;
-
+		
 		// update version
 		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
 		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
@@ -15620,90 +15680,36 @@ tern	G_update_MED_type_m13(const si1 *path)
 		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 
 		// write out
-		fseek_m13(fp, 0, SEEK_SET);
+		fseek_m13(fp, header_offset, SEEK_SET);
 		bytes_to_write = bytes_to_read;
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 	}
-		
-	// video data (uh only, but different location)
-	else if (type_code == VID_DATA_TYPE_CODE_m13) {
-		
-		fp = fopen_m13(path, "r+");
-		if (fp == NULL)
-			return_m13(FALSE_m13);
-
-		// read in raw data
-		bytes_to_read = UH_BYTES_m13;
-		rd = (ui1 *) malloc((size_t) bytes_to_read);
-		if (rd == NULL)
-			goto UPDATE_MED_TYPE_FAIL_m13;
-		fseek_m13(fp, -UH_BYTES_m13, SEEK_END);
-		nr = fread_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_read, fp);
-		if (nr != bytes_to_read)
-			goto UPDATE_MED_TYPE_FAIL_m13;
-
-		// set up
-		uh = (UH_m13 *) rd;
-
-		// update version
-		uh->MED_version_major = MED_FORMAT_VERSION_MAJOR_m13;
-		uh->MED_version_minor = MED_FORMAT_VERSION_MINOR_m13;
-
-		// update fields: no overlaps, no encryption
-		
-		// ordered
-		uh->ordered = TRUE_m13;
-		
-		// encryption
-		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
-		uh->encryption_rounds = 0;  // no encryption in MED 1.0 video
-		uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = NO_ENCRYPTION_m13;  // no encryption in MED 1.0 video
-		
-		// anonymized subject
-		memset((void *) (rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
-		
-		// update header CRC
-		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
-
-		// write out
-		fseek_m13(fp, -UH_BYTES_m13, SEEK_END);
-		bytes_to_write = bytes_to_read;
-		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
-		if (nw != bytes_to_write)
-			goto UPDATE_MED_TYPE_FAIL_m13;
-	}
-		
+				
 	// record data & indices (have to be done together, using FPSs for encryption)
 	else if (type_code == REC_INDS_TYPE_CODE_m13 || type_code == REC_DATA_TYPE_CODE_m13) {
-		FPS_m13		*ri_fps, *rd_fps;
-		si1			tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13];
-		UH_m13			*ri_uh, *rd_uh;
-		REC_IDX_m13		*ri;
-		REC_HDR_m13		r_rh, *w_rh;
-		REC_Sgmt_v10_m13	Sgmt_v10;
-		REC_Sgmt_v11_m13	*Sgmt_v11;
-		REC_Note_v11_m13	r_Note_v11, *w_Note_v11;
 		
 		G_path_parts_m13(path, tmp_path, tmp_name, NULL);
 		if (type_code == REC_INDS_TYPE_CODE_m13) {
-			ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, path, "r+", NULL, NULL);
+			ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, path, "r+", NULL, NULL, 0);
 			sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, REC_DATA_TYPE_STR_m13);
-			rd_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_path, "r+", NULL, NULL);
+			rd_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_path, "r+", NULL, NULL, 0);
 		} else {
-			rd_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, path, "r+", NULL, NULL);
+			rd_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, path, "r+", NULL, NULL, 0);
 			sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, REC_INDS_TYPE_STR_m13);
-			ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_path, "r+", NULL, NULL);
+			ri_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, 0, 0, NULL, tmp_path, "r+", NULL, NULL, 0);
 		}
-		if (ri_fps == NULL || rd_fps == NULL)
+		if (ri_fps == NULL || rd_fps == NULL) {
+			exit_m13(E_GEN_m13);
 			goto UPDATE_MED_TYPE_FAIL_m13;
+		}
 
 		// set up
 		ri_uh = ri_fps->uh;
-		ri_uh = ri_fps->uh;
+		rd_uh = rd_fps->uh;
 
-		// already done
+		// already done (done in cojunction, so can get here)
 		if (ri_uh->MED_version_major == MED_FORMAT_VERSION_MAJOR_m13 && ri_uh->MED_version_minor == MED_FORMAT_VERSION_MINOR_m13) {
 			if (rd_uh->MED_version_major == MED_FORMAT_VERSION_MAJOR_m13 && rd_uh->MED_version_minor == MED_FORMAT_VERSION_MINOR_m13) {
 				r_val = TRUE_m13;
@@ -15740,19 +15746,21 @@ tern	G_update_MED_type_m13(const si1 *path)
 
 		// update Sgmt index versions (data will be done also as always used as a pair)
 		for (i = 0; i < n_blocks; ++i, ++ri) {
-			
+		
+			eprintf_m13("starting block %ld", i);
+			r_rd = rd_fps->params.raw_data + r_pos;
+			r_rh = *((REC_HDR_m13 *) r_rd);  // copy
+			w_rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + w_pos);  // pointer
+
 			// update Sgmt record index versions
 			if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13 || r_rh.type_code == REC_Note_TYPE_CODE_m13) {
-				
-				r_rh = *((REC_HDR_m13 *) (rd_fps->params.raw_data + r_pos));  // copy
-				w_rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + w_pos);  // pointer
-
 				if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13) {
+					eprintf_m13("");
 					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
-						
+						eprintf_m13("");
 						// update structure
-						Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (rd_rd + r_pos + REC_HDR_BYTES_m13));  // copy
-						Sgmt_v11 = (REC_Sgmt_v11_m13 *) (rd_rd + w_pos + REC_HDR_BYTES_m13);  // pointer
+						Sgmt_v10 = *((REC_Sgmt_v10_m13 *) (r_rd + REC_HDR_BYTES_m13));  // copy
+						Sgmt_v11 = (REC_Sgmt_v11_m13 *) ((ui1 *) w_rh + REC_HDR_BYTES_m13);  // pointer
 						Sgmt_v11->end_time = Sgmt_v10.end_time;
 						Sgmt_v11->start_samp_num = Sgmt_v10.start_samp_num;
 						Sgmt_v11->end_samp_num = Sgmt_v10.end_samp_num;
@@ -15760,75 +15768,88 @@ tern	G_update_MED_type_m13(const si1 *path)
 						Sgmt_v11->samp_freq = (sf4) Sgmt_v10.samp_freq;
 						text_bytes = (si8) (r_rh.total_record_bytes - (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13));
 						if (text_bytes) {
-							text = (si1 *) (rd_rd + r_pos + REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13);
+							text = (si1 *) (r_rd + REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13);
 							text_bytes = strlen(text) + 1;  // account for terminal zero
 						}
 						body_bytes = REC_Sgmt_v11_BYTES_m13 + text_bytes;
 						if (text_bytes) {
-							memmove_m13((void *) (rd_rd + w_pos + REC_HDR_BYTES_m13 + REC_Sgmt_v11_BYTES_m13), (void *) text, (size_t) text_bytes);
+							memmove_m13((void *) ((ui1 *) w_rh + REC_HDR_BYTES_m13 + REC_Sgmt_v11_BYTES_m13), (void *) text, (size_t) text_bytes);
 							body_bytes = G_pad_m13((ui1 *) Sgmt_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13);
 						}
 						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
 						
 						// update version
 						ri->version_minor = w_rh->version_minor = 1;
+						eprintf_m13("");
 					}
 				} else {  // rh->type_code == REC_Note_TYPE_CODE_m13 (just reduce alignment requirement from 16 to 8 bytes)
+					eprintf_m13("");
 					// Note version 1.0
 					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
+						eprintf_m13("");
 						text_bytes = (si8) (r_rh.total_record_bytes - REC_HDR_BYTES_m13);
 						if (text_bytes) {
-							text = (si1 *) rd_rd + r_pos + REC_HDR_BYTES_m13;
+							text = (si1 *) r_rd + REC_HDR_BYTES_m13;
 							text_bytes = strlen(text) + 1;  // account for terminal zero
 						}
 						body_bytes = text_bytes;
 						if (text_bytes) {
-							memmove_m13((void *) (rd_rd + w_pos + REC_HDR_BYTES_m13), (void *) text, (size_t) text_bytes);
+							memmove_m13((void *) ((ui1 *) w_rh + REC_HDR_BYTES_m13), (void *) text, (size_t) text_bytes);
 							body_bytes = G_pad_m13((ui1 *) text, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13);
 						}
 						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
+						eprintf_m13("");
 					}
 					// Note version 1.1
 					else if (r_rh.version_major == 1 && r_rh.version_minor == 1) {
-						
-						r_Note_v11 = *((REC_Note_v11_m13 *) (rd_rd + r_pos + REC_HDR_BYTES_m13));  // copy
-						w_Note_v11 = (REC_Note_v11_m13 *) (rd_rd + w_pos + REC_HDR_BYTES_m13);  // pointer
+						eprintf_m13("");
+						r_Note_v11 = *((REC_Note_v11_m13 *) (r_rd + REC_HDR_BYTES_m13));  // copy
+						w_Note_v11 = (REC_Note_v11_m13 *) ((ui1 *) w_rh + REC_HDR_BYTES_m13);  // pointer
 						*w_Note_v11 = r_Note_v11;
 						text_bytes = (si8) (r_rh.total_record_bytes - (REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13));
 						if (text_bytes) {
-							text = (si1 *) rd_rd + r_pos + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13;
+							text = (si1 *) r_rd + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13;
 							text_bytes = strlen(text) + 1;  // account for terminal zero
 						}
 						body_bytes = REC_Note_v11_BYTES_m13 + text_bytes;
 						if (text_bytes) {
-							memmove_m13((void *) (rd_rd + w_pos + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13), (void *) text, (size_t) text_bytes);
+							memmove_m13((void *) ((ui1 *) w_rh + REC_HDR_BYTES_m13 + REC_Note_v11_BYTES_m13), (void *) text, (size_t) text_bytes);
 							body_bytes = G_pad_m13((ui1 *) w_Note_v11, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13;
 						}
 						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
+						eprintf_m13("");
 					}
+					eprintf_m13("");
 				}
 				
+				eprintf_m13("");
 				r_pos += r_rh.total_record_bytes;
 				w_pos += w_rh->total_record_bytes;
-
+				eprintf_m13("");
 			} else if (r_pos != w_pos) {  // neither of above types => just move
+				eprintf_m13("");
 				w_rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + w_pos);
 				if (r_pos != w_pos)
-					memmove_m13((void *) w_rh, (void *) (rd_fps->params.raw_data + r_pos), w_rh->total_record_bytes);
-				r_pos += w_rh->total_record_bytes;
-				w_pos += w_rh->total_record_bytes;
+					memmove_m13((void *) w_rh, (void *) (void *) r_rd, r_rh.total_record_bytes);
+				eprintf_m13("");
 			}
-		}
-		
-		// write out
-		if (FPS_write_m13(ri_fps, FPS_FULL_FILE_m13, 0, ri_fps->uh->n_entries, NULL) == FALSE_m13)
-			goto UPDATE_MED_TYPE_FAIL_m13;
-		if (FPS_write_m13(rd_fps, FPS_FULL_FILE_m13, w_pos - UH_BYTES_m13, rd_fps->uh->n_entries, NULL) == FALSE_m13)
-			goto UPDATE_MED_TYPE_FAIL_m13;
+			
+			r_pos += r_rh.total_record_bytes;
+			w_pos += w_rh->total_record_bytes;
 
-		// truncate if shrunk
-		if (w_pos < r_pos)
-			truncate_m13(rd_fps->path, w_pos);
+			eprintf_m13("finishing block %ld", i);
+		}
+		eprintf_m13("finished all blocks");
+
+		// write out (closed above by full file read)
+		eprintf_m13("FPS_is_open_m13(ri_fps) = %hhd", FPS_is_open_m13(ri_fps));
+		eprintf_m13("ri_fps->uh->n_entries = %ld", ri_fps->uh->n_entries);
+		if (FPS_write_m13(ri_fps, FPS_FULL_FILE_m13, (size_t) (ri_fps->uh->n_entries * INDEX_BYTES_m13), ri_fps->uh->n_entries, NULL) == FALSE_m13)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		eprintf_m13("");
+		if (FPS_write_m13(rd_fps, FPS_FULL_FILE_m13, (size_t) (w_pos - UH_BYTES_m13), rd_fps->uh->n_entries, NULL) == FALSE_m13)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		eprintf_m13("");
 	}
 
 	// unknown file type
@@ -15844,15 +15865,17 @@ UPDATE_MED_TYPE_FAIL_m13:
 	
 	if (rd)
 		free((void *) rd);
-	if (ts_block)
-		free((void *) ts_block);
 	if (fp)
 		fclose_m13(fp);
 	if (ri_fps)
 		FPS_free_m13(&ri_fps);
-	if (rd_fps)
+	if (rd_fps) {
 		FPS_free_m13(&rd_fps);
+		if (w_pos < r_pos && r_val == TRUE_m13)  // truncate if shrunk (after file closed)
+			truncate_m13(rd_fps->path, w_pos);
+	}
 
+	eprintf_m13("finishing %s", path);
 	return_m13(r_val);
 }
 
@@ -16358,7 +16381,6 @@ tern	G_update_session_name_header_m13(const si1 *path, const si1 *fs_name, const
 		}
 		
 		// write
-		eprintf_m13("%s open = %hhd", fp->path, fisopen_m13(fp));
 		nrw = fwrite_m13((void *) &uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
 		if (nrw != UH_BYTES_m13) {
 			fclose_m13(fp);
@@ -18094,6 +18116,8 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 	if (uh->level_3_password_validation_field != (ui1 *) (bytes + UH_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->video_data_file_number != (ui4 *) (bytes + UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13))
+		goto UH_NOT_ALIGNED_m13;
+	if (&uh->live != (tern *) (bytes + UH_LIVE_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->ordered != (tern *) (bytes + UH_ORDERED_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
@@ -32007,7 +32031,7 @@ si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 
 FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...)  // varargs(mode empty): ui8 fd_flags
 {
-	si1			tmp_path[PATH_BYTES_m13], tmp_dir[PATH_BYTES_m13], tmp_name[MAX_NAME_BYTES_m13], tmp_ext[TYPE_BYTES_m13];
+	si1			tmp_dir[PATH_BYTES_m13], tmp_name[MAX_NAME_BYTES_m13], tmp_ext[TYPE_BYTES_m13];
 	ui2			flags, permissions;
 	ui4			mmap_block_bytes;
 	ui8			fd_flags;
@@ -32068,18 +32092,17 @@ FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 
 	}
 	
 	flags = fps->params.fp->flags | (FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 | FILE_FLAGS_MED_m13); // MED library functions depend on len & pos fields being maintained
-	G_add_behavior_m13(IGNORE_ERROR_m13);
+	G_add_behavior_m13(RETURN_QUIETLY_m13);
 	fp = fps->params.fp = fopen_m13(fps->path, NULL, fps->params.mode_str, (si4) flags, (si4) permissions);
+	G_pop_behavior_m13();
 	if (fp == NULL) {
 		// try alternate name
 		if (G_exists_m13(fps->path) == FALSE_m13) {
 			if (G_swap_names_m13((LH_m13 *) fps) == TRUE_m13) {
 				G_path_parts_m13(fps->path, tmp_dir, tmp_name, tmp_ext);
-				sprintf_m13(tmp_path, "%s/%s.%s", tmp_dir, fps->name, tmp_ext);
-				if (G_exists_m13(tmp_path) == TRUE_m13) {
-					strcpy(fps->path, tmp_path);
+				sprintf_m13(fps->path, "%s/%s.%s", tmp_dir, fps->name, tmp_ext);
+				if (G_exists_m13(fps->path) == TRUE_m13)
 					fp = fps->params.fp = fopen_m13(fps->path, NULL, fps->params.mode_str, (si4) flags, (si4) permissions);
-				}
 			}
 		}
 		if (fp == NULL) {
@@ -32121,13 +32144,14 @@ FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 
 }
 
 
-FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...)  // varargs(fps invalid): si1 *path, si1 *mode_str, si1 *password, LH *parent
+FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...)  // varargs(fps invalid): si1 *path, si1 *mode_str, si1 *password, LH *parent, ui8 lh_flags
 											    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 {											    // if both vararg modes set, rel_bytes is last argument
 	tern			free_fps, valid_fps, fps_alloced, rel_offset, readable;
 	tern			file_opened, auto_bytes, header_only, full_file, mem_map, data_read, CRC_valid;
 	si1			*path, *mode_str, *password;
 	ui4			type_code;
+	ui8			lh_flags;
 	si8			len, rel_bytes, header_offset, bytes_read, bytes_to_read;
 	LH_m13			*parent;
 	FPS_m13			*tmp_fps;
@@ -32146,6 +32170,8 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	// n_bytes == FPS_AUTO_BYTES_m13: set FPS_UH_ONLY_m13 & FPS_FULL_FILE_m13 from level header flags
 	// n_bytes == FPS_BYTES_NO_ENTRY_m13 (0): attempt to infer
 	// n_items == FPS_ITEMS_NO_ENTRY_m130 (0): calculate
+	
+	// vararg lh_flags == NO_FLAGS_m13 (0): valid fps - existing flags, invalid fps - default flags
 
 	// initialize function flags
 	free_fps = valid_fps = file_opened = auto_bytes = header_only = full_file = mem_map = data_read = FALSE_m13;
@@ -32153,17 +32179,12 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		free_fps = TRUE_m13;
 	else
 		valid_fps = G_valid_level_code_m13(fps->type_code);  // NULL or pre-allocated, but uninitialized FPS
-	if (fps->direcs.flags & FPS_DF_MMAP_m13)
-		mem_map = TRUE_m13;
-	else
-		mem_map = FALSE_m13;
 
 	// get varargs
 	path = password = mode_str = NULL;
 	parent = NULL;
-	offset = REMOVE_DISCONT_m13(offset);
 	rel_offset = FPS_REL_OFFSET_m13(offset);
-	rel_bytes = 0;
+	rel_bytes = lh_flags = 0;
 	if (valid_fps == FALSE_m13 || rel_offset == TRUE_m13) {
 		va_start(v_args, dest);
 		// open arguments
@@ -32177,15 +32198,19 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 				if (*password == 0)
 					password = NULL;  // less checking below
 			parent = va_arg(v_args, LH_m13 *);
+			lh_flags = va_arg(v_args, ui8);
 		}
 		// relative offset
-		if (rel_offset == TRUE_m13) {
+		if (rel_offset == TRUE_m13)
 			rel_bytes = va_arg(v_args, si8);
-			offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
-		}
 		va_end(v_args);
 	}
-	
+	if (offset >= 0)
+		offset = REMOVE_DISCONT_m13(offset);
+
+	if (rel_offset == TRUE_m13)
+		offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
+
 	// full file already read
 	if (valid_fps == TRUE_m13) {
 		if (fps->params.full_file_read == TRUE_m13) {
@@ -32211,6 +32236,8 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 			}
 		} else {
 			fps = FPS_open_m13(path, mode_str, n_bytes, parent);
+			if (fps == NULL)
+				return_m13(NULL);
 		}
 		if (fps == NULL)
 			return_m13(NULL);
@@ -32227,8 +32254,9 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	len = fps->params.fp->len;
 	type_code = fps->type_code;
 	
-	if (rel_offset == TRUE_m13)
-		offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
+	// set flags
+	if (lh_flags)
+		fps->flags = lh_flags;
 	
 	// set n_bytes
 	if (n_bytes == FPS_AUTO_BYTES_m13)
@@ -32240,7 +32268,6 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	if (offset == FPS_UH_ONLY_m13) {
 		if (fps->params.uh_read == TRUE_m13)
 			return_m13(fps);
-		fps->n_items = 0;
 		header_only = TRUE_m13;
 	} else if (offset == FPS_FULL_FILE_m13) {
 		offset = FPS_UH_BYTES_m13;
@@ -32257,10 +32284,18 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		}
 	}
 	if (n_bytes == FPS_BYTES_NO_ENTRY_m13 && header_only == FALSE_m13) {
-		G_set_error_m13(E_FREAD_m13, "n_bytes must be passed or inferable");
+		G_set_error_m13(E_FREAD_m13, "n_bytes not passed or inferable in \"%s\"", fps->path);
 		return_m13(NULL);
 	}
 	// if n_items not set, get after read
+
+	// memory mapping (do after flags set)
+	if (fps->direcs.flags & FPS_DF_MMAP_m13) {
+		mem_map = TRUE_m13;
+		FPS_realloc_m13(fps, fps->params.fp->len - UH_BYTES_m13);  // FPS_realloc_m13 assumes universal header bytes
+	} else {
+		mem_map = FALSE_m13;
+	}
 
 	// allocate memory
 	if (dest == NULL)
@@ -32269,10 +32304,10 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		if (fps->params.raw_data_bytes < (n_bytes + FPS_UH_BYTES_m13))
 			FPS_realloc_m13(fps, n_bytes);  // FPS_realloc_m13 assumes universal header bytes
 	} else if (malloc_size_m13(dest) < n_bytes) {  // can't realloc non-FPS memory block
-		G_set_error_m13(E_ALLOC_m13, "destination is too small for read");
+		G_set_error_m13(E_ALLOC_m13, "destination is too small for read in \"%s\"", fps->path);
 		goto FPS_READ_FAIL_m13;
 	}
-	
+
 	// read in universal header
 	pg = G_proc_globs_m13((LH_m13 *) fps);
 	pwd = &pg->password_data;
@@ -32341,7 +32376,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	if (data_read == FALSE_m13) {
 		FPS_seek_m13(fps, offset);
 		if (mem_map == TRUE_m13)
-			bytes_read = FPS_mmap_read_m13(fps, n_bytes);  // called by FPS_read_m13() after offset & n_bytes resolved
+			bytes_read = FPS_mmap_read_m13(fps, n_bytes);
 		else
 			bytes_read = fread_m13(dest, sizeof(ui1), (size_t) n_bytes, fps->params.fp);
 		if (bytes_read != n_bytes)
@@ -32349,13 +32384,15 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 	}
 	
 	// set n_items (more efficient if this is passed in data files)
-	if (n_items == 0) {
-		if (full_file == TRUE_m13)
+	if (n_items == FPS_ITEMS_NO_ENTRY_m13) {
+		if (header_only == TRUE_m13)
+			n_items = 0;
+		else if (full_file == TRUE_m13)
 			n_items = uh->n_entries;
 		else
 			n_items = G_items_for_bytes_m13(fps, &n_bytes);
 		if (n_items == 0)
-			G_set_error_m13(E_FREAD_m13, "cannot determine number of items read");
+			G_set_error_m13(E_FREAD_m13, "cannot determine number of items in \"%s\"", fps->path);
 	}
 	fps->n_items = n_items;
 
@@ -32592,7 +32629,12 @@ si8	FPS_seek_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_*)
 		return_m13((si8) FALSE_m13);
 	}
 	
-	if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
+	if (offset == FPS_UH_OFFSET_m13) {
+		if (fps->type_code == VID_DATA_TYPE_CODE_m13)
+			offset = fps->params.fp->len - UH_BYTES_m13;
+		else
+			offset = UH_OFFSET_m13;  // zero
+	} else if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
 		va_start(v_arg, offset);
 		rel_bytes = va_arg(v_arg, si8);
 		va_end(v_arg);
@@ -33046,10 +33088,23 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	// offset == FPS_FULL_FILE_m13: write full file, close file
 	// offset == FPS_APPEND_m13: append to current file, leave open
 
+	eprintf_m13("");
+	// open if path available
 	if (FPS_is_open_m13(fps) == FALSE_m13) {
-		G_set_error_m13(E_FWRITE_m13, "FPS is not open");
-		return_m13((si8) FALSE_m13);
+		if (*fps->path) {
+			if (fps->params.fp) {
+				free_m13((void *) fps->params.fp);
+				fps->params.fp = NULL;
+			}
+			fps->params.fp = fopen_m13(fps->path, FPS_WRITE_OPEN_STR_DEFAULT_m13);
+			if (FPS_is_open_m13(fps) == FALSE_m13) {
+				G_set_error_m13(E_FWRITE_m13, "FPS could for \"%s\" not be opened");
+				return_m13((si8) FALSE_m13);
+			}
+			strcpy(fps->params.mode_str, FPS_WRITE_OPEN_STR_DEFAULT_m13);
+		}
 	}
+	eprintf_m13("");
 
 	rel_bytes = 0;
 	if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
@@ -33058,6 +33113,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		va_end(v_arg);
 	}
 
+	eprintf_m13("");
 	// set conditions
 	write_uh = header_only = full_file = FALSE_m13;
 	if (offset == FPS_APPEND_m13) {
@@ -33075,6 +33131,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	if (fps->direcs.flags & (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13))  // always update universal header on close write
 		write_uh = TRUE_m13;
 	
+	eprintf_m13("");
 	// data relevant routines
 	uh = fps->uh;
 	if (header_only == FALSE_m13) {
@@ -33172,6 +33229,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		}
 	}
 
+	eprintf_m13("");
 	// update universal header
 	if (write_uh == TRUE_m13) {
 		// update header CRC
@@ -33186,6 +33244,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		}
 	}
 
+	eprintf_m13("");
 	// write data
 	if (header_only == FALSE_m13) {
 		FPS_seek_m13(fps, offset);
@@ -33198,10 +33257,12 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 			free_m13(encrypted_data);
 	}
 
+	eprintf_m13("");
 	// flush
 	if (fps->direcs.flags & (FPS_DF_FLUSH_AFTER_WRITE_m13 | FPS_DF_UPDATE_UH_m13))
 		fflush(fps->params.fp->fp);  // fflush() updates stat structure
 		
+	eprintf_m13("");
 	// close
 	if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
 		FPS_close_m13(fps);
@@ -33209,6 +33270,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	if (globals_m13->access_times == TRUE_m13)
 		G_update_access_time_m13((LH_m13 *) fps);
 	
+	eprintf_m13("");
 	return_m13(TRUE_m13);
 }
 
@@ -38582,7 +38644,6 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		if (fp == NULL)
 			return_m13(FALSE_m13);
 	} else if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13) {
-		eprintf_m13("fseek failed");
 		return_m13(FALSE_m13);
 	}
 	
@@ -38601,9 +38662,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	new_data = (ui1 *) ptr;
 
 	// see file file has pcrc data
-	eprintf_m13("%s open = %hhd", path, fisopen_m13(fp));
 	pcrc_offset = PRTY_pcrc_offset_m13(fp, path, &pcrc_len);
-	eprintf_m13("%s open = %hhd", path, fisopen_m13(fp));
 	if (pcrc_len)
 		flen = pcrc_offset;
 	else
@@ -38611,10 +38670,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	
 	// read data file
 	bytes_to_read = flen - offset;  // don't read past end of data
-	eprintf_m13("%s: flen = %ld, offset = %ld", path, flen, offset);
-	eprintf_m13("%s: bytes_to_read = %ld, n_bytes = %ld", path, bytes_to_read, n_bytes);
 	if (bytes_to_read < n_bytes) {
-		eprintf_m13("extending %s", path);
 		extending = TRUE_m13;
 	} else {
 		bytes_to_read = n_bytes;
@@ -38622,15 +38678,12 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	}
 	
 	// read in existing data
-	if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13) {
-		eprintf_m13("fseek failed");
+	if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)
 		goto PRTY_UPDATE_FAIL_m13;
-	}
 	nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
 	if (nrw != bytes_to_read)
 		goto PRTY_UPDATE_FAIL_m13;
 	
-	eprintf_m13("");
 	// update file pcrc data, if exists (& not extending)
 	if (pcrc_len) {
 		if (extending == FALSE_m13) {  // if extending, pcrc data needs to be rebuilt (handled below, after file written)
@@ -38643,14 +38696,12 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 		}
 	}
 
-	eprintf_m13("");
 	// open parity file
 	pfp = fopen_m13(par_path, "r+");
 	if (pfp == NULL)
 		goto PRTY_UPDATE_FAIL_m13;
 	pfp->flags |= FILE_FLAGS_LOCK_m13;  // the parity file needs locking - multiple threads may be reading & writing
 	
-	eprintf_m13("");
 	// read existing parity data (parity data always has pcrc data)
 	pcrc_offset = PRTY_pcrc_offset_m13(pfp, par_path, &pcrc_len);
 	bytes_to_read = pcrc_offset - offset;  // don't read past end of parity file
@@ -38662,7 +38713,6 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	if (nrw != bytes_to_read)
 		goto PRTY_UPDATE_FAIL_m13;
 
-	eprintf_m13("");
 	// remove old & add new contributions
 	// (OK if extending => old data past end of file is zeros)
 	od = old_data;
@@ -38679,7 +38729,6 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 			goto PRTY_UPDATE_FAIL_m13;
 	}
 	
-	eprintf_m13("");
 	// update parity file
 	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
 		goto PRTY_UPDATE_FAIL_m13;
@@ -38687,19 +38736,15 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	if (nrw != n_bytes)
 		goto PRTY_UPDATE_FAIL_m13;
 	
-	eprintf_m13("");
 	// update parity file pcrc (extending)
 	if (extending == TRUE_m13) {
 		pcrc_block_bytes = PRTY_pcrc_block_bytes_m13(pfp, NULL);
 		fclose_m13(&pfp);  // PRTY_write_pcrc_m13() expects closed file (set to NULL)
-		eprintf_m13("calling PRTY_write_pcrc_m13()");
 		pcrc_updated = PRTY_write_pcrc_m13(par_path, pcrc_block_bytes);
-		eprintf_m13("back from PRTY_write_pcrc_m13()");
 		if (pcrc_updated == FALSE_m13)
 			goto PRTY_UPDATE_FAIL_m13;
 	}
 	
-	eprintf_m13("");
 	r_val = TRUE_m13;
 	
 PRTY_UPDATE_FAIL_m13:
@@ -38824,14 +38869,9 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
 	if (fseek_m13(fp, start_byte, SEEK_SET))
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	eprintf_m13("before read");
 	nrw = fread_m13((void *) tmp_data, sizeof(ui1), (size_t) bytes_to_read, fp);
-	eprintf_m13("nrw = %lu, bytes_to_read = %lu", nrw, bytes_to_read);
-	if (nrw != bytes_to_read) {
-		eprintf_m13("read failed on %s", m13_fp->path);
+	if (nrw != bytes_to_read)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	}
-	eprintf_m13("after read");
 
 	// replace with old with new data
 	start_byte -= offset;
@@ -38867,12 +38907,6 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	
 PRTY_PCRC_UPDATE_FAIL_m13:
 	
-	if (r_val == FALSE_m13) {
-		eprintf_m13("FAIL FAIL FAIL - should be backing up function stack");
-		G_show_behavior_m13(CURRENT_BEHAVIOR_STACK_m13);
-		G_show_error_m13();
-	}
-
 	// clean up
 	if (crcs)
 		free((void *) crcs);
