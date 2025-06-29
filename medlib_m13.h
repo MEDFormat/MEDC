@@ -1561,11 +1561,11 @@ typedef struct {
 } PRTY_m13;
 
 typedef struct {
-	ui8		pcrc_tag; // == PRTY_UID_m13 (marker to confirm identity of this structure)
-	ui8		session_UID; // present in all parity files
-	ui8		segment_UID; // zero in parity data that is session level
+	ui8		tag; // marker to confirm identity of this structure
+	ui8		session_UID; // present in all parity files (same names - in case misplaced)
+	ui8		segment_UID; // UID_NO_ENTRY_m13 (zero) in parity data that is session level (same names - in case misplaced)
 	ui4		n_blocks; // number of data blocks (& crcs) preceding this structure
-	ui4		block_bytes; // bytes per block (except probably the last), multiple of 4 bytes (defaults to 4096)
+	ui4		block_bytes; // data bytes per block (except probably the last), multiple of 4 bytes (defaults to PRTY_BLOCK_BYTES_DEFAULT_m13)
 } PRTY_CRC_DATA_m13;
 
 // Parity File Structure:
@@ -1580,7 +1580,7 @@ si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files);
 ui4	PRTY_flag_for_path_m13(const si1 *path);
 tern	PRTY_is_parity_m13(const si1 *path, tern MED_file);
 si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path);
-si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, si8 *pcrc_len);
+si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *pcrc);
 tern	PRTY_recover_segment_header_fields_m13(const si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
 tern	PRTY_restore_m13(const si1 *MED_path);
@@ -2113,6 +2113,7 @@ typedef struct PROC_GLOBS_m13 { // multiple thread access
 	MISCELLANEOUS_m13	miscellaneous;
 	pid_t_m13		_id; // thread or process id (used if LH_m13 unknown [NULL])
 	LH_m13			*child; // hierarchy level immediately below these process globals
+	si4			ref_count;
 } PROC_GLOBS_m13;
 #else // __cplusplus
 typedef struct PROC_GLOBS_m13 {
@@ -2132,6 +2133,7 @@ typedef struct PROC_GLOBS_m13 {
 	MISCELLANEOUS_m13	miscellaneous;
 	pid_t_m13		_id; // thread id (used if LH_m13 unknown [NULL])
 	LH_m13			*child; // hierarchy level immediately below these process globals
+	si4			ref_count; // count of structures & threads currently linked to these process globals
 } PROC_GLOBS_m13;
 #endif // __cplusplus
 
@@ -2575,18 +2577,17 @@ typedef struct {
 //**********************************************************************************//
 
 // Constants
-#define FPS_UH_BYTES_m13			((si8) UH_BYTES_m13) // passed as n_bytes
 #define FPS_BYTES_NO_ENTRY_m13			((si8) 0) // passed as n_bytes
 #define FPS_ITEMS_NO_ENTRY_m13			((si8) 0) // passed as n_items
-#define FPS_UH_OFFSET_m13			((si8) -1) // passed as offset, if video data, will resolve to uh at end of file (NOTE: different than UH_OFFSET_m13 which is just zero)
-#define FPS_AUTO_BYTES_m13			((si8) -2) // passed as n_bytes (use level header flags to determine n_bytes)
-#define FPS_FULL_FILE_m13			((si8) -3) // passed as n_bytes
-#define FPS_UH_ONLY_m13				((si8) -4) // passed as n_bytes
+#define FPS_AUTO_BYTES_m13			((si8) -1) // passed as n_bytes
+#define FPS_FULL_FILE_m13			((si8) 0x7FFFFFFFFFFFFFF9) // passed as offset (Note: value positive so not treated as discontinuity)
+#define FPS_UH_ONLY_m13				((si8) 0x7FFFFFFFFFFFFFFA) // passed as offset (Note: value positive so not treated as discontinuity)
+#define FPS_UH_OFFSET_m13			((si8) 0x7FFFFFFFFFFFFFFB) // passed as offset (Note: value positive so not treated as discontinuity)
 #define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset (Note: value positive so not treated as discontinuity)
 #define FPS_REL_START_m13			((si8) 0x7FFFFFFFFFFFFFFD) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
 #define FPS_REL_CURR_m13			((si8) 0x7FFFFFFFFFFFFFFE) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
 #define FPS_REL_END_m13				((si8) 0x7FFFFFFFFFFFFFFF) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
-#define FPS_REL_OFFSET_m13(x)			( ((x) >= FPS_APPEND_m13) ? TRUE_m13 : FALSE_m13 )
+#define FPS_REL_OFFSET_m13(x)			( ((x) > FPS_APPEND_m13) ? TRUE_m13 : FALSE_m13 )
 
 #define FPS_FILE_LENGTH_UNKNOWN_m13		-1
 #define FPS_PROTOTYPE_TYPE_CODE_m13		TS_METADATA_TYPE_CODE_m13 // any metadata type would do
@@ -3213,6 +3214,7 @@ tern			G_proc_error_get_m13(LH_m13 *lh);
 void			G_proc_error_set_m13(LH_m13 *lh, tern state);
 PROC_GLOBS_m13		*G_proc_globs_m13(LH_m13 *lh);
 void			G_proc_globs_delete_m13(LH_m13 *lh);
+PROC_GLOBS_m13		*G_proc_globs_find_m13(LH_m13 *lh);
 PROC_GLOBS_m13		*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg);
 PROC_GLOBS_m13		*G_proc_globs_new_m13(LH_m13 *lh);
 tern			G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw);
@@ -5584,6 +5586,7 @@ si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flag
 void		tempclean_m13(void);
 FILE_m13	*tempfile_m13(void);
 si1		*tempnam_m13(si1 *path);
+tern		touch_m13(const si1 *path);
 si4		truncate_m13(const si1 *path, off_t len);
 si4		vasprintf_m13(si1 **target, const si1 *fmt, va_list args);
 si4		vfprintf_m13(void *fp, const si1 *fmt, va_list args);
