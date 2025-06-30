@@ -847,8 +847,9 @@ typedef struct {
 #define UH_ENCRYPTION_1_OFFSET_m13				920 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_2_OFFSET_m13				921 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_3_OFFSET_m13				922 // si1, MED 1.1 & above
-#define UH_PROTECTED_REGION_OFFSET_m13				923
-#define UH_PROTECTED_REGION_BYTES_m13				53
+#define UH_ENCRYPTION_4_OFFSET_m13				923 // si1, MED 1.1 & above
+#define UH_PROTECTED_REGION_OFFSET_m13				924
+#define UH_PROTECTED_REGION_BYTES_m13				52
 #define UH_DISCRETIONARY_REGION_OFFSET_m13			976
 #define UH_DISCRETIONARY_REGION_BYTES_m13			48
 
@@ -1709,7 +1710,7 @@ tern		NET_trim_address_m13(si1 *addr_str);
 
 // convenience
 #define SUPPRESS_OUTPUT_m13		( SUPPRESS_ERROR_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_MESSAGE_OUTPUT_m13 )
-#define RETURN_QUIETLY_m13		( IGNORE_ERROR_m13 | SUPPRESS_OUTPUT_m13 )  // generally used with handleable or acceptable errors
+#define RETURN_QUIETLY_m13		( IGNORE_ERROR_m13 | RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13 )  // generally used with handleable or acceptable errors
 
 // error codes
 #define E_NUM_CODES_m13		21
@@ -2380,6 +2381,7 @@ typedef struct {
 	si1		encryption_1; // MED 1.1 and above
 	si1		encryption_2; // MED 1.1 and above
 	si1		encryption_3; // MED 1.1 and above
+	si1		encryption_4; // MED 1.1 and above
 	ui1		protected_region[UH_PROTECTED_REGION_BYTES_m13];
 	ui1		discretionary_region[UH_DISCRETIONARY_REGION_BYTES_m13];
 } UH_m13;
@@ -3180,6 +3182,7 @@ tern			G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
 si1			*G_generate_segment_name_m13(si1 *segment_name, FPS_m13 *fps);
 ui8			G_generate_UID_m13(ui8 *uid);
+si8			G_header_offset_m13(FILE_m13 *fp, const si1 *path);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
 tern			G_init_global_tables_m13(tern init_all_tables);
 tern			G_init_globals_m13(tern init_all_tables, const si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor
@@ -3189,6 +3192,7 @@ SLICE_m13		*G_init_slice_m13(SLICE_m13 *slice);
 tern			G_init_timezone_tables_m13(void);
 tern			G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
 tern			G_is_level_header_m13(void *ptr);
+tern			G_is_video_data_m13(const si1 *path);
 si8			G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
 ui4			G_level_m13(const si1 *full_file_name, ui4 *input_type_code);
 tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, const si1 *ip_str, const si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
@@ -3301,7 +3305,6 @@ tern			G_valid_tern_m13(tern *val);
 tern			G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_video_data_CRCs_m13(FPS_m13 *fps);
-tern			G_video_data_m13(const si1 *string);
 void			G_warning_message_m13(const si1 *fmt, ...);
 void			G_write_medlibrc_m13(const si1 *path);
 
@@ -3529,7 +3532,7 @@ void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr
 
 // Prototypes
 si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_separator, tern numeric_order);
-const si1	*STR_bool_m13(ui8 val);
+const si1	*STR_bool_m13(ui8 val, tern colored);
 wchar_t		*STR_char2wchar_m13(wchar_t *target, const si1 *source);
 ui4		STR_check_spaces_m13(const si1 *string);
 si4		STR_compare_m13(const void *a, const void *b);
