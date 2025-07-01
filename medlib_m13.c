@@ -1588,109 +1588,6 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 }
 
 
-si8	G_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset)
-{
-	ui4				entry_size;
-	si8				i, bytes, max_bytes, bytes_remaining;
-	REC_HDR_m13		*rh;
-	CMP_FIXED_BH_m13	*bh;
-	UH_m13		*uh;
-	
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	// offset only needed for items with variable size data (TS_DATA_TYPE_CODE_m13 & REC_DATA_TYPE_CODE_m13), presumed absolute
-	// offset == 0 for writing
-	// returns FALSE_m13 for error
-	
-	uh = fps->uh;
-	switch (uh->type_code) {
-		case TS_INDS_TYPE_CODE_m13:
-		case VID_INDS_TYPE_CODE_m13:
-		case REC_INDS_TYPE_CODE_m13:
-			bytes = (*n_items) * INDEX_BYTES_m13;
-			uh->maximum_entry_size = INDEX_BYTES_m13;
-			return_m13(bytes);
-		case TS_METADATA_TYPE_CODE_m13:
-		case VID_METADATA_TYPE_CODE_m13:
-			bytes = METADATA_BYTES_m13;
-			uh->maximum_entry_size = METADATA_BYTES_m13;
-			*n_items = 1;
-			return_m13(bytes);
-	}
-	
-	bytes = 0;
-	if (offset == 0) {  // writing (data is in memory)
-		switch (uh->type_code) {
-			case TS_DATA_TYPE_CODE_m13:
-				bh = fps->params.cps->block_header;
-				for (i = 0; i < *n_items; ++i) {
-					entry_size = (si8) bh->total_block_bytes;
-					if (uh->maximum_entry_size < entry_size)  // caller should've done this, but just in case
-						uh->maximum_entry_size = entry_size;
-					bytes += entry_size;
-					bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + entry_size);
-				}
-				break;
-			case REC_DATA_TYPE_CODE_m13:
-				rh = (REC_HDR_m13 *) fps->rec_data;
-				for (i = 0; i < *n_items; ++i) {
-					entry_size = (si8) rh->total_record_bytes;
-					if (uh->maximum_entry_size < entry_size)  // caller should've done this, but just in case
-						uh->maximum_entry_size = entry_size;
-					bytes += entry_size;
-					rh = (REC_HDR_m13 *) ((ui1 *) rh + entry_size);
-				}
-				break;
-		}
-		return_m13(bytes);
-	}
-	
-	// reading (this is why it's better to pass this value)
-	max_bytes = (si8) uh->maximum_entry_size * (*n_items);
-	bytes_remaining = fps->params.fp->len - offset;
-	if (max_bytes > bytes_remaining)
-		max_bytes = bytes_remaining;
-	if (FPS_realloc_m13(fps, max_bytes) == FALSE_m13)
-		return_m13(FALSE_m13);
-		
-	if (FPS_read_m13(fps, offset, max_bytes, 0, NULL) == NULL)
-		return_m13(FALSE_m13);
-	switch (uh->type_code) {
-		case TS_DATA_TYPE_CODE_m13:
-			bh = fps->params.cps->block_header;
-			for (i = 0; i < *n_items; ++i) {
-				entry_size = (si8) bh->total_block_bytes;
-				bytes += entry_size;
-				if (bytes > max_bytes) {
-					*n_items = i;
-					bytes -= entry_size;
-					break;
-				}
-				bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + entry_size);
-			}
-			break;
-		case REC_DATA_TYPE_CODE_m13:
-			rh = (REC_HDR_m13 *) fps->rec_data;
-			for (i = 0; i < *n_items; ++i) {
-				entry_size = (si8) rh->total_record_bytes;
-				bytes += entry_size;
-				if (bytes > max_bytes) {
-					*n_items = i;
-					bytes -= entry_size;
-					break;
-				}
-				rh = (REC_HDR_m13 *) ((ui1 *) rh + entry_size);
-			}
-			break;
-	}
-	
-	return_m13(bytes);
-}
-
-
 tern  G_calculate_indices_CRCs_m13(FPS_m13 *fps)
 {
 	si8 		i;
@@ -2429,7 +2326,7 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 	static tern		warning_given = FALSE_m13;
 	tern			free_fps2, live, reopen;
 	si1			path[PATH_BYTES_m13], name[SEG_NAME_BYTES_m13], mode_str[6];
-	si8			n_entries, file_offset, idx, offset;
+	si8			nr, n_entries, file_offset, idx, offset;
 	ui4			maximum_entry_size;
 	FPS_m13			*fps2;
 	UH_m13			*uh, *uh2;
@@ -2499,21 +2396,23 @@ tern	G_correct_universal_header_m13(FPS_m13 *fps)
 				// read first block header
 				file_offset = UH_BYTES_m13;
 				G_push_behavior_m13(RETURN_QUIETLY_m13);
-				if (fseek_m13(fps->params.fp, file_offset, SEEK_SET) == -1) {
+				if (fseek_m13(fps->params.fp, file_offset, SEEK_SET)) {
 					G_pop_behavior_m13();
 					break;
 				}
-				if (fread_m13((void *) &bh, sizeof(CMP_FIXED_BH_m13), (size_t) 1, fps->params.fp) == -1) {
+				nr = fread_m13((void *) &bh, sizeof(CMP_FIXED_BH_m13), (size_t) 1, fps->params.fp);
+				if (nr != 1) {
 					G_pop_behavior_m13();
 					break;
 				}
 				// read second block header
 				file_offset += bh.total_block_bytes;
-				if (fseek_m13(fps->params.fp, file_offset, SEEK_SET) == -1) {
+				if (fseek_m13(fps->params.fp, file_offset, SEEK_SET)) {
 					G_pop_behavior_m13();
 					break;
 				}
-				if (fread_m13((void *) &bh, sizeof(CMP_FIXED_BH_m13), (size_t) 1, fps->params.fp) == -1) {
+				nr = fread_m13((void *) &bh, sizeof(CMP_FIXED_BH_m13), (size_t) 1, fps->params.fp);
+				if (nr != 1) {
 					G_pop_behavior_m13();
 					break;
 				}
@@ -6712,62 +6611,6 @@ tern	G_is_video_data_m13(const si1 *path)
 }
 
 
-si8	G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes)
-{
-	si8				items, bytes;
-	ui4				entry_size;
-	UH_m13		*uh;
-	REC_HDR_m13		*rh;
-	CMP_FIXED_BH_m13	*bh;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	items = 0;
-	uh = fps->uh;
-	switch (uh->type_code) {
-		case TS_INDS_TYPE_CODE_m13:
-		case VID_INDS_TYPE_CODE_m13:
-		case REC_INDS_TYPE_CODE_m13:
-			items = (*n_bytes) / INDEX_BYTES_m13;
-			uh->maximum_entry_size = INDEX_BYTES_m13;
-			return_m13(items);
-		case TS_METADATA_TYPE_CODE_m13:
-		case VID_METADATA_TYPE_CODE_m13:
-			items = 1;
-			*n_bytes = METADATA_BYTES_m13;
-			uh->maximum_entry_size = METADATA_BYTES_m13;
-			return_m13(items);
-	}
-	
-	switch (uh->type_code) {
-		case TS_DATA_TYPE_CODE_m13:
-			bh = fps->params.cps->block_header;
-			for (bytes = 0; bytes < *n_bytes; ++items) {
-				entry_size = bh->total_block_bytes;
-				if (uh->maximum_entry_size < entry_size)  // caller should've done this, but just in case
-					uh->maximum_entry_size = entry_size;
-				bytes += (si8) entry_size;
-				bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + (si8) entry_size);
-			}
-			break;
-		case REC_DATA_TYPE_CODE_m13:
-			rh = (REC_HDR_m13 *) fps->rec_data;
-			for (bytes = 0; bytes < *n_bytes; ++items) {
-				entry_size = rh->total_record_bytes;
-				if (uh->maximum_entry_size < entry_size)  // caller should've done this, but just in case
-					uh->maximum_entry_size = entry_size;
-				bytes += (si8) entry_size;
-				rh = (REC_HDR_m13 *) ((ui1 *) rh + (si8) entry_size);
-			}
-	}
-	*n_bytes = bytes;
-	
-	return_m13(items);
-}
-
-
 ui4	G_level_m13(const si1 *full_file_name, ui4 *type_code)
 {
 	si1	enclosing_directory[PATH_BYTES_m13];
@@ -6831,7 +6674,7 @@ ui4	G_level_from_base_name_m13(si1 *path, si1 *level_path)
 	G_push_function_m13();
 #endif
 
-	// useful to allow users to pass just base names into apps
+	// useful to allow callers to pass just base names into apps
 	
 	// returns level type code, or NO_TYPE_CODE_m13 if can't find match
 	
@@ -9578,7 +9421,8 @@ tern	G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw)
 		G_path_parts_m13(fps->path, md_dir, NULL, NULL);
 		if (G_find_metadata_file_m13(md_dir, md_file)) {
 			fp = fopen_m13(md_file, "r");
-			fseek_m13(fp, UH_BYTES_m13, SEEK_SET);
+			if (fseek_m13(fp, UH_BYTES_m13, SEEK_SET))
+				return_m13(FALSE_m13);
 			md1 = (METADATA_SECTION_1_m13 *) malloc((size_t) METADATA_SECTION_1_BYTES_m13);
 			fread_m13((void *) md1, sizeof(ui1), sizeof(METADATA_SECTION_1_BYTES_m13), fp);
 			fclose_m13(fp);
@@ -11427,7 +11271,7 @@ UH_m13	*G_read_universal_header_m13(const si1 *path, UH_m13 *uh)
 		goto READ_UH_FAIL_m13;
 
 	if (header_offset)
-		if (fseek_m13(fp, header_offset, SEEK_SET) == FALSE_m13)
+		if (fseek_m13(fp, header_offset, SEEK_SET))
 			goto READ_UH_FAIL_m13;
 	
 	nr = fread_m13((void *) uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
@@ -12502,14 +12346,17 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 	// if code == E_SIG_m13 (called from function_stack_trap_m13), line is signal number
 
 	
+	eprintf_m13("%s(%d) %d", function, line, code);
 	// get behavior
 	behavior = G_current_behavior_m13();
 	if (code == E_SIG_m13) { // always exit on signal
 		behavior &= ~(RETURN_QUIETLY_m13);
 		G_add_behavior_m13(RETURN_QUIETLY_m13);  // in case error in functions called below
 	}
-	if (behavior & IGNORE_ERROR_m13)
+	if (behavior & IGNORE_ERROR_m13) {
+		eprintf_m13("%s(%d) %d - ignoring", function, line, code);
 		return;
+	}
 
 	// no error specified in code or message
 	message_exists = (STR_is_empty_m13(message) == TRUE_m13) ? FALSE_m13 : TRUE_m13;
@@ -14817,6 +14664,7 @@ void	G_signal_trap_m13(si4 sig_num)
 	FUNCTION_STACK_m13	*stack;
 	
 	
+	eprintf_m13("%d", sig_num);
 	if (isem_tryown_m13(&globals_m13->error.isem, TRUE_m13) == FALSE_m13) {
 		if (sig_num == SIGINT) {  // ctrl-C while error executing (e.g. reentrant error loop)
 			isem_chown_m13(&globals_m13->error.isem, ISEM_SELF_m13);
@@ -15122,10 +14970,8 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 		ri_fps->uh->body_CRC = rd_fps->uh->body_CRC = CRC_NO_ENTRY_m13;  // force recalculation of crcs (b/c crcs order sensitive)
 		if (FPS_write_m13(ri_fps, FPS_FULL_FILE_m13, ri_len - UH_BYTES_m13, ri_fps->uh->n_entries, NULL) == FALSE_m13)
 			return_m13(FALSE_m13);
-		eprintf_m13("");
 		if (FPS_write_m13(rd_fps, FPS_FULL_FILE_m13, rd_len - UH_BYTES_m13, rd_fps->uh->n_entries, NULL) == FALSE_m13)
 			return_m13(FALSE_m13);
-		eprintf_m13("");
 	}
 	
 	if (reopen_ri == TRUE_m13) {
@@ -15984,7 +15830,8 @@ tern	G_update_MED_type_m13(const si1 *path)
 		uh->body_CRC = CRC_calculate_m13((ui1 *) uh + UH_BYTES_m13, METADATA_BYTES_m13);
 
 		// write out
-		fseek_m13(fp, 0, SEEK_SET);
+		if (fseek_m13(fp, 0, SEEK_SET))
+			goto UPDATE_MED_TYPE_FAIL_m13;
 		bytes_to_write = bytes_to_read;
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write)
@@ -16001,14 +15848,16 @@ tern	G_update_MED_type_m13(const si1 *path)
  
 		if (type_code == VID_DATA_TYPE_CODE_m13) {
 			header_offset = PRTY_pcrc_offset_m13(fp, NULL, NULL) - UH_BYTES_m13;
-			fseek_m13(fp, header_offset, SEEK_SET);
+			if (fseek_m13(fp, header_offset, SEEK_SET))
+				goto UPDATE_MED_TYPE_FAIL_m13;
 		} else {
 			header_offset = 0;
 		}
 		
 		// read in raw data
 		bytes_to_read = UH_BYTES_m13;
-		fseek_m13(fp, header_offset, SEEK_SET);
+		if (fseek_m13(fp, header_offset, SEEK_SET))
+			goto UPDATE_MED_TYPE_FAIL_m13;
 		rd = (ui1 *) malloc((size_t) bytes_to_read);
 		if (rd == NULL)
 			goto UPDATE_MED_TYPE_FAIL_m13;
@@ -16043,7 +15892,8 @@ tern	G_update_MED_type_m13(const si1 *path)
 		uh->header_CRC = CRC_calculate_m13((ui1 *) uh + UH_HEADER_CRC_START_OFFSET_m13, UH_BYTES_m13 - UH_HEADER_CRC_START_OFFSET_m13);
 
 		// write out
-		fseek_m13(fp, header_offset, SEEK_SET);
+		if (fseek_m13(fp, header_offset, SEEK_SET))
+			goto UPDATE_MED_TYPE_FAIL_m13;
 		bytes_to_write = bytes_to_read;
 		nw = fwrite_m13((void *) rd, sizeof(ui1), (size_t) bytes_to_write, fp);
 		if (nw != bytes_to_write)
@@ -29359,6 +29209,54 @@ FILE 	*FILE_to_std_m13(void *fp, si1 *path)
 }
 
 
+void	FILE_update_pointer_m13(void *fp)
+{
+	si4		fd;
+	FILE_m13	*m13_fp;
+	FILE		*std_fp;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// use this to "fix" FILE_m13 structure if it's FILE pointer has been used by standard system file functions that don't update FILE_m13 structure
+	
+	if (FILE_is_std_m13(fp) != FALSE_m13)
+		return_void_m13;
+	
+	m13_fp = (FILE_m13 *) fp;
+	std_fp = m13_fp->fp;
+
+	// reset to default
+	m13_fp->fd = FILE_FD_CLOSED_m13;
+	m13_fp->len = m13_fp->pos = -1;  // not set
+	m13_fp->acc = 0;  // not set
+
+	if (std_fp == NULL)
+		return_void_m13;
+
+	fd = fileno_m13(std_fp);  // pass std_fp to force real fileno()
+	
+#ifdef WINDOWS_m13
+	if (fd < 0)  // closed
+		fd = FILE_FD_CLOSED_m13;  // ensure same value across OSs
+#endif
+	
+	m13_fp->fd = fd;
+	if (fd == FILE_FD_CLOSED_m13) {
+		m13_fp->fp = NULL;
+	} else if (fd > FILE_FD_STDERR_m13) {
+		if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+			m13_fp->len = flen_m13(std_fp);  // pass std_fp to force real fstat()
+		if (m13_fp->flags & FILE_FLAGS_POS_m13)
+			m13_fp->pos = ftell_m13(std_fp);  // pass std_fp to force real ftell()
+	}
+	
+	return_void_m13;
+}
+
+
+
 //*******************************//
 // MARK: FILTER FUNCTIONS  (FILT)
 //*******************************//
@@ -31792,6 +31690,136 @@ tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs)
 // MARK: FILE PROCESSING FUNCTIONS  (FPS)
 //***************************************//
 
+si8	FPS_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset)
+{
+	ui4			entry_size, max_entry_size;
+	si8			i, items, bytes, max_bytes, nr, bytes_remaining;
+	REC_HDR_m13		*rh;
+	CMP_FIXED_BH_m13	*bh;
+	UH_m13			*uh;
+	
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// offset only needed for items with variable size data (TS_DATA_TYPE_CODE_m13 & REC_DATA_TYPE_CODE_m13), presumed absolute
+	// offset == 0 for writing
+	// returns FALSE_m13 for error
+	
+	uh = fps->uh;
+	switch (uh->type_code) {
+		case TS_INDS_TYPE_CODE_m13:
+		case VID_INDS_TYPE_CODE_m13:
+		case REC_INDS_TYPE_CODE_m13:
+			bytes = (*n_items) * INDEX_BYTES_m13;
+			uh->maximum_entry_size = INDEX_BYTES_m13;
+			return_m13(bytes);
+		case TS_METADATA_TYPE_CODE_m13:
+		case VID_METADATA_TYPE_CODE_m13:
+			bytes = METADATA_BYTES_m13;
+			uh->maximum_entry_size = METADATA_BYTES_m13;
+			*n_items = 1;
+			return_m13(bytes);
+	}
+	
+	items = *n_items;
+	bytes = 0;
+	max_entry_size = 0;
+	max_bytes = (si8) fps->params.raw_data_bytes - (fps->data_ptrs - fps->params.raw_data);
+	if (offset == 0) {  // writing (data is in memory)
+		switch (uh->type_code) {
+			case TS_DATA_TYPE_CODE_m13:
+				bh = (CMP_FIXED_BH_m13 *) fps->ts_data;
+				for (i = 0; i < items; ++i) {
+					entry_size = (si8) bh->total_block_bytes;
+					bytes += (si8) entry_size;
+					if (bytes > max_bytes) {
+						items = i;
+						bytes -= (si8) entry_size;
+						break;
+					}
+					if (max_entry_size < entry_size)
+						max_entry_size = entry_size;
+					bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + (ui8) entry_size);
+				}
+				break;
+			case REC_DATA_TYPE_CODE_m13:
+				rh = (REC_HDR_m13 *) fps->rec_data;
+				for (i = 0; i < items; ++i) {
+					entry_size = (si8) rh->total_record_bytes;
+					bytes += (si8) entry_size;
+					if (bytes > max_bytes) {
+						items = i;
+						bytes -= (si8) entry_size;
+						break;
+					}
+					if (max_entry_size < entry_size)
+						max_entry_size = entry_size;
+					rh = (REC_HDR_m13 *) ((ui1 *) rh + (ui8) entry_size);
+				}
+				break;
+		}
+		if (uh->maximum_entry_size < max_entry_size)
+			uh->maximum_entry_size = max_entry_size;
+		*n_items = items;
+
+		return_m13(bytes);
+	}
+	
+	// reading (this is why it's better to pass this value)
+	max_bytes = (si8) uh->maximum_entry_size * items;
+	bytes_remaining = fps->params.fp->len - offset;
+	if (max_bytes > bytes_remaining)
+		max_bytes = bytes_remaining;
+	if (FPS_realloc_m13(fps, max_bytes) == FALSE_m13)
+		return_m13(FALSE_m13);
+	if (fseek_m13(fps->params.fp, offset, SEEK_SET))
+		return_m13(FALSE_m13);
+	nr = fread_m13((void *) fps->data_ptrs, sizeof(ui1), (size_t) max_bytes, fps->params.fp);
+	if (nr != max_bytes)
+		return_m13(FALSE_m13);
+	
+	switch (uh->type_code) {
+		case TS_DATA_TYPE_CODE_m13:
+			bh = (CMP_FIXED_BH_m13 *) fps->ts_data;
+			for (i = 0; i < items; ++i) {
+				entry_size = (si8) bh->total_block_bytes;
+				bytes += (si8) entry_size;
+				if (bytes > max_bytes) {
+					items = i;
+					bytes -= (si8) entry_size;
+					break;
+				}
+				if (max_entry_size < entry_size)
+					max_entry_size = entry_size;
+				bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + (ui8) entry_size);
+			}
+			break;
+		case REC_DATA_TYPE_CODE_m13:
+			rh = (REC_HDR_m13 *) fps->rec_data;
+			for (i = 0; i < items; ++i) {
+				entry_size = (si8) rh->total_record_bytes;
+				bytes += (si8) entry_size;
+				if (bytes > max_bytes) {
+					items = i;
+					bytes -= (si8) entry_size;
+					break;
+				}
+				if (max_entry_size < entry_size)
+					max_entry_size = entry_size;
+				rh = (REC_HDR_m13 *) ((ui1 *) rh + entry_size);
+			}
+			break;
+	}
+	if (uh->maximum_entry_size < max_entry_size)
+		uh->maximum_entry_size = max_entry_size;
+	*n_items = items;
+	
+	return_m13(bytes);
+}
+
+
 FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13  *parent)
 {
 	ui4		type_code;
@@ -32215,6 +32243,76 @@ tern	FPS_is_open_m13(FPS_m13 *fps)
 }
 
 
+si8	FPS_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes)
+{
+	si8			items, bytes, max_bytes;
+	ui4			entry_size, max_entry_size;
+	UH_m13			*uh;
+	REC_HDR_m13		*rh;
+	CMP_FIXED_BH_m13	*bh;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	uh = fps->uh;
+	switch (uh->type_code) {
+		case TS_INDS_TYPE_CODE_m13:
+		case VID_INDS_TYPE_CODE_m13:
+		case REC_INDS_TYPE_CODE_m13:
+			items = (*n_bytes) / INDEX_BYTES_m13;
+			*n_bytes = items * INDEX_BYTES_m13;  // in case extra bytes passed
+			uh->maximum_entry_size = INDEX_BYTES_m13;
+			return_m13(items);
+		case TS_METADATA_TYPE_CODE_m13:
+		case VID_METADATA_TYPE_CODE_m13:
+			items = 1;
+			*n_bytes = METADATA_BYTES_m13;
+			uh->maximum_entry_size = METADATA_BYTES_m13;
+			return_m13(items);
+	}
+	
+	max_entry_size = 0;
+	items = bytes = 0;
+	max_bytes = *n_bytes;
+	switch (uh->type_code) {
+		case TS_DATA_TYPE_CODE_m13:
+			bh = (CMP_FIXED_BH_m13 *) fps->ts_data;
+			for (; bytes < max_bytes; ++items) {
+				entry_size = bh->total_block_bytes;
+				bytes += (si8) entry_size;
+				if (bytes > max_bytes) {
+					bytes -= (si8) entry_size;
+					break;
+				}
+				if (max_entry_size < entry_size)
+					max_entry_size = entry_size;
+				bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + (si8) entry_size);
+			}
+			break;
+		case REC_DATA_TYPE_CODE_m13:
+			rh = (REC_HDR_m13 *) fps->rec_data;
+			for (; bytes < max_bytes; ++items) {
+				entry_size = rh->total_record_bytes;
+				bytes += (si8) entry_size;
+				if (bytes > max_bytes) {
+					bytes -= (si8) entry_size;
+					break;
+				}
+				if (max_entry_size < entry_size)
+					max_entry_size = entry_size;
+				rh = (REC_HDR_m13 *) ((ui1 *) rh + (si8) entry_size);
+			}
+			break;
+	}
+	if (uh->maximum_entry_size < max_entry_size)
+		uh->maximum_entry_size = max_entry_size;
+	*n_bytes = bytes;
+	
+	return_m13(items);
+}
+
+
 si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 {
 	ui1			mode;
@@ -32308,7 +32406,8 @@ si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 		*bit_word |= bit_mask;  // mark block as read
 	}
 	if (read_bytes) {
-		fseek_m13(fp, read_start, SEEK_SET);
+		if (fseek_m13(fp, read_start, SEEK_SET))
+			return_m13(0);
 		fread_m13((void *) (fps->params.raw_data + read_start), (size_t) 1, (size_t) read_bytes, fp);
 	}
 
@@ -32568,7 +32667,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		full_file = TRUE_m13;
 	} else if (n_bytes == FPS_BYTES_NO_ENTRY_m13) {
 		if (n_items) {
-			n_bytes = G_bytes_for_items_m13(fps, &n_items, offset);
+			n_bytes = FPS_bytes_for_items_m13(fps, &n_items, offset);
 			if (DATA_CODE_m13(type_code) == TRUE_m13)
 				data_read = TRUE_m13;  // data files must be read to get n_bytes, don't repeat
 		}
@@ -32680,7 +32779,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *
 		else if (full_file == TRUE_m13)
 			n_items = uh->n_entries;
 		else
-			n_items = G_items_for_bytes_m13(fps, &n_bytes);
+			n_items = FPS_items_for_bytes_m13(fps, &n_bytes);
 		if (n_items == 0)
 			G_set_error_m13(E_FREAD_m13, "cannot determine number of items in \"%s\"", fps->path);
 	}
@@ -32823,7 +32922,9 @@ tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str)
 		G_set_error_m13(E_GEN_m13, "no mode passed");
 		return_m13(FALSE_m13);
 	} else {
+		eprintf_m13("");
 		FPS_set_open_flags_m13(fps, mode_str);
+		eprintf_m13("");
 	}
 	
 	fp = fps->params.fp;
@@ -32928,15 +33029,6 @@ si8	FPS_seek_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_*)
 		return_m13((si8) FALSE_m13);
 	}
 	
-	if (fps->params.fp == NULL) {
-		if (fps->params.full_file_read == TRUE_m13) {  // file close, but full file already read
-			FPS_set_pointers_m13(fps, offset);  // offset must be resolved for FPS_set_pointers_m13()
-			return_m13(offset);
-		}
-		G_set_error_m13(E_FGEN_m13, "FPS file pointer is null");
-		return_m13((si8) FALSE_m13);
-	}
-
 	if (FPS_REL_OFFSET_m13(offset) == TRUE_m13) {
 		va_start(v_arg, offset);
 		rel_bytes = va_arg(v_arg, si8);
@@ -32946,10 +33038,20 @@ si8	FPS_seek_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_*)
 	}
 	offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
 	
+	if (fps->params.fp == NULL) {
+		if (fps->params.full_file_read == TRUE_m13) {  // file close, but full file already read
+			FPS_set_pointers_m13(fps, offset);  // offset must be resolved for FPS_set_pointers_m13()
+			return_m13(offset);
+		}
+		G_set_error_m13(E_FGEN_m13, "FPS file pointer is null");
+		return_m13((si8) FALSE_m13);
+	}
+
 	if (fps->params.fp->pos == offset)
 		return_m13(offset);
 	
-	fseek_m13(fps->params.fp, offset, SEEK_SET);
+	if (fseek_m13(fps->params.fp, offset, SEEK_SET))
+		return_m13((si8) FALSE_m13);
 
 	return_m13(offset);
 }
@@ -33121,13 +33223,13 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 			case '+':
 				flags |= (FPS_DF_READ_MODE_m13 | FPS_DF_WRITE_MODE_m13);
 				break;
-			case 'T':  // ignored
-			case 't':  // ignored
-			case 'B':  // ignored
-			case 'b':  // ignored
+			case 'T':  // ignored (Windows)
+			case 't':  // ignored (Windows)
+			case 'B':  // ignored (Windows)
+			case 'b':  // ignored (Windows)
 				break;
 			default:
-				G_set_error_m13(E_GEN_m13, "unrecognized mode character");
+				G_set_error_m13(E_GEN_m13, "unrecognized mode character: \"%c\"  (0x%02hhx)", *c, *c);
 				return_m13(FPS_DF_NO_FLAGS_m13);
 				break;
 		}
@@ -33135,7 +33237,10 @@ ui8	FPS_set_open_flags_m13(FPS_m13 *fps, const si1 *mode_str)
 	
 	mode_count = read_mode + write_mode + append_mode;
 	if (mode_count != 1) {
-		G_set_error_m13(E_GEN_m13, "more than one, or no, primary mode selected");
+		if (mode_count)
+			G_set_error_m13(E_GEN_m13, "more than one primary mode selected");
+		else
+			G_set_error_m13(E_GEN_m13, "no primary mode selected");
 		return_m13(FPS_DF_NO_FLAGS_m13);
 	}
 	if (no_truncate_mode == TRUE_m13) {
@@ -33413,7 +33518,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 	} else if (offset == FPS_FULL_FILE_m13) {
 		offset = UH_BYTES_m13;
 		fps->direcs.flags |= FPS_DF_CLOSE_AFTER_OP_m13;  // automatically close after full file write
-		full_file = TRUE_m13;  // write_uh set below b/c of FPS_DF_CLOSE_AFTER_OP_m13
+		full_file = write_uh = TRUE_m13;  // write_uh set below b/c of FPS_DF_CLOSE_AFTER_OP_m13
 	} else {
 		offset = FPS_resolve_offset_m13(fps, offset, rel_bytes);
 	}
@@ -33435,9 +33540,9 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		}
 		
 		if (n_items == 0)
-			n_items = G_items_for_bytes_m13(fps, &n_bytes);  // updates maximum entry size
+			n_items = FPS_items_for_bytes_m13(fps, &n_bytes);  // updates maximum entry size
 		else if (n_bytes == 0)
-			n_bytes = G_bytes_for_items_m13(fps, &n_items, 0);  // updates maximum entry size
+			n_bytes = FPS_bytes_for_items_m13(fps, &n_items, 0);  // updates maximum entry size
 		else
 			G_update_maximum_entry_size_m13(fps, n_bytes, n_items, offset);
 		fps->n_items = n_items;  // items in current write
@@ -33445,8 +33550,8 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *sou
 		len = fps->params.fp->len;
 		if (offset == len)  // append
 			uh->n_entries += n_items;
-		else if (n_bytes > (len - offset))  // partial overlap
-			G_warning_message_m13("%s(): partial overlap not handled => universal header -> n_entries not updated; address with calling routine or library update\n", __FUNCTION__);
+		else if (n_bytes > (len - offset))  // overlap with extension
+			G_warning_message_m13("%s(): overlap with extension could be, but is not currently handled\n\tuniversal header -> n_entries will not be not updated\n\taddress with calling function or library code update\n", __FUNCTION__);
 
 		// leave decrypted directive
 		encrypted_data = NULL;
@@ -38254,13 +38359,14 @@ si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path)
 	if (vid_data == TRUE_m13)
 		pcrc_offset -= UH_BYTES_m13;
 	
-	fseek_m13(fp, (size_t) pcrc_offset, SEEK_SET);
+	if (fseek_m13(fp, (size_t) pcrc_offset, SEEK_SET))
+		return_m13(FALSE_m13);
 	nr = fread_m13((void *) &pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
 	if (nr != 1) {
 		if (close_file == TRUE_m13)
 			fclose_m13(fp);
 		else
-			fseek_m13(fp, in_offset, SEEK_SET);
+			fseek_m13(fp, in_offset, SEEK_SET);  // no need to check return value, returning failure anyway
 		return_m13(FALSE_m13);
 	}
 		
@@ -38271,8 +38377,8 @@ si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path)
 
 	if (close_file == TRUE_m13)
 		fclose_m13(fp);
-	else
-		fseek_m13(fp, in_offset, SEEK_SET);
+	else if (fseek_m13(fp, in_offset, SEEK_SET))
+		return_m13(FALSE_m13);
 
 	return_m13(block_len);
 }
@@ -38317,7 +38423,7 @@ si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *
 		goto PCRC_OFFSET_FAIL;
 	}
 	
-	if (fseek_m13(fp, (size_t) flen - sizeof(PRTY_CRC_DATA_m13), SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, (size_t) flen - sizeof(PRTY_CRC_DATA_m13), SEEK_SET))
 		goto PCRC_OFFSET_FAIL;
 	nr = fread_m13((void *) pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
 	if (nr != 1)
@@ -38339,7 +38445,7 @@ PCRC_OFFSET_FAIL:
 
 	if (close_fp == TRUE_m13)
 		fclose_m13(fp);
-	else if (fseek_m13(fp, in_offset, SEEK_SET) == FALSE_m13)  // reset error contitions in case got here successfully
+	else if (fseek_m13(fp, in_offset, SEEK_SET))  // reset error contitions in case got here successfully
 		got_pcrc = pcrc_offset = FALSE_m13;
 
 	if (got_pcrc == FALSE_m13)
@@ -38954,7 +39060,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	}
 	
 	// read in existing data
-	if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, offset, SEEK_SET))
 		goto PRTY_UPDATE_FAIL_m13;
 	nrw = (si8) fread_m13((void *) old_data, sizeof(ui1), (size_t) bytes_to_read, fp);
 	if (nrw != bytes_to_read)
@@ -38989,7 +39095,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	bytes_to_read = pcrc_offset - offset;  // don't read past end of parity file
 	if (bytes_to_read >= n_bytes)
 		bytes_to_read = n_bytes;
-	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(pfp, offset, SEEK_SET))
 		goto PRTY_UPDATE_FAIL_m13;
 	nrw = (si8) fread_m13((void *) par_data, sizeof(ui1), (size_t) bytes_to_read, pfp);
 	if (nrw != bytes_to_read)
@@ -39011,7 +39117,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 			goto PRTY_UPDATE_FAIL_m13;
 	
 	// update parity file
-	if (fseek_m13(pfp, offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(pfp, offset, SEEK_SET))
 		goto PRTY_UPDATE_FAIL_m13;
 	nrw = (si8) fwrite_m13((void *) par_data, sizeof(ui1), (size_t) n_bytes, pfp);
 	if (nrw != n_bytes)
@@ -39041,7 +39147,7 @@ PRTY_UPDATE_FAIL_m13:
 		free((void *) tmp_data);
 	if (was_open == FALSE_m13)
 		fclose_m13(fp);
-	else if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)  // reset to incoming file position
+	else if (fseek_m13(fp, offset, SEEK_SET))  // reset to incoming file position
 		r_val = FALSE_m13;
 
 	return_m13(r_val);
@@ -39125,7 +39231,7 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	crcs = (ui4 *) malloc((size_t) crc_bytes);
 	if (crcs == NULL)
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
-	if (fseek_m13(fp, pcrc_offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, pcrc_offset, SEEK_SET))
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
 	nrw = fread_m13((void *) crcs, sizeof(ui1), (size_t) crc_bytes, fp);
 	if (nrw != crc_bytes)
@@ -39168,7 +39274,7 @@ tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  //
 	}
 
 	// write out updated values
-	if (fseek_m13(fp, pcrc_offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, pcrc_offset, SEEK_SET))
 		goto PRTY_PCRC_UPDATE_FAIL_m13;
 	if (is_std == FALSE_m13) {
 		if ((m13_fp->flags & FILE_FLAGS_PARITY_m13) == 0) {
@@ -39193,7 +39299,7 @@ PRTY_PCRC_UPDATE_FAIL_m13:
 		m13_fp->flags &= ~FILE_FLAGS_PARITY_m13;
 	if (was_open == FALSE_m13)
 		fclose_m13(fp);
-	else if (fseek_m13(fp, offset, SEEK_SET) == FALSE_m13)  // reset to incoming file position
+	else if (fseek_m13(fp, offset, SEEK_SET))  // reset to incoming file position
 		r_val = FALSE_m13;  // reset error
 
 	return_m13(r_val);
@@ -40090,7 +40196,7 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes)
 		header_offset = len - UH_BYTES_m13;  // between end of video data & start of pcrc crcs
 	else
 		header_offset = 0;
-	if (fseek_m13(fp, header_offset, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, header_offset, SEEK_SET))
 		goto PRTY_WRITE_PCRC_FAIL;
 
 	nrw = fread_m13((void *) &uh, sizeof(ui1), UH_BYTES_m13, fp);
@@ -40098,7 +40204,7 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes)
 		goto PRTY_WRITE_PCRC_FAIL;
 	
 	// rewind
-	if (fseek_m13(fp, 0, SEEK_SET) == FALSE_m13)
+	if (fseek_m13(fp, 0, SEEK_SET))
 		goto PRTY_WRITE_PCRC_FAIL;
 
 	// allocate
@@ -44935,6 +45041,7 @@ void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 	behavior = G_current_behavior_m13();
 #endif
 	
+	eprintf_m13("%s(%d)", function, line);
 	// hold subsequent threads here
 	if (isem_tryown_m13(&globals_m13->error.isem, TRUE_m13) == FALSE_m13) {
 		if (status == E_SIG_m13)  // subsequent signal (probably user SIGINT)
@@ -44997,59 +45104,77 @@ inline
 #endif
 si4	fclose_m13(void *fp)
 {
-	tern		closed;
+	tern		close;
 	si4		r_val;
 	FILE		*std_fp;
 	FILE_m13	*m13_fp, **m13_fp_ptr;
-
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	// returns -1 if error closing
-	// returns 0 under all other circumstances (including already closed, or unclosable [e.g. standard streams])
+	
+	// returns FALSE_m13 if error closing
+	// returns 0 under all other circumstances (including already closed, null, or unclosable [e.g. standard streams])
 	// pass &fp to set local FILE_m13 pointer to NULL
-
+	
 	switch (FILE_is_std_m13(fp)) {
 		case FALSE_m13:
 			m13_fp = (FILE_m13 *) fp;
+			std_fp = m13_fp->fp;
 			m13_fp_ptr = NULL;
 			break;
 		case TRUE_m13:
 			m13_fp_ptr = (FILE_m13 **) fp;
 			if (FILE_is_std_m13(*m13_fp_ptr) == FALSE_m13) {  // address of FILE_m13 pointer passed
 				m13_fp = *m13_fp_ptr;
+				std_fp = m13_fp->fp;
 				break;
 			}
+			// FILE pointer type handled here
 			std_fp = (FILE *) fp;
 			if (fileno_m13(std_fp) > FILE_FD_STDERR_m13) {  // else already closed or standard stream - fall through to return(0)
 				if (fclose(std_fp)) {
 					G_set_error_m13(E_FOPEN_m13, "error closing file");
-					return_m13(-1);
+					return_m13(FALSE_m13);
 				}  // closed - fall through to return(0)
 			}
 		case UNKNOWN_m13:  // fp == NULL
 			return_m13(0);
 	}
 	
-	// close FILE_m13
-	if (m13_fp->fd == FILE_FD_CLOSED_m13)
-		closed = TRUE_m13;
-	else if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13)
-		closed = TRUE_m13;  // can't close standard streams => treat as closed
-	else
-		closed = FALSE_m13;
+	// rest handles FILE_m13 pointer
+	
+	// unlock
+	if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+		flock_m13(m13_fp, FLOCK_CLOSE_m13);
+	
+	// close
+	if (std_fp == NULL) {
+		G_set_error_m13(E_FOPEN_m13, "standard FP is null");
+		return_m13(FALSE_m13);
+	}
 	
 	r_val = 0;
-	if (closed == FALSE_m13) {
-		if (fclose(m13_fp->fp)) {
+	if (m13_fp->fd == FILE_FD_CLOSED_m13) {
+		close = FALSE_m13;
+	} else if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13) {  // can't close standard streams => treat as closed
+		close = FALSE_m13;
+	} else if (std_fp == NULL) {  // would fail if passed to fclose() => calling it an error because probably want to track down how this got happened
+		r_val = FALSE_m13;
+		G_set_error_m13(E_FGEN_m13, "standard FP is null in file \"%s\"", m13_fp->path);
+		close = FALSE_m13;
+	} else {
+		close = TRUE_m13;
+	}
+	
+	if (close == TRUE_m13) {
+		if (fclose(std_fp)) {
 			G_set_error_m13(E_FOPEN_m13, "error closing file \"%s\"", m13_fp->path);
-			r_val = E_FOPEN_m13;
+			r_val = FALSE_m13;
 		}
 	}
 
-	if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
-		flock_m13(m13_fp, FLOCK_CLOSE_m13);
-
+	// free or mark as closed
 	if (m13_fp->flags & FILE_FLAGS_ALLOCED_m13) {
 		free_m13(m13_fp);
 		if (m13_fp_ptr)  // set calling function pointer to NULL
@@ -45103,43 +45228,51 @@ inline
 #endif
 tern	fisopen_m13(void *fp)
 {
-	si4	fd;
-	FILE	*std_fp;
+	tern		is_std;
+	si4		fd;
+	FILE_m13	*m13_fp;
+	FILE		*std_fp;
 	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
 	
 	// gets file descriptor to determine if file is open
 	// if fp is FILE_m13, uses standard fileno(), not fp->fd, in case fp->fd is zero, or not reset on close
 	// returns TRUE_m13 if open & closable, FALSE_m13 if closed, & UNKNOWN_m13 if open, but not closable (standard streams)
 	
-	if (fp == NULL)
-		return(FALSE_m13);
-	
-	switch (FILE_is_std_m13(fp)) {
+	is_std = FILE_is_std_m13(fp);
+	switch (is_std) {
 		case FALSE_m13:
-			std_fp = ((FILE_m13 *) fp)->fp;
+			m13_fp = (FILE_m13 *) fp;
+			std_fp = m13_fp->fp;
+			if (std_fp == NULL)
+				return_m13(FALSE_m13);
 			break;
 		case TRUE_m13:
 			std_fp = (FILE *) fp;
 			break;
 		case UNKNOWN_m13:  // fp == NULL
-			return(FALSE_m13);
+			return_m13(FALSE_m13);
 	}
 
-	// do not use fileno_m13() which will use fp->fd if available
-#if defined MACOS_m13 || defined LINUX_m13
-	fd = fileno(std_fp);
-#endif
+	fd = fileno_m13(std_fp);  // use std_fp to force real fileno()
+	
 #ifdef WINDOWS_m13
-	fd = _fileno(std_fp);
+	if (fd < 0)  // closed
+		fd = FILE_FD_CLOSED_m13;  // ensure same value across OSs
 #endif
+	
+	if (is_std == FALSE_m13)  // update FILE_m13 structure
+		m13_fp->fd = fd;
 
-	if (fd > 2)  // open & closable
-		return(TRUE_m13);
+	if (fd > FILE_FD_STDERR_m13)  // open & closable
+		return_m13(TRUE_m13);
 	
 	if (fd < 0)  // closed
-		return(FALSE_m13);
-
-	return(UNKNOWN_m13);  // standard streams (generally open, but not closable)
+		return_m13(FALSE_m13);
+	
+	return_m13(UNKNOWN_m13);  // standard streams (generally open, but not closable)
 }
 
 
@@ -45158,7 +45291,7 @@ si8	flen_m13(void *fp)
 	G_push_function_m13();
 #endif
 	
-	// returns -1 on failure (not open or no path)
+	// returns FALSE_m13 on failure (not open or no path)
 
 	if (fp == NULL) {
 		G_set_error_m13(E_GEN_m13, "fp is null");
@@ -45182,14 +45315,14 @@ si8	flen_m13(void *fp)
 		err = -1;  // not open or no path
 	
 	// error
-	if (err == -1) {
+	if (err) {
 		if (is_std == TRUE_m13) {
 			if (fisopen_m13(fp) == FALSE_m13)
 				G_set_error_m13(E_FOPEN_m13, "file is closed");
 			else
-				G_set_error_m13(E_FGEN_m13, "failed obtain the file length");
+				G_set_error_m13(E_FGEN_m13, "failed to obtain the file length");
 		} else {
-			G_set_error_m13(E_FGEN_m13, "failed obtain the lengtg of file \"%s\"", m13_fp->path);
+			G_set_error_m13(E_FGEN_m13, "failed to obtain the length of file \"%s\"", m13_fp->path);
 		}
 		len = (si8) -1;
 	} else {
@@ -46205,7 +46338,8 @@ void	*freopen_m13(const si1 *path, const si1 *mode, void *fp)
 			if (is_std == FALSE_m13)
 				m13_fp->pos = m13_fp->len = 0;
 		} else {
-			fseek_m13(fp, 0, SEEK_SET);
+			if (fseek_m13(fp, 0, SEEK_SET))
+				return_m13(fp);
 		}
 		return_m13(fp);
 	}
@@ -46399,15 +46533,28 @@ si4	fseek_m13(void *fp, si8 offset, si4 whence)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns zero on success
+	// returns FALSE_m13 on failure
 
 	is_std = FILE_is_std_m13(fp);
-	if (is_std == TRUE_m13) {
-		std_fp = (FILE *) fp;
-	} else {
-		m13_fp = (FILE_m13 *) fp;
-		std_fp = m13_fp->fp;
+	switch (is_std) {
+		case TRUE_m13:
+			std_fp = (FILE *) fp;
+			break;
+		case FALSE_m13:
+			m13_fp = (FILE_m13 *) fp;
+			std_fp = m13_fp->fp;
+			if (std_fp == NULL) {
+				G_set_error_m13(E_FGEN_m13, "standard FP is null in file \"%s\"", m13_fp->path);
+				return_m13(FALSE_m13);
+			}
+			break;
+		case UNKNOWN_m13:
+			G_set_error_m13(E_FGEN_m13, "FP is null");
+			return_m13(FALSE_m13);
 	}
-
+	
 	errno_reset_m13();
 #if defined MACOS_m13 || defined LINUX_m13
 	err = fseek(std_fp, offset, whence);
@@ -46417,7 +46564,6 @@ si4	fseek_m13(void *fp, si8 offset, si4 whence)
 #endif
 
 	if (err) {
-		err = errno_m13();
 		is_open = fisopen_m13(fp);
 		if (is_std == TRUE_m13) {
 			if (is_open == FALSE_m13)
@@ -46430,7 +46576,7 @@ si4	fseek_m13(void *fp, si8 offset, si4 whence)
 			else
 				G_set_error_m13(E_FGEN_m13, "fseek() error in \"%s\"", m13_fp->path);
 		}
-		return_m13(err);
+		return_m13(FALSE_m13);
 	}
 
 	if (is_std == FALSE_m13) {
@@ -46552,10 +46698,11 @@ si4	ftruncate_m13(void *fp, off_t len)
 	// if the file size is smaller than len, the extended region is filled with zeros
 	// file file must be open & have write privileges
 	// note: the interface differs from the standard, subsituting a file pointer for a file descriptor (more convenient)
+	// returns zero on success, FALSE_m13 on failure
 	
 	if (len < 0) {
 		G_set_error_m13(E_FREAD_m13, "len must be positive");
-		return_m13(-1);
+		return_m13(FALSE_m13);
 	}
 
 	// setup
@@ -46573,7 +46720,7 @@ si4	ftruncate_m13(void *fp, off_t len)
 			G_set_error_m13(E_FREAD_m13, "file \"%s\" is closed", m13_fp->path);
 		else
 			G_set_error_m13(E_FREAD_m13, "file is closed");
-		return_m13(-1);
+		return_m13(FALSE_m13);
 	}
 	
 	// FILE_m13 stuff
@@ -46581,16 +46728,17 @@ si4	ftruncate_m13(void *fp, off_t len)
 		// check write privileges
 		if (!(m13_fp->flags & FILE_FLAGS_WRITE_m13)) {
 			G_set_error_m13(E_FREAD_m13, "file \"%s\" is not open for writing", m13_fp->path);
-			return_m13(-1);
+			return_m13(FALSE_m13);
 		}
 		// lock
 		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
 			if (flock_m13(m13_fp, FLOCK_WRITE_LOCK_m13))
-				return_m13(-1);
+				return_m13(FALSE_m13);
 	}
 
-	// truncate (or extend)
+	// for truncate (or extend)
 	fd = fileno_m13(std_fp);
+	
 	errno_reset_m13();
 #if defined MACOS_m13 || defined LINUX_m13
 	err = ftruncate(fd, len);
@@ -46600,18 +46748,17 @@ si4	ftruncate_m13(void *fp, off_t len)
 #endif
 
 	// unlock
-	if (is_std == FALSE_m13) {
+	if (is_std == FALSE_m13)
 		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
 			if (flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13))
-				return_m13(-1);
-	}
+				return_m13(FALSE_m13);
 
 	if (err) {
 		if (is_std == FALSE_m13)
 			G_set_error_m13(E_FREAD_m13, "error truncating file \"%s\"", m13_fp->path);
 		else
 			G_set_error_m13(E_FREAD_m13, "error truncating file");
-		return_m13(-1);
+		return_m13(FALSE_m13);
 	}
 	
 	if (is_std == FALSE_m13)
@@ -46860,12 +47007,12 @@ void	isem_dec_m13(isem_t_m13 *isem)
 				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
 				if (*isem->name) {
 					if (*owner_name)
-						G_warning_message_m13("isem \"%s\" is still owned by %s()  [id: %lu] ...\n", isem->name, owner_name, isem->owner);
+						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
 					if (*owner_name)
-						G_warning_message_m13("isem is still owned by %s()  [id: %lu] ...\n", owner_name, isem->owner);
+						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
 				}
@@ -47037,12 +47184,12 @@ void	isem_inc_m13(isem_t_m13 *isem)
 				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
 				if (*isem->name) {
 					if (*owner_name)
-						G_warning_message_m13("isem \"%s\" is still owned by %s()  [id: %lu] ...\n", isem->name, owner_name, isem->owner);
+						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
 					if (*owner_name)
-						G_warning_message_m13("isem is still owned by %s()  [id: %lu] ...\n", owner_name, isem->owner);
+						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
 				}
@@ -47126,12 +47273,12 @@ void	isem_own_m13(isem_t_m13 *isem, tern own)
 				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
 				if (*isem->name) {
 					if (*owner_name)
-						G_warning_message_m13("isem \"%s\" is still owned by %s()  [id: %lu] ...\n", isem->name, owner_name, isem->owner);
+						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
 					if (*owner_name)
-						G_warning_message_m13("isem is still owned by %s()  [id: %lu] ...\n", owner_name, isem->owner);
+						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
 				}
@@ -47193,12 +47340,12 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
 				if (*isem->name) {
 					if (*owner_name)
-						G_warning_message_m13("isem \"%s\" is still owned by %s()  [id: %lu] ...\n", isem->name, owner_name, isem->owner);
+						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
 					if (*owner_name)
-						G_warning_message_m13("isem is still owned by %s()  [id: %lu] ...\n", owner_name, isem->owner);
+						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
 				}
@@ -47595,12 +47742,12 @@ void	isem_wait_m13(isem_t_m13 *isem)
 				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
 				if (*isem->name) {
 					if (*owner_name)
-						G_warning_message_m13("isem \"%s\" is still owned by %s()  [id: %lu] ...\n", isem->name, owner_name, isem->owner);
+						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
 					if (*owner_name)
-						G_warning_message_m13("isem is still owned by %s()  [id: %lu] ...\n", owner_name, isem->owner);
+						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
 				}
@@ -47661,12 +47808,12 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
 				if (*isem->name) {
 					if (*owner_name)
-						G_warning_message_m13("isem \"%s\" is still owned by %s()  [id: %lu] ...\n", isem->name, owner_name, isem->owner);
+						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
 					if (*owner_name)
-						G_warning_message_m13("isem is still owned by %s()  [id: %lu] ...\n", owner_name, isem->owner);
+						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
 				}
@@ -48058,6 +48205,7 @@ tern	mlock_m13(void *addr, size_t len, ...)  // varargs(addr == NULL): void *add
 	} else {
 		zero_data = FALSE_m13;
 	}
+	
 	errno_reset_m13();
 
 	#if defined MACOS_m13 || defined LINUX_m13

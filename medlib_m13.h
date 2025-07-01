@@ -1284,6 +1284,7 @@ tern		FILE_locking_m13(void *fp, tern heed);  // turn locking on or off for a fi
 tern		FILE_show_m13(FILE_m13 *fp);
 FILE 		*FILE_std_m13(void *fp);
 FILE 		*FILE_to_std_m13(void *fp, si1 *path);
+void		FILE_update_pointer_m13(void *fp);
 
 
 
@@ -2749,6 +2750,7 @@ typedef struct {
 #endif // standard C
 
 // Prototypes
+si8		FPS_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset);
 FPS_m13		*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13 *parent);
 tern		FPS_close_m13(FPS_m13 *fps);
 si4		FPS_compare_times_m13(const void *a, const void *b);
@@ -2757,6 +2759,7 @@ FPS_m13		*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n
 FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
 FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
+si8		FPS_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes);
 FPS_m13		*FPS_open_m13(const si1 *path, const si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): const si1 *mode, ui8 fd_flags
 FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent, ui8 lh_flags
@@ -3118,7 +3121,6 @@ void			G_behavior_stack_reset_exec_m13(const si1 *function, si4 line, ui4 code);
 si1			*G_behavior_string_m13(ui4 behavior_code, si1 *behavior_string);
 si8			G_build_contigua_m13(LH_m13 *lh);
 Sgmt_REC_m13		*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_type);
-si8			G_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset);
 tern 			G_calculate_indices_CRCs_m13(FPS_m13 *fps);
 tern			G_calculate_metadata_CRC_m13(FPS_m13 *fps);
 tern			G_calculate_record_data_CRCs_m13(FPS_m13 *fps);
@@ -3193,7 +3195,6 @@ tern			G_init_timezone_tables_m13(void);
 tern			G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file_UID, tern originating_file);
 tern			G_is_level_header_m13(void *ptr);
 tern			G_is_video_data_m13(const si1 *path);
-si8			G_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
 ui4			G_level_m13(const si1 *full_file_name, ui4 *input_type_code);
 tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, const si1 *ip_str, const si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
 tern			G_MED_file_m13(ui4 type_code);
