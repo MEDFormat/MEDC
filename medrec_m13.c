@@ -213,7 +213,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 			REC_show_CSti_type_m13(record_header);
 			break;
 		default:
-			G_warning_message_m13("%s(): 0x%x is an unrecognized record type code\n", __FUNCTION__, type_code);
+			G_warning_message_m13("%s(): 0x%08x is an unrecognized record type code\n", __FUNCTION__, type_code);
 			break;
 	}
 	printf_m13("------------------ Record Body - END ------------------\n\n");
@@ -317,12 +317,12 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 		else
 			printf_m13("Acquisition Channel Number: %d\n", Sgmt_v10->acq_chan_num);
 
-		if (Sgmt_v10->samp_freq == REC_Sgmt_v10_SAMP_FREQ_NO_ENTRY_m13)
-			printf_m13("Sampling Frequency / Frame Rate: no entry\n");
-		else if (Sgmt_v10->samp_freq == REC_Sgmt_v10_SAMP_FREQ_VARIABLE_m13)
-			printf_m13("Sampling Frequency / Frame Rate: variable\n");
+		if (Sgmt_v10->rate == REC_Sgmt_v10_RATE_NO_ENTRY_m13)
+			printf_m13("Rate: no entry\n");
+		else if (Sgmt_v10->rate == REC_Sgmt_v10_RATE_VARIABLE_m13)
+			printf_m13("Rate: variable\n");
 		else
-			printf_m13("Sampling Frequency / Frame Rate: %lf\n", Sgmt_v10->samp_freq);
+			printf_m13("Rate: %lf\n", Sgmt_v10->rate);
 		if (record_header->total_record_bytes > (REC_HDR_BYTES_m13 + REC_Sgmt_v10_BYTES_m13)) {
 			segment_description = (si1 *) Sgmt_v10 + REC_Sgmt_v10_DESCRIPTION_OFFSET_m13;
 			if (*segment_description)
@@ -351,12 +351,12 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 			printf_m13("Segment Number: no entry\n");
 		else
 			printf_m13("Segment Number: %d\n", Sgmt_v11->seg_num);
-		if (Sgmt_v11->samp_freq == REC_Sgmt_v11_SAMP_FREQ_NO_ENTRY_m13)
-			printf_m13("Sampling Frequency / Frame Rate: no entry\n");
-		else if (Sgmt_v11->samp_freq == REC_Sgmt_v11_SAMP_FREQ_VARIABLE_m13)
-			printf_m13("Sampling Frequency / Frame Rate: variable\n");
+		if (Sgmt_v11->rate == REC_Sgmt_v11_RATE_NO_ENTRY_m13)
+			printf_m13("Rate: no entry\n");
+		else if (Sgmt_v11->samp_freq == REC_Sgmt_v11_RATE_VARIABLE_m13)
+			printf_m13("Rate: variable\n");
 		else
-			printf_m13("Sampling Frequency / Frame Rate: %f\n", Sgmt_v11->samp_freq);
+			printf_m13("Rate: %f\n", Sgmt_v11->rate);
 		if (record_header->total_record_bytes > (REC_HDR_BYTES_m13 + REC_Sgmt_v11_BYTES_m13)) {
 			segment_description = (si1 *) Sgmt_v11 + REC_Sgmt_v11_DESCRIPTION_OFFSET_m13;
 			if (*segment_description)
@@ -411,7 +411,7 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v10->acq_chan_num != (si4 *) (bytes + REC_Sgmt_v10_ACQ_CHAN_NUM_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->samp_freq != (sf8 *) (bytes + REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13))
+	if (&Sgmt_v10->rate != (sf8 *) (bytes + REC_Sgmt_v10_RATE_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 
 	// Version 1.1
@@ -427,7 +427,7 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 	if (&Sgmt_v11->seg_num != (si4 *) (bytes + REC_Sgmt_v11_SEG_NUM_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->samp_freq != (sf4 *) (bytes + REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13))
+	if (&Sgmt_v11->rate != (sf4 *) (bytes + REC_Sgmt_v11_RATE_OFFSET_m13))
 		goto REC_Sgmt_NOT_ALIGNED_m13;
 
 	// aligned

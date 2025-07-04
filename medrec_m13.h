@@ -171,12 +171,9 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v10_ACQ_CHAN_NUM_OFFSET_m13		36						// si4
 #define REC_Sgmt_v10_ACQ_CHAN_NUM_NO_ENTRY_m13		CHANNEL_NUMBER_NO_ENTRY_m13
 #define REC_Sgmt_v10_ACQ_CHAN_NUM_ALL_CHANNELS_m13	CHANNEL_NUMBER_ALL_CHANNELS_m13
-#define REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13		40						// sf8
-#define REC_Sgmt_v10_SAMP_FREQ_NO_ENTRY_m13		RATE_NO_ENTRY_m13
-#define REC_Sgmt_v10_SAMP_FREQ_VARIABLE_m13		RATE_VARIABLE_m13
-#define REC_Sgmt_v10_FRAME_RATE_OFFSET_m13		REC_Sgmt_v10_SAMP_FREQ_OFFSET_m13		// sf8
-#define REC_Sgmt_v10_FRAME_RATE_NO_ENTRY_m13		RATE_NO_ENTRY_m13
-#define REC_Sgmt_v10_FRAME_RATE_VARIABLE_m13		RATE_VARIABLE_m13
+#define REC_Sgmt_v10_RATE_OFFSET_m13			40						// sf8
+#define REC_Sgmt_v10_RATE_NO_ENTRY_m13			RATE_NO_ENTRY_m13
+#define REC_Sgmt_v10_RATE_VARIABLE_m13			RATE_VARIABLE_m13
 #define REC_Sgmt_v10_DESCRIPTION_OFFSET_m13		REC_Sgmt_v10_BYTES_m13				// si1 (arbitrary length, padded to 16-byte alignment for encryption)
 
 // Structure defined in medlib_m13.h due to codependency
@@ -193,12 +190,6 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 #define REC_Sgmt_v11_RATE_OFFSET_m13			28						// sf4
 #define REC_Sgmt_v11_RATE_NO_ENTRY_m13			((sf4) RATE_NO_ENTRY_m13)
 #define REC_Sgmt_v11_RATE_VARIABLE_m13			((sf4) RATE_VARIABLE_m13)
-#define REC_Sgmt_v11_SAMP_FREQ_OFFSET_m13		REC_Sgmt_v11_RATE_OFFSET_m13			// sf4
-#define REC_Sgmt_v11_SAMP_FREQ_NO_ENTRY_m13		((sf4) RATE_NO_ENTRY_m13)
-#define REC_Sgmt_v11_SAMP_FREQ_VARIABLE_m13		((sf4) RATE_VARIABLE_m13)
-#define REC_Sgmt_v11_FRAME_RATE_OFFSET_m13		REC_Sgmt_v11_RATE_OFFSET_m13			// sf4
-#define REC_Sgmt_v11_FRAME_RATE_NO_ENTRY_m13		((sf4) RATE_NO_ENTRY_m13)
-#define REC_Sgmt_v11_FRAME_RATE_VARIABLE_m13		((sf4) RATE_VARIABLE_m13)
 #define REC_Sgmt_v11_DESCRIPTION_OFFSET_m13		REC_Sgmt_v11_BYTES_m13				// si1 (arbitrary length, padded to 8-byte alignment)
 
 // Structure defined in medlib.h due to codependency

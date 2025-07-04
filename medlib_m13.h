@@ -816,7 +816,6 @@ typedef struct {
 #define UH_CHANNEL_LEVEL_CODE_m13				-2
 #define UH_SESSION_LEVEL_CODE_m13				-3
 #define UH_TYPE_STR_OFFSET_m13				32 // ascii[4]
-#define UH_TYPE_STR_TERMINAL_ZERO_OFFSET_m13			(UH_TYPE_STR_OFFSET_m13 + 4) // si1
 #define UH_TYPE_CODE_OFFSET_m13					UH_TYPE_STR_OFFSET_m13 // ui4
 #define UH_TYPE_NO_ENTRY_m13					0 // zero as ui4 or zero-length string as ascii[4]
 #define UH_MED_VERSION_MAJOR_OFFSET_m13				37 // ui1
@@ -1028,7 +1027,6 @@ typedef struct {
 #define REC_HDR_START_TIME_OFFSET_m13			8 // si8
 #define REC_HDR_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13 // si8
 #define REC_HDR_TYPE_STR_OFFSET_m13			16	 // ascii[4]
-#define REC_HDR_TYPE_STR_TERMINAL_ZERO_OFFSET_m13	(REC_HDR_TYPE_STR_OFFSET_m13 + 4) // si1
 #define REC_HDR_TYPE_CODE_OFFSET_m13			REC_HDR_TYPE_STR_OFFSET_m13  // ui4
 #define REC_HDR_TYPE_CODE_NO_ENTRY_m13			0	 // ui4
 #define REC_HDR_VERSION_MAJOR_OFFSET_m13		21	 // ui1
@@ -1045,7 +1043,6 @@ typedef struct {
 #define REC_IDX_START_TIME_OFFSET_m13			8 // si8
 #define REC_IDX_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
 #define REC_IDX_TYPE_STR_OFFSET_m13			16 // ascii[4]
-#define REC_IDX_TYPE_STR_TERMINAL_ZERO_OFFSET_m13	(REC_IDX_TYPE_STR_OFFSET_m13 + 4) // si1
 #define REC_IDX_TYPE_CODE_OFFSET_m13			REC_IDX_TYPE_STR_OFFSET_m13  // as ui4
 #define REC_IDX_TYPE_CODE_NO_ENTRY_m13			0 // as ui4
 #define REC_IDX_VERSION_MAJOR_OFFSET_m13		21 // ui1
@@ -1284,7 +1281,7 @@ tern		FILE_locking_m13(void *fp, tern heed);  // turn locking on or off for a fi
 tern		FILE_show_m13(FILE_m13 *fp);
 FILE 		*FILE_std_m13(void *fp);
 FILE 		*FILE_to_std_m13(void *fp, si1 *path);
-void		FILE_update_pointer_m13(void *fp);
+void		FILE_update_m13(void *fp);
 
 
 
@@ -2056,13 +2053,9 @@ typedef struct {
 // All MED File Structures begin with a level header structure
 typedef struct LH_m13 { // multiple thread access
 	union {
+		ui4 		type_code;
 		struct {
 			si1 	type_string[TYPE_BYTES_m13];
-			ui1 	pad[3]; // enforce 8-byte alignment
-		};
-		struct {
-			ui4 	type_code;
-			si1	type_string_terminal_zero; // not used - here for clarity
 			tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 			tern	names_differ;
 		};
@@ -2084,13 +2077,9 @@ typedef struct PROC_GLOBS_m13 { // multiple thread access
 		LH_m13 	header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 in C++
 			union {
+				ui4 		type_code;
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
-					ui1 	pad[3]; // enforce 8-byte alignment
-				};
-				struct {
-					ui4 	type_code;
-					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 					tern	names_differ;
 				};
@@ -2347,15 +2336,12 @@ typedef struct {
  // end robust mode region
 	si4		segment_number;
 	union {
+		ui4		type_code;
 		struct {
 			si1	type_string[TYPE_BYTES_m13];
 			ui1	MED_version_major;
 			ui1	MED_version_minor;
 			ui1	byte_order_code;
-		};
-		struct {
-			ui4	type_code;
-			si1	type_string_terminal_zero; // not used - here for clarity
 		};
 	};
 	si8		session_start_time;
@@ -2512,15 +2498,12 @@ typedef struct REC_HDR_m13 { // struct name for medrec_m13.h interdependency
 	ui4		total_record_bytes; // header + body bytes
 	si8		start_time;
 	union {
+		ui4		type_code;
 		struct {
 			si1	type_string[TYPE_BYTES_m13];
 			ui1	version_major;
 			ui1	version_minor; // minor version == 0
 			si1	encryption_level;
-		};
-		struct {
-			ui4	type_code;
-			si1	type_string_terminal_zero; // not used - here for clarity
 		};
 	};
 } REC_HDR_m13;
@@ -2529,15 +2512,12 @@ typedef struct {
 	si8		file_offset; // never negative: the record indices are not used to indicate discontinuities
 	si8		start_time;
 	union {
+		ui4		type_code;
 		struct {
 			si1	type_string[TYPE_BYTES_m13];
 			ui1	version_major;
 			ui1	version_minor;
 			si1	encryption_level;
-		};
-		struct {
-			ui4	type_code;
-			si1	type_string_terminal_zero; // not used - there for clarity
 		};
 	};
 } REC_IDX_m13;
@@ -2688,13 +2668,9 @@ typedef struct {
 		LH_m13			header; // in case just want the level header (type == GENERIC_TYPE_CODE_m13 => use universal header to get specific type)
 		struct { // this struct replaces anonymous LH_m13 for C++
 			union {
+				ui4 		type_code;
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
-					ui1 	pad[3]; // enforce 8-byte alignment
-				};
-				struct {
-					ui4 	type_code;
-					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 					tern	names_differ;
 				};
@@ -2761,11 +2737,11 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes);
-FPS_m13		*FPS_open_m13(const si1 *path, const si1 *mode, si8 n_bytes, LH_m13 *parent, ...); // varargs(mode empty): const si1 *mode, ui8 fd_flags
-FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *dest, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent, ui8 lh_flags
-												    // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
+FPS_m13		*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...); // vararg(mode_str empty): ui8 fd_flags
+FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent, ui8 lh_flags
+											// varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 tern		FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes);
-tern		FPS_reopen_m13(FPS_m13 *fps, const si1 *mode);
+tern		FPS_reopen_m13(FPS_m13 *fps, const si1 *mode, ...); // vararg(mode_str empty): ui8 fd_flags
 si8		FPS_resolve_offset_m13(FPS_m13 *fps, si8 offset, ...);  // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 si8		FPS_seek_m13(FPS_m13 *fps, si8 offset, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 si8		FPS_set_direcs_from_lh_flags_m13(FPS_m13 *fps, ui8 lh_flags);
@@ -2776,7 +2752,7 @@ tern		FPS_show_m13(FPS_m13 *fps);
 tern		FPS_show_direcs_m13(FPS_m13 *fps);
 tern		FPS_show_params_m13(FPS_m13 *fps);
 tern		FPS_sort_m13(FPS_m13 **fps_array, si4 n_fps);
-tern		FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *source, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
+tern		FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 
 
 
@@ -2784,11 +2760,10 @@ tern		FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, void *so
 //******************************** MED Structures ********************************//
 //**********************************************************************************//
 
-// Generally Useful Structures
 typedef union {
-	si1	ext[8];
+	si1	str[8];
 	ui4	code;
-} EXT_CODE_m13;
+} STR_CODE_m13;
 
 #ifdef __cplusplus
 typedef struct {
@@ -2802,15 +2777,12 @@ typedef struct {
 				si8	end_time;
 			};
 			union { // anonymous union
+				ui4		type_code;
 				struct {
-					si1 type_string[TYPE_BYTES_m13];
-					ui1 version_major;
-					ui1 version_minor;
-					si1 encryption_level;
-				};
-				struct {
-					ui4 type_code;
-					si1	type_string_terminal_zero;
+					si1	type_string[TYPE_BYTES_m13];
+					ui1	version_major;
+					ui1	version_minor;
+					si1	encryption_level;
 				};
 			};
 		};
@@ -2856,13 +2828,9 @@ typedef struct {
 		LH_m13		header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 for C++
 			union {
+				ui4 		type_code;
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
-					ui1 	pad[3]; // enforce 8-byte alignment
-				};
-				struct {
-					ui4 	type_code;
-					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 					tern	names_differ;
 				};
@@ -2925,13 +2893,9 @@ typedef struct CHAN_m13 {
 		LH_m13		header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 for C++
 			union {
+				ui4 		type_code;
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
-					ui1 	pad[3]; // enforce 8-byte alignment
-				};
-				struct {
-					ui4 	type_code;
-					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 					tern	names_differ;
 				};
@@ -2982,13 +2946,9 @@ typedef struct {
 		LH_m13	header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 in C++
 			union {
+				ui4 		type_code;
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
-					ui1 	pad[3]; // enforce 8-byte alignment
-				};
-				struct {
-					ui4 	type_code;
-					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 					tern	names_differ;
 				};
@@ -3029,13 +2989,9 @@ typedef struct {
 		LH_m13		header; // in case just want the level header
 		struct { // this struct replaces anonymous LH_m13 in C++
 			union {
+				ui4 		type_code;
 				struct {
 					si1 	type_string[TYPE_BYTES_m13];
-					ui1 	pad[3]; // enforce 8-byte alignment
-				};
-				struct {
-					ui4 	type_code;
-					si1	type_string_terminal_zero; // not used - here for clarity
 					tern	allocated; // allocted on heap, independently (not en bloc)  [moved from flags - cleaner code]
 					tern	names_differ;
 				};
@@ -4889,7 +4845,6 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 #define TR_PACKET_BYTES_OFFSET_m13			4		  // ui2
 #define TR_FLAGS_OFFSET_m13				6	  // ui2
 #define TR_ID_STRING_OFFSET_m13				8	  // ascii[4]
-#define TR_ID_STRING_TERMINAL_ZERO_OFFSET_m13		(TR_ID_STRING_OFFSET_m13 + 4) // si1
 #define TR_ID_CODE_OFFSET_m13				TR_ID_STRING_OFFSET_m13  // ui4
 // TR_ID_CODE_NO_ENTRY_m13 defined above
 #define TR_TYPE_OFFSET_m13				13	  // ui1
@@ -4926,20 +4881,14 @@ typedef struct {
 	ui2	flags;
 	union {
 		struct {
-			si1 ID_string[TYPE_BYTES_m13]; // transmission ID is typically application specific
-			ui1 type; // transmission type (general [0-63] or transmission ID specific [64-255])
+			si1	ID_string[TYPE_BYTES_m13]; // transmission ID is typically application specific
+			ui1	type; // transmission type (general [0-63] or transmission ID specific [64-255])
 			ui1	subtype; // rarely used
-			ui1 version; // transmission header version
+			ui1	version; // transmission header version
 		};
 		struct {
-			ui4 ID_code; // transmission ID is typically application specific
-			union {
-				ui4	combined_check; // use to to check [zero, type, subtype, version] as a ui4
-				struct {
-					si1	ID_string_terminal_zero; // here for clarity
-					ui1	pad_bytes[3]; // not available for use (type, subtype, & version above)
-				};
-			};
+			ui4	ID_code; // transmission ID is typically application specific
+			ui4	combined_check; // use to to check [terminal zero of ID_string, type, subtype, version] as a ui4
 		};
 	};
 	si8	transmission_bytes; // full size of tramsmitted data in bytes (*** does not include header ***)
@@ -5584,9 +5533,9 @@ si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		system_m13(const si1 *command, ...); // varargs(command = NULL): const si1 *command, tern (as si4) null_std_streams, ui4 behavior;
-si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(BEHAVIOR_PASSED_m13 set): ui4 behavior)
-												    // varargs(SP_SEPARATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
-												    // note if both passed, behavior is first argument
+si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_BEHAVIOR_PASSED_m13 flag set): ui4 behavior)
+												    // varargs(SP_SEPARATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 e_buf_len
+												    // note: if both passed, behavior is first argument
 void		tempclean_m13(void);
 FILE_m13	*tempfile_m13(void);
 si1		*tempnam_m13(si1 *path);
