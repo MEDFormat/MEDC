@@ -106,7 +106,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 	ui4	type_code;
 	si1	time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(CRC_BYTES_m13, 1)];
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -230,7 +230,7 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes)
 {
 	tern	return_value, free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -285,7 +285,7 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 	REC_Sgmt_v11_m13	*Sgmt_v11;
 	si1                     time_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(ui8), 1)];
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -383,7 +383,7 @@ tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
 	REC_Sgmt_v11_m13	*Sgmt_v11;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -457,7 +457,7 @@ tern    REC_show_Stat_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_Stat_v10_m13	*Stat;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -512,7 +512,7 @@ tern     REC_check_Stat_type_alignment_m13(ui1 *bytes)
 	REC_Stat_v10_m13	*Stat;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -570,7 +570,7 @@ tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header)
 	si1			*note_text;
 	REC_Note_v11_m13	*note;
 	
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
@@ -614,7 +614,7 @@ tern        REC_check_Note_type_alignment_m13(ui1 *bytes)
 	const si1		*vers_str;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -664,7 +664,7 @@ tern	REC_show_EDFA_type_m13(REC_HDR_m13 *record_header)
 	REC_EDFA_v10_m13	*edfa;
 	si1			*annotation;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -692,7 +692,7 @@ tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
 	REC_EDFA_v10_m13	*edfa;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -741,7 +741,7 @@ tern	REC_show_Seiz_type_m13(REC_HDR_m13 *record_header)
 	si1			        time_str[TIME_STRING_BYTES_m13];
 	PROC_GLOBS_m13			*proc_globs;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -824,7 +824,7 @@ tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
 	tern				free_flag = FALSE_m13;
 	ui1				*chan_bytes;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -892,7 +892,7 @@ tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header)
 {
 	si1	*log_entry;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -915,7 +915,7 @@ tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header)
 
 tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
 {
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -934,7 +934,7 @@ tern	REC_show_NlxP_type_m13(REC_HDR_m13 *record_header)
 	si1                     hex_str[HEX_STR_BYTES_m13(sizeof(ui4), 1)];
 	REC_NlxP_v10_m13	*nlxp;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -977,7 +977,7 @@ tern     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
 	REC_NlxP_v10_m13	*nlxp;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1032,7 +1032,7 @@ tern    REC_show_Curs_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_Curs_v10_m13	*curs;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1058,7 +1058,7 @@ tern     REC_check_Curs_type_alignment_m13(ui1 *bytes)
 	REC_Curs_v10_m13	*curs;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1109,7 +1109,7 @@ tern    REC_show_Epoc_type_m13(REC_HDR_m13 *record_header)
 	REC_Epoc_v10_m13	*epoc1;
 	REC_Epoc_v20_m13	*epoc2;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1170,7 +1170,7 @@ tern     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
 	REC_Epoc_v20_m13	*epoc2;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1237,7 +1237,7 @@ tern	REC_show_ESti_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_ESti_v10_m13	*esti;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1301,7 +1301,7 @@ tern     REC_check_ESti_type_alignment_m13(ui1 *bytes)
 	REC_ESti_v10_m13	*esti;
 	tern			free_flag = FALSE_m13;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1360,7 +1360,7 @@ tern    REC_show_CSti_type_m13(REC_HDR_m13 *record_header)
 {
 	REC_CSti_v10_m13	*csti;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1386,7 +1386,7 @@ tern     REC_check_CSti_type_alignment_m13(ui1 *bytes)
 	tern			free_flag = FALSE_m13;
 	REC_CSti_v10_m13	*csti;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
@@ -1439,7 +1439,7 @@ void    REC_show_HFOc_type_m13(REC_HDR_m13 *record_header)
 	REC_HFOc_v12_m13	*hfoc_2;
 	REC_HFOc_v13_m13	*hfoc_3;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_message_m13("%s()\n", __FUNCTION__);
 #endif
 	
@@ -1496,7 +1496,7 @@ tern	REC_check_HFOc_type_alignment_m13(ui1 *bytes)
 	REC_HFOc_v12_m13	*hfoc_2;
 	REC_HFOc_v13_m13	*hfoc_3;
 
-#ifdef FN_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_message_m13("%s()\n", __FUNCTION__);
 #endif
 	

@@ -18454,12 +18454,9 @@ ui8	AT_actual_size_m13(void *address)
 	ui8		actual_bytes;
 	AT_ENTRY_m13	*ate;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	if (address == NULL)  // usually from realloc() with ptr == NULL
-		return_m13(0);
+		return(0);
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
@@ -18468,7 +18465,7 @@ ui8	AT_actual_size_m13(void *address)
 		if (ate->address == address) {
 			actual_bytes = ate->actual_bytes;
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-			return_m13(actual_bytes);
+			return(actual_bytes);
 		}
 	}
 	
@@ -18476,7 +18473,7 @@ ui8	AT_actual_size_m13(void *address)
 
 	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 	
-	return_m13(0);
+	return(0);
 }
 
 
@@ -18488,9 +18485,6 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
 
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 	_id = gettid_m13();
@@ -18500,7 +18494,7 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
-		return_void_m13;
+		return;
 	}
 	
 	// get mutex
@@ -18553,7 +18547,7 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 	
-	return_void_m13;
+	return;
 }
 
 
@@ -18621,14 +18615,11 @@ tern	AT_freeable_m13(void *address)
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	// return whether an address is in the AT list
 	
 	if (address == NULL)
-		return_m13(FALSE_m13);
+		return(FALSE_m13);
 	
 	freeable = FALSE_m13;
 	
@@ -18656,7 +18647,7 @@ AT_FREEABLE_UNLOCK_m13:
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 	
-	return_m13(freeable);
+	return(freeable);
 }
 
 
@@ -18668,9 +18659,6 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	// Note this function does not free the accociated memory, just marks it as freed in the AT list
 
@@ -18683,7 +18671,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 		else
 			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
 
-		return_m13(FALSE_m13);
+		return(FALSE_m13);
 	}
 
 	// get mutex
@@ -18705,7 +18693,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
-		return_m13(FALSE_m13);
+		return(FALSE_m13);
 	}
 	
 	// already freed
@@ -18722,7 +18710,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		
-		return_m13(FALSE_m13);
+		return(FALSE_m13);
 	}
 	
 	// mark as freed
@@ -18738,7 +18726,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 	
-	return_m13(TRUE_m13);
+	return(TRUE_m13);
 }
 
 
@@ -18748,13 +18736,10 @@ ui8	AT_requested_size_m13(void *address)
 	ui8		requested_bytes;
 	AT_ENTRY_m13	*ate;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	if (address == NULL) {
 		G_warning_message_m13("%s(): %sNULL address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-		return_m13(0);
+		return(0);
 	}
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
@@ -18764,7 +18749,7 @@ ui8	AT_requested_size_m13(void *address)
 		if (ate->address == address) {
 			requested_bytes = ate->requested_bytes;
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-			return_m13(requested_bytes);
+			return(requested_bytes);
 		}
 	}
 	
@@ -18772,7 +18757,7 @@ ui8	AT_requested_size_m13(void *address)
 	
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
-	return_m13(0);
+	return(0);
 }
 
 
@@ -18782,9 +18767,6 @@ void	AT_show_entries_m13(void)
 	AT_ENTRY_m13	*ate;
 	si8		alloced_entries = 0;
 
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
@@ -18806,7 +18788,7 @@ void	AT_show_entries_m13(void)
 
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
-	return_void_m13;
+	return;
 }
 
 
@@ -18815,13 +18797,10 @@ void	AT_show_entry_m13(void *address)
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	if (address == NULL) {
 		G_warning_message_m13("%s(): %sattempting to show a NULL object%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-		return_void_m13;
+		return;
 	}
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
@@ -18843,7 +18822,7 @@ void	AT_show_entry_m13(void *address)
 				printf_m13("freeing thread id: %lu\n", ate->free_thread_id);
 			}
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-			return_void_m13;
+			return;
 		}
 	}
 	
@@ -18851,7 +18830,7 @@ void	AT_show_entry_m13(void *address)
 	
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
-	return_void_m13;
+	return;
 }
 
 
@@ -18862,14 +18841,11 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	si8		i;
 	AT_ENTRY_m13	*ate;
 
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	if (orig_address == NULL) {
 		if (new_address) {
 			AT_add_entry_m13(function, line, new_address, requested_bytes);
-			return_m13(TRUE_m13);
+			return(TRUE_m13);
 		}
 	}
 	
@@ -18878,7 +18854,7 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 
 	if (new_address == NULL) {
 		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
-		return_m13(FALSE_m13);
+		return(FALSE_m13);
 	}
 	
 	// get mutex
@@ -18894,7 +18870,7 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	if (i == -1) {
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		G_warning_message_m13("%s(): %saddress is not allocated%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
-		return_m13(FALSE_m13);
+		return(FALSE_m13);
 	}
 	
 	if (ate->free_function) {
@@ -18926,7 +18902,7 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
-	return_m13(TRUE_m13);
+	return(TRUE_m13);
 }
 #endif // AT_DEBUG_m13
 
@@ -26912,16 +26888,25 @@ inline
 #endif
 void  CRC_matrix_square_m13(ui4 *square, const ui4 *mat)
 {
-	ui4 n;
+	const ui4	*tmp_mat;
+	ui4		vec, sum;
+	si4		i;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
-	for (n = 0; n < 32; n++)
-		square[n] = CRC_matrix_times_m13(mat, mat[n]);
+	for (i = 0; i < 32; ++i) {
+		sum = 0;
+		vec = mat[i];
+		tmp_mat = mat;
+		while (vec) {
+			if (vec & 1)
+				sum ^= *tmp_mat;
+			vec >>= 1;
+			++tmp_mat;
+		}
+		square[i] = sum;
+	}
 	
-	return_void_m13;
+	return;
 }
 
 
@@ -26930,7 +26915,7 @@ inline
 #endif
 ui4  CRC_matrix_times_m13(const ui4 *mat, ui4 vec)
 {
-	ui4 sum;
+	ui4	sum;
 	
 
 	sum = 0;
@@ -26938,7 +26923,7 @@ ui4  CRC_matrix_times_m13(const ui4 *mat, ui4 vec)
 		if (vec & 1)
 			sum ^= *mat;
 		vec >>= 1;
-		mat++;
+		++mat;
 	}
 	
 	return(sum);
@@ -46006,13 +45991,9 @@ void	free_m13(void *ptr)
 void	AT_free_m13(const si1 *function, si4 line, void *ptr)
 #endif
 {
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
 	#ifdef AT_DEBUG_m13
 	if (AT_remove_entry_m13(function, line, ptr) == FALSE_m13)
-		return_void_m13;
+		return;
 	#endif
 
 	#ifdef MATLAB_PERSISTENT_m13
@@ -46021,7 +46002,7 @@ void	AT_free_m13(const si1 *function, si4 line, void *ptr)
 	free(ptr);
 	#endif
 	
-	return_void_m13;
+	return;
 }
 
 
@@ -46032,12 +46013,9 @@ void	free_2D_m13(void **ptr, size_t dim1)
 void	AT_free_2D_m13(const si1 *function, si4 line, void **ptr, size_t dim1)
 #endif
 {
-	si8 i;
+	si8	i;
 	void	*base_address;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	// dim1 == 0 indicates allocated en bloc per caller (caller could just use free_m13() in this case, as here)
 	
@@ -46047,7 +46025,7 @@ void	AT_free_2D_m13(const si1 *function, si4 line, void **ptr, size_t dim1)
 		#else
 		free_m13((void *) ptr);
 		#endif
-		return_void_m13;
+		return;
 	}
 		
 	// allocated en bloc  (check all addresses because pointers may have been sorted)
@@ -46059,7 +46037,7 @@ void	AT_free_2D_m13(const si1 *function, si4 line, void **ptr, size_t dim1)
 			#else
 			free_m13((void *) ptr);
 			#endif
-			return_void_m13;
+			return;
 		}
 	}
 
@@ -46078,7 +46056,7 @@ void	AT_free_2D_m13(const si1 *function, si4 line, void **ptr, size_t dim1)
 	free_m13((void *) ptr);
 	#endif
 
-	return_void_m13;
+	return;
 }
 
 
