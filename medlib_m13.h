@@ -272,18 +272,19 @@ typedef long double	sf16;
 
 // Enhanced Pascal strings
 // Useful for large strings, or strings whose length needs to be known often
-// (eventually all medlib string functions will accept these)
+
+// (Ultimately all medlib string (STR) functions will be adapted to accept these as void pointers.)
 
 #define PSTR_TAG_m13		((si1) 0x80)
-#define PSTR_MAX_LEN_m13	((ui4) 0xFFFFFFFF)
+#define PSTR_MAX_BYTES_m13	((ui4) 0xFFFFFFFE) // max chars will be fewer if multibyte
 
 // flags (bytes 1-3, byte 0 used for tag)
 #define PSTR_FLAG_ALLOCED_m13	((ui4) 1 << 8) // pstr structure was allocated
 #define PSTR_FLAG_CONST_m13	((ui4) 1 << 9) // string is const
-#define PSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is ascii (not sure if useful)
+#define PSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is pure ascii (no multibyte characters)
 
 // macros
-#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((*((ui1 *) (x)) == PSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is a pstr
+#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((((pstr *) (x))->tag == PSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is a pstr pointer
 
 // typedefs
 typedef struct {
@@ -291,11 +292,16 @@ typedef struct {
 		si1	tag; // marker for pstr vs *si1 (PSTR_TAG_m13 [== 0x80] is not valid as first byte of any utf8 character, including ascii)
 		ui4	flags; // bytes 1-3 used for flags
 	};
-	ui4	len; // string length in bytes (not necessarily characters), not including terminal zero
-	si1	*str; // standard string pointer (terminal zero required)
+	ui4	bytes; // string length in bytes (not necessarily characters), not including terminal zero
+	ui4	chars; // string length in characters (not necessarily bytes), not including terminal zero
+	ui4	msize; // bytes allocated to string
+	si1	*str; // standard C string pointer (terminal zero required)
 } pstr;  // (untagged & uncapitalized because it is treated as an elemental type)
 
 
+// Prototypes
+pstr	*ptsr_alloc_m13(si8 n_bytes); // vararg(n_bytes negative): ui4 pstr_flags
+void	*ptsr_free_m13(void *ptr); // can also pass &pstr to null local pointer with free
 
 //**********************************************************************************//
 //***************** Record Structures Integral to the MED Library ******************//
@@ -1372,7 +1378,7 @@ typedef struct {
 	const si1 		*name;
 	_Atomic pid_t_m13	owner;  // thread id of owning thread, zero when unowned (normal state)
 	pthread_mutex_t_m13	mutex;
-	_Atomic tern		mutex_initialized;
+	_Atomic tern		initialized;
 	tern			free_on_destroy;
 } isem_t_m13;
 
@@ -2126,13 +2132,13 @@ typedef struct PROC_GLOBS_m13 {
 	LH_m13			*child; // hierarchy level immediately below these process globals
 	si4			ref_count; // count of structures & threads currently linked to these process globals
 } PROC_GLOBS_m13;
-#endif // __cplusplus
+#endif // standard c
 
 // NOTE: placement of LH_m13 in structures allows passing of LH_m13 pointer to functions,
 // and based on its content, functions can cast pointer to specific level structures.
 // e.g:
 // if (lh->type_code == LH_SESS_m13)
-//	sess = (SESS_m13 *) lh ;
+//	sess = (SESS_m13 *) lh;
 
 typedef struct {
 	pthread_mutex_t_m13		mutex;
@@ -2306,6 +2312,7 @@ typedef struct {
 								  	// not thread safe => use G_unique_temp_file_m13() in threaded applications
 	ui4				file_creation_umask;
 	pid_t_m13			main_id;  // process thread id (not necessarily same as process id)
+	pthread_mutex_t_m13		update_mutex;
 	ERR_m13				error; // causal error
 	tern				threading; // global default, used to set process globals default
 	BEHAVIOR_m13			default_behavior;
@@ -2313,7 +2320,7 @@ typedef struct {
 	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
 	ui4				CRC_mode;
 	tern				access_times; // record times of each structure & file access
-	tern				write_sorted_records; // if records unsorted, sort & re-write
+	tern				write_sorted_records; // if records unsorted, re-write after sorting
 	tern				write_corrected_headers; // if files closed without header update, n_entries may be zero (if TRUE_m13, write corrected header when encountered)
 	tern				update_file_system_names; // if session or channel file system name differ from higher level names, rename lower level files & directories
 	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
@@ -2560,17 +2567,18 @@ typedef struct {
 //**********************************************************************************//
 
 // Constants
-#define FPS_BYTES_NO_ENTRY_m13			((si8) 0) // passed as n_bytes
 #define FPS_ITEMS_NO_ENTRY_m13			((si8) 0) // passed as n_items
-#define FPS_AUTO_BYTES_m13			((si8) -1) // passed as n_bytes
-#define FPS_FULL_FILE_m13			((si8) 0x7FFFFFFFFFFFFFF9) // passed as offset (Note: value positive so not treated as discontinuity)
-#define FPS_UH_ONLY_m13				((si8) 0x7FFFFFFFFFFFFFFA) // passed as offset (Note: value positive so not treated as discontinuity)
-#define FPS_UH_OFFSET_m13			((si8) 0x7FFFFFFFFFFFFFFB) // passed as offset (Note: value positive so not treated as discontinuity)
-#define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset (Note: value positive so not treated as discontinuity)
-#define FPS_REL_START_m13			((si8) 0x7FFFFFFFFFFFFFFD) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
-#define FPS_REL_CURR_m13			((si8) 0x7FFFFFFFFFFFFFFE) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
-#define FPS_REL_END_m13				((si8) 0x7FFFFFFFFFFFFFFF) // passed as offset with rel_bytes vararg (Note: value positive so not treated as discontinuity)
-#define FPS_REL_OFFSET_m13(x)			( ((x) > FPS_APPEND_m13) ? TRUE_m13 : FALSE_m13 )
+#define FPS_BYTES_NO_ENTRY_m13			((si8) 0) // passed as n_bytes
+#define FPS_NO_ALLOC_m13			((si8) -1) // passed as n_bytes in FPS_open_m13() & FPS_init_m13() only
+#define FPS_AUTO_BYTES_m13			((si8) -2) // passed as n_bytes
+#define FPS_FULL_FILE_m13			((si8) -3) // passed as n_bytes
+#define FPS_UH_ONLY_m13				((si8) -4) // passed as n_bytes
+#define FPS_UH_OFFSET_m13			((si8) 0x7FFFFFFFFFFFFFFB) // passed as offset (value positive so not treated as discontinuity)
+#define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset (value positive so not treated as discontinuity)
+#define FPS_REL_START_m13			((si8) 0x7FFFFFFFFFFFFFFD) // passed as offset with rel_bytes vararg (value positive so not treated as discontinuity)
+#define FPS_REL_CURR_m13			((si8) 0x7FFFFFFFFFFFFFFE) // passed as offset with rel_bytes vararg (value positive so not treated as discontinuity)
+#define FPS_REL_END_m13				((si8) 0x7FFFFFFFFFFFFFFF) // passed as offset with rel_bytes vararg (value positive so not treated as discontinuity)
+#define FPS_REL_OFFSET_m13(x)			( ((x) >= FPS_REL_START_m13) ? TRUE_m13 : FALSE_m13 )
 
 #define FPS_FILE_LENGTH_UNKNOWN_m13		-1
 #define FPS_PROTOTYPE_TYPE_CODE_m13		TS_METADATA_TYPE_CODE_m13 // any metadata type would do
@@ -2649,7 +2657,7 @@ typedef struct {
 // Parameters contain "mechanics" of FPS (mostly used internally by library functions)
 typedef struct {
 	si1			mode_str[6]; // open mode string (Windows systems: 'b' added by fopen_m13(), but not included in this string)
-	tern			uh_read; // universal header has been read in
+	tern			header_read; // universal header has been read in
 	tern			full_file_read; // full file has been read in
 	si8			raw_data_bytes; // bytes in raw data array
 	ui1			*raw_data; // universal header followed by data (in standard read - just region requested, in full file & mem map - matches media)
@@ -4259,13 +4267,15 @@ tern	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
 // Minor modifications for compatibility with the MED Library.
 // The CRC routines are customized for little endian machines.
 
+// Typedefs
+typedef ui4	crc4;
 
 // Constants
 #define CRC_BYTES_m13		4
 #define CRC_TABLES_m13		8
 #define CRC_TABLE_ENTRIES_m13	256
-#define CRC_POLYNOMIAL_m13	((ui4) 0xEDB88320) // note library CRC routines are customized to this polynomial, it cannot be changed arbitrarily
-#define CRC_START_VALUE_m13	((ui4) 0x0)
+#define CRC_POLYNOMIAL_m13	((crc4) 0xEDB88320) // note library CRC routines are customized to this polynomial, it cannot be changed arbitrarily
+#define CRC_START_VALUE_m13	((crc4) 0x0)
 #define CRC_NO_ENTRY_m13	CRC_START_VALUE_m13
 
 // CRC Modes
@@ -4275,16 +4285,16 @@ tern	CMP_zero_buffers_m13(CMP_BUFFERS_m13 *buffers);
 #define CRC_MODES_ALL_m13	( CRC_VALIDATE_m13 | CRC_VALIDATE_m13 ) // validate on input & calculate on output
 
 // Macros
-#define CRC_SWAP32_m13(q)	( (((q) >> 24) & 0xff) + (((q) >> 8) & 0xff00) + (((q) & 0xff00) << 8) + (((q) & 0xff) << 24) )
+#define CRC_SWAP4_m13(x)	( (((x) >> 24) & 0x000000ff) + (((x) >> 8) & 0x0000ff00) + (((x) & 0x0000ff00) << 8) + (((x) & 0x000000ff) << 24) )
 
 // Function Prototypes
-ui4	CRC_calculate_m13(const ui1 *block_ptr, si8 block_bytes);
-ui4	CRC_combine_m13(ui4 block_1_crc, ui4 block_2_crc, si8 block_2_bytes);
+crc4	CRC_calculate_m13(const ui1 *block_ptr, si8 block_bytes);
+crc4	CRC_combine_m13(crc4 block_1_crc, crc4 block_2_crc, si8 block_2_bytes);
 tern	CRC_init_tables_m13(void);
-void	CRC_matrix_square_m13(ui4 *square, const ui4 *mat);
-ui4	CRC_matrix_times_m13(const ui4 *mat, ui4 vec);
-ui4	CRC_update_m13(const ui1 *block_ptr, si8 block_bytes, ui4 current_crc);
-tern	CRC_validate_m13(const ui1 *block_ptr, si8 block_bytes, ui4 crc_to_validate);
+void	CRC_matrix_square_m13(crc4 *square, const crc4 *mat);
+crc4	CRC_matrix_times_m13(const crc4 *mat, crc4 vec);
+crc4	CRC_update_m13(const ui1 *block_ptr, si8 block_bytes, crc4 current_crc);
+tern	CRC_validate_m13(const ui1 *block_ptr, si8 block_bytes, crc4 crc_to_validate);
 
 
 
@@ -5467,6 +5477,7 @@ void		isem_inc_m13(isem_t_m13 *sem);
 isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, const si1 *name, tern free_on_destroy);
 void		isem_own_m13(isem_t_m13 *isem, tern own);
 void		isem_setcnt_m13(isem_t_m13 *isem, ui4 count);
+void		isem_show_m13(isem_t_m13 *isem);
 tern		isem_trydec_m13(isem_t_m13 *sem);
 tern		isem_tryinc_m13(isem_t_m13 *sem);
 tern		isem_tryown_m13(isem_t_m13 *isem, tern own);

@@ -111,7 +111,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 #endif
 
 	// decrypt record body if necesary
-	if (record_header->encryption_level > NO_ENCRYPTION_m13)
+	if (record_header->encryption_level > NO_ENCRYPTION_m13 && fps)
 		G_decrypt_record_data_m13(fps, record_header, 1);
 		    
 	// display record header fields
@@ -127,7 +127,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 	type_code = record_header->type_code;
 	if (type_code) {
 		STR_hex_m13(hex_str, (ui1 *) record_header->type_string, CRC_BYTES_m13, NULL, TRUE_m13);
-		printf_m13("Record Type String: %s (0x%s)\n", record_header->type_string, hex_str);
+		printf_m13("Record Type String: %s  (0x%s)\n", record_header->type_string, hex_str);
 	} else {
 		printf_m13("Record Type String: no entry\n");
 	}
@@ -143,7 +143,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 	} else {
 		printf_m13("Record Version: %hu.%hu\n", record_header->version_major, record_header->version_minor);
 	}
-	printf_m13("Record Encryption Level: %hd ", record_header->encryption_level);
+	printf_m13("Record Encryption Level: %hd  ", record_header->encryption_level);
 	if (record_header->encryption_level == NO_ENCRYPTION_m13)
 		printf_m13("(none)\n");
 	else if (record_header->encryption_level == LEVEL_1_ENCRYPTION_m13)
@@ -172,7 +172,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 	// record body
 	printf_m13("----------------- Record Body - START -----------------\n");
 	if (record_header->encryption_level > NO_ENCRYPTION_m13) {
-		printf_m13("No access to this record\n");
+		printf_m13("No access to the body of this record\n");
 		printf_m13("------------------ Record Body - END ------------------\n\n");
 		return_m13(TRUE_m13);
 	}
@@ -579,11 +579,11 @@ tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header)
 		if (record_header->total_record_bytes > REC_HDR_BYTES_m13) {
 			note_text = (si1 *) record_header + REC_HDR_BYTES_m13;
 			if (*note_text)
-				printf_m13("Note Text: %s\n", note_text);
+				printf_m13("Text: %s\n", note_text);
 			else
-				printf_m13("Note Text: no entry\n");
+				printf_m13("Text: no entry\n");
 		} else {
-			printf_m13("Note Text: no entry\n");
+			printf_m13("Text: no entry\n");
 		}
 	}
 	// Version 1.1
@@ -900,9 +900,9 @@ tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header)
 	if (record_header->version_major == 1 && record_header->version_minor == 0) {
 		log_entry = (si1 *) record_header + REC_HDR_BYTES_m13;
 		if (*log_entry)
-			printf_m13("System Log entry:\n%s\n", log_entry);
+			printf_m13("Log Entry:\n%s\n", log_entry);
 		else
-			printf_m13("System Log entry: no entry\n");
+			printf_m13("Log Entry: no entry\n");
 	}
 	// Unrecognized record version
 	else {
@@ -1131,16 +1131,16 @@ tern    REC_show_Epoc_type_m13(REC_HDR_m13 *record_header)
 				printf_m13("awake\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_1_m13:
-				printf_m13("non-REM 1\n");
+				printf_m13("stage 1\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_2_m13:
-				printf_m13("non-REM 2\n");
+				printf_m13("stage 2\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_3_m13:
-				printf_m13("non-REM 3\n");
+				printf_m13("stage 3\n");
 				break;
 			case REC_Epoc_v20_STAGE_NREM_4_m13:
-				printf_m13("non-REM 4\n");
+				printf_m13("stage 4\n");
 				break;
 			case REC_Epoc_v20_STAGE_REM_m13:
 				printf_m13("REM\n");
@@ -1443,7 +1443,7 @@ void    REC_show_HFOc_type_m13(REC_HDR_m13 *record_header)
 	G_message_m13("%s()\n", __FUNCTION__);
 #endif
 	
-	// Versions 1.0-3
+	// Versions 1.0 - 1.3
 	if (record_header->version_major == 1 && record_header->version_minor <= 3) {
 		switch (record_header->version_minor) {
 			case 0:
