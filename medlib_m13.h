@@ -294,7 +294,7 @@ typedef struct {
 	};
 	ui4	bytes; // string length in bytes (not necessarily characters), not including terminal zero
 	ui4	chars; // string length in characters (not necessarily bytes), not including terminal zero
-	ui4	msize; // bytes allocated to string
+	ui4	msize; // bytes allocated to string (including terminal zero)
 	si1	*str; // standard C string pointer (terminal zero required)
 } pstr;  // (untagged & uncapitalized because it is treated as an elemental type)
 
@@ -805,7 +805,7 @@ typedef struct {
 #define ALL_SPACES_m13			(ESCAPED_SPACES_m13 | UNESCAPED_SPACES_m13)
 
 // Universal Header: File Format Constants
-#define UH_OFFSET_m13						0
+#define UH_OFFSET_m13						0  // except video data files where it is after video data & before pcrc data (if it exists)
 #define UH_BYTES_m13						1024 // 1 KiB
 #define UH_HEADER_CRC_OFFSET_m13				0 // ui4
 #define UH_BODY_CRC_OFFSET_m13					4 // ui4
@@ -1190,7 +1190,11 @@ typedef struct {
 #define FILE_PERM_USR_EXEC_m13		((ui2) 1 << 6) // == S_IXUSR
 #define FILE_PERM_USR_WRITE_m13		((ui2) 1 << 7) // == S_IWUSR
 #define FILE_PERM_USR_READ_m13		((ui2) 1 << 8) // == S_IRUSR
-#define FILE_PERM_STAT_MASK_m13		((ui2) 0x01FF) // lower 9 bits of stat member st_mode (ui2)
+#define FILE_PERM_STICKY_m13		((ui2) 1 << 9) // == S_ISVTX (sticky bit)
+#define FILE_PERM_SET_GRP_m13		((ui2) 1 << 10) // == S_ISGID (set group bit)
+#define FILE_PERM_SET_USR_m13		((ui2) 1 << 10) // == S_ISUID (set user bit)
+#define FILE_STAT_PERM_MASK_m13		((ui2) 0x01FF) // lower 9 bits of stat member st_mode (as ui2)
+#define FILE_STAT_MODE_MASK_m13		((ui2) 0x07FF) // lower 12 bits of stat member st_mode (as ui2)
 
 // Convenience
 #define FILE_PERM_NONE_m13		0
@@ -1267,12 +1271,19 @@ typedef struct {
 // Typedefs
 typedef struct {
 	ui4	tag; // == FILE_MARKER_m13 (marker for FILE_m13 vs FILE)
-	ui4	fid; // CRC of file path (can't use file descriptor because not unique if file dup'd)
-	si1	path[PATH_BYTES_m13];
 	ui2	flags;
 	ui2	perms; // system file permissions (lower 9 bits of "st_mode" element of stat structure)
-	si4	fd; // system file descriptor
+	si1	path[PATH_BYTES_m13];
+	union {
+		ui8	fid; // fp & pd of file  [see FILE_same_m13()]
+		struct {
+			ui4	drive_id;
+			ui4	inode_id;
+		};
+	};
 	FILE	*fp; // system FILE pointer
+	si4	fd; // system file descriptor
+	si1	pad_bytes[4]; // future use (bytes will be there anyway)
 	si8	len; // current file length (-1 indicates not set)
 	si8	pos; // file pointer position (relative to start)  (-1 indicates not set)
 	si8	acc; // uutc of last file access (open, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
@@ -1280,10 +1291,11 @@ typedef struct {
 
 // Prototypes
 FILE_m13 	*FILE_from_std_m13(FILE *std_fp, const si1 *path);
-ui4		FILE_id_m13(const si1 *path);
+ui8		FILE_id_m13(void *fp, const si1 *path);
 FILE_m13	*FILE_init_m13(void *fp, ...); // varargs(fp == stream): const si1 *path
 tern		FILE_is_std_m13(void *fp);
-tern		FILE_locking_m13(void *fp, tern heed);  // turn locking on or off for a file (heed or ignore locks on fp)
+tern		FILE_locking_m13(void *fp, tern heed); // turn locking on or off for a file (heed or ignore locks on fp)
+tern		FILE_same_m13(void *fp1, void *fp2);
 tern		FILE_show_m13(FILE_m13 *fp);
 FILE 		*FILE_std_m13(void *fp);
 FILE 		*FILE_to_std_m13(void *fp, si1 *path);
@@ -1371,13 +1383,15 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 // example usage: flock reader count => write request blocks in isem until reader count == 0
 
 #define ISEM_SELF_m13		((pid_t_m13) 0xFFFFFFFFFFFFFFFF)
+#define ISEM_NO_OWNER_m13	((pid_t_m13) 0)
+#define ISEM_NAME_BYTES_m13	30 // short ascii names (short by 2 bytes for two subsequent terns)
 
 typedef struct {
 	_Atomic ui4		count;
-	ui4			period;  // checking period, in nanoseconds (max ~4.3 secs); 0 indicates no wait in try functions, default  (10 us) in non-try functions
-	const si1 		*name;
-	_Atomic pid_t_m13	owner;  // thread id of owning thread, zero when unowned (normal state)
+	ui4			period; // checking period, in nanoseconds (max ~4.3 secs); 0 indicates no wait in try functions, default  (10 us) in non-try functions
+	_Atomic pid_t_m13	owner; // thread id of owning thread, zero when unowned (normal state)
 	pthread_mutex_t_m13	mutex;
+	si1 			name[ISEM_NAME_BYTES_m13];
 	_Atomic tern		initialized;
 	tern			free_on_destroy;
 } isem_t_m13;
@@ -1732,7 +1746,7 @@ typedef enum {
 	E_FMED_m13,		// 10, not med file error
 	E_FACC_m13,		// 11, file access / password error
 	E_CRYP_m13,		// 12, cryptographic error
-	E_MET_m13,		// 13, metadata error
+	E_META_m13,		// 13, metadata error
 	E_REC_m13,		// 14, records error
 	E_NET_m13,		// 15, network error
 	E_CMP_m13,		// 16, compression / computational error
@@ -1743,63 +1757,45 @@ typedef enum {
 } E_MED_CODES_m13;
 
 // error string table
-#define	E_MAX_STR_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
-#define E_MESSAGE_LEN_m13		E_MAX_STR_LEN_m13
+#define	E_MAX_MSG_LEN_m13		((PATH_BYTES_m13 << 1) + 128)  // enough for two paths plus some text
+#define	E_TBL_TAG_LEN_m13		8 // Note: tag strings do not conatins the "E_" of the enums, this is added in the printf()
+#define	E_TBL_MSG_LEN_m13		56
 #define E_STR_TABLE_ENTRIES_m13		E_NUM_CODES_m13
 #define E_STR_TABLE_m13 { \
-	"no errors", \
-	"general error", \
-	"system signal", \
-	"memory allocation error", \
-	"general file error", \
-	"file or directory not found", \
-	"file open error", \
-	"file read error", \
-	"file write error", \
-	"file lock error", \
-	"not MED file or directory", \
-	"access denied", \
-	"cryptographic error", \
-	"metadata not found", \
-	"record error", \
-	"network error", \
-	"compression / computation error", \
-	"process error", \
-	"filter error", \
-	"database error", \
-	"parity error" \
+	{ "NONE", "no errors" }, \
+	{ "GEN", "general error" }, \
+	{ "SIG", "system signal" }, \
+	{ "ALLOC", "memory allocation error" }, \
+	{ "FGEN", "general file error" }, \
+	{ "FEXIST", "file or directory not found" }, \
+	{ "FOPEN", "file open error" }, \
+	{ "FREAD", "file read error" }, \
+	{ "FWRITE", "file write error" }, \
+	{ "FLOCK", "file lock error" }, \
+	{ "FMED", "not MED file or directory" }, \
+	{ "FACC", "access denied" }, \
+	{ "CRYPT", "cryptographic error" }, \
+	{ "META", "metadata error / not found" }, \
+	{ "REC", "record error" }, \
+	{ "NET", "network error" }, \
+	{ "CMP", "compression / computation error" }, \
+	{ "PROC", "process error" }, \
+	{ "FILT", "filter error" }, \
+	{ "DB", "database error" }, \
+	{ "PRTY", "parity error" } \
 }
-#define E_TAG_TABLE_ENTRIES_m13		E_NUM_CODES_m13
-#define E_TAG_TABLE_m13 { \
-	"E_NONE", \
-	"E_GEN", \
-	"E_SIG", \
-	"E_ALLOC", \
-	"E_FGEN", \
-	"E_FEXIST", \
-	"E_FOPEN", \
-	"E_FREAD", \
-	"E_FWRITE", \
-	"E_FLOCK", \
-	"E_FMED", \
-	"E_FACC", \
-	"E_CRYP", \
-	"E_MET", \
-	"E_REC", \
-	"E_NET", \
-	"E_CMP", \
-	"E_PROC", \
-	"E_FILT", \
-	"E_DB", \
-	"E_PRTY" \
-}
+
+typedef struct {
+	const si1	tag[E_TBL_TAG_LEN_m13];
+	const si1	msg[E_TBL_MSG_LEN_m13];
+} E_STRING_m13;
 
 typedef struct {
 	_Atomic si4		code;
 	si4			signal;
 	si4			line;
 	const si1		*function;
-	si1			message[E_MAX_STR_LEN_m13];
+	si1			message[E_MAX_MSG_LEN_m13];
 	si1			thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	_Atomic pid_t_m13	thread_id;
 	pthread_mutex_t_m13	mutex; // prevent access while being modified (does not duplicate role of isem)
@@ -1807,6 +1803,8 @@ typedef struct {
 } ERR_m13;
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__) // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
+
+// Debugging printf()
 #ifdef MATLAB_m13
 	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
@@ -2155,8 +2153,7 @@ typedef struct {
 	CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*CMP_VDS_threshold_map;
 	NET_PARAMS_m13			NET_params; // parameters for default internet interface
 	HW_PARAMS_m13			HW_params;
-	const si1			**E_strings_table;
-	const si1			**E_tags_table;
+	E_STRING_m13			*E_strings_table;
 	#ifdef WINDOWS_m13
 	HINSTANCE			hNTdll; // handle to ntdll dylib (used by WN_nap_m13(); only loaded if used)
 	#endif
@@ -2182,13 +2179,13 @@ typedef struct { // multiple thread access
 	_Atomic si4			top_idx; // last non-empty behavior_stack in list
 } BEHAVIOR_STACK_LIST_m13;
 
-// call with "G_push_function_m13(ui4 behavior)" prototype
+
+// Exec Function Defines
 #define G_add_behavior_m13(code)		G_add_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_add_behavior_m13(ui4 behavior)" prototype
 #define G_pop_behavior_m13()			G_pop_behavior_exec_m13(__FUNCTION__, __LINE__) // call with "G_pop_behavior_m13(ui4 behavior)" prototype
 #define G_push_behavior_m13(code)		G_push_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_push_behavior_m13(ui4 behavior)" prototype
 #define G_remove_behavior_m13(code)		G_remove_behavior_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_remove_behavior_m13(ui4 behavior)" prototype
 #define G_behavior_stack_reset_m13(code)	G_behavior_stack_reset_exec_m13(__FUNCTION__, __LINE__, code) // call with "G_behavior_stack_reset_m13(ui4 behavior)" prototype
-
 #define G_push_function_m13() 			G_push_function_exec_m13(__FUNCTION__) // call with "G_push_function_m13(void)" prototype
 #define G_pop_function_m13()			G_pop_function_exec_m13(__FUNCTION__, __LINE__) // call with "G_pop_function_m13(void)" prototype
 
@@ -2222,11 +2219,10 @@ typedef struct { // multiple thread access
 } PROC_GLOBS_LIST_m13;
 
 typedef struct { // multiple thread access
-	_Atomic pid_t_m13	owner_id; // thread id when writing, zero otherwise (only owner can unlock write)
-	isem_t_m13		read_cnt; // number of processes currently reading file
-	isem_t_m13		write_cnt; // number of processes currently writing file (0 or 1)
+	_Atomic ui8		file_id; // from FILE_id_m13()
+	isem_t_m13		read_cnt; // ownership or number of processes currently reading file
 	_Atomic ui4		open_cnt; // number of processes that have file open
-	_Atomic ui4		file_id; // CRC of full path
+	ui1			pad_bytes[4]; // future use (bytes will be there anyway)
 } FLOCK_ENTRY_m13;
 
 typedef struct { // multiple thread access
@@ -2279,6 +2275,11 @@ typedef struct {
 } APP_INFO_m13;
 
 typedef struct {
+	pthread_mutex_t_m13	mutex;
+	_Atomic ui1		value;
+} TEST_BYTE_m13; // global byte to check pointer for readability (global ensures volatility, mutex prevents concurrent usage)
+
+typedef struct {
 	pthread_mutex_t_m13		mutex;
 // Application Info
 	APP_INFO_m13			*app_info;
@@ -2327,6 +2328,7 @@ typedef struct {
 	tern				update_MED_version; // if file MED version is not current, update affected files
 	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
 	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
+	TEST_BYTE_m13			test_byte;
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -2569,10 +2571,10 @@ typedef struct {
 // Constants
 #define FPS_ITEMS_NO_ENTRY_m13			((si8) 0) // passed as n_items
 #define FPS_BYTES_NO_ENTRY_m13			((si8) 0) // passed as n_bytes
-#define FPS_NO_ALLOC_m13			((si8) -1) // passed as n_bytes in FPS_open_m13() & FPS_init_m13() only
-#define FPS_AUTO_BYTES_m13			((si8) -2) // passed as n_bytes
-#define FPS_FULL_FILE_m13			((si8) -3) // passed as n_bytes
-#define FPS_UH_ONLY_m13				((si8) -4) // passed as n_bytes
+#define FPS_AUTOBYTES_m13			((si8) 0) // passed as n_bytes (use level header flags to determine FPS_UH_ONLY_m13 or FPS_FULL_FILE_m13) => just makes intention clearer than zero
+#define FPS_NO_ALLOC_m13			((si8) -1) // used as n_bytes in FPS_open_m13() & FPS_init_m13() only
+#define FPS_FULL_FILE_m13			((si8) 0x7FFFFFFFFFFFFFF9) // passed as offset or n_bytes (value positive so not treated as discontinuity if offset)
+#define FPS_UH_ONLY_m13				((si8) 0x7FFFFFFFFFFFFFFA) // passed as offset or n_bytes (value positive so not treated as discontinuity if offset)
 #define FPS_UH_OFFSET_m13			((si8) 0x7FFFFFFFFFFFFFFB) // passed as offset (value positive so not treated as discontinuity)
 #define FPS_APPEND_m13				((si8) 0x7FFFFFFFFFFFFFFC) // passed as offset (value positive so not treated as discontinuity)
 #define FPS_REL_START_m13			((si8) 0x7FFFFFFFFFFFFFFD) // passed as offset with rel_bytes vararg (value positive so not treated as discontinuity)
@@ -2716,7 +2718,7 @@ typedef struct {
 	};
 	si1				local_path[PATH_BYTES_m13]; // full path to level (pointed to by level_header path)
 	si1				local_name[MAX_NAME_BYTES_m13]; // base name of level (pointed to by level_header name)
-	UH_m13				*uh; // points to base of raw_data array
+	UH_m13				*uh;  // points to base of raw_data array (even in video data files)
 	FPS_DIRECS_m13	 		direcs;
 	FPS_PARAMS_m13	 		params;
 	union {				// the MED file types (set to point to current data (just read, or to write)
@@ -2738,12 +2740,15 @@ si8		FPS_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset);
 FPS_m13		*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 copy_bytes, LH_m13 *parent);
 tern		FPS_close_m13(FPS_m13 *fps);
 si4		FPS_compare_times_m13(const void *a, const void *b);
-tern		FPS_free_m13(FPS_m13 **fps);
+si8		FPS_flen_m13(FPS_m13 *fps, const si1 *path);
+tern		FPS_free_m13(void *ptr);
+si8		FPS_header_offset_m13(FPS_m13 *fps, const si1 *path);
 FPS_m13		*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent);
 FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
 FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
+tern		FPS_mmap_m13(FPS_m13 *fps, tern set);
 si8		FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes);
 FPS_m13		*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent, ...); // vararg(mode_str empty): ui8 fd_flags
 FPS_m13 	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...); // varargs(fps invalid): const si1 *path, const si1 *mode, const si1 *password, LH *parent, ui8 lh_flags
@@ -2760,6 +2765,7 @@ tern		FPS_show_m13(FPS_m13 *fps);
 tern		FPS_show_direcs_m13(FPS_m13 *fps);
 tern		FPS_show_params_m13(FPS_m13 *fps);
 tern		FPS_sort_m13(FPS_m13 **fps_array, si4 n_fps);
+tern		FPS_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
 tern		FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...); // varargs(offset == FPS_REL_START/CURR/END): si8 rel_bytes
 
 
@@ -3069,7 +3075,6 @@ typedef struct {
 //************************** GENERAL (G) MED Functions ***************************//
 //**********************************************************************************//
 
-
 // Prototypes
 CHAN_m13		*G_active_channel_m13(SESS_m13 *sess, si1 channel_type);
 void			G_add_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
@@ -3134,13 +3139,14 @@ si8			G_find_index_m13(SEG_m13 *seg, si8 target, ui4 mode);
 si1			*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offset, si4 DST_offset);
 si1			*G_find_metadata_file_m13(const si1 *path, si1 *md_path);
 si8			G_find_record_index_m13(FPS_m13 *rec_inds_fps, si8 target_time, ui4 mode, si8 low_idx);
+si8			G_flen_m13(FILE_m13 *fp, const si1 *path);
 si8 			G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...); // varargs (lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
-tern			G_free_channel_m13(CHAN_m13 **chan_ptr);
+tern			G_free_channel_m13(void *ptr);
 void			G_free_global_tables_m13(void);
 void			G_free_globals_m13(tern cleanup_for_exit);
-tern			G_free_segment_m13(SEG_m13 **seg_ptr);
-tern			G_free_session_m13(SESS_m13 **sess_ptr);
-tern			G_free_ssr_m13(SSR_m13 **ssr_ptr);
+tern			G_free_segment_m13(void *ptr);
+tern			G_free_session_m13(void *ptr);
+tern			G_free_ssr_m13(void *ptr);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
 si1			**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names);
@@ -3257,7 +3263,6 @@ void			G_thread_exit_m13(void);
 void			G_update_access_time_m13(LH_m13 *lh);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name);
-tern			G_update_maximum_entry_size_m13(FPS_m13 *fps, si8 n_bytes, si8 n_items, si8 offset);
 tern			G_update_MED_type_m13(const si1 *path); // used by G_update_MED_version_m13()
 tern			G_update_MED_version_m13(FPS_m13 *fps);
 tern			G_update_session_name_m13(FPS_m13 *fps);
@@ -3428,6 +3433,7 @@ si8		WN_filetime_to_uutc_m13(ui1 *win_filetime); // for conversion of windows fi
 //******************** MED Alignmment Checking (ALCK) Functions ******************//
 //**********************************************************************************//
 
+// Prototypes
 tern	ALCK_all_m13(void);
 tern	ALCK_metadata_m13(ui1 *bytes);
 tern	ALCK_metadata_section_1_m13(ui1 *bytes);
@@ -3516,7 +3522,7 @@ si1		*STR_match_start_m13(const si1 *pattern, const si1 *buffer);
 si1		*STR_match_start_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len);
 si1 		*STR_re_escape_m13(const si1 *str, si1 *esc_str);
 tern 		STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
-si1		*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, const si1 *buffer, si1 *new_buffer);
+si1		*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *buffer, si1 *new_buffer);
 si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
 tern		STR_sort_m13(si1 **string_array, si8 n_strings);
 tern		STR_strip_character_m13(si1 *s, si1 character);
@@ -3589,15 +3595,15 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_BLOCK_RECORDS_REGION_OFFSET_m13			56
 
 // CMP: Record Header Offset Constants
-#define CMP_REC_HDR_BYTES_m13			8
+#define CMP_REC_HDR_BYTES_m13				8
 #define CMP_REC_HDR_TYPE_CODE_OFFSET_m13		0 // ui4
-#define CMP_REC_HDR_TYPE_CODE_NO_ENTRY_m13	0
-#define CMP_REC_HDR_VERSION_MAJOR_OFFSET_m13	4 // ui1
-#define CMP_REC_HDR_VERSION_MAJOR_NO_ENTRY_m13	0xFF
-#define CMP_REC_HDR_VERSION_MINOR_OFFSET_m13	5 // ui1
-#define CMP_REC_HDR_VERSION_MINOR_NO_ENTRY_m13	0xFF
-#define CMP_REC_HDR_TOTAL_BYTES_OFFSET_m13	6 // ui2
-#define CMP_REC_HDR_TOTAL_BYTES_NO_ENTRY_m13	0xFFFF // Note maximum CMP record size is 65k - smaller than MED record
+#define CMP_REC_HDR_TYPE_CODE_NO_ENTRY_m13		0
+#define CMP_REC_HDR_VERSION_MAJOR_OFFSET_m13		4 // ui1
+#define CMP_REC_HDR_VERSION_MAJOR_NO_ENTRY_m13		0xFF
+#define CMP_REC_HDR_VERSION_MINOR_OFFSET_m13		5 // ui1
+#define CMP_REC_HDR_VERSION_MINOR_NO_ENTRY_m13		0xFF
+#define CMP_REC_HDR_TOTAL_BYTES_OFFSET_m13		6 // ui2
+#define CMP_REC_HDR_TOTAL_BYTES_NO_ENTRY_m13		0xFFFF // Note maximum CMP record size is 65k - smaller than MED record
 
 // CMP: RED (Range Encoded Derivatives) Model Offset Constants
 #define CMP_RED_MODEL_NUMBER_OF_KEYSAMPLE_BYTES_OFFSET_m13 	0 // ui4
@@ -3831,12 +3837,12 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 								( (ui4) (bh_ptr)->model_region_bytes) )
 
 // Update CPS Pointer Flags
-#define CMP_UPDATE_ORIGINAL_PTR_m13		((ui1) 1)
-#define CMP_RESET_ORIGINAL_PTR_m13 		((ui1) 2)
-#define CMP_UPDATE_BLOCK_HDR_PTR_m13		((ui1) 4)
-#define CMP_RESET_BLOCK_HDR_PTR_m13		((ui1) 8)
-#define CMP_UPDATE_DECOMPRESSED_PTR_m13		((ui1) 16)
-#define CMP_RESET_DECOMPRESSED_PTR_m13		((ui1) 32)
+#define CMP_UPDATE_ORIGINAL_PTR_m13		((ui1) 1 << 0)
+#define CMP_RESET_ORIGINAL_PTR_m13 		((ui1) 1 << 1)
+#define CMP_UPDATE_BLOCK_HDR_PTR_m13		((ui1) 1 << 2)
+#define CMP_RESET_BLOCK_HDR_PTR_m13		((ui1) 1 << 3)
+#define CMP_UPDATE_DECOMPRESSED_PTR_m13		((ui1) 1 << 4)
+#define CMP_RESET_DECOMPRESSED_PTR_m13		((ui1) 1 << 5)
 
 // Binterpolate() center mode codes
 #define CMP_CENT_MODE_NONE_m13		0 // extrema only
@@ -4302,6 +4308,7 @@ tern	CRC_validate_m13(const ui1 *block_ptr, si8 block_bytes, crc4 crc_to_validat
 //************************************ UTF-8 *************************************//
 //**********************************************************************************//
 
+// Prototypes
 tern		UTF8_1_byte_char_m13(const si1 *c);
 tern		UTF8_2_byte_char_m13(const si1 *c);
 tern		UTF8_3_byte_char_m13(const si1 *c);
@@ -4965,7 +4972,7 @@ si1		*TR_strerror_m13(si4 err_num);
 // Western Sahara:
 // DST is on most of the year and off during Ramadan, whose dates change annually in a way that is not accomodated by this schema.
 // As Ramadan only lasts a month, and can occur at virtually any time of year, this table treats it as if it's Daylight Time
-// is it's Standard Time, and it does not observe DST.
+// is it's Standard Time, and it does not observe DST. So, the displayed time will be off by +1 hours during Ramadan each year.
 //
 // If it were to have a proper entry, it would look something like:
 // { "WESTERN SAHARA", "EH", "ESH", "", "", "WESTERN EUROPEAN TIME", "WET", 0, "WESTERN EUROPEAN DAYLIGHT TIME", "WEDT", 0x3c0002041f00ff01, 0xc40003031300ffff, -1 }
@@ -5431,8 +5438,8 @@ PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si
 // in some cases behavior is more robust than standard functions
 // in a few cases return values are modified to be more useful
 // see function definition comments for specific changes
-// a few non-standard functions that are closely related to standard functions are also included here
-// note FILE * types have been changed to void *, where appropriate, to allow use of either FILE * or FILE_m13 * types without casts or compiler warnings
+// several non-standard functions that are closely related to standard functions, or should be standard functions, are also included here
+// note FILE * types have been replaced with void *, where appropriate, to allow use of either FILE * or FILE_m13 * types without casts or compiler warnings
 
 #if defined MACOS_m13 || defined LINUX_m13
 	typedef	struct stat		struct_stat_m13;
@@ -5443,22 +5450,22 @@ PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si
 
 
 si4		asprintf_m13(si1 **target, const si1 *fmt, ...);
-size_t		calloc_size_m13(void *address, size_t el_size);
+size_t		calloc_size_m13(void *address, size_t el_size); // memory allocation size in number of elements
 tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
-si4		errno_m13(void);
+si4		errno_m13(void);  // returns platform independent value of errno
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
-void		exit_exec_m13(const si1 *function, const si4 line, si4 status);
-si4		fclose_m13(void *fp);  // pass FILE *, FILE_m13 *, or to null local variable, FILE_m13 **
+void		exit_exec_m13(const si1 *function, const si4 line, si4 status);  // called with exit_m13(si4 status) prototype (preproceesor adds function & line)
+si4		fclose_m13(void *fp);  // pass address of FILE_m13 * to null local pointer
 si4		fileno_m13(void *fp);
-tern		fisopen_m13(void *fp);
-si8		flen_m13(void *fp);
+tern		fisopen_m13(void *fp); // returns whether file is open
+si8		flen_m13(void *fp); // returns length of file
 si4		flock_m13(void *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 							 // varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
 si4		fprintf_m13(void *fp, const si1 *fmt, ...);
 si4		fputc_m13(si4 c, void *fp);
 size_t		fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...); // (el_size negative): non_blocking read
-tern		freeable_m13(void *address);
+tern		freeable_m13(void *address); // returns whether address is freeable without segfaulting
 void		*freopen_m13(const si1 *path, const si1 *mode, void *fp);
 si4		fscanf_m13(void *fp, const si1 *fmt, ...);
 si4		fseek_m13(void *fp, si8 offset, si4 whence);
@@ -5469,40 +5476,42 @@ size_t		fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...);   
 si1		*getcwd_m13(si1 *buf, size_t size);
 pid_t_m13	getpid_m13(void);
 pid_t_m13	gettid_m13(void);
-void		isem_chown_m13(isem_t_m13 *isem, pid_t_m13 tid);
-void		isem_dec_m13(isem_t_m13 *sem);
-void		isem_destroy_m13(isem_t_m13 *isem);
-ui4		isem_getcnt_m13(isem_t_m13 *isem);
-void		isem_inc_m13(isem_t_m13 *sem);
-isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, const si1 *name, tern free_on_destroy);
-void		isem_own_m13(isem_t_m13 *isem, tern own);
-void		isem_setcnt_m13(isem_t_m13 *isem, ui4 count);
-void		isem_show_m13(isem_t_m13 *isem);
-tern		isem_trydec_m13(isem_t_m13 *sem);
-tern		isem_tryinc_m13(isem_t_m13 *sem);
-tern		isem_tryown_m13(isem_t_m13 *isem, tern own);
-tern		isem_trysetcnt_m13(isem_t_m13 *isem, ui4 count);
-tern		isem_trywait_m13(isem_t_m13 *sem);
-tern		isem_trywait_noinc_m13(isem_t_m13 *isem);
-void		isem_wait_m13(isem_t_m13 *sem);
-void		isem_wait_noinc_m13(isem_t_m13 *isem);
+// inverse semaphore functions [semaphores (with optional ownership) that unlock when count == 0]
+void		isem_chown_m13(isem_t_m13 *isem, pid_t_m13 tid); // ownership not required  [special tid values: ISEM_SELF_m13, ISEM_UNOWN_m13]
+void		isem_dec_m13(isem_t_m13 *sem); // ownership not required
+void		isem_destroy_m13(isem_t_m13 *isem); // ownership not required
+ui4		isem_getcnt_m13(isem_t_m13 *isem); // ownership not required
+void		isem_inc_m13(isem_t_m13 *sem); // ownership or no owner required, or block
+isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, const si1 *name, pid_t_m13 owner, tern free_on_destroy);
+void		isem_own_m13(isem_t_m13 *isem); // ownership or no owner required, or block
+void		isem_setcnt_m13(isem_t_m13 *isem, ui4 count); // ownership or no owner required, or block
+void		isem_show_m13(isem_t_m13 *isem); // ownership not required
+tern		isem_tryinc_m13(isem_t_m13 *sem); // ownershipp or no owner required, or fail
+tern		isem_tryown_m13(isem_t_m13 *isem); // no ownership required, or fail
+tern		isem_trysetcnt_m13(isem_t_m13 *isem, ui4 count); // ownership or no owner required, or fail
+tern		isem_trywait_m13(isem_t_m13 *sem); // ownership or no owner required, or fail
+tern		isem_trywait_noinc_m13(isem_t_m13 *isem); // ownership or no owner required, or fail
+void		isem_wait_m13(isem_t_m13 *sem); // ownership or no owner required, or block
+void		isem_wait_noinc_m13(isem_t_m13 *isem); // ownership or no owner required, or block
 size_t		malloc_size_m13(void *address);
-tern		md_m13(const si1 *dir);  // synonym for mkdir()
+tern		md_m13(const si1 *dir); // synonym for mkdir()
 void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
-tern		mkdir_m13(const si1 *dir);
+tern		mkdir_m13(const si1 *dir); // make directory
 tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
 void		*memcpy_m13(void *target, const void *source, size_t n_bytes);
-void		*memmove_m13(void *target, const void *source, size_t n_bytes);
+void		*memmove_m13(void *target, const void *source, size_t n_bytes);  // uses memcpy() if regions do not overlap
 si4		mprotect_m13(void *address, size_t len, si4 protection);
+si1		mreadable_m13(void *addr, size_t len, tern full_range);  // checks if memory is readable, & returns alignment
+si1		mwritable_m13(void *addr, size_t len, tern full_range);  // checks if memory is writable, & returns alignment
 tern		munlock_m13(void *addr, size_t len);
-tern		mv_m13(const si1 *path, const si1 *new_path);  // move
+tern		mv_m13(const si1 *path, const si1 *new_path);  // move, rename
 void		nanosleep_m13(struct timespec *tv);
-void		nap_m13(const si1 *nap_str);
+void		nap_m13(const si1 *nap_str);  // sleep with duration set by string
 struct timespec	*nap_timespec_m13(const si1 *nap_str, struct timespec *nap);
 si4		pthread_equal_m13(pthread_t_m13 thread_1, pthread_t_m13 thread_2);
 void		pthread_exit_m13(void *ptr);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
-si1		*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len);
+si1		*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len);  // get thread name by thread id
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
 si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
 si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
@@ -5537,7 +5546,7 @@ void		srandom_m13(ui4 seed); // seed system random number generator
 si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
 si4		stat_m13(const si1 *path, struct_stat_m13 *sb);
 si8		strcat_m13(si1 *target, const si1 *source);
-size_t		strchar_m13(const si1 *string);
+size_t		strchar_m13(const si1 *string); // strlen() that returns number of characters in string regardless of multibyte characters
 si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
 si8		strcpy_m13(si1 *target, const si1 *source);
 si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
@@ -5558,7 +5567,7 @@ si4		vprintf_m13(const si1 *fmt, va_list args);
 si4		vsnprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, va_list args);
 si4		vsprintf_m13(si1 *target, const si1 *fmt, va_list args);
 
-// standard functions with AT_DEBUG_m13 versions
+// standard (& related) functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13 // use these protoypes in all cases, defines will convert if needed
 void	*calloc_m13(size_t n_members, si8 el_size); // (el_size negative): level headers flag
 void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size); // (el_size negative): level header flag
