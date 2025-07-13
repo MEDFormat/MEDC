@@ -3601,6 +3601,7 @@ void	G_error_message_m13(const si1 *fmt, ...)
 si1	G_exists_m13(const si1 *path)
 {
 	si1			tmp_path[PATH_BYTES_m13];
+	si4			err;
 	struct_stat_m13 	sb;
 	
 #ifdef FT_DEBUG_m13
@@ -3609,20 +3610,17 @@ si1	G_exists_m13(const si1 *path)
 
 	// can be used for files or directories
 	
-	if (path == NULL)
+	if (STR_is_empty_m13(path) == TRUE_m13)
 		return_m13(DOES_NOT_EXIST_m13);
-	
-	if (*path == 0)
-		return_m13(DOES_NOT_EXIST_m13);
-	
-	tmp_path[0] = 0;
+		
 	G_full_path_m13(path, tmp_path);
 	
-	errno_reset_m13();
-	if (stat_m13(tmp_path, &sb) == -1) {
-		if (errno_m13() == ENOENT)
+	G_push_behavior_m13(RETURN_QUIETLY_m13);
+	err = stat_m13(tmp_path, &sb);
+	G_pop_behavior_m13();
+	if (err) {
+		if (err == ENOENT)
 			return_m13(DOES_NOT_EXIST_m13);
-		G_set_error_m13(E_GEN_m13, "passed path \"%s\" resulted in error", path);
 		return_m13(EXISTS_ERR_m13);
 	}
 	
@@ -5356,9 +5354,11 @@ tern	G_free_session_m13(void *ptr)
 		}
 		free_m13(sess->vid_chans);
 	}
+	eprintf_m13("");
 	if (sess->ssr)
 		G_free_ssr_m13(sess->ssr);
-
+	eprintf_m13("");
+	
 	if (sess->contigua)
 		free_m13(sess->contigua);
 
@@ -5425,9 +5425,11 @@ tern	G_free_ssr_m13(void *ptr)
 		gen_fps = ssr->rec_inds_fps[i];
 		if (gen_fps)
 			FPS_free_m13(gen_fps);
+		eprintf_m13("");
 		gen_fps = ssr->rec_data_fps[i];
 		if (gen_fps)
 			FPS_free_m13(gen_fps);
+		eprintf_m13("");
 	}
 	free_m13(ssr->rec_inds_fps);
 	free_m13(ssr->rec_data_fps);
@@ -8079,6 +8081,8 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 			FPS_free_m13(rd_fps);
 		return_m13(FALSE_m13);
 	}
+	eprintf_m13("");
+	FPS_show_m13(rd_fps);
 
 	// assign
 	switch (lh->type_code) {
@@ -8142,9 +8146,9 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	ssr->parent = (LH_m13 *) sess;
 	mapped_segs = pg->current_session.n_mapped_segments;
 	first_seg_num = pg->current_session.first_mapped_segment_number;
-	ssr->rec_data_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
 	ssr->rec_inds_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
-	
+	ssr->rec_data_fps = (FPS_m13 **) calloc_m13((size_t) mapped_segs, sizeof(FPS_m13 *));
+
 	for (i = first_seg_num, j = 0; j < mapped_segs; ++i, ++j)
 		G_open_records_m13((LH_m13 *) ssr, i);
 	
@@ -8818,25 +8822,25 @@ si8 G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment)
 }
 
 
-tern	G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *extension)
+tern	G_path_parts_m13(const si1 *file_name, si1 *path, si1 *name, si1 *extension)
 {
-	si1	*c, *cc, temp_full_file_name[PATH_BYTES_m13];
+	si1	*c, *cc, tmp_path[PATH_BYTES_m13];
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// handle bad calls
-	if (STR_is_empty_m13(full_file_name) == TRUE_m13) {
-		G_set_error_m13(E_GEN_m13, "full_file_name is empty");
+	if (STR_is_empty_m13(file_name) == TRUE_m13) {
+		G_set_error_m13(E_GEN_m13, "file name is empty");
 		return_m13(FALSE_m13);
 	}
 		
 	// get path from root
-	G_full_path_m13(full_file_name, temp_full_file_name);
+	G_full_path_m13(file_name, tmp_path);
 
 	// move pointer to end of string
-	c = temp_full_file_name + strlen(temp_full_file_name) - 1;
+	c = tmp_path + strlen(tmp_path) - 1;
 	
 	// step back to first extension
 	cc = c;
@@ -8869,7 +8873,7 @@ tern	G_path_parts_m13(const si1 *full_file_name, si1 *path, si1 *name, si1 *exte
 	
 	// copy path if allocated
 	if (path)
-		strcpy_m13(path, temp_full_file_name);
+		strcpy_m13(path, tmp_path);
 	
 	return_m13(TRUE_m13);
 }
@@ -8889,14 +8893,17 @@ void	G_pop_behavior_exec_m13(const si1 *function, const si4 line)
 	if (stack == NULL)
 		return;
 
-	if (stack->top_idx >= 0)
-		if (--(stack->top_idx) == -1)
-			stack->_id = 0;  // release stack (popping stack base); // G_current_behavior_m13 will return default behavior
+	// pop
+	if (--stack->top_idx == -1)
+		stack->_id = 0;  // release stack (popping stack base); G_current_behavior_m13 will return default behavior
 	
 	// exit if popped back to an exit on fail & error is set
 	err_code = G_error_code_m13();
 	if (err_code) {
-		code = stack->behaviors[stack->top_idx].code;
+		if (stack->top_idx >= 0)
+			code = stack->behaviors[stack->top_idx].code;
+		else
+			code = globals_m13->default_behavior.code;
 		if ((code & RETURN_ON_FAIL_m13) == 0)
 			exit_exec_m13(function, line, err_code);
 	}
@@ -8939,11 +8946,8 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 	}
 	
 	// pop
-	if (stack->top_idx >= 0) {
-		--stack->top_idx;
-		if (stack->top_idx == -1)
-			stack->_id = 0;  // release stack (popping stack base);
-	}
+	if (--stack->top_idx == -1)
+		stack->_id = 0;  // release stack (popping stack base);
 
 #endif  // FT_DEBUG_m13
 
@@ -10408,11 +10412,12 @@ LH_m13 	*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varargs (level_h
 }
 
 
-void	G_read_medlibrc_m13(const si1 *app_path)
+void	G_read_medlibrc_m13(const si1 *application_path)
 {
-	tern		fexists, tern_val, failed;
+	tern		tern_val, failed;
 	const si1	*field_name;
-	si1		*path, str_val[PATH_BYTES_m13], message[PATH_BYTES_m13 + RC_STRING_BYTES_m13], *buffer;
+	si1		*path, *app_path, dflt_path[PATH_BYTES_m13];
+	si1		str_val[PATH_BYTES_m13], message[(PATH_BYTES_m13 << 1) + RC_STRING_BYTES_m13], *buffer;
 	si4             option_number;
 	si8		file_len, nr, int_val;
 	sf8		float_val;
@@ -10430,72 +10435,63 @@ void	G_read_medlibrc_m13(const si1 *app_path)
 	fp = NULL;
 	
 	// get file
-	path = str_val;
+	*str_val = *dflt_path = 0;
 	
 	// try app directory first (for customized app settings)
-	if (STR_is_empty_m13(app_path) == FALSE_m13) {
-		G_full_path_m13(app_path, path);
-		G_path_parts_m13(path, path, NULL, NULL);
-		sprintf_m13(path, "%s/.medlibrc", path);
-		fexists = G_exists_m13(path);
-	} else {
-		fexists = FALSE_m13;
+	if (STR_is_empty_m13(application_path) == FALSE_m13) {
+		G_full_path_m13(application_path, str_val);
+		app_path = str_val;
+		G_path_parts_m13(app_path, app_path, NULL, NULL);  // strip off app name
+		sprintf_m13(app_path, "%s/.medlibrc", app_path);
+		path = app_path;
+		fp = fopen_m13(path, "r");
 	}
 	
 	// try default location
-	if (fexists == FALSE_m13) {
+	if (fp == NULL) {
 		#if defined MACOS_m13 || defined LINUX_m13
-		si1		*env_var;
-		
+		si1	*env_var;
+
 		env_var = getenv("HOME");
 		if (env_var == NULL) {
 			sprintf_m13(message, "\"HOME\" is not defined in the environment");
 			goto READ_MEDLIBRC_FAIL;
 		}
-		sprintf_m13(path, "%s/.medlibrc", env_var);
+		sprintf_m13(dflt_path, "%s/.medlibrc", env_var);
 		#endif
 		#ifdef WINDOWS_m13
 		si1	*home_drive, *home_path;
-		
+
 		home_drive = getenv("HOMEDRIVE");
 		home_path = getenv("HOMEPATH");
 		if (home_path == NULL || home_drive == NULL) {
 			sprintf_m13(message, "either \"HOMEDRIVE\" or \"HOMEPATH\" is not defined in the environment");
 			goto READ_MEDLIBRC_FAIL;
 		}
-		sprintf_m13(path, "%s%s/.medlibrc", home_drive, home_path);
+		sprintf_m13(dflt_path, "%s%s/.medlibrc", home_drive, home_path);
 		#endif
-		
-		fexists = G_exists_m13(path);
-	}
-	
-	// can't find => create in default location (no message)
-	if (fexists == FALSE_m13) {
-		G_write_medlibrc_m13(path);
-		failed = FALSE_m13;
-		goto READ_MEDLIBRC_FAIL;
-	}
-	
-	// read file
-	fp = fopen_m13(path, "r");
-	if (fp == NULL) {
-		sprintf_m13(message, "could not open the file \"%s\", writing default RC file", path);
-		G_write_medlibrc_m13(path);
-		goto READ_MEDLIBRC_FAIL;
+
+		path = dflt_path;
+		fp = fopen_m13(path, "r");
+		if (fp == NULL) {
+			if (*app_path)
+				sprintf_m13(message, "Did not find medlib RC file at \"%s\", or \"%s\".\nWriting RC defaults to \"%s\".", app_path, dflt_path, dflt_path);
+			else
+				sprintf_m13(message, "Did not find medlib RC file at\"%s\".\nWriting RC defaults to \"%s\".", dflt_path, dflt_path);
+			goto READ_MEDLIBRC_FAIL;
+		}
 	}
 
 	// read in rc file
 	file_len = flen_m13(fp);
 	buffer = malloc((size_t) (file_len + 1));  // include room for terminal zero
 	if (buffer == NULL) {
-		sprintf_m13(message, "alloc error");
+		G_set_error_m13(E_ALLOC_m13, NULL);
 		goto READ_MEDLIBRC_FAIL;
 	}
 	nr = fread_m13(buffer, sizeof(si1), (size_t) file_len, fp);
-	fclose_m13(&fp);
 	if (nr != file_len) {
-		sprintf_m13(message, "could not read the file \"%s\", writing default RC file", path);
-		G_write_medlibrc_m13(path);
+		sprintf_m13(message, "Could not read the file \"%s\".\nWriting RC defaults to \"%s\".", path);
 		goto READ_MEDLIBRC_FAIL;
 	}
 	buffer[file_len] = 0;
@@ -10504,12 +10500,11 @@ void	G_read_medlibrc_m13(const si1 *app_path)
 	field_name = "MED Library Version";
 	if ((option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val)))  {
 		if (strcmp_m13(str_val, "1.1.3")) {  // only supported version at this time
-			sprintf_m13(message, "unsupported library version, writing default RC file");
-			G_write_medlibrc_m13(path);
+			sprintf_m13(message, "Unsupported library version.\nWriting RC defaults to \"%s\".", path);
 			goto READ_MEDLIBRC_FAIL;
 		}
 	}
-
+	
 	field_name = "Update File System Names";
 	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
 	if (option_number != RC_ERR_m13)
@@ -10569,8 +10564,10 @@ READ_MEDLIBRC_FAIL:
 	if (fp)
 		fclose_m13(fp);
 	
-	if (failed == TRUE_m13)
-		G_warning_message_m13("\nRuntime Configuration: %s\n\n", message);
+	if (failed == TRUE_m13) {
+		G_message_m13("\nRuntime Configuration:\n%s\n\n", message);
+		G_write_medlibrc_m13(path);
+	}
 	
 	return;
 }
@@ -11346,7 +11343,7 @@ UH_m13	*G_read_universal_header_m13(const si1 *path, UH_m13 *uh)
 	
 	// get type
 	G_path_parts_m13(path, NULL, NULL, type.str);
-	
+
 	file_type = G_MED_file_m13(type.code);
 	if (file_type != TRUE_m13) {  // not MED file
 		// not MED file or directory (UNKNOWN_m13 return value)
@@ -14985,7 +14982,7 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	ri_fps = rec_inds_fps;
 	rd_fps = rec_data_fps;
 	
-	// reopen
+	// reopen indices
 	reopen_ri = FALSE_m13;
 	if (FPS_is_open_m13(ri_fps) == TRUE_m13) {
 		if ((ri_fps->params.fp->flags & FILE_FLAGS_WRITE_m13) == 0)
@@ -14994,7 +14991,6 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 			reopen_ri = TRUE_m13;
 		if (reopen_ri == TRUE_m13) {
 			strcpy(ri_mode_str, ri_fps->params.mode_str);
-			eprintf_m13("ri_mode_str = \"%s\"", ri_mode_str);
 			if (FPS_reopen_m13(ri_fps, "r+") == FALSE_m13)
 				return_m13(FALSE_m13);
 		}
@@ -15004,7 +15000,8 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 			return_m13(FALSE_m13);
 	}
 	ri_len = ri_fps->params.fp->len;
-		
+	
+	// reopen data
 	reopen_rd = FALSE_m13;
 	if (FPS_is_open_m13(rd_fps) == TRUE_m13) {
 		if ((rd_fps->params.fp->flags & FILE_FLAGS_WRITE_m13) == 0)
@@ -15013,7 +15010,6 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 			reopen_rd = TRUE_m13;
 		if (reopen_rd == TRUE_m13) {
 			strcpy(rd_mode_str, rd_fps->params.mode_str);
-			eprintf_m13("rd_mode \"%s\" => \'r+\"", rd_mode_str);
 			if (FPS_reopen_m13(rd_fps, "r+") == FALSE_m13)
 				return_m13(FALSE_m13);
 		}
@@ -15085,16 +15081,13 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	// write out sorted files
 	if (globals_m13->write_sorted_records == TRUE_m13) {
 		ri_fps->uh->body_CRC = rd_fps->uh->body_CRC = CRC_NO_ENTRY_m13;  // force recalculation of crcs (b/c crcs order sensitive)
-		eprintf_m13("ri write");
 		if (FPS_write_m13(ri_fps, FPS_FULL_FILE_m13, ri_len - UH_BYTES_m13, ri_fps->uh->n_entries) == FALSE_m13)  // note: passing FPS_FULL_FILE_m13 in offset so can pass n_bytes
 			return_m13(FALSE_m13);
-		eprintf_m13("rd write");
 		if (FPS_write_m13(rd_fps, FPS_FULL_FILE_m13, rd_len - UH_BYTES_m13, rd_fps->uh->n_entries) == FALSE_m13)  // note: passing FPS_FULL_FILE_m13 in offset so can pass n_bytes
 			return_m13(FALSE_m13);
 	}
 	
 	if (reopen_ri == TRUE_m13) {
-		eprintf_m13("ri_mode_str = \"%s\"", ri_mode_str);
 		if (FPS_reopen_m13(ri_fps, ri_mode_str) == FALSE_m13)
 			return_m13(FALSE_m13);
 	} else if (FPS_close_m13(ri_fps) == FALSE_m13) {
@@ -15102,7 +15095,6 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 	}
 
 	if (reopen_rd == TRUE_m13) {
-		eprintf_m13("rd_mode \"r+\" => \"%s\"", rd_mode_str);
 		if (FPS_reopen_m13(rd_fps, rd_mode_str) == FALSE_m13)
 			return_m13(FALSE_m13);
 	} else if (FPS_close_m13(rd_fps) == FALSE_m13) {
@@ -15118,7 +15110,6 @@ inline
 #endif
 tern	G_swap_names_m13(LH_m13 *lh)
 {
-	tern		tried_parent;  // for passing files
 	si1		num_str[FILE_NUMBERING_DIGITS_m13 + 1], seg_name[SEG_NAME_BYTES_m13];
 	UH_m13		uh;
 	SSR_m13		*ssr;
@@ -15139,13 +15130,23 @@ tern	G_swap_names_m13(LH_m13 *lh)
 		return_m13(UNKNOWN_m13);
 	}
 	
-	tried_parent = FALSE_m13;
+	// if file, use parent
+	if (G_MED_file_m13(lh->type_code) == TRUE_m13) {
+		if (lh->parent) {
+			lh = lh->parent;
+		} else {
+			if (STR_is_empty_m13(lh->path) == TRUE_m13)
+				G_set_error_m13(E_GEN_m13, "file is an orphan");
+			else
+				G_set_error_m13(E_GEN_m13, "file \"%s\" is an orphan", lh->path);
+			return_m13(UNKNOWN_m13);
+		}
+	}
 
-SWAP_NAMES_TRY_PARENT_m13:
-	
 	if (lh->names_differ == UNKNOWN_m13)
-		G_read_universal_header_m13(lh->path, &uh);
-	
+		if (G_read_universal_header_m13(lh->path, &uh) == NULL)
+			return_m13(UNKNOWN_m13);
+		
 	switch (lh->type_code) {
 		case SESS_TYPE_CODE_m13:
 			pg = G_proc_globs_m13(lh);
@@ -15227,15 +15228,9 @@ SWAP_NAMES_TRY_PARENT_m13:
 			}
 			return_m13(FALSE_m13);
 		default:
-			if (tried_parent == TRUE_m13)
-				break;
-			lh = lh->parent;
-			tried_parent = TRUE_m13;
-			goto SWAP_NAMES_TRY_PARENT_m13;
+			G_set_error_m13(E_GEN_m13, "not a MED level");
 	}
-	
-	G_set_error_m13(E_GEN_m13, "not a MED level");
-	
+		
 	return_m13(UNKNOWN_m13);
 }
 
@@ -17120,6 +17115,7 @@ void  G_warning_message_m13(const si1 *fmt, ...)
 
 void	G_write_medlibrc_m13(const si1 *path)
 {
+	tern		update_parity;
 	const si1	*buffer;
 	si8		len, nw;
 	FILE_m13	*fp;
@@ -17127,25 +17123,24 @@ void	G_write_medlibrc_m13(const si1 *path)
 	
 	// open file
 	fp = fopen_m13(path, "w");
-	if (fp == NULL) {
-		G_error_message_m13("%s(): could not create the file \"%s\"", __FUNCTION__, path);
+	if (fp == NULL)
 		return;
-	}
 
 	// write out rc file
-	buffer = "\nRC Format:\n----------\n\nAny line not beginning with \"%%\" is ignored.\n\nEntry \"TYPE\"s are one of the following: string, float, integer, ternary.\n\nThe string \"NO ENTRY\" can be entered as a DEFAULT or VALUE where appropriate.\n\n\"DEFAULT\" values are used when there is no text in the value label or the word \"DEFAULT\" is specified as the value.\n\n\"PROMPT\" will ask the user for input and present the OPTIONS and DEFAULT.\n\nVALUEs can be \"DEFAULT\", \"NO ENTRY\", any of the defined OPTION strings, or free text if the field permits.\n\n\"PROMPT\" and \"NO ENTRY\" can serve as values or defaults, but are not considered OPTIONs.\n\nIf the \"OPTIONS\" label is \"OPTIONS ONLY\", only the listed options are permitted as values (\"PROMPT\", & \"DEFAULT\" are permitted also).\nOtherwise the \"OPTIONS\" are just options, and custom values are permitted.\n\n\nMED Library RC Fields:\n----------------------\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: Increase process priority at startup (if application requests)\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: NO\n%% VALUE: DEFAULT\n\n";
+	buffer = "\nRC Format:\n----------\n\nAny line not beginning with \"%%\" is ignored.\n\nEntry \"TYPE\"s are one of the following: string, float, integer, ternary.\n\nThe string \"NO ENTRY\" can be entered as a DEFAULT or VALUE where appropriate.\n\n\"DEFAULT\" values are used when there is no text in the value label or the word \"DEFAULT\" is specified as the value.\n\n\"PROMPT\" will ask the user for input and present the OPTIONS and DEFAULT.\n\nVALUEs can be \"DEFAULT\", \"NO ENTRY\", any of the defined OPTION strings, or free text if the field permits.\n\n\"PROMPT\" and \"NO ENTRY\" can serve as values or defaults, but are not considered OPTIONs.\n\nIf the \"OPTIONS\" label is \"OPTIONS ONLY\", only the listed options are permitted as values (\"PROMPT\", & \"DEFAULT\" are permitted also).\nOtherwise the \"OPTIONS\" are just options, and custom values are permitted.\n\n\nMED Library RC Fields:\n----------------------\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Write Corrected Headers\n%% NOTES: If headers are incomplete, write out completed headers if encountered\n%% NOTES: This may happen when acquisition or conversion terminates abnormally\n%% NOTES: This is also the expected state when files are read during acquisition; files are not updated under those circumstances\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: If application requests, increase process priority\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n";
 
+	update_parity = globals_m13->update_parity;
+	globals_m13->update_parity = FALSE_m13;  // RC file does not have parity data (fwrite_m13() would check - fine, but inefficient)
+	
 	len = strlen(buffer);
 	nw = fwrite_m13((si1 *) buffer, sizeof(si1), (size_t) len, fp);
-	fclose_m13(&fp);
-	if (nw != len) {
-		G_error_message_m13("%s(): could not write the file \"%s\"", __FUNCTION__, path);
-		fclose_m13(fp);
-		return;
-	}
+	
+	globals_m13->update_parity = update_parity;  // restore
 	
 	fclose_m13(fp);
-	
+	if (nw != len)
+		return;
+
 	return;
 }
 
@@ -28790,9 +28785,8 @@ inline
 #endif
 ui8	FILE_id_m13(void *fp, const si1 *path)
 {
-	tern			path_is_empty;
-	ui4			drive_id, inode_id;
-	ui8			file_id;
+	tern			is_std, path_is_empty;
+	ui8			device_id, inode_id, file_id;
 	si4			fd;
 	FILE_m13		*m13_fp;
 	struct_stat_m13		sb;
@@ -28803,41 +28797,55 @@ ui8	FILE_id_m13(void *fp, const si1 *path)
 	
 	// pass file pointer or path, other can be NULL
 	// returns zero on failure
+	// sets fid in FILE_m13 structures
 
-	if (fp) {
+	is_std = FILE_is_std_m13(fp);
+	if (is_std == FALSE_m13) {
+		m13_fp = (FILE_m13 *) fp;
+		if (m13_fp->fid)
+			return_m13(m13_fp->fid);
+		fd = m13_fp->fd;
+	} else if (is_std == TRUE_m13) {
 		fd = fileno_m13(fp);
-		if (fd == FILE_FD_CLOSED_m13)
-			fp = NULL;  // try path below
-		
-		if (fstat_m13(fd, &sb))
-			return_m13((ui4) 0);
+	} else {  // NULL
+		fd = 0;
 	}
 	
-	if (fp == NULL) {
-		path_is_empty = FALSE_m13;
-		if (STR_is_empty_m13(path) == TRUE_m13) {
-			path_is_empty = TRUE_m13;
-			if (FILE_is_std_m13(fp) == FALSE_m13) {
-				m13_fp = (FILE_m13 *) fp;
-				if (STR_is_empty_m13(m13_fp->path) == FALSE_m13) {
-					path = m13_fp->path;
-					path_is_empty = FALSE_m13;
-				}
+	if (fd <= FILE_FD_STDERR_m13) {   // closed or not set, or standard stream - try with path
+		path_is_empty = STR_is_empty_m13(path);
+		if (path_is_empty == TRUE_m13) {
+			if (is_std == FALSE_m13) {
+				path = m13_fp->path;
+				path_is_empty = STR_is_empty_m13(path);
 			}
 		}
 		if (path_is_empty == TRUE_m13) {
 			G_set_error_m13(E_FLOCK_m13, "path is empty");
-			return_m13((ui4) 0);
+			return_m13((ui8) 0);
 		}
-		
 		if (stat_m13(path, &sb))
-			return_m13((ui4) 0);
+			return_m13((ui8) 0);
+	} else if (fstat_m13(fd, &sb)) {
+		return_m13((ui8) 0);
 	}
+
+	// get device ID
+	if (sb.st_dev)
+		device_id = (ui8) sb.st_dev & (ui8) 0x00000000FFFFFFFF;  // zero if device ID not found
+	else
+		device_id = (ui8) sb.st_rdev & (ui8) 0x00000000FFFFFFFF;  // try special device ID
 	
-	// generate file id (
-	drive_id = (ui4) sb.st_dev & (ui4) 0xFFFFFFFF;  // st_dev typically a ui4, but don't count on it
-	inode_id = (ui4) sb.st_ino & (ui4) 0xFFFFFFFF;  // st_ino typically a ui4, but don't count on it
-	file_id = ((ui8) drive_id << 32) & (ui8) inode_id;
+	// get inode ID
+	inode_id = (ui8) sb.st_ino;  // st_ino typically a ui4 (upper 32 bits discarded if 64-bit)
+	if (inode_id == 0 || inode_id == 0xFFFFFFFFFFFFFFFF)  // failsafe: crc of path (inode 0 or -1 if si4 or si8)
+		inode_id = (ui8) CRC_calculate_m13((ui1 *) path, strlen(path)) << 32;
+	
+	// build file Id
+	file_id = device_id | (inode_id << 32);
+	
+	// set in FILE_m13 structure
+	if (is_std == FALSE_m13)
+		m13_fp->fid = file_id;
 	
 	return_m13(file_id);
 }
@@ -29158,24 +29166,19 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		return_m13(FALSE_m13);
 	}
 	
-	printf_m13("Path: ");
 	if (*fp->path)
-		printf_m13("%s\n", fp->path);
+		printf_m13("Path: %s\n", fp->path);
 	else
-		printf_m13("not set\n");
+		printf_m13("Path: not set\n");
+	
 	if (fp->fid) {
 		printf_m13("File ID: 0x%016lx\n", fp->fid);
-		if (fp->drive_id)
-			printf_m13("\tDrive ID: %u\n", fp->drive_id);
-		else
-			printf_m13("\ttDrive ID: not set\n");
-		if (fp->inode_id)
-			printf_m13("\tInode ID: %u\n", fp->inode_id);
-		else
-			printf_m13("\tInode ID: not set\n");
+		printf_m13("\tDevice ID: 0x%08x\n", fp->device_id);
+		printf_m13("\tInode ID: 0x%08x (or path crc)\n", fp->inode_id);
 	} else {
 		printf_m13("File ID: not set\n");
 	}
+	
 	STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), " ", TRUE_m13);
 	printf_m13("Flags (%s):\n", bin_str);
 	if (fp->flags & FILE_FLAGS_STD_STREAM_m13) {
@@ -29225,22 +29228,17 @@ tern	FILE_show_m13(FILE_m13 *fp)
 	printf_m13("\tuser\t%c %c %c\n", ((fp->perms & FILE_PERM_USR_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_EXEC_m13) ? '+' : '-'));
 	printf_m13("\tgroup\t%c %c %c\n", ((fp->perms & FILE_PERM_GRP_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_EXEC_m13) ? '+' : '-'));
 	printf_m13("\tother\t%c %c %c\n", ((fp->perms & FILE_PERM_OTH_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_EXEC_m13) ? '+' : '-'));
-	printf_m13("\tsticky\t%c\n", ((fp->perms & FILE_PERM_STICKY_m13) ? '+' : '-'));
-	printf_m13("\tset group\t%c\n", ((fp->perms & FILE_PERM_SET_GRP_m13) ? '+' : '-'));
-	printf_m13("\tset user\t%c\n", ((fp->perms & FILE_PERM_SET_USR_m13) ? '+' : '-'));
-	printf_m13("Sytem FILE Pointer: ");
-	if (fp->fp)
-		printf_m13("set\n");
-	else
-		printf_m13("not set\n");
+	printf_m13("Modes:\n");
+	printf_m13("\tsticky: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_STICKY_m13), FALSE_m13));
+	printf_m13("\tset group: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_GRP_m13), FALSE_m13));
+	printf_m13("\tset user: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_USR_m13), FALSE_m13));
 
-	if (fp->flags & FILE_FLAGS_LEN_m13) {
-		if (fp->len >= 0)
-			printf_m13("Length: %ld\n", fp->len);
-		else
-			printf_m13("Length: not set\n");
-	}
-	printf_m13("\tSystem File Descriptor: %d ", fp->fd);
+	if (fp->fp)
+		printf_m13("Pointer: set\n");
+	else
+		printf_m13("Pointer: not set\n");
+
+	printf_m13("Descriptor: %d ", fp->fd);
 	switch (fp->fd) {
 		case FILE_FD_EPHEMERAL_m13:
 			printf_m13("(ephemeral)\n");
@@ -29263,6 +29261,13 @@ tern	FILE_show_m13(FILE_m13 *fp)
 			else
 				printf_m13("(invalid)\n");
 			break;
+	}
+
+	if (fp->flags & FILE_FLAGS_LEN_m13) {
+		if (fp->len >= 0)
+			printf_m13("Length: %ld\n", fp->len);
+		else
+			printf_m13("Length: not set\n");
 	}
 
 	if (fp->flags & FILE_FLAGS_POS_m13) {
@@ -32003,12 +32008,12 @@ FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 cop
 	*fps = *proto_fps;
 
 	// parameters that shouldn't be copied
-	fps->path = fps->local_path;
-	fps->name = fps->local_name;
 	params = &fps->params;
-	params->fp = NULL;
+	params->fp = &params->local_f;
 	params->mmap_n_blocks = 0;
 	params->mmap_block_bitmap = NULL;
+	fps->path = fps->params.fp->path;
+	fps->name = fps->local_name;
 
 	// set path
 	if (STR_is_empty_m13(path) == FALSE_m13) {
@@ -32314,7 +32319,6 @@ si8	FPS_header_offset_m13(FPS_m13 *fps, const si1 *path)
 FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent)
 {
 	ui2		alloced_mask;
-	ui4		type_code;
 	FILE_m13	*fp;
 	STR_CODE_m13	type;
 
@@ -32325,7 +32329,7 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_
 	// create or reset an FPS
 	// if path is empty:
 	//	path will be fps->path
-	//	fps->uh->type_code will be fps->uh->type_code
+	//	fps->type_code will be fps->uh->type_code
 	// n_bytes = bytes to allocate for body, not including universal header
 	// 	if n_bytes == FPS_NO_ALLOC_m13, no memory will be allocated at all, not even a header (e.g. because FPS_read_m13() will reallocate anyway)
 	//	if n_bytes == 0 or FPS_UH_ONLY_m13, only the universal_header will be allocated
@@ -32336,10 +32340,15 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_
 
 	if (fps == NULL) {
 		fps = (FPS_m13 *) calloc_m13((size_t) 1, -sizeof(FPS_m13));  // flag as level header
-		fps->path = fps->local_path;
+		fps->params.fp = &fps->params.local_f;  // set fp
+		fps->path = fps->params.fp->path;
 		fps->name = fps->local_name;
 	}
 	
+	// initialize directives & parameters
+	FPS_init_params_m13(&fps->params);
+	FPS_init_direcs_m13(&fps->direcs);
+
 	// set path
 	if (STR_is_empty_m13(path) == FALSE_m13) {
 		strcpy(fps->path, path);
@@ -32348,15 +32357,9 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_
 	} else if (STR_is_empty_m13(fps->path) == TRUE_m13) {
 		G_set_error_m13(E_GEN_m13, "path is empty");
 		return_m13(NULL);
-	} else {  // path in fps->path
-		if (fps->type_code == NO_TYPE_CODE_m13)
-			fps->type_code = G_MED_type_code_from_string_m13(fps->path);
+	} else if (fps->type_code == NO_TYPE_CODE_m13) {  // path in fps->path
+		fps->type_code = G_MED_type_code_from_string_m13(fps->path);
 	}
-	type_code = fps->type_code;
-
-	// initialize directives & parameters
-	FPS_init_params_m13(&fps->params);
-	FPS_init_direcs_m13(&fps->direcs);
 
 	// set open mode
 	if (STR_is_empty_m13(mode_str) == TRUE_m13)
@@ -32382,7 +32385,7 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_
 	// allocate
 	switch (n_bytes) {
 		case 0:
-			switch (type_code) {
+			switch (fps->type_code) {
 				case TS_INDS_TYPE_CODE_m13:
 				case VID_INDS_TYPE_CODE_m13:
 				case REC_INDS_TYPE_CODE_m13:
@@ -32476,7 +32479,8 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params)
 		if (params->cps)
 			CMP_free_cps_m13(&params->cps);
 		if (params->fp)
-			fclose_m13(params->fp);
+			if (params->fp->fp)
+				fclose_m13(params->fp);
 		if (params->mmap_block_bitmap) {
 			free_m13(params->mmap_block_bitmap);
 			params->mmap_block_bitmap = NULL;
@@ -32487,7 +32491,10 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params)
 	}
 	
 	// set non-zero defaults
-	params->fp = FILE_init_m13(params->fp);
+	params->fp = &params->local_f;
+	params->fp->tag = FILE_TAG_m13;  // set this before sending to FILE_init_m13() so knows it's not a standard FILE pointer
+	FILE_init_m13(params->fp);
+	
 	params->header_read = params->full_file_read = FALSE_m13;
 	params->mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
 
@@ -32956,6 +32963,8 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 				if (tmp_fps == NULL)
 					return_m13(NULL);
 				*fps = *tmp_fps;  // copy base structure to passed pointer
+				fps->params.fp = &fps->params.local_f;  // reset fp
+				fps->path = fps->params.fp->path;  // reset path
 				free_m13(tmp_fps);  // free temporary base structure (i.e. don't use FPS_free_m13)
 				if (fps_alloced == TRUE_m13)
 					fps->allocated = TRUE_m13;
@@ -33294,7 +33303,7 @@ tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 
 tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str empty): ui8 fd_flags
 {
-	tern		reopen;
+	tern		reopen, free_mode_str;
 	FILE_m13	*fp;
 	va_list		v_arg;
 	
@@ -33312,9 +33321,10 @@ tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str 
 		va_start(v_arg, mode_str);
 		fps->direcs.flags = va_arg(v_arg, ui8);
 		va_end(v_arg);
-		mode_str = FPS_set_open_string_m13(fps, FPS_DF_NO_FLAGS_m13);  // will use fps->direcs.flags; returned string is pointer to FPS mode_str, no need to free
+		mode_str = FPS_set_open_string_m13(NULL, fps->direcs.flags);  // get mode_str from flags
+		free_mode_str = TRUE_m13;
 	} else {
-		FPS_set_open_flags_m13(fps, mode_str);  // copies mode_str to FPS mode_str
+		free_mode_str = FALSE_m13;
 	}
 	
 	// already open in requested mode
@@ -33322,19 +33332,24 @@ tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str 
 	if (strcmp_m13(fps->params.mode_str, mode_str) == 0)
 		if (FPS_is_open_m13(fps) == TRUE_m13)
 			reopen = FALSE_m13;
+	
+	if (free_mode_str == TRUE_m13) {
+		strcpy(fps->params.mode_str, mode_str);
+		free_m13((void *) mode_str);
+		mode_str = fps->params.mode_str;
+	}
 
 	// reopen
 	if (reopen == TRUE_m13) {
-		eprintf_m13("before reopen");
-		FILE_show_m13(fps->params.fp);
+		if (free_mode_str == FALSE_m13)  // alreddy set from flags
+			FPS_set_open_flags_m13(fps, mode_str);  // sets FPS directives open flags & copies mode_str to FPS mode_str
 		fp = freopen_m13(fps->path, mode_str, fps->params.fp);
-		eprintf_m13("after reopen");
-		FILE_show_m13(fp);
 		if (fp == NULL)
 			return_m13(FALSE_m13);
-		if (fps->params.fp != fp) {
-			eprintf_m13("copying fp");
-			*fps->params.fp = *fp;
+		if (fp != fps->params.fp) {
+			fps->params.local_f = *fp;
+			fps->params.fp = &fps->params.local_f;
+			fps->path = fps->params.fp->path;
 			free_m13(fp);
 		}
 	} else if (fseek_m13(fps->params.fp, 0, SEEK_SET)) {  // already open in requested mode => just move file pointer beginning of file
@@ -33684,9 +33699,13 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 	else
 		mode_str = (si1 *) calloc_m13((size_t) 8, sizeof(si1));  // caller takes ownership
 	
-	if (flags == FPS_DF_NO_FLAGS_m13)
-		if (fps)
+	if (fps) {
+		if (flags == FPS_DF_NO_FLAGS_m13)
 			flags = fps->direcs.flags;
+		else
+			fps->direcs.flags = flags;  // set directive flags bfore masking
+	}
+	
 	flags &= FPS_OPEN_MODE_MASK_m13;
 	if (flags == FPS_DF_NO_FLAGS_m13) {
 		G_set_error_m13(E_GEN_m13, "no mode flags available");
@@ -38947,22 +38966,17 @@ si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *
 	flen = flen_m13(fp);
 	
 	// no pcrc data possible (don't read)
-	eprintf_m13("");
 	if (flen <= (sizeof(ui4) + sizeof(PRTY_CRC_DATA_m13))) {  // must be at least one crc + pcrc struct
 		pcrc_offset = flen;  // not error
 		goto PCRC_OFFSET_FAIL;
 	}
 	
-	eprintf_m13("");
 	if (fseek_m13(fp, (size_t) flen - sizeof(PRTY_CRC_DATA_m13), SEEK_SET))
 		goto PCRC_OFFSET_FAIL;
-	eprintf_m13("flen = %ld, sizeof(PRTY_CRC_DATA_m13) = %lu, fpos = %ld", flen, sizeof(PRTY_CRC_DATA_m13), ftell_m13(fp));
 	nr = fread_m13(pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
-	eprintf_m13("nr = %ld", nr);
 	if (nr != 1)
 		goto PCRC_OFFSET_FAIL;
-	eprintf_m13("");
-
+\
 	// no pcrc data
 	if (pcrc->tag != PRTY_PCRC_TAG_m13) {
 		pcrc_offset = flen;  // not error
@@ -38974,10 +38988,8 @@ si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *
 	pcrc_bytes = (pcrc->n_blocks * sizeof(ui4)) + sizeof(PRTY_CRC_DATA_m13);
 	pcrc_offset = flen - pcrc_bytes;
 
-
 PCRC_OFFSET_FAIL:
 
-	eprintf_m13("");
 	if (close_fp == TRUE_m13)
 		fclose_m13(fp);
 	else if (fseek_m13(fp, in_offset, SEEK_SET))  // reset error contitions in case got here successfully
@@ -38987,7 +38999,6 @@ PCRC_OFFSET_FAIL:
 		if (pcrc != &local_pcrc)
 			memset(pcrc, 0, sizeof(PRTY_CRC_DATA_m13));
 
-	eprintf_m13("");
 	return_m13(pcrc_offset);
 }
 
@@ -45669,8 +45680,8 @@ si4	fclose_m13(void *fp)
 				if (fclose(std_fp)) {
 					G_set_error_m13(E_FOPEN_m13, "error closing file");
 					return_m13(FALSE_m13);
-				}  // closed - fall through to return(0)
-			}
+				}
+			}  // else closed - fall through to return(0)
 		case UNKNOWN_m13:  // fp == NULL
 			return_m13(0);
 	}
@@ -45713,6 +45724,7 @@ si4	fclose_m13(void *fp)
 		if (m13_fp_ptr)  // set calling function pointer to NULL
 			*m13_fp_ptr = NULL;
 	} else {
+		*m13_fp->path = 0;
 		m13_fp->fp = NULL;
 		m13_fp->fd = FILE_FD_CLOSED_m13;
 	}
@@ -46066,7 +46078,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 		if (operation & FLOCK_WRITE_m13) {  // write unlock
 			if (lock->read_cnt.owner == _id)  // only owning thread can release ownership
 				lock->read_cnt.owner = ISEM_NO_OWNER_m13;
-			else  // can't unlock - not owner
+			else  // not owner - can't unlock
 				return(FLOCK_LOCKED_m13);
 		} else {  // read unlock
 			isem_dec_m13(&lock->read_cnt);  // release a read lock
@@ -46077,19 +46089,19 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 	// non-blocking lock
 	if (operation & FLOCK_NON_BLOCKING_m13) {
 		if (operation & FLOCK_WRITE_m13) { // write lock
-			if (isem_tryown_m13(&lock->read_cnt) == TRUE_m13)  // get write lock
-				if (isem_trywait_noinc_m13(&lock->read_cnt) == TRUE_m13)  // wait for reads to drop to zero (but don't increment count)
+			if (isem_tryown_m13(&lock->read_cnt) == TRUE_m13)  // take ownership if unowned
+				if (isem_getcnt_m13(&lock->read_cnt) == (ui4) 0)  // check if reads == zero
 					return(FLOCK_SUCCESS_m13);
 		} else if (isem_tryinc_m13(&lock->read_cnt) == TRUE_m13) {  // read lock
-				return(FLOCK_SUCCESS_m13);
+			return(FLOCK_SUCCESS_m13);
 		}
 		return(FLOCK_LOCKED_m13);
 	}
 	
 	// blocking lock
 	if (operation & FLOCK_WRITE_m13) {  // get write lock
-		isem_own_m13(&lock->read_cnt);  // block until unowned, & take ownership
-		isem_wait_noinc_m13(&lock->read_cnt); // wait for reads to drop to zero (but don't increment count)
+		isem_own_m13(&lock->read_cnt);  // block until unowned, take ownership
+		isem_wait_noinc_m13(&lock->read_cnt); // block until reads == zero, don't increment count
 	} else {  // read lock
 		isem_inc_m13(&lock->read_cnt);  // block until unowned, increment count
 	}
@@ -46527,12 +46539,6 @@ size_t	fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // (
 			if (m13_fp->flags & FILE_FLAGS_TIME_m13)
 				m13_fp->acc = G_current_uutc_m13();
 		} else {
-			si4 err;
-			err = errno_m13();
-			eprintf_m13("errno = %d, %s in %s", err, strerror(err), m13_fp->path);
-			eprintf_m13("no reading in %s", err, strerror(err), m13_fp->path);
-			FILE_show_m13(m13_fp);
-			eprintf_m13("fd = %d, in %s", fileno(std_fp), m13_fp->path);
 			G_set_error_m13(E_FREAD_m13, "failed to read file \"%s\"", m13_fp->path);
 		}
 	} else if (nr != n_elements) {
@@ -46713,9 +46719,6 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 	G_push_function_m13();
 #endif
 	
-	if (mode_str)
-		eprintf_m13("mode_str = \"%s\"", mode_str);
-		
 	// check mode
 	if (STR_is_empty_m13(mode_str) == TRUE_m13) {
 		G_set_error_m13(E_FOPEN_m13, "mode string is empty");
@@ -47164,8 +47167,43 @@ inline
 #endif
 si4	fstat_m13(si4 fd, struct_stat_m13 *sb)
 {
-	si4	r_val;
+	si4	r_val, err;
 	
+
+	errno_reset_m13();
+
+#if defined MACOS_m13 || defined LINUX_m13
+	r_val = fstat(fd, sb);
+#endif
+#ifdef WINDOWS_m13
+	r_val = _fstat64(fd, sb);
+#endif
+	
+	if (r_val) {
+		err = errno_m13();
+		r_val = FALSE_m13;
+		G_set_error_m13(E_FGEN_m13, "fstat() failed with error #%d: \"%s\"", err, strerror(err));
+	}
+
+	return(r_val);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	fstat_fp_m13(void *fp, struct_stat_m13 *sb)
+{
+	si4		r_val, fd;
+	FILE_m13	*m13_fp;
+	
+	
+	// returns zero on success
+	// returns the system errno on error, as opposed to posix fstat() which returns -1
+	
+	fd = fileno_m13(fp);
+	
+	errno_reset_m13();
 	
 #if defined MACOS_m13 || defined LINUX_m13
 	r_val = fstat(fd, sb);
@@ -47174,9 +47212,16 @@ si4	fstat_m13(si4 fd, struct_stat_m13 *sb)
 	r_val = _fstat64(fd, sb);
 #endif
 	
-	if (r_val)
-		G_set_error_m13(E_FGEN_m13, "fstat() error");
-		
+	if (r_val) {
+		if (FILE_is_std_m13(fp) == FALSE_m13) {
+			m13_fp = (FILE_m13 *) fp;
+			if (STR_is_empty_m13(m13_fp->path) == FALSE_m13)
+				return(stat_m13(m13_fp->path, sb));
+		}
+		r_val = errno_m13();
+		G_set_error_m13(E_FGEN_m13, "fstat() failed with error #%d: \"%s\"", r_val, strerror(r_val));
+	}
+
 	return(r_val);
 }
 
@@ -47514,7 +47559,7 @@ inline
 #endif
 void	isem_chown_m13(isem_t_m13 *isem, pid_t_m13 tid)
 {
-	// change isem thread ownership
+	// change isem  ownership
 	// pass zero to clear ownership
 	// pass ISEM_SELF_m13 to change ownership to current thread
 	// superfunction - any thread can call
@@ -47554,7 +47599,7 @@ void	isem_dec_m13(isem_t_m13 *isem)
 
 void	isem_destroy_m13(isem_t_m13 *isem)
 {
-	// destroys the inverse semaphore
+	// destroys the isem
 	// free_on_destroy == TRUE_m13: deallocates
 	// free_on_destroy == FALSE_m13: resets to initialized state (mutex left in current state of initialization)
 	
@@ -47594,10 +47639,11 @@ isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, co
 	si8			period;
 	struct timespec		tv;
 	
+	
 	// Initializes the inverse semaphore to the initial value
 	// pass isem == NULL to allocate
-	// free_on_destroy == TRUE_m13 indicates isem should be freed by isem_destroy_m13()
 	// owner == ISEM_SELF_m13 => set owner to current thread; owner == ISEM_NO_OWNER_m13 initialize isem to unowned
+	// free_on_destroy == TRUE_m13 indicates isem should be freed by isem_destroy_m13()
 	// returns NULL on failure
 	
 	// check nap
@@ -47666,8 +47712,8 @@ void	isem_inc_m13(isem_t_m13 *isem)
 	struct timespec		tv;
 
 	
-	// increments the count
-	// if owned by another thread, blocks until unowned
+	// if unowned or owner, increments count
+	// if owned & not owner, blocks until it can increment the count
 
 	tv.tv_sec = (si8) 0;
 	if (isem->period)
@@ -47736,7 +47782,8 @@ void	isem_own_m13(isem_t_m13 *isem)
 	struct timespec		tv;
 
 	
-	// if unowned takes ownership, if owned blocks until takes ownership
+	// if unowned or owner, takes ownership
+	// if owned & not owner, blocks until it can take ownership
 
 	tv.tv_sec = (si8) 0;
 	if (isem->period)
@@ -47806,8 +47853,10 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 	pid_t_m13		tid;
 	struct timespec		tv;
 
-	// set the isem count to count
-	// if owned by another thread, blocks until unowned
+	
+	// if unowned or owner: set the count
+	// if owned & not owner: blocks until unowned or owner & sets count
+	// if period > 0, it will try once more after a nap
 
 	tv.tv_sec = (si8) 0;
 	if (isem->period)
@@ -47869,6 +47918,13 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 
 void	isem_show_m13(isem_t_m13 *isem)
 {
+	if (isem->initialized != TRUE_m13) {
+		pthread_mutex_init_m13(&isem->mutex, NULL);
+		isem->initialized = TRUE_m13;
+	}
+
+	pthread_mutex_lock_m13(&isem->mutex);
+
 	if (*isem->name)
 		printf_m13("isem \"%s\":\n", isem->name);
 	else
@@ -47878,6 +47934,10 @@ void	isem_show_m13(isem_t_m13 *isem)
 	printf_m13("\towner (tid): %lu\n", isem->owner);
 	printf_m13("\tinitialized: %s\n", STR_tern_m13(isem->initialized, FALSE_m13));
 	printf_m13("\tfree on destroy: %s\n\n", STR_tern_m13(isem->free_on_destroy, FALSE_m13));
+	
+	pthread_mutex_unlock_m13(&isem->mutex);
+	
+	return;
 }
 
 
@@ -47890,7 +47950,7 @@ tern	isem_tryinc_m13(isem_t_m13 *isem)
 
 	// if unowned or owner: increments the count, returns TRUE_m13
 	// if owned & not owner: returns FALSE_m13
-	// if period > 0, it will check once more after a nap
+	// if period > 0, it will try once more after a nap
 
 	if (isem->period) {
 		waited = FALSE_m13;
@@ -47938,7 +47998,9 @@ tern	isem_tryown_m13(isem_t_m13 *isem)
 	pid_t_m13		tid;
 	struct timespec		tv;
 
-	// if unowned or owner takes ownership & returns TRUE_m13, if owned by another thread returns FALSE_m13
+	
+	// if unowned or owner takes ownership & returns TRUE_m13
+	// if owned not owner returns FALSE_m13
 	// if period > 0, it will check once more after a nap
 	// returns UNKNOWN_m13 on error
 
@@ -47994,7 +48056,7 @@ tern	isem_trysetcnt_m13(isem_t_m13 *isem, ui4 count)
 	struct timespec		tv;
 
 
-	// if unowned or owner: sets the isem count to count, returns TRUE_m13
+	// if unowned or owner: sets the isem count, returns TRUE_m13
 	// if owned & not owner: returns FALSE_m13
 	// if period > 0, it will check once more after a nap
 
@@ -48045,10 +48107,11 @@ tern	isem_trywait_m13(isem_t_m13 *isem)
 	pid_t_m13		tid;
 	struct timespec		tv;
 
-	// if count == 0, sets count == 1 & returns TRUE_m13
-	// if count > 0, returns FALSE_m13
+	
+	// if unowned or owner & count == 0, sets count == 1 & returns TRUE_m13
+	// if owned & not owner or count > 0, returns FALSE_m13
 	// if period > 0, it will check once more after a nap
-	// calling function should call isem_dec_m13() when finished
+	// calling thread should call decrement count when finished
 
 	if (isem->period) {
 		waited = FALSE_m13;
@@ -48096,12 +48159,14 @@ tern	isem_trywait_m13(isem_t_m13 *isem)
 tern	isem_trywait_noinc_m13(isem_t_m13 *isem)
 {
 	tern			waited, r_val;
+	pid_t_m13		tid;
 	struct timespec		tv;
 
-	// if count == 0, returns TRUE_m13
-	// if count > 0, returns FALSE_m13
+	
+	// if unowned or owner & count == 0, returns TRUE_m13
+	// if owned & not owner or count > 0, returns FALSE_m13
 	// if period > 0, it will check once more after a nap
-
+	
 	if (isem->period) {
 		waited = FALSE_m13;
 		tv.tv_sec = (si8) 0;
@@ -48115,14 +48180,19 @@ tern	isem_trywait_noinc_m13(isem_t_m13 *isem)
 		isem->initialized = TRUE_m13;
 	}
 
+	tid = gettid_m13();
+
 	pthread_mutex_lock_m13(&isem->mutex);
 
 	r_val = FALSE_m13;
 	while (1) {
-		if (isem->count == 0) {
-			r_val = TRUE_m13;
-			break;
+		if (isem->owner == tid || isem->owner == 0) {
+			if (isem->count == 0) {
+				r_val = TRUE_m13;
+				break;
+			}
 		}
+
 		if (waited == TRUE_m13)
 			break;
 		
@@ -48149,8 +48219,8 @@ void	isem_wait_m13(isem_t_m13 *isem)
 	struct timespec		tv;
 
 	
-	// blocks until unowned & count == 0, sets count == 1
-	// calling function should call isem_dec_m13() when finished
+	// blocks until unowned or owner & count == 0, sets count == 1
+	// calling thread should decrement count when finished
 
 	tv.tv_sec = (si8) 0;
 	if (isem->period)
@@ -48216,10 +48286,11 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 	tern			wait_warning;
 	si1			owner_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si8			wait_time_base, wait_time, tmp_time;
+	pid_t_m13		tid;
 	struct timespec		tv;
 
 	
-	// blocks until count == 0
+	// blocks until unowned or owner & count == 0
 
 	tv.tv_sec = (si8) 0;
 	if (isem->period)
@@ -48236,11 +48307,14 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 		isem->initialized = TRUE_m13;
 	}
 	
+	tid = gettid_m13();
+	
 	pthread_mutex_lock_m13(&isem->mutex);
 
 	while (1) {
-		if (isem->count == 0)
-			break;
+		if (isem->owner == tid || isem->owner == 0)
+			if (isem->count == 0)
+				break;
 		
 		pthread_mutex_unlock_m13(&isem->mutex);
 		
@@ -50403,6 +50477,13 @@ inline
 si4	stat_m13(const si1 *path, struct_stat_m13 *sb)
 {
 	si4	r_val;
+	
+	
+	// returns zero on success
+	// returns the system errno on error, as opposed to posix fstat() which returns -1
+
+	errno_reset_m13();
+	
 #if defined MACOS_m13 || defined LINUX_m13
 	r_val = stat(path, sb);
 #endif
@@ -50410,8 +50491,10 @@ si4	stat_m13(const si1 *path, struct_stat_m13 *sb)
 	r_val = _stat64(path, sb);
 #endif
 	
-	if (r_val)
-		G_set_error_m13(E_FGEN_m13, "stat() error");
+	if (r_val) {
+		r_val = errno_m13();
+		G_set_error_m13(E_FGEN_m13, "stat() failed on file \"%s\" with error #%d: \"%s\"", path, r_val, strerror(r_val));
+	}
 	
 	return(r_val);
 }
