@@ -255,12 +255,13 @@ void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 code)
 	}
 	
 	behavior = stack->behaviors + stack->top_idx;
-	if (stack->top_idx)
+	if (stack->top_idx >= 0)
 		prev_code = behavior->code;
 	else
 		prev_code = globals_m13->default_behavior.code;
 	++stack->top_idx;
 	++behavior;
+	behavior->function = function;
 	behavior->line = line;
 	behavior->code = prev_code | code;
 
@@ -2095,7 +2096,7 @@ void	G_clear_error_m13(void)
 	
 	err = &globals_m13->error;
 	
-	isem_chown_m13(&err->isem, ISEM_SELF_m13);  // change owner to current thread temprarily
+	isem_chown_m13(&err->isem, ISEM_SELF_m13);  // change owner to current thread temporarily
 	pthread_mutex_lock_m13(&err->mutex);
 	
 	err->code = E_NONE_m13;
@@ -5187,9 +5188,16 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		// Sgmt_recs_list allocated for each proc_glob
 		list_size = globals_m13->proc_globs_list->size;
 		pg_ptrs = globals_m13->proc_globs_list->proc_globs_ptrs;
-		for (i = 0; i < list_size; ++i)
-			if (pg_ptrs[i]->_id)
+		for (i = 0; i < list_size; ++i) {
+			eprintf_m13("i = %d", i);
+			if (pg_ptrs[i]) {
+				eprintf_m13("");
 				G_proc_globs_delete_m13((LH_m13 *) pg_ptrs[i]);
+				eprintf_m13("");
+				free((void *) pg_ptrs[i]);
+				eprintf_m13("");
+			}
+		}
 		// proc_globs allocated in blocks of GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13
 		for (i = 0; i < list_size; i += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13)
 			free(pg_ptrs[i]);
@@ -5354,10 +5362,8 @@ tern	G_free_session_m13(void *ptr)
 		}
 		free_m13(sess->vid_chans);
 	}
-	eprintf_m13("");
 	if (sess->ssr)
 		G_free_ssr_m13(sess->ssr);
-	eprintf_m13("");
 	
 	if (sess->contigua)
 		free_m13(sess->contigua);
@@ -5425,11 +5431,9 @@ tern	G_free_ssr_m13(void *ptr)
 		gen_fps = ssr->rec_inds_fps[i];
 		if (gen_fps)
 			FPS_free_m13(gen_fps);
-		eprintf_m13("");
 		gen_fps = ssr->rec_data_fps[i];
 		if (gen_fps)
 			FPS_free_m13(gen_fps);
-		eprintf_m13("");
 	}
 	free_m13(ssr->rec_inds_fps);
 	free_m13(ssr->rec_data_fps);
@@ -8041,14 +8045,16 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 			sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_INDS_TYPE_STR_m13);
 		else
 			sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_INDS_TYPE_STR_m13);
-		ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
+		if (G_exists_m13(tmp_str))  // since records not required to exist, check first
+			ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 		if (ri_fps == NULL) {
 			if (G_swap_names_m13(lh) == TRUE_m13) {
 				if (lh->type_code == SSR_TYPE_CODE_m13)
 					sprintf_m13(tmp_str, "%s/%s_s%s.%s", lh->path, lh->name, num_str, REC_INDS_TYPE_STR_m13);
 				else
 					sprintf_m13(tmp_str, "%s/%s.%s", lh->path, lh->name, REC_INDS_TYPE_STR_m13);
-				ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
+				if (G_exists_m13(tmp_str))  // since records not required to exist, check first
+					ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) sess, 0);
 			}
 		}
 	}
@@ -8081,8 +8087,6 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 			FPS_free_m13(rd_fps);
 		return_m13(FALSE_m13);
 	}
-	eprintf_m13("");
-	FPS_show_m13(rd_fps);
 
 	// assign
 	switch (lh->type_code) {
@@ -9145,45 +9149,56 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	Sgmt_RECS_LIST_m13	*Sgmt_records_list;
 	Sgmt_RECS_ENTRY_m13	*Sgmt_records_entry;
 	
+	eprintf_m13("");
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	eprintf_m13("");
 	pg = G_proc_globs_find_m13(lh);
 	if (pg == NULL)
 		return_void_m13;
 	
+	eprintf_m13("");
 	if (pg->ref_count)
 		return_void_m13;
 	
+	eprintf_m13("");
 	// delete proc globals Sgmt_records_list
 	Sgmt_records_list = pg->current_session.Sgmt_recs_list;
 	pthread_mutex_lock_m13(&Sgmt_records_list->mutex);
 	
+	eprintf_m13("");
 	Sgmt_records_entry = Sgmt_records_list->entries;
 	for (i = Sgmt_records_list->top_idx + 1; i--; ++Sgmt_records_entry)
 		free(Sgmt_records_entry->Sgmt_recs);
 	free(Sgmt_records_list->entries);
 	
+	eprintf_m13("");
 	pthread_mutex_unlock_m13(&Sgmt_records_list->mutex);
 	pthread_mutex_destroy_m13(&Sgmt_records_list->mutex);
 	
+	eprintf_m13("");
 	free(Sgmt_records_list);
 	pg->current_session.Sgmt_recs_list = NULL;
 
 	pg->_id = 0;
 	pg->ref_count = 0;
 	
+	eprintf_m13("");
 	// trim search extents
 	pg_list = globals_m13->proc_globs_list;
 	pthread_mutex_lock_m13(&pg_list->mutex);
 	
+	eprintf_m13("");
 	pg_ptrs = pg_list->proc_globs_ptrs;
 	if (pg == pg_ptrs[pg_list->top_idx])
 		--pg_list->top_idx;
 	
 	pthread_mutex_unlock_m13(&pg_list->mutex);
 
+	eprintf_m13("");
 	return_void_m13;
 }
 
@@ -11006,11 +11021,10 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		ssr = sess->ssr;
 		if (ssr == NULL)
 			ssr = G_open_seg_sess_recs_m13(sess);
-		if (ssr) {
+		if (ssr)
 			for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j)
 				if (ssr->rec_inds_fps[j] && ssr->rec_data_fps[j])
 					G_read_records_m13((LH_m13 *) ssr, slice, i);
-		}
 	}
 
 	// wait for channel threads
@@ -11038,23 +11052,6 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	*slice = pg->current_session.index_channel->slice;
 	if (pg->active_channels.sampling_frequencies_vary == TRUE_m13 || pg->active_channels.frame_rates_vary == TRUE_m13)
 		slice->start_samp_num = slice->end_samp_num = SAMPLE_NUMBER_NO_ENTRY_m13;  // unioned with video fields
-
-	// read session records
-	if (sess->flags & LH_READ_SESS_RECS_MASK_m13)
-		if (sess->rec_inds_fps && sess->rec_data_fps)
-			G_read_records_m13((LH_m13 *) sess, slice);
-
-	// read segmented session records
-	if (sess->flags & LH_READ_SEG_SESS_RECS_MASK_m13) {
-		ssr = sess->ssr;
-		if (ssr == NULL)
-			ssr = G_open_seg_sess_recs_m13(sess);
-		if (ssr) {
-			for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j)
-				if (ssr->rec_inds_fps[j] && ssr->rec_data_fps[j])
-					G_read_records_m13((LH_m13 *) ssr, slice, i);
-		}
-	}
 
 	// update ephemeral data  (session record ephemeral data updated on session / segment open)
 	if (sess->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
@@ -11502,12 +11499,13 @@ void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 	}
 	
 	behavior = stack->behaviors + stack->top_idx;
-	if (stack->top_idx)
+	if (stack->top_idx >= 0)
 		prev_code = behavior->code;
 	else
 		prev_code = globals_m13->default_behavior.code;
 	++stack->top_idx;
 	++behavior;
+	behavior->function = function;
 	behavior->line = line;
 	behavior->code = prev_code & ~code;
 	
@@ -14856,10 +14854,11 @@ void	G_signal_trap_m13(si4 sig_num)
 	function = __FUNCTION__;
 	#endif
 	
+	// pass signal number to G_set_error_exec_m13() in line argument because line not available in trap
 	#ifdef MATLAB_m13
-	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "[%s, sys code %d]", error_desc, error_type, sig_num);
+	G_set_error_exec_m13(function, sig_num, E_SIG_m13, "[%s, sys code %d]", error_desc, error_type, sig_num);
 	#else
-	G_set_error_exec_m13(function, E_UNKNOWN_LINE_m13, E_SIG_m13, "%s  %s[%s, sys code %d]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
+	G_set_error_exec_m13(function, sig_num, E_SIG_m13, "%s  %s[%s, sys code %d]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
 	#endif
 	
 	return;  // never gets here - G_set_error_m13() will always exit on a signal error
@@ -28855,7 +28854,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 {
 	tern			is_std;
 	si1			*path;
-	ui2			alloced_flag;
+	ui2			alloced_bit;
 	si4			fd;
 	struct_stat_m13		sb;
 	va_list			v_args;
@@ -28874,7 +28873,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 		m13_fp = (FILE_m13 *) calloc_m13((size_t) 1, sizeof(FILE_m13));  // zeroed structure
 		if (m13_fp == NULL)
 			return_m13(NULL);
-		alloced_flag = FILE_FLAGS_ALLOCED_m13;
+		alloced_bit = FILE_FLAGS_ALLOCED_m13;
 		is_std = FALSE_m13;
 	} else {
 		is_std = FILE_is_std_m13(fp);
@@ -28883,11 +28882,11 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 			m13_fp = (FILE_m13 *) calloc_m13((size_t) 1, sizeof(FILE_m13));
 			if (m13_fp == NULL)
 				return_m13(NULL);
-			alloced_flag = (ui2) FILE_FLAGS_ALLOCED_m13;
+			alloced_bit = (ui2) FILE_FLAGS_ALLOCED_m13;
 		} else {
 			m13_fp = (FILE_m13 *) fp;
 			std_fp = m13_fp->fp;
-			alloced_flag = m13_fp->flags & FILE_FLAGS_ALLOCED_m13;
+			alloced_bit = m13_fp->flags & FILE_FLAGS_ALLOCED_m13;
 			if (fisopen_m13(std_fp) == TRUE_m13)
 				fclose_m13(std_fp);  // use std fp so do not free FILE_m13
 			memset(m13_fp, (si4) 0, sizeof(FILE_m13));  // zero structure
@@ -29034,7 +29033,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 	
 	// set alloced flag
 	// (flags set on open: FILE_FLAGS_LOCK_m13, FILE_FLAGS_READ_m13, FILE_FLAGS_WRITE_m13)
-	m13_fp->flags |= alloced_flag;
+	m13_fp->flags |= alloced_bit;
 	
 	// set start id
 	m13_fp->tag = FILE_TAG_m13;
@@ -29165,8 +29164,10 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		printf_m13("passed pointer is a FILE pointer\n");
 		return_m13(FALSE_m13);
 	}
-	
-	if (*fp->path)
+
+	printf_m13("------------------- FILE_m13 - START -------------------\n");
+
+	if (*fp->path && fp->fp)
 		printf_m13("Path: %s\n", fp->path);
 	else
 		printf_m13("Path: not set\n");
@@ -29174,80 +29175,94 @@ tern	FILE_show_m13(FILE_m13 *fp)
 	if (fp->fid) {
 		printf_m13("File ID: 0x%016lx\n", fp->fid);
 		printf_m13("\tDevice ID: 0x%08x\n", fp->device_id);
-		printf_m13("\tInode ID: 0x%08x (or path crc)\n", fp->inode_id);
+		printf_m13("\tInode ID: 0x%08x  (or path crc)\n", fp->inode_id);
 	} else {
 		printf_m13("File ID: not set\n");
 	}
 	
-	STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), " ", TRUE_m13);
-	printf_m13("Flags (%s):\n", bin_str);
-	if (fp->flags & FILE_FLAGS_STD_STREAM_m13) {
-		printf_m13("\tstandard stream\n");
-	} else if (fp->flags & FILE_FLAGS_MED_m13) {
-		if (fp->flags & FILE_FLAGS_PARITY_m13)
-			printf_m13("\tMED file (parity)\n");
+	if (fp->flags & FILE_FLAGS_SET_m13) {
+		STR_bin_m13(bin_str, (ui1 *) &fp->flags, sizeof(ui2), " ", TRUE_m13);
+		printf_m13("Flags (%s):\n", bin_str);
+		if (fp->flags & FILE_FLAGS_STD_STREAM_m13) {
+			printf_m13("\tstandard stream\n");
+		} else if (fp->flags & FILE_FLAGS_MED_m13) {
+			if (fp->flags & FILE_FLAGS_PARITY_m13)
+				printf_m13("\tMED file  (parity)\n");
+			else
+				printf_m13("\tMED file  (data)\n");
+		} else {
+			printf_m13("\tstandard file\n");
+		}
+		if (fp->flags & FILE_FLAGS_ALLOCED_m13)
+			printf_m13("\tdirect heap allocation  (freeable)\n");
 		else
-			printf_m13("\tMED file (data)\n");
-	} else {
-		printf_m13("\tstandard file\n");
-	}
-	if (fp->flags & FILE_FLAGS_ALLOCED_m13)
-		printf_m13("\theap allocated\n");
-	else
-		printf_m13("\ten bloc or stack allocated\n");
-	if (fp->flags & FILE_FLAGS_READ_m13)
-		printf_m13("\treading enabled\n");
-	else
-		printf_m13("\treading disabled\n");
-	if (fp->flags & FILE_FLAGS_WRITE_m13) {
-		if (fp->flags & FILE_FLAGS_APPEND_m13)
-			printf_m13("\twriting enabled (sequential)\n");
+			printf_m13("\tindirect heap or stack allocation  (not freeable)\n");
+		if (fp->flags & FILE_FLAGS_READ_m13)
+			printf_m13("\treading enabled\n");
 		else
-			printf_m13("\twriting enabled (nonsequential)\n");
+			printf_m13("\treading disabled\n");
+		if (fp->flags & FILE_FLAGS_WRITE_m13) {
+			if (fp->flags & FILE_FLAGS_APPEND_m13)
+				printf_m13("\twriting enabled  (sequential)\n");
+			else
+				printf_m13("\twriting enabled  (nonsequential)\n");
+		} else {
+			printf_m13("\twriting disabled\n");
+		}
+		if (fp->flags & FILE_FLAGS_LOCK_m13)
+			printf_m13("\tlocking enabled\n");
+		else
+			printf_m13("\tlocking disabled\n");
+		if (fp->flags & FILE_FLAGS_LEN_m13)
+			printf_m13("\tlength-tracking enabled\n");
+		else
+			printf_m13("\tlength-tracking disabled\n");
+		if (fp->flags & FILE_FLAGS_POS_m13)
+			printf_m13("\tposition-tracking enabled\n");
+		else
+			printf_m13("\tposition-tracking disabled\n");
+		if (fp->flags & FILE_FLAGS_TIME_m13)
+			printf_m13("\taccess-tracking enabled\n");
+		else
+			printf_m13("\taccess-tracking disabled\n");
 	} else {
-		printf_m13("\twriting disabled\n");
+		printf_m13("Flags: not set\n");
 	}
-	if (fp->flags & FILE_FLAGS_LOCK_m13)
-		printf_m13("\tlocking enabled\n");
-	else
-		printf_m13("\tlocking disabled\n");
-	if (fp->flags & FILE_FLAGS_LEN_m13)
-		printf_m13("\tlength-tracking enabled\n");
-	else
-		printf_m13("\tlength-tracking disabled\n");
-	if (fp->flags & FILE_FLAGS_POS_m13)
-		printf_m13("\tposition-tracking enabled\n");
-	else
-		printf_m13("\tposition-tracking disabled\n");
-	if (fp->flags & FILE_FLAGS_TIME_m13)
-		printf_m13("\taccess-tracking enabled\n");
-	else
-		printf_m13("\taccess-tracking disabled\n");
-
-	printf_m13("Permissions:\tr w x\n");
-	printf_m13("\tuser\t%c %c %c\n", ((fp->perms & FILE_PERM_USR_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_EXEC_m13) ? '+' : '-'));
-	printf_m13("\tgroup\t%c %c %c\n", ((fp->perms & FILE_PERM_GRP_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_EXEC_m13) ? '+' : '-'));
-	printf_m13("\tother\t%c %c %c\n", ((fp->perms & FILE_PERM_OTH_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_EXEC_m13) ? '+' : '-'));
-	printf_m13("Modes:\n");
-	printf_m13("\tsticky: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_STICKY_m13), FALSE_m13));
-	printf_m13("\tset group: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_GRP_m13), FALSE_m13));
-	printf_m13("\tset user: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_USR_m13), FALSE_m13));
+	if (fp->perms) {
+		printf_m13("Permissions:\tr w x\n");
+		printf_m13("\tuser\t%c %c %c\n", ((fp->perms & FILE_PERM_USR_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_EXEC_m13) ? '+' : '-'));
+		printf_m13("\tgroup\t%c %c %c\n", ((fp->perms & FILE_PERM_GRP_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_EXEC_m13) ? '+' : '-'));
+		printf_m13("\tother\t%c %c %c\n", ((fp->perms & FILE_PERM_OTH_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_EXEC_m13) ? '+' : '-'));
+		printf_m13("Modes:\n");
+		printf_m13("\tsticky: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_STICKY_m13), FALSE_m13));
+		printf_m13("\tset group: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_GRP_m13), FALSE_m13));
+		printf_m13("\tset user: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_USR_m13), FALSE_m13));
+	} else {
+		printf_m13("Permissions: not set\n");
+		printf_m13("Modes: not set\n");
+	}
 
 	if (fp->fp)
-		printf_m13("Pointer: set\n");
+		printf_m13("Pointer: set  (addr: %lu)\n", (ui8) fp->fp);
 	else
 		printf_m13("Pointer: not set\n");
 
-	printf_m13("Descriptor: %d ", fp->fd);
+	printf_m13("Descriptor: %d  ", fp->fd);
 	switch (fp->fd) {
 		case FILE_FD_EPHEMERAL_m13:
 			printf_m13("(ephemeral)\n");
 			break;
 		case FILE_FD_CLOSED_m13:
-			printf_m13("(closed)\n");
+			if (fp->fp)
+				printf_m13("(closed)\n");
+			else
+				printf_m13("(not set)\n");
 			break;
 		case FILE_FD_STDIN_m13:
-			printf_m13("(stdin, or not set)\n");
+			if (fp->fp == stdin)
+				printf_m13("(stdin)\n");
+			else
+				printf_m13("(not set)\n");
 			break;
 		case FILE_FD_STDOUT_m13:
 			printf_m13("(stdout)\n");
@@ -29286,6 +29301,8 @@ tern	FILE_show_m13(FILE_m13 *fp)
 			printf_m13("%ld (oUTC), %s\n", fp->acc, tim_str);
 		}
 	}
+
+	printf_m13("-------------------- FILE_m13 - END --------------------\n");
 
 	return_m13(TRUE_m13);
 }
@@ -32116,7 +32133,7 @@ tern	FPS_close_m13(FPS_m13 *fps)
 	if (FPS_is_open_m13(fps) == FALSE_m13)
 		return_m13(FALSE_m13);
 	
-	fclose_m13(&fps->params.fp);
+	fclose_m13(fps->params.fp);
 		
 	if (globals_m13->access_times == TRUE_m13)
 		G_update_access_time_m13((LH_m13 *) fps);
@@ -32517,7 +32534,10 @@ tern	FPS_is_open_m13(FPS_m13 *fps)
 	if (fps->params.fp == NULL)
 		return_m13(FALSE_m13);
 	
-	return_m13(fisopen_m13(fps->params.fp->fp));
+	if (fps->params.fp->fd <= 0)
+		return_m13(FALSE_m13);
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -32834,25 +32854,29 @@ FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 
 	}
 	
 	flags = fps->params.fp->flags | (FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 | FILE_FLAGS_MED_m13); // MED library functions depend on len & pos fields being maintained
-	G_add_behavior_m13(RETURN_QUIETLY_m13);
-	fp = fps->params.fp = fopen_m13(fps->path, NULL, fps->params.mode_str, (si4) flags, (si4) permissions);
-	G_pop_behavior_m13();
+	G_add_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_OUTPUT_m13);  // allow error to register (cleared below if successful with alternate name)
+	fp = fopen_m13(fps->path, NULL, fps->params.mode_str, fps->params.fp, (si4) flags, (si4) permissions);
 	if (fp == NULL) {
 		// try alternate name
 		if (G_exists_m13(fps->path) == FALSE_m13) {
 			if (G_swap_names_m13((LH_m13 *) fps) == TRUE_m13) {
 				G_path_parts_m13(fps->path, tmp_dir, tmp_name, tmp_ext);
 				sprintf_m13(fps->path, "%s/%s.%s", tmp_dir, fps->name, tmp_ext);
-				if (G_exists_m13(fps->path) == TRUE_m13)
-					fp = fps->params.fp = fopen_m13(fps->path, NULL, fps->params.mode_str, (si4) flags, (si4) permissions);
+				fp = fopen_m13(fps->path, NULL, fps->params.mode_str, fps->params.fp, (si4) flags, (si4) permissions);
 			}
 		}
 		if (fp == NULL) {
+			G_pop_behavior_m13();
 			FPS_free_m13(fps);
 			return_m13(NULL);
+		} else if (G_error_code_m13()) {
+			if (globals_m13->error.thread_id == gettid_m13())  // this thread set the error
+				G_clear_error_m13();
 		}
 	}
-
+	G_pop_behavior_m13();
+	fps->params.fp = fp;
+	
 	fstat_m13(fp->fd, &sb);
 
 	// memory mapping
@@ -39673,7 +39697,7 @@ tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...)  // vara
 	// update parity file pcrc (extending)
 	if (extending == TRUE_m13) {
 		pcrc_block_bytes = PRTY_pcrc_block_bytes_m13(pfp, NULL);
-		fclose_m13(&pfp);  // PRTY_write_pcrc_m13() expects closed file (set to NULL)
+		fclose_m13(pfp);  // PRTY_write_pcrc_m13() expects closed file (set to NULL)
 		pcrc_updated = PRTY_write_pcrc_m13(par_path, pcrc_block_bytes);
 		if (pcrc_updated == FALSE_m13)
 			goto PRTY_UPDATE_FAIL_m13;
@@ -45724,9 +45748,13 @@ si4	fclose_m13(void *fp)
 		if (m13_fp_ptr)  // set calling function pointer to NULL
 			*m13_fp_ptr = NULL;
 	} else {
-		*m13_fp->path = 0;
 		m13_fp->fp = NULL;
 		m13_fp->fd = FILE_FD_CLOSED_m13;
+		if ((m13_fp->flags & FILE_FLAGS_MED_m13) == 0)  // leave path intact => FPS path (probably anyawy; not a big deal if not zeroed either way)
+			*m13_fp->path = 0;
+		m13_fp->fid = (ui8) 0;
+		m13_fp->flags = FILE_FLAGS_NONE_m13;
+		m13_fp->perms = FILE_PERM_NONE_m13;
 	}
 
 	return_m13(r_val);
@@ -46110,11 +46138,11 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 }
 
 
-FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == NULL): si1 *mode, ui2 flags (as si4), ui2 permissions (as si4)
+FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode empty): const si1 *mode, FILE_m13 *fp, si4 flags, ui2 (as si4) permissions
 {
-	tern		read_mode, write_mode, append_mode, plus_mode, trunc_mode;
+	tern		read_mode, write_mode, append_mode, plus_mode, trunc_mode, free_fp;
 	si1		exists, *c, main_mode_total, tmp_path[PATH_BYTES_m13];
-	ui2 		flags, permissions;
+	ui2 		flags, alloced_bit, permissions;
 	FILE_m13	*fp;
 	si4		sys_mode_flags;
 	si8		path_len;
@@ -46125,6 +46153,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 #endif
 
 	// function will create path if it does not exist in write modes
+	// if vararg fp is passed & not NULL, the FILE_m13 it points to will be used instead of allocated
 	
 	if (STR_is_empty_m13(path) == TRUE_m13) {
 		G_set_error_m13(E_FOPEN_m13, "path is empty");
@@ -46140,9 +46169,15 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		
 		va_start(v_args, mode);
 		mode = va_arg(v_args, si1 *);
+		fp = va_arg(v_args, FILE_m13 *);
 		flags = (ui2) va_arg(v_args, si4);
 		permissions = (ui2) va_arg(v_args, si4);
 		va_end(v_args);
+		if (fp)
+			free_fp = FALSE_m13;
+	} else {
+		free_fp = TRUE_m13;
+		fp = NULL;
 	}
 	
 	if (STR_is_empty_m13(mode) == TRUE_m13) {
@@ -46151,7 +46186,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	}
 	
 	// get new FILE_m13
-	fp = FILE_init_m13(NULL);
+	fp = FILE_init_m13(fp);
 	if (fp == NULL)
 		return_m13(NULL);
 	path_len = strcpy_m13(fp->path, path);
@@ -46159,8 +46194,11 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 		fp->perms = permissions;  // custom permissions (may be modified by process umask or system)
 	else
 		fp->perms = permissions = FILE_PERM_DEFAULT_m13;  // default permissions (may be modified by process umask or system)
-	if (flags)
-		fp->flags = flags | FILE_FLAGS_ALLOCED_m13;  // set alloced flag, but otherwise override default flags with passed flags
+	if (flags) {
+		alloced_bit = fp->flags & FILE_FLAGS_ALLOCED_m13;  // preserve alloced bit  [set by FILE_init_m13()]
+		fp->flags = (flags | FILE_FLAGS_SET_m13) & ~FILE_FLAGS_ALLOCED_m13;  // override default flags with passed flags (except alloced bit)
+		fp->flags |= (alloced_bit | FILE_FLAGS_SET_m13);  // restore alloced bit & set "set" bit)
+	}
 	if (G_MED_type_code_from_string_m13(path + (path_len - 4)) != NO_TYPE_CODE_m13) {
 		fp->flags |= FILE_FLAGS_MED_m13;
 		if (PRTY_is_parity_m13(path, TRUE_m13) == TRUE_m13)
@@ -46207,7 +46245,8 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 
 	main_mode_total = read_mode + write_mode + append_mode;
 	if (main_mode_total != 1) {
-		free_m13(fp);
+		if (free_fp == TRUE_m13)
+			free_m13(fp);
 		G_set_error_m13(E_FOPEN_m13, "invalid mode: \"%s\"", mode);
 		return_m13(NULL);
 	}
@@ -46298,16 +46337,17 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode == N
 	
 	// handle open error
 	if (fp->fp == NULL) {
-		free_m13(fp);
+		if (free_fp == TRUE_m13)
+			free_m13(fp);
 		exists = G_exists_m13(path);
 		if (exists == DIR_EXISTS_m13)
 			G_set_error_m13(E_FOPEN_m13, "path \"%s\" is a directory", path);
 		else if (exists == FILE_EXISTS_m13)
-			G_set_error_m13(E_FOPEN_m13, "failed to open file \"%s\"", path);
+			G_set_error_m13(E_FOPEN_m13, "error opening \"%s\"", path);
 		else if (read_mode == TRUE_m13)
 			G_set_error_m13(E_FOPEN_m13, "file \"%s\" does not exist", path);
 		else  // write modes
-			G_set_error_m13(E_FOPEN_m13, "failed to create file \"%s\"", path);
+			G_set_error_m13(E_FOPEN_m13, "error creating \"%s\"", path);
 		return_m13(NULL);
 	}
 	
@@ -46731,10 +46771,12 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 		case FALSE_m13:
 			m13_fp = (FILE_m13 *) fp;
 			std_fp = m13_fp->fp;
-			if (STR_is_empty_m13(path) == FALSE_m13)  // passed path overrides
-				strcpy(m13_fp->path, path);
-			else
+			if (STR_is_empty_m13(path) == FALSE_m13) {  // passed path overrides
+				if (path != m13_fp->path)
+					strcpy(m13_fp->path, path);
+			} else {
 				path = m13_fp->path;
+			}
 			if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
 				flock_m13(m13_fp, FLOCK_CLOSE_m13);
 			break;
@@ -46757,7 +46799,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 		path = tmp_path;
 	}
 	
-	// handle not open
+	// not open
 	if (fisopen_m13(fp) == FALSE_m13) {
 		m13_fp = fopen_m13(path, mode_str);
 		if (m13_fp == NULL)
@@ -46956,7 +46998,6 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 #ifdef WINDOWS_m13
 	m13_fp->fd = _fileno(std_fp);
 #endif
-
 	
 	// update flags
 	m13_fp->flags &= ~FILE_FLAGS_MODE_MASK_m13;
@@ -50574,11 +50615,18 @@ si8	strcpy_m13(si1 *target, const si1 *source)
 
 	// returns final length of "target" (not including terminal zero)
 	// in contrast to standard strcpy(), this function does not return a pointer to "target"
+	// unlike some standard strcpy() functions, there is problem if target == source; length is still returned
 	// strings may overlap
 	
 	if (target == NULL || source == NULL)
 		return(0);
 
+	if (target == source) {
+		c = target - 1;
+		while (*++c);
+		return(c - target);
+	}
+	
 	if (target <= source) {
 		c = target - 1;
 		c2 = source - 1;

@@ -1213,18 +1213,19 @@ typedef struct {
 #endif
 
 #define FILE_FLAGS_NONE_m13		((ui2) 0)
-#define FILE_FLAGS_ALLOCED_m13		((ui2) 1 << 0) // file structure was allocated
-#define FILE_FLAGS_LOCK_m13		((ui2) 1 << 1) // file is subject to locking
-#define FILE_FLAGS_STD_STREAM_m13	((ui2) 1 << 2) // file is a standard stream (stdin, stdout, stderr converted to FILE_m13)
-#define FILE_FLAGS_MED_m13		((ui2) 1 << 3) // file is a MED file
-#define FILE_FLAGS_PARITY_m13		((ui2) 1 << 4) // file is a parity file
-#define FILE_FLAGS_READ_m13		((ui2) 1 << 5) // file is open for reading
-#define FILE_FLAGS_WRITE_m13		((ui2) 1 << 6) // file is open for writing
-#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 7) // file is open in append mode (all writes will append regardless of fp; "append" is treated as a modifier of "write" mode)
-#define FILE_FLAGS_LEN_m13		((ui2) 1 << 8) // update len with each operation
-#define FILE_FLAGS_POS_m13		((ui2) 1 << 9) // update pos with each operation
-#define FILE_FLAGS_TIME_m13		((ui2) 1 << 10) // update access time with each operation (global sets flag here, but flag supersedes global in execution)
-#define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
+#define FILE_FLAGS_SET_m13		((ui2) 1 << 0) // to distinguish set bits zero from flags not set
+#define FILE_FLAGS_ALLOCED_m13		((ui2) 1 << 1) // file structure was allocated
+#define FILE_FLAGS_LOCK_m13		((ui2) 1 << 2) // file is subject to locking
+#define FILE_FLAGS_STD_STREAM_m13	((ui2) 1 << 3) // file is a standard stream (stdin, stdout, stderr converted to FILE_m13)
+#define FILE_FLAGS_MED_m13		((ui2) 1 << 4) // file is a MED file
+#define FILE_FLAGS_PARITY_m13		((ui2) 1 << 5) // file is a parity file
+#define FILE_FLAGS_READ_m13		((ui2) 1 << 6) // file is open for reading
+#define FILE_FLAGS_WRITE_m13		((ui2) 1 << 7) // file is open for writing
+#define FILE_FLAGS_APPEND_m13		((ui2) 1 << 8) // file is open in append mode (all writes will append regardless of fp; "append" is treated as a modifier of "write" mode)
+#define FILE_FLAGS_LEN_m13		((ui2) 1 << 9) // update len with each operation
+#define FILE_FLAGS_POS_m13		((ui2) 1 << 10) // update pos with each operation
+#define FILE_FLAGS_TIME_m13		((ui2) 1 << 11) // update access time with each operation (global sets flag here, but flag supersedes global in execution)
+#define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_SET_m13 | FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
 #define FILE_FLAGS_MODE_MASK_m13	( FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13 | FILE_FLAGS_APPEND_m13 )
 
 #define FILE_FD_EPHEMERAL_m13		((si4) -2)
@@ -5465,7 +5466,7 @@ tern		fisopen_m13(void *fp); // returns whether file is open
 si8		flen_m13(void *fp); // returns length of file
 si4		flock_m13(void *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 							 // varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
-FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode == NULL): si1 *mode, si4 flags, ui2 (as si4) permissions
+FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode empty): const si1 *mode, FILE_m13 *m13_fp, si4 flags, ui2 (as si4) permissions
 si4		fprintf_m13(void *fp, const si1 *fmt, ...);
 si4		fputc_m13(si4 c, void *fp);
 size_t		fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...); // (el_size negative): non_blocking read
