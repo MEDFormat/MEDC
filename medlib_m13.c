@@ -5038,9 +5038,8 @@ tern	G_free_channel_m13(void *ptr)
 		free_m13(chan->contigua);
 	
 	// delete process globals
-	if ((pg = chan->proc_globs))
-		if (--pg->ref_count == 0)
-			G_proc_globs_delete_m13((LH_m13 *) pg);
+	if (chan->proc_globs)
+		G_proc_globs_delete_m13((LH_m13 *) chan->proc_globs);
 
 	// can't set stack addresses to NULL
 	// shouldn't set en bloc addresses to NULL
@@ -5196,7 +5195,7 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 		pg_ptrs = globals_m13->proc_globs_list->proc_globs_ptrs;
 		for (i = 0; i < list_size; ++i)
 			if (pg_ptrs[i]->_id) {
-				pg_ptrs[i]->ref_count = 0;
+				pg_ptrs[i]->ref_count = 1;  // G_proc_globs_delete_m13 decrements & then checks == zero
 				G_proc_globs_delete_m13((LH_m13 *) pg_ptrs[i]);
 			}
 		// proc_globs allocated in blocks of GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13
@@ -5239,7 +5238,6 @@ tern	G_free_segment_m13(void *ptr)
 {
 	ui4		type_code;
 	SEG_m13		*seg, **seg_ptr;
-	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5284,10 +5282,8 @@ tern	G_free_segment_m13(void *ptr)
 		free_m13(seg->contigua);
 	
 	// delete process globals
-	pg = seg->proc_globs;
-	if (pg)
-		if (--pg->ref_count == 0)
-			G_proc_globs_delete_m13((LH_m13 *) pg);
+	if (seg->proc_globs)
+		G_proc_globs_delete_m13((LH_m13 *) seg->proc_globs);
 
 	// can't set stack addresses to NULL
 	// shouldn't set en bloc addresses to NULL
@@ -5309,7 +5305,6 @@ tern	G_free_session_m13(void *ptr)
 	si4			i;
 	SESS_m13 		*sess, **sess_ptr;
 	CHAN_m13		*chan;
-	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5371,10 +5366,8 @@ tern	G_free_session_m13(void *ptr)
 		free_m13(sess->contigua);
 
 	// delete process globals
-	pg = sess->proc_globs;
-	if (pg)
-		if (--pg->ref_count == 0)
-			G_proc_globs_delete_m13((LH_m13 *) pg);
+	if (sess->proc_globs)
+		G_proc_globs_delete_m13((LH_m13 *) sess->proc_globs);
 
 	// can't set stack addresses to NULL
 	// shouldn't set en bloc addresses to NULL
@@ -5441,8 +5434,7 @@ tern	G_free_ssr_m13(void *ptr)
 	free_m13(ssr->rec_data_fps);
 
 	// delete process globals
-	if (--pg->ref_count == 0)
-		G_proc_globs_delete_m13((LH_m13 *) pg);
+	G_proc_globs_delete_m13((LH_m13 *) pg);
 
 	// can't set stack addresses to NULL
 	// shouldn't set en bloc addresses to NULL
@@ -9145,9 +9137,14 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	pg = G_proc_globs_find_m13(lh);
 	if (pg == NULL)
 		return;
-	
-	// alread cleared or still in use
-	if (pg->_id == 0 || pg->ref_count)
+		
+	// still in use by other entities
+	if (pg->ref_count)  // shouldn't get here if == zero, but possible
+		if (--pg->ref_count)
+			return;
+
+	// never used (or already cleared)
+	if (pg->_id == 0)
 		return;
 		
 	// delete proc globals Sgmt_records_list
@@ -12540,7 +12537,7 @@ tern	G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m13 
 	fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, md_file, "r", password, lh, 0);
 	if (fps == NULL)
 		return_m13(FALSE_m13);
-	
+
 	FPS_free_m13(fps);
 	
 	return_m13(TRUE_m13);
@@ -15521,8 +15518,7 @@ void	G_thread_exit_m13(void)
 	// delete process globals (if last reference)
 	pg = G_proc_globs_find_m13(NULL);  // find by thread (not all threads have reference to process globals)
 	if (pg)
-		if (--pg->ref_count == 0)
-			G_proc_globs_delete_m13((LH_m13 *) pg);
+		G_proc_globs_delete_m13((LH_m13 *) pg);
 	
 	// release thread behavior stack
 	G_delete_behavior_stack_m13();
@@ -16136,7 +16132,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 	r_val = TRUE_m13;
 	
 UPDATE_MED_TYPE_FAIL_m13:
-	
+
 	if (rd)
 		free(rd);
 	if (fp)
@@ -16153,11 +16149,12 @@ UPDATE_MED_TYPE_FAIL_m13:
 tern	G_update_MED_version_m13(FPS_m13 *fps)
 {
 	static _Atomic tern	updated = FALSE_m13;
-	tern			reopen;
+	tern			r_val, reopen;
 	si1			**file_list, **chan_list, **seg_list, **vid_list;
 	si1			*sess_path, path[SEG_NAME_BYTES_m13], *fs_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
 	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
+	si8			nr, curr_bytes_read;
 	PROC_GLOBS_m13		*pg;
 
 #ifdef FT_DEBUG_m13
@@ -16176,9 +16173,12 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 		pthread_mutex_init_m13(&globals_m13->update_mutex, NULL);
 		pthread_mutex_lock_m13(&globals_m13->update_mutex);
 	}
-	if (updated == TRUE_m13)
+	if (updated == TRUE_m13) {
+		pthread_mutex_unlock_m13(&globals_m13->update_mutex);
 		return_m13(TRUE_m13);
+	}
 	updated = TRUE_m13;
+	r_val = FALSE_m13;
 
 	// set up
 	pg = G_proc_globs_m13((LH_m13 *) fps);
@@ -16195,6 +16195,7 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 
 	if (FPS_is_open_m13(fps) == TRUE_m13) {
 		reopen = TRUE_m13;
+		curr_bytes_read = fps->params.fp->pos;
 		FPS_close_m13(fps);
 	} else {
 		reopen = FALSE_m13;
@@ -16300,16 +16301,20 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 	if (chan_list)
 		free_m13(chan_list);
 	
-	// reopen fps (called when only inuversal header read in)
+	// reopen fps & re-read data
 	if (reopen == TRUE_m13) {
-		FPS_reopen_m13(fps, fps->params.mode_str);
-		fread_m13(fps->uh, sizeof(ui1), UH_BYTES_m13, fps->params.fp);
+		if (FPS_reopen_m13(fps, fps->params.mode_str) == FALSE_m13) {
+			r_val = FALSE_m13;
+		} else {
+			nr = fread_m13(fps->params.raw_data, sizeof(ui1), (size_t) curr_bytes_read, fps->params.fp);
+			if (nr != curr_bytes_read)
+				r_val = FALSE_m13;
+		}
 	}
 	
 	pthread_mutex_unlock_m13(&globals_m13->update_mutex);
-	pthread_mutex_destroy_m13(&globals_m13->update_mutex);
 
-	return_m13(TRUE_m13);
+	return_m13(r_val);
 }
 
 
@@ -16321,7 +16326,7 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	si1			*sess_path, path[SEG_NAME_BYTES_m13], tmp_path[SEG_NAME_BYTES_m13], *fs_name, *uh_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
 	si4			i, j, k, n_files, n_chans, n_segs, n_vids;
-	si8			len, nr;
+	si8			len, nr, curr_bytes_read;
 	PROC_GLOBS_m13		*pg;
 
 #ifdef FT_DEBUG_m13
@@ -16343,10 +16348,12 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 		pthread_mutex_init_m13(&globals_m13->update_mutex, NULL);
 		pthread_mutex_lock_m13(&globals_m13->update_mutex);
 	}
-	if (updated == TRUE_m13)
+	if (updated == TRUE_m13) {
+		pthread_mutex_unlock_m13(&globals_m13->update_mutex);
 		return_m13(TRUE_m13);
+	}
 	updated = TRUE_m13;
-	r_val = FALSE_m13;
+	reopen = r_val = FALSE_m13;
 
 	pg = G_proc_globs_m13((LH_m13 *) fps);
 	sess_path = pg->current_session.path;
@@ -16365,9 +16372,8 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	// close passed fps (just to be safe)
 	if (FPS_is_open_m13(fps) == TRUE_m13) {
 		reopen = TRUE_m13;
+		curr_bytes_read = fps->params.fp->pos;
 		FPS_close_m13(fps);
-	} else {
-		reopen = FALSE_m13;
 	}
 
 	// session record indices
@@ -16589,22 +16595,24 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	if (chan_list)
 		free_m13(chan_list);
 	
-	// reopen fps
-	if (reopen) {
-		FPS_reopen_m13(fps, fps->params.mode_str);
-		nr = fread_m13(fps->params.raw_data, sizeof(ui1), UH_BYTES_m13, fps->params.fp);
-		if (nr != UH_BYTES_m13)
-			goto UPDATE_SESSION_NAME_FAIL_m13;
-	}
-
 	// update process globals
 	*pg->current_session.uh_name = 0;
 	r_val = TRUE_m13;
 	
 UPDATE_SESSION_NAME_FAIL_m13:
 
+	// reopen fps & re-read data
+	if (reopen == TRUE_m13) {
+		if (FPS_reopen_m13(fps, fps->params.mode_str) == FALSE_m13) {
+			r_val = FALSE_m13;
+		} else {
+			nr = fread_m13(fps->params.raw_data, sizeof(ui1), (size_t) curr_bytes_read, fps->params.fp);
+			if (nr != curr_bytes_read)
+				r_val = FALSE_m13;
+		}
+	}
+
 	pthread_mutex_unlock_m13(&globals_m13->update_mutex);
-	pthread_mutex_destroy_m13(&globals_m13->update_mutex);
 
 	return_m13(r_val);
 }
@@ -29203,7 +29211,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		if (fp->flags & FILE_FLAGS_ALLOCED_m13)
 			printf_m13("\tdirect heap allocation  (freeable)\n");
 		else
-			printf_m13("\tindirect heap or stack allocation  (not freeable)\n");
+			printf_m13("\tindirect heap, or stack allocation  (not freeable)\n");
 		if (fp->flags & FILE_FLAGS_READ_m13)
 			printf_m13("\treading enabled\n");
 		else
@@ -32222,7 +32230,6 @@ tern	FPS_free_m13(void *ptr)
 {
 	ui4		type_code;
 	FPS_m13 	*fps, **fps_ptr;
-	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -32262,10 +32269,8 @@ tern	FPS_free_m13(void *ptr)
 		free_m13(fps->params.raw_data);
 	
 	// delete process globals
-	pg = fps->proc_globs;
-	if (pg)
-		if (--pg->ref_count == 0)
-			G_proc_globs_delete_m13((LH_m13 *) pg);
+	if (fps->proc_globs)
+		G_proc_globs_delete_m13((LH_m13 *) fps->proc_globs);
 
 	if (fps->params.mmap_block_bitmap)
 		free_m13(fps->params.mmap_block_bitmap);
@@ -32541,9 +32546,14 @@ tern	FPS_is_open_m13(FPS_m13 *fps)
 	if (fps->params.fp == NULL)
 		return_m13(FALSE_m13);
 	
-	if (fps->params.fp->fd <= 0)
+	if (fps->params.fp->fd < 0)
 		return_m13(FALSE_m13);
 
+	if (fps->params.fp->fp == NULL) {
+		fps->params.fp->fd = FILE_FD_CLOSED_m13;  // shouldn't have gotten here - fix
+		return_m13(FALSE_m13);
+	}
+		
 	return_m13(TRUE_m13);
 }
 
@@ -33334,7 +33344,7 @@ tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 
 tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str empty): ui8 fd_flags
 {
-	tern		reopen, free_mode_str;
+	tern		is_open, mode_differs, reopen, free_mode_str;
 	FILE_m13	*fp;
 	va_list		v_arg;
 	
@@ -33359,11 +33369,13 @@ tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str 
 	}
 	
 	// already open in requested mode
-	reopen = TRUE_m13;
-	if (strcmp_m13(fps->params.mode_str, mode_str) == 0)
-		if (FPS_is_open_m13(fps) == TRUE_m13)
-			reopen = FALSE_m13;
-	
+	is_open = FPS_is_open_m13(fps);
+	mode_differs = strcmp_m13(fps->params.mode_str, mode_str) ? TRUE_m13 : FALSE_m13;
+	if (mode_differs == TRUE_m13 || is_open == FALSE_m13)
+		reopen = TRUE_m13;
+	else
+		reopen = FALSE_m13;
+
 	if (free_mode_str == TRUE_m13) {
 		strcpy(fps->params.mode_str, mode_str);
 		free_m13((void *) mode_str);
@@ -33372,7 +33384,7 @@ tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str 
 
 	// reopen
 	if (reopen == TRUE_m13) {
-		if (free_mode_str == FALSE_m13)  // alreddy set from flags
+		if (free_mode_str == FALSE_m13)  // already set from flags
 			FPS_set_open_flags_m13(fps, mode_str);  // sets FPS directives open flags & copies mode_str to FPS mode_str
 		fp = freopen_m13(fps->path, mode_str, fps->params.fp);
 		if (fp == NULL)
@@ -33380,6 +33392,7 @@ tern	FPS_reopen_m13(FPS_m13 *fps, const si1 *mode_str, ...)  // vararg(mode_str 
 		if (fp != fps->params.fp) {
 			fps->params.local_f = *fp;
 			fps->params.fp = &fps->params.local_f;
+			fps->params.fp->flags &= ~FILE_FLAGS_ALLOCED_m13;  // local copy directly allocated
 			fps->path = fps->params.fp->path;
 			free_m13(fp);
 		}
@@ -45722,10 +45735,10 @@ si4	fclose_m13(void *fp)
 		close = FALSE_m13;
 	} else if (m13_fp->flags & FILE_FLAGS_STD_STREAM_m13) {  // can't close standard streams => treat as closed
 		close = FALSE_m13;
-	} else if (std_fp == NULL) {  // would fail if passed to fclose() => calling it an error because probably want to track down how this got happened
-		r_val = FALSE_m13;
-		G_set_error_m13(E_FGEN_m13, "standard FP is null in file \"%s\"", m13_fp->path);
+	} else if (std_fp == NULL) {  // would fail if passed to fclose()
+		r_val = FALSE_m13;  // si4
 		close = FALSE_m13;
+		G_set_error_m13(E_FGEN_m13, "standard FP is null in file \"%s\"", m13_fp->path);
 	} else {
 		close = TRUE_m13;
 	}
@@ -45736,7 +45749,7 @@ si4	fclose_m13(void *fp)
 			r_val = FALSE_m13;
 		}
 	}
-
+	
 	// free or mark as closed
 	if (m13_fp->flags & FILE_FLAGS_ALLOCED_m13) {
 		free_m13(m13_fp);
@@ -46745,9 +46758,10 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 {
 	tern		is_std, mode_matches, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
 	si1		*c, tmp_path[PATH_BYTES_m13], sys_mode[8];
+	ui2		alloced_bit;
 	si4		main_mode_total;
 	FILE		*std_fp;
-	FILE_m13	*m13_fp;
+	FILE_m13	*m13_fp, *new_fp;
 	struct_stat_m13	sb;
 	
 #ifdef FT_DEBUG_m13
@@ -46796,17 +46810,18 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 	
 	// not open
 	if (fisopen_m13(fp) == FALSE_m13) {
-		m13_fp = fopen_m13(path, mode_str);
-		if (m13_fp == NULL)
+		new_fp = fopen_m13(path, mode_str);
+		if (new_fp == NULL)
 			return_m13(NULL);
-		if (is_std == TRUE_m13)
-			fp = (void *) m13_fp->fp;  // copy FILE *
-		else if (is_std == FALSE_m13)
-			*((FILE_m13 *) fp) = *m13_fp;  // copy FILE_m13 contents
-		if (fp)
-			free_m13(m13_fp);  // free fp allocated by fopen_m13()
-		else  // is_std == UNKNOWN_m13 (fp == NULL) => return FILE_m13 *, don't free
-			fp = (void *) m13_fp;
+		if (is_std == TRUE_m13) {
+			fp = (void *) new_fp->fp;  // copy FILE *
+		} else if (is_std == FALSE_m13) {
+			alloced_bit = m13_fp->flags & FILE_FLAGS_ALLOCED_m13;  // save m13_fp alloced bit
+			new_fp->flags &= ~FILE_FLAGS_ALLOCED_m13;  // unset new_fp alloced bit (new_fp freed below)
+			*m13_fp = *new_fp;  // copy FILE_m13 contents
+			m13_fp->flags |= alloced_bit;  // restore m13_fp alloced bit
+		}
+		free_m13(new_fp);  // free fp allocated by fopen_m13()
 		
 		return_m13(fp);
 	}
@@ -46936,6 +46951,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 			if (fseek_m13(fp, 0, SEEK_SET))
 				return_m13(fp);
 		}
+
 		return_m13(fp);
 	}
 	
@@ -46967,7 +46983,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 		*c++ = '+';
 	}
 	*c = 0;
-	
+
 	// reopen
 	errno_reset_m13();
 	std_fp = freopen(path, sys_mode, std_fp);
@@ -46996,8 +47012,6 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 	
 	// update flags
 	m13_fp->flags &= ~FILE_FLAGS_MODE_MASK_m13;
-	if (plus_mode == TRUE_m13)
-		m13_fp->flags |= (FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13);
 	if (read_mode == TRUE_m13) {
 		m13_fp->flags |= FILE_FLAGS_READ_m13;
 	} else {  // write_mode == TRUE_m13
@@ -47005,6 +47019,8 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 		if (append_mode == TRUE_m13)
 			m13_fp->flags |= FILE_FLAGS_APPEND_m13;
 	}
+	if (plus_mode == TRUE_m13)
+		m13_fp->flags |= (FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13);
 
 	// set permissions
 	fstat_m13(m13_fp->fd, &sb);
@@ -47159,6 +47175,7 @@ si4	fseek_m13(void *fp, si8 offset, si4 whence)
 #endif
 	
 	if (err) {
+		err = errno_m13();
 		is_open = fisopen_m13(fp);
 		if (is_std == TRUE_m13) {
 			if (is_open == FALSE_m13)
