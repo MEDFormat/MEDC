@@ -5122,11 +5122,12 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 {
 	si4			i, list_size;
 	BEHAVIOR_STACK_m13	**behavior_stack_ptrs;
-	FUNCTION_STACK_m13	**function_stack_ptrs;
 	FLOCK_ENTRY_m13		**lock_ptrs;
 	PROC_GLOBS_m13		**pg_ptrs;
 	ERR_m13			*err;
-	
+#ifdef FT_DEBUG_m13
+	FUNCTION_STACK_m13	**function_stack_ptrs;
+#endif
 	
 	// unset signal traps (sometimes necessary for begugging)
 	// G_set_signal_traps_m13(FALSE_m13);
@@ -13373,9 +13374,11 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	}
 	putchar_m13('\n');
 
+	return(j);
+
 #endif  // FT_DEBUG_m13
 	
-	return(j);
+	return(-1);
 }
 
 
@@ -14775,7 +14778,9 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 void	G_signal_trap_m13(si4 sig_num)
 {
 	const si1		*error_type, *error_desc, *function;
+#ifdef FT_DEBUG_m13
 	FUNCTION_STACK_m13	*stack;
+#endif
 	
 	
 	if (isem_tryown_m13(&globals_m13->error.isem) == FALSE_m13) {
