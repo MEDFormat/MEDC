@@ -112,7 +112,7 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 
 	// decrypt record body if necesary
 	if (record_header->encryption_level > NO_ENCRYPTION_m13 && fps)
-		G_decrypt_record_data_m13(fps, record_header, 1);
+		G_decrypt_records_m13(fps, record_header, 1);
 		    
 	// display record header fields
 	if (record_number != REC_NO_RECORD_NUMBER_m13)

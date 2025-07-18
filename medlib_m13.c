@@ -339,7 +339,7 @@ CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, const si1 *pat
 	
 	// set parent
 	chan->parent = parent;  // set parent before getting proc_globs
-	pg = G_proc_globs_m13((LH_m13 *) chan);
+	pg = G_proc_globs_m13(chan);
 	pg->current_session.n_mapped_segments = n_segs;
 	
 	// make new prototype fps (don't modify original)
@@ -579,7 +579,7 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chan
 	sess = (SESS_m13 *) calloc_m13((size_t) 1, sizeof(SESS_m13));
 	if (sess == NULL)
 		return_m13(NULL);
-	pg = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13(sess);
 	sess->path = pg->current_session.path;
 	sess->name = pg->current_session.fs_name;
 	pg->current_session.n_mapped_segments = n_segs;
@@ -782,20 +782,23 @@ void	G_apply_recording_time_offset_m13(si8 *time, si8 recording_time_offset)
 }
 
 
-si1 	*G_base_name_m13(LH_m13 *lh, const si1 *path, si1 *base_name)
+si1 	*G_base_name_m13(void *level_header, const si1 *path, si1 *base_name)
 {
 	tern		free_base_name = FALSE_m13;
 	si1		enc_dir[PATH_BYTES_m13];
 	ui4		level_code;
 	si8		len;
 	STR_CODE_m13	type = {0};
+	LH_m13		*lh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 	
 	// returns base name (session or channel name) without segment or video file number extentions
+	// returns NULL on error
 	
+	lh = (LH_m13 *) level_header;
 	if (STR_is_empty_m13(path) == TRUE_m13) {
 		if (lh) {
 			path = lh->path;
@@ -1018,7 +1021,7 @@ si1	*G_behavior_string_m13(ui4 behavior_code, si1 *behavior_string)
 }
 
 
-si8	G_build_contigua_m13(LH_m13 *lh)
+si8	G_build_contigua_m13(void *level_header)
 {
 	tern				force_discont, null_sample_numbers;
 	si1				tmp_str[PATH_BYTES_m13];
@@ -1028,6 +1031,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 	si8				last_block_usecs, new_bytes, absolute_numbering_offset;
 	si8				last_segment_end_sample_number, last_segment_end_frame_number, last_segment_end_time, last_segment_number;
 	sf8				samp_freq, frame_rate;
+	LH_m13				*lh;
 	PROC_GLOBS_m13			*pg;
 	SEG_m13				*seg;
 	CHAN_m13			*chan;
@@ -1045,8 +1049,9 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 
 	// find contigua in current time slice, and set in level
 
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
-		G_set_error_m13(E_GEN_m13, "level is not open");
+		G_set_error_m13(E_GEN_m13, "level is null");
 		return_m13(FALSE_m13);
 	}
 
@@ -1088,7 +1093,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 			return_m13(FALSE_m13);
 	}
 	
-	seg_idx = G_segment_index_m13(slice->start_seg_num, lh);
+	seg_idx = G_segment_index_m13(lh, slice->start_seg_num);
 	if (seg_idx == FALSE_m13)
 		return_m13(FALSE_m13);
 	n_segs = SLICE_SEG_COUNT_m13(slice);
@@ -1327,7 +1332,7 @@ si8	G_build_contigua_m13(LH_m13 *lh)
 }
 
 
-Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_type)
+Sgmt_REC_m13	*G_build_Sgmt_records_m13(void *level_header, si4 search_mode, ui4 *source_type)
 {
 	tern			seek_mode, seg_exists;
 	si1			**seg_list, *metadata_ext, tmp_str[PATH_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
@@ -1341,6 +1346,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	FPS_m13			*ri_fps, *rd_fps, *md_fps;
 	REC_IDX_m13		*ri;
 	Sgmt_REC_m13		*Sgmt_recs, *Sgmt_rec;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 
 	
@@ -1351,6 +1357,7 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(LH_m13 *lh, si4 search_mode, ui4 *source_
 	// level must be session or channel
 	// note: this called from G_Sgmt_records_m13() which has the list mutex
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		G_set_error_m13(E_GEN_m13, "level header is null");
 		return_m13(NULL);
@@ -1717,9 +1724,9 @@ CHAN_m13	*G_change_index_chan_m13(SESS_m13 *sess, CHAN_m13 *chan, const si1 *cha
 	// if both NULL, use channel_type
 	
 	if (sess) {
-		pg = G_proc_globs_m13((LH_m13 *) sess);
+		pg = G_proc_globs_m13(sess);
 	} else if (chan) {
-		pg = G_proc_globs_m13((LH_m13 *) chan);
+		pg = G_proc_globs_m13(chan);
 	} else {
 		G_set_error_m13(E_GEN_m13, "both session and channel are null");
 		return_m13(NULL);
@@ -2035,7 +2042,7 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 		return_m13((si4) FALSE_m13);
 	}
 	
-	pg = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13(sess);
 	sess_segs = pg->current_session.n_segments;
 	if (start_seg < 1 || end_seg > sess_segs) {
 		G_set_error_m13(E_GEN_m13, "segment range not valid");
@@ -2198,7 +2205,7 @@ tern	G_condition_password_m13(const si1 *password, si1 *password_bytes, tern exp
 }
 
 
-tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
+tern	G_condition_slice_m13(void *level_header, SLICE_m13 *slice)
 {
 	si8		test_time;
 	PROC_GLOBS_m13	*pg;
@@ -2212,7 +2219,7 @@ tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
 		return_m13(FALSE_m13);
 	}
 	
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	
 	if (pg->time_constants.recording_time_offset == FALSE_m13) {
 		pg->time_constants.recording_time_offset = GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13;  // == 0
@@ -2254,9 +2261,9 @@ tern	G_condition_slice_m13(SLICE_m13 *slice, LH_m13 *lh)
 
 tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 {
-	si4			i;
-	si8			len;
-	TIMEZONE_ALIAS_m13	*tz_aliases_table;
+	si4				i;
+	si8				len;
+	const TIMEZONE_ALIAS_m13	*tz_aliases_table;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2299,7 +2306,6 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 	
 	// check country aliases
 	tz_aliases_table = globals_m13->tables->country_aliases_table;
-	
 	if (*tz_info->country) {
 		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m13; ++i) {
 			if ((strcmp_m13(tz_info->country, tz_aliases_table[i].alias)) == 0) {
@@ -2311,7 +2317,6 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 	
 	// check country acronyms
 	tz_aliases_table = globals_m13->tables->country_acronym_aliases_table;
-	
 	if (*tz_info->country_acronym_2_letter) {
 		for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13; ++i) {
 			if ((strcmp_m13(tz_info->country_acronym_2_letter, tz_aliases_table[i].alias)) == 0) {
@@ -2322,7 +2327,7 @@ tern	G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info)
 	}
 	
 	if (*tz_info->country_acronym_3_letter) {
-		for (i = 0; i < TZ_COUNTRY_ALIASES_ENTRIES_m13; ++i) {
+		for (i = 0; i < TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13; ++i) {
 			if ((strcmp_m13(tz_info->country_acronym_3_letter, tz_aliases_table[i].alias)) == 0) {
 				strcpy(tz_info->country_acronym_3_letter, tz_aliases_table[i].table_name);
 				break;
@@ -2665,14 +2670,16 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 		encryption_3 = &uh->encryption_3;
 		encryption_rounds = uh->encryption_rounds;
 	}
-
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	if (*encryption_2 == NO_ENCRYPTION_m13 && *encryption_3 == NO_ENCRYPTION_m13)
+		return_m13(TRUE_m13);
+	
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	
 	// decrypt section 2
 	if (*encryption_2 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= *encryption_2 ) {
-			if (uh->encryption_2 == LEVEL_1_ENCRYPTION_m13)
+			if (*encryption_2 == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
@@ -2688,7 +2695,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	// decrypt section 3
 	if (*encryption_3 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= *encryption_3) {
-			if (uh->encryption_3 == LEVEL_1_ENCRYPTION_m13)
+			if (*encryption_3 == LEVEL_1_ENCRYPTION_m13)
 				decryption_key = pwd->level_1_encryption_key;
 			else
 				decryption_key = pwd->level_2_encryption_key;
@@ -2723,7 +2730,7 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 }
 
 
-tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR_m13 *rh, si8 n_records
+tern	G_decrypt_records_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR_m13 *rh, si8 n_records
 {
 	ui1			*encryption_key, encryption_rounds;
 	si8			i, n_records;
@@ -2743,36 +2750,53 @@ tern	G_decrypt_record_data_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC
 		rh = va_arg(v_args, REC_HDR_m13 *);
 		n_records = va_arg(v_args, si8);
 		va_end(v_args);
+		encryption_rounds = 1;  // default (update function or assume, as here)
 	} else {
 		rh = (REC_HDR_m13 *) fps->rec_data;
 		n_records = fps->n_items;
+		if (MED_VER_1_0_m13(fps->uh) == TRUE_m13) {
+			encryption_rounds = 1;  // always 1 in med 1.0
+		} else {
+			encryption_rounds = fps->uh->encryption_rounds;
+			if (fps->uh->encryption_1 == NO_ENCRYPTION_m13)  // typically "variable" (-128), howvever if no records are encrypted, it can be zero, which means this function can be skipped
+				return_m13(TRUE_m13);
+		}
 	}
 	if (n_records == 0)  // failure == all records unreadable, not no records
 		return_m13(TRUE_m13);
 	
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
-	encryption_rounds = fps->uh->encryption_rounds;
 
+	eprintf_m13("");
 	for (i = 0; i < n_records; ++i) {
+		eprintf_m13("i = %d,  rh offset = %lu", i, (ui8) ((ui1 *) rh - fps->params.raw_data));
+		eprintf_m13("rh = %lu, raw_data = %lu", (ui8) rh, (ui8) fps->params.raw_data);
 		if (rh->encryption_level > NO_ENCRYPTION_m13) {
+			eprintf_m13("");
 			if (pwd->access_level >= rh->encryption_level) {
+				eprintf_m13("");
 				if (rh->encryption_level == LEVEL_1_ENCRYPTION_m13)
 					encryption_key = pwd->level_1_encryption_key;
 				else
 					encryption_key = pwd->level_2_encryption_key;
+				eprintf_m13("");
 				AES_decrypt_m13((ui1 *) rh + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, encryption_rounds);
+				eprintf_m13("");
 				rh->encryption_level = -rh->encryption_level;  // mark as currently decrypted
 			}
 		}
+		eprintf_m13("rh->total_record_bytes = %u", rh->total_record_bytes);
 		rh = (REC_HDR_m13 *) ((ui1 *) rh + rh->total_record_bytes);
+		eprintf_m13("");
 	}
+	eprintf_m13("");
 
 	return_m13(TRUE_m13);
 }
 
 
-tern G_decrypt_time_series_data_m13(FPS_m13 *fps)
+tern G_decrypt_time_series_m13(FPS_m13 *fps)
 {
 	static tern			warning_delivered = FALSE_m13;
 	ui1				*key, encryption_rounds;
@@ -2793,12 +2817,16 @@ tern G_decrypt_time_series_data_m13(FPS_m13 *fps)
 		return_m13(FALSE_m13);
 	}
 	uh = fps->uh;
-	enc_level = uh->encryption_1;
-	if (enc_level == NO_ENCRYPTION_m13)
-		return_m13(TRUE_m13);
+	if (MED_VER_1_0_m13(uh) == TRUE_m13) {
+		return_m13(TRUE_m13);  // never any time series enc in MED 1.0
+	} else {
+		enc_level = uh->encryption_1;
+		if (enc_level == NO_ENCRYPTION_m13)
+			return_m13(TRUE_m13);
+	}
 	
 	cps = fps->params.cps;
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	if (pwd->access_level >= enc_level) {
 		if (enc_level == LEVEL_1_ENCRYPTION_m13)
@@ -2849,12 +2877,23 @@ tern G_decrypt_time_series_data_m13(FPS_m13 *fps)
 }
 
 
-tern  	G_decrypt_video_data_m13(FPS_m13 *fps)
+tern  	G_decrypt_video_m13(FPS_m13 *fps)
 {
+	si1	enc_level;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	if (MED_VER_1_0_m13(fps->uh) == TRUE_m13) {
+		return_m13(TRUE_m13);  // never any time series enc in MED 1.0
+	} else {
+		enc_level = fps->uh->encryption_1;
+		if (enc_level == NO_ENCRYPTION_m13)
+			return_m13(TRUE_m13);
+	}
+
+	// code not written yet
 	
 	return_m13(TRUE_m13);
 }
@@ -3073,10 +3112,13 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	G_push_function_m13();
 #endif
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	md = fps->metadata;
 	uh = fps->uh;
+	
+	if (uh->encryption_2 == NO_ENCRYPTION_m13 && uh->encryption_3 == NO_ENCRYPTION_m13)
+		return_m13(TRUE_m13);
 
 	// section 2 encrypt
 	if (uh->encryption_2 < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
@@ -3106,7 +3148,7 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 }
 
 
-tern	G_encrypt_record_data_m13(FPS_m13 *fps)
+tern	G_encrypt_records_m13(FPS_m13 *fps)
 {
 	ui1			*encryption_key;
 	si8			i;
@@ -3119,10 +3161,12 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 	G_push_function_m13();
 #endif
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	rh = (REC_HDR_m13 *) fps->rec_data;
 	uh = fps->uh;
+	if (uh->encryption_1 == NO_ENCRYPTION_m13)  // typically "variable" (-128), howvever if no records are encrypted, it can be zero, which means this function can be skipped
+		return_m13(TRUE_m13);
 
 	for (i = fps->n_items; i--;) {
 		if (rh->encryption_level < NO_ENCRYPTION_m13) {
@@ -3140,7 +3184,7 @@ tern	G_encrypt_record_data_m13(FPS_m13 *fps)
 }
 		
 		
-tern G_encrypt_time_series_data_m13(FPS_m13 *fps)
+tern	G_encrypt_time_series_m13(FPS_m13 *fps)
 {
 	static tern		warning_delivered = FALSE_m13;
 	ui1			*key, encryption_rounds;
@@ -3165,7 +3209,7 @@ tern G_encrypt_time_series_data_m13(FPS_m13 *fps)
 	if (enc_level == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	if (pwd->access_level >= enc_level) {
 		if (enc_level == LEVEL_1_ENCRYPTION_m13)
@@ -3213,12 +3257,19 @@ tern G_encrypt_time_series_data_m13(FPS_m13 *fps)
 }
 		
 		
-tern  	G_encrypt_video_data_m13(FPS_m13 *fps)
+tern  	G_encrypt_video_m13(FPS_m13 *fps)
 {
+	si1	enc_level;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	enc_level = fps->uh->encryption_1;
+	if (enc_level == NO_ENCRYPTION_m13)
+		return_m13(TRUE_m13);
+	
+	// code not written yet
 	
 	return_m13(TRUE_m13);
 }
@@ -4104,20 +4155,21 @@ FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, const si1 *path, FILE_TIMES_m13 *
 }
 
 
-CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
+CONTIGUON_m13	*G_find_discontinuities_m13(void *level_header, si8 *n_contigua)
 {
-	si1					tmp_str[PATH_BYTES_m13];
-	si4					i, start_seg_num, end_seg_num, seg_idx, n_segs, last_seg_num;
-	si8					j, k, nc, n_indices, *sample_offsets;
-	sf8					samp_period, sf8_samps;
-	FPS_m13					**tsi_fps;
+	si1				tmp_str[PATH_BYTES_m13];
+	si4				i, start_seg_num, end_seg_num, seg_idx, n_segs, last_seg_num;
+	si8				j, k, nc, n_indices, *sample_offsets;
+	sf8				samp_period, sf8_samps;
+	FPS_m13				**tsi_fps;
+	LH_m13				*lh;
 	PROC_GLOBS_m13			*pg;
 	TS_IDX_m13			*tsi, *last_tsi;
 	TS_METADATA_SECTION_2_m13	*md2;
 	SEG_m13				*seg;
-	CHAN_m13				*chan;
-	SESS_m13				*sess;
-	CONTIGUON_m13				*contigua;
+	CHAN_m13			*chan;
+	SESS_m13			*sess;
+	CONTIGUON_m13			*contigua;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -4126,6 +4178,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 	// The difference between this function & G_build_contigua_m13(), is that this does not use time slice as delimiter for returned contigua.
 	// Caller is responsible for freeing contigua.
 	
+	lh = (LH_m13 *) level_header;
 	switch (lh->type_code) {
 		case TS_SEG_TYPE_CODE_m13:
 			seg = (SEG_m13 *) lh;
@@ -4161,7 +4214,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(LH_m13 *lh, si8 *n_contigua)
 	sample_offsets = (si8 *) malloc((size_t) n_segs * sizeof(si8));
 	
 	// get time series indices & sample offsets
-	seg_idx = G_segment_index_m13(start_seg_num, lh);
+	seg_idx = G_segment_index_m13(lh, start_seg_num);
 	if (seg_idx == FALSE_m13)
 		return_m13(NULL);
 	samp_period = (sf8) 0.0;
@@ -4829,7 +4882,7 @@ si8	G_flen_m13(FILE_m13 *fp, const si1 *path)
 }
 
 
-si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // varargs(lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
+si8 G_frame_number_for_uutc_m13(void *level_header, si8 target_uutc, ui4 mode, ...)  // varargs(lh == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
 	tern			terminal_index;
 	si1			tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -4839,6 +4892,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 	sf8			tmp_sf8, frame_rate, rounded_frame_num, frame_num_eps;
 	ui4			mask;
 	va_list			v_args;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
@@ -4862,6 +4916,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 	// mode FIND_NEXT_m13: frame number following the frame period within which the target_uutc falls ( == FIND_CURRENT_m13 + 1)
 	// mode FIND_PREVIOUS_m13: frame number preceding the frame period within which the target_uutc falls ( == FIND_CURRENT_m13 - 1)
 
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {  // reference points passed
 		va_start(v_args, mode);
 		ref_frame_number = va_arg(v_args, si8);
@@ -4879,7 +4934,7 @@ si8 G_frame_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // 
 			case VID_CHAN_TYPE_CODE_m13:
 			case SESS_TYPE_CODE_m13:
 				seg_num = G_segment_for_uutc_m13(lh, target_uutc);
-				seg_idx = G_segment_index_m13(seg_num, lh);
+				seg_idx = G_segment_index_m13(lh, seg_num);
 				if (seg_idx == FALSE_m13)
 					return_m13(FRAME_NUMBER_NO_ENTRY_m13);
 				if (lh->type_code == VID_CHAN_TYPE_CODE_m13) {
@@ -5020,7 +5075,7 @@ tern	G_free_channel_m13(void *ptr)
 	}
 
 	if (chan->segs) {
-		pg = G_proc_globs_m13((LH_m13 *) chan);
+		pg = G_proc_globs_m13(chan);
 		for (i = 0; i < pg->current_session.n_mapped_segments; ++i) {
 			seg = chan->segs[i];
 			if (seg)
@@ -5041,15 +5096,14 @@ tern	G_free_channel_m13(void *ptr)
 	if (chan->proc_globs)
 		G_proc_globs_delete_m13((LH_m13 *) chan->proc_globs);
 
-	// can't set stack addresses to NULL
-	// shouldn't set en bloc addresses to NULL
-	if (chan->allocated == TRUE_m13)
+	// free
+	if (chan->allocated == TRUE_m13) {
 		free_m13(chan);
-	else
+		if (chan_ptr)  // can't set stack addresses to NULL; shouldn't set en bloc addresses to NULL
+			*chan_ptr = NULL;
+	} else {
 		memset(chan, 0, sizeof(CHAN_m13));
-	
-	if (chan_ptr)
-		*chan_ptr = NULL;
+	}
 	
 	return_m13(TRUE_m13);
 }
@@ -5060,47 +5114,52 @@ void	G_free_global_tables_m13(void)
 	GLOBAL_TABLES_m13	*tables;
 	
 	
+	// debug
+	G_set_signal_traps_m13(FALSE_m13);
+	
 	tables = globals_m13->tables;
 	if (tables == NULL)
 		return;
 		
 	if (tables->timezone_table)
-		free(tables->timezone_table);
+		free((void *) tables->timezone_table);
 	
 	if (tables->country_aliases_table)
-		free(tables->country_aliases_table);
+		free((void *) tables->country_aliases_table);
 	
 	if (tables->country_acronym_aliases_table)
-		free(tables->country_acronym_aliases_table);
+		free((void *) tables->country_acronym_aliases_table);
 	
-	// debug free() problem
-	// if (tables->CRC_table)
-		// free(tables->CRC_table);
-	
+	eprintf_m13("free commented out");
+//	if (tables->CRC_tables)
+//		 free((void *) tables->CRC_tables);
+	eprintf_m13("");
+
 	if (tables->AES_sbox_table)
-		free(tables->AES_sbox_table);
+		free((void *) tables->AES_sbox_table);
 	
 	if (tables->AES_rsbox_table)
-		free(tables->AES_rsbox_table);
+		free((void *) tables->AES_rsbox_table);
 	
 	if (tables->AES_rcon_table)
-		free(tables->AES_rcon_table);
+		free((void *) tables->AES_rcon_table);
 	
 	if (tables->SHA_h0_table)
-		free(tables->SHA_h0_table);
+		free((void *) tables->SHA_h0_table);
 	
 	if (tables->SHA_k_table)
-		free(tables->SHA_k_table);
+		free((void *) tables->SHA_k_table);
 
 	if (tables->CMP_normal_CDF_table)
-		free(tables->CMP_normal_CDF_table);
+		free((void *) tables->CMP_normal_CDF_table);
 
 	if (tables->CMP_VDS_threshold_map)
-		free(tables->CMP_VDS_threshold_map);
+		free((void *) tables->CMP_VDS_threshold_map);
 
-	// debug free() problem
-	// if (tables->E_strings_table)
-		// free(tables->E_strings_table);
+	eprintf_m13("free commented out");
+//	if (tables->E_strings_table)
+//		 free((void *) tables->E_strings_table);
+	eprintf_m13("");
 
 	#ifdef WINDOWS_m13
 	if (globals_m13->tables->hNTdll)
@@ -5285,15 +5344,14 @@ tern	G_free_segment_m13(void *ptr)
 	if (seg->proc_globs)
 		G_proc_globs_delete_m13((LH_m13 *) seg->proc_globs);
 
-	// can't set stack addresses to NULL
-	// shouldn't set en bloc addresses to NULL
-	if (seg->allocated == TRUE_m13)
+	// free
+	if (seg->allocated == TRUE_m13) {
 		free_m13(seg);
-	else
+		if (seg_ptr)  // can't set stack addresses to NULL; shouldn't set en bloc addresses to NULL
+			*seg_ptr = NULL;
+	} else {
 		memset(seg, 0, sizeof(SEG_m13));
-	
-	if (seg_ptr)
-		   *seg_ptr = NULL;
+	}
 
 	return_m13(TRUE_m13);
 }
@@ -5369,16 +5427,15 @@ tern	G_free_session_m13(void *ptr)
 	if (sess->proc_globs)
 		G_proc_globs_delete_m13((LH_m13 *) sess->proc_globs);
 
-	// can't set stack addresses to NULL
-	// shouldn't set en bloc addresses to NULL
-	if (sess->allocated == TRUE_m13)
+	// free
+	if (sess->allocated == TRUE_m13) {
 		free_m13(sess);
-	else
+		if (sess_ptr)  // can't set stack addresses to NULL; shouldn't set en bloc addresses to NULL
+			*sess_ptr = NULL;
+	} else {
 		memset(sess, 0, sizeof(SESS_m13));
-	
-	if (sess_ptr)
-		*sess_ptr = NULL;
-	
+	}
+
 	return_m13(TRUE_m13);
 }
 
@@ -5420,7 +5477,7 @@ tern	G_free_ssr_m13(void *ptr)
 		}
 	}
 
-	pg = G_proc_globs_m13((LH_m13 *) ssr);
+	pg = G_proc_globs_m13(ssr);
 	n_segs = pg->current_session.n_mapped_segments;
 	for (i = 0; i < n_segs; ++i) {
 		gen_fps = ssr->rec_inds_fps[i];
@@ -5436,15 +5493,14 @@ tern	G_free_ssr_m13(void *ptr)
 	// delete process globals
 	G_proc_globs_delete_m13((LH_m13 *) pg);
 
-	// can't set stack addresses to NULL
-	// shouldn't set en bloc addresses to NULL
-	if (ssr->allocated == TRUE_m13)
+	// free
+	if (ssr->allocated == TRUE_m13) {
 		free_m13(ssr);
-	else
+		if (ssr_ptr)  // can't set stack addresses to NULL; shouldn't set en bloc addresses to NULL
+			*ssr_ptr = NULL;
+	} else {
 		memset(ssr, 0, sizeof(SSR_m13));
-	
-	if (ssr_ptr)
-		*ssr_ptr = NULL;
+	}
 
 	return_m13(TRUE_m13);
 }
@@ -5707,7 +5763,7 @@ tern	G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_
 	if (STR_is_empty_m13(L2_pw_hint) == TRUE_m13)
 		L2_pw_hint = NULL;
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	memset(pwd, 0, sizeof(PASSWORD_DATA_m13));
 	pwd->processed = TRUE_m13;
@@ -5996,6 +6052,7 @@ tern G_include_record_m13(ui4 type_code, si4 *record_filters)
 tern	G_init_error_tables_m13(void)
 {
 	GLOBAL_TABLES_m13	*tables;
+	E_STRING_m13		*E_strings_table;
 	
 	
 	tables = globals_m13->tables;
@@ -6009,15 +6066,16 @@ tern	G_init_error_tables_m13(void)
 	}
 	
 	// error strings table
-	tables->E_strings_table = (E_STRING_m13 *) malloc((size_t) E_STR_TABLE_ENTRIES_m13 * sizeof(E_STRING_m13));
-	if (tables->E_strings_table == NULL) {
+	E_strings_table = (E_STRING_m13 *) malloc((size_t) E_STR_TABLE_ENTRIES_m13 * sizeof(E_STRING_m13));
+	if (E_strings_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		E_STRING_m13	temp[E_STR_TABLE_ENTRIES_m13] = E_STR_TABLE_m13;
-		memcpy(tables->E_strings_table, temp, (size_t) E_STR_TABLE_ENTRIES_m13 * sizeof(E_STRING_m13));
+		memcpy(E_strings_table, temp, (size_t) E_STR_TABLE_ENTRIES_m13 * sizeof(E_STRING_m13));
 	}
+	tables->E_strings_table = (const E_STRING_m13 *) E_strings_table;
 
 	pthread_mutex_unlock_m13(&tables->mutex);
 
@@ -6211,7 +6269,7 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	}
 	globals_m13->thread_list->top_idx = (si4) -1;
 	pthread_mutex_init_m13(&globals_m13->thread_list->mutex, NULL);
-	PROC_thread_list_add_m13(NULL);  // add main process
+	PROC_thread_list_add_m13(0, 0, NULL, "main");  // add main process
 
 	// application info
 	if (app_path) {
@@ -6327,7 +6385,7 @@ tern	G_init_medlib_m13(tern init_all_tables, const si1 *app_path, ...)  // varar
 		G_remove_behavior_m13(RETURN_ON_FAIL_m13);
 		G_set_error_m13(E_GEN_m13, "library only coded for 8-bit signed chars currently");
 	}
-		
+			
 	// umask
 #if defined MACOS_m13 || defined LINUX_m13
 	umask(globals_m13->file_creation_umask);
@@ -6452,7 +6510,7 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	}
 	
 	// section 3 fields
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	md3->recording_time_offset = pg->time_constants.recording_time_offset;
 	md3->daylight_time_start_code = pg->time_constants.daylight_start_code;
 	md3->daylight_time_end_code = pg->time_constants.daylight_end_code;
@@ -6503,7 +6561,8 @@ SLICE_m13	*G_init_slice_m13(SLICE_m13 *slice)
 tern	G_init_timezone_tables_m13(void)
 {
 	GLOBAL_TABLES_m13	*tables;
-	
+	TIMEZONE_INFO_m13	*timezone_table;
+	TIMEZONE_ALIAS_m13	*country_aliases_table, *country_acronym_aliases_table;
 	
 	tables = globals_m13->tables;
 	if (tables->timezone_table)
@@ -6516,37 +6575,40 @@ tern	G_init_timezone_tables_m13(void)
 	}
 	
 	// timezone table
-	tables->timezone_table = (TIMEZONE_INFO_m13 *) malloc((size_t) TZ_TABLE_ENTRIES_m13 * sizeof(TIMEZONE_INFO_m13));
-	if (tables->timezone_table == NULL) {
+	timezone_table = (TIMEZONE_INFO_m13 *) malloc((size_t) TZ_TABLE_ENTRIES_m13 * sizeof(TIMEZONE_INFO_m13));
+	if (timezone_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		TIMEZONE_INFO_m13 temp[TZ_TABLE_ENTRIES_m13] = TZ_TABLE_m13;
-		memcpy(globals_m13->tables->timezone_table, temp, TZ_TABLE_ENTRIES_m13 * sizeof(TIMEZONE_INFO_m13));
+		memcpy(timezone_table, temp, TZ_TABLE_ENTRIES_m13 * sizeof(TIMEZONE_INFO_m13));
 	}
+	tables->timezone_table = (const TIMEZONE_INFO_m13 *) timezone_table;
 
 	// country aliases
-	tables->country_aliases_table = (TIMEZONE_ALIAS_m13 *) malloc((size_t) TZ_COUNTRY_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
-	if (tables->country_aliases_table == NULL) {
+	country_aliases_table = (TIMEZONE_ALIAS_m13 *) malloc((size_t) TZ_COUNTRY_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
+	if (country_aliases_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		TIMEZONE_ALIAS_m13 temp[TZ_COUNTRY_ALIASES_ENTRIES_m13] = TZ_COUNTRY_ALIASES_TABLE_m13;
-		memcpy(tables->country_aliases_table, temp, TZ_COUNTRY_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
+		memcpy(country_aliases_table, temp, TZ_COUNTRY_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
 	}
+	tables->country_aliases_table = (const TIMEZONE_ALIAS_m13 *) country_aliases_table;
 
 	// country acronym aliases
-	tables->country_acronym_aliases_table = (TIMEZONE_ALIAS_m13 *) malloc((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
-	if (tables->country_acronym_aliases_table == NULL) {
+	country_acronym_aliases_table = (TIMEZONE_ALIAS_m13 *) malloc((size_t)TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
+	if (country_acronym_aliases_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		TIMEZONE_ALIAS_m13 temp[TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13] = TZ_COUNTRY_ACRONYM_ALIASES_TABLE_m13;
-		memcpy(tables->country_acronym_aliases_table, temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
+		memcpy(country_acronym_aliases_table, temp, TZ_COUNTRY_ACRONYM_ALIASES_ENTRIES_m13 * sizeof(TIMEZONE_ALIAS_m13));
 	}
+	tables->country_acronym_aliases_table = (const TIMEZONE_ALIAS_m13 *) country_acronym_aliases_table;
 
 	pthread_mutex_unlock_m13(&tables->mutex);
 
@@ -7677,7 +7739,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 	} else {
 		free_chan = FALSE_m13;
 	}
-	pg = G_proc_globs_m13((LH_m13 *) chan);
+	pg = G_proc_globs_m13(chan);
 
 	// set basic info (path, name, type, flags, parent)
 	if (*chan_path)
@@ -7726,7 +7788,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 
 	// set session globals (password, time constants, session directory/name)
 	if (pg->time_constants.set != TRUE_m13) {
-		if (G_set_session_globals_m13(chan->path, password, (LH_m13 *) chan) == FALSE_m13) {
+		if (G_set_session_globals_m13(chan, chan->path, password) == FALSE_m13) {
 			if (free_chan == TRUE_m13)
 				G_free_channel_m13(chan);
 			return_m13(NULL);
@@ -7735,7 +7797,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 	
 	// process time slice (passed slice is not modified)
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, (LH_m13 *) chan);
+		G_condition_slice_m13(chan, slice);
 			
 	// get segment range
 	if (slice->n_segs == UNKNOWN_m13) {
@@ -7747,7 +7809,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 	}
 
 	// open segments
-	seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) chan);
+	seg_idx = G_segment_index_m13(chan, slice->start_seg_num);
 	if (seg_idx == FALSE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(chan);
@@ -7952,11 +8014,12 @@ pthread_rval_m13	G_open_channel_thread_m13(void *ptr)
 }
 
 
-tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
+tern	G_open_records_m13(void *level_header, ...)  // varagrgs(level == ssr): si4 seg_num
 {
 	si1		tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	si4		seg_idx;
 	FPS_m13		*ri_fps, *rd_fps;
+	LH_m13		*lh;
 	SESS_m13	*sess;
 	SSR_m13		*ssr;
 	CHAN_m13	*chan;
@@ -7970,6 +8033,7 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 	// returns FALSE_m13 if not opened because don't exist
 	// returns UNKNOWN_m13 on error
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		G_set_error_m13(E_GEN_m13, "level is null");
 		return_m13(UNKNOWN_m13);
@@ -7987,11 +8051,11 @@ tern	G_open_records_m13(LH_m13 *lh, ...)  // varagrgs(level == ssr): si4 seg_num
 				si4		seg_num;
 				va_list		v_arg;
 				
-				va_start(v_arg, lh);
+				va_start(v_arg, level_header);
 				seg_num = va_arg(v_arg, si4);
 				va_end(v_arg);
 				
-				seg_idx = G_segment_index_m13(seg_num, lh);
+				seg_idx = G_segment_index_m13(lh, seg_num);
 				if (seg_idx == FALSE_m13)
 					return_m13(FALSE_m13);
 				
@@ -8118,7 +8182,7 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	}
 	
 	// get path
-	pg = G_proc_globs_m13((LH_m13 *) ssr);
+	pg = G_proc_globs_m13(ssr);
 	strcpy(ssr->name, sess->name);
 	sprintf_m13(ssr->path, "%s/%s.%s", sess->path, ssr->name, SSR_TYPE_STR_m13);
 	if (G_exists_m13(ssr->path) == FALSE_m13) {
@@ -8213,9 +8277,9 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 	}
 
 	// set session globals (password, time constants, session directory/name)
-	pg = G_proc_globs_m13((LH_m13 *) seg);
+	pg = G_proc_globs_m13(seg);
 	if (pg->time_constants.set != TRUE_m13) {
-		if (G_set_session_globals_m13(seg->path, password, (LH_m13 *) seg) == FALSE_m13) {
+		if (G_set_session_globals_m13(seg, seg->path, password) == FALSE_m13) {
 			if (free_seg == TRUE_m13)
 				G_free_segment_m13(seg);
 			return_m13(NULL);
@@ -8224,7 +8288,7 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 
 	// process time slice (passed slice is not modified)
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, (LH_m13 *) seg);
+		G_condition_slice_m13(seg, slice);
 		
 	// metadata
 	if (seg->flags & LH_READ_METADATA_MASK_m13) {
@@ -8427,18 +8491,20 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		return_m13(NULL);
 	}
 	
+	eprintf_m13("");
 	// set session globals (directory, name, password, time constants)
-	if (G_set_session_globals_m13(chan_list[0], password, (LH_m13 *) sess) == FALSE_m13) {
+	if (G_set_session_globals_m13(sess, chan_list[0], password) == FALSE_m13) {
 		if (free_sess == TRUE_m13)
 			G_free_session_m13(sess);
 		return_m13(NULL);
 	}
-	pg = G_proc_globs_m13((LH_m13 *) sess);
+	eprintf_m13("");
+	pg = G_proc_globs_m13(sess);
 	sess->path = pg->current_session.path;
 	sess->name = pg->current_session.fs_name;  // default to fs_name
 	if (*index_channel_name)
 		strcpy(pg->current_session.index_channel_name, index_channel_name);
-
+	
 	// divide channel lists
 	if (flags & LH_EXCLUDE_TS_CHANS_m13) {
 		include_ts_chans = FALSE_m13;
@@ -8476,7 +8542,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		}
 	}
 	free_m13(chan_list);
-
+	
 	// set up time series channels
 	if (sess->flags & LH_MAP_ALL_TS_CHANS_m13 && all_channels_selected == FALSE_m13) {
 		// get lists of all channels, regardless of what was passed in the list
@@ -8611,7 +8677,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 
 	// process time slice (passed slice is not modified)
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, (LH_m13 *) sess);
+		G_condition_slice_m13(sess, slice);
 	
 	// set reference channel (before get segment range)
 	G_change_index_chan_m13(sess, NULL, NULL, DEFAULT_CHAN_m13);
@@ -8631,6 +8697,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	proc_thread_infos = (PROC_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(PROC_THREAD_INFO_m13));
 	read_MED_thread_infos = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_chans, sizeof(READ_MED_THREAD_INFO_m13));
 	
+	eprintf_m13("");
 	// set up time series channels
 	for (i = j = 0; i < n_ts_chans; ++i, ++j) {
 		chan = sess->ts_chans[i];
@@ -8737,7 +8804,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 				G_merge_universal_headers_m13(sess->ts_metadata_fps, sess->rec_data_fps, NULL);
 			ssr = sess->ssr;
 			if (ssr) {
-				seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) sess);
+				seg_idx = G_segment_index_m13(sess, slice->start_seg_num);
 				if (seg_idx == FALSE_m13) {
 					if (free_sess == TRUE_m13)
 						G_free_session_m13(sess);
@@ -8946,14 +9013,14 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	G_proc_error_get_m13(LH_m13 *lh)
+tern	G_proc_error_get_m13(void *level_header)
 {
 	PROC_GLOBS_m13	*pg;
 	
 	// returns TRUE_m13 if set
 	// returns FALSE_m13 if clear
 
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	
 	return(pg->miscellaneous.proc_error);
 }
@@ -8962,26 +9029,26 @@ tern	G_proc_error_get_m13(LH_m13 *lh)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_proc_error_set_m13(LH_m13 *lh, tern state)
+void	G_proc_error_set_m13(void *level_header, tern state)
 {
 	PROC_GLOBS_m13	*pg;
 	
 	// pass TRUE_m13 to set
 	// pass FALSE_m13 to clear
 		
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	pg->miscellaneous.proc_error = state;
 	
 	return;
 }
 
 
-PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
+PROC_GLOBS_m13	*G_proc_globs_m13(void *level_header)
 {
 	si4			i, n_pg;
 	ui8			sess_uid;
 	pid_t_m13		_id;
-	LH_m13			*tmp_lh;
+	LH_m13			*lh, *tmp_lh;
 	PROC_GLOBS_m13		*pg, **pg_ptr, *new_pg;
 	PROC_GLOBS_LIST_m13	*list;
 	
@@ -8989,9 +9056,9 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	G_push_function_m13();
 #endif
 	
-	pg = NULL;
-
 	// find process globals by shortcut or linkage
+	pg = NULL;
+	lh = (LH_m13 *) level_header;
 	if (lh) {
 		// poc_globs passed
 		if (lh->type_code == PROC_GLOBS_TYPE_CODE_m13)
@@ -9041,6 +9108,7 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 
 	// find by thread id (recursing up thread ancestral tree as necessary)
 	_id = gettid_m13();
+	eprintf_m13("_id = %lu", (ui8) _id);
 	do {
 		pg_ptr = list->proc_globs_ptrs;
 		n_pg = list->top_idx + 1;
@@ -9076,8 +9144,8 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 			// allocate new proc_globs
 			new_pg = (PROC_GLOBS_m13 *) malloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13 * sizeof(PROC_GLOBS_m13));
 			if (new_pg == NULL) {
-				G_set_error_m13(E_ALLOC_m13, NULL);
 				pthread_mutex_unlock_m13(&list->mutex);
+				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
 
@@ -9094,11 +9162,15 @@ PROC_GLOBS_m13	*G_proc_globs_m13(LH_m13 *lh)
 	pthread_mutex_unlock_m13(&list->mutex);
 	
 	// initialize
+	pg->_id = _id;
+	eprintf_m13("before init: pg = %lu", (ui8) pg);
+	eprintf_m13("before init: pg->_id = %lu", (ui8) pg->_id);
 	G_proc_globs_init_m13(pg);
+	eprintf_m13("");
 	++pg->ref_count;  // add a ref count for this thread (NOTE: this is NOT done in proc_globs_new() as that function is used to add proc_globs to the current thread)
 
 PROC_GLOBS_FOUND_m13:
-	
+
 	if (lh) {
 		// set shortcuts
 		lh->proc_globs = pg;
@@ -9125,7 +9197,7 @@ PROC_GLOBS_FOUND_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_proc_globs_delete_m13(LH_m13 *lh)
+void	G_proc_globs_delete_m13(void *level_header)
 {
 	si4			i;
 	PROC_GLOBS_m13		*pg, **pg_ptrs;
@@ -9134,7 +9206,7 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 	Sgmt_RECS_ENTRY_m13	*Sgmt_records_entry;
 
 	
-	pg = G_proc_globs_find_m13(lh);
+	pg = G_proc_globs_find_m13(level_header);
 	if (pg == NULL)
 		return;
 		
@@ -9179,10 +9251,11 @@ void	G_proc_globs_delete_m13(LH_m13 *lh)
 }
 
 
-PROC_GLOBS_m13	*G_proc_globs_find_m13(LH_m13 *lh)
+PROC_GLOBS_m13	*G_proc_globs_find_m13(void *level_header)
 {
 	si4			i, n_pg;
 	ui8			sess_uid;
+	LH_m13			*lh;
 	pid_t_m13		_id;
 	LH_m13			*tmp_lh;
 	PROC_GLOBS_m13		*pg, **pg_ptr;
@@ -9192,10 +9265,10 @@ PROC_GLOBS_m13	*G_proc_globs_find_m13(LH_m13 *lh)
 	// return process globals pointer if found
 	// return NULL if not (do not create)
 	// do not set linkage
-	
-	pg = NULL;
-
+		
 	// search by linkage
+	pg = NULL;
+	lh = (LH_m13 *) level_header;
 	if (lh) {
 		// proc_globs passed
 		if (lh->type_code == PROC_GLOBS_TYPE_CODE_m13)
@@ -9272,9 +9345,8 @@ PROC_GLOBS_m13	*G_proc_globs_find_m13(LH_m13 *lh)
 }
 	
 
-PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg)
+tern	G_proc_globs_init_m13(PROC_GLOBS_m13 *pg)
 {
-	tern			free_pg;
 	Sgmt_RECS_ENTRY_m13	*list_entries;
 	
 #ifdef FT_DEBUG_m13
@@ -9282,26 +9354,26 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg)
 #endif
 	
 	// allocate - caller takes ownership
+	eprintf_m13("in init: pg = %lu", (ui8) pg);
 	if (pg == NULL) {
-		pg = (PROC_GLOBS_m13 *) calloc((size_t) 1, sizeof(PROC_GLOBS_m13));
-		if (pg == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
-			return_m13(NULL);
-		}
-		free_pg = TRUE_m13;
-	} else {
-		free_pg = FALSE_m13;
+		G_set_error_m13(E_GEN_m13, "process globals are null");
+		return_m13(FALSE_m13);
 	}
-	
-	// set _id
-	pg->_id = gettid_m13();  // note this may be a duplicate entry by _id, but linkage will lead to correct proc_globs
+	eprintf_m13("in init: pg->_id = %lu", (ui8) pg->_id);
+	eprintf_m13("");
 
+	// set _id
+	pg->_id = gettid_m13();  // note this may be a duplicate entry by _id, but session UID or linkage will lead to correct proc_globs
+
+	eprintf_m13("");
 	// set reference count
 	pg->ref_count = 0;
 
+	eprintf_m13("");
 	// set header
 	pg->type_code = PROC_GLOBS_TYPE_CODE_m13;
 		
+	eprintf_m13("");
 	// password data
 	pg->password_data.processed = FALSE_m13;
 	
@@ -9344,21 +9416,20 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg)
 	strcpy(pg->time_constants.daylight_timezone_acronym, GLOBALS_DAYLIGHT_TIMEZONE_ACRONYM_DEFAULT_m13);
 	strcpy(pg->time_constants.daylight_timezone_string, GLOBALS_DAYLIGHT_TIMEZONE_STRING_DEFAULT_m13);
 	
+	eprintf_m13("");
 	// set up Sgmt_record_list
 	pg->current_session.Sgmt_recs_list = (Sgmt_RECS_LIST_m13 *) calloc((size_t) 1, sizeof(Sgmt_RECS_LIST_m13));
 	if (pg->current_session.Sgmt_recs_list == NULL) {
-		if (free_pg == TRUE_m13)
-			free(pg);
 		G_set_error_m13(E_ALLOC_m13, NULL);
-		return_m13(NULL);
+		return_m13(FALSE_m13);
 	}
+	eprintf_m13("");
 	list_entries = (Sgmt_RECS_ENTRY_m13 *) calloc((size_t) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13, sizeof(Sgmt_RECS_ENTRY_m13));
 	if (list_entries == NULL) {
-		if (free_pg == TRUE_m13)
-			free(pg);
 		G_set_error_m13(E_ALLOC_m13, NULL);
-		return_m13(NULL);
+		return_m13(FALSE_m13);
 	}
+	eprintf_m13("");
 	pg->current_session.Sgmt_recs_list->entries = list_entries;
 	pg->current_session.Sgmt_recs_list->size = (si4) GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13;
 	pg->current_session.Sgmt_recs_list->top_idx = (si4) -1;
@@ -9369,13 +9440,14 @@ PROC_GLOBS_m13	*G_proc_globs_init_m13(PROC_GLOBS_m13 *pg)
 	pg->miscellaneous.mmap_block_bytes = GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13;
 	pg->miscellaneous.threading = globals_m13->threading;
 
-	return_m13(pg);
+	return_m13(TRUE_m13);
 }
 
 
-PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
+PROC_GLOBS_m13	*G_proc_globs_new_m13(void *level_header)
 {
 	si4			i, n_pg;
+	LH_m13 			*lh;
 	PROC_GLOBS_m13		*pg, **pg_ptr, *new_pg;
 	PROC_GLOBS_LIST_m13	*list;
 	
@@ -9386,6 +9458,7 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(LH_m13 *lh)
 	// generate a new set of process globals within same thread
 	// e.g. for multiple sessions open in same thread
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		G_set_error_m13(E_GEN_m13, "level must be specified");
 		return_m13(NULL);
@@ -9490,7 +9563,7 @@ tern	G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw)
 		G_set_error_m13(E_GEN_m13, "FPS is null");
 		return_m13(FALSE_m13);
 	}
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	memset(pwd, 0, sizeof(PASSWORD_DATA_m13));
 	pwd->processed = TRUE_m13;
@@ -9581,10 +9654,11 @@ tern	G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw)
 }
 
 
-tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
+tern	G_propagate_flags_m13(void *level_header, ui8 new_flags)
 {
 	si4		i, j, n_ts_chans, n_vid_chans, n_segs;
 	ui8		active_status;
+	LH_m13		*lh;
 	PROC_GLOBS_m13	*pg;
 	SEG_m13		*seg;
 	CHAN_m13	*chan;
@@ -9597,6 +9671,7 @@ tern	G_propagate_flags_m13(LH_m13 *lh, ui8 new_flags)
 	G_push_function_m13();
 #endif
 
+	lh = (LH_m13 *) level_header;
 	pg = G_proc_globs_m13(lh);
 	switch (lh->type_code) {
 		case TS_SEG_TYPE_CODE_m13:
@@ -9789,10 +9864,10 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 	// sets proc globals values
 	// returns TRUE_m13 if any frequencies vary
 	
-	pg = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13(sess);
 	
 	// check time series channels
-	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	seg_idx = G_segment_index_m13(sess, FIRST_OPEN_SEG_m13);
 	if (seg_idx == FALSE_m13)
 		return_m13(FALSE_m13);
 	n_chans = sess->n_ts_chans;
@@ -9923,7 +9998,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	if (G_all_zeros_m13((ui1 *) slice, (si4) sizeof(SLICE_m13)) == TRUE_m13)
 		G_init_slice_m13(slice);
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, (LH_m13 *) chan);
+		G_condition_slice_m13(chan, slice);
 		
 	// get segment range
 	if (slice->n_segs == UNKNOWN_m13) {
@@ -9936,7 +10011,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	} else {
 		n_segs = slice->n_segs;
 	}
-	seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) chan);
+	seg_idx = G_segment_index_m13(chan, slice->start_seg_num);
 	if (seg_idx == FALSE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(chan);
@@ -10294,7 +10369,7 @@ si4	G_read_cs_file_m13(const si1 *cs_file_name, si4 n_available_channels, si4 **
 }
 
 
-LH_m13 	*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varargs (level_header == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
+LH_m13 	*G_read_data_m13(void *level_header, SLICE_m13 *slice, ...)  // varargs (level_header == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
 {
 	void				*file_list;
 	si1				*password, *index_channel_name, tmp_str[PATH_BYTES_m13];
@@ -10302,6 +10377,7 @@ LH_m13 	*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varargs (level_h
 	si4				list_len;
 	ui8				flags;
 	va_list				v_args;
+	LH_m13				*lh;
 	SESS_m13			*sess;
 	CHAN_m13			*chan;
 	SEG_m13			*seg;
@@ -10310,6 +10386,7 @@ LH_m13 	*G_read_data_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varargs (level_h
 	G_push_function_m13();
 #endif
 
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		// get varargs
 		va_start(v_args, slice);
@@ -10557,10 +10634,11 @@ READ_MEDLIBRC_FAIL:
 }
 
 
-si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type_code == SSR_TYPE_CODE_m13): si4 seg_num
+si8 G_read_records_m13(void *level_header, SLICE_m13 *slice, ...)  // varags(level->type_code == SSR_TYPE_CODE_m13): si4 seg_num
 {
 	tern		sort;
 	si8		start_idx, end_idx, n_recs, bytes_to_read, offset;
+	LH_m13		*lh;
 	FPS_m13		*ri_fps, *rd_fps;
 	REC_IDX_m13	*ri;
 	SESS_m13	*sess;
@@ -10576,7 +10654,7 @@ si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type
 	// returns FALSE_m13 if not read because don't exist
 	// returns UNKNOWN_m13 on error
 	
-
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		G_set_error_m13(E_GEN_m13, "level is null");
 		return_m13(UNKNOWN_m13);
@@ -10598,7 +10676,7 @@ si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type
 				seg_num = va_arg(v_args, si4);
 				va_end(v_args);
 				
-				seg_idx = G_segment_index_m13(seg_num, lh);
+				seg_idx = G_segment_index_m13(lh, seg_num);
 				if (seg_idx == FALSE_m13)
 					return_m13(FALSE_m13);
 				ri_fps = ssr->rec_inds_fps[seg_idx];
@@ -10624,7 +10702,7 @@ si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type
 
 	if (ri_fps == NULL || rd_fps  == NULL)
 		return_m13(FALSE_m13);
-
+	
 	// sort records
 	if (MED_VER_1_0_m13(ri_fps->uh) == TRUE_m13)
 		sort = TRUE_m13;  // no header field to tell if already sorted
@@ -10635,6 +10713,13 @@ si8 G_read_records_m13(LH_m13 *lh, SLICE_m13 *slice, ...)  // varags(level->type
 	if (sort == TRUE_m13)
 		G_sort_records_m13(ri_fps, rd_fps);
 
+	// make sure indices fully read in
+	if (ri_fps->params.full_file_read == FALSE_m13) {
+		ri_fps = FPS_read_m13(ri_fps, FPS_FULL_FILE_m13, 0, 0);
+		if (ri_fps == NULL)
+			return_m13(FALSE_m13);
+	}
+	
 	start_idx = G_find_record_index_m13(ri_fps, slice->start_time, FIND_FIRST_ON_OR_AFTER_m13, 0);
 	if (start_idx == NO_IDX_m13) {  // no records "on or after" slice beginning
 		if (rd_fps)
@@ -10702,7 +10787,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs: si
 	if (G_all_zeros_m13((ui1 *) slice, (si4) sizeof(SLICE_m13)) == TRUE_m13)
 		G_init_slice_m13(slice);
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, (LH_m13 *) seg);
+		G_condition_slice_m13(seg, slice);
 	
 	// check for valid limit pair (time takes priority)
 	if ((search_mode = G_search_mode_m13(slice)) == FALSE_m13) {
@@ -10856,7 +10941,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 			sess->slice = *slice;  // passed slice is not modified
 		}
 		if (sess->slice.conditioned == FALSE_m13)
-			G_condition_slice_m13(slice, (LH_m13 *) sess);
+			G_condition_slice_m13(sess, slice);
 		free_sess = FALSE_m13;
 	}
 
@@ -10866,7 +10951,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	if (G_all_zeros_m13((ui1 *) slice, (si4) sizeof(SLICE_m13)) == TRUE_m13)
 		G_init_slice_m13(slice);
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, (LH_m13 *) sess);
+		G_condition_slice_m13(sess, slice);
 
 	// get segment range
 	if (slice->n_segs == UNKNOWN_m13) {
@@ -10884,7 +10969,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	}
 	
 	// set inactive reference flags
-	pg = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13(sess);
 	chan = pg->current_session.index_channel;
 	if ((chan->flags & LH_CHAN_ACTIVE_m13) == 0) {
 		if (chan->flags & LH_READ_SEG_DATA_MASK_m13) {
@@ -11149,7 +11234,7 @@ si8	G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice)
 				// reallocate cache manually so CMP_realloc_cps_m13() does not free
 				if (n_samps > cps->params.allocated_decompressed_samples) {
 					cps->decompressed_data = cps->params.cache = (si4 *) realloc_m13(cps->params.cache, n_samps * sizeof(si4));
-					cps->params.allocated_decompressed_samples = n_samps;
+					cps->params.allocated_decompressed_samples = calloc_size_m13(cps->decompressed_data, sizeof(si4));
 				}
 				first_cached_block = cached_blocks[0].block_number;
 				last_cached_block = cached_blocks[cached_block_cnt - 1].block_number;
@@ -11540,7 +11625,7 @@ tern  G_reset_metadata_for_update_m13(FPS_m13 *fps)
 }
 
 
-si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  // varargs(lh == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
+si8 G_sample_number_for_uutc_m13(void *level_header, si8 target_uutc, ui4 mode, ...)  // varargs(lh == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 {
 	tern			terminal_index;
 	si1			tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -11550,6 +11635,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 	sf8			tmp_sf8, sampling_frequency, rounded_samp_num, samp_num_eps;
 	ui4			mask;
 	va_list			v_args;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 	TS_IDX_m13		*tsi;
 	SEG_m13			*seg;
@@ -11573,6 +11659,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 	// mode FIND_NEXT_m13: sample number following the sample period within which the target_uutc falls ( == FIND_CURRENT_m13 + 1)
 	// mode FIND_PREVIOUS_m13: sample number preceding the sample period within which the target_uutc falls ( == FIND_CURRENT_m13 - 1)
 
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {  // reference points passed
 		va_start(v_args, mode);
 		ref_sample_number = va_arg(v_args, si8);
@@ -11590,7 +11677,7 @@ si8 G_sample_number_for_uutc_m13(LH_m13 *lh, si8 target_uutc, ui4 mode, ...)  //
 			case TS_CHAN_TYPE_CODE_m13:
 			case SESS_TYPE_CODE_m13:
 				seg_num = G_segment_for_uutc_m13(lh, target_uutc);
-				seg_idx = G_segment_index_m13(seg_num, lh);
+				seg_idx = G_segment_index_m13(lh, seg_num);
 				if (seg_idx == FALSE_m13)
 					return_m13(SAMPLE_NUMBER_NO_ENTRY_m13);
 				if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
@@ -11869,10 +11956,11 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 }
 
 		
-si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
+si4	G_segment_for_frame_number_m13(void *level_header, si8 target_frame)
 {
 	si4			idx, low_idx, high_idx;
-	PROC_GLOBS_m13	*pg;
+	LH_m13			*lh;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 	
 #ifdef FT_DEBUG_m13
@@ -11882,6 +11970,7 @@ si4	G_segment_for_frame_number_m13(LH_m13 *lh, si8 target_frame)
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
+	lh = (LH_m13 *) level_header;
 	pg = G_proc_globs_m13(lh);
 	
 	switch (lh->type_code) {
@@ -11975,10 +12064,11 @@ si4	G_segment_for_path_m13(const si1 *path)
 }
 
 
-si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
+si4	G_segment_for_sample_number_m13(void *level_header, si8 target_sample)
 {
 	si4			idx, low_idx, high_idx;
-	PROC_GLOBS_m13	*pg;
+	LH_m13			*lh;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 
 #ifdef FT_DEBUG_m13
@@ -11988,6 +12078,7 @@ si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
+	lh = (LH_m13 *) level_header;
 	pg = G_proc_globs_m13(lh);
 	
 	switch (lh->type_code) {
@@ -12027,10 +12118,11 @@ si4	G_segment_for_sample_number_m13(LH_m13 *lh, si8 target_sample)
 }
 
 		
-si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
+si4	G_segment_for_uutc_m13(void *level_header, si8 target_time)
 {
 	si4			idx, low_idx, high_idx;
-	PROC_GLOBS_m13	*pg;
+	LH_m13			*lh;
+	PROC_GLOBS_m13		*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 	
 #ifdef FT_DEBUG_m13
@@ -12040,6 +12132,7 @@ si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
 	// Note: this may seem like overkill, that a simple forward linear search would suffice,
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
+	lh = (LH_m13 *) level_header;
 	pg = G_proc_globs_m13(lh);
 	
 	switch (lh->type_code) {
@@ -12080,9 +12173,10 @@ si4	G_segment_for_uutc_m13(LH_m13 *lh, si8 target_time)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	G_segment_index_m13(si4 segment_number, LH_m13 *lh)
+si4	G_segment_index_m13(void *level_header, si4 segment_number)
 {
 	si4		i, mapped_segs, sess_segs, first_seg, seg_idx;
+	LH_m13		*lh;
 	PROC_GLOBS_m13	*pg;
 	CHAN_m13	*chan;
 	
@@ -12100,6 +12194,7 @@ si4	G_segment_index_m13(si4 segment_number, LH_m13 *lh)
 		return_m13(FALSE_m13);
 	}
 	
+	lh = (LH_m13 *) level_header;
 	pg = G_proc_globs_m13(lh);
 	
 	mapped_segs = pg->current_session.n_mapped_segments;
@@ -12154,10 +12249,11 @@ si4	G_segment_index_m13(si4 segment_number, LH_m13 *lh)
 }
 
 
-si4 G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
+si4 G_segment_range_m13(void *level_header, SLICE_m13 *slice)
 {
 	si4			search_mode, n_segs;
 	si8			start_time, end_time, last_seg_idx;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 	Sgmt_REC_m13		*Sgmt_records;
 	
@@ -12166,10 +12262,11 @@ si4 G_segment_range_m13(LH_m13 *lh, SLICE_m13 *slice)
 #endif
 	
 	// returns UNKNOWN_m13 on failure
-
+	lh = (LH_m13 *) level_header;
+	
 	// reset slice seg fields
 	if (slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(slice, lh);
+		G_condition_slice_m13(lh, slice);
 	slice->start_seg_num = slice->end_seg_num = SEGMENT_NUMBER_NO_ENTRY_m13;
 	slice->n_segs = UNKNOWN_m13;
 
@@ -12330,7 +12427,7 @@ tern	G_session_directory_m13(FPS_m13 *fps)
 		return_m13(FALSE_m13);
 	}
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 
 	// set session path & names
 	pg_sess_dir = pg->current_session.path;
@@ -12374,7 +12471,7 @@ si1	*G_session_path_for_path_m13(const si1 *path, si1 *sess_path)
 }
 
 
-si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
+si8	G_session_samples_m13(void *level_header, sf8 rate)
 {
 	si4			i;
 	sf4			sf4_rate;
@@ -12388,7 +12485,7 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 	G_push_function_m13();
 #endif
 
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	list = pg->current_session.Sgmt_recs_list;
 	
 	// search for matching entry
@@ -12415,6 +12512,7 @@ si8	G_session_samples_m13(LH_m13 *lh, sf8 rate)
 
 void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *message, ...)
 {
+	const si1	*thread_name;
 	ui4		behavior, message_exists;
 	ERR_m13		*err;
 	va_list		v_args;
@@ -12423,7 +12521,6 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 	// Call G_set_error_m13() / G_set_error_exec_m13() for causal errors only
 	// Return error local error condition for errors returned from functions, no messages necessary
 	// if code == E_SIG_m13 (called from function_stack_trap_m13), line is signal number
-
 	
 	// get behavior
 	behavior = G_current_behavior_m13();
@@ -12504,8 +12601,9 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 		err->code = code;
 		err->line = line;
 		err->function = function;
-		pthread_getname_m13(0, err->thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 		err->thread_id = gettid_m13();
+		thread_name = PROC_thread_name_m13(err->thread_id);
+		strncpy_m13(err->thread_name, thread_name, THREAD_NAME_BYTES_m13);
 	}
 	
 	// relase error hold
@@ -12518,7 +12616,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 }
 
 
-tern	G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m13 *lh)
+tern	G_set_session_globals_m13(void *level_header, const si1 *MED_path, const si1 *password)
 {
 	si1		md_file[PATH_BYTES_m13];
 	FPS_m13		*fps;
@@ -12534,7 +12632,9 @@ tern	G_set_session_globals_m13(const si1 *MED_path, const si1 *password, LH_m13 
 	if (G_find_metadata_file_m13(MED_path, md_file) == NULL)
 		return_m13(FALSE_m13);
 	
-	fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, md_file, "r", password, lh, 0);
+	eprintf_m13("");
+	fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, md_file, "r", password, level_header, 0);
+	eprintf_m13("");
 	if (fps == NULL)
 		return_m13(FALSE_m13);
 
@@ -12554,6 +12654,7 @@ void	G_set_signal_traps_m13(tern set)
 	
 	// if set == TRUE_m13, set library handled signals to G_signal_trap_m13
 	// if set == FALSE_m13, restore to system default handling
+	// Note: using signal() instead of the more robust sigaction(), because sigaction() is not implemented on Windows, and substituting its functionality is complex
 		
 	if (set == TRUE_m13)
 		f = G_signal_trap_m13;
@@ -12563,10 +12664,10 @@ void	G_set_signal_traps_m13(tern set)
 	signal(SIGABRT, f);  // Abnormal termination
 	signal(SIGFPE, f);  // Floating point exception
 	signal(SIGILL, f);  // Illegal instruction
-	signal(SIGINT, f);  // Ctrl-C interrupt (often caught on Windows before gets here [b/c == "Copy"])
+	signal(SIGINT, f);  // Ctrl-C interrupt (often caught on Windows before gets here [used for "Copy"])
 	signal(SIGSEGV, f);  // Memory segment violation
 	signal(SIGTERM, f);  // Terminate
-	#if defined MACOS_m13 || defined LINUX_m13  // supported on Unix-like OS's
+	#if defined MACOS_m13 || defined LINUX_m13  // supported on Posix OS's
 		signal(SIGBUS, f);  // Bus error
 		signal(SIGKILL, f);  // Kill
 		signal(SIGQUIT, f);  // Quit
@@ -12579,12 +12680,12 @@ void	G_set_signal_traps_m13(tern set)
 }
 
 
-tern  G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt)
+tern	G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt)
 {
-	si4 n_potential_timezones, potential_timezone_entries[TZ_TABLE_ENTRIES_m13];
-	si4 i, j, response_num, items;
-	PROC_GLOBS_m13	*pg;
-	TIMEZONE_INFO_m13	*tz_table;
+	si4			n_potential_timezones, potential_timezone_entries[TZ_TABLE_ENTRIES_m13];
+	si4			i, j, response_num, items;
+	PROC_GLOBS_m13		*pg;
+	const TIMEZONE_INFO_m13	*tz_table;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12799,12 +12900,13 @@ SET_GTC_TIMEZONE_MATCH_m13:
 }
 
 
-Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
+Sgmt_REC_m13	*G_Sgmt_records_m13(void *level_header, si4 search_mode)
 {
 	si1			md_path[PATH_BYTES_m13];
 	ui4 			source_type;
 	si4			i, n_entries, seg_idx, n_segs;
 	sf4			rate;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 	SESS_m13		*sess;
 	SSR_m13			*ssr;
@@ -12822,6 +12924,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 	sess = NULL;
 	ssr = NULL;
 	chan = NULL;
+	lh = (LH_m13 *) level_header;
 	pg = G_proc_globs_m13(lh);
 	list = pg->current_session.Sgmt_recs_list;
 	pthread_mutex_lock_m13(&list->mutex);
@@ -12881,7 +12984,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 		rate = RATE_NO_ENTRY_m13;
 		if (chan) {
 			if (chan->segs) {
-				seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) chan);
+				seg_idx = G_segment_index_m13(chan, FIRST_OPEN_SEG_m13);
 				if (seg_idx == FALSE_m13) {
 					pthread_mutex_unlock_m13(&list->mutex);
 					return_m13(NULL);
@@ -12961,7 +13064,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(LH_m13 *lh, si4 search_mode)
 }
 
 
-ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
+ui4	G_Sgmt_records_source_m13(void *level_header, Sgmt_REC_m13 *Sgmt_recs)
 {
 	ui4			source;
 	si4			i;
@@ -12973,7 +13076,7 @@ ui4	G_Sgmt_records_source_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 	G_push_function_m13();
 #endif
 
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	list = pg->current_session.Sgmt_recs_list;
 	
 	// search for matching entry
@@ -13047,11 +13150,12 @@ tern	G_show_behavior_m13(ui4 behavior_code)
 }
 
 
-tern	G_show_contigua_m13(LH_m13 *lh)
+tern	G_show_contigua_m13(void *level_header)
 {
 	si8		i, n_contigua;
 	CONTIGUON_m13	*contigua;
-	SEG_m13	*seg;
+	LH_m13		*lh;
+	SEG_m13		*seg;
 	CHAN_m13	*chan;
 	SESS_m13	*sess;
 
@@ -13061,8 +13165,9 @@ tern	G_show_contigua_m13(LH_m13 *lh)
 
 	// find contigua in current time slice, and set in level
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
-		G_set_error_m13(E_GEN_m13, "level is not open");
+		G_set_error_m13(E_GEN_m13, "level is null");
 		return_m13(FALSE_m13);
 	}
 	
@@ -13215,10 +13320,10 @@ tern	G_show_error_m13(void)
 	line = err->line;
 	
 	if (code == E_NONE_m13) {
-		#ifdef MATLAB_m13
-		mexPrintf("\nError:\tno error set\n\n");
-		#else
-		fprintf(stderr, "\n%sError%s:\tno error set\n\n", TC_RED_m13, TC_RESET_m13);
+		#ifdef MATLAB_m13  // no text color
+		printf_m13("\nError:\tno error set\n\n");
+		#else  // colored text
+		printf_m13("\n%sError%s:\tno error set\n\n", TC_RED_m13, TC_RESET_m13);
 		#endif
 
 		pthread_mutex_unlock_m13(&err->mutex);
@@ -13228,22 +13333,24 @@ tern	G_show_error_m13(void)
 
 	_id = gettid_m13();
 	
-#ifdef MATLAB_m13
+#ifdef MATLAB_m13  // no text color
 	if (*err->thread_name) {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(~); in %s(id: %lu)]\n", mess, func, name, _id);
+			printf_m13("\n\nError:\t%s\n\t[set in %s(~); in %s(id: %lu)]\n", mess, func, name, _id);
 		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, name, _id);
+			printf_m13("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, name, _id);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(~); in thread %lu]\n", mess, func, _id);
+			printf_m13("\n\nError:\t%s\n\t[set in %s(~); in thread %lu]\n", mess, func, _id);
 		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
+			printf_m13("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
 	}
+	#if defined MACOS_m13 || defined LINUX_m13
 	if (err->signal == SIGTRAP)
-		mexPrintf("\t(it is possible this signal was triggered by another thread or a code breakpoint)\n");
+		printf_m13("\t(this signal can be raised by a code breakpoint)\n");
+	#endif
 	putchar_m13('\n');
-#else
+#else  // colored text
 	if (*err->thread_name) {
 		if (err->line == E_UNKNOWN_LINE_m13)
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(~); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
@@ -13255,8 +13362,10 @@ tern	G_show_error_m13(void)
 		else
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
 	}
+	#if defined MACOS_m13 || defined LINUX_m13
 	if (err->signal == SIGTRAP)
-		printf("\t%s(it is possible this signal was triggered by another thread or a code breakpoint)%s\n", TC_GREEN_m13, TC_RESET_m13);
+		printf_m13("\t%s(this signal can be raised by a code breakpoint)%s\n", TC_GREEN_m13, TC_RESET_m13);
+	#endif
 	putchar_m13('\n');
 #endif
 
@@ -13305,12 +13414,11 @@ tern	G_show_file_times_m13(FILE_TIMES_m13 *ft)
 si4	G_show_function_stack_m13(pid_t_m13 _id)
 {
 #ifdef FT_DEBUG_m13
-	
-	si1			*c, thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13], title[PROC_THREAD_NAME_LEN_DEFAULT_m13 + 48];
+	const si1		*thread_name;
+	si1			*c, title[THREAD_NAME_BYTES_m13 + 48];
 	si4			i, j, func_start_num;
 	FUNCTION_STACK_m13	*stack;
 	pid_t_m13		_pid;
-	pthread_t		*thread_p;
 
 	
 	// pass _id == 0 for error or local thread call
@@ -13338,15 +13446,12 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	}
 
 	// print thread name
-	thread_p = PROC_thread_for_id_m13(stack->_id);
-	if (thread_p) {
-		pthread_getname_m13(*thread_p, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-		if (*thread_name)
-			sprintf_m13(title, "Function Stack for %s(id: %lu)", thread_name, _id);
-		else
-			sprintf_m13(title, "Function Stack for Thread %lu:", _id);
-		printf_m13("%s\n", title);
-	}
+	thread_name = PROC_thread_name_m13(_id);
+	if (thread_name)
+		sprintf_m13(title, "Function Stack for %s(id: %lu)", thread_name, _id);
+	else
+		sprintf_m13(title, "Function Stack for Thread %lu:", _id);
+	printf_m13("%s\n", title);
 
 	// replace string characters with '-' (terminal zero preserved)
 	c = title - 1;
@@ -13357,15 +13462,15 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 	// print stack
 	for (i = 0, j = func_start_num; i <= stack->top_idx; ++i, ++j) {
 		if (stack->entries[i].return_line <= 0)
-			#ifdef MATLAB_m13
-			mexPrintf("%d)\t%s(~)\n", j, stack->entries[i].name);
-			#else
+			#ifdef MATLAB_m13  // no text color
+			printf_m13("%d)\t%s(~)\n", j, stack->entries[i].name);
+			#else  // colored text
 			printf_m13("%d)\t%s(%s~%s)\n", j, stack->entries[i].name, TC_BLUE_m13, TC_RESET_m13);
 			#endif
 		else
-			#ifdef MATLAB_m13
-			mexPrintf("%d)\t%s(%d)\n", j, stack->entries[i].name, stack->entries[i].return_line);
-			#else
+			#ifdef MATLAB_m13  // no text color
+			printf_m13("%d)\t%s(%d)\n", j, stack->entries[i].name, stack->entries[i].return_line);
+			#else  // colored text
 			printf_m13("%d)\t%s(%s%d%s)\n", j, stack->entries[i].name, TC_BLUE_m13, stack->entries[i].return_line, TC_RESET_m13);
 			#endif
 	}
@@ -13431,15 +13536,18 @@ void  G_show_globals_m13(void)
 }
 
 
-tern	G_show_level_header_m13(LH_m13 *lh)
+tern	G_show_level_header_m13(void *level_header)
 {
 	si1	hex_str[HEX_STR_BYTES_m13(sizeof(ui8), 0)];
 	si1	bin_str[BIN_STR_BYTES_m13(sizeof(ui8), 1)];
 	si1	tim_str[TIME_STRING_BYTES_m13];
+	LH_m13	*lh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	lh = (LH_m13 *) level_header;
 		
 	printf_m13("---------------- Level Header - START ----------------\n");
 	STR_hex_m13(hex_str, (ui1 *) lh->type_string, sizeof(ui4), NULL, TRUE_m13);
@@ -13462,10 +13570,14 @@ tern	G_show_level_header_m13(LH_m13 *lh)
 	} else {
 		printf_m13("Name: null\n");
 	}
-	if (lh->parent)
-		printf_m13("Parent: set  (addr: %lu)\n", (ui8) lh->parent);
-	else
+	if (lh->parent) {
+		if (lh->type_code == PROC_GLOBS_TYPE_CODE_m13)
+			printf_m13("Parent: process globals  (addr: %lu)\n", (ui8) lh->parent);
+		else
+			printf_m13("Parent: set  (addr: %lu; path: \"%s\")\n", (ui8) lh->parent, lh->parent->path);
+	} else {
 		printf_m13("Parent: null\n");
+	}
 	if (lh->proc_globs)
 		printf_m13("Process Globals: set  (addr: %lu)\n", (ui8) lh->proc_globs);
 	else
@@ -14056,7 +14168,7 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 }
 
 
-tern	G_show_proc_globs_m13(LH_m13 *lh)
+tern	G_show_proc_globs_m13(void *level_header)
 {
 	si1 		tim_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
 	PROC_GLOBS_m13	*pg;
@@ -14065,7 +14177,7 @@ tern	G_show_proc_globs_m13(LH_m13 *lh)
 	G_push_function_m13();
 #endif
 	
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	
 	printf_m13("\nProcess Globals\n===============\n");
 	printf_m13("\n_id: ");
@@ -14251,7 +14363,7 @@ tern	G_show_records_m13(FPS_m13 *rec_data_fps, si4 *record_filters)
 }
 
 
-tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
+tern	G_show_Sgmt_records_m13(void *level_header, Sgmt_REC_m13 *Sgmt_recs)
 {
 	si1	  		tim_str[TIME_STRING_BYTES_m13];
 	ui4			source;
@@ -14265,15 +14377,15 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 #endif
 
 	if (Sgmt_recs == NULL) {
-		Sgmt_recs = G_Sgmt_records_m13(lh, INDEX_SEARCH_m13);
+		Sgmt_recs = G_Sgmt_records_m13(level_header, INDEX_SEARCH_m13);
 		if (Sgmt_recs == NULL) {
 			G_set_error_m13(E_GEN_m13, "cannot get Sgmt records array");
 			return_m13(FALSE_m13);
 		}
 	}
-	source = G_Sgmt_records_source_m13(lh, Sgmt_recs);
+	source = G_Sgmt_records_source_m13(level_header, Sgmt_recs);
 
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	n_segs = pg->current_session.n_segments;
 	if (n_segs == SEGMENT_NUMBER_NO_ENTRY_m13) {  // == 0
 		G_set_error_m13(E_GEN_m13, "empty Sgmt records array");
@@ -14293,7 +14405,7 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 			printf_m13("Start Time: no entry\n");
 		}else {
 			G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
-			STR_time_m13(lh, Sgmt->start_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			STR_time_m13(level_header, Sgmt->start_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
 			G_pop_behavior_m13();
 			printf_m13("Start Time: %ld (oUTC)  [%s]\n", Sgmt->start_time, tim_str);
 		}
@@ -14301,7 +14413,7 @@ tern	G_show_Sgmt_records_m13(LH_m13 *lh, Sgmt_REC_m13 *Sgmt_recs)
 			printf_m13("End Time: no entry\n");
 		} else {
 			G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
-			STR_time_m13(lh, Sgmt->end_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
+			STR_time_m13(level_header, Sgmt->end_time, tim_str, TRUE_m13, FALSE_m13, FALSE_m13);
 			printf_m13("End Time: %ld (oUTC)  [%s]\n", Sgmt->end_time, tim_str);
 			G_pop_behavior_m13();
 		}
@@ -14428,7 +14540,7 @@ tern  G_show_slice_m13(SLICE_m13 *slice)
 }
 
 
-tern  G_show_timezone_info_m13(TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail)
+tern  G_show_timezone_info_m13(const TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14707,7 +14819,7 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		else if (uh->encryption_1 == -LEVEL_2_ENCRYPTION_m13)
 			printf_m13("level 2, currently decrypted");
 		else if (uh->encryption_1 == ENCRYPTION_VARIABLE_m13)
-			printf_m13("variable encryption");
+			printf_m13("variable");
 		else
 			printf_m13("unrecognized code");
 		printf_m13("  (%hhd)\n", uh->encryption_1);
@@ -14724,7 +14836,7 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		else if (uh->encryption_2 == -LEVEL_2_ENCRYPTION_m13)
 			printf_m13("level 2, currently decrypted");
 		else if (uh->encryption_2 == ENCRYPTION_VARIABLE_m13)
-			printf_m13("variable encryption");
+			printf_m13("variable");
 		else
 			printf_m13("unrecognized code");
 		printf_m13("  (%hhd)\n", uh->encryption_2);
@@ -14741,7 +14853,7 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		else if (uh->encryption_3 == -LEVEL_2_ENCRYPTION_m13)
 			printf_m13("level 2, currently decrypted");
 		else if (uh->encryption_3 == ENCRYPTION_VARIABLE_m13)
-			printf_m13("variable encryption");
+			printf_m13("variable");
 		else
 			printf_m13("unrecognized code");
 		printf_m13("  (%hhd)\n", uh->encryption_3);
@@ -14758,7 +14870,7 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		else if (uh->encryption_4 == -LEVEL_2_ENCRYPTION_m13)
 			printf_m13("level 2, currently decrypted");
 		else if (uh->encryption_4 == ENCRYPTION_VARIABLE_m13)
-			printf_m13("variable encryption");
+			printf_m13("variable");
 		else
 			printf_m13("unrecognized code");
 		printf_m13("  (%hhd)\n", uh->encryption_4);
@@ -14898,7 +15010,7 @@ tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 	
 	// build ACQ_NUM_SORT_m13 array
 	acq_idxs = (ACQ_NUM_SORT_m13 *) malloc(n_chans * sizeof(ACQ_NUM_SORT_m13));
-	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	seg_idx = G_segment_index_m13(sess, FIRST_OPEN_SEG_m13);
 	if (seg_idx == FALSE_m13)
 		return_m13(FALSE_m13);
 	*num_str = 0;
@@ -14961,152 +15073,146 @@ tern	G_sort_channels_by_acq_num_m13(SESS_m13 *sess)
 }
 
 
-tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
+tern	G_sort_records_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps)
 {
 	static tern		message_given = FALSE_m13;
-	tern			reopen_ri, reopen_rd;
-	ui1			*old_rd, *new_rd, *new_rh;
-	si1			ri_mode_str[8], rd_mode_str[8];
-	si8			i, ri_len, rd_len, n_recs, file_start_time, new_rd_offset;
-	FPS_m13			*ri_fps, *rd_fps;
-	REC_IDX_m13		*ri;
-	REC_HDR_m13		*old_rh;
+	ui1			*ri_data, *rd_data, *sorted_rd_data;
+	si8			i, nrw, ri_len, rd_len, n_recs, file_start_time, sorted_rd_offset;
+	FILE_m13		*ri_fp, *rd_fp;
+	UH_m13			*ri_uh, *rd_uh, *sorted_rd_uh;
+	REC_IDX_m13		*ri, *inds;
+	REC_HDR_m13		*new_rh, *old_rh;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// called by G_read_records_m13() after header read
 	// inefficient, but should be infrequent if records are written out after sorting
-	// returns TRUE_m12 on success, FALSE_m13 on failure
+	// returns TRUE_m13 on success, FALSE_m13 on failure
 
-	if (rec_inds_fps == NULL || rec_data_fps == NULL) {
-		G_set_error_m13(E_FGEN_m13, "record indices FPS or record data FPS is/are null");
+	if (ri_fps == NULL) {
+		G_set_error_m13(E_FGEN_m13, "record indices FPS is null");
+		return_m13(FALSE_m13);
+	}
+	if (rd_fps == NULL) {
+		G_set_error_m13(E_FGEN_m13, "record data FPS is null");
 		return_m13(FALSE_m13);
 	}
 
-	// rename pointers - no point other than less typing for me
-	// (receiving names more informative; this will probably be optimized out anyway)
-	ri_fps = rec_inds_fps;
-	rd_fps = rec_data_fps;
-	
-	// reopen indices
-	reopen_ri = FALSE_m13;
-	if (FPS_is_open_m13(ri_fps) == TRUE_m13) {
-		if ((ri_fps->params.fp->flags & FILE_FLAGS_WRITE_m13) == 0)
-			reopen_ri = TRUE_m13;
-		else if (ri_fps->params.fp->flags & FILE_FLAGS_APPEND_m13)  // need nonsequential writing
-			reopen_ri = TRUE_m13;
-		if (reopen_ri == TRUE_m13) {
-			strcpy(ri_mode_str, ri_fps->params.mode_str);
-			if (FPS_reopen_m13(ri_fps, "r+") == FALSE_m13)
-				return_m13(FALSE_m13);
-		}
-	} else {
-		ri_fps = FPS_open_m13(ri_fps->path, "r+", FPS_FULL_FILE_m13, ri_fps->parent);
-		if (ri_fps == NULL)
-			return_m13(FALSE_m13);
-	}
-	ri_len = ri_fps->params.fp->len;
-	
-	// reopen data
-	reopen_rd = FALSE_m13;
-	if (FPS_is_open_m13(rd_fps) == TRUE_m13) {
-		if ((rd_fps->params.fp->flags & FILE_FLAGS_WRITE_m13) == 0)
-			reopen_rd = TRUE_m13;
-		else if (rd_fps->params.fp->flags & FILE_FLAGS_APPEND_m13)  // need nonsequential writing
-			reopen_rd = TRUE_m13;
-		if (reopen_rd == TRUE_m13) {
-			strcpy(rd_mode_str, rd_fps->params.mode_str);
-			if (FPS_reopen_m13(rd_fps, "r+") == FALSE_m13)
-				return_m13(FALSE_m13);
-		}
-	} else {
-		rd_fps = FPS_open_m13(rd_fps->path, "r+", FPS_FULL_FILE_m13, rd_fps->parent);
-		if (rd_fps == NULL)
-			return_m13(FALSE_m13);
-	}
-	rd_len = rd_fps->params.fp->len;
-	
-	// read full files
-	ri_fps = FPS_read_m13(ri_fps, 0, FPS_FULL_FILE_m13, 0);
-	if (ri_fps == NULL)
-		return_m13(FALSE_m13);
-	rd_fps = FPS_read_m13(rd_fps, 0, FPS_FULL_FILE_m13, 0);
-	if (rd_fps == NULL)
-		return_m13(FALSE_m13);
-	
 	// only give this message once
 	if (message_given == FALSE_m13) {
 		G_message_m13("Sorting records ...\n");
 		message_given = TRUE_m13;
 	}
 	
+	// read in full files
+	ri_fp = fopen_m13(ri_fps->path, "r+");
+	rd_fp = fopen_m13(rd_fps->path, "r+");
+	if (ri_fp == NULL || rd_fp == NULL)
+		return_m13(FALSE_m13);
+	ri_len = ri_fp->len;
+	rd_len = rd_fp->len;
+	ri_data = (ui1 *) malloc_m13(ri_len);
+	rd_data = (ui1 *) malloc_m13(rd_len);
+	sorted_rd_data = (ui1 *) malloc_m13(rd_len);
+	if (ri_data == NULL || ri_data == NULL || sorted_rd_data == NULL)
+		return_m13(FALSE_m13);
+
+	nrw = fread_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
+	if (nrw != ri_len)
+		return_m13(FALSE_m13);
+	nrw = fread_m13(rd_data, sizeof(ui1), (size_t) rd_len, rd_fp);
+	if (nrw != rd_len)
+		return_m13(FALSE_m13);
+	
+	ri_uh = (UH_m13 *) ri_data;
+	rd_uh = (UH_m13 *) rd_data;
+	sorted_rd_uh = (UH_m13 *) sorted_rd_data;
+	n_recs = rd_uh->n_entries;  // use data for record count, terminal record index left alone
+	inds = (REC_IDX_m13 *) (ri_data + UH_BYTES_m13);
+	
 	// fix any no-entry start times (e.g. global, non-timed records)
-	n_recs = rd_fps->n_items;  // use data for record count, terminal record index left alone
-	ri = ri_fps->rec_inds;
-	file_start_time = ri_fps->uh->file_start_time;
+	ri = inds;
+	file_start_time = ri_uh->file_start_time;
 	for (i = n_recs; i--; ++ri) {
 		if (ri->start_time == UUTC_NO_ENTRY_m13) {
-			old_rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + ri->file_offset);
+			old_rh = (REC_HDR_m13 *) (rd_data + ri->file_offset);
 			ri->start_time = old_rh->start_time = file_start_time;
 		}
 	}
 	
 	// sort indices (need old file offsets for now)
-	qsort(ri_fps->rec_inds, (size_t) n_recs, sizeof(REC_IDX_m13), G_compare_record_index_times);  // leave terminal index where it is
-	
-	new_rd = (ui1 *) malloc_m13((size_t) rd_fps->params.raw_data_bytes);
-	if (new_rd == NULL)
-		return_m13(FALSE_m13);
-	
-	// swap data
-	old_rd = rd_fps->params.raw_data;
-	rd_fps->params.raw_data = new_rd;
-
+	qsort(inds, (size_t) n_recs, sizeof(REC_IDX_m13), G_compare_record_index_times);  // leave terminal index where it is
+		
 	// copy universal header
-	memcpy(new_rd, old_rd, (size_t) UH_BYTES_m13);
-
-	// set fps pointers to new data
-	rd_fps->uh = (UH_m13 *) rd_fps->params.raw_data;
-	rd_fps->rec_data = rd_fps->params.raw_data + UH_BYTES_m13;
+	memcpy(sorted_rd_data, rd_data, (size_t) UH_BYTES_m13);
 	
 	// move records
-	ri = ri_fps->rec_inds;
-	new_rd_offset = UH_BYTES_m13;
+	ri = inds;
+	sorted_rd_offset = UH_BYTES_m13;
 	for (i = n_recs; i--; ++ri) {
-		old_rh = (REC_HDR_m13 *) (old_rd + ri->file_offset);  // indices sorted by start time; old offsets intact & used here
-		new_rh = new_rd + new_rd_offset;
+		old_rh = (REC_HDR_m13 *) (rd_data + ri->file_offset);  // indices sorted by start time; old offsets intact & used here
+		new_rh = (REC_HDR_m13 *) (sorted_rd_data + sorted_rd_offset);
 		memcpy(new_rh, old_rh, old_rh->total_record_bytes);
-		ri->file_offset = new_rd_offset;  // update index to new offset
-		new_rd_offset += old_rh->total_record_bytes;
+		ri->file_offset = sorted_rd_offset;  // update index to new offset
+		sorted_rd_offset += old_rh->total_record_bytes;
 	}
-	free_m13(old_rd);
+	free_m13(rd_data);
 	
 	// update universal headers
-	ri_fps->uh->ordered = rd_fps->uh->ordered = TRUE_m13;
+	ri_uh->ordered = sorted_rd_uh->ordered = TRUE_m13;
+
+	// calculate crcs
+	ri_uh->body_CRC = CRC_calculate_m13(ri_data + UH_BYTES_m13, ri_len - UH_BYTES_m13);
+	ri_uh->header_CRC = CRC_calculate_m13(ri_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
+	rd_uh->body_CRC = CRC_calculate_m13(rd_data + UH_BYTES_m13, rd_len - UH_BYTES_m13);
+	rd_uh->header_CRC = CRC_calculate_m13(rd_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
 
 	// write out sorted files
 	if (globals_m13->write_sorted_records == TRUE_m13) {
-		ri_fps->uh->body_CRC = rd_fps->uh->body_CRC = CRC_NO_ENTRY_m13;  // force recalculation of crcs (b/c crcs order sensitive)
-		if (FPS_write_m13(ri_fps, FPS_FULL_FILE_m13, ri_len - UH_BYTES_m13, ri_fps->uh->n_entries) == FALSE_m13)  // note: passing FPS_FULL_FILE_m13 in offset so can pass n_bytes
+		fseek_m13(ri_fp, 0, SEEK_SET);
+		nrw = fwrite_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
+		if (nrw != ri_len)
 			return_m13(FALSE_m13);
-		if (FPS_write_m13(rd_fps, FPS_FULL_FILE_m13, rd_len - UH_BYTES_m13, rd_fps->uh->n_entries) == FALSE_m13)  // note: passing FPS_FULL_FILE_m13 in offset so can pass n_bytes
+		fseek_m13(rd_fp, 0, SEEK_SET);
+		nrw = fwrite_m13(sorted_rd_data, sizeof(ui1), (size_t) rd_len, rd_fp);
+		if (nrw != rd_len)
 			return_m13(FALSE_m13);
 	}
 	
-	if (reopen_ri == TRUE_m13) {
-		if (FPS_reopen_m13(ri_fps, ri_mode_str) == FALSE_m13)
-			return_m13(FALSE_m13);
-	} else if (FPS_close_m13(ri_fps) == FALSE_m13) {
-		return_m13(FALSE_m13);
-	}
+	fclose_m13(ri_fp);
+	fclose_m13(rd_fp);
+	
+	// update FPSs
+	free_m13(ri_fps->params.raw_data);
+	ri_fps->params.raw_data = ri_data;
+	ri_fps->params.raw_data_bytes = malloc_size_m13(ri_data);
+	ri_fps->uh = ri_uh;
+	ri_fps->rec_inds = (REC_IDX_m13 *) (ri_data + UH_BYTES_m13);
+	ri_fps->n_items = ri_uh->n_entries;
+	ri_fps->params.header_read = ri_fps->params.full_file_read = TRUE_m13;
+	if (fisopen_m13(ri_fps->params.fp) == TRUE_m13)  // close because full file read
+		if ((ri_fps->params.fp->flags & FILE_FLAGS_WRITE_m13) == 0)  // unless writing enabled
+			if (fclose_m13(ri_fps->params.fp))
+				return_m13(FALSE_m13);
 
-	if (reopen_rd == TRUE_m13) {
-		if (FPS_reopen_m13(rd_fps, rd_mode_str) == FALSE_m13)
-			return_m13(FALSE_m13);
-	} else if (FPS_close_m13(rd_fps) == FALSE_m13) {
-		return_m13(FALSE_m13);
-	}
+	free_m13(rd_fps->params.raw_data);
+	rd_fps->params.raw_data = sorted_rd_data;
+	rd_fps->params.raw_data_bytes = malloc_size_m13(sorted_rd_data);
+	rd_fps->uh = sorted_rd_uh;
+	rd_fps->rec_data = rd_data + UH_BYTES_m13;
+	rd_fps->n_items = sorted_rd_uh->n_entries;
+	rd_fps->params.header_read = rd_fps->params.full_file_read = TRUE_m13;
+	if (fisopen_m13(rd_fps->params.fp) == TRUE_m13)  // close because full file read
+		if ((rd_fps->params.fp->flags & FILE_FLAGS_WRITE_m13) == 0)  // unless writing enabled
+			if (fclose_m13(rd_fps->params.fp))
+				return_m13(FALSE_m13);
+
+	// this function is called before FPS_read_m13() in G_read_records_m13()
+	// so when FPS_read_m13 is called it will expect the records to have been decrypted
+	// because full_file_read == TRUE_m13
+	G_decrypt_records_m13(rd_fps);
 
 	return_m13(TRUE_m13);
 }
@@ -15115,13 +15221,14 @@ tern	G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	G_swap_names_m13(LH_m13 *lh)
+tern	G_swap_names_m13(void *level_header)
 {
 	si1		num_str[FILE_NUMBERING_DIGITS_m13 + 1], seg_name[SEG_NAME_BYTES_m13];
 	UH_m13		uh;
 	SSR_m13		*ssr;
 	CHAN_m13	*chan;
 	SEG_m13		*seg;
+	LH_m13		*lh;
 	PROC_GLOBS_m13	*pg;
 	
 #ifdef FT_DEBUG_m13
@@ -15132,6 +15239,7 @@ tern	G_swap_names_m13(LH_m13 *lh)
 	// returns FALSE_m13 if no alternate name to swap to
 	// returns UNKNOWN_m13 on error
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		G_set_error_m13(E_GEN_m13, "level is null");
 		return_m13(UNKNOWN_m13);
@@ -15552,15 +15660,17 @@ void	G_thread_exit_m13(void)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-void	G_update_access_time_m13(LH_m13 *lh)
+void	G_update_access_time_m13(void *level_header)
 {
 	si8	acc;
+	LH_m13	*lh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	acc = G_current_uutc_m13();
+	lh = (LH_m13 *) level_header;
 	do {
 		lh->access_time = acc;
 		lh = lh->parent;
@@ -15809,21 +15919,22 @@ tern	G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name)  // u
 
 tern	G_update_MED_type_m13(const si1 *path)
 {
-	tern			r_val, write_sorted_records;
-	ui1			*rd, *r_rd;
-	si1			*text, tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13];
+	tern			r_val;
+	ui1			*rd, *r_rd, *ri_data, *rd_data, *encryption_key;
+	si1			*text, tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13], ri_path[PATH_BYTES_m13], rd_path[PATH_BYTES_m13], first_rec_encryption;
 	ui4			type_code;
-	si8			i, bytes_to_read, bytes_to_write, n_blocks, header_offset;
+	si8			i, bytes_to_read, bytes_to_write, n_recs, header_offset;
 	si8			body_bytes, text_bytes, r_pos, w_pos;
-	size_t			nr, nw;
-	FILE_m13		*fp;
-	FPS_m13			*ri_fps, *rd_fps;
+	size_t			nr, nw, ri_len, rd_len;
+	FILE_m13		*fp, *ri_fp, *rd_fp;
 	UH_m13			*uh, *ri_uh, *rd_uh;
-	REC_IDX_m13		*ri;
+	REC_IDX_m13		*ri, *inds;
 	REC_HDR_m13		r_rh, *w_rh;
 	REC_Sgmt_v10_m13	Sgmt_v10;
 	REC_Sgmt_v11_m13	*Sgmt_v11;
 	REC_Note_v11_m13	r_Note_v11, *w_Note_v11;
+	PASSWORD_DATA_m13	*pwd;
+	PROC_GLOBS_m13		*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -15833,9 +15944,8 @@ tern	G_update_MED_type_m13(const si1 *path)
 		return_m13(FALSE_m13);
 
 	r_val = FALSE_m13;
-	rd = NULL;
-	fp = NULL;
-	ri_fps = rd_fps = NULL;
+	rd = ri_data = rd_data = NULL;
+	fp = ri_fp = rd_fp = NULL;
 	
 	// metadata (uh only)
 	type_code = G_MED_type_code_from_string_m13(path);
@@ -15848,7 +15958,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 
 		// read in raw data
 		bytes_to_read = METADATA_FILE_BYTES_m13;
-		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
 		if (rd == NULL)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 		nr = fread_m13(rd, sizeof(ui1), (size_t) bytes_to_read, fp);
@@ -15923,7 +16033,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 		bytes_to_read = UH_BYTES_m13;
 		if (fseek_m13(fp, header_offset, SEEK_SET))
 			goto UPDATE_MED_TYPE_FAIL_m13;
-		rd = (ui1 *) malloc((size_t) bytes_to_read);
+		rd = (ui1 *) malloc_m13((size_t) bytes_to_read);
 		if (rd == NULL)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 		nr = fread_m13(rd, sizeof(ui1), (size_t) bytes_to_read, fp);
@@ -15969,27 +16079,36 @@ tern	G_update_MED_type_m13(const si1 *path)
 	else if (type_code == REC_INDS_TYPE_CODE_m13 || type_code == REC_DATA_TYPE_CODE_m13) {
 		
 		G_path_parts_m13(path, tmp_path, tmp_name, NULL);
-		// open with "r+" so not automatically closed after FPS_FULL_FILE_m13 read (for write)
-		write_sorted_records = globals_m13->write_sorted_records;
-		globals_m13->write_sorted_records = FALSE_m13;  // don't want records file written by G_sort_records_m13()
-		globals_m13->update_MED_version = FALSE_m13;  // prevent recurrence from FPS_read_m13()  (know this is TRUE_m13 or wouldn't be here)
 		if (type_code == REC_INDS_TYPE_CODE_m13) {
-			ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, path, "r+", NULL, NULL, 0);
-			sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, REC_DATA_TYPE_STR_m13);
-			rd_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_path, "r+", NULL, NULL, 0);
+			strcpy_m13(ri_path, path);
+			sprintf_m13(rd_path, "%s/%s.%s", tmp_path, tmp_name, REC_DATA_TYPE_STR_m13);
 		} else {  // type_code == REC_DATA_TYPE_CODE_m13
-			rd_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, path, "r+", NULL, NULL, 0);
-			sprintf_m13(tmp_path, "%s/%s.%s", tmp_path, tmp_name, REC_INDS_TYPE_STR_m13);
-			ri_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_path, "r+", NULL, NULL, 0);
+			strcpy_m13(rd_path, path);
+			sprintf_m13(ri_path, "%s/%s.%s", tmp_path, tmp_name, REC_INDS_TYPE_STR_m13);
 		}
-		globals_m13->write_sorted_records = write_sorted_records;  // reset global
-		globals_m13->update_MED_version = TRUE_m13;  // restore
-		if (ri_fps == NULL || rd_fps == NULL)
+
+		// read in full files
+		ri_fp = fopen_m13(ri_path, "r+");
+		rd_fp = fopen_m13(rd_path, "r+");
+		if (ri_fp == NULL || rd_fp == NULL)
+			return_m13(FALSE_m13);
+		ri_len = ri_fp->len;
+		rd_len = rd_fp->len;
+		ri_data = (ui1 *) malloc_m13(ri_len);
+		rd_data = (ui1 *) malloc_m13(rd_len);
+		if (ri_data == NULL || ri_data == NULL)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		nr = fread_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
+		if (nr != ri_len)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		nr = fread_m13(rd_data, sizeof(ui1), (size_t) rd_len, rd_fp);
+		if (nr != rd_len)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 
-		// set up
-		ri_uh = ri_fps->uh;
-		rd_uh = rd_fps->uh;
+		ri_uh = (UH_m13 *) ri_data;
+		rd_uh = (UH_m13 *) rd_data;
+		n_recs = rd_uh->n_entries;  // use data for record count, terminal record index left alone
+		inds = (REC_IDX_m13 *) (ri_data + UH_BYTES_m13);
 
 		// other file already done (they're done in conjunction, so can get here)
 		if (ri_uh->MED_version_major == MED_FORMAT_VERSION_MAJOR_m13 && ri_uh->MED_version_minor == MED_FORMAT_VERSION_MINOR_m13) {
@@ -16014,31 +16133,51 @@ tern	G_update_MED_type_m13(const si1 *path)
 		// encryption
 		ri_uh->expanded_passwords = rd_uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
 		ri_uh->encryption_rounds = rd_uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
-		ri_uh->encryption_1 = rd_uh->encryption_1 = ENCRYPTION_VARIABLE_m13;  // encryption of record data
+		first_rec_encryption = inds->encryption_level;
+		ri_uh->encryption_1 = rd_uh->encryption_1 = first_rec_encryption;  // if this varies, vlue will change to ENCRYPTION_VARIABLE_m13
 		ri_uh->encryption_2 = ri_uh->encryption_3 = ri_uh->encryption_4 = rd_uh->encryption_2 = rd_uh->encryption_3 = rd_uh->encryption_4 = NO_ENCRYPTION_m13;
 
 		// anonymized subject
 		memset(((ui1 *) ri_uh + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);
 		memset(((ui1 *) rd_uh + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);
 
-		// set up differential data read & write locations
-		r_pos = w_pos = UH_BYTES_m13;
+		// get password
+		pg = G_proc_globs_m13(NULL);
+		pwd = &pg->password_data;
 
 		// loop over records
-		ri = ri_fps->rec_inds;
-		ri_uh->body_CRC = rd_uh->body_CRC = CRC_START_VALUE_m13;
-		n_blocks = rd_uh->n_entries;
+		r_pos = w_pos = UH_BYTES_m13;  // differential data read & write locations
+		ri = inds;
 		rd_uh->maximum_entry_size = 0;  // maximum_entry_size may shrink because updated records may be smaller
 
 		// update Sgmt & Note records, copy other types
-		for (i = 0; i < n_blocks; ++i, ++ri) {
+		for (i = 0; i < n_recs; ++i, ++ri) {
 		
-			r_rd = rd_fps->params.raw_data + r_pos;
+			r_rd = rd_data + r_pos;
 			r_rh = *((REC_HDR_m13 *) r_rd);  // copy
-			w_rh = (REC_HDR_m13 *) (rd_fps->params.raw_data + w_pos);  // pointer
-
+			w_rh = (REC_HDR_m13 *) (rd_data + w_pos);  // pointer
+			
+			if (ri->encryption_level != first_rec_encryption)
+				ri_uh->encryption_1 = rd_uh->encryption_1 = ENCRYPTION_VARIABLE_m13;
+			
 			// Sgmt or Note record
-			if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13 || r_rh.type_code == REC_Note_TYPE_CODE_m13) {
+			if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13 || r_rh.type_code == REC_Note_TYPE_CODE_m13 || r_rh.type_code == REC_SyLg_TYPE_CODE_m13) {
+				
+				// decrypt
+				if (r_rh.encryption_level > NO_ENCRYPTION_m13) {
+					if (pwd->access_level >= r_rh.encryption_level) {
+						if (r_rh.encryption_level == LEVEL_1_ENCRYPTION_m13)
+							encryption_key = pwd->level_1_encryption_key;
+						else
+							encryption_key = pwd->level_2_encryption_key;
+						AES_decrypt_m13((ui1 *) &r_rh + REC_HDR_BYTES_m13, r_rh.total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+						r_rh.encryption_level = -r_rh.encryption_level;  // mark as currently decrypted
+					}
+				}
+				
+				// copy record header
+				*w_rh = r_rh;
+
 				if (r_rh.type_code == REC_Sgmt_TYPE_CODE_m13) {
 					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
 						// update structure
@@ -16065,7 +16204,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 						// update version
 						ri->version_minor = w_rh->version_minor = 1;
 					}
-				} else {  // rh->type_code == REC_Note_TYPE_CODE_m13 (just reduce alignment requirement from 16 to 8 bytes)
+				} else if (r_rh.type_code == REC_Note_TYPE_CODE_m13) {  // (just reduce alignment requirement from 16 to 8 bytes)
 					// Note version 1.0
 					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
 						text_bytes = (si8) (r_rh.total_record_bytes - REC_HDR_BYTES_m13);
@@ -16098,28 +16237,80 @@ tern	G_update_MED_type_m13(const si1 *path)
 						}
 						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
 					}
+				} else {  // r_rh.type_code == REC_SyLg_TYPE_CODE_m13 (just reduce alignment requirement from 16 to 8 bytes)
+					if (r_rh.version_major == 1 && r_rh.version_minor == 0) {
+						text_bytes = (si8) (r_rh.total_record_bytes - REC_HDR_BYTES_m13);
+						if (text_bytes) {
+							text = (si1 *) r_rd + REC_HDR_BYTES_m13;
+							text_bytes = strlen(text) + 1;  // account for terminal zero
+						}
+						body_bytes = text_bytes;
+						if (text_bytes) {
+							memmove_m13(((ui1 *) w_rh + REC_HDR_BYTES_m13), text, (size_t) text_bytes);
+							body_bytes = G_pad_m13((ui1 *) text, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13);
+						}
+						w_rh->total_record_bytes = body_bytes + REC_HDR_BYTES_m13;
+					}
 				}
+				
+				// calculate record crc
+				w_rh->record_CRC = CRC_calculate_m13((ui1 *) w_rh + sizeof(crc4), w_rh->total_record_bytes - sizeof(crc4));;
+				
+				// encrypt
+				if (w_rh->encryption_level < NO_ENCRYPTION_m13) {
+					w_rh->encryption_level = -w_rh->encryption_level;  // mark as currently encrypted
+					if (w_rh->encryption_level == LEVEL_1_ENCRYPTION_m13)
+						encryption_key = pwd->level_1_encryption_key;
+					else
+						encryption_key = pwd->level_2_encryption_key;
+					AES_encrypt_m13((ui1 *) w_rh + REC_HDR_BYTES_m13, w_rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+				}
+
 			} else if (r_pos != w_pos) {  // neither of above types => just move
 				memmove_m13(w_rh, r_rd, r_rh.total_record_bytes);
 			}
 
+			// update record data header maximum entry size
+			if (rd_uh->maximum_entry_size < w_rh->total_record_bytes)
+				rd_uh->maximum_entry_size = w_rh->total_record_bytes;
+			
+			// calculate record crc if not calculated
+			if (w_rh->record_CRC == 0)
+				w_rh->record_CRC = CRC_calculate_m13((ui1 *) w_rh + sizeof(crc4), w_rh->total_record_bytes - sizeof(crc4));;
+			
 			ri->file_offset = w_pos;
 			r_pos += r_rh.total_record_bytes;
 			w_pos += w_rh->total_record_bytes;
 		}
 
+		// set terminal index
+		rd_len = w_pos;
+		ri->file_offset = rd_len;
+		
 		// truncate rd_fps if shrunk
-		if (w_pos < r_pos)
-			if (ftruncate_m13(rd_fps->params.fp, w_pos))  // note ftruncate_m13() takes the file pointer rather than the file descriptor in standard posix
+		if (rd_len < r_pos)
+			if (ftruncate_m13(rd_fp, rd_len))  // note ftruncate_m13() takes the file pointer rather than the file descriptor in standard posix
 				goto UPDATE_MED_TYPE_FAIL_m13;
 
-		// write out
-		nw = ri_fps->params.fp->len - UH_BYTES_m13;
-		if (FPS_write_m13(ri_fps, FPS_FULL_FILE_m13, nw, ri_uh->n_entries) == FALSE_m13)  // note: pass FPS_FULL_FILE_m13 in offset so can pass n_bytes
-			goto UPDATE_MED_TYPE_FAIL_m13;
-		nw = w_pos - UH_BYTES_m13;
-		if (FPS_write_m13(rd_fps, FPS_FULL_FILE_m13, nw, rd_uh->n_entries) == FALSE_m13)  // note: pass FPS_FULL_FILE_m13 in offset so can pass n_bytes
-			goto UPDATE_MED_TYPE_FAIL_m13;
+		// update crcs
+		ri_uh->body_CRC = CRC_calculate_m13(ri_data + UH_BYTES_m13, ri_len - UH_BYTES_m13);
+		ri_uh->header_CRC = CRC_calculate_m13(ri_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
+		rd_uh->body_CRC = CRC_calculate_m13(rd_data + UH_BYTES_m13, rd_len - UH_BYTES_m13);
+		rd_uh->header_CRC = CRC_calculate_m13(rd_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
+
+		// write out sorted files
+		if (globals_m13->write_sorted_records == TRUE_m13) {
+			if (fseek_m13(ri_fp, 0, SEEK_SET))
+				goto UPDATE_MED_TYPE_FAIL_m13;
+			nw = fwrite_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
+			if (nw != ri_len)
+				goto UPDATE_MED_TYPE_FAIL_m13;
+			if (fseek_m13(rd_fp, 0, SEEK_SET))
+				goto UPDATE_MED_TYPE_FAIL_m13;
+			nw = fwrite_m13(rd_data, sizeof(ui1), (size_t) rd_len, rd_fp);
+			if (nw != rd_len)
+				goto UPDATE_MED_TYPE_FAIL_m13;
+		}
 	}
 
 	// unknown file type
@@ -16134,13 +16325,17 @@ tern	G_update_MED_type_m13(const si1 *path)
 UPDATE_MED_TYPE_FAIL_m13:
 
 	if (rd)
-		free(rd);
+		free_m13(rd);
+	if (ri_data)
+		free_m13(ri_data);
+	if (rd_data)
+		free_m13(rd_data);
 	if (fp)
 		fclose_m13(fp);
-	if (ri_fps)
-		FPS_free_m13(ri_fps);
-	if (rd_fps)
-		FPS_free_m13(rd_fps);
+	if (ri_fp)
+		fclose_m13(ri_fp);
+	if (rd_fp)
+		fclose_m13(rd_fp);
 
 	return_m13(r_val);
 }
@@ -16181,7 +16376,7 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 	r_val = FALSE_m13;
 
 	// set up
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	G_message_m13("Updating session \"%s\" to MED version %d.%d ...\n", pg->current_session.fs_name, MED_FORMAT_VERSION_MAJOR_m13, MED_FORMAT_VERSION_MINOR_m13);
 	sess_path = pg->current_session.path;
 	if (STR_is_empty_m13(sess_path) == TRUE_m13) {
@@ -16355,7 +16550,7 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	updated = TRUE_m13;
 	reopen = r_val = FALSE_m13;
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	sess_path = pg->current_session.path;
 	if (STR_is_empty_m13(sess_path) == TRUE_m13) {
 		G_session_directory_m13(fps);
@@ -16682,7 +16877,7 @@ tern	G_update_session_name_header_m13(const si1 *path, const si1 *fs_name, const
 }
 
 
-si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, ...)  // varargs: si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
+si8 G_uutc_for_frame_number_m13(void *level_header, si8 target_frame_number, ui4 mode, ...)  // varargs(level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 {
 	tern			terminal_index;
 	si1			tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -16692,6 +16887,7 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 	sf8 			tmp_sf8, frame_rate;
 	ui4			mask;
 	va_list			v_args;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
@@ -16714,6 +16910,7 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 	// mode FIND_END_m13: last uutc < start of next frame period
 	// mode FIND_CENTER_m13: uutc closest to the center of the frame period
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {  // reference points passed
 		va_start(v_args, mode);
 		ref_frame_number = va_arg(v_args, si8);
@@ -16730,7 +16927,7 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 			case VID_CHAN_TYPE_CODE_m13:
 			case SESS_TYPE_CODE_m13:
 				seg_num = G_segment_for_frame_number_m13(lh, target_frame_number);
-				seg_idx = G_segment_index_m13(seg_num, lh);
+				seg_idx = G_segment_index_m13(lh, seg_num);
 				if (seg_idx == FALSE_m13)
 					return_m13(UUTC_NO_ENTRY_m13);
 				if (lh->type_code == VID_CHAN_TYPE_CODE_m13) {
@@ -16831,7 +17028,7 @@ si8 G_uutc_for_frame_number_m13(LH_m13 *lh, si8 target_frame_number, ui4 mode, .
 }
 
 
-si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode, ...)  // varargs: si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
+si8	G_uutc_for_sample_number_m13(void *level_header, si8 target_sample_number, ui4 mode, ...)  // varargs(level_header == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 {
 	tern			terminal_index;
 	si1			tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
@@ -16841,6 +17038,7 @@ si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode,
 	sf8			tmp_sf8, sampling_frequency;
 	ui4			mask;
 	va_list			v_args;
+	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
 	SEG_m13			*seg;
 	CHAN_m13		*chan;
@@ -16863,6 +17061,7 @@ si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode,
 	// mode FIND_END_m13: last uutc < start of next sample period
 	// mode FIND_CENTER_m13: uutc closest to the center of the sample period
 	
+	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {  // reference points passed
 		va_start(v_args, mode);
 		ref_sample_number = va_arg(v_args, si8);
@@ -16879,7 +17078,7 @@ si8	G_uutc_for_sample_number_m13(LH_m13 *lh, si8 target_sample_number, ui4 mode,
 			case TS_CHAN_TYPE_CODE_m13:
 			case SESS_TYPE_CODE_m13:
 				seg_num = G_segment_for_sample_number_m13(lh, target_sample_number);
-				seg_idx = G_segment_index_m13(seg_num, lh);
+				seg_idx = G_segment_index_m13(lh, seg_num);
 				if (seg_idx == FALSE_m13)
 					return_m13(UUTC_NO_ENTRY_m13);
 				if (lh->type_code == TS_CHAN_TYPE_CODE_m13) {
@@ -17410,7 +17609,7 @@ void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key,
 tern	AES_init_tables_m13(void)
 {
 	GLOBAL_TABLES_m13	*tables;
-
+	ui1			*AES_rcon_table, *AES_rsbox_table, *AES_sbox_table;
 	
 	tables = globals_m13->tables;
 	if (tables->AES_rcon_table)
@@ -17423,40 +17622,43 @@ tern	AES_init_tables_m13(void)
 	}
 
 	// rcon table
-	tables->AES_rcon_table = (ui1 *) malloc((size_t) AES_RCON_ENTRIES_m13);
-	if (tables->AES_rcon_table == NULL) {
+	AES_rcon_table = (ui1 *) malloc((size_t) AES_RCON_ENTRIES_m13);
+	if (AES_rcon_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		ui1 temp[AES_RCON_ENTRIES_m13] = AES_RCON_m13;
 		
-		memcpy(tables->AES_rcon_table, temp, (size_t) AES_RCON_ENTRIES_m13);
+		memcpy(AES_rcon_table, temp, (size_t) AES_RCON_ENTRIES_m13);
 	}
+	tables->AES_rcon_table = (const ui1 *) AES_rcon_table;
 	
 	// rsbox table
-	tables->AES_rsbox_table = (ui1 *) malloc((size_t) AES_RSBOX_ENTRIES_m13);
-	if (tables->AES_rsbox_table == NULL) {
+	AES_rsbox_table = (ui1 *) malloc((size_t) AES_RSBOX_ENTRIES_m13);
+	if (AES_rsbox_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		ui1 temp[AES_RSBOX_ENTRIES_m13] = AES_RSBOX_m13;
 		
-		memcpy(tables->AES_rsbox_table, temp, (size_t) AES_RSBOX_ENTRIES_m13);
+		memcpy(AES_rsbox_table, temp, (size_t) AES_RSBOX_ENTRIES_m13);
 	}
+	tables->AES_rsbox_table = (const ui1 *) AES_rsbox_table;
 
 	// sbox table
-	tables->AES_sbox_table = (ui1 *) malloc((size_t) AES_SBOX_ENTRIES_m13);
-	if (tables->AES_sbox_table == NULL) {
+	AES_sbox_table = (ui1 *) malloc((size_t) AES_SBOX_ENTRIES_m13);
+	if (AES_sbox_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
 	{
 		ui1 temp[AES_SBOX_ENTRIES_m13] = AES_SBOX_m13;
 		
-		memcpy(tables->AES_sbox_table, temp, (size_t) AES_SBOX_ENTRIES_m13);
+		memcpy(AES_sbox_table, temp, (size_t) AES_SBOX_ENTRIES_m13);
 	}
+	tables->AES_sbox_table = (const ui1 *) AES_sbox_table;
 
 	pthread_mutex_unlock_m13(&tables->mutex);
 
@@ -17566,8 +17768,9 @@ inline
 #endif
 void	AES_inv_sub_bytes_m13(ui1 state[][4])
 {
-	ui1	*ui1_p, *rsbox_table;
-	si4	i;
+	const ui1	*rsbox_table;
+	ui1		*ui1_p;
+	si4		i;
 	
 	
 	rsbox_table = globals_m13->tables->AES_rsbox_table;
@@ -17584,7 +17787,8 @@ void	AES_inv_sub_bytes_m13(ui1 state[][4])
 // NOTE: ensure any terminal unused bytes in key array (password) are zeroed
 ui1	*AES_key_expansion_m13(ui1 *expanded_key, const si1 *key)
 {
-	ui1		*rcon_table, *sbox_table, temp[4], k;
+	const ui1	*rcon_table, *sbox_table;
+	ui1		temp[4], k;
 	const si1	*si1_p1;
 	si1		*si1_p2, conditioned_key[AES_KEY_BYTES_m13];
 	si4		i, j;
@@ -17817,8 +18021,9 @@ inline
 #endif
 void	AES_sub_bytes_m13(ui1 state[][4])
 {
-	ui1	*ui1_p, *sbox_table;
-	si4	i;
+	const ui1	*sbox_table;
+	ui1		*ui1_p;
+	si4		i;
 	
 	
 	sbox_table = globals_m13->tables->AES_sbox_table;
@@ -18516,7 +18721,9 @@ ui8	AT_actual_size_m13(void *address)
 	AT_ENTRY_m13	*ate;
 	
 
-	if (address == NULL)  // usually from realloc() with ptr == NULL
+	// almost same as malloc_size_m13() except that function will fall throught ot system function if address not found
+	
+	if (address == NULL)  // usually from realloc_m13() with ptr == NULL
 		return(0);
 	
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
@@ -18524,52 +18731,68 @@ ui8	AT_actual_size_m13(void *address)
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
 		if (ate->address == address) {
-			actual_bytes = ate->actual_bytes;
-			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-			return(actual_bytes);
+			if (ate->free_function == NULL) {
+				actual_bytes = ate->actual_bytes;
+				pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+				return(actual_bytes);
+			}
 		}
 	}
 	
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-
-	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 	
+	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
+
 	return(0);
 }
 
 
-void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t requested_bytes)
+tern	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t requested_bytes)
 {
-	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1	*thread_name;
 	si4		i, n_entries;
 	pid_t_m13	_id;
 	AT_LIST_m13	*list;
-	AT_ENTRY_m13	*ate;
+	AT_ENTRY_m13	*ate, *first_freed_ate;
 
 
-	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 	_id = gettid_m13();
+	thread_name = PROC_thread_name_m13(_id);
 
 	if (address == NULL) {
-		if (*thread_name)
+		if (thread_name)
 			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %sattempting to add NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
-		return;
+		return(FALSE_m13);
 	}
 	
 	// get mutex
 	list = globals_m13->AT_list;
 	pthread_mutex_lock_m13(&list->mutex);
 
-	// find first freed address
+	// find matching address; keep track of find first freed address
 	n_entries = list->top_idx + 1;
 	ate = list->entries;
-	for (i = n_entries; i--; ++ate)
-		if (ate->free_function)
+	first_freed_ate = NULL;
+	for (i = n_entries; i--; ++ate) {
+		if (ate->address == address)
 			break;
-
-	if (i == -1) {  // new address
+		if (first_freed_ate == NULL)
+			if (ate->free_function)
+				first_freed_ate = ate;
+	}
+	
+	// address matched
+	if (i >= 0) {
+		if (ate->free_function == NULL) {  // should never happen
+			G_set_error_m13(E_GEN_m13, "memory allocated to address that is currently in use:  AT bug or egregious misuse");
+			return(FALSE_m13);
+		}
+		// else reassigned memory block => use this ate
+	} else if (first_freed_ate) {
+		ate = first_freed_ate;
+	} else {  // new address
 		if (n_entries == list->size) {  // expand list
 			n_entries += GLOBALS_AT_LIST_SIZE_INCREMENT_m13;
 			ate = (AT_ENTRY_m13 *) realloc(list->entries, n_entries * sizeof(AT_ENTRY_m13));
@@ -18585,7 +18808,6 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	
 	ate->free_function = NULL;
 	ate->free_line = 0;
-	*ate->free_thread_name = 0;
 	ate->free_thread_id = 0;
 	
 	// fill in
@@ -18602,28 +18824,25 @@ void	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	ate->requested_bytes = requested_bytes;
 	ate->alloc_function = function;
 	ate->alloc_line = line;
-	strcpy(ate->alloc_thread_name, thread_name);
 	ate->alloc_thread_id = gettid_m13();
 
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 	
-	return;
+	return(TRUE_m13);
 }
 
 
 void	AT_free_all_m13(const si1 *function, si4 line)
 {
 	const si1	*plural_str;
-	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
 	si8		i, alloced_entries;
-	pid_t_m13	tid;
+	pid_t_m13	_id;
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
+
 	
-	
-	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	tid = gettid_m13();
+	_id = gettid_m13();
 
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 
@@ -18639,7 +18858,7 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 			plural_str = "ies";
 		else
 			plural_str = "y";
-			printf_m13("\n%s(): freeing %ld entr%s:\n", __FUNCTION__, alloced_entries, plural_str);
+		printf_m13("\n%s(): freeing %ld entr%s:\n", __FUNCTION__, alloced_entries, plural_str);
 
 		ate = list->entries;
 		for (i = list->top_idx + 1; i--; ++ate) {
@@ -18654,8 +18873,7 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 				#endif
 				ate->free_function = function;
 				ate->free_line = line;
-				strcpy(ate->free_thread_name, thread_name);
-				ate->free_thread_id = tid;
+				ate->free_thread_id = _id;
 			}
 		}
 	}
@@ -18710,7 +18928,7 @@ AT_FREEABLE_UNLOCK_m13:
 
 tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 {
-	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1	*thread_name, *thread_name_2;
 	si8		i;
 	pid_t_m13	_id;
 	AT_LIST_m13	*list;
@@ -18719,11 +18937,11 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 	// Note this function does not free the accociated memory, just marks it as freed in the AT list
 
-	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 	_id = gettid_m13();
+	thread_name = PROC_thread_name_m13(_id);
 	
 	if (address == NULL) {
-		if (*thread_name)
+		if (thread_name)
 			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %sattempting to free NULL object%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
@@ -18743,7 +18961,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 	// no entry
 	if (i < 0) {
-		if (*thread_name)
+		if (thread_name)
 			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, _id);
 		else
 			G_warning_message_m13("%s(): %saddress was not allocated%s  [called at %s(%d); in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, _id);
@@ -18755,15 +18973,16 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	
 	// already freed
 	else if (ate->free_function) {
+		thread_name_2 = PROC_thread_name_m13(ate->free_thread_id);
 		G_warning_message_m13("%s(): %sDouble Free%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-		if (*ate->free_thread_name)
-			G_warning_message_m13("\tPrior free: called at %s(%d); in %s(id: %lu)\n", ate->free_function, ate->free_line, ate->free_thread_name, ate->free_thread_id);
+		if (thread_name)
+			G_warning_message_m13("\tThis free: requested at %s(%d); in %s(id: %lu)\n", function, line, thread_name, _id);
 		else
-			G_warning_message_m13("\tPrior free: called at %s(%d); in thread %lu\n", ate->free_function, ate->free_line, ate->free_thread_id);
-		if (*thread_name)
-			G_warning_message_m13("\tThis free: called at %s(%d); in %s(id: %lu)\n", function, line, thread_name, _id);
+			G_warning_message_m13("\tThis free: requested at %s(%d); in thread %lu\n", function, line, _id);
+		if (thread_name_2)
+			G_warning_message_m13("\tPrior free: requested at %s(%d); in %s(id: %lu)\n", ate->free_function, ate->free_line, thread_name_2, ate->free_thread_id);
 		else
-			G_warning_message_m13("\tThis free: called at %s(%d); in thread %lu\n", function, line, _id);
+			G_warning_message_m13("\tPrior free: requested at %s(%d); in thread %lu\n", ate->free_function, ate->free_line, ate->free_thread_id);
 
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 		
@@ -18773,7 +18992,6 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	// mark as freed
 	ate->free_function = function;
 	ate->free_line = line;
-	strcpy(ate->free_thread_name, thread_name);
 	ate->free_thread_id = _id;
 	
 	// trim search extents
@@ -18804,15 +19022,17 @@ ui8	AT_requested_size_m13(void *address)
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
 		if (ate->address == address) {
-			requested_bytes = ate->requested_bytes;
-			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-			return(requested_bytes);
+			if (ate->free_function == NULL) {
+				requested_bytes = ate->requested_bytes;
+				pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
+				return(requested_bytes);
+			}
 		}
 	}
+		
+	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 	
 	G_warning_message_m13("%s(): %sno entry for address%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
-	
-	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 
 	return(0);
 }
@@ -18820,13 +19040,14 @@ ui8	AT_requested_size_m13(void *address)
 
 void	AT_show_entries_m13(void)
 {
-	si8		i;
+	const si1	*thread_name;
+	si8		i, alloced_entries;
 	AT_ENTRY_m13	*ate;
-	si8		alloced_entries = 0;
 
 
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
 	
+	alloced_entries = 0;
 	ate = globals_m13->AT_list->entries;
 	for (i = globals_m13->AT_list->top_idx + 1; i--; ++ate) {
 		if (ate->free_function == NULL) {
@@ -18835,8 +19056,9 @@ void	AT_show_entries_m13(void)
 			printf_m13("actual bytes: %lu\n", ate->actual_bytes);
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
-			printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
 			printf_m13("allocating thread id: %lu\n", ate->alloc_thread_id);
+			thread_name = PROC_thread_name_m13(ate->alloc_thread_id);
+			printf_m13("allocating thread name: \"%s\"\n", thread_name);
 			++alloced_entries;
 		}
 	}
@@ -18851,6 +19073,7 @@ void	AT_show_entries_m13(void)
 
 void	AT_show_entry_m13(void *address)
 {
+	const si1	*thread_name;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	
@@ -18870,13 +19093,17 @@ void	AT_show_entry_m13(void *address)
 			printf_m13("actual bytes: %lu\n", ate->actual_bytes);
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
-			printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
 			printf_m13("allocating thread id: %lu\n", ate->alloc_thread_id);
+			thread_name = PROC_thread_name_m13(ate->alloc_thread_id);
+			if (thread_name)
+				printf_m13("allocating thread name: \"%s\"\n", thread_name);
 			if (ate->free_function) {
 				printf_m13("freeing function: %s()\n", ate->free_function);
 				printf_m13("freeing line: %d\n", ate->free_line);
-				printf_m13("freeing thread name: \"%s\"\n", ate->free_thread_name);
 				printf_m13("freeing thread id: %lu\n", ate->free_thread_id);
+				thread_name = PROC_thread_name_m13(ate->free_thread_id);
+				if (thread_name)
+					printf_m13("freeing thread name: \"%s\"\n", thread_name);
 			}
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return;
@@ -18893,24 +19120,25 @@ void	AT_show_entry_m13(void *address)
 
 tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void *new_address, size_t requested_bytes)
 {
-	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
-	pid_t_m13	tid;
+	const si1	*thread_name;
+	pid_t_m13	_id;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 
 
 	if (orig_address == NULL) {
 		if (new_address) {
-			AT_add_entry_m13(function, line, new_address, requested_bytes);
+			if (AT_add_entry_m13(function, line, new_address, requested_bytes) == FALSE_m13)
+				return(FALSE_m13);
 			return(TRUE_m13);
 		}
 	}
 	
-	pthread_getname_m13(0, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-	tid = gettid_m13();
+	_id = gettid_m13();
+	thread_name = PROC_thread_name_m13(_id);
 
 	if (new_address == NULL) {
-		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
+		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called at %s(%d) in thread  %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) _id);
 		return(FALSE_m13);
 	}
 	
@@ -18926,16 +19154,18 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	// no entry
 	if (i == -1) {
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-		G_warning_message_m13("%s(): %saddress is not allocated%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) tid);
+		G_warning_message_m13("%s(): %saddress is not allocated%s  [called at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) _id);
 		return(FALSE_m13);
 	}
 	
 	if (ate->free_function) {
-		G_warning_message_m13("%s(): %saddress %lu was already freed%s  [called from %s() at line %d in \"%s\" (id: %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) tid);
-		G_warning_message_m13("[previously freed in %s() at line %d in \"%s\" (id: %lu)]\n=> replacing with new data\n", ate->free_function, ate->free_line, ate->free_thread_name, (ui8) ate->free_thread_id);
+		G_warning_message_m13("%s(): %ssaddress %lu is not currently allocated%s  [called at %s(%d) in thread  %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) _id);
+		thread_name = PROC_thread_name_m13(ate->alloc_thread_id);
+		G_warning_message_m13("%s(): [prior allocation at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, function, line, thread_name, (ui8) ate->alloc_thread_id);
+		thread_name = PROC_thread_name_m13(ate->free_thread_id);
+		G_warning_message_m13("[prior free at %s(%d) in thread %s(id: %lu)]\n=> replacing with new data\n", ate->free_function, ate->free_line, thread_name, (ui8) ate->free_thread_id);
 		ate->free_function = NULL;
 		ate->free_line = 0;
-		*ate->free_thread_name = 0;
 		ate->free_thread_id = 0;
 	}
 
@@ -18953,8 +19183,7 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	ate->requested_bytes = requested_bytes;
 	ate->alloc_function = function;
 	ate->alloc_line = line;
-	strcpy(ate->alloc_thread_name, thread_name);
-	ate->alloc_thread_id = tid;
+	ate->alloc_thread_id = _id;
 
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
@@ -19189,13 +19418,13 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		if (fps) {
 			if (fps->params.raw_data_bytes < (compressed_data_bytes + UH_BYTES_m13)) {  // FPS_realloc_m13 assumes universal header bytes
 				FPS_realloc_m13(fps, compressed_data_bytes);
-			} else {
 				cps->params.allocated_compressed_bytes = fps->params.raw_data_bytes - UH_BYTES_m13;
+			} else {
 				cps->block_header = (CMP_FIXED_BH_m13 *) fps->data_ptrs;
 			}
 		} else {
 			cps->block_header = (CMP_FIXED_BH_m13 *) realloc_m13(cps->block_header, compressed_data_bytes);
-			cps->params.allocated_compressed_bytes = compressed_data_bytes;
+			cps->params.allocated_compressed_bytes = malloc_size_m13(cps->block_header);
 		}
 		cps->compressed_data = (ui1 *) cps->block_header;
 	} else {
@@ -19207,7 +19436,7 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		keysample_bytes = CMP_MAX_KEYSAMPLE_BYTES_m13(block_samples);
 	if (need_keysample_buffer == TRUE_m13) {
 		cps->params.keysample_buffer = (si1 *) calloc_m13((size_t) keysample_bytes, sizeof(ui1));
-		cps->params.allocated_keysample_bytes = keysample_bytes;
+		cps->params.allocated_keysample_bytes = malloc_size_m13(cps->params.keysample_buffer);
 	} else {
 		cps->params.keysample_buffer = NULL;
 		cps->params.allocated_keysample_bytes = 0;
@@ -19215,17 +19444,11 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 
 	// decompressed_data - caller specified array size
 	if (need_decompressed_data == TRUE_m13) {
-		if (mode == CMP_DECOMPRESSION_MODE_m13) {
-			if (data_samples > 0) {
-				cps->params.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m13((size_t) data_samples, sizeof(si4));
-			} else {
-				cps->params.cache = cps->decompressed_data = cps->decompressed_ptr = NULL;
-			}
-			cps->params.allocated_decompressed_samples = data_samples;
-		} else { // cps->direcs.compression_mode == CMP_COMPRESSION_MODE_m13  (decompressed_ptr used to calculate mean residual ratio for each block)
+		if (mode == CMP_DECOMPRESSION_MODE_m13)
+			cps->params.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m13((size_t) data_samples, sizeof(si4));
+		else // cps->direcs.compression_mode == CMP_COMPRESSION_MODE_m13  (decompressed_ptr used to calculate mean residual ratio for each block)
 			cps->params.cache = cps->decompressed_data = cps->decompressed_ptr = (si4 *) calloc_m13((size_t) block_samples, sizeof(si4));
-			cps->params.allocated_decompressed_samples = block_samples;
-		}
+		cps->params.allocated_decompressed_samples = calloc_size_m13(cps->decompressed_data, sizeof(si4));
 	} else {
 		cps->params.cache = cps->decompressed_data = cps->decompressed_ptr = NULL;
 		cps->params.allocated_decompressed_samples = 0;
@@ -20170,7 +20393,7 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 		return_m13(TRUE_m13);
 
 	// get decryption key
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	uh = fps->uh;
 	enc_level = uh->encryption_1;
@@ -20569,7 +20792,7 @@ tern CMP_encrypt_m13(FPS_m13 *fps)
 	if (enc_level == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
 
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
 	bh = fps->params.cps->block_header;
 	
@@ -21731,8 +21954,10 @@ CPS_PARAMS_m13	*CMP_init_params_m13(CPS_PARAMS_m13 *params)
 
 tern	CMP_init_tables_m13(void)
 {
-	size_t			len;
-	GLOBAL_TABLES_m13	*tables;
+	size_t				len;
+	sf8				*CMP_normal_CDF_table;
+	GLOBAL_TABLES_m13		*tables;
+	CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*CMP_VDS_threshold_map;
 	
 
 	tables = globals_m13->tables;
@@ -21745,7 +21970,7 @@ tern	CMP_init_tables_m13(void)
 		return(TRUE_m13);
 	}
 
-	tables->CMP_normal_CDF_table = (sf8 *) malloc((size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13 * sizeof(sf8));
+	CMP_normal_CDF_table = (sf8 *) malloc((size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13 * sizeof(sf8));
 	if (tables->CMP_normal_CDF_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
@@ -21754,11 +21979,12 @@ tern	CMP_init_tables_m13(void)
 		sf8 temp[CMP_NORMAL_CDF_TABLE_ENTRIES_m13] = CMP_NORMAL_CDF_TABLE_m13;
 		
 		len = (size_t) CMP_NORMAL_CDF_TABLE_ENTRIES_m13 * sizeof(sf8);
-		memcpy(tables->CMP_normal_CDF_table, temp, len);
+		memcpy(CMP_normal_CDF_table, temp, len);
 	}
+	tables->CMP_normal_CDF_table = (const sf8 *) CMP_normal_CDF_table;
 	
-	tables->CMP_VDS_threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) malloc((size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 * sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
-	if (tables->CMP_VDS_threshold_map == NULL) {
+	CMP_VDS_threshold_map = (CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) malloc((size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 * sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13));
+	if (CMP_VDS_threshold_map == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
@@ -21766,8 +21992,9 @@ tern	CMP_init_tables_m13(void)
 		CMP_VDS_THRESHOLD_MAP_ENTRY_m13	temp[CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13] = CMP_VDS_THRESHOLD_MAP_TABLE_m13;
 
 		len = (size_t) CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 * sizeof(CMP_VDS_THRESHOLD_MAP_ENTRY_m13);
-		memcpy(tables->CMP_VDS_threshold_map, temp, len);
+		memcpy(CMP_VDS_threshold_map, temp, len);
 	}
+	tables->CMP_VDS_threshold_map = (const CMP_VDS_THRESHOLD_MAP_ENTRY_m13 *) CMP_VDS_threshold_map;
 		
 	pthread_mutex_unlock_m13(&tables->mutex);
 
@@ -22681,20 +22908,20 @@ sf8	*CMP_mak_interp_sf8_m13(CMP_BUFFERS_m13 *in_bufs, si8 in_len, CMP_BUFFERS_m1
 }
 
 
-ui1 CMP_normality_score_m13(si4 *data, ui4 n_samps)
+sf8	CMP_normality_score_m13(si4 *data, ui4 n_samps)
 {
-	sf8 sx, sx2, sy, sy2, sxy, mx, mx2, sd, val, z, r, n, *norm_cdf;
-	sf8 num, den1, den2, cdf[CMP_NORMAL_CDF_TABLE_ENTRIES_m13];
-	si8 i, count[CMP_NORMAL_CDF_TABLE_ENTRIES_m13] = {0};
-	si4	*si4_p, bin;
-	ui1 ks;
+	const sf8	*norm_cdf;
+	sf8		sx, sx2, sy, sy2, sxy, mx, mx2, sd, val, z, r, n;
+	sf8		num, den1, den2, cdf[CMP_NORMAL_CDF_TABLE_ENTRIES_m13];
+	si8		i, count[CMP_NORMAL_CDF_TABLE_ENTRIES_m13] = {0};
+	si4		*si4_p, bin;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// Returns the correlation of the distribution in the data to that expected from a normal distribution.
-	// Essentially a Kolmogorov-Smirnov test normalized to range [-1 to 0) = 0 & [0 to 1] = [0 to 254]. 255 is reserved for no entry.
+	// Essentially a Kolmogorov-Smirnov test normalized to range [-1 to 0) = 0 & [0 to 1] = [0 to 1]
 	
 	if (globals_m13->tables->CMP_normal_CDF_table == NULL)
 		CMP_init_tables_m13();
@@ -22760,10 +22987,7 @@ ui1 CMP_normality_score_m13(si4 *data, ui4 n_samps)
 	else if (r > (sf8) 1.0)
 		r = (sf8) 1.0;
 	
-	// return KS score (negative values set to zero, positive scaled to 0-254, 255 reserved for no entry)
-	ks = (ui1) CMP_round_si4_m13(r * (sf8) 254.0); // ks = (ui1) CMP_round_si4_m13(sqrt(1.0 - (r * r)) * 254);  => I had this before, but I don't know why
-	
-	return_m13(ks);
+	return_m13(r);
 }
 
 
@@ -23854,7 +24078,7 @@ CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sample
 			free_m13((void * ) cps->params.cache);
 		if ((cps->decompressed_data = cps->decompressed_ptr = cps->params.cache = (si4 *) calloc_m13((size_t) new_decompressed_samples, sizeof(si4))) == NULL)
 			goto CMP_REALLOC_CPS_FAIL_m13;
-		cps->params.allocated_decompressed_samples = new_decompressed_samples;
+		cps->params.allocated_decompressed_samples = calloc_size_m13(cps->decompressed_data, sizeof(si4));
 	}
 		
 	// reallocate the following if they were previously allocated
@@ -23895,7 +24119,7 @@ CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sample
 CMP_REALLOC_CPS_FAIL_m13:
 
 	// try freeing caches on inactive channels
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	chan = pg->current_session.index_channel;
 	freed = FALSE_m13;
 	if (chan) {
@@ -25385,7 +25609,7 @@ tern  CMP_sf8_to_si4_and_scale_m13(sf8 *sf8_arr, si4 *si4_arr, si8 len, sf8 scal
 }
 
 
-tern  CMP_show_block_header_m13(LH_m13 *lh, CMP_FIXED_BH_m13 *bh)
+tern  CMP_show_block_header_m13(void *level_header, CMP_FIXED_BH_m13 *bh)
 {
 	si1	hex_str[HEX_STR_BYTES_m13(UID_BYTES_m13, 0)], time_str[TIME_STRING_BYTES_m13], bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
 	ui4	i, mask;
@@ -25413,8 +25637,8 @@ tern  CMP_show_block_header_m13(LH_m13 *lh, CMP_FIXED_BH_m13 *bh)
 	if (bh->start_time == UUTC_NO_ENTRY_m13)
 		printf_m13("Start Time: no entry\n");
 	else {
-		if (lh) {
-			STR_time_m13(lh, bh->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
+		if (level_header) {
+			STR_time_m13(level_header, bh->start_time, time_str, TRUE_m13, FALSE_m13, FALSE_m13);
 			printf_m13("Start Time: %ld (µUTC), %s\n", bh->start_time, time_str);
 		} else {
 			printf_m13("Start Time: %ld (oUTC), %s\n", bh->start_time);
@@ -26678,11 +26902,11 @@ tern	CMP_VDS_generate_template_m13(CPS_m13 *cps, si8 data_len)
 
 sf8	CMP_VDS_get_theshold_m13(CPS_m13 *cps)
 {
-	static tern			thresh_change_noted = FALSE_m13;
-	tern			no_filt;
-	si4				i, low_i, high_i;
-	sf8				prop, user_thresh, alg_thresh;
-	CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*thresh_map;
+	static tern				thresh_change_noted = FALSE_m13;
+	tern					no_filt;
+	si4					i, low_i, high_i;
+	sf8					prop, user_thresh, alg_thresh;
+	const CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*thresh_map;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -26882,57 +27106,54 @@ crc4	CRC_combine_m13(crc4 block_1_crc, crc4 block_2_crc, si8 block_2_bytes)
 
 tern	CRC_init_tables_m13(void)
 {
-	crc4			**crc_table, c, n, k;
+	crc4			**crc_tables, c, n, k;
 	size_t			len, dim1_bytes, dim2_bytes, content_bytes;
 	GLOBAL_TABLES_m13	*tables;
 
 
 	tables = globals_m13->tables;
-	if (tables->CRC_table)
+	if (tables->CRC_tables)
 		return(TRUE_m13);
-
+	
 	pthread_mutex_lock_m13(&tables->mutex);
-	if (tables->CRC_table) {  // may have been done by another thread while waiting
+	if (tables->CRC_tables) {  // may have been done by another thread while waiting
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(TRUE_m13);
 	}
 
-	if (tables->CRC_table == NULL) {
-		
-		// allocate (2D but not AT)
-		dim1_bytes = CRC_TABLES_m13 * sizeof(crc4 *);
-		dim2_bytes = CRC_TABLE_ENTRIES_m13 * sizeof(crc4);
-		content_bytes = CRC_TABLES_m13 * dim2_bytes;
-		len = dim1_bytes + content_bytes;
-		crc_table = (crc4 **) malloc(len);
-		if (crc_table == NULL) {
-			pthread_mutex_unlock_m13(&tables->mutex);
-			return(FALSE_m13);
-		}
-		crc_table[0] = (ui4 *) (crc_table + CRC_TABLES_m13);
-		for (k = 1; k < CRC_TABLES_m13; ++k)
-			crc_table[k] = crc_table[k - 1] + CRC_TABLE_ENTRIES_m13;
-
-		// generate a crc for every 8-bit value
-		for (n = 0; n < CRC_TABLE_ENTRIES_m13; n++) {
-			for (c = n, k = 0; k < 8; k++)
-				c = c & 1 ? CRC_POLYNOMIAL_m13 ^ (c >> 1) : c >> 1;
-			crc_table[0][n] = c;
-		}
-		
-		// generate crc for each value followed by one, two, and three zeros, and then the byte reversal of those as well as the first table
-		for (n = 0; n < CRC_TABLE_ENTRIES_m13; n++) {
-			c = crc_table[0][n];
-			crc_table[4][n] = CRC_SWAP4_m13(c);
-			for (k = 1; k < 4; k++) {
-				c = crc_table[0][c & 0xff] ^ (c >> 8);
-				crc_table[k][n] = c;
-				crc_table[k + 4][n] = CRC_SWAP4_m13(c);
-			}
-		}
-		
-		tables->CRC_table = crc_table;
+	// allocate (2D but not AT)
+	dim1_bytes = CRC_TABLES_m13 * sizeof(crc4 *);
+	dim2_bytes = CRC_TABLE_ENTRIES_m13 * sizeof(crc4);
+	content_bytes = CRC_TABLES_m13 * dim2_bytes;
+	len = dim1_bytes + content_bytes;
+	crc_tables = (crc4 **) malloc(len);
+	if (crc_tables == NULL) {
+		pthread_mutex_unlock_m13(&tables->mutex);
+		return(FALSE_m13);
 	}
+	crc_tables[0] = (ui4 *) (crc_tables + CRC_TABLES_m13);
+	for (k = 1; k < CRC_TABLES_m13; ++k)
+		crc_tables[k] = crc_tables[k - 1] + CRC_TABLE_ENTRIES_m13;
+
+	// generate a crc for every 8-bit value
+	for (n = 0; n < CRC_TABLE_ENTRIES_m13; n++) {
+		for (c = n, k = 0; k < 8; k++)
+			c = c & 1 ? CRC_POLYNOMIAL_m13 ^ (c >> 1) : c >> 1;
+		crc_tables[0][n] = c;
+	}
+	
+	// generate crc for each value followed by one, two, and three zeros, and then the byte reversal of those as well as the first table
+	for (n = 0; n < CRC_TABLE_ENTRIES_m13; n++) {
+		c = crc_tables[0][n];
+		crc_tables[4][n] = CRC_SWAP4_m13(c);
+		for (k = 1; k < 4; k++) {
+			c = crc_tables[0][c & 0xff] ^ (c >> 8);
+			crc_tables[k][n] = c;
+			crc_tables[k + 4][n] = CRC_SWAP4_m13(c);
+		}
+	}
+	
+	tables->CRC_tables = (const crc4 **) crc_tables;
 	
 	pthread_mutex_unlock_m13(&tables->mutex);
 
@@ -26945,7 +27166,7 @@ inline
 #endif
 void	CRC_matrix_square_m13(crc4 *square, const crc4 *mat)
 {
-	const ui4	*tmp_mat;
+	const crc4	*tmp_mat;
 	ui4		vec, sum;
 	si4		i;
 	
@@ -26992,23 +27213,23 @@ inline
 #endif
 crc4	CRC_update_m13(const ui1 *block_ptr, si8 block_bytes, crc4 current_crc)
 {
-	const crc4	**crc_table, *ui4_buf;
+	const crc4	**crc_tables, *ui4_buf;
 	crc4  		c;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (globals_m13->tables->CRC_table == NULL)
+	if (globals_m13->tables->CRC_tables == NULL)
 		CRC_init_tables_m13();
 	
-	crc_table = (const ui4 **) globals_m13->tables->CRC_table;
+	crc_tables = globals_m13->tables->CRC_tables;
 
 	c = ~current_crc;
 	
 	// bring block_ptr to 4 byte alignment
 	while (block_bytes && ((ui8) block_ptr & (ui8) 3)) {
-		c = crc_table[0][(c ^ (ui4) *block_ptr++) & (ui4) 0xff] ^ (c >> 8);
+		c = crc_tables[0][(c ^ (ui4) *block_ptr++) & (ui4) 0xff] ^ (c >> 8);
 		block_bytes--;
 	}
 
@@ -27016,13 +27237,13 @@ crc4	CRC_update_m13(const ui1 *block_ptr, si8 block_bytes, crc4 current_crc)
 	ui4_buf = (const ui4 *) block_ptr;
 	for (; block_bytes >= 4; block_bytes -= 4) {
 		c ^= *ui4_buf++;
-		c = crc_table[3][c & 0xff] ^ crc_table[2][(c >> 8) & 0xff] ^ crc_table[1][(c >> 16) & 0xff] ^ crc_table[0][c >> 24];
+		c = crc_tables[3][c & 0xff] ^ crc_tables[2][(c >> 8) & 0xff] ^ crc_tables[1][(c >> 16) & 0xff] ^ crc_tables[0][c >> 24];
 	}
 	
 	// process remaining bytes as single bytes
 	block_ptr = (const ui1 *) ui4_buf;
 	while (block_bytes--)
-		c = crc_table[0][(c ^ (ui4) *block_ptr++) & (ui4) 0xff] ^ (c >> 8);
+		c = crc_tables[0][(c ^ (ui4) *block_ptr++) & (ui4) 0xff] ^ (c >> 8);
 	
 	return_m13(~c);
 }
@@ -27115,7 +27336,7 @@ tern	DB_check_result_m13(PGresult *result)
 
 
 #ifdef DATABASE_m13
-PGresult	*DB_execute_command_m13(PGconn *conn, si1 *command, si4 *rows, si4 expected_rows)
+PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si4 expected_rows)
 {
 	extern GLOBALS_m13	*globals_m13;
 	PGresult		*result;
@@ -27192,7 +27413,7 @@ pthread_rval_m13	DM_channel_thread_m13(void *ptr)
 	chan = ci->chan;
 	chan_idx = ci->chan_idx;
 	slice = &chan->slice;
-	seg_idx = G_segment_index_m13(slice->start_seg_num, (LH_m13 *) chan);
+	seg_idx = G_segment_index_m13(chan, slice->start_seg_num);
 	if (seg_idx == FALSE_m13) {
 		pi->status = PROC_THREAD_FAILED_m13;
 		goto DM_CHANNEL_THREAD_RETURN_m13;
@@ -27789,7 +28010,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	if ((search_mode = G_search_mode_m13(slice)) == FALSE_m13)  // ensure there's a valid limit pair
 		return_m13(NULL);
 	
-	pg = G_proc_globs_m13((LH_m13 *) sess);
+	pg = G_proc_globs_m13(sess);
 
 	// allocate matrix structure
 	if (matrix == NULL)
@@ -27873,7 +28094,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 	
 	// change requested limits to time
 	if (req_slice->conditioned == FALSE_m13)
-		G_condition_slice_m13(req_slice, (LH_m13 *) sess);
+		G_condition_slice_m13(sess, req_slice);
 	if (req_slice->start_time == BEGINNING_OF_TIME_m13)
 		req_slice->start_time = pg->current_session.start_time;
 	if (req_slice->end_time == END_OF_TIME_m13)
@@ -27882,7 +28103,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		req_samp_secs = (sf8) SLICE_DUR_m13(req_slice) / (sf8) 1000000.0;  // requested time in seconds
 	else  // search_mode == INDEX_SEARCH_m13
 		req_num_samps = SLICE_IDX_COUNT_m13(req_slice);  // requested samples read (on reference channel)
-	seg_idx = G_segment_index_m13(FIRST_OPEN_SEG_m13, (LH_m13 *) sess);
+	seg_idx = G_segment_index_m13(sess, FIRST_OPEN_SEG_m13);
 	if (seg_idx == FALSE_m13)
 		return_m13(NULL);
 	ref_samp_freq = ref_chan->segs[seg_idx]->metadata_fps->metadata->time_series_section_2.sampling_frequency;  // use first open segment so don't require ephemeral metadata
@@ -29182,7 +29403,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 
 	printf_m13("------------------- FILE_m13 - START -------------------\n");
 
-	if (*fp->path && fp->fp)
+	if (*fp->path)
 		printf_m13("Path: %s\n", fp->path);
 	else
 		printf_m13("Path: not set\n");
@@ -29260,7 +29481,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 	if (fp->fp)
 		printf_m13("Pointer: set  (addr: %lu)\n", (ui8) fp->fp);
 	else
-		printf_m13("Pointer: not set\n");
+		printf_m13("Pointer: null\n");
 
 	printf_m13("Descriptor: %d  ", fp->fd);
 	switch (fp->fd) {
@@ -29268,10 +29489,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 			printf_m13("(ephemeral)\n");
 			break;
 		case FILE_FD_CLOSED_m13:
-			if (fp->fp)
-				printf_m13("(closed)\n");
-			else
-				printf_m13("(not set)\n");
+			printf_m13("(closed)\n");
 			break;
 		case FILE_FD_STDIN_m13:
 			if (fp->fp == stdin)
@@ -32085,7 +32303,7 @@ FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 cop
 		n_bytes = copy_bytes;
 	
 	params->raw_data = (void *) calloc_m13((size_t) n_bytes, sizeof(ui1));
-	params->raw_data_bytes = n_bytes;
+	params->raw_data_bytes = malloc_size_m13(params->raw_data);
 	
 	// copy
 	memcpy(params->raw_data, proto_fps->params.raw_data, (size_t) copy_bytes);
@@ -32116,8 +32334,8 @@ FPS_m13	*FPS_clone_m13(FPS_m13 *proto_fps, const si1 *path, si8 n_bytes, si8 cop
 			break;
 		case TS_DATA_TYPE_CODE_m13:
 			cps = params->cps = calloc_m13((size_t) 1, sizeof(CPS_m13));
+			cps->params.allocated_compressed_bytes = fps->params.raw_data_bytes - UH_BYTES_m13;
 			cps->block_header = (CMP_FIXED_BH_m13 *) fps->data_ptrs;
-			cps->params.allocated_compressed_bytes = n_bytes - UH_BYTES_m13;
 			break;
 		case VID_DATA_TYPE_CODE_m13:
 		case REC_DATA_TYPE_CODE_m13:
@@ -32141,14 +32359,19 @@ tern	FPS_close_m13(FPS_m13 *fps)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns TRUE_m13 if closed
+	// returns FALSE_m13 if error closing
+	// returns UNKNOWN_m13 if already closed or null
 
 	if (fps == NULL)
-		return_m13(FALSE_m13);
+		return_m13(UNKNOWN_m13);
 	
 	if (FPS_is_open_m13(fps) == FALSE_m13)
-		return_m13(FALSE_m13);
+		return_m13(UNKNOWN_m13);
 	
-	fclose_m13(fps->params.fp);
+	if (fclose_m13(fps->params.fp))
+		return_m13(FALSE_m13);
 		
 	if (globals_m13->access_times == TRUE_m13)
 		G_update_access_time_m13((LH_m13 *) fps);
@@ -32259,34 +32482,32 @@ tern	FPS_free_m13(void *ptr)
 			return_m13(FALSE_m13);
 		}
 	}
-
-	if (fps->uh)
-		if (fps->uh->type_code == TS_DATA_TYPE_CODE_m13)  // CPS requires special freeing
-			if (fps->params.cps)
-				CMP_free_cps_m13(&fps->params.cps);
+	
+	if (fps->type_code == TS_DATA_TYPE_CODE_m13)
+		if (fps->params.cps)
+			CMP_free_cps_m13(&fps->params.cps);
 	
 	if (fps->params.raw_data)
 		free_m13(fps->params.raw_data);
-	
+
 	// delete process globals
 	if (fps->proc_globs)
 		G_proc_globs_delete_m13((LH_m13 *) fps->proc_globs);
 
 	if (fps->params.mmap_block_bitmap)
 		free_m13(fps->params.mmap_block_bitmap);
-	
-	// Note: always close when freeing; close_file directives used in reading / writing functions
-	FPS_close_m13(fps);  // fine if already closed
-	
-	// can't set stack addresses to NULL
-	// shouldn't set en bloc addresses to NULL
-	if (fps->allocated == TRUE_m13)
+
+	// always close when freeing (fine if already closed)
+	FPS_close_m13(fps);
+
+	// free
+	if (fps->allocated == TRUE_m13) {
 		free_m13(fps);
-	else
+		if (fps_ptr)  // can't set stack addresses to NULL; shouldn't set en bloc addresses to NULL
+			*fps_ptr = NULL;
+	} else {
 		memset(fps, 0, sizeof(FPS_m13));
-	
-	if (fps_ptr)
-		*fps_ptr = NULL;
+	}
 
 	return_m13(TRUE_m13);
 }
@@ -32348,6 +32569,7 @@ si8	FPS_header_offset_m13(FPS_m13 *fps, const si1 *path)
 FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_bytes, LH_m13 *parent)
 {
 	ui2		alloced_mask;
+	ui8		len;
 	FILE_m13	*fp;
 	STR_CODE_m13	type;
 
@@ -32361,7 +32583,7 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_
 	//	fps->type_code will be fps->uh->type_code
 	// n_bytes = bytes to allocate for body, not including universal header
 	// 	if n_bytes == FPS_NO_ALLOC_m13, no memory will be allocated at all, not even a header (e.g. because FPS_read_m13() will reallocate anyway)
-	//	if n_bytes == 0 or FPS_UH_ONLY_m13, only the universal_header will be allocated
+	//	if n_bytes == FPS_UH_ONLY_m13, only the universal_header will be allocated
 	// 	if n_bytes == FPS_FULL_FILE_m13, enough memory for the full file will be allocated
 	// 	if n_bytes == 0, a reasonable starting amount of memory will be allocated
 	// if parent is NULL, parent will be fps->parent
@@ -32433,7 +32655,11 @@ FPS_m13	*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_
 			}
 			break;
 		case FPS_FULL_FILE_m13:
-			n_bytes = G_file_length_m13(NULL, fps->path) - UH_BYTES_m13;  // FPS_alloc_m13() assumes universal_header bytes
+			if (fps->params.fp->len > 0)
+				len = fps->params.fp->len;
+			else
+				fps->params.fp->len = len = G_file_length_m13(NULL, fps->path);
+			n_bytes = len - UH_BYTES_m13;  // FPS_alloc_m13() assumes universal_header bytes
 			break;
 		case FPS_UH_ONLY_m13:  // same as n_bytes == 0
 			n_bytes = 0;
@@ -32658,7 +32884,7 @@ tern	FPS_mmap_m13(FPS_m13 *fps, tern set)
 	// memory allocated / freed accordingly
 
 	if (set == TRUE_m13) {
-		pg = G_proc_globs_m13((LH_m13 *) fps);
+		pg = G_proc_globs_m13(fps);
 		fp = fps->params.fp;
 		mmap_block_bytes = pg->miscellaneous.mmap_block_bytes;
 		if (mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
@@ -32743,7 +32969,7 @@ si8	FPS_mmap_read_m13(FPS_m13 *fps, si8 n_bytes)
 	if (n_bytes > remaining_bytes)
 		n_bytes = remaining_bytes;
 		
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	pg = G_proc_globs_m13(fps);
 	block_bytes = (si8) pg->miscellaneous.mmap_block_bytes;
 	start_block = offset / block_bytes;
 	end_block = (offset + n_bytes - 1) / block_bytes;
@@ -33120,7 +33346,9 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 	}
 
 	// read in universal header
-	pg = G_proc_globs_m13((LH_m13 *) fps);
+	eprintf_m13("");
+	pg = G_proc_globs_m13(fps);
+	eprintf_m13("");
 	pwd = &pg->password_data;
 	uh = fps->uh;
 	if (read_header == TRUE_m13) {
@@ -33156,10 +33384,14 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 				G_process_password_data_m13(fps, password);
 
 		// current session directory globals
+		eprintf_m13("");
 		if (pg->current_session.UID != uh->session_UID) {
+			eprintf_m13("");
 			if (pg->current_session.UID)  // != 0 => new session, need new proc_globs (in same thread)
 				pg = G_proc_globs_new_m13((LH_m13 *) fps);
+			eprintf_m13("");
 			G_session_directory_m13(fps);
+			eprintf_m13("");
 		}
 		
 		// update session name
@@ -33174,7 +33406,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 		if (uh->n_entries == 0)
 			if (G_correct_universal_header_m13(fps) == FALSE_m13)
 				goto FPS_READ_FAIL_m13;
-
+		
 		fps->params.header_read = TRUE_m13;
 		
 		if (header_only == TRUE_m13) {
@@ -33184,7 +33416,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 			return_m13(fps);
 		}
 	}
-
+	
 	// set memory pointers
 	FPS_set_pointers_m13(fps, offset);
 
@@ -33255,14 +33487,14 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 	switch (type_code) {
 		case TS_DATA_TYPE_CODE_m13:
 			if (uh->encryption_1 > NO_ENCRYPTION_m13)
-				readable = G_decrypt_time_series_data_m13(fps);
+				readable = G_decrypt_time_series_m13(fps);
 			break;
 		case VID_DATA_TYPE_CODE_m13:
 			if (uh->encryption_1 > NO_ENCRYPTION_m13)
-				readable = G_decrypt_video_data_m13(fps);
+				readable = G_decrypt_video_m13(fps);
 			break;
 		case REC_DATA_TYPE_CODE_m13:
-			readable = G_decrypt_record_data_m13(fps);
+			readable = G_decrypt_records_m13(fps);
 			break;
 		case TS_METADATA_TYPE_CODE_m13:
 		case VID_METADATA_TYPE_CODE_m13:
@@ -33275,6 +33507,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 		goto FPS_READ_FAIL_m13;
 	}
 
+	// close
 	if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
 		FPS_close_m13(fps);
 	else if (globals_m13->access_times == TRUE_m13)
@@ -33299,6 +33532,7 @@ FPS_READ_FAIL_m13:
 
 tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 {
+	ui1		*raw_data;
 	CPS_m13		*cps;
 	
 #ifdef FT_DEBUG_m13
@@ -33307,6 +33541,7 @@ tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 	
 	// n_bytes does not include universal header bytes
 	// also accepts FPS_FULL_FILE_m13 & FPS_UH_ONLY_m13
+	// returns FALSE_m13 on filure
 
 	if (fps == NULL) {
 		G_set_error_m13(E_GEN_m13, "FPS is null");
@@ -33323,19 +33558,25 @@ tern	FPS_realloc_m13(FPS_m13 *fps, si8 n_bytes)
 	if (n_bytes <= fps->params.raw_data_bytes)
 		return_m13(TRUE_m13);
 	
-	fps->params.raw_data = realloc_m13(fps->params.raw_data, (size_t) n_bytes);
-	
-	fps->params.raw_data_bytes = n_bytes;
+	if (fps->params.raw_data)
+		raw_data = realloc_m13(fps->params.raw_data, (size_t) n_bytes);
+	else
+		raw_data = malloc_m13((size_t) n_bytes);
+	if (raw_data == NULL)
+		return_m13(FALSE_m13);
+
+	fps->params.raw_data = raw_data;
+	fps->params.raw_data_bytes = malloc_size_m13(raw_data);
 	fps->uh = (UH_m13 *) fps->params.raw_data;
 	fps->data_ptrs = (ui1 *) (fps->uh + 1);
 	
-	// handle CPS
-	if (fps->uh->type_code == TS_DATA_TYPE_CODE_m13) {
+	// update CPS
+	if (fps->type_code == TS_DATA_TYPE_CODE_m13) {
 		cps = fps->params.cps;
-		if (cps == NULL)
-			cps = fps->params.cps = (CPS_m13 *) calloc_m13((size_t) 1, sizeof(CPS_m13));
-		cps->block_header = (CMP_FIXED_BH_m13 *) fps->data_ptrs;
-		cps->params.allocated_compressed_bytes = n_bytes - UH_BYTES_m13;
+		if (cps) {
+			cps->params.allocated_compressed_bytes = fps->params.raw_data_bytes - UH_BYTES_m13;
+			cps->block_header = (CMP_FIXED_BH_m13 *) fps->data_ptrs;
+		}
 	}
 
 	return_m13(TRUE_m13);
@@ -34126,7 +34367,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)	// v
 			G_warning_message_m13("%s(): overlap with extension could be, but is not currently handled\n\tuniversal header -> n_entries will not be not updated\n\taddress with calling function or library code update\n", __FUNCTION__);
 
 		// get password
-		pg = G_proc_globs_m13((LH_m13 *) fps);
+		pg = G_proc_globs_m13(fps);
 		if (pg->password_data.processed != TRUE_m13) {
 			G_set_error_m13(E_CRYP_m13, "password not processed");
 			return_m13(FALSE_m13);
@@ -34156,10 +34397,10 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)	// v
 		// encrypt
 		switch (uh->type_code) {
 			case TS_DATA_TYPE_CODE_m13:
-				G_encrypt_time_series_data_m13(fps);
+				G_encrypt_time_series_m13(fps);
 				break;
 			case REC_DATA_TYPE_CODE_m13:
-				G_encrypt_record_data_m13(fps);
+				G_encrypt_records_m13(fps);
 				break;
 			case TS_METADATA_TYPE_CODE_m13:
 			case VID_METADATA_TYPE_CODE_m13:
@@ -34239,7 +34480,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)	// v
 	// close
 	if (fps->direcs.flags & FPS_DF_CLOSE_AFTER_OP_m13)
 		FPS_close_m13(fps);
-	
+
 	// restore decrypted data
 	if (leave_decrypted == TRUE_m13) {
 		fps->data_ptrs = (ui1 *) decrypted_data;
@@ -34579,7 +34820,6 @@ tern	HW_get_current_core_speed_m13()
 	
 #ifdef LINUX_m13
 	si1	*c, *buf = NULL;
-	si8	buf_len;
 	sf8	scaling;
 
 	if (system_pipe_m13(&buf, 0, "/usr/bin/lscpu", SP_DEFAULT_m13) == 0) {
@@ -34748,7 +34988,7 @@ tern	HW_get_machine_serial_m13(void)
 	*c = 0;
 	#endif
 
-	#ifdef LINUX_m12
+	#ifdef LINUX_m13
 	machine_sn = buf;
 	#endif
 
@@ -35469,8 +35709,7 @@ tern	NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global)
 tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 {
 	tern	global_np;
-	si1		tmp_str[256], *buffer, *c, *pattern;
-	si4		r_val;
+	si1	tmp_str[256], *buffer, *c, *pattern;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -35765,7 +36004,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		
 	// get ipconfig() output
 	buffer = NULL;
-	if (system_pipe_m13(&buffer, 0, "ipconfig /all", SP_BEHAVIOR_PASSED_m13, (RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13)) {
+	if (system_pipe_m13(&buffer, 0, "ipconfig /all", SP_BEHAVIOR_PASSED_m13, (RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13))) {
 		if (buffer)
 			free_m13(buffer);
 		if (global_np == TRUE_m13)
@@ -36035,8 +36274,7 @@ tern	NET_get_ethtool_m13(NET_PARAMS_m13 *np, tern copy_global)
 #else
 
 	tern	global_np;
-	si1		tmp_str[256], *buffer, *c, *pattern;
-	si4		r_val;
+	si1	tmp_str[256], *buffer, *c, *pattern;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -36536,7 +36774,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 
 
 #ifdef WINDOWS_m13
-si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
+si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 {
 	si1			local_iface_name[64], *buffer, *c, *c2;
 	si4			r_val;
@@ -36555,7 +36793,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 	buffer = NULL;
 	if (system_pipe_m13(&buffer, 0, "ipconfig", SP_BEHAVIOR_PASSED_m13, RETURN_ON_FAIL_m13) == 0) {  // parse ipconfig() output to find internet ip address
 		if ((c = STR_match_start_m13(iface_addr, buffer))) {
-			// find "LAN adapter" backwards fromm here
+			// find "LAN adapter" backwards from here
 			while (c >= buffer) {
 				if (*c == 'L')
 					if (strncmp_m13(c, "LAN adapter ", 12) == 0)
@@ -36571,7 +36809,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, si1 *iface_addr)
 			}
 		}
 	}
-	if (buffer))
+	if (buffer)
 		free_m13(buffer);
 
 	return_m13(iface_name);
@@ -37228,7 +37466,7 @@ tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 }
 
 
-tern	PROC_default_threading_m13(void *lh)
+tern	PROC_default_threading_m13(void *level_header)
 {
 	tern		threading;
 	PROC_GLOBS_m13	*pg;
@@ -37238,15 +37476,14 @@ tern	PROC_default_threading_m13(void *lh)
 #endif
 
 	// pass null for lh for current thread proc_globs
-	// lh is a level header pointer (LH_m13 *), only void because LH_m13 defined after PROC functions in header (will eventaully fix this)
 	
-	pg = G_proc_globs_m13((LH_m13 *) lh);
-	threading = pg->miscellaneous.threading;  // process specific
+	pg = G_proc_globs_m13(level_header);
+	threading = pg->miscellaneous.threading;  // process default
 	
 	if (threading == NOT_SET_m13) {
-		threading = globals_m13->threading;  // global
+		threading = globals_m13->threading;  // global default
 		if (threading == NOT_SET_m13)
-			threading = GLOBALS_THREADING_DEFAULT_m13;  // default
+			threading = GLOBALS_THREADING_DEFAULT_m13;  // compiled global default
 	}
 
 	return_m13(threading);
@@ -37680,13 +37917,15 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 #if defined MACOS_m13 || defined LINUX_m13
 pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_f, void *arg, si4 priority, const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, const si1 *thread_name)
 {
-	tern			free_cpu_set = FALSE_m13;
-	sf8			f_min_priority, f_max_priority;
-	pid_t_m13		_id = 0;
-	pthread_t		local_thread;
-	pthread_attr_t		thread_attributes;
-	struct sched_param	scheduling_parameters;
-	static si4		min_priority = PROC_UNDEFINED_PRIORITY_m13, low_priority, medium_priority, high_priority, max_priority;
+	tern				free_cpu_set = FALSE_m13;
+	sf8				f_min_priority, f_max_priority;
+	pid_t_m13			_id = 0;
+	pthread_t			local_thread;
+	pthread_attr_t			thread_attributes;
+	struct sched_param		scheduling_parameters;
+	static si4			min_priority = PROC_UNDEFINED_PRIORITY_m13, low_priority, medium_priority, high_priority, max_priority;
+	PROC_THREAD_INIT_INFO_m13	*init_info;
+
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37736,84 +37975,44 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 	if (detached == TRUE_m13)
 		pthread_attr_setdetachstate(&thread_attributes, PTHREAD_CREATE_DETACHED);
 
-	// generate affinity
 # ifdef LINUX_m13
+	// generate affinity
 	if (STR_is_empty_m13(affinity_str) == FALSE_m13) {
 		if (cpu_set_p == NULL)  // PROC_generate_cpu_set_m13() will allocate
 			free_cpu_set = TRUE_m13;
 		cpu_set_p = PROC_generate_cpu_set_m13(affinity_str, cpu_set_p);
 	}
-#endif
-	
-# ifdef MACOS_m13
-	
-	// in MacOS pthread_setname_np must be run from within the thread itself, so launch thread to name & then run code from within that thread
-	if (STR_is_empty_m13(thread_name) == FALSE_m13) {
-		PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
-		
-		named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) malloc(sizeof(PROC_MACOS_NAMED_THREAD_INFO_m13));  // PROC_macos_named_thread_m13() will free named_thread_info
-		named_thread_info->thread_name = thread_name;
-		named_thread_info->thread_f = thread_f;
-		named_thread_info->arg = arg;
-		arg = (void *) named_thread_info;
-		thread_f = PROC_macos_named_thread_m13;
-	}
 
-	// start thread
-	cpu_set_p = NULL;  // MacOS stopped supporting thread affinity => leaving code in case they change this back in future (all code is in place if they do)
-	if (cpu_set_p) {
-		mach_port_t	mach_thread;
-
-		// create thread (suspended)
-		if (pthread_create_suspended_np(thread_p, &thread_attributes, thread_f, arg)) {
-			G_set_error_m13(E_PROC_m13, "pthread_create_suspended_np() error");
-			return_m13((pid_t_m13) 0);
-		}
-		
-		// set affinity (in Mac OS thread must be created first)
-		PROC_set_thread_affinity_m13(thread_p, NULL, cpu_set_p, TRUE_m13);
-
-		// resume thread
-		mach_thread = pthread_mach_thread_np(*thread_p);
-		if (thread_resume((thread_read_t) mach_thread)) {
-			G_set_error_m13(E_PROC_m13, "thread_resume() error");
-			return_m13((pid_t_m13) 0);
-		}
-	} else {  // always comes here while no MacOS support for affinity
-		if (pthread_create(thread_p, &thread_attributes, thread_f, arg)) {
-			G_set_error_m13(E_PROC_m13, "pthread_create() error");
-			return_m13((pid_t_m13) 0);
-		}
-	}
-# endif  // MACOS_m13
-
-# ifdef LINUX_m13
 	// set affinity
 	if (cpu_set_p)
 		PROC_set_thread_affinity_m13(NULL, &thread_attributes, cpu_set_p, TRUE_m13);
-	
+# endif  // LINUX_m13
+
+	// set up thread init function argument
+	init_info = (PROC_THREAD_INIT_INFO_m13 *) malloc(sizeof(PROC_THREAD_INIT_INFO_m13));
+	init_info->name = thread_name;
+	init_info->_pid = gettid_m13();
+	init_info->f = thread_f;
+	init_info->f_arg = arg;
+
+	arg = (void *) init_info;
+	thread_f = PROC_thread_init_m13;
+
 	// start thread
 	if (pthread_create(thread_p, &thread_attributes, thread_f, arg)) {
 		G_set_error_m13(E_PROC_m13, "pthread_create() error");
 		return_m13((pid_t_m13) 0);
 	}
 
-	// set thread name (after thread created)
-	if (STR_is_empty_m13(thread_name) == FALSE_m13)
-		pthread_setname_np(*thread_p, thread_name);  // suffix _np is for "not posix" or "not portable"
-# endif  // LINUX_m13
-
 	// finished with attributes (destroy or memory leak)
 	pthread_attr_destroy(&thread_attributes);
 
 	if (free_cpu_set == TRUE_m13)
 		free(cpu_set_p);
-
-	// add thread to thread list
-	PROC_thread_list_add_m13(thread_p);
 	
-	// get thread's tid
-	_id = PROC_id_for_thread_m13(thread_p);
+	// set by PROC_thread_init_m13() - can be small delay
+	while ((_id = PROC_id_for_thread_m13(thread_p)) == (pid_t_m13) 0)
+		nap_m13("10 us");
 	
 	return_m13(_id);  // zero indicates failure (for compatibility with Windows version, which returns thread id)
 }
@@ -37823,12 +38022,12 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 #ifdef WINDOWS_m13
 pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_f, void *arg, si4 priority, const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p, tern detached, const si1 *thread_name)
 {
-	tern			free_cpu_set;
-	pthread_t_m13		local_thread;
-	ui4			win_id;
-	pid_t_m13		_id;
-	wchar_t			w_thread_name[THREAD_NAME_BYTES_m13];
-	cpu_set_t_m13 		local_cpu_set_p;
+	tern				free_cpu_set;
+	pthread_t_m13			local_thread;
+	ui4				win_id;
+	pid_t_m13			_id;
+	cpu_set_t_m13 			local_cpu_set_p;
+	PROC_THREAD_INIT_INFO_m13	*init_info;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37838,6 +38037,16 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 
 	if (thread_p == NULL)  // caller doesn't need thread_id - detached thread
 		thread_p = &local_thread;
+
+	// set up thread init function argument
+	init_info = (PROC_THREAD_INIT_INFO_m13 *) malloc(sizeof(PROC_THREAD_INIT_INFO_m13));
+	init_info->name = thread_name;
+	init_info->_pid = gettid_m13();
+	init_info->f = thread_f;
+	init_info->f_arg = arg;
+
+	arg = (void *) init_info;
+	thread_f = PROC_thread_init_m13;
 
 	// Create thread in suspended state so can set attributes
 	*thread_p = (HANDLE) _beginthreadex(NULL, 0, (LPTHREAD_START_ROUTINE) thread_f, arg, CREATE_SUSPENDED, &win_id);
@@ -37884,13 +38093,7 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 		if (free_cpu_set == TRUE_m13)
 			free(cpu_set_p);
 	}
-	
-	// set thread name
-	if (STR_is_empty_m13(thread_name) == FALSE_m13) {
-		STR_char2wchar_m13(w_thread_name, thread_name);
-		SetThreadDescription(*thread_p, w_thread_name);
-	}
-	
+		
 	// start thread
 	ResumeThread(*thread_p);
 
@@ -37899,9 +38102,9 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 		CloseHandle(*thread_p);
 	
 	// add thread to thread list
-	PROC_thread_list_add_m13(thread_p);
+	PROC_thread_list_add_m13(thread_p, thread_name);
 
-	// get thread's tid
+	// return thread's id
 	_id = (pid_t_m13) win_id;
 
 	return_m13(_id);  // zero indicates failure
@@ -37909,44 +38112,44 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 #endif  // WINDOWS_m13
 
 
-pthread_rval_m13	PROC_macos_named_thread_m13(void *named_info_arg)
-{
-#ifdef MACOS_m13
-	
-	PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
-	const si1				*thread_name;
-	pthread_fn_m13				thread_f;
-	void					*thread_arg;
-	pthread_rval_m13			rval;
-
-	// in MacOS a thread can only be named from within itself
-	// this thread is substituted for the desired thread, names itself, & then calls desired thread as function
-
-	// break out (for readability)
-	named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) named_info_arg;
-	thread_name = named_thread_info->thread_name;
-	thread_f = named_thread_info->thread_f;
-	thread_arg = named_thread_info->arg;
-
-	// name thread
-	pthread_setname_np(thread_name);  // suffix _np is for "not posix" or "not portable"
-
-	// start thread function
-	rval = thread_f(thread_arg);
-	
-	// release named_thread_info structure (allocated by calling function)
-	free(named_info_arg);
-	
-	return(rval);
-#endif
-	return((pthread_rval_m13) 0);
-}
+//pthread_rval_m13	PROC_macos_named_thread_m13(void *named_info_arg)
+//{
+//#ifdef MACOS_m13
+//	
+//	PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
+//	const si1				*thread_name;
+//	pthread_fn_m13				thread_f;
+//	void					*thread_arg;
+//	pthread_rval_m13			rval;
+//
+//	// in MacOS a thread can only be named from within itself
+//	// this thread is substituted for the desired thread, names itself, & then calls desired thread as function
+//
+//	// break out (for readability)
+//	named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) named_info_arg;
+//	thread_name = named_thread_info->thread_name;
+//	thread_f = named_thread_info->thread_f;
+//	thread_arg = named_thread_info->arg;
+//
+//	// name thread
+//	pthread_setname_np(thread_name);  // suffix _np is for "not posix" or "not portable"
+//
+//	// start thread function
+//	rval = thread_f(thread_arg);
+//	
+//	// release named_thread_info structure (allocated by calling function)
+//	free(named_info_arg);
+//	
+//	return(rval);
+//#endif
+//	return((pthread_rval_m13) 0);
+//}
 
 
 #ifdef MACOS_m13
 tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
 {
-	si1		thread_name[THREAD_NAME_BYTES_m13];
+	const si1	thread_name;
 	const si4	MAX_ATTEMPTS = 100;
 	si4		attempts;
 	mach_port_t	mach_thread;
@@ -37971,8 +38174,8 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *a
 	} while (err && attempts--);
 	
 	if (err) {
-		pthread_getname_m13(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13);
-		if (*thread_name)
+		thread_name = PROC_thread_name_m13(0);
+		if (thread_name)
 			G_warning_message_m13("%s(): error setting affinity for thread \"%s\" => not set\n", __FUNCTION__, thread_name);
 		else
 			G_warning_message_m13("%s(): error setting thread affinity => not set\n", __FUNCTION__);
@@ -38040,10 +38243,10 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *a
 #ifdef WINDOWS_m13
 tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
 {
-	si1		thread_name[THREAD_NAME_BYTES_m13];
+	const si1	*thread_name;
 	const si4	MAX_ATTEMPTS = 100;
-	wchar_t		*w_thread_name;
 	si4		err, attempts;
+	pid_t_m13	_id;
 	HRESULT		hr;
 	
 #ifdef FT_DEBUG_m13
@@ -38063,11 +38266,13 @@ tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *a
 	} while (err && attempts--);
 	
 	if (err == 0) {
-		pthread_getname_m13(*thread_p, thread_name, (size_t) THREAD_NAME_BYTES_m13)
-		if (*thread_name)
-			G_warning_message_m13("%s(): error setting affinity for thread \"%s\" => not set\n", __FUNCTION__, thread_name);
+		_id = gettid_m13();
+		thread_name = PROC_thread_name_m13(_id);
+		if (thread_name)
+			G_warning_message_m13("%s(): error setting affinity for thread %s(id: %lu) => not set\n", __FUNCTION__, thread_name, _id);
 		else
-			G_warning_message_m13("%s(): error setting thread affinity => not set\n", __FUNCTION__);
+			G_warning_message_m13("%s(): error setting thread affinity for thread %lu => not set\n", __FUNCTION__, _id);
+
 		return_m13(FALSE_m13);
 	}
 
@@ -38230,7 +38435,7 @@ void	PROC_show_thread_list_m13(void)
 	n_entries = list->top_idx + 1;
 	entry = list->entries;
 	for (i = 0; i < n_entries; ++i, ++entry)
-		printf_m13("%d) _id = %lu, _pid = %lu, thread = %lu (as ui8)\n", i, entry->_id, entry->_pid, (ui8) entry->thread);
+		printf_m13("%d) name: \"%s\";  _id: %lu;  _pid: %lu;  thread (as ui8): 0x%016lx;\n", i, entry->name, entry->_id, entry->_pid, (ui8) entry->thread);
 	putchar_m13('\n');
 	
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -38273,39 +38478,78 @@ pthread_t_m13	*PROC_thread_for_id_m13(pid_t_m13 _id)
 }
 
 
-void	PROC_thread_list_add_m13(pthread_t_m13 *thread_p)
+pthread_rval_m13	PROC_thread_init_m13(void *arg)
+{
+	
+	void				*f_arg;
+	pthread_t_m13			thread;
+	pthread_fn_m13			f;
+	pthread_rval_m13		r_val;
+	PROC_THREAD_INIT_INFO_m13	*info;
+
+	
+	// this thread is substituted for the desired thread, by PROC_launch_thread_m13()
+	// so it can enter itself into the thread list
+
+	info = (PROC_THREAD_INIT_INFO_m13 *) arg;
+	
+	// add thread to thread list
+	thread = pthread_self_m13();
+	PROC_thread_list_add_m13(0, info->_pid, &thread, info->name);
+	
+	// thread must be launched to set name
+	if (info->name) {
+		#ifdef MACOS_m13
+		pthread_setname_np(info->name);
+		#endif
+		
+		#ifdef LINUX_m13
+		pthread_setname_np(thread, info->name);
+		#endif
+		
+		#ifdef WINDOWS_m13
+		wchar_t w_thread_name[THREAD_NAME_BYTES_m13];
+
+		STR_char2wchar_m13(w_thread_name, info->name);
+		SetThreadDescription(thread, w_thread_name);
+		#endif
+	}
+
+	// copy function & argument pointers
+	f = info->f;
+	f_arg = info->f_arg;
+
+	// release thread init info structure (allocated by PROC_launch_thread_m13())
+	free(info);
+
+	// launch thread function
+	r_val = f(f_arg);
+		
+	return(r_val);
+}
+
+
+void	PROC_thread_list_add_m13(pid_t_m13 _id, pid_t_m13 _pid, pthread_t_m13 *thread_p, const si1 *name)
 {
 	si4			i, n_entries;
-	pid_t_m13		_id, _pid;
-	pthread_t		local_thread;
+	pthread_t_m13		local_thread;
 	THREAD_ENTRY_m13	*entry;
 	THREAD_LIST_m13		*list;
 	
 	
-	// this typically called by parent so _pid == current thread id
-	// pass NULL to add current thread (self - parent set to zero)
+	// pass _id == 0, to use current thread id
+	// pass thread_p == NULL to use current thread
+	
+	if (_id == 0)
+		_id = gettid_m13();  // self
+	
+	if (_id == globals_m13->main_id)
+		_pid = 0;  // main has no parent in this context (it is not the process id)
 	
 	if (thread_p == NULL) {
 		local_thread = pthread_self_m13();
 		thread_p = &local_thread;
 	}
-		
-	#ifdef MACOS_m13
-	pthread_threadid_np(*thread_p, &_id);
-	#endif
-	
-	#ifdef LINUX_m13
-	_id = (pid_t_m13) *thread_p;
-	#endif
-		
-	#ifdef WINDOWS_m13
-	_id = (pid_t_m13) GetThreadId(*thread_p);
-	#endif
-	
-	_pid = gettid_m13();
-	
-	if (_id == _pid)
-		_pid = 0;  // self
 	
 	// get mutex
 	list = globals_m13->thread_list;
@@ -38335,11 +38579,48 @@ void	PROC_thread_list_add_m13(pthread_t_m13 *thread_p)
 	entry->_id = _id;
 	entry->_pid = _pid;
 	entry->thread = *thread_p;
+	strncpy_m13((si1 *) entry->name, name, THREAD_NAME_BYTES_m13);
 	
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 
 	return;
+}
+
+
+const si1	*PROC_thread_name_m13(pid_t_m13 _id)
+{
+	const si1		*name;
+	si4			i;
+	THREAD_ENTRY_m13	*entry;
+	THREAD_LIST_m13		*list;
+	
+	
+	// pass _id == 0 for current thread
+	// returns NULL on failure
+	
+	if (_id == 0)   // self
+		_id = gettid_m13();
+	
+	// get mutex
+	list = globals_m13->thread_list;
+	pthread_mutex_lock_m13(&list->mutex);
+
+	// find first empty thread entry
+	entry = list->entries;
+	for (i = list->top_idx + 1; i--; ++entry)
+		if (entry->_id == _id)
+			break;
+
+	if (i == -1)  // no match
+		name = NULL;
+	else
+		name = entry->name;
+	
+	// return mutex
+	pthread_mutex_unlock_m13(&list->mutex);
+
+	return(name);
 }
 
 
@@ -38405,8 +38686,10 @@ void	PROC_thread_list_remove_m13(pid_t_m13 _id)
 		
 		// reset
 		#ifdef FT_DEBUG_m13  // zeroing everything helpful for debugging
-		entry->_id = entry->_pid = 0;
+		entry->_id = (pid_t_m13) 0;
+		entry->_pid = (pid_t_m13) 0;  // note: Windows does not like combining this line with the line above (b/c atomic variables, I think)
 		entry->thread = (pthread_t_m13) 0;
+		*entry->name = 0;
 		#else  // only need to do _id for functionality
 		entry->_id = 0;
 		#endif
@@ -41523,8 +41806,8 @@ ui1  *SHA_hash_m13(const ui1 *data, si8 len, ui1 *hash)
 
 void	SHA_init_m13(SHA_CTX_m13 *ctx)
 {
-	ui4	*SHA_h0;
-	si4	i;
+	const ui4	*SHA_h0;
+	si4		i;
 
 
 	ctx->datalen = 0;
@@ -41540,6 +41823,7 @@ void	SHA_init_m13(SHA_CTX_m13 *ctx)
 
 tern	SHA_init_tables_m13(void)
 {
+	ui4			*SHA_h0_table, *SHA_k_table;
 	size_t			len;
 	GLOBAL_TABLES_m13	*tables;
 
@@ -41555,8 +41839,8 @@ tern	SHA_init_tables_m13(void)
 	}
 
 	// h0 table
-	tables->SHA_h0_table = (ui4 *) malloc((size_t) SHA_H0_ENTRIES_m13 * sizeof(ui4));
-	if (tables->SHA_h0_table == NULL) {
+	SHA_h0_table = (ui4 *) malloc((size_t) SHA_H0_ENTRIES_m13 * sizeof(ui4));
+	if (SHA_h0_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
@@ -41564,12 +41848,13 @@ tern	SHA_init_tables_m13(void)
 		ui4	temp[SHA_H0_ENTRIES_m13] = SHA_H0_m13;
 		
 		len = (size_t) SHA_H0_ENTRIES_m13 * sizeof(ui4);
-		memcpy(tables->SHA_h0_table, temp, len);
+		memcpy(SHA_h0_table, temp, len);
 	}
+	tables->SHA_h0_table = (const ui4 *) SHA_h0_table;
 
 	// k table
-	tables->SHA_k_table = (ui4 *) malloc((size_t) SHA_K_ENTRIES_m13 * sizeof(ui4));
-	if (tables->SHA_k_table == NULL) {
+	SHA_k_table = (ui4 *) malloc((size_t) SHA_K_ENTRIES_m13 * sizeof(ui4));
+	if (SHA_k_table == NULL) {
 		pthread_mutex_unlock_m13(&tables->mutex);
 		return(FALSE_m13);
 	}
@@ -41577,8 +41862,9 @@ tern	SHA_init_tables_m13(void)
 		ui4 temp[SHA_K_ENTRIES_m13] = SHA_K_m13;
 		
 		len = (size_t) SHA_K_ENTRIES_m13 * sizeof(ui4);
-		memcpy(tables->SHA_k_table, temp, len);
+		memcpy(SHA_k_table, temp, len);
 	}
+	tables->SHA_k_table = (const ui4 *) SHA_k_table;
 
 	pthread_mutex_unlock_m13(&tables->mutex);
 
@@ -41588,7 +41874,8 @@ tern	SHA_init_tables_m13(void)
 
 void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data)
 {
-	ui4	a, b, c, d, e, f, g, h, i, j, t1, t2, m[64], *sha_k;
+	const ui4	*sha_k;
+	ui4		a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
 
 
 	for (i = 0, j = 0; i < 16; ++i, j += 4)
@@ -42659,7 +42946,7 @@ const si1	*STR_tern_m13(tern val, tern colored)
 }
 
 
-si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m13
+si1	*STR_time_m13(void *level_header, si8 uutc, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m13
 {
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
 	const si1  		*mos[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -42690,7 +42977,7 @@ si1	*STR_time_m13(LH_m13 *lh, si8 uutc, si1 *time_str, tern fixed_width, tern re
 			return_m13(NULL);
 	}
 	
-	pg = G_proc_globs_m13(lh);
+	pg = G_proc_globs_m13(level_header);
 	switch (uutc) {
 		case UUTC_NO_ENTRY_m13:
 			strcpy(time_str, "no entry");
@@ -43487,7 +43774,7 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 			
 		// recv
 		errno_reset_m13();
-		r_val = recv(sock_fd, pkt_header, max_pkt_bytes, 0);
+		r_val = recv(sock_fd, (si1 *) pkt_header, max_pkt_bytes, 0);
 				
 		// receive checks
 		if (r_val < TR_HDR_BYTES_m13 && data_bytes_received == 0) {
@@ -43823,7 +44110,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 		// send
 	TR_SEND_RETRANSMIT_m13:
 		errno_reset_m13();
-		r_val = send(sock_fd, pkt_header, packet_bytes, 0);
+		r_val = send(sock_fd, (const si1 *) pkt_header, packet_bytes, 0);
 		if (r_val <= 0) {
 			if (r_val == 0) {
 				data_bytes_sent = TR_E_SOCK_CLOSED_m13;
@@ -45390,10 +45677,8 @@ void	*calloc_m13(size_t n_members, si8 el_size)  // (el_size negative): level he
 		is_level_header = TRUE_m13;
 	}
 	
-	if (n_members == 0 || el_size == 0) {
-		G_set_error_m13(E_ALLOC_m13, "members or element size is zero");
+	if (n_members == 0 || el_size == 0)
 		return(NULL);
-	}
 	
 #ifdef MATLAB_PERSISTENT_m13
 	if (ptr = mxCalloc((mwSize) n_members, (mwSize) el_size))
@@ -45407,10 +45692,12 @@ void	*calloc_m13(size_t n_members, si8 el_size)  // (el_size negative): level he
 		return(NULL);
 	}
 	
-	
 	// alloc tracking
 #ifdef AT_DEBUG_m13
-	AT_add_entry_m13(function, line, ptr, n_members * (size_t) el_size);
+	if (AT_add_entry_m13(function, line, ptr, n_members * (size_t) el_size) == FALSE_m13) {
+		free(ptr);
+		return(NULL);
+	}
 #endif
 
 	if (is_level_header == TRUE_m13)
@@ -45444,10 +45731,8 @@ void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size)  // (el_size negativ
 		is_level_header = TRUE_m13;
 	}
 	
-	if (dim1 == 0 || dim2 == 0 || el_size == 0) {
-		G_set_error_m13(E_ALLOC_m13, "dimension 1, dimension 2, or element size is zero");
+	if (dim1 == 0 || dim2 == 0 || el_size == 0)
 		return(NULL);
-	}
 	
 	dim1_bytes = dim1 * sizeof(void *);
 	dim2_bytes = dim2 * (size_t) el_size;
@@ -45492,6 +45777,11 @@ size_t	calloc_size_m13(void *address, size_t element_size)
 	G_push_function_m13();
 #endif
 
+	if (element_size == 0) {
+		G_set_error_m13(E_ALLOC_m13, "element size is zero");
+		return_m13((size_t) 0);
+	}
+	
 	return_m13(malloc_size_m13(address) / element_size);
 }
 
@@ -45758,9 +46048,10 @@ si4	fclose_m13(void *fp)
 	} else {
 		m13_fp->fp = NULL;
 		m13_fp->fd = FILE_FD_CLOSED_m13;
-		if ((m13_fp->flags & FILE_FLAGS_MED_m13) == 0)  // leave path intact => FPS path (probably anyawy; not a big deal if not zeroed either way)
+		if ((m13_fp->flags & FILE_FLAGS_MED_m13) == 0) {  // leave path intact => FPS path (probably; not a big deal if not zeroed)
 			*m13_fp->path = 0;
-		m13_fp->fid = (ui8) 0;
+			m13_fp->fid = (ui8) 0;  // may as well leave fid intact if leaving path intact
+		}
 		m13_fp->flags = FILE_FLAGS_NONE_m13;
 		m13_fp->perms = FILE_PERM_NONE_m13;
 	}
@@ -46607,8 +46898,10 @@ void	AT_free_m13(const si1 *function, si4 line, void *ptr)
 #endif
 {
 	#ifdef AT_DEBUG_m13
-	if (AT_remove_entry_m13(function, line, ptr) == FALSE_m13)
+	if (AT_remove_entry_m13(function, line, ptr) == FALSE_m13) {
+		G_proc_error_set_m13(NULL, TRUE_m13);  // free_m13() is a void function
 		return;
+	}
 	#endif
 
 	#ifdef MATLAB_PERSISTENT_m13
@@ -47590,15 +47883,8 @@ inline
 #endif
 pid_t_m13	gettid_m13(void)
 {
-#ifdef LINUX_m13
+#if defined MACOS_m13 || defined LINUX_m13
 	return(gettid());
-#endif
-	
-#ifdef MACOS_m13
-	pid_t_m13	tid;
-	
-	pthread_threadid_np(NULL, &tid);  // NULL for thread returns current thread id
-	return(tid);
 #endif
 	
 #ifdef WINDOWS_m13
@@ -47759,9 +48045,9 @@ isem_t_m13	*isem_init_m13(isem_t_m13 *isem, ui4 init_val, const si1 *nap_str, co
 void	isem_inc_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
-	si1			owner_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1		*owner_name;
 	si8			wait_time_base, wait_time, tmp_time;
-	pid_t_m13		tid;
+	pid_t_m13		_id;
 	struct timespec		tv;
 
 	
@@ -47783,12 +48069,13 @@ void	isem_inc_m13(isem_t_m13 *isem)
 		isem->initialized = TRUE_m13;
 	}
 	
-	tid = gettid_m13();
+	_id = gettid_m13();
+	owner_name = NULL;
 	
 	pthread_mutex_lock_m13(&isem->mutex);
 	
 	while (1) {
-		if (isem->owner == tid || isem->owner == 0)
+		if (isem->owner == _id || isem->owner == 0)
 			break;
 		
 		pthread_mutex_unlock_m13(&isem->mutex);
@@ -47797,14 +48084,15 @@ void	isem_inc_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
+				if (owner_name == NULL)
+					owner_name = PROC_thread_name_m13(isem->owner);
 				if (*isem->name) {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
@@ -47829,7 +48117,7 @@ void	isem_inc_m13(isem_t_m13 *isem)
 void	isem_own_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
-	si1			owner_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1		*owner_name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -47854,6 +48142,7 @@ void	isem_own_m13(isem_t_m13 *isem)
 	}
 	
 	tid = gettid_m13();
+	owner_name = NULL;
 
 	pthread_mutex_lock_m13(&isem->mutex);
 
@@ -47871,14 +48160,15 @@ void	isem_own_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
+				if (owner_name == NULL)
+					owner_name = PROC_thread_name_m13(isem->owner);
 				if (*isem->name) {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
@@ -47901,7 +48191,7 @@ void	isem_own_m13(isem_t_m13 *isem)
 void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 {
 	tern			wait_warning;
-	si1			owner_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1		*owner_name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -47927,6 +48217,7 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 	}
 	
 	tid = gettid_m13();
+	owner_name = NULL;
 	
 	pthread_mutex_lock_m13(&isem->mutex);
 	
@@ -47940,14 +48231,15 @@ void	isem_setcnt_m13(isem_t_m13 *isem, ui4 count)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
+				if (owner_name == NULL)
+					owner_name = PROC_thread_name_m13(isem->owner);
 				if (*isem->name) {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
@@ -48266,7 +48558,7 @@ tern	isem_trywait_noinc_m13(isem_t_m13 *isem)
 void	isem_wait_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
-	si1			owner_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1		*owner_name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -48291,6 +48583,7 @@ void	isem_wait_m13(isem_t_m13 *isem)
 	}
 	
 	tid = gettid_m13();
+	owner_name = NULL;
 	
 	pthread_mutex_lock_m13(&isem->mutex);
 
@@ -48305,14 +48598,15 @@ void	isem_wait_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
+				if (owner_name == NULL)
+					owner_name = PROC_thread_name_m13(isem->owner);
 				if (*isem->name) {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
@@ -48337,7 +48631,7 @@ void	isem_wait_m13(isem_t_m13 *isem)
 void	isem_wait_noinc_m13(isem_t_m13 *isem)
 {
 	tern			wait_warning;
-	si1			owner_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1		*owner_name;
 	si8			wait_time_base, wait_time, tmp_time;
 	pid_t_m13		tid;
 	struct timespec		tv;
@@ -48361,6 +48655,7 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 	}
 	
 	tid = gettid_m13();
+	owner_name = NULL;
 	
 	pthread_mutex_lock_m13(&isem->mutex);
 
@@ -48375,14 +48670,15 @@ void	isem_wait_noinc_m13(isem_t_m13 *isem)
 			tmp_time = G_current_uutc_m13();
 			wait_time = tmp_time - wait_time_base;
 			if (wait_time >= (si8) 1000000) {  // notify after every second of waiting
-				pthread_getname_id_m13(isem->owner, owner_name, PROC_THREAD_NAME_LEN_DEFAULT_m13);
+				if (owner_name == NULL)
+					owner_name = PROC_thread_name_m13(isem->owner);
 				if (*isem->name) {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem \"%s\" is still owned by %s(id: %lu) ...\n", isem->name, owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem \"%s\" is still owned by thread %lu ...\n", isem->name, isem->owner);
 				} else {
-					if (*owner_name)
+					if (owner_name)
 						G_warning_message_m13("isem is still owned by %s(id: %lu) ...\n", owner_name, isem->owner);
 					else
 						G_warning_message_m13("isem is still owned by thread %lu ...\n", isem->owner);
@@ -48419,10 +48715,8 @@ void	*malloc_m13(si8 n_bytes)  // (n_bytes negative): level header flag
 		is_level_header = TRUE_m13;
 	}
 	
-	if (n_bytes == 0) {
-		G_set_error_m13(E_ALLOC_m13, "requested bytes is zero");
+	if (n_bytes == 0)
 		return(NULL);
-	}
 	
 #ifdef MATLAB_PERSISTENT_m13
 	if (ptr = mxMalloc((mwSize) n_bytes))
@@ -48438,7 +48732,10 @@ void	*malloc_m13(si8 n_bytes)  // (n_bytes negative): level header flag
 	
 	// alloc tracking
 #ifdef AT_DEBUG_m13
-	AT_add_entry_m13(function, line, ptr, (size_t) n_bytes);
+	if (AT_add_entry_m13(function, line, ptr, (size_t) n_bytes) == FALSE_m13) {
+		free(ptr);
+		return(NULL);
+	}
 #endif
 
 	if (is_level_header == TRUE_m13)
@@ -48472,10 +48769,8 @@ void	**malloc_2D_m13(size_t dim1, si8 dim2_bytes)  // (dim2_bytes negative): lev
 		is_level_header = TRUE_m13;
 	}
 	
-	if (dim1 == 0 || dim2_bytes == 0) {
-		G_set_error_m13(E_ALLOC_m13, "dimension 1 or dimension 2 bytes is zero");
+	if (dim1 == 0 || dim2_bytes == 0)
 		return(NULL);
-	}
 	
 	dim1_bytes = dim1 * sizeof(void *);
 	content_bytes = dim1 * (size_t) dim2_bytes;
@@ -48522,29 +48817,22 @@ size_t	malloc_size_m13(void *address)
 #endif
 
 	if (address == NULL)
-		return_m13(0);
+		return_m13((size_t) 0);
 	
 #ifdef AT_DEBUG_m13
-	si8		i;
-	size_t		actual_bytes;
-	AT_LIST_m13	*list;
-	AT_ENTRY_m13	*ate;
+	si8	bytes;
 	
-	list = globals_m13->AT_list;
-	pthread_mutex_lock_m13(&list->mutex);
+	G_add_behavior_m13(SUPPRESS_WARNING_OUTPUT_m13);
+	bytes = AT_actual_size_m13(address);
+	G_pop_behavior_m13();
+	if (bytes)
+		return_m13((size_t) bytes);
 	
-	ate = list->entries;
-	actual_bytes = (size_t) 0;
-	for (i = list->top_idx + 1; i--; ++ate)
-		if (ate->address == address)
-			actual_bytes = ate->actual_bytes;
-	
-	pthread_mutex_unlock_m13(&list->mutex);
-
-	return_m13((size_t) actual_bytes);
+	G_warning_message_m13("%s(): %sno AT entry for address, checking if allocated with standard functions%s\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13);
 #endif
-	
+
 #ifdef MACOS_m13
+	// returns zero if address not allocated
 	return_m13(malloc_size(address));
 #endif
 
@@ -49260,16 +49548,14 @@ inline
 #endif
 void	pthread_exit_m13(void *ptr)
 {
-	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1	*thread_name;
 	pid_t_m13	_id;
-	pthread_t	thread;
 
 	
 	if (!(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13)) {
 		_id = gettid_m13();
-		thread = pthread_self_m13();
-		pthread_getname_m13(thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
-		if (*thread_name)
+		thread_name = PROC_thread_name_m13(_id);
+		if (thread_name)
 			G_warning_message_m13("%s(): exiting %s(id: %lu)", thread_name, _id);
 		else
 			G_warning_message_m13("%s(): exit thread %lu)", _id);
@@ -49297,7 +49583,7 @@ si1	*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len
 	// pass null thread_name to allocate
 	
 	if (thread_name == NULL) {
-		name_len = (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13;
+		name_len = (size_t) THREAD_NAME_BYTES_m13;
 		thread_name = (si1 *) malloc(name_len * sizeof(si1));
 		if (thread_name == NULL) {
 			G_error_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
@@ -49347,7 +49633,7 @@ si1	*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len)
 	// pass null thread_name to allocate
 	
 	if (thread_name == NULL) {
-		name_len = (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13;
+		name_len = (size_t) THREAD_NAME_BYTES_m13;
 		thread_name = (si1 *) malloc(name_len * sizeof(si1));
 		if (thread_name == NULL) {
 			G_error_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
@@ -49413,16 +49699,15 @@ inline
 #endif
 si4	pthread_kill_m13(pthread_t_m13 thread, si4 signal)
 {
-	si1		thread_name[PROC_THREAD_NAME_LEN_DEFAULT_m13];
+	const si1	*thread_name;
 	si4		r_val, err;
 	pid_t_m13	_id;
 
 	
 	if (!(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13)) {
-		*thread_name = 0;
-		pthread_getname_m13(thread, thread_name, (size_t) PROC_THREAD_NAME_LEN_DEFAULT_m13);
 		_id = PROC_id_for_thread_m13(&thread);
-		if (*thread_name)
+		thread_name = PROC_thread_name_m13(_id);
+		if (thread_name)
 			G_warning_message_m13("%s(): killing %s(id: %lu)\n", thread_name, _id);
 		else
 			G_warning_message_m13("%s(): killing thread %lu)\n", _id);
@@ -49830,22 +50115,36 @@ void	*realloc_m13(void *ptr, si8 n_bytes)  // (n_bytes negative): level header f
 #endif
 	
 #ifdef MATLAB_PERSISTENT_m13
-	if (new_ptr = mxRealloc(ptr, (mwSize) n_bytes))
+	if (ptr)
+		new_ptr = mxRealloc(ptr, (mwSize) n_bytes);
+	else
+		new_ptr = mxMalloc((mwSize) n_bytes);
+	if (new_ptr)
 		mexMakeMemoryPersistent(new_ptr);
 #else
-	new_ptr = realloc(ptr, (size_t) n_bytes);
+	if (ptr)
+		new_ptr = realloc(ptr, (size_t) n_bytes);
+	else
+		new_ptr = malloc((size_t) n_bytes);
 #endif
 	if (new_ptr == NULL) {
-		G_set_error_m13(E_ALLOC_m13, "realloc failed");
+		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
 	}
 	
 	// alloc tracking
 #ifdef AT_DEBUG_m13
-	if (ptr)
-		AT_update_entry_m13(function, line, ptr, new_ptr, (size_t) n_bytes);
-	else
-		AT_add_entry_m13(function, line, new_ptr, (size_t) n_bytes);
+	if (ptr) {
+		if (AT_update_entry_m13(function, line, ptr, new_ptr, (size_t) n_bytes) == FALSE_m13) {
+			free(new_ptr);
+			return(NULL);
+		}
+	} else {
+		if (AT_add_entry_m13(function, line, new_ptr, (size_t) n_bytes) == FALSE_m13) {
+			free(new_ptr);
+			return(NULL);
+		}
+	}
 #endif
 	
 	if (is_level_header == TRUE_m13)
@@ -50000,7 +50299,7 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 	new_ptr = malloc_2D_m13(new_dim1, new_dim2 * (size_t) el_size);
 #endif
 	if (new_ptr == NULL) {
-		G_set_error_m13(E_ALLOC_m13, "realloc failed");
+		G_set_error_m13(E_ALLOC_m13, NULL);
 		return(NULL);
 	}
 
