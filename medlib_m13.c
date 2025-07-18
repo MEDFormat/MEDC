@@ -38112,44 +38112,10 @@ pid_t_m13	PROC_launch_thread_m13(pthread_t_m13 *thread_p, pthread_fn_m13 thread_
 #endif  // WINDOWS_m13
 
 
-//pthread_rval_m13	PROC_macos_named_thread_m13(void *named_info_arg)
-//{
-//#ifdef MACOS_m13
-//	
-//	PROC_MACOS_NAMED_THREAD_INFO_m13	*named_thread_info;
-//	const si1				*thread_name;
-//	pthread_fn_m13				thread_f;
-//	void					*thread_arg;
-//	pthread_rval_m13			rval;
-//
-//	// in MacOS a thread can only be named from within itself
-//	// this thread is substituted for the desired thread, names itself, & then calls desired thread as function
-//
-//	// break out (for readability)
-//	named_thread_info = (PROC_MACOS_NAMED_THREAD_INFO_m13 *) named_info_arg;
-//	thread_name = named_thread_info->thread_name;
-//	thread_f = named_thread_info->thread_f;
-//	thread_arg = named_thread_info->arg;
-//
-//	// name thread
-//	pthread_setname_np(thread_name);  // suffix _np is for "not posix" or "not portable"
-//
-//	// start thread function
-//	rval = thread_f(thread_arg);
-//	
-//	// release named_thread_info structure (allocated by calling function)
-//	free(named_info_arg);
-//	
-//	return(rval);
-//#endif
-//	return((pthread_rval_m13) 0);
-//}
-
-
 #ifdef MACOS_m13
 tern	PROC_set_thread_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p, tern wait_for_lauch)
 {
-	const si1	thread_name;
+	const si1	*thread_name;
 	const si4	MAX_ATTEMPTS = 100;
 	si4		attempts;
 	mach_port_t	mach_thread;
@@ -38615,7 +38581,7 @@ const si1	*PROC_thread_name_m13(pid_t_m13 _id)
 	if (i == -1)  // no match
 		name = NULL;
 	else
-		name = entry->name;
+		name = (const si1 *) entry->name;
 	
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -47883,7 +47849,14 @@ inline
 #endif
 pid_t_m13	gettid_m13(void)
 {
-#if defined MACOS_m13 || defined LINUX_m13
+#ifdef MACOS_m13
+	pid_t_m13	tid;
+	
+	pthread_threadid_np(NULL, &tid);  // NULL for thread returns current thread id
+	return(tid);
+#endif
+
+#ifdef LINUX_m13
 	return(gettid());
 #endif
 	
