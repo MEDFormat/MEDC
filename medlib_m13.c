@@ -37694,19 +37694,22 @@ tern	PROC_default_threading_m13(void *level_header)
 
 cpu_set_t_m13	*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 *passed_cpu_set_p)
 {
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+#ifdef MACOS_m13
+	G_warning_message_m13("%s(): MacOS does not support core affinity assignment\n", __FUNCTION__);
+	return_m13(NULL);
+#endif
+
+#if defined LINUX_m13 || defined WINDOWS_m13
 	tern  			not_flag, lessthan_flag, greaterthan_flag;
 	const si1 		*aff_str;
 	si4 			i, n_cpus, start_num, end_num, cpus_set;
 	cpu_set_t_m13 		*cpu_set_p;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-#ifdef MACOS_m13
-	G_warning_message_m13("%s(): MacOS does not support core affinity assignment\n", __FUNCTION__);
-	return_m13(NULL);
-#endif
 
 	/* affinity string examples
 	"a" or "all" set to all logical cpus  // same as not specifying a cpu set on most OS's
@@ -37797,7 +37800,7 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 
 
 	// build affinity set
 	
-#ifdef LINUX_m13
+	#ifdef LINUX_m13
 	if (not_flag == TRUE_m13) {
 		for (i = 0; i < n_cpus; ++i)  // set all bits
 			CPU_SET(i, cpu_set_p);
@@ -37808,9 +37811,9 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 
 		for (cpus_set = 0, i = start_num; i <= end_num; ++i, ++cpus_set)
 			CPU_SET(i, cpu_set_p);
 	}
-#endif
+	#endif
 
-#ifdef WINDOWS_m13
+	#ifdef WINDOWS_m13
 	cpu_set_t_m13	mask;
 
 	mask = 1 << start_num;
@@ -37821,7 +37824,7 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 
 		*cpu_set_p = ~*cpu_set_p;
 		cpus_set = n_cpus - cpus_set;
 	}
-#endif
+	#endif
 	
 	if (cpus_set == 0) {
 		G_warning_message_m13("%s(): no cpus specified => setting to ~0\n", __FUNCTION__);
@@ -37829,6 +37832,7 @@ cpu_set_t_m13	*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 
 	}
 
 	return_m13(cpu_set_p);
+#endif  // LINUX_m13 || WINDOWS_m13
 }
 
 
@@ -38291,9 +38295,10 @@ tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 	tern		free_cpu_set;
 	ui4		win_id, res;
 	const si4	MAX_ATTEMPTS = 10;
-	si4		priority, err, attempts;
-	ui8		err;
+	ui4		err;
+	si4		priority, attempts;
 	pid_t_m13	_id;
+	pthread_t_m13	thread;
 
 
 #ifdef FT_DEBUG_m13
@@ -38328,7 +38333,6 @@ tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 				priority = job->priority;
 				break;
 		}
-		SetThreadPriority(thread, priority);
 	}
 
 	// get affinity
@@ -38352,11 +38356,11 @@ tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 	// wait for thread to launch (can return from _beginthreadex() successfully before thread actually created)
 	attempts = MAX_ATTEMPTS;
 	do {
-		res = WaitForSingleObject(thread, 1);  // max 1 ms wait
-		if (res == WAIT_FAILED)
+		err = WaitForSingleObject(thread, 1);  // max 1 ms wait
+		if (err == WAIT_FAILED)
 			nap_m13("100 us");
-	} while (res == WAIT_FAILED && attempts--);
-	if (res == WAIT_FAILED) {
+	} while (err == WAIT_FAILED && attempts--);
+	if (err == WAIT_FAILED) {
 		if (STR_is_empty_m13(job->name) == TRUE_m13)
 			G_set_error_m13(E_PROC_m13, "error launching job\n");
 		else
@@ -49703,9 +49707,9 @@ si1	*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len)
 	HRESULT		res;
 	wchar_t 	*w_thread_name;
 	
-	ww_thread_name = malloc(name_len * 2);
+	w_thread_name = (wchar_t *) malloc(name_len << 1);
 	
-	res = GetThreadDescription(*thread_p, w_thread_name);
+	res = GetThreadDescription(*thread_p, (PWSTR *) &w_thread_name);
 	if (SUCCEEDED(res))
 		STR_wchar2char_m13(thread_name, w_thread_name);
 	
