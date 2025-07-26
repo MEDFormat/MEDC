@@ -2242,7 +2242,9 @@ typedef struct { // multiple thread access
 	si4			alloc_line;
 	si4			free_line;
 	pid_t_m13		alloc_thread_id;
+	si1			alloc_thread_name[THREAD_NAME_BYTES_m13];
 	pid_t_m13		free_thread_id;
+	si1			free_thread_name[THREAD_NAME_BYTES_m13];
 } AT_ENTRY_m13;
 
 typedef struct { // multiple thread access
@@ -4178,7 +4180,7 @@ tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CPS_m1
 tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
 tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 **buffers_ptr);
 tern	CMP_free_cps_cache_m13(CPS_m13 *cps);
-tern	CMP_free_cps_m13(CPS_m13 **cps_ptr);
+tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure);
 sf8	CMP_gamma_cdf_m13(sf8 x, sf8 k, sf8 theta, sf8 offset);
 sf8	CMP_gamma_cf_m13(sf8 a, sf8 x, sf8 *g_ln);
 sf8	CMP_gamma_inv_cdf_m13(sf8 p, sf8 k, sf8 theta, sf8 offset);

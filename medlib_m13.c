@@ -5278,23 +5278,23 @@ void  G_free_globals_m13(tern cleanup_for_exit)
 	}
 
 	if (globals_m13->thread_list) {
-		free(globals_m13->thread_list->entries);
+		if (globals_m13->thread_list->entries)
+			free(globals_m13->thread_list->entries);
 		pthread_mutex_destroy_m13(&globals_m13->thread_list->mutex);
 		free(globals_m13->thread_list);
 	}
 
+	if (globals_m13->app_info)
+		free(globals_m13->app_info);
+	
 #ifdef AT_DEBUG_m13
 	if (globals_m13->AT_list) {
-		free_all_m13();  // display memory still allocated & free it
+//		free_all_m13();  // display memory still allocated & free it
 		free(globals_m13->AT_list->entries);
 		pthread_mutex_destroy_m13(&globals_m13->AT_list->mutex);
 		free(globals_m13->AT_list);
 	}
 #endif
-	
-	
-	if (globals_m13->app_info)
-		free(globals_m13->app_info);
 	
 	err = &globals_m13->error;
 	pthread_mutex_destroy_m13(&err->mutex);
@@ -6228,7 +6228,6 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	}
 	globals_m13->function_stack_list->top_idx = (si4) -1;
 	pthread_mutex_init_m13(&globals_m13->function_stack_list->mutex, NULL);
-	G_push_function_exec_m13("main", 0);  // main doesn't push itself because it has to initialize globals first
 	if ((GLOBALS_BEHAVIOR_DEFAULT_m13 & SUPPRESS_MESSAGE_OUTPUT_m13) == 0) {
 		#ifdef MATLAB_m13
 		mexPrintf("Function Tracking enabled\n");
@@ -6366,7 +6365,7 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	// do these after stacks active
 	PROC_thread_list_add_m13(0, 0, NULL, "main");  // main() not launched by process, so not automtically added to list
 #ifdef FT_DEBUG_m13
-	G_push_function_exec_m13("main", __LINE__);  // main can't push to the function stack because it has to initialize globals first
+	G_push_function_exec_m13("main", (si4) 0);  // main can't push to the function stack because it has to initialize globals first
 #endif
 	
 	// get user preferences
@@ -9876,7 +9875,7 @@ void	G_push_function_exec_m13(const si1 *function, const si4 line)
 	stack->functions[++stack->top_idx].name = function;
 	stack->functions[stack->top_idx].entry_line = line;
 	stack->functions[stack->top_idx].return_line = E_UNKNOWN_LINE_m13;
-			
+				
 #endif  // FT_DEBUG_m13
 
 	return;
@@ -10055,7 +10054,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 	// set up thread infos
 	jobs = (PROC_JOB_m13 *) calloc((size_t) n_segs, sizeof(PROC_JOB_m13));
 	rmis = (READ_MED_THREAD_INFO_m13 *) calloc((size_t) n_segs, sizeof(READ_MED_THREAD_INFO_m13));
-	
+
 	null_segment_cnt = 0;
 	for (i = slice->start_seg_num, j = seg_idx, k = 0; k < n_segs; ++i, ++j, ++k) {
 		seg = chan->segs[j];
@@ -10193,7 +10192,7 @@ pthread_rval_m13	G_read_channel_thread_m13(void *ptr)
 
 	rmi = (READ_MED_THREAD_INFO_m13 *) (job->function_arg);
 	rmi->MED_struct = (LH_m13 *) G_read_channel_m13((CHAN_m13 *) rmi->MED_struct, rmi->slice, rmi->MED_dir, (SESS_m13 *) rmi->parent, rmi->flags, rmi->password);
-	
+
 	if (rmi->MED_struct)
 		job->status = PROC_THREAD_SUCCEEDED_m13;
 	else
@@ -10800,7 +10799,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
 	// open segment
 	if (seg == NULL) {
 		// get varargs
@@ -10818,7 +10817,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 	} else {
 		free_seg = FALSE_m13;
 	}
-
+	
 	// process time slice (passed slice is not modified)
 	if (slice)  // passed slice supersedes structure slice
 		seg->slice = *slice;
@@ -10841,7 +10840,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 		if (slice->end_time > uh->segment_end_time)
 			slice->end_time = uh->segment_end_time;
 	}
-			
+	
 	// get local indices
 	if (seg->type_code == TS_SEG_TYPE_CODE_m13) {
 		tmd2 = &seg->metadata_fps->metadata->time_series_section_2;
@@ -10873,7 +10872,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 	}
 	slice->start_seg_num = slice->end_seg_num = seg->metadata_fps->uh->segment_number;
 	slice->n_segs = 1;
-
+	
 	// read segment data
 	inactive_ref = FALSE_m13;  // check for inactive reference
 	if (seg->flags & LH_READ_SEG_DATA_MASK_m13) {
@@ -11093,6 +11092,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(sess);
+	
 	r_val = PROC_jobs_distribute_m13(jobs, n_chans, 0, 1, threading, FALSE_m13);
 	if (r_val == FALSE_m13) {
 		if (free_sess == TRUE_m13)
@@ -12664,7 +12664,8 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 		err->function = function;
 		err->thread_id = gettid_m13();
 		thread_name = PROC_thread_name_m13(err->thread_id);
-		strncpy_m13(err->thread_name, thread_name, THREAD_NAME_BYTES_m13);
+		if (thread_name)
+			strncpy_m13(err->thread_name, thread_name, THREAD_NAME_BYTES_m13);
 	}
 	
 	// relase error hold
@@ -12681,10 +12682,10 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 
 tern	G_set_session_globals_m13(void *level_header, const si1 *MED_path, const si1 *password)
 {
-	si1		md_file[PATH_BYTES_m13];
-	FPS_m13		*fps;
-	UH_m13		*uh;
-	PROC_GLOBS_m13	*pg;
+	si1			md_file[PATH_BYTES_m13];
+	FPS_m13			*fps;
+	UH_m13			*uh;
+	PROC_GLOBS_m13		*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12713,7 +12714,7 @@ tern	G_set_session_globals_m13(void *level_header, const si1 *MED_path, const si
 		G_update_MED_version_m13(fps);
 
 	FPS_free_m13(fps);
-	
+
 	return_m13(TRUE_m13);
 }
 
@@ -15251,8 +15252,8 @@ tern	G_sort_records_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps)
 	// calculate crcs
 	ri_uh->body_CRC = CRC_calculate_m13(ri_data + UH_BYTES_m13, ri_len - UH_BYTES_m13);
 	ri_uh->header_CRC = CRC_calculate_m13(ri_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
-	rd_uh->body_CRC = CRC_calculate_m13(sorted_rd_data + UH_BYTES_m13, rd_len - UH_BYTES_m13);
-	rd_uh->header_CRC = CRC_calculate_m13(sorted_rd_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
+	sorted_rd_uh->body_CRC = CRC_calculate_m13(sorted_rd_data + UH_BYTES_m13, rd_len - UH_BYTES_m13);
+	sorted_rd_uh->header_CRC = CRC_calculate_m13(sorted_rd_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
 
 	// write out sorted files
 	if (globals_m13->write_sorted_records == TRUE_m13) {
@@ -15288,7 +15289,7 @@ tern	G_sort_records_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps)
 	rd_fps->params.raw_data = sorted_rd_data;
 	rd_fps->params.raw_data_bytes = malloc_size_m13(sorted_rd_data);
 	rd_fps->uh = sorted_rd_uh;
-	rd_fps->rec_data = rd_data + UH_BYTES_m13;
+	rd_fps->rec_data = sorted_rd_data + UH_BYTES_m13;
 	rd_fps->n_items = sorted_rd_uh->n_entries;
 	rd_fps->params.header_read = rd_fps->params.full_file_read = TRUE_m13;
 	if (fisopen_m13(rd_fps->params.fp) == TRUE_m13)  // close because full file read
@@ -16003,8 +16004,9 @@ tern	G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name)  // u
 tern	G_update_MED_type_m13(const si1 *path)
 {
 	tern			r_val;
-	ui1			*rd, *r_rd, *ri_data, *rd_data, *encryption_key;
-	si1			*text, tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13], ri_path[PATH_BYTES_m13], rd_path[PATH_BYTES_m13], first_rec_encryption;
+	ui1			*rd, *r_rd, *ri_data, *rd_data, *encryption_key, first_rec_encryption;
+	si1			*text, tmp_path[PATH_BYTES_m13], tmp_name[NAME_BYTES_m13];
+	si1			ri_path[PATH_BYTES_m13], rd_path[PATH_BYTES_m13];
 	ui4			type_code;
 	si8			i, bytes_to_read, bytes_to_write, n_recs, header_offset;
 	si8			body_bytes, text_bytes, r_pos, w_pos;
@@ -16172,9 +16174,11 @@ tern	G_update_MED_type_m13(const si1 *path)
 
 		// read in full files
 		ri_fp = fopen_m13(ri_path, "r+");
+		if (ri_fp == NULL)
+			goto UPDATE_MED_TYPE_FAIL_m13;
 		rd_fp = fopen_m13(rd_path, "r+");
-		if (ri_fp == NULL || rd_fp == NULL)
-			return_m13(FALSE_m13);
+		if (rd_fp == NULL)
+			goto UPDATE_MED_TYPE_FAIL_m13;
 		ri_len = ri_fp->len;
 		rd_len = rd_fp->len;
 		ri_data = (ui1 *) malloc_m13(ri_len);
@@ -16381,19 +16385,17 @@ tern	G_update_MED_type_m13(const si1 *path)
 		rd_uh->body_CRC = CRC_calculate_m13(rd_data + UH_BYTES_m13, rd_len - UH_BYTES_m13);
 		rd_uh->header_CRC = CRC_calculate_m13(rd_data + sizeof(crc4), UH_BYTES_m13 - sizeof(crc4));;
 
-		// write out sorted files
-		if (globals_m13->write_sorted_records == TRUE_m13) {
-			if (fseek_m13(ri_fp, 0, SEEK_SET))
-				goto UPDATE_MED_TYPE_FAIL_m13;
-			nw = fwrite_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
-			if (nw != ri_len)
-				goto UPDATE_MED_TYPE_FAIL_m13;
-			if (fseek_m13(rd_fp, 0, SEEK_SET))
-				goto UPDATE_MED_TYPE_FAIL_m13;
-			nw = fwrite_m13(rd_data, sizeof(ui1), (size_t) rd_len, rd_fp);
-			if (nw != rd_len)
-				goto UPDATE_MED_TYPE_FAIL_m13;
-		}
+		// write out files
+		if (fseek_m13(ri_fp, 0, SEEK_SET))
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		nw = fwrite_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
+		if (nw != ri_len)
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		if (fseek_m13(rd_fp, 0, SEEK_SET))
+			goto UPDATE_MED_TYPE_FAIL_m13;
+		nw = fwrite_m13(rd_data, sizeof(ui1), (size_t) rd_len, rd_fp);
+		if (nw != rd_len)
+			goto UPDATE_MED_TYPE_FAIL_m13;
 	}
 
 	// unknown file type
@@ -18883,6 +18885,7 @@ tern	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 				pthread_mutex_unlock_m13(&list->mutex);
 				exit_m13(-1);
 			}
+			memset(ate + list->size, 0, sizeof(AT_ENTRY_m13) * GLOBALS_AT_LIST_SIZE_INCREMENT_m13);
 			list->entries = ate;
 			list->size = n_entries;
 		}
@@ -18892,6 +18895,7 @@ tern	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	ate->free_function = NULL;
 	ate->free_line = 0;
 	ate->free_thread_id = 0;
+	*ate->free_thread_name = 0;
 	
 	// fill in
 	ate->address = address;
@@ -18907,7 +18911,11 @@ tern	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	ate->requested_bytes = requested_bytes;
 	ate->alloc_function = function;
 	ate->alloc_line = line;
-	ate->alloc_thread_id = gettid_m13();
+	ate->alloc_thread_id = _id;
+	if (thread_name)
+		strcpy(ate->alloc_thread_name, thread_name);  // need local copy of name because thread may no longer exist
+	else
+		*ate->alloc_thread_name = 0;
 
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
@@ -19076,7 +19084,11 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	ate->free_function = function;
 	ate->free_line = line;
 	ate->free_thread_id = _id;
-	
+	if (thread_name)
+		strcpy(ate->free_thread_name, thread_name);  // need local copy of name because thread may no longer exist
+	else
+		*ate->free_thread_name = 0;
+
 	// trim search extents
 	if (ate == list->entries + list->top_idx)
 		--list->top_idx;
@@ -19123,7 +19135,6 @@ ui8	AT_requested_size_m13(void *address)
 
 void	AT_show_entries_m13(void)
 {
-	const si1	*thread_name;
 	si8		i, alloced_entries;
 	AT_ENTRY_m13	*ate;
 
@@ -19140,8 +19151,8 @@ void	AT_show_entries_m13(void)
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
 			printf_m13("allocating thread id: %lu\n", ate->alloc_thread_id);
-			thread_name = PROC_thread_name_m13(ate->alloc_thread_id);
-			printf_m13("allocating thread name: \"%s\"\n", thread_name);
+			if (*ate->alloc_thread_name)
+				printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
 			++alloced_entries;
 		}
 	}
@@ -19156,7 +19167,6 @@ void	AT_show_entries_m13(void)
 
 void	AT_show_entry_m13(void *address)
 {
-	const si1	*thread_name;
 	si8		i;
 	AT_ENTRY_m13	*ate;
 	
@@ -19177,16 +19187,14 @@ void	AT_show_entry_m13(void *address)
 			printf_m13("allocating function: %s()\n", ate->alloc_function);
 			printf_m13("allocating line: %d\n", ate->alloc_line);
 			printf_m13("allocating thread id: %lu\n", ate->alloc_thread_id);
-			thread_name = PROC_thread_name_m13(ate->alloc_thread_id);
-			if (thread_name)
-				printf_m13("allocating thread name: \"%s\"\n", thread_name);
+			if (*ate->alloc_thread_name)
+				printf_m13("allocating thread name: \"%s\"\n", ate->alloc_thread_name);
 			if (ate->free_function) {
 				printf_m13("freeing function: %s()\n", ate->free_function);
 				printf_m13("freeing line: %d\n", ate->free_line);
 				printf_m13("freeing thread id: %lu\n", ate->free_thread_id);
-				thread_name = PROC_thread_name_m13(ate->free_thread_id);
-				if (thread_name)
-					printf_m13("freeing thread name: \"%s\"\n", thread_name);
+				if (*ate->free_thread_name)
+					printf_m13("freeing thread name: \"%s\"\n", ate->free_thread_name);
 			}
 			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
 			return;
@@ -19221,7 +19229,10 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	thread_name = PROC_thread_name_m13(_id);
 
 	if (new_address == NULL) {
-		G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called at %s(%d) in thread  %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) _id);
+		if (thread_name)
+			G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) _id);
+		else
+			G_warning_message_m13("%s(): %sattempting to reassign to NULL object%s  [called at %s(%d) in thread %lu]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, (ui8) _id);
 		return(FALSE_m13);
 	}
 	
@@ -19237,19 +19248,30 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	// no entry
 	if (i == -1) {
 		pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-		G_warning_message_m13("%s(): %saddress is not allocated%s  [called at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) _id);
+		if (thread_name)
+			G_warning_message_m13("%s(): %saddress is not allocated%s  [called at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, thread_name, (ui8) _id);
+		else
+			G_warning_message_m13("%s(): %saddress is not allocated%s  [called at %s(%d) in thread id]\n", __FUNCTION__, TC_RED_m13, TC_RESET_m13, function, line, (ui8) _id);
 		return(FALSE_m13);
 	}
 	
 	if (ate->free_function) {
-		G_warning_message_m13("%s(): %ssaddress %lu is not currently allocated%s  [called at %s(%d) in thread  %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) _id);
-		thread_name = PROC_thread_name_m13(ate->alloc_thread_id);
-		G_warning_message_m13("%s(): [prior allocation at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, function, line, thread_name, (ui8) ate->alloc_thread_id);
-		thread_name = PROC_thread_name_m13(ate->free_thread_id);
-		G_warning_message_m13("[prior free at %s(%d) in thread %s(id: %lu)]\n=> replacing with new data\n", ate->free_function, ate->free_line, thread_name, (ui8) ate->free_thread_id);
+		if (thread_name)
+			G_warning_message_m13("%s(): %ssaddress %lu is not currently allocated%s  [called at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, thread_name, (ui8) _id);
+		else
+			G_warning_message_m13("%s(): %ssaddress %lu is not currently allocated%s  [called at %s(%d) in thread %lu]\n", __FUNCTION__, TC_RED_m13, (ui8) orig_address, TC_RESET_m13, function, line, (ui8) _id);
+		if (*ate->alloc_thread_name)
+			G_warning_message_m13("%s(): [prior allocation at %s(%d) in thread %s(id: %lu)]\n", __FUNCTION__, function, line, ate->alloc_thread_name, (ui8) ate->alloc_thread_id);
+		else
+			G_warning_message_m13("%s(): [prior allocation at %s(%d) in thread %lu]\n", __FUNCTION__, function, line, (ui8) ate->alloc_thread_id);
+		if (*ate->free_thread_name)
+			G_warning_message_m13("[prior free at %s(%d) in thread %s(id: %lu)]\n=> replacing with new data\n", ate->free_function, ate->free_line, ate->free_thread_name, (ui8) ate->free_thread_id);
+		else
+			G_warning_message_m13("[prior free at %s(%d) in thread %lu]\n=> replacing with new data\n", ate->free_function, ate->free_line, (ui8) ate->free_thread_id);
 		ate->free_function = NULL;
 		ate->free_line = 0;
 		ate->free_thread_id = 0;
+		*ate->free_thread_name = 0;
 	}
 
 	// update
@@ -19267,6 +19289,10 @@ tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void
 	ate->alloc_function = function;
 	ate->alloc_line = line;
 	ate->alloc_thread_id = _id;
+	if (thread_name)
+		strcpy(ate->alloc_thread_name, thread_name);  // need local copy of name because thread may no longer exist
+	else
+		*ate->alloc_thread_name = 0;
 
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
@@ -29197,7 +29223,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 			m13_fp = (FILE_m13 *) calloc_m13((size_t) 1, sizeof(FILE_m13));
 			if (m13_fp == NULL)
 				return_m13(NULL);
-			alloced_bit = (ui2) FILE_FLAGS_ALLOCED_m13;
+			alloced_bit = FILE_FLAGS_ALLOCED_m13;
 		} else {
 			m13_fp = (FILE_m13 *) fp;
 			std_fp = m13_fp->fp;
@@ -29511,7 +29537,7 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		if (fp->flags & FILE_FLAGS_ALLOCED_m13)
 			printf_m13("\tdirect heap allocation  (freeable)\n");
 		else
-			printf_m13("\tindirect heap, or stack allocation  (not freeable)\n");
+			printf_m13("\tindirect heap or stack allocation  (not freeable)\n");
 		if (fp->flags & FILE_FLAGS_READ_m13)
 			printf_m13("\treading enabled\n");
 		else
@@ -33121,7 +33147,6 @@ FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, void *p
 	PROC_GLOBS_m13		*pg;
 	FILE_m13		*fp;
 	va_list			v_arg;
-	struct_stat_m13		sb;
 #ifdef WINDOWS_m13
 	HANDLE			file_h;
 	DISK_GEOMETRY		disk_geom = { 0 };
@@ -33201,14 +33226,15 @@ FPS_m13	*FPS_open_m13(const si1 *path, const si1 *mode_str, si8 n_bytes, void *p
 	G_pop_behavior_m13();
 	fps->params.fp = fp;
 	
-	fstat_m13(fp->fd, &sb);
-
 	// memory mapping
 	if (fps->direcs.flags & FPS_DF_MMAP_m13) {
 		pg = G_proc_globs_m13(parent);
 		mmap_block_bytes = pg->miscellaneous.mmap_block_bytes;
 		if (mmap_block_bytes == GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13) {
 			#if defined MACOS_m13 || defined LINUX_m13
+			struct_stat_m13		sb;
+
+			fstat_m13(fp->fd, &sb);
 			mmap_block_bytes = (ui4) sb.st_blksize;
 			#endif
 			#ifdef WINDOWS_m13
@@ -38151,7 +38177,7 @@ pthread_rval_m13	PROC_job_init_m13(void *arg)
 	
 	// launch job
 	r_val = job->function(arg);
-	
+
 	if (job->threaded == TRUE_m13)
 		G_thread_exit_m13();
 
@@ -42785,6 +42811,8 @@ si1	*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *bu
 	pat_len = strlen(pattern);
 	new_pat_len = strlen(new_pattern);
 	char_diff = new_pat_len - pat_len;
+	if (char_diff < 0)
+		char_diff = 0;  // new_buffer must be at least as big as input buffer
 	
 	matches = 0;
 	cc = buffer;
@@ -42808,7 +42836,7 @@ si1	*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *bu
 		if (new_buffer == NULL)
 			return_m13(NULL);
 	}
-	strcpy(new_buffer, buffer);
+	memcpy(new_buffer, buffer, (size_t) len);
 	
 	last_c = cc = buffer;
 	new_c = new_buffer;
@@ -45907,10 +45935,9 @@ void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 	
 	// hold subsequent threads here
 	if (isem_tryown_m13(&globals_m13->error.isem) == FALSE_m13) {
-		if (status == E_SIG_m13)  // subsequent signal (probably user SIGINT)
-			isem_chown_m13(&globals_m13->error.isem, ISEM_SELF_m13);
-		else
+		if (status != E_SIG_m13)
 			isem_own_m13(&globals_m13->error.isem);  // hold non-owners here
+		// else subsequent signal (probably SIGINT from user)
 	}
 	
 	if ((behavior & SUPPRESS_ERROR_OUTPUT_m13) == 0) {
@@ -49379,8 +49406,12 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 	#endif
 	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (r_val) {
-		G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
-		return_m13(FALSE_m13);
+		// sometimes this errors even though the operation succeeded
+		nap_m13("1 ms");  // allow for a little file system latency
+		if (G_exists_m13(new_path) == FALSE_m13) {
+			G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
+			return_m13(FALSE_m13);
+		}
 	}
 	
 	return_m13(TRUE_m13);
