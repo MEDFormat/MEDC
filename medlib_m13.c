@@ -21308,19 +21308,12 @@ tern  CMP_free_cps_cache_m13(CPS_m13 *cps)
 }
 
 
-tern  CMP_free_cps_m13(CPS_m13 **cps_ptr)
+tern  CMP_free_cps_m13(CPS_m13 *cps, tern free_structure)
 {
-	CPS_m13			*cps;
-
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (cps_ptr == NULL) {
-		G_set_error_m13(E_GEN_m13, "CPS pointer is null");
-		return_m13(FALSE_m13);
-	}
-	cps = *cps_ptr;
 	if (cps == NULL) {
 		G_set_error_m13(E_GEN_m13, "CPS is null");
 		return_m13(FALSE_m13);
@@ -21367,10 +21360,8 @@ tern  CMP_free_cps_m13(CPS_m13 **cps_ptr)
 	if (cps->params.VDS_output_buffers)
 		CMP_free_buffers_m13(&cps->params.VDS_output_buffers);
 	
-	if (freeable_m13(cps) == TRUE_m13)
+	if (free_structure == TRUE_m13)
 		free_m13(cps);
-	
-	*cps_ptr = NULL;
 	
 	return_m13(TRUE_m13);
 }
@@ -32574,7 +32565,7 @@ tern	FPS_free_m13(void *ptr)
 	
 	if (fps->type_code == TS_DATA_TYPE_CODE_m13)
 		if (fps->params.cps)
-			CMP_free_cps_m13(&fps->params.cps);
+			CMP_free_cps_m13(fps->params.cps, TRUE_m13);
 	
 	if (fps->params.raw_data)
 		free_m13(fps->params.raw_data);
@@ -32822,7 +32813,7 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params)
 		params->raw_data_bytes = 0;
 		*params->mode_str = 0;
 		if (params->cps)
-			CMP_free_cps_m13(&params->cps);
+			CMP_free_cps_m13(params->cps, TRUE_m13);
 		if (params->fp)
 			if (params->fp->fp)
 				fclose_m13(params->fp);
@@ -37555,7 +37546,7 @@ tern	PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag)
 		#ifdef MATLAB_m13
 			mexPrintf("%s(): could not adjust process open file limit\n", __FUNCTION__);
 		#else
-			printf("%s(): could not adjust process open file limit\n", __FUNCTION__);
+			printf("%s%s(): could not adjust process open file limit%s\n", TC_GREEN_m13, __FUNCTION__, TC_RESET_m13);
 		#endif
 		}
 	}
