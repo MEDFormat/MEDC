@@ -1,4 +1,6 @@
 
-Medlib_m13 is under development & not yet stable.
+Medlib_m13 is under development & may be unstable in places.
 
-Unless you are involved in m13 development, use version m12
+To avoid upgrade effort on new code, or new features, use version m13.
+
+For more established stability, use version m12.
