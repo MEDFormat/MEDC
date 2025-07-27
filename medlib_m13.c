@@ -6433,7 +6433,7 @@ tern	G_init_medlib_m13(tern init_all_tables, const si1 *app_path, ...)  // varar
 		r_val = FALSE_m13;
 	#endif
 	#ifndef MATLAB_m13  // initialize Windows terminal
-	if (WN_initialize_terminal_m13() == FALSE_m13)
+	if (WN_init_terminal_m13() == FALSE_m13)
 		r_val = FALSE_m13;
 	#endif
 #endif
@@ -29283,6 +29283,7 @@ FILE_m13	*FILE_init_m13(void *fp, ...)  // varargs(fp == stream): si1 *path
 		}
 		
 		// set permissions
+		fstat_m13(fd, &sb);
 		m13_fp->perms = (ui2) sb.st_mode & FILE_STAT_MODE_MASK_m13;  // file system permissions
 		
 		// set flags
@@ -34882,6 +34883,7 @@ tern	HW_get_core_info_m13()
 	} else {
 		c = buf;
 		while (*c++ != '\n');
+		cur_mhz = max_mhz = (si4) 0;  // silence compiler warning
 		sscanf_m13(c, "%d%d", cur_mhz, max_mhz);
 		free_m13(buf);
 
@@ -37983,9 +37985,8 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores, si4 jobs_per_core, tern thread_jobs, tern wait_jobs)
 {
 	tern			r_val;
-	si1			affinity[8];
 	si4			i, logical_cores, concurrent_cores, concurrent_jobs;
-	si4			total_jobs, currently_running, finished_jobs, start_core, end_core;
+	si4			total_jobs, currently_running, finished_jobs;
 	cpu_set_t_m13		cpu_set;
 	HW_PARAMS_m13		*hw_params;
 	PROC_JOB_m13		*job;
@@ -38067,20 +38068,37 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 	if (concurrent_jobs > total_jobs)
 		concurrent_jobs = total_jobs;
 	
-	// build cpu set
-#if defined MACOS_m13 || defined LINUX_m13
+	// set affinity (build cpu set)
+#if defined LINUX_m13 || defined WINDOWS_m13
+	si1	affinity[8];
+	si4	start_core, end_core;
+
+
+	#ifdef LINUX_m13
 	start_core = reserved_cores;
-#endif
-#ifdef WINDOWS_m13  // Windows prefers first and terminal cores
+	#endif
+	#ifdef WINDOWS_m13  // Windows prefers first and terminal cores
 	if (reserved_cores)
 		start_core = 1;
 	else
 		start_core = 0;
-#endif
+	#endif
 	end_core = start_core + (concurrent_cores - 1);
 	sprintf(affinity, "%d-%d", start_core, end_core);
 	PROC_generate_cpu_set_m13(affinity, &cpu_set);
-			
+	
+	for (job = jobs, i = n_jobs; i--; ++job) {
+		job->cpu_set_p = &cpu_set;
+		job->affinity_str = NULL;
+	}
+#endif
+#ifdef MACOS_m13
+	for (job = jobs, i = n_jobs; i--; ++job) {
+		job->cpu_set_p = NULL;
+		job->affinity_str = NULL;
+	}
+#endif
+
 	// launch initial job set
 	for (currently_running = 0, job = jobs, i = concurrent_jobs; i--; ++job) {
 		if (job->skip == TRUE_m13)
