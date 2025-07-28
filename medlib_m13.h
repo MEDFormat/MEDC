@@ -1202,10 +1202,14 @@ typedef struct {
 #define FILE_PERM_NONE_m13		0
 #define FILE_PERM_UG_R_m13		( FILE_PERM_USR_READ_m13 | FILE_PERM_GRP_READ_m13 )
 #define FILE_PERM_UG_W_m13		( FILE_PERM_USR_WRITE_m13 | FILE_PERM_GRP_WRITE_m13 )
+#define FILE_PERM_UG_X_m13		( FILE_PERM_USR_EXEC_m13 | FILE_PERM_GRP_EXEC_m13 )
 #define FILE_PERM_UG_RW_m13		( FILE_PERM_UG_R_m13 | FILE_PERM_UG_W_m13 )
+#define FILE_PERM_UG_RWX_m13		( FILE_PERM_UG_RW_m13 | FILE_PERM_UG_X_m13 )
 #define FILE_PERM_UGO_R_m13		( FILE_PERM_UG_R_m13 | FILE_PERM_OTH_READ_m13 )
 #define FILE_PERM_UGO_W_m13		( FILE_PERM_UG_W_m13 | FILE_PERM_OTH_WRITE_m13 )
+#define FILE_PERM_UGO_X_m13		( FILE_PERM_UG_X_m13 | FILE_PERM_OTH_EXEC_m13 )
 #define FILE_PERM_UGO_RW_m13		( FILE_PERM_UGO_R_m13 | FILE_PERM_UGO_W_m13 )
+#define FILE_PERM_UGO_RWX_m13		( FILE_PERM_UGO_RW_m13 | FILE_PERM_UGO_X_m13 )
 #if defined MACOS_m13 || defined LINUX_m13
 	#define FILE_PERM_DEFAULT_m13		FILE_PERM_UG_RW_m13 // rw- rw- ---
 #endif
@@ -5553,6 +5557,7 @@ si8		strcat_m13(si1 *target, const si1 *source);
 size_t		strchar_m13(const si1 *string); // strlen() that returns number of characters in string regardless of multibyte characters
 si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
 si8		strcpy_m13(si1 *target, const si1 *source);
+size_t		strlen_m13(const si1 *source);
 si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
 si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
 si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);

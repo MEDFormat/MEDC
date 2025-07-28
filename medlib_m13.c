@@ -6368,9 +6368,9 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	G_push_function_exec_m13("main", (si4) 0);  // main can't push to the function stack because it has to initialize globals first
 #endif
 	
-	// get user preferences
+	// get user library preferences
 	G_read_medlibrc_m13(app_path);
-	
+
 	return(TRUE_m13);
 }
 
@@ -8767,7 +8767,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		free(rmis);
 		return_m13(NULL);
 	}
-
+	
 	// open session records
 	if (sess->flags & LH_READ_SESS_RECS_MASK_m13)
 		G_open_records_m13((LH_m13 *) sess);
@@ -10509,7 +10509,7 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 {
 	tern		tern_val, failed;
 	const si1	*field_name;
-	si1		*path, *app_path, dflt_path[PATH_BYTES_m13];
+	si1		*path, app_path[PATH_BYTES_m13], dflt_path[PATH_BYTES_m13];
 	si1		str_val[PATH_BYTES_m13], message[(PATH_BYTES_m13 << 1) + RC_STRING_BYTES_m13], *buffer;
 	si4             option_number;
 	si8		file_len, nr, int_val;
@@ -10523,6 +10523,8 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	
 	// setup
 	G_push_behavior_m13(RETURN_QUIETLY_m13);  // no errors set in this function
+	*app_path = *dflt_path = 0;
+	path = NULL;
 	failed = TRUE_m13;
 	buffer = NULL;
 	fp = NULL;
@@ -10532,18 +10534,15 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	
 	// try app directory first (for customized app settings)
 	if (STR_is_empty_m13(application_path) == FALSE_m13) {
-		G_full_path_m13(application_path, str_val);
-		app_path = str_val;
+		G_full_path_m13(application_path, app_path);
 		G_path_parts_m13(app_path, app_path, NULL, NULL);  // strip off app name
 		sprintf_m13(app_path, "%s/.medlibrc", app_path);
-		if (G_exists_m13(app_path) == TRUE_m13) {
+		if (G_exists_m13(app_path) == TRUE_m13)
 			path = app_path;
-			fp = fopen_m13(path, "r");
-		}
 	}
-	
+
 	// try default location
-	if (fp == NULL) {
+	if (path == NULL) {
 		#if defined MACOS_m13 || defined LINUX_m13
 		si1	*env_var;
 
@@ -10566,17 +10565,21 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 		sprintf_m13(dflt_path, "%s%s/.medlibrc", home_drive, home_path);
 		#endif
 
-		if (G_exists_m13(dflt_path) == TRUE_m13) {
+		path = dflt_path;
+		if (G_exists_m13(dflt_path) == TRUE_m13)
 			path = dflt_path;
-			fp = fopen_m13(path, "r");
-		}
-		if (fp == NULL) {
-			if (*app_path)
-				sprintf_m13(message, "Did not find medlib RC file at \"%s\", or \"%s\".\nWriting RC defaults to \"%s\".", app_path, dflt_path, dflt_path);
-			else
-				sprintf_m13(message, "Did not find medlib RC file at\"%s\".\nWriting RC defaults to \"%s\".", dflt_path, dflt_path);
-			goto READ_MEDLIBRC_FAIL;
-		}
+	}
+	
+	if (path == NULL) {
+		sprintf_m13(message, "Could not find medlib RC file at \"%s\", or \"%s\".\nWriting RC defaults to \"%s\".", app_path, dflt_path, dflt_path);
+		path = dflt_path;  // write to default location
+		goto READ_MEDLIBRC_FAIL;
+	}
+
+	fp = fopen_m13(path, "r");
+	if (fp == NULL) {
+		sprintf_m13(message, "Could not open medlib RC file at \"%s\".\nWriting default RC file to that location..", path);
+		goto READ_MEDLIBRC_FAIL;
 	}
 
 	// read in rc file
@@ -10588,7 +10591,7 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	}
 	nr = fread_m13(buffer, sizeof(si1), (size_t) file_len, fp);
 	if (nr != file_len) {
-		sprintf_m13(message, "Could not read the file \"%s\".\nWriting RC defaults to \"%s\".", path);
+		sprintf_m13(message, "Could not read the file \"%s\".\nWriting default RC file to that location.", path);
 		goto READ_MEDLIBRC_FAIL;
 	}
 	buffer[file_len] = 0;
@@ -10597,7 +10600,7 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	field_name = "MED Library Version";
 	if ((option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val)))  {
 		if (strcmp_m13(str_val, "1.1.3")) {  // only supported version at this time
-			sprintf_m13(message, "Unsupported library version.\nWriting RC defaults to \"%s\".", path);
+			sprintf_m13(message, "Unsupported library version.\nWriting default RC file to \"%s\".", path);
 			goto READ_MEDLIBRC_FAIL;
 		}
 	}
@@ -10635,14 +10638,14 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	field_name = "Chattiness";
 	option_number = RC_read_field_m13(field_name, &buffer, FALSE_m13, str_val, &float_val, &int_val, &tern_val);
 	if (option_number != RC_ERR_m13) {
-		globals_m13->default_behavior.code &= ~SUPPRESS_OUTPUT_m13;  // BLATHERING option (& clear library behavior for other options)
-		// DEMURE, TACITURN
+		globals_m13->default_behavior.code &= ~SUPPRESS_OUTPUT_m13;  // BLATHERING option
+		// DEMURE, TACITURN, APHASIC
 		if (strcmp(str_val, "DEMURE") == 0)
-			globals_m13->default_behavior.code |= SUPPRESS_WARNING_OUTPUT_m13;
+			globals_m13->default_behavior.code |= SUPPRESS_WARNING_OUTPUT_m13;  // messages are generally for requested output; warnings can generally be ignored
 		else if (strcmp(str_val, "TACITURN") == 0)
 			globals_m13->default_behavior.code |= (SUPPRESS_MESSAGE_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13);
 		else if (strcmp(str_val, "APHASIC") == 0)
-			globals_m13->default_behavior.code |= SUPPRESS_OUTPUT_m13;
+			globals_m13->default_behavior.code |= (SUPPRESS_MESSAGE_OUTPUT_m13 | SUPPRESS_WARNING_OUTPUT_m13 | SUPPRESS_ERROR_OUTPUT_m13);  // == SUPPRESS_OUTPUT_m13
 	}
 
 	field_name = "Increase Priority";
@@ -10655,15 +10658,25 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 READ_MEDLIBRC_FAIL:
 	
 	G_pop_behavior_m13();
-		
+
 	if (buffer)
 		free(buffer);
 	if (fp)
 		fclose_m13(fp);
 	
 	if (failed == TRUE_m13) {
-		G_message_m13("\nRuntime Configuration:\n%s\n\n", message);
-		G_write_medlibrc_m13(path);
+		G_message_m13("\nRuntime Configuration:\n%s\n", message);
+		if (path) {
+			G_write_medlibrc_m13(path);
+			if (path != app_path && *app_path) {  // create an app-specific copy => faster for subsequent runs
+				G_message_m13("Also writing RC defaults to \"%s\".  (application specific RC file)\n", app_path);
+				G_write_medlibrc_m13(app_path);
+			} else if (path != dflt_path && *dflt_path) {  // create a global copy
+				G_message_m13("Also writing RC defaults to \"%s\".  (global RC file: used when no application specific file exists)\\n", dflt_path);
+				G_write_medlibrc_m13(app_path);
+			}
+		}
+		G_message_m13("\n");
 	}
 	
 	return;
@@ -13421,12 +13434,12 @@ tern	G_show_error_m13(void)
 #ifdef MATLAB_m13  // no text color
 	if (*err->thread_name) {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(~); in %s(id: %lu)]\n", mess, func, name, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(?); in %s(id: %lu)]\n", mess, func, name, _id);
 		else
 			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, name, _id);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(~); in thread %lu]\n", mess, func, _id);
+			mexPrintf("\n\nError:\t%s\n\t[set in %s(?); in thread %lu]\n", mess, func, _id);
 		else
 			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
 	}
@@ -13438,12 +13451,12 @@ tern	G_show_error_m13(void)
 #else  // colored text
 	if (*err->thread_name) {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(~); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(?); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
 		else
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
 	} else {
 		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(~); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
+			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(?); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
 		else
 			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
 	}
@@ -17419,7 +17432,7 @@ void	G_write_medlibrc_m13(const si1 *path)
 {
 	tern		update_parity;
 	const si1	*buffer;
-	si8		len, nw;
+	size_t		len;
 	FILE_m13	*fp;
 	
 	
@@ -17428,20 +17441,20 @@ void	G_write_medlibrc_m13(const si1 *path)
 	if (fp == NULL)
 		return;
 
-	// write out rc file
-	buffer = "\nRC Format:\n----------\n\nAny line not beginning with \"%%\" is ignored.\n\nEntry \"TYPE\"s are one of the following: string, float, integer, ternary.\n\nThe string \"NO ENTRY\" can be entered as a DEFAULT or VALUE where appropriate.\n\n\"DEFAULT\" values are used when there is no text in the value label or the word \"DEFAULT\" is specified as the value.\n\n\"PROMPT\" will ask the user for input and present the OPTIONS and DEFAULT.\n\nVALUEs can be \"DEFAULT\", \"NO ENTRY\", any of the defined OPTION strings, or free text if the field permits.\n\n\"PROMPT\" and \"NO ENTRY\" can serve as values or defaults, but are not considered OPTIONs.\n\nIf the \"OPTIONS\" label is \"OPTIONS ONLY\", only the listed options are permitted as values (\"PROMPT\", & \"DEFAULT\" are permitted also).\nOtherwise the \"OPTIONS\" are just options, and custom values are permitted.\n\n\nMED Library RC Fields:\n----------------------\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Write Corrected Headers\n%% NOTES: If headers are incomplete, write out completed headers if encountered\n%% NOTES: This may happen when acquisition or conversion terminates abnormally\n%% NOTES: This is also the expected state when files are read during acquisition; files are not updated under those circumstances\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: If application requests, increase process priority\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n";
+	// default rc file
+	buffer = "\nRC Format:\n----------\n\nAny line not beginning with \"%%\" is ignored.\n\nEntry \"TYPE\"s are one of the following: string, float, integer, ternary.\n\nThe string \"NO ENTRY\" can be entered as a DEFAULT or VALUE where appropriate.\n\n\"DEFAULT\" values are used when there is no text in the value label or the word \"DEFAULT\" is specified as the value.\n\n\"PROMPT\" will ask the user for input and present the OPTIONS and DEFAULT.\n\nVALUEs can be \"DEFAULT\", \"NO ENTRY\", any of the defined OPTION strings, or free text if the field permits.\n\n\"PROMPT\" and \"NO ENTRY\" can serve as values or defaults, but are not considered OPTIONs.\n\nIf the \"OPTIONS\" label is \"OPTIONS ONLY\", only the listed options are permitted as values (\"PROMPT\", & \"DEFAULT\" are permitted also).\nOtherwise the \"OPTIONS\" are just options, and custom values are permitted.\n\n\nMED Library RC Fields:\n----------------------\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Write Corrected Headers\n%% NOTES: If headers are incomplete, write out completed headers when encountered\n%% NOTES: This may happen when acquisition or conversion terminates abnormally\n%% NOTES: This is also the expected state when files are read during acquisition; files are not updated under those circumstances\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: If application requests, increase process priority\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n";
 
+	
+	len = strlen_m13(buffer);
+	
 	update_parity = globals_m13->update_parity;
 	globals_m13->update_parity = FALSE_m13;  // RC file does not have parity data (fwrite_m13() would check - fine, but inefficient)
 	
-	len = strlen(buffer);
-	nw = fwrite_m13((si1 *) buffer, sizeof(si1), (size_t) len, fp);
+	fwrite_m13((void *) buffer, sizeof(si1), len, fp);
 	
-	globals_m13->update_parity = update_parity;  // restore
-	
+	globals_m13->update_parity = update_parity;  // reset
+
 	fclose_m13(fp);
-	if (nw != len)
-		return;
 
 	return;
 }
@@ -17467,12 +17480,11 @@ void	G_write_medlibrc_m13(const si1 *path)
 // For the complete description of the algorithm, see:
 // http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf
 //
-// The code include here is for 128-bit AES encryption & decryption only.
+// The code included here is for 128-bit AES encryption & decryption only.
 //
 // Modifications have been made for compatibility with the MED Library.
 
 
-// this function adds the round key to the state
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
 {
 	si4	i, j;
@@ -17486,18 +17498,15 @@ void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
 }
 
 
-// cipher is the main encryption function
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
 	si4	i, j, round;
 	
 
 	// copy the input to state array
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < 4; j++)
 			state[j][i] = in[i * 4 + j];
-		}
-	}
 
 	// Add the First round key to the state before starting the rounds.
 	AES_add_round_key_m13(0, state, round_key);
@@ -17520,11 +17529,9 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 	
 	// the encryption process is over
 	// copy the state array to output array
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < 4; j++)
 			out[i * 4 + j] = state[j][i];
-		}
-	}
 
 	return;
 }
@@ -17751,18 +17758,15 @@ tern	AES_init_tables_m13(void)
 }
 
 
-// inv_cipher is the main decryption function
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
 	si4	i, j, round = 0;
 	
 
 	// copy the encrypted data to the state array
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < 4; j++)
 			state[j][i] = in[i * 4 + j];
-		}
-	}
 
 	// add the first round key to the state before starting the rounds
 	AES_add_round_key_m13(AES_NR_m13, state, round_key);
@@ -17785,11 +17789,9 @@ void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 	
 	// the decryption process is over
 	// copy the state array to output array
-	for (i = 0; i < 4; i++) {
-		for (j = 0; j < 4; j++) {
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < 4; j++)
 			out[i * 4 + j] = state[j][i];
-		}
-	}
 
 	return;
 }
@@ -17867,9 +17869,7 @@ void	AES_inv_sub_bytes_m13(ui1 state[][4])
 }
 
 
-// the key expansion function produces AES_NB * (AES_NR + 1) round keys
-// the round keys are used in each round to encrypt the states
-// NOTE: ensure any terminal unused bytes in key array (password) are zeroed
+// Note: ensure any terminal unused bytes in key array (password) are zeroed
 ui1	*AES_key_expansion_m13(ui1 *expanded_key, const si1 *key)
 {
 	const ui1	*rcon_table, *sbox_table;
@@ -17960,7 +17960,6 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, const si1 *key)
 }
 
 
-// the mix_columns function mixes the columns of the state matrix
 void	AES_mix_columns_m13(ui1 state[][4])
 {
 	si4	i;
@@ -18064,22 +18063,19 @@ void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
 }
 
 
-// the shift_rows function shifts the rows in the state to the left
-// each row is shifted with a different offset
-// offset == row number, so the first row is not shifted
 void	AES_shift_rows_m13(ui1 state[][4])
 {
 	ui1	temp;
 	
 
-	// Rotate first row 1 columns to left
+	// rotate first row 1 columns to left
 	temp = state[1][0];
 	state[1][0] = state[1][1];
 	state[1][1] = state[1][2];
 	state[1][2] = state[1][3];
 	state[1][3] = temp;
 	
-	// Rotate second row 2 columns to left
+	// rotate second row 2 columns to left
 	temp = state[2][0];
 	state[2][0] = state[2][2];
 	state[2][2] = temp;
@@ -18088,7 +18084,7 @@ void	AES_shift_rows_m13(ui1 state[][4])
 	state[2][1] = state[2][3];
 	state[2][3] = temp;
 	
-	// Rotate third row 3 columns to left
+	// rotate third row 3 columns to left
 	temp = state[3][0];
 	state[3][0] = state[3][3];
 	state[3][3] = state[3][2];
@@ -18099,8 +18095,6 @@ void	AES_shift_rows_m13(ui1 state[][4])
 }
 
 
-// the sub_bytes function substitutes the values in the
-// state matrix with values in an s-box.
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
@@ -29575,13 +29569,17 @@ tern	FILE_show_m13(FILE_m13 *fp)
 		printf_m13("\tuser\t%c %c %c\n", ((fp->perms & FILE_PERM_USR_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_USR_EXEC_m13) ? '+' : '-'));
 		printf_m13("\tgroup\t%c %c %c\n", ((fp->perms & FILE_PERM_GRP_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_GRP_EXEC_m13) ? '+' : '-'));
 		printf_m13("\tother\t%c %c %c\n", ((fp->perms & FILE_PERM_OTH_READ_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_WRITE_m13) ? '+' : '-'), ((fp->perms & FILE_PERM_OTH_EXEC_m13) ? '+' : '-'));
+		#if defined MACOS_m13 || defined LINUX_m13
 		printf_m13("Modes:\n");
 		printf_m13("\tsticky: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_STICKY_m13), FALSE_m13));
 		printf_m13("\tset group: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_GRP_m13), FALSE_m13));
 		printf_m13("\tset user: %s\n", STR_bool_m13((ui8) (fp->perms & FILE_PERM_SET_USR_m13), FALSE_m13));
+		#endif
 	} else {
 		printf_m13("Permissions: not set\n");
+		#if defined MACOS_m13 || defined LINUX_m13
 		printf_m13("Modes: not set\n");
+		#endif
 	}
 
 	if (fp->fp)
@@ -34445,7 +34443,9 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)	// v
 			FPS_update_maximum_entry_size_m13(fps, n_bytes, n_items, offset);
 		}
 	}
-	if (fps->direcs.flags & (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13))  // always update universal header on close write
+	
+	// always update universal header on close write
+	if (fps->direcs.flags & (FPS_DF_UPDATE_UH_m13 | FPS_DF_CLOSE_AFTER_OP_m13))
 		write_header = TRUE_m13;
 
 	// data relevant routines
@@ -34462,7 +34462,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)	// v
 		if (offset == len)  // append
 			uh->n_entries += n_items;
 		else if (n_bytes > (len - offset))  // overlap with extension
-			G_warning_message_m13("%s(): overlap with extension could be, but is not currently handled\n\tuniversal header -> n_entries will not be not updated\n\taddress with calling function or library code update\n", __FUNCTION__);
+			G_warning_message_m13("%s(): overlap with extension could be, but is not currently handled\n\tuniversal header -> n_entries will not be not updated\n\tredress with calling function or library code update\n", __FUNCTION__);
 
 		// get password
 		pg = G_proc_globs_m13(fps);
@@ -34507,7 +34507,7 @@ tern	FPS_write_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)	// v
 		}
 		
 		// Calculate CRCs
-		// IMPORTANT: if the file is written non-sequentially (not FPS_APPEND_m13 or FPS_FULL_FILE_m13), the CRCs will be invalid
+		// IMPORTANT: if the file is written nonsequentially (not FPS_APPEND_m13 or FPS_FULL_FILE_m13), the CRCs will be invalid (because they're order sensitive)
 		if (globals_m13->CRC_mode & CRC_CALCULATE_m13) {
 			switch (uh->type_code) {
 				case TS_DATA_TYPE_CODE_m13:
@@ -34884,7 +34884,7 @@ tern	HW_get_core_info_m13()
 		c = buf;
 		while (*c++ != '\n');
 		cur_mhz = max_mhz = (si4) 0;  // silence compiler warning
-		sscanf_m13(c, "%d%d", cur_mhz, max_mhz);
+		sscanf_m13(c, "%d%d", &cur_mhz, &max_mhz);
 		free_m13(buf);
 
 		hw_params->current_speed = (sf8) cur_mhz / (sf8) 1000.0;
@@ -35288,8 +35288,6 @@ tern	HW_get_performance_specs_m13(tern get_current)
 		fprintf_m13(fp, "nsecs per integer division: %0.6lf\n", perf_specs->nsecs_per_integer_division);
 		fclose_m13(fp);
 	}
-	HW_show_info_m13();
-
 	
 	return_m13(TRUE_m13);
 }
@@ -37642,15 +37640,14 @@ tern	PROC_change_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attri
 #endif
 
 	// this function is to change affinity in a thread
-	// if thread is running pass thread_p
-	// if thread is not running it should be created suspended before calling this function
-	// there is no correlate of attributes in Windows (ignored)
-	
+	// thread_p is required - there is no correlate of attributes in Windows (argument ignored)
+	// if thread is not running it should be created in suspended state before calling this function
+
 	// thread may take a beat to launch
 	attempts = MAX_ATTEMPTS;
 	do {
-		err = SetThreadAffinityMask(*thread_p, (DWORD_PTR) *cpu_set_p);  // Note Windows uses DWORD_PTR to ensure a ui8 - it is not used as pointer to ui4
-		if (err == 0)
+		err = SetThreadAffinityMask(*thread_p, (DWORD_PTR) *cpu_set_p);  // Note: Windows uses DWORD_PTR type to ensure the value is a ui8, it is NOT used as a pointer to a DWORD (ui4)
+		if (err == 0)  // returns prior affinity mask on success
 			nap_m13("100 us");
 	} while (err == 0 && attempts--);
 	
@@ -38022,7 +38019,7 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 		}
 		return_m13(r_val);
 	}
-
+	
 	// get logical cores
 	hw_params = &globals_m13->tables->HW_params;
 	if (hw_params->logical_cores == 0)
@@ -38392,7 +38389,7 @@ tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 
 	// set affinity
 	if (job->cpu_set_p)
-		PROC_change_affinity_m13(thread, NULL, job->cpu_set_p);
+		PROC_change_affinity_m13(&thread, NULL, job->cpu_set_p);
 	
 	// start thread
 	ResumeThread(thread);
@@ -46511,7 +46508,7 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode empt
 	}
 	G_full_path_m13(path, tmp_path);
 	path = tmp_path;
-	
+
 	// get varargs
 	flags = permissions = 0;
 	if (mode == NULL) {
@@ -46540,10 +46537,25 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode empt
 	if (fp == NULL)
 		return_m13(NULL);
 	path_len = strcpy_m13(fp->path, path);
+	
+	// set permissions
 	if (permissions)
 		fp->perms = permissions;  // custom permissions (may be modified by process umask or system)
 	else
 		fp->perms = permissions = FILE_PERM_DEFAULT_m13;  // default permissions (may be modified by process umask or system)
+	#ifdef WINDOWS_m13
+	si4	wn_permissions;
+	
+	wn_permissions = 0;
+	if (permissions & FILE_PERM_UGO_R_m13)
+		wn_permissions |= _S_IREAD;
+	if (permissions & FILE_PERM_UGO_W_m13)
+		wn_permissions |= _S_IWRITE;
+	if (permissions & FILE_PERM_UGO_X_m13)
+		wn_permissions |= _S_IEXEC;
+	#endif
+	
+	// set flags
 	if (flags) {
 		alloced_bit = fp->flags & FILE_FLAGS_ALLOCED_m13;  // preserve alloced bit  [set by FILE_init_m13()]
 		fp->flags = (flags | FILE_FLAGS_SET_m13) & ~FILE_FLAGS_ALLOCED_m13;  // override default flags with passed flags (except alloced bit)
@@ -46646,23 +46658,20 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode empt
 #endif
 #ifdef WINDOWS_m13
 	si1 	local_mode[8];  // don't modify passed mode & make sure room for 'b' component
-	si4	perm_mode;
 	
 	c = local_mode;
-	*c++ = 'b';
 	sys_mode_flags = _O_BINARY;  // all MED files are binary
-	perm_mode = WN_PERM_MODE_DEFAULT_m13;
 	if (read_mode == TRUE_m13) {
 		// do not create
 		*c++ = 'r';
 		if (plus_mode == TRUE_m13) {
-			sys_mode_flags = _O_RDWR;  // read & write
-			*c++ = '+';
+			sys_mode_flags |= _O_RDWR;  // read & write
+			// add '+' after 'b' below for Windows
 		} else {
-			sys_mode_flags = _O_RDONLY;  // read only
+			sys_mode_flags |= _O_RDONLY;  // read only
 		}
 	} else {  // write_mode == TRUE_m13
-		sys_mode_flags = _O_CREAT;  // all write modes will create if doesn't exist
+		sys_mode_flags |= _O_CREAT;  // all write modes will create if doesn't exist
 		if (append_mode == TRUE_m13) {
 			*c++ = 'a';
 			sys_mode_flags |= _O_APPEND;  // append all writes
@@ -46671,16 +46680,21 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode empt
 		}
 		if (plus_mode == TRUE_m13) {
 			sys_mode_flags |= _O_RDWR;  // read & write
-			*c++ = '+';
+			// add '+' after 'b' below for Windows
 		} else {
 			sys_mode_flags |= _O_WRONLY;  // write only
 		}
 		if (trunc_mode == TRUE_m13)
 			sys_mode_flags |= _O_TRUNC;  // clobber if exists
 	}
+	*c++ = 'b';
+	if (plus_mode == TRUE_m13) {
+		read_mode = write_mode = TRUE_m13;
+		*c++ = '+';
+	}
 	*c = 0;
 
-	fp->fd = _open(path, sys_mode_flags, perm_mode);
+	fp->fd = _open(path, sys_mode_flags, wn_permissions);
 	if (fp->fd > FILE_FD_STDERR_m13)
 		fp->fp = _fdopen(fp->fd, local_mode);
 #endif
@@ -46746,10 +46760,13 @@ FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...)  // varargs(mode empt
 	fp->perms = (ui2) sb.st_mode & FILE_STAT_MODE_MASK_m13;  // take all 12 bits
 	#endif
 	#ifdef WINDOWS_m13
-	if (sb.st_mode & _S_IREAD)
-		fp->perms = FILE_PERM_UGO_R_m13;
-	if (sb.st_mode & _S_IWRITE)
-		fp->perms = FILE_PERM_UGO_W_m13;
+	fp->perms = 0;  // only set lower 9 bits in Windows (no "set" or "sticky" bits)
+	if (sb.st_mode & _S_IREAD)  // _S_IREAD == read for all
+		fp->perms |= FILE_PERM_UGO_R_m13;
+	if (sb.st_mode & _S_IWRITE)  // _S_IWRITE == write for all
+		fp->perms |= FILE_PERM_UGO_W_m13;
+	if (sb.st_mode & _S_IEXEC)  // _S_IEXEC == execute for all
+		fp->perms |= FILE_PERM_UGO_X_m13;
 	#endif
 	
 	// update access time
@@ -51045,6 +51062,27 @@ si8	strcpy_m13(si1 *target, const si1 *source)
 	}
 	
 	return_m13(len);
+}
+
+
+size_t	strlen_m13(const si1 *source)
+{
+	const si1	*c;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns the length of "source" (not including terminal zero)
+	// no difference between this function & strlen() on any OS, except that it handles null input
+	// could just call strlen() here, but not worth function overhead
+	
+	if (source == NULL)
+		return_m13(0);
+
+	for (c = source - 1; *++c;);
+	
+	return_m13((size_t) (c - source));
 }
 
 
