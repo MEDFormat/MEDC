@@ -9,7 +9,7 @@
 ::		Windows (dir)
 ::			MED2RAW.c (file)
 ::
-:: Link the libraries with "/link %LIBOBJ%\libmed_m13_%LIBSFX%.lib" in executables, as below.
+:: Link the libraries with "/link %LIBOBJ%\libmed_m13_%LIBSFX%.lib" in executables (variable defined below)
 ::
 
 ::
@@ -32,7 +32,7 @@ set OS=Windows
 set PRGINC=%DEVDRV%:\%PRG%
 set PRGSRC=%PRGINC%
 set PRGOBJ=%PRGSRC%\%OS%
-set LIBINC=%DEVDRV%:\lib\m13
+set LIBINC=%DEVDRV%:\lib
 set LIBOBJ=%LIBINC%\%OS%
 set LIBSFX=win
 
