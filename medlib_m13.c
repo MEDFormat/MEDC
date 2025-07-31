@@ -45628,9 +45628,10 @@ void	*calloc_m13(size_t n_members, si8 el_size)  // (el_size negative): level he
 #endif
 {
 	tern	is_level_header = FALSE_m13;
-	size_t	requested_bytes;
 	void	*ptr;
-		
+#if defined AT_DEBUG_m13
+	size_t	requested_bytes;
+#endif
 	
 	// pass negative element size to flag as level header
 	
@@ -45642,8 +45643,10 @@ void	*calloc_m13(size_t n_members, si8 el_size)  // (el_size negative): level he
 	if (n_members == 0 || el_size == 0)
 		return(NULL);
 	
+#if defined AT_DEBUG_m13
 	requested_bytes = n_members * el_size;
-	
+#endif
+
 #ifdef MATLAB_PERSISTENT_m13
 	#if defined AT_DEBUG_m13 && defined AT_CHECK_OVERWRITES_m13
 	ptr = mxMalloc(requested_bytes + (size_t) 32);  // ensure at least 32 extra bytes allocated
