@@ -12828,13 +12828,13 @@ tern	G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_star
 
 	// still multiple: ask user
 	if (prompt == TRUE_m13) {
-		fprintf_m13(stderr_m13, "\nMultiple potential timezone entries:\n\n");
+		printf_m13("\nMultiple potential timezone entries:\n\n");
 		for (i = 0; i < n_potential_timezones; ++i) {
-			fprintf_m13(stderr_m13, "%d)\n", i + 1);
+			printf_m13("%d)\n", i + 1);
 			G_show_timezone_info_m13(&tz_table[potential_timezone_entries[i]], FALSE_m13);
-			fputc_m13('\n', stderr_m13);
+			fputc_m13('\n', stdout);
 		}
-		fprintf_m13(stderr_m13, "Select one (by number): ");
+		printf_m13("Select one (by number): ");
 		items = scanf("%d", &response_num);
 		if (items != 1 || response_num < 1 || response_num > n_potential_timezones) {
 			G_set_error_m13(E_GEN_m13, "invalid choice");
@@ -17202,17 +17202,17 @@ void  G_warning_message_m13(const si1 *fmt, ...)
 	va_list		v_args;
 	
 
-	// GREEN suppressible text to stderr
+	// GREEN suppressible text to stdout
 	if (!(G_current_behavior_m13() & SUPPRESS_WARNING_OUTPUT_m13)) {
 #ifndef MATLAB_m13
-		fprintf(stderr, TC_GREEN_m13);
+		printf(TC_GREEN_m13);
 #endif
 		va_start(v_args, fmt);
-		vfprintf_m13(stderr_m13, fmt, v_args);
+		vprintf_m13(fmt, v_args);
 		va_end(v_args);
 #ifndef MATLAB_m13
-		fprintf(stderr, TC_RESET_m13);
-		fflush(stderr);
+		printf(TC_RESET_m13);
+		fflush(stdout);
 #endif
 	}
 	
@@ -35059,8 +35059,8 @@ tern	HW_get_memory_info_m13(void)
 	page_size = sysconf(_SC_PAGE_SIZE);
 	
 	if (pages == -1 || page_size == -1) {
-		fprintf_m13(stderr_m13, "%s(): sysconf() error\n");
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		G_set_error_m13(E_PROC_m13, "sysconf() error");
 		return_m13(FALSE_m13);
 	}
 
@@ -35074,7 +35074,7 @@ tern	HW_get_memory_info_m13(void)
 	
 	status.dwLength = sizeof(status);
 	if (GlobalMemoryStatusEx(&status) == 0) {
-		fprintf_m13(stderr_m13, "%s(): GlobalMemoryStatusEx() error\n", __FUNCTION__);
+		G_set_error_m13(E_PROC_m13, "GlobalMemoryStatusEx() error");
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 		return_m13(FALSE_m13);
 	}
@@ -46063,7 +46063,7 @@ si4	fileno_m13(void *fp)
 	#ifdef WINDOWS_m13
 	fd = _fileno(std_fp);
 	if (fd == -2) {
-		G_warning_message_m13("%s(): stdout or stderr not associated with stream\n", __FUNCTION__);
+		G_warning_message_m13("%s(): stdout or stderr not currently associated with a stream\n", __FUNCTION__);
 		fd = -1;
 	}
 	#endif
@@ -49941,7 +49941,7 @@ si4	putchar_m13(si4 c)
 #ifdef MATLAB_m13
 	return(mexPrintf("%c", c));
 #else
-	return(fputc(c, stdout));
+	return(fputc_m13(c, stdout));
 #endif
 }
 
