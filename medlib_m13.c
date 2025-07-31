@@ -6289,7 +6289,7 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 			mexPrintf("Allocation Tracking enabled\n");
 			#endif
 		#else
-			#if defined AT_DEBUG && defined AT_CHECK_OVERWRITES_m13
+			#if defined AT_DEBUG_m13 && defined AT_CHECK_OVERWRITES_m13
 			printf("%sAllocation Tracking enabled%s (with overwrite checking)%s\n", TC_BLUE_m13, TC_GREEN_m13, TC_RESET_m13);
 			#else
 			printf("%sAllocation Tracking enabled%s\n", TC_BLUE_m13, TC_RESET_m13);
@@ -45610,7 +45610,7 @@ si4  asprintf_m13(si1 **target, const si1 *fmt, ...)
 
 	
 	// Note: this function returns a system allocated string whose ownership is transfered to the caller
-	// if using AT_DEBUG functions, this memory is not entered into the allocation list, and should be freed with free(), not free_m13()
+	// if using AT_DEBUG_m13 functions, this memory is not entered into the allocation list, and should be freed with free(), not free_m13()
 	
 	*target = NULL;
 	va_start(v_args, fmt);
@@ -48737,7 +48737,7 @@ void	*malloc_m13(si8 n_bytes)  // (n_bytes negative): level header flag
 	
 
 #ifdef MATLAB_PERSISTENT_m13
-	#if defined AT_DEBUG && defined AT_CHECK_OVERWRITES_m13
+	#if defined AT_DEBUG_m13 && defined AT_CHECK_OVERWRITES_m13
 	ptr = mxMalloc((mwSize) (n_bytes + 8)  // ensure at least 32extra bytes allocated
 	#else
 	ptr = mxMalloc((mwSize) n_bytes)
@@ -48745,7 +48745,7 @@ void	*malloc_m13(si8 n_bytes)  // (n_bytes negative): level header flag
 	if (ptr)
 		mexMakeMemoryPersistent(ptr);
 #else
-	#if defined AT_DEBUG && defined AT_CHECK_OVERWRITES_m13
+	#if defined AT_DEBUG_m13 && defined AT_CHECK_OVERWRITES_m13
 	ptr = malloc((size_t) (n_bytes + 8));  // ensure at least 32 extra bytes allocated
 	#else
 	ptr = malloc((size_t) n_bytes);
@@ -52320,7 +52320,7 @@ si4	vasprintf_m13(si1 **target, const si1 *fmt, va_list args)
 	
 
 	// Note: this function returns a system allocated string whose ownership is transfered to the caller
-	// if using AT_DEBUG functions, this memory is not entered into the allocation list, and should be freed with free(), not free_m13()
+	// if using AT_DEBUG_m13 functions, this memory is not entered into the allocation list, and should be freed with free(), not free_m13()
 	
 #ifdef WINDOWS_m13  // no vasprintf() in Windows
 	va_list		args_copy;
