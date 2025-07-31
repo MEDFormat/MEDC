@@ -629,7 +629,8 @@ typedef struct {
 #define MINIMUM_DST_OFFSET_m13			0
 #define DST_OFFSET_NO_ENTRY_m13			-1
 #define TIME_STRING_BYTES_m13			128
-#define NUMBER_OF_SAMPLES_NO_ENTRY_m13		-1
+#define NUMBER_OF_INDICES_NO_ENTRY_m13		-1
+#define NUMBER_OF_SAMPLES_NO_ENTRY_m13		NUMBER_OF_INDICES_NO_ENTRY_m13
 #define NUMBER_OF_FRAMES_NO_ENTRY_m13		NUMBER_OF_SAMPLES_NO_ENTRY_m13
 #define EMPTY_SLICE_m13				-1
 #define INDEX_NO_ENTRY_m13			((si8) 0x8000000000000000)
@@ -641,7 +642,8 @@ typedef struct {
 #define END_OF_INDICES_m13			((si8) 0x7FFFFFFFFFFFFFFF)
 #define END_OF_SAMPLE_NUMBERS_m13		END_OF_INDICES_m13
 #define END_OF_FRAME_NUMBERS_m13		END_OF_INDICES_m13
-#define UUTC_NO_ENTRY_m13			((si8) 0x8000000000000000)
+#define TIME_NO_ENTRY_m13			((si8) 0x8000000000000000)
+#define UUTC_NO_ENTRY_m13			TIME_NO_ENTRY_m13
 #define UUTC_EARLIEST_TIME_m13			((si8) 0x0000000000000000) // 00:00:00.000000 Thursday, 1 Jan 1970, UTC
 #define UUTC_LATEST_TIME_m13			((si8) 0x7FFFFFFFFFFFFFFF) // 04:00:54.775808 Sunday, 10 Jan 29424, UTC
 #define BEGINNING_OF_TIME_m13			UUTC_EARLIEST_TIME_m13
@@ -693,17 +695,18 @@ typedef struct {
 #define GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13			512 // number of open files
 #define GLOBALS_THREAD_LIST_SIZE_INCREMENT_m13			32 // number of threads
 #define GLOBALS_SGMT_LIST_SIZE_INCREMENT_m13			8 // number of rates
+#define GLOBALS_AT_LIST_SIZE_INCREMENT_m13			8096 // number of allocations
 #define GLOBALS_REFERENCE_CHANNEL_IDX_NO_ENTRY_m13		-1
 #define GLOBALS_MMAP_BLOCK_BYTES_NO_ENTRY_m13			((ui4) 0)
 #define GLOBALS_MMAP_BLOCK_BYTES_DEFAULT_m13			4096 // 4 KiB
 #define GLOBALS_THREADING_DEFAULT_m13				TRUE_m13
-#define GLOBALS_AT_LIST_SIZE_INCREMENT_m13			8096
+#define GLOBALS_MEMORY_MAPPING_DEFAULT_m13			FALSE_m13
 
 // Global Time Defaults
 #define GLOBALS_OBSERVE_DST_DEFAULT_m13				FALSE_m13
 #define GLOBALS_RTO_KNOWN_DEFAULT_m13				UNKNOWN_m13
-#define GLOBALS_SESSION_START_TIME_DEFAULT_m13			UUTC_NO_ENTRY_m13
-#define GLOBALS_SESSION_END_TIME_DEFAULT_m13			UUTC_NO_ENTRY_m13
+#define GLOBALS_SESSION_START_TIME_DEFAULT_m13			TIME_NO_ENTRY_m13
+#define GLOBALS_SESSION_END_TIME_DEFAULT_m13			TIME_NO_ENTRY_m13
 #define GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13		0
 #define GLOBALS_RECORDING_TIME_OFFSET_NO_ENTRY_m13		-1 // negative values are not valid
 #define GLOBALS_STANDARD_UTC_OFFSET_DEFAULT_m13			0
@@ -919,7 +922,7 @@ typedef struct {
 #define TS_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m13		9400 // utf8[31]
 #define TS_METADATA_TIME_BASE_UNITS_DESCRIPTION_BYTES_m13		128
 #define TS_METADATA_SESSION_START_SAMPLE_NUMBER_OFFSET_m13		9528
-#define TS_METADATA_SESSION_START_SAMPLE_NUMBER_NO_ENTRY_m13		SAMPLE_NUMBER_NO_ENTRY_m13
+#define TS_METADATA_SESSION_START_SAMPLE_NUMBER_NO_ENTRY_m13		INDEX_NO_ENTRY_m13
 #define TS_METADATA_NUMBER_OF_SAMPLES_OFFSET_m13			9536 // si8
 #define TS_METADATA_NUMBER_OF_SAMPLES_NO_ENTRY_m13			NUMBER_OF_SAMPLES_NO_ENTRY_m13
 #define TS_METADATA_NUMBER_OF_BLOCKS_OFFSET_m13				9544 // si8
@@ -1031,7 +1034,7 @@ typedef struct {
 #define REC_HDR_TOTAL_RECORD_BYTES_NO_ENTRY_m13		0
 #define REC_HDR_CRC_START_OFFSET_m13			REC_HDR_TOTAL_RECORD_BYTES_OFFSET_m13
 #define REC_HDR_START_TIME_OFFSET_m13			8 // si8
-#define REC_HDR_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13 // si8
+#define REC_HDR_START_TIME_NO_ENTRY_m13			TIME_NO_ENTRY_m13 // si8
 #define REC_HDR_TYPE_STR_OFFSET_m13			16	 // ascii[4]
 #define REC_HDR_TYPE_CODE_OFFSET_m13			REC_HDR_TYPE_STR_OFFSET_m13  // ui4
 #define REC_HDR_TYPE_CODE_NO_ENTRY_m13			0	 // ui4
@@ -1047,7 +1050,7 @@ typedef struct {
 #define REC_IDX_FILE_OFFSET_OFFSET_m13			0 // si8
 #define REC_IDX_FILE_OFFSET_NO_ENTRY_m13		-1
 #define REC_IDX_START_TIME_OFFSET_m13			8 // si8
-#define REC_IDX_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
+#define REC_IDX_START_TIME_NO_ENTRY_m13			TIME_NO_ENTRY_m13
 #define REC_IDX_TYPE_STR_OFFSET_m13			16 // ascii[4]
 #define REC_IDX_TYPE_CODE_OFFSET_m13			REC_IDX_TYPE_STR_OFFSET_m13  // as ui4
 #define REC_IDX_TYPE_CODE_NO_ENTRY_m13			0 // as ui4
@@ -1063,7 +1066,7 @@ typedef struct {
 #define TS_IDX_FILE_OFFSET_OFFSET_m13			0 // si8
 #define TS_IDX_FILE_OFFSET_NO_ENTRY_m13			-1
 #define TS_IDX_START_TIME_OFFSET_m13			 8 // si8
-#define TS_IDX_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
+#define TS_IDX_START_TIME_NO_ENTRY_m13			TIME_NO_ENTRY_m13
 #define TS_IDX_START_SAMPLE_NUMBER_OFFSET_m13		16 // si8
 #define TS_IDX_START_SAMPLE_NUMBER_NO_ENTRY_m13		-1
 
@@ -1072,7 +1075,7 @@ typedef struct {
 #define VID_IDX_FILE_OFFSET_OFFSET_m13			0 // si8
 #define VID_IDX_FILE_OFFSET_NO_ENTRY_m13		-1
 #define VID_IDX_START_TIME_OFFSET_m13			8 // si8
-#define VID_IDX_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
+#define VID_IDX_START_TIME_NO_ENTRY_m13			TIME_NO_ENTRY_m13
 #define VID_IDX_START_FRAME_OFFSET_m13			16 // ui4
 #define VID_IDX_START_FRAME_NO_ENTRY_m13		0xFFFFFFFF
 #define VID_IDX_VIDEO_FILE_NUMBER_OFFSET_m13		20 // ui4
@@ -1804,7 +1807,7 @@ typedef struct {
 	_Atomic pid_t_m13	thread_id;
 	pthread_mutex_t_m13	mutex; // prevent access while being modified (does not duplicate role of isem)
 	isem_t_m13		isem; // inverse semaphore
-} ERR_m13;
+} ERROR_m13;
 
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__) // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
 
@@ -2055,8 +2058,9 @@ typedef struct {
 	volatile ui4	med_rand_w; // volatile because, while thread-local, accessed by address by multiple functions => compiler should not optimize with local copy
 	volatile ui4	med_rand_z; // volatile because, while thread-local, accessed by address by multiple functions => compiler should not optimize with local copy
 	_Atomic tern	threading; // TRUE_m13 == thread processing where appropriate (atomic b/c other threads may access)
+	tern 		memory_mapping; // set by global memory mapping value, but can be made process-specific by setting this value
 	_Atomic tern	proc_error; // thread-local mechanism for void functions (no return value) to indicate that an error occurred (global error may be set by other threads; atomic b/c other threads may access)
-} MISCELLANEOUS_m13; // PROC_GLOBS_m13 element
+} PROC_GLOB_MISC_m13; // PROC_GLOBS_m13 element
 
 // All MED File Structures begin with a level header structure
 typedef struct LH_m13 { // multiple thread access
@@ -2109,7 +2113,7 @@ typedef struct PROC_GLOBS_m13 { // multiple thread access
  // Time Constants
 	TIME_CONSTANTS_m13	time_constants;
  // Miscellaneous
-	MISCELLANEOUS_m13	miscellaneous;
+	PROC_GLOB_MISC_m13	miscellaneous;
 	pid_t_m13		_id; // thread or process id (used if LH_m13 unknown [NULL])
 	LH_m13			*child; // hierarchy level immediately below these process globals
 	si4			ref_count;
@@ -2129,7 +2133,7 @@ typedef struct PROC_GLOBS_m13 {
  // Time Constants
 	TIME_CONSTANTS_m13	time_constants;
  // Miscellaneous
-	MISCELLANEOUS_m13	miscellaneous;
+	PROC_GLOB_MISC_m13	miscellaneous;
 	pid_t_m13		_id; // thread id (used if LH_m13 unknown [NULL])
 	LH_m13			*child; // hierarchy level immediately below these process globals
 	si4			ref_count; // count of structures & threads currently linked to these process globals
@@ -2286,6 +2290,31 @@ typedef struct {
 } TEST_BYTE_m13; // global byte to check pointer for readability (global ensures volatility, mutex prevents concurrent usage)
 
 typedef struct {
+	si1				cwd[PATH_BYTES_m13]; // current working directory (periodically auto-cleared)
+	si1				temp_dir[PATH_BYTES_m13]; // system temp directory (periodically auto-cleared)
+	si1				temp_file[PATH_BYTES_m13]; // full path to temp file (i.e. incudes temp_dir)
+									// not thread safe => use G_unique_temp_file_m13() in threaded applications
+	ui4				file_creation_umask;
+	pid_t_m13			main_id;  // process thread id (not necessarily same as process id)
+	pthread_mutex_t_m13		update_mutex;
+	tern				threading; // global default, used to set process globals default
+	tern				memory_mapping; // global default, used to set process globals default
+	si1				file_lock_mode; // enable global file locking
+	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
+	ui4				CRC_mode;
+	tern				access_times; // record times of each structure & file access
+	tern				write_sorted_records; // if records unsorted, re-write after sorting
+	tern				write_corrected_headers; // if files closed without header update, n_entries may be zero (if TRUE_m13, write corrected header when encountered)
+	tern				update_file_system_names; // if session or channel file system name differ from higher level names, rename lower level files & directories
+	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
+	tern				update_MED_version; // if file MED version is not current, update affected files
+	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
+	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
+	TEST_BYTE_m13			test_byte;
+	_Atomic tern			suspend_stacks;
+} GLOBAL_MISC_m13;
+
+typedef struct {
 	pthread_mutex_t_m13		mutex;
 // Application Info
 	APP_INFO_m13			*app_info;
@@ -2312,30 +2341,12 @@ typedef struct {
 						  //			all filters positive: exclude
 						  //			else: include
 						  // Note: as type codes are composed of ascii bytes values (< 0x80), it is always possible to make them negative without promotion.
- // Miscellaneous
-	si1				cwd[PATH_BYTES_m13]; // current working directory (periodically auto-cleared)
-	si1				temp_dir[PATH_BYTES_m13]; // system temp directory (periodically auto-cleared)
-	si1				temp_file[PATH_BYTES_m13]; // full path to temp file (i.e. incudes temp_dir)
-								  	// not thread safe => use G_unique_temp_file_m13() in threaded applications
-	ui4				file_creation_umask;
-	pid_t_m13			main_id;  // process thread id (not necessarily same as process id)
-	pthread_mutex_t_m13		update_mutex;
-	ERR_m13				error; // causal error
-	tern				threading; // global default, used to set process globals default
+// Behavior
 	BEHAVIOR_m13			default_behavior;
-	si1				file_lock_mode; // enable global file locking
-	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
-	ui4				CRC_mode;
-	tern				access_times; // record times of each structure & file access
-	tern				write_sorted_records; // if records unsorted, re-write after sorting
-	tern				write_corrected_headers; // if files closed without header update, n_entries may be zero (if TRUE_m13, write corrected header when encountered)
-	tern				update_file_system_names; // if session or channel file system name differ from higher level names, rename lower level files & directories
-	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
-	tern				update_MED_version; // if file MED version is not current, update affected files
-	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
-	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
-	TEST_BYTE_m13			test_byte;
-	_Atomic tern			suspend_stacks;
+// Error
+	ERROR_m13			error; // causal error
+// Miscellaneous
+	GLOBAL_MISC_m13			miscellaneous;
 } GLOBALS_m13;
 
 // Universal Header Structure
@@ -2674,9 +2685,11 @@ typedef struct {
 	FILE_m13		*fp; // FILE_m13 pointer (which contains standard FILE pointer); fp is initialized to point to "local_f" (below), but is manipulable
 	FILE_m13		local_f; // all FPS manipulation functions use "fp" rather than "local_f" allowing the FPS to point to a different FILE_m13 if needed
  // memory mapping
+	ui8			*mmap_block_bitmap; // each bit represents block_bytes bytes; NULL if not memory mapping
 	ui4			mmap_block_bytes; // read size for memory mapped files (size data may be on different volumes, or even files within the same volume)
 	ui4			mmap_n_blocks; // file system block in file == number of bits in bitmap
-	ui8			*mmap_block_bitmap; // each bit represents block_bytes bytes; NULL if not memory mapping
+	ui4			mmap_blocks_read; // when this == mmap_n_blocks, mmap directive flag is unset & full_file_read parameter is set to TRUE_m13
+	ui1			pad[4]; // future use (compiler would pad regardless)
 } FPS_PARAMS_m13;
 
 #ifdef __cplusplus
@@ -2749,8 +2762,8 @@ si8		FPS_flen_m13(FPS_m13 *fps, const si1 *path);
 tern		FPS_free_m13(void *ptr);
 si8		FPS_header_offset_m13(FPS_m13 *fps, const si1 *path);
 FPS_m13		*FPS_init_m13(FPS_m13 *fps, const si1 *path, const si1 *mode_str, si8 n_bytes, void *parent);
-FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
-FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params);
+FPS_DIRECS_m13  *FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs);
+FPS_PARAMS_m13  *FPS_init_params_m13(FPS_PARAMS_m13 *params);
 tern		FPS_is_open_m13(FPS_m13 *fps);
 si8		FPS_items_for_bytes_m13(FPS_m13 *fps, si8 *n_bytes);
 tern		FPS_mmap_m13(FPS_m13 *fps, tern set);
@@ -3146,7 +3159,7 @@ si1			*G_find_timezone_acronym_m13(si1 *timezone_acronym, si4 standard_UTC_offse
 si1			*G_find_metadata_file_m13(const si1 *path, si1 *md_path);
 si8			G_find_record_index_m13(FPS_m13 *rec_inds_fps, si8 target_time, ui4 mode, si8 low_idx);
 si8			G_flen_m13(FILE_m13 *fp, const si1 *path);
-si8 			G_frame_number_for_uutc_m13(void *level_header, si8 target_uutc, ui4 mode, ...); // varargs (level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
+//si8 			G_frame_number_for_uutc_m13(void *level_header, si8 target_uutc, ui4 mode, ...); // varargs (level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
 tern			G_free_channel_m13(void *ptr);
 void			G_free_global_tables_m13(void);
 void			G_free_globals_m13(tern cleanup_for_exit);
@@ -3162,6 +3175,7 @@ si1			*G_generate_segment_name_m13(si1 *segment_name, FPS_m13 *fps);
 ui8			G_generate_UID_m13(ui8 *uid);
 si8			G_header_offset_m13(FILE_m13 *fp, const si1 *path);
 tern			G_include_record_m13(ui4 type_code, si4 *record_filters);
+si8			G_index_for_time_m13(void *level_header, si8 target_time, ui4 mode, ...);  // varargs(lh == NULL): si8 ref_index, si8 ref_time, sf8 rate
 tern			G_init_global_tables_m13(tern init_all_tables);
 tern			G_init_globals_m13(tern init_all_tables, const si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor
 tern			G_init_medlib_m13(tern init_all_tables, const si1 *app_path, ...); // varargs(app_path): ui4 version_major, ui4 version_minor;
@@ -3218,13 +3232,11 @@ tern			G_recover_passwords_m13(const si1 *L3_password, UH_m13* universal_header)
 void			G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 tern			G_reset_metadata_for_update_m13(FPS_m13 *fps);
-si8			G_sample_number_for_uutc_m13(void *level_header, si8 target_uutc, ui4 mode, ...); // varargs(level_header == NULL): si8 ref_sample_number, si8 ref_uutc, sf8 sampling_frequency
 si4			G_search_mode_m13(SLICE_m13 *slice);
 si4			G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 search_mode);
-si4			G_segment_for_frame_number_m13(void *level_header, si8 target_sample);
+si4			G_segment_for_index_m13(void *level_header, si8 target_index);
 si4			G_segment_for_path_m13(const si1 *path);
-si4			G_segment_for_sample_number_m13(void *level_header, si8 target_sample);
-si4			G_segment_for_uutc_m13(void *level_header, si8 target_time);
+si4			G_segment_for_time_m13(void *level_header, si8 target_time);
 si4			G_segment_index_m13(void *level_header, si4 segment_number);
 si4			G_segment_range_m13(void *level_header, SLICE_m13 *slice);
 ui4			*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
@@ -3267,6 +3279,7 @@ tern			G_terminal_password_bytes_m13(const si1 *password, si1 *password_bytes);
 tern			G_ternary_entry_m13(const si1 *entry);
 tern			G_textbelt_text_m13(const si1 *phone_number, const si1 *content, const si1 *textbelt_key);
 void			G_thread_exit_m13(void);
+si8			G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...);  // varargs(level_header == NULL): si8 ref_index, si8 ref_time, sf8 rate
 void			G_update_access_time_m13(void *level_header);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name);
@@ -3274,8 +3287,6 @@ tern			G_update_MED_type_m13(const si1 *path); // used by G_update_MED_version_m
 tern			G_update_MED_version_m13(FPS_m13 *fps);
 tern			G_update_session_name_m13(FPS_m13 *fps);
 tern			G_update_session_name_header_m13(const si1 *fs_path, const si1 *fs_name, const si1 *uh_name); // used by G_update_session_name_m13()
-si8			G_uutc_for_frame_number_m13(void *level_header, si8 target_frame_number, ui4 mode, ...); // varargs (level_header == NULL): si8 ref_frame_number, si8 ref_uutc, sf8 frame_rate
-si8			G_uutc_for_sample_number_m13(void *level_header, si8 target_sample_number, ui4 mode, ...); // varargs (level_header == NULL): si8 ref_smple_number, si8 ref_uutc, sf8 sampling_frequency
 tern			G_valid_file_code_m13(ui4 type_code);
 tern			G_valid_level_code_m13(ui4 type_code);
 tern			G_valid_tern_m13(tern *val);
@@ -3574,7 +3585,7 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_BLOCK_BLOCK_FLAGS_NO_ENTRY_m13			0
 #define CMP_BLOCK_CRC_START_OFFSET_m13				CMP_BLOCK_BLOCK_FLAGS_OFFSET_m13
 #define CMP_BLOCK_START_TIME_OFFSET_m13				16 // si8
-#define CMP_BLOCK_START_TIME_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
+#define CMP_BLOCK_START_TIME_NO_ENTRY_m13			TIME_NO_ENTRY_m13
 #define CMP_BLOCK_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13		24 // si4
 #define CMP_BLOCK_ACQUISITION_CHANNEL_NUMBER_NO_ENTRY_m13	-1
 #define CMP_BLOCK_TOTAL_BLOCK_BYTES_OFFSET_m13			28 // ui4
@@ -3779,7 +3790,6 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CPS_DIRECTIVES_NO_ZERO_COUNTS_DEFAULT_m13			FALSE_m13
 #define CPS_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m13			FALSE_m13 // user sets value in parameters
 #define CPS_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m13			TRUE_m13 // determine overflow bytes on a block by block basis
-#define CPS_DIRECTIVES_POSITIVE_DERIVATIVES_DEFAULT_m13 		FALSE_m13
 #define CPS_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m13			FALSE_m13 // user sets level in parameters
 #define CPS_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m13		FALSE_m13
 #define CPS_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m13		TRUE_m13
@@ -4175,6 +4185,7 @@ tern	CMP_decrypt_m13(FPS_m13 *fps); // single block decrypt (see also decrypt_ti
 tern	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CPS_m13 *cps);
 tern	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len);
 ui1	CMP_differentiate_m13(CPS_m13 *cps);
+sf8	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs);
 tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 n_samples);
 tern	CMP_encrypt_m13(FPS_m13 *fps); // single block encrypt (see also encrypt_time_series_data_m13)
 tern	CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
@@ -4859,7 +4870,7 @@ tern			DM_transpose_out_of_place_m13(DATA_MATRIX_m13 *in_matrix, DATA_MATRIX_m13
 // Transmission Message
 #define TR_MESSAGE_HDR_BYTES_m13			16
 #define TR_MESSAGE_HDR_TIME_OFFSET_m13			0 // si8
-#define TR_MESSAGE_HDR_NO_ENTRY_m13			UUTC_NO_ENTRY_m13
+#define TR_MESSAGE_HDR_NO_ENTRY_m13			TIME_NO_ENTRY_m13
 #define TR_MESSAGE_HDR_MESSAGE_BYTES_OFFSET_m13		8 // si8
 #define TR_MESSAGE_HDR_MESSAGE_BYTES_NO_ENTRY_m13	0
 
@@ -5522,11 +5533,11 @@ si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_le
 si1		*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len);  // get thread name by thread id
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
 si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
-si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex);
-si4		pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex, pthread_mutexattr_t_m13 *attr);
-si4		pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex);
-si4		pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex);
-si4		pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex);
+si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex_p);
+si4		pthread_mutex_init_m13(pthread_mutex_t_m13 *mutex_p, pthread_mutexattr_t_m13 *attr_p);
+si4		pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex_p);
+si4		pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex_p);
+si4		pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex_p);
 pthread_t_m13	pthread_self_m13(void);
 si4		printf_m13(const si1 *fmt, ...);
 si4		putc_m13(si4 c, void *fp);
