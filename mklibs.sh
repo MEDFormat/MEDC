@@ -26,12 +26,12 @@ DBG="false"
 
 if [ $OS = "Linux" ]; then
 	DHNDEV="/mnt/dhndev"
-	LIBSFX="_lin"
+	LIBSFX="lin"
 	PGINC="/usr/include/postgresql"
 	PGLIB="/usr/lib/x86_64-linux-gnu"  # (no linking in this script)
 elif [  $OS = "MacOS" ]; then
 	DHNDEV="/Volumes/dhndev";
-	LIBSFX="_mac"
+	LIBSFX="mac"
 	PGINC="/Applications/Postgres.app/Contents/Versions/latest/include"
 	PGLIB="/Applications/Postgres.app/Contents/Versions/latest/lib"  # (no linking in this script)
 fi
@@ -67,7 +67,7 @@ fi
 
 # delete old libraries
 echo " "
-CMD="rm *13${LIBSFX}.a"
+CMD="rm *_m13_${LIBSFX}.a"
 echo $CMD; echo " "
 $CMD
 
@@ -143,48 +143,7 @@ elif [ $BIN = "all" ]; then
 	$CMD
 fi
 
-CMD="ar rcs libmed_m13${LIBSFX}.a medlib_m13.o medrec_m13.o"
-echo $CMD
-$CMD
-echo " "
-
-
-LIBNAME="dhnlib_d13"
-if [ $BIN = "x86" ]; then
-	if [  $OS = "MacOS" ]; then
-		TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	else
-		TMP_CC_OPT=$CC_OPT
-	fi
-	CMD="$CC $TMP_CC_OPT -I$LIBINC -I$TGTINC ${LIBSRC}/${LIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-elif [ $BIN = "arm" ]; then
-	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CMD="$CC $TMP_CC_OPT -I$LIBINC -I$TGTINC ${LIBSRC}/${LIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-elif [ $BIN = "all" ]; then	
-	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CMD="$CC $TMP_CC_OPT -o ${LIBNAME}_x86.o -I$LIBINC -I$TGTINC ${LIBSRC}/${LIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-
-	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CMD="$CC $TMP_CC_OPT -o ${LIBNAME}_arm.o -I$LIBINC -I$TGTINC ${LIBSRC}/${LIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-
-	CMD="lipo -create -output ${LIBNAME}.o ${LIBNAME}_x86.o ${LIBNAME}_arm.o"
-	echo $CMD; echo " "
-	$CMD
-
-	CMD="rm ${LIBNAME}_x86.o ${LIBNAME}_arm.o"
-	echo $CMD; echo " "
-	$CMD
-fi
-
-CMD="ar rcs libdhn_d13${LIBSFX}.a dhnlib_d13.o"
+CMD="ar rcs libmed_m13_${LIBSFX}.a medlib_m13.o medrec_m13.o"
 echo $CMD
 $CMD
 echo " "
@@ -231,54 +190,7 @@ fi
 mv ${TGTINC}/targets_m13.h ${TGTINC}/targets_db_m13.h
 mv ${TGTINC}/targets_nodb_m13.h ${TGTINC}/targets_m13.h
 
-CMD="ar rcs libmeddb_m13${LIBSFX}.a meddblib_m13.o medrec_m13.o"
-echo $CMD
-$CMD
-echo " "
-
-
-# dhnlib with keys
-BASELIBNAME="dhnlib_d13"
-LIBNAME="dhnkeylib_d13"
-mv ${TGTINC}/targets_m13.h ${TGTINC}/targets_nokey_m13.h
-mv ${TGTINC}/targets_key_m13.h ${TGTINC}/targets_m13.h
-if [ $BIN = "x86" ]; then
-	if [  $OS = "MacOS" ]; then
-		TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	else
-		TMP_CC_OPT=$CC_OPT
-	fi
-	CMD="$CC $TMP_CC_OPT -o ${LIBNAME}.o -I$LIBINC -I$TGTINC ${LIBSRC}/${BASELIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-elif [ $BIN = "arm" ]; then
-	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CMD="$CC $TMP_CC_OPT -o ${LIBNAME}.o -I$LIBINC -I$TGTINC ${LIBSRC}/${BASELIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-elif [ $BIN = "all" ]; then	
-	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CMD="$CC $TMP_CC_OPT -o ${LIBNAME}_x86.o -I$LIBINC -I$TGTINC ${LIBSRC}/${BASELIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-
-	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12"
-	CMD="$CC $TMP_CC_OPT -o ${LIBNAME}_arm.o -I$LIBINC -I$TGTINC -I$PGINC ${LIBSRC}/${BASELIBNAME}.c"
-	echo $CMD; echo " "
-	$CMD
-
-	CMD="lipo -create -output ${LIBNAME}.o ${LIBNAME}_x86.o ${LIBNAME}_arm.o"
-	echo $CMD; echo " "
-	$CMD
-
-	CMD="rm ${LIBNAME}_x86.o ${LIBNAME}_arm.o"
-	echo $CMD; echo " "
-	$CMD
-fi
-mv ${TGTINC}/targets_m13.h ${TGTINC}/targets_key_m13.h
-mv ${TGTINC}/targets_nokey_m13.h ${TGTINC}/targets_m13.h
-
-CMD="ar rcs libdhnkey_d13${LIBSFX}.a dhnkeylib_d13.o"
+CMD="ar rcs libmeddb_m13_${LIBSFX}.a meddblib_m13.o medrec_m13.o"
 echo $CMD
 $CMD
 echo " "
