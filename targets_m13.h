@@ -49,6 +49,8 @@
 // #define FT_DEBUG_m13  // uncomment to enable function tracking (and recompile medlib_m13.c)
 // #define AT_DEBUG_m13  // uncomment to use allocation tracking (and recompile medlib_m13.c)
 // #define AT_CHECK_OVERWRITES_m13  // uncomment to check if memory was written past requested extents
+				 // catches small overwrites that remain within the system allocated extents, and thus would not cause an error
+				 // detected on free, does not track where overwrite occurred (for this functionality use valgrind or similar)
 
 // ensure AT_DEBUG_m13 is defined if AT_CHECK_OVERWRITES_m13 is defined
 #ifdef AT_CHECK_OVERWRITES_m13
