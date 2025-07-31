@@ -1,6 +1,6 @@
 ::
 :: This script relies on the following directory hierarchy and library existing:
-:: Z: (drive)
+:: DEVDRV: (drive)
 ::	lib (dir)
 ::		Windows (dir)
 ::			targets_m13.h (file) (edited to define "WINDOWS_m13")
