@@ -88,25 +88,25 @@ if [ $BIN = "x86" ]; then
 	else
 		TMP_CC_OPT="${CC_OPT} -lm"
 	fi
-	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/$PRG $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 elif [ $BIN = "arm" ]; then
 	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/$PRG $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 elif [ $BIN = "all" ]; then	
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_x86 -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_x86 $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 
 	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_arm -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_arm $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13_$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
