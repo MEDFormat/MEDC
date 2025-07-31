@@ -32,7 +32,7 @@
 // Define one of these here if appropriate
 // #define DATABASE_m13			// MED database (DB) functions (postgres only at this time)
 // #define MATLAB_m13			// for screen output & exit functions
-// #define MATLAB_PERSISTENT_m13	// For persistent memory between mex calls.
+// #define MATLAB_PERSISTENT_m13	// for persistent memory between mex calls
 
 // ensure MATLAB_m13 is defined if MATLAB_PERSISTENT_m13 is defined
 #ifdef MATLAB_PERSISTENT_m13
