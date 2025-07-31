@@ -21400,8 +21400,8 @@ sf8	CMP_gamma_inv_p_m13(sf8 p, sf8 a)
 	g_ln = CMP_gamma_ln_m13(a);
 	
 	if (a <= (sf8) 0.0) {
-		G_error_message_m13("a must be pos\n", __FUNCTION__);
-		exit(1);
+		G_set_error_m13(E_CMP_m13, "\"\a\" must be positive");
+		return_m13((sf8) -1.0);
 	}
 	
 	if (p >= (sf8) 1.0) {
@@ -49613,7 +49613,7 @@ si1	*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len
 		name_len = (size_t) THREAD_NAME_BYTES_m13;
 		thread_name = (si1 *) malloc(name_len * sizeof(si1));
 		if (thread_name == NULL) {
-			G_error_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
+			G_warning_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
 			return(NULL);
 		}
 		#ifdef AT_DEBUG_m13
@@ -49664,7 +49664,7 @@ si1	*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len)
 		name_len = (size_t) THREAD_NAME_BYTES_m13;
 		thread_name = (si1 *) malloc(name_len * sizeof(si1));
 		if (thread_name == NULL) {
-			G_error_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
+			G_warning_message_m13("%s(): malloc() error\n", __FUNCTION__);  // G_set_error_m13() calls pthread_getname_m13() - potential infinite loop
 			return(NULL);
 		}
 		#ifdef AT_DEBUG_m13
