@@ -1,6 +1,17 @@
 #!/bin/bash
 
 
+# This script relies on the following directory hierarchy:
+# /Volumes/devdrv (or /mnt/devdrv) (mount point)
+#	lib (dir)
+#		MacOS (or Linux) (dir)
+#			targets_m13.h (file) (edited to define "MACOS_m13" or "LINUX_m13")
+#			libmed_m13_mac.a (or libmed_m13_lin.a) (file)
+#
+# Link with "-L$LIBOBJ -lmed_m13_$LIBSFX" in executables (variables defined below)
+# Link with "-L$LIBOBJ -lmed_m13_$LIBSFX" in executables (variables defined below)
+
+
 #########################
 #### Start Edit Here ####
 #########################
@@ -25,18 +36,18 @@ DBG="false"
 ########################
 
 if [ $OS = "Linux" ]; then
-	DHNDEV="/mnt/dhndev"
+	DEVDRV="/mnt/devdrv"
 	LIBSFX="lin"
 	PGINC="/usr/include/postgresql"
 	PGLIB="/usr/lib/x86_64-linux-gnu"  # (no linking in this script)
 elif [  $OS = "MacOS" ]; then
-	DHNDEV="/Volumes/dhndev";
+	DEVDRV="/Volumes/devdrv";
 	LIBSFX="mac"
 	PGINC="/Applications/Postgres.app/Contents/Versions/latest/include"
 	PGLIB="/Applications/Postgres.app/Contents/Versions/latest/lib"  # (no linking in this script)
 fi
 
-LIBSRC=${DHNDEV}/lib/m13
+LIBSRC=${DEVDRV}/lib
 LIBINC=$LIBSRC
 LIBOBJ=${LIBINC}/$OS
 

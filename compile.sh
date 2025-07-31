@@ -1,6 +1,19 @@
 #!/bin/bash
 
 
+# This script relies on the following directory hierarchy and library existing:
+# /Volumes/devdrv (or /mnt/devdrv) (mount point)
+# 	lib (dir)
+#		MacOS (or Linux) (dir)
+#			targets_m13.h (file) (edited to define "MACOS_m13" or "LINUX_m13")
+#			libmed_m13_mac.a (or libmed_m13_lin.a) (file)
+#	MED2RAW (dir)
+#		MacOS (or Linux) (dir)
+#			MED2RAW.c (file)
+#
+# Link the library with "-L$LIBOBJ -lmed_m13_$LIBSFX" in executables (variables defined below)
+
+
 #########################
 #### Start Edit Here ####
 #########################
@@ -29,17 +42,17 @@ DBG="false"
 
 
 if [ $OS = "Linux" ]; then
-	DHNDEV="/mnt/dhndev"
+	DEVDRV="/mnt/devdrv"
 	LIBSFX="lin"
 elif [  $OS = "MacOS" ]; then
-	DHNDEV="/Volumes/dhndev";
+	DEVDRV="/Volumes/devdrv";
 	LIBSFX="mac"
 fi
 
-PRGINC=${DHNDEV}/$PRG
+PRGINC=${DEVDRV}/$PRG
 PRGSRC=$PRGINC
 PRGOBJ=${PRGSRC}/$OS
-LIBINC=${DHNDEV}/lib/m13
+LIBINC=${DEVDRV}/lib
 LIBOBJ=${LIBINC}/$OS
 
 if [ $TGT_FILE = "library" ]; then
