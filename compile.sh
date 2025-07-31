@@ -1,20 +1,4 @@
 #!/bin/bash
- 
-
-#
-# This script relies on the following directory hierarchy and library existing:
-# /Volumes/devdrv (or /mnt/devdrv) (mount point)
-# 	lib (dir)
-#		MacOS (or Linux) (dir)
-#			targets_m12.h (file) (edited to define "MACOS_m12" or "LINUX_m122")
-#			libmed_m12_mac.a (or libmed_m11_lin.a) (file)
-#	MED2RAW (dir)
-#		MacOS (or Linux) (dir)
-#			MED2RAW.c (file)
-#
-# Link the library with "-L$LIBOBJ -lmed_m12$LIBSFX" in executables, as below.
-#
-
 
 
 #########################
@@ -30,7 +14,7 @@ CC="clang"
 # OS: "MacOS" or "Linux"
 OS="MacOS"
 
-# targets_m11.h file: "local" or "library"
+# targets_m13.h file: "local" or "library"
 TGT_FILE="library"
 
 # binary: "x86", "arm", or "all"
@@ -42,10 +26,10 @@ BIN="all"
 
 
 if [ $OS = "Linux" ]; then
-	DEVDRV="/mnt/devdrv"
+	DHNDEV="/mnt/dhndev"
 	LIBSFX="_lin"
 elif [  $OS = "MacOS" ]; then
-	DEVDRV="/Volumes/devdrv";
+	DHNDEV="/Volumes/dhndev";
 	LIBSFX="_mac"
 fi
 
@@ -53,10 +37,10 @@ if [ $CC = "icc" ]; then
 	BIN="x86"
 fi
 
-PRGINC=${DEVDRV}/$PRG
+PRGINC=${DHNDEV}/$PRG
 PRGSRC=$PRGINC
 PRGOBJ=${PRGSRC}/$OS
-LIBINC=${DEVDRV}/lib
+LIBINC=${DHNDEV}/lib/m13
 LIBOBJ=${LIBINC}/$OS
 
 CC_OPT="-O3 -Wall -fms-extensions -Wno-microsoft-anon-tag"
@@ -79,26 +63,30 @@ fi
 
 # compile
 if [ $BIN = "x86" ]; then
-	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
+	if [  $OS = "MacOS" ]; then
+		TMP_CC_OPT="${CC_OPT} -arch x86_64"
+	else
+		TMP_CC_OPT="${CC_OPT} -lm"
+	fi
+	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 elif [ $BIN = "arm" ]; then
 	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/$PRG -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 elif [ $BIN = "all" ]; then	
 	TMP_CC_OPT="${CC_OPT} -arch x86_64"
-	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_x86 -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_x86 -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
 
 	TMP_CC_OPT="${CC_OPT} -target arm64-apple-macos12 -mmacosx-version-min=12.0"
-	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_arm -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m12$LIBSFX"
+	CC_CMD="$CC -o ${PRGOBJ}/${PRG}_arm -Wall $TMP_CC_OPT -I$TGTINC -I$PRGINC -I$LIBINC ${PRGSRC}/${PRG}.c -L$LIBOBJ -lmed_m13$LIBSFX"
 	echo " "
 	echo $CC_CMD
 	$CC_CMD
