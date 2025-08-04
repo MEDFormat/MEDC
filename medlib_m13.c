@@ -20701,9 +20701,7 @@ ui1	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 		if (*cnt)
 			dispersion += (sf8) *cnt / float_max_cnt;
 
-	dispersion -= (sf8) 1.0;  //
-	if (dispersion > (sf8) 255.0)  // rounding error
-		dispersion = (sf8) 256.0;
+	dispersion -= (sf8) 1.0;  // range 0-255, not 1-256
 	disp = (ui1) (dispersion + (sf8) 0.5);
 	
 	return_m13(disp);
