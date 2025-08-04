@@ -4244,6 +4244,7 @@ tern	CMP_RED1_decode_m13(CPS_m13 *cps);
 tern	CMP_RED2_decode_m13(CPS_m13 *cps);
 tern	CMP_RED1_encode_m13(CPS_m13 *cps);
 tern	CMP_RED2_encode_m13(CPS_m13 *cps);
+si8	CMP_range_encode_m13(si4 *derivatives, si8 n_samps, ui1 deriv_level);
 tern	CMP_retrend_si4_m13(si4 *in_y, si4 *out_y, si8 len, sf8 m, sf8 b);
 tern	CMP_retrend_2_sf8_m13(sf8 *in_x, sf8 *in_y, sf8 *out_y, si8 len, sf8 m, sf8 b);
 si2	CMP_round_si2_m13(sf8 val);
