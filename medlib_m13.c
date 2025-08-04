@@ -20697,7 +20697,7 @@ ui1	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 		if (*cnt > max_cnt)
 			max_cnt = *cnt;
 	float_max_cnt = (sf8) max_cnt;
-	for (cnt = count, dispersion = (sf8) 0.0, i = 256; i--; ++cnt)
+	for (cnt = count, dispersion = (sf8) 0.0, i = CMP_RED_MAX_STATS_BINS_m13; i--; ++cnt)
 		if (*cnt)
 			dispersion += (sf8) *cnt / float_max_cnt;
 
