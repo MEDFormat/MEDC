@@ -1111,24 +1111,27 @@ typedef struct {
 #define LH_UPDATE_EPHEMERAL_DATA_m13		((ui8) 1 << 2) // signal to higher level from lower level (reset by higher level after update)
 
 // session level
-#define LH_EXCLUDE_TS_CHANS_m13			((ui8) 1 << 8) // useful when session directory passed, but don't want time series channels
-#define LH_EXCLUDE_VID_CHANS_m13		((ui8) 1 << 9) // useful when session directory passed, but don't want video channels
-#define LH_MAP_ALL_TS_CHANS_m13			((ui8) 1 << 10) // useful when time series channels may be added to open session
-#define LH_MAP_ALL_VID_CHANS_m13		((ui8) 1 << 11) // useful when video channels may be added to open session
+#define LH_SESS_OPEN_m13			((ui8) 1 << 8) // session has been opened
+#define LH_EXCLUDE_TS_CHANS_m13			((ui8) 1 << 9) // useful when session directory passed, but don't want time series channels
+#define LH_EXCLUDE_VID_CHANS_m13		((ui8) 1 << 10) // useful when session directory passed, but don't want video channels
+#define LH_MAP_ALL_TS_CHANS_m13			((ui8) 1 << 11) // useful when time series channels may be added to open session
+#define LH_MAP_ALL_VID_CHANS_m13		((ui8) 1 << 12) // useful when video channels may be added to open session
 
 #define LH_READ_SLICE_SESS_RECS_m13		((ui8) 1 << 16) // read full record indices file (close file); open data, read universal header, leave open
 #define LH_READ_FULL_SESS_RECS_m13		((ui8) 1 << 17) // read full recordindices & data files, close all files
 #define LH_MMAP_SESS_RECS_m13			((ui8) 1 << 18) // allocate, but don't read full file
 
 // segmented session records level
-#define LH_READ_SLICE_SEG_SESS_RECS_m13		((ui8) 1 << 24) // read full indices file (close file); open data, read universal header, leave open
-#define LH_READ_FULL_SEG_SESS_RECS_m13		((ui8) 1 << 25) // read full indices file & data files, close all files
-#define LH_MMAP_SEG_SESS_RECS_m13		((ui8) 1 << 26) // allocate, but don't read full data file
+#define LH_SSR_OPEN_m13				((ui8) 1 << 24) // segmented session records has been opened
+#define LH_READ_SLICE_SEG_SESS_RECS_m13		((ui8) 1 << 25) // read full indices file (close file); open data, read universal header, leave open
+#define LH_READ_FULL_SEG_SESS_RECS_m13		((ui8) 1 << 26) // read full indices file & data files, close all files
+#define LH_MMAP_SEG_SESS_RECS_m13		((ui8) 1 << 27) // allocate, but don't read full data file
 
 // channel level
-#define LH_CHAN_ACTIVE_m13			((ui8) 1 << 32) // include channel in current read set
-#define LH_IDX_CHAN_INACTIVE_m13		((ui8) 1 << 33)
-#define LH_MAP_ALL_SEGS_m13			((ui8) 1 << 34) // allocate slots for every segment, regardless of whether required for current read
+#define LH_CHAN_OPEN_m13			((ui8) 1 << 32) // channel has been opened
+#define LH_CHAN_ACTIVE_m13			((ui8) 1 << 33) // include channel in current read set
+#define LH_IDX_CHAN_INACTIVE_m13		((ui8) 1 << 34)
+#define LH_MAP_ALL_SEGS_m13			((ui8) 1 << 35) // allocate slots for every segment, regardless of whether required for current read
 // (active channels only)
 #define LH_READ_SLICE_CHAN_RECS_m13		((ui8) 1 << 40) // read full record indices file (close file); open record data, read universal header, leave open
 #define LH_READ_FULL_CHAN_RECS_m13		((ui8) 1 << 41) // read full record indices & data files, close all files
@@ -1136,8 +1139,9 @@ typedef struct {
 #define LH_THREAD_SEG_READS_m13			((ui8) 1 << 43) // set if likely to cross many segment boundaries in read (e.g. one channel, long reads or short segments)
 
 // segment level
-#define LH_NO_CPS_PTR_RESET_m13			((ui8) 1 << 48) // caller will update pointers
-#define LH_NO_CPS_CACHING_m13			((ui8) 1 << 49) // set cps_caching parameter to FALSE
+#define LH_SEG_OPEN_m13				((ui8) 1 << 48) // segment has been opened
+#define LH_NO_CPS_PTR_RESET_m13			((ui8) 1 << 49) // caller will update pointers
+#define LH_NO_CPS_CACHING_m13			((ui8) 1 << 50) // set cps_caching parameter to FALSE
 // (active channels only)
 #define LH_READ_SLICE_SEG_DATA_m13		((ui8) 1 << 56) // read full metadata & indices files, close files; open data, read universal header, leave open
 #define LH_READ_FULL_SEG_DATA_m13		((ui8) 1 << 57) // read full metadata, indices, & data files, close all files
@@ -4049,7 +4053,7 @@ typedef struct {
 typedef struct {
 	ui4 count;
 	union {
-		si1 value;
+		si1	value;
 		ui1	pos_value;
 	};
 } CMP_STATISTICS_BIN_m13;
@@ -4185,7 +4189,7 @@ tern	CMP_decrypt_m13(FPS_m13 *fps); // single block decrypt (see also decrypt_ti
 tern	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CPS_m13 *cps);
 tern	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len);
 ui1	CMP_differentiate_m13(CPS_m13 *cps);
-sf8	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs);
+ui1	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs);
 tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 n_samples);
 tern	CMP_encrypt_m13(FPS_m13 *fps); // single block encrypt (see also encrypt_time_series_data_m13)
 tern	CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));

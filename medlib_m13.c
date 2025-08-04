@@ -7853,6 +7853,8 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 		if (chan == NULL)
 			return_m13(NULL);
 		free_chan = TRUE_m13;
+	} else if (chan->flags & LH_CHAN_OPEN_m13) {
+		return_m13(chan);
 	} else {
 		free_chan = FALSE_m13;
 	}
@@ -8102,6 +8104,9 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 		chan->flags |= LH_UPDATE_EPHEMERAL_DATA_m13;
 	}
 	
+	// set open flag
+	chan->flags |= LH_CHAN_OPEN_m13;
+	
 	return_m13(chan);
 }
 
@@ -8299,6 +8304,8 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 		ssr = sess->ssr = (SSR_m13 *) calloc_m13((size_t) 1, -sizeof(SSR_m13));  // flag as level header
 		if (ssr == NULL)
 			return_m13(ssr);
+	} else if (ssr->flags & LH_SSR_OPEN_m13) {
+		return_m13(ssr);
 	}
 	ssr->path = ssr->local_path;
 	ssr->name = ssr->fs_name;
@@ -8326,6 +8333,9 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	for (i = first_seg_num, j = 0; j < mapped_segs; ++i, ++j)
 		G_open_records_m13((LH_m13 *) ssr, i);
 	
+	// mark as open
+	ssr->flags |= LH_SSR_OPEN_m13;
+	
 	return_m13(ssr);
 }
 
@@ -8347,6 +8357,8 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 		if (seg == NULL)
 			return_m13(NULL);
 		free_seg = TRUE_m13;
+	} else if (seg->flags & LH_SEG_OPEN_m13) {
+		return_m13(seg);
 	} else {
 		free_seg = FALSE_m13;
 	}
@@ -8483,6 +8495,9 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 	if (seg->flags & LH_GENERATE_EPHEMERAL_DATA_m13)
 		seg->flags |= LH_UPDATE_EPHEMERAL_DATA_m13;
 
+	// set open flag
+	seg->flags |= LH_SEG_OPEN_m13;
+	
 	return_m13(seg);
 }
 
@@ -8529,20 +8544,22 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 	PROC_JOB_m13			*jobs;
 	READ_MED_THREAD_INFO_m13	*rmis;
 	SSR_m13				*ssr;
-
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
 	// if file_list is a pointer to single string, make list_len zero to indicate a one dimensional char array
 	// if list_len > 0, assumed to be two dimensional array
-
+	
 	// allocate session
 	if (sess == NULL) {
 		sess = (SESS_m13 *) calloc_m13((size_t) 1, -sizeof(SESS_m13));  // flag as level header
 		if (sess == NULL)
 			return_m13(NULL);
 		free_sess = TRUE_m13;
+	} else if (sess->flags & LH_SESS_OPEN_m13) {
+		return_m13(sess);
 	} else {
 		free_sess = FALSE_m13;
 	}
@@ -8975,6 +8992,9 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			uh->channel_UID = uh->segment_UID = UID_NO_ENTRY_m13;
 		}
 	}
+	
+	// set open flag
+	sess->flags |= LH_SESS_OPEN_m13;
 	
 	return_m13(sess);
 }
@@ -10082,9 +10102,9 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 }
 
 
-CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs: si1 *chan_path, void *parent, ui8 lh_flags, si1 *password
+CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs(chan == NULL): si1 *chan_path, void *parent, ui8 lh_flags, si1 *password
 {
-	tern				free_chan, threading, r_val;
+	tern				open_chan, free_chan, threading, r_val;
 	si1 				*chan_path, *password;
 	si1 				num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	ui8 				flags;
@@ -10101,20 +10121,33 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs:
 
 	// open channel
 	if (chan == NULL) {
-		// get varargs
-		va_start(v_args, slice);
-		chan_path = va_arg(v_args, si1 *);
-		parent = (LH_m13 *) va_arg(v_args, void *);
-		flags = va_arg(v_args, ui8);
-		password = va_arg(v_args, si1 *);
-		va_end(v_args);
+		open_chan = free_chan = TRUE_m13;
+	} else if ((chan->flags & LH_CHAN_OPEN_m13) == 0) {
+		open_chan = TRUE_m13;
+		free_chan = FALSE_m13;
+	} else {
+		open_chan = free_chan = FALSE_m13;
+	}
+	if (open_chan == TRUE_m13) {
+		if (chan == NULL) {
+			// get varargs
+			va_start(v_args, slice);
+			chan_path = va_arg(v_args, si1 *);
+			parent = (LH_m13 *) va_arg(v_args, void *);
+			flags = va_arg(v_args, ui8);
+			password = va_arg(v_args, si1 *);
+			va_end(v_args);
+		} else {
+			chan_path = NULL;
+			parent = NULL;
+			flags = LH_NO_FLAGS_m13;
+			password = NULL;
+		}
+		
 		// open channel
-		chan = G_open_channel_m13(NULL, slice, chan_path, parent, flags, password);
+		chan = G_open_channel_m13(chan, slice, chan_path, parent, flags, password);  // G_open_channel_m13() will allocate if chan == NULL
 		if (chan == NULL)
 			return_m13(NULL);
-		free_chan = TRUE_m13;
-	} else {
-		free_chan = FALSE_m13;
 	}
 	
 	// process time slice (passed slice is not modified)
@@ -10895,7 +10928,7 @@ si8 G_read_records_m13(void *level_header, SLICE_m13 *slice, ...)  // varags(lev
 
 SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg == NULL): const si1 *seg_path, void *parent, ui8 lh_flags, const si1 *password
 {
-	tern				free_seg, inactive_ref;
+	tern				free_seg, open_seg, inactive_ref;
 	si1				*seg_path, *password;
 	si4				search_mode;
 	ui8				flags;
@@ -10913,20 +10946,33 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 	
 	// open segment
 	if (seg == NULL) {
-		// get varargs
-		va_start(v_args, slice);
-		seg_path = va_arg(v_args, si1 *);
-		parent = (LH_m13 *) va_arg(v_args, void *);
-		flags = va_arg(v_args, ui8);
-		password = va_arg(v_args, si1 *);
-		va_end(v_args);
+		open_seg = free_seg = TRUE_m13;
+	} else if ((seg->flags & LH_SEG_OPEN_m13) == 0) {
+		open_seg = TRUE_m13;
+		free_seg = FALSE_m13;
+	} else {
+		open_seg = free_seg = FALSE_m13;
+	}
+	if (open_seg == TRUE_m13) {
+		if (seg == NULL) {
+			// get varargs
+			va_start(v_args, slice);
+			seg_path = va_arg(v_args, si1 *);
+			parent = (LH_m13 *) va_arg(v_args, void *);
+			flags = va_arg(v_args, ui8);
+			password = va_arg(v_args, si1 *);
+			va_end(v_args);
+		} else {
+			seg_path = NULL;
+			parent = NULL;
+			flags = LH_NO_FLAGS_m13;
+			password = NULL;
+		}
+		
 		// open segment
 		seg = G_open_segment_m13(NULL, slice, seg_path, parent, flags, password);
 		if (seg == NULL)
 			return_m13(NULL);
-		free_seg = TRUE_m13;
-	} else {
-		free_seg = FALSE_m13;
 	}
 	
 	// process time slice (passed slice is not modified)
@@ -11045,7 +11091,7 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr)
 
 SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
 {
-	tern				free_sess, threading, calculate_channel_indices, r_val;
+	tern				open_sess, free_sess, threading, calculate_channel_indices, r_val;
 	si1 				*password, *index_channel_name;
 	ui8 				flags;
 	si4 				i, j, list_len, seg_idx, n_chans, search_mode;
@@ -11065,20 +11111,35 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 
 	// open session
 	if (sess == NULL) {
-		// get varargs
-		va_start(v_args, slice);
-		file_list = va_arg(v_args, void *);
-		list_len = va_arg(v_args, si4);
-		flags = va_arg(v_args, ui8);
-		password = va_arg(v_args, si1 *);
-		index_channel_name = va_arg(v_args, si1 *);
-		va_end(v_args);
+		open_sess = free_sess = TRUE_m13;
+	} else if ((sess->flags & LH_SESS_OPEN_m13) == 0) {
+		open_sess = TRUE_m13;
+		free_sess = FALSE_m13;
+	} else {
+		open_sess = free_sess = FALSE_m13;
+	}
+	if (open_sess == TRUE_m13) {
+		if (sess == NULL) {
+			// get varargs
+			va_start(v_args, slice);
+			file_list = va_arg(v_args, void *);
+			list_len = va_arg(v_args, si4);
+			flags = va_arg(v_args, ui8);
+			password = va_arg(v_args, si1 *);
+			index_channel_name = va_arg(v_args, si1 *);
+			va_end(v_args);
+		} else {
+			file_list = NULL;
+			list_len = 0;
+			flags = LH_NO_FLAGS_m13;
+			password = NULL;
+			index_channel_name = NULL;
+		}
 		
 		// open session
-		sess = G_open_session_m13(NULL, slice, file_list, list_len, flags, password, index_channel_name);
+		sess = G_open_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);  // G_open_session_m13() will allocate
 		if (sess == NULL)
 			return_m13(NULL);
-		free_sess = TRUE_m13;
 	} else {  // process time slice (passed slice is not modified)
 		if (slice == NULL) {
 			if (G_all_zeros_m13((ui1 *) &sess->slice, (si4) sizeof(SLICE_m13)) == TRUE_m13)
@@ -11088,7 +11149,6 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		}
 		if (sess->slice.conditioned == FALSE_m13)
 			G_condition_slice_m13(sess, slice);
-		free_sess = FALSE_m13;
 	}
 
 	if (slice)  // passed slice supersedes structure slice
@@ -20451,12 +20511,11 @@ tern	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len)
 
 ui1	CMP_differentiate_m13(CPS_m13 *cps)
 {
-	ui1			deriv_level, set_deriv_level;
+	ui1			deriv_level, set_deriv_level, dispersion, last_dispersion;
 	ui4			n_samps, n_diffs;
 	si4			*input_buffer, *deriv_buffer, samp_min, samp_max, diff_min, diff_max;
 	si4			diff, *si4_p1, *si4_p2, *si4_p3;
 	si8			i, si8_diff, pos_inf_si4, neg_inf_si4;
-	sf8			dispersion, last_dispersion;
 	CMP_FIXED_BH_m13	*bh;
 	
 #ifdef FT_DEBUG_m13
@@ -20587,9 +20646,9 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 }
 
 
-sf8	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
+ui1	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 {
-	ui1	*ui1_p, overflow_bytes, ks_flag;
+	ui1	*ui1_p, overflow_bytes, ks_flag, disp;
 	ui4	n_samps, n_deriv_samps, *count, *cnt, max_cnt;
 	si4	low_d, high_d, diff;
 	si8	i, j;
@@ -20601,6 +20660,7 @@ sf8	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 	
 	// generates a measure of dispersion for a data block at a particular derivative level
 	// measure is sum(bin_count / max_bin_count) which is order insensitive & unnormalized
+	// range 0 (no dispersion) to 255 (flat distribution)
 
 	// generate count & build keysample array
 	if (cps->params.minimum_difference_value > 0) {  // positive derivatives
@@ -20633,7 +20693,7 @@ sf8	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 	}
 
 	// calculate dispersion
-	for (cnt = count, max_cnt = 0, i = 256; i--; ++cnt)
+	for (cnt = count, max_cnt = 0, i = CMP_RED_MAX_STATS_BINS_m13; i--; ++cnt)
 		if (*cnt > max_cnt)
 			max_cnt = *cnt;
 	float_max_cnt = (sf8) max_cnt;
@@ -20641,7 +20701,12 @@ sf8	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 		if (*cnt)
 			dispersion += (sf8) *cnt / float_max_cnt;
 
-	return_m13(dispersion);
+	dispersion -= (sf8) 1.0;  //
+	if (dispersion > (sf8) 255.0)  // rounding error
+		dispersion = (sf8) 256.0;
+	disp = (ui1) (dispersion + (sf8) 0.5);
+	
+	return_m13(disp);
 }
 
 
