@@ -7852,12 +7852,13 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 		chan = (CHAN_m13 *) calloc_m13((size_t) 1, -sizeof(CHAN_m13));  // flag as level header
 		if (chan == NULL)
 			return_m13(NULL);
-		chan->path = chan->local_path;
-		chan->name = chan->fs_name;
 		free_chan = TRUE_m13;
 	} else {
 		free_chan = FALSE_m13;
 	}
+	chan->path = chan->local_path;
+	chan->name = chan->fs_name;
+	
 	pg = G_proc_globs_m13(chan);
 
 	// set basic info (path, name, type, flags, parent)
@@ -8298,10 +8299,10 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 		ssr = sess->ssr = (SSR_m13 *) calloc_m13((size_t) 1, -sizeof(SSR_m13));  // flag as level header
 		if (ssr == NULL)
 			return_m13(ssr);
-		ssr->path = ssr->local_path;
-		ssr->name = ssr->fs_name;
 	}
-	
+	ssr->path = ssr->local_path;
+	ssr->name = ssr->fs_name;
+
 	// get path
 	pg = G_proc_globs_m13(ssr);
 	strcpy(ssr->name, sess->name);
@@ -8346,12 +8347,12 @@ SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path,
 		if (seg == NULL)
 			return_m13(NULL);
 		free_seg = TRUE_m13;
-		seg->path = seg->local_path;
-		seg->name = seg->fs_name;
 	} else {
 		free_seg = FALSE_m13;
 	}
-	
+	seg->path = seg->local_path;
+	seg->name = seg->fs_name;
+
 	// set basic info (path, name, type, flags)
 	if (*seg_path)
 		seg->type_code = G_MED_path_components_m13(seg_path, seg->path, seg->name);
@@ -8541,11 +8542,11 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		sess = (SESS_m13 *) calloc_m13((size_t) 1, -sizeof(SESS_m13));  // flag as level header
 		if (sess == NULL)
 			return_m13(NULL);
-		sess->type_code = SESS_TYPE_CODE_m13;
 		free_sess = TRUE_m13;
 	} else {
 		free_sess = FALSE_m13;
 	}
+	sess->type_code = SESS_TYPE_CODE_m13;
 	if (slice)  // passed slice supersedes structure slice
 		sess->slice = *slice;
 	slice = &sess->slice;
