@@ -22014,7 +22014,7 @@ CPS_PARAMS_m13	*CMP_init_params_m13(CPS_PARAMS_m13 *params)
 	params->VDS_LFP_high_fc = RATE_NO_ENTRY_m13;
 	params->VDS_threshold = CPS_PARAMS_VDS_THRESHOLD_DEFAULT_m13;
 	params->SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13;
-	params->SRRED_update_frequency = CMP_PARAMS_SRRED_UPDATE_FREQUENCY_DEFAULT_m13;
+	params->SRRED_update_interval = CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13;
 
 	params->count = NULL;
 	params->sorted_count = NULL;
@@ -26381,15 +26381,15 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	ui4				SRRED_total_header_bytes, SRRED_model_region_bytes;
 	ui4				n_derivs, algorithm;
 	si4				*si4_p1, *si4_p2, *deriv_buffer, *scrap_buffer;
-	si8				i, n_samps, scale;
-	sf8				tmp_sf8;
+	si8				i, n_samps, freq_usecs;
+	sf8				scale, tmp_sf8;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
-
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
+	
 	bh = cps->block_header;
 	SRRED_model_region = cps->params.model_region;
 	SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) SRRED_model_region;
@@ -26398,9 +26398,19 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	update_params = FALSE_m13;
 	if (SRRED_header->scale == (sf4) 0.0) {
 		update_params = TRUE_m13;
-	} else if (cps->params.SRRED_update_frequency != CMP_PARAMS_SRRED_NO_UPDATES_m13) {
-		if (cps->params.SRRED_update_counter == cps->params.SRRED_update_frequency) {
-			cps->params.SRRED_update_counter = 0;
+		if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13 && cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
+			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1e6) + (sf8) 0.5);
+			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
+			update_params = TRUE_m13;
+		}
+	} else if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
+		update_params = TRUE_m13;
+	} else if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13) {
+		if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
+			update_params = TRUE_m13;
+		} else if (cps->params.SRRED_update_time > bh->start_time) {
+			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1e6) + (sf8) 0.5);
+			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
 			update_params = TRUE_m13;
 		}
 	}
@@ -26497,10 +26507,6 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	bh->model_region_bytes = (ui2) CMP_SRRED_MODEL_FIXED_HDR_BYTES_m13;
 	cps->params.model_region = SRRED_model_region;
 	
-	// update update counter
-	if (cps->params.SRRED_update_frequency != CMP_PARAMS_SRRED_NO_UPDATES_m13)
-		++cps->params.SRRED_update_counter;
-
 	return_m13(TRUE_m13);
 }
 

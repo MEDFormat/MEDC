@@ -3857,8 +3857,9 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13		((ui4) 3000)
 #define CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13		((ui4) 5000)
 #define CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13			((ui4) 0xFFFFFFFF) // use full block samples, unless < CMP_VDS_MINIMUM_SAMPLES_m13
-#define CMP_PARAMS_SRRED_NO_UPDATES_m13				((ui4) 0xFFFFFFFF) // measure once & never update
-#define CMP_PARAMS_SRRED_UPDATE_FREQUENCY_DEFAULT_m13		CMP_PARAMS_SRRED_NO_UPDATES_m13
+#define CMP_PARAMS_SRRED_NO_UPDATES_m13				((sf8) -1.0) // measure once & never update (fast, but does not allow for dift)
+#define CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13			((sf8) 0.0) // measure for every block (slow, but best compression)
+#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13		CMP_PARAMS_SRRED_NO_UPDATES_m13
 // parameters defaults (lossy)
 #define CPS_PARAMS_GOAL_RATIO_DEFAULT_m13			((sf8) 0.05)
 #define CPS_PARAMS_GOAL_TOLERANCE_DEFAULT_m13			((sf8) 0.005)
@@ -4176,8 +4177,10 @@ typedef struct {
 	
  // lossless compression parameters
 	ui4	SRRED_test_samples; // smaller sizes increase speed, (CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13 uses full block (most acccurate), unless < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
-	ui4	SRRED_update_frequency; // 1 == update with every block, 10 == update evey 10th block, CMP_PARAMS_SRRED_NO_UPDATES_m13 measures only at startup & does not update)
-	ui4	SRRED_update_counter; // used with SRRED_update_frequency
+	sf8	SRRED_update_interval; // time, in seconds, between updates
+				       // CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13 (0.0) == update with every block
+				       // CMP_PARAMS_SRRED_NO_UPDATES_m13 (-1.0) == measure only at startup & do not update
+	si8	SRRED_update_time; // uutc of next update; used with SRRED_update_interval
 
  // lossy compression parameters
 	sf8	goal_ratio; // either compression ratio or mean residual ratio
