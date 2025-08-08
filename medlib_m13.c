@@ -26363,6 +26363,17 @@ sf8	CMP_splope_m13(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt)
 }
 
 
+tern	CMP_SRRED_decode_m13(CPS_m13 *cps)
+{
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	return_m13(TRUE_m13);
+}
+
+
 tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 {
 	tern				update_params;
