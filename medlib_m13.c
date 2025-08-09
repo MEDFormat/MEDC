@@ -26514,8 +26514,9 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 {
 	ui1				n_derivs;
+	ui4				n_samps;
 	si4				*si4_p1, *si4_p2, *scaled, *derivs;
-	si8				i, n_samps, n_scaled_samps, size, last_size, min_size;
+	si8				i, n_scaled_samps, size, last_size, min_size;
 	sf8				tmp_sf8, scale, inv_scale, lock_scale, scale_step, min_scale, ratio;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
@@ -26527,11 +26528,17 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	// returns scale - factor by which to divide raw samples
 
 	bh = cps->block_header;
-	n_samps = (si8) bh->number_of_samples;
-	if (n_samps < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
-		return_m13(FALSE_m13);
-	if (n_samps > cps->params.SRRED_test_samples)
-		n_samps = cps->params.SRRED_test_samples;
+	if (cps->params.SRRED_test_samples) {
+		n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples;
+		if (n_samps == CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13)
+			n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples = (si8) bh->number_of_samples;
+		else if (n_samps < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
+			n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13;
+	} else {
+		n_samps = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13;  // not set, use default
+	}
+	if (n_samps < bh->number_of_samples)
+		return_m13(FALSE_m13);  // don't set error => initial blocks can be small in live recordings - just set on next block  (FALSE_m13 return will just send tp PRED)
 	
 	// get derivative & level
 	cps->direcs.flags &= ~CPS_DF_SET_DERIVATIVE_LEVEL_m13;
@@ -26547,14 +26554,14 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	
 	// find unscaled size (no residuals)
 	derivs = cps->params.derivative_buffer;
-	last_size = min_size = CMP_range_encode_m13(derivs, n_samps, n_derivs);  // function expects base of derivatives array
+	last_size = min_size = CMP_range_encode_m13(derivs, (si8) n_samps, n_derivs);  // function expects base of derivatives array
 	min_scale = (sf8) 1.0;  // the scale at which min_size occurred
 	
 	// find optimal scale for this derivative level
 	scaled = (si4 *) cps->params.scrap_buffers->buffer[0];
 	scale = CMP_SRRED_BIG_STEP_m13 + CMP_SRRED_SMALL_STEP_m13;  // add small step to avoid checking for zero if backing up on first step
 	scale_step = CMP_SRRED_BIG_STEP_m13;
-	n_scaled_samps = n_samps - (si8) n_derivs;
+	n_scaled_samps = (si8) (n_samps - n_derivs);
 	lock_scale = (sf8) 0.0;
 	while (scale <= (sf8) CMP_SRRED_TOP_SCALE_m13) {
 		// scale & round
@@ -26570,7 +26577,7 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 		}
 		
 		// get scaled size
-		size = CMP_range_encode_m13(scaled, n_samps, n_derivs);  // function expects base of derivatives array
+		size = CMP_range_encode_m13(scaled, (si8) n_samps, n_derivs);  // function expects base of derivatives array
 		
 		// get residuals
 		si4_p1 = scaled + n_derivs;  // skip initial values (CMP_range_encode_m13() expects initial values to be there, but doesn't use them)
@@ -26586,7 +26593,7 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 		}
 		
 		// add residual size to scaled size
-		size += CMP_range_encode_m13(scaled, n_samps, n_derivs);  // function expects base of derivatives array
+		size += CMP_range_encode_m13(scaled, (si8) n_samps, n_derivs);  // function expects base of derivatives array
 		
 		if (size < min_size) {
 			min_size = size;

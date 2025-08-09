@@ -3859,7 +3859,7 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13			((ui4) 0xFFFFFFFF) // use full block samples, unless < CMP_VDS_MINIMUM_SAMPLES_m13
 #define CMP_PARAMS_SRRED_NO_UPDATES_m13				((sf8) -1.0) // measure once & never update (fast, but does not allow for dift)
 #define CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13			((sf8) 0.0) // measure for every block (slow, but best compression)
-#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13		CMP_PARAMS_SRRED_NO_UPDATES_m13
+#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13		((sf8) 60.0) // update once a minute (in sample time)
 // parameters defaults (lossy)
 #define CPS_PARAMS_GOAL_RATIO_DEFAULT_m13			((sf8) 0.05)
 #define CPS_PARAMS_GOAL_TOLERANCE_DEFAULT_m13			((sf8) 0.005)
