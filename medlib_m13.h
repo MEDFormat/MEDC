@@ -386,6 +386,8 @@ typedef struct {
 //*********************** CMP Structures required in MED section **********************//
 //*************************************************************************************//
 
+#define CMP_FIXED_BH_BYTES_m13	56
+
 typedef struct {
  // CMP block header fixed region start
 	ui8 block_start_UID;
@@ -3583,6 +3585,9 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_SRRED_SMALL_STEP_m13		((sf8) 0.00002)  // ((sf8) 0.00001) is better, but this is notably faster
 #define CMP_SRRED_TOP_SCALE_m13			((sf8) 0.5) // search scales from CMP_SRRED_BIG_STEP_m13 to here
 #define CMP_SELF_MANAGED_MEMORY_m13		-1 // pass CMP_SELF_MANAGED_MEMORY_m13 to CMP_allocate_processing_struct to prevent automatic re-allocation
+#define CMP_RED_TO_PRED_m13			TRUE_m13
+#define CMP_PRED_TO_RED_m13			FALSE_m13
+#define CMP_RED_PRED_SWAP_m13			UNKNOWM_m13
 
 // CMP: Block Fixed Header Offset Constants
 #define CMP_BLOCK_FIXED_HDR_BYTES_m13				56 // fixed region only
@@ -3854,12 +3859,16 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CPS_PARAMS_DERIVATIVE_LEVEL_DEFAULT_m13			((ui1) 1)
 #define CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13			4
 // parameters defaults (SRRED)
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13		((ui4) 3000)
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13		((ui4) 5000)
+#define CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13		((ui4) 3000)  // rapidly diminishing benefit below this
+#define CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13		((ui4) 15000)  // usually asymptotes around here
 #define CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13			((ui4) 0xFFFFFFFF) // use full block samples, unless < CMP_VDS_MINIMUM_SAMPLES_m13
+#define CMP_PARAMS_SRRED_TEST_SAMPLES_MAX_COMPRESSION_m13	CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13
+#define CMP_PARAMS_SRRED_TEST_SAMPLES_MAX_SPEED_m13		CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13
 #define CMP_PARAMS_SRRED_NO_UPDATES_m13				((sf8) -1.0) // measure once & never update (fast, but does not allow for dift)
 #define CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13			((sf8) 0.0) // measure for every block (slow, but best compression)
-#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13		((sf8) 60.0) // update once a minute (in sample time)
+#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13		((sf8) 10.0) // update every 10 seconds (in sample time)
+#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_MAX_COMPRESSION_m13	CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13
+#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_MAX_SPEED_m13		CMP_PARAMS_SRRED_NO_UPDATES_m13
 // parameters defaults (lossy)
 #define CPS_PARAMS_GOAL_RATIO_DEFAULT_m13			((sf8) 0.05)
 #define CPS_PARAMS_GOAL_TOLERANCE_DEFAULT_m13			((sf8) 0.005)
@@ -3877,9 +3886,9 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 
 
 // RED/PRED Codec Constants
-#define CMP_SI1_KEYSAMPLE_FLAG_m13 		((si1) 0x80)  // -128 as si1
-#define CMP_UI1_KEYSAMPLE_FLAG_m13 		((ui1) 0x80)  // +128 as ui1
-#define CMP_POS_DERIV_KEYSAMPLE_FLAG_m13	((ui1) 0x00)  // no zero differences expected in positive derivative model
+#define CMP_SI1_KEYSAMPLE_FLAG_m13 		((si1) 0x80) // -128 as si1
+#define CMP_UI1_KEYSAMPLE_FLAG_m13 		((ui1) 0x80) // +128 as ui1
+#define CMP_POS_DERIV_KEYSAMPLE_FLAG_m13	((ui1) 0x00) // no zero differences expected in positive derivative model
 #define CMP_RED_TOTAL_COUNTS_m13 		((ui4) 0x10000) // 2^16
 #define CMP_RED_MAXIMUM_RANGE_m13 		((ui8) 0x1000000000000) // 2^48
 #define CMP_RED_RANGE_MASK_m13			((ui8) 0xFFFFFFFFFFFF) // 2^48 - 1
@@ -4211,6 +4220,13 @@ typedef struct {
 	void			*cumulative_count; // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void			*minimum_range; // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void			*symbol_map; // used by RED/PRED encode & decode (ui1 * or ui1 **)
+	
+// pointer copies for switching between RED & PRED (Note: memory must be allocated for PRED initially)
+	void			*PRED_base_count;
+	void			*PRED_base_sorted_count;
+	void			*PRED_base_symbol_map;
+	void			*PRED_base_cumulative_count;
+	void			*PRED_base_minimum_range;
 } CPS_PARAMS_m13;
 
 typedef struct CPS_m13 {
@@ -4323,6 +4339,10 @@ sf8	CMP_splope_m13(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt);
 tern	CMP_SRRED_decode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_encode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps);
+sf8	CMP_SRRED_median_score_m13(CPS_m13 *cps, sf8 scale);
+sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale);
+sf8	CMP_SRRED_weighted_sum_m13(CPS_m13 *cps);
+tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED);
 sf8	CMP_trace_amplitude_m13(sf8 *y, sf8 *buffer, si8 len, tern detrend);
 si8	CMP_ts_sort_m13(si4 *x, si8 len, CMP_NODE_m13 *nodes, CMP_NODE_m13 *head, CMP_NODE_m13 *tail, si4 return_sorted_ts, ...);
 tern	CMP_unlock_buffers_m13(CMP_BUFFERS_m13 *buffers);

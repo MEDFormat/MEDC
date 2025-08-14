@@ -19355,7 +19355,7 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		cps->direcs.flags &= ~CPS_DF_COMPRESSION_MODE_m13;
 	
 	// allocate RED/PRED buffers
-	if (cps->direcs.flags & (CPS_DF_RED1_ALGORITHM_m13 | CPS_DF_RED2_ALGORITHM_m13 | CPS_DF_SRRED_ALGORITHM_m13)) {
+	if (cps->direcs.flags & (CPS_DF_RED1_ALGORITHM_m13 | CPS_DF_RED2_ALGORITHM_m13)) {
 		if (mode == CMP_COMPRESSION_MODE_m13) {
 			cps->params.count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
 			cps->params.sorted_count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(CMP_STATISTICS_BIN_m13));
@@ -19368,27 +19368,27 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 		}
 		cps->params.cumulative_count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8));
 		cps->params.minimum_range = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8));
-	} else if (cps->direcs.flags & (CPS_DF_PRED1_ALGORITHM_m13 | CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_VDS_ALGORITHM_m13)) {  // VDS uses RED & PRED, but buffers allocated for PRED
+	} else if (cps->direcs.flags & (CPS_DF_PRED1_ALGORITHM_m13 | CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_VDS_ALGORITHM_m13 | CPS_DF_SRRED_ALGORITHM_m13)) {  // VDS uses RED & PRED, but buffers allocated for PRED
 		if (mode == CMP_COMPRESSION_MODE_m13) {
-			cps->params.count = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
-			cps->params.sorted_count = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(CMP_STATISTICS_BIN_m13));
-			cps->params.symbol_map = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui1));
+			cps->params.PRED_base_count = cps->params.count = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
+			cps->params.PRED_base_sorted_count = cps->params.sorted_count = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(CMP_STATISTICS_BIN_m13));
+			cps->params.PRED_base_symbol_map = cps->params.symbol_map = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui1));
 			need_derivative_buffer = TRUE_m13;
 		} else {
-			cps->params.count = NULL;
-			cps->params.sorted_count = NULL;
-			cps->params.symbol_map = NULL;
+			cps->params.PRED_base_count = cps->params.count = NULL;
+			cps->params.PRED_base_sorted_count = cps->params.sorted_count = NULL;
+			cps->params.PRED_base_symbol_map = cps->params.symbol_map = NULL;
 		}
-		cps->params.cumulative_count = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8));
-		cps->params.minimum_range = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8));
+		cps->params.PRED_base_cumulative_count = cps->params.cumulative_count = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8));
+		cps->params.PRED_base_minimum_range = cps->params.minimum_range = calloc_2D_m13((size_t) CMP_PRED_CATS_m13, CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8));
 	} else {
 		if (mode == CMP_COMPRESSION_MODE_m13)  // MBE needs derivative buffer for compression
 			need_derivative_buffer = TRUE_m13;
-		cps->params.count = NULL;
-		cps->params.sorted_count = NULL;
-		cps->params.symbol_map = NULL;
-		cps->params.cumulative_count = NULL;
-		cps->params.minimum_range = NULL;
+		cps->params.PRED_base_count = cps->params.count = NULL;
+		cps->params.PRED_base_sorted_count = cps->params.sorted_count = NULL;
+		cps->params.PRED_base_symbol_map = cps->params.symbol_map = NULL;
+		cps->params.PRED_base_cumulative_count = cps->params.cumulative_count = NULL;
+		cps->params.PRED_base_minimum_range = cps->params.minimum_range = NULL;
 	}
 
 	// VDS
@@ -20515,18 +20515,19 @@ tern	CMP_detrend_sf8_m13(sf8 *input_buffer, sf8 *output_buffer, si8 len)
 
 ui1	CMP_differentiate_m13(CPS_m13 *cps)
 {
+	tern			(*compress_f)(CPS_m13 *cps);
 	ui1			deriv_level, set_deriv_level;
 	ui4			n_samps, n_diffs;
 	si4			*input_buffer, *deriv_buffer, samp_min, samp_max, diff_min, diff_max;
 	si4			diff, *si4_p1, *si4_p2, *si4_p3;
 	si8			i, si8_diff, pos_inf_si4, neg_inf_si4, size, last_size;
 	CMP_FIXED_BH_m13	*bh;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// returns derivative level (1-255)
+	// returns derivative level (1-255); also sets in CPS parameters
 	// 0xFF indicates error
 	// zero indicates no differentiation
 	
@@ -20580,7 +20581,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 			CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
 			memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
 			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
-			return_m13(0xFF);
+			return_m13(0);
 		}
 		diff = (si4) si8_diff;
 		if (diff < diff_min)
@@ -20599,9 +20600,36 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	if (set_deriv_level == 1)
 		return_m13(1);
 	
-	// higher derivatives
-	if (set_deriv_level == 0xFF)  // find_derivative_level option
-		last_size = CMP_range_encode_m13(cps->params.derivative_buffer, n_samps, deriv_level);
+	// find derivatives
+	if (set_deriv_level == 0xFF) {  // find_derivative_level option
+		switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
+			case CPS_DF_RED1_ALGORITHM_m13:
+				compress_f = CMP_RED1_encode_m13;
+				break;
+			case CPS_DF_PRED1_ALGORITHM_m13:
+				compress_f = CMP_PRED1_encode_m13;
+				break;
+			case CPS_DF_SRRED_ALGORITHM_m13: // Note: SSRED determines derivative level using RED2
+				CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);  // swap to RED buffers, if necessary
+			case CPS_DF_RED2_ALGORITHM_m13:
+				compress_f = CMP_RED2_encode_m13;
+				break;
+			case CPS_DF_PRED2_ALGORITHM_m13:
+				compress_f = CMP_PRED2_encode_m13;
+				break;
+			case CPS_DF_MBE_ALGORITHM_m13:
+				compress_f = CMP_MBE_encode_m13;
+				break;
+			case CPS_DF_VDS_ALGORITHM_m13:
+				compress_f = CMP_VDS_encode_m13;
+				break;
+			default:
+				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
+				return_m13(0xFF);
+		}
+		compress_f(cps);
+		last_size = bh->total_block_bytes;
+	}
 	
 	while (--n_diffs) {
 		input_buffer = cps->params.derivative_buffer;
@@ -20626,15 +20654,16 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 		*si4_p3 = *si4_p1;  // derivative initial value
 		++deriv_level;
 		if (set_deriv_level == 0xFF) {  // find_derivative_level option
-			size = CMP_range_encode_m13(deriv_buffer, n_samps, deriv_level);
-			if (size < last_size) {
+			compress_f(cps);
+			size = bh->total_block_bytes;
+			if (size < last_size) {  // monotonic decrease to minimum level (if not first derivative); monotonic increase after minimum level
 				cps->params.minimum_difference_value = diff_min;
 				cps->params.maximum_difference_value = diff_max;
 				cps->params.derivative_level = deriv_level;
 				last_size = size;
 				memcpy(input_buffer, deriv_buffer, (size_t) (n_samps << 2));  // copy into CPS derivative buffer (called "input_buffer" here)
 			} else {
-				--deriv_level;  // monotonic decrease to minimum level (if not first derivative); monotonic increase after minimum level
+				--deriv_level;
 				break;
 			}
 		} else {
@@ -20647,70 +20676,10 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 		}
 	}
 	
+	// set derivative_level in CPS
+	cps->params.derivative_level = deriv_level;
+	
 	return_m13(deriv_level);
-}
-
-
-ui1	CMP_dispersion_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
-{
-	ui1	*ui1_p, overflow_bytes, ks_flag, disp;
-	ui4	n_samps, n_deriv_samps, *count, *cnt, max_cnt;
-	si4	low_d, high_d, diff;
-	si8	i, j;
-	sf8	dispersion, float_max_cnt;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	// generates a measure of dispersion for a data block at a particular derivative level
-	// measure is sum(bin_count / max_bin_count) which is order insensitive & unnormalized
-	// range 0 (no dispersion) to 255 (flat distribution)
-	// this is an efficient measure in normal data, but not accurate in data with many overflows
-
-	// generate count & build keysample array
-	if (cps->params.minimum_difference_value > 0) {  // positive derivatives
-		low_d = 1; high_d = 255;
-		ks_flag = CMP_POS_DERIV_KEYSAMPLE_FLAG_m13;  // == 0 (non-overflow range: 1 to 255)
-	} else {
-		low_d = -127; high_d = 127;
-		ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m13;  // == -128 (non-overflow range: -127 to +127)
-	}
-	
-	count = (ui4 *) cps->params.count;
-	memset(count, 0, CMP_RED_MAX_STATS_BINS_m13 * sizeof(ui4));
-	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
-	deriv_p += + n_derivs;
-	n_samps = cps->block_header->number_of_samples;
-	n_deriv_samps = n_samps - n_derivs;
-	
-	// generate histogram
-	for (i = n_deriv_samps; i--;) {
-		diff = *deriv_p++;
-		if (diff < low_d || diff > high_d) {
-			ui1_p = (ui1 *) &diff;
-			++count[ks_flag];
-			j = overflow_bytes; do {
-				++count[*ui1_p++];
-			} while (--j);
-		} else {
-			++count[(ui1) diff];
-		}
-	}
-
-	// calculate dispersion
-	for (cnt = count, max_cnt = 0, i = CMP_RED_MAX_STATS_BINS_m13; i--; ++cnt)
-		if (*cnt > max_cnt)
-			max_cnt = *cnt;
-	float_max_cnt = (sf8) max_cnt;
-	for (cnt = count, dispersion = (sf8) 0.0, i = CMP_RED_MAX_STATS_BINS_m13; i--; ++cnt)
-		if (*cnt)
-			dispersion += (sf8) *cnt / float_max_cnt;
-
-	dispersion -= (sf8) 1.0;  // range 0-255, not 1-256
-	disp = (ui1) (dispersion + (sf8) 0.5);
-	
-	return_m13(disp);
 }
 
 
@@ -22762,7 +22731,7 @@ tern	CMP_MBE_encode_m13(CPS_m13 *cps)
 	} else {
 		// calculate derivatives
 		if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
-			n_derivs = cps->params.goal_derivative_level;
+			n_derivs = cps->params.derivative_level;
 		else
 			n_derivs = CMP_differentiate_m13(cps);  // CMP_differentiate_m13() sets parameter mins & maxs
 		MBE_header->derivative_level = n_derivs;
@@ -24349,177 +24318,6 @@ tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len)
 }
 
 
-si8	CMP_range_encode_m13(si4 *derivatives, si8 n_samps, ui1 deriv_level)
-{
-	ui1			*low_bound_high_byte_p, *high_bound_high_byte_p, *symbol_map, ks_flag, *key_p, *ui1_p, *comp_p, *compressed_data;
-	si1			*keysample_buffer;
-	ui4			*count, n_keysamp_bytes, goal_total_counts, bin;
-	si4			overflow_bytes, low_d, high_d, *deriv_p, diff;
-	ui8			*cumulative_count, *minimum_range, total_counts, scaled_total_counts, range, high_bound, low_bound;
-	si8			i, j, k, len, n_stats_entries, extra_counts, bytes, pad_bytes;
-	CMP_STATISTICS_BIN_m13	*sorted_count, temp_sorted_count;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// used primarily to determine optimal derivative level for a data block (other uses also possible)
-	// returns bytes required to range encode (RED, not PRED) a derivative buffer
-	// includes initial values, statistics, compressed data, & pad bytes
-	// excludes header & model bytes (which should constant)
-	// derivatives are presumed to have been calculated
-	// deriv_level is the derivative level (determines offset into derivative buffer
-	// n_samps is the total number of samples, not the number of differentiated samples
-	
-	len = n_samps - deriv_level;
-	compressed_data = (ui1 *) calloc(len * 5, sizeof(si1));
-	keysample_buffer = (si1 *) calloc(len * 5, sizeof(si1));
-	count = (ui4 *) calloc(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
-	sorted_count = (CMP_STATISTICS_BIN_m13 *) calloc(CMP_RED_MAX_STATS_BINS_m13, sizeof(CMP_STATISTICS_BIN_m13));
-	symbol_map = (ui1 *) calloc(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui1));
-	cumulative_count = (ui8 *) calloc(CMP_RED_MAX_STATS_BINS_m13 + 1, sizeof(ui8));
-	minimum_range = (ui8 *) calloc(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui8));
-	overflow_bytes = 4;
-
-	// generate count & build keysample array
-	low_d = -127; high_d = 127;
-	ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m13;  // == -128 (non-overflow range: -127 to +127)
-	
-	key_p = (ui1 *) keysample_buffer;
-	deriv_p = derivatives + deriv_level;
-	for (i = len; i--;) {
-		diff = *deriv_p++;
-		if (diff < low_d || diff > high_d) {
-			ui1_p = (ui1 *) &diff;
-			++count[*key_p++ = ks_flag];
-			j = overflow_bytes; do {
-				++count[*key_p++ = *ui1_p++];
-			} while (--j);
-		} else {
-			++count[*key_p++ = (ui1) diff];
-		}
-	}
-	n_keysamp_bytes = (ui4) (key_p - (ui1 *) keysample_buffer);
-
-	// build sorted_count
-	for (i = n_stats_entries = 0, j = 255, k = 128; k--; ++i, --j) {
-		if (count[i]) {
-			sorted_count[n_stats_entries].count = count[i];
-			sorted_count[n_stats_entries++].value = (si1) i;
-		}
-		if (count[j]) {
-			sorted_count[n_stats_entries].count = count[j];
-			sorted_count[n_stats_entries++].value = (si1) j;
-		}
-	}
-	
-	// build sorted_count: bubble sort
-	i = n_stats_entries;
-	do {
-		for (j = 0, k = 1; k < i; ++k) {
-			if (sorted_count[k - 1].count < sorted_count[k].count) {
-				temp_sorted_count = sorted_count[k - 1];
-				sorted_count[k - 1] = sorted_count[k];
-				sorted_count[k] = temp_sorted_count;
-				j = k;  // highest swap index
-			}
-		}
-	} while ((i = j) > 1);
-		
-	// scale count so that total counts equals (RED_TOTAL_COUNTS - 1)
-	goal_total_counts = CMP_RED_TOTAL_COUNTS_m13 - 1;
-	total_counts = (ui8) n_keysamp_bytes;
-	for (scaled_total_counts = i = 0; i < n_stats_entries; ++i) {
-		sorted_count[i].count = (ui4) (((((ui8) goal_total_counts << 1) * (ui8) sorted_count[i].count) + total_counts) / (total_counts << 1));
-		if (sorted_count[i].count == 0)
-			sorted_count[i].count = 1;
-		scaled_total_counts += (si8) sorted_count[i].count;
-	}
-	extra_counts = ((si8) goal_total_counts - (si8) scaled_total_counts);
-	if (extra_counts > 0) {
-		do {
-			for (i = 0; (i < n_stats_entries) && extra_counts; ++i) {
-				++sorted_count[i].count;
-				--extra_counts;
-			}
-		} while (extra_counts);
-	} else if (extra_counts < 0) {
-		extra_counts = -extra_counts;
-		do {
-			for (i = n_stats_entries - 1; (i >= 0) && extra_counts; --i) {
-				if (sorted_count[i].count > 1) {
-					--sorted_count[i].count;
-					--extra_counts;
-				}
-			}
-		} while (extra_counts);
-	}
-	
-	// build symbol map, count array & minimum ranges
-	for (cumulative_count[0] = i = 0; i < n_stats_entries; ++i) {
-		symbol_map[sorted_count[i].pos_value] = (ui1) i;
-		cumulative_count[i + 1] = cumulative_count[i] + (ui8) (count[i] = sorted_count[i].count);
-		minimum_range[i] = CMP_RED_TOTAL_COUNTS_m13 / count[i];
-		if (CMP_RED_TOTAL_COUNTS_m13 > (count[i] * minimum_range[i]))
-			++minimum_range[i];
-	}
-		
-	// range encode
-	key_p = (ui1 *) keysample_buffer;
-	comp_p = compressed_data;
-	low_bound_high_byte_p = ((ui1 *) &low_bound) + 5;
-	high_bound_high_byte_p = ((ui1 *) &high_bound) + 5;
-	low_bound = 0;
-	range = CMP_RED_MAXIMUM_RANGE_m13;
-	
-	for (i = n_keysamp_bytes; i;) {
-		for (; range >= minimum_range[bin = symbol_map[*key_p]]; key_p++) {
-			high_bound = low_bound + ((range * cumulative_count[bin + 1]) >> 16);
-			if (bin)
-				low_bound += (range * cumulative_count[bin]) >> 16;
-			range = high_bound - low_bound;
-			if (!--i)
-				break;
-		}
-		// full dump
-		if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p || !i) {
-			--high_bound;  // ensure goal < high bound on decode
-			ui1_p = high_bound_high_byte_p;
-			*comp_p++ = *ui1_p--; *comp_p++ = *ui1_p--; *comp_p++ = *ui1_p--;
-			*comp_p++ = *ui1_p--; *comp_p++ = *ui1_p--; *comp_p++ = *ui1_p--;
-			range = CMP_RED_MAXIMUM_RANGE_m13;
-			low_bound = 0;
-		} else {  // partial dump
-			do {
-				*comp_p++ = *high_bound_high_byte_p;
-				low_bound <<= 8;
-				high_bound <<= 8;
-			} while (*low_bound_high_byte_p == *high_bound_high_byte_p);
-			low_bound &= CMP_RED_RANGE_MASK_m13;
-			high_bound &= CMP_RED_RANGE_MASK_m13;
-			range = high_bound - low_bound;
-		}
-	}
-	
-	bytes = (si8) (comp_p - (ui1 *) compressed_data);
-	pad_bytes = bytes & (si8) 7;
-	if (pad_bytes)
-		bytes += (si8) 8 - pad_bytes;
-	bytes += n_stats_entries * sizeof(ui2);
-	bytes += deriv_level * sizeof(si4);
-	
-	free(compressed_data);
-	free(keysample_buffer);
-	free(count);
-	free(sorted_count);
-	free(symbol_map);
-	free(cumulative_count);
-	free(minimum_range);
-
-	return_m13(bytes);
-}
-
-
 tern	CMP_RED1_decode_m13(CPS_m13 *cps)
 {
 	tern				pos_derivs, no_zero_counts;
@@ -25249,7 +25047,7 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 
 	// calculate derivatives
 	if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
-		n_derivs = cps->params.goal_derivative_level;
+		n_derivs = cps->params.derivative_level;
 	else
 		n_derivs = CMP_differentiate_m13(cps);
 
@@ -26416,19 +26214,17 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	}
 	if (update_params == TRUE_m13) {
 		if (CMP_SRRED_find_parameters_m13(cps) == FALSE_m13) {
-			cps->direcs.flags &= ~CPS_DF_ALGORITHM_MASK_m13;
-			cps->direcs.flags |= CPS_DF_PRED_ALGORITHM_m13;
 			CMP_PRED2_encode_m13(cps);
 			return_m13(CMP_PRED2_encode_m13(cps));
 		}
 	}
 
 	// differentiate (do here because derivatives are what is scaled)
-	n_derivs = cps->params.goal_derivative_level;
 	cps->direcs.flags &= ~CPS_DF_FIND_DERIVATIVE_LEVEL_m13;
 	cps->direcs.flags |= CPS_DF_SET_DERIVATIVE_LEVEL_m13;
 	CMP_differentiate_m13(cps);
-	
+	n_derivs = (ui4) cps->params.derivative_level;
+
 	// save these values as they will be manipulated below
 	scrap_buffer = (si4 *) cps->params.scrap_buffers->buffer[0];
 	deriv_buffer = cps->params.derivative_buffer;
@@ -26513,11 +26309,13 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 {
-	ui1				n_derivs;
-	ui4				n_samps;
-	si4				*si4_p1, *si4_p2, *scaled, *derivs;
-	si8				i, n_scaled_samps, size, last_size, min_size;
-	sf8				tmp_sf8, scale, inv_scale, lock_scale, scale_step, min_scale, ratio;
+	ui4				n_samps, n_derivs, n_deriv_samps;
+	const si4			FINAL_WINDOW = 5;
+	si4				*si4_p1, *si4_p2, *deriv_samps, *scaled_samps;
+	si8				i, size, min_size, unscaled_size;
+	const sf8			MINIMUM_RATIO = 0.95;
+	sf8				scale, last_scale, inv_scale, min_scale, end_scale, scale_step, ratio;
+	sf8				tmp_sf8, score, last_score, max_score;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
 
@@ -26525,7 +26323,8 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	G_push_function_m13();
 #endif
 	
-	// returns scale - factor by which to divide raw samples
+	// sets scale & derivatives by which to divide raw samples in SRRED header
+	// returns FALSE_m13 on error
 
 	bh = cps->block_header;
 	if (cps->params.SRRED_test_samples) {
@@ -26538,12 +26337,14 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 		n_samps = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13;  // not set, use default
 	}
 	if (n_samps < bh->number_of_samples)
-		return_m13(FALSE_m13);  // don't set error => initial blocks can be small in live recordings - just set on next block  (FALSE_m13 return will just send tp PRED)
+		return_m13(FALSE_m13);  // don't set error => initial blocks can be small in live recordings - will just set on next block  (FALSE_m13 return will redirect to PRED)
 	
-	// get derivative & level
+	// set CPS to RED
+	
+	// differentiate to optimal derivative level
 	cps->direcs.flags &= ~CPS_DF_SET_DERIVATIVE_LEVEL_m13;
 	cps->direcs.flags |= CPS_DF_FIND_DERIVATIVE_LEVEL_m13;
-	n_derivs = CMP_differentiate_m13(cps);
+	n_derivs = (ui4) CMP_differentiate_m13(cps);  // CMP_differentiate_m13() sets optimal derivative in cps->params (both derivative_level & goal_derivative_level)
 	if (n_derivs == (ui1) 0xFF)
 		return_m13(FALSE_m13);
 	
@@ -26552,22 +26353,62 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	cps->direcs.flags |= CPS_DF_SET_DERIVATIVE_LEVEL_m13;
 	cps->params.goal_derivative_level = n_derivs;  // set cps set_derivative level (RED block header derivative level set by RED_encode_m13()
 	
-	// find unscaled size (no residuals)
-	derivs = cps->params.derivative_buffer;
-	last_size = min_size = CMP_range_encode_m13(derivs, (si8) n_samps, n_derivs);  // function expects base of derivatives array
-	min_scale = (sf8) 1.0;  // the scale at which min_size occurred
+	// step forward from scale == zero by large steps until peak found (binary search won't work for this)
+	// (peak will be closer to lower end of scales)
+	scale = (sf8) 0.0;
+	scale_step = (sf8) 0.01;
+	last_scale = 0.001;
+	last_score = CMP_SRRED_median_score_m13(cps, last_scale);
+	while (scale < (sf8) 1.0) {
+		scale += scale_step;
+		score = CMP_SRRED_median_score_m13(cps, scale);  // medians fall off monotonically from peak)
+		if (score < last_score)
+			break;
+		last_scale = scale;
+		last_score = score;
+	}
 	
-	// find optimal scale for this derivative level
-	scaled = (si4 *) cps->params.scrap_buffers->buffer[0];
-	scale = CMP_SRRED_BIG_STEP_m13 + CMP_SRRED_SMALL_STEP_m13;  // add small step to avoid checking for zero if backing up on first step
-	scale_step = CMP_SRRED_BIG_STEP_m13;
-	n_scaled_samps = (si8) (n_samps - n_derivs);
-	lock_scale = (sf8) 0.0;
-	while (scale <= (sf8) CMP_SRRED_TOP_SCALE_m13) {
-		// scale & round
-		si4_p1 = derivs + n_derivs;  // skip initial values (CMP_range_encode_m13() expects initial values to be there, but doesn't use them)
-		si4_p2 = scaled + n_derivs;  // skip initial values (CMP_range_encode_m13() expects initial values to be there, but doesn't use them)
-		for (i = n_scaled_samps; i--;) {
+	// step forward from scale by smaller steps until peak score found (binary search won't work for this)
+	scale = last_scale - scale_step;
+	last_score = CMP_SRRED_median_score_m13(cps, last_scale);
+	scale_step = (sf8) 0.001;
+	while (scale < (sf8) 1.0) {
+		scale += scale_step;
+		score = CMP_SRRED_median_score_m13(cps, scale);  // medians fall off monotonically from peak)
+		if (score < last_score)
+			break;
+		last_scale = scale;
+		last_score = score;
+	}
+
+	// find max score by linear search in very small steps
+	scale = last_scale - (scale_step * 2);
+	end_scale = last_scale;
+	scale_step = (sf8) 0.00005;
+	max_score = (sf8) 0.0;
+	while (scale <= end_scale) {
+		score = CMP_SRRED_score_m13(cps, scale);  // significant jittery in individual scores => have to check all in this range
+		if (score > max_score) {
+			max_score = score;
+			min_scale = scale;
+		}
+		scale += scale_step;
+	}
+	
+	// final: find optimal scale using tiny steps and actual sizes
+	// (smallest size can be a point or two off from maximim score)
+	deriv_samps = cps->params.derivative_buffer;
+	scaled_samps = (si4 *) cps->params.scrap_buffers->buffer[0];
+	n_deriv_samps = n_samps - n_derivs;
+	scale_step = (sf8) 0.00001;
+	scale = (min_scale -= (sf8) (FINAL_WINDOW >> 1) * scale_step);
+	min_size = POS_INF_SI8_m13;
+	for (i = 0; i < FINAL_WINDOW; ++i) {
+		
+		// scale & round data
+		si4_p1 = deriv_samps + n_derivs;  // skip initial values
+		si4_p2 = scaled_samps + n_derivs;  // skip initial values
+		for (i = n_deriv_samps; i--;) {
 			tmp_sf8 = (sf8) *si4_p1++ * scale;
 			if (tmp_sf8 >= (sf8) 0.0)
 				tmp_sf8 += (sf8) 0.5;
@@ -26577,50 +26418,289 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 		}
 		
 		// get scaled size
-		size = CMP_range_encode_m13(scaled, (si8) n_samps, n_derivs);  // function expects base of derivatives array
+		cps->params.derivative_buffer = scaled_samps;  // compress scaled derivative
+		CMP_swap_RED_PRED_m13(cps, CMP_RED_TO_PRED_m13);
+		CMP_PRED2_encode_m13(cps);  // PRED generally does a little better with scaled
+		size = bh->total_block_bytes;
+		cps->params.derivative_buffer = deriv_samps;  // restore
 		
-		// get residuals
-		si4_p1 = scaled + n_derivs;  // skip initial values (CMP_range_encode_m13() expects initial values to be there, but doesn't use them)
-		si4_p2 = derivs + n_derivs;  // skip initial values (CMP_range_encode_m13() expects initial values to be there, but doesn't use them)
+		// generate residuals
+		si4_p1 = deriv_samps + n_derivs;  // skip initial values
+		si4_p2 = scaled_samps + n_derivs;  // skip initial values
 		inv_scale = (sf8) 1.0 / scale;  // faster to multiply
-		for (i = n_scaled_samps; i--;) {  // round
-			tmp_sf8 = (sf8) *si4_p1 * inv_scale;
+		for (i = n_deriv_samps; i--;) {
+			tmp_sf8 = (sf8) *si4_p2 * inv_scale;
 			if (tmp_sf8 >= (sf8) 0.0)
 				tmp_sf8 += (sf8) 0.5;
 			else
 				tmp_sf8 -= (sf8) 0.5;
-			*si4_p1++ = *si4_p2++ - (si4) tmp_sf8;  // replace scaled value with its residual
-		}
-		
-		// add residual size to scaled size
-		size += CMP_range_encode_m13(scaled, (si8) n_samps, n_derivs);  // function expects base of derivatives array
-		
-		if (size < min_size) {
-			min_size = size;
-			min_scale = scale;  // min_scale == scale at which min_size occurred
+			*si4_p2++ = *si4_p1++ - (si4) tmp_sf8;  // replace scaled value with its residual
 		}
 
-		// set step
-		ratio = (sf8) last_size / (sf8) size;
-		if (scale_step == CMP_SRRED_BIG_STEP_m13) {
-			if (tmp_sf8 <= CMP_SRRED_DOWN_THRESH_m13) {
-				lock_scale = scale;  // guarantee small steps until reach this scale
-				scale -= CMP_SRRED_BIG_STEP_m13;  // back up (could have overstepped minimum)
-				scale_step = (sf8) CMP_SRRED_SMALL_STEP_m13;  // switch to small step
-			}
-		} else if (scale > lock_scale) {
-			if (ratio >= CMP_SRRED_UP_THRESH_m13)
-				scale_step = (sf8) CMP_SRRED_BIG_STEP_m13;  // switch back to big step
+		// get residual size
+		cps->params.derivative_buffer = scaled_samps;  // compress residuals
+		CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);
+		CMP_RED2_encode_m13(cps);  // RED generally does a little better with residuals
+		size += bh->total_block_bytes;
+		cps->params.derivative_buffer = deriv_samps;  // restore
+
+		if (size < min_size) {
+			min_size = size;
+			min_scale = scale;
 		}
 		
-		// update
-		last_size = size;
 		scale += scale_step;
 	}
-	
+
+	// get unscaled size (no residuals) with PRED
+	CMP_swap_RED_PRED_m13(cps, CMP_RED_TO_PRED_m13);
+	CMP_PRED2_encode_m13(cps);
+	unscaled_size = bh->total_block_bytes;
+	ratio = (sf8) min_size / (sf8) unscaled_size;
+	if (ratio > MINIMUM_RATIO)  // inflation, or benefit too small to be useful
+		min_scale = (sf8) 1.0;
+
+	// set scale in SRRED header
 	SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
 	SRRED_header->scale = (sf4) ((sf8) 1.0 / min_scale);  // invert & demote scale (lossless - sf4 has plenty of precision for this range of scales)
 	
+	return_m13(TRUE_m13);
+}
+
+
+sf8	CMP_SRRED_median_score_m13(CPS_m13 *cps, sf8 scale)
+{
+	const si4	MEDIAN_WINDOW = 5;  // 5 is a good number, but if changing, make sure it's odd, or change the code to handle even medians
+	const si4	CENTER_IDX = (MEDIAN_WINDOW >> 1);
+	si4		i, j, k;
+	const sf8	median_scale_step = (sf8) 0.00025;
+	sf8		scores[5], tmp_score;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (scale == 0)
+		scale = (sf8) 0.001;
+	else if (scale >= (sf8) 1.0)
+	    scale = (sf8) 0.999 - ((sf8) (MEDIAN_WINDOW - 1) * median_scale_step);
+
+	// get scores (from which to get median)
+	for (i = 0; i < MEDIAN_WINDOW; ++i) {
+		scores[i] = CMP_SRRED_score_m13(cps, scale);
+		scale += median_scale_step;
+	}
+
+	// sort (bubble, ascending)
+	i = MEDIAN_WINDOW; do {
+		for (j = 0, k = 1; k < i; ++k) {
+			if (scores[k - 1] > scores[k]) {
+				tmp_score = scores[k - 1];
+				scores[k - 1] = scores[k];
+				scores[k] = tmp_score;
+				j = k;  // highest swap index
+			}
+		}
+	} while ((i = j) > 1);
+	
+	return_m13(scores[CENTER_IDX]);
+}
+
+
+sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale)
+{
+	ui4	n_deriv_samps, deriv_level;
+	si4	*deriv_samps, *scaled_samps, *si4_p1, *si4_p2;
+	si8	i;
+	sf8	tmp_sf8, s_ws, r_ws, inv_scale, score;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	if (scale == 0)
+		scale = (sf8) 0.001;
+	else if (scale >= (sf8) 1.0)
+	    scale = (sf8) 0.999;
+
+	// scale & round data
+	deriv_level = (si4) cps->params.derivative_level;
+	n_deriv_samps = cps->block_header->number_of_samples - deriv_level;  // don't scale initial values
+	deriv_samps = cps->params.derivative_buffer;  // don't scale initial values
+	scaled_samps = cps->params.scrap_buffers->buffer[0];
+	si4_p1 = deriv_samps + deriv_level;  // skip initial values;
+	si4_p2 = scaled_samps + deriv_level;  // skip initial values;
+	for (i = n_deriv_samps; i--;) {
+		tmp_sf8 = (sf8) *si4_p1++ * scale;
+		if (tmp_sf8 >= (sf8) 0.0)
+			tmp_sf8 += (sf8) 0.5;
+		else
+			tmp_sf8 -= (sf8) 0.5;
+		*si4_p2++ = (si4) tmp_sf8;
+	}
+	
+	// get scaled weighted sum
+	s_ws = CMP_SRRED_weighted_sum_m13(cps);
+	
+	// generate residuals
+	si4_p1 = deriv_samps + deriv_level;  // skip initial values;
+	si4_p2 = scaled_samps + deriv_level;  // skip initial values;
+	inv_scale = (sf8) 1.0 / scale;  // faster to multiply
+	for (i = n_deriv_samps; i--;) {
+		tmp_sf8 = (sf8) *si4_p2 * inv_scale;
+		if (tmp_sf8 >= (sf8) 0.0)
+			tmp_sf8 += (sf8) 0.5;
+		else
+			tmp_sf8 -= (sf8) 0.5;
+		*si4_p2++ = *si4_p1++ - (si4) tmp_sf8;  // replace scaled value with its residual
+	}
+
+	// get residuals weighted sum
+	r_ws = CMP_SRRED_weighted_sum_m13(cps);
+	
+	// calculate final score
+	score = (sf8) n_deriv_samps / (s_ws + r_ws);
+	
+	return_m13(score);
+}
+
+
+sf8	CMP_SRRED_weighted_sum_m13(CPS_m13 *cps)
+{
+	ui1		*key_p, *ui1_p, ks_flag;
+	ui4		*ui4_p, *count, *sorted_count, tmp_sorted_count, n_deriv_samps;
+	si4 		*si4_p, *scaled_samps, deriv_level, diff, low_d, high_d, n_stats_entries;
+	const si8	OVERFLOW_BYTES = 4;  // just use max & skip overhead of CMP_get_overflow_bytes_m13()
+	si8		i, j, k;
+	sf8		ws, bin;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// generated SRRED weighted sum from scaled buffer (scrap buffer zero)
+	
+	deriv_level = (si4) cps->params.derivative_level;
+	n_deriv_samps = cps->block_header->number_of_samples - deriv_level;  // skip initial values
+	scaled_samps = cps->params.scrap_buffers->buffer[0];
+
+	// generate counts
+	count = (ui4 *) cps->params.count;
+	key_p = (ui1 *) cps->params.keysample_buffer;
+	si4_p = scaled_samps + deriv_level;  // skip initial values
+	low_d = (si4) -127; high_d = (si4) 127;
+	ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m13;
+	for (i = n_deriv_samps; i--;) {
+		diff = *si4_p++;
+		if (diff < low_d || diff > high_d) {
+			ui1_p = (ui1 *) &diff;
+			++count[*key_p++ = ks_flag];
+			j = OVERFLOW_BYTES; do {
+				++count[*key_p++ = *ui1_p++];
+			} while (--j);
+		} else {
+			++count[*key_p++ = (ui1) diff];
+		}
+	}
+
+	// build sorted count (interleave)
+	sorted_count = (ui4 *) cps->params.sorted_count;  // allocated as CMP_STATISTICS_BIN_m13, but can still that use memory because bigger than ui4
+	for (i = n_stats_entries = 0, j = 255, k = 128; k--; ++i, --j) {
+		if (count[i])
+			sorted_count[n_stats_entries] = count[i];
+		if (count[j])
+			sorted_count[n_stats_entries] = count[j];
+	}
+	if (n_stats_entries < 3)  // when scaled down to fewer than 3 bins, SRRED won't do any better than PRED
+		return_m13((sf8) 0.0);
+	
+	// build sorted counts (bubble sort, descending)
+	i = n_stats_entries;
+	do {
+		for (j = 0, k = 1; k < i; ++k) {
+			if (sorted_count[k - 1] < sorted_count[k]) {
+				tmp_sorted_count = sorted_count[k - 1];
+				sorted_count[k - 1] = sorted_count[k];
+				sorted_count[k] = tmp_sorted_count;
+				j = k;  // highest swap index
+			}
+		}
+	} while ((i = j) > 1);
+
+	// calculate weighted sum from counts
+	ws = (sf8) 0.0;
+	bin = (sf8) 1.0;  // bins number from 1 (important for score)
+	ui4_p = sorted_count;
+	for (i = n_stats_entries; i--;)
+		ws += log((sf8) *ui4_p++) * bin++;
+	
+	return_m13(ws);
+}
+
+
+tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED)
+{
+	tern	RED_current;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// switches buffers from RED to PRED & vice versa
+	// RED_to_PRED == TRUE_m13 switch from RED to PRED
+	// RED_to_PRED == FALSE_m13 switch from PRED to RED
+	// RED_to_PRED == UNKNOWN_m13 switch to other from current
+	// returns FALSE_m13 on failure
+
+	if (cps->params.PRED_base_count == NULL) {
+		G_set_error_m13(E_CMP_m13, "PRED buffers are not allocated");
+		return_m13(FALSE_m13);
+	}
+	
+	// determine current state of buffers
+	if (cps->params.count == cps->params.PRED_base_count) {
+		RED_current = FALSE_m13;
+	} else if (cps->params.count == *((void **) cps->params.PRED_base_count)) {
+		RED_current = TRUE_m13;
+	} else {
+		G_set_error_m13(E_CMP_m13, "PRED base buffers are not set properly");
+		return_m13(FALSE_m13);
+	}
+	
+	if (RED_current == TRUE_m13) {
+		if (RED_to_PRED == FALSE_m13)  // requested PRED to RED => already RED
+			return_m13(TRUE_m13);
+		else
+			RED_to_PRED = TRUE_m13;  // cover UNKNOWN_m13 case
+	} else if (RED_current == FALSE_m13) {
+		if (RED_to_PRED == TRUE_m13)  // requested RED to PRED => already PRED
+			return_m13(TRUE_m13);
+		else
+			RED_to_PRED = FALSE_m13;  // cover UNKNOWN_m13 case
+	}
+	
+	// change RED buffers to PRED buffers
+	if (RED_to_PRED == TRUE_m13) {
+		cps->params.count = cps->params.PRED_base_count;
+		cps->params.sorted_count = cps->params.PRED_base_sorted_count;
+		cps->params.symbol_map = cps->params.PRED_base_symbol_map;
+		cps->params.cumulative_count = cps->params.PRED_base_cumulative_count;
+		cps->params.minimum_range = cps->params.PRED_base_minimum_range;
+
+		return_m13(TRUE_m13);
+	} else {  // change PRED buffers to RED buffers
+		cps->params.PRED_base_count = cps->params.count;
+		cps->params.PRED_base_sorted_count = cps->params.sorted_count;
+		cps->params.PRED_base_symbol_map = cps->params.symbol_map;
+		cps->params.PRED_base_cumulative_count = cps->params.cumulative_count;
+		cps->params.PRED_base_minimum_range = cps->params.minimum_range;
+		cps->params.count = *((void **) cps->params.PRED_base_count);  // pointer to first PRED array
+		cps->params.sorted_count = *((void **) cps->params.PRED_base_sorted_count);  // pointer to first PRED array
+		cps->params.symbol_map = *((void **) cps->params.PRED_base_symbol_map);  // pointer to first PRED array
+		cps->params.cumulative_count = *((void **) cps->params.PRED_base_cumulative_count);  // pointer to first PRED array
+		cps->params.minimum_range = *((void **) cps->params.PRED_base_minimum_range);  // pointer to first PRED array
+	}
+		
 	return_m13(TRUE_m13);
 }
 
@@ -27013,7 +27093,6 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	si8				*in_x, *new_in_x, *si8_p1, *si8_p2, scale;
 	sf8				VDS_alg_thresh, *out_x, *template, *sf8_p1, *sf8_p2, *sf8_p3, *in_y, *out_y;
 	sf8				*abs_diffs, *quantval_buf, diff, thresh, baseline, *resids, max_dx, max_dy;
-	void				*saved_count_p, *saved_sorted_count_p, *saved_symbol_map_p, *saved_cumulative_count_p, *saved_minimum_range_p;
 	CMP_BUFFERS_m13			*VDS_in_bufs, *VDS_out_bufs;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_VDS_MODEL_FIXED_HDR_m13	*VDS_header;
@@ -27229,17 +27308,8 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 		*si4_p++ = (si4) *si8_p1++;
 	
 	// change PRED amplitude buffers to RED time buffers
-	saved_count_p = cps->params.count;
-	saved_sorted_count_p = cps->params.sorted_count;
-	saved_symbol_map_p = cps->params.symbol_map;
-	saved_cumulative_count_p = cps->params.cumulative_count,
-	saved_minimum_range_p = cps->params.minimum_range,
-	cps->params.count = *((void **) saved_count_p);
-	cps->params.sorted_count = *((void **) saved_sorted_count_p);
-	cps->params.symbol_map = *((void **) saved_symbol_map_p);
-	cps->params.cumulative_count = *((void **) saved_cumulative_count_p);
-	cps->params.minimum_range = *((void **) saved_minimum_range_p);
-
+	CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);
+	
 	VDS_time_model_region = (ui1 *) bh + VDS_total_block_bytes;
 	cps->params.model_region = VDS_time_model_region;
 	CMP_RED2_encode_m13(cps); // start with RED2 for times - may fall through
@@ -27256,11 +27326,7 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	}
 	
 	// restore PRED amplitude buffers
-	cps->params.count = saved_count_p;
-	cps->params.sorted_count = saved_sorted_count_p;
-	cps->params.symbol_map = saved_symbol_map_p;
-	cps->params.cumulative_count = saved_cumulative_count_p;
-	cps->params.minimum_range = saved_minimum_range_p;
+	CMP_swap_RED_PRED_m13(cps, CMP_RED_TO_PRED_m13);
 
 	// set block back to VDS values
 	bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
