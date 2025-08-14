@@ -292,10 +292,10 @@ tern	G_all_zeros_m13(ui1 *bytes, si4 field_length)
 
 CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, const si1 *path, LH_m13 *parent, si4 n_segs, tern chan_recs, tern seg_recs)
 {
-	si1			*seg_type_str, tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
-	ui4			type_code;
-	si8			i;
-	UH_m13	*uh;
+	si1		*seg_type_str, tmp_str[PATH_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
+	ui4		type_code;
+	si8		i;
+	UH_m13		*uh;
 	SEG_m13		*seg;
 	PROC_GLOBS_m13	*pg;
 	
@@ -415,9 +415,9 @@ CHAN_m13	*G_alloc_channel_m13(CHAN_m13 *chan, FPS_m13 *proto_fps, const si1 *pat
 
 SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, const si1 *path, LH_m13 *parent, si4 seg_num, tern seg_recs)
 {
-	si1 tmp_str[PATH_BYTES_m13];
-	ui4			type_code;
-	UH_m13	*uh;
+	si1 		tmp_str[PATH_BYTES_m13];
+	ui4		type_code;
+	UH_m13		*uh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -557,14 +557,14 @@ SEG_m13	*G_alloc_segment_m13(SEG_m13 *seg, FPS_m13 *proto_fps, const si1 *path, 
 
 SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chans, si4 n_vid_chans, si4 n_segs, si1 **ts_chan_names, si1 **vid_chan_names, tern sess_recs, tern seg_sess_recs, tern chan_recs, tern seg_recs)
 {
-	si1		free_names, tmp_str[PATH_BYTES_m13], number_str[FILE_NUMBERING_DIGITS_m13 + 1];
-	si8		i;
-	SESS_m13	*sess;
-	UH_m13		*uh;
-	FPS_m13		*gen_fps;
-	SSR_m13		*ssr;
-	CHAN_m13	*chan;
-	PROC_GLOBS_m13	*pg;
+	si1			free_names, tmp_str[PATH_BYTES_m13], number_str[FILE_NUMBERING_DIGITS_m13 + 1];
+	si8			i;
+	SESS_m13		*sess;
+	UH_m13			*uh;
+	FPS_m13			*gen_fps;
+	SSR_m13			*ssr;
+	CHAN_m13		*chan;
+	PROC_GLOBS_m13		*pg;
 
 	
 #ifdef FT_DEBUG_m13
@@ -1165,7 +1165,7 @@ si8	G_build_contigua_m13(void *level_header)
 						if (k) {
 							contiguon->end_samp_num = (tsi[k].start_samp_num + absolute_numbering_offset) - 1;
 							last_block_samples = tsi[k].start_samp_num - tsi[k - 1].start_samp_num;
-							last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1e6);
+							last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1.0e6);
 							contiguon->end_time = (tsi[k - 1].start_time + last_block_usecs) - 1;
 						} else {  // discontinuity on segment transition
 							contiguon->end_samp_num = last_segment_end_sample_number;
@@ -1192,7 +1192,7 @@ si8	G_build_contigua_m13(void *level_header)
 		// close final contiguon
 		contiguon->end_samp_num = (tsi[k].start_samp_num + absolute_numbering_offset) - 1;
 		last_block_samples = tsi[k].start_samp_num - tsi[k - 1].start_samp_num;
-		last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1e6);
+		last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1.0e6);
 		contiguon->end_time = (tsi[k - 1].start_time + last_block_usecs) - 1;
 		contiguon->end_seg_num = (si4) last_segment_number;
 	} else {  // VID_CHAN_TYPE_CODE_m13
@@ -1251,7 +1251,7 @@ si8	G_build_contigua_m13(void *level_header)
 						if (k) {
 							contiguon->end_frame_num = ((si8) vi[k].start_frame_num + absolute_numbering_offset) - 1;
 							last_block_frames = vi[k].start_frame_num - vi[k - 1].start_frame_num;
-							last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1e6);
+							last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1.0e6);
 							contiguon->end_time = (vi[k - 1].start_time + last_block_usecs) - 1;
 						} else {  // discontinuity on segment transition
 							contiguon->end_frame_num = last_segment_end_frame_number;
@@ -1278,7 +1278,7 @@ si8	G_build_contigua_m13(void *level_header)
 		// close final contiguon
 		contiguon->end_frame_num = (vi[k].start_frame_num + absolute_numbering_offset) - 1;
 		last_block_frames = vi[k].start_frame_num - vi[k - 1].start_frame_num;
-		last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1e6);
+		last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1.0e6);
 		contiguon->end_time = (vi[k - 1].start_time + last_block_usecs) - 1;
 		contiguon->end_seg_num = (si4) last_segment_number;
 	}
@@ -1353,7 +1353,6 @@ Sgmt_REC_m13	*G_build_Sgmt_records_m13(void *level_header, si4 search_mode, ui4 
 	Sgmt_REC_m13		*Sgmt_recs, *Sgmt_rec;
 	LH_m13			*lh;
 	PROC_GLOBS_m13		*pg;
-
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -1607,7 +1606,6 @@ tern	G_calculate_indices_CRCs_m13(FPS_m13 *fps)
 	INDEX_m13	*idx;
 	UH_m13		*uh;
 
-	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -1647,7 +1645,6 @@ tern	G_calculate_record_data_CRCs_m13(FPS_m13 *fps)
 	REC_HDR_m13	*rh;
 	UH_m13		*uh;
 	
-	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -1676,7 +1673,6 @@ tern	G_calculate_time_series_data_CRCs_m13(FPS_m13 *fps)
 	si8 			i;
 	UH_m13			*uh;
 	CMP_FIXED_BH_m13	*bh;
-
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -1999,6 +1995,8 @@ tern	G_check_password_m13(const si1 *password)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+	
+	// returns FALSE_m13 for invalid password
 
 	// check pointer: return FALSE_m13 for NULL
 	if (password == NULL) {
@@ -2017,7 +2015,6 @@ tern	G_check_password_m13(const si1 *password)
 		return_m13(FALSE_m13);
 	}
 		
-	// return TRUE_m13 for valid password
 	return_m13(TRUE_m13);
 }
 
@@ -2028,8 +2025,8 @@ si4	G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess)
 	si4			remapped_start_seg, remapped_end_seg, remapped_seg_cnt;
 	si4			i, j, offset, mapped_segs, sess_segs;
 	CHAN_m13		*chan;
-	SEG_m13		**remapped_segs;
-	PROC_GLOBS_m13	*pg;
+	SEG_m13			**remapped_segs;
+	PROC_GLOBS_m13		*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2213,8 +2210,8 @@ tern	G_condition_password_m13(const si1 *password, si1 *password_bytes, tern exp
 
 tern	G_condition_slice_m13(void *level_header, SLICE_m13 *slice)
 {
-	si8		test_time;
-	PROC_GLOBS_m13	*pg;
+	si8			test_time;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2577,8 +2574,8 @@ BEHAVIOR_m13	*G_current_behavior_entry_m13(void)
 #if defined MACOS_m13 || defined LINUX_m13
 inline si8  G_current_uutc_m13(void)
 {
-	struct timeval  tv;
-	si8 uutc;
+	struct timeval		tv;
+	si8			uutc;
 	
 
 	gettimeofday(&tv, NULL);
@@ -2592,12 +2589,12 @@ inline si8  G_current_uutc_m13(void)
 #ifdef WINDOWS_m13
 si8  G_current_uutc_m13(void)
 {
-	static const ui8  EPOCH = (ui8) 116444736000000000;
-	struct timeval  tv;
-	si8 uutc, sec, usec;
-	SYSTEMTIME  system_time;
-	FILETIME  file_time;
-	ui8 time;
+	static const ui8	EPOCH = (ui8) 116444736000000000;
+	struct timeval		tv;
+	si8			uutc, sec, usec;
+	SYSTEMTIME		system_time;
+	FILETIME		file_time;
+	ui8			time;
 	
 
 	GetSystemTime(&system_time);
@@ -2619,8 +2616,8 @@ inline
 #endif
 si4  G_days_in_month_m13(si4 month, si4 year)
 {
-	static const si4  standard_days[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-	si4 days;
+	static const si4	standard_days[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+	si4			days;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2650,12 +2647,12 @@ si4  G_days_in_month_m13(si4 month, si4 year)
 
 tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 {
-	ui1			*decryption_key, encryption_rounds;
-	si1			*encryption_2, *encryption_3;
-	PROC_GLOBS_m13		*pg;
-	PASSWORD_DATA_m13	*pwd;
-	METADATA_SECTION_3_m13	*section_3;
-	UH_m13			*uh;
+	ui1				*decryption_key, encryption_rounds;
+	si1				*encryption_2, *encryption_3;
+	PROC_GLOBS_m13			*pg;
+	PASSWORD_DATA_m13		*pwd;
+	METADATA_SECTION_3_m13		*section_3;
+	UH_m13				*uh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2794,15 +2791,15 @@ tern	G_decrypt_records_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR
 
 tern G_decrypt_time_series_m13(FPS_m13 *fps)
 {
-	static tern			warning_delivered = FALSE_m13;
-	ui1				*key, encryption_rounds;
-	si1				enc_level;
-	si8 i, encryption_bytes, encryptable_bytes, n_items;
-	CPS_m13				*cps;
+	static tern		warning_delivered = FALSE_m13;
+	ui1			*key, encryption_rounds;
+	si1			enc_level;
+	si8			i, encryption_bytes, encryptable_bytes, n_items;
+	CPS_m13			*cps;
 	CMP_FIXED_BH_m13	*bh;
-	PASSWORD_DATA_m13		*pwd;
+	PASSWORD_DATA_m13	*pwd;
 	PROC_GLOBS_m13		*pg;
-	UH_m13		*uh;
+	UH_m13			*uh;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2967,12 +2964,12 @@ void	G_delete_function_stack_m13(void)
 
 si4 G_DST_offset_m13(si8 uutc)
 {
-	si4 i, month, DST_start_month, DST_end_month;
-	si4 first_weekday_of_month, target_day_of_month, last_day_of_month;
-	time_t  utc, local_utc, change_utc;
-	struct tm time_info = { 0 }, change_time_info = { 0 };
+	si4				i, month, DST_start_month, DST_end_month;
+	si4				first_weekday_of_month, target_day_of_month, last_day_of_month;
+	time_t				utc, local_utc, change_utc;
+	struct tm			time_info = { 0 }, change_time_info = { 0 };
 	DAYLIGHT_TIME_CHANGE_CODE_m13	*first_DTCC, *last_DTCC, *change_DTCC;
-	PROC_GLOBS_m13		*pg;
+	PROC_GLOBS_m13			*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -3101,8 +3098,8 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	ui1			*encryption_key;
 	PASSWORD_DATA_m13	*pwd;
 	METADATA_m13		*md;
-	PROC_GLOBS_m13	*pg;
-	UH_m13	*uh;
+	PROC_GLOBS_m13		*pg;
+	UH_m13			*uh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -3149,9 +3146,9 @@ tern	G_encrypt_records_m13(FPS_m13 *fps)
 	ui1			*encryption_key;
 	si8			i;
 	PASSWORD_DATA_m13	*pwd;
-	REC_HDR_m13	*rh;
-	PROC_GLOBS_m13	*pg;
-	UH_m13	*uh;
+	REC_HDR_m13		*rh;
+	PROC_GLOBS_m13		*pg;
+	UH_m13			*uh;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -3274,10 +3271,10 @@ tern  	G_encrypt_video_m13(FPS_m13 *fps)
 #if defined MACOS_m13 || defined LINUX_m13
 tern	G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password)
 {
-	si1		pw_copy[MAX_ASCII_PASSWORD_STRING_BYTES_m13], dc[8];
-	const si4	MAX_ATTEMPTS = 3;
-	si4		i, c, attempts;
-	struct termios	term, saved_term;
+	si1			pw_copy[MAX_ASCII_PASSWORD_STRING_BYTES_m13], dc[8];
+	const si4		MAX_ATTEMPTS = 3;
+	si4			i, c, attempts;
+	struct termios		term, saved_term;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -3319,7 +3316,7 @@ ENTER_ASCII_PASSWORD_RETRY_1_m13:
 		// set timeout
 		tv.tv_sec = (time_t) timeout_secs;
 		timeout_secs -= (sf8) tv.tv_sec;
-		tv.tv_usec = (time_t) (timeout_secs * (sf8) 1e6);
+		tv.tv_usec = (time_t) (timeout_secs * (sf8) 1.0e6);
 
 		// wait for keyboard entry
 		FD_ZERO(&fds);
@@ -3440,7 +3437,7 @@ tern	G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_n
 		// set timeout
 		tv.tv_sec = (time_t) timeout_secs;
 		timeout_secs -= (sf8) tv.tv_sec;
-		tv.tv_usec = (time_t) (timeout_secs * (sf8) 1e6);
+		tv.tv_usec = (time_t) (timeout_secs * (sf8) 1.0e6);
 
 		// wait for keyboard entry
 		FD_ZERO(&fds);
@@ -3762,11 +3759,11 @@ si8	G_file_length_m13(FILE_m13 *fp, const si1 *path)
 si1	**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags)
 {
 	tern	regex;
-	si1		tmp_enclosing_directory[PATH_BYTES_m13], tmp_path[PATH_BYTES_m13];
-	si1		tmp_name[PATH_BYTES_m13], tmp_extension[16], tmp_ext[16], *buffer, *c, *c2;
-	si1		**tmp_ptr_ptr;
-	ui4		path_parts;
-	si4		i, j, n_in_files, *n_out_files;
+	si1	tmp_enclosing_directory[PATH_BYTES_m13], tmp_path[PATH_BYTES_m13];
+	si1	tmp_name[PATH_BYTES_m13], tmp_extension[16], tmp_ext[16], *buffer, *c, *c2;
+	si1	**tmp_ptr_ptr;
+	ui4	path_parts;
+	si4	i, j, n_in_files, *n_out_files;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -4028,9 +4025,9 @@ FILE_TIMES_m13	*G_file_times_m13(FILE_m13 *fp, const si1 *path, FILE_TIMES_m13 *
 		ft = (FILE_TIMES_m13 *) malloc_m13(sizeof(FILE_TIMES_m13));
 
 #if defined MACOS_m13 || defined LINUX_m13
-	si4		fd;
-	struct_stat_m13	sb;
-	struct timeval 	set_times[2] = {0};
+	si4			fd;
+	struct_stat_m13		sb;
+	struct timeval 		set_times[2] = {0};
 	
 	
 	// set times: access and modification only
@@ -4226,7 +4223,7 @@ CONTIGUON_m13	*G_find_discontinuities_m13(void *level_header, si8 *n_contigua)
 		md2 = &seg->metadata_fps->metadata->time_series_section_2;
 		sample_offsets[i] = md2->session_start_sample_number;
 		if (samp_period == (sf8) 0.0)
-			samp_period = (sf8) 1e6 / md2->sampling_frequency;
+			samp_period = (sf8) 1.0e6 / md2->sampling_frequency;
 	}
 	
 	// count contigua
@@ -4453,7 +4450,7 @@ si8	G_find_index_m13(SEG_m13 *seg, si8 target, ui4 mode)
 #if defined MACOS_m13 || defined LINUX_m13
 si1	*G_find_metadata_file_m13(const si1 *path, si1 *md_path)
 {
-	tern	match;
+	tern		match;
 	si1		*c, *name;
 	ui4		code;
 	size_t		len;
@@ -4725,8 +4722,8 @@ WN_FIND_MDF_SEG_LEVEL_m13:
 
 si8	G_find_record_index_m13(FPS_m13 *rec_inds_fps, si8 target_time, ui4 mode, si8 low_idx)
 {
-	si8				i, idx, n_inds, high_idx, high_time_diff, low_time_diff;
-	REC_IDX_m13		*ri;
+	si8		i, idx, n_inds, high_idx, high_time_diff, low_time_diff;
+	REC_IDX_m13	*ri;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -4955,9 +4952,6 @@ void	G_free_global_tables_m13(void)
 	GLOBAL_TABLES_m13	*tables;
 	
 	
-	// debug
-	G_set_signal_traps_m13(FALSE_m13);
-	
 	tables = globals_m13->tables;
 	if (tables == NULL)
 		return;
@@ -5013,13 +5007,14 @@ void	G_free_global_tables_m13(void)
 }
 
 
-void  G_free_globals_m13(tern cleanup_for_exit)
+void	G_free_globals_m13(tern cleanup_for_exit)
 {
 	si4			i, list_size;
 	BEHAVIOR_STACK_m13	**behavior_stack_ptrs;
 	FLOCK_ENTRY_m13		**lock_ptrs;
 	PROC_GLOBS_m13		**pg_ptrs;
 	ERROR_m13		*err;
+	
 #ifdef FT_DEBUG_m13
 	FUNCTION_STACK_m13	**function_stack_ptrs;
 #endif
@@ -5209,10 +5204,10 @@ tern	G_free_segment_m13(void *ptr)
 
 tern	G_free_session_m13(void *ptr)
 {
-	ui4			type_code;
-	si4			i;
-	SESS_m13 		*sess, **sess_ptr;
-	CHAN_m13		*chan;
+	ui4		type_code;
+	si4		i;
+	SESS_m13 	*sess, **sess_ptr;
+	CHAN_m13	*chan;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5292,11 +5287,11 @@ tern	G_free_session_m13(void *ptr)
 
 tern	G_free_ssr_m13(void *ptr)
 {
-	ui4		type_code;
-	si4		i, n_segs;
-	FPS_m13		*gen_fps;
-	SSR_m13		*ssr, **ssr_ptr;
-	PROC_GLOBS_m13	*pg;
+	ui4			type_code;
+	si4			i, n_segs;
+	FPS_m13			*gen_fps;
+	SSR_m13			*ssr, **ssr_ptr;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5567,8 +5562,8 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 
 si1	**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names)
 {
-	si8 i;
-	si1 number_str[FILE_NUMBERING_DIGITS_m13 + 1];
+	si8	i;
+	si1	number_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5705,7 +5700,7 @@ si8	G_generate_recording_time_offset_m13(si8 recording_start_time_uutc)
 {
 	time_t			recording_start_time_utc, offset_utc_time, UTC_offset, secs_since_midnight;
 	struct tm		time_info;
-	PROC_GLOBS_m13	*pg;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5847,8 +5842,8 @@ inline
 #endif
 tern G_include_record_m13(ui4 type_code, si4 *record_filters)
 {
-	si1			mode;
-	const si1		INCLUDE_POSITIVE = 1, EXCLUDE_NEGATIVE = -1;
+	si1		mode;
+	const si1	INCLUDE_POSITIVE = 1, EXCLUDE_NEGATIVE = -1;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -5946,7 +5941,7 @@ si8	G_index_for_time_m13(void *level_header, si8 target_time, ui4 mode, ...)  //
 		ref_time = va_arg(v_args, si8);
 		rate = va_arg(v_args, sf8);
 		va_end(v_args);
-		rate /= (sf8) 1e6;  // indices per microsecond
+		rate /= (sf8) 1.0e6;  // indices per microsecond
 		tmp_sf8 = (sf8) (target_time - ref_time) * rate;
 		absolute_numbering_offset = 0;
 		goto INDEX_FOR_TIME_FINALIZE_m13;  // just to avoid a giant "else"
@@ -6041,7 +6036,7 @@ si8	G_index_for_time_m13(void *level_header, si8 target_time, ui4 mode, ...)  //
 		ref_time = tsi->start_time;
 		
 		if (terminal_index == FALSE_m13 && i == n_inds) {
-			rate = tmd2->sampling_frequency / (sf8) 1e6;
+			rate = tmd2->sampling_frequency / (sf8) 1.0e6;
 		} else {
 			++tsi;
 			rate = (sf8) (tsi->start_samp_num - ref_index) / (sf8) (tsi->start_time - ref_time);  // samples per microsecond
@@ -6103,7 +6098,7 @@ si8	G_index_for_time_m13(void *level_header, si8 target_time, ui4 mode, ...)  //
 		ref_index = vi->start_frame_num;
 		ref_time = vi->start_time;
 		if (terminal_index == FALSE_m13 && i == n_inds) {
-			rate = vmd2->frame_rate / (sf8) 1e6;
+			rate = vmd2->frame_rate / (sf8) 1.0e6;
 		} else {
 			++vi;
 			rate = (sf8) (vi->start_frame_num - ref_index) / (sf8) (vi->start_time - ref_time);  // frames per microsecond
@@ -6377,7 +6372,6 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	globals_m13->thread_list->top_idx = (si4) -1;
 	pthread_mutex_init_m13(&globals_m13->thread_list->mutex, NULL);
 	
-
 	// application info
 	if (app_path) {
 		va_list		v_args;
@@ -6431,9 +6425,9 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	misc->temp_dir[len - 1] = 0;  // remove trailing '\'
 	#endif
 	misc->file_creation_umask = GLOBALS_FILE_CREATION_UMASK_DEFAULT_m13;
-#ifndef FT_DEBUG_m13  // otherwise done above
+	#ifndef FT_DEBUG_m13  // otherwise done above
 	misc->main_id = gettid_m13();
-#endif
+	#endif
 	misc->access_times = GLOBALS_ACCESS_TIMES_DEFAULT_m13;
 	misc->threading = GLOBALS_THREADING_DEFAULT_m13;  // used to set process_globals default (process values can be set independently)
 	misc->memory_mapping = GLOBALS_MEMORY_MAPPING_DEFAULT_m13;  // used to set process_globals default (process values can be set independently)
@@ -6453,9 +6447,9 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	
 	// do these after stacks active
 	PROC_thread_list_add_m13(0, 0, NULL, "main");  // main() not launched by process, so not automtically added to list
-#ifdef FT_DEBUG_m13
+	#ifdef FT_DEBUG_m13
 	G_push_function_exec_m13("main", 0);  // main can't push to the function stack because it has to initialize globals first  [don't know line for main()]
-#endif
+	#endif
 	
 	// get user library preferences
 	G_read_medlibrc_m13(app_path);
@@ -6535,9 +6529,9 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 {
 	PROC_GLOBS_m13			*pg;
 	TS_METADATA_SECTION_2_m13	*tmd2;
-	VID_METADATA_SECTION_2_m13		*vmd2;
-	METADATA_SECTION_3_m13			*md3;
-	UH_m13			*uh;
+	VID_METADATA_SECTION_2_m13	*vmd2;
+	METADATA_SECTION_3_m13		*md3;
+	UH_m13				*uh;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -6937,8 +6931,8 @@ ui4	G_level_m13(const si1 *full_file_name, ui4 *type_code)
 
 ui4	G_level_from_base_name_m13(si1 *path, si1 *level_path)
 {
-	si1		tmp_path[PATH_BYTES_m13], tmp_path2[PATH_BYTES_m13];
-	ui4		level;
+	si1	tmp_path[PATH_BYTES_m13], tmp_path2[PATH_BYTES_m13];
+	ui4	level;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -7197,10 +7191,10 @@ tern	G_MED_file_m13(ui4 type_code)
 
 ui4  G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1 *MED_name)
 {
-	si1 extension[TYPE_BYTES_m13], local_MED_name[SEG_NAME_BYTES_m13];
-	si1 local_MED_dir[PATH_BYTES_m13];;
-	si4 fe, name_bytes;
-	ui4 code;
+	si1	extension[TYPE_BYTES_m13], local_MED_name[SEG_NAME_BYTES_m13];
+	si1	local_MED_dir[PATH_BYTES_m13];;
+	si4	fe, name_bytes;
+	ui4	code;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -7366,12 +7360,12 @@ const si1	*G_MED_type_string_from_code_m13(ui4 code)
 
 tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps)
 {
-	ui4 type_code;
-	METADATA_SECTION_1_m13			*md1_1, *md1_2, *md1_m;
+	ui4				type_code;
+	METADATA_SECTION_1_m13		*md1_1, *md1_2, *md1_m;
 	TS_METADATA_SECTION_2_m13	*tmd2_1, *tmd2_2, *tmd2_m;
-	VID_METADATA_SECTION_2_m13		*vmd2_1, *vmd2_2, *vmd2_m;
-	METADATA_SECTION_3_m13			*md3_1, *md3_2, *md3_m;
-	tern  	equal;
+	VID_METADATA_SECTION_2_m13	*vmd2_1, *vmd2_2, *vmd2_m;
+	METADATA_SECTION_3_m13		*md3_1, *md3_2, *md3_m;
+	tern				equal;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -7669,10 +7663,10 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 }
 
 
-tern  G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m13 * merged_fps)
+tern	G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m13 * merged_fps)
 {
-	UH_m13	*uh_1, *uh_2, *merged_uh;
-	tern  equal = TRUE_m13;
+	UH_m13		*uh_1, *uh_2, *merged_uh;
+	tern		equal = TRUE_m13;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -7810,7 +7804,7 @@ tern  G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m13 * m
 }
 
 
-void  G_message_m13(const si1 *fmt, ...)
+void	G_message_m13(const si1 *fmt, ...)
 {
 	va_list		v_args;
 	ui4		behavior;
@@ -8289,11 +8283,11 @@ tern	G_open_records_m13(void *level_header, ...)  // varagrgs(level == ssr): si4
 }
 
 
-SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
+SSR_m13	*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 {
-	si4		i, j, mapped_segs, first_seg_num;
-	SSR_m13		*ssr;
-	PROC_GLOBS_m13	*pg;
+	si4			i, j, mapped_segs, first_seg_num;
+	SSR_m13			*ssr;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -8342,10 +8336,10 @@ SSR_m13		*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 
 SEG_m13	*G_open_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, const si1 *seg_path, void *parent, ui8 flags, const si1 *password)
 {
-	tern		free_seg;
-	si1		tmp_str[PATH_BYTES_m13], *ext;
-	CHAN_m13	*chan;
-	PROC_GLOBS_m13	*pg;
+	tern			free_seg;
+	si1			tmp_str[PATH_BYTES_m13], *ext;
+	CHAN_m13		*chan;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -9000,9 +8994,9 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 }
 
 
-si8 G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment)
+si8	G_pad_m13(ui1 *buffer, si8 content_len, ui4 alignment)
 {
-	si8  i, pad_bytes;
+	si8	i, pad_bytes;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -9164,7 +9158,7 @@ inline
 #endif
 tern	G_proc_error_get_m13(void *level_header)
 {
-	PROC_GLOBS_m13	*pg;
+	PROC_GLOBS_m13		*pg;
 	
 	// returns TRUE_m13 if set
 	// returns FALSE_m13 if clear
@@ -9180,7 +9174,7 @@ inline
 #endif
 void	G_proc_error_set_m13(void *level_header, tern state)
 {
-	PROC_GLOBS_m13	*pg;
+	PROC_GLOBS_m13		*pg;
 	
 	// pass TRUE_m13 to set
 	// pass FALSE_m13 to clear
@@ -9999,9 +9993,9 @@ tern	G_rates_vary_m13(SESS_m13 *sess)
 {
 	si4			i, n_chans, seg_idx;
 	sf8			rate, min_rate, max_rate;
-	PROC_GLOBS_m13	*pg;
+	PROC_GLOBS_m13		*pg;
 	CHAN_m13		*chan, *max_chan, *min_chan;
-	SEG_m13		*seg;
+	SEG_m13			*seg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -10529,16 +10523,16 @@ si4	G_read_cs_file_m13(const si1 *cs_file_name, si4 n_available_channels, si4 **
 
 LH_m13 	*G_read_data_m13(void *level_header, SLICE_m13 *slice, ...)  // varargs (level_header == NULL): void *file_list, si4 list_len, ui8 lh_flags, si1 *password, si1 *index_channel_name
 {
-	void				*file_list;
-	si1				*password, *index_channel_name, tmp_str[PATH_BYTES_m13];
-	ui4				level_code;
-	si4				list_len;
-	ui8				flags;
-	va_list				v_args;
-	LH_m13				*lh;
-	SESS_m13			*sess;
-	CHAN_m13			*chan;
-	SEG_m13			*seg;
+	void		*file_list;
+	si1		*password, *index_channel_name, tmp_str[PATH_BYTES_m13];
+	ui4		level_code;
+	si4		list_len;
+	ui8		flags;
+	va_list		v_args;
+	LH_m13		*lh;
+	SESS_m13	*sess;
+	CHAN_m13	*chan;
+	SEG_m13		*seg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -11589,6 +11583,7 @@ si8	G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice)
 		cps->params.cached_block_cnt = n_blocks;  // all blocks now cached
 		
 	n_samps = (local_end_idx - local_start_idx) + 1;  // trim (it did contain total samps in blocks)
+	
 	return_m13(n_samps);
 }
 
@@ -11670,7 +11665,7 @@ READ_UH_FAIL_m13:
 }
 
 
-tern  G_recover_passwords_m13(const si1 *L3_password, UH_m13 *universal_header)
+tern	G_recover_passwords_m13(const si1 *L3_password, UH_m13 *universal_header)
 {
 	tern	level_1_valid;
 	ui1 	hash[SHA_HASH_BYTES_m13], L3_hash[SHA_HASH_BYTES_m13];
@@ -11797,10 +11792,10 @@ void	G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset)
 }
 
 
-tern  G_reset_metadata_for_update_m13(FPS_m13 *fps)
+tern	G_reset_metadata_for_update_m13(FPS_m13 *fps)
 {
 	TS_METADATA_SECTION_2_m13	*tmd2;
-	VID_METADATA_SECTION_2_m13		*vmd2;
+	VID_METADATA_SECTION_2_m13	*vmd2;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12184,10 +12179,10 @@ inline
 #endif
 si4	G_segment_index_m13(void *level_header, si4 segment_number)
 {
-	si4		i, mapped_segs, sess_segs, first_seg, seg_idx;
-	LH_m13		*lh;
-	PROC_GLOBS_m13	*pg;
-	CHAN_m13	*chan;
+	si4			i, mapped_segs, sess_segs, first_seg, seg_idx;
+	LH_m13			*lh;
+	PROC_GLOBS_m13		*pg;
+	CHAN_m13		*chan;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12326,9 +12321,9 @@ si4 G_segment_range_m13(void *level_header, SLICE_m13 *slice)
 
 ui4	*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files)
 {
-	ui4			j, *start_frames, local_n_video_files;
-	si8			i, n_inds;
-	VID_IDX_m13		*vidx;
+	ui4		j, *start_frames, local_n_video_files;
+	si8		i, n_inds;
+	VID_IDX_m13	*vidx;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -12702,14 +12697,14 @@ void	G_set_signal_traps_m13(tern set)
 	signal(SIGINT, f);  // Ctrl-C interrupt (often caught on Windows before gets here [used for "Copy"])
 	signal(SIGSEGV, f);  // Memory segment violation
 	signal(SIGTERM, f);  // Terminate
-	#if defined MACOS_m13 || defined LINUX_m13  // supported on Posix OS's
-		signal(SIGBUS, f);  // Bus error
-		signal(SIGKILL, f);  // Kill
-		signal(SIGQUIT, f);  // Quit
-		signal(SIGTRAP, f);  // Trace Trap (unhandled exception, or debugger breakpoint)
-		signal(SIGXCPU, f);  // CPU time limit
-		signal(SIGXFSZ, f);  // File size limit
-	#endif
+#if defined MACOS_m13 || defined LINUX_m13  // supported on Posix OS's
+	signal(SIGBUS, f);  // Bus error
+	signal(SIGKILL, f);  // Kill
+	signal(SIGQUIT, f);  // Quit
+	signal(SIGTRAP, f);  // Trace Trap (unhandled exception, or debugger breakpoint)
+	signal(SIGXCPU, f);  // CPU time limit
+	signal(SIGXFSZ, f);  // File size limit
+#endif
 
 	return;
 }
@@ -12717,10 +12712,10 @@ void	G_set_signal_traps_m13(tern set)
 
 tern	G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt)
 {
-	si4			n_potential_timezones, potential_timezone_entries[TZ_TABLE_ENTRIES_m13];
-	si4			i, j, response_num, items;
-	PROC_GLOBS_m13		*pg;
-	const TIMEZONE_INFO_m13	*tz_table;
+	si4				n_potential_timezones, potential_timezone_entries[TZ_TABLE_ENTRIES_m13];
+	si4				i, j, response_num, items;
+	PROC_GLOBS_m13			*pg;
+	const TIMEZONE_INFO_m13		*tz_table;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -13523,7 +13518,7 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 }
 
 
-void  G_show_globals_m13(void)
+void	G_show_globals_m13(void)
 {
 	si4	i;
 	
@@ -13754,7 +13749,7 @@ tern	G_show_level_header_flags_m13(ui8 flags)
 }
 
 
-tern  G_show_location_info_m13(LOCATION_INFO_m13 *li)
+tern	G_show_location_info_m13(LOCATION_INFO_m13 *li)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14180,7 +14175,7 @@ tern	G_show_password_data_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 {
-	PROC_GLOBS_m13	*pg;
+	PROC_GLOBS_m13		*pg;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14213,8 +14208,8 @@ tern	G_show_password_hints_m13(PASSWORD_DATA_m13 *pwd, si1 pw_level)
 
 tern	G_show_proc_globs_m13(void *level_header)
 {
-	si1 		tim_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
-	PROC_GLOBS_m13	*pg;
+	si1 			tim_str[TIME_STRING_BYTES_m13], hex_str[HEX_STR_BYTES_m13(sizeof(si8), 1)];
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14509,8 +14504,8 @@ tern	G_show_Sgmt_records_m13(void *level_header, Sgmt_REC_m13 *Sgmt_recs)
 }
 
 
-tern  G_show_slice_m13(SLICE_m13 *slice)
-{	
+tern	G_show_slice_m13(SLICE_m13 *slice)
+{
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -14583,7 +14578,7 @@ tern  G_show_slice_m13(SLICE_m13 *slice)
 }
 
 
-tern  G_show_timezone_info_m13(const TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail)
+tern	G_show_timezone_info_m13(const TIMEZONE_INFO_m13 *timezone_entry, tern show_DST_detail)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -14969,7 +14964,7 @@ void	G_signal_trap_m13(si4 sig_num)
 			error_type = "SIGTERM";
 			error_desc = "terminate";
 			break;
-		#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
+	#if defined MACOS_m13 || defined LINUX_m13  // Windows signal mechanism is more limited
 		case SIGBUS:
 			error_type = "SIGBUS";
 			error_desc = "bus error";
@@ -14994,7 +14989,7 @@ void	G_signal_trap_m13(si4 sig_num)
 			error_type = "SIGXFSZ";
 			error_desc = "file size limit exceeded";
 			break;
-		#endif
+	#endif
 		default:
 			sig_num = -1;
 			error_type = "SIGUNKN";
@@ -15742,7 +15737,7 @@ si8	G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...)  /
 		ref_time = va_arg(v_args, si8);
 		rate = va_arg(v_args, sf8);
 		va_end(v_args);
-		rate /= (sf8) 1e6;  // indices per microsecond
+		rate /= (sf8) 1.0e6;  // indices per microsecond
 		goto TIME_FOR_INDEX_FINALIZE_m13;
 	}
 	
@@ -15827,7 +15822,7 @@ si8	G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...)  /
 		ref_time = tsi->start_time;
 		ref_index = tsi->start_samp_num;
 		if (terminal_index == FALSE_m13 && i == n_inds) {
-			rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency / (sf8) 1e6;
+			rate = seg->metadata_fps->metadata->time_series_section_2.sampling_frequency / (sf8) 1.0e6;
 		} else {
 			++tsi;
 			rate = (sf8) (tsi->start_samp_num - ref_index) / (sf8) (tsi->start_time - ref_time);  // samples per microsecond
@@ -15868,7 +15863,7 @@ si8	G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...)  /
 		ref_time = vi->start_time;
 		ref_index = vi->start_frame_num;
 		if (terminal_index == FALSE_m13 && i == n_inds) {
-			rate = seg->metadata_fps->metadata->video_section_2.frame_rate / (sf8) 1e6;
+			rate = seg->metadata_fps->metadata->video_section_2.frame_rate / (sf8) 1.0e6;
 		} else {
 			++vi;
 			rate = (sf8) (vi->start_frame_num - ref_index) / (sf8) (vi->start_time - ref_time);  // frames per microsecond
@@ -15931,7 +15926,6 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 	si1		*fs_name, *uh_name, name[MAX_NAME_BYTES_m13], sufx[8];
 	si4		i, j, n_segs, n_vids;
 	si8		len;
-	
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -17197,7 +17191,7 @@ tern	G_valid_tern_m13(tern *val)
 }
 
 
-tern  G_validate_record_data_CRCs_m13(FPS_m13 *fps)
+tern	G_validate_record_data_CRCs_m13(FPS_m13 *fps)
 {
 	tern  	valid;
 	si8 	i;
@@ -17222,7 +17216,7 @@ tern  G_validate_record_data_CRCs_m13(FPS_m13 *fps)
 }
 
 
-tern  G_validate_time_series_data_CRCs_m13(FPS_m13 *fps)
+tern	G_validate_time_series_data_CRCs_m13(FPS_m13 *fps)
 {
 	tern  		valid;
 	si8 		i;
@@ -17247,7 +17241,7 @@ tern  G_validate_time_series_data_CRCs_m13(FPS_m13 *fps)
 }
 
 
-tern  G_validate_video_data_CRCs_m13(FPS_m13 *fps)
+tern	G_validate_video_data_CRCs_m13(FPS_m13 *fps)
 {
 	
 #ifdef FT_DEBUG_m13
@@ -17258,7 +17252,7 @@ tern  G_validate_video_data_CRCs_m13(FPS_m13 *fps)
 }
 
 
-void  G_warning_message_m13(const si1 *fmt, ...)
+void	G_warning_message_m13(const si1 *fmt, ...)
 {
 	va_list		v_args;
 	
@@ -17973,7 +17967,7 @@ void	AES_sub_bytes_m13(ui1 state[][4])
 //*******************************************//
 
 
-tern  ALCK_all_m13(void)
+tern	ALCK_all_m13(void)
 {
 	tern  return_value;
 	ui1		*bytes;
@@ -18009,7 +18003,7 @@ tern  ALCK_all_m13(void)
 }
 
 
-tern  ALCK_metadata_m13(ui1 *bytes)
+tern	ALCK_metadata_m13(ui1 *bytes)
 {
 	tern	return_value, free_flag = FALSE_m13;
 	METADATA_m13	*md;
@@ -18058,8 +18052,8 @@ tern  ALCK_metadata_m13(ui1 *bytes)
 
 tern	ALCK_metadata_section_1_m13(ui1 *bytes)
 {
-	METADATA_SECTION_1_m13	*md1;
-	tern		free_flag = FALSE_m13;
+	METADATA_SECTION_1_m13		*md1;
+	tern				free_flag = FALSE_m13;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -18103,8 +18097,8 @@ METADATA_SECTION_1_NOT_ALIGNED_m13:
 
 tern	ALCK_metadata_section_3_m13(ui1 *bytes)
 {
-	METADATA_SECTION_3_m13	*md3;
-	tern		free_flag = FALSE_m13;
+	METADATA_SECTION_3_m13		*md3;
+	tern				free_flag = FALSE_m13;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -18412,7 +18406,7 @@ TS_METADATA_SECTION_2_NOT_ALIGNED_m13:
 
 tern	ALCK_universal_header_m13(ui1 *bytes)
 {
-	UH_m13	*uh;
+	UH_m13		*uh;
 	tern		free_flag = FALSE_m13;
 	
 #ifdef FT_DEBUG_m13
@@ -18559,7 +18553,7 @@ VID_INDS_NOT_ALIGNED_m13:
 tern	ALCK_video_metadata_section_2_m13(ui1 *bytes)
 {
 	VID_METADATA_SECTION_2_m13	*vmd2;
-	tern			free_flag = FALSE_m13;
+	tern				free_flag = FALSE_m13;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -18976,7 +18970,6 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 	}
 #endif
 
-
 	// trim search extents
 	if (ate == list->entries + list->top_idx)
 		--list->top_idx;
@@ -19293,18 +19286,18 @@ CMP_BUFFERS_m13  *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffe
 
 CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECS_m13 *directives, CPS_PARAMS_m13 *parameters)
 {
-	tern	need_compressed_data = FALSE_m13;
-	tern	need_decompressed_data = FALSE_m13;
-	tern	need_original_data = FALSE_m13;
-	tern	need_keysample_buffer = FALSE_m13;
-	tern	need_detrended_buffer = FALSE_m13;
-	tern	need_derivative_buffer = FALSE_m13;
-	tern	need_scrap_buffer = FALSE_m13;
-	tern	need_scaled_amplitude_buffer = FALSE_m13;
-	tern	need_scaled_frequency_buffer = FALSE_m13;
-	tern	need_VDS_buffers = FALSE_m13;
-	si8	pad_samples;
-	CPS_m13	*cps;
+	tern		need_compressed_data = FALSE_m13;
+	tern		need_decompressed_data = FALSE_m13;
+	tern		need_original_data = FALSE_m13;
+	tern		need_keysample_buffer = FALSE_m13;
+	tern		need_detrended_buffer = FALSE_m13;
+	tern		need_derivative_buffer = FALSE_m13;
+	tern		need_scrap_buffer = FALSE_m13;
+	tern		need_scaled_amplitude_buffer = FALSE_m13;
+	tern		need_scaled_frequency_buffer = FALSE_m13;
+	tern		need_VDS_buffers = FALSE_m13;
+	si8		pad_samples;
+	CPS_m13		*cps;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -19517,9 +19510,9 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 
 tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, tern extrema, sf8 *minima, sf8 *maxima)
 {
-	si8		i, j, max_bin_width;
-	si8		i_bin_width, i_bin_start, i_bin_end;
-	sf8		*in_val, *bin_start_p, f_bin_width, f_bin_end, bin_min, bin_max, bin_sum, *quantile_buf, us_ratio;
+	si8	i, j, max_bin_width;
+	si8	i_bin_width, i_bin_start, i_bin_end;
+	sf8	*in_val, *bin_start_p, f_bin_width, f_bin_end, bin_min, bin_max, bin_sum, *quantile_buf, us_ratio;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -19756,7 +19749,6 @@ tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_l
 	if (center_mode == CMP_CENT_MODE_MEDIAN_m13)
 		free(quantile_buf);
 
-
 	return_m13(TRUE_m13);
 }
 
@@ -19793,10 +19785,10 @@ tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-sf8  CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps)
+sf8	CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps)
 {
-	sf8  sum, mrr, diff, r;
-	si8  i;
+	si8  	i;
+	sf8  	sum, mrr, diff, r;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -19824,15 +19816,14 @@ sf8  CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, 
 }
 
 
-tern  CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats, si4 *input_buffer, si8 len, CMP_NODE_m13 *nodes)
+tern	CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats, si4 *input_buffer, si8 len, CMP_NODE_m13 *nodes)
 {
-	CMP_NODE_m13		*np, head, tail;
+	CMP_NODE_m13	*np, head, tail;
 	tern		free_nodes;
-	si4			*x;
-	sf8  		sum_x, n, dm, t, sdm2, sdm3, sdm4, m1, m2, m3, m4;
-	sf8 	true_median;
-	si8 	i, n_nodes, mid_idx, max_cnt, running_cnt;
-	ui1 	median_found;
+	ui1		median_found;
+	si4		*x;
+	si8		i, n_nodes, mid_idx, max_cnt, running_cnt;
+	sf8  		true_median, sum_x, n, dm, t, sdm2, sdm3, sdm4, m1, m2, m3, m4;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -19917,7 +19908,7 @@ tern  CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats, si4 *input_buffer, s
 }
 
 
-tern  CMP_check_block_header_alignment_m13(ui1 *bytes)
+tern	CMP_check_block_header_alignment_m13(ui1 *bytes)
 {
 	CMP_FIXED_BH_m13	*cbh;
 	tern			free_flag = FALSE_m13;
@@ -19982,9 +19973,9 @@ CMP_BLOCK_HDR_NOT_ALIGNED_m13:
 }
 
 
-tern CMP_check_CPS_allocation_m13(FPS_m13 *fps)
+tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 {
-	tern	r_val = TRUE_m13;
+	tern		r_val = TRUE_m13;
 	si1		need_compressed_data = FALSE_m13;
 	si1		need_decompressed_data = FALSE_m13;
 	si1		need_original_data = FALSE_m13;
@@ -19994,7 +19985,7 @@ tern CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 	si1		need_scaled_frequency_buffer = FALSE_m13;
 	si1		need_keysample_buffer = FALSE_m13;
 	si1		need_VDS_buffers = FALSE_m13;
-	CPS_m13	*cps;
+	CPS_m13		*cps;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -20135,10 +20126,10 @@ tern CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 }
 
 
-tern  CMP_check_record_header_alignment_m13(ui1 *bytes)
+tern	CMP_check_record_header_alignment_m13(ui1 *bytes)
 {
-	CMP_REC_HDR_m13	*crh;
-	tern		free_flag = FALSE_m13;
+	CMP_REC_HDR_m13		*crh;
+	tern			free_flag = FALSE_m13;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -20181,7 +20172,7 @@ CMP_REC_HEADER_NOT_ALIGNED_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4 CMP_compare_sf8_m13(const void *a, const void * b)
+si4	CMP_compare_sf8_m13(const void *a, const void * b)
 {
 	if (*((sf8 *) a) > *((sf8 *) b))
 		return(1);
@@ -20266,7 +20257,7 @@ si4	CMP_count_bins_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
 }
 
 
-tern  CMP_decode_m13(FPS_m13 *fps)
+tern	CMP_decode_m13(FPS_m13 *fps)
 {
 	ui4			offset;
 	si4			*si4_p;
@@ -20977,11 +20968,11 @@ tern	CMP_find_amplitude_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *c
 }
 
 
-si8  *CMP_find_crits_m13(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
+si8	*CMP_find_crits_m13(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 {
 	const si1	PEAK = 1, TROUGH = -1;
-	si1 	mode;
-	si8 	nc, i, j, n, crit;
+	si1		mode;
+	si8		nc, i, j, n, crit;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -21066,8 +21057,8 @@ si8  *CMP_find_crits_m13(sf8 *data, si8 data_len, si8 *n_crits, si8 *crit_xs)
 tern	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, si8 *n_troughs, si8 *trough_xs)
 {
 	const si1	PEAK = 1, TROUGH = 2;
-	si1 	mode;
-	si8 	np, nt, i, j, n, crit;
+	si1 		mode;
+	si8 		np, nt, i, j, n, crit;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -21215,9 +21206,9 @@ tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *c
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern  CMP_free_buffers_m13(CMP_BUFFERS_m13 **buffers_ptr)
+tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 **buffers_ptr)
 {
-	CMP_BUFFERS_m13 *buffers;
+	CMP_BUFFERS_m13		*buffers;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -21503,9 +21494,9 @@ sf8	CMP_gamma_inv_p_m13(sf8 p, sf8 a)
 
 sf8	CMP_gamma_ln_m13(sf8 xx)
 {
-	si4 i;
-	sf8 x, y, tmp, ser;
-	static sf8  cof[6] = {76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5};
+	si4		i;
+	sf8		x, y, tmp, ser;
+	static sf8	cof[6] = {76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5};
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -21524,7 +21515,7 @@ sf8	CMP_gamma_ln_m13(sf8 xx)
 
 sf8	CMP_gamma_p_m13(sf8 a, sf8 x)
 {
-	sf8 gam_ser, gam_cf, g_ln;
+	sf8	gam_ser, gam_cf, g_ln;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -21639,11 +21630,11 @@ tern	CMP_generate_parameter_map_m13(CPS_m13 *cps)
 
 ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm)
 {
-	ui1					bits_per_samp;
-	ui2					flags;
-	si8					i, val, abs_min, abs_max;
-	CMP_RED_MODEL_FIXED_HDR_m13		*RED_header;
-	CMP_PRED_MODEL_FIXED_HDR_m13		*PRED_header;
+	ui1				bits_per_samp;
+	ui2				flags;
+	si8				i, val, abs_min, abs_max;
+	CMP_RED_MODEL_FIXED_HDR_m13	*RED_header;
+	CMP_PRED_MODEL_FIXED_HDR_m13	*PRED_header;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -22001,10 +21992,10 @@ CPS_PARAMS_m13	*CMP_init_params_m13(CPS_PARAMS_m13 *params)
 
 tern	CMP_init_tables_m13(void)
 {
-	size_t				len;
-	sf8				*CMP_normal_CDF_table;
-	GLOBAL_TABLES_m13		*tables;
-	CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*CMP_VDS_threshold_map;
+	size_t					len;
+	sf8					*CMP_normal_CDF_table;
+	GLOBAL_TABLES_m13			*tables;
+	CMP_VDS_THRESHOLD_MAP_ENTRY_m13		*CMP_VDS_threshold_map;
 	
 
 	tables = globals_m13->tables;
@@ -22560,8 +22551,8 @@ si4	*CMP_lin_interp_si4_m13(si4 *in_data, si8 in_len, si4 *out_data, si8 out_len
 
 tern	CMP_lin_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf8 *m, sf8 *b)
 {
-	sf8 sx, sy, sxx, sxy, n, mx, my, x_val, y_val;
-	si8 i;
+	sf8	sx, sy, sxx, sxy, n, mx, my, x_val, y_val;
+	si8	i;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -22798,14 +22789,14 @@ tern	CMP_MBE_encode_m13(CPS_m13 *cps)
 // Note: input x's are integers, output x's are floats
 sf8	*CMP_mak_interp_sf8_m13(CMP_BUFFERS_m13 *in_bufs, si8 in_len, CMP_BUFFERS_m13 *out_bufs, si8 out_len)
 {
-	si8		*index, *si8_p1, *si8_p2;
+	si8	*index, *si8_p1, *si8_p2;
 	si8 	i, j, filled_slopes, in_nm1, tmp_delta_len;
-	si8		*in_x;
+	si8	*in_x;
 	sf8 	*delta, *tmp_delta, *weights, *slopes;
-	sf8		delta_0, delta_m1, delta_n, delta_n1;
-	sf8		*sf8_p1, *sf8_p2, *sf8_p3, *sf8_p4, *sf8_p5, *sf8_p6;
-	sf8		sf8_v1, sf8_v2, sf8_v3, sf8_v4;
-	sf8 		*in_y, *dx, *out_x, *tmp_out_x, *out_y, *coefs[4];
+	sf8	delta_0, delta_m1, delta_n, delta_n1;
+	sf8	*sf8_p1, *sf8_p2, *sf8_p3, *sf8_p4, *sf8_p5, *sf8_p6;
+	sf8	sf8_v1, sf8_v2, sf8_v3, sf8_v4;
+	sf8 	*in_y, *dx, *out_x, *tmp_out_x, *out_y, *coefs[4];
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -23046,8 +23037,8 @@ sf8	CMP_normality_score_m13(si4 *data, ui4 n_samps)
 
 sf8	CMP_p2z_m13(sf8 p)
 {
-	const sf8	P_EPS = (sf8) 0.00000005;
-	sf8 	z, low_z, high_z, temp_z, low_p, high_p, temp_p;
+	const sf8	P_EPS = (sf8) 5.0e-7;
+	sf8 		z, low_z, high_z, temp_z, low_p, high_p, temp_p;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -26197,7 +26188,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	if (SRRED_header->scale == (sf4) 0.0) {
 		update_params = TRUE_m13;
 		if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13 && cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
-			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1e6) + (sf8) 0.5);
+			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1.0e6) + (sf8) 0.5);
 			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
 			update_params = TRUE_m13;
 		}
@@ -26207,7 +26198,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 		if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
 			update_params = TRUE_m13;
 		} else if (cps->params.SRRED_update_time > bh->start_time) {
-			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1e6) + (sf8) 0.5);
+			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1.0e6) + (sf8) 0.5);
 			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
 			update_params = TRUE_m13;
 		}
@@ -26651,6 +26642,11 @@ tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED)
 	// RED_to_PRED == FALSE_m13 switch from PRED to RED
 	// RED_to_PRED == UNKNOWN_m13 switch to other from current
 	// returns FALSE_m13 on failure
+	
+	// Note: the following are defined for ease of reading when calling:
+	// CMP_RED_to_PRED_m13 == TRUE_m13
+	// CMP_PRED_to_RED_m13 == FALSE_m13
+	// CMP_RED_PRED_SWAP_m13 == UNKNOWN_m13
 
 	if (cps->params.PRED_base_count == NULL) {
 		G_set_error_m13(E_CMP_m13, "PRED buffers are not allocated");
@@ -28535,7 +28531,7 @@ tern	DM_free_matrix_m13(DATA_MATRIX_m13 **matrix_ptr)
 }
 
 
-DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLICE_m13 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
+DATA_MATRIX_m13	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLICE_m13 *slice, si4 varargs, ...)  // varargs: si8 out_samp_count, sf8 out_sf, ui8 flags, sf8 scale, sf8 fc1, sf8 fc2
 {
 	tern				changed_to_absolute_time, padding_required, r_val, threading;
 	ui1				*data_base, *minima_base, *maxima_base;
@@ -28730,7 +28726,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		req_slice->end_time = G_time_for_index_m13((LH_m13 *) sess, req_slice->end_samp_num, FIND_END_m13);
 	} else if (matrix->flags & DM_EXTMD_RELATIVE_LIMITS_m13) {
 		start_sample_number = G_index_for_time_m13((LH_m13 *) sess, req_slice->start_time, FIND_CURRENT_m13);
-		duration = (sf8) SLICE_DUR_m13(req_slice) / (sf8) 1e6;  // convert to seconds
+		duration = (sf8) SLICE_DUR_m13(req_slice) / (sf8) 1.0e6;  // convert to seconds
 		end_sample_number = start_sample_number + (si8) ((ref_samp_freq * duration) + (sf8) 0.5) - (si8) 1;  // relative samples
 		req_slice->end_time = G_time_for_index_m13((LH_m13 *) sess, end_sample_number, FIND_END_m13);
 	}
@@ -28963,7 +28959,7 @@ DATA_MATRIX_m13 *DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		matrix->n_contigua = ref_chan->n_contigua;
 		matrix->contigua = (CONTIGUON_m13 *) calloc_m13((size_t) matrix->n_contigua, sizeof(CONTIGUON_m13));
 		memcpy(matrix->contigua, ref_chan->contigua, (size_t) ref_chan->n_contigua * sizeof(CONTIGUON_m13));
-		tmp_sf8 = matrix->sampling_frequency / (sf8) 1e6;  // samples per microsecond
+		tmp_sf8 = matrix->sampling_frequency / (sf8) 1.0e6;  // samples per microsecond
 		if (matrix->flags & DM_PAD_MASK_m13) {
 			for (i = 0; i < matrix->n_contigua; ++i) {
 				matrix->contigua[i].start_samp_num = (si8) round((matrix->contigua[i].start_time - sess_slice->start_time) * tmp_sf8);
@@ -30663,9 +30659,6 @@ void	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX
 	FILT_COMPLEX_m13	ta, tb;
 	sf8			den;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	ta = *a;  // copy in case in place
 	tb = *b;
@@ -30674,7 +30667,7 @@ void	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX
 	quotient->imag = ((ta.imag * tb.real) - (ta.real * tb.imag)) / den;
 	
 	
-	return_void_m13;
+	return;
 }
 
 
@@ -30684,11 +30677,8 @@ inline
 void	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans)
 {
 	FILT_COMPLEX_m13	t;
-	sf8  		c;
+	sf8  			c;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
 
 	t = *exponent;  // copy in case in place
 	c = exp(t.real);
@@ -30696,7 +30686,7 @@ void	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans)
 	ans->imag = c * sin(t.imag);
 	
 	
-	return_void_m13;
+	return;
 }
 
 
@@ -30707,24 +30697,21 @@ void	FILT_complex_mult_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLE
 {
 	FILT_COMPLEX_m13  ta, tb;
 	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
+	
 	ta = *a;  // copy in case in place
 	tb = *b;
 	product->real = (ta.real * tb.real) - (ta.imag * tb.imag);
 	product->imag = (ta.real * tb.imag) + (ta.imag * tb.real);
 	
 	
-	return_void_m13;
+	return;
 }
 
 
 tern	FILT_elmhes_m13(sf8 **a, si4 poles)
 {
-	si4 i, j, m;
-	sf8	x, y, t1;
+	si4	i, j, m;
+	sf8	x, y, t;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -30741,14 +30728,14 @@ tern	FILT_elmhes_m13(sf8 **a, si4 poles)
 		}
 		if (i != m) {
 			for (j = m - 1; j < poles; j++) {
-				t1 = a[i][j];
+				t = a[i][j];
 				a[i][j] = a[m][j];
-				a[m][j] = t1;
+				a[m][j] = t;
 			}
 			for (j = 0; j < poles; j++) {
-				t1 = a[j][i];
+				t = a[j][i];
 				a[j][i] = a[j][m];
-				a[j][m] = t1;
+				a[j][m] = t;
 			}
 		}
 		if (x != (sf8) 0.0) {
@@ -30927,10 +30914,10 @@ tern	FILT_excise_transients_m13(CPS_m13 *cps, si8 len, si8 *n_extrema)
 si4	FILT_filtfilt_m13(FILTPS_m13 *filtps)
 {
 	tern  	free_z_flag, free_buf_flag;
-	si4	  	padded_data_len, pad_len, pad_lenx2, poles;
-	si8	  	i, j, k, m, data_len;
-	sf8	  	dx2, zc[FILT_MAX_ORDER_m13 * 2], t1, t2;
-	sf8 	  	*num, *den, *data, *filt_data, *z, *buf, *dp, *fdp;
+	si4	padded_data_len, pad_len, pad_lenx2, poles;
+	si8	i, j, k, m, data_len;
+	sf8	dx2, zc[FILT_MAX_ORDER_m13 * 2], t1, t2;
+	sf8	*num, *den, *data, *filt_data, *z, *buf, *dp, *fdp;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -31163,7 +31150,7 @@ tern	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 **qd_ptr)
 
 tern	FILT_generate_initial_conditions_m13(FILTPS_m13 *filtps)
 {
-	si4 i, j, poles;
+	si4	i, j, poles;
 	sf8	**q, *rhs, *z, *num, *den;
 
 #ifdef FT_DEBUG_m13
@@ -31200,8 +31187,8 @@ tern	FILT_generate_initial_conditions_m13(FILTPS_m13 *filtps)
 
 tern	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs)
 {
-	si4 nn, m, l, k, j, its, i, mmin, max;
-	sf8  z, y, x, w, v, u, t, s, r, q, p, anorm, eps, t1, t2, t3, t4;
+	si4	nn, m, l, k, j, its, i, mmin, max;
+	sf8	z, y, x, w, v, u, t, s, r, q, p, anorm, eps, t1, t2, t3, t4;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -31368,11 +31355,11 @@ tern	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs)
 }
 
 
-FILTPS_m13  *FILT_init_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, tern alloc_orig_data, tern alloc_filt_data, tern alloc_buffer, ui4 behavior, sf8 cutoff_1, ...)
+FILTPS_m13	*FILT_init_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, tern alloc_orig_data, tern alloc_filt_data, tern alloc_buffer, ui4 behavior, sf8 cutoff_1, ...)
 {
-	si8			  pad_samples, buf_len;
+	si8		pad_samples, buf_len;
 	FILTPS_m13	*filtps;
-	va_list			  arg_p;
+	va_list		arg_p;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -31508,16 +31495,16 @@ tern	FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order)  // done in place i
 
 
 // Special thanks to Tej Stead for his work on this algorithm
-sf8	FILT_line_noise_filter_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers)
+sf8	FILT_line_noise_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers)
 {
-	tern			free_buffers;
-	ui1				score;
-	si4				filt_order, n_harmonics;
+	tern		free_buffers;
+	ui1		score;
+	si4		filt_order, n_harmonics;
 	FILTPS_m13	*filtps;
-	si8				i, j, k, int_samps_per_cycle, n_templates, template_trace_len, last_template_start;
-	sf8				samps_per_cycle, min_y, max_y, *sf8_p1, *sf8_p2, *sf8_p3;
-	sf8				*low_y, *high_y, **template_mtx, *template_trace, *template_buf;
-	sf8				amp_y, amp_n, high_f, max_high_f, sum, offset;
+	si8		i, j, k, int_samps_per_cycle, n_templates, template_trace_len, last_template_start;
+	sf8		samps_per_cycle, min_y, max_y, *sf8_p1, *sf8_p2, *sf8_p3;
+	sf8		*low_y, *high_y, **template_mtx, *template_trace, *template_buf;
+	sf8		amp_y, amp_n, high_f, max_high_f, sum, offset;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -31807,7 +31794,7 @@ sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option
 }
 
 
-sf8  *FILT_noise_floor_filter_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers)
+sf8	*FILT_noise_floor_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers)
 {
 	si8	i, j, k;
 	tern	free_buffers;
@@ -32392,8 +32379,8 @@ QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, ...)  // var
 
 tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd)
 {
-	si8 	len, span, out_idx, in_idx, oldest_idx;
-	sf8 	*x, *qx, quantile, new_val, prev_new_val, low_val_q, high_val_q, low_q_val, high_q_val, q_shift, oldest_val;
+	si8 		len, span, out_idx, in_idx, oldest_idx;
+	sf8 		*x, *qx, quantile, new_val, prev_new_val, low_val_q, high_val_q, low_q_val, high_q_val, q_shift, oldest_val;
 	FILT_NODE_m13	*nodes, *new_node, *prev_new_node, *tail, *curr_node, *next_node, *prev_node, *low_q_node, *oldest_node;
 
 #ifdef FT_DEBUG_m13
@@ -32518,8 +32505,8 @@ tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd)
 
 tern	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd)
 {
-	si8 	i, len, span, new_span, out_idx, low_q_idx, oldest_idx, last_sliding_out_idx;
-	sf8 	*x, *qx, quantile, temp_idx, low_val_q, high_val_q, low_q_val, high_q_val, true_q_val;
+	si8 		i, len, span, new_span, out_idx, low_q_idx, oldest_idx, last_sliding_out_idx;
+	sf8 		*x, *qx, quantile, temp_idx, low_val_q, high_val_q, low_q_val, high_q_val, true_q_val;
 	FILT_NODE_m13	*nodes, *head, *tail, *low_q_node, *oldest_node;
 
 #ifdef FT_DEBUG_m13
@@ -32597,7 +32584,7 @@ tern	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4 FILT_sf8_sort_m13(const void *n1, const void *n2)
+si4	FILT_sf8_sort_m13(const void *n1, const void *n2)
 {
 	if (*((sf8 *) n1) > *((sf8 *) n2))
 		return(1);
@@ -32688,7 +32675,6 @@ si8	FPS_bytes_for_items_m13(FPS_m13 *fps, si8 *n_items, si8 offset)
 	REC_HDR_m13		*rh;
 	CMP_FIXED_BH_m13	*bh;
 	UH_m13			*uh;
-	
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -33316,7 +33302,6 @@ FPS_DIRECS_m13	*FPS_init_direcs_m13(FPS_DIRECS_m13 *direcs)
 
 FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params)
 {
-	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -34358,9 +34343,9 @@ si8	FPS_seek_m13(FPS_m13 *fps, si8 offset, ...)  // varargs(offset == FPS_REL_*)
 
 si8	FPS_set_direcs_from_lh_flags_m13(FPS_m13 *fps, ui8 lh_flags)
 {
-	tern		read_slice_flag, read_full_flag, mmap_flag;
-	ui4		type_code, level_code;
-	si8		n_bytes;
+	tern	read_slice_flag, read_full_flag, mmap_flag;
+	ui4	type_code, level_code;
+	si8	n_bytes;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -35097,7 +35082,7 @@ ui4	HW_get_block_size_m13(const si1 *volume_path)
 	ui4			mmap_block_bytes;
 	si4			r_val;
 	FILE_m13		*test_fp;
-	PROC_GLOBS_m13	*pg;
+	PROC_GLOBS_m13		*pg;
 #if defined MACOS_m13 || defined LINUX_m13
 	struct stat		sb;
 #endif
@@ -35440,8 +35425,8 @@ tern	HW_get_current_core_speed_m13()
 #endif  // MACOS_m13
 	
 #ifdef WINDOWS_m13
-	si1		*buf = NULL, *c;
-	si4		cur_mhz;
+	si1	*buf = NULL, *c;
+	si4	cur_mhz;
 
 	if (system_pipe_m13(&buf, 0, "wmic cpu get currentclockspeed", SP_DEFAULT_m13) == 0) {
 		c = buf;
@@ -35808,7 +35793,7 @@ si1	*HW_get_performance_specs_file_m13(si1 *file)
 	}
 	
 #if defined MACOS_m13 || defined LINUX_m13
-	si1		*env_var;
+	si1	*env_var;
 
 	env_var = getenv("HOME");
 	if (env_var == NULL) {
@@ -37237,8 +37222,8 @@ NET_PARAMS_m13	*NET_get_plugged_in_m13(si1 *iface, NET_PARAMS_m13 *np)
 NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 {
 	tern	global_np;
-	si1		*command, *buffer, *pattern, *c;
-	si4		r_val;
+	si1	*command, *buffer, *pattern, *c;
+	si4	r_val;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37322,10 +37307,10 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 #if defined MACOS_m13 || defined LINUX_m13
 si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 {
-	si1 			tmp_addr[INET6_ADDRSTRLEN];
-	si4 			fam;
-	struct ifaddrs		*if_addr_list, *ifa;
-	socklen_t		si_len;
+	si1 		tmp_addr[INET6_ADDRSTRLEN];
+	si4 		fam;
+	struct ifaddrs	*if_addr_list, *ifa;
+	socklen_t	si_len;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37379,10 +37364,10 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 #ifdef WINDOWS_m13
 si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 {
-	si1			local_iface_name[64], *buffer, *c, *c2;
-	si4			r_val;
-	si8			sz;
-	FILE			*fp;
+	si1	local_iface_name[64], *buffer, *c, *c2;
+	si4	r_val;
+	si8	sz;
+	FILE	*fp;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37422,7 +37407,7 @@ si1	*NET_iface_name_for_addr_m13(si1 *iface_name, const si1 *iface_addr)
 
 tern	NET_init_tables_m13(void)
 {
-	tern	copy_global;
+	tern		copy_global;
 	NET_PARAMS_m13	*np;
 	
 
@@ -37490,7 +37475,7 @@ tern	NET_reset_parameters_m13(NET_PARAMS_m13 *np)
 
 tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *free_params)
 {
-	tern	interface_is_global, params_are_global;
+	tern		interface_is_global, params_are_global;
 	si1		tmp_str[64];
 	NET_PARAMS_m13	*params;
 	
@@ -37684,9 +37669,9 @@ tern	NET_trim_address_m13(si1 *address)
 // MARK: PARALLEL FUNCTIONS  (PAR)
 //********************************//
 
-// ******************************************************************************************************** //
-// Note: the PAR functions have not yet been updated for PROC_GLOBS_m13 & will not as is in the m13 library
-// ******************************************************************************************************** //
+// ************************************************************************************************************* //
+// Note: the PAR functions have not yet been updated for PROC_GLOBS_m13 & will not work as is in the m13 library
+// ************************************************************************************************************* //
 
 //tern	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)  // frees thread globals & par itself - sets par pointer to NULL
 //{
@@ -38169,8 +38154,8 @@ tern	PROC_change_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attri
 
 tern	PROC_default_threading_m13(void *level_header)
 {
-	tern		threading;
-	PROC_GLOBS_m13	*pg;
+	tern			threading;
+	PROC_GLOBS_m13		*pg;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -38707,12 +38692,12 @@ pthread_rval_m13	PROC_job_init_m13(void *arg)
 #if defined MACOS_m13 || defined LINUX_m13
 tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 {
-	sf8				f_min_priority, f_max_priority;
-	pthread_t			thread;
-	pthread_attr_t			attributes;
-	struct sched_param		sched_params;
-	static si4			min_priority = PROC_UNDEFINED_PRIORITY_m13;
-	static si4			low_priority, med_priority, high_priority, max_priority;
+	sf8			f_min_priority, f_max_priority;
+	pthread_t		thread;
+	pthread_attr_t		attributes;
+	struct sched_param	sched_params;
+	static si4		min_priority = PROC_UNDEFINED_PRIORITY_m13;
+	static si4		low_priority, med_priority, high_priority, max_priority;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -40709,7 +40694,7 @@ PRTY_PCRC_UPDATE_FAIL_m13:
 }
 
 
-tern  PRTY_validate_m13(const si1 *file_path, ...)  // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks)
+tern	PRTY_validate_m13(const si1 *file_path, ...)  // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks)
 {
 	tern			r_val, valid, header_valid, body_valid, return_bb, localizing_crcs;
 	ui1			*bytes, *idx_bytes;
@@ -41996,8 +41981,7 @@ si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_
 			G_set_error_m13(E_GEN_m13, "unrecognized type (%d) passed", val_type);
 			return_m13(RC_ERR_m13);
 	}
-	// zero strings
-	*str_val = *type_str = *options_str = *default_value_str = 0;
+	*str_val = *type_str = *options_str = *default_value_str = 0;  // zero strings
 	
 	// find requested field entry
 	c = *buffer;
@@ -42319,7 +42303,7 @@ void	SHA_finalize_m13(SHA_CTX_m13 *ctx, ui1 *hash)
 }
 
 
-ui1  *SHA_hash_m13(const ui1 *data, si8 len, ui1 *hash)
+ui1	*SHA_hash_m13(const ui1 *data, si8 len, ui1 *hash)
 {
 	SHA_CTX_m13 ctx;
 	
@@ -42610,7 +42594,7 @@ wchar_t	*STR_char2wchar_m13(wchar_t *target, const si1 *source)
 
 ui4	STR_check_spaces_m13(const si1 *string)
 {
-	ui4	spaces;
+	ui4		spaces;
 	const si1	*c;
 	
 #ifdef FT_DEBUG_m13
@@ -42639,7 +42623,7 @@ ui4	STR_check_spaces_m13(const si1 *string)
 
 si4	STR_compare_m13(const void *a, const void *b)
 {
-	si1		*ap, *bp, ac, bc;
+	si1	*ap, *bp, ac, bc;
 	
 	
 	// Sorting Rules:
@@ -42694,9 +42678,9 @@ si4	STR_compare_m13(const void *a, const void *b)
 }
 
 
-tern  STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
+tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
 {
-	tern	format_seq;
+	tern		format_seq;
 	const si1	*c1, *c3;
 	si1		*c2;
 
@@ -42819,7 +42803,7 @@ si1	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_le
 	si1		*offset_dur_str;
 	si4		level_idx, int_level_1, int_level_2;
 	const sf8	divisors[9] = {31556926000000.0, 2629744000000.0, 604800000000.0, 86400000000.0, 3600000000.0, 60000000.0, 1000000.0, 1000.0, 1.0};
-	sf8 usecs, level_1, level_2;
+	sf8		usecs, level_1, level_2;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -42888,7 +42872,7 @@ si1	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_le
 tern	STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len)
 {
 	si1	*c1, *c2, *tmp_str, backslash;
-	si8 n_target_chars, len;
+	si8	n_target_chars, len;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44927,7 +44911,7 @@ tern	TR_set_socket_timeout_m13(TR_INFO_m13 *trans_info)
 	struct timeval	tv;
 	
 	tv.tv_sec = (time_t) trans_info->timeout;
-	tv.tv_usec = (time_t) ((((sf8) trans_info->timeout - (sf8) tv.tv_sec) * (sf8) 1e6) + (sf8) 0.5);
+	tv.tv_usec = (time_t) ((((sf8) trans_info->timeout - (sf8) tv.tv_sec) * (sf8) 1.0e6) + (sf8) 0.5);
 	setsockopt(trans_info->sock_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(struct timeval));
 #endif
 #ifdef WINDOWS_m13
@@ -44951,8 +44935,6 @@ tern	TR_show_message_m13(TR_HDR_m13 *header)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-
 	type = header->type;
 	
 	switch (type) {
@@ -44999,7 +44981,6 @@ tern	TR_show_transmission_m13(TR_INFO_m13 *trans_info)
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
 
 	// transmission info
 	printf_m13("-------------- Transmission Info - START ------------\n");
@@ -45459,7 +45440,7 @@ si8	WN_DATE_to_uutc_m13(sf8 date)
 
 	// DATE == days since 29 Dec 1899 00:00:00 UTC
 	secs = (date * (sf8) 86400.0) - (sf8) 2209161600.0;
-	uutc = (si8) round(secs * (sf8) 1e6);
+	uutc = (si8) round(secs * (sf8) 1.0e6);
 	
 	return_m13(uutc);
 }
@@ -45773,7 +45754,7 @@ void	WN_nap_m13(struct timespec *nap)
 	G_WN_SLEEP_USE_MS:
 	
 	ms = nap->tv_sec * (si8) 1000;
-	ms += (si8) round((sf8) nap->tv_nsec / (sf8) 1e6);
+	ms += (si8) round((sf8) nap->tv_nsec / (sf8) 1.0e6);
 	if (ms == (si8) 0) {
 		ms = (si8) 1;  // limited to 1 ms rseolution
 	} else if (ms > (si8) 0x7FFFFFFF) {
@@ -45794,7 +45775,6 @@ void	WN_nap_m13(struct timespec *nap)
 void	*WN_query_information_file_m13(void *fp, si4 info_class, void *fi)
 {
 #ifdef WINDOWS_m13
-	
 	tern				alloced;
 	size_t				ret_struct_size;
 	FILE				*std_fp;
@@ -45913,7 +45893,6 @@ tern	WN_reset_terminal_m13(void)
 tern	WN_socket_startup_m13(void)
 {
 #ifdef WINDOWS_m13
-	
 	WORD		wVersionRequested;
 	WSADATA		wsaData;
 	si4		err;
@@ -45946,7 +45925,6 @@ tern	WN_socket_startup_m13(void)
 si4	WN_system_m13(const si1 *command)  // Windows has a system() function which works fine, but it opens a command prompt window.
 {
 #ifdef WINDOWS_m13
-	
 	si1			*tmp_command;
 	si1			*cmd_exe_path;
 	si4			r_val;
@@ -46003,9 +45981,9 @@ si8	WN_time_to_uutc_m13(FILETIME win_time)
 {
 	si8	uutc, leftovers;
 	
-	#ifdef FT_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
-	#endif
+#endif
 	
 	// A Windows time is the number of 100-nanosecond intervals since 12:00 AM January 1, 1601 UTC (excluding leap seconds).
 	uutc = ((si8) win_time.dwHighDateTime << 32) + (si8) win_time.dwLowDateTime;
@@ -46026,12 +46004,12 @@ sf8	WN_uutc_to_date_m13(si8 uutc)
 {
 	sf8	secs, days;
 	
-	#ifdef FT_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
-	#endif
+#endif
 
 	// DATE == days since 29 Dec 1899 00:00:00 UTC
-	secs = ((sf8) uutc / (sf8) 1e6) + (sf8) 2209161600.0;
+	secs = ((sf8) uutc / (sf8) 1.0e6) + (sf8) 2209161600.0;
 	days = secs / (sf8) 86400.0;
 	
 	return_m13(days);
@@ -46043,9 +46021,9 @@ FILETIME	WN_uutc_to_win_time_m13(si8 uutc)
 {
 	FILETIME ft;
 	
-	#ifdef FT_DEBUG_m13
+#ifdef FT_DEBUG_m13
 	G_push_function_m13();
-	#endif
+#endif
 
 	uutc += WIN_USECS_TO_EPOCH_m13;
 	uutc *= WIN_TICKS_PER_USEC_m13;
@@ -46189,7 +46167,7 @@ si1	*WN_windify_format_string_m13(const si1 *fmt)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4  asprintf_m13(si1 **target, const si1 *fmt, ...)
+si4	asprintf_m13(si1 **target, const si1 *fmt, ...)
 {
 	si4		r_val;
 	va_list		v_args;
@@ -46213,10 +46191,10 @@ void	*AT_calloc_m13(const si1 *function, si4 line, size_t n_members, si8 el_size
 void	*calloc_m13(size_t n_members, si8 el_size)  // (el_size negative): level header flag
 #endif
 {
-	tern	is_level_header = FALSE_m13;
-	void	*ptr;
+	tern		is_level_header = FALSE_m13;
+	void		*ptr;
 #if defined AT_DEBUG_m13
-	size_t	requested_bytes;
+	size_t		requested_bytes;
 #endif
 	
 	// pass negative element size to flag as level header
@@ -46462,7 +46440,7 @@ void	errno_reset_m13(void)
 
 void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 {
-	ui4			behavior;
+	ui4	behavior;
 	
 	
 	#ifdef FT_DEBUG_m13
@@ -46771,8 +46749,7 @@ si8	flen_m13(void *fp)
 		
 	
 si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
-						// varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
-{
+{						// varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 	tern				is_std;
 	const si1			*path, *nap_str;
 	si4				i, n_locks, std_fd;
@@ -47561,8 +47538,8 @@ inline
 #endif
 tern	freeable_m13(void *address)
 {
-	ui8			address_val;
-	HW_PARAMS_m13		*hw_params;
+	ui8		address_val;
+	HW_PARAMS_m13	*hw_params;
 
 	
 	// returns whether address is freeable
@@ -47633,13 +47610,13 @@ tern	freeable_m13(void *address)
 
 void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 {
-	tern		is_std, mode_matches, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
-	si1		*c, tmp_path[PATH_BYTES_m13], sys_mode[8];
-	ui2		alloced_bit;
-	si4		main_mode_total;
-	FILE		*std_fp;
-	FILE_m13	*m13_fp, *new_fp;
-	struct_stat_m13	sb;
+	tern			is_std, mode_matches, read_mode, write_mode, append_mode, plus_mode, trunc_mode;
+	si1			*c, tmp_path[PATH_BYTES_m13], sys_mode[8];
+	ui2			alloced_bit;
+	si4			main_mode_total;
+	FILE			*std_fp;
+	FILE_m13		*m13_fp, *new_fp;
+	struct_stat_m13		sb;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -49956,7 +49933,7 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 	G_full_path_m13(new_path, tmp_new_path);
 	new_path = (const si1 *) tmp_new_path;
 
-	// check source exists
+	// check input path exists
 	fe = G_exists_m13(path);
 	if (fe == FALSE_m13) {
 		G_set_error_m13(E_GEN_m13, "\"%s\" does not exist", path);
@@ -50590,7 +50567,7 @@ ui4	rand32_med_m13(void)
 	
 	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
 	// replicable sequences across platforms
-	// indepenedent sequnces possible with different coefficients
+	// independent sequnces possible with different coefficients
 	// seed & get initial coefficients with with srand_med_m13()
 
 	pg = G_proc_globs_m13(NULL);
@@ -50612,7 +50589,7 @@ ui4	rand32_med_wz_m13(volatile ui4 *w, volatile ui4 *z)
 	
 	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
 	// replicable sequences across platforms
-	// indepenedent sequnces possible with different coefficients
+	// independent sequnces possible with different coefficients
 	// seed & get initial coefficients with with srand_med_m13()
 
 	// not seeded
@@ -50666,7 +50643,7 @@ ui8	rand64_med_m13(void)
 	
 	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
 	// replicable sequences across platforms
-	// indepenedent sequnces possible with different coefficients
+	// independent sequnces possible with different coefficients
 	// seed & get initial coefficients with with srand_med_m13()
 
 	pg = G_proc_globs_m13(NULL);
@@ -50688,7 +50665,7 @@ ui8	rand64_med_wz_m13(volatile ui4 *w, volatile ui4 *z)
 	
 	// returns pseudo-random numbers in the range [0, (2^64 − 1)]
 	// replicable sequences across platforms
-	// indepenedent sequnces possible with different coefficients
+	// independent sequnces possible with different coefficients
 	// seed & get initial coefficients with with srand_med_m13()
 
 	rv = (ui8) rand32_med_wz_m13(w, z) << 32;  // bits 32-63
@@ -51353,9 +51330,10 @@ void	srand_med_m13(ui4 seed)
 	
 	// returns pseudo-random numbers in the range [0, (2^32 − 1)]
 	// replicable sequences across platforms
-	// indepenedent sequnces possible with different coefficients
+	// independent sequnces possible with different coefficients
 	// seed & get initial coefficients with with srand_med_m13()
-
+	// pass seed == zero to seed with current time
+	
 	pg = G_proc_globs_m13(NULL);
 	
 	w = &pg->miscellaneous.med_rand_w;
@@ -51403,6 +51381,11 @@ void	srandom_m13(ui4 seed)
 
 	// seed system generator
 	// produces replicable sequences on same system
+	// pass seed == zero to seed with current time
+	
+	if (seed == 0)
+		seed = (ui4) time(NULL);
+	
 	
 #if defined MACOS_m13 || defined LINUX_m13
 	srandom(seed);
@@ -51833,9 +51816,8 @@ SYSTEM_RETRY_m13:
 // not a standard function, but closely related
 #if defined MACOS_m13 || defined LINUX_m13
 si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...)  // varargs(BEHAVIOR_PASSED_m13 flag set): ui4 behavior)
-											    // varargs(SP_SEPARATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 e_buf_len
+{											    // varargs(SP_SEPARATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 e_buf_len
 											    // note if both passed, behavior is first argument
-{
 	tern		command_needs_shell, pipe_failure, buffer_initially_null, e_buffer_initially_null, pop_behavior;
 	tern		free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
 	si1		**e_buffer_ptr, *buffer, *e_buffer, *c, *command_p;
@@ -52341,9 +52323,8 @@ SYSTEM_PIPE_FAIL_m13:
 // not a standard function, but closely related
 #ifdef WINDOWS_m13
 si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...)  // varargs(BEHAVIOR_PASSED_m13 set): ui4 behavior)
-											    // varargs(SP_SEPARATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
+{											    // varargs(SP_SEPARATE_STREAMS_m13 set): si1 **e_buffer_ptr, si8 e_buf_len
 									     		    // note if both passed, behavior is first argument
-{
 	tern			pipe_failure, buffer_initially_null, e_buffer_initially_null, pop_behavior;
 	tern			free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
 	si1			**e_buffer_ptr, *buffer, *e_buffer, cmd_exe_path[MAX_PATH], *tmp_command, *command_p;
@@ -53093,4 +53074,3 @@ si4	vsprintf_m13(si1 *target, const si1 *fmt, va_list args)
 
 	return(r_val);
 }
-
