@@ -38627,7 +38627,6 @@ pid_t_m13	PROC_id_for_thread_m13(pthread_t_m13 *thread_p)
 tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag, ...)  // varargs (sudo_prompt_flag == TRUE_m13): si1 *exec_name, sf8 timeout_secs;
 {
 	tern	r_val;
-	si4	sys_r_val;
 	
 
 	// verbose_flag passed because this function is usually called before the MED libraries are initialized
@@ -38639,6 +38638,8 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 			return(FALSE_m13);
 		
 	#if (defined MACOS_m13 || defined LINUX_m13) && !defined MATLAB_m13
+	si4	sys_r_val;
+
 	if (sudo_prompt_flag == TRUE_m13) {
 		
 		uid_t	effective_user = geteuid();
@@ -46748,7 +46749,7 @@ void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 		
 		if (status >= E_NONE_m13 && status < E_NUM_CODES_m13) {
 			#ifdef MATLAB_m13
-			mexPrintf("Exit Status: %s  [%s, med code %d]\n\n", globals_m13->tables->E_strings_table[status], globals_m13->tables->E_tags_table[status], status);
+			mexPrintf("Exit Status: %s  [%s, med code %d]\n\n", globals_m13->tables->E_strings_table[status].msg, globals_m13->tables->E_strings_table[status].tag, status);
 			#else
 			printf("%sExit Status:%s %s  %s[E_%s, med code %d]%s\n\n", TC_RED_m13, TC_RESET_m13, globals_m13->tables->E_strings_table[status].msg, TC_YELLOW_m13, globals_m13->tables->E_strings_table[status].tag, status, TC_RESET_m13);
 			#endif
