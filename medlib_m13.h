@@ -3579,15 +3579,14 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_VDS_OUTPUT_BUFFERS_m13		CMP_MAK_OUTPUT_BUFFERS_m13
 #define CMP_VDS_LOWPASS_ORDER_m13		6
 #define CMP_VDS_MINIMUM_SAMPLES_m13		10
-#define CMP_SRRED_DOWN_THRESH_m13		((sf8) 0.95)
-#define CMP_SRRED_UP_THRESH_m13			((sf8) 1.02)
-#define CMP_SRRED_BIG_STEP_m13			((sf8) 0.00025)
-#define CMP_SRRED_SMALL_STEP_m13		((sf8) 0.00002)  // ((sf8) 0.00001) is better, but this is notably faster
-#define CMP_SRRED_TOP_SCALE_m13			((sf8) 0.5) // search scales from CMP_SRRED_BIG_STEP_m13 to here
-#define CMP_SELF_MANAGED_MEMORY_m13		-1 // pass CMP_SELF_MANAGED_MEMORY_m13 to CMP_allocate_processing_struct to prevent automatic re-allocation
-#define CMP_RED_TO_PRED_m13			TRUE_m13
-#define CMP_PRED_TO_RED_m13			FALSE_m13
-#define CMP_RED_PRED_SWAP_m13			UNKNOWM_m13
+#define CMP_SRRED_BOTTOM_SCALE_m13		((sf8) 0.005) // minimum search scale (scale search starts here)
+#define CMP_SRRED_TOP_SCALE_m13			((sf8) 0.995) // maximum search scale (usually exits well before here)
+#define CMP_SRRED_SCALE_STEP_m13		((sf8) 0.0001) // scale search increment
+#define CMP_SRRED_SCRAP_BUFFERS_m13		2
+#define CMP_SELF_MANAGED_MEMORY_m13		-1 // pass to CMP_allocate_CPS_m13() to prevent automatic re-allocation
+#define CMP_RED_TO_PRED_m13			TRUE_m13 // for CMP_swap_RED_PRED_m13()
+#define CMP_PRED_TO_RED_m13			FALSE_m13 // for CMP_swap_RED_PRED_m13()
+#define CMP_RED_PRED_SWAP_m13			UNKNOWM_m13 // for CMP_swap_RED_PRED_m13()
 
 // CMP: Block Fixed Header Offset Constants
 #define CMP_BLOCK_FIXED_HDR_BYTES_m13				56 // fixed region only
@@ -3677,11 +3676,11 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_SRRED_MODEL_PAD_OFFSET_m13					14 // ui1[2]
 #define CMP_SRRED_MODEL_FIXED_HDR_BYTES_m13				16
 // SRRED Model Flags
-#define CMP_SRRED_FLAGS_SCALED_RED_m13				((ui4) 1 << 0)  // bit 0
+#define CMP_SRRED_FLAGS_SCALED_PRED_m13				((ui4) 1 << 0)  // bit 0
 #define CMP_SRRED_FLAGS_SCALED_MBE_m13				((ui4) 1 << 1)  // bit 1
 #define CMP_SRRED_FLAGS_RESIDUALS_RED_m13			((ui4) 1 << 2)  // bit 2
 #define CMP_SRRED_FLAGS_RESIDUALS_MBE_m13			((ui4) 1 << 3)  // bit 3
-#define CMP_SRRED_SCALED_ALGORITHMS_MASK_m13			( CMP_SRRED_FLAGS_SCALED_RED_m13 | CMP_SRRED_FLAGS_SCALED_MBE_m13 )
+#define CMP_SRRED_SCALED_ALGORITHMS_MASK_m13			( CMP_SRRED_FLAGS_SCALED_PRED_m13 | CMP_SRRED_FLAGS_SCALED_MBE_m13 )
 #define CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13			( CMP_SRRED_FLAGS_RESIDUALS_RED_m13 | CMP_SRRED_FLAGS_RESIDUALS_MBE_m13 )
 #define CMP_SRRED_ALGORITHMS_MASK_m13				( CMP_SRRED_SCALED_ALGORITHMS_MASK_m13 | CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13 )
 
@@ -3884,7 +3883,6 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_PROTECTED_REGION_BYTES_DEFAULT_m13			((ui2) 0)
 #define CMP_USER_DISCRETIONARY_REGION_BYTES_DEFAULT_m13		((ui2) 0)
 
-
 // RED/PRED Codec Constants
 #define CMP_SI1_KEYSAMPLE_FLAG_m13 		((si1) 0x80) // -128 as si1
 #define CMP_UI1_KEYSAMPLE_FLAG_m13 		((ui1) 0x80) // +128 as ui1
@@ -4082,8 +4080,9 @@ typedef struct { // requires 4-byte alignment
 	ui4	scaled_block_total_bytes;
 	ui2	scaled_block_model_bytes;
 	ui2	residuals_block_model_bytes;
+	ui1	derivative_level;
+	ui1	pad;
 	ui2	flags;
-	ui1	pad[2];
 } CMP_SRRED_MODEL_FIXED_HDR_m13;
 
 typedef struct { // requires 4-byte alignment
@@ -4190,6 +4189,8 @@ typedef struct {
 				       // CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13 (0.0) == update with every block
 				       // CMP_PARAMS_SRRED_NO_UPDATES_m13 (-1.0) == measure only at startup & do not update
 	si8	SRRED_update_time; // uutc of next update; used with SRRED_update_interval
+	si8	SRRED_overflow_samples; // number of samples in the overflow buffer
+	si8	n_stats_entries; // number of bins in the counts array (also used in find derivative level)
 
  // lossy compression parameters
 	sf8	goal_ratio; // either compression ratio or mean residual ratio
@@ -4206,6 +4207,11 @@ typedef struct {
  // compression arrays
 	si1			*keysample_buffer; // passed in both compression & decompression
 	si4			*derivative_buffer; // used if needed in compression & decompression, size of maximum block differences
+	union {
+		si4		*next_derivative_buffer; // used in find_derivative_level option & SRRED
+		si4		*overflows_buffer; // used in SRRED
+		si4		*residuals_buffer; // used in SRRED
+	};
 	si4			*detrended_buffer; // used if needed in compression, size of decompressed block
 	si4			*scaled_amplitude_buffer; // used if needed in compression, size of decompressed block
 	si4			*scaled_frequency_buffer; // used if needed in compression, size of decompressed block
@@ -4283,6 +4289,7 @@ sf8	CMP_gamma_p_m13(sf8 a, sf8 x);
 sf8	CMP_gamma_ser_m13(sf8 a, sf8 x, sf8 *g_ln);
 tern	CMP_generate_lossy_data_m13(CPS_m13 *cps, si4* input_buffer, si4 *output_buffer, ui1 mode);
 tern	CMP_generate_parameter_map_m13(CPS_m13 *cps);
+void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows);
 ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm);
 tern	CMP_get_variable_region_m13(CPS_m13 *cps);
 tern	CMP_hex_to_int_m13(si1 *hex_str, void *hex_val, si4 val_bytes);
@@ -4311,8 +4318,8 @@ tern	CMP_PRED1_decode_m13(CPS_m13 *cps);
 tern	CMP_PRED2_decode_m13(CPS_m13 *cps);
 tern	CMP_PRED1_encode_m13(CPS_m13 *cps);
 tern	CMP_PRED2_encode_m13(CPS_m13 *cps);
-CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buf);
+CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
 tern	CMP_RED1_decode_m13(CPS_m13 *cps);
 tern	CMP_RED2_decode_m13(CPS_m13 *cps);
@@ -4339,9 +4346,7 @@ sf8	CMP_splope_m13(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt);
 tern	CMP_SRRED_decode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_encode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps);
-sf8	CMP_SRRED_median_score_m13(CPS_m13 *cps, sf8 scale);
 sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale);
-sf8	CMP_SRRED_weighted_sum_m13(CPS_m13 *cps);
 tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED);
 sf8	CMP_trace_amplitude_m13(sf8 *y, sf8 *buffer, si8 len, tern detrend);
 si8	CMP_ts_sort_m13(si4 *x, si8 len, CMP_NODE_m13 *nodes, CMP_NODE_m13 *head, CMP_NODE_m13 *tail, si4 return_sorted_ts, ...);
