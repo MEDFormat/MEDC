@@ -11436,7 +11436,7 @@ si8	G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice)
 			cached_blocks = cps->params.cached_blocks;
 			cached_block_cnt = cps->params.cached_block_cnt;
 			if (cached_block_cnt) {
-				// reallocate cache manually so CMP_realloc_cps_m13() does not free
+				// reallocate cache manually so CMP_realloc_CPS_m13() does not free
 				if (n_samps > cps->params.allocated_decompressed_samples) {
 					cps->decompressed_data = cps->params.cache = (si4 *) realloc_m13(cps->params.cache, n_samps * sizeof(si4));
 					cps->params.allocated_decompressed_samples = calloc_size_m13(cps->decompressed_data, sizeof(si4));
@@ -11523,7 +11523,7 @@ si8	G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice)
 			compressed_data_bytes = REMOVE_DISCONT_m13(tsi[end_block + 1].file_offset) - start_offset;
 		}
 		CMP_update_CPS_pointers_m13(tsd_fps, CMP_RESET_DECOMPRESSED_PTR_m13 | CMP_RESET_BLOCK_HDR_PTR_m13);
-		cps = CMP_realloc_cps_m13(tsd_fps, CMP_DECOMPRESSION_MODE_m13, n_samps, tmd2->maximum_block_samples);
+		cps = CMP_realloc_CPS_m13(tsd_fps, CMP_DECOMPRESSION_MODE_m13, n_samps, tmd2->maximum_block_samples);
 		if (cps == NULL)
 			return_m13(FALSE_m13);
 	}
@@ -20278,7 +20278,7 @@ tern	CMP_decode_m13(FPS_m13 *fps)
 	cps = fps->params.cps;
 	bh = cps->block_header;
 	if (cps->params.allocated_block_samples < bh->number_of_samples) {
-		if (CMP_realloc_cps_m13(fps, CMP_DECOMPRESSION_MODE_m13, (si8) bh->number_of_samples, bh->number_of_samples) == NULL)
+		if (CMP_realloc_CPS_m13(fps, CMP_DECOMPRESSION_MODE_m13, (si8) bh->number_of_samples, bh->number_of_samples) == NULL)
 			return_m13(FALSE_m13);
 		bh = cps->block_header;
 	}
@@ -20869,7 +20869,7 @@ tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number
 	cps = fps->params.cps;
 	bh = cps->block_header;
 	if (cps->params.allocated_block_samples < n_samples) {
-		if (CMP_realloc_cps_m13(fps, CMP_COMPRESSION_MODE_m13, (si8) n_samples, n_samples) == NULL)
+		if (CMP_realloc_CPS_m13(fps, CMP_COMPRESSION_MODE_m13, (si8) n_samples, n_samples) == NULL)
 			return_m13(FALSE_m13);
 		bh = cps->block_header;
 	}
@@ -20976,7 +20976,7 @@ tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number
 	if (data_is_compressed == FALSE_m13)
 		(*compression_f)(cps);
 
-	// encryption done in write_file_m13()
+	// encryption done in FPS_write_m13()
 	// if done here, leave_decrypted FPS directive won't work
 	// call would be: CMP_encrypt_m13(cps);
 
@@ -21415,7 +21415,7 @@ tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 **buffers_ptr)
 }
 
 
-tern	CMP_free_cps_cache_m13(CPS_m13 *cps)
+tern	CMP_free_CPS_cache_m13(CPS_m13 *cps)
 {
 	tern	freed = FALSE_m13;
 	
@@ -21444,7 +21444,7 @@ tern	CMP_free_cps_cache_m13(CPS_m13 *cps)
 }
 
 
-tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure)
+tern	CMP_free_CPS_m13(CPS_m13 *cps, tern free_structure)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -23381,7 +23381,7 @@ tern	CMP_PRED1_decode_m13(CPS_m13 *cps)
 	PRED_header = (CMP_PRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
 	n_derivs = PRED_header->derivative_level;
 	n_keysample_bytes = PRED_header->n_keysample_bytes;
-	stats_entries = PRED_header->numbers_of_statistics_bins;
+	stats_entries = PRED_header->n_statistics_bins;
 	for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m13; ++i)
 		total_stats_entries += (ui4) stats_entries[i];
 	
@@ -23536,7 +23536,7 @@ tern	CMP_PRED2_decode_m13(CPS_m13 *cps)
 	PRED_header = (CMP_PRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
 	n_derivs = PRED_header->derivative_level;
 	n_keysample_bytes = PRED_header->n_keysample_bytes;
-	stats_entries = PRED_header->numbers_of_statistics_bins;
+	stats_entries = PRED_header->n_statistics_bins;
 	for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m13; ++i)
 		total_stats_entries += (ui4) stats_entries[i];
 	
@@ -23818,7 +23818,7 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 	n_keysamp_bytes = (ui4) (key_p - (ui1 *) cps->params.keysample_buffer);
 	
 	// build sorted_count: interleave
-	stats_entries = PRED_header->numbers_of_statistics_bins;
+	stats_entries = PRED_header->n_statistics_bins;
 	for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m13; ++i) {
 		for (j = stats_entries[i] = 0, k = 255, m = 128; m--; ++j, --k) {
 			if (count[i][j]) {
@@ -24104,7 +24104,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	n_keysamp_bytes = (ui4) (key_p - (ui1 *) cps->params.keysample_buffer);
 	
 	// build sorted_count: interleave
-	stats_entries = PRED_header->numbers_of_statistics_bins;
+	stats_entries = PRED_header->n_statistics_bins;
 	for (total_stats_entries = i = 0; i < CMP_PRED_CATS_m13; ++i) {
 		for (j = stats_entries[i] = 0, k = 255, m = 128; m--; ++j, --k) {
 			if (count[i][j]) {
@@ -24397,7 +24397,7 @@ sf8	CMP_quantval_m13(sf8 *x, si8 len, sf8 quantile, tern preserve_input, sf8 *bu
 }
 
 
-CPS_m13		*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples)
+CPS_m13		*CMP_realloc_CPS_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples)
 {
 	tern			realloc_flag, freed;
 	ui4			new_val;
@@ -24556,15 +24556,15 @@ CMP_REALLOC_CPS_FAIL_m13:
 				chan = sess->ts_chans[i];
 				if (chan->type_code == TS_CHAN_TYPE_CODE_m13)
 					if ((chan->flags & LH_CHAN_ACTIVE_m13) == 0)
-						if (CMP_free_cps_cache_m13(cps) == TRUE_m13)
+						if (CMP_free_CPS_cache_m13(cps) == TRUE_m13)
 							freed = TRUE_m13;
 			}
 		}
 	}
 
 	if (freed == TRUE_m13) {
-		cps = CMP_realloc_cps_m13(fps, compression_mode, data_samples, block_samples);
-		return_m13(cps);  // CMP_realloc_cps_m13 returns NULL on failure, which this function also does
+		cps = CMP_realloc_CPS_m13(fps, compression_mode, data_samples, block_samples);
+		return_m13(cps);  // CMP_realloc_CPS_m13 returns NULL on failure, which this function also does
 	}
 
 	return_m13(NULL);
@@ -26894,6 +26894,353 @@ sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale)
 		score += log((sf8) *ui4_p++) * sf8_bin++;  // bin must count from 1
 
 	return_m13(score);
+}
+
+
+tern    CMP_SSE_decode_m13(CPS_m13 *cps)
+{
+	ui1				*comp_p, *symbol_map, n_derivs, overflow_bytes, last_bin;
+	si1				*si1_p1, *si1_p2;
+	ui4				*count, n_samps, n_keysample_bytes, remaining_bits;
+	si4				*si4_p, overflow_val, sign_bit, sign_bytes, *init_val_p;
+	si8     			cmp_data_bits, offset_bits;
+	ui8     			*in_bit, **in_word;
+	si8				i, j, n_stats_entries;
+	CMP_FIXED_BH_m13		*bh;
+	CMP_SSE_MODEL_FIXED_HDR_m13	*SSE_header;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// CMP decompress from block_header to decompressed_ptr
+	bh = cps->block_header;
+	n_samps = bh->number_of_samples;
+	
+	// zero or one or samples
+	if (n_samps <= 1) {
+		if (bh->number_of_samples == 1)
+			cps->decompressed_ptr[0] = *((si4 *) (cps->params.model_region + CMP_SSE_MODEL_FIXED_HDR_BYTES_m13));
+		cps->params.derivative_level = 0;
+		return_m13(TRUE_m13);
+	}
+
+	SSE_header = (CMP_SSE_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
+	n_derivs = SSE_header->derivative_level;
+	n_keysample_bytes = SSE_header->n_keysample_bytes;
+	n_stats_entries = (si8) SSE_header->n_statistics_bins;
+	
+	// set parameters for return
+	cps->params.derivative_level = n_derivs;
+	
+	// get block flags
+	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_SSE_COMPRESSION_m13);
+	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
+	if (overflow_bytes == 4)
+		sign_bytes = (ui4) 0;
+	else  // Windows: shift of 32 bits is equated to shift of 0, so have to do this
+		sign_bytes = (ui4) 0xFFFFFFFF << (overflow_bytes << 3);
+	
+	// copy initial derivative values to output buffer
+	init_val_p = (si4 *) (cps->params.model_region + CMP_SSE_MODEL_FIXED_HDR_BYTES_m13);
+	for (i = 0; i < n_derivs; ++i)
+		cps->decompressed_ptr[i] = *init_val_p++;
+
+	// get symbol map & count array
+	count = (ui4 *) init_val_p;
+	symbol_map = (ui1 *) (count + n_stats_entries);
+
+	// set up in_bit & in_word arrays
+	in_bit = (ui8 *) calloc((size_t) n_stats_entries, sizeof(ui8));
+	in_word = (ui8 **) calloc((size_t) n_stats_entries, sizeof(ui8 *));
+
+	comp_p = symbol_map + n_stats_entries;
+	offset_bits = ((ui8) comp_p & (ui8) 7) << (ui8) 3;
+	last_bin = n_stats_entries - 1;
+	remaining_bits = n_keysample_bytes;
+	cmp_data_bits = offset_bits;
+	for (i = 0; i < last_bin; ++i) {
+		in_word[i] = (ui8 *) (comp_p + (cmp_data_bits >> 6));
+		in_bit[i] = (ui8) 1 << (cmp_data_bits & 63);
+		if (!(in_bit[i] >>= 1)) {
+			in_bit[i] = (ui8) 0x8000000000000000;
+			--in_word[i];
+		}
+		cmp_data_bits += remaining_bits;
+		remaining_bits -= count[i];
+	}
+
+	// SSE decode
+	si1_p1 = cps->params.keysample_buffer;
+	for (i = SSE_header->n_keysample_bytes; i--;) {
+		for (j = 0; j < last_bin; ++j) {
+			if (!(in_bit[j] <<= 1)) {
+				in_bit[j] = 1;
+				++in_word[j];
+			}
+			if (*in_word[j] & in_bit[j])
+				break;
+		}
+		*si1_p1++ = symbol_map[j];
+	}
+
+	free((void *) in_bit);
+	free((void *) in_word);
+	
+	// generate derivatives from keysample data
+	si4_p = cps->decompressed_ptr + n_derivs;
+	si1_p1 = (si1 *) cps->params.keysample_buffer;
+	for (i = n_samps - n_derivs; i--;) {
+		if (*si1_p1 == CMP_SI1_KEYSAMPLE_FLAG_m13) {
+			overflow_val = 0;
+			++si1_p1;
+			si1_p2 = (si1 *) &overflow_val;
+			j = overflow_bytes; do {
+				*si1_p2++ = *si1_p1++;
+			} while (--j);
+			if (overflow_val & sign_bit)
+				overflow_val |= sign_bytes;
+			*si4_p++ = overflow_val;
+		} else {
+			*si4_p++ = (si4) *si1_p1++;
+		}
+	}
+	
+	// integrate derivatives
+	CMP_integrate_m13(cps);
+	
+	return_m13(TRUE_m13);
+}
+
+
+tern    CMP_SSE_encode_m13(CPS_m13 *cps)
+{
+	tern				use_raw;
+	ui1				*ui1_p, ks_flag, *key_p, n_derivs, *comp_p, *symbols, *symbol_map, overflow_bytes;
+	ui4				*count, *bin_counts, n_keysamp_bytes, header_bytes;
+	ui4				n_samps, n_deriv_samps, bin, last_bin, fall_through_bytes, rem;
+	ui4				offset_bytes, offset_bits, cmp_data_bytes, cmp_data_bits, remaining_bits;
+	si4				*deriv_p, *init_val_p, diff, bits_per_samp, raw_bits_per_samp;
+	si4				low_d, high_d;
+	ui8				*cmp_data, *out_bit, **out_word;
+	si8				i, j, k, n_stats_entries, MBE_data_bits;
+	CMP_STATISTICS_BIN_m13		*sorted_count, temp_sorted_count;
+	CMP_FIXED_BH_m13		*bh;
+	CMP_SSE_MODEL_FIXED_HDR_m13	*SSE_header;
+	CMP_MBE_MODEL_FIXED_HDR_m13	*MBE_header;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	// compress from input_buffer to block_header
+	
+	// set algorithm block flag
+	bh = cps->block_header;
+	bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
+	bh->block_flags |= CMP_BF_SSE_ENCODING_m13;
+
+	SSE_header = (CMP_SSE_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
+	n_samps = bh->number_of_samples;
+	SSE_header->flags = (ui1) 0;
+
+	// zero or one or samples
+	if (n_samps <= 1) {
+		bh->model_region_bytes = (ui2) CMP_SSE_MODEL_FIXED_HDR_BYTES_m13;
+		if (bh->number_of_samples == 1) {
+			*((si4 *) (cps->params.model_region + bh->model_region_bytes)) = cps->input_buffer[0];  // note: no statistics
+			bh->model_region_bytes += sizeof(si4);
+		}
+		SSE_header->n_keysample_bytes = 0;
+		SSE_header->derivative_level = 0;
+		SSE_header->n_statistics_bins = 0;
+		bh->total_header_bytes = (ui4) (cps->params.model_region - (ui1 *) bh) + bh->model_region_bytes;
+		bh->total_block_bytes = G_pad_m13((ui1 *) bh, bh->total_header_bytes, 8);
+		return_m13(TRUE_m13);
+	}
+
+	// calculate derivatives
+	n_derivs = CMP_differentiate_m13(cps);
+
+	// set up SSE arrays
+	count = (ui4 *) cps->params.count;
+	sorted_count = (CMP_STATISTICS_BIN_m13 *) cps->params.sorted_count;
+	symbol_map = (ui1 *) cps->params.symbol_map;
+
+	// set model parameters
+	SSE_header->derivative_level = n_derivs;
+	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_SSE_COMPRESSION_m13);
+
+	// generate count & build keysample array
+	low_d = -127; high_d = 127;
+	ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m13;  // == -128 (non-overflow range: -127 to +127)
+	memset((void *) count, (si4) 0, CMP_RED_MAX_STATS_BINS_m13 * sizeof(ui4));
+	
+	key_p = (ui1 *) cps->params.keysample_buffer;
+	deriv_p = cps->params.derivative_buffer + n_derivs;
+	n_deriv_samps = n_samps - n_derivs;
+	for (i = n_deriv_samps; i--;) {
+		diff = *deriv_p++;
+		if (diff < low_d || diff > high_d) {
+			ui1_p = (ui1 *) &diff;
+			++count[*key_p++ = ks_flag];
+			j = overflow_bytes; do {
+				++count[*key_p++ = *ui1_p++];
+			} while (--j);
+		} else {
+			++count[*key_p++ = (ui1) diff];
+		}
+	}
+	n_keysamp_bytes = (ui4) (key_p - (ui1 *) cps->params.keysample_buffer);
+
+	// build sorted_count
+	for (i = n_stats_entries = 0, j = 255, k = 128; k--; ++i, --j) {
+		if (count[i]) {
+			sorted_count[n_stats_entries].count = count[i];
+			sorted_count[n_stats_entries++].value = (si1) i;
+		}
+		if (count[j]) {
+			sorted_count[n_stats_entries].count = count[j];
+			sorted_count[n_stats_entries++].value = (si1) j;
+		}
+	}
+	SSE_header->n_statistics_bins = (ui2) n_stats_entries;
+	
+	// build sorted_count: bubble sort
+	i = n_stats_entries;
+	do {
+		for (j = 0, k = 1; k < i; ++k) {
+			if (sorted_count[k - 1].count < sorted_count[k].count) {
+				temp_sorted_count = sorted_count[k - 1];
+				sorted_count[k - 1] = sorted_count[k];
+				sorted_count[k] = temp_sorted_count;
+				j = k;  // highest swap index
+			}
+		}
+	} while ((i = j) > 1);
+			
+	// build symbol map, count array
+	for (i = 0; i < n_stats_entries; ++i)
+		symbol_map[sorted_count[i].pos_value] = (ui1) i;
+	
+	// copy initial derivative values to output buffer
+	init_val_p = (si4 *) (cps->params.model_region + CMP_SSE_MODEL_FIXED_HDR_BYTES_m13);
+	for (i = 0; i < n_derivs; ++i)
+		*init_val_p++ = cps->params.derivative_buffer[i];
+
+	// write scaled counts & symbols into header
+	bin_counts = (ui4 *) init_val_p;
+	symbols = (ui1 *) (bin_counts + n_stats_entries);
+	for (i = 0; i < n_stats_entries; ++i) {
+		*bin_counts++ = sorted_count[i].count;
+		*symbols++ = sorted_count[i].value;
+	}
+	
+	// fill header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
+	bh->model_region_bytes = (ui2) (symbols - cps->params.model_region);
+	bh->total_header_bytes = (ui4) (symbols - (ui1 *) bh);
+	SSE_header->n_keysample_bytes = n_keysamp_bytes;
+
+	// set up in_bit & in_word arrays
+	out_bit = (ui8 *) calloc((size_t) n_stats_entries, sizeof(ui8));
+	out_word = (ui8 **) calloc((size_t) n_stats_entries, sizeof(ui8 *));
+
+	// set up out_bit & out_word arrays
+	cmp_data = (ui8 *) bh + (bh->total_header_bytes >> 3);
+	offset_bytes = (bh->total_header_bytes & 7);
+	offset_bits = (ui8) (offset_bytes << 3);
+	last_bin = n_stats_entries - 1;
+	remaining_bits = n_keysamp_bytes;
+	cmp_data_bits = offset_bits;
+	for (i = 0; i < last_bin; ++i) {
+		out_word[i] = (ui8 *) (cmp_data + (cmp_data_bits >> 6));
+		out_bit[i] = (ui8) 1 << (cmp_data_bits & 63);
+		if (!(out_bit[i] >>= 1)) {
+			out_bit[i] = (ui8) 0x8000000000000000;
+			--out_word[i];
+		}
+		cmp_data_bits += remaining_bits;
+		remaining_bits -= sorted_count[i].count;
+	}
+	cmp_data_bits -= offset_bits;
+
+	// SSE encode
+	cmp_data_bytes = cmp_data_bits >> 3;
+	if (cmp_data_bits & 7)
+		++cmp_data_bytes;
+	cmp_data_bytes += bh->total_header_bytes;
+	if (cps->params.allocated_compressed_bytes < cmp_data_bytes)
+		goto SSE_ENCODE_FORCE_FALL_THROUGH_m13;
+	comp_p = (ui1 *) bh + bh->total_header_bytes;  // can't realloc from here
+	memset(comp_p, 0, cmp_data_bytes);
+	ui1_p = (ui1 *) cps->params.keysample_buffer;
+	for (i = n_keysamp_bytes; i--;) {
+		bin = symbol_map[*ui1_p++];
+		for (j = bin + 1; j--;) {
+			if (!(out_bit[j] <<= 1)) {
+				out_bit[j] = 1;
+				++out_word[j];
+			}
+		}
+		if (bin != last_bin)
+			*out_word[bin] |= out_bit[bin];
+	}
+
+	free((void *) out_bit);
+	free((void *) out_word);
+
+	// finish header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
+	bh->total_block_bytes = (ui4) G_pad_m13((ui1 *) bh, cmp_data_bytes, 8);
+	
+	// calculate fall through encoding bytes
+	if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
+		
+		SSE_ENCODE_FORCE_FALL_THROUGH_m13:
+		
+		for (raw_bits_per_samp = 0, i = (si8) cps->params.maximum_sample_value - (si8) cps->params.minimum_sample_value; i; i >>= 1)
+			++raw_bits_per_samp;
+		if (n_derivs) {
+			for (bits_per_samp = 0, i = (si8) cps->params.maximum_difference_value - (si8) cps->params.minimum_difference_value; i; i >>= 1)
+				++bits_per_samp;
+			if (raw_bits_per_samp > bits_per_samp)  // this can happen in very noisy data
+				use_raw = FALSE_m13;
+			else
+				use_raw = TRUE_m13;
+		} else {
+			use_raw = TRUE_m13;
+		}
+		if (use_raw == TRUE_m13) {
+			bits_per_samp = raw_bits_per_samp;
+			n_derivs = 0;
+			n_deriv_samps = n_samps;
+		}
+		MBE_data_bits = (si8) n_deriv_samps * (si8) bits_per_samp;
+		fall_through_bytes = (MBE_data_bits + 7) >> 3;
+		header_bytes = cps->params.model_region - (ui1 *) bh;  // fixed block bytes + variable region before model
+		fall_through_bytes += header_bytes + CMP_MBE_MODEL_FIXED_HDR_BYTES_m13 + (n_derivs * 4);
+		if ((rem = fall_through_bytes & 7))  // pad bytes
+			fall_through_bytes += (8 - rem);
+		if (fall_through_bytes < bh->total_block_bytes) {
+			bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
+			bh->block_flags |= CMP_BF_MBE_ENCODING_m13;
+			MBE_header = (CMP_MBE_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
+			if (use_raw == TRUE_m13) {
+				// cps->input_buffer = unchanged
+				MBE_header->minimum_value = cps->params.minimum_sample_value;
+				MBE_header->derivative_level = 0;
+			} else {
+				cps->input_buffer = cps->params.derivative_buffer;
+				MBE_header->minimum_value = cps->params.minimum_difference_value;
+				MBE_header->derivative_level = n_derivs;
+			}
+			MBE_header->bits_per_sample = bits_per_samp;
+			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
+			
+			return_m13(CMP_MBE_encode_m13(cps));
+		}
+	}
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -33338,7 +33685,7 @@ tern	FPS_free_m13(void *ptr)
 	
 	if (fps->type_code == TS_DATA_TYPE_CODE_m13)
 		if (fps->params.cps)
-			CMP_free_cps_m13(fps->params.cps, TRUE_m13);
+			CMP_free_CPS_m13(fps->params.cps, TRUE_m13);
 	
 	if (fps->params.raw_data)
 		free_m13(fps->params.raw_data);
@@ -33585,7 +33932,7 @@ FPS_PARAMS_m13	*FPS_init_params_m13(FPS_PARAMS_m13 *params)
 		params->raw_data_bytes = 0;
 		*params->mode_str = 0;
 		if (params->cps)
-			CMP_free_cps_m13(params->cps, TRUE_m13);
+			CMP_free_CPS_m13(params->cps, TRUE_m13);
 		if (params->fp)
 			if (params->fp->fp)
 				fclose_m13(params->fp);

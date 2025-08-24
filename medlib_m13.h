@@ -3672,17 +3672,30 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_SRRED_MODEL_SCALED_BLOCK_TOTAL_BYTES_OFFSET_m13		4 // ui4
 #define CMP_SRRED_MODEL_SCALED_BLOCK_MODEL_BYTES_OFFSET_m13		8 // ui2
 #define CMP_SRRED_MODEL_RESIDUALS_BLOCK_MODEL_BYTES_OFFSET_m13 		10 // ui2
-#define CMP_SRRED_MODEL_FLAGS_OFFSET_m13				12 // ui2
-#define CMP_SRRED_MODEL_PAD_OFFSET_m13					14 // ui1[2]
+#define CMP_SRRED_MODEL_DERIVATIVE_LEVEL_OFFSET_m13 			12 // ui1
+#define CMP_SRRED_MODEL_PAD_OFFSET_m13					13 // ui1
+#define CMP_SRRED_MODEL_FLAGS_OFFSET_m13				14 // ui2
 #define CMP_SRRED_MODEL_FIXED_HDR_BYTES_m13				16
 // SRRED Model Flags
-#define CMP_SRRED_FLAGS_SCALED_PRED_m13				((ui4) 1 << 0)  // bit 0
-#define CMP_SRRED_FLAGS_SCALED_MBE_m13				((ui4) 1 << 1)  // bit 1
-#define CMP_SRRED_FLAGS_RESIDUALS_RED_m13			((ui4) 1 << 2)  // bit 2
-#define CMP_SRRED_FLAGS_RESIDUALS_MBE_m13			((ui4) 1 << 3)  // bit 3
+#define CMP_SRRED_FLAGS_SCALED_PRED_m13				((ui4) 1 << 0) // bit 0
+#define CMP_SRRED_FLAGS_SCALED_MBE_m13				((ui4) 1 << 1) // bit 1
+#define CMP_SRRED_FLAGS_RESIDUALS_RED_m13			((ui4) 1 << 2) // bit 2
+#define CMP_SRRED_FLAGS_RESIDUALS_MBE_m13			((ui4) 1 << 3) // bit 3
 #define CMP_SRRED_SCALED_ALGORITHMS_MASK_m13			( CMP_SRRED_FLAGS_SCALED_PRED_m13 | CMP_SRRED_FLAGS_SCALED_MBE_m13 )
 #define CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13			( CMP_SRRED_FLAGS_RESIDUALS_RED_m13 | CMP_SRRED_FLAGS_RESIDUALS_MBE_m13 )
 #define CMP_SRRED_ALGORITHMS_MASK_m13				( CMP_SRRED_SCALED_ALGORITHMS_MASK_m13 | CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13 )
+
+// CMP: SSE (Symbol Sequence Encoding) Model Offset Constants
+#define CMP_SSE_MODEL_NUMBER_OF_KEYSAMPLE_BYTES_OFFSET_m13	0 // ui4
+#define CMP_SSE_MODEL_DERIVATIVE_LEVEL_OFFSET_m13		4 // ui1
+#define CMP_SSE_MODEL_PAD_BYTES_OFFSET_m13			5 // ui1[3]
+#define CMP_SSE_MODEL_NUMBER_OF_STATISTICS_BINS_OFFSET_m13	8 // ui2
+#define CMP_SSE_MODEL_FLAGS_OFFSET_m13				10 // ui2
+#define CMP_SSE_MODEL_FIXED_HDR_BYTES_m13			12
+// SSE Model Flags
+#define CMP_SSE_2_BYTE_OVERFLOWS_MASK_m13				((ui2) 1 << 2)		// bit 2
+#define CMP_SSE_3_BYTE_OVERFLOWS_MASK_m13				((ui2) 1 << 3)		// bit 3
+#define CMP_SSE_OVERFLOW_BYTES_MASK_m13					(CMP_SSE_2_BYTE_OVERFLOWS_MASK_m13 | CMP_SSE_3_BYTE_OVERFLOWS_MASK_m13)
 
 // CMP: MBE (Minimal Bit Encoding) Model Offset Constants
 #define CMP_MBE_MODEL_MINIMUM_VALUE_OFFSET_m13			0 // si4
@@ -3732,7 +3745,7 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 
 #define CMP_BF_ALGORITHMS_MASK_m13		( CMP_BF_RED1_ENCODING_m13 | CMP_BF_PRED1_ENCODING_m13 | CMP_BF_MBE_ENCODING_m13 \
 						| CMP_BF_VDS_ENCODING_m13 | CMP_BF_RED2_ENCODING_m13 | CMP_BF_PRED2_ENCODING_m13 \
-						| CMP_BF_SRRED_ENCODING_m13 )
+						| CMP_BF_SRRED_ENCODING_m13 | CMP_BF_SSE_ENCODING_m13 )
 // CMP Parameter Map Indices
 #define CMP_PF_INTERCEPT_IDX_m13		((ui4) 0) // parameter flags bit 0
 #define CMP_PF_GRADIENT_IDX_m13			((ui4) 1) // parameter flags bit 1
@@ -4065,7 +4078,7 @@ typedef struct { // requires 4-byte alignment
 	ui1	derivative_level;
 	ui1	pad[3];
 	union {
-		ui2	numbers_of_statistics_bins[3];
+		ui2	n_statistics_bins[3];
 		struct {
 			ui2	n_nil_statistics_bins;
 			ui2	n_pos_statistics_bins;
@@ -4091,6 +4104,14 @@ typedef struct { // requires 4-byte alignment
 	ui1	derivative_level;
 	ui2	flags;
 } CMP_MBE_MODEL_FIXED_HDR_m13;
+
+typedef struct {  // requires 4-byte alignment
+	ui4	n_keysample_bytes;
+	ui1	derivative_level;
+	ui1	pad[3];
+	ui2	n_statistics_bins;
+	ui2	flags;
+} CMP_SSE_MODEL_FIXED_HDR_m13;
 
 typedef struct { // requires 4-byte alignment
 	ui4	n_VDS_samples;
@@ -4278,8 +4299,8 @@ tern	CMP_find_crits_2_m13(sf8 *data, si8 data_len, si8 *n_peaks, si8 *peak_xs, s
 tern	CMP_find_extrema_m13(si4 *input_buffer, si8 len, si4 *min, si4 *max, CPS_m13 *cps);
 tern	CMP_find_frequency_scale_m13(CPS_m13 *cps, tern (*compression_f)(CPS_m13 *cps));
 tern	CMP_free_buffers_m13(CMP_BUFFERS_m13 **buffers_ptr);
-tern	CMP_free_cps_cache_m13(CPS_m13 *cps);
-tern	CMP_free_cps_m13(CPS_m13 *cps, tern free_structure);
+tern	CMP_free_CPS_cache_m13(CPS_m13 *cps);
+tern	CMP_free_CPS_m13(CPS_m13 *cps, tern free_structure);
 sf8	CMP_gamma_cdf_m13(sf8 x, sf8 k, sf8 theta, sf8 offset);
 sf8	CMP_gamma_cf_m13(sf8 a, sf8 x, sf8 *g_ln);
 sf8	CMP_gamma_inv_cdf_m13(sf8 p, sf8 k, sf8 theta, sf8 offset);
@@ -4319,7 +4340,7 @@ tern	CMP_PRED2_decode_m13(CPS_m13 *cps);
 tern	CMP_PRED1_encode_m13(CPS_m13 *cps);
 tern	CMP_PRED2_encode_m13(CPS_m13 *cps);
 sf8	CMP_quantval_m13(sf8 *data, si8 len, sf8 quantile, tern preserve_input, sf8 *buf);
-CPS_m13	*CMP_realloc_cps_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
+CPS_m13	*CMP_realloc_CPS_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_samples, ui4 block_samples);
 tern	CMP_rectify_m13(si4 *input_buffer, si4 *output_buffer, si8 len);
 tern	CMP_RED1_decode_m13(CPS_m13 *cps);
 tern	CMP_RED2_decode_m13(CPS_m13 *cps);
@@ -4347,6 +4368,8 @@ tern	CMP_SRRED_decode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_encode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps);
 sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale);
+tern    CMP_SSE_decode_m13(CPS_m13 *cps);
+tern    CMP_SSE_encode_m13(CPS_m13 *cps);
 tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED);
 sf8	CMP_trace_amplitude_m13(sf8 *y, sf8 *buffer, si8 len, tern detrend);
 si8	CMP_ts_sort_m13(si4 *x, si8 len, CMP_NODE_m13 *nodes, CMP_NODE_m13 *head, CMP_NODE_m13 *tail, si4 return_sorted_ts, ...);
