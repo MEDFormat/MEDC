@@ -12583,7 +12583,7 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 		if (code == E_SIG_m13) {
 			err->signal = line;  // system siganl number passed in line argument since no line available in signal trap
 			line = E_UNKNOWN_LINE_m13;
-			function = "<unknown>";
+			function = NULL;
 			#ifdef FT_DEBUG_m13
 			if (stack->top_idx >= 0)
 				function = stack->functions[stack->top_idx].name;  // stack found above
@@ -13336,7 +13336,7 @@ tern  G_show_daylight_change_code_m13(DAYLIGHT_TIME_CHANGE_CODE_m13 *code, const
 tern	G_show_error_m13(void)
 {
 	const si1	*func;
-	si1		*mess, *name;
+	si1		*mess, *thread;
 	si4		code, line;
 	ERROR_m13	*err;
 	pid_t_m13	_id;
@@ -13347,7 +13347,7 @@ tern	G_show_error_m13(void)
 
 	code = err->code;
 	mess = err->message;
-	name = err->thread_name;
+	thread = err->thread_name;
 	func = err->function;
 	line = err->line;
 	
@@ -13366,16 +13366,31 @@ tern	G_show_error_m13(void)
 	_id = gettid_m13();
 
 #ifdef MATLAB_m13  // no text color
-	if (*err->thread_name) {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id: %lu)]\n", mess, func, name, _id);
-		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, name, _id);
+	if (*thread) {
+		if (line == E_UNKNOWN_LINE_m13) {
+			if (func)
+				mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id: %lu)]\n", mess, func, thread, _id);
+			else
+				mexPrintf("\n\nError:\t%s\n\t[set in %s(id: %lu)]\n", mess, thread, _id);
+		} else {
+			if (func)
+				mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, thread, _id);
+			else
+				mexPrintf("\n\nError:\t%s\n\t[set in %s(id: %lu)]\n", mess, thread, _id);
+
+		}
 	} else {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread %lu]\n", mess, func, _id);
-		else
-			mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
+		if (line == E_UNKNOWN_LINE_m13) {
+			if (func)
+				mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread %lu]\n", mess, func, _id);
+			else
+				mexPrintf("\n\nError:\t%s\n\t[set in thread %lu]\n", mess, _id);
+		} else {
+			if (func)
+				mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
+			else
+				mexPrintf("\n\nError:\t%s\n\t[set in thread %lu]\n", mess, _id);
+		}
 	}
 	#if defined MACOS_m13 || defined LINUX_m13
 	if (err->signal == SIGTRAP)
@@ -13383,16 +13398,31 @@ tern	G_show_error_m13(void)
 	#endif
 	mexPrintf("\n");
 #else  // colored text
-	if (*err->thread_name) {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, name, _id, TC_RESET_m13);
-		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, name, _id, TC_RESET_m13);
+	if (*thread) {
+		if (line == E_UNKNOWN_LINE_m13) {
+			if (func)
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, thread, _id, TC_RESET_m13);
+			else
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, thread, _id, TC_RESET_m13);
+		} else {
+			if (func)
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, TC_BLUE_m13, mess, func, line, thread, _id, TC_RESET_m13);
+			else
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, TC_BLUE_m13, mess, thread, _id, TC_RESET_m13);
+
+		}
 	} else {
-		if (err->line == E_UNKNOWN_LINE_m13)
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
-		else
-			printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
+		if (line == E_UNKNOWN_LINE_m13) {
+			if (func)
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
+			else
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, _id, TC_RESET_m13);
+		} else {
+			if (func)
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
+			else
+				printf("\n\n%c%sError:%s\t%s\n\t%s[set in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, _id, TC_RESET_m13);
+		}
 	}
 	#if defined MACOS_m13 || defined LINUX_m13
 	if (err->signal == SIGTRAP)
@@ -14998,7 +15028,7 @@ void	G_signal_trap_m13(si4 sig_num)
 	}
 	
 	// set error (put sigal number in line argument & call G_set_error_exec_m13(() directly)
-	function = "<unknown>";
+	function = NULL;
 	#ifdef FT_DEBUG_m13
 	FUNCTION_STACK_m13		*stack;
 
@@ -15013,7 +15043,7 @@ void	G_signal_trap_m13(si4 sig_num)
 	
 	// pass signal number to G_set_error_exec_m13() in line argument because line not available in trap
 	#ifdef MATLAB_m13
-	G_set_error_exec_m13(function, sig_num, E_SIG_m13, "[%s, sys code %d]", error_desc, error_type, sig_num);
+	G_set_error_exec_m13(function, sig_num, E_SIG_m13, "%s  [%s, sys code %d]", error_desc, error_type, sig_num);
 	#else
 	G_set_error_exec_m13(function, sig_num, E_SIG_m13, "%s  %s[%s, sys code %d]%s", error_desc, TC_YELLOW_m13, error_type, sig_num, TC_RESET_m13);
 	#endif
@@ -23389,9 +23419,10 @@ tern	CMP_PRED1_decode_m13(CPS_m13 *cps)
 	cps->params.derivative_level = n_derivs;
 	
 	// get block flags
-	no_zero_counts = FALSE_m13;
 	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
+	else
+		no_zero_counts = FALSE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
 	if (overflow_bytes == 4)
@@ -23544,9 +23575,10 @@ tern	CMP_PRED2_decode_m13(CPS_m13 *cps)
 	cps->params.derivative_level = n_derivs;
 	
 	// get block flags
-	no_zero_counts = FALSE_m13;
 	if (PRED_header->flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
+	else
+		no_zero_counts = FALSE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
 	if (overflow_bytes == 4)
@@ -23787,10 +23819,11 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 
 	// set model parameters
 	PRED_header->derivative_level = n_derivs;
-	no_zero_counts = FALSE_m13;
 	if (cps->direcs.flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
 		PRED_header->flags |= CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13;
+	} else {
+		no_zero_counts = FALSE_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_PRED_COMPRESSION_m13);
 
@@ -24074,7 +24107,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	// set model parameters
 	PRED_header->derivative_level = n_derivs;
 	no_zero_counts = FALSE_m13;
-	if (cps->direcs.flags & CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13) {
+	if (cps->direcs.flags & CPS_DF_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
 		PRED_header->flags |= CMP_PRED_FLAGS_NO_ZERO_COUNTS_m13;
 	}
@@ -24632,12 +24665,14 @@ tern	CMP_RED1_decode_m13(CPS_m13 *cps)
 	cps->params.derivative_level = RED_header->derivative_level;
 	
 	// get block flags
-	no_zero_counts = FALSE_m13;
 	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
-	pos_derivs = FALSE_m13;
+	else
+		no_zero_counts = FALSE_m13;
 	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13)
 		pos_derivs = TRUE_m13;
+	else
+		pos_derivs = FALSE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
 	if (overflow_bytes == 4)
@@ -24800,12 +24835,14 @@ tern	CMP_RED2_decode_m13(CPS_m13 *cps)
 	cps->params.derivative_level = RED_header->derivative_level;
 	
 	// get block flags
-	no_zero_counts = FALSE_m13;
 	if (RED_header->flags & CMP_RED_FLAGS_NO_ZERO_COUNTS_m13)
 		no_zero_counts = TRUE_m13;
-	pos_derivs = FALSE_m13;
+	else
+		no_zero_counts = FALSE_m13;
 	if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13)
 		pos_derivs = TRUE_m13;
+	else
+		pos_derivs = FALSE_m13;
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_DECOMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 	sign_bit = (ui4) 1 << ((overflow_bytes << 3) - 1);
 	if (overflow_bytes == 4)
@@ -25049,15 +25086,17 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 
 	// set model parameters
 	RED_header->derivative_level = n_derivs;
-	pos_derivs = FALSE_m13;
 	if (n_derivs && cps->params.minimum_difference_value > 0) {
 		pos_derivs = TRUE_m13;
 		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13;
+	} else {
+		pos_derivs = FALSE_m13;
 	}
-	no_zero_counts = FALSE_m13;
 	if (cps->direcs.flags & CPS_DF_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
 		RED_header->flags |= CMP_RED_FLAGS_NO_ZERO_COUNTS_m13;
+	} else {
+		no_zero_counts = FALSE_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 
@@ -25334,15 +25373,17 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 
 	// set model parameters
 	RED_header->derivative_level = n_derivs;
-	pos_derivs = FALSE_m13;
 	if (n_derivs && cps->params.minimum_difference_value > 0) {
 		pos_derivs = TRUE_m13;
 		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13;
+	} else {
+		pos_derivs = FALSE_m13;
 	}
-	no_zero_counts = FALSE_m13;
 	if (cps->direcs.flags & CPS_DF_NO_ZERO_COUNTS_m13) {
 		no_zero_counts = TRUE_m13;
 		RED_header->flags |= CMP_RED_FLAGS_NO_ZERO_COUNTS_m13;
+	} else {
+		no_zero_counts = FALSE_m13;
 	}
 	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
 
@@ -26001,15 +26042,17 @@ tern	CMP_show_block_header_m13(void *level_header, CMP_FIXED_BH_m13 *bh)
 
 tern	CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 {
-	ui1				*VDS_model_region;
-	si1				*symbols, *time_alg, *amp_alg, *indent, bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
+	ui1				*VDS_model_region, *SRRED_model_region;
+	si1				*symbols, *time_alg, *amp_alg, *scaled_alg, *resid_alg, *indent, bin_str[BIN_STR_BYTES_m13(sizeof(ui4), 3)];
 	ui2 				*counts;
-	ui4				algorithm, mask, amp_alg_flag, time_alg_flag;
+	ui4				algorithm, mask, amp_alg_flag, time_alg_flag, scaled_alg_flag, resid_alg_flag;
 	si4				*derivs;
 	si8 				i, total_counts;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_RED_MODEL_FIXED_HDR_m13	*RED_header;
 	CMP_PRED_MODEL_FIXED_HDR_m13	*PRED_header;
+	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
+	CMP_SSE_MODEL_FIXED_HDR_m13	*SSE_header;
 	CMP_MBE_MODEL_FIXED_HDR_m13	*MBE_header;
 	CMP_VDS_MODEL_FIXED_HDR_m13	*VDS_header;
 
@@ -26019,7 +26062,7 @@ tern	CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 
 	bh = cps->block_header;
 
-	// "recursed_call" argument is used internally for VDS models => call with FALSE_m13
+	// "recursed_call" argument is used internally for VDS & SRRED models => call with FALSE_m13
 	if (recursed_call == TRUE_m13) {
 		indent = "\t";
 	} else {
@@ -26102,6 +26145,65 @@ tern	CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 			printf_m13("\n%sNumber of NEG Statistics Bins: %hu  (counts are scaled)\n", indent, PRED_header->n_neg_statistics_bins);
 			for (i = 0; i < PRED_header->n_neg_statistics_bins; ++i)
 				printf_m13("%sbin %03d:  symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
+			break;
+			
+		case CMP_BF_SRRED_ENCODING_m13:
+			SRRED_model_region = cps->params.model_region;
+			SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) SRRED_model_region;
+			algorithm = SRRED_header->flags & CMP_SRRED_SCALED_ALGORITHMS_MASK_m13;
+			switch (algorithm) {
+				case CMP_SRRED_FLAGS_SCALED_PRED_m13:
+					scaled_alg = "PRED";
+					scaled_alg_flag = CMP_BF_PRED2_ENCODING_m13;
+					break;
+				case CMP_SRRED_FLAGS_SCALED_MBE_m13:
+					scaled_alg = "MBE";
+					scaled_alg_flag = CMP_BF_MBE_ENCODING_m13;
+					break;
+			}
+			algorithm = SRRED_header->flags & CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13;
+			switch (algorithm) {
+				case CMP_SRRED_FLAGS_RESIDUALS_RED_m13:
+					resid_alg = "RED";
+					resid_alg_flag = CMP_BF_RED2_ENCODING_m13;
+					break;
+				case CMP_SRRED_FLAGS_RESIDUALS_MBE_m13:
+					resid_alg = "MBE";
+					resid_alg_flag = CMP_BF_MBE_ENCODING_m13;
+					break;
+			}
+			printf_m13("Model: Scaled + Residuals Range Encoded Derivatives (SRRED)\n");
+			printf_m13("Scale: %f\n", SRRED_header->scale);
+			printf_m13("Scaled Block Total Bytes: %u\n", SRRED_header->scaled_block_total_bytes);
+			printf_m13("Scaled Block Model: %s\n", scaled_alg);
+			printf_m13("Scaled Block Model Bytes: %hu\n", SRRED_header->scaled_block_model_bytes);
+			printf_m13("Resdiduals Block Model: %s\n", resid_alg);
+			printf_m13("Resdiduals Block Model Bytes: %hu\n", SRRED_header->residuals_block_model_bytes);
+			printf_m13("SRRED Model Flag Bits: ");
+			for (i = 0, mask = 1; i < 16; ++i, mask <<= 1) {
+				if (SRRED_header->flags & mask)
+					printf_m13("%d ", i);
+			}
+			STR_bin_m13(bin_str, &SRRED_header->flags, sizeof(ui2), " - ", TRUE_m13);
+			printf_m13(" (value: %s)\n", bin_str);
+			// show scaled model
+			printf_m13("\t============== SRRED Scaled Block Model - START =============\n");
+			cps->params.model_region = SRRED_model_region + CMP_SRRED_MODEL_FIXED_HDR_BYTES_m13;
+			bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
+			bh->block_flags |= scaled_alg_flag;
+			CMP_show_block_model_m13(cps, TRUE_m13);
+			printf_m13("\t=============== SRRED Scaled Block Model - END ==============\n");
+			// show time model
+			printf_m13("\t============ SRRED Residuals Block Model - START ============\n");
+			cps->params.model_region += SRRED_header->scaled_block_total_bytes;
+			bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
+			bh->block_flags |= resid_alg_flag;
+			CMP_show_block_model_m13(cps, TRUE_m13);
+			printf_m13("\t============= SRRED Residuals Block Model - END =============\n");
+			// restore base VDS model
+			cps->params.model_region = SRRED_model_region;
+			bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
+			bh->block_flags |= CMP_BF_SRRED_ENCODING_m13;
 			break;
 			
 		case CMP_BF_MBE_ENCODING_m13:
@@ -26196,6 +26298,38 @@ tern	CMP_show_block_model_m13(CPS_m13 *cps, tern recursed_call)
 			bh->block_flags &= ~CMP_BF_ALGORITHMS_MASK_m13;
 			bh->block_flags |= CMP_BF_VDS_ENCODING_m13;
 			break;
+			
+		case CMP_BF_SSE_ENCODING_m13:
+			SSE_header = (CMP_SSE_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
+			printf_m13("%sModel: Symbol Sequence Encoding (SSE)\n", indent);
+			printf_m13("%sNumber of Keysample Bytes: %u\n", indent, SSE_header->n_keysample_bytes);
+			printf_m13("%sDerivative Level: %hhu\n", indent, SSE_header->derivative_level);
+			if (SSE_header->derivative_level > 0) {
+				derivs = (si4 *) (cps->params.model_region + CMP_SSE_MODEL_FIXED_HDR_BYTES_m13);
+				if (SSE_header->derivative_level == 1) {
+					printf_m13("%sDerivative Initial Value: %d", indent, derivs[0]);
+				} else {
+					printf_m13("%sDerivative Initial Values: %d", indent, derivs[0]);
+					for (i = 1; i < SSE_header->derivative_level; ++i)
+						printf_m13(", %d", derivs[i]);
+				}
+				printf_m13("\n");
+			}
+			printf_m13("%sSSE Model Flag Bits: ", indent);
+			for (i = 0, mask = 1; i < 16; ++i, mask <<= 1) {
+				if (SSE_header->flags & mask)
+					printf_m13("%d ", i);
+			}
+			STR_bin_m13(bin_str, &SSE_header->flags, sizeof(ui2), " - ", TRUE_m13);
+			printf_m13(" (value: %s)\n", bin_str);
+			printf_m13("\n%sNumber of Statistics Bins: %hu  (counts are scaled)\n", indent, SSE_header->n_statistics_bins);
+			// end fixed SSE model fields
+			counts = (ui2 *) (cps->params.model_region + CMP_SSE_MODEL_FIXED_HDR_BYTES_m13 + (SSE_header->derivative_level * 4));
+			symbols = (si1 *) (counts + SSE_header->n_statistics_bins);
+			for (i = 0; i < SSE_header->n_statistics_bins; ++i)
+				printf_m13("%sbin %03d:  symbol: %hhd\tcount: %hu\n", indent, i, *symbols++, *counts++);
+			break;
+
 		default:
 			G_set_error_m13(E_CMP_m13, "unrecognized model (%u)", bh->block_flags & CMP_BF_ALGORITHMS_MASK_m13);
 			break;
@@ -47082,17 +47216,19 @@ void	exit_exec_m13(const si1 *function, const si4 line, si4 status)
 		G_show_function_stack_m13(globals_m13->error.thread_id);
 		#endif
 
-		#ifdef MATLAB_m13
-		if (line == E_UNKNOWN_LINE_m13)
-			mexPrintf("[exited in %s()]\n\n", function);
-		else
-			mexPrintf("[exited at %s(%d)]\n\n", function, line);
-		#else
-		if (line == E_UNKNOWN_LINE_m13)
-			printf("[exited in %s()]\n\n", function);
-		else
-			printf("[exited at %s(%s%d%s)]\n\n", function, TC_BLUE_m13, line, TC_RESET_m13);
-		#endif
+		if (function) {
+			#ifdef MATLAB_m13
+			if (line == E_UNKNOWN_LINE_m13)
+				mexPrintf("[exited in %s()]\n\n", function);
+			else
+				mexPrintf("[exited at %s(%d)]\n\n", function, line);
+			#else
+			if (line == E_UNKNOWN_LINE_m13)
+				printf("[exited in %s()]\n\n", function);
+			else
+				printf("[exited at %s(%s%d%s)]\n\n", function, TC_BLUE_m13, line, TC_RESET_m13);
+			#endif
+		}
 		
 		if (status >= E_NONE_m13 && status < E_NUM_CODES_m13) {
 			#ifdef MATLAB_m13

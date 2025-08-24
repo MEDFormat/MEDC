@@ -1821,7 +1821,7 @@ typedef struct {
 #ifdef MATLAB_m13
 	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
-	#define eprintf_m13(fmt, ...)		do { printf_m13("%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
+	#define eprintf_m13(fmt, ...)		do { fprintf(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
 #endif
 
 
@@ -3667,7 +3667,7 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_PRED_3_BYTE_OVERFLOWS_m13					((ui2) 1 << 3) // bit 3
 #define CMP_PRED_OVERFLOW_BYTES_MASK_m13				( CMP_PRED_2_BYTE_OVERFLOWS_m13 | CMP_PRED_3_BYTE_OVERFLOWS_m13 )
 
-// CMP: SRRED (Scaled Residual Range Encoded Derivatives) Model Offset Constants
+// CMP: SRRED (Scaled + Residuals RED) Model Offset Constants
 #define CMP_SRRED_MODEL_SCALED_BLOCK_SCALE_OFFSET_m13			0 // sf4  (note this is independent of block header gradient parameter)
 #define CMP_SRRED_MODEL_SCALED_BLOCK_TOTAL_BYTES_OFFSET_m13		4 // ui4
 #define CMP_SRRED_MODEL_SCALED_BLOCK_MODEL_BYTES_OFFSET_m13		8 // ui2
@@ -3693,6 +3693,8 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_SSE_MODEL_FLAGS_OFFSET_m13				10 // ui2
 #define CMP_SSE_MODEL_FIXED_HDR_BYTES_m13			12
 // SSE Model Flags
+#define CMP_SSE_FLAGS_BIT_0_m13						((ui2) 1 << 0) // bit 0 Note: this is left empty to keep bits same as RED & PRED
+#define CMP_SSE_FLAGS_BIT_1_m13						((ui2) 1 << 1) // bit 1 Note: this is left empty to keep bits same as RED & PRED
 #define CMP_SSE_2_BYTE_OVERFLOWS_MASK_m13				((ui2) 1 << 2)		// bit 2
 #define CMP_SSE_3_BYTE_OVERFLOWS_MASK_m13				((ui2) 1 << 3)		// bit 3
 #define CMP_SSE_OVERFLOW_BYTES_MASK_m13					(CMP_SSE_2_BYTE_OVERFLOWS_MASK_m13 | CMP_SSE_3_BYTE_OVERFLOWS_MASK_m13)
