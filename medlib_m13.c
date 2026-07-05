@@ -38,7 +38,7 @@
 // MED derives from the Multiscale Electrophysiology Format (MEF), versions 1-3.
 // Many people contributed to the MEF effort, but special mention is owed to
 // Greg Worrell, Casey Stengel, Andy Gardner, Mark Bower, Vince Vasoli, Ben Brinkmann,
-// Dan Crepeau, Jan Cimbálnik, Jon Lange, and Jon Halford for their contributions
+// Dan Crepeau, Jan Cimbálník, Jon Lange, and Jon Halford for their contributions
 // in design, coding, testing, implementation, and adoption.
 
 // The encryption / decryption algorithm is the 128-bit AES standard ( http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf ).
@@ -157,7 +157,7 @@ ui4 	G_add_level_extension_m13(si1 *directory_name)
 #endif
 	
 	// returns type code of existing level
-	// appends extension to passed directory_name (enough space assumed to be available)
+	// appends extension to passed directory_name (enough space is assumed)
 
 	from_root = G_full_path_m13(directory_name, full_path);  // returns T/F on whether full_path path wsa from root
 	G_path_parts_m13(full_path, enclosing_dir, base_name, NULL);
@@ -10577,6 +10577,7 @@ LH_m13 	*G_read_data_m13(void *level_header, SLICE_m13 *slice, ...)  // varargs 
 					return_m13(NULL);
 				}
 				lh = (LH_m13 *) chan;
+				break;
 			case TS_SEG_TYPE_CODE_m13:
 			case VID_SEG_TYPE_CODE_m13:
 				seg = G_open_segment_m13(NULL, slice, (si1 *) file_list, NULL, flags, password);
@@ -11878,6 +11879,7 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
 	pg = G_proc_globs_m13(NULL);  // use proc_globs from current thread
+	G_show_slice_m13(slice);
 		
 	if (search_mode == TIME_SEARCH_m13) {
 		// start segment
@@ -12391,17 +12393,17 @@ tern  G_sendgrid_email_m13(const si1 *sendgrid_key, const si1 *to_email, const s
 
 #if defined MACOS_m13 || defined LINUX_m13
 	if (exclude_cc == TRUE_m13)
-		sprintf(command, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
+		snprintf(command, 2048, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
 	else
-		sprintf(command, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
+		snprintf(command, 2048, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
 	system(command);
 #endif
 	
 #ifdef WINDOWS_m13
 	if (exclude_cc == TRUE_m13)
-		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
+		snprintf(command, 2048, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
 	else
-		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
+		snprintf(command, 2048, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m13);
 	WN_system_m13(command);
 #endif
 
@@ -13357,7 +13359,7 @@ tern	G_show_error_m13(void)
 		#ifdef MATLAB_m13  // no text color
 		mexPrintf("\nError:\tno error set\n\n");
 		#else  // colored text
-		printf_m13("\n%sError%s:\tno error set\n\n", TC_RED_m13, TC_RESET_m13);
+		printf("\n%sError%s:\tno error set\n\n", TC_RED_m13, TC_RESET_m13);
 		#endif
 
 		return(TRUE_m13);
@@ -13369,25 +13371,25 @@ tern	G_show_error_m13(void)
 	if (*thread) {
 		if (line == E_UNKNOWN_LINE_m13) {
 			if (func)
-				mexPrintf("\n\nError:\t%s\n\t[set in %s(); in %s(id: %lu)]\n", mess, func, thread, _id);
+				mexPrintf("\n\nError:\t%s\n\t[set in %s(), in thread %s(id: %lu)]\n", mess, func, thread, _id);
 			else
-				mexPrintf("\n\nError:\t%s\n\t[set in %s(id: %lu)]\n", mess, thread, _id);
+				mexPrintf("\n\nError:\t%s\n\t[set in thread %s(id: %lu)]\n", mess, thread, _id);
 		} else {
 			if (func)
-				mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in %s(id: %lu)]\n", mess, func, line, thread, _id);
+				mexPrintf("\n\nError:\t%s\n\t[set at %s(%d), in thread %s(id: %lu)]\n", mess, func, line, thread, _id);
 			else
-				mexPrintf("\n\nError:\t%s\n\t[set in %s(id: %lu)]\n", mess, thread, _id);
+				mexPrintf("\n\nError:\t%s\n\t[set in thread %s(id: %lu)]\n", mess, thread, _id);
 
 		}
 	} else {
 		if (line == E_UNKNOWN_LINE_m13) {
 			if (func)
-				mexPrintf("\n\nError:\t%s\n\t[set in %s(); in thread %lu]\n", mess, func, _id);
+				mexPrintf("\n\nError:\t%s\n\t[set in %s(), in thread %lu]\n", mess, func, _id);
 			else
 				mexPrintf("\n\nError:\t%s\n\t[set in thread %lu]\n", mess, _id);
 		} else {
 			if (func)
-				mexPrintf("\n\nError:\t%s\n\t[set at %s(%d); in thread %lu]\n", mess, func, line, _id);
+				mexPrintf("\n\nError:\t%s\n\t[set at %s(%d), in thread %lu]\n", mess, func, line, _id);
 			else
 				mexPrintf("\n\nError:\t%s\n\t[set in thread %lu]\n", mess, _id);
 		}
@@ -13401,34 +13403,34 @@ tern	G_show_error_m13(void)
 	if (*thread) {
 		if (line == E_UNKNOWN_LINE_m13) {
 			if (func)
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, thread, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(), in thread %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, thread, _id, TC_RESET_m13);
 			else
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, thread, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in thread %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, thread, _id, TC_RESET_m13);
 		} else {
 			if (func)
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, TC_BLUE_m13, mess, func, line, thread, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d), in thread %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, thread, _id, TC_RESET_m13);
 			else
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, TC_BLUE_m13, mess, thread, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in thread %s(id: %lu)]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, thread, _id, TC_RESET_m13);
 
 		}
 	} else {
 		if (line == E_UNKNOWN_LINE_m13) {
 			if (func)
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set in %s(); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in %s(), in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, _id, TC_RESET_m13);
 			else
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, _id, TC_RESET_m13);
 		} else {
 			if (func)
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d); in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set at %s(%d), in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, func, line, _id, TC_RESET_m13);
 			else
-				printf("\n\n%c%sError:%s\t%s\n\t%s[set in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, _id, TC_RESET_m13);
+				printf_m13("\n\n%c%sError:%s\t%s\n\t%s[set in thread %lu]%s\n", 7, TC_RED_m13, TC_RESET_m13, mess, TC_BLUE_m13, _id, TC_RESET_m13);
 		}
 	}
 	#if defined MACOS_m13 || defined LINUX_m13
 	if (err->signal == SIGTRAP)
 		printf_m13("\t%s(this signal can be raised by a code breakpoint)%s\n", TC_GREEN_m13, TC_RESET_m13);
 	#endif
-	printf("\n");
+	printf_m13("\n");
 #endif
 
 	return(TRUE_m13);
@@ -17431,9 +17433,8 @@ void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key,
 	G_push_function_m13();
 #endif
 
-	if (rounds < 1) {
-		if (rounds < 0)
-			G_set_error_m13(E_CRYP_m13, "negative number of rounds");
+	if (rounds == 0) {
+		G_set_error_m13(E_CRYP_m13, "rounds must be positive");
 		return_void_m13;
 	}
 
@@ -17507,8 +17508,7 @@ void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key,
 #endif
 
 	if (rounds < 1) {
-		if (rounds < 0)
-			G_set_error_m13(E_CRYP_m13, "negative number of rounds");
+		G_set_error_m13(E_CRYP_m13, "rounds must be positive");
 		return_void_m13;
 	}
 	
@@ -19309,7 +19309,7 @@ CMP_BUFFERS_m13  *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffe
 	// lock
 	buffers->locked = FALSE_m13;
 	if (lock_memory == TRUE_m13)
-		buffers->locked = mlock_m13(buffers->buffer, (size_t) buffers->total_allocated_bytes);
+		buffers->locked = mlock_m13(buffers->buffer, (si8) buffers->total_allocated_bytes);
 	
 	return_m13(buffers);
 }
@@ -20575,7 +20575,6 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
 			return_m13(0);
 		}
-		cps->params.scrap_buffers = CMP_allocate_buffers_m13(cps->params.scrap_buffers, 1, n_samps, sizeof(si4), FALSE_m13, FALSE_m13);
 	}
 	
 	// first derivative level (gets min & max sample values)
@@ -20624,18 +20623,23 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	if (set_deriv_level == 0xFF) {  // find_derivative_level option
 		switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
 			case CPS_DF_SRRED_ALGORITHM_m13:
-				CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);  // swap to RED buffers, if necessary
 			case CPS_DF_RED1_ALGORITHM_m13:
 			case CPS_DF_PRED1_ALGORITHM_m13:
 			case CPS_DF_RED2_ALGORITHM_m13:
 			case CPS_DF_PRED2_ALGORITHM_m13:
+				break;
 			case CPS_DF_MBE_ALGORITHM_m13:
+				if (cps->params.count == NULL) {
+					cps->params.count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
+					if (cps->params.count == NULL)
+						return_m13(0xFF);
+				}
 				break;
 			case CPS_DF_VDS_ALGORITHM_m13:
-				G_set_error_m13(E_GEN_m13, "VDS is not designed to work with derivatives\n");
+				G_set_error_m13(E_GEN_m13, "VDS is not designed to work with derivatives");
 				return_m13(0xFF);
 			default:
-				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
+				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm");
 				return_m13(0xFF);
 		}
 		CMP_get_counts_m13(cps, FALSE_m13);  // overflows not separated in finding optimal derivative
@@ -20649,7 +20653,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	
 	curr_deriv_buffer = cps->params.derivative_buffer;
 	if (set_deriv_level == 0xFF)  // find_derivative_level option
-		next_deriv_buffer = (si4 *) cps->params.next_derivative_buffer;  // need a scrap buffer for higer derivative levels
+		next_deriv_buffer = (si4 *) cps->params.next_derivative_buffer;  // need a scrap buffer for higher derivative levels
 	else
 		next_deriv_buffer = curr_deriv_buffer;  // do in place (traverse array backwards)
 
@@ -20679,7 +20683,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 			cnts = cps->params.count;
 			score = tmp_sf8 = (sf8) 0.0;
 			for (i = cps->params.n_stats_entries; i--;)
-				score += (sf8) *cnts++ * log(++tmp_sf8);  // note: log starts at 1.0
+				score += (sf8) *cnts++ * log(++tmp_sf8);  // note: bin numbering starts at 1.0
 			if (score < last_score) {  // monotonic decrease to minimum score; monotonic increase after minimum score
 				last_score = score;
 				cps->params.minimum_difference_value = diff_min;
@@ -20704,179 +20708,9 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	
 	// set derivative_level in CPS
 	cps->params.derivative_level = deriv_level;
-	
+		
 	return_m13(deriv_level);
 }
-
-
-//ui1	CMP_differentiate_m13(CPS_m13 *cps)
-//{
-//	tern			(*compress_f)(CPS_m13 *cps);
-//	ui1			deriv_level, set_deriv_level;
-//	ui4			n_samps, n_diffs;
-//	si4			*input_buffer, *deriv_buffer, samp_min, samp_max, diff_min, diff_max;
-//	si4			diff, *si4_p1, *si4_p2, *si4_p3;
-//	si8			i, si8_diff, pos_inf_si4, neg_inf_si4, size, last_size;
-//	CMP_FIXED_BH_m13	*bh;
-//
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	// returns derivative level (1-255); also sets in CPS parameters
-//	// 0xFF indicates error
-//	// zero indicates no differentiation
-//	
-//	// from input buffer to derivative buffer
-//	bh = cps->block_header;
-//	n_samps = bh->number_of_samples;
-//	if (n_samps <= 1) {
-//		if (n_samps == 1)
-//			cps->params.minimum_sample_value = cps->params.maximum_sample_value = cps->input_buffer[0];
-//		else
-//			cps->params.minimum_sample_value = cps->params.maximum_sample_value = 0;
-//		cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
-//		return_m13(0);
-//	}
-//
-//	set_deriv_level = 1;  // default
-//	if (cps->direcs.flags & CPS_DF_FIND_DERIVATIVE_LEVEL_m13)
-//		set_deriv_level = 0xFF;
-//	else if (cps->direcs.flags & CPS_DF_SET_DERIVATIVE_LEVEL_m13)
-//		set_deriv_level = cps->params.goal_derivative_level;
-//	if (set_deriv_level != 1) {
-//		if (set_deriv_level == 0) {
-//			CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
-//			memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
-//			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
-//			return_m13(0);
-//		}
-//		cps->params.scrap_buffers = CMP_allocate_buffers_m13(cps->params.scrap_buffers, 1, n_samps, sizeof(si4), FALSE_m13, FALSE_m13);
-//	}
-//	
-//	// first derivative level (gets min & max sample values)
-//	input_buffer = cps->input_buffer;
-//	deriv_buffer = cps->params.derivative_buffer;
-//	si4_p1 = input_buffer + (n_samps - 1);
-//	si4_p2 = si4_p1 - 1;
-//	si4_p3 = deriv_buffer + (n_samps - 1);
-//	samp_min = samp_max = input_buffer[0];
-//	diff_min = diff_max = input_buffer[1] - input_buffer[0];
-//	deriv_level = (ui1) 1;
-//	n_diffs = n_samps - deriv_level;
-//	pos_inf_si4 = (si8) POS_INF_SI4_m13;
-//	neg_inf_si4 = (si8) NEG_INF_SI4_m13;
-//	for (i = n_diffs; i--;) {
-//		if (*si4_p1 < samp_min)
-//			samp_min = *si4_p1;
-//		else if (*si4_p1 > samp_max)
-//			samp_max = *si4_p1;
-//		si8_diff = (si8) *si4_p1-- - (si8) *si4_p2--;
-//		if (si8_diff > pos_inf_si4 || si8_diff < neg_inf_si4) {
-//			G_warning_message_m13("\n%s(): difference exceeds 4-byte integer range => returning derivative level zero\n", __FUNCTION__);
-//			CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
-//			memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
-//			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
-//			return_m13(0);
-//		}
-//		diff = (si4) si8_diff;
-//		if (diff < diff_min)
-//			diff_min = diff;
-//		else if (diff > diff_max)
-//			diff_max = diff;
-//		*si4_p3-- = diff;
-//	}
-//	*si4_p3 = *si4_p1;  // first derivative initial value
-//	cps->params.minimum_sample_value = samp_min;
-//	cps->params.maximum_sample_value = samp_max;
-//	cps->params.minimum_difference_value = diff_min;
-//	cps->params.maximum_difference_value = diff_max;
-//	cps->params.derivative_level = 1;
-//
-//	if (set_deriv_level == 1)
-//		return_m13(1);
-//	
-//	// find derivatives
-//	if (set_deriv_level == 0xFF) {  // find_derivative_level option
-//		switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
-//			case CPS_DF_RED1_ALGORITHM_m13:
-//				compress_f = CMP_RED1_encode_m13;
-//				break;
-//			case CPS_DF_PRED1_ALGORITHM_m13:
-//				compress_f = CMP_PRED1_encode_m13;
-//				break;
-//			case CPS_DF_SRRED_ALGORITHM_m13: // Note: SSRED determines derivative level using RED2
-//				CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);  // swap to RED buffers, if necessary
-//			case CPS_DF_RED2_ALGORITHM_m13:
-//				compress_f = CMP_RED2_encode_m13;
-//				break;
-//			case CPS_DF_PRED2_ALGORITHM_m13:
-//				compress_f = CMP_PRED2_encode_m13;
-//				break;
-//			case CPS_DF_MBE_ALGORITHM_m13:
-//				compress_f = CMP_MBE_encode_m13;
-//				break;
-//			case CPS_DF_VDS_ALGORITHM_m13:
-//				G_set_error_m13(E_GEN_m13, "VDS is not designed to work with derivatives\n");
-//				return_m13(0xFF);
-//			default:
-//				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
-//				return_m13(0xFF);
-//		}
-//		compress_f(cps);
-//		last_size = bh->total_block_bytes;
-//	}
-//	
-//	while (--n_diffs) {
-//		input_buffer = cps->params.derivative_buffer;
-//		deriv_buffer = (si4 *) cps->params.scrap_buffers->buffer[0];  // need a scrap buffer for find_derivative_level option
-//		si4_p1 = input_buffer + (n_samps - 1);
-//		si4_p2 = si4_p1 - 1;
-//		si4_p3 = deriv_buffer + (n_samps - 1);
-//		diff_min = diff_max = input_buffer[deriv_level + 1] - input_buffer[deriv_level];
-//		for (i = n_diffs; i--;) {
-//			si8_diff = (si8) *si4_p1-- - (si8) *si4_p2--;
-//			if (si8_diff > pos_inf_si4 || si8_diff < neg_inf_si4) {
-//				cps->params.derivative_level = deriv_level;
-//				return_m13(deriv_level);  // return previous derivative level level
-//			}
-//			diff = (si4) si8_diff;
-//			if (diff < diff_min)
-//				diff_min = diff;
-//			else if (diff > diff_max)
-//				diff_max = diff;
-//			*si4_p3-- = diff;
-//		}
-//		*si4_p3 = *si4_p1;  // derivative initial value
-//		++deriv_level;
-//		if (set_deriv_level == 0xFF) {  // find_derivative_level option
-//			compress_f(cps);
-//			size = bh->total_block_bytes;
-//			if (size < last_size) {  // monotonic decrease to minimum level (if not first derivative); monotonic increase after minimum level
-//				cps->params.minimum_difference_value = diff_min;
-//				cps->params.maximum_difference_value = diff_max;
-//				cps->params.derivative_level = deriv_level;
-//				last_size = size;
-//				memcpy(input_buffer, deriv_buffer, (size_t) (n_samps << 2));  // copy into CPS derivative buffer (called "input_buffer" here)
-//			} else {
-//				--deriv_level;
-//				break;
-//			}
-//		} else {
-//			cps->params.minimum_difference_value = diff_min;
-//			cps->params.maximum_difference_value = diff_max;
-//			cps->params.derivative_level = deriv_level;
-//			memcpy(input_buffer, deriv_buffer, (size_t) (n_samps << 2));  // copy into CPS derivative buffer (called "input_buffer" here)
-//			if (deriv_level == set_deriv_level)
-//				break;
-//		}
-//	}
-//	
-//	// set derivative_level in CPS
-//	cps->params.derivative_level = deriv_level;
-//	
-//	return_m13(deriv_level);
-//}
 
 
 tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 n_samples)
@@ -20958,7 +20792,7 @@ tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number
 			compression_f = CMP_VDS_encode_m13;
 			break;
 		default:
-			G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
+			G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm");
 			return_m13(FALSE_m13);
 	}
 	
@@ -21552,9 +21386,9 @@ sf8	CMP_gamma_cdf_m13(sf8 x, sf8 k, sf8 theta, sf8 offset)
 	if (x < (sf8) 0.0)
 		x = (sf8) 0.0;
 	if (k <= (sf8) 0.0)
-		k = nan(NULL);
+		k = NAN;
 	if (theta <= (sf8) 0.0)
-		theta = nan(NULL);
+		theta = NAN;
 
 	x /= theta;
 	p = CMP_gamma_p_m13(k, x);
@@ -21618,9 +21452,9 @@ sf8	CMP_gamma_inv_cdf_m13(sf8 p, sf8 k, sf8 theta, sf8 offset)
 	if (p > (sf8) 1.0)
 		p = (sf8) 1.0;
 	if (k <= (sf8) 0.0)
-		k = nan(NULL);
+		k = NAN;
 	if (theta <= (sf8) 0.0)
-		theta = nan(NULL);
+		theta = NAN;
 	
 	x = CMP_gamma_inv_p_m13(p, k);
 	x = (x * theta) + offset;
@@ -21855,7 +21689,7 @@ void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows)
 	// generate counts from the CPS derivative buffer into the CPS counts array
 	// the number of count entries stored in the CPS parameter n_stats_entries
 	// if overflows == TRUE_m13, the overflows will be separated from the the non-overflow counts returned in the
-	// overflow samples array (scrap_buffers->buffer[1]); the overflow count is stored in the CPS parameter n_overflow_samples
+	// overflow samples array; the overflow count is stored in the CPS parameter SRRED_overflow_samples
 	// if overflows == FALSE_m13, the overflows will be incorporated into the counts (as in RED & PRED encoding functions)
 	
 	deriv_level = (si4) cps->params.derivative_level;
@@ -23951,7 +23785,7 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 	}
 	
 	// fill header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
-	bh->model_region_bytes = (ui2) (ui2) (symbols - cps->params.model_region);
+	bh->model_region_bytes = (ui2) (symbols - cps->params.model_region);
 	bh->total_header_bytes = (ui4) (symbols - (ui1 *) bh);
 	PRED_header->n_keysample_bytes = n_keysamp_bytes;
 	
@@ -24035,7 +23869,8 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			CMP_MBE_encode_m13(cps);
+			
+			return_m13(CMP_MBE_encode_m13(cps));
 		}
 	}
 
@@ -24093,7 +23928,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	
 	// calculate derivatives
 	if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
-		n_derivs = cps->params.derivative_level;
+		n_derivs = PRED_header->derivative_level;
 	else
 		n_derivs = CMP_differentiate_m13(cps);
 
@@ -24237,7 +24072,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	}
 	
 	// fill header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
-	bh->model_region_bytes = (ui2) (ui2) (symbols - cps->params.model_region);
+	bh->model_region_bytes = (ui2) (symbols - cps->params.model_region);
 	bh->total_header_bytes = (ui4) (symbols - (ui1 *) bh);
 	PRED_header->n_keysample_bytes = n_keysamp_bytes;
 	
@@ -24324,7 +24159,8 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			CMP_MBE_encode_m13(cps);
+			
+			return_m13(CMP_MBE_encode_m13(cps));
 		}
 	}
 
@@ -25301,8 +25137,8 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			CMP_MBE_encode_m13(cps);
-			return_m13(TRUE_m13);
+			
+			return_m13(CMP_MBE_encode_m13(cps));
 		}
 	}
 		
@@ -25360,7 +25196,7 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 
 	// calculate derivatives
 	if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
-		n_derivs = cps->params.derivative_level;
+		n_derivs = RED_header->derivative_level;
 	else
 		n_derivs = CMP_differentiate_m13(cps);
 
@@ -25590,7 +25426,8 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			CMP_MBE_encode_m13(cps);
+			
+			return_m13(CMP_MBE_encode_m13(cps));
 		}
 	}
 		
@@ -26646,7 +26483,7 @@ tern	CMP_SRRED_decode_m13(CPS_m13 *cps)
 	n_derivs = SRRED_header->derivative_level;
 	scale = (sf8) SRRED_header->scale;
 	si4_p1 = derivs_buffer + n_derivs;  // skip initial values
-	si4_p2 = resids_buffer + n_derivs;  // skip initial values (all initial values are zero for residuals)
+	si4_p2 = resids_buffer;  // no initial values for residuals
 	for (i = n_samps - n_derivs; i--;) {
 		tmp_sf8  = (sf8) *si4_p1 * scale;
 		if (tmp_sf8 >= (sf8) 0.0)  // avoid round() overhead
@@ -26675,7 +26512,9 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	sf8				scale, inv_scale, tmp_sf8;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
-	
+	CMP_PRED_MODEL_FIXED_HDR_m13	*PRED_header;
+	CMP_RED_MODEL_FIXED_HDR_m13	*RED_header;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -26683,45 +26522,41 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	bh = cps->block_header;
 	SRRED_model_region = cps->params.model_region;
 	SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) SRRED_model_region;
-	
+	SRRED_header->scale = cps->params.SRRED_scale;
+
 	// find parameters
 	update_params = FALSE_m13;
-	if (SRRED_header->scale == (sf4) 0.0) {
+	if (SRRED_header->scale <= (sf4) 1.0) {  // not set, or last block was redirected to PRED
 		update_params = TRUE_m13;
-		if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13 && cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
+	} else if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {  // always update
+		update_params = TRUE_m13;
+	} else if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13) {  // update periodically [NOT never (or always) update]
+		if (cps->params.SRRED_update_time <= bh->start_time) {
+			update_params = TRUE_m13;
 			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1.0e6) + (sf8) 0.5);
 			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
-			update_params = TRUE_m13;
-		}
-	} else if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
-		update_params = TRUE_m13;
-	} else if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13) {
-		if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
-			update_params = TRUE_m13;
-		} else if (cps->params.SRRED_update_time > bh->start_time) {
-			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1.0e6) + (sf8) 0.5);
-			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
-			update_params = TRUE_m13;
 		}
 	}
 	if (update_params == TRUE_m13) {
 		if (CMP_SRRED_find_parameters_m13(cps) == FALSE_m13) {
-			cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag to PRED so PRED differentiates
+			cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag so PRED differentiates
 			cps->direcs.flags |= CPS_DF_PRED2_ALGORITHM_m13;
 			CMP_PRED2_encode_m13(cps);  // redirect to PRED
-			cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag
+			cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag for next block
 			cps->direcs.flags |= CPS_DF_SRRED_ALGORITHM_m13;
+			
 			return_m13(CMP_PRED2_encode_m13(cps));
 		}
 	}
 	
 	// SRRED no better than PRED
 	if (SRRED_header->scale == (sf4) 1.0) {
-		cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag to PRED so PRED differentiates
+		cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag so PRED differentiates
 		cps->direcs.flags |= CPS_DF_PRED2_ALGORITHM_m13;
 		CMP_PRED2_encode_m13(cps);  // redirect to PRED
-		cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag
+		cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag for next block
 		cps->direcs.flags |= CPS_DF_SRRED_ALGORITHM_m13;
+		
 		return_m13(CMP_PRED2_encode_m13(cps));
 	}
 
@@ -26740,7 +26575,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	scale = (sf8) SRRED_header->scale;
 	inv_scale = (sf8) 1.0 / scale;  // invert - faster to multiply
 	si4_p1 = derivs_buffer + n_derivs;  // skip initial values
-	si4_p2 = resids_buffer + n_derivs;  // skip initial values (all initial values are zero for residuals)
+	si4_p2 = resids_buffer;  // no initial values for residuals
 	for (i = n_samps - n_derivs; i--;) {
 		original_val = *si4_p1;
 		tmp_sf8  = (sf8) original_val * inv_scale;
@@ -26767,6 +26602,8 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	// set cps to PRED encode scaled derivatives
 	cps->params.model_region = SRRED_model_region + SRRED_model_region_bytes;  // scaled model region follows SRRED model region
 	CMP_swap_RED_PRED_m13(cps, CMP_RED_TO_PRED_m13);
+	PRED_header = (CMP_PRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
+	PRED_header->derivative_level = n_derivs;
 	CMP_PRED2_encode_m13(cps); // start with PRED for scaled - may fall through to MBE
 
 	// set SRRED header values
@@ -26787,7 +26624,11 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	cps->params.model_region = ((ui1 *) bh) + bh->total_block_bytes;  // bh->total_block_bytes == total through scaled block at this point;
 	CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);
 	cps->params.derivative_buffer = resids_buffer;  // swap derivative buffer for RED derivative buffer
+	RED_header = (CMP_RED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
+	RED_header->derivative_level = 0;  // no initial values for residuals
+	bh->number_of_samples = n_samps - n_derivs;  // no initial values for residuals
 	CMP_RED2_encode_m13(cps);  // start with RED for residuals - may fall through
+	bh->number_of_samples = n_samps;  // restore
 	cps->params.derivative_buffer = derivs_buffer;  // restore derivative buffer
 	SRRED_header->residuals_block_model_bytes = bh->model_region_bytes;  // from CMP_RED2_encode_m13()
 	SRRED_header->flags &= ~CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13;
@@ -26831,13 +26672,13 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	if (cps->params.SRRED_test_samples) {
 		n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples;
 		if (n_samps == CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13)
-			n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples = (si8) bh->number_of_samples;
+			n_samps = cps->params.SRRED_test_samples = (si8) bh->number_of_samples;
 		else if (n_samps < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
-			n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13;
+			n_samps = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13;
 	} else {
 		n_samps = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13;  // not set, use default
 	}
-	if (n_samps < bh->number_of_samples)
+	if (n_samps > bh->number_of_samples)
 		return_m13(FALSE_m13);  // don't set error => initial blocks can be small in live recordings - will just set on next block  (FALSE_m13 return will redirect to PRED)
 	
 	// differentiate to optimal derivative level
@@ -26846,7 +26687,7 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	n_derivs = (ui4) CMP_differentiate_m13(cps);  // CMP_differentiate_m13() sets optimal derivative in cps->params (both derivative_level & goal_derivative_level)
 	if (n_derivs == (ui1) 0xFF)
 		return_m13(FALSE_m13);
-	
+
 	// set cps to use optimal derivative level
 	cps->direcs.flags &= ~CPS_DF_FIND_DERIVATIVE_LEVEL_m13;
 	cps->direcs.flags |= CPS_DF_SET_DERIVATIVE_LEVEL_m13;
@@ -26856,8 +26697,7 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	
 	// get minimum (unscaled) score
 	CMP_get_counts_m13(cps, FALSE_m13);  // counts with integrated overflows, no residuals
-	min_scale = (sf8) 1.0;  // scale if minimum score(scaled + residuals) > score(unscaled)
-	sf8_bin = (sf8) 1.0;
+	sf8_bin =(sf8) 1.0;  // scale if minimum score(scaled + residuals) > score(unscaled) => if not changed, SRRED_encode_m13() redirects to PRED
 	ui4_p = cps->params.count;
 	min_score = (sf8) 0.0;
 	for (i = cps->params.n_stats_entries; i--;)
@@ -26867,10 +26707,11 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	CMP_get_counts_m13(cps, TRUE_m13);
 		
 	// linear search for scale with lowest score (binary search won't work for this)
-	// (lowest score will usually be closer to lower end of scales)
+	// (lowest score usually nearer low end of scales)
 	scale = CMP_SRRED_BOTTOM_SCALE_m13;
 	scale_step = CMP_SRRED_SCALE_STEP_m13;
 	exit_scale = CMP_SRRED_TOP_SCALE_m13;
+	min_scale = (sf8) 1.0;  // uscaled
 	while (scale <= exit_scale) {
 		
 		score = CMP_SRRED_score_m13(cps, scale);
@@ -26879,15 +26720,18 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 			min_scale = scale;  // SRRED scale is the number by which the derivative values are divided (>= 1)
 			exit_scale = (sf8) 5.0 * scale;  // empirically determined bailout heuristic
 			if (exit_scale > CMP_SRRED_TOP_SCALE_m13)
-			    exit_scale = CMP_SRRED_TOP_SCALE_m13;
+				exit_scale = CMP_SRRED_TOP_SCALE_m13;
 		}
 		
 		scale += scale_step;
 	}
 	
-	// set scale in SRRED header
+	// set scale in SRRED header & CPS
 	SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
-	SRRED_header->scale = (sf4) ((sf8) 1.0 / min_scale);  // invert & demote scale (lossless - sf4 has plenty of precision for this range of scales)
+	if (min_scale < (sf8) 1.0) {
+		SRRED_header->scale = (sf4) ((sf8) 1.0 / min_scale);  // invert & demote scale (lossless - sf4 has plenty of precision for this range of scales)
+		cps->params.SRRED_scale = SRRED_header->scale;  // save for subsequent blocks
+	}
 	
 	return_m13(TRUE_m13);
 }
@@ -26899,7 +26743,7 @@ sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale)
 	ui1		*ui1_p;
 	ui4		*cnts, *scaled_cnts, *residual_cnts, *sorted_scaled_cnts, *sorted_residual_cnts;
 	ui4		scaled_bin, unscaled_bin, residual_bin, bin_cnt, tmp_sorted_count, *ui4_p;
-	ui4		bin, tmp_cnts[CMP_RED_MAX_STATS_BINS_m13 << 2];
+	ui4		bin, tmp_cnts[CMP_RED_MAX_STATS_BINS_m13 << 2];  // used for 4 consecutive arrays of CMP_RED_MAX_STATS_BINS_m13
 	const si4	LOW_D = -127, HIGH_D = 127;
 	si4		scaled_val, unscaled_val, residual_val, *si4_p;
 	si4		n_scaled_stats_entries, n_residual_stats_entries;
@@ -26918,7 +26762,7 @@ sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale)
 	sorted_residual_cnts = sorted_scaled_cnts + CMP_RED_MAX_STATS_BINS_m13;
 
 	// clear arrays
-	memset(tmp_cnts, (si4) 0, (size_t) (CMP_RED_MAX_STATS_BINS_m13 << 2));
+	memset(tmp_cnts, (si4) 0, sizeof(tmp_cnts));
 	
 	// divide counts (into scaled & residual)
 	inv_scale = (sf8) 1.0 / scale;
@@ -27400,16 +27244,16 @@ tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED)
 	// CMP_RED_PRED_SWAP_m13 == UNKNOWN_m13
 
 	// determine current state of buffers
-	if (cps->params.count == cps->params.PRED_base_count) {
-		RED_current = FALSE_m13;
-	} else if (cps->params.count == *((void **) cps->params.PRED_base_count)) {
-		RED_current = TRUE_m13;
-	} else if (cps->params.count) {
-		RED_current = TRUE_m13;
-	} else {
-		G_set_error_m13(E_CMP_m13, "RED buffers are not allocated");
+	if (cps->params.count == NULL) {
+		G_set_error_m13(E_CMP_m13, "RED/PRED buffers are not allocated");
 		return_m13(FALSE_m13);
 	}
+	if (cps->params.PRED_base_count == NULL)
+		RED_current = TRUE_m13;
+	else if (cps->params.count == cps->params.PRED_base_count)
+		RED_current = FALSE_m13;
+	else  // cps->params.count == *((void **) cps->params.PRED_base_count))
+		RED_current = TRUE_m13;
 	
 	if (RED_current == TRUE_m13) {
 		if (RED_to_PRED == FALSE_m13)  // requested PRED to RED => already RED
@@ -29549,6 +29393,7 @@ DATA_MATRIX_m13	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		switch (matrix->flags & DM_FILT_MASK_m13) {
 			case DM_FILT_ANTIALIAS_m13:
 				matrix->filter_high_fc = matrix->sampling_frequency / FILT_ANTIALIAS_FREQ_DIVISOR_DEFAULT_m13;
+				/* fall through */
 			case DM_FILT_LOWPASS_m13:
 				matrix->filter_low_fc = NAN;  // nan("");
 				break;
@@ -32468,7 +32313,7 @@ sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option
 #endif
 
 	if (ax == NULL)
-		ax = malloc((size_t) (len << 3));
+		ax = malloc_m13((size_t) (len << 3));
 		
 	// make span odd
 	if (!(span & 1))
@@ -32557,7 +32402,7 @@ sf8	*FILT_noise_floor_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thres
 #endif
 
 	if (filt_data == NULL)
-		filt_data = (sf8 *) malloc((size_t) (data_len << 3));
+		filt_data = (sf8 *) malloc_m13((size_t) (data_len << 3));
 
 	free_buffers = FALSE_m13;
 	if (nff_buffers == NULL)
@@ -35337,6 +35182,7 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 		case FPS_WP_OPEN_MODE_m13:
 			*c++ = 'w';
 			*c++ = '+';
+			break;
 		case FPS_WN_OPEN_MODE_m13:
 			*c++ = 'w';
 			*c++ = 'n';
@@ -35352,6 +35198,7 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 		case FPS_AP_OPEN_MODE_m13:
 			*c++ = 'a';
 			*c++ = '+';
+			break;
 		case FPS_AC_OPEN_MODE_m13:
 			*c++ = 'a';
 			*c++ = 'c';
@@ -36330,15 +36177,26 @@ tern	HW_get_machine_serial_m13(void)
 
 	#ifdef WINDOWS_m13
 	si1	*c;
-
-	c = STR_match_end_m13("SerialNumber", buf);
-	if (c) {
-		while (*c < '0' || *c > 'z')
-			++c;
-		machine_sn = c;
-		while (*c >= '0' && *c <= 'z')
-			++c;
-		*c = 0;
+	
+	machine_sn = NULL;
+	buf_len = strlen(buf);
+	
+	// check for wide characters
+	if (*buf == 'S' && buf_len == 1) {
+		STR_wchar2char_m13(buf, (wchar_t *) buf);
+		buf_len = strlen(buf);
+	}
+	
+	if (buf_len > 12) {
+		c = STR_match_end_m13("SerialNumber", buf);
+		if (c) {
+			while (*c < '0' || *c > 'z')
+				++c;
+			machine_sn = c;
+			while (*c >= '0' && *c <= 'z')
+				++c;
+			*c = 0;
+		}
 	}
 	#endif
 		
@@ -36365,7 +36223,6 @@ tern	HW_get_memory_info_m13(void)
 #endif
 
 	// gets system memory & page size in bytes
-
 	hw_params = &globals_m13->tables->HW_params;
 	if (hw_params->system_memory_size)
 		return_m13(TRUE_m13);
@@ -36461,9 +36318,9 @@ tern	HW_get_performance_specs_m13(tern get_current)
 	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr3 = (ui8 *) malloc((size_t) ROUNDS << 3);
-	mlock_m13(test_arr1, (size_t) (ROUNDS * sizeof(sf8)));
-	mlock_m13(test_arr2, (size_t) (ROUNDS * sizeof(sf8)));
-	mlock_m13(test_arr3, (size_t) (ROUNDS * sizeof(sf8)));
+	mlock_m13(test_arr1, (si8) (ROUNDS * sizeof(sf8)));
+	mlock_m13(test_arr2, (si8) (ROUNDS * sizeof(sf8)));
+	mlock_m13(test_arr3, (si8) (ROUNDS * sizeof(sf8)));
 
 	p1 = test_arr1;
 	p2 = test_arr2;
@@ -40872,8 +40729,8 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	unlock_parity = mlock_m13(parity_ps.parity, (size_t) mem_block_bytes);
-	unlock_data = mlock_m13(parity_ps.data, (size_t) mem_block_bytes);
+	unlock_parity = mlock_m13(parity_ps.parity, mem_block_bytes);
+	unlock_data = mlock_m13(parity_ps.data, mem_block_bytes);
 	G_pop_behavior_m13();
 	n_parity_files = allocated_parity_files = 0;
 	parity_path = parity_ps.path;
@@ -40948,6 +40805,7 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 					case VID_SEG_TYPE_CODE_m13:
 						len = strlen(base_name);
 						base_name[len - 6] = 0;
+						/* fall through */
 					case TS_CHAN_TYPE_CODE_m13:
 					case VID_CHAN_TYPE_CODE_m13:
 						STR_replace_pattern_m13(base_name, "parity", input_file_list[i], parity_path);
@@ -40956,6 +40814,7 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 				break;
 			case VID_DATA_TYPE_CODE_m13:
 				video_data = TRUE_m13;
+				/* fall through */
 			case TS_METADATA_TYPE_CODE_m13:
 			case TS_DATA_TYPE_CODE_m13:
 			case TS_INDS_TYPE_CODE_m13:
@@ -41885,8 +41744,8 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	unlock_parity = mlock_m13(parity_ps.parity, (size_t) mem_block_bytes);
-	unlock_data = mlock_m13(parity_ps.data, (size_t) mem_block_bytes);
+	unlock_parity = mlock_m13(parity_ps.parity, mem_block_bytes);
+	unlock_data = mlock_m13(parity_ps.data, mem_block_bytes);
 	G_pop_behavior_m13();
 	
 	n_files = (n_chans > n_segs) ? n_chans : n_segs;
@@ -41894,7 +41753,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 	if (n_files) {
 		parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
 		G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-		unlock_files = mlock_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		unlock_files = mlock_m13(files, (si8) (n_files * sizeof(PRTY_FILE_m13)));
 		G_pop_behavior_m13();
 		base_paths = (si1 **) calloc_2D_m13(n_files, PATH_BYTES_m13, sizeof(si1));
 	}
@@ -42059,7 +41918,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 		n_files = new_files;
 		parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
 		G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-		unlock_files = mlock_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		unlock_files = mlock_m13(files, (si8) (n_files * sizeof(PRTY_FILE_m13)));
 		G_pop_behavior_m13();
 		base_paths = (si1 **) calloc_2D_m13(n_files, PATH_BYTES_m13, sizeof(si1));
 	}
@@ -42213,7 +42072,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 				n_files = n_ssrs;
 				parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
 				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-				unlock_files = mlock_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+				unlock_files = mlock_m13(files, (si8) (n_files * sizeof(PRTY_FILE_m13)));
 				G_pop_behavior_m13();
 			}
 			
@@ -46916,6 +46775,106 @@ si1	*WN_windify_format_string_m13(const si1 *fmt)
 //**********************************************//
 
 
+#ifdef AT_DEBUG_m13
+void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 n_bytes)
+#else
+void	*aligned_alloc_m13(si8 n_bytes)  // (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
+#endif
+{
+	tern		touch_pages;
+	ui1		*ui1_p;
+	void		*ptr;
+	ui8		u_len, alloc_size, n_pages;
+	static ui8	page_size = 0, psm1;
+	si8		i;
+	HW_PARAMS_m13	*hw_params;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	
+	if (n_bytes < 0) {
+		u_len = (ui8) -n_bytes;
+		touch_pages = TRUE_m13;
+	} else {
+		u_len = (ui8) n_bytes;
+		touch_pages = FALSE_m13;
+	}
+	
+	// get page size
+	if (page_size == 0) {
+		hw_params = &globals_m13->tables->HW_params;
+		if (hw_params->system_page_size == 0)
+			if (HW_get_memory_info_m13() == FALSE_m13)
+				return(NULL);
+		page_size = (ui8) hw_params->system_page_size ;
+		psm1 = page_size - 1;
+	}
+		
+	// set alloc size to multiple of page size
+	alloc_size = u_len & (~psm1);
+	if (u_len & psm1)
+		alloc_size += page_size;
+	
+	// allocate
+	#if defined MACOS_m13 || defined LINUX_m13
+	ptr = aligned_alloc(page_size, alloc_size);
+	#endif
+	#ifdef WINDOWS_m13  // NOTE: this pointer must be freed with aligned_free_m13() in Windows
+	ptr = _aligned_malloc(u_len, page_size);  // Windows does not require multiple of page size
+	#endif
+	if (ptr == NULL) {
+		G_set_error_m13(E_ALLOC_m13, NULL);
+		return(NULL);
+	}
+	
+	// alloc tracking
+#ifdef AT_DEBUG_m13
+	if (AT_add_entry_m13(function, line, ptr, (size_t) alloc_size) == FALSE_m13) {
+		free(ptr);
+		return(NULL);
+	}
+#endif
+
+	// prevents soft failure due to possible lag in true allocation
+	if (touch_pages == TRUE_m13) {
+		n_pages = alloc_size / page_size;
+		ui1_p = (ui1 *) ptr;
+		for (i = n_pages; i--; ui1_p += page_size)
+			*ui1_p = 0;
+	}
+	
+	return_m13(ptr);
+}
+
+	  
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+#ifndef AT_DEBUG_m13
+void	aligned_free_m13(void *ptr)
+#else
+void	AT_aligned_free_m13(const si1 *function, si4 line, void *ptr)
+#endif
+{
+	#ifdef AT_DEBUG_m13
+	if (AT_remove_entry_m13(function, line, ptr) == FALSE_m13) {
+		G_proc_error_set_m13(NULL, TRUE_m13);  // free_m13() is a void function
+		return;
+	}
+	#endif
+
+	#ifdef WINDOWS_m13
+	_aligned_free(ptr))
+	#else
+	free(ptr);
+	#endif
+	
+	return;
+}
+
+
+
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
@@ -47078,18 +47037,87 @@ size_t	calloc_size_m13(void *address, size_t element_size)
 }
 
 
+#if defined MACOS_m13 || defined LINUX_m13
+// copy a single regular file's contents (no shell). "new_path" is the full destination path. Returns 0 on success.
+static si4	G_cp_file_m13(const si1 *src, const si1 *dst, mode_t mode)
+{
+	si4	in_fd, out_fd;
+	ssize_t	n_rd, n_wr, off;
+	ui1	buf[0x10000];  // 64 KiB
+
+	in_fd = open(src, O_RDONLY);
+	if (in_fd == -1)
+		return(-1);
+	out_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, mode);
+	if (out_fd == -1) {
+		close(in_fd);
+		return(-1);
+	}
+	while ((n_rd = read(in_fd, buf, sizeof(buf))) > 0) {
+		for (off = 0; off < n_rd; off += n_wr) {
+			n_wr = write(out_fd, buf + off, (size_t) (n_rd - off));
+			if (n_wr <= 0) {
+				close(in_fd);
+				close(out_fd);
+				return(-1);
+			}
+		}
+	}
+	close(in_fd);
+	close(out_fd);
+	return(n_rd < 0 ? -1 : 0);
+}
+
+// recursively copy a file or directory tree (no shell). "dst" is the full destination path (becomes a copy of "src"). Returns 0 on success.
+static si4	G_cp_recursive_m13(const si1 *src, const si1 *dst)
+{
+	si1		src_child[PATH_BYTES_m13], dst_child[PATH_BYTES_m13];
+	DIR		*dir;
+	struct dirent	*entry;
+	struct stat	st;
+
+	if (lstat(src, &st) != 0)
+		return(-1);
+	if (S_ISDIR(st.st_mode) == 0)  // regular file (symlinks copied as their target's contents, matching "cp -f")
+		return(G_cp_file_m13(src, dst, (mode_t) (st.st_mode & 0777)));
+
+	if (mkdir(dst, (mode_t) ((st.st_mode & 0777) | S_IRWXU)) != 0 && errno != EEXIST)
+		return(-1);
+	dir = opendir(src);
+	if (dir == NULL)
+		return(-1);
+	while ((entry = readdir(dir)) != NULL) {
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+		snprintf(src_child, sizeof(src_child), "%s/%s", src, entry->d_name);
+		snprintf(dst_child, sizeof(dst_child), "%s/%s", dst, entry->d_name);
+		if (G_cp_recursive_m13(src_child, dst_child) != 0) {
+			closedir(dir);
+			return(-1);
+		}
+	}
+	closedir(dir);
+	return(0);
+}
+#endif
+
+
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
 tern	cp_m13(const si1 *path, const si1 *new_path)
 {
-	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
-	si4	fe, r_val;
-	
+	si1	tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
+	si4	fe;
+#ifdef WINDOWS_m13
+	si1	command[(PATH_BYTES_m13 * 2) + 16];
+	si4	r_val;
+#endif
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
+
 	// returns, TRUE_m13 on success, FALSE_m13 on failure, UNKNOWN_m13 if "path" does not exist
 
 	// condition paths
@@ -47097,38 +47125,43 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 	path = (const si1 *) tmp_path;
 	G_full_path_m13(new_path, tmp_new_path);
 	new_path = (const si1 *) tmp_new_path;
-	
+
 	fe = G_exists_m13(path);
-	
+
 	if (fe == FILE_EXISTS_m13) {
-		
 		#if defined MACOS_m13 || defined LINUX_m13
-		sprintf_m13(command, "cp -f \"%s\" \"%s\"", path, new_path);
+		if (G_cp_file_m13(path, new_path, (mode_t) (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) != 0) {  // 0644
+			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
+			return_m13(FALSE_m13);
+		}
 		#endif
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "copy \\/y \"%s\" \"%s\"", path, new_path);
-		#endif
 		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
+		#endif
 	} else if (fe == DIR_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
-		sprintf_m13(command, "cp -Rf \"%s\" \"%s\"" , path, new_path);
+		if (G_cp_recursive_m13(path, new_path) != 0) {
+			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
+			return_m13(FALSE_m13);
+		}
 		#endif
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "xcopy \\/s \\/e \\/y \\/c \\/q \"%s\" \"%s\"", path, new_path);
-		#endif
 		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
+		#endif
 	} else {
 		return_m13(UNKNOWN_m13);
 	}
-	
+
 	return_m13(TRUE_m13);
 }
 
@@ -47296,6 +47329,7 @@ si4	fclose_m13(void *fp)
 					return_m13(FALSE_m13);
 				}
 			}  // else closed - fall through to return(0)
+		/* fall through */
 		case UNKNOWN_m13:  // fp == NULL
 			return_m13(0);
 	}
@@ -48299,7 +48333,7 @@ tern	freeable_m13(void *address)
 	// returns whether address is freeable
 	// heap starts at heap base & grows upward
 	// MacOS & Linux stack base > heap_max_address & grows downward
-	// Windows stack base < heap base & generally grows toward heap base (Windows documentation say this may not always be true, but I have not seen it happen)
+	// Windows stack base < heap base & generally grows toward heap base
 	// if getting unexpected results, consider re-compiling with AT_DEBUG_m13 defined to track errors down
 	// NOTE: not tested under 32-bit hardware or compilation on any OS
 
@@ -48320,40 +48354,39 @@ tern	freeable_m13(void *address)
 	hw_params = &globals_m13->tables->HW_params;
 	if (address_val > hw_params->heap_max_address)
 		return(FALSE_m13);
-#ifndef MATLAB_m13  // true heap base in Matlab is from Matlab itself and thus far below first allocated medlib variable
-	if (address_val < hw_params->heap_base_address)
-		return(FALSE_m13);
-#endif
 
 #ifdef MACOS_m13
 	// check if address in allocation table
-	if (malloc_size(address) == 0)
+	if (malloc_zone_from_ptr(address) == NULL)
 		return(FALSE_m13);
 #endif
 	
-	// Can't use malloc_size() equivalents on unallocated addresses in Linux or Windows
-	// Linux: malloc_usable_size() generates unrecoverable segmentation fault
-	// Windows: _msize() terminates process without signal
-
 #ifdef LINUX_m13
-	si4	err;
+	void		*stack_bottom, *stack_top;
+	size_t		sz;
+	pthread_attr_t	attr;
 	
-	// check that current protection can be changed
-	err = mprotect(address, (size_t) 1, PROT_READ | PROT_WRITE);
-	if (err)  // errno set: EACCES (not permitted), EINVAL (not page aligned), or ENOMEM (outside process address range)
+	pthread_getattr_np(pthread_self(), &attr);
+	pthread_attr_getstack(&attr, &stack_bottom, &sz);
+	stack_top = (ui1 *) stack_bottom + sz;
+	pthread_attr_destroy(&attr);
+	
+	if (stack_bottom <= address)
 		return(FALSE_m13);
+	if (address < stack_top)
+		return(FALSE_m13);
+	
+	// could parse /proc/self/maps for "[stack]" & "[heap]" labels - always correct, but slow
 #endif
 
 #ifdef WINDOWS_m13
-	DWORD	err, curr_protection;
-
-	// check that current protection can be changed
-	err = VirtualProtect(address, (size_t) 1, (DWORD) PAGE_READONLY, &curr_protection);
-	if (err == 0)  // errno set: probably ERROR_INVALID_ADDRESS
-		return(FALSE_m13);
+	void		*stack_bottom, *stack_top;
 	
-	// reset protection if successful
-	VirtualProtect(address, (size_t) 1, curr_protection, &err);  // second protection parameter cannot be NULL
+	GetCurrentThreadStackLimits(&stack_bottom, &stack_top);
+	if (stack_bottom <= address)
+		return(FALSE_m13);
+	if (address < stack_top)
+		return(FALSE_m13);
 #endif
 
 	// checked all that we can check => still possible that the address is not truly freeable, but unlikely
@@ -50066,7 +50099,7 @@ void	*malloc_m13(si8 n_bytes)  // (n_bytes negative): level header flag
 		mexMakeMemoryPersistent(ptr);
 #else
 	#if defined AT_DEBUG_m13 && defined AT_CHECK_OVERWRITES_m13
-	ptr = malloc((size_t) (n_bytes + 8));  // ensure at least 32 extra bytes allocated
+	ptr = malloc((size_t) (n_bytes + 8));  // ensure at least 8 extra bytes allocated
 	#else
 	ptr = malloc((size_t) n_bytes);
 	#endif
@@ -50279,7 +50312,7 @@ void	*memmove_m13(void *target, const void *source, size_t n_bytes)
 }
 
 
-void	*memset_m13(void *ptr, si4 val, size_t n_members, ...)  // vargargs(n_members < 0): const void *el_val (val == el_size)
+void	*memset_m13(void *ptr, si4 val, si8 n_members, ...)  // vargargs(n_members < 0): const void *el_val (val == el_size)
 {
 	si8		i;
 	si2		*si2_p, si2_val;
@@ -50303,7 +50336,7 @@ void	*memset_m13(void *ptr, si4 val, size_t n_members, ...)  // vargargs(n_membe
 		el_val = (const void *) &val;
 		el_size = (size_t) 1;
 	}
-	buf_len = n_members * el_size;
+	buf_len = (size_t) n_members * el_size;
 	
 	// regular memset()
 	if (el_size == 1) {
@@ -50357,30 +50390,56 @@ inline
 #endif
 tern	mkdir_m13(const si1 *dir)
 {
-	si1	command[PATH_BYTES_m13 + 16], tmp_dir[PATH_BYTES_m13];
-	si4	r_val;
-	
+	si1	tmp_dir[PATH_BYTES_m13], *p, sep;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
+
 	// condition path
 	G_full_path_m13(dir, tmp_dir);
-	dir = (const si1 *) tmp_dir;
 
-	#if defined MACOS_m13 || defined LINUX_m13
-	sprintf_m13(command, "mkdir -p \"%s\"", dir);
-	#endif
-	#ifdef WINDOWS_m13
-	sprintf_m13(command, "mkdir \"%s\"", dir);
-	#endif
-	
-	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
-	if (r_val) {
+	// recursively create path components (equivalent to "mkdir -p") without forking a shell.
+	// existing components (EEXIST) are not an error; tmp_dir is temporarily terminated at each separator.
+	for (p = tmp_dir + 1; *p; ++p) {
+		#if defined MACOS_m13 || defined LINUX_m13
+		if (*p == '/') {
+			sep = *p;
+			*p = 0;
+			if (mkdir(tmp_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
+				G_set_error_m13(E_FOPEN_m13, "cannot create path");
+				return_m13(FALSE_m13);
+			}
+			*p = sep;
+		}
+		#endif
+		#ifdef WINDOWS_m13
+		if (*p == '/' || *p == '\\') {
+			sep = *p;
+			*p = 0;
+			if (_mkdir(tmp_dir) != 0 && errno != EEXIST) {
+				G_set_error_m13(E_FOPEN_m13, "cannot create path");
+				return_m13(FALSE_m13);
+			}
+			*p = sep;
+		}
+		#endif
+	}
+
+#if defined MACOS_m13 || defined LINUX_m13
+	if (mkdir(tmp_dir, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0 && errno != EEXIST) {
 		G_set_error_m13(E_FOPEN_m13, "cannot create path");
 		return_m13(FALSE_m13);
 	}
-	
+#endif
+			
+#ifdef WINDOWS_m13
+	if (_mkdir(tmp_dir) != 0 && errno != EEXIST) {
+		G_set_error_m13(E_FOPEN_m13, "cannot create path");
+		return_m13(FALSE_m13);
+	}
+#endif
+
 	return_m13(TRUE_m13);
 }
 
@@ -50388,49 +50447,86 @@ tern	mkdir_m13(const si1 *dir)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	mlock_m13(void *addr, size_t len, ...)  // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data)
+tern	mlock_m13(void *addr, si8 len)  // (len < 0): len = -len, lock regardless of page alignment (may lock memory outside of intended range as well)
 {
-	tern		zero_data;
-	si4		r_val;
-	va_list		v_args;
-	
+	ui8		u_len;
+	static ui8	psm1 = 0;
+	HW_PARAMS_m13	*hw_params;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-
-	if (addr == NULL) {
-		va_start(v_args, len);
-		addr = va_arg(v_args, void *);
-		len = va_arg(v_args, size_t);
-		zero_data = (tern) va_arg(v_args, si4);
-		va_end(v_args);
+	
+	if (len == 0)
+		return(TRUE_m13);
+	
+	// check page alignmemt
+	if (len > 0) {
+		u_len = (ui8) len;
+		// get page size
+		if (psm1 == 0) {
+			hw_params = &globals_m13->tables->HW_params;
+			if (hw_params->system_page_size == 0) {
+				if (HW_get_memory_info_m13() == FALSE_m13) {
+					G_set_error_m13(E_GEN_m13, "cannot get system page size");
+					return(FALSE_m13);
+				}
+			}
+			psm1 = (ui8) hw_params->system_page_size - 1;
+		}
+		if ((ui8) addr & psm1) {
+			G_set_error_m13(E_ALLOC_m13, "address is not page aligned");
+			return(FALSE_m13);
+		}
 	} else {
-		zero_data = FALSE_m13;
+		u_len = (ui8) -len;
 	}
 	
+	// lock
 	errno_reset_m13();
 
 	#if defined MACOS_m13 || defined LINUX_m13
-	r_val = mlock(addr, len);
-	#endif
-	
-	#ifdef WINDOWS_m13
-	if (VirtualLock(addr, len))
-		r_val = 0;
-	else
-		r_val = -1;
-	#endif
-	
-	if (r_val == 0) {
-		if (zero_data == TRUE_m13)
-			memset(addr, 0, len);  // force OS to give real memory before return (otherwise there can be a lag)
-		return_m13(TRUE_m13);
+	si4		r_val;
+
+	r_val = mlock(addr, u_len);
+	if (r_val != 0 && (errno == ENOMEM || errno == EPERM)) {
+		struct rlimit	rl;
+		tern		bump;
+		
+		// change memlock resource limit & try again
+		bump = FALSE_m13;
+		if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
+			if (geteuid() == 0 && rl.rlim_max != RLIM_INFINITY) {  // privileged: lift entirely
+				rl.rlim_cur = rl.rlim_max = RLIM_INFINITY;
+				bump = TRUE_m13;
+			} else if (rl.rlim_cur != rl.rlim_max) {  // unprivileged: raise soft up to hard
+				rl.rlim_cur = rl.rlim_max;
+				bump = TRUE_m13;
+			}
+			if (bump == TRUE_m13 && setrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
+				errno_reset_m13();
+				r_val = mlock(addr, u_len);  // retry with the raised limit
+			}
+		}
 	}
-			
-	return_m13(FALSE_m13);
+	if (r_val)
+		return_m13(FALSE_m13);
+	#endif
+
+	#ifdef WINDOWS_m13
+	if (VirtualLock(addr, u_len) == 0) {
+		// double memory working size & try again
+		if (SetProcessWorkingSetSizeEx(proc, u_len, u_len << 1, QUOTA_LIMITS_HARDWS_MIN_ENABLE) == 0)
+			return_m13(FALSE_m13);
+		if (VirtualLock(addr, u_len) == 0)
+			return_m13(FALSE_m13);
+	}
+	#endif
+
+	return_m13(TRUE_m13);
 }
 
-	  
+
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
@@ -50674,9 +50770,13 @@ inline
 #endif
 tern	mv_m13(const si1 *path, const si1 *new_path)
 {
-	si1	command[(PATH_BYTES_m13 * 2) + 16], tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13], enc_dir[PATH_BYTES_m13];
-	si4	fe, r_val;
-	
+	si1	tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13], enc_dir[PATH_BYTES_m13];
+	si4	fe;
+#if defined MACOS_m13 || defined LINUX_m13
+	si1	command[(PATH_BYTES_m13 * 2) + 16];
+	si4	r_val;
+#endif
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -50703,13 +50803,12 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 		}
 	}
 	
-	// move (use system() rather tha rename() so works across different file systems)
-	#if defined MACOS_m13 || defined LINUX_m13
+	// fast path: rename() / MoveFileEx are atomic and fork no shell.
+#if defined MACOS_m13 || defined LINUX_m13
+	if (rename(path, new_path) == 0)
+		return_m13(TRUE_m13);
+	// rename() fails across file systems (EXDEV) and on some network mounts; fall back to shell mv
 	sprintf_m13(command, "mv -f \"%s\" \"%s\"", path, new_path);
-	#endif
-	#ifdef WINDOWS_m13
-	sprintf_m13(command, "move \\/y \"%s\" \"%s\"", path, new_path);
-	#endif
 	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (r_val) {
 		// sometimes this errors even though the operation succeeded
@@ -50719,6 +50818,17 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 			return_m13(FALSE_m13);
 		}
 	}
+#endif
+#ifdef WINDOWS_m13
+	// MoveFileEx replaces an existing target and copies across volumes when needed (no shell)
+	if (MoveFileExA(path, new_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED) == 0) {
+		nap_m13("1 ms");  // allow for a little file system latency
+		if (G_exists_m13(new_path) == FALSE_m13) {
+			G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, new_path);
+			return_m13(FALSE_m13);
+		}
+	}
+#endif
 	
 	return_m13(TRUE_m13);
 }
@@ -51689,13 +51799,49 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 }
 
 
+#if defined MACOS_m13 || defined LINUX_m13
+// recursively remove a file or directory tree (no shell). Returns 0 on success.
+static si4	G_rm_recursive_m13(const si1 *path)
+{
+	si1		child[PATH_BYTES_m13];
+	DIR		*dir;
+	struct dirent	*entry;
+	struct stat	st;
+
+	if (lstat(path, &st) != 0)
+		return(-1);
+	if (S_ISDIR(st.st_mode) == 0)  // regular file or symlink: unlink directly (does not follow symlinks)
+		return(unlink(path));
+
+	dir = opendir(path);
+	if (dir == NULL)
+		return(-1);
+	while ((entry = readdir(dir)) != NULL) {
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+		snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+		if (G_rm_recursive_m13(child) != 0) {
+			closedir(dir);
+			return(-1);
+		}
+	}
+	closedir(dir);
+	return(rmdir(path));
+}
+#endif
+
+
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
 tern	rm_m13(const si1 *path)
 {
-	si1	command[PATH_BYTES_m13 + 16], tmp_path[PATH_BYTES_m13], **file_list, dir[PATH_BYTES_m13], name[MAX_NAME_BYTES_m13], ext[8];
-	si4	i, fe, r_val, n_files;
+	si1	tmp_path[PATH_BYTES_m13], **file_list, dir[PATH_BYTES_m13], name[MAX_NAME_BYTES_m13], ext[8];
+	si4	i, fe, n_files;
+#ifdef WINDOWS_m13
+	si1	command[PATH_BYTES_m13 + 16];
+	si4	r_val;
+#endif
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -51721,24 +51867,26 @@ tern	rm_m13(const si1 *path)
 	fe = G_exists_m13(path);
 	
 	if (fe == FILE_EXISTS_m13) {
-		r_val = remove(path);
-		if (r_val) {
+		if (remove(path)) {
 			G_set_error_m13(E_GEN_m13, "could not remove file \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
 		return_m13(TRUE_m13);
 	} else if (fe == DIR_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
-		sprintf_m13(command, "rm -Rf \"\%s\"", path);
+		if (G_rm_recursive_m13(path) != 0) {
+			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
+			return_m13(FALSE_m13);
+		}
 		#endif
 		#ifdef WINDOWS_m13
 		sprintf_m13(command, "rmdir \\/s \\/q \"%s\"", path);
-		#endif
 		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
+		#endif
 		return_m13(TRUE_m13);
 	}
 	
@@ -53587,27 +53735,34 @@ inline
 #endif
 tern	touch_m13(const si1 *path)
 {
-	si1	command[PATH_BYTES_m13 + 32];
-	
+	si4	fd;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// create (or update access time) on file named by path
 	// returns TRUE_m13 on success, FALSE_m13 on failure
-	
+
+	// create if absent without truncating (existing content is preserved), then close
 #if defined MACOS_m13 || defined LINUX_m13
-	sprintf(command, "touch %s", path);
+	fd = open(path, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);  // 0644
 #endif
 #ifdef WINDOWS_m13
-	sprintf_m13(command, "type nul >> %s", path);
+	fd = _open(path, _O_WRONLY | _O_CREAT, _S_IREAD | _S_IWRITE);
 #endif
-	
-	if (system_m13(NULL, command, TRUE_m13, SUPPRESS_OUTPUT_m13)) {
+	if (fd == -1) {
 		G_set_error_m13(E_FGEN_m13, "error touching file \"%s\"", path);
 		return_m13(FALSE_m13);
 	}
-	
+#if defined MACOS_m13 || defined LINUX_m13
+	close(fd);
+	utimensat(AT_FDCWD, path, NULL, 0);  // set access & modification times to now (best effort)
+#endif
+#ifdef WINDOWS_m13
+	_close(fd);
+#endif
+
 	return_m13(TRUE_m13);
 }
 

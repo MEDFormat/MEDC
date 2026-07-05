@@ -204,7 +204,7 @@
 #include <stdint.h>
 
 typedef uint8_t		ui1;
-typedef char		si1; // Note: the "char" type is not guaranteed to be a signed one-byte integer. If it is not, library will exit during initialization.
+typedef char		si1; _Static_assert((si1) -1 < 0, "\"si1\" must be signed: compile with -fsigned-char"); // medlib chars must be signed: enforce at build (compile flag already set in mklibs_m13.sh)
 typedef int8_t		tern; // ternary type
 typedef uint16_t	ui2;
 typedef int16_t		si2;
@@ -1821,7 +1821,7 @@ typedef struct {
 #ifdef MATLAB_m13
 	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #else
-	#define eprintf_m13(fmt, ...)		do { fprintf(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
+	#define eprintf_m13(fmt, ...)		do { fprintf_m13(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
 #endif
 
 
@@ -3492,6 +3492,8 @@ void	AT_show_entries_m13(void);
 tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void *new_address, size_t requested_bytes);
 
 // AT replacement functions for alloc standard functions (these do not need to be called directly)
+void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 n_bytes);
+void	AT_aligned_free_m13(const si1 *function, si4 line, void *ptr);
 void	*AT_calloc_m13(const si1 *function, si4 line, size_t n_members, si8 el_size);
 void	**AT_calloc_2D_m13(const si1 *function, si4 line, size_t dim1, size_t dim2, si8 el_size);
 void	AT_free_m13(const si1 *function, si4 line, void *ptr);
@@ -3505,6 +3507,8 @@ void	*AT_recalloc_m13(const si1 *function, si4 line, void *ptr, size_t curr_memb
 void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size);
 
 // preprocessor directives to replace standard alloc functions with AT versions
+#define aligned_alloc_m13(a)			AT_aligned_alloc_m13(__FUNCTION__, __LINE__, a)
+#define aligned_free_m13(a)			AT_aligned_free_m13(__FUNCTION__, __LINE__, a)
 #define calloc_m13(a, b)			AT_calloc_m13(__FUNCTION__, __LINE__, a, b)
 #define calloc_2D_m13(a, b, c)			AT_calloc_2D_m13(__FUNCTION__, __LINE__, a, b, c)
 #define free_m13(a)				AT_free_m13(__FUNCTION__, __LINE__, a)
@@ -3582,7 +3586,6 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_SRRED_BOTTOM_SCALE_m13		((sf8) 0.005) // minimum search scale (scale search starts here)
 #define CMP_SRRED_TOP_SCALE_m13			((sf8) 0.995) // maximum search scale (usually exits well before here)
 #define CMP_SRRED_SCALE_STEP_m13		((sf8) 0.0001) // scale search increment
-#define CMP_SRRED_SCRAP_BUFFERS_m13		2
 #define CMP_SELF_MANAGED_MEMORY_m13		-1 // pass to CMP_allocate_CPS_m13() to prevent automatic re-allocation
 #define CMP_RED_TO_PRED_m13			TRUE_m13 // for CMP_swap_RED_PRED_m13()
 #define CMP_PRED_TO_RED_m13			FALSE_m13 // for CMP_swap_RED_PRED_m13()
@@ -3740,10 +3743,10 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 #define CMP_BF_PRED1_ENCODING_m13		((ui4) 1 << 9)  // bit 9
 #define CMP_BF_MBE_ENCODING_m13			((ui4) 1 << 10)  // bit 10
 #define CMP_BF_VDS_ENCODING_m13			((ui4) 1 << 11)  // bit 11
-#define CMP_BF_RED2_ENCODING_m13		((ui4) 1 << 12)  // bit 12 (fastest lossless)
-#define CMP_BF_PRED2_ENCODING_m13		((ui4) 1 << 13)  // bit 13 (fast lossless; better compression than RED)
+#define CMP_BF_RED2_ENCODING_m13		((ui4) 1 << 12)  // bit 12 (fast lossless)
+#define CMP_BF_PRED2_ENCODING_m13		((ui4) 1 << 13)  // bit 13 (fast lossless; better compression, but slower than RED)
 #define CMP_BF_SRRED_ENCODING_m13		((ui4) 1 << 14)  // bit 14 (slower lossless; better compression than PRED)
-#define CMP_BF_SSE_ENCODING_m13			((ui4) 1 << 15)  // bit 15 (fastest compression; compression ratio highly data-dependent)
+#define CMP_BF_SSE_ENCODING_m13			((ui4) 1 << 15)  // bit 15 (fastest lossless; compression ratio highly data-dependent)
 
 #define CMP_BF_ALGORITHMS_MASK_m13		( CMP_BF_RED1_ENCODING_m13 | CMP_BF_PRED1_ENCODING_m13 | CMP_BF_MBE_ENCODING_m13 \
 						| CMP_BF_VDS_ENCODING_m13 | CMP_BF_RED2_ENCODING_m13 | CMP_BF_PRED2_ENCODING_m13 \
@@ -3826,8 +3829,8 @@ si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
 
 // masks
 #define CPS_DF_ALGORITHM_MASK_m13			( CPS_DF_RED1_ALGORITHM_m13 | CPS_DF_PRED1_ALGORITHM_m13 | CPS_DF_RED2_ALGORITHM_m13 | \
-							CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_VDS_ALGORITHM_m13 | CPS_DF_MBE_ALGORITHM_m13 | \
-							CPS_DF_SRRED_ALGORITHM_m13 | CPS_DF_SSE_ALGORITHM_m13 )
+							CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_SRRED_ALGORITHM_m13 | CPS_DF_SSE_ALGORITHM_m13 | \
+							CPS_DF_VDS_ALGORITHM_m13 | CPS_DF_MBE_ALGORITHM_m13 )
 
 // directive defaults
 #define CPS_DIRECTIVES_COMPRESSION_MODE_DEFAULT_m13			FALSE_m13 // TRUE_m13 == compression, FALSE_m13 == decompression
@@ -4207,6 +4210,7 @@ typedef struct {
 	ui4	n_derivative_bytes; // values in derivative or difference buffer
 	
  // lossless compression parameters
+	sf4	SRRED_scale;
 	ui4	SRRED_test_samples; // smaller sizes increase speed, (CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13 uses full block (most acccurate), unless < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
 	sf8	SRRED_update_interval; // time, in seconds, between updates
 				       // CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13 (0.0) == update with every block
@@ -5630,9 +5634,9 @@ void		isem_wait_m13(isem_t_m13 *sem); // ownership or no owner required, or bloc
 void		isem_wait_noinc_m13(isem_t_m13 *isem); // ownership or no owner required, or block
 size_t		malloc_size_m13(void *address);
 tern		md_m13(const si1 *dir); // synonym for mkdir()
-void		*memset_m13(void *ptr, si4 val, size_t n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
+void		*memset_m13(void *ptr, si4 val, si8 n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
 tern		mkdir_m13(const si1 *dir); // make directory
-tern		mlock_m13(void *addr, size_t len, ...); // varargs(addr == NULL): void *addr, size_t len, tern (as si4) zero_data
+tern		mlock_m13(void *addr, si8 len);  // (len < 0): len = -len, lock regardless of page alignment
 void		*memcpy_m13(void *target, const void *source, size_t n_bytes);
 void		*memmove_m13(void *target, const void *source, size_t n_bytes);  // uses memcpy() if regions do not overlap
 si4		mprotect_m13(void *address, size_t len, si4 protection);
@@ -5705,6 +5709,8 @@ si4		vsprintf_m13(si1 *target, const si1 *fmt, va_list args);
 
 // standard (& related) functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13 // use these protoypes in all cases, defines will convert if needed
+void	*aligned_alloc_m13(si8 n_bytes);  // (n_bytes negative): touch each page before returning
+void	aligned_free_m13(void *ptr);  // must use this in Windows if pointer obtained from aligned_alloc_m13()
 void	*calloc_m13(size_t n_members, si8 el_size); // (el_size negative): level headers flag
 void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size); // (el_size negative): level header flag
 void	free_m13(void *ptr);

@@ -4634,6 +4634,7 @@ si1		*TR_strerror(si4 err_num);
 //***********************************************************************//
 
 
+void		*aligned_alloc_m12(si8 n_bytes, const si1 *function, ui4 behavior_on_fail);  // (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
 si4		asprintf_m12(si1 **target, si1 *fmt, ...);
 void		*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 behavior_on_fail);
 void		**calloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
@@ -4657,7 +4658,7 @@ void		*malloc_m12(size_t n_bytes, const si1 *function, ui4 behavior_on_fail);
 void		**malloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
 size_t		malloc_size_m12(void *address);
 void		memset_m12(void *ptr, const void *pattern, size_t pat_len, size_t n_members);
-TERN_m12	mlock_m12(void *addr, size_t len, TERN_m12 zero_data, const si1 *function, ui4 behavior_on_fail);
+TERN_m12	mlock_m12(void *addr, si8 len, const si1 *function, ui4 behavior_on_fail);  // (len < 0): len = -len, lock regardless of page alignment
 TERN_m12	munlock_m12(void *addr, size_t len, const si1 *function, ui4 behavior_on_fail);
 si4     	printf_m12(si1 *fmt, ...);
 si4		putc_m12(si4 c, FILE *stream);

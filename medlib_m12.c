@@ -160,7 +160,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
 
-	// try video series channel
+	// try video channel
 	extension = VIDEO_CHANNEL_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
 	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
@@ -176,7 +176,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 		goto ADD_LEVEL_EXTENSION_MATCH_m12;
 	}
 
-	// try video series segment
+	// try video segment
 	extension = VIDEO_SEGMENT_DIRECTORY_TYPE_STRING_m12;
 	sprintf_m12(full_path, "%s/%s.%s", enclosing_dir, base_name, extension);
 	if (G_exists_m12(full_path) == DIR_EXISTS_m12) {
@@ -196,7 +196,7 @@ ui4 	G_add_level_extension_m12(si1 *directory_name)
 	
 ADD_LEVEL_EXTENSION_MATCH_m12:
 	
-	// attempt to append extension (may cause seg fault or memory corruption)
+	// attempt to append extension (may cause seg fault or memory corruption if adequate space not available)
 	if (from_root == TRUE_m12)
 		sprintf_m12(directory_name, "%s/%s.%s", enclosing_dir, base_name, extension);
 	else
@@ -2080,7 +2080,9 @@ TERN_m12	G_decrypt_metadata_m12(FILE_PROCESSING_STRUCT_m12 *fps)
 		} else {
 			G_warning_message_m12("%s(): Section 2 of the Metadata is encrypted at level %hhd => cannot decrypt\n", __FUNCTION__, fps->metadata->section_1.section_2_encryption_level);
 			G_show_password_hints_m12(pwd, fps->metadata->section_1.section_2_encryption_level);
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			G_set_error_m12(E_BAD_PASSWORD_m12, __FUNCTION__, __LINE__);
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			return(FALSE_m12);  // can't do anything without section 2, so fail
 		}
 	}
@@ -10361,11 +10363,9 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 	if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12 || number_of_items == FPS_FULL_FILE_m12 || opened_flag == TRUE_m12) {
 		
 		FPS_read_m12(fps, 0, UNIVERSAL_HEADER_BYTES_m12, __FUNCTION__, behavior_on_fail);
-		if (uh->number_of_entries == 0) {
-			if (G_correct_universal_header_m12(fps) == FALSE_m12) { // live or abnormally terminated file
+		if (uh->number_of_entries == 0)
+			if (G_correct_universal_header_m12(fps) == FALSE_m12) // live or abnormally terminated file
 				return(NULL);
-			}
-		}
 		if (uh->session_UID != globals_m12->session_UID)  // set current session directory globals
 			G_get_session_directory_m12(NULL, NULL, fps);
 		if (number_of_items == FPS_UNIVERSAL_HEADER_ONLY_m12) {
@@ -10470,16 +10470,23 @@ FILE_PROCESSING_STRUCT_m12	*G_read_file_m12(FILE_PROCESSING_STRUCT_m12 *fps, si1
 			break;
 		case TIME_SERIES_METADATA_FILE_TYPE_CODE_m12:
 		case VIDEO_METADATA_FILE_TYPE_CODE_m12:
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			readable = G_decrypt_metadata_m12(fps);
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			break;
 		default:
 			readable = TRUE_m12;  // file types without (possible) encryption
 			break;
 	}
 	if (readable == FALSE_m12) {
-		if (allocated_flag == TRUE_m12)
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
+		if (allocated_flag == TRUE_m12) {
+			printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 			FPS_free_processing_struct_m12(fps, TRUE_m12);
+		}
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		G_set_error_m12(E_READ_ERR_m12, __FUNCTION__, __LINE__);
+		printf_m12("%s(%d)\n", __FUNCTION__, __LINE__);
 		return(NULL);
 	}
 	
@@ -12258,12 +12265,13 @@ void    G_sendgrid_email_m12(si1 *sendgrid_key, si1 *to_email, si1 *cc_email, si
 		sprintf(command, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"cc\": [{\"email\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
 		sprintf(command, "/usr/bin/curl --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header 'authorization: Bearer %s' --header 'content-type: application/json' --data '{\"personalizations\":[{\"to\": [{\"email\": \"%s\", \"name\": \"%s\"}], \"subject\": \"%s\"}], \"content\": [{\"type\": \"text/plain\", \"value\": \"%s\"}], \"from\": {\"email\": \"%s\", \"name\": \"%s\"}, \"reply_to\": {\"email\": \"%s\", \"name\": \"%s\"}}' > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+	
 	system(command);
 #endif
 	
 #ifdef WINDOWS_m12
 	if (include_cc == TRUE_m12)
-		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
+		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\": [{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"cc\\\": [{\\\"email\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, cc_email, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	else
 		sprintf(command, "curl.exe --connect-timeout 5.0 --request POST --url https://api.sendgrid.com/v3/mail/send --header \"authorization: Bearer %s\" --header \"content-type: application/json\" --data \"{\\\"personalizations\\\":[{\\\"to\\\": [{\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}], \\\"subject\\\": \\\"%s\\\"}], \\\"content\\\": [{\\\"type\\\": \\\"text/plain\\\", \\\"value\\\": \\\"%s\\\"}], \\\"from\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}, \\\"reply_to\\\": {\\\"email\\\": \\\"%s\\\", \\\"name\\\": \\\"%s\\\"}}\" > %s 2>&1", sendgrid_key, to_email, to_name, subject, escaped_content, from_email, from_name, reply_to_email, reply_to_name, NULL_DEVICE_m12);
 	WN_system_m12(command);
@@ -16918,7 +16926,7 @@ CMP_BUFFERS_m12    *CMP_allocate_buffers_m12(CMP_BUFFERS_m12 *buffers, si8 n_buf
 	// lock
 	buffers->locked = FALSE_m12;
 	if (lock_memory == TRUE_m12)
-		buffers->locked = mlock_m12((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		buffers->locked = mlock_m12((void *) buffers->buffer, (size_t) buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	
 	return(buffers);
 }
@@ -20232,7 +20240,7 @@ void	CMP_lock_buffers_m12(CMP_BUFFERS_m12 *buffers)
 	
 	// lock
 	if (buffers->locked != TRUE_m12) {
-		buffers->locked = mlock_m12((void *) buffers->buffer, buffers->total_allocated_bytes, FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+		buffers->locked = mlock_m12((void *) buffers->buffer, buffers->total_allocated_bytes, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 		buffers->locked = TRUE_m12;
 	}
 
@@ -30691,12 +30699,29 @@ void	HW_get_machine_serial_m12(void)
 #endif
 
 #ifdef WINDOWS_m12
-	si8		buf_len;
+	si1	*c;
+	si8	buf_len;
 	
+	machine_sn = NULL;
 	buf_len = strlen(buf);
-	buf[buf_len - 7] = buf[buf_len - 8] = 0;  // <cr><lf>
-	STR_wchar2char_m12(buf, (wchar_t *) buf);
-	machine_sn = STR_match_end_m12("SerialNumber  \r\n", buf);
+	
+	// check for wide characters
+	if (*buf == 'S' && buf_len == 1) {
+		STR_wchar2char_m12(buf, (wchar_t *) buf);
+		buf_len = strlen(buf);
+	}
+	
+	if (buf_len > 12) {
+		c = STR_match_end_m12("SerialNumber", buf);
+		if (c) {
+			while (*c < '0' || *c > 'z')
+				++c;
+			machine_sn = c;
+			while (*c >= '0' && *c <= 'z')
+				++c;
+			*c = 0;
+		}
+	}
 #endif
 
 	// copy machine serial number
@@ -30802,7 +30827,7 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	if (get_current != TRUE_m12)
 		if (HW_get_performance_specs_from_file_m12() == TRUE_m12)
 			return;
-	
+
 	PROC_pthread_mutex_lock_m12(&global_tables_m12->HW_mutex);
 	// may have been done by another thread while waiting
 	if (perf_specs->integer_multiplications_per_sec != 0.0)  {
@@ -30819,9 +30844,9 @@ void	HW_get_performance_specs_m12(TERN_m12 get_current)
 	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
 	test_arr3 = (ui8 *) malloc((size_t) ROUNDS << 3);
-	mlock_m12((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	mlock_m12((void *) test_arr2, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
-	mlock_m12((void *) test_arr3, (size_t) (ROUNDS * sizeof(sf8)), FALSE_m12, __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	mlock_m12((void *) test_arr1, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	mlock_m12((void *) test_arr2, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
+	mlock_m12((void *) test_arr3, (size_t) (ROUNDS * sizeof(sf8)), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 
 	p1 = test_arr1;
 	p2 = test_arr2;
@@ -30950,10 +30975,10 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 
 	if (HW_get_performance_specs_file_m12(file) == NULL)
 		return(FALSE_m12);
-		
+
 	if (G_exists_m12(file) == DOES_NOT_EXIST_m12)
 		return(FALSE_m12);
-	
+
 	hw_params = &global_tables_m12->HW_params;
 	if (hw_params->machine_code == 0)
 		HW_get_machine_code_m12();
@@ -31013,7 +31038,7 @@ TERN_m12	HW_get_performance_specs_from_file_m12(void)
 
 	PROC_pthread_mutex_unlock_m12(&global_tables_m12->HW_mutex);
 	free((void *) buffer);
-	
+
 	return(TRUE_m12);
 
 HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m12:
@@ -32023,7 +32048,7 @@ TERN_m12	NET_get_ethtool_m12(NET_PARAMS_m12 *np, TERN_m12 copy_global)
 	buffer = NULL;
 	sprintf_m12(temp_str, "/usr/sbin/ethtool %s", np->interface_name);
 	ret_val = system_pipe_m12(&buffer, 0, temp_str, SP_DEFAULT_m12, __FUNCTION__,  RETURN_ON_FAIL_m12 | SUPPRESS_OUTPUT_m12);
-	if (ret_val) {  // don't return false => this is typically superfluous info
+	if (ret_val && buffer == NULL) {  // don't return false => this is typically superfluous info
 		G_warning_message_m12("%s(): ethtool is not installed.\nCannot get link speed or duplex settings.\nInstall with \"sudo apt install ethtool\"\n", __FUNCTION__);
 	} else {
 		pattern = "Speed: ";
@@ -34993,9 +35018,9 @@ TERN_m12	PRTY_restore_m12(si1 *MED_path)
 	mem_blocks = mem_block_bytes / mmap_block_bytes;
 	parity_ps.mem_block_bytes = mem_blocks * mmap_block_bytes;
 	parity_ps.parity = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	unlock_parity = mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+	unlock_parity = mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	parity_ps.data = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	unlock_data = mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+	unlock_data = mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	n_parity_files = allocated_parity_files = 0;
 	parity_path = parity_ps.path;
 	parity_files = NULL;
@@ -35704,16 +35729,16 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 	parity_ps.mem_block_bytes = mem_block_bytes = mem_blocks * mmap_block_bytes;
 	
 	parity_ps.parity = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	unlock_parity = mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+	unlock_parity = mlock_m12((void *) parity_ps.parity, (size_t) mem_block_bytes, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	
 	parity_ps.data = (ui1 *) calloc((size_t) mem_block_bytes, sizeof(ui1));
-	unlock_data = mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+	unlock_data = mlock_m12((void *) parity_ps.data, (size_t) mem_block_bytes, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 	
 	n_files = (n_chans > n_segs) ? n_chans : n_segs;
 	unlock_files = FALSE_m12;
 	if (n_files) {
 		parity_ps.files = files = (PRTY_FILE_m12 *) malloc((size_t) n_files * sizeof(PRTY_FILE_m12));
-		unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+		unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
 		
@@ -35876,7 +35901,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 		
 		n_files = new_files;
 		parity_ps.files = files = (PRTY_FILE_m12 *) realloc((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12));
-		unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+		unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		base_paths = (si1 **) calloc_2D_m12(n_files, FULL_FILE_NAME_BYTES_m12, sizeof(si1), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 	}
 	
@@ -36028,7 +36053,7 @@ TERN_m12	PRTY_write_m12(si1 *session_path, ui4 flags, si4 segment_number)
 				munlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, USE_GLOBAL_BEHAVIOR_m12);
 			n_files = n_ssrs;
 			parity_ps.files = files = (PRTY_FILE_m12 *) realloc((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12));
-			unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), FALSE_m12, __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
+			unlock_files = mlock_m12((void *) files, (size_t) n_files * sizeof(PRTY_FILE_m12), __FUNCTION__, RETURN_ON_FAIL_m12 | SUPPRESS_ERROR_OUTPUT_m12);
 		}
 
 		// segmented session record data
@@ -40993,6 +41018,91 @@ si1	*WN_windify_format_string_m12(si1 *fmt)
 // MARK: STANDARD LIBRARY FUNCTIONS  (no prefix)
 //**********************************************//
 
+
+void	*aligned_alloc_m12(si8 n_bytes, const si1 *function, ui4 behavior_on_fail)  // (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
+{
+	TERN_m12	touch_pages;
+	ui1		*ui1_p;
+	void		*ptr;
+	si4		err;
+	ui8		u_len, n_pages, alloc_size;
+	static ui8	page_size = 0, psm1;
+	si8		i;
+	HW_PARAMS_m12	*hw_params;
+
+#ifdef FN_DEBUG_m12
+	G_message_m12("%s()\n", __FUNCTION__);
+#endif
+
+	if (n_bytes < 0) {
+		u_len = (ui8) -n_bytes;
+		touch_pages = TRUE_m12;
+	} else {
+		u_len = (ui8) n_bytes;
+		touch_pages = FALSE_m12;
+	}
+
+	// get page size
+	if (page_size == 0) {
+		hw_params = &global_tables_m12->HW_params;
+		if (hw_params->system_page_size == 0) {
+			HW_get_memory_info_m12();
+			if (hw_params->system_page_size == 0)
+				return(NULL);
+			psm1 = (ui8) (hw_params->system_page_size - 1);
+		}
+		page_size = (ui8) hw_params->system_page_size;
+		psm1 = page_size - 1;
+	}
+
+	// set alloc size to multiple of page size
+	alloc_size = u_len & ~psm1;
+	if (u_len & psm1)
+		alloc_size += page_size;
+	
+	// allocate
+	#if defined MACOS_m12 || defined LINUX_m12
+	ptr = aligned_alloc(page_size, alloc_size);
+	#endif
+	#ifdef WINDOWS_m23  // NOTE: this pointer must be freed with aligned_free_m13() in Windows
+	ptr = _aligned_malloc(u_len, page_size);  // Windows does not require multiple of page size
+	#endif
+	if (ptr == NULL) {
+		if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
+			(void) fprintf_m12(stderr, "%c\n\t%s() failed to allocate the requested array (size %lu)\n", 7, __FUNCTION__, u_len);
+			err = errno_m12();
+			(void) fprintf_m12(stderr, "\tsystem error number %d (%s)\n", err, strerror(err));
+			if (function)
+				(void)fprintf_m12(stderr, "\tcalled from function %s()\n", function);
+			if (behavior_on_fail & RETURN_ON_FAIL_m12)
+				(void)fprintf_m12(stderr, "\t=> returning NULL\n\n");
+			else if (behavior_on_fail & EXIT_ON_FAIL_m12)
+				(void)fprintf_m12(stderr, "\t=> exiting program\n\n");
+			fflush(stderr);
+		}
+		if (behavior_on_fail & RETURN_ON_FAIL_m12)
+			return(NULL);
+		else if (behavior_on_fail & EXIT_ON_FAIL_m12)
+			exit_m12(-1);
+	}
+
+	// alloc tracking
+#ifdef AT_DEBUG_m12
+	AT_add_entry_m12(ptr, (size_t) u_len, function);
+#endif
+
+	// prevents soft failure due to possible lag in true allocation
+	if (touch_pages == TRUE_m12) {
+		n_pages = alloc_size / page_size;
+		ui1_p = (ui1 *) ptr;
+		for (i = n_pages; i--; ui1_p += page_size)
+			*ui1_p = 0;
+	}
+	
+	return(ptr);
+}
+
+
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
@@ -41893,37 +42003,93 @@ void	memset_m12(void *ptr, const void *pattern, size_t pat_len, size_t n_members
 #ifndef WINDOWS_m12  // inline causes linking problem in Windows
 inline
 #endif
-TERN_m12	mlock_m12(void *addr, size_t len, TERN_m12 zero_data, const si1 *function, ui4 behavior_on_fail)
+TERN_m12	mlock_m12(void *addr, si8 len, const si1 *function, ui4 behavior_on_fail)  // (len < 0): len = -len, lock regardless of page alignment
 {
-	si1			*err_str;
-	si4			ret_val, err;
-	
+	si1		*err_str;
+	static ui8	psm1 = 0;
+	si4		err;
+	size_t		u_len;
+	HW_PARAMS_m12	*hw_params;
 #ifdef FN_DEBUG_m12
 	G_message_m12("%s()\n", __FUNCTION__);
 #endif
 
-	errno_reset_m12();
-
-	#if defined MACOS_m12 || defined LINUX_m12
-	ret_val = mlock(addr, len);
-	#endif
-	
-	#ifdef WINDOWS_m12
-	if (VirtualLock(addr, len))
-		ret_val = 0;
-	else
-		ret_val = -1;
-	#endif
-	
-	if (ret_val == 0) {
-		if (zero_data == TRUE_m12)
-			memset(addr, 0, len);  // forces OS to give real memory before return (otherwise there may be a lag)
+	if (len == 0)
 		return(TRUE_m12);
+	
+	if (len > 0) {
+		u_len = (size_t) len;
+		if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
+			behavior_on_fail = globals_m12->behavior_on_fail;
+		
+		// check if address is page aligned
+		if (!(behavior_on_fail & SUPPRESS_WARNING_OUTPUT_m12)) {
+			// get page size
+			if (psm1 == 0) {
+				hw_params = &global_tables_m12->HW_params;
+				if (hw_params->system_page_size) {
+					psm1 = (ui8) (hw_params->system_page_size - 1);
+				} else {
+					HW_get_memory_info_m12();
+					if (hw_params->system_page_size) {
+						psm1 = (ui8) (hw_params->system_page_size - 1);
+					} else {
+						fprintf_m12(stderr, "\n\t%s() cannot get system page size\n", __FUNCTION__);
+						return(FALSE_m12);
+					}
+				}
+			}
+			if (psm1) {
+				if ((ui8) addr & psm1) {
+					fprintf_m12(stderr, "\n\t%s() address is not page aligned\n", __FUNCTION__);
+					return(FALSE_m12);
+				}
+			}
+		}
+	} else {
+		u_len = (size_t) -len;
 	}
 	
-	if (behavior_on_fail == USE_GLOBAL_BEHAVIOR_m12)
-		behavior_on_fail = globals_m12->behavior_on_fail;
+	// lock
+	errno_reset_m12();
 	
+	#if defined MACOS_m12 || defined LINUX_m12
+	si4	r_val;
+
+	r_val = mlock(addr, u_len);
+	if (r_val != 0 && (errno == ENOMEM || errno == EPERM)) {
+		struct rlimit	rl;
+		TERN_m12	bump;
+		
+		// change memlock resource limit & try again
+		bump = FALSE_m12;
+		if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
+			if (geteuid() == 0 && rl.rlim_max != RLIM_INFINITY) {  // privileged: lift entirely
+				rl.rlim_cur = rl.rlim_max = RLIM_INFINITY;
+				bump = TRUE_m12;
+			} else if (rl.rlim_cur != rl.rlim_max) {  // unprivileged: raise soft up to hard
+				rl.rlim_cur = rl.rlim_max;
+				bump = TRUE_m12;
+			}
+			if (bump == TRUE_m12 && setrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
+				errno_reset_m12();
+				r_val = mlock(addr, u_len);  // retry with the raised limit
+			}
+		}
+	}
+	if (r_val == 0)
+		return(TRUE_m12);
+	#endif
+
+	#ifdef WINDOWS_m12
+	if (VirtualLock(addr, u_len) == 0) {
+		// double memory working size & try again
+		if (SetProcessWorkingSetSizeEx(proc, u_len, u_len << 1, QUOTA_LIMITS_HARDWS_MIN_ENABLE))
+			if (VirtualLock(addr, u_len))
+				return_m13(TRUE_m12);
+	}
+	#endif
+
 	if (!(behavior_on_fail & SUPPRESS_ERROR_OUTPUT_m12)) {
 		err = errno_m12();
 		#if defined MACOS_m12 || defined LINUX_m12
