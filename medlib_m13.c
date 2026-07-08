@@ -19291,6 +19291,7 @@ CMP_BUFFERS_m13  *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffe
 				free_m13(buffers);
 			return_m13(NULL);
 		}
+		buffers->locked = FALSE_m13;
 		buffers->total_allocated_bytes = total_requested_bytes;
 	} else if (zero_data == TRUE_m13) {
 		memset(buffers->buffer, 0, (size_t) total_requested_bytes);
@@ -19307,9 +19308,9 @@ CMP_BUFFERS_m13  *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffe
 	}
 	
 	// lock
-	buffers->locked = FALSE_m13;
 	if (lock_memory == TRUE_m13)
-		buffers->locked = mlock_m13(buffers->buffer, (si8) buffers->total_allocated_bytes);
+		if (buffers->locked != TRUE_m13)
+			buffers->locked = mlock_m13(buffers->buffer, -((si8) buffers->total_allocated_bytes));
 	
 	return_m13(buffers);
 }
@@ -22755,12 +22756,10 @@ tern	CMP_lock_buffers_m13(CMP_BUFFERS_m13 *buffers)
 #endif
 
 	// lock
-	if (buffers->locked != TRUE_m13) {
-		buffers->locked = mlock_m13(buffers->buffer, buffers->total_allocated_bytes);
-		buffers->locked = TRUE_m13;
-	}
+	if (buffers->locked != TRUE_m13)
+		buffers->locked = mlock_m13(buffers->buffer, -((si8) buffers->total_allocated_bytes));
 
-	return_m13(TRUE_m13);
+	return_m13(buffers->locked);
 }
 
 
@@ -27434,12 +27433,10 @@ tern	CMP_unlock_buffers_m13(CMP_BUFFERS_m13 *buffers)
 #endif
 
 	// unlock
-	if (buffers->locked != FALSE_m13) {
+	if (buffers->locked != FALSE_m13)
 		buffers->locked = munlock_m13(buffers->buffer, buffers->total_allocated_bytes);
-		buffers->locked = FALSE_m13;
-	}
 
-	return_m13(TRUE_m13);
+	return_m13(buffers->locked);
 }
 
 
@@ -36279,7 +36276,7 @@ tern	HW_get_performance_specs_m13(tern get_current)
 	si1				file[PATH_BYTES_m13];
 	ui8				*p1, *p2, *p3;
 	ui8				*test_arr1, *test_arr2, *test_arr3;
-	si8				i;
+	si8				i, n_bytes;
 	sf8				temp_sf8;
 	FILE_m13			*fp;
 	HW_PARAMS_m13			*hw_params;
@@ -36315,12 +36312,13 @@ tern	HW_get_performance_specs_m13(tern get_current)
 		ROUNDS = 100000000;
 	}
 	
-	test_arr1 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
-	test_arr2 = (ui8 *) calloc((size_t) ROUNDS, sizeof(ui8));
-	test_arr3 = (ui8 *) malloc((size_t) ROUNDS << 3);
-	mlock_m13(test_arr1, (si8) (ROUNDS * sizeof(sf8)));
-	mlock_m13(test_arr2, (si8) (ROUNDS * sizeof(sf8)));
-	mlock_m13(test_arr3, (si8) (ROUNDS * sizeof(sf8)));
+	n_bytes = (si8) (ROUNDS * 24);  // 3 arrays of 8 byte values
+	test_arr1 = (ui8 *) aligned_alloc_m13((si8) -1, -n_bytes);  // page align & touch pages
+	if (test_arr1 == NULL)
+		return_m13(FALSE_m13);
+	test_arr2 = test_arr1 + ROUNDS;
+	test_arr3 = test_arr2 + ROUNDS;
+	mlock_m13(test_arr1, (si8) -n_bytes);
 
 	p1 = test_arr1;
 	p2 = test_arr2;
@@ -36359,12 +36357,8 @@ tern	HW_get_performance_specs_m13(tern get_current)
 	perf_specs->nsecs_per_integer_division = (sf8) 1e9 / temp_sf8;
 
 	// clean up
-	munlock_m13(test_arr1, (size_t) (ROUNDS * sizeof(sf8)));
-	munlock_m13(test_arr2, (size_t) (ROUNDS * sizeof(sf8)));
-	munlock_m13(test_arr3, (size_t) (ROUNDS * sizeof(sf8)));
-	free(test_arr1);
-	free(test_arr2);
-	free(test_arr3);
+	munlock_m13(test_arr1, (size_t) n_bytes);
+	free_m13(test_arr1);
 	
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	
@@ -40729,8 +40723,8 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	unlock_parity = mlock_m13(parity_ps.parity, mem_block_bytes);
-	unlock_data = mlock_m13(parity_ps.data, mem_block_bytes);
+	unlock_parity = mlock_m13(parity_ps.parity, -mem_block_bytes);
+	unlock_data = mlock_m13(parity_ps.data, -mem_block_bytes);
 	G_pop_behavior_m13();
 	n_parity_files = allocated_parity_files = 0;
 	parity_path = parity_ps.path;
@@ -41697,7 +41691,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 	si1			num_str[FILE_NUMBERING_DIGITS_m13 + 1], type_string[TYPE_BYTES_m13];
 	si1			**chan_names, **vid_paths, **seg_names, **base_paths, **ssr_list;
 	si4			i, j, k, start_seg, end_seg, n_chans, n_vids, n_segs, n_ssrs, n_files, new_files;
-	si8			mmap_block_bytes, mem_block_bytes, mem_blocks;
+	si8			mmap_block_bytes, mem_block_bytes, mem_blocks, n_bytes;
 	PRTY_FILE_m13		*files;
 	PRTY_m13		parity_ps;
 	
@@ -41744,16 +41738,17 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 	parity_ps.parity = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	parity_ps.data = (ui1 *) calloc_m13((size_t) mem_block_bytes, sizeof(ui1));
 	G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-	unlock_parity = mlock_m13(parity_ps.parity, mem_block_bytes);
-	unlock_data = mlock_m13(parity_ps.data, mem_block_bytes);
+	unlock_parity = mlock_m13(parity_ps.parity, -mem_block_bytes);
+	unlock_data = mlock_m13(parity_ps.data, -mem_block_bytes);
 	G_pop_behavior_m13();
 	
 	n_files = (n_chans > n_segs) ? n_chans : n_segs;
 	unlock_files = FALSE_m13;
 	if (n_files) {
-		parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_files * sizeof(PRTY_FILE_m13));
+		n_bytes = (si8) (n_files * sizeof(PRTY_FILE_m13));
+		parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13((size_t) n_bytes);
 		G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-		unlock_files = mlock_m13(files, (si8) (n_files * sizeof(PRTY_FILE_m13)));
+		unlock_files = mlock_m13(files, (si8) -n_bytes);
 		G_pop_behavior_m13();
 		base_paths = (si1 **) calloc_2D_m13(n_files, PATH_BYTES_m13, sizeof(si1));
 	}
@@ -41916,9 +41911,10 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 		}
 
 		n_files = new_files;
-		parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+		n_bytes = (si8) (n_files * sizeof(PRTY_FILE_m13));
+		parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_bytes);
 		G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-		unlock_files = mlock_m13(files, (si8) (n_files * sizeof(PRTY_FILE_m13)));
+		unlock_files = mlock_m13(files, (si8) -n_bytes);
 		G_pop_behavior_m13();
 		base_paths = (si1 **) calloc_2D_m13(n_files, PATH_BYTES_m13, sizeof(si1));
 	}
@@ -42070,9 +42066,10 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 				if (unlock_files == TRUE_m13)
 					munlock_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
 				n_files = n_ssrs;
-				parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+				n_bytes = (si8) (n_files * sizeof(PRTY_FILE_m13));
+				parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_bytes);
 				G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
-				unlock_files = mlock_m13(files, (si8) (n_files * sizeof(PRTY_FILE_m13)));
+				unlock_files = mlock_m13(files, (si8) -n_bytes);
 				G_pop_behavior_m13();
 			}
 			
@@ -46778,14 +46775,14 @@ si1	*WN_windify_format_string_m13(const si1 *fmt)
 #ifdef AT_DEBUG_m13
 void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 n_bytes)
 #else
-void	*aligned_alloc_m13(si8 n_bytes)  // (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
+void	*aligned_alloc_m13(si8 alignment, si8 n_bytes)  // (alignment == -1): alignment = system page size; (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
 #endif
 {
 	tern		touch_pages;
 	ui1		*ui1_p;
 	void		*ptr;
-	ui8		u_len, alloc_size, n_pages;
-	static ui8	page_size = 0, psm1;
+	ui8		u_len, alloc_size, n_pages, am1;
+	static ui8	page_size = 0;
 	si8		i;
 	HW_PARAMS_m13	*hw_params;
 
@@ -46802,20 +46799,23 @@ void	*aligned_alloc_m13(si8 n_bytes)  // (n_bytes < 0): n_bytes = -n_bytes, all 
 	}
 	
 	// get page size
-	if (page_size == 0) {
-		hw_params = &globals_m13->tables->HW_params;
-		if (hw_params->system_page_size == 0)
-			if (HW_get_memory_info_m13() == FALSE_m13)
-				return(NULL);
-		page_size = (ui8) hw_params->system_page_size ;
-		psm1 = page_size - 1;
+	if (alignment == -1 || touch_pages == TRUE_m13) {
+		if (page_size == 0) {
+			hw_params = &globals_m13->tables->HW_params;
+			if (hw_params->system_page_size == 0)
+				if (HW_get_memory_info_m13() == FALSE_m13)
+					return(NULL);
+			page_size = (ui8) hw_params->system_page_size;
+			alignment = (si8) page_size;
+		}
 	}
 		
 	// set alloc size to multiple of page size
-	alloc_size = u_len & (~psm1);
-	if (u_len & psm1)
-		alloc_size += page_size;
-	
+	am1 = (ui8) (alignment - 1);
+	alloc_size = u_len & ~am1;
+	if (u_len & am1)
+		alloc_size += (ui8) alignment;
+
 	// allocate
 	#if defined MACOS_m13 || defined LINUX_m13
 	ptr = aligned_alloc(page_size, alloc_size);
@@ -50312,6 +50312,71 @@ void	*memmove_m13(void *target, const void *source, size_t n_bytes)
 }
 
 
+void	*memalign_m13(void *addr, si4 alignment)  // (alignment == -1): page align
+{
+	static si4	page_size = 0;
+	ui8		am1, n_bytes, alloc_size;
+	void		*new_addr;
+	HW_PARAMS_m13	*hw_params;
+	
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+
+	// align addr to alignmemt if not already alignmed
+	// if memory must move it is copied & freed, if freeable
+	// if alignment == -1, memory is aligned to system page size
+	// returns NULL on failure, passed memory is untouched
+	
+	// nothing to do
+	if (addr == NULL) {
+		G_set_error_m13(E_GEN_m13, "NULL pointer");
+		return_m13(NULL);  // error
+	}
+	
+	// get page size
+	if (alignment == -1) {
+		if (page_size == 0) {
+			hw_params = &globals_m13->tables->HW_params;
+			if (hw_params->system_page_size == 0) {
+				HW_get_memory_info_m13();
+				if (hw_params->system_page_size == 0)
+					return_m13(NULL);
+			}
+			page_size = (si4) hw_params->system_page_size;
+		}
+		alignment = page_size;
+	}
+	
+	// already aligned
+	am1 = (ui8) alignment - 1;
+	if (((ui8) addr & am1) == 0)
+		return_m13(addr);
+	
+	// set alloc size to multiple of alignment
+	n_bytes = malloc_size_m13(addr);
+	alloc_size = n_bytes & ~am1;
+	if (n_bytes & am1)
+		alloc_size += alignment;
+	
+	// alloc
+	new_addr = aligned_alloc_m13((si8) alignment, (si8) alloc_size);
+	if (new_addr == NULL)
+		return_m13(NULL);
+
+	// move memory (guaranteed not to overlap)
+	new_addr = memcpy(new_addr, addr, (size_t) n_bytes);
+	if (new_addr == NULL)
+		return_m13(NULL);
+
+	if (freeable_m13(addr) == TRUE_m13)
+		free_m13(addr);
+	
+	return_m13(new_addr);
+}
+
+
 void	*memset_m13(void *ptr, si4 val, si8 n_members, ...)  // vargargs(n_members < 0): const void *el_val (val == el_size)
 {
 	si8		i;
@@ -50326,7 +50391,7 @@ void	*memset_m13(void *ptr, si4 val, si8 n_members, ...)  // vargargs(n_members 
 	G_push_function_m13();
 #endif
 
-	if (n_members < 0) {
+	if (n_members < 0) {  // vararg call: multibyte pattern
 		n_members = -n_members;
 		va_start(v_arg, n_members);
 		el_val = va_arg(v_arg, const void *);
@@ -50488,12 +50553,11 @@ tern	mlock_m13(void *addr, si8 len)  // (len < 0): len = -len, lock regardless o
 	#if defined MACOS_m13 || defined LINUX_m13
 	si4		r_val;
 
-	r_val = mlock(addr, u_len);
-	if (r_val != 0 && (errno == ENOMEM || errno == EPERM)) {
+	r_val = mlock(addr, (size_t) u_len);
+	if (r_val != 0 && (errno == ENOMEM || errno == EPERM)) {  // change memlock resource limit & try again
 		struct rlimit	rl;
 		tern		bump;
 		
-		// change memlock resource limit & try again
 		bump = FALSE_m13;
 		if (getrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
 			if (geteuid() == 0 && rl.rlim_max != RLIM_INFINITY) {  // privileged: lift entirely
@@ -50506,11 +50570,13 @@ tern	mlock_m13(void *addr, si8 len)  // (len < 0): len = -len, lock regardless o
 			if (bump == TRUE_m13 && setrlimit(RLIMIT_MEMLOCK, &rl) == 0) {
 				errno_reset_m13();
 				r_val = mlock(addr, u_len);  // retry with the raised limit
+				if (r_val)
+					return_m13(FALSE_m13);
 			}
 		}
-	}
-	if (r_val)
+	} else {
 		return_m13(FALSE_m13);
+	}
 	#endif
 
 	#ifdef WINDOWS_m13

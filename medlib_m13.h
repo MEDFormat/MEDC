@@ -3492,7 +3492,7 @@ void	AT_show_entries_m13(void);
 tern	AT_update_entry_m13(const si1 *function, si4 line, void *orig_address, void *new_address, size_t requested_bytes);
 
 // AT replacement functions for alloc standard functions (these do not need to be called directly)
-void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 n_bytes);
+void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 alignment, si8 n_bytes);
 void	AT_aligned_free_m13(const si1 *function, si4 line, void *ptr);
 void	*AT_calloc_m13(const si1 *function, si4 line, size_t n_members, si8 el_size);
 void	**AT_calloc_2D_m13(const si1 *function, si4 line, size_t dim1, size_t dim2, si8 el_size);
@@ -3507,7 +3507,7 @@ void	*AT_recalloc_m13(const si1 *function, si4 line, void *ptr, size_t curr_memb
 void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr_dim1, size_t new_dim1, size_t curr_dim2, size_t new_dim2, si8 el_size);
 
 // preprocessor directives to replace standard alloc functions with AT versions
-#define aligned_alloc_m13(a)			AT_aligned_alloc_m13(__FUNCTION__, __LINE__, a)
+#define aligned_alloc_m13(a, b)			AT_aligned_alloc_m13(__FUNCTION__, __LINE__, a, b)
 #define aligned_free_m13(a)			AT_aligned_free_m13(__FUNCTION__, __LINE__, a)
 #define calloc_m13(a, b)			AT_calloc_m13(__FUNCTION__, __LINE__, a, b)
 #define calloc_2D_m13(a, b, c)			AT_calloc_2D_m13(__FUNCTION__, __LINE__, a, b, c)
@@ -5634,7 +5634,8 @@ void		isem_wait_m13(isem_t_m13 *sem); // ownership or no owner required, or bloc
 void		isem_wait_noinc_m13(isem_t_m13 *isem); // ownership or no owner required, or block
 size_t		malloc_size_m13(void *address);
 tern		md_m13(const si1 *dir); // synonym for mkdir()
-void		*memset_m13(void *ptr, si4 val, si8 n_members, ...); // vargarg(n_members negative): const void *el_val (val == el_size)
+void		*memalign_m13(void *addr, si4 alignment);  // (alignment == -1): page align
+void		*memset_m13(void *ptr, si4 val, si8 n_members, ...);  // vargargs(n_members < 0): const void *el_val (val == el_size)
 tern		mkdir_m13(const si1 *dir); // make directory
 tern		mlock_m13(void *addr, si8 len);  // (len < 0): len = -len, lock regardless of page alignment
 void		*memcpy_m13(void *target, const void *source, size_t n_bytes);
@@ -5709,7 +5710,7 @@ si4		vsprintf_m13(si1 *target, const si1 *fmt, va_list args);
 
 // standard (& related) functions with AT_DEBUG_m13 versions
 #ifndef AT_DEBUG_m13 // use these protoypes in all cases, defines will convert if needed
-void	*aligned_alloc_m13(si8 n_bytes);  // (n_bytes negative): touch each page before returning
+void	*aligned_alloc_m13(si8 alignment, si8 n_bytes);  // (alignment == -1): alignment = system page size; (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
 void	aligned_free_m13(void *ptr);  // must use this in Windows if pointer obtained from aligned_alloc_m13()
 void	*calloc_m13(size_t n_members, si8 el_size); // (el_size negative): level headers flag
 void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size); // (el_size negative): level header flag

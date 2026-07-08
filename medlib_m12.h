@@ -4633,8 +4633,7 @@ si1		*TR_strerror(si4 err_num);
 //*****************  MED VERSIONS OF STANDARD FUNCTIONS  ****************//
 //***********************************************************************//
 
-
-void		*aligned_alloc_m12(si8 n_bytes, const si1 *function, ui4 behavior_on_fail);  // (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
+void		*aligned_alloc_m12(si8 alignment, si8 n_bytes, const si1 *function, ui4 behavior_on_fail);  // (alignment == -1): alignment = system page size; (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
 si4		asprintf_m12(si1 **target, si1 *fmt, ...);
 void		*calloc_m12(size_t n_members, size_t el_size, const si1 *function, ui4 behavior_on_fail);
 void		**calloc_2D_m12(size_t dim1, size_t dim2, size_t el_size, const si1 *function, ui4 behavior_on_fail);
