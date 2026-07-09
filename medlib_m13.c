@@ -46773,7 +46773,7 @@ si1	*WN_windify_format_string_m13(const si1 *fmt)
 
 
 #ifdef AT_DEBUG_m13
-void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 n_bytes)
+void	*AT_aligned_alloc_m13(const si1 *function, si4 line, si8 alignment, si8 n_bytes)
 #else
 void	*aligned_alloc_m13(si8 alignment, si8 n_bytes)  // (alignment == -1): alignment = system page size; (n_bytes < 0): n_bytes = -n_bytes, all pages touched before return
 #endif
