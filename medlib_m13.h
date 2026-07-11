@@ -275,16 +275,24 @@ typedef long double	sf16;
 
 // (Ultimately all medlib string (STR) functions will be adapted to accept these as void pointers.)
 
+// NOTES:
+// pstr is a memory-only structure: never write to disk or transmit (tag/flags union relies on little-endian byte order & structure contains a pointer)
+// set flags with "|=", never direct assignment - byte 0 of the flags word is the tag, direct assignment destroys it
+// string invariant: str[bytes] == 0 (terminal zero maintained by all medlib string functions)
+
 #define PSTR_TAG_m13		((si1) 0x80)
 #define PSTR_MAX_BYTES_m13	((ui4) 0xFFFFFFFE) // max chars will be fewer if multibyte
 
 // flags (bytes 1-3, byte 0 used for tag)
-#define PSTR_FLAG_ALLOCED_m13	((ui4) 1 << 8) // pstr structure was allocated
-#define PSTR_FLAG_CONST_m13	((ui4) 1 << 9) // string is const
-#define PSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is pure ascii (no multibyte characters)
+#define PSTR_FLAG_ALLOCED_m13	((ui4) 1 << 8) // pstr structure was allocated (PSTR_free_m13() frees structure as well as string)
+#define PSTR_FLAG_CONST_m13	((ui4) 1 << 9) // string is const (string functions will not modify, resize, or free it)
+#define PSTR_FLAG_ASCII_m13	((ui4) 1 << 10) // string is pure ascii (no multibyte characters; chars == bytes)
+#define PSTR_FLAGS_ALL_m13	(PSTR_FLAG_ALLOCED_m13 | PSTR_FLAG_CONST_m13 | PSTR_FLAG_ASCII_m13)
 
 // macros
-#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((((pstr *) (x))->tag == PSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is a pstr pointer
+// NOTE: "x" evaluated twice - do not pass expressions with side effects
+// (only byte 0 of "x" is read, so safe to apply to any string pointer: 0x80 is a utf8 continuation byte, never a first byte)
+#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((((const pstr *) (x))->tag == PSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is a pstr pointer
 
 // typedefs
 typedef struct {
@@ -300,8 +308,11 @@ typedef struct {
 
 
 // Prototypes
-pstr	*ptsr_alloc_m13(si8 n_bytes); // vararg(n_bytes negative): ui4 pstr_flags
-void	*ptsr_free_m13(void *ptr); // can also pass &pstr to null local pointer with free
+pstr		*PSTR_alloc_m13(si8 n_bytes, ...);  // n_bytes includes terminal zero (becomes msize); varargs(n_bytes negative): ui4 pstr_flags
+si8		PSTR_char_count_m13(const si1 *s, si8 n_bytes);  // utf8 character count of first n_bytes of s
+si1		*PSTR_ensure_m13(pstr *ps, si8 req_bytes);  // grow string buffer to hold at least req_bytes (includes terminal zero); returns string pointer (may move), NULL on failure
+void		*PSTR_free_m13(void *ptr);  // pass pstr *, or address of pstr * to also null the local pointer; returns NULL for convenience
+void		PSTR_set_counts_m13(pstr *ps);  // set bytes & chars from string content (single pass; use after writing into str directly)
 
 //**********************************************************************************//
 //***************** Record Structures Integral to the MED Library ******************//
@@ -761,6 +772,9 @@ typedef struct {
 #define VID_INDS_TYPE_STR_m13			"vidx" // ascii[4]
 #define VID_INDS_TYPE_CODE_m13			((ui4) 0x78646976) // ui4 (little endian)
 // #define VID_INDS_TYPE_CODE_m13		((ui4) 0x76696478) // ui4 (big endian)
+#define VID_PARITY_TYPE_STR_m13			"vpar" // ascii[4]; video data parity (per channel, per segment; in parity channel segment directories)
+#define VID_PARITY_TYPE_CODE_m13		((ui4) 0x72617076) // ui4 (little endian)
+// #define VID_PARITY_TYPE_CODE_m13		((ui4) 0x76706172) // ui4 (big endian)
 #define SSR_TYPE_STR_m13			"recd" // ascii[4]
 #define SSR_TYPE_CODE_m13			((ui4) 0x64636572) // ui4 (little endian)
 // #define SSR_TYPE_CODE_m13			((ui4) 0x72656364) // ui4 (big endian)
@@ -1249,8 +1263,17 @@ typedef struct {
 #define FILE_FD_STDOUT_m13		((si4) 1)
 #define FILE_FD_STDERR_m13		((si4) 2)
 
+// thread local storage
+#ifdef WINDOWS_m13
+	#define thread_local_m13	__declspec(thread)
+#else
+	#define thread_local_m13	_Thread_local
+#endif
+
 // Locking operations  [si4 to match standard flock()]
 // NOTE: locking only possible with FILE_m13 file pointers
+// NOTE: read -> write lock upgrade is supported: a thread holding read locks may take a write lock on the same file;
+// its own read locks are absorbed into the write lock & survive it (released by their own read unlocks)
 #define FLOCK_OPEN_m13			((si4) 1 << 0) // increment open count +/- create lock
 #define FLOCK_CLOSE_m13			((si4) 1 << 1) // decrement open count +/- destroy lock
 #define FLOCK_LOCK_m13			((si4) 1 << 2) // lock (with mode)
@@ -1301,6 +1324,7 @@ typedef struct {
 		};
 	};
 	FILE	*fp; // system FILE pointer
+	struct FLOCK_ENTRY_m13	*lock; // cached lock list entry (set by flock_m13(); NULL until first locking operation, cleared on close)
 	si4	fd; // system file descriptor (not necessarily unique to physical file (dup/dup2)
 	si1	pad_bytes[4]; // future use (bytes will be there anyway)
 	si8	len; // current file length (-1 indicates not set)
@@ -1327,6 +1351,14 @@ void		FILE_update_m13(void *fp);
 //**********************************************************************************//
 
 // Thread Management Constants
+#define PROC_JOBS_PER_CORE_DEFAULT_m13		0x7FFFFFFF // sentinel: engages session-adaptive tuning - starts at PROC_JOBS_PER_CORE_BASE_m13,
+							// steered by measured core utilization (see PROC_jobs_distribute_m13());
+							// pass an explicit count to fix jobs per core (no tuning)
+#define PROC_JOBS_PER_CORE_BASE_m13		2 // adaptive tuning starting point - benchmarked (M3 Max, decode-dominant jobs with
+							// interleaved I/O stalls): 2 runs ~2x faster than 1 (cores pick up decode during
+							// other jobs' I/O); 3 no faster & increases the transient memory footprint;
+							// change only with due consideration (& benchmarks)
+#define PROC_JOBS_PER_CORE_MAX_m13		4 // ceiling for session-adaptive tuning
 #define PROC_DEFAULT_PRIORITY_m13 		0x7FFFFFFF
 #define PROC_MIN_PRIORITY_m13			0x7FFFFFFE
 #define PROC_LOW_PRIORITY_m13			0x7FFFFFFD
@@ -1437,6 +1469,7 @@ typedef struct {
 // Note: medlib versions of standard pthread functions are prototyped with other standard function versions
 tern			PROC_adjust_open_file_limit_m13(si4 new_limit, tern verbose_flag);
 tern			PROC_change_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attributes, cpu_set_t_m13 *cpu_set_p);
+sf8			PROC_cpu_time_m13(void); // process cpu time (user + system, all threads), in seconds
 tern			PROC_default_threading_m13(void *lh); // lh is an LH_m13 *
 cpu_set_t_m13		*PROC_generate_cpu_set_m13(const si1 *affinity_str, cpu_set_t_m13 *cpu_set_p);
 pid_t_m13		PROC_id_for_thread_m13(pthread_t_m13 *thread_p);
@@ -1458,48 +1491,97 @@ pid_t_m13		PROC_thread_parent_id_m13(pid_t_m13 _id);
 //********************************* Parallel (PAR) *********************************//
 //**********************************************************************************//
 
-//// Constants
-//#define PAR_LAUNCHING_m13		1
-//#define PAR_RUNNING_m13			2
-//#define PAR_FINISHED_m13		3
-//#define PAR_DEFAULTS_m13		"defaults"
-//#define PAR_UNTHREADED_m13		0
+// The PAR functions run other library functions in threads, without requiring the caller to know
+// anything about threading. Each PAR_INFO_m13 is a handle ("future") for one running function:
+// launch, poll status (or wait), then collect the return value & error info.
+// Primary use case: true parallelism for single-threaded host languages (e.g. the Python wrapper),
+// such as concurrent reads of multiple sessions.
 //
-//// Supported Functions
-//#define PAR_OPEN_SESSION_M13		1
-//#define PAR_READ_SESSION_M13		2
-//#define PAR_OPEN_CHANNEL_M13		3
-//#define PAR_READ_CHANNEL_M13		4
-//#define PAR_OPEN_SEGMENT_M13		5
-//#define PAR_READ_SEGMENT_M13		6
-//#define PAR_DM_GET_MATRIX_M13		7
+// The target function is passed by pointer, its arguments described by a signature string & captured
+// at launch, so any library function can be run in parallel without PAR-specific code, given:
 //
-//// Structures
-//typedef struct {
-//	si1		label[64];
-//	si1		function[64];
-//	void		*r_val; // pointer to returned data
-//	pid_t_m13	tid;
-//	pthread_t_m13	thread_id;
-//	si4		priority;
-//	si1		affinity[16];
-//	si4		detached;
-//	si4		status;
-//} PAR_INFO_m13;
+// 1) the target function must return a pointer; NULL return is interpreted as failure
+// 2) signature characters: 'p' == pointer, 'i' == integer, 'd' == sf8
+//    '|' == start of variadic arguments (matches the "..." of variadic target prototypes)
+// 3) integer arguments should be cast to si8 at the PAR_launch_m13() call site
+//    (like printf() "%ld" arguments); pointer & sf8 arguments are captured as passed
+// 4) sf8 arguments are currently supported only in the variadic shapes enumerated in
+//    PAR_call_m13() (e.g. DM_get_matrix_m13()); add shapes there as needed
+// 5) on job failure, error info set by the job's thread (or a descendant) is captured into
+//    the handle & the causal error is cleared (handled) => check the handle, not G_error_code_m13()
+//    (launch-time errors are set on the caller's thread as usual => caller handles)
 //
-//typedef struct {
-//	PAR_INFO_m13	*par_info;
-//	va_list		args;
-//} PAR_THREAD_INFO_m13;
+// example (concurrent reads of two sessions):
+//	par_a = PAR_launch_m13(NULL, (void *) G_open_session_m13, "pppiipp", NULL, slice_a, list_a, (si8) len_a, (si8) lh_flags, password, NULL);
+//	par_b = PAR_launch_m13(NULL, (void *) G_open_session_m13, "pppiipp", NULL, slice_b, list_b, (si8) len_b, (si8) lh_flags, password, NULL);
+//	PAR_wait_m13(par_a, NULL);
+//	PAR_wait_m13(par_b, NULL);
+//	sess_a = (SESS_m13 *) par_a->r_val;  // NULL on failure (error info in handle)
+//	sess_b = (SESS_m13 *) par_b->r_val;
 //
-//// Protoypes
-//tern			PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
-//PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, const si1 *function, const si1 *label, ...); // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, const si1 *affinity, si4 detached
-//PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, ...); // varargs (par_info == NULL): const si1 *function, const si1 *label, si4 priority, const si1 *affinity, si4 detached, <function arguments>
-//								      // varargs (par_info != NULL): <function arguments>
-//tern			PAR_show_info_m13(PAR_INFO_m13 *par_info);
-//pthread_rval_m13	PAR_thread_m13(void *arg);
-//tern			PAR_wait_m13(PAR_INFO_m13 *par_info, const si1 *interval);
+// large fan-outs: capture each call with PAR_prep_m13() (same arguments as PAR_launch_m13()),
+// then PAR_distribute_m13() launches the set throttled to the available cores
+// (as PROC_jobs_distribute_m13() does for PROC jobs)
+// (core counts from HW_PARAMS_m13; all cores are used by default - benchmarks show heterogeneous CPUs
+// (e.g. Apple silicon) run integer-heavy job sets fastest across ALL cores; to keep efficiency cores
+// free for system responsiveness pass reserved_cores == efficiency_cores; on hyperthreaded CPUs
+// compute-bound jobs may run best throttled to physical cores: reserved_cores == logical - physical;
+// jobs_per_core: pass PROC_JOBS_PER_CORE_DEFAULT_m13 for session-adaptive tuning (recommended; starts
+// at PROC_JOBS_PER_CORE_BASE_m13 & converges on the measured optimum over repeated calls))
+
+// Constants
+#define PAR_MAX_ARGS_m13		16 // maximum total arguments
+#define PAR_MAX_FIXED_ARGS_m13		8 // maximum fixed arguments of a variadic target
+#define PAR_MAX_TAIL_ARGS_m13		8 // maximum variadic (post '|') arguments
+#define PAR_SIG_BYTES_m13		( PAR_MAX_ARGS_m13 + 2 ) // signature characters, '|', terminal zero
+#define PAR_AFFINITY_BYTES_m13		16
+#define PAR_MSG_BYTES_m13		( (PATH_BYTES_m13 << 1) + 128 ) // == E_MAX_MSG_LEN_m13 (defined below)
+#define PAR_DEFAULTS_m13		"defaults"
+
+// Status Macros (status values defined with PROC constants)
+#define PAR_RUNNING_m13(par_info)	( ((par_info)->job.status == PROC_THREAD_RUNNING_m13) ? TRUE_m13 : FALSE_m13 )
+#define PAR_FINISHED_m13(par_info)	( ((par_info)->job.status & PROC_THREAD_FINISHED_m13) ? TRUE_m13 : FALSE_m13 )
+#define PAR_SUCCEEDED_m13(par_info)	( ((par_info)->job.status == PROC_THREAD_SUCCEEDED_m13) ? TRUE_m13 : FALSE_m13 )
+#define PAR_FAILED_m13(par_info)	( ((par_info)->job.status == PROC_THREAD_FAILED_m13) ? TRUE_m13 : FALSE_m13 )
+
+// Structures
+typedef union {
+	void	*p; // pointer arguments ('p')
+	si8	i; // integer arguments ('i')
+	sf8	d; // sf8 arguments ('d')
+} PAR_ARG_m13;
+
+typedef struct {
+	PROC_JOB_m13	job; // thread control (function, priority, affinity, threading, status)
+	void		*fn; // target function [ must return a pointer; NULL return interpreted as failure ]
+	void		*r_val; // target function return value [ valid when PAR_SUCCEEDED_m13() ]
+	const si1	*error_function; // function that set error (static string; error info captured at job finish)
+	PAR_ARG_m13	args[PAR_MAX_ARGS_m13]; // captured target function arguments (unused cells zero)
+	si4		n_args; // total captured arguments
+	si4		n_fixed; // arguments before '|' (== n_args if target not variadic)
+	si4		error_code; // E_MED_CODES_m13 value at job finish (E_NONE_m13 if no error)
+	si4		error_line; // line that set error
+	si1		error_message[PAR_MSG_BYTES_m13]; // may originate in a descendant thread (causal error)
+	si1		label[THREAD_NAME_BYTES_m13]; // thread name & job description
+	si1		affinity[PAR_AFFINITY_BYTES_m13]; // cpu affinity string (empty => any cpu)
+	si1		sig[PAR_SIG_BYTES_m13]; // argument signature string
+	tern		variadic; // sig contains '|'
+	tern		allocated; // allocated by PAR library code => freed by PAR_free_m13()
+} PAR_INFO_m13;
+
+// Prototypes
+void			*PAR_call_m13(PAR_INFO_m13 *par_info); // executes captured call in calling thread
+tern			PAR_distribute_m13(PAR_INFO_m13 **par_infos, si4 n_infos, si4 reserved_cores, si4 jobs_per_core, tern thread_jobs, tern wait_jobs); // launch prepped handles throttled to cores (args as in PROC_jobs_distribute_m13())
+tern			PAR_free_m13(PAR_INFO_m13 **par_info_ptr);
+PAR_INFO_m13		*PAR_init_m13(PAR_INFO_m13 *par_info, const si1 *label, ...); // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, const si1 *affinity, si4 threaded
+PAR_INFO_m13		*PAR_launch_m13(PAR_INFO_m13 *par_info, void *fn, const si1 *sig, ...); // varargs: target function arguments, per sig
+PAR_INFO_m13		*PAR_prep_m13(PAR_INFO_m13 *par_info, void *fn, const si1 *sig, ...); // varargs: target function arguments, per sig (capture without launching)
+PAR_INFO_m13		*PAR_prep_exec_m13(PAR_INFO_m13 *par_info, void *fn, const si1 *sig, va_list v_args);
+tern			PAR_show_info_m13(PAR_INFO_m13 *par_info);
+tern			PAR_start_m13(PAR_INFO_m13 *par_info); // launch a prepped handle
+pthread_rval_m13	PAR_thread_m13(void *arg);
+tern			PAR_wait_m13(PAR_INFO_m13 *par_info, const si1 *interval);
+tern			PAR_wait_all_m13(PAR_INFO_m13 **par_infos, si4 n_infos, const si1 *interval);
 
 
 
@@ -1657,43 +1739,59 @@ si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_
 #define NET_MAC_ADDRESS_BYTES_m13		6
 #define NET_MAC_ADDRESS_STR_BYTES_m13		(NET_MAC_ADDRESS_BYTES_m13 * 3) // 6 hex bytes plus colons & terminal zero
 #define NET_IPV4_ADDRESS_BYTES_m13		4
-#define NET_IPV4_ADDRESS_STR_BYTES_m13		(NET_IPV4_ADDRESS_BYTES_m13 * 4) // 4 dec bytes plus periods & terminal zero
+#define NET_IPV4_ADDRESS_STR_BYTES_m13		(NET_IPV4_ADDRESS_BYTES_m13 * 4) // 4 dec bytes plus periods & terminal zero (16); retained for legacy string buffers
+
+// Family-agnostic address (MED 1.1 library 13): holds IPv4 or IPv6.
+// *** On-disk stable: no platform-variable types (no sockaddr_storage), no OS AF_* values. ***
+// "family" is a MED library code (NET_ADDR_FAM_IPV4/6_m13), NOT the OS AF_INET/AF_INET6 value (which differs by OS).
+// Runtime code maps family <-> AF_* in local variables only (NET_af_from_family_m13 / NET_family_from_af_m13).
+#define NET_ADDR_FAM_NONE_m13			((ui1) 0)  // not set
+#define NET_ADDR_FAM_IPV4_m13			((ui1) 4)
+#define NET_ADDR_FAM_IPV6_m13			((ui1) 6)
+#define NET_ADDR_PREFIX_NO_ENTRY_m13		((ui1) 0xFF)
+#define NET_ADDR_BYTES_m13			16	// holds IPv4 (in bytes[0..3]) or a full IPv6 address, network byte order
+#define NET_ADDR_STR_BYTES_m13			46	// == INET6_ADDRSTRLEN; string is byte-aligned so it needs no rounding (holds any v4/v6 literal + terminal zero)
 
 
 // Structures
+typedef struct {			// 64 bytes, 8-byte aligned, zero padding; self-aligned for direct disk<->memory transfer
+	union {				// off 0:  network byte order; the ui8 pair forces 8-alignment, so placing it first eliminates all padding
+		ui1	bytes[NET_ADDR_BYTES_m13];
+		struct {	// aligned 8-byte copy/compare
+			ui8	hi;
+			ui8	lo;
+		};
+	} addr;
+	ui1	family;			// off 16: NET_ADDR_FAM_* (library code, not AF_*)
+	ui1	prefix_len;		// off 17: CIDR prefix length (bits); replaces IPv4 dotted netmask (valid for v4 & v6); NET_ADDR_PREFIX_NO_ENTRY_m13 = none
+	si1	string[NET_ADDR_STR_BYTES_m13];	// off 18..64: presentation form (inet_ntop); dotted-quad for v4, colon-hex for v6
+} NET_ADDR_m13;
+
 typedef struct {
-	si1	interface_name[64];
-	si1	host_name[256]; // max 253 ascii characters
 	union {
 		ui1	MAC_address_bytes[8]; // network byte order
 		ui8	MAC_address_num; // network byte order
 	};
-	si1 MAC_address_string[NET_MAC_ADDRESS_STR_BYTES_m13]; // upper case hex with colons
-	union {
-		ui1	LAN_IPv4_address_bytes[NET_IPV4_ADDRESS_BYTES_m13]; // network byte order
-		ui4	LAN_IPv4_address_num; // network byte order
-	};
-	si1 LAN_IPv4_address_string[NET_IPV4_ADDRESS_STR_BYTES_m13]; // dec with periods
-	union {
-		ui1	LAN_IPv4_subnet_mask_bytes[NET_IPV4_ADDRESS_BYTES_m13]; // network byte order
-		ui4	LAN_IPv4_subnet_mask_num; // network byte order
-	};
-	si1 LAN_IPv4_subnet_mask_string[NET_IPV4_ADDRESS_STR_BYTES_m13]; // dec with periods
-	union {
-		ui1	WAN_IPv4_address_bytes[NET_IPV4_ADDRESS_BYTES_m13]; // network byte order
-		ui4	WAN_IPv4_address_num; // network byte order
-	};
-	si1	WAN_IPv4_address_string[NET_IPV4_ADDRESS_STR_BYTES_m13]; // dec with periods
-	si4	MTU; // maximum transmission unit
-	si1	link_speed[16];
-	si1	duplex[16];
-	tern	active; // interface status
-	tern	plugged_in;
+	NET_ADDR_m13	LAN_address;	// interface (LAN) address; LAN_address.prefix_len carries the subnet prefix
+	NET_ADDR_m13	WAN_address;	// public (WAN) address as seen from the internet
+	si4		MTU;		// maximum transmission unit
+	si1		interface_name[64];
+	si1		host_name[256];	// max 253 ascii characters
+	si1		MAC_address_string[NET_MAC_ADDRESS_STR_BYTES_m13]; // upper case hex with colons (18 bytes)
+	si1		link_speed[16];
+	si1		duplex[16];
+	tern		active; // interface status
+	tern		plugged_in;
 } NET_PARAMS_m13;
 
 // Prototypes
+tern		NET_addr_set_m13(NET_ADDR_m13 *addr, const si1 *addr_str); // parse a v4 or v6 literal into family/bytes/string; FALSE if not a valid literal
+si4		NET_af_from_family_m13(ui1 family); // NET_ADDR_FAM_* -> AF_INET / AF_INET6 (AF_UNSPEC if NONE)
+ui1		NET_family_from_af_m13(si4 af); // AF_INET / AF_INET6 -> NET_ADDR_FAM_*
 tern		NET_check_internet_connection_m13(void);
 tern		NET_domain_to_ip_m13(const si1 *domain_name, si1 *ip);
+ui1		NET_v4_prefix_from_mask_m13(const ui1 *mask_bytes); // dotted-quad mask bytes -> CIDR prefix length
+tern		NET_v4_mask_str_from_prefix_m13(si1 *mask_str, ui1 prefix_len); // CIDR prefix length -> "255.255.255.0" (v4 only)
 NET_PARAMS_m13	*NET_get_active_m13(si1 *iface, NET_PARAMS_m13 *np);
 tern		NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global);
 tern		NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global);
@@ -1871,6 +1969,8 @@ typedef struct {
 	ui1				endianness;
 	si4				physical_cores;
 	si4				logical_cores;
+	si4				performance_cores; // heterogeneous CPUs (e.g. Apple silicon): high performance ("P") cores; == physical_cores in uniform CPUs
+	si4				efficiency_cores; // heterogeneous CPUs: low power ("E") cores; == 0 in uniform CPUs
 	tern				hyperthreading;
 	sf8				minimum_speed;
 	sf8				maximum_speed;
@@ -2122,7 +2222,7 @@ typedef struct PROC_GLOBS_m13 { // multiple thread access
 	PROC_GLOB_MISC_m13	miscellaneous;
 	pid_t_m13		_id; // thread or process id (used if LH_m13 unknown [NULL])
 	LH_m13			*child; // hierarchy level immediately below these process globals
-	si4			ref_count;
+	_Atomic si4		ref_count; // (atomic: modified by concurrent threads outside list mutex)
 } PROC_GLOBS_m13;
 #else // __cplusplus
 typedef struct PROC_GLOBS_m13 {
@@ -2142,7 +2242,7 @@ typedef struct PROC_GLOBS_m13 {
 	PROC_GLOB_MISC_m13	miscellaneous;
 	pid_t_m13		_id; // thread id (used if LH_m13 unknown [NULL])
 	LH_m13			*child; // hierarchy level immediately below these process globals
-	si4			ref_count; // count of structures & threads currently linked to these process globals
+	_Atomic si4		ref_count; // count of structures & threads currently linked to these process globals (atomic: modified by concurrent threads outside list mutex)
 } PROC_GLOBS_m13;
 #endif // standard c
 
@@ -2215,8 +2315,8 @@ typedef struct { // single thread access
 	FUNCTION_ENTRY_m13	*functions;
 	si4			size; // total allocated functions
 	si4			top_idx; // top of function stack
-	si4			err_top_idx; // position in stack on error recursion
-	tern			err_chain;  // TRUE_m13 if element of thread chain leading to causal error
+	// Note: error display state lives in the error snapshot (see FT_SNAPSHOT_m13 in medlib_m13.c) -
+	// live stacks are never frozen by errors (error may be handled & cleared, execution continues)
 } FUNCTION_STACK_m13;
 
 typedef struct { // multiple thread access
@@ -2233,11 +2333,11 @@ typedef struct { // multiple thread access
 	_Atomic si4			top_idx; // last non-empty function_stack in list
 } PROC_GLOBS_LIST_m13;
 
-typedef struct { // multiple thread access
+typedef struct FLOCK_ENTRY_m13 { // multiple thread access (tagged: forward referenced by FILE_m13)
 	_Atomic ui8		file_id; // from FILE_id_m13()
 	isem_t_m13		read_cnt; // ownership or number of processes currently reading file
 	_Atomic ui4		open_cnt; // number of processes that have file open
-	ui1			pad_bytes[4]; // future use (bytes will be there anyway)
+	_Atomic ui4		write_depth; // reentrant write lock depth (auto-locking writes within explicit write-locked spans; modified only by owning thread)
 } FLOCK_ENTRY_m13;
 
 typedef struct { // multiple thread access
@@ -3213,9 +3313,11 @@ void			G_pop_behavior_exec_m13(const si1 *function, const si4 line);
 void			G_pop_function_exec_m13(const si1 *function, const si4 line);
 tern			G_proc_error_get_m13(void *level_header);
 void			G_proc_error_set_m13(void *level_header, tern state);
-PROC_GLOBS_m13		*G_proc_globs_m13(void *level_header);
+PROC_GLOBS_m13		*G_proc_globs_m13(void *level_header); // level_header NULL: resolve by thread id / ancestry
+									// NOTE: a thread with multiple open sessions has multiple proc_globs with the same _id =>
+									// NULL resolves to the first found; pass a level header for deterministic resolution
 void			G_proc_globs_delete_m13(void *level_header);
-PROC_GLOBS_m13		*G_proc_globs_find_m13(void *level_header);
+PROC_GLOBS_m13		*G_proc_globs_find_m13(void *level_header); // as G_proc_globs_m13(), but no creation & no linkage (returns NULL if not found)
 tern			G_proc_globs_init_m13(PROC_GLOBS_m13 *pg);
 PROC_GLOBS_m13		*G_proc_globs_new_m13(void *level_header);
 tern			G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw);
@@ -3530,37 +3632,40 @@ void	**AT_recalloc_2D_m13(const si1 *function, si4 line, void **ptr, size_t curr
 //**********************************************************************************//
 
 // Prototypes
-si1		*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_separator, tern numeric_order);
+// NOTE: string args declared as void pointers are standard strings or pstrs, freely mixed (disambiguated by tag)
+// pstr inputs: lengths & character counts read from structure (no scan); pstr outputs: grown as required (cannot overflow), counts maintained
+// output functions returning void * return the output arg as passed (or an allocated standard string if the output arg was passed NULL)
+void		*STR_bin_m13(void *str, void *num_ptr, size_t num_bytes, const void *byte_separator, tern numeric_order);
 const si1	*STR_bool_m13(ui8 val, tern colored);
-wchar_t		*STR_char2wchar_m13(wchar_t *target, const si1 *source);
-ui4		STR_check_spaces_m13(const si1 *string);
-si4		STR_compare_m13(const void *a, const void *b);
-tern		STR_contains_formatting_m13(const si1 *string, si1 *plain_string);
-tern		STR_contains_regex_m13(const si1 *string);
-si1 		*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_level);
-tern		STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len);
-si1		*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number);
-si1		*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separator, tern numeric_order);
-tern		STR_is_empty_m13(const si1 *string);
-si1		*STR_match_end_m13(const si1 *pattern, const si1 *buffer);
-si1		*STR_match_end_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len);
-si1		*STR_match_line_end_m13(const si1 *pattern, const si1 *buffer);
-si1		*STR_match_line_start_m13(const si1 *pattern, const si1 *buffer);
-si1		*STR_match_start_m13(const si1 *pattern, const si1 *buffer);
-si1		*STR_match_start_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len);
-si1 		*STR_re_escape_m13(const si1 *str, si1 *esc_str);
-tern 		STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer);
-si1		*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *buffer, si1 *new_buffer);
-si1		*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two);
-tern		STR_sort_m13(si1 **string_array, si8 n_strings);
-tern		STR_strip_character_m13(si1 *s, si1 character);
+wchar_t		*STR_char2wchar_m13(wchar_t *target, const void *source);
+ui4		STR_check_spaces_m13(const void *string);
+si4		STR_compare_m13(const void *a, const void *b); // qsort() comparator: elements are standard string or pstr pointers, freely mixed
+tern		STR_contains_formatting_m13(const void *string, void *plain_string);
+tern		STR_contains_regex_m13(const void *string);
+void 		*STR_duration_m13(void *dur_str, si8 int_usecs, tern abbreviated, tern two_level);
+tern		STR_escape_chars_m13(void *string, si1 target_char, si8 buffer_len); // buffer_len ignored for pstrs (msize authoritative)
+void		*STR_fixed_width_int_m13(void *string, si4 string_bytes, si8 number);
+void		*STR_hex_m13(void *str, void *num_ptr, si8 num_bytes, const void *byte_separator, tern numeric_order);
+tern		STR_is_empty_m13(const void *string); // O(1) for pstrs
+si1		*STR_match_end_m13(const void *pattern, const void *buffer); // returns position within buffer string
+si1		*STR_match_end_bin_m13(const void *pattern, const si1 *buffer, si8 buf_len); // buffer is raw bytes (may contain zeros), not a string
+si1		*STR_match_line_end_m13(const void *pattern, const void *buffer); // returns position within buffer string
+si1		*STR_match_line_start_m13(const void *pattern, const void *buffer); // returns position within buffer string
+si1		*STR_match_start_m13(const void *pattern, const void *buffer); // returns position within buffer string
+si1		*STR_match_start_bin_m13(const void *pattern, const si1 *buffer, si8 buf_len); // buffer is raw bytes (may contain zeros), not a string
+void 		*STR_re_escape_m13(const void *str, void *esc_str);
+tern 		STR_replace_char_m13(si1 c, si1 new_c, void *buffer);
+void		*STR_replace_pattern_m13(const void *pattern, const void *new_pattern, void *buffer, void *new_buffer);
+void		*STR_size_m13(void *size_str, si8 n_bytes, tern base_two);
+tern		STR_sort_m13(void *string_array, si8 n_strings); // elements are standard string or pstr pointers, freely mixed
+tern		STR_strip_character_m13(void *string, si1 character);
 const si1	*STR_tern_m13(tern val, tern colored);
-si1		*STR_time_m13(void *level_header, si8 uutc_time, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...);
-tern		STR_to_lower_m13(si1 *s);
-tern		STR_to_title_m13(si1 *s);
-tern		STR_to_upper_m13(si1 *s);
-tern		STR_unescape_chars_m13(si1 *string, si1 target_char);
-si1		*STR_wchar2char_m13(si1 *target, const wchar_t *source);
+void		*STR_time_m13(void *level_header, si8 uutc_time, void *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...);
+tern		STR_to_lower_m13(void *string);
+tern		STR_to_title_m13(void *string);
+tern		STR_to_upper_m13(void *string);
+tern		STR_unescape_chars_m13(void *string, si1 target_char);
+void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 
 
 
@@ -4710,6 +4815,8 @@ typedef struct {
 	si8		len, span, in_idx, out_idx, oldest_idx;
 	sf8		*x, *qx, quantile, low_val_q, high_val_q;
 	FILT_NODE_m13	*nodes, head, tail, *oldest_node, *curr_node;
+	FILT_NODE_m13	*new_node, *prev_new_node;  // insertion state carried between head/mid calls
+	sf8		prev_new_val;
 } QUANTFILT_DATA_m13;
 
 
@@ -4734,7 +4841,8 @@ sf8	FILT_line_noise_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, 
 void	FILT_mat_mult_m13(void *a, void *b, void *product, si4 outer_dim1, si4 inner_dim, si4 outer_dim2);
 sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option_code);
 sf8	*FILT_noise_floor_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers);
-sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si1 tail_option_code);
+sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si4 tail_option_code, ...); // varargs(tail_option_code negative): FILT_NODE_m13 *nodes (span + 1 entries, uninitialized OK; not freed)
+									// Note: tail_option_code must be si4 (not si1): va_start() on a parameter that undergoes default argument promotion is undefined behavior
 QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, ...); // varargs: sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si4 tail_option_code
 tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd);
 tern	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd);
@@ -5062,6 +5170,7 @@ typedef struct {
 	tern	expanded_key_allocated; // determines whether to free expanded key
 	ui1	mode; // TR_MODE_SEND_m13, TR_MODE_RECV_m13, TR_MODE_NONE_m13 (needed to properly close TCP sockets)
 	si4	sock_fd;
+	si4	sock_family; // AF_INET or AF_INET6 of the current socket (runtime only, not persisted); 0 (AF_UNSPEC) == none yet
 	si1	dest_addr[INET6_ADDRSTRLEN]; // INET6_ADDRSTRLEN == 46 (this can be an IP address string or or a domain name [< 46 characters])
 	ui2	dest_port;
 	si1	iface_addr[INET6_ADDRSTRLEN]; // zero-length string for any default internet interface
@@ -5084,7 +5193,9 @@ tern		TR_check_transmission_header_alignment_m13(ui1 *bytes);
 tern		TR_close_transmission_m13(TR_INFO_m13 *trans_info);
 tern		TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port);
 tern		TR_connect_to_server_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port);
-tern		TR_create_socket_m13(TR_INFO_m13 *trans_info);
+tern		TR_create_socket_m13(TR_INFO_m13 *trans_info); // uses trans_info->sock_family (defaults to AF_INET if unset)
+tern		TR_ensure_socket_family_m13(TR_INFO_m13 *trans_info, si4 af); // (re)create the socket if it is missing or of the wrong family
+tern		TR_make_sockaddr_m13(void *sockaddr_storage_ptr, ui4 *sa_len, si4 af, const si1 *addr_str, ui2 port); // fill a sockaddr_in/in6 for either family (NULL/empty addr_str => wildcard)
 tern		TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr);
 tern		TR_realloc_trans_info_m13(TR_INFO_m13 *trans_info, si8 buffer_bytes, TR_HDR_m13 **caller_header);
 si8		TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header); // receive may reallocate, pass caller header to have function set local variable, otherwise pass NULL, can do manually
@@ -5154,7 +5265,7 @@ si1		*TR_strerror_m13(si4 err_num);
 	{ "BELARUS", "BY", "BLR", "", "", "MOSCOW STANDARD TIME", "MSK", 10800, "", "", 0x0, 0x0, -1 }, \
 	{ "BELGIUM", "BE", "BEL", "", "", "CENTRAL EUROPEAN TIME", "CET", 3600, "CENTRAL EUROPEAN DAYLIGHT TIME", "CEDT", 0x3C00020200060001, 0xC4000309000600FF, -1 }, \
 	{ "BELIZE", "BZ", "BLZ", "", "", "CENTRAL STANDARD TIME", "CST", -21600, "", "", 0x0, 0x0, -1 }, \
-	{ "BENIN", "BJ", "BEN", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0 }, \
+	{ "BENIN", "BJ", "BEN", "", "", "WEST AFRICA TIME", "WAT", 3600, "", "", 0x0, 0x0, -1 }, \
 	{ "BERMUDA", "BM", "BMU", "", "", "ATLANTIC STANDARD TIME", "AST", -14400, "ATLANTIC DAYLIGHT TIME", "ADT", 0x3C00020200020001, 0xC400020A000100FF, -1 }, \
 	{ "BHUTAN", "BT", "BTN", "", "", "BHUTAN TIME", "BTT", 21600, "", "", 0x0, 0x0, -1 }, \
 	{ "BOLIVIA", "BO", "BOL", "", "", "BOLIVIA TIME", "BOT", -14400, "", "", 0x0, 0x0, -1 }, \
@@ -5671,7 +5782,7 @@ ui4		rand32_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less conven
 ui8		rand64_m13(void); // 64-bit random number using system random number generator
 ui8		rand64_med_m13(void); // 64-bit random number using medlib generator (replicable sequences across platforms)
 ui8		rand64_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of rand64_med_m13()
-tern		rm_m13(const si1 *path);  // remove
+tern		rm_m13(const si1 *path);  // remove (removes directory trees recursively via internal rm_recursive_m13() on MacOS & Linux)
 si4		scanf_m13(const si1 *fmt, ...);
 si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
 sem_t_m13	*sem_open_m13(const si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
@@ -5685,14 +5796,14 @@ void		srand_med_wz_m13(ui4 seed, volatile ui4 *w, volatile ui4 *z); // faster, l
 void		srandom_m13(ui4 seed); // seed system random number generator
 si4		sscanf_m13(si1 *target, const si1 *fmt, ...);
 si4		stat_m13(const si1 *path, struct_stat_m13 *sb);
-si8		strcat_m13(si1 *target, const si1 *source);
-size_t		strchar_m13(const si1 *string); // strlen() that returns number of characters in string regardless of multibyte characters
-si4		strcmp_m13(const si1 *string_1, const si1 *string_2);
-si8		strcpy_m13(si1 *target, const si1 *source);
-size_t		strlen_m13(const si1 *source);
-si8		strncat_m13(si1 *target, const si1 *source, size_t n_chars);
-si4		strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars);
-si8		strncpy_m13(si1 *target, const si1 *source, size_t n_chars);
+si8		strcat_m13(void *target, const void *source); // args are standard strings or pstrs (disambiguated by tag); pstr targets grown as required
+size_t		strchar_m13(const void *string); // strlen() that returns number of characters in string regardless of multibyte characters; O(1) for pstrs
+si4		strcmp_m13(const void *string_1, const void *string_2); // args are standard strings or pstrs (disambiguated by tag)
+si8		strcpy_m13(void *target, const void *source); // args are standard strings or pstrs (disambiguated by tag); pstr targets grown as required
+size_t		strlen_m13(const void *source); // arg is standard string or pstr (disambiguated by tag); O(1) for pstrs
+si8		strncat_m13(void *target, const void *source, size_t n_chars); // args are standard strings or pstrs (disambiguated by tag); pstr targets grown as required
+si4		strncmp_m13(const void *string_1, const void *string_2, size_t n_chars); // args are standard strings or pstrs (disambiguated by tag)
+si8		strncpy_m13(void *target, const void *source, size_t n_chars); // args are standard strings or pstrs (disambiguated by tag); pstr targets grown as required
 si4		system_m13(const si1 *command, ...); // varargs(command = NULL): const si1 *command, tern (as si4) null_std_streams, ui4 behavior;
 si4		system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags, ...); // varargs(SP_BEHAVIOR_PASSED_m13 flag set): ui4 behavior)
 												    // varargs(SP_SEPARATE_STREAMS_m13 flag set): si1 **e_buffer_ptr, si8 e_buf_len

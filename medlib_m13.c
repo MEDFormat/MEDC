@@ -104,6 +104,34 @@ static GLOBALS_m13	*globals_m13 = NULL;
 GLOBALS_m13		*globals_m13 = NULL;
 #endif
 
+// concurrently active job distributions (PROC & PAR)
+// used by adaptive jobs_per_core: utilization measurements are only trusted when a distribution runs alone
+static _Atomic si4	distribute_calls_m13 = 0;
+
+#ifdef FT_DEBUG_m13
+// error function stack snapshot: G_set_error_exec_m13() copies the function stacks of the causal thread & its
+// ancestors here for later display (G_show_function_stack_m13() / exit_exec_m13()); subsequent pops record the
+// error's propagation (return lines) into the snapshot; live stacks are never modified, so function tracking
+// continues normally when an error is handled & cleared (e.g. PAR job errors captured into their handles)
+#define FT_SNAP_STACKS_m13	16 // maximum thread chain depth
+#define FT_SNAP_FRAMES_m13	256 // maximum frames per stack
+
+typedef struct {
+	pid_t_m13		_id; // thread id at snapshot
+	si4			n_frames;
+	si4			unwind_idx; // error propagation recording position (top frame first); -1 == fully unwound
+	FUNCTION_ENTRY_m13	frames[FT_SNAP_FRAMES_m13];
+} FT_SNAP_STACK_m13;
+
+typedef struct {
+	_Atomic tern		active;
+	si4			n_stacks;
+	FT_SNAP_STACK_m13	stacks[FT_SNAP_STACKS_m13]; // causal thread first, ancestors follow
+} FT_SNAPSHOT_m13;
+
+static FT_SNAPSHOT_m13	FT_error_snapshot_m13;  // zeroed static (debug builds only)
+#endif  // FT_DEBUG_m13
+
 
 //*********************************//
 // MARK: GENERAL MED FUNCTIONS  (G)
@@ -658,7 +686,7 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chan
 			free_names = TRUE_m13;
 		}
 		sess->vid_chans = (CHAN_m13 **) calloc_2D_m13((size_t) n_vid_chans, 1, -sizeof(CHAN_m13));
-		if (sess->ts_chans == NULL) {
+		if (sess->vid_chans == NULL) {
 			G_free_session_m13(sess);
 			FPS_free_m13(proto_fps);
 			if (free_names == TRUE_m13)
@@ -667,7 +695,7 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chan
 		}
 		for (i = 0; i < n_vid_chans; ++i) {
 			chan = sess->vid_chans[i];
-			sprintf_m13(tmp_str, "%s/%s.%s", sess->path, ts_chan_names[i], VID_CHAN_TYPE_CODE_m13);
+			sprintf_m13(tmp_str, "%s/%s.%s", sess->path, vid_chan_names[i], VID_CHAN_TYPE_CODE_m13);
 			chan = G_alloc_channel_m13(chan, proto_fps, tmp_str, (LH_m13 *) sess, n_segs, chan_recs, seg_recs);
 			if (chan == NULL) {
 				G_free_session_m13(sess);
@@ -685,17 +713,17 @@ SESS_m13	*G_alloc_session_m13(FPS_m13 *proto_fps, const si1 *path, si4 n_ts_chan
 	if (sess_recs == TRUE_m13) {
 		// indices
 		sprintf_m13(tmp_str, "%s/%s.%s", sess->path, sess->name, REC_INDS_TYPE_CODE_m13);
-		chan->rec_inds_fps = FPS_clone_m13(proto_fps, tmp_str, INDEX_BYTES_m13, 0, (LH_m13 *) sess);
-		if (chan->rec_inds_fps == NULL) {
+		sess->rec_inds_fps = FPS_clone_m13(proto_fps, tmp_str, INDEX_BYTES_m13, 0, (LH_m13 *) sess);
+		if (sess->rec_inds_fps == NULL) {
 			G_free_session_m13(sess);
 			FPS_free_m13(proto_fps);
 			return_m13(NULL);
 		}
-		
+
 		// data
 		sprintf_m13(tmp_str, "%s/%s.%s", sess->path, sess->name, REC_DATA_TYPE_CODE_m13);
-		chan->rec_data_fps = FPS_clone_m13(proto_fps, tmp_str, REC_LARGEST_RECORD_BYTES_m13, 0, (LH_m13 *) sess);
-		if (chan->rec_data_fps == NULL) {
+		sess->rec_data_fps = FPS_clone_m13(proto_fps, tmp_str, REC_LARGEST_RECORD_BYTES_m13, 0, (LH_m13 *) sess);
+		if (sess->rec_data_fps == NULL) {
 			G_free_session_m13(sess);
 			FPS_free_m13(proto_fps);
 			return_m13(NULL);
@@ -1137,8 +1165,9 @@ si8	G_build_contigua_m13(void *level_header)
 			// get indices
 			if (seg->ts_inds_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_INDS_TYPE_STR_m13);
-				seg->ts_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
-				if (seg->ts_inds_fps == NULL) {
+				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
+					seg->ts_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
+					if (seg->ts_inds_fps == NULL)
 						return_m13(FALSE_m13);
 				} else {
 					force_discont = TRUE_m13;
@@ -1190,11 +1219,13 @@ si8	G_build_contigua_m13(void *level_header)
 		}
 		
 		// close final contiguon
-		contiguon->end_samp_num = (tsi[k].start_samp_num + absolute_numbering_offset) - 1;
-		last_block_samples = tsi[k].start_samp_num - tsi[k - 1].start_samp_num;
-		last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1.0e6);
-		contiguon->end_time = (tsi[k - 1].start_time + last_block_usecs) - 1;
-		contiguon->end_seg_num = (si4) last_segment_number;
+		if (n_contigua) {  // no contigua if all segments missing
+			contiguon->end_samp_num = (tsi[k].start_samp_num + absolute_numbering_offset) - 1;
+			last_block_samples = tsi[k].start_samp_num - tsi[k - 1].start_samp_num;
+			last_block_usecs = (si8) round(((sf8) last_block_samples / samp_freq) * (sf8) 1.0e6);
+			contiguon->end_time = (tsi[k - 1].start_time + last_block_usecs) - 1;
+			contiguon->end_seg_num = (si4) last_segment_number;
+		}
 	} else {  // VID_CHAN_TYPE_CODE_m13
 		for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 			if (chan)  // segment level passed
@@ -1207,7 +1238,7 @@ si8	G_build_contigua_m13(void *level_header)
 			if (seg->metadata_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VID_METADATA_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					seg->metadata_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, tmp_str, NULL, "r", (LH_m13 *) seg, 0);
+					seg->metadata_fps = FPS_read_m13(NULL, FPS_FULL_FILE_m13, METADATA_BYTES_m13, 1, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 					if (seg->metadata_fps == NULL)
 						return_m13(FALSE_m13);
 				} else {
@@ -1220,10 +1251,10 @@ si8	G_build_contigua_m13(void *level_header)
 			absolute_numbering_offset = vmd2->session_start_frame_number;
 			
 			// get indices
-			if (seg->ts_inds_fps == NULL) {
+			if (seg->vid_inds_fps == NULL) {
 				sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, VID_INDS_TYPE_STR_m13);
 				if (G_exists_m13(tmp_str) == FILE_EXISTS_m13) {
-					seg->vid_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, NULL, "r", (LH_m13 *) seg, 0);
+					seg->vid_inds_fps = FPS_read_m13(NULL, 0, FPS_FULL_FILE_m13, 0, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
 					if (seg->vid_inds_fps == NULL)
 						return_m13(FALSE_m13);
 				} else {
@@ -1276,11 +1307,13 @@ si8	G_build_contigua_m13(void *level_header)
 		}
 		
 		// close final contiguon
-		contiguon->end_frame_num = (vi[k].start_frame_num + absolute_numbering_offset) - 1;
-		last_block_frames = vi[k].start_frame_num - vi[k - 1].start_frame_num;
-		last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1.0e6);
-		contiguon->end_time = (vi[k - 1].start_time + last_block_usecs) - 1;
-		contiguon->end_seg_num = (si4) last_segment_number;
+		if (n_contigua) {  // no contigua if all segments missing
+			contiguon->end_frame_num = (vi[k].start_frame_num + absolute_numbering_offset) - 1;
+			last_block_frames = vi[k].start_frame_num - vi[k - 1].start_frame_num;
+			last_block_usecs = (si8) round(((sf8) last_block_frames / frame_rate) * (sf8) 1.0e6);
+			contiguon->end_time = (vi[k - 1].start_time + last_block_usecs) - 1;
+			contiguon->end_seg_num = (si4) last_segment_number;
+		}
 	}
 	
 	if (n_contigua == 0)
@@ -2115,10 +2148,14 @@ void	G_clear_error_m13(void)
 	*err->message = 0;
 	*err->thread_name = 0;
 	err->thread_id = 0;
-	
+
+	#ifdef FT_DEBUG_m13
+	FT_error_snapshot_m13.active = FALSE_m13;  // release error snapshot (live stacks were never modified)
+	#endif
+
 	pthread_mutex_unlock_m13(&err->mutex);
 	isem_chown_m13(&err->isem, 0);  // release isem ownership
-	
+
 	return;
 }
 
@@ -2848,8 +2885,8 @@ tern G_decrypt_time_series_m13(FPS_m13 *fps)
 		  
 		// calculate encryption bytes
 		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-		if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
-			encryption_bytes = encryptable_bytes;
+		if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
+			encryption_bytes = encryptable_bytes;  // full 16 byte AES blocks after encryption start point; AES_encrypt/decrypt_m13() handle trailing partial block internally (AES_partial_encrypt/decrypt_m13())
 		} else {
 			encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
 			if (encryption_bytes > encryptable_bytes)
@@ -2931,32 +2968,25 @@ void	G_delete_function_stack_m13(void)
 	FUNCTION_STACK_m13		*stack;
 
 	
-	// causal error set => do not delete stack of causal thread
-	if (G_error_code_m13())
-		if (globals_m13->error.thread_id == gettid_m13())
-			return;
+	// Note: error display data lives in the error snapshot => stacks are always deletable
 
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-	
-	// don't remove any stacks in error chain
-	if (stack->err_chain == FALSE_m13) {
-		
-		// reduce list search extents
-		list = globals_m13->function_stack_list;
-		pthread_mutex_lock_m13(&list->mutex);
-		
-		if (stack == list->stack_ptrs[list->top_idx])
-			--list->top_idx;
-		
-		pthread_mutex_unlock_m13(&list->mutex);
-		
-		// reset stack for re-use (leave size intact, functions already allocated)
-		stack->_id = 0;
-		stack->top_idx = -1;
-	}
-	
+
+	// reduce list search extents
+	list = globals_m13->function_stack_list;
+	pthread_mutex_lock_m13(&list->mutex);
+
+	if (stack == list->stack_ptrs[list->top_idx])
+		--list->top_idx;
+
+	pthread_mutex_unlock_m13(&list->mutex);
+
+	// reset stack for re-use (leave size intact, functions already allocated)
+	stack->_id = 0;
+	stack->top_idx = -1;
+
 	return;
 }
 #endif  // FT_DEBUG_m13
@@ -3229,8 +3259,8 @@ tern	G_encrypt_time_series_m13(FPS_m13 *fps)
 		
 		// calculate encryption bytes
 		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-		if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
-			encryption_bytes = encryptable_bytes;
+		if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
+			encryption_bytes = encryptable_bytes;  // full 16 byte AES blocks after encryption start point; AES_encrypt/decrypt_m13() handle trailing partial block internally (AES_partial_encrypt/decrypt_m13())
 		} else {
 			encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
 			if (encryption_bytes > encryptable_bytes)
@@ -5481,9 +5511,12 @@ inline
 #endif
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 {
+	tern				own_call;
 	si4				i, n_stacks;
 	FUNCTION_STACK_LIST_m13		*list;
 	FUNCTION_STACK_m13 		*stack, **stack_ptr, *new_stack;
+	static thread_local_m13 pid_t_m13		own_id = 0;  // thread id is immutable => cache (saves a system call on every push & pop)
+	static thread_local_m13 FUNCTION_STACK_m13	*own_stack = NULL;  // this thread's stack (avoids the list mutex & search on every push & pop)
 
 
 	// pass zero for current thread function stack
@@ -5491,17 +5524,26 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	// initializing or freeing globals
 	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
 		return(NULL);
-	
+
 	// get _id
-	if (_id == 0)
-		_id = gettid_m13();
-	
+	own_call = FALSE_m13;
+	if (_id == 0) {
+		own_call = TRUE_m13;
+		if (own_id == 0)
+			own_id = gettid_m13();
+		_id = own_id;
+		// cached stack valid while this thread holds it (release & delete zero the _id => mismatch => searched path)
+		if (own_stack)
+			if (own_stack->_id == _id)
+				return(own_stack);
+	}
+
 	// get mutex
 	list = globals_m13->function_stack_list;
 	if (list == NULL)
 		return(NULL);
 	pthread_mutex_lock_m13(&list->mutex);
-	
+
 	// find stack
 	stack_ptr = list->stack_ptrs;
 	n_stacks = list->top_idx + 1;
@@ -5513,7 +5555,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 		}
 		if (stack)
 			continue;
-		if ((*stack_ptr)->top_idx == -1)  // first open stack
+		if ((*stack_ptr)->_id == 0)  // first open stack (_id is zeroed on release; top_idx == -1 would also match a claimed stack before its first push)
 			stack = *stack_ptr;
 	}
 	
@@ -5549,13 +5591,16 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 		}
 	
 		// setup or reset stack
-		stack->top_idx = stack->err_top_idx = (si4) -1;
+		stack->top_idx = (si4) -1;
 		stack->_id = _id;
-		stack->err_chain = FALSE_m13;
 	}
-	
+
 	pthread_mutex_unlock_m13(&list->mutex);
-		
+
+	// cache this thread's stack (thread local)
+	if (own_call == TRUE_m13)
+		own_stack = stack;
+
 	return(stack);
 }
 
@@ -7300,6 +7345,7 @@ ui4	G_MED_type_code_from_string_m13(const si1 *string)
 		case VID_METADATA_TYPE_CODE_m13:
 		case VID_DATA_TYPE_CODE_m13:
 		case VID_INDS_TYPE_CODE_m13:
+		case VID_PARITY_TYPE_CODE_m13:
 		case TS_CHAN_TYPE_CODE_m13:
 		case TS_METADATA_TYPE_CODE_m13:
 		case TS_DATA_TYPE_CODE_m13:
@@ -7344,6 +7390,8 @@ const si1	*G_MED_type_string_from_code_m13(ui4 code)
 			return_m13(VID_DATA_TYPE_STR_m13);
 		case VID_INDS_TYPE_CODE_m13:
 			return_m13(VID_INDS_TYPE_STR_m13);
+		case VID_PARITY_TYPE_CODE_m13:
+			return_m13(VID_PARITY_TYPE_STR_m13);
 		case TS_CHAN_TYPE_CODE_m13:
 			return_m13(TS_CHAN_TYPE_STR_m13);
 		case TS_METADATA_TYPE_CODE_m13:
@@ -8002,7 +8050,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(chan);
-	r_val = PROC_jobs_distribute_m13(jobs, n_segs, 0, 1, threading, FALSE_m13);
+	r_val = PROC_jobs_distribute_m13(jobs, n_segs, 0, PROC_JOBS_PER_CORE_DEFAULT_m13, threading, FALSE_m13);
 	if (r_val == FALSE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(chan);
@@ -8860,7 +8908,7 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(sess);
-	r_val = PROC_jobs_distribute_m13(jobs, n_chans, 0, 1, threading, FALSE_m13);
+	r_val = PROC_jobs_distribute_m13(jobs, n_chans, 0, PROC_JOBS_PER_CORE_DEFAULT_m13, threading, FALSE_m13);
 	if (r_val == FALSE_m13) {
 		if (free_sess == TRUE_m13)
 			G_free_session_m13(sess);
@@ -9120,21 +9168,24 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
 		return;
-	
-	// don't pop from stacks in error chain
-	if (stack->err_chain == TRUE_m13) {
-		if (stack->err_top_idx >= 0)  // add return line, but don't pop function
-			if (strcmp(function, stack->functions[stack->err_top_idx].name) == 0)
-				stack->functions[stack->err_top_idx--].return_line = line;
-		
-		// exit if at base
-		if (stack->_id == globals_m13->miscellaneous.main_id)
-			if (stack->err_top_idx == -1)
-				exit_exec_m13(function, line, G_error_code_m13());
-		
-		return;
+
+	// record error propagation (return lines) into the error snapshot; the live stack still pops normally below
+	// Note: no exit here - under exit-on-fail behaviors G_set_error_exec_m13() exits at set time (with the
+	// snapshot displayed); under RETURN_ON_FAIL_m13 the error belongs to the app (inspect, handle, or clear)
+	if (FT_error_snapshot_m13.active == TRUE_m13) {
+		si4			i;
+		FT_SNAP_STACK_m13	*snap;
+
+		for (snap = FT_error_snapshot_m13.stacks, i = FT_error_snapshot_m13.n_stacks; i--; ++snap) {
+			if (snap->_id != stack->_id)
+				continue;
+			if (snap->unwind_idx >= 0)
+				if (strcmp(function, snap->frames[snap->unwind_idx].name) == 0)
+					snap->frames[snap->unwind_idx--].return_line = line;
+			break;
+		}
 	}
-	
+
 	// check balance
 	if (stack->top_idx >= 0) {
 		if (strcmp(function, stack->functions[stack->top_idx].name)) {
@@ -9301,12 +9352,15 @@ PROC_GLOBS_m13	*G_proc_globs_m13(void *level_header)
 		pg = list->proc_globs_ptrs[++list->top_idx];
 	}
 
+	// claim slot before releasing mutex (concurrent creators could otherwise claim the same empty slot)
+	pg->_id = gettid_m13();
+
 	// relase mutex
 	pthread_mutex_unlock_m13(&list->mutex);
-	
+
 	// initialize
 	G_proc_globs_init_m13(pg);
-	++pg->ref_count;  // add a ref count for this thread (NOTE: this is NOT done in proc_globs_new() as that function is used to add proc_globs to the current thread)
+	++pg->ref_count;  // add a ref count for this thread (balances the thread exit delete; G_proc_globs_new_m13() does the same)
 
 PROC_GLOBS_FOUND_m13:
 
@@ -9349,9 +9403,9 @@ void	G_proc_globs_delete_m13(void *level_header)
 	if (pg == NULL)
 		return;
 		
-	// still in use by other entities
-	if (pg->ref_count)  // shouldn't get here if == zero, but possible
-		if (--pg->ref_count)
+	// still in use by other entities (ref_count is _Atomic => concurrent decrements can't lose counts)
+	if (pg->ref_count > 0)  // shouldn't get here if == zero, but possible
+		if (--pg->ref_count > 0)
 			return;
 
 	// never used (or already cleared)
@@ -9371,19 +9425,19 @@ void	G_proc_globs_delete_m13(void *level_header)
 	pthread_mutex_destroy_m13(&Sgmt_records_list->mutex);
 	
 	free(Sgmt_records_list);
-	pg->current_session.Sgmt_recs_list = NULL;
 
-	pg->_id = 0;
-	pg->ref_count = 0;
-	
-	// trim search extents
+	// clear entire slot: empty slots are recognized by _id == 0, but stale fields (e.g. current_session.UID)
+	// must not match future searches either (deleted then reopened session would find this dead slot by UID)
+	memset((void *) pg, 0, sizeof(PROC_GLOBS_m13));
+
+	// trim search extents (scan past any hole chain at the top - interior holes are reused by the empty slot searches)
 	pg_list = globals_m13->proc_globs_list;
 	pthread_mutex_lock_m13(&pg_list->mutex);
-	
+
 	pg_ptrs = pg_list->proc_globs_ptrs;
-	if (pg == pg_ptrs[pg_list->top_idx])
+	while (pg_list->top_idx >= 0 && pg_ptrs[pg_list->top_idx]->_id == 0)
 		--pg_list->top_idx;
-	
+
 	pthread_mutex_unlock_m13(&pg_list->mutex);
 	
 	return;
@@ -9397,6 +9451,7 @@ PROC_GLOBS_m13	*G_proc_globs_find_m13(void *level_header)
 	LH_m13			*lh;
 	pid_t_m13		_id;
 	LH_m13			*tmp_lh;
+	UH_m13			*uh;
 	PROC_GLOBS_m13		*pg, **pg_ptr;
 	PROC_GLOBS_LIST_m13	*list;
 	
@@ -9440,7 +9495,8 @@ PROC_GLOBS_m13	*G_proc_globs_find_m13(void *level_header)
 	// search by session UID
 	if (lh) {
 		if (G_MED_file_m13(lh->type_code) == TRUE_m13) {
-			sess_uid = ((FPS_m13 *) lh)->uh->session_UID;
+			uh = ((FPS_m13 *) lh)->uh;  // may not be read yet
+			sess_uid = (uh == NULL) ? 0 : uh->session_UID;
 			if (sess_uid) {
 				pg_ptr = list->proc_globs_ptrs;
 				n_pg = list->top_idx + 1;
@@ -9614,10 +9670,10 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(void *level_header)
 		}
 	}
 	
-	// expand list
+	// expand list (identical to G_proc_globs_m13(): teardown in G_free_globals_m13() frees by block, so allocation strategies must match)
 	if (pg == NULL) {
 		if (n_pg == list->size) {
-			++n_pg;
+			n_pg += GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13;
 			pg_ptr = (PROC_GLOBS_m13 **) realloc(list->proc_globs_ptrs, (size_t) n_pg * sizeof(PROC_GLOBS_m13 *));
 			if (pg_ptr == NULL) {
 				pthread_mutex_unlock_m13(&list->mutex);
@@ -9626,34 +9682,49 @@ PROC_GLOBS_m13	*G_proc_globs_new_m13(void *level_header)
 			}
 			list->proc_globs_ptrs = pg_ptr;
 
-			// allocate proc_globs (note: proc_globs allocated en bloc)
-			new_pg = (PROC_GLOBS_m13 *) malloc((size_t) sizeof(PROC_GLOBS_m13));
+			// allocate new proc_globs (en bloc; calloc: G_proc_globs_init_m13() does not zero the level header fields)
+			new_pg = (PROC_GLOBS_m13 *) calloc((size_t) GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13, sizeof(PROC_GLOBS_m13));
 			if (new_pg == NULL) {
-				G_set_error_m13(E_ALLOC_m13, NULL);
 				pthread_mutex_unlock_m13(&list->mutex);
+				G_set_error_m13(E_ALLOC_m13, NULL);
 				return_m13(NULL);
 			}
-			list->proc_globs_ptrs[list->size] = new_pg;
+			pg_ptr = list->proc_globs_ptrs + list->size;  // list->size is old list->size at this point
+			for (i = GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13; i--;)
+				*pg_ptr++ = new_pg++;
 			list->size = n_pg;
 		}
 		pg = list->proc_globs_ptrs[++list->top_idx];
 	}
 
+	// claim slot before releasing mutex (concurrent creators could otherwise claim the same empty slot)
+	pg->_id = gettid_m13();
+
 	// relase mutex
 	pthread_mutex_unlock_m13(&list->mutex);
-	
+
 	// initialize
 	G_proc_globs_init_m13(pg);
+	++pg->ref_count;  // add a ref count for this thread (balances the thread exit delete, as in G_proc_globs_m13())
 
-	// set shortcuts
+	// set shortcuts (with ref counts, as in G_proc_globs_m13())
+	// existing links are released & replaced up the full hierarchy - e.g. new session detected in FPS_read_m13()
+	// re-links the hierarchy to the new proc_globs (a partial re-link would split the hierarchy across two proc_globs)
+	if (lh->proc_globs)
+		G_proc_globs_delete_m13((LH_m13 *) lh->proc_globs);  // release ref on old proc_globs
 	lh->proc_globs = pg;
+	++pg->ref_count;  // add a ref count for link
 	while (lh->parent) {
-		if (lh->parent->type_code == PROC_GLOBS_TYPE_CODE_m13)  // unlikely with new proc_globs, but possible
+		if (lh->parent->type_code == PROC_GLOBS_TYPE_CODE_m13)  // top of hierarchy
 			break;
 		lh = lh->parent;
-		if (lh->proc_globs)  // all higher links already set, just return
-			return_m13(pg);
+		if (lh->proc_globs) {
+			if (lh->proc_globs == pg)  // already linked to these proc_globs => higher levels are too
+				return_m13(pg);
+			G_proc_globs_delete_m13((LH_m13 *) lh->proc_globs);  // release ref on old proc_globs
+		}
 		lh->proc_globs = pg;
+		++pg->ref_count;  // add a ref count for link
 	}
 	
 	// set top links
@@ -9955,13 +10026,9 @@ void	G_push_function_exec_m13(const si1 *function, const si4 line)
 	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
 		return;
 	
-	// get function stacks mutex
+	// get function stack
 	stack = G_function_stack_m13(0);
 	if (stack == NULL)
-		return;
-	
-	// do not modify function stacks in error chain
-	if (stack->err_chain == TRUE_m13)
 		return;
 
 	// expand stack
@@ -10218,7 +10285,7 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs(
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(chan);
-	r_val = PROC_jobs_distribute_m13(jobs, n_segs, 0, 1, threading, FALSE_m13);
+	r_val = PROC_jobs_distribute_m13(jobs, n_segs, 0, PROC_JOBS_PER_CORE_DEFAULT_m13, threading, FALSE_m13);
 	if (r_val == FALSE_m13) {
 		if (free_chan == TRUE_m13)
 			G_free_channel_m13(chan);
@@ -10828,13 +10895,14 @@ si8 G_read_records_m13(void *level_header, SLICE_m13 *slice, ...)  // varags(lev
 	// returns TRUE_m13 if read
 	// returns FALSE_m13 if not read because don't exist
 	// returns UNKNOWN_m13 on error
-	
+
 	lh = (LH_m13 *) level_header;
 	if (lh == NULL) {
 		G_set_error_m13(E_GEN_m13, "level is null");
 		return_m13(UNKNOWN_m13);
 	}
-	
+
+	ri_fps = rd_fps = NULL;  // invalid type_code falls through switch to null check below
 	switch (lh->type_code) {
 		case SESS_TYPE_CODE_m13:
 			sess = (SESS_m13 *) lh;
@@ -11259,7 +11327,7 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 	else
 		threading = PROC_default_threading_m13(sess);
 	
-	r_val = PROC_jobs_distribute_m13(jobs, n_chans, 0, 1, threading, FALSE_m13);
+	r_val = PROC_jobs_distribute_m13(jobs, n_chans, 0, PROC_JOBS_PER_CORE_DEFAULT_m13, threading, FALSE_m13);
 	if (r_val == FALSE_m13) {
 		if (free_sess == TRUE_m13)
 			G_free_session_m13(sess);
@@ -12565,30 +12633,43 @@ void	G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *me
 
 		#ifdef FT_DEBUG_m13
 		pid_t_m13		parent_id;
-		FUNCTION_STACK_m13	*stack, *tmp_stack;
-		
-		// setup error function stack chain
+		FT_SNAP_STACK_m13	*snap;
+		FUNCTION_STACK_m13	*tmp_stack;
+
+		// snapshot the function stacks of the causal thread & its ancestors for error display
+		// live stacks are NOT modified: function tracking continues normally, so a handled & cleared
+		// error leaves the stacks fully functional (e.g. PAR job errors captured into their handles)
+		// Note: ancestor stacks may be mutated by their (running) owners during the copy - snapshot is
+		// display grade, & ancestors are typically blocked waiting on the erring thread at this point
+		FT_error_snapshot_m13.n_stacks = 0;
 		parent_id = 0;
 		do {
 			tmp_stack = G_function_stack_m13(parent_id);
 			if (tmp_stack == NULL)
 				break;
-			if (parent_id == 0)
-				stack = tmp_stack;  // save causal stack - may need below
-			tmp_stack->err_chain = TRUE_m13;
-			tmp_stack->err_top_idx = tmp_stack->top_idx;
-			parent_id = PROC_thread_parent_id_m13(tmp_stack->_id);
+			snap = FT_error_snapshot_m13.stacks + FT_error_snapshot_m13.n_stacks;
+			snap->_id = tmp_stack->_id;
+			snap->n_frames = tmp_stack->top_idx + 1;
+			if (snap->n_frames > FT_SNAP_FRAMES_m13)
+				snap->n_frames = FT_SNAP_FRAMES_m13;
+			if (snap->n_frames > 0)
+				memcpy(snap->frames, tmp_stack->functions, (size_t) snap->n_frames * sizeof(FUNCTION_ENTRY_m13));
+			snap->unwind_idx = snap->n_frames - 1;
+			if (++FT_error_snapshot_m13.n_stacks == FT_SNAP_STACKS_m13)
+				break;
+			parent_id = PROC_thread_parent_id_m13(snap->_id);
 		} while (parent_id);
+		FT_error_snapshot_m13.active = TRUE_m13;
 		#endif
-		
+
 		// special handling for E_SIG_m13 (line & function arguments invalid)
 		if (code == E_SIG_m13) {
 			err->signal = line;  // system siganl number passed in line argument since no line available in signal trap
 			line = E_UNKNOWN_LINE_m13;
 			function = NULL;
 			#ifdef FT_DEBUG_m13
-			if (stack->top_idx >= 0)
-				function = stack->functions[stack->top_idx].name;  // stack found above
+			if (FT_error_snapshot_m13.n_stacks && FT_error_snapshot_m13.stacks[0].n_frames > 0)
+				function = FT_error_snapshot_m13.stacks[0].frames[FT_error_snapshot_m13.stacks[0].n_frames - 1].name;  // causal thread's top frame
 			#endif
 		}
 		
@@ -12970,6 +13051,7 @@ Sgmt_REC_m13	*G_Sgmt_records_m13(void *level_header, si4 search_mode)
 		chan = pg->current_session.index_channel;
 		i = -1;  // no entries => create new entry
 		n_entries = list->top_idx + 1;
+		rate = RATE_NO_ENTRY_m13;  // rate not used in time search - mark entry as rate-unmatched rather than storing stack garbage
 	} else {  // INDEX_SEARCH_m13 - find by rate
 		switch (lh->type_code) {
 			case SESS_TYPE_CODE_m13:
@@ -13478,13 +13560,17 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 #ifdef FT_DEBUG_m13
 	const si1		*thread_name;
 	si1			*c, title[THREAD_NAME_BYTES_m13 + 48];
-	si4			i, j, func_start_num;
+	si4			i, j, s, func_start_num;
+	FUNCTION_ENTRY_m13	*frames;
 	FUNCTION_STACK_m13	*stack;
+	FT_SNAP_STACK_m13	*snap;
 	pid_t_m13		_pid;
 
-	
+
 	// pass _id == 0 for error or local thread call
 	// returns -1 on failure
+	// error displays show the error snapshot (stacks & propagation as they were at the error);
+	// non-error displays show the live stack of the requested thread
 
 	if (_id == 0) {
 		if (G_error_code_m13())
@@ -13492,11 +13578,56 @@ si4	G_show_function_stack_m13(pid_t_m13 _id)
 		else
 			_id = gettid_m13();
 	}
-	
+
+	// error snapshot display (causal thread & its ancestors; base of the chain shown first)
+	if (FT_error_snapshot_m13.active == TRUE_m13 && FT_error_snapshot_m13.stacks[0]._id == _id) {
+		for (j = 0, s = FT_error_snapshot_m13.n_stacks - 1; s >= 0; --s) {
+			snap = FT_error_snapshot_m13.stacks + s;
+
+			// print thread name
+			thread_name = PROC_thread_name_m13(snap->_id);
+			if (thread_name)
+				sprintf_m13(title, "Function Stack for %s(id: %lu)", thread_name, snap->_id);
+			else
+				sprintf_m13(title, "Function Stack for Thread %lu:", snap->_id);
+			printf_m13("%s\n", title);
+
+			// replace string characters with '-' (terminal zero preserved)
+			c = title - 1;
+			while (*++c)
+				*c = '-';
+			printf_m13("%s\n", title);
+
+			// print frames
+			frames = snap->frames;
+			for (i = 0; i < snap->n_frames; ++i, ++j) {
+				if (frames[i].return_line <= 0)
+					#ifdef MATLAB_m13  // no text color
+					mexPrintf("%d)\t%s(%d -> ~)\n", j, frames[i].name, frames[i].entry_line);
+					#else  // colored text
+					printf_m13("%d)\t%s(%s%d -> ~%s)\n", j, frames[i].name, TC_BLUE_m13, frames[i].entry_line, TC_RESET_m13);
+					#endif
+				else
+					#ifdef MATLAB_m13  // no text color
+					mexPrintf("%d)\t%s(%d -> %d)\n", j, frames[i].name, frames[i].entry_line, frames[i].return_line);
+					#else  // colored text
+					printf_m13("%d)\t%s(%s%d -> %d%s)\n", j, frames[i].name, TC_BLUE_m13, frames[i].entry_line, frames[i].return_line, TC_RESET_m13);
+					#endif
+			}
+			#ifdef MATLAB_m13
+			mexPrintf("\n");
+			#else
+			printf_m13("\n");
+			#endif
+		}
+		return(j);
+	}
+
+	// live stack display
 	stack = G_function_stack_m13(_id);
 	if (stack == NULL)
 		return(-1);
-	
+
 	// recurse
 	_pid = PROC_thread_parent_id_m13(_id);
 	if (_pid) {
@@ -15034,13 +15165,10 @@ void	G_signal_trap_m13(si4 sig_num)
 	#ifdef FT_DEBUG_m13
 	FUNCTION_STACK_m13		*stack;
 
-	stack = G_function_stack_m13(0);
-	if (stack) {
-		if (G_error_code_m13())
-			function = stack->functions[stack->err_top_idx].name;
-		else
+	stack = G_function_stack_m13(0);  // signaled thread's current function (live stacks are not modified by errors)
+	if (stack)
+		if (stack->top_idx >= 0)
 			function = stack->functions[stack->top_idx].name;
-	}
 	#endif
 	
 	// pass signal number to G_set_error_exec_m13() in line argument because line not available in trap
@@ -15185,7 +15313,7 @@ tern	G_sort_records_m13(FPS_m13 *ri_fps, FPS_m13 *rd_fps)
 	ri_data = (ui1 *) malloc_m13(ri_len);
 	rd_data = (ui1 *) malloc_m13(rd_len);
 	sorted_rd_data = (ui1 *) malloc_m13(rd_len);
-	if (ri_data == NULL || ri_data == NULL || sorted_rd_data == NULL)
+	if (ri_data == NULL || rd_data == NULL || sorted_rd_data == NULL)
 		return_m13(FALSE_m13);
 
 	nrw = fread_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
@@ -15677,27 +15805,45 @@ inline
 #endif
 void	G_thread_exit_m13(void)
 {
+	si4			i;
 	pid_t_m13		_id;
 	ERROR_m13		*err;
 	PROC_GLOBS_m13		*pg;
-	
+	PROC_GLOBS_LIST_m13	*list;
+
 	// Call this function to release thread-local memory when leaving a thread.
 	// If not done, memory will be released by G_free_globals_m13(), or program termination.
 	// Only important in programs where many threads start & complete during course of operation.
 	// Currently the behavior stack, function stack, & thread list are the only affected globals.
 	// proc_globs are often shared between threads and so are not deleted automatically on exit
-	
+
 	// called by thread_return_m13() & thread_return_null_m13
-	
+
 	// don't remove any main process thread stuff (probably running in unthreaded mode)
 	_id = gettid_m13();
 	if (_id == globals_m13->miscellaneous.main_id)
 		return;
-	
-	// delete process globals (if last reference)
-	pg = G_proc_globs_find_m13(NULL);  // find by thread (not all threads have reference to process globals)
-	if (pg)
+
+	// delete process globals created by this thread (releases the thread reference; tears down on last reference)
+	// exact thread id match only: G_proc_globs_find_m13(NULL) matches by ancestry, but an ancestor's proc_globs
+	// must not be released by an exiting child thread that never added a reference
+	// (loop: a thread may have created proc_globs for multiple sessions)
+	list = globals_m13->proc_globs_list;
+	i = 0;
+	while (1) {
+		pg = NULL;
+		pthread_mutex_lock_m13(&list->mutex);
+		for (; i <= list->top_idx; ++i) {
+			if (list->proc_globs_ptrs[i]->_id == _id) {
+				pg = list->proc_globs_ptrs[i++];
+				break;
+			}
+		}
+		pthread_mutex_unlock_m13(&list->mutex);
+		if (pg == NULL)
+			break;
 		G_proc_globs_delete_m13((LH_m13 *) pg);
+	}
 	
 	// release thread behavior stack
 	G_delete_behavior_stack_m13();
@@ -15711,10 +15857,8 @@ void	G_thread_exit_m13(void)
 	if (G_error_code_m13()) {
 		err = &globals_m13->error;
 		pthread_mutex_lock_m13(&err->isem.mutex);
-		if (err->isem.owner == _id) {  // transfer error isem ownership to parent thread
-			_id = PROC_thread_parent_id_m13(_id);
-			isem_chown_m13(&err->isem, _id);
-		}
+		if (err->isem.owner == _id)  // transfer error isem ownership to parent thread
+			err->isem.owner = PROC_thread_parent_id_m13(_id);  // assign directly - isem_chown_m13() would relock held mutex (deadlock)
 		pthread_mutex_unlock_m13(&err->isem.mutex);
 	} else {
 		PROC_thread_list_remove_m13(_id);
@@ -16370,7 +16514,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 		rd_len = rd_fp->len;
 		ri_data = (ui1 *) malloc_m13(ri_len);
 		rd_data = (ui1 *) malloc_m13(rd_len);
-		if (ri_data == NULL || ri_data == NULL)
+		if (ri_data == NULL || rd_data == NULL)
 			goto UPDATE_MED_TYPE_FAIL_m13;
 		nr = fread_m13(ri_data, sizeof(ui1), (size_t) ri_len, ri_fp);
 		if (nr != ri_len)
@@ -18742,6 +18886,7 @@ tern	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 	// address matched
 	if (i >= 0) {
 		if (ate->free_function == NULL) {  // should never happen
+			pthread_mutex_unlock_m13(&list->mutex);  // release before return (or every subsequent allocation blocks)
 			G_set_error_m13(E_GEN_m13, "memory allocated to address that is currently in use:  AT bug or egregious misuse");
 			return(FALSE_m13);
 		}
@@ -18977,11 +19122,12 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 		*ate->free_thread_name = 0;
 
 #ifdef AT_CHECK_OVERWRITES_m13
+	tern	overwrite_detected = FALSE_m13;
 	ui1	*val, check_val;
 	si4	excess_bytes;
-	
+
 	val = (ui1 *) address + ate->requested_bytes;
-	
+
 	excess_bytes = (si4) (ate->actual_bytes - ate->requested_bytes);
 	check_val = 0x01;
 	for (i = excess_bytes; i--; ++val, ++check_val) {
@@ -18990,9 +19136,7 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 				G_warning_message_m13("%s(): %smemory at address %lu was written past its requested extents%s  [free called in %s(id: %lu)]\n", __FUNCTION__, TC_RED_m13, (ui8) address, TC_RESET_m13, function, line, thread_name, _id);
 			else
 				G_warning_message_m13("%s(): %smemory at address %lu was written past its requested extents%s  [free called in thread %lu]\n", __FUNCTION__, TC_RED_m13, (ui8) address, TC_RESET_m13, function, line, _id);
-			pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-			AT_show_entry_m13(address);
-			pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
+			overwrite_detected = TRUE_m13;  // shown below: releasing & re-taking the mutex here would allow a concurrent add to realloc the entries => ate would dangle
 			break;
 		}
 		if (check_val == 0xFF)
@@ -19006,7 +19150,12 @@ tern	AT_remove_entry_m13(const si1 *function, si4 line, void *address)
 
 	// return mutex
 	pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);
-	
+
+#ifdef AT_CHECK_OVERWRITES_m13
+	if (overwrite_detected == TRUE_m13)
+		AT_show_entry_m13(address);
+#endif
+
 	return(TRUE_m13);
 }
 
@@ -20439,7 +20588,7 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 		if (enc_level == LEVEL_1_ENCRYPTION_m13)
 			key = pwd->level_1_encryption_key;
 		else
-			key = pwd->level_1_encryption_key;
+			key = pwd->level_2_encryption_key;
 	} else {
 		G_set_error_m13(E_CRYP_m13, "cannot decrypt data: insufficient access");
 		return_m13(FALSE_m13);
@@ -20447,8 +20596,8 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 	
 	// calculate encryption bytes
 	encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-	if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
-		encryption_bytes = encryptable_bytes;
+	if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
+		encryption_bytes = encryptable_bytes;  // full 16 byte AES blocks after encryption start point; AES_encrypt/decrypt_m13() handle trailing partial block internally (AES_partial_encrypt/decrypt_m13())
 	} else {
 		encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
 		if (encryption_bytes > encryptable_bytes)
@@ -20898,8 +21047,8 @@ tern	CMP_encrypt_m13(FPS_m13 *fps)
 	
 	// calculate encryption bytes
 	encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
-	if (bh->block_flags | CMP_BF_MBE_ENCODING_m13) {
-		encryption_bytes = encryptable_bytes;
+	if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
+		encryption_bytes = encryptable_bytes;  // full 16 byte AES blocks after encryption start point; AES_encrypt/decrypt_m13() handle trailing partial block internally (AES_partial_encrypt/decrypt_m13())
 	} else {
 		encryption_bytes = (bh->total_header_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13) + ENCRYPTION_BLOCK_BYTES_m13;
 		if (encryption_bytes > encryptable_bytes)
@@ -22244,7 +22393,7 @@ tern	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf
 	d = max_m - min_m;
 
 	// search
-	while (d > thresh) {
+	do {
 		ma = (upper_m + lower_m) / (sf8) 2.0;
 		bp = buf; xp = x_input_buffer; yp = y_input_buffer;
 		for (i = len; i--;)
@@ -22273,7 +22422,7 @@ tern	CMP_lad_reg_2_sf8_m13(sf8 *x_input_buffer, sf8 *y_input_buffer, si8 len, sf
 		else
 			break;
 		d = upper_m - lower_m;
-	}
+	} while (d > thresh);
 
 	*b = ba;
 	*m = ma;
@@ -22330,7 +22479,7 @@ tern	CMP_lad_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf
 	d = max_m - min_m;
 
 	// search
-	while (d > thresh) {
+	do {
 		ma = (upper_m + lower_m) / (sf8) 2.0;
 		bp = buf; xp = x; yp = y;
 		for (i = len; i--;)
@@ -22359,7 +22508,7 @@ tern	CMP_lad_reg_2_si4_m13(si4 *x_input_buffer, si4 *y_input_buffer, si8 len, sf
 		else
 			break;
 		d = upper_m - lower_m;
-	}
+	} while (d > thresh);
 
 	*b = ba;
 	*m = ma;
@@ -22408,7 +22557,7 @@ tern	CMP_lad_reg_sf8_m13(sf8 *y, si8 len, sf8 *m, sf8 *b)
 	d = max_m - min_m;
 	
 	// search
-	while (d > thresh) {
+	do {
 		lm = (upper_m + lower_m) / (sf8) 2.0;
 		bp = buf; yp = y;
 		m_sum = (sf8) 0.0;
@@ -22439,7 +22588,7 @@ tern	CMP_lad_reg_sf8_m13(sf8 *y, si8 len, sf8 *m, sf8 *b)
 		else
 			break;
 		d = upper_m - lower_m;
-	}
+	} while (d > thresh);
 	*b = lb;
 	*m = lm;
 	
@@ -22486,7 +22635,7 @@ tern	CMP_lad_reg_si4_m13(si4 *input_buffer, si8 len, sf8 *m, sf8 *b)
 	d = max_m - min_m;
 	
 	// search
-	while (d > thresh) {
+	do {
 		ma = (upper_m + lower_m) / (sf8) 2.0;
 		bp = buf; yp = y;
 		m_sum = (sf8) 0.0;
@@ -22517,7 +22666,7 @@ tern	CMP_lad_reg_si4_m13(si4 *input_buffer, si8 len, sf8 *m, sf8 *b)
 		else
 			break;
 		d = upper_m - lower_m;
-	}
+	} while (d > thresh);
 	
 	*b = ba;
 	*m = ma;
@@ -29537,7 +29686,7 @@ DATA_MATRIX_m13	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		threading = FALSE_m13;
 	else
 		threading = PROC_default_threading_m13(sess);
-	r_val = PROC_jobs_distribute_m13(jobs, matrix->channel_count, 0, 1, threading, FALSE_m13);
+	r_val = PROC_jobs_distribute_m13(jobs, matrix->channel_count, 0, PROC_JOBS_PER_CORE_DEFAULT_m13, threading, FALSE_m13);
 	if (r_val == FALSE_m13) {
 		free(jobs);
 		free(chan_thread_infos);
@@ -32091,13 +32240,13 @@ tern	FILT_invert_matrix_m13(sf8 **a, sf8 **inv_a, si4 order)  // done in place i
 sf8	FILT_line_noise_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, si8 cycles_per_template, tern calculate_score, tern fast_mode, CMP_BUFFERS_m13 *lnf_buffers)
 {
 	tern		free_buffers;
-	ui1		score;
 	si4		filt_order, n_harmonics;
 	FILTPS_m13	*filtps;
+	FILT_NODE_m13	*qf_nodes;
 	si8		i, j, k, int_samps_per_cycle, n_templates, template_trace_len, last_template_start;
 	sf8		samps_per_cycle, min_y, max_y, *sf8_p1, *sf8_p2, *sf8_p3;
-	sf8		*low_y, *high_y, **template_mtx, *template_trace, *template_buf;
-	sf8		amp_y, amp_n, high_f, max_high_f, sum, offset;
+	sf8		*low_y, *high_y, **template_mtx, *mtx_row, *template_trace, *template_buf;
+	sf8		amp_y, amp_n, high_f, max_high_f, sum, offset, score;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -32154,21 +32303,24 @@ sf8	FILT_line_noise_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, 
 		*sf8_p1++ = *sf8_p2++ - *sf8_p3++;
 	high_y = fy;
 
-	// make template matrix
+	// make template matrix (en bloc: row pointers followed by row data - single allocation & free)
 	n_templates = len / int_samps_per_cycle;
-	template_mtx = (sf8 **) malloc(int_samps_per_cycle * sizeof(sf8 *));
-	for (i = 0; i < int_samps_per_cycle; ++i)
-		template_mtx[i] = (sf8 *) malloc(n_templates << 3);
+	template_mtx = (sf8 **) malloc((size_t) (int_samps_per_cycle * sizeof(sf8 *)) + (size_t) ((int_samps_per_cycle * n_templates) << 3));
+	mtx_row = (sf8 *) (template_mtx + int_samps_per_cycle);
+	for (i = 0; i < int_samps_per_cycle; ++i, mtx_row += n_templates)
+		template_mtx[i] = mtx_row;
 	for (i = k = 0; i < n_templates; ++i)
 		for (j = 0; j < int_samps_per_cycle; ++j, ++k)
 			template_mtx[j][i] = high_y[k];
 
-	// quantfilt along sample dimension
+	// quantfilt along sample dimension (node buffer allocated once & reused across rows)
 	template_buf = (sf8 *) lnf_buffers->buffer[1];
+	qf_nodes = (FILT_NODE_m13 *) malloc((size_t) (cycles_per_template + 1) * sizeof(FILT_NODE_m13));
 	for (i = 0; i < int_samps_per_cycle; ++i) {
-		FILT_quantfilt_m13(template_mtx[i], template_buf, n_templates, 0.5, cycles_per_template, FILT_EXTRAPOLATE_m13);
+		FILT_quantfilt_m13(template_mtx[i], template_buf, n_templates, 0.5, cycles_per_template, -FILT_EXTRAPOLATE_m13, qf_nodes);
 		memcpy(template_mtx[i], template_buf, (n_templates << 3));
 	}
+	free(qf_nodes);
 	
 	// build template trace (into buf 1)
 	template_trace = (sf8 *) lnf_buffers->buffer[1];
@@ -32235,9 +32387,7 @@ sf8	FILT_line_noise_m13(sf8 *y, sf8 *fy, si8 len, sf8 samp_freq, sf8 line_freq, 
 	}
 	
 	// clean up
-	for (i = 0; i < int_samps_per_cycle; ++i)
-		free(template_mtx[i]);
-	free(template_mtx);
+	free(template_mtx);  // en bloc
 	if (free_buffers == TRUE_m13)
 		CMP_free_buffers_m13(&lnf_buffers);
 	
@@ -32479,22 +32629,36 @@ sf8	*FILT_noise_floor_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thres
 }
 
 
-sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si1 tail_option_code)
+sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si4 tail_option_code, ...)  // varargs(tail_option_code negative): FILT_NODE_m13 *nodes
 {
+	tern		free_nodes;
 	FILT_NODE_m13	*nodes, head, tail, *new_node, *prev_new_node, *curr_node, *next_node, *prev_node, *low_q_node, *oldest_node;
 	si8 		i, new_span, out_idx, in_idx, low_q_idx, oldest_idx, last_sliding_out_idx, odd_span;
 	sf8 		new_val, prev_new_val, temp_idx, low_val_q, high_val_q, low_q_val, high_q_val, true_q_val, q_shift, oldest_val;
-	
+	va_list		v_args;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// pass negative tail_option_code to supply a caller-allocated node buffer in varargs (span + 1 entries, no initialization required)
+	// hoists the allocation out of repeated calls (e.g. per-row calls over a matrix)
 
 	// setup
 	if (len < span)
 		span = len;
 	if (qx == NULL) // caller responsible for freeing qx
 		qx = (sf8 *) calloc_m13((size_t) len, sizeof(sf8));
-	nodes = (FILT_NODE_m13 *) calloc((size_t) (span + 1), sizeof(FILT_NODE_m13));
+	if (tail_option_code < 0) {  // caller-provided node buffer
+		tail_option_code = -tail_option_code;
+		va_start(v_args, tail_option_code);
+		nodes = va_arg(v_args, FILT_NODE_m13 *);
+		va_end(v_args);
+		free_nodes = FALSE_m13;
+	} else {
+		nodes = (FILT_NODE_m13 *) calloc((size_t) (span + 1), sizeof(FILT_NODE_m13));
+		free_nodes = TRUE_m13;
+	}
 	new_node = nodes;
 	head.val = -DBL_MAX;
 	head.next = new_node;
@@ -32768,9 +32932,10 @@ sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si1 ta
 		for (i = last_sliding_out_idx; i < len; ++i)
 			qx[i] = (sf8) 0.0;
 	}
-	
+
 	// clean up
-	free(nodes);
+	if (free_nodes == TRUE_m13)
+		free(nodes);
 
 	return_m13(qx);
 }
@@ -32965,6 +33130,9 @@ QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, ...)  // var
 	qd->out_idx = out_idx;
 	qd->low_val_q = low_val_q;
 	qd->high_val_q = high_val_q;
+	qd->new_node = new_node;  // empty spare node (== nodes + span)
+	qd->prev_new_node = prev_new_node;
+	qd->prev_new_val = prev_new_val;
 
 	return_m13(qd);
 }
@@ -32997,7 +33165,10 @@ tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd)
 	quantile = qd->quantile;
 	low_val_q = qd->low_val_q;
 	high_val_q = qd->high_val_q;
-
+	new_node = qd->new_node;  // empty spare node
+	prev_new_node = qd->prev_new_node;  // last inserted node - insertion search seed
+	prev_new_val = qd->prev_new_val;
+	oldest_val = oldest_node->val;
 
 	// slide window (main loop)
 	low_q_val = low_q_node->val;
@@ -33088,10 +33259,13 @@ tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd)
 	// set structure variables
 	qd->oldest_idx = oldest_idx;
 	qd->oldest_node = oldest_node;
-	qd->curr_node = curr_node;
+	qd->curr_node = low_q_node;  // read as the low quantile node on next mid/tail call (curr_node is insertion search residue)
 	qd->in_idx = in_idx;
 	qd->out_idx = out_idx;
-	
+	qd->new_node = new_node;
+	qd->prev_new_node = prev_new_node;
+	qd->prev_new_val = prev_new_val;
+
 	return_m13(TRUE_m13);
 }
 
@@ -35850,7 +36024,11 @@ tern	HW_get_core_info_m13()
 		hw_params->maximum_speed = max_mhz / (sf8) 1000.0;
 		hw_params->current_speed = hw_params->maximum_speed * (scaling / (sf8) 100.0);
 	}
-	
+
+	// P/E core detection not implemented in Linux => uniform CPU assumed
+	hw_params->performance_cores = hw_params->physical_cores;
+	hw_params->efficiency_cores = 0;
+
 	if (buf)
 		free_m13(buf);
 #endif  // LINUX_m13
@@ -35868,6 +36046,17 @@ tern	HW_get_core_info_m13()
 		hw_params->hyperthreading = TRUE_m13;
 	else
 		hw_params->hyperthreading = FALSE_m13;
+
+	// performance ("P") & efficiency ("E") core counts (Apple silicon; perflevel sysctls absent in uniform CPUs)
+	len = sizeof(si4);
+	if (sysctlbyname("hw.perflevel0.physicalcpu", &hw_params->performance_cores, &len, NULL, 0) == 0) {
+		len = sizeof(si4);
+		if (sysctlbyname("hw.perflevel1.physicalcpu", &hw_params->efficiency_cores, &len, NULL, 0))
+			hw_params->efficiency_cores = 0;  // single performance level
+	} else {  // uniform CPU
+		hw_params->performance_cores = hw_params->physical_cores;
+		hw_params->efficiency_cores = 0;
+	}
 	len = 128;
 	sysctlbyname("machdep.cpu.brand_string", brand_string, &len, NULL, 0);
 	c = STR_match_end_m13("(TM)", brand_string);
@@ -35923,6 +36112,8 @@ tern	HW_get_core_info_m13()
 	hw_params->logical_cores = (si4) sys_info.dwNumberOfProcessors;
 	hw_params->physical_cores = 0;  // unknown
 	hw_params->hyperthreading = UNKNOWN_m13;
+	hw_params->performance_cores = 0;  // P/E core detection not implemented in Windows => unknown (as physical_cores)
+	hw_params->efficiency_cores = 0;
 
 	switch((si4) sys_info.wProcessorArchitecture) {
 		case PROCESSOR_ARCHITECTURE_AMD64:
@@ -36665,6 +36856,121 @@ tern	HW_show_info_m13(void)
 // MARK: NETWORK FUNCTIONS  (NET)
 //*******************************//
 
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+si4	NET_af_from_family_m13(ui1 family)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// MED library family code -> OS address family (AF_* values differ across OSes, so never store them on disk)
+	switch (family) {
+		case NET_ADDR_FAM_IPV4_m13:
+			return_m13(AF_INET);
+		case NET_ADDR_FAM_IPV6_m13:
+			return_m13(AF_INET6);
+	}
+	return_m13(AF_UNSPEC);
+}
+
+
+#ifndef WINDOWS_m13  // inline causes linking problem in Windows
+inline
+#endif
+ui1	NET_family_from_af_m13(si4 af)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// OS address family -> MED library family code
+	switch (af) {
+		case AF_INET:
+			return_m13(NET_ADDR_FAM_IPV4_m13);
+		case AF_INET6:
+			return_m13(NET_ADDR_FAM_IPV6_m13);
+	}
+	return_m13(NET_ADDR_FAM_NONE_m13);
+}
+
+
+tern	NET_addr_set_m13(NET_ADDR_m13 *addr, const si1 *addr_str)
+{
+	ui1	tmp[NET_ADDR_BYTES_m13];
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// parse a numeric v4 or v6 literal into family + network-byte-order bytes + canonical string
+	// (does NOT resolve host names - use NET_domain_to_ip_m13() first for those)
+	memset((void *) addr->addr.bytes, 0, (size_t) NET_ADDR_BYTES_m13);
+	if (inet_pton(AF_INET, addr_str, (void *) tmp) == 1) {
+		memcpy((void *) addr->addr.bytes, (void *) tmp, (size_t) NET_IPV4_ADDRESS_BYTES_m13);
+		addr->family = NET_ADDR_FAM_IPV4_m13;
+		inet_ntop(AF_INET, (void *) addr->addr.bytes, addr->string, (socklen_t) NET_ADDR_STR_BYTES_m13);
+		return_m13(TRUE_m13);
+	}
+	if (inet_pton(AF_INET6, addr_str, (void *) tmp) == 1) {
+		memcpy((void *) addr->addr.bytes, (void *) tmp, (size_t) NET_ADDR_BYTES_m13);
+		addr->family = NET_ADDR_FAM_IPV6_m13;
+		inet_ntop(AF_INET6, (void *) addr->addr.bytes, addr->string, (socklen_t) NET_ADDR_STR_BYTES_m13);
+		return_m13(TRUE_m13);
+	}
+	addr->family = NET_ADDR_FAM_NONE_m13;
+	*addr->string = 0;
+	return_m13(FALSE_m13);
+}
+
+
+ui1	NET_v4_prefix_from_mask_m13(const ui1 *mask_bytes)
+{
+	si4	i;
+	ui1	prefix, byte;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// count contiguous leading 1 bits of a 4-byte (network order) IPv4 mask -> CIDR prefix length
+	prefix = 0;
+	for (i = 0; i < NET_IPV4_ADDRESS_BYTES_m13; ++i) {
+		byte = mask_bytes[i];
+		while (byte & 0x80) {
+			++prefix;
+			byte = (ui1) (byte << 1);
+		}
+	}
+	return_m13(prefix);
+}
+
+
+tern	NET_v4_mask_str_from_prefix_m13(si1 *mask_str, ui1 prefix_len)
+{
+	si4	i, rem;
+	ui1	mask[NET_IPV4_ADDRESS_BYTES_m13];
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// CIDR prefix length -> dotted-quad IPv4 mask string (v4 only)
+	if (prefix_len > 32)
+		return_m13(FALSE_m13);
+	rem = (si4) prefix_len;
+	for (i = 0; i < NET_IPV4_ADDRESS_BYTES_m13; ++i) {
+		if (rem >= 8) {
+			mask[i] = 0xFF;
+			rem -= 8;
+		} else if (rem > 0) {
+			mask[i] = (ui1) (0xFF << (8 - rem));
+			rem = 0;
+		} else {
+			mask[i] = 0;
+		}
+	}
+	sprintf_m13(mask_str, "%hhu.%hhu.%hhu.%hhu", mask[0], mask[1], mask[2], mask[3]);
+	return_m13(TRUE_m13);
+}
+
+
 tern	NET_check_internet_connection_m13(void)
 {
 	NET_PARAMS_m13	*np;
@@ -36689,7 +36995,7 @@ tern	NET_check_internet_connection_m13(void)
 	
 	// LAN can be up but WAN still down, so check wan IP
 	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
-	*np->WAN_IPv4_address_string = 0;
+	*np->WAN_address.string = 0;
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
 	np = NET_get_wan_ipv4_address_m13(np);
@@ -36705,31 +37011,31 @@ tern	NET_domain_to_ip_m13(const si1 *domain_name, si1 *ip)
 {
 	si4			rv;
 	struct addrinfo		hints, *servinfo;
-	struct sockaddr_in	*h;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = AF_UNSPEC;  // allow either an IPv4 (A) or IPv6 (AAAA) result
 	hints.ai_socktype = SOCK_STREAM;
 
 	if ((rv = getaddrinfo(domain_name, NULL, &hints , &servinfo)) != 0) {
 		G_set_error_m13(E_GEN_m13, "getaddrinfo: %s (%d)\n", __FUNCTION__, gai_strerror(rv), rv);
 		return_m13(FALSE_m13);
 	}
-	
-	// just use the first addrinfo
-	if ((h = (struct sockaddr_in *) servinfo->ai_addr) == NULL) {
+
+	// just use the first addrinfo; honor its family so an AAAA result is read from sin6_addr, not mis-read as IPv4
+	if (servinfo == NULL || servinfo->ai_addr == NULL) {
 		*ip = 0;
-		freeaddrinfo(servinfo);
+		if (servinfo != NULL)
+			freeaddrinfo(servinfo);
 		return_m13(FALSE_m13);
 	}
 
-	strcpy(ip, inet_ntoa(h->sin_addr));
+	inet_ntop(servinfo->ai_family, NET_get_in_addr_m13(servinfo->ai_addr), ip, (socklen_t) INET6_ADDRSTRLEN);  // writes dotted-quad (v4) or colon-hex (v6) into ip
 	freeaddrinfo(servinfo);  // done with this structure
-	
+
 	return_m13(TRUE_m13);
 }
 
@@ -36899,7 +37205,8 @@ tern	NET_get_adapter_m13(NET_PARAMS_m13 *np, tern copy_global)
 tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 {
 	tern	global_np;
-	si1	tmp_str[256], *buffer, *c, *pattern;
+	si1	tmp_str[256], *buffer, *c, *c2, *pattern;
+	ui1	mask[NET_IPV4_ADDRESS_BYTES_m13];
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -36959,27 +37266,51 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
 	}
 
-	// LAN_IPv4
-	if (*np->LAN_IPv4_address_string == 0) {
+	// LAN address (IPv4 first)
+	if (*np->LAN_address.string == 0) {
 		pattern = "inet ";
 		if ((c = STR_match_end_m13(pattern, buffer)) == NULL) {
-			G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
-			np->LAN_IPv4_address_num = 0;
-			strcpy(np->LAN_IPv4_address_string, "unknown");
+			// no IPv4 on this interface; leave family NONE so the IPv6 pass below can fill it
+			np->LAN_address.family = NET_ADDR_FAM_NONE_m13;
+			*np->LAN_address.string = 0;
 		} else {
-			sscanf(c, "%s", np->LAN_IPv4_address_string);
-			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
+			sscanf(c, "%s", tmp_str);  // dotted-quad literal
+			NET_addr_set_m13(&np->LAN_address, tmp_str);  // fills family + bytes (network order) + canonical string
 		}
 	}
 
+	// subnet mask (IPv4) -> CIDR prefix length; only meaningful when LAN_address is IPv4
 	pattern = "netmask ";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL) {
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
-		np->LAN_IPv4_subnet_mask_num = 0;
-		strcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+		np->LAN_address.prefix_len = NET_ADDR_PREFIX_NO_ENTRY_m13;
 	} else {
-		sscanf(c, "%s", np->LAN_IPv4_subnet_mask_string);
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);
+		mask[0] = mask[1] = mask[2] = mask[3] = 0;
+		sscanf(c, "%hhu.%hhu.%hhu.%hhu", mask, mask + 1, mask + 2, mask + 3);
+		np->LAN_address.prefix_len = NET_v4_prefix_from_mask_m13(mask);
+	}
+
+	// MED dual-stack: LAN IPv6 discovery. If no IPv4 was found, capture the first global (non-link-local) IPv6 address.
+	// ifconfig lines look like "inet6 2001:db8::1 prefixlen 64 ..." or "inet6 fe80::1%eth0 prefixlen 64 scopeid ...".
+	if (np->LAN_address.family == NET_ADDR_FAM_NONE_m13) {
+		pattern = "inet6 ";
+		c = buffer;
+		while ((c = STR_match_end_m13(pattern, c)) != NULL) {
+			sscanf(c, "%s", tmp_str);  // e.g. "2001:db8::1" or "fe80::1%eth0" or "2001:db8::1/64"
+			// strip any "%iface" zone id and any "/prefix" suffix
+			for (c2 = tmp_str; *c2; ++c2) {
+				if (*c2 == '%' || *c2 == '/') {
+					*c2 = 0;
+					break;
+				}
+			}
+			// skip link-local (fe80::/10 -> fe8, fe9, fea, feb prefixes)
+			if (strncasecmp(tmp_str, "fe8", 3) && strncasecmp(tmp_str, "fe9", 3) && strncasecmp(tmp_str, "fea", 3) && strncasecmp(tmp_str, "feb", 3)) {
+				if (NET_addr_set_m13(&np->LAN_address, tmp_str) == TRUE_m13) {
+					np->LAN_address.prefix_len = NET_ADDR_PREFIX_NO_ENTRY_m13;  // v4 netmask does not apply to a v6 address
+					break;  // keep the first global IPv6 address
+				}
+			}
+		}
 	}
 
 	// status
@@ -37003,10 +37334,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		globals_m13->tables->NET_params.MTU = np->MTU;
 		strcpy(globals_m13->tables->NET_params.MAC_address_string, np->MAC_address_string);
 		globals_m13->tables->NET_params.MAC_address_num = np->MAC_address_num;
-		strcpy(globals_m13->tables->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
-		globals_m13->tables->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
-		strcpy(globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
-		globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
+		globals_m13->tables->NET_params.LAN_address = np->LAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 		globals_m13->tables->NET_params.plugged_in = np->plugged_in;
 		globals_m13->tables->NET_params.active = np->active;
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
@@ -37023,7 +37351,8 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 {
 	tern	global_np;
-	si1	tmp_str[256], *buffer, *c, *pattern;
+	si1	tmp_str[256], *buffer, *c, *c2, *pattern;
+	ui1	mask[NET_IPV4_ADDRESS_BYTES_m13];
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37082,26 +37411,50 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
 	}
 
-	if (*np->LAN_IPv4_address_string == 0) {  // may have been filled in by NET_get_lan_ipv4_address_m13()
+	// MED dual-stack: mirrored from Linux path, UNVERIFIED on this OS
+	if (*np->LAN_address.string == 0) {  // may have been filled in by NET_get_lan_ipv4_address_m13()
 		pattern = "inet ";
 		if ((c = STR_match_end_m13(pattern, buffer)) == NULL) {
-			G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\".\nCheck that cable is plugged in\n", __FUNCTION__, pattern, np->interface_name);
-			np->LAN_IPv4_address_num = 0;
-			strcpy(np->LAN_IPv4_address_string, "unknown");
+			// no IPv4 on this interface; leave family NONE so the IPv6 pass below can fill it
+			np->LAN_address.family = NET_ADDR_FAM_NONE_m13;
+			*np->LAN_address.string = 0;
 		} else {
-			sscanf(c, "%s", np->LAN_IPv4_address_string);
-			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
+			sscanf(c, "%s", tmp_str);  // dotted-quad literal
+			NET_addr_set_m13(&np->LAN_address, tmp_str);  // fills family + bytes (network order) + canonical string
 		}
 	}
 
+	// subnet mask (IPv4, hex on MacOS) -> CIDR prefix length; only meaningful when LAN_address is IPv4
 	pattern = "netmask 0x";
 	if ((c = STR_match_end_m13(pattern, buffer)) == NULL) {
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of ifconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
-		np->LAN_IPv4_subnet_mask_num = 0;
-		strcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+		np->LAN_address.prefix_len = NET_ADDR_PREFIX_NO_ENTRY_m13;
 	} else {
-		sscanf(c, "%02hhx%02hhx%02hhx%02hhx", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);  // network byte order
-		sprintf_m13(np->LAN_IPv4_subnet_mask_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes[0], np->LAN_IPv4_subnet_mask_bytes[1], np->LAN_IPv4_subnet_mask_bytes[2], np->LAN_IPv4_subnet_mask_bytes[3]);
+		mask[0] = mask[1] = mask[2] = mask[3] = 0;
+		sscanf(c, "%02hhx%02hhx%02hhx%02hhx", mask, mask + 1, mask + 2, mask + 3);  // network byte order
+		np->LAN_address.prefix_len = NET_v4_prefix_from_mask_m13(mask);
+	}
+
+	// MED dual-stack: mirrored from Linux path, UNVERIFIED on this OS
+	// LAN IPv6 discovery: if no IPv4 was found, capture the first global (non-link-local) IPv6 address.
+	// MacOS ifconfig lines look like "inet6 2001:db8::1 prefixlen 64 ..." or "inet6 fe80::1%en0 prefixlen 64 scopeid ...".
+	if (np->LAN_address.family == NET_ADDR_FAM_NONE_m13) {
+		pattern = "inet6 ";
+		c = buffer;
+		while ((c = STR_match_end_m13(pattern, c)) != NULL) {
+			sscanf(c, "%s", tmp_str);  // e.g. "2001:db8::1" or "fe80::1%en0"
+			for (c2 = tmp_str; *c2; ++c2) {  // strip "%iface" zone id and "/prefix" suffix
+				if (*c2 == '%' || *c2 == '/') {
+					*c2 = 0;
+					break;
+				}
+			}
+			if (strncasecmp(tmp_str, "fe8", 3) && strncasecmp(tmp_str, "fe9", 3) && strncasecmp(tmp_str, "fea", 3) && strncasecmp(tmp_str, "feb", 3)) {  // skip link-local
+				if (NET_addr_set_m13(&np->LAN_address, tmp_str) == TRUE_m13) {
+					np->LAN_address.prefix_len = NET_ADDR_PREFIX_NO_ENTRY_m13;  // v4 netmask does not apply to a v6 address
+					break;  // keep the first global IPv6 address
+				}
+			}
+		}
 	}
 
 	pattern = "media: ";
@@ -37137,10 +37490,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		globals_m13->tables->NET_params.MTU = np->MTU;
 		strcpy(globals_m13->tables->NET_params.MAC_address_string, np->MAC_address_string);
 		globals_m13->tables->NET_params.MAC_address_num = np->MAC_address_num;
-		strcpy(globals_m13->tables->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
-		globals_m13->tables->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
-		strcpy(globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
-		globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
+		globals_m13->tables->NET_params.LAN_address = np->LAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 		globals_m13->tables->NET_params.plugged_in = np->plugged_in;
 		globals_m13->tables->NET_params.active = np->active;
 		strcpy(globals_m13->tables->NET_params.link_speed, np->link_speed);
@@ -37161,10 +37511,14 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 	tern		global_np;
 	si1 	tmp_str[256], *buffer, *iface_start, *c, *c2, *pattern;
 	si4 	i, r_val, attempts;
+	ui1	mask[NET_IPV4_ADDRESS_BYTES_m13];
+	ui1			*b;
 	DWORD 			dwSize, dwRetVal;
 	ULONG			flags, family, outBufLen;
 	LPVOID 			lpMsgBuf;
-	PIP_ADAPTER_ADDRESSES	pAddresses, pCurrAddress;
+	PIP_ADAPTER_ADDRESSES		pAddresses, pCurrAddress;
+	PIP_ADAPTER_UNICAST_ADDRESS	pUnicast;
+	struct sockaddr_in6		*s6;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37257,38 +37611,105 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		sscanf(np->MAC_address_string, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", np->MAC_address_bytes, np->MAC_address_bytes + 1, np->MAC_address_bytes + 2, np->MAC_address_bytes + 3, np->MAC_address_bytes + 4, np->MAC_address_bytes + 5);  // network byte order
 	}
 
-	if (*np->LAN_IPv4_address_string == 0) {  // may have been filled in above
+	// MED dual-stack: mirrored from Linux path, UNVERIFIED on this OS
+	if (*np->LAN_address.string == 0) {  // may have been filled in above
 		pattern = "IPv4 Address";
 		if ((c = STR_match_end_m13(pattern, iface_start)) == NULL) {
-			G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
-			np->LAN_IPv4_address_num = 0;
-			strcpy(np->LAN_IPv4_address_string, "unknown");
+			// no IPv4 for this interface
+			np->LAN_address.family = NET_ADDR_FAM_NONE_m13;
+			*np->LAN_address.string = 0;
 		} else {
 			while (*c++ != ':');
 			++c;
-			c2 = np->LAN_IPv4_address_string;
+			c2 = tmp_str;
 			while (*c != '\r' && *c != '\n' && *c != '(')  // MS attaches "(Preferred)" with no space to default interface
 				*c2++ = *c++;
 			*c2 = 0;
-			sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);  // network byte order
+			NET_addr_set_m13(&np->LAN_address, tmp_str);  // fills family + bytes (network order) + canonical string
 		}
 	}
+	// (IPv6 LAN discovery follows the subnet-mask parse below, via GetAdaptersAddresses(), to match the Linux/macOS ordering)
 
+	// subnet mask (IPv4) -> CIDR prefix length; only meaningful when LAN_address is IPv4
 	pattern = "Subnet Mask";
 	if ((c = STR_match_end_m13(pattern, iface_start)) == NULL) {
-		G_warning_message_m13("%s(): Could not match pattern \"%s\" in output of ipconfig() for interface \"%s\"\n", __FUNCTION__, pattern, np->interface_name);
-		np->LAN_IPv4_subnet_mask_num = 0;
-		strcpy(np->LAN_IPv4_subnet_mask_string, "unknown");
+		np->LAN_address.prefix_len = NET_ADDR_PREFIX_NO_ENTRY_m13;
 	} else {
 		while (*c++ != ':');
 		++c;
-		c2 = np->LAN_IPv4_subnet_mask_string;
+		c2 = tmp_str;
 		while (*c != '\r' && *c != '\n')
 			*c2++ = *c++;
 		*c2 = 0;
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_subnet_mask_bytes, np->LAN_IPv4_subnet_mask_bytes + 1, np->LAN_IPv4_subnet_mask_bytes + 2, np->LAN_IPv4_subnet_mask_bytes + 3);
+		mask[0] = mask[1] = mask[2] = mask[3] = 0;
+		sscanf(tmp_str, "%hhu.%hhu.%hhu.%hhu", mask, mask + 1, mask + 2, mask + 3);
+		np->LAN_address.prefix_len = NET_v4_prefix_from_mask_m13(mask);
 	}
-	
+
+	// MED dual-stack: Windows IPv6 LAN discovery via GetAdaptersAddresses().  UNVERIFIED on this OS.
+	// Mirrors the Linux/macOS behavior: only fill in an IPv6 address if no IPv4 was found for this interface.
+	// Matches the adapter by MAC (as NET_get_adapter_m13() does), then takes the first global unicast IPv6
+	// address (skipping link-local fe80::/10, multicast ff00::/8, and loopback/unspecified).
+	if (np->LAN_address.family == NET_ADDR_FAM_NONE_m13) {
+		flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+		family = AF_INET6;
+		pAddresses = NULL;
+		outBufLen = 16384;
+		attempts = 0;
+		do {
+			pAddresses = (IP_ADAPTER_ADDRESSES *) malloc_m13(outBufLen);
+			dwRetVal = GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
+			if (dwRetVal == ERROR_BUFFER_OVERFLOW) {
+				free(pAddresses);
+				pAddresses = NULL;
+			} else {
+				break;
+			}
+			++attempts;
+		} while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (attempts < 3));
+
+		if (dwRetVal == NO_ERROR) {
+			for (pCurrAddress = pAddresses; pCurrAddress; pCurrAddress = pCurrAddress->Next) {
+				// match this adapter to the interface by MAC address
+				if (pCurrAddress->PhysicalAddressLength != (DWORD) NET_MAC_ADDRESS_BYTES_m13)
+					continue;
+				for (i = 0; i < (si4) pCurrAddress->PhysicalAddressLength; ++i)
+					if (pCurrAddress->PhysicalAddress[i] != np->MAC_address_bytes[i])
+						break;
+				if (i != (si4) pCurrAddress->PhysicalAddressLength)
+					continue;  // not this adapter
+
+				// walk the adapter's unicast addresses; take the first global IPv6
+				for (pUnicast = pCurrAddress->FirstUnicastAddress; pUnicast; pUnicast = pUnicast->Next) {
+					if (pUnicast->Address.lpSockaddr == NULL)
+						continue;
+					if (pUnicast->Address.lpSockaddr->sa_family != AF_INET6)
+						continue;
+					s6 = (struct sockaddr_in6 *) pUnicast->Address.lpSockaddr;
+					b = (ui1 *) &s6->sin6_addr;  // 16 bytes, network byte order
+					if (b[0] == 0xFE && (b[1] & 0xC0) == 0x80)
+						continue;  // link-local fe80::/10
+					if (b[0] == 0xFF)
+						continue;  // multicast ff00::/8
+					for (i = 0; i < 15; ++i)  // detect loopback (::1) / unspecified (::)
+						if (b[i])
+							break;
+					if (i == 15 && (b[15] == 0 || b[15] == 1))
+						continue;
+					if (inet_ntop(AF_INET6, (void *) &s6->sin6_addr, tmp_str, (socklen_t) sizeof(tmp_str)) == NULL)
+						continue;
+					if (NET_addr_set_m13(&np->LAN_address, tmp_str) == TRUE_m13) {
+						np->LAN_address.prefix_len = NET_ADDR_PREFIX_NO_ENTRY_m13;  // v4 netmask does not apply to a v6 address
+						break;  // keep the first global IPv6 address
+					}
+				}
+				break;  // matched the adapter (whether or not a global IPv6 was found) - stop searching
+			}
+		}
+		if (pAddresses)
+			free(pAddresses);
+	}
+
 	free_m13(buffer);
 
 	if (copy_global == TRUE_m13) {
@@ -37296,10 +37717,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 		strcpy(globals_m13->tables->NET_params.host_name, np->host_name);
 		strcpy(globals_m13->tables->NET_params.MAC_address_string, np->MAC_address_string);
 		globals_m13->tables->NET_params.MAC_address_num = np->MAC_address_num;
-		strcpy(globals_m13->tables->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
-		globals_m13->tables->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
-		strcpy(globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_string, np->LAN_IPv4_subnet_mask_string);
-		globals_m13->tables->NET_params.LAN_IPv4_subnet_mask_num = np->LAN_IPv4_subnet_mask_num;
+		globals_m13->tables->NET_params.LAN_address = np->LAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 		globals_m13->tables->NET_params.plugged_in = np->plugged_in;
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else if (global_np == TRUE_m13) {
@@ -37314,7 +37732,7 @@ tern	NET_get_config_m13(NET_PARAMS_m13 *np, tern copy_global)
 NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 {
 	tern	global_np, free_np;
-	si1		*command, *buffer, *c;
+	si1	*command, *buffer, *c;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -37368,21 +37786,22 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 	// parse route() output to get internet interface name
 	if ((c = STR_match_end_m13("dev ", buffer)))
 		sscanf(c, "%s", np->interface_name);
-	// parse route() output to get internet ip address
+	// parse route() output to get internet ip address ("src" is v4 or v6 depending on the resolved route)
 	if ((c = STR_match_end_m13("src ", buffer))) {
-		sscanf(c, "%s", np->LAN_IPv4_address_string);
-		sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
+		sscanf(c, "%s", np->LAN_address.string);
+		NET_addr_set_m13(&np->LAN_address, np->LAN_address.string);  // fills family + bytes (network order) + canonical string
 	}
 	#endif  // LINUX_m13
 
 	#ifdef WINDOWS_m13
 	si1	tmp_str[128];
 
+	// MED dual-stack: mirrored from Linux path, UNVERIFIED on this OS
 	// parse route() output to get default ip address
 	if ((c = STR_match_end_m13("0.0.0.0", buffer))) {
-		sscanf(c, "%s%s%s", tmp_str, tmp_str, np->LAN_IPv4_address_string);
-		sscanf(np->LAN_IPv4_address_string, "%hhu.%hhu.%hhu.%hhu", np->LAN_IPv4_address_bytes, np->LAN_IPv4_address_bytes + 1, np->LAN_IPv4_address_bytes + 2, np->LAN_IPv4_address_bytes + 3);
-		NET_iface_name_for_addr_m13(np->interface_name, np->LAN_IPv4_address_string);
+		sscanf(c, "%s%s%s", tmp_str, tmp_str, np->LAN_address.string);
+		NET_addr_set_m13(&np->LAN_address, np->LAN_address.string);  // fills family + bytes (network order) + canonical string
+		NET_iface_name_for_addr_m13(np->interface_name, np->LAN_address.string);
 	}
 	#endif
 	
@@ -37392,14 +37811,13 @@ NET_PARAMS_m13	*NET_get_default_interface_m13(NET_PARAMS_m13 *np)
 		if (global_np == FALSE_m13) {
 			strcpy(globals_m13->tables->NET_params.interface_name, np->interface_name);
 			#if defined LINUX_m13 || defined WINDOWS_m13
-			strcpy(globals_m13->tables->NET_params.LAN_IPv4_address_string, np->LAN_IPv4_address_string);
-			globals_m13->tables->NET_params.LAN_IPv4_address_num = np->LAN_IPv4_address_num;
+			globals_m13->tables->NET_params.LAN_address = np->LAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 			#endif
 		}
 	} else {
 		G_warning_message_m13("%s(): no default interface\n", __FUNCTION__);
-		*np->LAN_IPv4_address_string = 0;
-		np->LAN_IPv4_address_num = 0;
+		np->LAN_address.family = NET_ADDR_FAM_NONE_m13;
+		*np->LAN_address.string = 0;
 		if (free_np == TRUE_m13)
 			free(np);
 		np = NULL;
@@ -37603,12 +38021,11 @@ NET_PARAMS_m13	*NET_get_lan_ipv4_address_m13(si1 *iface, NET_PARAMS_m13 *np)
 		return_m13(NULL);
 
 	if (copy_global == TRUE_m13) {
-		if (*globals_m13->tables->NET_params.LAN_IPv4_address_string) {
-			strcpy(np->LAN_IPv4_address_string, globals_m13->tables->NET_params.LAN_IPv4_address_string);
-			np->LAN_IPv4_address_num = globals_m13->tables->NET_params.LAN_IPv4_address_num;
+		if (*globals_m13->tables->NET_params.LAN_address.string) {
+			np->LAN_address = globals_m13->tables->NET_params.LAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 		}
 	}
-	if (*np->LAN_IPv4_address_string)
+	if (*np->LAN_address.string)
 		return_m13(np);
 		
 	if (NET_get_config_m13(np, copy_global) == FALSE_m13) {
@@ -37833,24 +38250,23 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 
 	if (np == NULL)
 		np = (NET_PARAMS_m13 *) calloc_m13((size_t) 1, sizeof(NET_PARAMS_m13));
-	else if (*np->WAN_IPv4_address_string)
+	else if (*np->WAN_address.string)
 		return_m13(np);
 	
 	global_np = FALSE_m13;
 	if (np == &globals_m13->tables->NET_params)
 		global_np = TRUE_m13;
 	
-	if (*globals_m13->tables->NET_params.WAN_IPv4_address_string) {
+	if (*globals_m13->tables->NET_params.WAN_address.string) {
 		if (global_np == FALSE_m13) {
-			strcpy(np->WAN_IPv4_address_string, globals_m13->tables->NET_params.WAN_IPv4_address_string);
-			np->WAN_IPv4_address_num = globals_m13->tables->NET_params.WAN_IPv4_address_num;
+			np->WAN_address = globals_m13->tables->NET_params.WAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 		}
 		return_m13(np);
 	}
 	
 	if (global_np == TRUE_m13) {
 		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
-		if (*np->WAN_IPv4_address_string)  {  // may have been done by another thread while waiting
+		if (*np->WAN_address.string)  {  // may have been done by another thread while waiting
 			pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 			return_m13(np);
 		}
@@ -37888,17 +38304,16 @@ NET_PARAMS_m13 *NET_get_wan_ipv4_address_m13(NET_PARAMS_m13 *np)
 		free_m13(buffer);
 		return_m13(NULL);
 	}
-	sscanf(c, "%[^< ]s", np->WAN_IPv4_address_string);
-	sscanf(c, "%hhu.%hhu.%hhu.%hhu", np->WAN_IPv4_address_bytes, np->WAN_IPv4_address_bytes + 1, np->WAN_IPv4_address_bytes + 2, np->WAN_IPv4_address_bytes + 3);
-	
+	sscanf(c, "%[^< ]s", np->WAN_address.string);
+	NET_addr_set_m13(&np->WAN_address, np->WAN_address.string);  // fills family + bytes (network order) + canonical string (v4 or v6)
+
 	free_m13(buffer);
 
 	if (global_np == TRUE_m13) {
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	} else {
 		pthread_mutex_lock_m13(&globals_m13->tables->mutex);
-		strcpy(globals_m13->tables->NET_params.WAN_IPv4_address_string, np->WAN_IPv4_address_string);
-		globals_m13->tables->NET_params.WAN_IPv4_address_num = np->WAN_IPv4_address_num;
+		globals_m13->tables->NET_params.WAN_address = np->WAN_address;  // whole-struct copy (family + bytes + string + prefix_len)
 		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
 	}
 
@@ -38166,6 +38581,7 @@ tern	NET_resolve_arguments_m13(si1 *iface, NET_PARAMS_m13 **params_ptr, tern *fr
 tern  NET_show_parameters_m13(NET_PARAMS_m13 *np)
 {
 	si1  hex_str[HEX_STR_BYTES_m13(NET_MAC_ADDRESS_BYTES_m13, 1)];
+	si1  mask_str[NET_IPV4_ADDRESS_STR_BYTES_m13];
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -38192,29 +38608,27 @@ tern  NET_show_parameters_m13(NET_PARAMS_m13 *np)
 		printf_m13("MAC_address_bytes: unknown\n");
 		printf_m13("MAC_address_string: unknown\n");
 	}
-	if (np->LAN_IPv4_address_num) {
-		STR_hex_m13(hex_str, np->LAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":", TRUE_m13);
-		printf_m13("LAN_IPv4_address_bytes: %s\n", hex_str);
-		printf_m13("LAN_IPv4_address_string: %s\n", np->LAN_IPv4_address_string);
+	// LAN address (family-agnostic: IPv4 or IPv6)
+	if (np->LAN_address.family != NET_ADDR_FAM_NONE_m13) {
+		printf_m13("LAN_address.family: IPv%hhu\n", np->LAN_address.family);
+		printf_m13("LAN_address.string: %s\n", np->LAN_address.string);
+		if (np->LAN_address.prefix_len == NET_ADDR_PREFIX_NO_ENTRY_m13) {
+			printf_m13("LAN_address.prefix_len: unknown\n");
+		} else {
+			printf_m13("LAN_address.prefix_len: %hhu\n", np->LAN_address.prefix_len);
+			if (np->LAN_address.family == NET_ADDR_FAM_IPV4_m13)  // reconstruct dotted-quad netmask for display
+				if (NET_v4_mask_str_from_prefix_m13(mask_str, np->LAN_address.prefix_len) == TRUE_m13)
+					printf_m13("LAN_address.subnet_mask: %s\n", mask_str);
+		}
 	} else {
-		printf_m13("LAN_IPv4_address_bytes: unknown\n");
-		printf_m13("LAN_IPv4_address_string: unknown\n");
+		printf_m13("LAN_address: unknown\n");
 	}
-	if (np->LAN_IPv4_subnet_mask_num) {
-		STR_hex_m13(hex_str, np->LAN_IPv4_subnet_mask_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":", TRUE_m13);
-		printf_m13("LAN_IPv4_subnet_mask_bytes: %s\n", hex_str);
-		printf_m13("LAN_IPv4_subnet_mask_string: %s\n", np->LAN_IPv4_subnet_mask_string);
+	// WAN address (family-agnostic: IPv4 or IPv6)
+	if (np->WAN_address.family != NET_ADDR_FAM_NONE_m13) {
+		printf_m13("WAN_address.family: IPv%hhu\n", np->WAN_address.family);
+		printf_m13("WAN_address.string: %s\n", np->WAN_address.string);
 	} else {
-		printf_m13("LAN_IPv4_subnet_mask_bytes: unknown\n");
-		printf_m13("LAN_IPv4_subnet_mask_string: unknown\n");
-	}
-	if (np->WAN_IPv4_address_num) {
-		STR_hex_m13(hex_str, np->WAN_IPv4_address_bytes, NET_IPV4_ADDRESS_BYTES_m13, ":", TRUE_m13);
-		printf_m13("WAN_IPv4_address_bytes: %s\n", hex_str);
-		printf_m13("WAN_IPv4_address_string: %s\n", np->WAN_IPv4_address_string);
-	} else {
-		printf_m13("WAN_IPv4_address_bytes: unknown\n");
-		printf_m13("WAN_IPv4_address_string: unknown\n");
+		printf_m13("WAN_address: unknown\n");
 	}
 	if (np->MTU)
 		printf_m13("MTU: %d\n", np->MTU);
@@ -38271,354 +38685,841 @@ tern	NET_trim_address_m13(si1 *address)
 // MARK: PARALLEL FUNCTIONS  (PAR)
 //********************************//
 
-// ************************************************************************************************************* //
-// Note: the PAR functions have not yet been updated for PROC_GLOBS_m13 & will not work as is in the m13 library
-// ************************************************************************************************************* //
+void	*PAR_call_m13(PAR_INFO_m13 *par_info)
+{
+	void		*fn, *r_val;
+	PAR_ARG_m13	*a;
 
-//tern	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)  // frees thread globals & par itself - sets par pointer to NULL
-//{
-//	extern GLOBALS_m13		**globals_list_m13;
-//	extern volatile si4		globals_list_len_m13;
-//	extern pthread_mutex_t_m13	globals_list_mutex_m13;
-//	PAR_INFO_m13			*par_info;
-//	
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	par_info = *par_info_ptr;
-//	if (par_info->status == PAR_RUNNING_m13) {
-//		G_warning_message_m13("%s(): process is running => returning\n", __FUNCTION__);
-//		return_m13(FALSE_m13);
-//	}
-//	if (par_info->tid == 0) {
-//		G_warning_message_m13("%s(): process has no thread ID => returning\n", __FUNCTION__);
-//		return_m13(FALSE_m13);
-//	}
-//
-//	// free par & set to NULL
-//	free(par_info);  // caller responsible for disposing of anything in par_info->r_val, if neceessary
-//	*par_info_ptr = NULL;
-//
-//	return_m13(TRUE_m13);;
-//}
-//
-//
-//PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, const si1 *function, const si1 *label, ...) // varargs(label != "PAR_DEFAULTS_m13" or NULL): si4 priority, const si1 *affinity, si4 detached
-//{
-//	tern		defaults;
-//	const si1 	*affinity;
-//	si4 		priority, detached;
-//	va_list		v_args;
-//	
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	if (STR_is_empty_m13(function) == TRUE_m13) {
-//		G_set_error_m13(E_GEN_m13, "no function passed");
-//		return_m13(NULL);
-//	}
-//
-//	if (par_info == NULL)
-//		par_info = (PAR_INFO_m13 *) calloc_m13((size_t) 1, sizeof(PAR_INFO_m13));
-//
-//	strcpy(par_info->function, function);
-//
-//	defaults = FALSE_m13;
-//	if (label)
-//		if (strcmp_m13(label, PAR_DEFAULTS_m13) == 0)
-//			defaults = TRUE_m13;
-//	
-//	if (defaults == TRUE_m13) {
-//		label = affinity = NULL;
-//		priority = detached = 0;
-//	} else {
-//		va_start(v_args, label);
-//		priority = va_arg(v_args, si4);
-//		affinity = va_arg(v_args, const si1 *);
-//		detached = va_arg(v_args, si4);
-//		va_end(v_args);
-//	}
-//
-//	if (STR_is_empty_m13(label) == TRUE_m13)
-//		strcpy(par_info->label, "unlabeled thread");
-//	else
-//		strcpy(par_info->label, label);
-//	
-//	if (priority == 0)
-//		priority = PROC_DEFAULT_PRIORITY_m13;
-//	par_info->priority = priority;
-//	
-//	if (affinity == NULL)
-//		affinity = "~0";
-//	strcpy(par_info->affinity, affinity);
-//
-//	if (detached == 0)
-//		detached = TRUE_m13;
-//	par_info->detached = detached;
-//	
-//	return_m13(par_info);
-//}
-//
-//
-//PAR_INFO_m13	*PAR_launch_m13(PAR_INFO_m13 *par_info, ...)  // varargs (par_info == NULL): si1 *function, si1 *label, si4 priority, si1 *affinity, si4 detached, <function arguments>
-//							  // varargs (par_info): <function arguments>
-//{
-//	tern			unthreaded;
-//	PAR_THREAD_INFO_m13	par_t_info;
-//
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	// function() must return a pointer
-//	
-//	// get varags
-//	va_start(par_t_info.args, par_info);
-//	
-//	// initialize par_info
-//	if (par_info == NULL) {
-//		si1			*function, *label, *affinity;
-//		si4			priority, detached;
-// 
-//		par_info = (PAR_INFO_m13 *) calloc_m13((size_t) 1, sizeof(PAR_INFO_m13));
-//		function = va_arg(par_t_info.args, si1 *);
-//		label = va_arg(par_t_info.args, si1 *);
-//		if (strcmp_m13(label, PAR_DEFAULTS_m13) == 0) {
-//			PAR_init_m13(par_info, function, label);
-//		} else {
-//			priority = va_arg(par_t_info.args, si4);
-//			affinity = va_arg(par_t_info.args, si1 *);
-//			detached = va_arg(par_t_info.args, si4);
-//			PAR_init_m13(par_info, function, label, priority, affinity, detached);
-//		}
-//	}
-//		
-//	// "unthreaded" mechanism => just want seperate globals
-//	if (par_info->detached == PAR_UNTHREADED_m13) {
-//		unthreaded = TRUE_m13;
-//		par_info->detached = FALSE_m13;  // launch as attached thread
-//	} else {
-//		unthreaded = FALSE_m13;
-//	}
-//	
-//	// set up thread info
-//	par_t_info.par_info = par_info;
-//	
-//	// launch thread
-//	par_info->status = PAR_LAUNCHING_m13;
-//	PROC_launch_thread_m13(PAR_thread_m13, &par_t_info, par_info->priority, par_info->affinity, NULL, par_info->detached, par_info->label);
-//
-//	// wait for argument capture
-//	while (par_info->status == PAR_LAUNCHING_m13)
-//		nap_m13("10 us");
-//	va_end(par_t_info.args);
-//	
-//	if (unthreaded == TRUE_m13) {
-//		PAR_wait_m13(par_info, NULL);
-//		par_info->detached = PAR_UNTHREADED_m13;  // restore for next call
-//	}
-//	
-//	return_m13(par_info);
-//}
-//
-//
-//tern	PAR_show_info_m13(PAR_INFO_m13 *par_info)
-//{
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	printf_m13("\nlabel: \"%s\"\n", par_info->label);
-//	printf_m13("function: \"%s\"\n", par_info->function);
-//	if (par_info->r_val == NULL)
-//		printf_m13("r_val: not set\n");
-//	else
-//		printf_m13("r_val: set\n");
-//	printf_m13("tid: %d\n", par_info->tid);
-//	printf_m13("priority: 0x%08x\n", par_info->priority);
-//	printf_m13("affinity: \"%s\"\n", par_info->affinity);
-//	printf_m13("detached: %d\n", par_info->detached);
-//	printf_m13("status: %d\n\n", par_info->status);
-//
-//	return_m13(TRUE_m13);
-//}
-//
-//
-//pthread_rval_m13	PAR_thread_m13(void *arg)
-//{
-//	si1			*function, *path, *password, *index_channel_name;
-//	si4			i, fn, list_len, varargs, entries;
-//	ui8			flags;
-//	si8 			sample_count;
-//	sf8 			sampling_frequency, scale, fc1, fc2;
-//	void			*file_list;
-//	pid_t_m13		_id;
-//	PROC_GLOBS_LIST_m13	*list;
-//	PROC_GLOBS_m13		*pg, **pg_ptr;
-//	PAR_THREAD_INFO_m13	*par_t_info;
-//	PAR_INFO_m13 		*par_info;
-//	SESS_m13		*sess;
-//	CHAN_m13		*chan;
-//	SEG_m13			*seg;
-//	SLICE_m13		*slice;
-//	DATA_MATRIX_m13 	*mat;
-//
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	par_t_info = (PAR_THREAD_INFO_m13 *) arg;
-//	par_info = par_t_info->par_info;
-//	function = par_info->function;
-//	
-//	// find proc_globs by previous thread id
-//	_id = par_info->tid;
-//	list = globals_m13->proc_globs_list;
-//	pthread_mutex_lock_m13(&list->mutex);  // get mutex
-//	entries = list->top_idx + 1;
-//	pg_ptr = list->proc_globs_ptrs;
-//	pg = NULL;
-//	for (i = entries; i--; ++pg_ptr) {
-//		if (*pg_ptr) {
-//			pg = *pg_ptr;
-//			if (pg->_id == _id)
-//				break;
-//		}
-//	}
-//	pthread_mutex_unlock_m13(&list->mutex);  // relase mutex
-//
-//	if (i == -1)  // proc_globs not found, create new
-//		pg = G_proc_globs_m13(NULL);
-//	else
-//		pg->_id = gettid_m13();  // set to current thread id
-//	par_info->tid = pg->_id;
-//
-//	// get function
-//	if (strcmp_m13(function, "G_open_session_m13") == 0)
-//		fn = PAR_OPEN_SESSION_M13;
-//	else if (strcmp_m13(function, "G_read_session_m13") == 0)
-//		fn = PAR_READ_SESSION_M13;
-//	else if (strcmp_m13(function, "G_open_channel_m13") == 0)
-//		fn = PAR_OPEN_CHANNEL_M13;
-//	else if (strcmp_m13(function, "G_read_channel_m13") == 0)
-//		fn = PAR_READ_CHANNEL_M13;
-//	else if (strcmp_m13(function, "G_open_segment_m13") == 0)
-//		fn = PAR_OPEN_SEGMENT_M13;
-//	else if (strcmp_m13(function, "G_read_segment_m13") == 0)
-//		fn = PAR_READ_SEGMENT_M13;
-//	else if (strcmp_m13(function, "DM_get_matrix_m13") == 0)
-//		fn = PAR_DM_GET_MATRIX_M13;
-//	else {
-//		G_warning_message_m13("%s(): can't match function => returning\n", __FUNCTION__);
-//		par_info->status = PAR_FINISHED_m13;
-//		thread_return_null_m13;
-//	}
-//
-//	// launch function
-//	par_info->status = PAR_RUNNING_m13;
-//	switch (fn) {
-//		case PAR_OPEN_SESSION_M13:
-//		case PAR_READ_SESSION_M13:
-//			sess = va_arg(par_t_info->args, SESS_m13 *);
-//			slice = va_arg(par_t_info->args, SLICE_m13 *);
-//			if (fn == PAR_READ_SESSION_M13 && sess) {
-//				par_info->r_val = (void *) G_read_session_m13(sess, slice);
-//			} else {
-//				file_list = va_arg(par_t_info->args, void *);
-//				list_len = va_arg(par_t_info->args, si4);
-//				flags = va_arg(par_t_info->args, ui8);
-//				password = va_arg(par_t_info->args, si1 *);
-//				index_channel_name = va_arg(par_t_info->args, si1 *);
-//				switch (fn) {
-//					case PAR_OPEN_SESSION_M13:
-//						par_info->r_val = (void *) G_open_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);
-//						break;
-//					case PAR_READ_SESSION_M13:
-//						par_info->r_val = (void *) G_read_session_m13(sess, slice, file_list, list_len, flags, password, index_channel_name);
-//						break;
-//				}
-//			}
-//			break;
-//		case PAR_OPEN_CHANNEL_M13:
-//		case PAR_READ_CHANNEL_M13:
-//		case PAR_OPEN_SEGMENT_M13:
-//		case PAR_READ_SEGMENT_M13:
-//			if (fn == PAR_OPEN_SEGMENT_M13 || fn == PAR_READ_SEGMENT_M13)
-//				seg = va_arg(par_t_info->args, SEG_m13 *);
-//			else
-//				chan = va_arg(par_t_info->args, CHAN_m13 *);
-//			slice = va_arg(par_t_info->args, SLICE_m13 *);
-//			if (fn == PAR_READ_CHANNEL_M13 && chan) {
-//				par_info->r_val = (void *) G_read_channel_m13(chan, slice);
-//			} else if (fn == PAR_READ_SEGMENT_M13 && seg) {
-//				par_info->r_val = (void *) G_read_segment_m13(seg, slice);
-//			} else {
-//				path = va_arg(par_t_info->args, void *);
-//				flags = va_arg(par_t_info->args, ui8);
-//				password = va_arg(par_t_info->args, si1 *);
-//				switch (fn) {
-//					case PAR_OPEN_CHANNEL_M13:
-//						par_info->r_val = (void *) G_open_channel_m13(chan, slice, path, NULL, flags, password);
-//						break;
-//					case PAR_READ_CHANNEL_M13:
-//						par_info->r_val = (void *) G_read_channel_m13(chan, slice, path, NULL, flags, password);
-//						break;
-//					case PAR_OPEN_SEGMENT_M13:
-//						par_info->r_val = (void *) G_open_segment_m13(seg, slice, path, NULL, flags, password);
-//						break;
-//					case PAR_READ_SEGMENT_M13:
-//						par_info->r_val = (void *) G_read_segment_m13(seg, slice, path, NULL, flags, password);
-//						break;
-//				}
-//			}
-//			break;
-//		case PAR_DM_GET_MATRIX_M13:
-//			mat = va_arg(par_t_info->args, DATA_MATRIX_m13 *);
-//			sess = va_arg(par_t_info->args, SESS_m13 *);
-//			slice = va_arg(par_t_info->args, SLICE_m13 *);
-//			varargs = va_arg(par_t_info->args, si4);
-//			if (varargs == FALSE_m13) {
-//				par_info->r_val = (void *) DM_get_matrix_m13(mat, sess, slice, varargs);
-//			} else {
-//				sample_count = va_arg(par_t_info->args, si8);
-//				sampling_frequency = va_arg(par_t_info->args, sf8);
-//				flags = va_arg(par_t_info->args, ui8);
-//				scale = va_arg(par_t_info->args, sf8);
-//				fc1 = va_arg(par_t_info->args, sf8);
-//				fc2 = va_arg(par_t_info->args, sf8);
-//				par_info->r_val = (void *) DM_get_matrix_m13(mat, sess, slice, varargs, sample_count, sampling_frequency, flags, scale, fc1, fc2);
-//			}
-//			break;
-//	}
-//
-//	par_info->status = PAR_FINISHED_m13;
-//	
-//	thread_return_null_m13;
-//}
-//
-//
-//tern	PAR_wait_m13(PAR_INFO_m13 *par_info, const si1 *interval)
-//{
-//#ifdef FT_DEBUG_m13
-//	G_push_function_m13();
-//#endif
-//
-//	if (par_info->detached == FALSE_m13) {
-//		pthread_join_m13(par_info->thread_id, NULL);
-//		return_m13(TRUE_m13);
-//	}
-//	
-//	if (STR_is_empty_m13(interval) == TRUE_m13)
-//		interval = "1 ms";
-//
-//	// poll detached thread at interval
-//	while (par_info->status == PAR_RUNNING_m13)
-//		nap_m13(interval);
-//	
-//	return_m13(TRUE_m13);
-//}
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// executes the call captured by PAR_launch_m13() in the calling thread
+	// (called by PAR_thread_m13(); can also be used directly to run a captured call synchronously)
+	// signature validated by PAR_launch_m13()
+
+	fn = par_info->fn;
+	a = par_info->args;
+	r_val = NULL;
+
+	// non-variadic targets: all argument cells are 8-byte integer class => one call shape per argument count
+	if (par_info->variadic == FALSE_m13) {
+		switch (par_info->n_args) {
+			case 0:
+				r_val = ((void *(*)(void)) fn)();
+				break;
+			case 1:
+				r_val = ((void *(*)(void *)) fn)(a[0].p);
+				break;
+			case 2:
+				r_val = ((void *(*)(void *, void *)) fn)(a[0].p, a[1].p);
+				break;
+			case 3:
+				r_val = ((void *(*)(void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p);
+				break;
+			case 4:
+				r_val = ((void *(*)(void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p);
+				break;
+			case 5:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p);
+				break;
+			case 6:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p);
+				break;
+			case 7:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p);
+				break;
+			case 8:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p);
+				break;
+			case 9:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p);
+				break;
+			case 10:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p);
+				break;
+			case 11:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p);
+				break;
+			case 12:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p);
+				break;
+			case 13:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p);
+				break;
+			case 14:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p, a[13].p);
+				break;
+			case 15:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p, a[13].p, a[14].p);
+				break;
+			case 16:
+				r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *, void *)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p, a[13].p, a[14].p, a[15].p);
+				break;
+		}
+		return_m13(r_val);
+	}
+
+	// variadic targets with sf8 arguments: argument types are positional in variadic calls => enumerated shapes
+	// (keep in sync with signature validation in PAR_launch_m13())
+	if (strchr(par_info->sig, 'd')) {
+		if (strcmp_m13(par_info->sig, "pppi|ididdd") == 0)  // DM_get_matrix_m13(), full varargs form
+			r_val = ((void *(*)(void *, void *, void *, si4, ...)) fn)(a[0].p, a[1].p, a[2].p, (si4) a[3].i, a[4].i, a[5].d, a[6].i, a[7].d, a[8].d, a[9].d);
+		else
+			G_set_error_m13(E_PROC_m13, "unsupported variadic sf8 signature \"%s\" => add shape to %s()", par_info->sig, __FUNCTION__);
+		return_m13(r_val);
+	}
+
+	// variadic targets, pointer/integer arguments: one call shape per fixed argument count
+	// (passing more variadic arguments than the callee consumes is defined behavior => all tail cells passed, unused cells zero)
+	switch (par_info->n_fixed) {
+		case 1:
+			r_val = ((void *(*)(void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p);
+			break;
+		case 2:
+			r_val = ((void *(*)(void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p);
+			break;
+		case 3:
+			r_val = ((void *(*)(void *, void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p);
+			break;
+		case 4:
+			r_val = ((void *(*)(void *, void *, void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p);
+			break;
+		case 5:
+			r_val = ((void *(*)(void *, void *, void *, void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p);
+			break;
+		case 6:
+			r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p, a[13].p);
+			break;
+		case 7:
+			r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p, a[13].p, a[14].p);
+			break;
+		case 8:
+			r_val = ((void *(*)(void *, void *, void *, void *, void *, void *, void *, void *, ...)) fn)(a[0].p, a[1].p, a[2].p, a[3].p, a[4].p, a[5].p, a[6].p, a[7].p, a[8].p, a[9].p, a[10].p, a[11].p, a[12].p, a[13].p, a[14].p, a[15].p);
+			break;
+	}
+
+	return_m13(r_val);
+}
+
+
+tern	PAR_distribute_m13(PAR_INFO_m13 **par_infos, si4 n_infos, si4 reserved_cores, si4 jobs_per_core, tern thread_jobs, tern wait_jobs)
+{
+	tern			r_val, adaptive;
+	si4			i, logical_cores, concurrent_cores, concurrent_jobs;
+	si4			total_jobs, currently_running, finished_jobs, ideal_jpc;
+	si8			start_uutc;
+	sf8			start_cpu, wall_secs, cpu_rate;
+	HW_PARAMS_m13		*hw_params;
+	PAR_INFO_m13		**pi_ptr, *pi;
+	static _Atomic si4	tuned_jobs_per_core = 0;  // session-adaptive, separate from PROC_jobs_distribute_m13()'s (different job class); zero == not yet tuned
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// launches prepped handles throttled to the available cores (PROC_jobs_distribute_m13() for PAR handles)
+	// prep handles with PAR_prep_m13(); NULL, unprepped, & running entries skipped
+	// reserved_cores, jobs_per_core, thread_jobs, & wait_jobs as in PROC_jobs_distribute_m13()
+	// returns FALSE_m13 on any error, UNKNOWN_m13 if jobs still running, but none have failed, TRUE_m13 if all jobs finished successfully
+
+	// check threading
+	if (thread_jobs == NOT_SET_m13)
+		thread_jobs = PROC_default_threading_m13(NULL);
+
+	// run jobs unthreaded
+	if (thread_jobs == FALSE_m13) {
+		r_val = TRUE_m13;
+		for (pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr) {
+			pi = *pi_ptr;
+			if (pi == NULL)
+				continue;
+			if (pi->fn == NULL)
+				continue;
+			pi->job.threaded = FALSE_m13;
+			// launch in current thread; job completes before loop continues
+			PAR_start_m13(pi);
+			if (pi->job.status == PROC_THREAD_FAILED_m13)
+				r_val = FALSE_m13;
+		}
+		return_m13(r_val);
+	}
+
+	// adaptive jobs_per_core: the default sentinel engages session tuning (as in PROC_jobs_distribute_m13())
+	adaptive = FALSE_m13;
+	if (jobs_per_core == PROC_JOBS_PER_CORE_DEFAULT_m13) {
+		adaptive = TRUE_m13;
+		if (tuned_jobs_per_core)
+			jobs_per_core = tuned_jobs_per_core;
+		else
+			jobs_per_core = PROC_JOBS_PER_CORE_BASE_m13;
+	}
+
+	// get logical cores
+	hw_params = &globals_m13->tables->HW_params;
+	if (hw_params->logical_cores == 0)
+		HW_get_core_info_m13();
+	logical_cores = hw_params->logical_cores;
+
+	// Note: heterogeneous CPUs (e.g. Apple silicon): benchmarks (integer-heavy jobs, M3 Max) show distributing
+	// across ALL cores beats throttling to performance cores (~20% on large job sets, ~40% on single waves) -
+	// efficiency cores contribute & no affinity is possible in MacOS anyway; to keep efficiency cores free
+	// (e.g. machine responsiveness), pass reserved_cores == HW_PARAMS_m13 efficiency_cores
+
+	// set reserved cores & concurrent jobs
+#ifdef WINDOWS_m13
+	// Windows performs better with at least 1 reserved core, if possible
+	if (reserved_cores < 3) {  // user passed less than optimal number of reserved cores
+		if (logical_cores >= 6)
+			reserved_cores = 3;
+		else if (logical_cores >= 4)
+			reserved_cores = 2;
+		else if (logical_cores >= 2)
+			reserved_cores = 1;
+		else
+			reserved_cores = 0;
+	}
+#endif
+	if (reserved_cores >= logical_cores)
+		reserved_cores = logical_cores - 1;
+
+	concurrent_cores = logical_cores - reserved_cores;
+	if (jobs_per_core)
+		concurrent_jobs = concurrent_cores * jobs_per_core;
+	else
+		concurrent_jobs = n_infos;
+
+	// initialize & count total jobs
+	for (pi_ptr = par_infos, total_jobs = 0, i = n_infos; i--; ++pi_ptr) {
+		pi = *pi_ptr;
+		if (pi == NULL)
+			continue;
+		if (pi->fn == NULL)
+			continue;
+		if (PAR_RUNNING_m13(pi) == TRUE_m13) {
+			G_warning_message_m13("%s(): job \"%s\" is running => skipping\n", __FUNCTION__, pi->label);
+			continue;
+		}
+		++total_jobs;
+		pi->job.threaded = TRUE_m13;
+		pi->job.status = PROC_THREAD_WAITING_m13;
+	}
+	if (concurrent_jobs > total_jobs)
+		concurrent_jobs = total_jobs;
+
+	// set affinity (build cpu set shared by all jobs)
+#if defined LINUX_m13 || defined WINDOWS_m13
+	si1		affinity[8];
+	si4		start_core, end_core;
+	cpu_set_t_m13	cpu_set;
+
+
+	#ifdef LINUX_m13
+	start_core = reserved_cores;
+	#endif
+	#ifdef WINDOWS_m13  // Windows prefers first and terminal cores
+	if (reserved_cores)
+		start_core = 1;
+	else
+		start_core = 0;
+	#endif
+	end_core = start_core + (concurrent_cores - 1);
+	sprintf(affinity, "%d-%d", start_core, end_core);
+	PROC_generate_cpu_set_m13(affinity, &cpu_set);
+
+	for (pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr) {
+		if (*pi_ptr) {
+			(*pi_ptr)->job.cpu_set_p = &cpu_set;
+			(*pi_ptr)->job.affinity_str = NULL;
+		}
+	}
+#endif
+#ifdef MACOS_m13  // currently MacOS does not support thread affinity assignment
+	for (pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr) {
+		if (*pi_ptr) {
+			(*pi_ptr)->job.cpu_set_p = NULL;
+			(*pi_ptr)->job.affinity_str = NULL;
+		}
+	}
+#endif
+
+	// open utilization measurement window (see adaptation below)
+	++distribute_calls_m13;
+	start_uutc = G_current_uutc_m13();
+	start_cpu = PROC_cpu_time_m13();
+
+	// launch initial job set
+	for (currently_running = 0, pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr) {
+		pi = *pi_ptr;
+		if (pi == NULL)
+			continue;
+		if (pi->job.status != PROC_THREAD_WAITING_m13)
+			continue;
+
+		// launch job (PAR_start_m13() sets job status on launch failure)
+		if (PAR_start_m13(pi) == TRUE_m13) {
+			while (pi->job.status == PROC_THREAD_WAITING_m13)  // wait for status change in thread
+				nap_m13("1 us");  // don't peg cpu on this
+			if (++currently_running == concurrent_jobs)
+				break;
+		}
+	}
+
+	// launch rest of jobs as others finish
+	r_val = TRUE_m13;
+	while (1) {
+		for (currently_running = 0, pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr) {
+			pi = *pi_ptr;
+			if (pi == NULL)
+				continue;
+			if (pi->job.status == PROC_THREAD_RUNNING_m13)
+				++currently_running;
+		}
+
+		for (finished_jobs = 0, pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr) {
+			pi = *pi_ptr;
+			if (pi == NULL)
+				continue;
+			if (pi->fn == NULL)
+				continue;
+			if (currently_running == concurrent_jobs)
+				break;
+			if (pi->job.status == PROC_THREAD_WAITING_m13) {
+
+				// launch job (PAR_start_m13() sets job status on launch failure)
+				if (PAR_start_m13(pi) == TRUE_m13) {
+					while (pi->job.status == PROC_THREAD_WAITING_m13)  // wait for status change in thread
+						nap_m13("1 us");  // don't peg cpu on this
+					++currently_running;
+				}
+			} else if (pi->job.status & PROC_THREAD_FINISHED_m13) {
+				++finished_jobs;
+				if (pi->job.status == PROC_THREAD_FAILED_m13)
+					r_val = FALSE_m13;
+			}
+		}
+
+		if (total_jobs <= (finished_jobs + currently_running))
+			break;
+		nap_m13("100 us");  // don't peg this cpu
+	}
+
+	// adapt session jobs_per_core (as in PROC_jobs_distribute_m13() - see the full derivation there)
+	if (adaptive == TRUE_m13 && distribute_calls_m13 == 1) {
+		wall_secs = (sf8) (G_current_uutc_m13() - start_uutc) / (sf8) 1e6;
+		if (total_jobs >= (concurrent_jobs << 1) && wall_secs >= (sf8) 0.1) {
+			cpu_rate = (PROC_cpu_time_m13() - start_cpu) / wall_secs;
+			if (cpu_rate > (sf8) 0.0) {
+				ideal_jpc = (si4) ceil((((sf8) jobs_per_core * (sf8) concurrent_cores) / cpu_rate) - (sf8) 0.05);  // 0.05: don't step up on rounding jitter
+				if (ideal_jpc > PROC_JOBS_PER_CORE_MAX_m13)
+					ideal_jpc = PROC_JOBS_PER_CORE_MAX_m13;
+				else if (ideal_jpc < 1)
+					ideal_jpc = 1;
+				if (ideal_jpc > jobs_per_core)
+					tuned_jobs_per_core = jobs_per_core + 1;  // one step per call (noisy measurements shouldn't jump)
+				else if (ideal_jpc < jobs_per_core)
+					tuned_jobs_per_core = jobs_per_core - 1;
+			}
+		}
+	}
+	--distribute_calls_m13;
+
+	// clear stack cpu set references (cpu set consumed at launch; handles may be reused after this function returns)
+	for (pi_ptr = par_infos, i = n_infos; i--; ++pi_ptr)
+		if (*pi_ptr)
+			(*pi_ptr)->job.cpu_set_p = NULL;
+
+	if (wait_jobs == TRUE_m13)
+		return_m13(PAR_wait_all_m13(par_infos, n_infos, NULL));
+
+	if (r_val == TRUE_m13) {
+		if (finished_jobs == total_jobs)
+			return_m13(TRUE_m13);
+		return_m13(UNKNOWN_m13);
+	}
+
+	return_m13(FALSE_m13);
+}
+
+
+tern	PAR_free_m13(PAR_INFO_m13 **par_info_ptr)
+{
+	PAR_INFO_m13	*par_info;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// frees par_info & sets caller's pointer to NULL
+	// (caller responsible for disposing of anything in par_info->r_val, if necessary)
+
+	if (par_info_ptr == NULL)
+		return_m13(FALSE_m13);
+	par_info = *par_info_ptr;
+	if (par_info == NULL)
+		return_m13(FALSE_m13);
+
+	if (PAR_RUNNING_m13(par_info) == TRUE_m13) {
+		G_warning_message_m13("%s(): job is running => returning\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+
+	if (par_info->allocated == TRUE_m13)
+		free_m13(par_info);
+	*par_info_ptr = NULL;
+
+	return_m13(TRUE_m13);
+}
+
+
+PAR_INFO_m13	*PAR_init_m13(PAR_INFO_m13 *par_info, const si1 *label, ...) // varargs(label != PAR_DEFAULTS_m13 or NULL): si4 priority, const si1 *affinity, si4 threaded
+{
+	tern		defaults;
+	const si1 	*affinity;
+	si4 		priority, threaded;
+	va_list		v_args;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// par_info allocated if NULL
+	// defaults: system default priority, no cpu affinity, default threading
+	// pass threaded == FALSE_m13 to run launched functions in the calling thread (synchronous)
+	// pass threaded == NOT_SET_m13 (or 0) for default threading (see PROC_default_threading_m13())
+
+	if (par_info == NULL) {
+		par_info = (PAR_INFO_m13 *) calloc_m13((size_t) 1, sizeof(PAR_INFO_m13));
+		if (par_info == NULL)
+			return_m13(NULL);
+		par_info->allocated = TRUE_m13;
+	} else {
+		memset((void *) par_info, 0, sizeof(PAR_INFO_m13));
+		par_info->allocated = FALSE_m13;
+	}
+	par_info->variadic = FALSE_m13;
+
+	defaults = FALSE_m13;
+	if (label == NULL)
+		defaults = TRUE_m13;
+	else if (strcmp_m13(label, PAR_DEFAULTS_m13) == 0)
+		defaults = TRUE_m13;
+
+	if (defaults == TRUE_m13) {
+		label = affinity = NULL;
+		priority = PROC_DEFAULT_PRIORITY_m13;
+		threaded = NOT_SET_m13;
+	} else {
+		va_start(v_args, label);
+		priority = va_arg(v_args, si4);
+		affinity = va_arg(v_args, const si1 *);
+		threaded = va_arg(v_args, si4);
+		va_end(v_args);
+		if (priority == 0)
+			priority = PROC_DEFAULT_PRIORITY_m13;
+	}
+	if (threaded == NOT_SET_m13)
+		threaded = PROC_default_threading_m13(NULL);
+
+	if (STR_is_empty_m13(label) == TRUE_m13)
+		strcpy(par_info->label, "unlabeled job");
+	else
+		strcpy(par_info->label, label); // label limit: THREAD_NAME_BYTES_m13 (including terminal zero)
+
+	if (STR_is_empty_m13(affinity) == FALSE_m13)
+		strcpy(par_info->affinity, affinity); // affinity limit: PAR_AFFINITY_BYTES_m13 (including terminal zero)
+
+	// set up job
+	par_info->job.name = par_info->label;
+	par_info->job.function = PAR_thread_m13;
+	par_info->job.function_arg = (void *) par_info;
+	par_info->job.affinity_str = par_info->affinity;
+	par_info->job.priority = priority;
+	par_info->job.threaded = (tern) threaded;
+	par_info->job.detached = TRUE_m13; // set per launch (threaded => detached, unthreaded => NOT_SET_m13)
+	par_info->job.status = PROC_THREAD_WAITING_m13;
+
+	return_m13(par_info);
+}
+
+
+PAR_INFO_m13	*PAR_launch_m13(PAR_INFO_m13 *par_info, void *fn, const si1 *sig, ...) // varargs: target function arguments, per sig
+{
+	va_list		v_args;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// prep & start in one call
+	// par_info allocated & initialized with defaults if NULL (otherwise initialize with PAR_init_m13() before first launch)
+	// arguments are copied at launch => caller's variables need not persist
+	// returns NULL on failure
+	// Note: unsupported variadic sf8 shapes are detected in PAR_call_m13() & reported via the handle's error info
+
+	va_start(v_args, sig);
+	par_info = PAR_prep_exec_m13(par_info, fn, sig, v_args);
+	va_end(v_args);
+	if (par_info == NULL)
+		return_m13(NULL);
+
+	if (PAR_start_m13(par_info) == FALSE_m13)
+		return_m13(NULL);
+
+	return_m13(par_info);
+}
+
+
+PAR_INFO_m13	*PAR_prep_m13(PAR_INFO_m13 *par_info, void *fn, const si1 *sig, ...) // varargs: target function arguments, per sig
+{
+	va_list		v_args;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// capture a call without launching it (launch with PAR_start_m13() or PAR_distribute_m13())
+
+	va_start(v_args, sig);
+	par_info = PAR_prep_exec_m13(par_info, fn, sig, v_args);
+	va_end(v_args);
+
+	return_m13(par_info);
+}
+
+
+PAR_INFO_m13	*PAR_prep_exec_m13(PAR_INFO_m13 *par_info, void *fn, const si1 *sig, va_list v_args)
+{
+	tern		variadic;
+	const si1	*c;
+	si4		n_args, n_fixed;
+	PAR_ARG_m13	*a;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// validates sig & captures the call into the handle (see PAR_launch_m13() & PAR_prep_m13())
+
+	if (fn == NULL) {
+		G_set_error_m13(E_PROC_m13, "no function passed");
+		return_m13(NULL);
+	}
+
+	// parse & validate signature
+	if (sig == NULL)
+		sig = "";
+	variadic = FALSE_m13;
+	n_args = n_fixed = 0;
+	for (c = sig; *c; ++c) {
+		switch (*c) {
+			case 'p':
+			case 'i':
+				++n_args;
+				break;
+			case 'd':
+				if (variadic == FALSE_m13) {
+					G_set_error_m13(E_PROC_m13, "signature \"%s\": fixed sf8 arguments not supported => pass by pointer, or add shape to PAR_call_m13()", sig);
+					return_m13(NULL);
+				}
+				++n_args;
+				break;
+			case '|':
+				if (variadic == TRUE_m13) {
+					G_set_error_m13(E_PROC_m13, "signature \"%s\": multiple '|'", sig);
+					return_m13(NULL);
+				}
+				variadic = TRUE_m13;
+				n_fixed = n_args;
+				break;
+			default:
+				G_set_error_m13(E_PROC_m13, "signature \"%s\": unrecognized character '%c'", sig, *c);
+				return_m13(NULL);
+		}
+	}
+	if (n_args > PAR_MAX_ARGS_m13) {
+		G_set_error_m13(E_PROC_m13, "signature \"%s\": more than PAR_MAX_ARGS_m13 (%d) arguments", sig, PAR_MAX_ARGS_m13);
+		return_m13(NULL);
+	}
+	if (variadic == TRUE_m13) {
+		if (n_fixed == 0 || n_fixed > PAR_MAX_FIXED_ARGS_m13) {
+			G_set_error_m13(E_PROC_m13, "signature \"%s\": variadic targets require 1 to PAR_MAX_FIXED_ARGS_m13 (%d) fixed arguments", sig, PAR_MAX_FIXED_ARGS_m13);
+			return_m13(NULL);
+		}
+		if ((n_args - n_fixed) > PAR_MAX_TAIL_ARGS_m13) {
+			G_set_error_m13(E_PROC_m13, "signature \"%s\": more than PAR_MAX_TAIL_ARGS_m13 (%d) variadic arguments", sig, PAR_MAX_TAIL_ARGS_m13);
+			return_m13(NULL);
+		}
+	} else {
+		n_fixed = n_args;
+	}
+
+	// initialize handle
+	if (par_info == NULL) {
+		par_info = PAR_init_m13(NULL, NULL);
+		if (par_info == NULL)
+			return_m13(NULL);
+	}
+	if (PAR_RUNNING_m13(par_info) == TRUE_m13) {
+		G_set_error_m13(E_PROC_m13, "job \"%s\" is running", par_info->label);
+		return_m13(NULL);
+	}
+
+	// capture call
+	par_info->fn = fn;
+	strcpy(par_info->sig, sig); // length validated above
+	par_info->n_args = n_args;
+	par_info->n_fixed = n_fixed;
+	par_info->variadic = variadic;
+	par_info->r_val = NULL;
+	par_info->error_code = E_NONE_m13;
+	par_info->error_line = 0;
+	par_info->error_function = NULL;
+	par_info->error_message[0] = 0;
+	memset((void *) par_info->args, 0, sizeof(par_info->args)); // unused variadic cells passed as zeroes
+	a = par_info->args;
+	for (c = sig; *c; ++c) {
+		switch (*c) {
+			case 'p':
+				(a++)->p = va_arg(v_args, void *);
+				break;
+			case 'i':
+				(a++)->i = va_arg(v_args, si8);
+				break;
+			case 'd':
+				(a++)->d = va_arg(v_args, sf8);
+				break;
+		}
+	}
+
+	// reset per-launch job fields (in case handle previously used by PAR_distribute_m13())
+	par_info->job.cpu_set_p = NULL;
+	par_info->job.affinity_str = par_info->affinity;
+	par_info->job.status = PROC_THREAD_WAITING_m13;
+
+	return_m13(par_info);
+}
+
+
+tern	PAR_show_info_m13(PAR_INFO_m13 *par_info)
+{
+	const si1	*status_str;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (par_info == NULL) {
+		G_warning_message_m13("%s(): NULL par_info => returning\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+
+	switch (par_info->job.status) {
+		case PROC_THREAD_WAITING_m13:
+			status_str = "waiting";
+			break;
+		case PROC_THREAD_RUNNING_m13:
+			status_str = "running";
+			break;
+		case PROC_THREAD_SUCCEEDED_m13:
+			status_str = "succeeded";
+			break;
+		case PROC_THREAD_FAILED_m13:
+			status_str = "failed";
+			break;
+		default:
+			status_str = "unknown";
+			break;
+	}
+
+	printf_m13("\nlabel: \"%s\"\n", par_info->label);
+	printf_m13("function: %p\n", par_info->fn);
+	printf_m13("signature: \"%s\"\n", par_info->sig);
+	printf_m13("thread id: %lu\n", par_info->job._id);
+	printf_m13("status: %s\n", status_str);
+	if (par_info->r_val == NULL)
+		printf_m13("r_val: not set\n");
+	else
+		printf_m13("r_val: set\n");
+	if (par_info->error_code != E_NONE_m13) {
+		printf_m13("error code: %d\n", par_info->error_code);
+		if (par_info->error_function)
+			printf_m13("error function: %s()  (line %d)\n", par_info->error_function, par_info->error_line);
+		if (*par_info->error_message)
+			printf_m13("error message: \"%s\"\n", par_info->error_message);
+	}
+	printf_m13("\n");
+
+	return_m13(TRUE_m13);
+}
+
+
+tern	PAR_start_m13(PAR_INFO_m13 *par_info)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// launches a prepped handle (see PAR_prep_m13(); called by PAR_launch_m13() & PAR_distribute_m13())
+	// Note: the thread finds its process globals through thread ancestry or session UID (see G_proc_globs_m13())
+
+	if (par_info == NULL) {
+		G_set_error_m13(E_PROC_m13, "NULL par_info");
+		return_m13(FALSE_m13);
+	}
+	if (par_info->fn == NULL) {
+		G_set_error_m13(E_PROC_m13, "job \"%s\" not prepped", par_info->label);
+		return_m13(FALSE_m13);
+	}
+	if (PAR_RUNNING_m13(par_info) == TRUE_m13) {
+		G_set_error_m13(E_PROC_m13, "job \"%s\" is running", par_info->label);
+		return_m13(FALSE_m13);
+	}
+
+	if (par_info->job.threaded == FALSE_m13) { // run in calling thread; job completes before return
+		par_info->job.detached = NOT_SET_m13;
+		par_info->job.status = PROC_THREAD_WAITING_m13;
+		par_info->job.function((void *) &par_info->job);
+	} else {
+		par_info->job.detached = TRUE_m13; // PAR threads always detached (completion signaled by job status)
+		if (PROC_job_launch_m13(&par_info->job) == FALSE_m13) {
+			par_info->job.status = PROC_THREAD_FAILED_m13;
+			return_m13(FALSE_m13);
+		}
+	}
+
+	return_m13(TRUE_m13);
+}
+
+
+pthread_rval_m13	PAR_thread_m13(void *arg)
+{
+	tern		error_captured;
+	pid_t_m13	_id, own_id;
+	ERROR_m13	*err;
+	PROC_JOB_m13	*job;
+	PAR_INFO_m13	*par_info;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// thread list entry & exit handled by PROC_job_init_m13()
+
+	job = (PROC_JOB_m13 *) arg;
+	job->status = PROC_THREAD_RUNNING_m13;
+	par_info = (PAR_INFO_m13 *) job->function_arg;
+
+	// execute captured call
+	par_info->r_val = PAR_call_m13(par_info);
+
+	if (par_info->r_val == NULL) {
+		// snapshot error info into handle, if error was set by this thread or a descendant (e.g. channel threads)
+		error_captured = FALSE_m13;
+		err = &globals_m13->error;
+		pthread_mutex_lock_m13(&err->mutex);
+		if (err->code != E_NONE_m13) {
+			own_id = gettid_m13();
+			_id = err->thread_id;
+			while (_id && _id != own_id) // walk error thread ancestry (thread list entries kept when error set)
+				_id = PROC_thread_parent_id_m13(_id);
+			if (_id == own_id) {
+				par_info->error_code = err->code;
+				par_info->error_line = err->line;
+				par_info->error_function = err->function;
+				strcpy(par_info->error_message, err->message);
+				error_captured = TRUE_m13;
+			}
+		}
+		pthread_mutex_unlock_m13(&err->mutex);
+		if (error_captured == TRUE_m13) // error info lives on in handle => error handled (releases isem so other threads can set errors)
+			G_clear_error_m13();
+		job->status = PROC_THREAD_FAILED_m13; // set after r_val & error info (job status signals completion)
+	} else {
+		job->status = PROC_THREAD_SUCCEEDED_m13;
+	}
+
+	return_m13((pthread_rval_m13) 0);
+}
+
+
+tern	PAR_wait_m13(PAR_INFO_m13 *par_info, const si1 *interval)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns TRUE_m13 if job succeeded, FALSE_m13 otherwise
+
+	if (par_info == NULL) {
+		G_warning_message_m13("%s(): NULL par_info => returning\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+	if (par_info->fn == NULL) {
+		G_warning_message_m13("%s(): job \"%s\" was not launched => returning\n", __FUNCTION__, par_info->label);
+		return_m13(FALSE_m13);
+	}
+
+	if (STR_is_empty_m13(interval) == TRUE_m13)
+		interval = "100 us";
+
+	// poll job status at interval (don't peg this cpu)
+	while ((par_info->job.status & PROC_THREAD_FINISHED_m13) == 0)
+		nap_m13(interval);
+
+	return_m13(PAR_SUCCEEDED_m13(par_info));
+}
+
+
+tern	PAR_wait_all_m13(PAR_INFO_m13 **par_infos, si4 n_infos, const si1 *interval)
+{
+	tern		r_val;
+	si4		i, total_jobs, finished_jobs;
+	PAR_INFO_m13	**pi_ptr, *pi;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns FALSE_m13 if any job failed
+	// NULL & unlaunched entries skipped
+
+	if (STR_is_empty_m13(interval) == TRUE_m13)
+		interval = "100 us";
+
+	// count waitable jobs
+	for (pi_ptr = par_infos, total_jobs = 0, i = n_infos; i--; ++pi_ptr) {
+		pi = *pi_ptr;
+		if (pi)
+			if (pi->fn)
+				++total_jobs;
+	}
+
+	r_val = TRUE_m13;
+	while (1) {
+
+		for (pi_ptr = par_infos, finished_jobs = 0, i = n_infos; i--; ++pi_ptr) {
+			pi = *pi_ptr;
+			if (pi == NULL)
+				continue;
+			if (pi->fn == NULL)
+				continue;
+			if (pi->job.status & PROC_THREAD_FINISHED_m13) {
+				++finished_jobs;
+				if (pi->job.status == PROC_THREAD_FAILED_m13)
+					r_val = FALSE_m13;
+			}
+		}
+
+		if (finished_jobs == total_jobs)
+			break;
+
+		// don't peg this cpu
+		nap_m13(interval);
+	}
+
+	return_m13(r_val);
+}
 
 
 
@@ -38752,6 +39653,39 @@ tern	PROC_change_affinity_m13(pthread_t_m13 *thread_p, pthread_attr_t_m13 *attri
 	return_m13(TRUE_m13);
 }
 #endif  // WINDOWS_m13
+
+
+sf8	PROC_cpu_time_m13(void)
+{
+	sf8	secs;
+#if defined MACOS_m13 || defined LINUX_m13
+	struct rusage	ru;
+#endif
+#ifdef WINDOWS_m13
+	FILETIME	create_t, exit_t, kernel_t, user_t;
+	ULARGE_INTEGER	kernel_usage, user_usage;
+#endif
+
+	// process cpu time (user + system, all threads), in seconds
+	// (no function stack push: called in timing paths)
+
+#if defined MACOS_m13 || defined LINUX_m13
+	getrusage(RUSAGE_SELF, &ru);
+	secs = (sf8) ru.ru_utime.tv_sec + ((sf8) ru.ru_utime.tv_usec / (sf8) 1e6);
+	secs += (sf8) ru.ru_stime.tv_sec + ((sf8) ru.ru_stime.tv_usec / (sf8) 1e6);
+#endif
+
+#ifdef WINDOWS_m13
+	GetProcessTimes(GetCurrentProcess(), &create_t, &exit_t, &kernel_t, &user_t);
+	kernel_usage.LowPart = kernel_t.dwLowDateTime;
+	kernel_usage.HighPart = kernel_t.dwHighDateTime;
+	user_usage.LowPart = user_t.dwLowDateTime;
+	user_usage.HighPart = user_t.dwHighDateTime;
+	secs = ((sf8) kernel_usage.QuadPart + (sf8) user_usage.QuadPart) / (sf8) 1e7;  // 100 ns units
+#endif
+
+	return(secs);
+}
 
 
 tern	PROC_default_threading_m13(void *level_header)
@@ -39069,12 +40003,15 @@ tern	PROC_increase_process_priority_m13(tern verbose_flag, si4 sudo_prompt_flag,
 
 tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores, si4 jobs_per_core, tern thread_jobs, tern wait_jobs)
 {
-	tern			r_val;
+	tern			r_val, adaptive;
 	si4			i, logical_cores, concurrent_cores, concurrent_jobs;
-	si4			total_jobs, currently_running, finished_jobs;
+	si4			total_jobs, currently_running, finished_jobs, ideal_jpc;
+	si8			start_uutc;
+	sf8			start_cpu, wall_secs, cpu_rate;
 	cpu_set_t_m13		cpu_set;
 	HW_PARAMS_m13		*hw_params;
 	PROC_JOB_m13		*job;
+	static _Atomic si4	tuned_jobs_per_core = 0;  // session-adaptive (see below); zero == not yet tuned
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -39084,6 +40021,7 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 	// reserved_cores = number of cores to leave unassigned (typically zero). This may be adjusted for the OS & number of logical cores.
 	// if reserving cores for system n_reserved_cores typically == 1-2
 	// if jobs can fully utilize a core, set jobs_per_core == 1, titrate to higher numbers for jobs that do a lot of waiting, set to 0 to launch all threads concurrently and let system distribute
+	// (pass PROC_JOBS_PER_CORE_DEFAULT_m13 for session-adaptive tuning, starting at PROC_JOBS_PER_CORE_BASE_m13 - recommended for the library's typical decode-dominant jobs)
 	// if thread_jobs == TRUE_m13 thread out the jobs, if FALSE_m13 run consecutively in this thread, if NOT_SET_m13 use default threading
 	// if wait_jobs == TRUE_m13 wait for jobs in this function
 	// returns FALSE_m13 on any error, UNKNOWN_m13 if jobs still running, but none have failed, TRUE_m13 if all jobs finished successfully
@@ -39107,13 +40045,24 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 		}
 		return_m13(r_val);
 	}
-	
+
+	// adaptive jobs_per_core: the default sentinel engages session tuning (measured core utilization =>
+	// per-job stall fraction => ideal concurrency; see adaptation below); explicit values honored as passed
+	adaptive = FALSE_m13;
+	if (jobs_per_core == PROC_JOBS_PER_CORE_DEFAULT_m13) {
+		adaptive = TRUE_m13;
+		if (tuned_jobs_per_core)
+			jobs_per_core = tuned_jobs_per_core;
+		else
+			jobs_per_core = PROC_JOBS_PER_CORE_BASE_m13;
+	}
+
 	// get logical cores
 	hw_params = &globals_m13->tables->HW_params;
 	if (hw_params->logical_cores == 0)
 		HW_get_core_info_m13();
 	logical_cores = hw_params->logical_cores;
-	
+
 	// set reserved cores & concurrent jobs
 #ifdef WINDOWS_m13
 	// Windows performs better with at least 1 reserved core, if possible
@@ -39184,6 +40133,11 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 	}
 #endif
 
+	// open utilization measurement window (see adaptation below)
+	++distribute_calls_m13;
+	start_uutc = G_current_uutc_m13();
+	start_cpu = PROC_cpu_time_m13();
+
 	// launch initial job set
 	for (currently_running = 0, job = jobs, i = concurrent_jobs; i--; ++job) {
 		if (job->skip == TRUE_m13)
@@ -39231,7 +40185,30 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 			break;
 		nap_m13("100 us");  // don't peg this cpu
 	}
-	
+
+	// adapt session jobs_per_core: per-job busy fraction == cpu_rate / (jobs_per_core * concurrent_cores)
+	// => ideal jobs_per_core (busy fraction * ideal == 1) == (jobs_per_core * concurrent_cores) / cpu_rate
+	// measurement trusted only when: no other distribution ran concurrently, >= 2 waves of jobs, & window >= 100 ms
+	// (other busy threads in the process inflate cpu_rate => adaptation errs conservative)
+	if (adaptive == TRUE_m13 && distribute_calls_m13 == 1) {
+		wall_secs = (sf8) (G_current_uutc_m13() - start_uutc) / (sf8) 1e6;
+		if (total_jobs >= (concurrent_jobs << 1) && wall_secs >= (sf8) 0.1) {
+			cpu_rate = (PROC_cpu_time_m13() - start_cpu) / wall_secs;
+			if (cpu_rate > (sf8) 0.0) {
+				ideal_jpc = (si4) ceil((((sf8) jobs_per_core * (sf8) concurrent_cores) / cpu_rate) - (sf8) 0.05);  // 0.05: don't step up on rounding jitter
+				if (ideal_jpc > PROC_JOBS_PER_CORE_MAX_m13)
+					ideal_jpc = PROC_JOBS_PER_CORE_MAX_m13;
+				else if (ideal_jpc < 1)
+					ideal_jpc = 1;
+				if (ideal_jpc > jobs_per_core)
+					tuned_jobs_per_core = jobs_per_core + 1;  // one step per call (noisy measurements shouldn't jump)
+				else if (ideal_jpc < jobs_per_core)
+					tuned_jobs_per_core = jobs_per_core - 1;
+			}
+		}
+	}
+	--distribute_calls_m13;
+
 	if (wait_jobs == TRUE_m13)
 		return_m13(PROC_jobs_wait_m13(jobs, n_jobs));
 	
@@ -40169,7 +41146,7 @@ si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files)  // MED_path is MED 
 				if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
 					strcpy(tmp_list[tmp_files++], tmp_path);
 			} else if (type_code == VID_CHAN_TYPE_CODE_m13) {
-				vid_list = G_file_list_m13(NULL, &n_vids, chan_list[i], "*_s????_n????", NULL, GFL_FULL_PATH_m13);
+				vid_list = G_file_list_m13(NULL, &n_vids, seg_list[j], "*_s????_n????", NULL, GFL_FULL_PATH_m13);
 				for (k = 0; k < n_vids; ++k)
 					strcpy(tmp_list[tmp_files++], vid_list[k]);
 				free_m13(vid_list);
@@ -40182,7 +41159,7 @@ si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files)  // MED_path is MED 
 			}
 			sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, REC_DATA_TYPE_STR_m13);
 			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
-				strcpy(tmp_list[tmp_files], tmp_path);
+				strcpy(tmp_list[tmp_files++], tmp_path);
 			sprintf_m13(tmp_path, "%s/%s.%s", seg_list[j], tmp_str, REC_INDS_TYPE_STR_m13);
 			if (G_exists_m13(tmp_path) == FILE_EXISTS_m13)
 				strcpy(tmp_list[tmp_files++], tmp_path);
@@ -40270,6 +41247,7 @@ ui4	PRTY_flag_for_path_m13(const si1 *path)
 			flag = PRTY_VID_SEG_META_m13;
 			break;
 		case VID_DATA_TYPE_CODE_m13:
+		case VID_PARITY_TYPE_CODE_m13:  // video data parity file ("parity_<chan>_sNNNN.vpar")
 			flag = PRTY_VID_SEG_DAT_DATA_m13;
 			break;
 		case VID_INDS_TYPE_CODE_m13:
@@ -40688,9 +41666,9 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 	tern			success, valid, video_data, unlock_parity, unlock_data;
 	si1			sess_path[PATH_BYTES_m13], sess_name[NAME_BYTES_m13], base_name[SEG_NAME_BYTES_m13];
 	si1			tmp_path[PATH_BYTES_m13], **input_file_list, **ts_chan_names, **vid_chan_names, **ssr_names, **list;
-	si1			*parity_path, response[8];
+	si1			*parity_path, response[8], num_str[FILE_NUMBERING_DIGITS_m13 + 1], **vid_list;
 	ui4			level_code;
-	si4			i, j, k, n_ts_chans, n_vid_chans, n_segs, n_input_files, n_parity_files, n_bad_blocks;
+	si4			i, j, k, n_ts_chans, n_vid_chans, n_segs, n_vids, n_input_files, n_parity_files, n_bad_blocks;
 	si4			allocated_parity_files, n_repaired, n_attempted, n_skipped;
 	si8			len, mmap_block_bytes, mem_block_bytes, mem_blocks;
 	PRTY_FILE_m13		*parity_files;
@@ -40807,18 +41785,22 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 				}
 				break;
 			case VID_DATA_TYPE_CODE_m13:
+				// video data parity is channel & segment specific: "parity_<chan>_sNNNN.vpar" in the parity channel segment directory
+				// (members are this channel segment's video data files [_nNNNN tags]: roughly equal size => used as a group)
 				video_data = TRUE_m13;
-				/* fall through */
+				len = strlen(base_name);  // base_name == "<chan>_sNNNN_nNNNN"
+				memcpy(num_str, base_name + (len - 10), FILE_NUMBERING_DIGITS_m13);  // segment number digits
+				num_str[FILE_NUMBERING_DIGITS_m13] = 0;
+				base_name[len - 12] = 0;  // truncate to channel name
+				sprintf_m13(parity_path, "%s/parity.%s/parity_s%s.%s/parity_%s_s%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, num_str, VID_SEG_TYPE_STR_m13, base_name, num_str, VID_PARITY_TYPE_STR_m13);
+				break;
 			case TS_METADATA_TYPE_CODE_m13:
 			case TS_DATA_TYPE_CODE_m13:
 			case TS_INDS_TYPE_CODE_m13:
 			case VID_METADATA_TYPE_CODE_m13:
 			case VID_INDS_TYPE_CODE_m13:
 				len = strlen(base_name);
-				if (video_data == TRUE_m13)
-					base_name[len - 12] = 0;
-				else
-					base_name[len - 6] = 0;
+				base_name[len - 6] = 0;
 				STR_replace_pattern_m13(base_name, "parity", input_file_list[i], parity_path);
 				break;
 		}
@@ -40829,11 +41811,27 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 		}
 
 		// build file list
-		strcpy(parity_files[PRTY_FILE_DAMAGED_IDX_m13].path, input_file_list[i]);
-		for (j = 1, k = 0; j < n_parity_files; ++k) {
-			if (strcmp_m13(list[k], base_name)) {
-				STR_replace_pattern_m13("parity", list[k], parity_path, tmp_path);
-				strcpy(parity_files[j++].path, tmp_path);
+		if (video_data == TRUE_m13) {  // members: this channel segment's video data files
+			G_path_parts_m13(input_file_list[i], tmp_path, NULL, NULL);  // damaged file's directory == channel segment directory
+			vid_list = G_file_list_m13(NULL, &n_vids, tmp_path, "*_s????_n????", NULL, GFL_FULL_PATH_m13);
+			n_parity_files = n_vids;
+			if (n_parity_files > allocated_parity_files) {
+				parity_files = (PRTY_FILE_m13 *) realloc_m13(parity_files, (size_t) n_parity_files * sizeof(PRTY_FILE_m13));
+				allocated_parity_files = n_parity_files;
+			}
+			strcpy(parity_files[PRTY_FILE_DAMAGED_IDX_m13].path, input_file_list[i]);
+			for (j = 1, k = 0; k < n_vids; ++k) {
+				if (strcmp_m13(vid_list[k], input_file_list[i]))  // damaged file already in first slot
+					strcpy(parity_files[j++].path, vid_list[k]);
+			}
+			free_m13(vid_list);
+		} else {
+			strcpy(parity_files[PRTY_FILE_DAMAGED_IDX_m13].path, input_file_list[i]);
+			for (j = 1, k = 0; j < n_parity_files; ++k) {
+				if (strcmp_m13(list[k], base_name)) {
+					STR_replace_pattern_m13("parity", list[k], parity_path, tmp_path);
+					strcpy(parity_files[j++].path, tmp_path);
+				}
 			}
 		}
 
@@ -41688,7 +42686,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 	tern			unlock_parity, unlock_data, unlock_files;
 	si1			sess_path[PATH_BYTES_m13];
 	si1			sess_name[NAME_BYTES_m13], tmp_str[PATH_BYTES_m13 + 64];
-	si1			num_str[FILE_NUMBERING_DIGITS_m13 + 1], type_string[TYPE_BYTES_m13];
+	si1			num_str[FILE_NUMBERING_DIGITS_m13 + 1];
 	si1			**chan_names, **vid_paths, **seg_names, **base_paths, **ssr_list;
 	si4			i, j, k, start_seg, end_seg, n_chans, n_vids, n_segs, n_ssrs, n_files, new_files;
 	si8			mmap_block_bytes, mem_block_bytes, mem_blocks, n_bytes;
@@ -41924,32 +42922,43 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 		// build video segment parity
 		for (i = start_seg; i <= end_seg; ++i) {
 			
-			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
-			
-			// video segment data (these are done across video data files within a segment)
-			if (flags & PRTY_VID_SEG_DAT_DATA_m13) {
-				sprintf_m13(base_paths[0], "%s/%s.%s/%s.%s", sess_path, chan_names[j], VID_CHAN_TYPE_STR_m13, tmp_str, VID_SEG_TYPE_STR_m13);
-				strcat(tmp_str, "_n0000");
-				vid_paths = G_file_list_m13(NULL, &n_vids, base_paths[0], tmp_str, NULL, GFL_FULL_PATH_m13);
-				if (n_vids) {
-					G_path_parts_m13(vid_paths[0], NULL, NULL, type_string);  // get video extension
-					sprintf_m13(tmp_str, "parity_s%s", num_str);
-					sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, tmp_str, VID_SEG_TYPE_STR_m13, tmp_str, type_string);
-					G_message_m13("Building segment %d video data parity ...\n", i);
-					for (j = 0; j < n_vids; ++j)
-						strcpy_m13(files[j].path, vid_paths[j]);
-					free_m13(vid_paths);
-					parity_ps.n_files = n_vids;
-					PRTY_build_m13(&parity_ps);
-					for (j = 0; j < n_vids; ++j)  // create parity crc files for video data files
-						PRTY_write_pcrc_m13(files[j].path, 0);
-				}
-			}
-			
 			// build segment base paths
+			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, i);
 			for (j = 0; j < n_chans; ++j) {
 				sprintf_m13(tmp_str, "%s_s%s", chan_names[j], num_str);
 				sprintf_m13(base_paths[j], "%s/%s.%s/%s.%s/%s", sess_path, chan_names[j], VID_CHAN_TYPE_STR_m13, tmp_str, VID_SEG_TYPE_STR_m13, tmp_str);
+			}
+
+			// video segment data
+			// continuous video is typically split into a series of similar-sized files (tagged _nNNNN), kept in the video segment directory
+			// these are used as a group to create the video data parity for the segment, so parity is channel & segment specific:
+			// one "parity_<chan>_sNNNN.vpar" file per video channel, in the parity channel segment directory
+			if (flags & PRTY_VID_SEG_DAT_DATA_m13) {
+				for (j = 0; j < n_chans; ++j) {
+					vid_paths = G_file_list_m13(NULL, &n_vids, base_paths[j], "*_s????_n????", NULL, GFL_FULL_PATH_m13);
+					if (n_vids) {
+						if (n_vids > n_files) {
+							if (unlock_files == TRUE_m13)
+								munlock_m13(files, (size_t) n_files * sizeof(PRTY_FILE_m13));
+							n_files = n_vids;
+							n_bytes = (si8) (n_files * sizeof(PRTY_FILE_m13));
+							parity_ps.files = files = (PRTY_FILE_m13 *) realloc_m13(files, (size_t) n_bytes);
+							G_push_behavior_m13(RETURN_ON_FAIL_m13 | SUPPRESS_ERROR_OUTPUT_m13);
+							unlock_files = mlock_m13(files, (si8) -n_bytes);
+							G_pop_behavior_m13();
+						}
+						for (k = 0; k < n_vids; ++k)
+							strcpy_m13(files[k].path, vid_paths[k]);
+						free_m13(vid_paths);
+						sprintf_m13(tmp_str, "parity_s%s", num_str);
+						sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/parity_%s_s%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, tmp_str, VID_SEG_TYPE_STR_m13, chan_names[j], num_str, VID_PARITY_TYPE_STR_m13);
+						G_message_m13("Building segment %d video data parity for channel \"%s\" ...\n", i, chan_names[j]);
+						parity_ps.n_files = n_vids;
+						PRTY_build_m13(&parity_ps);
+						for (k = 0; k < n_vids; ++k)  // create parity crc files for video data files
+							PRTY_write_pcrc_m13(files[k].path, 0);
+					}
+				}
 			}
 			
 			// video indices
@@ -42260,6 +43269,166 @@ PRTY_WRITE_PCRC_FAIL:
 		free(crcs);
 
 	return_m13(r_val);
+}
+
+
+//********************************************//
+// MARK: PASCAL STRING FUNCTIONS  (PSTR)
+//********************************************//
+
+pstr	*PSTR_alloc_m13(si8 n_bytes, ...)  // varargs(n_bytes negative): ui4 pstr_flags
+{
+	ui4	pstr_flags;
+	pstr	*ps;
+	va_list	v_args;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// allocates pstr structure & string buffer of n_bytes, including terminal zero (n_bytes becomes msize)
+	// pass negative n_bytes to pass initial pstr flags in varargs
+
+	pstr_flags = 0;
+	if (n_bytes < 0) {
+		n_bytes = -n_bytes;
+		va_start(v_args, n_bytes);
+		pstr_flags = va_arg(v_args, ui4);
+		va_end(v_args);
+	}
+	if (n_bytes == 0)
+		n_bytes = 1;  // room for terminal zero
+	if (n_bytes > (si8) PSTR_MAX_BYTES_m13) {  // msize is ui4
+		G_set_error_m13(E_ALLOC_m13, "requested string bytes exceed PSTR_MAX_BYTES_m13");
+		return_m13(NULL);
+	}
+
+	ps = (pstr *) malloc_m13(sizeof(pstr));
+	if (ps == NULL)
+		return_m13(NULL);
+	ps->str = (si1 *) malloc_m13((size_t) n_bytes);
+	if (ps->str == NULL) {
+		free_m13(ps);
+		return_m13(NULL);
+	}
+
+	ps->flags = (ui4) (ui1) PSTR_TAG_m13 | (pstr_flags & PSTR_FLAGS_ALL_m13) | PSTR_FLAG_ALLOCED_m13;  // establish tag; flags below must use "|=" to preserve it
+	ps->bytes = ps->chars = 0;
+	ps->msize = (ui4) n_bytes;
+	*ps->str = 0;
+
+	return_m13(ps);
+}
+
+
+si8	PSTR_char_count_m13(const si1 *s, si8 n_bytes)  // utf8 character count of first n_bytes of s
+{
+	si8	chars;
+
+	// counts non-continuation bytes (single pass; no validation)
+
+	chars = 0;
+	while (n_bytes--)
+		chars += ((*s++ & (si1) 0xC0) != (si1) 0x80);
+
+	return(chars);
+}
+
+
+si1	*PSTR_ensure_m13(pstr *ps, si8 req_bytes)  // req_bytes includes terminal zero
+{
+	si8	new_size;
+
+	// grows string buffer to hold at least req_bytes (doubling for amortized O(1) appends)
+	// returns string pointer (reallocation may move it), or NULL on failure
+
+	if ((si8) ps->msize >= req_bytes)
+		return(ps->str);
+
+	if (ps->flags & PSTR_FLAG_CONST_m13) {
+		G_set_error_m13(E_GEN_m13, "cannot resize const pstr");
+		return(NULL);
+	}
+	if (req_bytes > (si8) PSTR_MAX_BYTES_m13) {
+		G_set_error_m13(E_ALLOC_m13, "requested string bytes exceed PSTR_MAX_BYTES_m13");
+		return(NULL);
+	}
+	new_size = (si8) ps->msize << 1;
+	if (new_size < req_bytes)
+		new_size = req_bytes;
+	if (new_size > (si8) PSTR_MAX_BYTES_m13)
+		new_size = (si8) PSTR_MAX_BYTES_m13;
+
+	ps->str = (si1 *) realloc_m13(ps->str, (size_t) new_size);
+	if (ps->str == NULL)
+		return(NULL);
+	ps->msize = (ui4) new_size;
+
+	return(ps->str);
+}
+
+
+void	*PSTR_free_m13(void *ptr)
+{
+	pstr	*ps, **ps_p;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// pass a pstr pointer, or the address of a pstr pointer to also set the caller's pointer to NULL
+	// (disambiguated by the tag; direct form checked first - low byte of a heap address can coincidentally equal the tag, so pass the direct form where possible)
+	// string buffer not freed if PSTR_FLAG_CONST_m13 set; structure only freed if PSTR_FLAG_ALLOCED_m13 set
+	// returns NULL for convenience (e.g. "ps = PSTR_free_m13(ps);")
+
+	if (ptr == NULL)
+		return_m13(NULL);
+
+	ps_p = NULL;
+	ps = (pstr *) ptr;
+	if (ps->tag != PSTR_TAG_m13) {  // address-of-pointer form
+		ps_p = (pstr **) ptr;
+		ps = *ps_p;
+		if (ps == NULL)
+			return_m13(NULL);
+		if (ps->tag != PSTR_TAG_m13) {
+			G_set_error_m13(E_GEN_m13, "not a pstr");
+			return_m13(NULL);
+		}
+	}
+
+	if (ps->str != NULL && !(ps->flags & PSTR_FLAG_CONST_m13))
+		free_m13(ps->str);
+	if (ps->flags & PSTR_FLAG_ALLOCED_m13) {
+		free_m13(ps);
+	} else {  // caller-owned structure: leave tag & flags, clear string fields
+		ps->str = NULL;
+		ps->bytes = ps->chars = ps->msize = 0;
+	}
+	if (ps_p != NULL)
+		*ps_p = NULL;
+
+	return_m13(NULL);
+}
+
+
+void	PSTR_set_counts_m13(pstr *ps)  // set bytes & chars from string content (single pass)
+{
+	const si1	*c;
+	si8		chars;
+
+	// for functions that write arbitrary content into a pstr string buffer
+
+	c = ps->str - 1;
+	chars = 0;
+	while (*++c)
+		chars += ((*c & (si1) 0xC0) != (si1) 0x80);
+	ps->bytes = (ui4) (c - ps->str);
+	ps->chars = (ui4) chars;
+	if (ps->bytes != ps->chars)
+		ps->flags &= ~PSTR_FLAG_ASCII_m13;
+
+	return;
 }
 
 
@@ -43073,36 +44242,51 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 // MARK: STRING FUNCTIONS  (STR)
 //******************************//
 
-si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_separator, tern numeric_order)
+void	*STR_bin_m13(void *str_ptr, void *num_ptr, size_t num_bytes, const void *byte_separator, tern numeric_order)
 {
 	ui1		*num, mask;
-	const si1	*cc;
-	si1		*c;
+	const si1	*sep, *cc;
+	si1		*str, *c;
 	si4		str_len, sep_len, byte_bits;
+	pstr		*ops;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
+
 	// returns a binary string for num
 	// input presumed to be little endian
 	// displayed high bit => low bit, left to right
 	// pass NULL or "" for byte_separator for no separation between bytes
 	// if numeric_order is TRUE_m13, bytes & bits will be displayed high->low from left->right
 	// otherwise they will be displayed as they appear in memory (from low->high addresses & bit positions)
+	// "str_ptr" & "byte_separator" are standard strings or pstrs (disambiguated by tag); pstr output grown as required
+	// returns str_ptr as passed (or allocated standard string if passed NULL)
 
-	if (STR_is_empty_m13(byte_separator) == FALSE_m13) {
-		for (cc = byte_separator - 1; *++cc;);
-		sep_len = (cc - byte_separator);
-	} else {
-		sep_len = 0;
+	sep = (const si1 *) byte_separator;
+	sep_len = 0;
+	if (PSTR_m13(byte_separator) == TRUE_m13) {
+		sep = ((const pstr *) byte_separator)->str;
+		sep_len = (si4) ((const pstr *) byte_separator)->bytes;
+	} else if (STR_is_empty_m13(byte_separator) == FALSE_m13) {
+		for (cc = sep - 1; *++cc;);
+		sep_len = (cc - sep);
 	}
 
+	str_len = (num_bytes << 3) + 1;  // account for terminal zero
+	if (sep_len)
+		str_len += (num_bytes - 1) * sep_len;
+
+	ops = NULL;
+	str = (si1 *) str_ptr;
 	if (str == NULL) {  // caller responsible for freeing
-		str_len = (num_bytes << 3) + 1;  // account for terminal zero
-		if (sep_len)
-			str_len += (num_bytes - 1) * sep_len;
 		str = malloc_m13((size_t) str_len);
+		str_ptr = (void *) str;
+	} else if (PSTR_m13(str_ptr) == TRUE_m13) {
+		ops = (pstr *) str_ptr;
+		str = PSTR_ensure_m13(ops, (si8) str_len);
+		if (str == NULL)
+			return_m13(str_ptr);
 	}
 	
 	if (numeric_order == TRUE_m13) {
@@ -43116,7 +44300,7 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_sepa
 					*c++ = '0';
 			}
 			if (sep_len && num_bytes)
-				for (cc = byte_separator; *cc; *c++ = *cc++);
+				for (cc = sep; *cc; *c++ = *cc++);
 		}
 	} else {
 		num = (ui1 *) num_ptr;
@@ -43129,12 +44313,15 @@ si1	*STR_bin_m13(si1 *str, void *num_ptr, size_t num_bytes, const si1 *byte_sepa
 					*c++ = '0';
 			}
 			if (sep_len && num_bytes)
-				for (cc = byte_separator; *cc; *c++ = *cc++);
+				for (cc = sep; *cc; *c++ = *cc++);
 		}
 	}
 	*c = 0;
 
-	return_m13(str);
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(str_ptr);
 }
 
 
@@ -43164,12 +44351,12 @@ const si1	*STR_bool_m13(ui8 val, tern colored)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-wchar_t	*STR_char2wchar_m13(wchar_t *target, const si1 *source)
+wchar_t	*STR_char2wchar_m13(wchar_t *target, const void *source_ptr)
 {
-	const si1	*cc;
+	const si1	*source, *cc;
 	si1		*c, *tmp_source = NULL;
 	si8		len, wsz;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -43177,10 +44364,17 @@ wchar_t	*STR_char2wchar_m13(wchar_t *target, const si1 *source)
 	// if source == target, done in place
 	// if not actually ascii, results may be weird
 	// assumes target is big enough
-	
+	// "source_ptr" is a standard string or pstr (disambiguated by tag); pstr length read from structure (no scan)
+
 	wsz = sizeof(wchar_t);  // 2 or 4 => varies by OS & compiler
 	c = (si1 *) target - wsz;
-	len = strlen(source) + 1;
+	if (PSTR_m13(source_ptr) == TRUE_m13) {
+		source = ((const pstr *) source_ptr)->str;
+		len = (si8) ((const pstr *) source_ptr)->bytes + 1;
+	} else {
+		source = (const si1 *) source_ptr;
+		len = strlen(source) + 1;
+	}
 	if ((void *) source == (void *) target) {
 		tmp_source = (si1 *) malloc((size_t) len);
 		memcpy(tmp_source, source, (size_t) len);
@@ -43200,20 +44394,25 @@ wchar_t	*STR_char2wchar_m13(wchar_t *target, const si1 *source)
 }
 
 
-ui4	STR_check_spaces_m13(const si1 *string)
+ui4	STR_check_spaces_m13(const void *string_ptr)
 {
 	ui4		spaces;
-	const si1	*c;
-	
+	const si1	*string, *c;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// "string_ptr" is a standard string or pstr (disambiguated by tag)
+
+	if (string_ptr == NULL)
+		return_m13(NO_SPACES_m13);
+	string = (PSTR_m13(string_ptr) == TRUE_m13) ? ((const pstr *) string_ptr)->str : (const si1 *) string_ptr;
 	if (string == NULL)
 		return_m13(NO_SPACES_m13);
 	if (*string == 0)
 		return_m13(NO_SPACES_m13);
-	
+
 	c = string;
 	spaces = NO_SPACES_m13;
 	while (*++c) {
@@ -43238,9 +44437,16 @@ si4	STR_compare_m13(const void *a, const void *b)
 	// ascii only
 	// case insensitive, but in case of equivalence lower case precedes upper case (e.g. "abc.txt" before "Abc.txt"
 	//  "." before <space> (e.g. "RawData.nrd" before "RawData 0001.nrd"
-	
-	ac = *(ap = *((si1 **) a));
-	bc = *(bp = *((si1 **) b));
+	// array elements may be standard strings or pstrs, mixed freely (disambiguated by tag)
+
+	ap = *((si1 **) a);
+	if (PSTR_m13(ap) == TRUE_m13)
+		ap = ((pstr *) ap)->str;
+	bp = *((si1 **) b);
+	if (PSTR_m13(bp) == TRUE_m13)
+		bp = ((pstr *) bp)->str;
+	ac = *ap;
+	bc = *bp;
 
 	while (ac && bc) {
 		
@@ -43286,11 +44492,12 @@ si4	STR_compare_m13(const void *a, const void *b)
 }
 
 
-tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
+tern	STR_contains_formatting_m13(const void *string_ptr, void *plain_string_ptr)
 {
 	tern		format_seq;
-	const si1	*c1, *c3;
-	si1		*c2;
+	const si1	*string, *c1, *c3;
+	si1		*plain_string, *c2;
+	pstr		*ops;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -43300,7 +44507,25 @@ tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
 	// if plain_string == string : return T/F on string, do modify string (done in place)
 	// if plain_string != string && plain_string : return T/F on path, return plain_string with formatting removed, leave string intact
 	// assumes plain_string has adequate space for deformatted string if passed (length plain_string will always be <= length of string)
-		
+	// args are standard strings or pstrs (disambiguated by tag); a pstr plain_string must have adequate msize (deformatted length <= string length)
+
+	string = (PSTR_m13(string_ptr) == TRUE_m13) ? ((const pstr *) string_ptr)->str : (const si1 *) string_ptr;
+	ops = NULL;
+	plain_string = (si1 *) plain_string_ptr;
+	if (PSTR_m13(plain_string_ptr) == TRUE_m13) {
+		ops = (pstr *) plain_string_ptr;
+		if (ops->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(UNKNOWN_m13);
+		}
+		plain_string = ops->str;
+		if ((si8) ops->msize <= (si8) strlen_m13(string_ptr)) {
+			plain_string = PSTR_ensure_m13(ops, (si8) strlen_m13(string_ptr) + 1);
+			if (plain_string == NULL)
+				return_m13(UNKNOWN_m13);
+		}
+	}
+
 	c1 = string;
 	format_seq = FALSE_m13;
 	while (*c1) {
@@ -43324,7 +44549,7 @@ tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
 	
 	if (plain_string == NULL)
 		return_m13(format_seq);
-	
+
 	if (format_seq == TRUE_m13) {
 		if (plain_string != string) {
 			c2 = plain_string;
@@ -43335,8 +44560,11 @@ tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
 			c2 = (si1 *) c1;  // same string - no copying needed
 		}
 	} else {
-		if (plain_string != string)
+		if (plain_string != string) {
 			strcpy(plain_string, string);
+			if (ops != NULL)
+				PSTR_set_counts_m13(ops);
+		}
 		return_m13(FALSE_m13);
 	}
 	
@@ -43366,7 +44594,10 @@ tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
 		*c2++ = *c1++;
 	}
 	*c2 = 0;
-	
+
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
 	return_m13(TRUE_m13);
 }
 
@@ -43374,19 +44605,24 @@ tern	STR_contains_formatting_m13(const si1 *string, si1 *plain_string)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	STR_contains_regex_m13(const si1 *string)
+tern	STR_contains_regex_m13(const void *string_ptr)
 {
-	si1	c;
-	
+	si1		c;
+	const si1	*string;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// NOT an exhaustive list of potential regex characters, just enough to know if regex is present
-	
+	// "string_ptr" is a standard string or pstr (disambiguated by tag)
+
+	if (string_ptr == NULL)
+		return_m13(FALSE_m13);
+	string = (PSTR_m13(string_ptr) == TRUE_m13) ? ((const pstr *) string_ptr)->str : (const si1 *) string_ptr;
 	if (string == NULL)
 		return_m13(FALSE_m13);
-	
+
 	while ((c = *string++)) {
 		switch (c) {
 			case '*':
@@ -43404,23 +44640,36 @@ tern	STR_contains_regex_m13(const si1 *string)
 }
 
 
-si1	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_level)
+void	*STR_duration_m13(void *dur_str_ptr, si8 int_usecs, tern abbreviated, tern two_level)
 {
 	const si1	*full[9] = {"year", "month", "week", "day", "hour", "minute", "second", "millisecond", "microsecond"};
 	const si1	*abbr[9] = {"yr", "mo", "wk", "day", "hr", "min", "sec", "ms", "us"};
-	si1		*offset_dur_str;
+	si1		*dur_str, *offset_dur_str;
 	si4		level_idx, int_level_1, int_level_2;
 	const sf8	divisors[9] = {31556926000000.0, 2629744000000.0, 604800000000.0, 86400000000.0, 3600000000.0, 60000000.0, 1000000.0, 1000.0, 1.0};
 	sf8		usecs, level_1, level_2;
+	pstr		*ops;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
+
 	// Note: if dur_str == NULL, it will be allocated & calling function is responsible for freeing
-	if (dur_str == NULL)
+	// "dur_str_ptr" is a standard string or pstr (disambiguated by tag); pstr output grown as required
+	// returns dur_str_ptr as passed (or allocated standard string if passed NULL)
+
+	ops = NULL;
+	dur_str = (si1 *) dur_str_ptr;
+	if (dur_str == NULL) {
 		dur_str = malloc_m13((size_t) TIME_STRING_BYTES_m13);
-		
+		dur_str_ptr = (void *) dur_str;
+	} else if (PSTR_m13(dur_str_ptr) == TRUE_m13) {
+		ops = (pstr *) dur_str_ptr;
+		dur_str = PSTR_ensure_m13(ops, (si8) TIME_STRING_BYTES_m13);
+		if (dur_str == NULL)
+			return_m13(dur_str_ptr);
+	}
+
 	if (int_usecs <= 0) {
 		if (int_usecs == 0) {
 			if (two_level == TRUE_m13)
@@ -43431,7 +44680,9 @@ si1	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_le
 				strcat(dur_str, "us");
 			else
 				strcat(dur_str, "microseconds");
-			return_m13(dur_str);
+			if (ops != NULL)
+				PSTR_set_counts_m13(ops);
+			return_m13(dur_str_ptr);
 		}
 		if (abbreviated == TRUE_m13) {
 			strcpy(dur_str, "neg ");
@@ -43446,7 +44697,7 @@ si1	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_le
 	}
 
 	level_1 = usecs = (sf8) int_usecs;
-	for (level_idx = 0; usecs >= divisors[level_idx]; ++level_idx);
+	for (level_idx = 0; usecs < divisors[level_idx]; ++level_idx);  // stop at first divisor <= usecs (divisors descending)
 
 	if (level_idx == 8)  // usecs
 		two_level = FALSE_m13;
@@ -43473,36 +44724,60 @@ si1	*STR_duration_m13(si1 *dur_str, si8 int_usecs, tern abbreviated, tern two_le
 			sprintf_m13(offset_dur_str, "%0.2lf %ss", level_1, full[level_idx]);
 	}
 
-	return_m13(dur_str);
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(dur_str_ptr);
 }
 
 
-tern	STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len)
+tern	STR_escape_chars_m13(void *string_ptr, si1 target_char, si8 buffer_len)
 {
-	si1	*c1, *c2, *tmp_str, backslash;
+	si1	*string, *c1, *c2, *tmp_str, backslash;
 	si8	n_target_chars, len;
-	
+	pstr	*ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
+	// "string_ptr" is a standard string or pstr (disambiguated by tag)
+	// pstr: grown as required - buffer_len ignored (msize is authoritative); counts updated in place
+
+	if (string_ptr == NULL)
+		return_m13(FALSE_m13);
+	ops = NULL;
+	string = (si1 *) string_ptr;
+	if (PSTR_m13(string_ptr) == TRUE_m13) {
+		ops = (pstr *) string_ptr;
+		if (ops->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(FALSE_m13);
+		}
+		string = ops->str;
+	}
+
 	backslash = (si1) 0x5c;
-	
+
 	// count
 	for (n_target_chars = 0, c1 = string; *c1++;)
 		if (*c1 == target_char)
 			if (*(c1 - 1) != backslash)
 				++n_target_chars;
 	len = (c1 - string) + n_target_chars;
-	if (buffer_len != 0) {  // if zero, proceed at caller's peril
+	if (ops != NULL) {
+		string = PSTR_ensure_m13(ops, len);
+		if (string == NULL)
+			return_m13(FALSE_m13);
+	} else if (buffer_len != 0) {  // if zero, proceed at caller's peril
 		if (buffer_len < len) {
 			G_set_error_m13(E_GEN_m13, "string buffer too small");
 			return_m13(FALSE_m13);
 		}
 	}
-	
+
 	tmp_str = (si1 *) malloc(len);
-	
+
 	c1 = string;
 	c2 = tmp_str;
 	while (*c1) {
@@ -43514,27 +44789,44 @@ tern	STR_escape_chars_m13(si1 *string, si1 target_char, si8 buffer_len)
 	}
 	*c2 = 0;
 	strcpy(string, tmp_str);
-	
+
 	free(tmp_str);
-	
+
+	if (ops != NULL) {  // escapes are single byte ascii: adjust counts directly
+		ops->bytes += (ui4) n_target_chars;
+		ops->chars += (ui4) n_target_chars;
+	}
+
 	return_m13(TRUE_m13);
 }
 
 
-si1	*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number)
+void	*STR_fixed_width_int_m13(void *string_ptr, si4 string_bytes, si8 number)
 {
 	si4	native_numerical_length, temp;
-	si1	*c;
-	
+	si1	*string, *c;
+	pstr	*ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// string bytes does not include terminal zero
-	
-	if (string == NULL)
+	// "string_ptr" is a standard string or pstr (disambiguated by tag); pstr output grown as required
+	// returns string_ptr as passed (or allocated standard string if passed NULL)
+
+	ops = NULL;
+	string = (si1 *) string_ptr;
+	if (string == NULL) {
 		string = (si1 *) calloc_m13((size_t)(string_bytes + 1), sizeof(si1));
-	
+		string_ptr = (void *) string;
+	} else if (PSTR_m13(string_ptr) == TRUE_m13) {
+		ops = (pstr *) string_ptr;
+		string = PSTR_ensure_m13(ops, (si8) string_bytes + 1);
+		if (string == NULL)
+			return_m13(NULL);
+	}
+
 	native_numerical_length = 0;
 	temp = number;
 	while (temp) {
@@ -43543,7 +44835,7 @@ si1	*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number)
 	}
 	if (number <= 0)
 		++native_numerical_length;
-	
+
 	c = string;
 	temp = string_bytes - native_numerical_length;
 	if (temp < 0) {
@@ -43552,21 +44844,27 @@ si1	*STR_fixed_width_int_m13(si1 *string, si4 string_bytes, si8 number)
 	}
 	while (temp--)
 		*c++ = '0';
-	
+
 	sprintf_m13(c, "%d", number);
-	
-	return_m13(string);
+
+	if (ops != NULL) {  // output is pure ascii digits of known length
+		ops->bytes = ops->chars = (ui4) string_bytes;
+		string[string_bytes] = 0;  // ensure invariant
+	}
+
+	return_m13(string_ptr);
 }
 
 
-si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separator, tern numeric_order)
+void	*STR_hex_m13(void *str_ptr, void *num_ptr, si8 num_bytes, const void *byte_separator, tern numeric_order)
 {
 	tern		caps;
 	ui1		*byte;
 	si4		sep_len, str_len;
-	const si1	*cc;
-	si1		*c;
-	
+	const si1	*sep, *cc;
+	si1		*str, *c;
+	pstr		*ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -43578,14 +44876,19 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separat
 	// pass negative num_bytes for capital letters
 	// if numeric_order is TRUE_m13, bytes will be displayed high->low from left->right
 	// otherwise bytes will be displayed as they appear in memory (from low->high addresses)
+	// "str_ptr" & "byte_separator" are standard strings or pstrs (disambiguated by tag); pstr output grown as required
+	// returns str_ptr as passed (or allocated standard string if passed NULL)
 
-	if (STR_is_empty_m13(byte_separator) == FALSE_m13) {
-		for (cc = byte_separator - 1; *++cc;);
-		sep_len = (cc - byte_separator);
-	} else {
-		sep_len = 0;
+	sep = (const si1 *) byte_separator;
+	sep_len = 0;
+	if (PSTR_m13(byte_separator) == TRUE_m13) {
+		sep = ((const pstr *) byte_separator)->str;
+		sep_len = (si4) ((const pstr *) byte_separator)->bytes;
+	} else if (STR_is_empty_m13(byte_separator) == FALSE_m13) {
+		for (cc = sep - 1; *++cc;);
+		sep_len = (cc - sep);
 	}
-	
+
 	if (num_bytes < 0) {
 		num_bytes = -num_bytes;
 		caps = TRUE_m13;
@@ -43593,13 +44896,22 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separat
 		caps = FALSE_m13;
 	}
 
+	str_len = (num_bytes << 1) + 1;  // 2 bytes per byte + terminal zero
+	if (sep_len)
+		str_len += (num_bytes - 1) * sep_len;
+
+	ops = NULL;
+	str = (si1 *) str_ptr;
 	if (str == NULL) {  // caller takes ownership
-		str_len = (num_bytes << 1) + 1;  // 2 bytes per byte + terminal zero
-		if (sep_len)
-			str_len += (num_bytes - 1) * sep_len;
 		str = malloc_m13((size_t) str_len);
+		str_ptr = (void *) str;
+	} else if (PSTR_m13(str_ptr) == TRUE_m13) {
+		ops = (pstr *) str_ptr;
+		str = PSTR_ensure_m13(ops, (si8) str_len);
+		if (str == NULL)
+			return_m13(str_ptr);
 	}
-	
+
 	c = str;
 	if (numeric_order == TRUE_m13) {
 		byte = ((ui1 *) num_ptr) + (num_bytes - 1);  // little endian - last byte is highest order
@@ -43610,7 +44922,7 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separat
 				sprintf(c, "%02hhx", *byte);
 			c += 2;
 			if (sep_len && num_bytes)
-				for (cc = byte_separator; *cc; *c++ = *cc++);
+				for (cc = sep; *cc; *c++ = *cc++);
 		}
 	} else {
 		byte = (ui1 *) num_ptr;
@@ -43621,46 +44933,70 @@ si1	*STR_hex_m13(si1 *str, void *num_ptr, si8 num_bytes, const si1 *byte_separat
 				sprintf(c, "%02hhx", *byte);
 			c += 2;
 			if (sep_len && num_bytes)
-				for (cc = byte_separator; *cc; *c++ = *cc++);
+				for (cc = sep; *cc; *c++ = *cc++);
 		}
 	}
 	*c = 0;
-	
-	return_m13(str);
+
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(str_ptr);
 }
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	STR_is_empty_m13(const si1 *string)
+tern	STR_is_empty_m13(const void *string)
 {
+	// arg is standard string or pstr (disambiguated by tag)
+
 	if (string == NULL)
 		return(TRUE_m13);
-	
-	if (*string)
+
+	if (PSTR_m13(string) == TRUE_m13) {
+		if (((const pstr *) string)->bytes)
+			return(FALSE_m13);
+		return(TRUE_m13);
+	}
+
+	if (*((const si1 *) string))
 		return(FALSE_m13);
-	
+
 	return(TRUE_m13);
 }
 
 
-si1	*STR_match_end_m13(const si1 *pattern, const si1 *buffer)
+si1	*STR_match_end_m13(const void *pattern_ptr, const void *buffer_ptr)
 {
-	const si1	*pat_p, *buf_p;
-	si4		pat_len, buf_len;
-	
+	const si1	*pattern, *buffer, *pat_p, *buf_p;
+	si8		pat_len, buf_len;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
-	
-	pat_len = strlen(pattern);
-	buf_len = strlen(buffer);
+	// args are standard strings or pstrs (disambiguated by tag); pstr lengths read from structure (no scan)
+
+	if (PSTR_m13(pattern_ptr) == TRUE_m13) {
+		pattern = ((const pstr *) pattern_ptr)->str;
+		pat_len = (si8) ((const pstr *) pattern_ptr)->bytes;
+	} else {
+		pattern = (const si1 *) pattern_ptr;
+		pat_len = (si8) strlen(pattern);
+	}
+	if (PSTR_m13(buffer_ptr) == TRUE_m13) {
+		buffer = ((const pstr *) buffer_ptr)->str;
+		buf_len = (si8) ((const pstr *) buffer_ptr)->bytes;
+	} else {
+		buffer = (const si1 *) buffer_ptr;
+		buf_len = (si8) strlen(buffer);
+	}
 	if (pat_len > buf_len)
 		return_m13(NULL);
-	
+
 	do {
 		pat_p = pattern;
 		buf_p = buffer++;
@@ -43673,20 +45009,27 @@ si1	*STR_match_end_m13(const si1 *pattern, const si1 *buffer)
 }
 
 
-si1	*STR_match_end_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len)
+si1	*STR_match_end_bin_m13(const void *pattern_ptr, const si1 *buffer, si8 buf_len)
 {
-	const si1	*pat_p, *buf_p, *buf_end;
+	const si1	*pattern, *pat_p, *buf_p, *buf_end;
 	si8		pat_len;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to the character after the first match in the buffer, NULL if no match (assumes pattern is zero-terminated)
-	// "bin" version allows for binary data in buffer (zeros in buffer)
+	// "bin" version allows for binary data in buffer (zeros in buffer) - buffer is raw bytes, not a string, so remains si1 *
 	// NOTE: if updating buffer pointer in sequential calls, adjust buf_len accordingly
+	// "pattern_ptr" is a standard string or pstr (disambiguated by tag)
 
-	pat_len = (si8) strlen(pattern);
+	if (PSTR_m13(pattern_ptr) == TRUE_m13) {
+		pattern = ((const pstr *) pattern_ptr)->str;
+		pat_len = (si8) ((const pstr *) pattern_ptr)->bytes;
+	} else {
+		pattern = (const si1 *) pattern_ptr;
+		pat_len = (si8) strlen(pattern);
+	}
 	if (pat_len >= buf_len)
 		return_m13(NULL);
 	
@@ -43708,16 +45051,17 @@ si1	*STR_match_end_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len)
 }
 
 
-si1	*STR_match_line_end_m13(const si1 *pattern, const si1 *buffer)
+si1	*STR_match_line_end_m13(const void *pattern, const void *buffer)
 {
 	si1	*buf_p;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to beginning of the line following the line with first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
-	
+	// args are standard strings or pstrs (disambiguated by tag, in STR_match_end_m13())
+
 	buf_p = STR_match_end_m13(pattern, buffer);
 	if (buf_p == NULL)
 		return_m13(NULL);
@@ -43737,46 +45081,63 @@ si1	*STR_match_line_end_m13(const si1 *pattern, const si1 *buffer)
 }
 
 
-si1	*STR_match_line_start_m13(const si1 *pattern, const si1 *buffer)
+si1	*STR_match_line_start_m13(const void *pattern, const void *buffer_ptr)
 {
-	si1	*buf_p;
-	
+	const si1	*buffer;
+	si1		*buf_p;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to beginning of the line containing the first match, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	// args are standard strings or pstrs (disambiguated by tag)
 
-	buf_p = STR_match_start_m13(pattern, buffer);
+	buf_p = STR_match_start_m13(pattern, buffer_ptr);
 	if (buf_p == NULL)
 		return_m13(NULL);
-	
+
+	buffer = (PSTR_m13(buffer_ptr) == TRUE_m13) ? ((const pstr *) buffer_ptr)->str : (const si1 *) buffer_ptr;
+
 	while (*buf_p != '\n' && buf_p != buffer)
 		--buf_p;
-	
+
 	if (buf_p == buffer)
 		return_m13(buf_p);
-	
+
 	return_m13(++buf_p);
 }
 
 
-si1	*STR_match_start_m13(const si1 *pattern, const si1 *buffer)
+si1	*STR_match_start_m13(const void *pattern_ptr, const void *buffer_ptr)
 {
-	const si1	*pat_p, *buf_p;
-	si4		pat_len, buf_len;
+	const si1	*pattern, *buffer, *pat_p, *buf_p;
+	si8		pat_len, buf_len;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to beginning of the first match in the buffer, NULL if no match (assumes both pattern & buffer are zero-terminated)
+	// args are standard strings or pstrs (disambiguated by tag); pstr lengths read from structure (no scan)
 
-	pat_len = strlen(pattern);
-	buf_len = strlen(buffer);
+	if (PSTR_m13(pattern_ptr) == TRUE_m13) {
+		pattern = ((const pstr *) pattern_ptr)->str;
+		pat_len = (si8) ((const pstr *) pattern_ptr)->bytes;
+	} else {
+		pattern = (const si1 *) pattern_ptr;
+		pat_len = (si8) strlen(pattern);
+	}
+	if (PSTR_m13(buffer_ptr) == TRUE_m13) {
+		buffer = ((const pstr *) buffer_ptr)->str;
+		buf_len = (si8) ((const pstr *) buffer_ptr)->bytes;
+	} else {
+		buffer = (const si1 *) buffer_ptr;
+		buf_len = (si8) strlen(buffer);
+	}
 	if (pat_len > buf_len)
 		return_m13(NULL);
-	
+
 	do {
 		pat_p = pattern;
 		buf_p = buffer++;
@@ -43789,20 +45150,27 @@ si1	*STR_match_start_m13(const si1 *pattern, const si1 *buffer)
 }
 
 
-si1	*STR_match_start_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len)
+si1	*STR_match_start_bin_m13(const void *pattern_ptr, const si1 *buffer, si8 buf_len)
 {
-	const si1	*pat_p, *buf_p, *buf_end;
+	const si1	*pattern, *pat_p, *buf_p, *buf_end;
 	si8		pat_len;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// returns pointer to beginning of the first match in the buffer, NULL if no match (assumes pattern is zero-terminated)
-	// "bin" version allows for binary data in buffer (zeros in buffer)
+	// "bin" version allows for binary data in buffer (zeros in buffer) - buffer is raw bytes, not a string, so remains si1 *
 	// NOTE: if updating buffer pointer in sequential calls, adjust buf_len accordingly
+	// "pattern_ptr" is a standard string or pstr (disambiguated by tag)
 
-	pat_len = (si8) strlen(pattern);
+	if (PSTR_m13(pattern_ptr) == TRUE_m13) {
+		pattern = ((const pstr *) pattern_ptr)->str;
+		pat_len = (si8) ((const pstr *) pattern_ptr)->bytes;
+	} else {
+		pattern = (const si1 *) pattern_ptr;
+		pat_len = (si8) strlen(pattern);
+	}
 	if (pat_len >= buf_len)
 		return_m13(NULL);
 	
@@ -43827,22 +45195,40 @@ si1	*STR_match_start_bin_m13(const si1 *pattern, const si1 *buffer, si8 buf_len)
 }
 
 
-si1	*STR_re_escape_m13(const si1 *str, si1 *esc_str)
+void	*STR_re_escape_m13(const void *str_ptr, void *esc_str_ptr)
 {
-	const si1	*cc;
-	si1		*c;
+	const si1	*str, *cc;
+	si1		*esc_str, *c;
 	si8		len;
-	
+	pstr		*ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	cc = str;
-	while (*cc++);
-	len = cc - str;
-	if (esc_str == NULL)  // up to caller to free
+	// "str_ptr" & "esc_str_ptr" are standard strings or pstrs (disambiguated by tag); pstr output grown as required
+	// returns esc_str_ptr as passed (or allocated standard string if passed NULL)
+
+	if (PSTR_m13(str_ptr) == TRUE_m13) {
+		str = ((const pstr *) str_ptr)->str;
+		len = (si8) ((const pstr *) str_ptr)->bytes + 1;
+	} else {
+		str = (const si1 *) str_ptr;
+		cc = str;
+		while (*cc++);
+		len = cc - str;
+	}
+	ops = NULL;
+	esc_str = (si1 *) esc_str_ptr;
+	if (esc_str == NULL) {  // up to caller to free
 		esc_str = (si1 *) calloc((size_t) (len * 2), sizeof(si1));
-	strcpy(esc_str, str);
+		esc_str_ptr = (void *) esc_str;
+	} else if (PSTR_m13(esc_str_ptr) == TRUE_m13) {
+		ops = (pstr *) esc_str_ptr;
+		esc_str = PSTR_ensure_m13(ops, len * 2);  // worst case: every character escaped
+		if (esc_str == NULL)
+			return_m13(esc_str_ptr);
+	}
 	c = esc_str;
 	cc = str - 1;
 	while (*++cc) {
@@ -43868,61 +45254,111 @@ si1	*STR_re_escape_m13(const si1 *str, si1 *esc_str)
 		}
 	}
 	*c = 0;
-	
-	return_m13(esc_str);
+
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(esc_str_ptr);
 }
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	STR_replace_char_m13(si1 c, si1 new_c, si1 *buffer)
+tern	STR_replace_char_m13(si1 c, si1 new_c, void *buffer)
 {
+	si1	*buf;
+	pstr	*bps;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// Note: does not handle UTF8 chars
 	// Done in place
-	
+	// "buffer" is a standard string or pstr (disambiguated by tag)
+	// replacing with zero truncates: pstr counts updated accordingly
+
 	if (buffer == NULL || c == 0)
 		return_m13(TRUE_m13);
-	
+
+	bps = NULL;
+	buf = (si1 *) buffer;
+	if (PSTR_m13(buffer) == TRUE_m13) {
+		bps = (pstr *) buffer;
+		if (bps->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(FALSE_m13);
+		}
+		buf = bps->str;
+	}
+
 	do {
-		if (*buffer == c)
-			*buffer = new_c;
-	} while (*buffer++);
-	
+		if (*buf == c)
+			*buf = new_c;
+	} while (*buf++);
+
+	if (bps != NULL && new_c == 0) {  // truncated at first replacement: recount
+		buf = bps->str - 1;
+		while (*++buf);
+		bps->bytes = (ui4) (buf - bps->str);
+		bps->chars = (ui4) PSTR_char_count_m13(bps->str, (si8) bps->bytes);
+	}
+
 	return_m13(TRUE_m13);
 }
 
 
-si1	*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *buffer, si1 *new_buffer)
+void	*STR_replace_pattern_m13(const void *pattern_ptr, const void *new_pattern_ptr, void *buffer_ptr, void *new_buffer_ptr)
 {
 	tern		in_place = FALSE_m13;
-	const si1	*cc, *cc2, *last_c;
-	si1		*new_c;
+	const si1	*pattern, *new_pattern, *cc, *cc2, *last_c;
+	si1		*buffer, *new_buffer, *new_c;
 	si4		char_diff, extra_chars, matches;
-	si8		len, pat_len, new_pat_len;
-	
+	si8		len, pat_len, new_pat_len, buf_len;
+	pstr		*bps, *ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// if buffer buffer == new_buffer, done in place (adequate space assumed)
-	// if buffer new_buffer == NULL, it is allocated
+	// if buffer == new_buffer, done in place (adequate space assumed for standard strings; pstrs grown as required)
+	// if new_buffer == NULL, it is allocated
+	// all four args are standard strings or pstrs (disambiguated by tag); pstr pattern/buffer lengths read from structure (no scan)
+	// returns new_buffer as passed (buffer if in place, allocated standard string if passed NULL)
 
-	if (pattern == NULL || new_pattern == NULL || buffer == NULL)
+	if (pattern_ptr == NULL || new_pattern_ptr == NULL || buffer_ptr == NULL)
 		return_m13(NULL);
+
+	bps = NULL;
+	ops = NULL;
+	buffer = (si1 *) buffer_ptr;
+	if (PSTR_m13(buffer_ptr) == TRUE_m13)
+		buffer = (bps = (pstr *) buffer_ptr)->str;
+	new_buffer = (si1 *) new_buffer_ptr;
+	if (PSTR_m13(new_buffer_ptr) == TRUE_m13)
+		new_buffer = (ops = (pstr *) new_buffer_ptr)->str;
+	if (PSTR_m13(pattern_ptr) == TRUE_m13) {
+		pattern = ((const pstr *) pattern_ptr)->str;
+		pat_len = (si8) ((const pstr *) pattern_ptr)->bytes;
+	} else {
+		pattern = (const si1 *) pattern_ptr;
+		pat_len = (si8) strlen(pattern);
+	}
+	if (PSTR_m13(new_pattern_ptr) == TRUE_m13) {
+		new_pattern = ((const pstr *) new_pattern_ptr)->str;
+		new_pat_len = (si8) ((const pstr *) new_pattern_ptr)->bytes;
+	} else {
+		new_pattern = (const si1 *) new_pattern_ptr;
+		new_pat_len = (si8) strlen(new_pattern);
+	}
 	if (*pattern == 0 || *buffer == 0)
 		return_m13(NULL);
-	
-	pat_len = strlen(pattern);
-	new_pat_len = strlen(new_pattern);
+
 	char_diff = new_pat_len - pat_len;
 	if (char_diff < 0)
 		char_diff = 0;  // new_buffer must be at least as big as input buffer
-	
+
 	matches = 0;
 	cc = buffer;
 	while (1) {
@@ -43932,24 +45368,31 @@ si1	*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *bu
 		++matches;
 	}
 	if (!matches)
-		return_m13((si1 *) buffer);
-	
+		return_m13(buffer_ptr);
+
 	extra_chars = matches * char_diff;
-	len = strlen(buffer) + extra_chars + 1;  // extra byte for terminal zero
-	if (new_buffer == buffer) {
+	buf_len = (bps != NULL) ? (si8) bps->bytes : (si8) strlen(buffer);
+	len = buf_len + extra_chars + 1;  // extra byte for terminal zero
+	if (new_buffer == buffer) {  // (demoted comparison: also catches same pstr passed twice)
 		in_place = TRUE_m13;
 		new_buffer = NULL;
+		ops = NULL;
 	}
-	if (new_buffer == NULL) {
+	if (ops != NULL) {
+		new_buffer = PSTR_ensure_m13(ops, len);
+		if (new_buffer == NULL)
+			return_m13(NULL);
+	} else if (new_buffer == NULL) {
 		new_buffer = (si1 *) calloc_m13((size_t) len, sizeof(ui1));
 		if (new_buffer == NULL)
 			return_m13(NULL);
+		if (in_place == FALSE_m13)
+			new_buffer_ptr = (void *) new_buffer;
 	}
-	memcpy(new_buffer, buffer, (size_t) len);
-	
+	// (no pre-copy of buffer into new_buffer needed - rewrite loop below writes all bytes including terminal zero)
+
 	last_c = cc = buffer;
 	new_c = new_buffer;
-	extra_chars = 0;
 	while (1) {
 		cc = (const si1 *) STR_match_start_m13(pattern, cc);
 		if (cc == NULL)
@@ -43964,32 +45407,58 @@ si1	*STR_replace_pattern_m13(const si1 *pattern, const si1 *new_pattern, si1 *bu
 	while (*last_c)
 		*new_c++ = *last_c++;
 	*new_c = 0;
-	
+
 	if (in_place == TRUE_m13) {
+		if (bps != NULL) {  // grow in-place pstr to hold result
+			buffer = PSTR_ensure_m13(bps, len);
+			if (buffer == NULL) {
+				free_m13(new_buffer);
+				return_m13(NULL);
+			}
+		}
 		memcpy(buffer, new_buffer, (size_t) len);
 		free_m13(new_buffer);
-		new_buffer = (si1 *) buffer;
+		if (bps != NULL)
+			PSTR_set_counts_m13(bps);
+		return_m13(buffer_ptr);
 	}
 
-	return_m13(new_buffer);
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(new_buffer_ptr);
 }
 
 
-si1	*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two)
+void	*STR_size_m13(void *size_str_ptr, si8 n_bytes, tern base_two)
 {
 	static const si1  units[6][8] = {"Bytes", "KB", "MB", "GB", "TB", "PB"};
 	static const si1  i_units[6][8] = {"Bytes", "KiB", "MiB", "GiB", "TiB", "PiB"};
+	si1 *size_str;
 	ui8 i, j, t;
 	sf8 size;
-	
+	pstr *ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// Note: if size_str == NULL, it will be allocated & calling function is responsible for freeing
-	if (size_str == NULL)
+	// "size_str_ptr" is a standard string or pstr (disambiguated by tag); pstr output grown as required
+	// returns size_str_ptr as passed (or allocated standard string if passed NULL)
+
+	ops = NULL;
+	size_str = (si1 *) size_str_ptr;
+	if (size_str == NULL) {
 		size_str = (si1 *) malloc_m13((size_t) SIZE_STRING_BYTES_m13);
-	
+		size_str_ptr = (void *) size_str;
+	} else if (PSTR_m13(size_str_ptr) == TRUE_m13) {
+		ops = (pstr *) size_str_ptr;
+		size_str = PSTR_ensure_m13(ops, (si8) SIZE_STRING_BYTES_m13);
+		if (size_str == NULL)
+			return_m13(size_str_ptr);
+	}
+
 	if (base_two == TRUE_m13) {
 		for (i = 0, j = 1, t = n_bytes; t >>= 10; ++i, j <<= 10);
 		size = (sf8) n_bytes / (sf8) j;
@@ -44000,14 +45469,17 @@ si1	*STR_size_m13(si1 *size_str, si8 n_bytes, tern base_two)
 		sprintf_m13(size_str, "%0.2lf %s", size, units[i]);
 	}
 
-	return_m13(size_str);
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(size_str_ptr);
 }
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-tern	STR_sort_m13(si1 **string_array, si8 n_strings)
+tern	STR_sort_m13(void *string_array, si8 n_strings)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -44015,20 +45487,38 @@ tern	STR_sort_m13(si1 **string_array, si8 n_strings)
 
 	// input must be 2D string array, such as allocated by calloc_2D_m13()
 	// sorts the pointers, does not move the strings
-	
-	qsort(string_array, (size_t) n_strings, sizeof(si1 *), STR_compare_m13);
-	
+	// elements may be standard strings or pstrs, mixed freely
+
+	qsort(string_array, (size_t) n_strings, sizeof(void *), STR_compare_m13);
+
 	return_m13(TRUE_m13);
 }
 
 
-tern	STR_strip_character_m13(si1 *s, si1 character)
+tern	STR_strip_character_m13(void *string, si1 character)
 {
-	si1	*c1, *c2;
-	
+	si1	*s, *c1, *c2;
+	si8	removed;
+	pstr	*sps;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// "string" is a standard string or pstr; pstr counts updated in place (no recount)
+
+	if (string == NULL)
+		return_m13(FALSE_m13);
+	sps = NULL;
+	s = (si1 *) string;
+	if (PSTR_m13(string) == TRUE_m13) {
+		sps = (pstr *) string;
+		if (sps->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(FALSE_m13);
+		}
+		s = sps->str;
+	}
 
 	c1 = c2 = s;
 	while (*c2) {
@@ -44039,7 +45529,13 @@ tern	STR_strip_character_m13(si1 *s, si1 character)
 		*c1++ = *c2++;
 	}
 	*c1 = 0;
-	
+
+	if (sps != NULL) {  // stripped chars are single byte, non-continuation: adjust counts directly
+		removed = (si8) (c2 - c1);
+		sps->bytes -= (ui4) removed;
+		sps->chars -= (ui4) removed;
+	}
+
 	return_m13(TRUE_m13);
 }
 
@@ -44081,8 +45577,10 @@ const si1	*STR_tern_m13(tern val, tern colored)
 }
 
 
-si1	*STR_time_m13(void *level_header, si8 uutc, si1 *time_str, tern fixed_width, tern relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m13
+void	*STR_time_m13(void *level_header, si8 uutc, void *time_str_ptr, tern fixed_width, tern relative_days, si4 colored_text, ...)  // time_str buffer sould be of length TIME_STRING_BYTES_m13
 {
+	si1			*time_str;
+	pstr			*ops;
 	si1			*standard_timezone_acronym, *standard_timezone_string, *date_color, *time_color, *color_reset, *meridian;
 	const si1  		*mos[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 	const si1		*months[12] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
@@ -44104,25 +45602,41 @@ si1	*STR_time_m13(void *level_header, si8 uutc, si1 *time_str, tern fixed_width,
 #endif
 	
 	// PASS NULL for level header to use thread-local globals
-	
+	// "time_str_ptr" is a standard string or pstr (disambiguated by tag); pstr output grown as required
+	// returns time_str_ptr as passed (or allocated standard string if passed NULL)
+
 	// if time_str is null, caller is responsible for freeing
+	ops = NULL;
+	time_str = (si1 *) time_str_ptr;
 	if (time_str == NULL) {
 		time_str = (si1 *) malloc_m13((size_t) TIME_STRING_BYTES_m13);
 		if (time_str == NULL)
 			return_m13(NULL);
+		time_str_ptr = (void *) time_str;
+	} else if (PSTR_m13(time_str_ptr) == TRUE_m13) {
+		ops = (pstr *) time_str_ptr;
+		time_str = PSTR_ensure_m13(ops, (si8) TIME_STRING_BYTES_m13);
+		if (time_str == NULL)
+			return_m13(time_str_ptr);
 	}
-	
+
 	pg = G_proc_globs_m13(level_header);
 	switch (uutc) {
 		case TIME_NO_ENTRY_m13:
 			strcpy(time_str, "no entry");
-			return_m13(time_str);
+			if (ops != NULL)
+				PSTR_set_counts_m13(ops);
+			return_m13(time_str_ptr);
 		case BEGINNING_OF_TIME_m13:
 			strcpy(time_str, "beginning of time");
-			return_m13(time_str);
+			if (ops != NULL)
+				PSTR_set_counts_m13(ops);
+			return_m13(time_str_ptr);
 		case END_OF_TIME_m13:
 			strcpy(time_str, "end of time");
-			return_m13(time_str);
+			if (ops != NULL)
+				PSTR_set_counts_m13(ops);
+			return_m13(time_str_ptr);
 		case CURRENT_TIME_m13:
 			uutc = G_current_uutc_m13();
 			if (pg->time_constants.set == FALSE_m13)  // set global time constants to location of machine
@@ -44213,38 +45727,62 @@ si1	*STR_time_m13(void *level_header, si8 uutc, si1 *time_str, tern fixed_width,
 		else
 				sprintf_m13(time_str, "%s %s%s", time_str, standard_timezone_string, color_reset);
 	}
-	
-	return_m13(time_str);
+
+	if (ops != NULL)
+		PSTR_set_counts_m13(ops);
+
+	return_m13(time_str_ptr);
 }
 
 
-tern	STR_to_lower_m13(si1 *s)
+tern	STR_to_lower_m13(void *string)
 {
+	si1	*s;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// arg is standard string or pstr (disambiguated by tag); byte & character counts unchanged by transform
+
+	if (string == NULL)
+		return_m13(FALSE_m13);
+	s = (si1 *) string;
+	if (PSTR_m13(string) == TRUE_m13) {
+		if (((pstr *) string)->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(FALSE_m13);
+		}
+		s = ((pstr *) string)->str;
+	}
 
 	--s;
 	while (*++s) {
 		if (*s > 64 && *s < 91)
 			*s += 32;
 	}
-	
+
 	return_m13(TRUE_m13);
 }
 
 
-tern	STR_to_title_m13(si1 *s)
+tern	STR_to_title_m13(void *string)
 {
 	tern	cap_mode;
-	
+	si1	*s;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// make all lower case
-	STR_to_lower_m13(s);
-	
+	// arg is standard string or pstr (disambiguated by tag); byte & character counts unchanged by transform
+
+	// make all lower case (also checks NULL & const pstr)
+	if (STR_to_lower_m13(string) == FALSE_m13)
+		return_m13(FALSE_m13);
+
+	s = (PSTR_m13(string) == TRUE_m13) ? ((pstr *) string)->str : (si1 *) string;
+
 	// capitalize first letter regardless of word
 	if (*s > 96 && *s < 123)
 		*s -= 32;
@@ -44344,29 +45882,60 @@ tern	STR_to_title_m13(si1 *s)
 }
 
 
-tern	STR_to_upper_m13(si1 *s)
+tern	STR_to_upper_m13(void *string)
 {
+	si1	*s;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// arg is standard string or pstr (disambiguated by tag); byte & character counts unchanged by transform
+
+	if (string == NULL)
+		return_m13(FALSE_m13);
+	s = (si1 *) string;
+	if (PSTR_m13(string) == TRUE_m13) {
+		if (((pstr *) string)->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(FALSE_m13);
+		}
+		s = ((pstr *) string)->str;
+	}
 
 	--s;
 	while (*++s) {
 		if (*s > 96 && *s < 123)
 			*s -= 32;
 	}
-	
+
 	return_m13(TRUE_m13);
 }
 
 
-tern	STR_unescape_chars_m13(si1 *string, si1 target_char)
+tern	STR_unescape_chars_m13(void *string_ptr, si1 target_char)
 {
-	si1	*c1, *c2, backslash;
-	
+	si1	*string, *c1, *c2, backslash;
+	pstr	*ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// "string_ptr" is a standard string or pstr (disambiguated by tag); pstr counts updated in place (no recount)
+
+	if (string_ptr == NULL)
+		return_m13(FALSE_m13);
+	ops = NULL;
+	string = (si1 *) string_ptr;
+	if (PSTR_m13(string_ptr) == TRUE_m13) {
+		ops = (pstr *) string_ptr;
+		if (ops->flags & PSTR_FLAG_CONST_m13) {
+			G_set_error_m13(E_GEN_m13, "cannot modify const pstr");
+			return_m13(FALSE_m13);
+		}
+		string = ops->str;
+	}
 
 	backslash = (si1) 0x5c;
 	c1 = c2 = string;
@@ -44380,7 +45949,12 @@ tern	STR_unescape_chars_m13(si1 *string, si1 target_char)
 		*c2++ = *c1++;
 	}
 	*c2 = 0;
-	
+
+	if (ops != NULL) {  // removed backslashes are single byte ascii: adjust counts directly
+		ops->bytes -= (ui4) (c1 - c2);
+		ops->chars -= (ui4) (c1 - c2);
+	}
+
 	return_m13(TRUE_m13);
 }
 
@@ -44388,28 +45962,42 @@ tern	STR_unescape_chars_m13(si1 *string, si1 target_char)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si1	*STR_wchar2char_m13(si1 *target, const wchar_t *source)
+void	*STR_wchar2char_m13(void *target_ptr, const wchar_t *source)
 {
-	si1	*c, *c2;
+	si1	*target, *c, *c2;
 	si8	len, wsz;
-	
+	pstr	*ops;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// if source == target, done in place
 	// if not actually ascii, results may be weird
-	
+	// "target_ptr" is a standard string or pstr (disambiguated by tag); pstr output grown as required
+	// returns target_ptr as passed
+
 	wsz = sizeof(wchar_t);  // 2 or 4 => varies by OS & compiler
+	len = wcslen(source);
+	ops = NULL;
+	target = (si1 *) target_ptr;
+	if (PSTR_m13(target_ptr) == TRUE_m13) {
+		ops = (pstr *) target_ptr;
+		target = PSTR_ensure_m13(ops, len + 1);
+		if (target == NULL)
+			return_m13(target_ptr);
+	}
 	c = target;
 	c2 = (si1 *) source - wsz;
-	len = wcslen(source);
-	
+
 	while (len--)
 		*c++ = *(c2 += wsz);  // little endian version
 	*c = 0;
-	
-	return_m13(target);
+
+	if (ops != NULL)  // output is single byte characters of known length
+		ops->bytes = ops->chars = (ui4) (c - target);
+
+	return_m13(target_ptr);
 }
 
 
@@ -44446,12 +46034,10 @@ TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	
 	// password / expanded key only required for encrypted transissions
 	trans_info->expanded_key_allocated = FALSE_m13;
-	if (password) {
-		if (*password) {
-			trans_info->expanded_key = (ui1 *) malloc_m13((size_t) AES_EXPANDED_KEY_BYTES_m13);
-			AES_key_expansion_m13(trans_info->expanded_key, password);
-			trans_info->expanded_key_allocated = TRUE_m13;
-		}
+	if (STR_is_empty_m13(password) == FALSE_m13) {
+		trans_info->expanded_key = (ui1 *) malloc_m13((size_t) AES_EXPANDED_KEY_BYTES_m13);
+		AES_key_expansion_m13(trans_info->expanded_key, password);
+		trans_info->expanded_key_allocated = TRUE_m13;
 	}
 	
 	// create socket (this function also sets timeout)
@@ -44463,11 +46049,12 @@ TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 
 tern	TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port)
 {
-	tern		sys_asgn_iface_addr, sys_asgn_iface_port;
-	si4			sock_fd;
-	si2			sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
+	tern			sys_asgn_iface_addr, sys_asgn_iface_port;
+	si4			sock_fd, af;
+	ui4			sa_len_u;
 	NET_PARAMS_m13		np;
-	struct sockaddr_in	sock_addr = { 0 };
+	NET_ADDR_m13		probe;
+	struct sockaddr_storage	sock_addr;
 	socklen_t		si_len;
 
 #ifdef FT_DEBUG_m13
@@ -44475,53 +46062,61 @@ tern	TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port)
 #endif
 
 	sys_asgn_iface_addr = sys_asgn_iface_port = FALSE_m13;
-	
+	af = trans_info->sock_family;  // may already be set (e.g. by TR_connect_to_server_m13); 0 (AF_UNSPEC) if unknown
+
 	if (iface_addr == TR_IFACE_ANY_m13) {
 		*trans_info->iface_addr = 0;
 		sys_asgn_iface_addr = TRUE_m13;
 	} else if (*iface_addr == 0) {  // TR_IFACE_DFLT_m13
-		if (*globals_m13->tables->NET_params.LAN_IPv4_address_string == 0)
+		if (*globals_m13->tables->NET_params.LAN_address.string == 0)
 			NET_get_lan_ipv4_address_m13(NULL, &globals_m13->tables->NET_params);
-		strcpy(trans_info->iface_addr, globals_m13->tables->NET_params.LAN_IPv4_address_string);
-	} else if (*iface_addr >= 'A' && *iface_addr <= 'z') {  // user passed interface name, get ip
+		strcpy(trans_info->iface_addr, globals_m13->tables->NET_params.LAN_address.string);
+	} else if (NET_addr_set_m13(&probe, iface_addr) == TRUE_m13) {  // user passed an IP literal (v4 or v6)
+		strcpy(trans_info->iface_addr, probe.string);  // canonical form
+	} else {  // not a literal => treat as an interface name & look up its address
 		NET_get_lan_ipv4_address_m13(NULL, &globals_m13->tables->NET_params);
 		if (NET_get_parameters_m13(iface_addr, &np) == NULL) {
 			G_warning_message_m13("%s(): cannot get IP address for interface name \"%s\"\n", __FUNCTION__, iface_addr);
 			return_m13(FALSE_m13);
 		} else {
-			strcpy(trans_info->iface_addr, np.LAN_IPv4_address_string);
+			strcpy(trans_info->iface_addr, np.LAN_address.string);
 		}
-	} else if (*iface_addr >= '0' && *iface_addr <= '9') {  // user passed ip
-		if (trans_info->iface_addr != iface_addr)
-			strcpy(trans_info->iface_addr, iface_addr);
-	} else {
-		G_warning_message_m13("%s(): improper IP address or interface name: \"%s\"\n", __FUNCTION__, iface_addr);
-		return_m13(FALSE_m13);
 	}
-	
+
+	// determine the address family to bind
+	if (sys_asgn_iface_addr == TRUE_m13) {
+		// wildcard bind: use the family already chosen for this transmission, else default to IPv4
+		if (af != AF_INET && af != AF_INET6)
+			af = AF_INET;
+	} else {
+		if (NET_addr_set_m13(&probe, trans_info->iface_addr) == FALSE_m13) {
+			G_warning_message_m13("%s(): improper interface address: \"%s\"\n", __FUNCTION__, trans_info->iface_addr);
+			return_m13(FALSE_m13);
+		}
+		af = NET_af_from_family_m13(probe.family);
+	}
+
 	if (iface_port == TR_PORT_ANY_m13)
 		sys_asgn_iface_port = TRUE_m13;
 	trans_info->iface_port = iface_port;
 
-	if (trans_info->sock_fd <= 0)
-		TR_create_socket_m13(trans_info);
+	// make sure the socket exists & is the right family
+	if (TR_ensure_socket_family_m13(trans_info, af) == FALSE_m13)
+		return_m13(FALSE_m13);
 	sock_fd = trans_info->sock_fd;
 
 	// set socket to reuse address
 	if (TR_set_socket_reuse_address_m13(trans_info, TRUE_m13) == FALSE_m13)
 		return_m13(FALSE_m13);
 
-	// set socket info
-	si_len = sizeof(struct sockaddr_in);
-	sock_addr.sin_family = sock_fam;
-	sock_addr.sin_port = htons(trans_info->iface_port);  // set local port (in internet byte order)
-	if (sys_asgn_iface_addr == TRUE_m13)
-		sock_addr.sin_addr.s_addr = 0;  // htonl(INADDR_ANY)
-	else
-		inet_pton(sock_fam, trans_info->iface_addr, &sock_addr.sin_addr);  // set local address for bind()
+	// build local sockaddr (wildcard address if system-assigned)
+	if (TR_make_sockaddr_m13((void *) &sock_addr, &sa_len_u, af, (sys_asgn_iface_addr == TRUE_m13) ? NULL : trans_info->iface_addr, trans_info->iface_port) == FALSE_m13) {
+		G_warning_message_m13("%s(): could not build local address\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
 
 	// bind socket to local interface
-	if (bind(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in))) {
+	if (bind(sock_fd, (struct sockaddr *) &sock_addr, (socklen_t) sa_len_u)) {
 		G_warning_message_m13("%s(): socket binding error\n", __FUNCTION__);
 		#if defined MACOS_m13 || defined LINUX_m13
 		close(sock_fd);
@@ -44534,11 +46129,16 @@ tern	TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port)
 
 	// get system assigned interface values
 	if (sys_asgn_iface_addr == TRUE_m13 || sys_asgn_iface_port == TRUE_m13) {
+		si_len = (socklen_t) sizeof(struct sockaddr_storage);
 		getsockname(sock_fd, (struct sockaddr *) &sock_addr, &si_len);
 		if (sys_asgn_iface_addr == TRUE_m13)
-			inet_ntop(sock_fam, &sock_addr.sin_addr, trans_info->iface_addr, si_len);  // usually 0.0.0.0
-		if (sys_asgn_iface_port == TRUE_m13)
-			trans_info->iface_port = ntohs(sock_addr.sin_port);
+			inet_ntop(af, NET_get_in_addr_m13((struct sockaddr *) &sock_addr), trans_info->iface_addr, (socklen_t) INET6_ADDRSTRLEN);  // usually the wildcard (0.0.0.0 or ::)
+		if (sys_asgn_iface_port == TRUE_m13) {
+			if (af == AF_INET6)
+				trans_info->iface_port = ntohs(((struct sockaddr_in6 *) &sock_addr)->sin6_port);
+			else
+				trans_info->iface_port = ntohs(((struct sockaddr_in *) &sock_addr)->sin_port);
+		}
 	}
 
 	return_m13(TRUE_m13);
@@ -44648,10 +46248,11 @@ tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)
 
 tern	TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port)
 {
-	tern		blocking, connected;
-	si2			sock_fam = AF_INET;  // change to AF_UNSPEC to support IPv4 or IPv6
-	si4			sock_fd, err, r_val, timeout_ms;
-	struct sockaddr_in	sock_addr = { 0 };
+	tern			blocking, connected;
+	si4			sock_fd, err, r_val, timeout_ms, af;
+	ui4			sa_len_u;
+	NET_ADDR_m13		probe;
+	struct sockaddr_storage	sock_addr;
 #if defined MACOS_m13 || defined LINUX_m13
 	struct pollfd		fds;
 #endif
@@ -44666,33 +46267,38 @@ tern	TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port
 	// connect() does not use the socket timeout value
 	// this function uses poll() to accomplish that
 	// the timeout value is read from the TR_INFO_m13 structure
-	
-	if (trans_info->sock_fd <= 0)
-		TR_create_socket_m13(trans_info);
-	sock_fd = trans_info->sock_fd;
 
-	if (*dest_addr >= 'A' && *dest_addr <= 'z') {  // user passed domain, get ip
+	// resolve destination (accept a v4/v6 literal directly, otherwise resolve as a host name)
+	if (STR_is_empty_m13(dest_addr) == TRUE_m13) {  // user passed no destination
+		G_warning_message_m13("%s(): no destination address\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+	if (NET_addr_set_m13(&probe, dest_addr) == TRUE_m13) {  // dest_addr is an IP literal (v4 or v6)
+		strcpy(trans_info->dest_addr, probe.string);  // canonical form
+	} else {  // host name => resolve (getaddrinfo AF_UNSPEC: may return an A or AAAA address)
 		if (NET_domain_to_ip_m13(dest_addr, trans_info->dest_addr) == FALSE_m13) {
 			G_warning_message_m13("%s(): cannot get IP address for domain \"%s\"\n", __FUNCTION__, dest_addr);
 			return_m13(FALSE_m13);
 		}
-	} else if (*dest_addr >= '0' && *dest_addr <= '9') {  // user passed ip
-		if (trans_info->dest_addr != dest_addr)
-			strcpy(trans_info->dest_addr, dest_addr);
-	} else if (*dest_addr == 0) {  // user passed no destination
-		G_warning_message_m13("%s(): no destination address\n", __FUNCTION__);
+		if (NET_addr_set_m13(&probe, trans_info->dest_addr) == FALSE_m13) {
+			G_warning_message_m13("%s(): resolved address \"%s\" is not a valid IP\n", __FUNCTION__, trans_info->dest_addr);
+			return_m13(FALSE_m13);
+		}
+	}
+	af = NET_af_from_family_m13(probe.family);
+	trans_info->dest_port = dest_port;
+
+	// make sure the socket exists & matches the destination family (recreates it if the family changed)
+	if (TR_ensure_socket_family_m13(trans_info, af) == FALSE_m13)
 		return_m13(FALSE_m13);
-	} else {
-		G_warning_message_m13("%s(): improper IP address or domain: \"%s\"\n", __FUNCTION__, dest_addr);
+	sock_fd = trans_info->sock_fd;
+
+	// connect socket to remote interface
+	if (TR_make_sockaddr_m13((void *) &sock_addr, &sa_len_u, af, trans_info->dest_addr, trans_info->dest_port) == FALSE_m13) {
+		G_warning_message_m13("%s(): could not build destination address\n", __FUNCTION__);
 		return_m13(FALSE_m13);
 	}
-	trans_info->dest_port = dest_port;
-	
-	// connect socket to remote interface
-	inet_pton(sock_fam, trans_info->dest_addr, &sock_addr.sin_addr); // set remote address for connect()
-	sock_addr.sin_port = htons(trans_info->dest_port);  // set local port (in internet byte order)
-	sock_addr.sin_family = sock_fam;  // set socket family
-	
+
 	// set socket to non-blocking (if not already)
 	blocking = TR_set_socket_blocking_m13(trans_info, UNKNOWN_m13);
 	if (blocking == TRUE_m13)
@@ -44701,7 +46307,7 @@ tern	TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port
 	// try to connect
 	connected = TRUE_m13;
 	errno_reset_m13();
-	r_val = connect(sock_fd, (struct sockaddr *) &sock_addr, sizeof(struct sockaddr_in));
+	r_val = connect(sock_fd, (struct sockaddr *) &sock_addr, (socklen_t) sa_len_u);
 	if (r_val == -1) {
 		err = errno_m13();
 		// see if just not connected yet
@@ -44755,36 +46361,64 @@ tern	TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port
 
 tern	TR_connect_to_server_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port)
 {
+	si4		af;
+	NET_ADDR_m13	probe;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// binds to default route interface & then connects
+	// binds to the default route interface & then connects
+	//
+	// Resolve the destination family FIRST so the local (wildcard) bind uses a matching family.
+	// (A specific default-interface address can't be bound when its family differs from the
+	//  destination, so a family-matched wildcard bind is used; the kernel still selects the
+	//  correct egress interface via the routing table at connect time.)
+	if (dest_addr == NULL || *dest_addr == 0) {
+		G_warning_message_m13("%s(): no destination address\n", __FUNCTION__);
+		return_m13(FALSE_m13);
+	}
+	if (NET_addr_set_m13(&probe, dest_addr) == TRUE_m13) {  // literal
+		strcpy(trans_info->dest_addr, probe.string);
+	} else {  // host name => resolve
+		if (NET_domain_to_ip_m13(dest_addr, trans_info->dest_addr) == FALSE_m13) {
+			G_warning_message_m13("%s(): cannot get IP address for domain \"%s\"\n", __FUNCTION__, dest_addr);
+			return_m13(FALSE_m13);
+		}
+		if (NET_addr_set_m13(&probe, trans_info->dest_addr) == FALSE_m13)
+			return_m13(FALSE_m13);
+	}
+	af = NET_af_from_family_m13(probe.family);
+	trans_info->sock_family = af;  // so the wildcard bind below matches the destination family
 
-	if (trans_info->sock_fd <= 0)
-		TR_create_socket_m13(trans_info);
-	
-	// bind to default interface, any port
-	if (TR_bind_m13(trans_info, TR_IFACE_DFLT_m13, TR_PORT_ANY_m13) == FALSE_m13)
+	// bind to the default interface (wildcard address of the destination family), any port
+	if (TR_bind_m13(trans_info, TR_IFACE_ANY_m13, TR_PORT_ANY_m13) == FALSE_m13)
 		return_m13(FALSE_m13);
 
-	return_m13(TR_connect_m13(trans_info, dest_addr, dest_port));
+	// connect to the already-resolved destination literal
+	return_m13(TR_connect_m13(trans_info, trans_info->dest_addr, dest_port));
 }
 
 
 tern	TR_create_socket_m13(TR_INFO_m13 *trans_info)
 {
-	si2		sock_fam = AF_INET;
-	si4		sock_type, sock_protocol;
+	si4		sock_fam, sock_type, sock_protocol;
 	TR_HDR_m13	*header;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	if (trans_info->sock_fd > 0)
 		TR_close_transmission_m13(trans_info);  // don't leave existing socket open
-	
+
+	// socket family: use the family already determined for this transmission; default to IPv4 if not yet set.
+	// (bind/connect call TR_ensure_socket_family_m13() to switch families once the address is known.)
+	sock_fam = trans_info->sock_family;
+	if (sock_fam != AF_INET && sock_fam != AF_INET6)
+		sock_fam = AF_INET;
+	trans_info->sock_family = sock_fam;
+
 	// create socket
 	header = trans_info->header;
 	if (header->flags & TR_FLAGS_UDP_m13) {
@@ -44802,8 +46436,59 @@ tern	TR_create_socket_m13(TR_INFO_m13 *trans_info)
 	// set socket timeout
 	if (trans_info->timeout > (sf4) 0.0)
 		TR_set_socket_timeout_m13(trans_info);
-			
+
 	return_m13(TRUE_m13);
+}
+
+
+tern	TR_ensure_socket_family_m13(TR_INFO_m13 *trans_info, si4 af)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// (re)create the socket if none exists yet or the existing one is the wrong family
+	if (af != AF_INET && af != AF_INET6)
+		return_m13(FALSE_m13);
+	if (trans_info->sock_fd > 0 && trans_info->sock_family == af)
+		return_m13(TRUE_m13);  // already the right family
+	trans_info->sock_family = af;
+	return_m13(TR_create_socket_m13(trans_info));  // closes any existing socket first
+}
+
+
+tern	TR_make_sockaddr_m13(void *sockaddr_storage_ptr, ui4 *sa_len, si4 af, const si1 *addr_str, ui2 port)
+{
+	struct sockaddr_in	*s4;
+	struct sockaddr_in6	*s6;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+	// fill a sockaddr_in (v4) or sockaddr_in6 (v6); a NULL or empty addr_str means the wildcard (INADDR_ANY / in6addr_any)
+	memset(sockaddr_storage_ptr, 0, sizeof(struct sockaddr_storage));
+	if (af == AF_INET) {
+		s4 = (struct sockaddr_in *) sockaddr_storage_ptr;
+		s4->sin_family = AF_INET;
+		s4->sin_port = htons(port);
+		if (addr_str == NULL || *addr_str == 0)
+			s4->sin_addr.s_addr = INADDR_ANY;  // 0
+		else if (inet_pton(AF_INET, addr_str, &s4->sin_addr) != 1)
+			return_m13(FALSE_m13);
+		*sa_len = (ui4) sizeof(struct sockaddr_in);
+		return_m13(TRUE_m13);
+	}
+	if (af == AF_INET6) {
+		s6 = (struct sockaddr_in6 *) sockaddr_storage_ptr;
+		s6->sin6_family = AF_INET6;
+		s6->sin6_port = htons(port);
+		if (addr_str == NULL || *addr_str == 0)
+			s6->sin6_addr = in6addr_any;
+		else if (inet_pton(AF_INET6, addr_str, &s6->sin6_addr) != 1)
+			return_m13(FALSE_m13);
+		*sa_len = (ui4) sizeof(struct sockaddr_in6);
+		return_m13(TRUE_m13);
+	}
+	return_m13(FALSE_m13);
 }
 
 
@@ -46319,7 +48004,7 @@ void	WN_nap_m13(struct timespec *nap)
 	if (use_ms == TRUE_m13)
 		goto G_WN_SLEEP_USE_MS;
 	
-	if (!(nap->tv_nsec % (si8) 10000))  // duration can be expressed in ms
+	if (!(nap->tv_nsec % (si8) 1000000))  // duration can be expressed in whole ms => no benefit from high resolution sleep
 		goto G_WN_SLEEP_USE_MS;
 
 	// load the required NT dylib functions
@@ -46806,8 +48491,9 @@ void	*aligned_alloc_m13(si8 alignment, si8 n_bytes)  // (alignment == -1): align
 				if (HW_get_memory_info_m13() == FALSE_m13)
 					return(NULL);
 			page_size = (ui8) hw_params->system_page_size;
-			alignment = (si8) page_size;
 		}
+		if (alignment == -1)
+			alignment = (si8) page_size;
 	}
 		
 	// set alloc size to multiple of page size
@@ -47039,7 +48725,7 @@ size_t	calloc_size_m13(void *address, size_t element_size)
 
 #if defined MACOS_m13 || defined LINUX_m13
 // copy a single regular file's contents (no shell). "new_path" is the full destination path. Returns 0 on success.
-static si4	G_cp_file_m13(const si1 *src, const si1 *dst, mode_t mode)
+static si4	cp_file_m13(const si1 *src, const si1 *dst, mode_t mode)
 {
 	si4	in_fd, out_fd;
 	ssize_t	n_rd, n_wr, off;
@@ -47069,7 +48755,7 @@ static si4	G_cp_file_m13(const si1 *src, const si1 *dst, mode_t mode)
 }
 
 // recursively copy a file or directory tree (no shell). "dst" is the full destination path (becomes a copy of "src"). Returns 0 on success.
-static si4	G_cp_recursive_m13(const si1 *src, const si1 *dst)
+static si4	cp_recursive_m13(const si1 *src, const si1 *dst)
 {
 	si1		src_child[PATH_BYTES_m13], dst_child[PATH_BYTES_m13];
 	DIR		*dir;
@@ -47079,7 +48765,7 @@ static si4	G_cp_recursive_m13(const si1 *src, const si1 *dst)
 	if (lstat(src, &st) != 0)
 		return(-1);
 	if (S_ISDIR(st.st_mode) == 0)  // regular file (symlinks copied as their target's contents, matching "cp -f")
-		return(G_cp_file_m13(src, dst, (mode_t) (st.st_mode & 0777)));
+		return(cp_file_m13(src, dst, (mode_t) (st.st_mode & 0777)));
 
 	if (mkdir(dst, (mode_t) ((st.st_mode & 0777) | S_IRWXU)) != 0 && errno != EEXIST)
 		return(-1);
@@ -47091,7 +48777,7 @@ static si4	G_cp_recursive_m13(const si1 *src, const si1 *dst)
 			continue;
 		snprintf(src_child, sizeof(src_child), "%s/%s", src, entry->d_name);
 		snprintf(dst_child, sizeof(dst_child), "%s/%s", dst, entry->d_name);
-		if (G_cp_recursive_m13(src_child, dst_child) != 0) {
+		if (cp_recursive_m13(src_child, dst_child) != 0) {
 			closedir(dir);
 			return(-1);
 		}
@@ -47130,7 +48816,7 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 
 	if (fe == FILE_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
-		if (G_cp_file_m13(path, new_path, (mode_t) (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) != 0) {  // 0644
+		if (cp_file_m13(path, new_path, (mode_t) (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) != 0) {  // 0644
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
@@ -47145,7 +48831,7 @@ tern	cp_m13(const si1 *path, const si1 *new_path)
 		#endif
 	} else if (fe == DIR_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
-		if (G_cp_recursive_m13(path, new_path) != 0) {
+		if (cp_recursive_m13(path, new_path) != 0) {
 			G_set_error_m13(E_GEN_m13, "could not copy \"%s\" to \"%s\"", path, new_path);
 			return_m13(FALSE_m13);
 		}
@@ -47335,9 +49021,9 @@ si4	fclose_m13(void *fp)
 	}
 	
 	// rest handles FILE_m13 pointer
-	
-	// unlock
-	if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+
+	// unlock (cached lock entry requires close accounting even if locking currently disabled)
+	if ((m13_fp->flags & FILE_FLAGS_LOCK_m13) || m13_fp->lock)
 		flock_m13(m13_fp, FLOCK_CLOSE_m13);
 	
 	// close
@@ -47536,11 +49222,54 @@ si8	flen_m13(void *fp)
 }
 		
 	
+#define FLOCK_HELD_SLOTS_m13	16
+
+typedef struct {
+	FLOCK_ENTRY_m13	*entry; // NULL == empty slot
+	ui8		file_id; // validates entry (slot is stale if entry was reused for another file)
+	si4		count; // read locks held on entry by this thread
+} FLOCK_HELD_READS_m13;
+
+static FLOCK_HELD_READS_m13	*FLOCK_held_slot_m13(FLOCK_ENTRY_m13 *lock, tern claim)
+{
+	si4			i;
+	FLOCK_HELD_READS_m13	*slot, *empty;
+	static thread_local_m13 FLOCK_HELD_READS_m13	held_reads[FLOCK_HELD_SLOTS_m13];  // thread local => no synchronization required
+
+	// tracks the read locks held by this thread on each file (isem counts are anonymous for speed)
+	// enables read -> write lock upgrade: a write lock waits for OTHER threads' reads only
+	// claim == TRUE_m13: claim an empty slot if entry not found (returns NULL if table full)
+	// claim == FALSE_m13: return NULL if entry not found
+
+	empty = NULL;
+	for (slot = held_reads, i = FLOCK_HELD_SLOTS_m13; i--; ++slot) {
+		if (slot->entry == lock) {
+			if (slot->file_id == lock->file_id)
+				return(slot);
+			slot->entry = NULL;  // stale: entry was reused for another file
+			slot->count = 0;
+		}
+		if (empty == NULL && slot->entry == NULL)
+			empty = slot;
+	}
+
+	if (claim == FALSE_m13 || empty == NULL)
+		return(NULL);
+
+	empty->entry = lock;
+	empty->file_id = lock->file_id;
+	empty->count = 0;
+
+	return(empty);
+}
+
+
 si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 {						// varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 	tern				is_std;
 	const si1			*path, *nap_str;
 	si4				i, n_locks, std_fd;
+	ui4				own_reads;
 	ui8				file_id, lock_file_id;
 	va_list				v_args;
 	pid_t_m13			_id;
@@ -47548,6 +49277,7 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 	FILE_m13			*m13_fp;
 	FLOCK_LIST_m13			*list;
 	FLOCK_ENTRY_m13			*lock, **lock_ptr, *new_locks, **new_lock_ptrs;
+	FLOCK_HELD_READS_m13		*held;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -47610,8 +49340,10 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 		path = m13_fp->path;
 		
 		// locking disabled
+		// (close operations maintain the lock list even when locking currently disabled - e.g. FILE_locking_m13() turned off after open)
 		if (!(m13_fp->flags & FILE_FLAGS_LOCK_m13))
-			return_m13(FLOCK_SUCCESS_m13);  // not considered an error
+			if (!(operation & FLOCK_CLOSE_m13))
+				return_m13(FLOCK_SUCCESS_m13);  // not considered an error
 		
 		// file closed
 		if (m13_fp->fd < 0) {
@@ -47647,7 +49379,20 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 		else
 			_id = 0;
 	}
-	
+
+	// cached lock entry: lock & unlock operations skip the list mutex & search (the hot path - every locked I/O call)
+	// entries are stable (allocated en bloc, never moved) & cannot be reused while the file remains open (open_cnt);
+	// file_id validated in case the open/close protocol was violated (e.g. freopen to a different physical file) => searched path
+	lock = NULL;
+	if (is_std == FALSE_m13 && !(operation & (FLOCK_OPEN_m13 | FLOCK_CLOSE_m13))) {
+		lock = m13_fp->lock;
+		if (lock)
+			if (lock->file_id != file_id)  // stale
+				lock = NULL;
+	}
+	if (lock)
+		goto FLOCK_OPERATE_m13;
+
 	// get list mutex
 	list = globals_m13->file_lock_list;
 	pthread_mutex_lock_m13(&list->mutex);  // lock the list
@@ -47672,6 +49417,8 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 	if (i == -1) {
 		if (operation & (FLOCK_UNLOCK_m13 | FLOCK_CLOSE_m13)) {  // file to unlock or close is not in list
 			pthread_mutex_unlock_m13(&list->mutex);  // unlock the list
+			if (is_std == FALSE_m13)
+				m13_fp->lock = NULL;  // clear any stale cached entry
 			return_m13(FLOCK_SUCCESS_m13);
 		}
 		if (lock == NULL) {
@@ -47686,85 +49433,147 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 				}
 				list->lock_ptrs = new_lock_ptrs;
 				
-				// allocate new locks (calloc so all fields zeroed)
-				new_locks = (FLOCK_ENTRY_m13 *) malloc((size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13 * sizeof(FLOCK_ENTRY_m13));
+				// allocate new locks (calloc: all fields zeroed => new entries read as empty & isems as uninitialized)
+				new_locks = (FLOCK_ENTRY_m13 *) calloc((size_t) GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13, sizeof(FLOCK_ENTRY_m13));
 				if (new_locks == NULL) {
 					pthread_mutex_unlock_m13(&list->mutex);
 					G_set_error_m13(E_ALLOC_m13, NULL);
 					return_m13(FLOCK_ERR_m13);
 				}
-				
+
 				// assign lock pointers
 				new_lock_ptrs = list->lock_ptrs + list->size;  // new_lock_ptrs incremented in loop (list_size still old size)
-				lock = new_locks;  // new_locks incremented in loop
 				for (i = GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13; i--;)
 					*new_lock_ptrs++ = new_locks++;
 				list->size = n_locks;
 			}
 			lock = list->lock_ptrs[++list->top_idx];
-			lock->read_cnt.initialized = FALSE_m13;
+			// Note: reused slots keep read_cnt.initialized == TRUE_m13 (isem_destroy_m13() preserves the mutex) => isem_init_m13() will not re-init the mutex
 		}
-		
+
 		// initialize lock
-		isem_init_m13(&lock->read_cnt, 0, nap_str, path, ISEM_NO_OWNER_m13, FALSE_m13);  // statically allocated - don't free on destroy
+		if (isem_init_m13(&lock->read_cnt, 0, nap_str, path, ISEM_NO_OWNER_m13, FALSE_m13) == NULL) {  // statically allocated - don't free on destroy
+			pthread_mutex_unlock_m13(&list->mutex);
+			return_m13(FLOCK_ERR_m13);  // error set by isem_init_m13() (claimed slot left empty; trimmed at closes)
+		}
 		lock->file_id = file_id;  // assign lock
+		lock->write_depth = (ui4) 0;
 		if (operation & FLOCK_OPEN_m13)
 			lock->open_cnt = (ui4) 0;
 		else
 			lock->open_cnt = (ui4) 1;  // lock operation called without initial call to fopen_m13() => add it here
 	}
-	
+
 	// open (called by fopen_m13)
 	if (operation & FLOCK_OPEN_m13) {
 		++lock->open_cnt;
 	} else if (operation & FLOCK_CLOSE_m13) {  // close (called by fclose_m13)
-		if (lock->open_cnt == 1)  // unassign lock
+		if (lock->open_cnt)  // shouldn't be zero here, but possible
+			--lock->open_cnt;
+		if (lock->open_cnt == 0) {  // last close: unassign lock & mark slot empty (reusable)
 			isem_destroy_m13(&lock->read_cnt);
-		
-		// trim search extents
-		if (lock == list->lock_ptrs[list->top_idx])
-			--list->top_idx;
+			lock->file_id = 0;
+			lock->write_depth = (ui4) 0;
+
+			// trim search extents (scan past hole chain at the top; interior holes reused by the empty slot search)
+			while (list->top_idx >= 0 && list->lock_ptrs[list->top_idx]->file_id == 0)
+				--list->top_idx;
+		}
 	}
-	
+
 	// release list mutex
 	pthread_mutex_unlock_m13(&list->mutex);
-	
+
+	// cache entry in FILE_m13 (cleared on close)
+	if (is_std == FALSE_m13) {
+		if (operation & FLOCK_CLOSE_m13)
+			m13_fp->lock = NULL;
+		else
+			m13_fp->lock = lock;
+	}
+
 	if (operation & (FLOCK_OPEN_m13 | FLOCK_CLOSE_m13))
 		return_m13(FLOCK_SUCCESS_m13);
+
+FLOCK_OPERATE_m13:
 	
 	// unlock
 	if (operation & FLOCK_UNLOCK_m13) {
 		if (operation & FLOCK_WRITE_m13) {  // write unlock
-			if (lock->read_cnt.owner == _id)  // only owning thread can release ownership
+			if (lock->read_cnt.owner == _id) {  // only owning thread can release ownership
+				if (--lock->write_depth)  // reentrant write locks still held (e.g. explicit write-locked span)
+					return_m13(FLOCK_SUCCESS_m13);
 				lock->read_cnt.owner = ISEM_NO_OWNER_m13;
-			else  // not owner - can't unlock
+			} else {  // not owner - can't unlock
 				return_m13(FLOCK_LOCKED_m13);
+			}
 		} else {  // read unlock
 			isem_dec_m13(&lock->read_cnt);  // release a read lock
+			held = FLOCK_held_slot_m13(lock, FALSE_m13);
+			if (held) {
+				if (held->count)
+					--held->count;
+				if (held->count == 0)
+					held->entry = NULL;  // free the slot
+			}
 		}
 		return_m13(FLOCK_SUCCESS_m13);
 	}
-	
+
+	// reentrant write lock (blocking or non-blocking): calling thread already owns the file
+	// (e.g. auto-locking fwrite_m13() within an explicit write-locked span => the span's lock survives the write's unlock)
+	// Note: owner is only set & cleared by the owning thread => no race with the checks below
+	if (operation & FLOCK_WRITE_m13) {
+		if (lock->read_cnt.owner == _id) {
+			++lock->write_depth;
+			return_m13(FLOCK_SUCCESS_m13);
+		}
+	}
+
 	// non-blocking lock
 	if (operation & FLOCK_NON_BLOCKING_m13) {
 		if (operation & FLOCK_WRITE_m13) { // write lock
-			if (isem_tryown_m13(&lock->read_cnt) == TRUE_m13)  // take ownership if unowned
-				if (isem_getcnt_m13(&lock->read_cnt) == (ui4) 0)  // check if reads == zero
+			held = FLOCK_held_slot_m13(lock, FALSE_m13);
+			own_reads = (held == NULL) ? (ui4) 0 : (ui4) held->count;
+			if (isem_tryown_m13(&lock->read_cnt) == TRUE_m13) {  // take ownership if unowned (fresh: reentrancy handled above)
+				if (isem_getcnt_m13(&lock->read_cnt) <= own_reads) {  // only this thread's read locks remain (read -> write upgrade)
+					lock->write_depth = (ui4) 1;
 					return_m13(FLOCK_SUCCESS_m13);
+				}
+				isem_chown_m13(&lock->read_cnt, ISEM_NO_OWNER_m13);  // readers active: release the ownership taken by this call (a failed attempt must not block future readers)
+			}
 		} else if (isem_tryinc_m13(&lock->read_cnt) == TRUE_m13) {  // read lock
+			held = FLOCK_held_slot_m13(lock, TRUE_m13);
+			if (held)
+				++held->count;
+			else  // survivable: this thread just can't upgrade these reads to a write lock
+				G_warning_message_m13("%s(): thread's held read table is full => read lock on \"%s\" will not upgrade to a write lock\n", __FUNCTION__, path);
 			return_m13(FLOCK_SUCCESS_m13);
 		}
 		return_m13(FLOCK_LOCKED_m13);
 	}
-	
+
 	// blocking lock
 	if (operation & FLOCK_WRITE_m13) {  // get write lock
+		held = FLOCK_held_slot_m13(lock, FALSE_m13);
+		own_reads = (held == NULL) ? (ui4) 0 : (ui4) held->count;
 		isem_own_m13(&lock->read_cnt);  // block until unowned, take ownership
-		isem_wait_noinc_m13(&lock->read_cnt); // block until reads == zero, don't increment count
+		if (own_reads == 0) {
+			isem_wait_noinc_m13(&lock->read_cnt); // block until reads == zero, don't increment count
+		} else {  // read -> write upgrade: wait for other threads' read locks only (ownership blocks new readers)
+			while (lock->read_cnt.count > own_reads)  // count is atomic => peeked directly (as owner is above)
+				nap_m13(nap_str);
+		}
+		lock->write_depth = (ui4) 1;
 	} else {  // read lock
 		isem_inc_m13(&lock->read_cnt);  // block until unowned, increment count
+		held = FLOCK_held_slot_m13(lock, TRUE_m13);
+		if (held)
+			++held->count;
+		else  // survivable: this thread just can't upgrade these reads to a write lock
+			G_warning_message_m13("%s(): thread's held read table is full => read lock on \"%s\" will not upgrade to a write lock\n", __FUNCTION__, path);
 	}
-	
+
 	return_m13(FLOCK_SUCCESS_m13);
 }
 
@@ -48427,7 +50236,7 @@ void	*freopen_m13(const si1 *path, const si1 *mode_str, void *fp)
 			} else {
 				path = m13_fp->path;
 			}
-			if (m13_fp->flags & FILE_FLAGS_LOCK_m13)
+			if ((m13_fp->flags & FILE_FLAGS_LOCK_m13) || m13_fp->lock)  // cached lock entry requires close accounting even if locking currently disabled
 				flock_m13(m13_fp, FLOCK_CLOSE_m13);
 			break;
 		case TRUE_m13:
@@ -51866,36 +53675,8 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-// recursively remove a file or directory tree (no shell). Returns 0 on success.
-static si4	G_rm_recursive_m13(const si1 *path)
-{
-	si1		child[PATH_BYTES_m13];
-	DIR		*dir;
-	struct dirent	*entry;
-	struct stat	st;
-
-	if (lstat(path, &st) != 0)
-		return(-1);
-	if (S_ISDIR(st.st_mode) == 0)  // regular file or symlink: unlink directly (does not follow symlinks)
-		return(unlink(path));
-
-	dir = opendir(path);
-	if (dir == NULL)
-		return(-1);
-	while ((entry = readdir(dir)) != NULL) {
-		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-			continue;
-		snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
-		if (G_rm_recursive_m13(child) != 0) {
-			closedir(dir);
-			return(-1);
-		}
-	}
-	closedir(dir);
-	return(rmdir(path));
-}
+static si4	rm_recursive_m13(const si1 *path);  // defined below rm_m13()
 #endif
-
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
@@ -51940,7 +53721,7 @@ tern	rm_m13(const si1 *path)
 		return_m13(TRUE_m13);
 	} else if (fe == DIR_EXISTS_m13) {
 		#if defined MACOS_m13 || defined LINUX_m13
-		if (G_rm_recursive_m13(path) != 0) {
+		if (rm_recursive_m13(path) != 0) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
 			return_m13(FALSE_m13);
 		}
@@ -51958,6 +53739,38 @@ tern	rm_m13(const si1 *path)
 	
 	return_m13(UNKNOWN_m13);
 }
+
+
+#if defined MACOS_m13 || defined LINUX_m13
+// recursively remove a file or directory tree (no shell). Returns 0 on success.
+static si4	rm_recursive_m13(const si1 *path)
+{
+	si1		child[PATH_BYTES_m13];
+	DIR		*dir;
+	struct dirent	*entry;
+	struct stat	st;
+
+	if (lstat(path, &st) != 0)
+		return(-1);
+	if (S_ISDIR(st.st_mode) == 0)  // regular file or symlink: unlink directly (does not follow symlinks)
+		return(unlink(path));
+
+	dir = opendir(path);
+	if (dir == NULL)
+		return(-1);
+	while ((entry = readdir(dir)) != NULL) {
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+		snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+		if (rm_recursive_m13(child) != 0) {
+			closedir(dir);
+			return(-1);
+		}
+	}
+	closedir(dir);
+	return(rmdir(path));
+}
+#endif
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
@@ -52433,88 +54246,162 @@ si4	stat_m13(const si1 *path, struct_stat_m13 *sb)
 }
 
 
-si8	strcat_m13(si1 *target, const si1 *source)
+si8	strcat_m13(void *target, const void *source)
 {
-	si1	*c;
-	
+	tern		t_pstr;
+	si1		*tgt, *c;
+	const si1	*src, *c2;
+	si8		t_len, s_len, s_chars;
+	pstr		*tps;
+	const pstr	*sps;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// appends a copy of "source" to "target", including terminal zero
-	// "target"  must have sufficient space to hold the result
+	// standard "target" must have sufficient space to hold the result; pstr "target" is grown as required
+	// "target" & "source" may each be a standard string or a pstr (disambiguated by tag)
+	// pstr source: length & character count read from structure (no scan)
 	// returns final length of "target" (not including terminal zero)
 	// in contrast to standard strcat(), this function does not return a pointer to "target"
-	
+
 	if (target == NULL)
 		return_m13((si8) 0);
-	if (source == NULL) {
-		c = target - 1;
-		while (*++c);
-		return_m13((si8) (c - target));
+
+	t_pstr = PSTR_m13(target);
+	src = (si1 *) source;
+	sps = NULL;
+	if (PSTR_m13(source) == TRUE_m13) {
+		sps = (const pstr *) source;
+		src = sps->str;
 	}
-	
-	for (c = target - 1; *++c;);
-	while ((*c++ = *source++));
-	
-	return_m13((si8) ((c - target) - 1));
+
+	if (src == NULL) {  // no source: return current target length
+		if (t_pstr == TRUE_m13)
+			return_m13((si8) ((pstr *) target)->bytes);
+		c = (si1 *) target - 1;
+		while (*++c);
+		return_m13((si8) (c - (si1 *) target));
+	}
+
+	if (t_pstr == TRUE_m13) {  // pstr target: append at known offset, grow as needed, maintain counts
+		tps = (pstr *) target;
+		if (sps != NULL) {
+			s_len = (si8) sps->bytes;
+			s_chars = (si8) sps->chars;
+		} else {  // single pass for length & character count
+			for (c2 = src, s_len = s_chars = 0; *c2; ++c2, ++s_len)
+				s_chars += ((*c2 & (si1) 0xC0) != (si1) 0x80);
+		}
+		t_len = (si8) tps->bytes;
+		tgt = PSTR_ensure_m13(tps, t_len + s_len + 1);
+		if (tgt == NULL)
+			return_m13(t_len);
+		memmove(tgt + t_len, src, (size_t) s_len + 1);  // includes terminal zero
+		tps->bytes = (ui4) (t_len + s_len);
+		tps->chars += (ui4) s_chars;
+		if (s_chars != s_len)
+			tps->flags &= ~PSTR_FLAG_ASCII_m13;
+		return_m13(t_len + s_len);
+	}
+
+	// standard target
+	tgt = (si1 *) target;
+	if (sps != NULL) {  // pstr source: known length block copy
+		for (c = tgt - 1; *++c;);
+		s_len = (si8) sps->bytes;
+		memmove(c, src, (size_t) s_len + 1);
+		return_m13((si8) (c - tgt) + s_len);
+	}
+	for (c = tgt - 1; *++c;);
+	while ((*c++ = *src++));
+
+	return_m13((si8) ((c - tgt) - 1));
 }
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-size_t	strchar_m13(const si1 *string)
+size_t	strchar_m13(const void *string)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// returns number of characters in string
+	// returns number of characters in string (not necessarily bytes)
+	// pstr: character count read from structure (no scan)
 
 	if (string == NULL)
 		return_m13(0);
 
-	return_m13(UTF8_strchar_m13(string));
+	if (PSTR_m13(string) == TRUE_m13)
+		return_m13((size_t) ((const pstr *) string)->chars);
+
+	return_m13(UTF8_strchar_m13((const si1 *) string));
 }
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	strcmp_m13(const si1 *string_1, const si1 *string_2)
+si4	strcmp_m13(const void *string_1, const void *string_2)
 {
+	const si1	*s1, *s2;
+	const pstr	*ps1, *ps2;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// lexicographically compares "string_1" & "string_2"
+	// compares "string_1" & "string_2" for equality
 	// returns 0 if equal, -1 (FALSE_m13) if not
 	// note this version may be faster than standard strcmp() as it does not determine a string comparison value, only whether equal
+	// two pstrs: unequal lengths detected without touching string data; equal lengths compared with memcmp() (word-wise)
 
 	if (string_1 == string_2)
 		return_m13((si4) 0);
-	
+
 	if (string_1 == NULL || string_2 == NULL)
 		return_m13((si4) -1);
 
-	while (*string_1 && *string_2)
-		if (*string_1++ != *string_2++)
+	ps1 = ps2 = NULL;
+	s1 = (const si1 *) string_1;
+	s2 = (const si1 *) string_2;
+	if (PSTR_m13(string_1) == TRUE_m13)
+		s1 = (ps1 = (const pstr *) string_1)->str;
+	if (PSTR_m13(string_2) == TRUE_m13)
+		s2 = (ps2 = (const pstr *) string_2)->str;
+	if (ps1 != NULL && ps2 != NULL) {  // both pstr: lengths known
+		if (ps1->bytes != ps2->bytes)
 			return_m13((si4) -1);
-	
-	if (*string_1 || *string_2)
+		if (memcmp(s1, s2, (size_t) ps1->bytes))
+			return_m13((si4) -1);
+		return_m13((si4) 0);
+	}
+	if (s1 == NULL || s2 == NULL)
 		return_m13((si4) -1);
-	
+
+	while (*s1 && *s2)
+		if (*s1++ != *s2++)
+			return_m13((si4) -1);
+
+	if (*s1 || *s2)
+		return_m13((si4) -1);
+
 	return_m13((si4) 0);
 }
 
 
-si8	strcpy_m13(si1 *target, const si1 *source)
+si8	strcpy_m13(void *target, const void *source)
 {
-	const si1	*c2;
-	si1		*c;
-	si8		i, len;
-	
+	const si1	*src, *c2;
+	si1		*tgt, *c;
+	si8		i, len, s_chars;
+	pstr		*tps;
+	const pstr	*sps;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -52523,96 +54410,187 @@ si8	strcpy_m13(si1 *target, const si1 *source)
 	// in contrast to standard strcpy(), this function does not return a pointer to "target"
 	// unlike some standard strcpy() functions, there is no problem if target == source; length is still returned
 	// strings may overlap
-	
+	// "target" & "source" may each be a standard string or a pstr (disambiguated by tag)
+	// pstr target: grown as required, never overflows; pstr source: length & character count read from structure (no scan)
+
 	if (target == NULL || source == NULL)
 		return_m13(0);
 
 	if (target == source) {
-		c = target - 1;
+		if (PSTR_m13(target) == TRUE_m13)
+			return_m13((si8) ((pstr *) target)->bytes);
+		c = (si1 *) target - 1;
 		while (*++c);
-		return_m13(c - target);
+		return_m13(c - (si1 *) target);
 	}
-	
-	if (target <= source) {
-		c = target - 1;
-		c2 = source - 1;
-		while ((*++c = *++c2));
-		len = (si8) (c2 - source);
-	} else {  // overwrite possible, copy backwards
-		c2 = source - 1;
-		while (*++c2);
-		len = (si8) (c2 - source);
 
-		c = target + len;
-		c2 = source + len;
+	tps = NULL;
+	sps = NULL;
+	tgt = (si1 *) target;
+	src = (const si1 *) source;
+	if (PSTR_m13(target) == TRUE_m13)
+		tgt = (tps = (pstr *) target)->str;
+	if (PSTR_m13(source) == TRUE_m13)
+		src = (sps = (const pstr *) source)->str;
+	if (src == NULL)
+		return_m13(0);
+
+	if (tps != NULL || sps != NULL) {  // pstr involved: block copy with known length
+		if (sps != NULL) {
+			len = (si8) sps->bytes;
+			s_chars = (si8) sps->chars;
+		} else {
+			for (c2 = src - 1; *++c2;);
+			len = (si8) (c2 - src);
+			s_chars = -1;  // count after copy if needed
+		}
+		if (tps != NULL) {
+			tgt = PSTR_ensure_m13(tps, len + 1);
+			if (tgt == NULL)
+				return_m13(0);
+		}
+		memmove(tgt, src, (size_t) len + 1);  // includes terminal zero; handles overlap
+		if (tps != NULL) {
+			tps->bytes = (ui4) len;
+			if (s_chars == -1)
+				s_chars = PSTR_char_count_m13(tgt, len);
+			tps->chars = (ui4) s_chars;
+			if (s_chars != len)
+				tps->flags &= ~PSTR_FLAG_ASCII_m13;
+		}
+		return_m13(len);
+	}
+
+	// standard target & source
+	if (tgt <= src) {
+		c = tgt - 1;
+		c2 = src - 1;
+		while ((*++c = *++c2));
+		len = (si8) (c2 - src);
+	} else {  // overwrite possible, copy backwards
+		c2 = src - 1;
+		while (*++c2);
+		len = (si8) (c2 - src);
+
+		c = tgt + len;
+		c2 = src + len;
 		i = len + 1;
 		while (i--)
 			*c-- = *c2--;
 	}
-	
+
 	return_m13(len);
 }
 
 
-size_t	strlen_m13(const si1 *source)
+size_t	strlen_m13(const void *source)
 {
-	const si1	*c;
-	
+	const si1	*s, *c;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// returns the length of "source" (not including terminal zero)
-	// no difference between this function & strlen() on any OS, except that it handles null input
-	// could just call strlen() here, but not worth function overhead
-	
+	// returns the length of "source" in bytes (not including terminal zero)
+	// no difference between this function & strlen() on any OS, except that it handles null input & pstrs
+	// pstr: length read from structure (no scan)
+
 	if (source == NULL)
 		return_m13(0);
 
-	for (c = source - 1; *++c;);
-	
-	return_m13((size_t) (c - source));
+	if (PSTR_m13(source) == TRUE_m13)
+		return_m13((size_t) ((const pstr *) source)->bytes);
+
+	s = (const si1 *) source;
+	for (c = s - 1; *++c;);
+
+	return_m13((size_t) (c - s));
 }
 
 
-si8	strncat_m13(si1 *target, const si1 *source, size_t n_chars)
+si8	strncat_m13(void *target, const void *source, size_t n_chars)
 {
-	const si1	*c2;
-	si1		*c;
-	si8		i, len;
-	
+	const si1	*src, *c2;
+	si1		*tgt, *c;
+	si8		i, len, t_len, s_len;
+	pstr		*tps;
+	const pstr	*sps;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// appends not more than "n_chars" characters from "source" to "target"
 	// "n_chars" does not include the terminal zero
-	// "target"  must have sufficient space to hold the result
+	// standard "target" must have sufficient space to hold the result; pstr "target" is grown as required
 	// returns the final length of "target" (not including terminal zero)
 	// in contrast to standard strncat(), this function does not return a pointer to "target"
 	// if final length is less than "n_chars", target is filled to "n_chars" with zeros
+	// "target" & "source" may each be a standard string or a pstr (disambiguated by tag)
 
 	if (target == NULL)
 		return_m13((si8) 0);
-	if (source == NULL) {
-		c = target - 1;
+
+	tps = NULL;
+	sps = NULL;
+	tgt = (si1 *) target;
+	src = (const si1 *) source;
+	if (PSTR_m13(target) == TRUE_m13)
+		tgt = (tps = (pstr *) target)->str;
+	if (PSTR_m13(source) == TRUE_m13)
+		src = (sps = (const pstr *) source)->str;
+
+	if (src == NULL) {  // no source: return current target length
+		if (tps != NULL)
+			return_m13((si8) tps->bytes);
+		c = tgt - 1;
 		while (*++c);
-		return_m13((si8) (c - target));
+		return_m13((si8) (c - tgt));
 	}
-	
-	for (c = target - 1; *++c;);
-	for (--c, c2 = source - 1; (*++c = *++c2);) {
+
+	if (tps != NULL) {  // pstr target: append at known offset, grow as needed, maintain counts
+		if (sps != NULL) {
+			s_len = (si8) sps->bytes;
+		} else {
+			for (c2 = src - 1; *++c2;);
+			s_len = (si8) (c2 - src);
+		}
+		if (s_len > (si8) n_chars)
+			s_len = (si8) n_chars;
+		t_len = (si8) tps->bytes;
+		len = t_len + s_len;
+		i = ((si8) n_chars > len) ? (si8) n_chars : len;  // capacity covers zero fill
+		tgt = PSTR_ensure_m13(tps, i + 1);
+		if (tgt == NULL)
+			return_m13(t_len);
+		memmove(tgt + t_len, src, (size_t) s_len);
+		c = tgt + len;
+		*c = 0;
+		if (len < (si8) n_chars)
+			for (i = (si8) n_chars - len; i--;)
+				*++c = 0;
+		tps->bytes = (ui4) len;
+		s_len = PSTR_char_count_m13(tgt + t_len, s_len);  // appended characters
+		tps->chars += (ui4) s_len;
+		if ((si8) tps->chars != (si8) tps->bytes)
+			tps->flags &= ~PSTR_FLAG_ASCII_m13;
+		return_m13(len);
+	}
+
+	// standard target
+	for (c = tgt - 1; *++c;);
+	for (--c, c2 = src - 1; (*++c = *++c2);) {
 		if (n_chars--)
 			continue;
 		*c = 0;
 		break;
 	}
-	len = (si8) (c - target);
-	
+	len = (si8) (c - tgt);
+
 	if (len < n_chars)
 		for (i = n_chars - len; i--;)
 			*c++ = 0;
-		
+
 	return_m13(len);
 }
 
@@ -52620,46 +54598,70 @@ si8	strncat_m13(si1 *target, const si1 *source, size_t n_chars)
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
-si4	strncmp_m13(const si1 *string_1, const si1 *string_2, size_t n_chars)
+si4	strncmp_m13(const void *string_1, const void *string_2, size_t n_chars)
 {
-	si8	len;
-	
+	const si1	*s1, *s2;
+	const pstr	*ps1, *ps2;
+	si8		len, l1, l2;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// lexicographically compares "string_1" & "string_2" up to a maximum of "n_chars" characters
+	// compares "string_1" & "string_2" for equality up to a maximum of "n_chars" characters
 	// returns 0 if equal, -1 (FALSE_m13) if not
 	// strings that are equal up to their terminal zeros they are considered equal even if they are less than "n_chars" in length
 	// strings may overlap
 	// note this version may be faster than standard strcmp() as it does not determine a string comparison value, only whether equal
+	// two pstrs: unequal effective lengths detected without touching string data; otherwise compared with memcmp() (word-wise)
 
 	if (string_1 == string_2)
 		return_m13((si4) 0);
-	
+
 	if (string_1 == NULL || string_2 == NULL)
 		return_m13((si4) FALSE_m13);
 
-	len = (si8) n_chars;  // (size_t is unsigned)
-	while (*string_1 && *string_2 && len--)
-		if (*string_1++ != *string_2++)
+	ps1 = ps2 = NULL;
+	s1 = (const si1 *) string_1;
+	s2 = (const si1 *) string_2;
+	if (PSTR_m13(string_1) == TRUE_m13)
+		s1 = (ps1 = (const pstr *) string_1)->str;
+	if (PSTR_m13(string_2) == TRUE_m13)
+		s2 = (ps2 = (const pstr *) string_2)->str;
+	if (ps1 != NULL && ps2 != NULL) {  // both pstr: effective lengths known
+		l1 = ((si8) ps1->bytes < (si8) n_chars) ? (si8) ps1->bytes : (si8) n_chars;
+		l2 = ((si8) ps2->bytes < (si8) n_chars) ? (si8) ps2->bytes : (si8) n_chars;
+		if (l1 != l2)
 			return_m13((si4) FALSE_m13);
-	
+		if (memcmp(s1, s2, (size_t) l1))
+			return_m13((si4) FALSE_m13);
+		return_m13((si4) 0);
+	}
+	if (s1 == NULL || s2 == NULL)
+		return_m13((si4) FALSE_m13);
+
+	len = (si8) n_chars;  // (size_t is unsigned)
+	while (*s1 && *s2 && len--)
+		if (*s1++ != *s2++)
+			return_m13((si4) FALSE_m13);
+
 	// fewer than n_chars matched
 	if (len > 0)
-		if (*string_1 || *string_2)  // one of strings did not terminate
+		if (*s1 || *s2)  // one of strings did not terminate
 			return_m13((si4) FALSE_m13);
-	
+
 	return_m13((si4) 0);  // both strings terminated
 }
 
 
-si8	strncpy_m13(si1 *target, const si1 *source, size_t n_chars)
+si8	strncpy_m13(void *target, const void *source, size_t n_chars)
 {
-	const si1	*c2;
-	si1		*c;
+	const si1	*src, *c2;
+	si1		*tgt, *c;
 	si8		i, len;
-	
+	pstr		*tps;
+	const pstr	*sps;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -52669,41 +54671,78 @@ si8	strncpy_m13(si1 *target, const si1 *source, size_t n_chars)
 	// in contrast to standard strncpy(), this function does not return a pointer to "target"
 	// strings may overlap
 	// if final length is less than "n_chars", target is filled to "n_chars" with zeros
+	// "target" & "source" may each be a standard string or a pstr (disambiguated by tag)
+	// pstr target: grown as required, never overflows; pstr source: length read from structure (no scan)
 
 	if (target == NULL || source == NULL)
 		return_m13(0);
 
+	tps = NULL;
+	sps = NULL;
+	tgt = (si1 *) target;
+	src = (const si1 *) source;
+	if (PSTR_m13(target) == TRUE_m13)
+		tgt = (tps = (pstr *) target)->str;
+	if (PSTR_m13(source) == TRUE_m13)
+		src = (sps = (const pstr *) source)->str;
+	if (src == NULL)
+		return_m13(0);
+
 	// get length of source
-	c2 = source - 1;
-	i = (si8) n_chars;
-	while (*++c2) {
-		if (i--)
-			continue;
-		break;
+	if (sps != NULL) {
+		len = (si8) sps->bytes;
+		if (len > (si8) n_chars)
+			len = (si8) n_chars;
+	} else {
+		c2 = src - 1;
+		i = (si8) n_chars;
+		while (*++c2) {
+			if (i--)
+				continue;
+			break;
+		}
+		len = (si8) (c2 - src);
 	}
-	len = (si8) (c2 - source);
-	
-	if (target <= source) {  // copy forwards
-		c = target;
-		c2 = source;
+
+	if (tps != NULL) {  // pstr target: grow as needed, block copy, maintain counts
+		i = ((si8) n_chars > len) ? (si8) n_chars : len;  // capacity covers zero fill
+		tgt = PSTR_ensure_m13(tps, i + 1);
+		if (tgt == NULL)
+			return_m13(0);
+		memmove(tgt, src, (size_t) len);
+		c = tgt + len;
+		*c = 0;
+		if (len < (si8) n_chars)
+			for (i = (si8) n_chars - len; i--;)
+				*++c = 0;
+		tps->bytes = (ui4) len;
+		tps->chars = (ui4) PSTR_char_count_m13(tgt, len);
+		if ((si8) tps->chars != len)
+			tps->flags &= ~PSTR_FLAG_ASCII_m13;
+		return_m13(len);
+	}
+	// standard target
+	if (tgt <= src) {  // copy forwards
+		c = tgt;
+		c2 = src;
 		for (i = len; i--;)
 			*c++ = *c2++;
 		*c = 0;
 	} else {  // overwrite possible, copy backwards
-		c = target + len;
+		c = tgt + len;
 		*c-- = 0;
-		c2 = source + (len - 1);
+		c2 = src + (len - 1);
 		for (i = len; i--;)
 			*c-- = *c2--;
 	}
-	
+
 	// zero remaining bytes
 	if (len < n_chars) {
-		c = target + len;
+		c = tgt + len;
 		for (i = n_chars - len; i--;)
 			*c++ = 0;
 	}
-	
+
 	return_m13(len);
 }
 
