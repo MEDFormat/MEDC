@@ -138,6 +138,7 @@
 	#include <unistd.h>
 	#include <dirent.h>
 	#include <sys/time.h>
+	#include <sys/file.h> // flock() (multiprocess file locking)
 	#include <sys/resource.h>
 	#include <sys/mman.h>
 	#include <pthread.h>
@@ -290,9 +291,16 @@ typedef long double	sf16;
 #define PSTR_FLAGS_ALL_m13	(PSTR_FLAG_ALLOCED_m13 | PSTR_FLAG_CONST_m13 | PSTR_FLAG_ASCII_m13)
 
 // macros
-// NOTE: "x" evaluated twice - do not pass expressions with side effects
-// (only byte 0 of "x" is read, so safe to apply to any string pointer: 0x80 is a utf8 continuation byte, never a first byte)
-#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((((const pstr *) (x))->tag == PSTR_TAG_m13) ? TRUE_m13 : FALSE_m13)) // TRUE_m13 if x is a pstr pointer
+// NOTE: "x" evaluated multiple times - do not pass expressions with side effects
+// Byte 0 gates the test (0x80 is a utf8 continuation byte, never a first byte) => valid strings never read deeper.
+// When byte 0 matches (a true pstr, or garbage such as an uninitialized buffer - 1/256 of random bytes), the rest
+// of the structure is validated: undefined flag bits zero, str set, bytes < msize. Uninitialized buffers passed as
+// strings therefore misidentify as pstrs with probability ~2^-30 per call rather than 2^-8 (which produced wild
+// pointer reads & heap corruption via PSTR_ensure_m13() on real data - the byte 0 test alone is NOT sufficient).
+#define PSTR_m13(x)		(((x) == NULL) ? FALSE_m13 : ((((const pstr *) (x))->tag != PSTR_TAG_m13) ? FALSE_m13 : \
+				(((((const pstr *) (x))->flags & ~(PSTR_FLAGS_ALL_m13 | (ui4) 0xFF)) == 0 \
+				&& ((const pstr *) (x))->str != NULL \
+				&& ((const pstr *) (x))->bytes < ((const pstr *) (x))->msize) ? TRUE_m13 : FALSE_m13))) // TRUE_m13 if x is a pstr pointer
 
 // typedefs
 typedef struct {
@@ -691,13 +699,15 @@ typedef struct {
 #define GLOBALS_BEHAVIOR_DEFAULT_m13		 		DEFAULT_BEHAVIOR_m13
 #define GLOBALS_FILE_LOCK_MODE_DEFAULT_m13			FLOCK_MODE_NONE_m13
 #define GLOBALS_FILE_LOCK_TIMEOUT_DEFAULT_m13			"1 ms"
+#define GLOBALS_FILE_LOCK_MULTIPROCESS_DEFAULT_m13		FALSE_m13 // extend locks across concurrent library instances (os level locks)
 #define GLOBALS_ACCESS_TIMES_DEFAULT_m13			FALSE_m13
 #define GLOBALS_CRC_MODE_DEFAULT_m13				CRC_CALCULATE_m13
 #define GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13		TRUE_m13
 #define GLOBALS_WRITE_CORRECTED_HEADERS_DEFAULT_m13		TRUE_m13
 #define GLOBALS_UPDATE_FILE_SYSTEM_NAMES_DEFAULT_m13		TRUE_m13
 #define GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13			TRUE_m13
-#define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			TRUE_m13
+#define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			FALSE_m13 // MED 1.0 -> 1.1 in-place upgrade on open; leave off except when testing the upgrade path
+									  // (all m1x libraries read all MED 1.x data - upgrade is never required for reading)
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // number of processes
@@ -1194,13 +1204,14 @@ typedef struct {
 #define LH_DEFAULT_FLAGS_m13			( LH_READ_SLICE_SEG_DATA_m13 | LH_READ_SLICE_ALL_RECS_m13 )
 
 
+
 //**********************************************************************************//
 //************************** File Functions (FILE & FLOCK) *************************//
 //**********************************************************************************//
 
 // FILE_m13 is an enhanced FILE pointer for use in medlib functions
-// Note: functions requiring FILE pointers accept either, FILE_m13 * or FILE * wherevere appropriate
-// These arguments are declared as void pointers use of either without casting or compiler warnings
+// Note: functions requiring FILE pointers accept either, FILE_m13 * or FILE * wherever appropriate
+// These arguments are declared as void pointers for use of either without casting or compiler warnings
 
 
 // Defines
@@ -1274,6 +1285,20 @@ typedef struct {
 // NOTE: locking only possible with FILE_m13 file pointers
 // NOTE: read -> write lock upgrade is supported: a thread holding read locks may take a write lock on the same file;
 // its own read locks are absorbed into the write lock & survive it (released by their own read unlocks)
+// NOTE: multiprocess locking (globals miscellaneous.file_lock_multiprocess == TRUE_m13) extends locks across
+// concurrent library instances (e.g. acquisition writing while separate reader processes follow live):
+// os level whole file locks (flock() in MacOS/Linux, LockFileEx() in Windows - both per open description) are
+// held on a dedicated duplicated descriptor (user closes cannot drop them) & changed only at lock state
+// transitions (first reader in, writer in, last holder out) => no cost per operation, none at all when off;
+// between processes the os locks are advisory - as all cooperating processes use this library, enforcement
+// is absolute within them; CAVEAT: lock upgrades & downgrades briefly release the os lock (flock() semantics);
+// CAVEAT: locks do NOT span machines over network file systems (verified: MacOS smbfs client locks are not
+// visible to processes on the file server & vice versa) - multiprocess locking is a same-machine guarantee
+
+// multiprocess (os level) lock states
+#define FLOCK_OS_NONE_m13		((si1) 0)
+#define FLOCK_OS_SHARED_m13		((si1) 1)
+#define FLOCK_OS_EXCLUSIVE_m13		((si1) 2)
 #define FLOCK_OPEN_m13			((si4) 1 << 0) // increment open count +/- create lock
 #define FLOCK_CLOSE_m13			((si4) 1 << 1) // decrement open count +/- destroy lock
 #define FLOCK_LOCK_m13			((si4) 1 << 2) // lock (with mode)
@@ -1487,8 +1512,9 @@ const si1		*PROC_thread_name_m13(pid_t_m13 _id);
 pid_t_m13		PROC_thread_parent_id_m13(pid_t_m13 _id);
 
 
+
 //**********************************************************************************//
-//********************************* Parallel (PAR) *********************************//
+//********************************* Parallel Functions (PAR) *********************************//
 //**********************************************************************************//
 
 // The PAR functions run other library functions in threads, without requiring the caller to know
@@ -1589,6 +1615,9 @@ tern			PAR_wait_all_m13(PAR_INFO_m13 **par_infos, si4 n_infos, const si1 *interv
 //********************************** Parity (PRTY) *********************************//
 //**********************************************************************************//
 
+// NOTE: names beginning with "parity" are RESERVED - they identify parity files & directories (PRTY_is_parity_m13())
+// writers should reject them for sessions, channels, & segments at name creation time (G_valid_name_m13())
+
 // Flags
 #define PRTY_GLB_SESS_REC_DATA_m13	((ui4) 1 << 0)
 #define PRTY_GLB_SESS_REC_IDX_m13	((ui4) 1 << 1)
@@ -1680,7 +1709,7 @@ typedef struct {
 	ui8		segment_UID; // UID_NO_ENTRY_m13 (zero) in parity data that is session level (same names - in case misplaced)
 	ui4		n_blocks; // number of data blocks (& crcs) preceding this structure
 	ui4		block_bytes; // data bytes per block (except probably the last), multiple of 4 bytes (defaults to PRTY_BLOCK_BYTES_DEFAULT_m13)
-} PRTY_CRC_DATA_m13;
+} PRTY_CRC_DATA_m13;  // used to add CRCs to files that don't have many (e.g. index files), or any (e.g. video data files)
 
 // Parity File Structure:
 // 1) parity data
@@ -2338,6 +2367,10 @@ typedef struct FLOCK_ENTRY_m13 { // multiple thread access (tagged: forward refe
 	isem_t_m13		read_cnt; // ownership or number of processes currently reading file
 	_Atomic ui4		open_cnt; // number of processes that have file open
 	_Atomic ui4		write_depth; // reentrant write lock depth (auto-locking writes within explicit write-locked spans; modified only by owning thread)
+	pthread_mutex_t_m13	os_mutex; // serializes os lock state transitions (multiprocess locking)
+	si4			os_fd; // dedicated descriptor holding the os lock (duplicated => user closes cannot drop it); -1 == none
+	_Atomic si1		os_lock_state; // this process's os lock: FLOCK_OS_NONE/SHARED/EXCLUSIVE_m13
+	ui1			pad_bytes[3]; // future use (bytes will be there anyway)
 } FLOCK_ENTRY_m13;
 
 typedef struct { // multiple thread access
@@ -2406,6 +2439,7 @@ typedef struct {
 	tern				threading; // global default, used to set process globals default
 	tern				memory_mapping; // global default, used to set process globals default
 	si1				file_lock_mode; // enable global file locking
+	tern				file_lock_multiprocess; // extend locks across concurrent library instances (os level locks; see Files section)
 	const si1			*file_lock_timeout; // blocking timeout (as string)  [nap_m13() form]
 	ui4				CRC_mode;
 	tern				access_times; // record times of each structure & file access
@@ -3397,6 +3431,7 @@ tern			G_update_session_name_m13(FPS_m13 *fps);
 tern			G_update_session_name_header_m13(const si1 *fs_path, const si1 *fs_name, const si1 *uh_name); // used by G_update_session_name_m13()
 tern			G_valid_file_code_m13(ui4 type_code);
 tern			G_valid_level_code_m13(ui4 type_code);
+tern			G_valid_name_m13(const si1 *name); // session/channel/segment base names; rejects the reserved "parity" prefix (for writers, at name creation time)
 tern			G_valid_tern_m13(tern *val);
 tern			G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
@@ -3530,8 +3565,6 @@ typedef HRESULT (CALLBACK* NTQUERYINFOFILETYPE)(HANDLE, IO_STATUS_BLOCK *, PVOID
 typedef HRESULT (CALLBACK* ZWSETTIMERRESTYPE)(ULONG, BOOLEAN, ULONG *);
 typedef HRESULT (CALLBACK* NTDELAYEXECTYPE)(BOOLEAN, LARGE_INTEGER *);
 
-
-
 // Prototypes
 FILETIME	WN_uutc_to_win_time_m13(si8 uutc);
 tern		WN_cleanup_m13(void);
@@ -3550,7 +3583,6 @@ sf8		WN_uutc_to_date_m13(si8 uutc);
 tern		WN_windify_file_paths_m13(si1 *target, const si1 *source);
 si1		*WN_windify_format_string_m13(const si1 *fmt);
 #endif // WINDOWS_m13
-
 si8		WN_filetime_to_uutc_m13(ui1 *win_filetime); // for conversion of windows file time to uutc on any platform
 
 
@@ -4278,25 +4310,25 @@ typedef struct {
 
 // parameters contain "mechanics" of CPS
 typedef struct {
- // cache parameters
+	// cache parameters
 	CMP_CACHE_BLOCK_INFO_m13	*cached_blocks;
 	si4				cached_block_list_len;
 	si4				cached_block_cnt;
 	si4				*cache;
 	
- // memory parameters
+	// memory parameters
 	si8	allocated_block_samples;
 	si8	allocated_keysample_bytes;
 	si8	allocated_compressed_bytes; // == time series data fps: (raw_data_bytes - UH_BYTES_m13)
 	si8	allocated_decompressed_samples;
 	
- // compression parameters
+	// compression parameters
 	ui1	goal_derivative_level; // used with set_derivative_level directive
 	ui1	derivative_level; // goal/actual pairs because not always possible
 	ui1	goal_overflow_bytes; // used with set_overflow_bytes directive
 	ui1	overflow_bytes; // goal/actual pairs because not always possible
 	
- // block parameters
+	// block parameters
 	tern	discontinuity; // set if block is first after a discontinuity, passed in compression, returned in decompression
 	ui4	block_start_index; // block relative
 	ui4	block_end_index; // block relative
@@ -4314,7 +4346,7 @@ typedef struct {
 	ui4	variable_region_bytes; // value calculated and set by library based on parameters & directives
 	ui4	n_derivative_bytes; // values in derivative or difference buffer
 	
- // lossless compression parameters
+	// lossless compression parameters
 	sf4	SRRED_scale;
 	ui4	SRRED_test_samples; // smaller sizes increase speed, (CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13 uses full block (most acccurate), unless < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
 	sf8	SRRED_update_interval; // time, in seconds, between updates
@@ -4324,7 +4356,7 @@ typedef struct {
 	si8	SRRED_overflow_samples; // number of samples in the overflow buffer
 	si8	n_stats_entries; // number of bins in the counts array (also used in find derivative level)
 
- // lossy compression parameters
+	// lossy compression parameters
 	sf8	goal_ratio; // either compression ratio or mean residual ratio
 	sf8	actual_ratio; // either compression ratio or mean residual ratio
 	sf8	goal_tolerance; // tolerance for lossy compression mode goal, value of <= 0.0 uses default values, which are returned
@@ -4336,7 +4368,7 @@ typedef struct {
 	sf8	VDS_threshold; // generally an integer, but float values are fine. Range 0.0 to 10.0; default == 5.0 (0.0 indicates lossless compression)
 	sf8	VDS_sampling_frequency; // used to preserve units during LFP filtering, if filtering is not specified, this is not used
 	
- // compression arrays
+	// compression arrays
 	si1			*keysample_buffer; // passed in both compression & decompression
 	si4			*derivative_buffer; // used if needed in compression & decompression, size of maximum block differences
 	union {
@@ -4359,7 +4391,7 @@ typedef struct {
 	void			*minimum_range; // used by RED/PRED encode & decode (ui8 * or ui8 **)
 	void			*symbol_map; // used by RED/PRED encode & decode (ui1 * or ui1 **)
 	
-// pointer copies for switching between RED & PRED (Note: memory must be allocated for PRED initially)
+	// pointer copies for switching between RED & PRED (Note: memory must be allocated for PRED initially)
 	void			*PRED_base_count;
 	void			*PRED_base_sorted_count;
 	void			*PRED_base_symbol_map;
@@ -4652,7 +4684,6 @@ tern		UTF8_valid_str_m13(const si1 *s);
 				0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, \
 				0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, \
 				0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb };
-
 
 // Function Prototypes
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key);
@@ -5185,7 +5216,7 @@ typedef struct {
 } TR_MESSAGE_HDR_m13; // text follows structure, padded with zeros to 16 byte alignment
 
 
-// Prototypes
+// Function Prototypes
 TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, const si1 *password);
 tern		TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port);
 tern		TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, const si1 *message_text);

@@ -905,12 +905,22 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 	pid_t_m13			_id;
 	BEHAVIOR_STACK_LIST_m13		*list;
 	BEHAVIOR_STACK_m13		**stack_ptr, *stack, *new_stack;
+	static thread_local_m13 pid_t_m13		own_id = 0;  // thread id is immutable => cache (saves a system call per lookup)
+	static thread_local_m13 BEHAVIOR_STACK_m13	*own_stack = NULL;  // this thread's stack (avoids the list mutex & search on ~every library call)
 
 
 	// initializing or freeing globals
 	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
 		return(NULL);
-	
+
+	// cached stack valid while this thread holds it (release - base pop or delete - zeroes the _id => mismatch => searched path)
+	if (own_id == 0)
+		own_id = gettid_m13();
+	_id = own_id;
+	if (own_stack)
+		if (own_stack->_id == _id)
+			return(own_stack);
+
 	// get mutex
 	list = globals_m13->behavior_stack_list;
 	if (list == NULL)
@@ -918,7 +928,6 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 	pthread_mutex_lock_m13(&list->mutex);
 
 	// find stack
-	_id = gettid_m13();
 	n_stacks = list->top_idx + 1;
 	stack_ptr = list->stack_ptrs;
 	stack = NULL;
@@ -929,7 +938,7 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 		}
 		if (stack)
 			continue;
-		if ((*stack_ptr)->top_idx == -1)  // first open stack
+		if ((*stack_ptr)->_id == 0)  // first open stack (_id is zeroed on release; top_idx == -1 would also match a stack claimed by another thread before its first push => two threads sharing one stack)
 			stack = *stack_ptr;
 	}
 	
@@ -964,8 +973,11 @@ BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 		stack->top_idx = -1;
 		stack->_id = _id;
 	}
-		
+
 	pthread_mutex_unlock_m13(&list->mutex);
+
+	// cache this thread's stack (thread local)
+	own_stack = stack;
 
 	return(stack);
 }
@@ -982,10 +994,21 @@ void	G_behavior_stack_exec_reset_m13(const si1 *function, si4 line, ui4 code)
 
 	// reduces stack to one entry which is set to behavior
 	// pass DEFAULT_BEHAVIOR_m13 to set to list default behavior
-	
+
 	stack = G_behavior_stack_m13();  // gets mutex
 	if (stack == NULL)
 		return;
+
+	// allocate if new stack (behaviors are allocated lazily, by the push/add/remove functions)
+	if (stack->behaviors == NULL) {
+		stack->behaviors = (BEHAVIOR_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_m13));
+		if (stack->behaviors == NULL) {
+			stack->_id = 0;  // release unusable stack
+			G_set_error_m13(E_ALLOC_m13, NULL);
+			return;
+		}
+		stack->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+	}
 
 	stack->top_idx = 0;
 	behavior = stack->behaviors;
@@ -1961,7 +1984,7 @@ tern	G_check_file_list_m13(si1 **file_list, si4 n_files)
 }
 
 
-tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  // varargs (is_could == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
+tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  // varargs (is_cloud == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
 {
 	const si1	*cloud_directory, *cloud_service_name, *cloud_utilities_directory;
 	si1		command[PATH_BYTES_m13 + 64], cloud_prefix[PATH_BYTES_m13];
@@ -2580,9 +2603,9 @@ ui4	G_current_behavior_m13(void)
 	stack = G_behavior_stack_m13();
 	if (stack == NULL)
 		return(globals_m13->default_behavior.code);
-	else if (stack->top_idx == -1)
+	else if (stack->top_idx < 0)  // empty (defensive "<": exactly -1 when balanced)
 		return(globals_m13->default_behavior.code);
-	
+
 	return(stack->behaviors[stack->top_idx].code);
 }
 
@@ -2599,11 +2622,11 @@ BEHAVIOR_m13	*G_current_behavior_entry_m13(void)
 	stack = G_behavior_stack_m13();
 	if (stack == NULL)
 		behavior = NULL;
-	else if (stack->top_idx == -1)
+	else if (stack->top_idx < 0)  // empty (defensive "<": exactly -1 when balanced)
 		behavior = NULL;
 	else
 		behavior = stack->behaviors + stack->top_idx;
-	
+
 	return(behavior);
 }
 
@@ -6479,6 +6502,7 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	misc->CRC_mode = GLOBALS_CRC_MODE_DEFAULT_m13;
 	misc->file_lock_mode = GLOBALS_FILE_LOCK_MODE_DEFAULT_m13;
 	misc->file_lock_timeout = GLOBALS_FILE_LOCK_TIMEOUT_DEFAULT_m13;
+	misc->file_lock_multiprocess = GLOBALS_FILE_LOCK_MULTIPROCESS_DEFAULT_m13;
 	misc->write_sorted_records = GLOBALS_WRITE_SORTED_RECORDS_DEFAULT_m13;
 	misc->write_corrected_headers = GLOBALS_WRITE_CORRECTED_HEADERS_DEFAULT_m13;
 	misc->update_file_system_names = GLOBALS_UPDATE_FILE_SYSTEM_NAMES_DEFAULT_m13;
@@ -6815,25 +6839,64 @@ inline
 #endif
 tern	G_is_level_header_m13(void *ptr)
 {
-	const ui4		TEST_VALUE = 0xFEDCBA98;
-	ui4			level_code;
-	sig_handler_t_m13	current_handler;
+	ui4	level_code;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// returns FALSE_m13 if NULL or lh->type_code not recognized
-	
+	// returns FALSE_m13 if NULL, unreadable, or lh->type_code not recognized
+
 	if (ptr == NULL)
 		return_m13(FALSE_m13);
-	
-	// potential seg fault (highly unlikely)
-	level_code = TEST_VALUE;
-	current_handler = signal(SIGSEGV, SIG_IGN);  // save current signal handler for SIGSEGV, & set to ignore SIGSEGV
-	level_code = *((ui4 *) ptr);  // no change in value if signaled
-	signal(SIGSEGV, current_handler);  // restore previous signal handler
-		
+
+	// address validity probe, thread safe
+	// (the prior approach - ignore SIGSEGV process-wide & dereference - is undefined for synchronous faults in POSIX
+	// (the faulting instruction re-executes => infinite loop), & races other threads' genuine faults & concurrent probes)
+	// Note: a pipe is used because it truly copies the buffer => EFAULT on unreadable addresses
+	// (writes to /dev/null are discarded without reading the buffer => no fault)
+#if defined MACOS_m13 || defined LINUX_m13
+	{
+		si4			new_fds[2], expected_fd;
+		static _Atomic si4	probe_wr_fd = -1, probe_rd_fd = -1;
+
+		if (probe_wr_fd == -1) {  // open once (atomic claim: a racing thread's extra pipe is closed)
+			if (pipe(new_fds) == 0) {
+				expected_fd = -1;
+				if (atomic_compare_exchange_strong(&probe_wr_fd, &expected_fd, new_fds[1]) == 0) {
+					close(new_fds[0]);
+					close(new_fds[1]);
+				} else {
+					probe_rd_fd = new_fds[0];
+				}
+			}
+		}
+		if (probe_wr_fd >= 0) {
+			ui4	drain;
+
+			if (write(probe_wr_fd, ptr, sizeof(ui4)) == -1) {
+				if (errno == EFAULT)  // unreadable address
+					return_m13(FALSE_m13);
+			} else {  // drain the pipe (concurrent probes' writes & reads interleave, but counts balance)
+				if (read(probe_rd_fd, &drain, sizeof(ui4)) == -1)
+					(void) 0;  // nothing useful to do (probe still succeeded)
+			}
+		}
+	}
+#endif
+#ifdef WINDOWS_m13
+	{
+		MEMORY_BASIC_INFORMATION	mbi;
+
+		if (VirtualQuery(ptr, &mbi, sizeof(mbi)) == 0)
+			return_m13(FALSE_m13);
+		if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+			return_m13(FALSE_m13);
+	}
+#endif
+
+	level_code = *((ui4 *) ptr);
+
 	switch (level_code) {
 		case SESS_TYPE_CODE_m13:
 		case SSR_TYPE_CODE_m13:
@@ -8080,10 +8143,20 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 	first_seg = NULL;
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 		if (jobs[i].skip == FALSE_m13) {
-			last_seg = chan->segs[j] = (SEG_m13 *) rmis[j].MED_struct;
+			last_seg = chan->segs[j] = (SEG_m13 *) rmis[i].MED_struct;  // rmis & jobs are slice-relative (0 based, as i); chan->segs is map-relative (seg_idx based, as j)
 			if (first_seg == NULL)
 				first_seg = last_seg;
 		}
+	}
+
+	// no segments assigned (e.g. all extant segments skipped)
+	if (first_seg == NULL) {
+		slice->n_segs = EMPTY_SLICE_m13;
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(chan);
+		free(jobs);
+		free(rmis);
+		return_m13(NULL);
 	}
 	free(jobs);
 	free(rmis);
@@ -8096,7 +8169,7 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 	slice->end_samp_num = last_seg->slice.end_samp_num;
 	slice->end_seg_num = last_seg->slice.end_seg_num;
 	slice->n_segs = SLICE_SEG_COUNT_m13(slice);
-	
+
 	// ephemeral data
 	if (chan->flags & LH_GENERATE_EPHEMERAL_DATA_m13) {
 		if (chan->metadata_fps)
@@ -9070,12 +9143,21 @@ tern	G_path_parts_m13(const si1 *file_name, si1 *path, si1 *name, si1 *extension
 	G_push_function_m13();
 #endif
 
+	// outputs defined on all paths, including failures (callers may pass uninitialized buffers => stale
+	// contents must never be mistaken for results, or sniffed as pstrs - see PSTR_m13() note)
+	if (path)
+		*path = 0;
+	if (name)
+		*name = 0;
+	if (extension)
+		*extension = 0;
+
 	// handle bad calls
 	if (STR_is_empty_m13(file_name) == TRUE_m13) {
 		G_set_error_m13(E_GEN_m13, "file name is empty");
 		return_m13(FALSE_m13);
 	}
-		
+
 	// get path from root
 	G_full_path_m13(file_name, tmp_path);
 
@@ -9137,6 +9219,14 @@ void	G_pop_behavior_exec_m13(const si1 *function, const si4 line)
 	if (stack == NULL)
 		return;
 
+	// unbalanced pop (no matching push): without this guard top_idx would underflow & the
+	// next push would write behaviors[-1] (heap corruption)
+	if (stack->top_idx < 0) {
+		G_warning_message_m13("%s(): unbalanced behavior stack pop  [called at %s(%d)]\n", __FUNCTION__, function, line);
+		stack->_id = 0;  // release (the lookup above may have claimed an empty stack just for this pop)
+		return;
+	}
+
 	// pop
 	if (--stack->top_idx == -1)
 		stack->_id = 0;  // release stack (popping stack base); G_current_behavior_m13 will return default behavior
@@ -9186,14 +9276,20 @@ void	G_pop_function_exec_m13(const si1 *function, const si4 line)
 		}
 	}
 
-	// check balance
-	if (stack->top_idx >= 0) {
-		if (strcmp(function, stack->functions[stack->top_idx].name)) {
-			G_set_error_m13(E_GEN_m13, "unbalanced function stack push/pops: attempting to pop %s(), but stack top is %s()", function, stack->functions[stack->top_idx].name);
-			exit_m13(E_GEN_m13);  // call exit to show error & stack
-		}
+	// unbalanced pop (no matching push): without this guard top_idx would underflow & the
+	// next push would write functions[-1] (heap corruption)
+	if (stack->top_idx < 0) {
+		G_warning_message_m13("%s(): unbalanced function stack pop of %s()  [line %d]\n", __FUNCTION__, function, line);
+		stack->_id = 0;  // release (the lookup above may have claimed an empty stack just for this pop)
+		return;
 	}
-	
+
+	// check balance
+	if (strcmp(function, stack->functions[stack->top_idx].name)) {
+		G_set_error_m13(E_GEN_m13, "unbalanced function stack push/pops: attempting to pop %s(), but stack top is %s()", function, stack->functions[stack->top_idx].name);
+		exit_m13(E_GEN_m13);  // call exit to show error & stack
+	}
+
 	// pop
 	if (--stack->top_idx == -1)
 		stack->_id = 0;  // release stack (popping stack base);
@@ -10315,10 +10411,20 @@ CHAN_m13	*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...)  // varargs(
 	first_seg = NULL;
 	for (i = 0, j = seg_idx; i < n_segs; ++i, ++j) {
 		if (jobs[i].skip == FALSE_m13) {
-			last_seg = chan->segs[j] = (SEG_m13 *) rmis[j].MED_struct;
+			last_seg = chan->segs[j] = (SEG_m13 *) rmis[i].MED_struct;  // rmis & jobs are slice-relative (0 based, as i); chan->segs is map-relative (seg_idx based, as j)
 			if (first_seg == NULL)
 				first_seg = last_seg;
 		}
+	}
+
+	// no segments assigned (e.g. all extant segments skipped)
+	if (first_seg == NULL) {
+		slice->n_segs = EMPTY_SLICE_m13;
+		if (free_chan == TRUE_m13)
+			G_free_channel_m13(chan);
+		free(jobs);
+		free(rmis);
+		return_m13(NULL);
 	}
 	free(jobs);
 	free(rmis);
@@ -12772,8 +12878,6 @@ void	G_set_signal_traps_m13(tern set)
 	else
 		f = SIG_DFL;
 	
-	// if SIGABRT already set to
-	signal(SIGABRT, f);  // Abnormal termination)
 	signal(SIGABRT, f);  // Abnormal termination
 	signal(SIGFPE, f);  // Floating point exception
 	signal(SIGILL, f);  // Illegal instruction
@@ -12782,11 +12886,11 @@ void	G_set_signal_traps_m13(tern set)
 	signal(SIGTERM, f);  // Terminate
 #if defined MACOS_m13 || defined LINUX_m13  // supported on Posix OS's
 	signal(SIGBUS, f);  // Bus error
-	signal(SIGKILL, f);  // Kill
 	signal(SIGQUIT, f);  // Quit
 	signal(SIGTRAP, f);  // Trace Trap (unhandled exception, or debugger breakpoint)
 	signal(SIGXCPU, f);  // CPU time limit
 	signal(SIGXFSZ, f);  // File size limit
+	// Note: SIGKILL & SIGSTOP cannot be caught, blocked, or ignored (registering them just fails with EINVAL)
 #endif
 
 	return;
@@ -15089,8 +15193,13 @@ void	G_signal_trap_m13(si4 sig_num)
 {
 	const si1		*error_type, *error_desc, *function;
 
-	
-	// set signals back to default handlers
+
+	// Note: this handler calls async-signal-unsafe machinery (mutexes, printf, allocation in display paths) -
+	// a deliberate tradeoff: all paths lead to exit & the diagnostics are worth the small risk of a handler
+	// deadlock (e.g. signal received mid-malloc); a second Ctrl-C escapes via the reentrant SIGINT path below
+	// Note: in Windows, SIGINT handlers run on a NEW thread => gettid() here will not match any library thread
+
+	// set signals back to default handlers (a second fault in this handler gets default handling => no recursion)
 	G_set_signal_traps_m13(FALSE_m13);
 	
 	if (isem_tryown_m13(&globals_m13->error.isem) == FALSE_m13) {
@@ -16098,15 +16207,16 @@ void	G_update_access_time_m13(void *level_header)
 
 tern	G_update_channel_name_m13(CHAN_m13 *chan)
 {
+	tern		name_ok;
 	si1		**seg_list, **vid_list, path[PATH_BYTES_m13], tmp_path[PATH_BYTES_m13];
 	si1		*fs_name, *uh_name, name[MAX_NAME_BYTES_m13], sufx[8];
 	si4		i, j, n_segs, n_vids;
 	si8		len;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
+
 	// update all MED file system names to new channel name
 	// universal header channel names will be updated if globals_m13->update_header_names == TRUE_m13
 
@@ -16117,7 +16227,16 @@ tern	G_update_channel_name_m13(CHAN_m13 *chan)
 		G_set_error_m13(E_GEN_m13, "channel is null");
 		return_m13(FALSE_m13);
 	}
-	
+
+	// refuse to propagate an invalid file system rename (e.g. user renamed the channel to a reserved "parity" name)
+	G_push_behavior_m13(RETURN_QUIETLY_m13);
+	name_ok = G_valid_name_m13(chan->fs_name);
+	G_pop_behavior_m13();
+	if (name_ok == FALSE_m13) {
+		G_warning_message_m13("%s(): \"%s\" is not a valid channel name => headers & file names not updated\n", __FUNCTION__, chan->fs_name);
+		return_m13(FALSE_m13);
+	}
+
 	fs_name = chan->fs_name;
 	uh_name = chan->uh_name;
 	G_message_m13("Updating channel name \"%s\" to \"%s\" ...\n", uh_name, fs_name);
@@ -16932,7 +17051,7 @@ tern	G_update_MED_version_m13(FPS_m13 *fps)
 tern	G_update_session_name_m13(FPS_m13 *fps)
 {
 	static _Atomic tern	updated = FALSE_m13;
-	tern			r_val, reopen, path_exists, changed;
+	tern			r_val, reopen, path_exists, changed, name_ok;
 	si1			**file_list, **chan_list, **seg_list, **vid_list, *sufx;
 	si1			*sess_path, path[SEG_NAME_BYTES_m13], tmp_path[SEG_NAME_BYTES_m13], *fs_name, *uh_name;
 	si1			chan_name[NAME_BYTES_m13], seg_name[SEG_NAME_BYTES_m13];
@@ -16967,6 +17086,18 @@ tern	G_update_session_name_m13(FPS_m13 *fps)
 	reopen = r_val = FALSE_m13;
 
 	pg = G_proc_globs_m13(fps);
+
+	// refuse to propagate an invalid file system rename (e.g. user renamed the session to a reserved "parity" name)
+	// (updated latch above => warns once per process, then skips silently)
+	G_push_behavior_m13(RETURN_QUIETLY_m13);
+	name_ok = G_valid_name_m13(pg->current_session.fs_name);
+	G_pop_behavior_m13();
+	if (name_ok == FALSE_m13) {
+		G_warning_message_m13("%s(): \"%s\" is not a valid session name => headers & file names not updated\n", __FUNCTION__, pg->current_session.fs_name);
+		pthread_mutex_unlock_m13(&globals_m13->miscellaneous.update_mutex);
+		return_m13(FALSE_m13);
+	}
+
 	sess_path = pg->current_session.path;
 	if (STR_is_empty_m13(sess_path) == TRUE_m13) {
 		G_session_directory_m13(fps);
@@ -17345,8 +17476,39 @@ tern	G_valid_level_code_m13(ui4 type_code)
 		case REC_DATA_TYPE_CODE_m13:
 			return_m13(TRUE_m13);
 	}
-	
+
 	return_m13(FALSE_m13);
+}
+
+
+tern	G_valid_name_m13(const si1 *name)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// validates a proposed session, channel, or segment base name (name only: no path, no extension)
+	// intended for writers (acquisition, converters) at name creation time
+	// returns FALSE_m13 & sets error on invalid names
+
+	if (STR_is_empty_m13(name) == TRUE_m13) {
+		G_set_error_m13(E_GEN_m13, "name is empty");
+		return_m13(FALSE_m13);
+	}
+	if (strlen(name) >= (size_t) NAME_BYTES_m13) {  // byte capacity (buffer safety; malformed utf8 could exceed it below the character limit)
+		G_set_error_m13(E_GEN_m13, "name exceeds NAME_BYTES_m13 (including terminal zero)");
+		return_m13(FALSE_m13);
+	}
+	if (strchar_m13(name) > (size_t) ((NAME_BYTES_m13 >> 2) - 1)) {  // character limit: names sized as utf8[63] (up to 4 bytes per character)
+		G_set_error_m13(E_GEN_m13, "name \"%s\" exceeds %d characters", name, (NAME_BYTES_m13 >> 2) - 1);
+		return_m13(FALSE_m13);
+	}
+	if (strncmp(name, "parity", 6) == 0) {  // names beginning with "parity" identify parity files & directories (see PRTY_is_parity_m13()) => a channel so named would be misclassified
+		G_set_error_m13(E_GEN_m13, "name \"%s\": the \"parity\" prefix is reserved for parity files", name);  // Note: ascii prefix comparison is utf8 safe (multibyte lead bytes cannot match ascii)
+		return_m13(FALSE_m13);
+	}
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -18959,12 +19121,13 @@ tern	AT_add_entry_m13(const si1 *function, si4 line, void *address, size_t reque
 void	AT_free_all_m13(const si1 *function, si4 line)
 {
 	const si1	*plural_str;
+	void		*address;
 	si8		i, alloced_entries;
 	pid_t_m13	_id;
 	AT_LIST_m13	*list;
 	AT_ENTRY_m13	*ate;
 
-	
+
 	_id = gettid_m13();
 
 	pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);
@@ -18983,12 +19146,18 @@ void	AT_free_all_m13(const si1 *function, si4 line)
 			plural_str = "y";
 		printf_m13("\n%s(): freeing %ld entr%s:\n", __FUNCTION__, alloced_entries, plural_str);
 
-		ate = list->entries;
-		for (i = list->top_idx + 1; i--; ++ate) {
+		// iterate by index & re-derive the entry pointer after each mutex window:
+		// a concurrent AT_add_entry_m13() can reallocate (move) the entries during AT_show_entry_m13()
+		for (i = 0; i <= (si8) list->top_idx; ++i) {
+			ate = list->entries + i;
 			if (ate->free_function == NULL) {
+				address = ate->address;
 				pthread_mutex_unlock_m13(&globals_m13->AT_list->mutex);  // release mutex for AT_show_entry_m13()
-				AT_show_entry_m13(ate->address);
+				AT_show_entry_m13(address);
 				pthread_mutex_lock_m13(&globals_m13->AT_list->mutex);  // reclaim mutex
+				ate = list->entries + i;  // re-derive
+				if (ate->free_function != NULL || ate->address != address)  // entry changed during the window
+					continue;
 				#ifdef MATLAB_PERSISTENT_m13
 				mxFree(ate->address);
 				#else
@@ -38909,7 +39078,7 @@ tern	PAR_distribute_m13(PAR_INFO_m13 **par_infos, si4 n_infos, si4 reserved_core
 
 	// set affinity (build cpu set shared by all jobs)
 #if defined LINUX_m13 || defined WINDOWS_m13
-	si1		affinity[8];
+	si1		affinity[16]; // "%d-%d" can exceed 8 bytes at >= 100 cores
 	si4		start_core, end_core;
 	cpu_set_t_m13	cpu_set;
 
@@ -40104,7 +40273,7 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 	
 	// set affinity (build cpu set)
 #if defined LINUX_m13 || defined WINDOWS_m13
-	si1	affinity[8];
+	si1	affinity[16];  // "%d-%d" can exceed 8 bytes at >= 100 cores
 	si4	start_core, end_core;
 
 
@@ -40641,6 +40810,10 @@ pthread_t_m13	*PROC_thread_for_id_m13(pid_t_m13 _id)
 
 	// pass 0 for id for current process thread
 
+	static thread_local_m13 pthread_t_m13	thread_copy;  // returned pointer must not reference the list:
+							      // entries move on list expansion & are reused on thread exit
+							      // (copy valid until this thread's next call to this function)
+
 	if (_id == 0)
 		_id = gettid_m13();
 
@@ -40653,13 +40826,16 @@ pthread_t_m13	*PROC_thread_for_id_m13(pid_t_m13 _id)
 	for (i = list->top_idx + 1; i--; ++entry)
 		if (entry->_id == _id)
 			break;
-	
+
+	if (i >= 0)
+		thread_copy = entry->thread;  // copy under mutex
+
 	pthread_mutex_unlock_m13(&list->mutex);
 
 	if (i == -1)
 		return(NULL);
-	
-	return(&entry->thread);
+
+	return(&thread_copy);
 }
 
 
@@ -40733,29 +40909,33 @@ const si1	*PROC_thread_name_m13(pid_t_m13 _id)
 	si4			i;
 	THREAD_ENTRY_m13	*entry;
 	THREAD_LIST_m13		*list;
-	
-	
+	static thread_local_m13 si1	name_copy[THREAD_NAME_BYTES_m13];  // returned pointer must not reference the list:
+									   // entries move on list expansion & are reused on thread exit
+									   // (copy valid until this thread's next call to this function)
+
 	// pass _id == 0 for current thread
 	// returns NULL on failure
-	
+
 	if (_id == 0)   // self
 		_id = gettid_m13();
-	
+
 	// get mutex
 	list = globals_m13->thread_list;
 	pthread_mutex_lock_m13(&list->mutex);
 
-	// find first empty thread entry
+	// find thread _id in list
 	entry = list->entries;
 	for (i = list->top_idx + 1; i--; ++entry)
 		if (entry->_id == _id)
 			break;
 
-	if (i == -1)  // no match
+	if (i == -1) {  // no match
 		name = NULL;
-	else
-		name = (const si1 *) entry->name;
-	
+	} else {
+		strcpy(name_copy, entry->name);  // copy under mutex
+		name = (const si1 *) name_copy;
+	}
+
 	// return mutex
 	pthread_mutex_unlock_m13(&list->mutex);
 
@@ -49230,6 +49410,89 @@ typedef struct {
 	si4		count; // read locks held on entry by this thread
 } FLOCK_HELD_READS_m13;
 
+static si4	FLOCK_os_lock_m13(FLOCK_ENTRY_m13 *lock, si1 new_state, tern blocking, si4 file_fd)
+{
+	// os level whole file lock, shared across concurrent library instances (multiprocess locking)
+	// changes state on the entry's dedicated duplicated descriptor; caller holds lock->os_mutex
+	// returns FLOCK_SUCCESS_m13, FLOCK_LOCKED_m13 (non-blocking & held by another process), or FLOCK_ERR_m13
+	// Note: on a failed non-blocking transition the existing lock state is retained (flock() & LockFileEx() semantics)
+
+	if (lock->os_lock_state == new_state)
+		return(FLOCK_SUCCESS_m13);
+
+	// dedicated descriptor (duplicated: os lock survives user closes of other descriptors on the file)
+	if (lock->os_fd == -1) {
+		if (new_state == FLOCK_OS_NONE_m13)
+			return(FLOCK_SUCCESS_m13);
+		#if defined MACOS_m13 || defined LINUX_m13
+		lock->os_fd = dup(file_fd);
+		#endif
+		#ifdef WINDOWS_m13
+		lock->os_fd = _dup(file_fd);
+		#endif
+		if (lock->os_fd == -1) {
+			G_set_error_m13(E_FLOCK_m13, "could not duplicate descriptor for os lock");
+			return(FLOCK_ERR_m13);
+		}
+	}
+
+#if defined MACOS_m13 || defined LINUX_m13
+	{
+		si4	op;
+
+		switch (new_state) {
+			case FLOCK_OS_SHARED_m13:
+				op = LOCK_SH;
+				break;
+			case FLOCK_OS_EXCLUSIVE_m13:
+				op = LOCK_EX;
+				break;
+			default:
+				op = LOCK_UN;
+				break;
+		}
+		if (blocking == FALSE_m13)
+			op |= LOCK_NB;
+		if (flock(lock->os_fd, op)) {
+			if (errno == EWOULDBLOCK)
+				return(FLOCK_LOCKED_m13);
+			G_set_error_m13(E_FLOCK_m13, "os lock error (%d)", errno);
+			return(FLOCK_ERR_m13);
+		}
+	}
+#endif
+
+#ifdef WINDOWS_m13
+	{
+		HANDLE		fh;
+		DWORD		lock_flags;
+		OVERLAPPED	ov = { 0 };
+
+		fh = (HANDLE) _get_osfhandle(lock->os_fd);
+		UnlockFileEx(fh, 0, 0xFFFFFFFF, 0xFFFFFFFF, &ov);  // transitions replace the whole file lock (brief release on upgrade/downgrade, as with flock())
+		if (new_state != FLOCK_OS_NONE_m13) {
+			lock_flags = (new_state == FLOCK_OS_EXCLUSIVE_m13) ? LOCKFILE_EXCLUSIVE_LOCK : 0;
+			if (blocking == FALSE_m13)
+				lock_flags |= LOCKFILE_FAIL_IMMEDIATELY;
+			memset((void *) &ov, 0, sizeof(ov));
+			if (LockFileEx(fh, lock_flags, 0, 0xFFFFFFFF, 0xFFFFFFFF, &ov) == 0) {
+				if (GetLastError() == ERROR_LOCK_VIOLATION) {
+					lock->os_lock_state = FLOCK_OS_NONE_m13;  // unlocked above
+					return(FLOCK_LOCKED_m13);
+				}
+				G_set_error_m13(E_FLOCK_m13, "os lock error (%lu)", GetLastError());
+				return(FLOCK_ERR_m13);
+			}
+		}
+	}
+#endif
+
+	lock->os_lock_state = new_state;
+
+	return(FLOCK_SUCCESS_m13);
+}
+
+
 static FLOCK_HELD_READS_m13	*FLOCK_held_slot_m13(FLOCK_ENTRY_m13 *lock, tern claim)
 {
 	si4			i;
@@ -49266,9 +49529,9 @@ static FLOCK_HELD_READS_m13	*FLOCK_held_slot_m13(FLOCK_ENTRY_m13 *lock, tern cla
 
 si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 {						// varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
-	tern				is_std;
+	tern				is_std, mp;
 	const si1			*path, *nap_str;
-	si4				i, n_locks, std_fd;
+	si4				i, n_locks, std_fd, file_fd;
 	ui4				own_reads;
 	ui8				file_id, lock_file_id;
 	va_list				v_args;
@@ -49368,6 +49631,10 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 		}
 	}
 	
+	// multiprocess locking (os level locks at state transitions)
+	mp = globals_m13->miscellaneous.file_lock_multiprocess;
+	file_fd = (is_std == TRUE_m13) ? std_fd : m13_fp->fd;
+
 	// check operation
 	if (operation & (FLOCK_LOCK_m13 | FLOCK_UNLOCK_m13)) {
 		if (!(operation & (FLOCK_READ_m13 | FLOCK_WRITE_m13))) {
@@ -49458,6 +49725,9 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 		}
 		lock->file_id = file_id;  // assign lock
 		lock->write_depth = (ui4) 0;
+		lock->os_fd = -1;
+		lock->os_lock_state = FLOCK_OS_NONE_m13;
+		pthread_mutex_init_m13(&lock->os_mutex, NULL);
 		if (operation & FLOCK_OPEN_m13)
 			lock->open_cnt = (ui4) 0;
 		else
@@ -49472,6 +49742,17 @@ si4	flock_m13(void *fp, si4 operation, ...)	// varargs(FILE_m13 flags FLOCK_TIME
 			--lock->open_cnt;
 		if (lock->open_cnt == 0) {  // last close: unassign lock & mark slot empty (reusable)
 			isem_destroy_m13(&lock->read_cnt);
+			if (lock->os_fd != -1) {  // closing the dedicated descriptor releases any os lock
+				#if defined MACOS_m13 || defined LINUX_m13
+				close(lock->os_fd);
+				#endif
+				#ifdef WINDOWS_m13
+				_close(lock->os_fd);
+				#endif
+				lock->os_fd = -1;
+				lock->os_lock_state = FLOCK_OS_NONE_m13;
+			}
+			pthread_mutex_destroy_m13(&lock->os_mutex);
 			lock->file_id = 0;
 			lock->write_depth = (ui4) 0;
 
@@ -49503,6 +49784,14 @@ FLOCK_OPERATE_m13:
 			if (lock->read_cnt.owner == _id) {  // only owning thread can release ownership
 				if (--lock->write_depth)  // reentrant write locks still held (e.g. explicit write-locked span)
 					return_m13(FLOCK_SUCCESS_m13);
+				if (mp == TRUE_m13) {  // downgrade or release os lock before releasing local ownership
+					pthread_mutex_lock_m13(&lock->os_mutex);
+					if (isem_getcnt_m13(&lock->read_cnt))  // local read locks remain (e.g. reads absorbed by upgrade)
+						FLOCK_os_lock_m13(lock, FLOCK_OS_SHARED_m13, TRUE_m13, file_fd);
+					else
+						FLOCK_os_lock_m13(lock, FLOCK_OS_NONE_m13, TRUE_m13, file_fd);
+					pthread_mutex_unlock_m13(&lock->os_mutex);
+				}
 				lock->read_cnt.owner = ISEM_NO_OWNER_m13;
 			} else {  // not owner - can't unlock
 				return_m13(FLOCK_LOCKED_m13);
@@ -49515,6 +49804,12 @@ FLOCK_OPERATE_m13:
 					--held->count;
 				if (held->count == 0)
 					held->entry = NULL;  // free the slot
+			}
+			if (mp == TRUE_m13 && lock->os_lock_state == FLOCK_OS_SHARED_m13) {  // last local read out => release os lock
+				pthread_mutex_lock_m13(&lock->os_mutex);
+				if (isem_getcnt_m13(&lock->read_cnt) == (ui4) 0 && lock->read_cnt.owner == 0)
+					FLOCK_os_lock_m13(lock, FLOCK_OS_NONE_m13, TRUE_m13, file_fd);
+				pthread_mutex_unlock_m13(&lock->os_mutex);
 			}
 		}
 		return_m13(FLOCK_SUCCESS_m13);
@@ -49537,12 +49832,30 @@ FLOCK_OPERATE_m13:
 			own_reads = (held == NULL) ? (ui4) 0 : (ui4) held->count;
 			if (isem_tryown_m13(&lock->read_cnt) == TRUE_m13) {  // take ownership if unowned (fresh: reentrancy handled above)
 				if (isem_getcnt_m13(&lock->read_cnt) <= own_reads) {  // only this thread's read locks remain (read -> write upgrade)
+					if (mp == TRUE_m13) {
+						pthread_mutex_lock_m13(&lock->os_mutex);
+						i = FLOCK_os_lock_m13(lock, FLOCK_OS_EXCLUSIVE_m13, FALSE_m13, file_fd);
+						pthread_mutex_unlock_m13(&lock->os_mutex);
+						if (i != FLOCK_SUCCESS_m13) {  // another process holds the file (or error): release the fresh ownership
+							isem_chown_m13(&lock->read_cnt, ISEM_NO_OWNER_m13);
+							return_m13(i);
+						}
+					}
 					lock->write_depth = (ui4) 1;
 					return_m13(FLOCK_SUCCESS_m13);
 				}
 				isem_chown_m13(&lock->read_cnt, ISEM_NO_OWNER_m13);  // readers active: release the ownership taken by this call (a failed attempt must not block future readers)
 			}
 		} else if (isem_tryinc_m13(&lock->read_cnt) == TRUE_m13) {  // read lock
+			if (mp == TRUE_m13 && lock->os_lock_state == FLOCK_OS_NONE_m13) {  // first local read in => os shared lock
+				pthread_mutex_lock_m13(&lock->os_mutex);
+				i = FLOCK_os_lock_m13(lock, FLOCK_OS_SHARED_m13, FALSE_m13, file_fd);
+				pthread_mutex_unlock_m13(&lock->os_mutex);
+				if (i != FLOCK_SUCCESS_m13) {  // another process holds the file exclusively (or error): roll back the read
+					isem_dec_m13(&lock->read_cnt);
+					return_m13(i);
+				}
+			}
 			held = FLOCK_held_slot_m13(lock, TRUE_m13);
 			if (held)
 				++held->count;
@@ -49564,9 +49877,19 @@ FLOCK_OPERATE_m13:
 			while (lock->read_cnt.count > own_reads)  // count is atomic => peeked directly (as owner is above)
 				nap_m13(nap_str);
 		}
+		if (mp == TRUE_m13) {  // block until no other process holds the file
+			pthread_mutex_lock_m13(&lock->os_mutex);
+			FLOCK_os_lock_m13(lock, FLOCK_OS_EXCLUSIVE_m13, TRUE_m13, file_fd);
+			pthread_mutex_unlock_m13(&lock->os_mutex);
+		}
 		lock->write_depth = (ui4) 1;
 	} else {  // read lock
 		isem_inc_m13(&lock->read_cnt);  // block until unowned, increment count
+		if (mp == TRUE_m13 && lock->os_lock_state == FLOCK_OS_NONE_m13) {  // first local read in => os shared lock (block until no other process holds exclusive)
+			pthread_mutex_lock_m13(&lock->os_mutex);
+			FLOCK_os_lock_m13(lock, FLOCK_OS_SHARED_m13, TRUE_m13, file_fd);
+			pthread_mutex_unlock_m13(&lock->os_mutex);
+		}
 		held = FLOCK_held_slot_m13(lock, TRUE_m13);
 		if (held)
 			++held->count;
