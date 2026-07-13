@@ -1757,7 +1757,7 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes);
 
 // Prototypes
 si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, tern *TERN_val);
-si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, void *val, si4 val_type, ...); // vararg (val_type == RC_UNKNOWN_m13): *returned_val_type
+si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, void *val, si4 val_type, ...); // vararg (val_type == RC_UNKNOWN_TYPE_m13): si4 *returned_val_type
 
 
 //**********************************************************************************//
@@ -4563,7 +4563,7 @@ typedef ui4	crc4;
 #define CRC_IGNORE_m13		((ui4) 0) // ignore CRCs
 #define CRC_VALIDATE_m13	((ui4) 1 << 0) // validate on input
 #define CRC_CALCULATE_m13	((ui4) 1 << 1) // calculate on output
-#define CRC_MODES_ALL_m13	( CRC_VALIDATE_m13 | CRC_VALIDATE_m13 ) // validate on input & calculate on output
+#define CRC_MODES_ALL_m13	( CRC_VALIDATE_m13 | CRC_CALCULATE_m13 ) // validate on input & calculate on output
 
 // Macros
 #define CRC_SWAP4_m13(x)	( (((x) >> 24) & 0x000000ff) + (((x) >> 8) & 0x0000ff00) + (((x) & 0x0000ff00) << 8) + (((x) & 0x000000ff) << 24) )
