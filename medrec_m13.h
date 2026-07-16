@@ -559,6 +559,66 @@ tern	REC_check_ESti_type_alignment_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
+//****************   CSig: Cryptographic Signature (digest / signature)   *************//
+//*************************************************************************************//
+
+// Constants
+#define REC_CSig_TYPE_STRING_m13	"CSig"			// ascii[4]
+#define REC_CSig_TYPE_CODE_m13		(ui4) 0x67695343	// ui4 (little endian)
+// #define REC_CSig_TYPE_CODE_m13	(ui4) 0x43536967	// ui4 (big endian)
+
+// Digest algorithm codes
+#define REC_CSig_DIGEST_NONE_m13	((ui4) 0)
+#define REC_CSig_DIGEST_SHA256_m13	((ui4) 1) // 32-byte SHA-256, canonical MED order: data region then universal header, pcrc regions excluded (see DGST module, medlib_m13.h)
+
+// Signature algorithm codes
+#define REC_CSig_SIG_NONE_m13		((ui4) 0) // digest only (tamper-evidence, no attribution)
+#define REC_CSig_SIG_ED25519_m13	((ui4) 1) // reserved: Ed25519 signature over the digest (not yet implemented)
+
+// Occasion codes (why the record was generated; when == record time - chain-of-custody value)
+#define REC_CSig_OCCASION_UNSPECIFIED_m13	((ui1) 0)
+#define REC_CSig_OCCASION_CLOSE_m13		((ui1) 1) // file finalized by its writer (acquisition segment close)
+#define REC_CSig_OCCASION_CONVERSION_m13	((ui1) 2) // format conversion completed
+#define REC_CSig_OCCASION_TRANSFER_m13		((ui1) 3) // transfer hand-off
+#define REC_CSig_OCCASION_ARCHIVE_m13		((ui1) 4) // archive commit
+#define REC_CSig_OCCASION_REPAIR_m13		((ui1) 5) // post-repair
+#define REC_CSig_OCCASION_REKEY_m13		((ui1) 6) // post re-encryption
+#define REC_CSig_OCCASION_DEMAND_m13		((ui1) 7) // on demand
+
+// Version 1.0
+#define REC_CSig_v10_BYTES_m13				24	// fixed region only; digest/signature/public-key follow
+#define REC_CSig_v10_TARGET_FILE_UID_OFFSET_m13		0	// ui8 (File UID of the file this record vouches for; named by UID, not path)
+#define REC_CSig_v10_DIGEST_ALGORITHM_OFFSET_m13	8	// ui4
+#define REC_CSig_v10_SIGNATURE_ALGORITHM_OFFSET_m13	12	// ui4
+#define REC_CSig_v10_DIGEST_BYTES_OFFSET_m13		16	// ui2 (d)
+#define REC_CSig_v10_SIGNATURE_BYTES_OFFSET_m13		18	// ui2 (s)
+#define REC_CSig_v10_PUBLIC_KEY_BYTES_OFFSET_m13	20	// ui2 (k)
+#define REC_CSig_v10_OCCASION_OFFSET_m13		22	// ui1 (REC_CSig_OCCASION_*)
+#define REC_CSig_v10_PAD_OFFSET_m13			23	// ui1[1]
+#define REC_CSig_v10_PAD_BYTES_m13			1
+#define REC_CSig_v10_VARIABLE_REGION_OFFSET_m13		REC_CSig_v10_BYTES_m13	// digest (d bytes), then signature (s bytes), then public key (k bytes)
+
+// Structures
+typedef struct {
+	ui8	target_file_UID;	// File UID of the file this record vouches for
+	ui4	digest_algorithm;	// REC_CSig_DIGEST_*
+	ui4	signature_algorithm;	// REC_CSig_SIG_*
+	ui2	digest_bytes;		// d
+	ui2	signature_bytes;	// s (0 when signature_algorithm == none)
+	ui2	public_key_bytes;	// k (0 when signature_algorithm == none)
+	ui1	occasion;		// REC_CSig_OCCASION_*
+	ui1	pad[REC_CSig_v10_PAD_BYTES_m13];
+} REC_CSig_v10_m13;
+// Variable region follows structure: digest[d] || signature[s] || public_key[k], padded to 16-byte alignment (struct + arrays)
+
+// Prototypes
+tern	REC_show_CSig_type_m13(REC_HDR_m13 *record_header);
+tern	REC_check_CSig_type_alignment_m13(ui1 *bytes);
+si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const ui1 *digest, ui1 *body); // fills a v1.0 CSig record body (digest-only); digest == NULL => compute canonical digest by streamed read (DGST_file_m13()); returns body bytes (pre-pad) or FALSE_m13
+
+
+
+//*************************************************************************************//
 //***************************   CSti: Cognitive Stimulation   *************************//
 //*************************************************************************************//
 

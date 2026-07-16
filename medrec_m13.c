@@ -209,6 +209,9 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 		case REC_ESti_TYPE_CODE_m13:
 			REC_show_ESti_type_m13(record_header);
 			break;
+		case REC_CSig_TYPE_CODE_m13:
+			REC_show_CSig_type_m13(record_header);
+			break;
 		case REC_CSti_TYPE_CODE_m13:
 			REC_show_CSti_type_m13(record_header);
 			break;
@@ -260,6 +263,8 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes)
 	if ((REC_check_Epoc_type_alignment_m13(bytes)) == FALSE_m13)
 		return_value = FALSE_m13;
 	if ((REC_check_ESti_type_alignment_m13(bytes)) == FALSE_m13)
+		return_value = FALSE_m13;
+	if ((REC_check_CSig_type_alignment_m13(bytes)) == FALSE_m13)
 		return_value = FALSE_m13;
 	if ((REC_check_CSti_type_alignment_m13(bytes)) == FALSE_m13)
 		return_value = FALSE_m13;
@@ -1349,6 +1354,185 @@ REC_ESti_NOT_ALIGNED_m13:
 
 	return_m13(FALSE_m13);
 
+}
+
+
+//*************************************************************************************//
+//****************   CSig: Cryptographic Signature (digest / signature)   *************//
+//*************************************************************************************//
+
+tern	REC_show_CSig_type_m13(REC_HDR_m13 *record_header)
+{
+	REC_CSig_v10_m13	*csig;
+	ui1			*digest;
+	si1			hex_str[HEX_STR_BYTES_m13(SHA_HASH_BYTES_m13, 1)];
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// Version 1.0
+	if (record_header->version_major == 1 && record_header->version_minor == 0) {
+		*hex_str = 0;  // STR_hex_m13() tag-sniffs its output arg: uninitialized stack bytes can false-match a pstr (see PSTR_m13() note)
+		csig = (REC_CSig_v10_m13 *) ((ui1 *) record_header + REC_HDR_BYTES_m13);
+		printf_m13("Target File UID: 0x%016lx\n", csig->target_file_UID);
+
+		if (csig->digest_algorithm == REC_CSig_DIGEST_SHA256_m13)
+			printf_m13("Digest Algorithm: SHA-256\n");
+		else if (csig->digest_algorithm == REC_CSig_DIGEST_NONE_m13)
+			printf_m13("Digest Algorithm: none\n");
+		else
+			printf_m13("Digest Algorithm: unrecognized (%u)\n", csig->digest_algorithm);
+
+		digest = (ui1 *) csig + REC_CSig_v10_VARIABLE_REGION_OFFSET_m13;
+		if (csig->digest_bytes && csig->digest_bytes <= SHA_HASH_BYTES_m13) {
+			STR_hex_m13(hex_str, digest, (si8) csig->digest_bytes, "-", FALSE_m13);
+			printf_m13("Digest (%hu bytes): %s\n", csig->digest_bytes, hex_str);
+		} else {
+			printf_m13("Digest: no entry\n");
+		}
+
+		if (csig->signature_algorithm == REC_CSig_SIG_ED25519_m13)
+			printf_m13("Signature Algorithm: Ed25519 (%hu-byte signature, %hu-byte public key)\n", csig->signature_bytes, csig->public_key_bytes);
+		else if (csig->signature_algorithm == REC_CSig_SIG_NONE_m13)
+			printf_m13("Signature Algorithm: none (digest only)\n");
+		else
+			printf_m13("Signature Algorithm: unrecognized (%u)\n", csig->signature_algorithm);
+
+		switch (csig->occasion) {
+			case REC_CSig_OCCASION_UNSPECIFIED_m13:
+				printf_m13("Occasion: unspecified\n");
+				break;
+			case REC_CSig_OCCASION_CLOSE_m13:
+				printf_m13("Occasion: file close\n");
+				break;
+			case REC_CSig_OCCASION_CONVERSION_m13:
+				printf_m13("Occasion: format conversion\n");
+				break;
+			case REC_CSig_OCCASION_TRANSFER_m13:
+				printf_m13("Occasion: transfer hand-off\n");
+				break;
+			case REC_CSig_OCCASION_ARCHIVE_m13:
+				printf_m13("Occasion: archive commit\n");
+				break;
+			case REC_CSig_OCCASION_REPAIR_m13:
+				printf_m13("Occasion: post-repair\n");
+				break;
+			case REC_CSig_OCCASION_REKEY_m13:
+				printf_m13("Occasion: post re-encryption\n");
+				break;
+			case REC_CSig_OCCASION_DEMAND_m13:
+				printf_m13("Occasion: on demand\n");
+				break;
+			default:
+				printf_m13("Occasion: unrecognized (%hhu)\n", csig->occasion);
+				break;
+		}
+	}
+	// Unrecognized record version
+	else {
+		G_set_error_m13(E_REC_m13, "unrecognized CSig record version (%hhd.%hhd)", record_header->version_major, record_header->version_minor);
+	}
+
+	return_m13(TRUE_m13);
+}
+
+
+tern	REC_check_CSig_type_alignment_m13(ui1 *bytes)
+{
+	REC_CSig_v10_m13	*csig;
+	tern			free_flag = FALSE_m13;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// check overall size
+	if (sizeof(REC_CSig_v10_m13) != REC_CSig_v10_BYTES_m13)
+		goto REC_CSig_NOT_ALIGNED_m13;
+
+	// check fields
+	if (bytes == NULL) {
+		bytes = (ui1 *) malloc(REC_CSig_v10_BYTES_m13);
+		free_flag = TRUE_m13;
+	}
+	csig = (REC_CSig_v10_m13 *) bytes;
+	if (&csig->target_file_UID != (ui8 *) (bytes + REC_CSig_v10_TARGET_FILE_UID_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (&csig->digest_algorithm != (ui4 *) (bytes + REC_CSig_v10_DIGEST_ALGORITHM_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (&csig->signature_algorithm != (ui4 *) (bytes + REC_CSig_v10_SIGNATURE_ALGORITHM_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (&csig->digest_bytes != (ui2 *) (bytes + REC_CSig_v10_DIGEST_BYTES_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (&csig->signature_bytes != (ui2 *) (bytes + REC_CSig_v10_SIGNATURE_BYTES_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (&csig->public_key_bytes != (ui2 *) (bytes + REC_CSig_v10_PUBLIC_KEY_BYTES_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (&csig->occasion != (ui1 *) (bytes + REC_CSig_v10_OCCASION_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+	if (csig->pad != (ui1 *) (bytes + REC_CSig_v10_PAD_OFFSET_m13))
+		goto REC_CSig_NOT_ALIGNED_m13;
+
+	// aligned
+	if (free_flag == TRUE_m13)
+		free((void *) bytes);
+
+	return_m13(TRUE_m13);
+
+	// not aligned
+REC_CSig_NOT_ALIGNED_m13:
+
+	if (free_flag == TRUE_m13)
+		free((void *) bytes);
+
+	G_set_error_m13(E_REC_m13, "CSig structure is NOT aligned");
+
+	return_m13(FALSE_m13);
+}
+
+
+si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const ui1 *digest, ui1 *body)
+{
+	ui1			local_digest[DGST_BYTES_m13];
+	REC_CSig_v10_m13	*csig;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// fills a v1.0 CSig record body (digest only)
+	// digest == NULL: the canonical MED digest is computed here by streamed read (DGST_file_m13())
+	// digest passed: caller already has it (e.g. streamed during writing - DGST_finalize_m13());
+	//	target_file_path is not touched in that case (may even be gone: transfer/archive occasions)
+	// canonical digest order & coverage: see the DGST module (medlib_m13.h); external one-liner there too
+	// body must have room for at least REC_CSig_v10_BYTES_m13 + DGST_BYTES_m13 (56) bytes
+	// signature fields are set to none (reserved for a future Ed25519 fill-in behind REC_CSig_SIG_ED25519_m13)
+	// returns the body byte count before record padding, or FALSE_m13 on error
+
+	if (body == NULL) {
+		G_set_error_m13(E_REC_m13, "CSig body buffer is null");
+		return_m13(FALSE_m13);
+	}
+	if (digest == NULL) {
+		if (DGST_file_m13(target_file_path, local_digest) != TRUE_m13)
+			return_m13(FALSE_m13);  // error set by DGST_file_m13()
+		digest = local_digest;
+	}
+
+	// fill record body
+	csig = (REC_CSig_v10_m13 *) body;
+	memset(csig, 0, sizeof(REC_CSig_v10_m13));
+	csig->target_file_UID = target_file_UID;
+	csig->digest_algorithm = REC_CSig_DIGEST_SHA256_m13;
+	csig->signature_algorithm = REC_CSig_SIG_NONE_m13;
+	csig->digest_bytes = (ui2) DGST_BYTES_m13;
+	csig->signature_bytes = 0;
+	csig->public_key_bytes = 0;
+	csig->occasion = occasion;
+	memcpy(body + REC_CSig_v10_VARIABLE_REGION_OFFSET_m13, digest, (size_t) DGST_BYTES_m13);
+
+	return_m13((si8) REC_CSig_v10_BYTES_m13 + DGST_BYTES_m13);
 }
 
 

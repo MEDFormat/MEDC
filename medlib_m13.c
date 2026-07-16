@@ -38,7 +38,7 @@
 // MED derives from the Multiscale Electrophysiology Format (MEF), versions 1-3.
 // Many people contributed to the MEF effort, but special mention is owed to
 // Greg Worrell, Casey Stengel, Andy Gardner, Mark Bower, Vince Vasoli, Ben Brinkmann,
-// Dan Crepeau, Jan Cimbálník, Jon Lange, and Jon Halford for their contributions
+// Dan Crepeau, Jan Cimbálnik, Jon Lange, and Jon Halford for their contributions
 // in design, coding, testing, implementation, and adoption.
 
 // The encryption / decryption algorithm is the 128-bit AES standard ( http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf ).
@@ -107,6 +107,11 @@ GLOBALS_m13		*globals_m13 = NULL;
 // concurrently active job distributions (PROC & PAR)
 // used by adaptive jobs_per_core: utilization measurements are only trusted when a distribution runs alone
 static _Atomic si4	distribute_calls_m13 = 0;
+
+// stack registry epoch: incremented by G_free_globals_m13() (must outlive the globals it guards)
+// threads cache pointers into the function stack registry; freeing the registry invalidates every cache -
+// without this check a re-initialized library hands a thread its FREED stack (same _id bytes still in the block)
+static _Atomic ui4	stacks_epoch_m13 = 0;
 
 #ifdef FT_DEBUG_m13
 // error function stack snapshot: G_set_error_exec_m13() copies the function stacks of the causal thread & its
@@ -185,7 +190,7 @@ ui4 	G_add_level_extension_m13(si1 *directory_name)
 #endif
 	
 	// returns type code of existing level
-	// appends extension to passed directory_name (enough space is assumed)
+	// appends extension to passed directory_name (enough space assumed to be available)
 
 	from_root = G_full_path_m13(directory_name, full_path);  // returns T/F on whether full_path path wsa from root
 	G_path_parts_m13(full_path, enclosing_dir, base_name, NULL);
@@ -255,44 +260,32 @@ ADD_LEVEL_EXTENSION_MATCH_m13:
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
 inline
 #endif
+// thread-local behavior stack internals (defined with G_behavior_stack_m13() below)
+static ui4	G_default_behavior_code_m13(void);
+static tern	G_behavior_stack_grow_m13(BEHAVIOR_STACK_m13 *stack);
+
+
 void	G_add_behavior_exec_m13(const si1 *function, si4 line, ui4 code)
 {
 	ui4			prev_code;
-	si4			n_behaviors;
-	BEHAVIOR_m13		*behavior, *new_behaviors;
+	BEHAVIOR_m13		*behavior;
 	BEHAVIOR_STACK_m13	*stack;
-	
+
 
 	// ORs to current behavior & pushes to stack as new entry
-	
-	// initializing or freeing globals
-	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
-		return;
 
-	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		return;
-	
+	stack = G_behavior_stack_m13();  // thread-local: always available
+
 	// expand stack
-	n_behaviors = stack->top_idx + 1;
-	if (n_behaviors == stack->size) {
-		n_behaviors += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		new_behaviors = (BEHAVIOR_m13 *) realloc(stack->behaviors, (size_t) n_behaviors * sizeof(BEHAVIOR_m13));
-		if (new_behaviors == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
+	if ((stack->top_idx + 1) == stack->size)
+		if (G_behavior_stack_grow_m13(stack) == FALSE_m13)
 			return;
-		}
-		stack->behaviors = new_behaviors;
-		stack->size = n_behaviors;
-	}
-	
-	behavior = stack->behaviors + stack->top_idx;
+
 	if (stack->top_idx >= 0)
-		prev_code = behavior->code;
+		prev_code = stack->behaviors[stack->top_idx].code;
 	else
-		prev_code = globals_m13->default_behavior.code;
-	++stack->top_idx;
-	++behavior;
+		prev_code = G_default_behavior_code_m13();
+	behavior = stack->behaviors + (++stack->top_idx);
 	behavior->function = function;
 	behavior->line = line;
 	behavior->code = prev_code | code;
@@ -896,90 +889,129 @@ si1 	*G_base_name_m13(void *level_header, const si1 *path, si1 *base_name)
 }
 
 
-#ifndef WINDOWS_m13  // inline causes linking problem in Windows
-inline
-#endif
+// thread-local behavior stack internals
+// storage belongs to the thread itself (no global registry) => behaviors work in every thread at every
+// lifecycle moment, including globals initialization, freeing, & re-initialization (suspend_stacks does
+// not apply to behaviors); the heap-grown behaviors block is reclaimed at thread exit by a TSD destructor
+// IMPORTANT: the TSD value is the heap behaviors block ITSELF (re-registered whenever it is allocated
+// or moved by realloc), NEVER the address of the thread_local stack struct: on MacOS the dynamic TLS block
+// is torn down by dyld's own TSD destructor & POSIX does not order destructors across keys => dereferencing
+// thread_local storage in a destructor is a use-after-free (found by ASan as an intermittent repair_MED
+// exit at Phase II, silent under a RETURN_QUIETLY window, 2026-07-15)
+
+#if defined MACOS_m13 || defined LINUX_m13
+static pthread_key_t	G_behavior_stack_key_m13;
+static pthread_once_t	G_behavior_stack_key_once_m13 = PTHREAD_ONCE_INIT;
+
+static void	G_behavior_stack_reclaim_m13(void *ptr)  // TSD destructor: thread is exiting; ptr is the behaviors block
+{
+	free(ptr);  // plain malloc family: behavior storage deliberately untracked; no other memory touched (see note above)
+}
+
+static void	G_behavior_stack_key_create_m13(void)
+{
+	pthread_key_create(&G_behavior_stack_key_m13, G_behavior_stack_reclaim_m13);
+}
+
+static void	G_behavior_stack_register_m13(BEHAVIOR_m13 *behaviors)
+{
+	pthread_once(&G_behavior_stack_key_once_m13, G_behavior_stack_key_create_m13);
+	pthread_setspecific(G_behavior_stack_key_m13, behaviors);  // on failure the block leaks at thread exit - benign relative to unavailable behaviors
+}
+#endif  // MACOS_m13 || LINUX_m13
+
+#ifdef WINDOWS_m13  // UNVERIFIED (FlsAlloc callback == TlsAlloc with a thread-exit destructor)
+static DWORD		G_behavior_stack_fls_m13 = FLS_OUT_OF_INDEXES;
+static INIT_ONCE	G_behavior_stack_once_m13 = INIT_ONCE_STATIC_INIT;
+
+static VOID WINAPI	G_behavior_stack_reclaim_m13(PVOID ptr)  // FLS callback: thread is exiting; ptr is the behaviors block
+{
+	free(ptr);  // plain malloc family: behavior storage deliberately untracked; no other memory touched (see note above)
+}
+
+static BOOL CALLBACK	G_behavior_stack_key_create_m13(PINIT_ONCE once, PVOID param, PVOID *ctx)
+{
+	G_behavior_stack_fls_m13 = FlsAlloc(G_behavior_stack_reclaim_m13);
+	return(TRUE);
+}
+
+static void	G_behavior_stack_register_m13(BEHAVIOR_m13 *behaviors)
+{
+	InitOnceExecuteOnce(&G_behavior_stack_once_m13, G_behavior_stack_key_create_m13, NULL, NULL);
+	if (G_behavior_stack_fls_m13 != FLS_OUT_OF_INDEXES)
+		FlsSetValue(G_behavior_stack_fls_m13, behaviors);  // on failure the block leaks at thread exit - benign relative to unavailable behaviors
+}
+#endif  // WINDOWS_m13
+
+static ui4	G_default_behavior_code_m13(void)
+{
+	ui4	code;
+
+	// zero == unset (zeroed globals during early initialization, or no globals at all) => library default
+	// (an explicit exit-on-fail scope is expressible by pushing a zero code onto the stack)
+
+	if (globals_m13 == NULL)
+		return(DEFAULT_BEHAVIOR_m13);
+	code = globals_m13->default_behavior.code;
+	if (code == 0)
+		return(DEFAULT_BEHAVIOR_m13);
+
+	return(code);
+}
+
+static tern	G_behavior_stack_grow_m13(BEHAVIOR_STACK_m13 *stack)
+{
+	si4		new_size;
+	BEHAVIOR_m13	*new_behaviors;
+	static thread_local_m13 tern	depth_warned = 0;  // zero-init == not warned
+
+	// unlimited growth (nesting depth cannot be predicted); the warning threshold usually indicates a push/pop leak
+
+	if (stack->behaviors == NULL) {  // first use in this thread (behaviors allocated lazily)
+		stack->behaviors = (BEHAVIOR_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_m13));
+		if (stack->behaviors == NULL) {
+			G_set_error_m13(E_ALLOC_m13, NULL);
+			return(FALSE_m13);
+		}
+		stack->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+		G_behavior_stack_register_m13(stack->behaviors);  // arrange reclamation at thread exit (TSD value == the block itself)
+		return(TRUE_m13);
+	}
+
+	new_size = stack->size + GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
+	new_behaviors = (BEHAVIOR_m13 *) realloc(stack->behaviors, (size_t) new_size * sizeof(BEHAVIOR_m13));
+	if (new_behaviors == NULL) {
+		G_set_error_m13(E_ALLOC_m13, NULL);
+		return(FALSE_m13);
+	}
+	stack->behaviors = new_behaviors;
+	stack->size = new_size;
+	G_behavior_stack_register_m13(stack->behaviors);  // realloc may move the block: re-register the new address
+
+	if (new_size > GLOBALS_BEHAVIOR_STACK_DEPTH_WARNING_m13 && depth_warned != TRUE_m13) {
+		G_warning_message_m13("%s(): behavior stack depth exceeds %d - probable behavior push/pop leak\n", __FUNCTION__, GLOBALS_BEHAVIOR_STACK_DEPTH_WARNING_m13);
+		depth_warned = TRUE_m13;
+	}
+
+	return(TRUE_m13);
+}
+
 BEHAVIOR_STACK_m13	*G_behavior_stack_m13(void)
 {
-	si4				i, n_stacks;
-	pid_t_m13			_id;
-	BEHAVIOR_STACK_LIST_m13		*list;
-	BEHAVIOR_STACK_m13		**stack_ptr, *stack, *new_stack;
-	static thread_local_m13 pid_t_m13		own_id = 0;  // thread id is immutable => cache (saves a system call per lookup)
-	static thread_local_m13 BEHAVIOR_STACK_m13	*own_stack = NULL;  // this thread's stack (avoids the list mutex & search on ~every library call)
+	static thread_local_m13 BEHAVIOR_STACK_m13	thread_stack = {0};
+	static thread_local_m13 tern			initialized = 0;  // zero-init == uninitialized
 
+	// always succeeds: storage is the thread's own (behaviors block allocated lazily by push/add/remove/reset)
 
-	// initializing or freeing globals
-	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
-		return(NULL);
-
-	// cached stack valid while this thread holds it (release - base pop or delete - zeroes the _id => mismatch => searched path)
-	if (own_id == 0)
-		own_id = gettid_m13();
-	_id = own_id;
-	if (own_stack)
-		if (own_stack->_id == _id)
-			return(own_stack);
-
-	// get mutex
-	list = globals_m13->behavior_stack_list;
-	if (list == NULL)
-		return(NULL);
-	pthread_mutex_lock_m13(&list->mutex);
-
-	// find stack
-	n_stacks = list->top_idx + 1;
-	stack_ptr = list->stack_ptrs;
-	stack = NULL;
-	for (i = n_stacks; i--; ++stack_ptr) {
-		if ((*stack_ptr)->_id == _id) {
-			stack = *stack_ptr;
-			break;
-		}
-		if (stack)
-			continue;
-		if ((*stack_ptr)->_id == 0)  // first open stack (_id is zeroed on release; top_idx == -1 would also match a stack claimed by another thread before its first push => two threads sharing one stack)
-			stack = *stack_ptr;
+	if (initialized != TRUE_m13) {
+		thread_stack._id = gettid_m13();
+		thread_stack.top_idx = -1;
+		initialized = TRUE_m13;
 	}
-	
-	// stack not found
-	if (i == -1) {
-		if (stack == NULL) {  // create a new stack
-			if (list->size == n_stacks) {  // expand list
-				n_stacks += GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13;
-				stack_ptr = (BEHAVIOR_STACK_m13 **) realloc(list->stack_ptrs, (size_t) n_stacks * sizeof(BEHAVIOR_STACK_m13 *));
-				if (stack_ptr == NULL) {  // return with no changes to stacks
-					pthread_mutex_unlock_m13(&list->mutex);
-					G_set_error_m13(E_ALLOC_m13, NULL);
-					return(NULL);
-				}
-				list->stack_ptrs = stack_ptr;
+	// reclamation registration happens in G_behavior_stack_grow_m13() when the behaviors block exists
+	// (the TSD value must be the heap block, never this thread_local struct's address - see reclaim note)
 
-				// allocate & initialize new stacks (note: stacks allocated en bloc)
-				new_stack = (BEHAVIOR_STACK_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_STACK_m13));
-				if (new_stack == NULL) {
-					G_set_error_m13(E_ALLOC_m13, NULL);
-					pthread_mutex_unlock_m13(&list->mutex);
-					return(NULL);
-				}
-				stack_ptr = list->stack_ptrs + list->size;  // list->size == old size at this point
-				for (i = GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13; i--;)
-					*stack_ptr++ = new_stack++;  // assign stack pointer
-				list->size = n_stacks;
-			}
-			stack = list->stack_ptrs[++list->top_idx];
-		}
-		// initialize & assign new stack (behaviors allocated by push/add/remove behavior functions)
-		stack->top_idx = -1;
-		stack->_id = _id;
-	}
-
-	pthread_mutex_unlock_m13(&list->mutex);
-
-	// cache this thread's stack (thread local)
-	own_stack = stack;
-
-	return(stack);
+	return(&thread_stack);
 }
 
 
@@ -995,27 +1027,19 @@ void	G_behavior_stack_exec_reset_m13(const si1 *function, si4 line, ui4 code)
 	// reduces stack to one entry which is set to behavior
 	// pass DEFAULT_BEHAVIOR_m13 to set to list default behavior
 
-	stack = G_behavior_stack_m13();  // gets mutex
-	if (stack == NULL)
-		return;
+	stack = G_behavior_stack_m13();  // thread-local: always available
 
 	// allocate if new stack (behaviors are allocated lazily, by the push/add/remove functions)
-	if (stack->behaviors == NULL) {
-		stack->behaviors = (BEHAVIOR_m13 *) calloc((size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13, sizeof(BEHAVIOR_m13));
-		if (stack->behaviors == NULL) {
-			stack->_id = 0;  // release unusable stack
-			G_set_error_m13(E_ALLOC_m13, NULL);
+	if (stack->behaviors == NULL)
+		if (G_behavior_stack_grow_m13(stack) == FALSE_m13)
 			return;
-		}
-		stack->size = GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-	}
 
 	stack->top_idx = 0;
 	behavior = stack->behaviors;
 	behavior->function = function;
 	behavior->line = line;
 	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
-		behavior->code = globals_m13->default_behavior.code;
+		behavior->code = G_default_behavior_code_m13();
 	else
 		behavior->code = code;
 
@@ -2045,6 +2069,33 @@ tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  //
 }
 
 
+tern	G_check_new_password_m13(const si1 *password)
+{
+	si4	pw_len;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// creation-time password policy: called when SETTING a password, never when reading (legacy or short
+	// passwords must always remain readable). Enforces a minimum length & warns on weak-but-legal lengths.
+	// No character-class rules are imposed - length is the dominant entropy factor & the KDF handles the rest.
+
+	if (G_check_password_m13(password) == FALSE_m13)  // format validity (non-null, 1..max characters)
+		return_m13(FALSE_m13);
+
+	pw_len = UTF8_strlen_m13(password);
+	if (pw_len < MIN_NEW_PASSWORD_CHARACTERS_m13) {
+		G_set_error_m13(E_FACC_m13, "new password too short (minimum %d characters)", MIN_NEW_PASSWORD_CHARACTERS_m13);
+		return_m13(FALSE_m13);
+	}
+	if (pw_len < RECOMMENDED_PASSWORD_CHARACTERS_m13)
+		G_warning_message_m13("%s(): password has %d characters; %d or more is recommended for strong protection\n", __FUNCTION__, pw_len, RECOMMENDED_PASSWORD_CHARACTERS_m13);
+
+	return_m13(TRUE_m13);
+}
+
+
 tern	G_check_password_m13(const si1 *password)
 {
 	si4	pw_len;
@@ -2243,7 +2294,7 @@ si4	G_compare_record_index_times(const void *a, const void *b)
 }
 
 
-tern	G_condition_password_m13(const si1 *password, si1 *password_bytes, tern expand_password)
+tern	G_condition_password_m13(const si1 *password, si1 *password_bytes)
 {
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -2260,10 +2311,10 @@ tern	G_condition_password_m13(const si1 *password, si1 *password_bytes, tern exp
 	if (password_bytes == NULL)
 		password_bytes = (si1 *) calloc_m13((size_t) PASSWORD_BYTES_m13, sizeof(ui1));
 	
-	if (expand_password == TRUE_m13)
-		G_expand_password_m13(password, password_bytes);
-	else
-		G_terminal_password_bytes_m13(password, password_bytes);
+	G_terminal_password_bytes_m13(password, password_bytes);  // unused bytes are zero
+	// (password "expansion" - pseudorandom fill of unused bytes - was eliminated: it added no entropy under any
+	// schema, & its library-specific generator would have been an interoperability burden; universal header
+	// expanded_passwords field is deprecated & always false)
 
 	return_m13(TRUE_m13);
 }
@@ -2599,13 +2650,11 @@ inline
 ui4	G_current_behavior_m13(void)
 {
 	BEHAVIOR_STACK_m13	*stack;
-	
 
-	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		return(globals_m13->default_behavior.code);
-	else if (stack->top_idx < 0)  // empty (defensive "<": exactly -1 when balanced)
-		return(globals_m13->default_behavior.code);
+
+	stack = G_behavior_stack_m13();  // thread-local: always available
+	if (stack->top_idx < 0)  // empty (defensive "<": exactly -1 when balanced)
+		return(G_default_behavior_code_m13());
 
 	return(stack->behaviors[stack->top_idx].code);
 }
@@ -2620,10 +2669,8 @@ BEHAVIOR_m13	*G_current_behavior_entry_m13(void)
 	BEHAVIOR_STACK_m13	*stack;
 	
 
-	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		behavior = NULL;
-	else if (stack->top_idx < 0)  // empty (defensive "<": exactly -1 when balanced)
+	stack = G_behavior_stack_m13();  // thread-local: always available
+	if (stack->top_idx < 0)  // empty (defensive "<": exactly -1 when balanced)
 		behavior = NULL;
 	else
 		behavior = stack->behaviors + stack->top_idx;
@@ -2706,9 +2753,66 @@ si4  G_days_in_month_m13(si4 month, si4 year)
 }
 
 
+tern	G_AES_crypt_m13(UH_m13 *uh, PASSWORD_DATA_m13 *pwd, si1 level, ui1 *data, si8 len, tern encrypt)
+{
+	tern	legacy_valid;
+	ui1	*key, schema;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// selects the AES variant & expanded key for the file's crypto schema & encryption level, then encrypts/decrypts in place
+	// uh == NULL implies legacy schema (e.g. MED 1.0 update paths)
+	// returns FALSE_m13 if the required key is unavailable
+
+	if (level < NO_ENCRYPTION_m13)
+		level = -level;  // decrypted state: sign flipped
+
+	if (uh == NULL)
+		schema = CRYPTO_SCHEMA_LEGACY_m13;
+	else if (MED_VER_1_0_m13(uh) == TRUE_m13)
+		schema = CRYPTO_SCHEMA_LEGACY_m13;  // MED 1.0 predates crypto schemas
+	else
+		schema = uh->crypto_schema;
+
+	if (schema == CRYPTO_SCHEMA_LEGACY_m13) {
+		if (level == LEVEL_1_ENCRYPTION_m13) {
+			key = (encrypt == TRUE_m13) ? pwd->level_1_encryption_key : pwd->level_1_decryption_key;
+			legacy_valid = pwd->level_1_legacy_key_valid;
+		} else {
+			key = (encrypt == TRUE_m13) ? pwd->level_2_encryption_key : pwd->level_2_decryption_key;
+			legacy_valid = pwd->level_2_legacy_key_valid;
+		}
+		if (legacy_valid != TRUE_m13) {  // schema 1 level chaining recovers master secrets, not passwords: legacy keys need the level's password directly
+			G_set_error_m13(E_CRYP_m13, "legacy-schema data requires its level %hhd password directly", level);
+			return_m13(FALSE_m13);
+		}
+		if (encrypt == TRUE_m13)
+			AES_encrypt_m13(data, len, NULL, key);
+		else
+			AES_decrypt_m13(data, len, NULL, key);
+	} else {
+		if (pwd->crypto_schema == CRYPTO_SCHEMA_LEGACY_m13) {  // mixed-schema session, passwords processed against the other schema
+			G_set_error_m13(E_CRYP_m13, "passwords were processed against a legacy-schema file: reprocess against this file");
+			return_m13(FALSE_m13);
+		}
+		if (level == LEVEL_1_ENCRYPTION_m13)
+			key = (encrypt == TRUE_m13) ? pwd->level_1_encryption_key_256 : pwd->level_1_decryption_key_256;
+		else
+			key = (encrypt == TRUE_m13) ? pwd->level_2_encryption_key_256 : pwd->level_2_decryption_key_256;
+		if (encrypt == TRUE_m13)
+			AES_encrypt_256_m13(data, len, NULL, key);
+		else
+			AES_decrypt_256_m13(data, len, NULL, key);
+	}
+
+	return_m13(TRUE_m13);
+}
+
+
 tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 {
-	ui1				*decryption_key, encryption_rounds;
 	si1				*encryption_2, *encryption_3;
 	PROC_GLOBS_m13			*pg;
 	PASSWORD_DATA_m13		*pwd;
@@ -2728,11 +2832,9 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	if (MED_VER_1_0_m13(uh) == TRUE_m13) {  // handle MED 1.0
 		encryption_2 = (si1 *) uh + MED_10_METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13;
 		encryption_3 = (si1 *) uh + MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13;
-		encryption_rounds = 1;
 	} else {
 		encryption_2 = &uh->encryption_2;
 		encryption_3 = &uh->encryption_3;
-		encryption_rounds = uh->encryption_rounds;
 	}
 	if (*encryption_2 == NO_ENCRYPTION_m13 && *encryption_3 == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
@@ -2743,11 +2845,8 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	// decrypt section 2
 	if (*encryption_2 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= *encryption_2 ) {
-			if (*encryption_2 == LEVEL_1_ENCRYPTION_m13)
-				decryption_key = pwd->level_1_encryption_key;
-			else
-				decryption_key = pwd->level_2_encryption_key;
-			AES_decrypt_m13(fps->params.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, NULL, decryption_key, encryption_rounds);
+			if (G_AES_crypt_m13(uh, pwd, *encryption_2, fps->params.raw_data + METADATA_SECTION_2_OFFSET_m13, METADATA_SECTION_2_BYTES_m13, FALSE_m13) == FALSE_m13)
+				return_m13(FALSE_m13);
 			*encryption_2 = -(*encryption_2);  // mark as currently decrypted
 		} else {
 			G_show_password_hints_m13(pwd, *encryption_2);
@@ -2759,11 +2858,8 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 	// decrypt section 3
 	if (*encryption_3 > NO_ENCRYPTION_m13) {  // natively & currently encrypted
 		if (pwd->access_level >= *encryption_3) {
-			if (*encryption_3 == LEVEL_1_ENCRYPTION_m13)
-				decryption_key = pwd->level_1_encryption_key;
-			else
-				decryption_key = pwd->level_2_encryption_key;
-			AES_decrypt_m13(fps->params.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, NULL, decryption_key, encryption_rounds);
+			if (G_AES_crypt_m13(uh, pwd, *encryption_3, fps->params.raw_data + METADATA_SECTION_3_OFFSET_m13, METADATA_SECTION_3_BYTES_m13, FALSE_m13) == FALSE_m13)
+				return_m13(FALSE_m13);
 			*encryption_3 = -(*encryption_3);  // mark as currently decrypted
 		} else {
 			pg->time_constants.RTO_known = FALSE_m13;
@@ -2796,7 +2892,6 @@ tern	G_decrypt_metadata_m13(FPS_m13 *fps)
 
 tern	G_decrypt_records_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR_m13 *rh, si8 n_records
 {
-	ui1			*encryption_key, encryption_rounds;
 	si8			i, n_records;
 	va_list			v_args;
 	REC_HDR_m13		*rh;
@@ -2814,17 +2909,12 @@ tern	G_decrypt_records_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR
 		rh = va_arg(v_args, REC_HDR_m13 *);
 		n_records = va_arg(v_args, si8);
 		va_end(v_args);
-		encryption_rounds = 1;  // default (update function or assume, as here)
 	} else {
 		rh = (REC_HDR_m13 *) fps->rec_data;
 		n_records = fps->n_items;
-		if (MED_VER_1_0_m13(fps->uh) == TRUE_m13) {
-			encryption_rounds = 1;  // always 1 in med 1.0
-		} else {
-			encryption_rounds = fps->uh->encryption_rounds;
-			if (fps->uh->encryption_1 == NO_ENCRYPTION_m13)  // typically "variable" (-128), howvever if no records are encrypted, it can be zero, which means this function can be skipped
-				return_m13(TRUE_m13);
-		}
+		// MED 1.1+: if no records are encrypted (encryption_1 == 0, vs the typical "variable" -128), this function can be skipped
+		if (MED_VER_1_0_m13(fps->uh) == FALSE_m13 && fps->uh->encryption_1 == NO_ENCRYPTION_m13)
+			return_m13(TRUE_m13);
 	}
 	if (n_records == 0)  // failure == all records unreadable, not no records
 		return_m13(TRUE_m13);
@@ -2835,11 +2925,8 @@ tern	G_decrypt_records_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR
 	for (i = 0; i < n_records; ++i) {
 		if (rh->encryption_level > NO_ENCRYPTION_m13) {
 			if (pwd->access_level >= rh->encryption_level) {
-				if (rh->encryption_level == LEVEL_1_ENCRYPTION_m13)
-					encryption_key = pwd->level_1_encryption_key;
-				else
-					encryption_key = pwd->level_2_encryption_key;
-				AES_decrypt_m13((ui1 *) rh + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, encryption_rounds);
+				if (G_AES_crypt_m13(fps ? fps->uh : NULL, pwd, rh->encryption_level, (ui1 *) rh + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, FALSE_m13) == FALSE_m13)
+					return_m13(FALSE_m13);
 				rh->encryption_level = -rh->encryption_level;  // mark as currently decrypted
 			}
 		}
@@ -2853,7 +2940,6 @@ tern	G_decrypt_records_m13(FPS_m13 *fps, ...)  // varargs (fps == NULL): REC_HDR
 tern G_decrypt_time_series_m13(FPS_m13 *fps)
 {
 	static tern		warning_delivered = FALSE_m13;
-	ui1			*key, encryption_rounds;
 	si1			enc_level;
 	si8			i, encryption_bytes, encryptable_bytes, n_items;
 	CPS_m13			*cps;
@@ -2882,12 +2968,7 @@ tern G_decrypt_time_series_m13(FPS_m13 *fps)
 	cps = fps->params.cps;
 	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
-	if (pwd->access_level >= enc_level) {
-		if (enc_level == LEVEL_1_ENCRYPTION_m13)
-			key = pwd->level_1_encryption_key;
-		else
-			key = pwd->level_2_encryption_key;
-	} else {
+	if (pwd->access_level < enc_level) {
 		if (warning_delivered == FALSE_m13) {
 			G_warning_message_m13("%s(): Cannot decrypt data => returning without decrypting\n", __FUNCTION__);
 			warning_delivered = TRUE_m13;
@@ -2898,15 +2979,14 @@ tern G_decrypt_time_series_m13(FPS_m13 *fps)
 	// decrypt
 	bh = cps->block_header;
 	n_items = fps->n_items;
-	encryption_rounds = uh->encryption_rounds;
 	for (i = n_items; i--;) {
-		
+
 		// check if block already decrypted
 		if (!(bh->block_flags & CMP_BF_ENCRYPTED_m13)) {
 			bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + bh->total_block_bytes); // set pointer to next block
 			continue;
 		}
-		  
+
 		// calculate encryption bytes
 		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
 		if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
@@ -2916,9 +2996,10 @@ tern G_decrypt_time_series_m13(FPS_m13 *fps)
 			if (encryption_bytes > encryptable_bytes)
 				encryption_bytes = encryptable_bytes;
 		}
-		
+
 		// decrypt
-		AES_decrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, encryption_rounds);
+		if (G_AES_crypt_m13(uh, pwd, enc_level, (ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, FALSE_m13) == FALSE_m13)
+			return_m13(FALSE_m13);
 		
 		// mark block as decrypted
 		bh->block_flags &= ~CMP_BF_ENCRYPTED_m13;
@@ -2958,25 +3039,13 @@ inline
 #endif
 void	G_delete_behavior_stack_m13(void)
 {
-	BEHAVIOR_STACK_LIST_m13		*list;
-	BEHAVIOR_STACK_m13		*stack;
+	BEHAVIOR_STACK_m13	*stack;
 
+
+	// thread-local: nothing to return to a pool - just empty the stack
+	// (storage stays allocated for re-use; reclaimed at thread exit by the TSD destructor)
 
 	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		return;
-	
-	// reduce list search extents
-	list = globals_m13->behavior_stack_list;
-	pthread_mutex_lock_m13(&list->mutex);
-	
-	if (stack == list->stack_ptrs[list->top_idx])
-		--list->top_idx;
-	
-	pthread_mutex_unlock_m13(&list->mutex);
-
-	// reset stack for re-use (leave size intact, behaviors allocated)
-	stack->_id = 0;
 	stack->top_idx = -1;
 
 	return;
@@ -3149,7 +3218,6 @@ si4 G_DST_offset_m13(si8 uutc)
 
 tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 {
-	ui1			*encryption_key, encryption_rounds;
 	si1			*encryption_2, *encryption_3;
 	PASSWORD_DATA_m13	*pwd;
 	METADATA_m13		*md;
@@ -3165,14 +3233,12 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	md = fps->metadata;
 	uh = fps->uh;
 
-	if (MED_VER_1_0_m13(uh) == TRUE_m13) {  // handle MED 1.0 (as in G_decrypt_metadata_m13())
+	if (MED_VER_1_0_m13(uh) == TRUE_m13) {  // handle MED 1.0 (as in G_decrypt_metadata_m13()): levels stored in metadata section 1
 		encryption_2 = (si1 *) uh + MED_10_METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13;
 		encryption_3 = (si1 *) uh + MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13;
-		encryption_rounds = 1;
 	} else {
 		encryption_2 = &uh->encryption_2;
 		encryption_3 = &uh->encryption_3;
-		encryption_rounds = uh->encryption_rounds;
 	}
 	if (*encryption_2 == NO_ENCRYPTION_m13 && *encryption_3 == NO_ENCRYPTION_m13)
 		return_m13(TRUE_m13);
@@ -3181,11 +3247,8 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	if (*encryption_2 < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
 		if (pwd->access_level >= -(*encryption_2)) {
 			*encryption_2 = -(*encryption_2);  // mark as currently encrypted
-			if (*encryption_2 == LEVEL_1_ENCRYPTION_m13)
-				encryption_key = pwd->level_1_encryption_key;
-			else
-				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m13((ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m13, NULL, encryption_key, encryption_rounds);
+			if (G_AES_crypt_m13(uh, pwd, *encryption_2, (ui1 *) &md->section_2, METADATA_SECTION_2_BYTES_m13, TRUE_m13) == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 	}
 
@@ -3193,11 +3256,8 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 	if (*encryption_3 < NO_ENCRYPTION_m13) {  // natively encrypted and currently decrypted
 		if (pwd->access_level >= -(*encryption_3)) {
 			*encryption_3 = -(*encryption_3);  // mark as currently encrypted
-			if (*encryption_3 == LEVEL_1_ENCRYPTION_m13)
-				encryption_key = pwd->level_1_encryption_key;
-			else
-				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m13((ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m13, NULL, encryption_key, encryption_rounds);
+			if (G_AES_crypt_m13(uh, pwd, *encryption_3, (ui1 *) &md->section_3, METADATA_SECTION_3_BYTES_m13, TRUE_m13) == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 	}
 
@@ -3207,7 +3267,6 @@ tern	G_encrypt_metadata_m13(FPS_m13 *fps)
 
 tern	G_encrypt_records_m13(FPS_m13 *fps)
 {
-	ui1			*encryption_key;
 	si8			i;
 	PASSWORD_DATA_m13	*pwd;
 	REC_HDR_m13		*rh;
@@ -3228,15 +3287,12 @@ tern	G_encrypt_records_m13(FPS_m13 *fps)
 	for (i = fps->n_items; i--;) {
 		if (rh->encryption_level < NO_ENCRYPTION_m13) {
 			rh->encryption_level = -rh->encryption_level;  // mark as currently encrypted
-			if (rh->encryption_level == LEVEL_1_ENCRYPTION_m13)
-				encryption_key = pwd->level_1_encryption_key;
-			else
-				encryption_key = pwd->level_2_encryption_key;
-			AES_encrypt_m13((ui1 *) rh + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, uh->encryption_rounds);
+			if (G_AES_crypt_m13(uh, pwd, rh->encryption_level, (ui1 *) rh + REC_HDR_BYTES_m13, rh->total_record_bytes - REC_HDR_BYTES_m13, TRUE_m13) == FALSE_m13)
+				return_m13(FALSE_m13);
 		}
 		rh = (REC_HDR_m13 *) ((ui1 *) rh + rh->total_record_bytes);
 	}
-	
+
 	return_m13(TRUE_m13);
 }
 		
@@ -3244,7 +3300,6 @@ tern	G_encrypt_records_m13(FPS_m13 *fps)
 tern	G_encrypt_time_series_m13(FPS_m13 *fps)
 {
 	static tern		warning_delivered = FALSE_m13;
-	ui1			*key, encryption_rounds;
 	si1			enc_level;
 	si8			i, encryptable_bytes, encryption_bytes;
 	PASSWORD_DATA_m13	*pwd;
@@ -3268,12 +3323,7 @@ tern	G_encrypt_time_series_m13(FPS_m13 *fps)
 
 	pg = G_proc_globs_m13(fps);
 	pwd = &pg->password_data;
-	if (pwd->access_level >= enc_level) {
-		if (enc_level == LEVEL_1_ENCRYPTION_m13)
-			key = pwd->level_1_encryption_key;
-		else
-			key = pwd->level_2_encryption_key;
-	} else {
+	if (pwd->access_level < enc_level) {
 		if (warning_delivered == FALSE_m13) {
 			G_warning_message_m13("%s(): Cannot encrypt data => returning without encrypting\n", __FUNCTION__);
 			warning_delivered = TRUE_m13;
@@ -3282,15 +3332,14 @@ tern	G_encrypt_time_series_m13(FPS_m13 *fps)
 	}
 
 	bh = (CMP_FIXED_BH_m13 *) fps->ts_data;
-	encryption_rounds = uh->encryption_rounds;
 	for (i = fps->n_items; i--;) {
-			
+
 		// check if block already encrypted
 		if (bh->block_flags & CMP_BF_ENCRYPTED_m13) {
 			bh = (CMP_FIXED_BH_m13 *) ((ui1 *) bh + bh->total_block_bytes);
 			continue;
 		}
-		
+
 		// calculate encryption bytes
 		encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
 		if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
@@ -3300,9 +3349,10 @@ tern	G_encrypt_time_series_m13(FPS_m13 *fps)
 			if (encryption_bytes > encryptable_bytes)
 				encryption_bytes = encryptable_bytes;
 		}
-		
+
 		// encrypt
-		AES_encrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, encryption_rounds);
+		if (G_AES_crypt_m13(uh, pwd, enc_level, (ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, TRUE_m13) == FALSE_m13)
+			return_m13(FALSE_m13);
 
 		// mark block as encrypted
 		bh->block_flags |= CMP_BF_ENCRYPTED_m13;
@@ -3743,37 +3793,6 @@ si1	G_exists_m13(const si1 *path)
 #endif
 	
 	return_m13(FILE_EXISTS_m13);
-}
-
-
-tern	G_expand_password_m13(const si1 *password, si1 *password_bytes)
-{
-	const si1	*cc;
-	si1		*c;
-	ui4		ui4_val, w, z;
-	si4		i;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// initialize medlib random number generator using password bytes
-	// fill password with cross-platform replicable random values
-	// does not require G_termimal_password_bytes_m13() to have been called
-	
-	// generate medlib generator seed from password bytes
-	for (cc = password - 1, ui4_val = 0; *++cc; ui4_val += (ui4) *cc);
-	
-	w = (ui4) 0x80000000 + ui4_val;
-	z = (ui4) 0x7FFFFFFF - ui4_val;
-
-	// fill password bytes with random numbers
-	for (c = password_bytes, i = PASSWORD_BYTES_m13; i--;) {
-		ui4_val = rand32_med_wz_m13(&w, &z);
-		*c++ = (si1) (ui4_val & (ui4) 0x000000FF);
-	}
-	
-	return_m13(TRUE_m13);
 }
 
 
@@ -5074,7 +5093,6 @@ void	G_free_global_tables_m13(void)
 void	G_free_globals_m13(tern cleanup_for_exit)
 {
 	si4			i, list_size;
-	BEHAVIOR_STACK_m13	**behavior_stack_ptrs;
 	FLOCK_ENTRY_m13		**lock_ptrs;
 	PROC_GLOBS_m13		**pg_ptrs;
 	ERROR_m13		*err;
@@ -5095,7 +5113,8 @@ void	G_free_globals_m13(tern cleanup_for_exit)
 	
 	pthread_mutex_lock_m13(&globals_m13->mutex);
 	globals_m13->miscellaneous.suspend_stacks = TRUE_m13;
-	
+	++stacks_epoch_m13;  // invalidate every thread's cached function-stack pointer (stacks freed below)
+
 	if (globals_m13->record_filters) {
 		// often statically allocated, so can't just free()
 		// e.g. si4 rec_filts = { REC_Seiz_TYPE_CODE_m13, REC_Note_TYPE_CODE_m13, NO_TYPE_CODE_m13 };
@@ -5104,22 +5123,9 @@ void	G_free_globals_m13(tern cleanup_for_exit)
 			free_m13(globals_m13->record_filters);
 	}
 			
-	if (globals_m13->behavior_stack_list) {
-		// behaviors allocated for each stack
-		list_size = globals_m13->behavior_stack_list->size;
-		behavior_stack_ptrs = globals_m13->behavior_stack_list->stack_ptrs;
-		for (i = 0; i < list_size; ++i)
-			if (behavior_stack_ptrs[i]->size)
-				free(behavior_stack_ptrs[i]->behaviors);
-	
-		// stacks allocated in blocks of GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13
-		for (i = 0; i < list_size; i += GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13)
-			free(behavior_stack_ptrs[i]);
-		free(behavior_stack_ptrs);
-		pthread_mutex_destroy_m13(&globals_m13->behavior_stack_list->mutex);
-		free(globals_m13->behavior_stack_list);
-	}
-	
+	// (behavior stacks are thread-local - reclaimed per thread by their TSD destructor, nothing to free here)
+
+
 	if (globals_m13->file_lock_list) {
 		// file locks allocated in blocks of GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13
 		list_size = globals_m13->file_lock_list->size;
@@ -5197,6 +5203,7 @@ void	G_free_globals_m13(tern cleanup_for_exit)
 	pthread_mutex_destroy_m13(&globals_m13->mutex);
 
 	free(globals_m13);
+	globals_m13 = NULL;  // a dangling pointer here made re-initialization skip G_init_globals_m13() & dereference the freed tables pointer
 
 	return;
 }
@@ -5438,6 +5445,9 @@ tern	G_full_path_m13(const si1 *path, si1 *full_path)
 	}
 	
 	from_root = contains_formatting = modify_path = FALSE_m13;
+	*tmp_path = 0;  // CRITICAL: STR_contains_formatting_m13() tag-sniffs the output arg (pstr vs si1 *) - uninitialized
+			// stack bytes can false-match the pstr tag & send a garbage pointer into realloc (intermittent
+			// SIGABRT, stack-content dependent; bit repair_MED Phase II 2026-07-15)
 	contains_formatting = STR_contains_formatting_m13(path, tmp_path);  // remove formatting
 	if (full_path)
 		modify_path = TRUE_m13;
@@ -5551,6 +5561,7 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	FUNCTION_STACK_m13 		*stack, **stack_ptr, *new_stack;
 	static thread_local_m13 pid_t_m13		own_id = 0;  // thread id is immutable => cache (saves a system call on every push & pop)
 	static thread_local_m13 FUNCTION_STACK_m13	*own_stack = NULL;  // this thread's stack (avoids the list mutex & search on every push & pop)
+	static thread_local_m13 ui4			own_epoch = 0;  // registry epoch at caching time (G_free_globals_m13 frees the registry => cached pointers dangle)
 
 
 	// pass zero for current thread function stack
@@ -5567,7 +5578,8 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 			own_id = gettid_m13();
 		_id = own_id;
 		// cached stack valid while this thread holds it (release & delete zero the _id => mismatch => searched path)
-		if (own_stack)
+		// & while the registry it points into is the one it was cached from (epoch)
+		if (own_stack && own_epoch == stacks_epoch_m13)
 			if (own_stack->_id == _id)
 				return(own_stack);
 	}
@@ -5632,8 +5644,10 @@ FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id)
 	pthread_mutex_unlock_m13(&list->mutex);
 
 	// cache this thread's stack (thread local)
-	if (own_call == TRUE_m13)
+	if (own_call == TRUE_m13) {
 		own_stack = stack;
+		own_epoch = stacks_epoch_m13;
+	}
 
 	return(stack);
 }
@@ -5665,11 +5679,12 @@ si1	**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names)
 
 tern	G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint)
 {
-	tern			expand_passwords;
 	PASSWORD_DATA_m13	*pwd;
-	ui1			hash[SHA_HASH_BYTES_m13];
+	ui1			hash[SHA_HASH_BYTES_m13], dk[SHA_HASH_BYTES_m13], *salt;
+	ui1			L1_master[CRYPTO_MASTER_BYTES_m13], L2_master[CRYPTO_MASTER_BYTES_m13], L3_master[CRYPTO_MASTER_BYTES_m13];
 	si1			L1_pw_bytes[PASSWORD_BYTES_m13] = { 0 }, L2_pw_bytes[PASSWORD_BYTES_m13] = { 0 }, L3_pw_bytes[PASSWORD_BYTES_m13] = { 0 };
 	si4			i;
+	ui4			iterations;
 	PROC_GLOBS_m13	*pg;
 	METADATA_SECTION_1_m13	*md1;
 	UH_m13	*uh;
@@ -5703,71 +5718,111 @@ tern	G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_
 		strncpy_m13(pwd->level_2_password_hint, L2_pw_hint, PASSWORD_HINT_BYTES_m13);
 
 	// copy password hints to metadata if possible
-	if (fps) {
-		uh = fps->uh;
-		if (METADATA_CODE_m13(uh->type_code) == TRUE_m13) {
-			md1 = &fps->metadata->section_1;
-			if (L1_pw_hint)
-				strncpy_m13(md1->level_1_password_hint, L1_pw_hint, PASSWORD_HINT_BYTES_m13);
-			if (L2_pw_hint)
-				strncpy_m13(md1->level_2_password_hint, L2_pw_hint, PASSWORD_HINT_BYTES_m13);
-		}
-		expand_passwords = uh->expanded_passwords;
-	} else {
-		G_warning_message_m13("%s(): fps is NULL; not copying hints & assuming expand passwords is false\n", __FUNCTION__);
-		expand_passwords = FALSE_m13;
+	if (fps == NULL || fps->uh == NULL) {  // validation fields are written to the universal header: cannot proceed without one
+		G_set_error_m13(E_CRYP_m13, "FPS universal header required to generate password data");
+		return_m13(FALSE_m13);
+	}
+	uh = fps->uh;
+	if (METADATA_CODE_m13(uh->type_code) == TRUE_m13) {
+		md1 = &fps->metadata->section_1;
+		if (L1_pw_hint)
+			strncpy_m13(md1->level_1_password_hint, L1_pw_hint, PASSWORD_HINT_BYTES_m13);
+		if (L2_pw_hint)
+			strncpy_m13(md1->level_2_password_hint, L2_pw_hint, PASSWORD_HINT_BYTES_m13);
 	}
 
-	// user passed level 1 password: generate validation field and encryption key
-	if (G_condition_password_m13(L1_pw, L1_pw_bytes, expand_passwords) == FALSE_m13)
+
+	// new password data is always written under the current crypto schema: the legacy schema is read-only
+	// (legacy validation fields are unsalted single-pass hashes & password bytes double as the AES key: see crypto schema notes in medlib_m13.h)
+	if (uh->crypto_schema == CRYPTO_SCHEMA_LEGACY_m13)
+		uh->crypto_schema = CRYPTO_SCHEMA_DEFAULT_m13;
+	if (uh->kdf_exponent == 0)
+		uh->kdf_exponent = CRYPTO_KDF_EXPONENT_DEFAULT_m13;
+	if (uh->session_UID == UID_NO_ENTRY_m13) {  // session UID doubles as the KDF salt: must exist before password data
+		G_set_error_m13(E_CRYP_m13, "universal header session UID not set (required as KDF salt)");
 		return_m13(FALSE_m13);
-	
+	}
+	salt = (ui1 *) &uh->session_UID;
+	iterations = (ui4) 1 << uh->kdf_exponent;
+	pwd->crypto_schema = uh->crypto_schema;
+
+	// user passed level 1 password: generate validation field and encryption keys
+	if (G_check_new_password_m13(L1_pw) == FALSE_m13)  // creation-time policy (length floor + weak-password warning)
+		return_m13(FALSE_m13);
+	if (G_condition_password_m13(L1_pw, L1_pw_bytes) == FALSE_m13)
+		return_m13(FALSE_m13);
+
 	// passed a level 1 password - at least level 1 access
 	pwd->access_level = LEVEL_1_ACCESS_m13;
-	
-	// generate Level 1 password validation field
-	SHA_hash_m13((ui1 *) L1_pw_bytes, PASSWORD_BYTES_m13, hash);
+
+	// derive level 1 master secret (slow by design: KDF iterations multiply the cost of each password guess)
+	SHA_pbkdf2_m13((ui1 *) L1_pw_bytes, PASSWORD_BYTES_m13, salt, UID_BYTES_m13, iterations, dk);
+	memcpy(L1_master, dk, CRYPTO_MASTER_BYTES_m13);
+
+	// generate Level 1 password validation field (independent HMAC branch: field reveals nothing about key material)
+	SHA_hmac_m13(L1_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_VALIDATE_STRING_m13, (si8) strlen(CRYPTO_VALIDATE_STRING_m13), hash);
 	memcpy(uh->level_1_password_validation_field, hash, PASSWORD_VALIDATION_FIELD_BYTES_m13);
-	
-	// generate encryption key
+
+	// generate encryption keys (AES-256 for this schema; legacy AES-128 also kept for reading legacy-schema files in the same session)
+	// decryption schedules derived alongside: built once here, consumed directly by every subsequent decrypt (files are write-once, read-many)
+	SHA_hmac_m13(L1_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_ENCRYPT_STRING_m13, (si8) strlen(CRYPTO_ENCRYPT_STRING_m13), hash);
+	AES_key_expansion_256_m13(pwd->level_1_encryption_key_256, hash);
+	AES_inv_key_schedule_m13(pwd->level_1_decryption_key_256, pwd->level_1_encryption_key_256, AES_NR_256_m13);
 	AES_key_expansion_m13(pwd->level_1_encryption_key, L1_pw_bytes);
-	
-	// user also passed level 2 password: generate validation field and encryption key
+	AES_inv_key_schedule_m13(pwd->level_1_decryption_key, pwd->level_1_encryption_key, AES_NR_m13);
+	pwd->level_1_legacy_key_valid = TRUE_m13;
+
+	// user also passed level 2 password: generate validation field and encryption keys
 	// level 2 encryption requires a level 1 password, even if level 1 encryption is not used
 	if (L2_pw) {
-		if (G_condition_password_m13(L2_pw, L2_pw_bytes, expand_passwords) == FALSE_m13)
+		if (G_check_new_password_m13(L2_pw) == FALSE_m13)
 			return_m13(FALSE_m13);
-					
+		if (G_condition_password_m13(L2_pw, L2_pw_bytes) == FALSE_m13)
+			return_m13(FALSE_m13);
+
 		// passed a level 2 password - level 2 access
 		pwd->access_level = LEVEL_2_ACCESS_m13;
-		
-		// generate Level 2 password validation field
-		SHA_hash_m13((ui1 *) L2_pw_bytes, PASSWORD_BYTES_m13, hash);
-		memcpy(uh->level_2_password_validation_field, hash, PASSWORD_VALIDATION_FIELD_BYTES_m13);
-		
-		// exclusive or with level 1 password bytes
+
+		// derive level 2 master secret
+		SHA_pbkdf2_m13((ui1 *) L2_pw_bytes, PASSWORD_BYTES_m13, salt, UID_BYTES_m13, iterations, dk);
+		memcpy(L2_master, dk, CRYPTO_MASTER_BYTES_m13);
+
+		// generate Level 2 password validation field: chain material xor level 1 master
+		// (as in the legacy schema, level 2 validates transitively through the level 1 field, & the level 2 secret recovers the level 1 secret;
+		// masters chain rather than passwords, so cracking one level no longer yields the password of another)
+		SHA_hmac_m13(L2_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_CHAIN_STRING_m13, (si8) strlen(CRYPTO_CHAIN_STRING_m13), hash);
 		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)
-			uh->level_2_password_validation_field[i] ^= L1_pw_bytes[i];
-		
-		// generate encryption key
+			uh->level_2_password_validation_field[i] = hash[i] ^ L1_master[i];
+
+		// generate encryption keys
+		SHA_hmac_m13(L2_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_ENCRYPT_STRING_m13, (si8) strlen(CRYPTO_ENCRYPT_STRING_m13), hash);
+		AES_key_expansion_256_m13(pwd->level_2_encryption_key_256, hash);
+		AES_inv_key_schedule_m13(pwd->level_2_decryption_key_256, pwd->level_2_encryption_key_256, AES_NR_256_m13);
 		AES_key_expansion_m13(pwd->level_2_encryption_key, L2_pw_bytes);
+		AES_inv_key_schedule_m13(pwd->level_2_decryption_key, pwd->level_2_encryption_key, AES_NR_m13);
+		pwd->level_2_legacy_key_valid = TRUE_m13;
 	}
-	
+
 	// user also passed level 3 password for recovery: generate validation field
 	if (L3_pw) {
-		if (G_condition_password_m13(L3_pw, L3_pw_bytes, expand_passwords) == FALSE_m13)
+		if (G_check_new_password_m13(L3_pw) == FALSE_m13)
 			return_m13(FALSE_m13);
-		
-		// generate Level 3 password validation field
-		SHA_hash_m13((ui1 *) L3_pw_bytes, PASSWORD_BYTES_m13, hash);
-		memcpy(uh->level_3_password_validation_field, hash, PASSWORD_VALIDATION_FIELD_BYTES_m13);
-		
+		if (G_condition_password_m13(L3_pw, L3_pw_bytes) == FALSE_m13)
+			return_m13(FALSE_m13);
+
+		// derive level 3 master secret
+		SHA_pbkdf2_m13((ui1 *) L3_pw_bytes, PASSWORD_BYTES_m13, salt, UID_BYTES_m13, iterations, dk);
+		memcpy(L3_master, dk, CRYPTO_MASTER_BYTES_m13);
+
+		// generate Level 3 password validation field: chain material xor highest-level master
+		// (level 3 recovery yields the master secrets, i.e. access & re-encryption ability, not the password strings themselves)
+		SHA_hmac_m13(L3_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_CHAIN_STRING_m13, (si8) strlen(CRYPTO_CHAIN_STRING_m13), hash);
 		if (pwd->access_level == LEVEL_1_ACCESS_m13) {  // only level 1 password passed
-			for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i) // exclusive or with level 1 password bytes
-				uh->level_3_password_validation_field[i] ^= L1_pw_bytes[i];
+			for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)
+				uh->level_3_password_validation_field[i] = hash[i] ^ L1_master[i];
 		} else {  // level 1 & level 2 passwords passed
-			for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i) // exclusive or with level 2 password bytes
-				uh->level_3_password_validation_field[i] ^= L2_pw_bytes[i];
+			for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)
+				uh->level_3_password_validation_field[i] = hash[i] ^ L2_master[i];
 		}
 	}
 
@@ -6399,19 +6454,8 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	if (globals_m13->tables == NULL)
 		G_init_global_tables_m13(init_all_tables);
 
-	// behavior stacks
-	globals_m13->behavior_stack_list = (BEHAVIOR_STACK_LIST_m13 *) calloc((size_t) 1, sizeof(BEHAVIOR_STACK_LIST_m13));
-	if (globals_m13->behavior_stack_list == NULL) {
-		#ifdef MATLAB_m13
-		mexErrMsgTxt("G_init_globals_m13(): calloc() failure for behavior stack list => exiting\n");
-		#else
-		printf("%s(): calloc() failure for behavior stack list => exiting\n", __FUNCTION__);
-		exit(-1);
-		#endif
-	}
-	globals_m13->behavior_stack_list->top_idx = (si4) -1;
-	pthread_mutex_init_m13(&globals_m13->behavior_stack_list->mutex, NULL);
-	
+	// (behavior stacks are thread-local - no global list to initialize)
+
 	// file locking
 	globals_m13->file_lock_list = (FLOCK_LIST_m13 *) calloc((size_t) 1, sizeof(FLOCK_LIST_m13));
 	if (globals_m13->file_lock_list == NULL) {
@@ -6833,8 +6877,9 @@ tern	G_init_universal_header_m13(FPS_m13 *fps, ui4 type_code, tern generate_file
 	uh->live = FALSE_m13;  // while live, this should be set acquisition code
 	uh->ordered = TRUE_m13;  // empty, so inherently ordered
 	uh->expanded_passwords = UH_EXPANDED_PASSWORDS_DEFAULT_m13;
-	uh->encryption_rounds = UH_ENCRYPTION_ROUNDS_DEFAULT_m13;
 	uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = uh->encryption_4 = NO_ENCRYPTION_m13;
+	uh->crypto_schema = CRYPTO_SCHEMA_DEFAULT_m13;
+	uh->kdf_exponent = CRYPTO_KDF_EXPONENT_DEFAULT_m13;
 
 	if (generate_file_UID == TRUE_m13)
 		G_generate_UID_m13(&uh->file_UID);
@@ -6962,7 +7007,7 @@ tern	G_is_video_data_m13(const si1 *path)
 
 	// check list of standard video extensions
 	for (i = n_video_exts; i--;)
-		if (strcmp_m13(path, video_exts[i]) == 0)
+		if (strcmp_m13(ext, video_exts[i]) == 0)  // NOT path: full paths never matched (found 2026-07-15)
 			break;
 	if (i < 0)
 		return_m13(FALSE_m13);
@@ -7902,9 +7947,6 @@ tern	G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 * fps_2, FPS_m13 * me
 	}
 	if (uh_1->ordered != uh_2->ordered) {
 		merged_uh->ordered = UNKNOWN_m13; equal = FALSE_m13;
-	}
-	if (uh_1->encryption_rounds != uh_2->encryption_rounds) {
-		merged_uh->encryption_rounds = 0; equal = FALSE_m13;
 	}
 	if (uh_1->encryption_1 != uh_2->encryption_1) {
 		merged_uh->encryption_1 = NO_ENCRYPTION_m13; equal = FALSE_m13;
@@ -9231,35 +9273,29 @@ void	G_pop_behavior_exec_m13(const si1 *function, const si4 line)
 	ui4			code;
 	si4			err_code;
 	BEHAVIOR_STACK_m13	*stack;
-	
 
-	// initializing or freeing globals
-	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
-		return;
 
-	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		return;
+	stack = G_behavior_stack_m13();  // thread-local: always available
 
 	// unbalanced pop (no matching push): without this guard top_idx would underflow & the
 	// next push would write behaviors[-1] (heap corruption)
 	if (stack->top_idx < 0) {
 		G_warning_message_m13("%s(): unbalanced behavior stack pop  [called at %s(%d)]\n", __FUNCTION__, function, line);
-		stack->_id = 0;  // release (the lookup above may have claimed an empty stack just for this pop)
 		return;
 	}
 
-	// pop
-	if (--stack->top_idx == -1)
-		stack->_id = 0;  // release stack (popping stack base); G_current_behavior_m13 will return default behavior
-	
+	// pop (popping the stack base leaves an empty stack: G_current_behavior_m13 will return default behavior)
+	--stack->top_idx;
+
 	// exit if popped back to an exit on fail & error is set
+	if (globals_m13 == NULL)  // no globals yet (behaviors are usable before library initialization)
+		return;
 	err_code = G_error_code_m13();
 	if (err_code) {
 		if (stack->top_idx >= 0)
 			code = stack->behaviors[stack->top_idx].code;
 		else
-			code = globals_m13->default_behavior.code;
+			code = G_default_behavior_code_m13();
 		if ((code & RETURN_ON_FAIL_m13) == 0)
 			exit_exec_m13(function, line, err_code);
 	}
@@ -9863,10 +9899,12 @@ tern	G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw)
 {
 	tern			free_md1, LEVEL_1_valid;
 	PASSWORD_DATA_m13	*pwd;
-	ui1			hash[SHA_HASH_BYTES_m13];
+	ui1			hash[SHA_HASH_BYTES_m13], dk[SHA_HASH_BYTES_m13], *salt;
+	ui1			cand_master[CRYPTO_MASTER_BYTES_m13], putative_L1_master[CRYPTO_MASTER_BYTES_m13];
 	si1			unspecified_pw_bytes[PASSWORD_BYTES_m13] = {0}, putative_L1_pw_bytes[PASSWORD_BYTES_m13] = {0};
 	si1			md_dir[PATH_BYTES_m13], md_file[PATH_BYTES_m13];
 	si4			i;
+	ui4			iterations;
 	PROC_GLOBS_m13		*pg;
 	METADATA_SECTION_1_m13	*md1;
 	UH_m13			*uh;
@@ -9929,43 +9967,123 @@ tern	G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw)
 	}
 	
 	// condition password (check, extract terminal bytes, expand)
-	if (G_condition_password_m13(unspecified_pw, unspecified_pw_bytes, uh->expanded_passwords) == FALSE_m13) {
+	if (G_condition_password_m13(unspecified_pw, unspecified_pw_bytes) == FALSE_m13) {
 		G_show_password_hints_m13(pwd, 0);
 		return_m13(FALSE_m13);
 	}
 
+	pwd->crypto_schema = uh->crypto_schema;
+	if (uh->crypto_schema == CRYPTO_SCHEMA_LEGACY_m13) {
+
+		// LEGACY SCHEMA (read-only): unsalted truncated SHA-256 validation fields; password bytes double as AES-128 key
+
+		// check for level 1 access
+		SHA_hash_m13((ui1 *) unspecified_pw_bytes, PASSWORD_BYTES_m13, hash);  // generate SHA-256 hash of password bytes
+		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)  // compare with stored level 1 hash
+			if (hash[i] != uh->level_1_password_validation_field[i])
+				break;
+		LEVEL_1_valid = FALSE_m13;
+		if (i == PASSWORD_BYTES_m13) {  // Level 1 password valid (can be level 2 password also, so continue)
+			pwd->access_level = LEVEL_1_ACCESS_m13;
+			AES_key_expansion_m13(pwd->level_1_encryption_key, unspecified_pw_bytes);  // generate level 1 key
+			AES_inv_key_schedule_m13(pwd->level_1_decryption_key, pwd->level_1_encryption_key, AES_NR_m13);
+			pwd->level_1_legacy_key_valid = TRUE_m13;
+			LEVEL_1_valid = TRUE_m13;
+		}
+
+		// check if level 2 password was set
+		if (G_all_zeros_m13(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
+			return_m13(LEVEL_1_valid);
+
+		// generate putative L1 password
+		for (i = 0; i < PASSWORD_BYTES_m13; ++i)  // xor with level 2 password validation field
+			putative_L1_pw_bytes[i] = hash[i] ^ uh->level_2_password_validation_field[i];
+
+		SHA_hash_m13((ui1 *) putative_L1_pw_bytes, PASSWORD_BYTES_m13, hash); // generate SHA-256 hash of putative level 1 password
+		for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)  // compare with stored level 1 hash
+			if (hash[i] != uh->level_1_password_validation_field[i])
+				break;
+
+		// Level 2 password valid
+		if (i == PASSWORD_VALIDATION_FIELD_BYTES_m13) {
+			if (LEVEL_1_valid == TRUE_m13) {  // L1 pw == L2 pw
+				memcpy(pwd->level_2_encryption_key, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13);
+				memcpy(pwd->level_2_decryption_key, pwd->level_1_decryption_key, ENCRYPTION_KEY_BYTES_m13);
+			} else {
+				AES_key_expansion_m13(pwd->level_1_encryption_key, putative_L1_pw_bytes);  // generate true level 1 key
+				AES_inv_key_schedule_m13(pwd->level_1_decryption_key, pwd->level_1_encryption_key, AES_NR_m13);
+				AES_key_expansion_m13(pwd->level_2_encryption_key, unspecified_pw_bytes);  // generate level 2 key
+				AES_inv_key_schedule_m13(pwd->level_2_decryption_key, pwd->level_2_encryption_key, AES_NR_m13);
+				pwd->level_1_legacy_key_valid = TRUE_m13;
+			}
+			pwd->level_2_legacy_key_valid = TRUE_m13;
+			pwd->access_level = LEVEL_2_ACCESS_m13;
+			return_m13(TRUE_m13);
+		}
+		if (LEVEL_1_valid == TRUE_m13)
+			return_m13(TRUE_m13);
+
+		// invalid as both level 1 & 2 password
+		return_m13(FALSE_m13);
+	}
+
+	// CRYPTO SCHEMA 1 & ABOVE: salted (session UID) PBKDF2-HMAC-SHA-256 master secret; HMAC-derived validation fields & AES-256 keys
+
+	if (uh->session_UID == UID_NO_ENTRY_m13) {  // session UID doubles as the KDF salt
+		G_set_error_m13(E_CRYP_m13, "universal header session UID not set (required as KDF salt)");
+		return_m13(FALSE_m13);
+	}
+	salt = (ui1 *) &uh->session_UID;
+	iterations = (ui4) 1 << uh->kdf_exponent;
+
+	// derive candidate master secret (slow by design: KDF iterations multiply the cost of each password guess)
+	SHA_pbkdf2_m13((ui1 *) unspecified_pw_bytes, PASSWORD_BYTES_m13, salt, UID_BYTES_m13, iterations, dk);
+	memcpy(cand_master, dk, CRYPTO_MASTER_BYTES_m13);
+
 	// check for level 1 access
-	SHA_hash_m13((ui1 *) unspecified_pw_bytes, PASSWORD_BYTES_m13, hash);  // generate SHA-256 hash of password bytes
-	for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)  // compare with stored level 1 hash
-		if (hash[i] != uh->level_1_password_validation_field[i])
-			break;
+	SHA_hmac_m13(cand_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_VALIDATE_STRING_m13, (si8) strlen(CRYPTO_VALIDATE_STRING_m13), hash);
 	LEVEL_1_valid = FALSE_m13;
-	if (i == PASSWORD_BYTES_m13) {  // Level 1 password valid (can be level 2 password also, so continue)
+	if (memcmp(hash, uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == 0) {  // Level 1 password valid (can be level 2 password also, so continue)
 		pwd->access_level = LEVEL_1_ACCESS_m13;
-		AES_key_expansion_m13(pwd->level_1_encryption_key, unspecified_pw_bytes);  // generate level 1 key
+		SHA_hmac_m13(cand_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_ENCRYPT_STRING_m13, (si8) strlen(CRYPTO_ENCRYPT_STRING_m13), hash);
+		AES_key_expansion_256_m13(pwd->level_1_encryption_key_256, hash);
+		AES_inv_key_schedule_m13(pwd->level_1_decryption_key_256, pwd->level_1_encryption_key_256, AES_NR_256_m13);
+		AES_key_expansion_m13(pwd->level_1_encryption_key, unspecified_pw_bytes);  // legacy key (for legacy-schema files in the same session)
+		AES_inv_key_schedule_m13(pwd->level_1_decryption_key, pwd->level_1_encryption_key, AES_NR_m13);
+		pwd->level_1_legacy_key_valid = TRUE_m13;
 		LEVEL_1_valid = TRUE_m13;
 	}
-	
+
 	// check if level 2 password was set
 	if (G_all_zeros_m13(uh->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
 		return_m13(LEVEL_1_valid);
 
-	// generate putative L1 password
-	for (i = 0; i < PASSWORD_BYTES_m13; ++i)  // xor with level 2 password validation field
-		putative_L1_pw_bytes[i] = hash[i] ^ uh->level_2_password_validation_field[i];
-		
-	SHA_hash_m13((ui1 *) putative_L1_pw_bytes, PASSWORD_BYTES_m13, hash); // generate SHA-256 hash of putative level 1 password
-	for (i = 0; i < PASSWORD_VALIDATION_FIELD_BYTES_m13; ++i)  // compare with stored level 1 hash
-		if (hash[i] != uh->level_1_password_validation_field[i])
-			break;
-	
+	// generate putative L1 master from chain material (level 2 validates transitively through the level 1 field, as in the legacy schema)
+	SHA_hmac_m13(cand_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_CHAIN_STRING_m13, (si8) strlen(CRYPTO_CHAIN_STRING_m13), hash);
+	for (i = 0; i < CRYPTO_MASTER_BYTES_m13; ++i)
+		putative_L1_master[i] = hash[i] ^ uh->level_2_password_validation_field[i];
+
+	SHA_hmac_m13(putative_L1_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_VALIDATE_STRING_m13, (si8) strlen(CRYPTO_VALIDATE_STRING_m13), hash);
+
 	// Level 2 password valid
-	if (i == PASSWORD_VALIDATION_FIELD_BYTES_m13) {
+	if (memcmp(hash, uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == 0) {
 		if (LEVEL_1_valid == TRUE_m13) {  // L1 pw == L2 pw
+			memcpy(pwd->level_2_encryption_key_256, pwd->level_1_encryption_key_256, ENCRYPTION_KEY_BYTES_256_m13);
+			memcpy(pwd->level_2_decryption_key_256, pwd->level_1_decryption_key_256, ENCRYPTION_KEY_BYTES_256_m13);
 			memcpy(pwd->level_2_encryption_key, pwd->level_1_encryption_key, ENCRYPTION_KEY_BYTES_m13);
+			memcpy(pwd->level_2_decryption_key, pwd->level_1_decryption_key, ENCRYPTION_KEY_BYTES_m13);
+			pwd->level_2_legacy_key_valid = TRUE_m13;
 		} else {
-			AES_key_expansion_m13(pwd->level_1_encryption_key, putative_L1_pw_bytes);  // generate true level 1 key
-			AES_key_expansion_m13(pwd->level_2_encryption_key, unspecified_pw_bytes);  // generate level 2 key
+			SHA_hmac_m13(putative_L1_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_ENCRYPT_STRING_m13, (si8) strlen(CRYPTO_ENCRYPT_STRING_m13), hash);
+			AES_key_expansion_256_m13(pwd->level_1_encryption_key_256, hash);  // generate true level 1 key
+			AES_inv_key_schedule_m13(pwd->level_1_decryption_key_256, pwd->level_1_encryption_key_256, AES_NR_256_m13);
+			pwd->level_1_legacy_key_valid = FALSE_m13;  // masters chain, passwords do not: raw level 1 password bytes are unknown
+			SHA_hmac_m13(cand_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_ENCRYPT_STRING_m13, (si8) strlen(CRYPTO_ENCRYPT_STRING_m13), hash);
+			AES_key_expansion_256_m13(pwd->level_2_encryption_key_256, hash);  // generate level 2 key
+			AES_inv_key_schedule_m13(pwd->level_2_decryption_key_256, pwd->level_2_encryption_key_256, AES_NR_256_m13);
+			AES_key_expansion_m13(pwd->level_2_encryption_key, unspecified_pw_bytes);
+			AES_inv_key_schedule_m13(pwd->level_2_decryption_key, pwd->level_2_encryption_key, AES_NR_m13);
+			pwd->level_2_legacy_key_valid = TRUE_m13;
 		}
 		pwd->access_level = LEVEL_2_ACCESS_m13;
 		return_m13(TRUE_m13);
@@ -10095,38 +10213,22 @@ inline
 #endif
 void	G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 {
-	si4			n_behaviors;
-	BEHAVIOR_m13		*behavior, *new_behaviors;
+	BEHAVIOR_m13		*behavior;
 	BEHAVIOR_STACK_m13	*stack;
-	
-	
-	// initializing or freeing globals
-	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
-		return;
-	
-	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		return;
-	
+
+
+	stack = G_behavior_stack_m13();  // thread-local: always available
+
 	// expand stack
-	n_behaviors = stack->top_idx + 1;
-	if (n_behaviors == stack->size) {
-		n_behaviors += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		new_behaviors = (BEHAVIOR_m13 *) realloc(stack->behaviors, (size_t) n_behaviors * sizeof(BEHAVIOR_m13));
-		if (new_behaviors == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
+	if ((stack->top_idx + 1) == stack->size)
+		if (G_behavior_stack_grow_m13(stack) == FALSE_m13)
 			return;
-		}
-		memset((new_behaviors + stack->size), (si4) 0, (size_t) GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13 * sizeof(BEHAVIOR_m13));  // realloc does not zero
-		stack->behaviors = new_behaviors;
-		stack->size = n_behaviors;
-	}
-	
+
 	behavior = stack->behaviors + (++stack->top_idx);
 	behavior->function = function;
 	behavior->line = line;
 	if (code == DEFAULT_BEHAVIOR_m13)  // set to list default
-		behavior->code = globals_m13->default_behavior.code;
+		behavior->code = G_default_behavior_code_m13();
 	else
 		behavior->code = code;
 
@@ -10778,7 +10880,6 @@ LH_m13 	*G_read_data_m13(void *level_header, SLICE_m13 *slice, ...)  // varargs 
 					return_m13(NULL);
 				}
 				lh = (LH_m13 *) chan;
-				break;
 			case TS_SEG_TYPE_CODE_m13:
 			case VID_SEG_TYPE_CODE_m13:
 				seg = G_open_segment_m13(NULL, slice, (si1 *) file_list, NULL, flags, password);
@@ -11870,21 +11971,68 @@ READ_UH_FAIL_m13:
 tern	G_recover_passwords_m13(const si1 *L3_password, UH_m13 *universal_header)
 {
 	tern	level_1_valid;
-	ui1 	hash[SHA_HASH_BYTES_m13], L3_hash[SHA_HASH_BYTES_m13];
+	ui1 	hash[SHA_HASH_BYTES_m13], L3_hash[SHA_HASH_BYTES_m13], dk[SHA_HASH_BYTES_m13], *salt;
+	ui1	putative_master[CRYPTO_MASTER_BYTES_m13], putative_L1_master[CRYPTO_MASTER_BYTES_m13];
 	si1 	L3_password_bytes[PASSWORD_BYTES_m13], hex_str[HEX_STR_BYTES_m13(PASSWORD_BYTES_m13, 1)];
 	si1 	saved_L1_password_bytes[PASSWORD_BYTES_m13], putative_L1_password_bytes[PASSWORD_BYTES_m13], putative_L2_password_bytes[PASSWORD_BYTES_m13];
 	si4 	i;
-	
+	ui4	iterations;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	if (G_check_password_m13(L3_password) == FALSE_m13)
 		return_m13(FALSE_m13);
-	
+
 	// get terminal bytes
 	G_terminal_password_bytes_m13(L3_password, L3_password_bytes);
-	
+
+	// crypto schema 1 & above: level 3 recovery yields the master secrets (full access & re-encryption ability)
+	// masters chain rather than passwords, so the password strings themselves are not recoverable (by design: a
+	// cracked or recovered level does not expose passwords that users may have reused outside MED)
+	if (universal_header->crypto_schema != CRYPTO_SCHEMA_LEGACY_m13) {
+		if (universal_header->session_UID == UID_NO_ENTRY_m13) {
+			G_set_error_m13(E_CRYP_m13, "universal header session UID not set (required as KDF salt)");
+			return_m13(FALSE_m13);
+		}
+		salt = (ui1 *) &universal_header->session_UID;
+		iterations = (ui4) 1 << universal_header->kdf_exponent;
+		SHA_pbkdf2_m13((ui1 *) L3_password_bytes, PASSWORD_BYTES_m13, salt, UID_BYTES_m13, iterations, dk);
+		SHA_hmac_m13(dk, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_CHAIN_STRING_m13, (si8) strlen(CRYPTO_CHAIN_STRING_m13), hash);
+		for (i = 0; i < CRYPTO_MASTER_BYTES_m13; ++i)  // xor with level 3 password validation field => highest-level master at generation time
+			putative_master[i] = hash[i] ^ universal_header->level_3_password_validation_field[i];
+
+		// try as the level 1 master (no level 2 password existed when level 3 was set, or level 2 password == level 1 password)
+		SHA_hmac_m13(putative_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_VALIDATE_STRING_m13, (si8) strlen(CRYPTO_VALIDATE_STRING_m13), hash);
+		if (memcmp(hash, universal_header->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == 0) {
+			STR_hex_m13(hex_str, putative_master, CRYPTO_MASTER_BYTES_m13, "-", FALSE_m13);
+			G_message_m13("Level 1 master secret: %s\n", hex_str);
+			if (G_all_zeros_m13(universal_header->level_2_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13)
+				G_message_m13("No Level 2 password\n");
+			else  // level 2 password == level 1 password (single master serves both levels)
+				G_message_m13("Level 2 master secret: same as Level 1 (level 2 password == level 1 password)\n");
+			return_m13(TRUE_m13);
+		}
+
+		// try as the level 2 master (level 2 chain recovers the level 1 master)
+		SHA_hmac_m13(putative_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_CHAIN_STRING_m13, (si8) strlen(CRYPTO_CHAIN_STRING_m13), hash);
+		for (i = 0; i < CRYPTO_MASTER_BYTES_m13; ++i)
+			putative_L1_master[i] = hash[i] ^ universal_header->level_2_password_validation_field[i];
+		SHA_hmac_m13(putative_L1_master, CRYPTO_MASTER_BYTES_m13, (ui1 *) CRYPTO_VALIDATE_STRING_m13, (si8) strlen(CRYPTO_VALIDATE_STRING_m13), hash);
+		if (memcmp(hash, universal_header->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == 0) {
+			STR_hex_m13(hex_str, putative_L1_master, CRYPTO_MASTER_BYTES_m13, "-", FALSE_m13);
+			G_message_m13("Level 1 master secret: %s\n", hex_str);
+			STR_hex_m13(hex_str, putative_master, CRYPTO_MASTER_BYTES_m13, "-", FALSE_m13);
+			G_message_m13("Level 2 master secret: %s\n", hex_str);
+			return_m13(TRUE_m13);
+		}
+
+		G_set_error_m13(E_GEN_m13, "the level 3 password is not valid for recovery");
+		return_m13(FALSE_m13);
+	}
+
+	// LEGACY SCHEMA
 	// get level 3 password hash
 	SHA_hash_m13((ui1 *) L3_password_bytes, PASSWORD_BYTES_m13, L3_hash);  // generate SHA-256 hash of level 3 password bytes
 	
@@ -11939,45 +12087,28 @@ inline
 void	G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code)
 {
 	ui4			prev_code;
-	si4			n_behaviors;
-	BEHAVIOR_m13		*behavior, *new_behaviors;
+	BEHAVIOR_m13		*behavior;
 	BEHAVIOR_STACK_m13	*stack;
-	
+
 
 	// not ands to current behavior & pushes to stack as new entry
-	
-	// initializing or freeing globals
-	if (globals_m13->miscellaneous.suspend_stacks == TRUE_m13)
-		return;
 
-	stack = G_behavior_stack_m13();
-	if (stack == NULL)
-		return;
-	
+	stack = G_behavior_stack_m13();  // thread-local: always available
+
 	// expand stack
-	n_behaviors = stack->top_idx + 1;
-	if (n_behaviors == stack->size) {
-		n_behaviors += GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13;
-		new_behaviors = (BEHAVIOR_m13 *) realloc(stack->behaviors, (size_t) n_behaviors * sizeof(BEHAVIOR_m13));
-		if (new_behaviors == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
+	if ((stack->top_idx + 1) == stack->size)
+		if (G_behavior_stack_grow_m13(stack) == FALSE_m13)
 			return;
-		}
-		stack->behaviors = new_behaviors;
-		stack->size = n_behaviors;
-	}
-	
-	behavior = stack->behaviors + stack->top_idx;
+
 	if (stack->top_idx >= 0)
-		prev_code = behavior->code;
+		prev_code = stack->behaviors[stack->top_idx].code;
 	else
-		prev_code = globals_m13->default_behavior.code;
-	++stack->top_idx;
-	++behavior;
+		prev_code = G_default_behavior_code_m13();
+	behavior = stack->behaviors + (++stack->top_idx);
 	behavior->function = function;
 	behavior->line = line;
 	behavior->code = prev_code & ~code;
-	
+
 	return;
 }
 
@@ -12080,7 +12211,6 @@ si4	G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 
 	// but in theory there can be a large number of non-uniformly spaced segments.
 	
 	pg = G_proc_globs_m13(NULL);  // use proc_globs from current thread
-	G_show_slice_m13(slice);
 		
 	if (search_mode == TIME_SEARCH_m13) {
 		// start segment
@@ -15144,8 +15274,7 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 	if (MED_VER_1_0_m13(uh) == FALSE_m13) {
 		printf_m13("Live: %s\n", STR_tern_m13(uh->live, FALSE_m13));
 		printf_m13("Ordered: %s\n", STR_tern_m13(uh->ordered, FALSE_m13));
-		printf_m13("Expanded Passwords: %s\n", STR_tern_m13(uh->expanded_passwords, FALSE_m13));
-		printf_m13("Encryption Rounds: %hhu\n", uh->encryption_rounds);
+		printf_m13("Expanded Passwords: %s  (deprecated: always false)\n", STR_tern_m13(uh->expanded_passwords, FALSE_m13));
 		printf_m13("Encryption 1: ");
 		if (uh->encryption_1 == NO_ENCRYPTION_m13)
 			printf_m13("none");
@@ -15213,6 +15342,17 @@ tern	G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh)
 		else
 			printf_m13("unrecognized code");
 		printf_m13("  (%hhd)\n", uh->encryption_4);
+
+		printf_m13("Crypto Schema: ");
+		if (uh->crypto_schema == CRYPTO_SCHEMA_LEGACY_m13)
+			printf_m13("legacy (unsalted SHA-256 validation, AES-128; read-only)");
+		else if (uh->crypto_schema == CRYPTO_SCHEMA_1_m13)
+			printf_m13("1 (salted PBKDF2-HMAC-SHA-256, AES-256)");
+		else
+			printf_m13("unrecognized schema");
+		printf_m13("  (%hhu)\n", uh->crypto_schema);
+		if (uh->crypto_schema != CRYPTO_SCHEMA_LEGACY_m13)
+			printf_m13("KDF Exponent: %hhu (%u iterations)\n", uh->kdf_exponent, (ui4) 1 << uh->kdf_exponent);
 	}
 
 	printf_m13("---------------- Universal Header - END ----------------\n");
@@ -16508,11 +16648,15 @@ tern	G_update_MED_type_m13(const si1 *path)
 		uh->encryption_1 = uh->encryption_4 = NO_ENCRYPTION_m13;
 		uh->encryption_2 = *((si1 *) (rd + MED_10_METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13));
 		uh->encryption_3 = *((si1 *) (rd + MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13));
-		if (uh->encryption_2 > NO_ENCRYPTION_m13 || uh->encryption_3 > NO_ENCRYPTION_m13)
-			uh->encryption_rounds = 1;  // only one round available in MED 1.0
-		else
-			uh->encryption_rounds = 0;  // no encryption
-		
+		// crypto schema: MED 1.0 password data & encrypted content are legacy schema (read-only but valid);
+		// re-keying to the current schema requires the passwords & re-encryption of all encrypted regions (separate operation)
+		if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
+			uh->crypto_schema = CRYPTO_SCHEMA_DEFAULT_m13;  // no password data: nothing legacy to preserve
+			uh->kdf_exponent = CRYPTO_KDF_EXPONENT_DEFAULT_m13;
+		} else {
+			uh->crypto_schema = CRYPTO_SCHEMA_LEGACY_m13;
+			uh->kdf_exponent = 0;
+		}
 		// zero old section 1 encryption fields
 		*((si1 *) (rd + MED_10_METADATA_SECTION_2_ENCRYPTION_LEVEL_OFFSET_m13)) = 0;
 		*((si1 *) (rd + MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13)) = 0;
@@ -16577,10 +16721,17 @@ tern	G_update_MED_type_m13(const si1 *path)
 		// ordered
 		uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
 		uh->ordered = TRUE_m13;  // must be true in MED 1.0
-		
+
 		// encryption
-		uh->encryption_rounds = 0;  // indices & time series data not encrypted
 		uh->encryption_1 = uh->encryption_2 = uh->encryption_3 = uh->encryption_4 = NO_ENCRYPTION_m13;
+		// crypto schema (see metadata update note)
+		if (G_all_zeros_m13(uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
+			uh->crypto_schema = CRYPTO_SCHEMA_DEFAULT_m13;
+			uh->kdf_exponent = CRYPTO_KDF_EXPONENT_DEFAULT_m13;
+		} else {
+			uh->crypto_schema = CRYPTO_SCHEMA_LEGACY_m13;
+			uh->kdf_exponent = 0;
+		}
 		
 		// anonymized subject
 		memset((rd + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13), 0, UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13);  // zero anonymized subject
@@ -16656,7 +16807,14 @@ tern	G_update_MED_type_m13(const si1 *path)
 		
 		// encryption
 		ri_uh->expanded_passwords = rd_uh->expanded_passwords = FALSE_m13;  // not available in MED 1.0
-		ri_uh->encryption_rounds = rd_uh->encryption_rounds = 1;  // records encrypted individually; only one round available in MED 1.0
+		// crypto schema (see metadata update note)
+		if (G_all_zeros_m13(rd_uh->level_1_password_validation_field, PASSWORD_VALIDATION_FIELD_BYTES_m13) == TRUE_m13) {
+			ri_uh->crypto_schema = rd_uh->crypto_schema = CRYPTO_SCHEMA_DEFAULT_m13;
+			ri_uh->kdf_exponent = rd_uh->kdf_exponent = CRYPTO_KDF_EXPONENT_DEFAULT_m13;
+		} else {
+			ri_uh->crypto_schema = rd_uh->crypto_schema = CRYPTO_SCHEMA_LEGACY_m13;
+			ri_uh->kdf_exponent = rd_uh->kdf_exponent = 0;
+		}
 		first_rec_encryption = inds->encryption_level;
 		ri_uh->encryption_1 = rd_uh->encryption_1 = first_rec_encryption;  // if this varies, vlue will change to ENCRYPTION_VARIABLE_m13
 		ri_uh->encryption_2 = ri_uh->encryption_3 = ri_uh->encryption_4 = rd_uh->encryption_2 = rd_uh->encryption_3 = rd_uh->encryption_4 = NO_ENCRYPTION_m13;
@@ -16700,12 +16858,14 @@ tern	G_update_MED_type_m13(const si1 *path)
 
 				// decrypt
 				if (r_rh.encryption_level > NO_ENCRYPTION_m13) {
-					if (r_rh.encryption_level == LEVEL_1_ENCRYPTION_m13)
-						encryption_key = pwd->level_1_encryption_key;
-					else
-						encryption_key = pwd->level_2_encryption_key;
-					AES_decrypt_m13(r_rd + REC_HDR_BYTES_m13, r_rh.total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
-					r_rh.encryption_level = -r_rh.encryption_level;  // mark as currently decrypted
+					if (pwd->access_level >= r_rh.encryption_level) {
+						if (r_rh.encryption_level == LEVEL_1_ENCRYPTION_m13)
+							encryption_key = pwd->level_1_decryption_key;
+						else
+							encryption_key = pwd->level_2_decryption_key;
+						AES_decrypt_m13(r_rd + REC_HDR_BYTES_m13, r_rh.total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key);
+						r_rh.encryption_level = -r_rh.encryption_level;  // mark as currently decrypted
+					}
 				}
 				
 				// copy record header
@@ -16793,7 +16953,7 @@ tern	G_update_MED_type_m13(const si1 *path)
 						encryption_key = pwd->level_1_encryption_key;
 					else
 						encryption_key = pwd->level_2_encryption_key;
-					AES_encrypt_m13((ui1 *) w_rh + REC_HDR_BYTES_m13, w_rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key, 1);
+					AES_encrypt_m13((ui1 *) w_rh + REC_HDR_BYTES_m13, w_rh->total_record_bytes - REC_HDR_BYTES_m13, NULL, encryption_key);
 				}
 
 				// calculate record crc
@@ -17680,10 +17840,123 @@ void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key)
 }
 
 
+// hardware block ciphers (x86 AES-NI / ARMv8 AES)
+// operate on the same byte-ordered blocks & FIPS-197 expanded key as the table implementations =>
+// byte-identical output; selected at runtime in AES_cipher_nr_m13() / AES_inv_cipher_nr_m13()
+#ifdef HW_CRYPTO_m13
+
+static tern	AES_hw_ready_m13(void)  // detection results live in the global tables
+{
+	if (globals_m13 == NULL)
+		return(FALSE_m13);
+	if (globals_m13->tables == NULL)
+		return(FALSE_m13);
+	return(globals_m13->tables->HW_params.AES_accel);
+}
+
+#if defined __x86_64__ || defined __i386__
+HW_AES_FN_ATTR_m13
+static void	AES_cipher_hw_m13(ui1 *in, ui1 *out, ui1 *round_key, si4 nr)
+{
+	si4	r;
+	__m128i	blk;
+
+	blk = _mm_loadu_si128((const __m128i *) in);
+	blk = _mm_xor_si128(blk, _mm_loadu_si128((const __m128i *) round_key));
+	for (r = 1; r < nr; ++r)
+		blk = _mm_aesenc_si128(blk, _mm_loadu_si128((const __m128i *) (round_key + (r << 4))));
+	blk = _mm_aesenclast_si128(blk, _mm_loadu_si128((const __m128i *) (round_key + (nr << 4))));
+	_mm_storeu_si128((__m128i *) out, blk);
+
+	return;
+}
+
+HW_AES_FN_ATTR_m13
+static void	AES_inv_cipher_hw_m13(ui1 *in, ui1 *out, ui1 *round_key, si4 nr)
+{
+	si4	r;
+	__m128i	blk;
+
+	// equivalent inverse cipher: expects a decryption schedule from AES_inv_key_schedule_m13()
+	// (middle round keys already passed through InvMixColumns - built once per key, not per block)
+	blk = _mm_loadu_si128((const __m128i *) in);
+	blk = _mm_xor_si128(blk, _mm_loadu_si128((const __m128i *) (round_key + (nr << 4))));
+	for (r = nr - 1; r > 0; --r)
+		blk = _mm_aesdec_si128(blk, _mm_loadu_si128((const __m128i *) (round_key + (r << 4))));
+	blk = _mm_aesdeclast_si128(blk, _mm_loadu_si128((const __m128i *) round_key));
+	_mm_storeu_si128((__m128i *) out, blk);
+
+	return;
+}
+#endif  // __x86_64__ || __i386__
+
+#ifdef __aarch64__
+HW_AES_FN_ATTR_m13
+static void	AES_cipher_hw_m13(ui1 *in, ui1 *out, ui1 *round_key, si4 nr)
+{
+	si4		r;
+	uint8x16_t	blk;
+
+	// AESE == AddRoundKey then SubBytes/ShiftRows => final AddRoundKey is a plain xor
+	blk = vld1q_u8(in);
+	for (r = 0; r < (nr - 1); ++r) {
+		blk = vaeseq_u8(blk, vld1q_u8(round_key + (r << 4)));
+		blk = vaesmcq_u8(blk);
+	}
+	blk = vaeseq_u8(blk, vld1q_u8(round_key + ((nr - 1) << 4)));
+	blk = veorq_u8(blk, vld1q_u8(round_key + (nr << 4)));
+	vst1q_u8(out, blk);
+
+	return;
+}
+
+HW_AES_FN_ATTR_m13
+static void	AES_inv_cipher_hw_m13(ui1 *in, ui1 *out, ui1 *round_key, si4 nr)
+{
+	si4		r;
+	uint8x16_t	blk;
+
+	// equivalent inverse cipher, ARM shape: expects a decryption schedule from AES_inv_key_schedule_m13()
+	// (middle round keys already passed through InvMixColumns; first & last keys are untransformed there, matching both ends here)
+	blk = vld1q_u8(in);
+	blk = vaesdq_u8(blk, vld1q_u8(round_key + (nr << 4)));
+	blk = vaesimcq_u8(blk);
+	for (r = nr - 1; r > 1; --r) {
+		blk = vaesdq_u8(blk, vld1q_u8(round_key + (r << 4)));
+		blk = vaesimcq_u8(blk);
+	}
+	blk = vaesdq_u8(blk, vld1q_u8(round_key + 16));
+	blk = veorq_u8(blk, vld1q_u8(round_key));
+	vst1q_u8(out, blk);
+
+	return;
+}
+#endif  // __aarch64__
+
+#endif  // HW_CRYPTO_m13
+
+
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
+	AES_cipher_nr_m13(in, out, state, round_key, AES_NR_m13);
+
+	return;
+}
+
+
+void	AES_cipher_nr_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key, si4 nr)
+{
 	si4	i, j, round;
-	
+
+
+	// nr == AES_NR_m13 (10) for AES-128, AES_NR_256_m13 (14) for AES-256
+
+#ifdef HW_CRYPTO_m13
+	if (AES_hw_ready_m13() == TRUE_m13) {
+		AES_cipher_hw_m13(in, out, round_key, nr);
+		return;
+	}
+#endif
 
 	// copy the input to state array
 	for (i = 0; i < 4; i++)
@@ -17692,23 +17965,23 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 
 	// Add the First round key to the state before starting the rounds.
 	AES_add_round_key_m13(0, state, round_key);
-	
-	// there will be AES_NR rounds.
-	// the first AES_NR - 1 rounds are identical
-	// these AES_NR - 1 rounds are executed in the loop below
-	for (round = 1; round < AES_NR_m13; round++) {
+
+	// there will be nr rounds.
+	// the first nr - 1 rounds are identical
+	// these nr - 1 rounds are executed in the loop below
+	for (round = 1; round < nr; round++) {
 		AES_sub_bytes_m13(state);
 		AES_shift_rows_m13(state);
 		AES_mix_columns_m13(state);
 		AES_add_round_key_m13(round, state, round_key);
 	}
-	
+
 	// the last round is given below
 	// the mix_columns function is not here in the last round
 	AES_sub_bytes_m13(state);
 	AES_shift_rows_m13(state);
-	AES_add_round_key_m13(AES_NR_m13, state, round_key);
-	
+	AES_add_round_key_m13(nr, state, round_key);
+
 	// the encryption process is over
 	// copy the state array to output array
 	for (i = 0; i < 4; i++)
@@ -17721,74 +17994,113 @@ void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 
 // "data" is buffer to be decrypted
 // "len" is bytes to be decrypted
-// if decrypting multiple times with the same encryption key, pass in expanded key
+// if decrypting multiple times with the same encryption key, pass in the DECRYPTION schedule
+// from AES_inv_key_expansion_m13() (NOT the encryption schedule: see AES_inv_key_schedule_m13())
 // decryption is done in place
-void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds)
+void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key)
 {
 	ui1	state[4][4];
 	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_m13];
-	ui1	*ui1_p, tmp_round_key[AES_EXPANDED_KEY_BYTES_m13], *orig_round_key;
-	si4	i;
+	ui1	*ui1_p;
 	ui8	*ui8_p;
-	si8	j, encryption_blocks, n_leftovers;
+	si8	j, encryption_blocks;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (rounds == 0) {
-		G_set_error_m13(E_CRYP_m13, "rounds must be positive");
+	// partial final blocks do not occur in legacy (schema 0) files: no legacy writer ever encrypted
+	// non-16-byte-multiple spans (schema 1 & above use ciphertext stealing: see AES_decrypt_256_m13())
+	if (len & (si8) 0xF) {
+		G_set_error_m13(E_CRYP_m13, "partial final block in legacy-schema data: no known writer produced this");
 		return_void_m13;
 	}
 
 	if (globals_m13->tables->AES_rsbox_table == NULL)
 		AES_init_tables_m13();
-	
+
 	if (expanded_key == NULL) {
 		round_key = local_round_key;
-		if (AES_key_expansion_m13(round_key, password) == NULL) {  // key expansion must be done before encryption
+		if (AES_inv_key_expansion_m13(round_key, password) == NULL) {  // key expansion must be done before decryption
 			G_set_error_m13(E_CRYP_m13, "no password or expanded key passed");
 			return_void_m13;
 		}
 	} else {
 		round_key = expanded_key;
 	}
-	
-	if (rounds > 1) {  // copy key if rounds > 1 to keep thread-safe
-		orig_round_key = round_key;
-		memcpy(tmp_round_key, round_key, (size_t) ENCRYPTION_KEY_BYTES_m13);
-		round_key = tmp_round_key;
+
+	// decrypt
+	encryption_blocks = len >> 4;
+	ui8_p = (ui8 *) state;
+	ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+	ui1_p = data;
+	for (j = encryption_blocks; j--;) {
+		AES_inv_cipher_m13(ui1_p, ui1_p, state, round_key);
+		ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+	}
+
+	return_void_m13;
+}
+
+
+// AES-256 version of AES_decrypt_m13()
+// "key" is 32 binary bytes (e.g. KDF-derived), not a password string
+// a passed expanded_key must be the DECRYPTION schedule from AES_inv_key_expansion_256_m13()
+void	AES_decrypt_256_m13(ui1 *data, si8 len, const ui1 *key, ui1 *expanded_key)
+{
+	ui1	state[4][4];
+	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_256_m13];
+	ui1	*ui1_p;
+	ui1	*last_c, steal_block[ENCRYPTION_BLOCK_BYTES_m13], recon_block[ENCRYPTION_BLOCK_BYTES_m13];
+	ui8	*ui8_p;
+	si8	j, encryption_blocks, full_blocks, n_leftovers;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (globals_m13->tables->AES_rsbox_table == NULL)
+		AES_init_tables_m13();
+
+	if (expanded_key == NULL) {
+		round_key = local_round_key;
+		if (AES_inv_key_expansion_256_m13(round_key, key) == NULL) {  // key expansion must be done before decryption
+			G_set_error_m13(E_CRYP_m13, "no key or expanded key passed");
+			return_void_m13;
+		}
+	} else {
+		round_key = expanded_key;
 	}
 
 	// decrypt
 	encryption_blocks = len >> 4;
 	n_leftovers = len & (si8) 0xF;
+	full_blocks = encryption_blocks;
+	if (n_leftovers && encryption_blocks)
+		--full_blocks;  // last full-block position holds the stolen block: handled with the tail below
 	ui8_p = (ui8 *) state;
-	for (i = (si4) rounds; i--;) {
-		
-		// AES decryption
-		ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
-		ui1_p = data;
-		for (j = encryption_blocks; j--;) {
-			AES_inv_cipher_m13(ui1_p, ui1_p, state, round_key);
-			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
-		}
-		
-		// leftover decryption
-		if (n_leftovers)
-			AES_partial_decrypt_m13(n_leftovers, ui1_p, round_key);
-		
-		// encrypt round key (reverse of encrypt)
-		if (i) {
-			ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
-			ui1_p = round_key;
-			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_cipher_m13(ui1_p, ui1_p, state, orig_round_key);  // use orig_round key b/c round key changes on each iteration of this loop
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
-			}
+	ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+	ui1_p = data;
+	for (j = full_blocks; j--;) {
+		AES_inv_cipher_nr_m13(ui1_p, ui1_p, state, round_key, AES_NR_256_m13);
+		ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+	}
+
+	// leftover decryption: ciphertext stealing (see AES_encrypt_256_m13)
+	if (n_leftovers) {
+		if (encryption_blocks) {
+			last_c = ui1_p;  // position of the stolen block
+			AES_inv_cipher_nr_m13(last_c, steal_block, state, round_key, AES_NR_256_m13);  // = trailing plaintext || stolen ciphertext tail
+			memcpy(recon_block, last_c + ENCRYPTION_BLOCK_BYTES_m13, (size_t) n_leftovers);  // reconstruct original last ciphertext block ...
+			memcpy(recon_block + n_leftovers, steal_block + n_leftovers, (size_t) (ENCRYPTION_BLOCK_BYTES_m13 - n_leftovers));  // ... from trailing bytes & stolen tail
+			AES_inv_cipher_nr_m13(recon_block, last_c, state, round_key, AES_NR_256_m13);  // last full plaintext block
+			memcpy(last_c + ENCRYPTION_BLOCK_BYTES_m13, steal_block, (size_t) n_leftovers);  // trailing plaintext
+		} else {  // total length < 16 bytes: no block to steal from (encrypted MED spans are always >= 1 block)
+			G_set_error_m13(E_CRYP_m13, "encrypted span shorter than one AES block");
+			return_void_m13;
 		}
 	}
-		
+
 	return_void_m13;
 }
 
@@ -17797,27 +18109,28 @@ void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key,
 // "len" is bytes to be encrypted
 // if encrypting multiple times with the same encryption key, pass in expanded key
 // encryption is done in place
-void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds)
+void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key)
 {
 	ui1	state[AES_NK_m13][AES_NB_m13];
 	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_m13];
-	ui1	*ui1_p, tmp_round_key[AES_EXPANDED_KEY_BYTES_m13], *orig_round_key;
-	si4	i;
+	ui1	*ui1_p;
 	ui8	*ui8_p;
-	si8	j, encryption_blocks, n_leftovers;
-	
+	si8	j, encryption_blocks;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (rounds < 1) {
-		G_set_error_m13(E_CRYP_m13, "rounds must be positive");
+	// partial final blocks are not written under the legacy schema (schema 0 is read-only; schema 1 & above
+	// use ciphertext stealing: see AES_encrypt_256_m13())
+	if (len & (si8) 0xF) {
+		G_set_error_m13(E_CRYP_m13, "partial final block in legacy-schema encryption: not supported");
 		return_void_m13;
 	}
-	
+
 	if (globals_m13->tables->AES_sbox_table == NULL)  // all tables initialized together
 		AES_init_tables_m13();
-	
+
 	if (expanded_key == NULL) {
 		round_key = local_round_key;
 		if (AES_key_expansion_m13(round_key, password) == NULL) {  // key expansion must be done before encryption
@@ -17828,52 +18141,75 @@ void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key,
 		round_key = expanded_key;
 	}
 
-	ui8_p = (ui8 *) state;
-	if (rounds > 1) {
-		orig_round_key = round_key;
-		memcpy(tmp_round_key, round_key, (size_t) ENCRYPTION_KEY_BYTES_m13);  // copy key if rounds > 1 to keep thread-safe
-		round_key = tmp_round_key;
-		
-		// self-encrypt for each round so not using same key in next round
-		// done in encryption so decryption (more common) is more efficient
-		for (i = (si4) rounds; --i;) {
-			ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
-			ui1_p = round_key;
-			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_cipher_m13(ui1_p, ui1_p, state, orig_round_key);  // use orig_round key b/c round key changes on each iteration of this loop
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
-			}
-		}
-	}
-	
 	// encryption
+	ui8_p = (ui8 *) state;
+	encryption_blocks = len >> 4;
+	ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+	ui1_p = data;
+	for (j = encryption_blocks; j--;) {
+		AES_cipher_m13(ui1_p, ui1_p, state, round_key);
+		ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+	}
+
+	return_void_m13;
+}
+
+
+// AES-256 version of AES_encrypt_m13()
+// "key" is 32 binary bytes (e.g. KDF-derived), not a password string
+void	AES_encrypt_256_m13(ui1 *data, si8 len, const ui1 *key, ui1 *expanded_key)
+{
+	ui1	state[4][4];
+	ui1	*round_key, local_round_key[AES_EXPANDED_KEY_BYTES_256_m13];
+	ui1	*ui1_p;
+	ui1	*last_c, steal_block[ENCRYPTION_BLOCK_BYTES_m13];
+	ui8	*ui8_p;
+	si8	j, encryption_blocks, n_leftovers;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (globals_m13->tables->AES_sbox_table == NULL)  // all tables initialized together
+		AES_init_tables_m13();
+
+	if (expanded_key == NULL) {
+		round_key = local_round_key;
+		if (AES_key_expansion_256_m13(round_key, key) == NULL) {  // key expansion must be done before encryption
+			G_set_error_m13(E_CRYP_m13, "no key or expanded key passed");
+			return_void_m13;
+		}
+	} else {
+		round_key = expanded_key;
+	}
+
+	// encryption
+	ui8_p = (ui8 *) state;
 	encryption_blocks = len >> 4;
 	n_leftovers = len & (si8) 0xF;
-	for (i = (si4) rounds; i--;) {
-		
-		// AES encryption
-		ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
-		ui1_p = data;
-		for (j = encryption_blocks; j--;) {
-			AES_cipher_m13(ui1_p, ui1_p, state, round_key);
-			ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
-		}
+	ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
+	ui1_p = data;
+	for (j = encryption_blocks; j--;) {
+		AES_cipher_nr_m13(ui1_p, ui1_p, state, round_key, AES_NR_256_m13);
+		ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
+	}
 
-		// leftover encryption
-		if (n_leftovers)
-			AES_partial_encrypt_m13(n_leftovers, ui1_p, round_key);
-
-		// decrypt round key back to original (encrypted above)
-		if (i) {
-			ui8_p[0] = ui8_p[1] = (ui8) 0;  // zero state array
-			ui1_p = round_key;
-			for (j = ENCRYPTION_KEY_BLOCKS_m13; j--;) {
-				AES_inv_cipher_m13(ui1_p, ui1_p, state, orig_round_key);  // use orig_round key b/c round key changes on each iteration of this loop
-				ui1_p += ENCRYPTION_BLOCK_BYTES_m13;
-			}
+	// leftover encryption: ciphertext stealing (ECB-CS, per the CBC-CS construction of NIST SP 800-38A addendum / RFC 3962)
+	// the trailing partial block borrows ciphertext from the last full block, so every byte gets true block-cipher
+	// treatment & the total length is unchanged
+	if (n_leftovers) {
+		if (encryption_blocks) {
+			last_c = ui1_p - ENCRYPTION_BLOCK_BYTES_m13;  // last full ciphertext block (just encrypted above)
+			memcpy(steal_block, ui1_p, (size_t) n_leftovers);  // trailing plaintext bytes ...
+			memcpy(steal_block + n_leftovers, last_c + n_leftovers, (size_t) (ENCRYPTION_BLOCK_BYTES_m13 - n_leftovers));  // ... padded with stolen ciphertext
+			memcpy(ui1_p, last_c, (size_t) n_leftovers);  // trailing ciphertext = leading bytes of the stolen block
+			AES_cipher_nr_m13(steal_block, last_c, state, round_key, AES_NR_256_m13);  // re-encrypted stolen block replaces last full block
+		} else {  // total length < 16 bytes: no block to steal from (encrypted MED spans are always >= 1 block)
+			G_set_error_m13(E_CRYP_m13, "encrypted span shorter than one AES block");
+			return_void_m13;
 		}
 	}
-	
+
 	return_void_m13;
 }
 
@@ -17940,33 +18276,54 @@ tern	AES_init_tables_m13(void)
 
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 {
+	AES_inv_cipher_nr_m13(in, out, state, round_key, AES_NR_m13);
+
+	return;
+}
+
+
+void	AES_inv_cipher_nr_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key, si4 nr)
+{
 	si4	i, j, round = 0;
-	
+
+
+	// nr == AES_NR_m13 (10) for AES-128, AES_NR_256_m13 (14) for AES-256
+	// round_key is a DECRYPTION schedule from AES_inv_key_schedule_m13() (equivalent inverse cipher, FIPS-197 5.3.5):
+	// middle round keys pre-transformed with InvMixColumns, so hardware & software paths share one schedule
+	// & no per-block key transform is needed (decryption is the dominant real-world operation: files are write-once, read-many)
+
+#ifdef HW_CRYPTO_m13
+	if (AES_hw_ready_m13() == TRUE_m13) {
+		AES_inv_cipher_hw_m13(in, out, round_key, nr);
+		return;
+	}
+#endif
 
 	// copy the encrypted data to the state array
 	for (i = 0; i < 4; i++)
 		for (j = 0; j < 4; j++)
 			state[j][i] = in[i * 4 + j];
 
-	// add the first round key to the state before starting the rounds
-	AES_add_round_key_m13(AES_NR_m13, state, round_key);
-	
-	// there will be AES_NR rounds
-	// the first AES_NR - 1 rounds are identical
-	// these AES_NR - 1 rounds are executed in the loop below
-	for (round = AES_NR_m13 - 1; round > 0; round--) {
+	// add the first round key to the state before starting the rounds (dw[nr] == w[nr]: untransformed)
+	AES_add_round_key_m13(nr, state, round_key);
+
+	// there will be nr rounds
+	// the first nr - 1 rounds are identical (equivalent-inverse-cipher order: InvMixColumns moves
+	// ahead of AddRoundKey, compensated by the pre-transformed middle round keys)
+	// these nr - 1 rounds are executed in the loop below
+	for (round = nr - 1; round > 0; round--) {
 		AES_inv_shift_rows_m13(state);
 		AES_inv_sub_bytes_m13(state);
-		AES_add_round_key_m13(round, state, round_key);
 		AES_inv_mix_columns_m13(state);
+		AES_add_round_key_m13(round, state, round_key);
 	}
-	
+
 	// the last round is given below
-	// the mix_columns function is not here in the last round
+	// the mix_columns function is not here in the last round (dw[0] == w[0]: untransformed)
 	AES_inv_shift_rows_m13(state);
 	AES_inv_sub_bytes_m13(state);
 	AES_add_round_key_m13(0, state, round_key);
-	
+
 	// the decryption process is over
 	// copy the state array to output array
 	for (i = 0; i < 4; i++)
@@ -17974,6 +18331,65 @@ void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key)
 			out[i * 4 + j] = state[j][i];
 
 	return;
+}
+
+
+// decryption-schedule version of AES_key_expansion_m13() (see AES_inv_key_schedule_m13())
+ui1	*AES_inv_key_expansion_m13(ui1 *inv_expanded_key, const si1 *key)
+{
+	inv_expanded_key = AES_key_expansion_m13(inv_expanded_key, key);  // (NULL passed) => allocated, caller takes ownership
+	if (inv_expanded_key == NULL)
+		return(NULL);
+
+	return(AES_inv_key_schedule_m13(inv_expanded_key, inv_expanded_key, AES_NR_m13));
+}
+
+
+// decryption-schedule version of AES_key_expansion_256_m13() (see AES_inv_key_schedule_m13())
+ui1	*AES_inv_key_expansion_256_m13(ui1 *inv_expanded_key, const ui1 *key)
+{
+	inv_expanded_key = AES_key_expansion_256_m13(inv_expanded_key, key);  // (NULL passed) => allocated, caller takes ownership
+	if (inv_expanded_key == NULL)
+		return(NULL);
+
+	return(AES_inv_key_schedule_m13(inv_expanded_key, inv_expanded_key, AES_NR_256_m13));
+}
+
+
+ui1	*AES_inv_key_schedule_m13(ui1 *inv_expanded_key, const ui1 *expanded_key, si4 nr)
+{
+	ui1	a, b, c, d, *ik;
+	si4	r, w;
+
+
+	// converts an encryption (forward) schedule into the decryption schedule consumed by AES_inv_cipher_nr_m13()
+	// & the hardware inverse ciphers: the "equivalent inverse cipher" schedule of FIPS-197 5.3.5 - middle round
+	// keys (1 .. nr - 1) pass through InvMixColumns, first & last are unchanged (byte semantics identical to the
+	// AESIMC / vaesimcq instructions) - built once per key so no per-block key transform is needed
+	// in-place conversion supported (inv_expanded_key == expanded_key)
+	// nr == AES_NR_m13 (10) for AES-128, AES_NR_256_m13 (14) for AES-256; schedule bytes == (nr + 1) * 16
+
+	if (expanded_key == NULL) {
+		G_set_error_m13(E_CRYP_m13, "no expanded key passed");
+		return(NULL);
+	}
+	if (inv_expanded_key == NULL)  // caller takes ownership
+		inv_expanded_key = (ui1 *) malloc_m13((size_t) ((nr + 1) << 4));
+	if (inv_expanded_key != expanded_key)
+		memcpy(inv_expanded_key, expanded_key, (size_t) ((nr + 1) << 4));
+
+	for (r = 1; r < nr; ++r) {
+		ik = inv_expanded_key + (r << 4);
+		for (w = 4; w--; ik += 4) {  // InvMixColumns each 4-byte word of the round key
+			a = ik[0]; b = ik[1]; c = ik[2]; d = ik[3];
+			ik[0] = AES_MULTIPLY_m13(a, 0x0e) ^ AES_MULTIPLY_m13(b, 0x0b) ^ AES_MULTIPLY_m13(c, 0x0d) ^ AES_MULTIPLY_m13(d, 0x09);
+			ik[1] = AES_MULTIPLY_m13(a, 0x09) ^ AES_MULTIPLY_m13(b, 0x0e) ^ AES_MULTIPLY_m13(c, 0x0b) ^ AES_MULTIPLY_m13(d, 0x0d);
+			ik[2] = AES_MULTIPLY_m13(a, 0x0d) ^ AES_MULTIPLY_m13(b, 0x09) ^ AES_MULTIPLY_m13(c, 0x0e) ^ AES_MULTIPLY_m13(d, 0x0b);
+			ik[3] = AES_MULTIPLY_m13(a, 0x0b) ^ AES_MULTIPLY_m13(b, 0x0d) ^ AES_MULTIPLY_m13(c, 0x09) ^ AES_MULTIPLY_m13(d, 0x0e);
+		}
+	}
+
+	return(inv_expanded_key);
 }
 
 
@@ -18070,8 +18486,8 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, const si1 *key)
 	sbox_table = globals_m13->tables->AES_sbox_table;
 
 	if (expanded_key == NULL)  // caller takes ownership
-		expanded_key = (ui1 *) malloc_m13((size_t) AES_KEY_BYTES_m13);
-		
+		expanded_key = (ui1 *) malloc_m13((size_t) AES_EXPANDED_KEY_BYTES_m13);  // NOT AES_KEY_BYTES_m13 (16): was a heap overflow for any NULL-passing caller
+
 	if (STR_is_empty_m13(key) == TRUE_m13) {
 		G_set_error_m13(E_GEN_m13, "key is empty");
 		return(NULL);
@@ -18135,7 +18551,81 @@ ui1	*AES_key_expansion_m13(ui1 *expanded_key, const si1 *key)
 
 		i++;
 	}
-	
+
+	return(expanded_key);
+}
+
+
+ui1	*AES_key_expansion_256_m13(ui1 *expanded_key, const ui1 *key)
+{
+	const ui1	*rcon_table, *sbox_table;
+	ui1		temp[4], k;
+	si4		i, j;
+
+
+	// AES-256 key schedule: Nk == 8, Nr == 14, expanded key == 240 bytes
+	// key is AES_KEY_BYTES_256_m13 (32) binary bytes (e.g. KDF-derived): null bytes are valid key material, so no string conditioning
+
+	// load tables
+	if (globals_m13->tables->AES_sbox_table == NULL)
+		AES_init_tables_m13();
+	rcon_table = globals_m13->tables->AES_rcon_table;
+	sbox_table = globals_m13->tables->AES_sbox_table;
+
+	if (expanded_key == NULL)  // caller takes ownership
+		expanded_key = (ui1 *) malloc_m13((size_t) AES_EXPANDED_KEY_BYTES_256_m13);
+
+	if (key == NULL) {
+		G_set_error_m13(E_GEN_m13, "key is null");
+		return(NULL);
+	}
+
+	// the first round keys are the key itself
+	for (i = j = 0; i < AES_NK_256_m13; i++, j += AES_NB_m13) {
+		expanded_key[j] = key[j];
+		expanded_key[j + 1] = key[j + 1];
+		expanded_key[j + 2] = key[j + 2];
+		expanded_key[j + 3] = key[j + 3];
+	}
+
+	// All other round keys are found from the previous round keys.
+	while (i < (AES_NB_m13 * (AES_NR_256_m13 + 1))) {
+
+		for (j = 0; j < AES_NB_m13; j++)
+			temp[j] = expanded_key[(i - 1) * 4 + j];
+
+		if (i % AES_NK_256_m13 == 0) {
+			// this rotates the 4 bytes in a word to the left once
+			// [a0, a1, a2, a3] becomes [a1, a2, a3, a0]
+			k = temp[0];
+			temp[0] = temp[1];
+			temp[1] = temp[2];
+			temp[2] = temp[3];
+			temp[3] = k;
+
+			// this takes a four-byte input word and applies the s-box
+			// to each of the four bytes to produce an output word
+			temp[0] = sbox_table[temp[0]];
+			temp[1] = sbox_table[temp[1]];
+			temp[2] = sbox_table[temp[2]];
+			temp[3] = sbox_table[temp[3]];
+
+			temp[0] = temp[0] ^ (ui1) rcon_table[i / AES_NK_256_m13];
+		} else if (i % AES_NK_256_m13 == 4) {  // Nk > 6 (AES-256): extra s-box application
+			temp[0] = sbox_table[temp[0]];
+			temp[1] = sbox_table[temp[1]];
+			temp[2] = sbox_table[temp[2]];
+			temp[3] = sbox_table[temp[3]];
+		}
+
+		expanded_key[i * AES_NB_m13] = expanded_key[(i - AES_NK_256_m13) * AES_NB_m13] ^ temp[0];
+		expanded_key[(i * AES_NB_m13) + 1] = expanded_key[((i - AES_NK_256_m13) * AES_NB_m13) + 1] ^ temp[1];
+		expanded_key[(i * AES_NB_m13) + 2] = expanded_key[((i - AES_NK_256_m13) * AES_NB_m13) + 2] ^ temp[2];
+		expanded_key[(i * AES_NB_m13) + 3] = expanded_key[((i - AES_NK_256_m13) * AES_NB_m13) + 3] ^ temp[3];
+
+		i++;
+	}
+
 	return(expanded_key);
 }
 
@@ -18178,6 +18668,8 @@ void	AES_partial_decrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
 	
 	// decryption for data encrypted with AES_partial_encrypt_m13()
 	// for keyless decryption pass NULL for round_key
+	// TRANSPORT LAYER ONLY (lightweight obfuscation, not true encryption): file crypto no longer uses
+	// this pair — schema 1 & above use ciphertext stealing & legacy files never contained partial blocks
 	
 	if (n_bytes > 0) {
 		
@@ -18216,6 +18708,8 @@ void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key)
 
 	// encryption for blocks smaller than 128 bits (16 bytes)
 	// for keyless encryption pass NULL for round_key
+	// TRANSPORT LAYER ONLY (lightweight obfuscation, not true encryption): file crypto no longer uses
+	// this pair — schema 1 & above use ciphertext stealing & legacy files never contained partial blocks
 	
 	if (n_bytes > 0) {
 		
@@ -18810,7 +19304,7 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->expanded_passwords != (tern *) (bytes + UH_EXPANDED_PASSWORDS_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
-	if (&uh->encryption_rounds != (ui1 *) (bytes + UH_ENCRYPTION_ROUNDS_OFFSET_m13))
+	if (&uh->reserved_919 != (ui1 *) (bytes + UH_RESERVED_919_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->encryption_1 != (si1 *) (bytes + UH_ENCRYPTION_1_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
@@ -18819,6 +19313,10 @@ tern	ALCK_universal_header_m13(ui1 *bytes)
 	if (&uh->encryption_3 != (si1 *) (bytes + UH_ENCRYPTION_3_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (&uh->encryption_4 != (si1 *) (bytes + UH_ENCRYPTION_4_OFFSET_m13))
+		goto UH_NOT_ALIGNED_m13;
+	if (&uh->crypto_schema != (ui1 *) (bytes + UH_CRYPTO_SCHEMA_OFFSET_m13))
+		goto UH_NOT_ALIGNED_m13;
+	if (&uh->kdf_exponent != (ui1 *) (bytes + UH_KDF_EXPONENT_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
 	if (uh->protected_region != (ui1 *) (bytes + UH_PROTECTED_REGION_OFFSET_m13))
 		goto UH_NOT_ALIGNED_m13;
@@ -20721,7 +21219,6 @@ tern	CMP_decode_m13(FPS_m13 *fps)
 
 tern	CMP_decrypt_m13(FPS_m13 *fps)
 {
-	ui1			*key;
 	si1			enc_level;
 	si8			encryption_bytes, encryptable_bytes;
 	PROC_GLOBS_m13		*pg;
@@ -20750,16 +21247,11 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 	pwd = &pg->password_data;
 	uh = fps->uh;
 	enc_level = uh->encryption_1;
-	if (pwd->access_level >= enc_level) {
-		if (enc_level == LEVEL_1_ENCRYPTION_m13)
-			key = pwd->level_1_encryption_key;
-		else
-			key = pwd->level_2_encryption_key;
-	} else {
+	if (pwd->access_level < enc_level) {
 		G_set_error_m13(E_CRYP_m13, "cannot decrypt data: insufficient access");
 		return_m13(FALSE_m13);
 	}
-	
+
 	// calculate encryption bytes
 	encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
 	if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
@@ -20769,9 +21261,10 @@ tern	CMP_decrypt_m13(FPS_m13 *fps)
 		if (encryption_bytes > encryptable_bytes)
 			encryption_bytes = encryptable_bytes;
 	}
-	
+
 	// decrypt
-	AES_decrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, uh->encryption_rounds);
+	if (G_AES_crypt_m13(uh, pwd, enc_level, (ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, FALSE_m13) == FALSE_m13)
+		return_m13(FALSE_m13);
 	
 	// mark block as decrypted
 	bh->block_flags &= ~CMP_BF_ENCRYPTED_m13;
@@ -20891,6 +21384,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
 			return_m13(0);
 		}
+		cps->params.scrap_buffers = CMP_allocate_buffers_m13(cps->params.scrap_buffers, 1, n_samps, sizeof(si4), FALSE_m13, FALSE_m13);
 	}
 	
 	// first derivative level (gets min & max sample values)
@@ -20939,23 +21433,18 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	if (set_deriv_level == 0xFF) {  // find_derivative_level option
 		switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
 			case CPS_DF_SRRED_ALGORITHM_m13:
+				CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);  // swap to RED buffers, if necessary
 			case CPS_DF_RED1_ALGORITHM_m13:
 			case CPS_DF_PRED1_ALGORITHM_m13:
 			case CPS_DF_RED2_ALGORITHM_m13:
 			case CPS_DF_PRED2_ALGORITHM_m13:
-				break;
 			case CPS_DF_MBE_ALGORITHM_m13:
-				if (cps->params.count == NULL) {
-					cps->params.count = calloc_m13(CMP_RED_MAX_STATS_BINS_m13, sizeof(ui4));
-					if (cps->params.count == NULL)
-						return_m13(0xFF);
-				}
 				break;
 			case CPS_DF_VDS_ALGORITHM_m13:
-				G_set_error_m13(E_GEN_m13, "VDS is not designed to work with derivatives");
+				G_set_error_m13(E_GEN_m13, "VDS is not designed to work with derivatives\n");
 				return_m13(0xFF);
 			default:
-				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm");
+				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
 				return_m13(0xFF);
 		}
 		CMP_get_counts_m13(cps, FALSE_m13);  // overflows not separated in finding optimal derivative
@@ -20969,7 +21458,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	
 	curr_deriv_buffer = cps->params.derivative_buffer;
 	if (set_deriv_level == 0xFF)  // find_derivative_level option
-		next_deriv_buffer = (si4 *) cps->params.next_derivative_buffer;  // need a scrap buffer for higher derivative levels
+		next_deriv_buffer = (si4 *) cps->params.next_derivative_buffer;  // need a scrap buffer for higer derivative levels
 	else
 		next_deriv_buffer = curr_deriv_buffer;  // do in place (traverse array backwards)
 
@@ -20999,7 +21488,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 			cnts = cps->params.count;
 			score = tmp_sf8 = (sf8) 0.0;
 			for (i = cps->params.n_stats_entries; i--;)
-				score += (sf8) *cnts++ * log(++tmp_sf8);  // note: bin numbering starts at 1.0
+				score += (sf8) *cnts++ * log(++tmp_sf8);  // note: log starts at 1.0
 			if (score < last_score) {  // monotonic decrease to minimum score; monotonic increase after minimum score
 				last_score = score;
 				cps->params.minimum_difference_value = diff_min;
@@ -21024,9 +21513,179 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	
 	// set derivative_level in CPS
 	cps->params.derivative_level = deriv_level;
-		
+	
 	return_m13(deriv_level);
 }
+
+
+//ui1	CMP_differentiate_m13(CPS_m13 *cps)
+//{
+//	tern			(*compress_f)(CPS_m13 *cps);
+//	ui1			deriv_level, set_deriv_level;
+//	ui4			n_samps, n_diffs;
+//	si4			*input_buffer, *deriv_buffer, samp_min, samp_max, diff_min, diff_max;
+//	si4			diff, *si4_p1, *si4_p2, *si4_p3;
+//	si8			i, si8_diff, pos_inf_si4, neg_inf_si4, size, last_size;
+//	CMP_FIXED_BH_m13	*bh;
+//
+//#ifdef FT_DEBUG_m13
+//	G_push_function_m13();
+//#endif
+//
+//	// returns derivative level (1-255); also sets in CPS parameters
+//	// 0xFF indicates error
+//	// zero indicates no differentiation
+//	
+//	// from input buffer to derivative buffer
+//	bh = cps->block_header;
+//	n_samps = bh->number_of_samples;
+//	if (n_samps <= 1) {
+//		if (n_samps == 1)
+//			cps->params.minimum_sample_value = cps->params.maximum_sample_value = cps->input_buffer[0];
+//		else
+//			cps->params.minimum_sample_value = cps->params.maximum_sample_value = 0;
+//		cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
+//		return_m13(0);
+//	}
+//
+//	set_deriv_level = 1;  // default
+//	if (cps->direcs.flags & CPS_DF_FIND_DERIVATIVE_LEVEL_m13)
+//		set_deriv_level = 0xFF;
+//	else if (cps->direcs.flags & CPS_DF_SET_DERIVATIVE_LEVEL_m13)
+//		set_deriv_level = cps->params.goal_derivative_level;
+//	if (set_deriv_level != 1) {
+//		if (set_deriv_level == 0) {
+//			CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
+//			memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
+//			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
+//			return_m13(0);
+//		}
+//		cps->params.scrap_buffers = CMP_allocate_buffers_m13(cps->params.scrap_buffers, 1, n_samps, sizeof(si4), FALSE_m13, FALSE_m13);
+//	}
+//	
+//	// first derivative level (gets min & max sample values)
+//	input_buffer = cps->input_buffer;
+//	deriv_buffer = cps->params.derivative_buffer;
+//	si4_p1 = input_buffer + (n_samps - 1);
+//	si4_p2 = si4_p1 - 1;
+//	si4_p3 = deriv_buffer + (n_samps - 1);
+//	samp_min = samp_max = input_buffer[0];
+//	diff_min = diff_max = input_buffer[1] - input_buffer[0];
+//	deriv_level = (ui1) 1;
+//	n_diffs = n_samps - deriv_level;
+//	pos_inf_si4 = (si8) POS_INF_SI4_m13;
+//	neg_inf_si4 = (si8) NEG_INF_SI4_m13;
+//	for (i = n_diffs; i--;) {
+//		if (*si4_p1 < samp_min)
+//			samp_min = *si4_p1;
+//		else if (*si4_p1 > samp_max)
+//			samp_max = *si4_p1;
+//		si8_diff = (si8) *si4_p1-- - (si8) *si4_p2--;
+//		if (si8_diff > pos_inf_si4 || si8_diff < neg_inf_si4) {
+//			G_warning_message_m13("\n%s(): difference exceeds 4-byte integer range => returning derivative level zero\n", __FUNCTION__);
+//			CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
+//			memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
+//			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
+//			return_m13(0);
+//		}
+//		diff = (si4) si8_diff;
+//		if (diff < diff_min)
+//			diff_min = diff;
+//		else if (diff > diff_max)
+//			diff_max = diff;
+//		*si4_p3-- = diff;
+//	}
+//	*si4_p3 = *si4_p1;  // first derivative initial value
+//	cps->params.minimum_sample_value = samp_min;
+//	cps->params.maximum_sample_value = samp_max;
+//	cps->params.minimum_difference_value = diff_min;
+//	cps->params.maximum_difference_value = diff_max;
+//	cps->params.derivative_level = 1;
+//
+//	if (set_deriv_level == 1)
+//		return_m13(1);
+//	
+//	// find derivatives
+//	if (set_deriv_level == 0xFF) {  // find_derivative_level option
+//		switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
+//			case CPS_DF_RED1_ALGORITHM_m13:
+//				compress_f = CMP_RED1_encode_m13;
+//				break;
+//			case CPS_DF_PRED1_ALGORITHM_m13:
+//				compress_f = CMP_PRED1_encode_m13;
+//				break;
+//			case CPS_DF_SRRED_ALGORITHM_m13: // Note: SSRED determines derivative level using RED2
+//				CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);  // swap to RED buffers, if necessary
+//			case CPS_DF_RED2_ALGORITHM_m13:
+//				compress_f = CMP_RED2_encode_m13;
+//				break;
+//			case CPS_DF_PRED2_ALGORITHM_m13:
+//				compress_f = CMP_PRED2_encode_m13;
+//				break;
+//			case CPS_DF_MBE_ALGORITHM_m13:
+//				compress_f = CMP_MBE_encode_m13;
+//				break;
+//			case CPS_DF_VDS_ALGORITHM_m13:
+//				G_set_error_m13(E_GEN_m13, "VDS is not designed to work with derivatives\n");
+//				return_m13(0xFF);
+//			default:
+//				G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
+//				return_m13(0xFF);
+//		}
+//		compress_f(cps);
+//		last_size = bh->total_block_bytes;
+//	}
+//	
+//	while (--n_diffs) {
+//		input_buffer = cps->params.derivative_buffer;
+//		deriv_buffer = (si4 *) cps->params.scrap_buffers->buffer[0];  // need a scrap buffer for find_derivative_level option
+//		si4_p1 = input_buffer + (n_samps - 1);
+//		si4_p2 = si4_p1 - 1;
+//		si4_p3 = deriv_buffer + (n_samps - 1);
+//		diff_min = diff_max = input_buffer[deriv_level + 1] - input_buffer[deriv_level];
+//		for (i = n_diffs; i--;) {
+//			si8_diff = (si8) *si4_p1-- - (si8) *si4_p2--;
+//			if (si8_diff > pos_inf_si4 || si8_diff < neg_inf_si4) {
+//				cps->params.derivative_level = deriv_level;
+//				return_m13(deriv_level);  // return previous derivative level level
+//			}
+//			diff = (si4) si8_diff;
+//			if (diff < diff_min)
+//				diff_min = diff;
+//			else if (diff > diff_max)
+//				diff_max = diff;
+//			*si4_p3-- = diff;
+//		}
+//		*si4_p3 = *si4_p1;  // derivative initial value
+//		++deriv_level;
+//		if (set_deriv_level == 0xFF) {  // find_derivative_level option
+//			compress_f(cps);
+//			size = bh->total_block_bytes;
+//			if (size < last_size) {  // monotonic decrease to minimum level (if not first derivative); monotonic increase after minimum level
+//				cps->params.minimum_difference_value = diff_min;
+//				cps->params.maximum_difference_value = diff_max;
+//				cps->params.derivative_level = deriv_level;
+//				last_size = size;
+//				memcpy(input_buffer, deriv_buffer, (size_t) (n_samps << 2));  // copy into CPS derivative buffer (called "input_buffer" here)
+//			} else {
+//				--deriv_level;
+//				break;
+//			}
+//		} else {
+//			cps->params.minimum_difference_value = diff_min;
+//			cps->params.maximum_difference_value = diff_max;
+//			cps->params.derivative_level = deriv_level;
+//			memcpy(input_buffer, deriv_buffer, (size_t) (n_samps << 2));  // copy into CPS derivative buffer (called "input_buffer" here)
+//			if (deriv_level == set_deriv_level)
+//				break;
+//		}
+//	}
+//	
+//	// set derivative_level in CPS
+//	cps->params.derivative_level = deriv_level;
+//	
+//	return_m13(deriv_level);
+//}
 
 
 tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number, ui4 n_samples)
@@ -21108,7 +21767,7 @@ tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number
 			compression_f = CMP_VDS_encode_m13;
 			break;
 		default:
-			G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm");
+			G_set_error_m13(E_GEN_m13, "unrecognized compression algorithm\n");
 			return_m13(FALSE_m13);
 	}
 	
@@ -21169,7 +21828,6 @@ tern	CMP_encode_m13(FPS_m13 *fps, si8 start_time, si4 acquisition_channel_number
 
 tern	CMP_encrypt_m13(FPS_m13 *fps)
 {
-	ui1				*key;
 	si1				enc_level;
 	ui4				encryption_bytes, encryptable_bytes;
 	PROC_GLOBS_m13		*pg;
@@ -21200,17 +21858,11 @@ tern	CMP_encrypt_m13(FPS_m13 *fps)
 		return_m13(TRUE_m13);
 	
 	// check access
-	if (pwd->access_level >= enc_level) {
-		if (enc_level == LEVEL_1_ENCRYPTION_m13) {
-			key = pwd->level_1_encryption_key;
-		} else {
-			key = pwd->level_2_encryption_key;
-		}
-	} else {
+	if (pwd->access_level < enc_level) {
 		G_set_error_m13(E_CRYP_m13, "cannot encrypt data => insufficient access\n");
 		return_m13(FALSE_m13);
 	}
-	
+
 	// calculate encryption bytes
 	encryptable_bytes = bh->total_block_bytes - CMP_BLOCK_ENCRYPTION_START_OFFSET_m13;
 	if (bh->block_flags & CMP_BF_MBE_ENCODING_m13) {  // MBE readable without other info (e.g. RED/PRED statistics) => encrypt full payload
@@ -21220,9 +21872,10 @@ tern	CMP_encrypt_m13(FPS_m13 *fps)
 		if (encryption_bytes > encryptable_bytes)
 			encryption_bytes = encryptable_bytes;
 	}
-	
+
 	// encrypt
-	AES_encrypt_m13((ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, NULL, key, uh->encryption_rounds);
+	if (G_AES_crypt_m13(uh, pwd, enc_level, (ui1 *) bh + CMP_BLOCK_ENCRYPTION_START_OFFSET_m13, encryption_bytes, TRUE_m13) == FALSE_m13)
+		return_m13(FALSE_m13);
 	
 	// mark block as encrypted
 	bh->block_flags |= CMP_BF_ENCRYPTED_m13;
@@ -21702,9 +22355,9 @@ sf8	CMP_gamma_cdf_m13(sf8 x, sf8 k, sf8 theta, sf8 offset)
 	if (x < (sf8) 0.0)
 		x = (sf8) 0.0;
 	if (k <= (sf8) 0.0)
-		k = NAN;
+		k = nan(NULL);
 	if (theta <= (sf8) 0.0)
-		theta = NAN;
+		theta = nan(NULL);
 
 	x /= theta;
 	p = CMP_gamma_p_m13(k, x);
@@ -21768,9 +22421,9 @@ sf8	CMP_gamma_inv_cdf_m13(sf8 p, sf8 k, sf8 theta, sf8 offset)
 	if (p > (sf8) 1.0)
 		p = (sf8) 1.0;
 	if (k <= (sf8) 0.0)
-		k = NAN;
+		k = nan(NULL);
 	if (theta <= (sf8) 0.0)
-		theta = NAN;
+		theta = nan(NULL);
 	
 	x = CMP_gamma_inv_p_m13(p, k);
 	x = (x * theta) + offset;
@@ -22005,7 +22658,7 @@ void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows)
 	// generate counts from the CPS derivative buffer into the CPS counts array
 	// the number of count entries stored in the CPS parameter n_stats_entries
 	// if overflows == TRUE_m13, the overflows will be separated from the the non-overflow counts returned in the
-	// overflow samples array; the overflow count is stored in the CPS parameter SRRED_overflow_samples
+	// overflow samples array (scrap_buffers->buffer[1]); the overflow count is stored in the CPS parameter n_overflow_samples
 	// if overflows == FALSE_m13, the overflows will be incorporated into the counts (as in RED & PRED encoding functions)
 	
 	deriv_level = (si4) cps->params.derivative_level;
@@ -24099,7 +24752,7 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 	}
 	
 	// fill header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
-	bh->model_region_bytes = (ui2) (symbols - cps->params.model_region);
+	bh->model_region_bytes = (ui2) (ui2) (symbols - cps->params.model_region);
 	bh->total_header_bytes = (ui4) (symbols - (ui1 *) bh);
 	PRED_header->n_keysample_bytes = n_keysamp_bytes;
 	
@@ -24183,8 +24836,7 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			
-			return_m13(CMP_MBE_encode_m13(cps));
+			CMP_MBE_encode_m13(cps);
 		}
 	}
 
@@ -24242,7 +24894,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	
 	// calculate derivatives
 	if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
-		n_derivs = PRED_header->derivative_level;
+		n_derivs = cps->params.derivative_level;
 	else
 		n_derivs = CMP_differentiate_m13(cps);
 
@@ -24386,7 +25038,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	}
 	
 	// fill header (compression algorithms are responsible for filling in: algorithm block flag, total_bytes, header_bytes, model_region_bytes, & model details)
-	bh->model_region_bytes = (ui2) (symbols - cps->params.model_region);
+	bh->model_region_bytes = (ui2) (ui2) (symbols - cps->params.model_region);
 	bh->total_header_bytes = (ui4) (symbols - (ui1 *) bh);
 	PRED_header->n_keysample_bytes = n_keysamp_bytes;
 	
@@ -24473,8 +25125,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			
-			return_m13(CMP_MBE_encode_m13(cps));
+			CMP_MBE_encode_m13(cps);
 		}
 	}
 
@@ -25451,8 +26102,8 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			
-			return_m13(CMP_MBE_encode_m13(cps));
+			CMP_MBE_encode_m13(cps);
+			return_m13(TRUE_m13);
 		}
 	}
 		
@@ -25510,7 +26161,7 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 
 	// calculate derivatives
 	if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
-		n_derivs = RED_header->derivative_level;
+		n_derivs = cps->params.derivative_level;
 	else
 		n_derivs = CMP_differentiate_m13(cps);
 
@@ -25740,8 +26391,7 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
 			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
-			
-			return_m13(CMP_MBE_encode_m13(cps));
+			CMP_MBE_encode_m13(cps);
 		}
 	}
 		
@@ -26797,7 +27447,7 @@ tern	CMP_SRRED_decode_m13(CPS_m13 *cps)
 	n_derivs = SRRED_header->derivative_level;
 	scale = (sf8) SRRED_header->scale;
 	si4_p1 = derivs_buffer + n_derivs;  // skip initial values
-	si4_p2 = resids_buffer;  // no initial values for residuals
+	si4_p2 = resids_buffer + n_derivs;  // skip initial values (all initial values are zero for residuals)
 	for (i = n_samps - n_derivs; i--;) {
 		tmp_sf8  = (sf8) *si4_p1 * scale;
 		if (tmp_sf8 >= (sf8) 0.0)  // avoid round() overhead
@@ -26826,9 +27476,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	sf8				scale, inv_scale, tmp_sf8;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
-	CMP_PRED_MODEL_FIXED_HDR_m13	*PRED_header;
-	CMP_RED_MODEL_FIXED_HDR_m13	*RED_header;
-
+	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
@@ -26836,41 +27484,45 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	bh = cps->block_header;
 	SRRED_model_region = cps->params.model_region;
 	SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) SRRED_model_region;
-	SRRED_header->scale = cps->params.SRRED_scale;
-
+	
 	// find parameters
 	update_params = FALSE_m13;
-	if (SRRED_header->scale <= (sf4) 1.0) {  // not set, or last block was redirected to PRED
+	if (SRRED_header->scale == (sf4) 0.0) {
 		update_params = TRUE_m13;
-	} else if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {  // always update
-		update_params = TRUE_m13;
-	} else if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13) {  // update periodically [NOT never (or always) update]
-		if (cps->params.SRRED_update_time <= bh->start_time) {
-			update_params = TRUE_m13;
+		if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13 && cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
 			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1.0e6) + (sf8) 0.5);
 			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
+			update_params = TRUE_m13;
+		}
+	} else if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
+		update_params = TRUE_m13;
+	} else if (cps->params.SRRED_update_interval != CMP_PARAMS_SRRED_NO_UPDATES_m13) {
+		if (cps->params.SRRED_update_interval == CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13) {
+			update_params = TRUE_m13;
+		} else if (cps->params.SRRED_update_time > bh->start_time) {
+			freq_usecs = (si8) ((cps->params.SRRED_update_interval * (sf8) 1.0e6) + (sf8) 0.5);
+			cps->params.SRRED_update_time = bh->start_time + freq_usecs;
+			update_params = TRUE_m13;
 		}
 	}
 	if (update_params == TRUE_m13) {
 		if (CMP_SRRED_find_parameters_m13(cps) == FALSE_m13) {
-			cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag so PRED differentiates
+			cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag to PRED so PRED differentiates
 			cps->direcs.flags |= CPS_DF_PRED2_ALGORITHM_m13;
 			CMP_PRED2_encode_m13(cps);  // redirect to PRED
-			cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag for next block
+			cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag
 			cps->direcs.flags |= CPS_DF_SRRED_ALGORITHM_m13;
-			
 			return_m13(CMP_PRED2_encode_m13(cps));
 		}
 	}
 	
 	// SRRED no better than PRED
 	if (SRRED_header->scale == (sf4) 1.0) {
-		cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag so PRED differentiates
+		cps->direcs.flags &= ~CPS_DF_SRRED_ALGORITHM_m13;  // change directive flag to PRED so PRED differentiates
 		cps->direcs.flags |= CPS_DF_PRED2_ALGORITHM_m13;
 		CMP_PRED2_encode_m13(cps);  // redirect to PRED
-		cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag for next block
+		cps->direcs.flags &= ~CPS_DF_PRED2_ALGORITHM_m13;  // reset directive flag
 		cps->direcs.flags |= CPS_DF_SRRED_ALGORITHM_m13;
-		
 		return_m13(CMP_PRED2_encode_m13(cps));
 	}
 
@@ -26889,7 +27541,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	scale = (sf8) SRRED_header->scale;
 	inv_scale = (sf8) 1.0 / scale;  // invert - faster to multiply
 	si4_p1 = derivs_buffer + n_derivs;  // skip initial values
-	si4_p2 = resids_buffer;  // no initial values for residuals
+	si4_p2 = resids_buffer + n_derivs;  // skip initial values (all initial values are zero for residuals)
 	for (i = n_samps - n_derivs; i--;) {
 		original_val = *si4_p1;
 		tmp_sf8  = (sf8) original_val * inv_scale;
@@ -26916,8 +27568,6 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	// set cps to PRED encode scaled derivatives
 	cps->params.model_region = SRRED_model_region + SRRED_model_region_bytes;  // scaled model region follows SRRED model region
 	CMP_swap_RED_PRED_m13(cps, CMP_RED_TO_PRED_m13);
-	PRED_header = (CMP_PRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
-	PRED_header->derivative_level = n_derivs;
 	CMP_PRED2_encode_m13(cps); // start with PRED for scaled - may fall through to MBE
 
 	// set SRRED header values
@@ -26938,11 +27588,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	cps->params.model_region = ((ui1 *) bh) + bh->total_block_bytes;  // bh->total_block_bytes == total through scaled block at this point;
 	CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);
 	cps->params.derivative_buffer = resids_buffer;  // swap derivative buffer for RED derivative buffer
-	RED_header = (CMP_RED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
-	RED_header->derivative_level = 0;  // no initial values for residuals
-	bh->number_of_samples = n_samps - n_derivs;  // no initial values for residuals
 	CMP_RED2_encode_m13(cps);  // start with RED for residuals - may fall through
-	bh->number_of_samples = n_samps;  // restore
 	cps->params.derivative_buffer = derivs_buffer;  // restore derivative buffer
 	SRRED_header->residuals_block_model_bytes = bh->model_region_bytes;  // from CMP_RED2_encode_m13()
 	SRRED_header->flags &= ~CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13;
@@ -26986,13 +27632,13 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	if (cps->params.SRRED_test_samples) {
 		n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples;
 		if (n_samps == CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13)
-			n_samps = cps->params.SRRED_test_samples = (si8) bh->number_of_samples;
+			n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples = (si8) bh->number_of_samples;
 		else if (n_samps < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
-			n_samps = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13;
+			n_samps = cps->params.SRRED_test_samples = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13;
 	} else {
 		n_samps = cps->params.SRRED_test_samples = CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13;  // not set, use default
 	}
-	if (n_samps > bh->number_of_samples)
+	if (n_samps < bh->number_of_samples)
 		return_m13(FALSE_m13);  // don't set error => initial blocks can be small in live recordings - will just set on next block  (FALSE_m13 return will redirect to PRED)
 	
 	// differentiate to optimal derivative level
@@ -27001,7 +27647,7 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	n_derivs = (ui4) CMP_differentiate_m13(cps);  // CMP_differentiate_m13() sets optimal derivative in cps->params (both derivative_level & goal_derivative_level)
 	if (n_derivs == (ui1) 0xFF)
 		return_m13(FALSE_m13);
-
+	
 	// set cps to use optimal derivative level
 	cps->direcs.flags &= ~CPS_DF_FIND_DERIVATIVE_LEVEL_m13;
 	cps->direcs.flags |= CPS_DF_SET_DERIVATIVE_LEVEL_m13;
@@ -27011,7 +27657,8 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	
 	// get minimum (unscaled) score
 	CMP_get_counts_m13(cps, FALSE_m13);  // counts with integrated overflows, no residuals
-	sf8_bin =(sf8) 1.0;  // scale if minimum score(scaled + residuals) > score(unscaled) => if not changed, SRRED_encode_m13() redirects to PRED
+	min_scale = (sf8) 1.0;  // scale if minimum score(scaled + residuals) > score(unscaled)
+	sf8_bin = (sf8) 1.0;
 	ui4_p = cps->params.count;
 	min_score = (sf8) 0.0;
 	for (i = cps->params.n_stats_entries; i--;)
@@ -27021,11 +27668,10 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	CMP_get_counts_m13(cps, TRUE_m13);
 		
 	// linear search for scale with lowest score (binary search won't work for this)
-	// (lowest score usually nearer low end of scales)
+	// (lowest score will usually be closer to lower end of scales)
 	scale = CMP_SRRED_BOTTOM_SCALE_m13;
 	scale_step = CMP_SRRED_SCALE_STEP_m13;
 	exit_scale = CMP_SRRED_TOP_SCALE_m13;
-	min_scale = (sf8) 1.0;  // uscaled
 	while (scale <= exit_scale) {
 		
 		score = CMP_SRRED_score_m13(cps, scale);
@@ -27034,18 +27680,15 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 			min_scale = scale;  // SRRED scale is the number by which the derivative values are divided (>= 1)
 			exit_scale = (sf8) 5.0 * scale;  // empirically determined bailout heuristic
 			if (exit_scale > CMP_SRRED_TOP_SCALE_m13)
-				exit_scale = CMP_SRRED_TOP_SCALE_m13;
+			    exit_scale = CMP_SRRED_TOP_SCALE_m13;
 		}
 		
 		scale += scale_step;
 	}
 	
-	// set scale in SRRED header & CPS
+	// set scale in SRRED header
 	SRRED_header = (CMP_SRRED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
-	if (min_scale < (sf8) 1.0) {
-		SRRED_header->scale = (sf4) ((sf8) 1.0 / min_scale);  // invert & demote scale (lossless - sf4 has plenty of precision for this range of scales)
-		cps->params.SRRED_scale = SRRED_header->scale;  // save for subsequent blocks
-	}
+	SRRED_header->scale = (sf4) ((sf8) 1.0 / min_scale);  // invert & demote scale (lossless - sf4 has plenty of precision for this range of scales)
 	
 	return_m13(TRUE_m13);
 }
@@ -27057,7 +27700,7 @@ sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale)
 	ui1		*ui1_p;
 	ui4		*cnts, *scaled_cnts, *residual_cnts, *sorted_scaled_cnts, *sorted_residual_cnts;
 	ui4		scaled_bin, unscaled_bin, residual_bin, bin_cnt, tmp_sorted_count, *ui4_p;
-	ui4		bin, tmp_cnts[CMP_RED_MAX_STATS_BINS_m13 << 2];  // used for 4 consecutive arrays of CMP_RED_MAX_STATS_BINS_m13
+	ui4		bin, tmp_cnts[CMP_RED_MAX_STATS_BINS_m13 << 2];
 	const si4	LOW_D = -127, HIGH_D = 127;
 	si4		scaled_val, unscaled_val, residual_val, *si4_p;
 	si4		n_scaled_stats_entries, n_residual_stats_entries;
@@ -27076,7 +27719,7 @@ sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale)
 	sorted_residual_cnts = sorted_scaled_cnts + CMP_RED_MAX_STATS_BINS_m13;
 
 	// clear arrays
-	memset(tmp_cnts, (si4) 0, sizeof(tmp_cnts));
+	memset(tmp_cnts, (si4) 0, (size_t) (CMP_RED_MAX_STATS_BINS_m13 << 2));
 	
 	// divide counts (into scaled & residual)
 	inv_scale = (sf8) 1.0 / scale;
@@ -27558,16 +28201,16 @@ tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED)
 	// CMP_RED_PRED_SWAP_m13 == UNKNOWN_m13
 
 	// determine current state of buffers
-	if (cps->params.count == NULL) {
-		G_set_error_m13(E_CMP_m13, "RED/PRED buffers are not allocated");
+	if (cps->params.count == cps->params.PRED_base_count) {
+		RED_current = FALSE_m13;
+	} else if (cps->params.count == *((void **) cps->params.PRED_base_count)) {
+		RED_current = TRUE_m13;
+	} else if (cps->params.count) {
+		RED_current = TRUE_m13;
+	} else {
+		G_set_error_m13(E_CMP_m13, "RED buffers are not allocated");
 		return_m13(FALSE_m13);
 	}
-	if (cps->params.PRED_base_count == NULL)
-		RED_current = TRUE_m13;
-	else if (cps->params.count == cps->params.PRED_base_count)
-		RED_current = FALSE_m13;
-	else  // cps->params.count == *((void **) cps->params.PRED_base_count))
-		RED_current = TRUE_m13;
 	
 	if (RED_current == TRUE_m13) {
 		if (RED_to_PRED == FALSE_m13)  // requested PRED to RED => already RED
@@ -29705,7 +30348,6 @@ DATA_MATRIX_m13	*DM_get_matrix_m13(DATA_MATRIX_m13 *matrix, SESS_m13 *sess, SLIC
 		switch (matrix->flags & DM_FILT_MASK_m13) {
 			case DM_FILT_ANTIALIAS_m13:
 				matrix->filter_high_fc = matrix->sampling_frequency / FILT_ANTIALIAS_FREQ_DIVISOR_DEFAULT_m13;
-				/* fall through */
 			case DM_FILT_LOWPASS_m13:
 				matrix->filter_low_fc = NAN;  // nan("");
 				break;
@@ -32626,7 +33268,7 @@ sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option
 #endif
 
 	if (ax == NULL)
-		ax = malloc_m13((size_t) (len << 3));
+		ax = malloc((size_t) (len << 3));
 		
 	// make span odd
 	if (!(span & 1))
@@ -32715,7 +33357,7 @@ sf8	*FILT_noise_floor_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thres
 #endif
 
 	if (filt_data == NULL)
-		filt_data = (sf8 *) malloc_m13((size_t) (data_len << 3));
+		filt_data = (sf8 *) malloc((size_t) (data_len << 3));
 
 	free_buffers = FALSE_m13;
 	if (nff_buffers == NULL)
@@ -35005,9 +35647,7 @@ FPS_m13	*FPS_read_m13(FPS_m13 *fps, si8 offset, si8 n_bytes, si8 n_items, ...)  
 			break;
 		case TS_METADATA_TYPE_CODE_m13:
 		case VID_METADATA_TYPE_CODE_m13:
-			if (MED_VER_1_0_m13(uh) == TRUE_m13)  // MED 1.0 encryption levels stored in metadata section 1, not universal header (function handles)
-				readable = G_decrypt_metadata_m13(fps);
-			else if (uh->encryption_2 > NO_ENCRYPTION_m13 || uh->encryption_3 > NO_ENCRYPTION_m13)
+			if (MED_VER_1_0_m13(uh) == TRUE_m13 || uh->encryption_2 > NO_ENCRYPTION_m13 || uh->encryption_3 > NO_ENCRYPTION_m13)  // MED 1.0 stores encryption levels in the metadata, not the universal header
 				readable = G_decrypt_metadata_m13(fps);
 			break;
 	}
@@ -35522,7 +36162,6 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 		case FPS_WP_OPEN_MODE_m13:
 			*c++ = 'w';
 			*c++ = '+';
-			break;
 		case FPS_WN_OPEN_MODE_m13:
 			*c++ = 'w';
 			*c++ = 'n';
@@ -35538,7 +36177,6 @@ si1	*FPS_set_open_string_m13(FPS_m13 *fps, ui8 flags)
 		case FPS_AP_OPEN_MODE_m13:
 			*c++ = 'a';
 			*c++ = '+';
-			break;
 		case FPS_AC_OPEN_MODE_m13:
 			*c++ = 'a';
 			*c++ = 'c';
@@ -36047,7 +36685,7 @@ ui4	HW_get_block_size_m13(const si1 *volume_path)
 	mmap_block_bytes = 0;
 	
 	// create a file on the session volume
-	sprintf_m13(test_path, "%s/test_file-remove_me", test_path);
+	sprintf_m13(test_path, "%s/test_file-remove_me", volume_path);
 	sprintf_m13(command, "echo x > \"%s\"", test_path);  // create non-empty file in case file system is cloud
 	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (r_val == 0) {
@@ -36404,6 +37042,102 @@ tern	HW_get_current_core_speed_m13()
 }
 
 
+tern	HW_get_crypto_accel_m13(void)
+{
+	HW_PARAMS_m13	*hw_params;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// detects hardware crypto instructions (cheap register/sysctl reads - done once at library launch)
+	// AES_accel: x86 AES-NI / ARMv8 AES; SHA256_accel: x86 SHA extensions / ARMv8 SHA-2
+	// encryption & hash routines read these globals to select hardware vs table implementations
+
+	hw_params = &globals_m13->tables->HW_params;
+
+	if (hw_params->AES_accel != UNKNOWN_m13)
+		return_m13(TRUE_m13);
+
+	pthread_mutex_lock_m13(&globals_m13->tables->mutex);
+	if (hw_params->AES_accel != UNKNOWN_m13) {  // may have been set by another thread while waiting
+		pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+		return_m13(TRUE_m13);
+	}
+
+	hw_params->AES_accel = hw_params->SHA256_accel = FALSE_m13;
+
+	// probes are deterministic within a process (register/sysctl/auxv reads - no transient failure modes) => no retries
+	// an inconclusive probe leaves FALSE_m13 (safe software path), & warns once (this function only executes once per process -
+	// encryption/hash callers never re-probe, they read the flags)
+
+#if defined MACOS_m13 && defined __aarch64__  // Apple silicon
+	si4	val;
+	size_t	len;
+
+	len = sizeof(si4); val = 0;
+	if (sysctlbyname("hw.optional.arm.FEAT_AES", &val, &len, NULL, 0) == 0) {
+		if (val)
+			hw_params->AES_accel = TRUE_m13;
+	} else {
+		G_warning_message_m13("%s(): hardware AES detection inconclusive => using software implementation\n", __FUNCTION__);
+	}
+	len = sizeof(si4); val = 0;
+	if (sysctlbyname("hw.optional.arm.FEAT_SHA256", &val, &len, NULL, 0) == 0) {
+		if (val)
+			hw_params->SHA256_accel = TRUE_m13;
+	} else {
+		G_warning_message_m13("%s(): hardware SHA-256 detection inconclusive => using software implementation\n", __FUNCTION__);
+	}
+#endif  // MACOS_m13 && __aarch64__
+
+#if defined LINUX_m13 && defined __aarch64__
+	ui8	hwcaps;
+
+	hwcaps = (ui8) getauxval(AT_HWCAP);
+	if (hwcaps == 0) {  // auxv unavailable (real aarch64 always reports at least FP/ASIMD)
+		G_warning_message_m13("%s(): hardware crypto detection inconclusive => using software implementations\n", __FUNCTION__);
+	} else {
+		if (hwcaps & ((ui8) 1 << 3))  // HWCAP_AES
+			hw_params->AES_accel = TRUE_m13;
+		if (hwcaps & ((ui8) 1 << 6))  // HWCAP_SHA2
+			hw_params->SHA256_accel = TRUE_m13;
+	}
+#endif  // LINUX_m13 && __aarch64__
+
+#if (defined MACOS_m13 || defined LINUX_m13) && (defined __x86_64__ || defined __i386__)  // inline asm works in clang, gcc, & icc
+	ui4	eax, ebx, ecx, edx;
+
+	__asm__ __volatile__ ("cpuid" : "=a" (eax), "=b" (ebx), "=c" (ecx), "=d" (edx) : "a" (1), "c" (0));
+	if (ecx & ((ui4) 1 << 25))  // CPUID.01H:ECX.AESNI
+		hw_params->AES_accel = TRUE_m13;
+	__asm__ __volatile__ ("cpuid" : "=a" (eax), "=b" (ebx), "=c" (ecx), "=d" (edx) : "a" (7), "c" (0));
+	if (ebx & ((ui4) 1 << 29))  // CPUID.07H.0:EBX.SHA
+		hw_params->SHA256_accel = TRUE_m13;
+#endif  // (MACOS_m13 || LINUX_m13) && (__x86_64__ || __i386__)
+
+#ifdef WINDOWS_m13  // UNVERIFIED
+	#ifdef _M_ARM64
+	if (IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE))  // covers AES & SHA-2 together
+		hw_params->AES_accel = hw_params->SHA256_accel = TRUE_m13;
+	#else
+	si4	regs[4];
+
+	__cpuid(regs, 1);
+	if (regs[2] & ((si4) 1 << 25))  // CPUID.01H:ECX.AESNI
+		hw_params->AES_accel = TRUE_m13;
+	__cpuidex(regs, 7, 0);
+	if (regs[1] & ((si4) 1 << 29))  // CPUID.07H.0:EBX.SHA
+		hw_params->SHA256_accel = TRUE_m13;
+	#endif  // _M_ARM64
+#endif  // WINDOWS_m13
+
+	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
+
+	return_m13(TRUE_m13);
+}
+
+
 tern	HW_get_endianness_m13(void)
 {
 	ui1		endianness;
@@ -36534,26 +37268,15 @@ tern	HW_get_machine_serial_m13(void)
 
 	#ifdef WINDOWS_m13
 	si1	*c;
-	
-	machine_sn = NULL;
-	buf_len = strlen(buf);
-	
-	// check for wide characters
-	if (*buf == 'S' && buf_len == 1) {
-		STR_wchar2char_m13(buf, (wchar_t *) buf);
-		buf_len = strlen(buf);
-	}
-	
-	if (buf_len > 12) {
-		c = STR_match_end_m13("SerialNumber", buf);
-		if (c) {
-			while (*c < '0' || *c > 'z')
-				++c;
-			machine_sn = c;
-			while (*c >= '0' && *c <= 'z')
-				++c;
-			*c = 0;
-		}
+
+	c = STR_match_end_m13("SerialNumber", buf);
+	if (c) {
+		while (*c < '0' || *c > 'z')
+			++c;
+		machine_sn = c;
+		while (*c >= '0' && *c <= 'z')
+			++c;
+		*c = 0;
 	}
 	#endif
 		
@@ -36818,7 +37541,7 @@ tern	HW_get_performance_specs_from_file_m13(void)
 	// read in file
 	fp = fopen_m13(file, "r");
 	flen = flen_m13(fp);
-	buffer = (si1 *) malloc((size_t) (flen + 1));
+	buffer = (si1 *) malloc_m13((size_t) (flen + 1));
 	fread_m13(buffer, sizeof(si1), (size_t) flen, fp);
 	fclose_m13(fp);
 	buffer[flen] = 0;
@@ -36861,13 +37584,13 @@ tern	HW_get_performance_specs_from_file_m13(void)
 		goto HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13;
 
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
-	free_m13(buffer);  // buffer from system_pipe_m13() => allocation-tracked
+	free_m13(buffer);  // allocated with malloc_m13() => allocation-tracked
 	return_m13(TRUE_m13);
 
 HW_GET_PERFORMANCE_SPECS_FROM_FILE_FAIL_m13:
 	
 	pthread_mutex_unlock_m13(&globals_m13->tables->mutex);
-	free_m13(buffer);  // buffer from system_pipe_m13() => allocation-tracked
+	free_m13(buffer);  // allocated with malloc_m13() => allocation-tracked
 	return_m13(FALSE_m13);
 }
 
@@ -36890,6 +37613,9 @@ tern	HW_init_tables_m13(void)
 
 	if (hw_params->logical_cores == 0)
 		HW_get_core_info_m13();
+
+	if (hw_params->AES_accel == UNKNOWN_m13)  // sets SHA256_accel also
+		HW_get_crypto_accel_m13();
 
 	if (*hw_params->machine_serial == 0)  // do this before getting machine code
 		HW_get_machine_serial_m13();
@@ -36939,7 +37665,10 @@ tern	HW_show_info_m13(void)
 		printf_m13("physical_cores = %d\n", hw_params->physical_cores);
 	
 	printf_m13("hyperthreading = %s\n", STR_tern_m13(hw_params->hyperthreading, TRUE_m13));
-	
+
+	printf_m13("AES_accel = %s\n", STR_tern_m13(hw_params->AES_accel, TRUE_m13));
+	printf_m13("SHA256_accel = %s\n", STR_tern_m13(hw_params->SHA256_accel, TRUE_m13));
+
 	if (hw_params->minimum_speed == 0.0)
 		printf_m13("minimum_speed = unknown\n");
 	else
@@ -40393,6 +41122,57 @@ tern	PROC_jobs_distribute_m13(PROC_JOB_m13 *jobs, si4 n_jobs, si4 reserved_cores
 }
 
 
+// thread trampoline for pthread_create_m13(): carries the spawner's behavior (snapshot at spawn) into the new thread
+typedef struct {
+	pthread_fn_m13	fn;
+	void		*arg;
+	ui4		behavior;
+} G_THREAD_TRAMPOLINE_m13;
+
+static pthread_rval_m13	G_thread_trampoline_m13(void *arg)
+{
+	G_THREAD_TRAMPOLINE_m13	tramp;
+
+	tramp = *((G_THREAD_TRAMPOLINE_m13 *) arg);
+	free((void *) arg);
+
+	G_push_behavior_m13(tramp.behavior);  // spawner's behavior becomes this thread's base entry
+
+	return(tramp.fn(tramp.arg));
+}
+
+si4	pthread_create_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, pthread_fn_m13 start_routine, void *arg)
+{
+	si4			err;
+	G_THREAD_TRAMPOLINE_m13	*tramp;
+
+	// pthread_create() with m13 semantics: the new thread inherits the spawner's current behavior
+	// (snapshot at spawn time) as its base stack entry; raw pthread_create() threads start at default behavior
+	// (library-internal threads inherit through PROC_job_launch_m13()/PROC_job_init_m13(), not through here)
+
+	tramp = (G_THREAD_TRAMPOLINE_m13 *) malloc(sizeof(G_THREAD_TRAMPOLINE_m13));
+	if (tramp == NULL) {
+		G_set_error_m13(E_ALLOC_m13, NULL);
+		return(-1);
+	}
+	tramp->fn = start_routine;
+	tramp->arg = arg;
+	tramp->behavior = G_current_behavior_m13();
+
+#if defined MACOS_m13 || defined LINUX_m13
+	err = pthread_create((pthread_t *) thread, (pthread_attr_t *) attributes, G_thread_trampoline_m13, (void *) tramp);
+#endif
+#ifdef WINDOWS_m13  // UNVERIFIED (attributes not supported - pass NULL)
+	*thread = (pthread_t_m13) _beginthreadex(NULL, 0, (LPTHREAD_START_ROUTINE) G_thread_trampoline_m13, (void *) tramp, 0, NULL);
+	err = (*thread == (pthread_t_m13) 0) ? -1 : 0;
+#endif
+	if (err)
+		free((void *) tramp);
+
+	return(err);
+}
+
+
 pthread_rval_m13	PROC_job_init_m13(void *arg)
 {
 	pthread_t_m13		thread;
@@ -40404,9 +41184,10 @@ pthread_rval_m13	PROC_job_init_m13(void *arg)
 	// so it can enter itself into the thread list, & set name
 	
 	job = (PROC_JOB_m13 *) arg;
-	
+
 	// enter into thread list
 	if (job->threaded == TRUE_m13) {
+		G_push_behavior_m13(job->parent_behavior);  // inherit spawner's behavior (snapshot at launch) as this thread's base entry
 		job->_id = gettid_m13();
 		thread = pthread_self_m13();
 		PROC_thread_list_add_m13(job->_id, job->_pid, &thread, job->name);
@@ -40514,6 +41295,7 @@ tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 
 	// parent id & status
 	job->_pid = gettid_m13();
+	job->parent_behavior = G_current_behavior_m13();  // snapshot: inherited as the new thread's base behavior
 	job->status = PROC_THREAD_WAITING_m13;
 	
 	// launch thread
@@ -40560,6 +41342,7 @@ tern	PROC_job_launch_m13(PROC_JOB_m13 *job)
 	
 	// parent id & status
 	job->_pid = gettid_m13();
+	job->parent_behavior = G_current_behavior_m13();  // snapshot: inherited as the new thread's base behavior
 	job->status = PROC_THREAD_WAITING_m13;
 	
 	// get priority
@@ -41529,6 +42312,85 @@ si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path)
 }
 
 
+PRTY_PCRC_EXT_m13	*PRTY_pcrc_ext_m13(FILE_m13 *fp, const si1 *file_path, si8 *ext_offset)
+{
+	tern				close_fp;
+	si8				nr, in_offset, crc_offset, body_bytes;
+	PRTY_PCRC_EXT_m13		*ext;
+	PRTY_PCRC_EXT_FOOTER_m13	footer;
+	PRTY_CRC_DATA_m13		pcrc;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// returns allocated pcrc extension if present, NULL otherwise (caller frees)
+	// legacy pcrc data (m12 & early m13) has no extension: UID fields of PRTY_CRC_DATA_m13 are unreliable in those files
+	// if ext_offset passed: set to file offset of extension start (start of pcrc crcs if no extension, FALSE_m13 on failure)
+	// if fp passed: assumes file is open with read privileges, returns fp to where it was when called
+	// if path passed: file is opened & closed
+
+	close_fp = FALSE_m13;
+	in_offset = 0;
+	if (fp == NULL) {
+		fp = fopen_m13(file_path, "r");
+		if (fp == NULL) {
+			if (ext_offset)
+				*ext_offset = FALSE_m13;
+			return_m13(NULL);
+		}
+		close_fp = TRUE_m13;
+	} else {
+		in_offset = ftell_m13(fp);
+	}
+
+	ext = NULL;
+	crc_offset = PRTY_pcrc_offset_m13(fp, NULL, &pcrc);
+	if (ext_offset)
+		*ext_offset = crc_offset;
+	if (crc_offset == FALSE_m13 || pcrc.tag != PRTY_PCRC_TAG_m13)  // error, or no pcrc data
+		goto PRTY_PCRC_EXT_EXIT_m13;
+	if (crc_offset < (si8) (sizeof(PRTY_PCRC_EXT_m13) + sizeof(PRTY_PCRC_EXT_FOOTER_m13)))
+		goto PRTY_PCRC_EXT_EXIT_m13;
+
+	// read footer
+	if (fseek_m13(fp, crc_offset - (si8) sizeof(PRTY_PCRC_EXT_FOOTER_m13), SEEK_SET))
+		goto PRTY_PCRC_EXT_EXIT_m13;
+	nr = fread_m13(&footer, sizeof(PRTY_PCRC_EXT_FOOTER_m13), (size_t) 1, fp);
+	if (nr != 1)
+		goto PRTY_PCRC_EXT_EXIT_m13;
+	if (footer.tag != PRTY_PCRC_EXT_TAG_m13)  // no extension (legacy pcrc data)
+		goto PRTY_PCRC_EXT_EXIT_m13;
+
+	// sanity check
+	body_bytes = (si8) footer.ext_bytes - (si8) sizeof(PRTY_PCRC_EXT_FOOTER_m13);
+	if (body_bytes < (si8) sizeof(PRTY_PCRC_EXT_m13) || (si8) footer.ext_bytes > crc_offset)
+		goto PRTY_PCRC_EXT_EXIT_m13;
+
+	// read extension
+	if (fseek_m13(fp, crc_offset - (si8) footer.ext_bytes, SEEK_SET))
+		goto PRTY_PCRC_EXT_EXIT_m13;
+	ext = (PRTY_PCRC_EXT_m13 *) malloc((size_t) body_bytes);
+	nr = fread_m13(ext, sizeof(ui1), (size_t) body_bytes, fp);
+	if (nr != body_bytes || (si8) (sizeof(PRTY_PCRC_EXT_m13) + ((si8) ext->n_members * sizeof(ui8))) != body_bytes) {
+		free(ext);
+		ext = NULL;
+		goto PRTY_PCRC_EXT_EXIT_m13;
+	}
+	if (ext_offset)
+		*ext_offset = crc_offset - (si8) footer.ext_bytes;
+
+PRTY_PCRC_EXT_EXIT_m13:
+
+	if (close_fp == TRUE_m13)
+		fclose_m13(fp);
+	else
+		fseek_m13(fp, in_offset, SEEK_SET);
+
+	return_m13(ext);
+}
+
+
 si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *pcrc)
 {
 	tern			got_pcrc, close_fp;
@@ -41651,7 +42513,7 @@ tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps)
 		for (i = 0; i < n_bad_blocks; ++i) {
 			parity_damage_start = bad_blocks[i].offset;
 			parity_damage_end = parity_damage_start + bad_blocks[i].length - 1;
-			for (j = 0; j < p_n_bad_blocks; ++i) {
+			for (j = 0; j < p_n_bad_blocks; ++j) {
 				file_damage_start = p_bad_blocks[j].offset;
 				file_damage_end = file_damage_start + p_bad_blocks[j].length - 1;
 				block_included = FALSE_m13;
@@ -41686,7 +42548,7 @@ tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps)
 		if (result == FALSE_m13) {
 			parity_damage_start = bad_blocks[i].offset;
 			parity_damage_end = parity_damage_start + bad_blocks[i].length - 1;
-			for (j = 0; j < p_n_bad_blocks; ++i) {
+			for (j = 0; j < p_n_bad_blocks; ++j) {
 				file_damage_start = p_bad_blocks[j].offset;
 				file_damage_end = file_damage_start + p_bad_blocks[j].length - 1;
 				block_included = FALSE_m13;
@@ -41840,17 +42702,20 @@ PRTY_REPAIR_EXIT_m13:
 
 tern	PRTY_restore_m13(const si1 *MED_path)
 {
-	tern			success, valid, video_data, unlock_parity, unlock_data;
+	tern			success, valid, video_data, unlock_parity, unlock_data, stale, sess_checked;
 	si1			sess_path[PATH_BYTES_m13], sess_name[NAME_BYTES_m13], base_name[SEG_NAME_BYTES_m13];
 	si1			tmp_path[PATH_BYTES_m13], **input_file_list, **ts_chan_names, **vid_chan_names, **ssr_names, **list;
 	si1			*parity_path, response[8], num_str[FILE_NUMBERING_DIGITS_m13 + 1], **vid_list;
 	ui4			level_code;
 	si4			i, j, k, n_ts_chans, n_vid_chans, n_segs, n_vids, n_input_files, n_parity_files, n_bad_blocks;
 	si4			allocated_parity_files, n_repaired, n_attempted, n_skipped;
-	si8			len, mmap_block_bytes, mem_block_bytes, mem_blocks;
+	si8			len, nr, mmap_block_bytes, mem_block_bytes, mem_blocks;
 	PRTY_FILE_m13		*parity_files;
 	PRTY_BLOCK_m13		*bad_blocks;
 	PRTY_m13		parity_ps;
+	PRTY_PCRC_EXT_m13	*ext;
+	UH_m13			uh;
+	FILE_m13		*fp;
 	STR_CODE_m13 		type;
 
 #ifdef FT_DEBUG_m13
@@ -41954,7 +42819,6 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 					case VID_SEG_TYPE_CODE_m13:
 						len = strlen(base_name);
 						base_name[len - 6] = 0;
-						/* fall through */
 					case TS_CHAN_TYPE_CODE_m13:
 					case VID_CHAN_TYPE_CODE_m13:
 						STR_replace_pattern_m13(base_name, "parity", input_file_list[i], parity_path);
@@ -42010,6 +42874,45 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 					strcpy(parity_files[j++].path, tmp_path);
 				}
 			}
+		}
+
+		// verify parity identity before using it (extended pcrc only: legacy parity files carry no identity data)
+		// warnings only: names match, so proceed, but the user should know the parity data may not be what it appears to be
+		ext = PRTY_pcrc_ext_m13(NULL, parity_path, NULL);
+		if (ext != NULL) {
+			stale = sess_checked = FALSE_m13;
+			if ((si4) ext->n_members != n_parity_files)
+				stale = TRUE_m13;
+			for (j = PRTY_FILE_DAMAGED_IDX_m13 + 1; j < n_parity_files; ++j) {  // skip damaged file (its universal header may not be trustworthy)
+				fp = fopen_m13(parity_files[j].path, "r");
+				if (fp == NULL)
+					continue;
+				if (G_is_video_data_m13(parity_files[j].path) == TRUE_m13) {  // video data file universal headers are footers
+					if (fseek_m13(fp, flen_m13(fp) - UH_BYTES_m13, SEEK_SET)) {
+						fclose_m13(fp);
+						continue;
+					}
+				}
+				nr = fread_m13(&uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
+				fclose_m13(fp);
+				if (nr != UH_BYTES_m13)
+					continue;
+				if (sess_checked == FALSE_m13 && ext->session_UID != UID_NO_ENTRY_m13) {
+					if (uh.session_UID != ext->session_UID)
+						G_warning_message_m13("Parity file \"%s\" identifies a different session (0x%016lx) than its member files (0x%016lx): it may be misplaced or belong to a derivative data set; repair may produce invalid data\n", parity_path, ext->session_UID, uh.session_UID);
+					sess_checked = TRUE_m13;
+				}
+				if (stale == FALSE_m13) {
+					for (k = 0; k < (si4) ext->n_members; ++k)
+						if (ext->member_file_UIDs[k] == uh.file_UID)
+							break;
+					if (k == (si4) ext->n_members)
+						stale = TRUE_m13;
+				}
+			}
+			if (stale == TRUE_m13)
+				G_warning_message_m13("Parity file \"%s\" was built from a different member file set (files added, deleted, or replaced since parity was created): parity should be rebuilt; repair may produce invalid data\n", parity_path);
+			free(ext);
 		}
 
 		// repair
@@ -42084,11 +42987,217 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 }
 
 
+PRTY_PCRC_EXT_m13	*PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path)
+{
+	tern		vid_members, mixed_sessions;
+	si1		par_path[PATH_BYTES_m13], par_dir[PATH_BYTES_m13], sess_path[PATH_BYTES_m13], tmp_path[PATH_BYTES_m13];
+	si1		sess_name[NAME_BYTES_m13], par_name[SEG_NAME_BYTES_m13], vid_chan[SEG_NAME_BYTES_m13], name_pattern[SEG_NAME_BYTES_m13 + 8];
+	si1		type_str[TYPE_BYTES_m13], seg_type_str[TYPE_BYTES_m13], chan_type_str[TYPE_BYTES_m13], num_str[FILE_NUMBERING_DIGITS_m13 + 1];
+	si1		**members, **names;
+	ui4		level_code, type_code;
+	si4		i, j, k, n_members, n_names, seg_num;
+	si8		nr, len;
+	ui8		tmp_uid, sess_uid, chan_uid, seg_uid;
+	UH_m13		uh;
+	FILE_m13	*fp;
+	PRTY_PCRC_EXT_m13	*ext;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// MED_path is a parity file
+	// derives the identity of a parity file from the universal headers of the member files it was built from
+	// (parity files have no universal headers: their bodies are the xor of their member files)
+	// fills the UID fields of pcrc (if passed) & returns the allocated pcrc extension (caller frees)
+	// member files that do not exist or cannot be read are simply excluded from the manifest
+
+	if (PRTY_is_parity_m13(MED_path, TRUE_m13) != TRUE_m13) {
+		G_warning_message_m13("%s(): \"%s\" is not a parity file\n", __FUNCTION__, MED_path);
+		return_m13(NULL);
+	}
+
+	G_full_path_m13(MED_path, par_path);
+	type_code = NO_TYPE_CODE_m13;
+	level_code = G_level_m13(par_path, &type_code);
+	G_session_path_for_path_m13(par_path, sess_path);
+	G_path_parts_m13(sess_path, NULL, sess_name, NULL);
+	G_path_parts_m13(par_path, par_dir, par_name, type_str);
+
+	// build member file list
+	members = NULL;
+	n_members = 0;
+	vid_members = FALSE_m13;
+	switch (level_code) {
+		case SESS_TYPE_CODE_m13:  // session-level records parity (parity of a single file)
+			members = (si1 **) calloc_2D_m13((size_t) 1, (size_t) PATH_BYTES_m13, sizeof(si1));
+			sprintf_m13(members[0], "%s/%s.%s", sess_path, sess_name, type_str);
+			if (G_exists_m13(members[0]) == FILE_EXISTS_m13)
+				n_members = 1;
+			break;
+		case SSR_TYPE_CODE_m13:  // segmented session records parity (across segments)
+			names = G_file_list_m13(NULL, &n_names, par_dir, NULL, type_str, GFL_FULL_PATH_m13);
+			if (n_names) {
+				members = (si1 **) calloc_2D_m13((size_t) n_names, (size_t) PATH_BYTES_m13, sizeof(si1));
+				for (i = 0; i < n_names; ++i) {
+					if (PRTY_is_parity_m13(names[i], TRUE_m13) == TRUE_m13)
+						continue;
+					strcpy(members[n_members++], names[i]);
+				}
+				free_m13(names);
+			}
+			break;
+		case TS_CHAN_TYPE_CODE_m13:  // channel-level records parity (across channels)
+		case VID_CHAN_TYPE_CODE_m13:
+			G_path_parts_m13(par_dir, NULL, NULL, chan_type_str);
+			names = G_file_list_m13(NULL, &n_names, sess_path, NULL, chan_type_str, GFL_NAME_m13);
+			if (n_names) {
+				members = (si1 **) calloc_2D_m13((size_t) n_names, (size_t) PATH_BYTES_m13, sizeof(si1));
+				for (i = 0; i < n_names; ++i) {
+					if (strncmp_m13(names[i], "parity", 6) == 0)
+						continue;
+					sprintf_m13(members[n_members], "%s/%s.%s/%s.%s", sess_path, names[i], chan_type_str, names[i], type_str);
+					if (G_exists_m13(members[n_members]) == FILE_EXISTS_m13)
+						++n_members;
+				}
+				free_m13(names);
+			}
+			break;
+		case TS_SEG_TYPE_CODE_m13:  // segment-level parity (across channels), except video data parity (across video data files within a channel/segment)
+		case VID_SEG_TYPE_CODE_m13:
+			if (type_code == VID_DATA_TYPE_CODE_m13 || G_MED_type_code_from_string_m13(type_str) == NO_TYPE_CODE_m13)
+				vid_members = TRUE_m13;
+			seg_num = G_segment_for_path_m13(par_path);
+			STR_fixed_width_int_m13(num_str, FILE_NUMBERING_DIGITS_m13, seg_num);
+			G_path_parts_m13(par_dir, tmp_path, NULL, seg_type_str);
+			G_path_parts_m13(tmp_path, NULL, NULL, chan_type_str);
+			if (vid_members == TRUE_m13) {
+				// spec naming "parity_<chan>_s####.vpar" identifies the channel; legacy naming ("parity_s####.<native ext>") cannot identify members
+				strcpy(vid_chan, par_name + 7);  // skip "parity_"
+				len = strlen(vid_chan);
+				if (len > 6 && vid_chan[len - 6] == '_' && vid_chan[len - 5] == 's')
+					vid_chan[len - 6] = 0;  // trim "_s####" => channel name
+				else
+					*vid_chan = 0;
+				if (*vid_chan) {
+					sprintf_m13(tmp_path, "%s/%s.%s/%s_s%s.%s", sess_path, vid_chan, VID_CHAN_TYPE_STR_m13, vid_chan, num_str, VID_SEG_TYPE_STR_m13);
+					sprintf_m13(name_pattern, "%s_s%s_n????", vid_chan, num_str);
+					members = G_file_list_m13(NULL, &n_members, tmp_path, name_pattern, NULL, GFL_FULL_PATH_m13);
+				}
+			} else {
+				names = G_file_list_m13(NULL, &n_names, sess_path, NULL, chan_type_str, GFL_NAME_m13);
+				if (n_names) {
+					members = (si1 **) calloc_2D_m13((size_t) n_names, (size_t) PATH_BYTES_m13, sizeof(si1));
+					for (i = 0; i < n_names; ++i) {
+						if (strncmp_m13(names[i], "parity", 6) == 0)
+							continue;
+						sprintf_m13(members[n_members], "%s/%s.%s/%s_s%s.%s/%s_s%s.%s", sess_path, names[i], chan_type_str, names[i], num_str, seg_type_str, names[i], num_str, type_str);
+						if (G_exists_m13(members[n_members]) == FILE_EXISTS_m13)
+							++n_members;
+					}
+					free_m13(names);
+				}
+			}
+			break;
+	}
+
+	// read member universal headers
+	ext = (PRTY_PCRC_EXT_m13 *) calloc((size_t) 1, sizeof(PRTY_PCRC_EXT_m13) + ((size_t) n_members * sizeof(ui8)));  // calloc zeroes protected region
+	sess_uid = chan_uid = seg_uid = UID_NO_ENTRY_m13;
+	mixed_sessions = FALSE_m13;
+	for (i = k = 0; i < n_members; ++i) {
+		fp = fopen_m13(members[i], "r");
+		if (fp == NULL)
+			continue;
+		if (G_is_video_data_m13(members[i]) == TRUE_m13) {  // video data file universal headers are footers
+			if (fseek_m13(fp, flen_m13(fp) - UH_BYTES_m13, SEEK_SET)) {
+				fclose_m13(fp);
+				continue;
+			}
+		}
+		nr = fread_m13(&uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
+		fclose_m13(fp);
+		if (nr != UH_BYTES_m13)
+			continue;
+		if (k == 0) {
+			sess_uid = uh.session_UID;
+			chan_uid = uh.channel_UID;
+			seg_uid = uh.segment_UID;
+		} else {
+			if (uh.session_UID != sess_uid)
+				mixed_sessions = TRUE_m13;
+			if (uh.channel_UID != chan_uid)
+				chan_uid = UID_NO_ENTRY_m13;
+			if (uh.segment_UID != seg_uid)
+				seg_uid = UID_NO_ENTRY_m13;
+		}
+		ext->member_file_UIDs[k++] = uh.file_UID;
+	}
+	n_members = k;
+	if (mixed_sessions == TRUE_m13) {
+		G_warning_message_m13("%s(): member files of \"%s\" belong to different sessions\n", __FUNCTION__, par_path);
+		sess_uid = UID_NO_ENTRY_m13;
+	}
+
+	// no readable members (e.g. legacy video data parity naming): identify session from any MED file in it
+	if (n_members == 0) {
+		names = PRTY_file_list_m13(sess_path, &n_names);
+		for (i = 0; i < n_names; ++i) {
+			if (PRTY_is_parity_m13(names[i], TRUE_m13) == TRUE_m13)
+				continue;
+			fp = fopen_m13(names[i], "r");
+			if (fp == NULL)
+				continue;
+			if (G_is_video_data_m13(names[i]) == TRUE_m13) {
+				if (fseek_m13(fp, flen_m13(fp) - UH_BYTES_m13, SEEK_SET)) {
+					fclose_m13(fp);
+					continue;
+				}
+			}
+			nr = fread_m13(&uh, sizeof(ui1), (size_t) UH_BYTES_m13, fp);
+			fclose_m13(fp);
+			if (nr != UH_BYTES_m13)
+				continue;
+			sess_uid = uh.session_UID;
+			break;
+		}
+		if (n_names)
+			free_m13(names);
+	}
+
+	// sort manifest ascending
+	for (i = 1; i < n_members; ++i) {
+		tmp_uid = ext->member_file_UIDs[i];
+		for (j = i; j && ext->member_file_UIDs[j - 1] > tmp_uid; --j)
+			ext->member_file_UIDs[j] = ext->member_file_UIDs[j - 1];
+		ext->member_file_UIDs[j] = tmp_uid;
+	}
+
+	// fill
+	ext->session_UID = sess_uid;
+	ext->channel_UID = chan_uid;
+	ext->segment_UID = seg_uid;
+	ext->n_members = (ui4) n_members;
+	ext->version = PRTY_PCRC_EXT_VER_m13;
+	if (pcrc) {
+		pcrc->session_UID = sess_uid;
+		pcrc->segment_UID = seg_uid;
+	}
+
+	if (members)
+		free_m13(members);
+
+	return_m13(ext);
+}
+
+
 tern	PRTY_show_pcrc_m13(const si1 *file_path)
 {
+	si4			i;
 	si8			pcrc_offset;
 	FILE_m13		*fp;
 	PRTY_CRC_DATA_m13	pcrc;
+	PRTY_PCRC_EXT_m13	*ext;
 	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -42101,8 +43210,8 @@ tern	PRTY_show_pcrc_m13(const si1 *file_path)
 	
 	fp = fopen_m13(file_path, "r");
 	pcrc_offset = PRTY_pcrc_offset_m13(fp, NULL, &pcrc);  // pcrc structure sits at the end of all pcrc-bearing files (video data included)
-	fclose_m13(fp);
 	if (pcrc_offset == FALSE_m13 || pcrc.n_blocks == 0) {
+		fclose_m13(fp);
 		G_warning_message_m13("%s(): file \"%s\" does not contain parity crc data\n", __FUNCTION__, file_path);
 		return_m13(FALSE_m13);
 	}
@@ -42112,6 +43221,22 @@ tern	PRTY_show_pcrc_m13(const si1 *file_path)
 	printf_m13("segment_UID: 0x%016lx\n", pcrc.segment_UID);
 	printf_m13("n_blocks: %u\n", pcrc.n_blocks);
 	printf_m13("block_bytes: %u\n", pcrc.block_bytes);
+
+	// extension
+	ext = PRTY_pcrc_ext_m13(fp, NULL, NULL);
+	fclose_m13(fp);
+	if (ext != NULL) {
+		printf_m13("extension version: %hhu\n", ext->version);
+		printf_m13("extension session_UID: 0x%016lx\n", ext->session_UID);
+		printf_m13("extension channel_UID: 0x%016lx\n", ext->channel_UID);
+		printf_m13("extension segment_UID: 0x%016lx\n", ext->segment_UID);
+		printf_m13("extension n_members: %u\n", ext->n_members);
+		for (i = 0; i < (si4) ext->n_members; ++i)
+			printf_m13("extension member_file_UID[%d]: 0x%016lx\n", i, ext->member_file_UIDs[i]);
+		free(ext);
+	} else if (PRTY_is_parity_m13(file_path, TRUE_m13) == TRUE_m13) {
+		printf_m13("no pcrc extension (legacy parity file): UID fields above were never set & are unreliable\n");
+	}
 
 	return_m13(TRUE_m13);
 }
@@ -42780,6 +43905,7 @@ tern	PRTY_validate_pcrc_m13(const si1 *file_path, ...)  // varargs(file_path == 
 	return_bb = FALSE_m13;
 	bad_blocks = NULL;
 	n_bad_blocks = NULL;
+	n_blocks = NULL;
 	if (file_path == NULL) {
 		va_start(v_args, file_path);
 		file_path = va_arg(v_args, const si1 *);
@@ -43317,6 +44443,10 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 
 	// session records
 	if (flags & PRTY_SESS_RECS_m13) {
+		if (n_files == 0) {  // possible if called with only session record flags (e.g. targeted parity rebuild)
+			n_files = 1;
+			parity_ps.files = files = (PRTY_FILE_m13 *) malloc_m13(sizeof(PRTY_FILE_m13));
+		}
 		// session records data
 		if (flags & PRTY_GLB_SESS_REC_DATA_m13) {
 			sprintf_m13(files[0].path, "%s/%s.%s", sess_path, sess_name, REC_DATA_TYPE_STR_m13);
@@ -43362,90 +44492,107 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 
 tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes)
 {
-	tern			r_val, vid_data, parity;
-	ui1			*bytes;
-	ui4			*crcs, n_blocks, max_block_bytes;
-	si4			i;
-	si8			len, header_offset, nrw, pcrc_offset, data_start, data_len;
-	PRTY_CRC_DATA_m13	pcrc;
-	FILE_m13		*fp;
-	UH_m13			uh;
-	
+	tern				r_val, vid_data, is_parity;
+	ui1				*bytes;
+	ui4				*crcs, n_blocks, max_block_bytes;
+	si4				i;
+	si8				len, old_flen, header_offset, ext_offset, ext_body_bytes, crc_offset, nrw;
+	PRTY_CRC_DATA_m13		pcrc;
+	PRTY_PCRC_EXT_m13		*ext, *tmp_ext;
+	PRTY_PCRC_EXT_FOOTER_m13	ext_footer;
+	FILE_m13			*fp;
+	UH_m13				uh;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
+
 	// function expects file to be closed
 	// pass zero for blocks_bytes to use default
 	// file_path can be any file, typically used for files that have no CRCs such as parity data and video data
 	// can be used to enhance localization in any file that has only one crc for the entire body, such as record or time series index files
-	
+
 
 	if (G_exists_m13(file_path) != TRUE_m13) {  // might be directory
 		G_warning_message_m13("%s(): file \"%s\" does not exist\n", __FUNCTION__, file_path);
 		return_m13(FALSE_m13);
 	}
-	
+
 	r_val = FALSE_m13;
 	bytes = NULL;
 	crcs = NULL;
+	ext = NULL;
 
 	// open file
 	fp = fopen_m13(file_path, "r+");
 	if (fp == NULL)
 		return_m13(FALSE_m13);
 	fp->flags |= FILE_FLAGS_PARITY_m13;  // pcrc bytes lie outside parity coverage by design (PRTY_build_m13() uses pcrc offset lengths): don't let fwrite_m13() invoke a parity update for them
-	pcrc_offset = PRTY_pcrc_offset_m13(fp, NULL, &pcrc);  // start of pcrc crcs, if they exist, otherwise where they should go
-	if (pcrc_offset == FALSE_m13) {  // error
+	old_flen = flen_m13(fp);
+	len = PRTY_pcrc_offset_m13(fp, NULL, &pcrc);  // start of pcrc crcs, if they exist, otherwise where they should go
+
+	if (len == FALSE_m13) {  // error
 		fclose_m13(fp);
 		return_m13(FALSE_m13);
 	}
 
-	// determine covered data region: pcrcs cover data only - universal headers are excluded (they carry their own CRCs)
-	// video data files: [video data][universal header][pcrc crcs][pcrc structure]
-	// parity files: [parity data][pcrc crcs][pcrc structure] (no universal header)
-	// all other files: [universal header][data][pcrc crcs][pcrc structure]
 	vid_data = G_is_video_data_m13(fp->path);
-	parity = PRTY_is_parity_m13(fp->path, UNKNOWN_m13);
-	memset(&uh, 0, sizeof(UH_m13));  // parity files carry no universal header (pcrc UIDs left at no entry)
-	if (vid_data == TRUE_m13) {
-		data_start = 0;
-		data_len = pcrc_offset - (si8) UH_BYTES_m13;
-		header_offset = data_len;  // universal header between end of video data & start of pcrc crcs
-	} else if (parity == TRUE_m13) {
-		data_start = 0;
-		data_len = pcrc_offset;
-		header_offset = -1;  // no universal header
-	} else {
-		data_start = (si8) UH_BYTES_m13;
-		data_len = pcrc_offset - (si8) UH_BYTES_m13;
-		header_offset = 0;
-	}
-	if (data_len < 0)
-		goto PRTY_WRITE_PCRC_FAIL;
+	is_parity = PRTY_is_parity_m13(fp->path, TRUE_m13);
+	if (is_parity == TRUE_m13) {
+		// parity files have no universal header (body is xor of member files): identity comes from member file universal headers
+		vid_data = FALSE_m13;  // video data parity files have no universal header footer either
+		tmp_ext = PRTY_pcrc_ext_m13(fp, NULL, &ext_offset);  // existing extension will be regenerated: exclude it from data length
+		if (tmp_ext != NULL) {
+			len = ext_offset;
+			free(tmp_ext);
+		}
+		ext = PRTY_set_pcrc_uids_m13(&pcrc, fp->path);
+		if (ext == NULL)
+			goto PRTY_WRITE_PCRC_FAIL;
 
-	// read universal header (for pcrc UIDs)
-	if (header_offset >= 0) {
+		// write extension after parity data (covered by the pcrc block crcs: transparent to pre-extension readers)
+		memset(&ext_footer, 0, sizeof(PRTY_PCRC_EXT_FOOTER_m13));
+		ext_body_bytes = (si8) sizeof(PRTY_PCRC_EXT_m13) + ((si8) ext->n_members * sizeof(ui8));
+		ext_footer.ext_bytes = (ui4) (ext_body_bytes + sizeof(PRTY_PCRC_EXT_FOOTER_m13));
+		ext_footer.tag = PRTY_PCRC_EXT_TAG_m13;
+		if (fseek_m13(fp, len, SEEK_SET))
+			goto PRTY_WRITE_PCRC_FAIL;
+		nrw = fwrite_m13(ext, sizeof(ui1), (size_t) ext_body_bytes, fp);
+		if (nrw != ext_body_bytes)
+			goto PRTY_WRITE_PCRC_FAIL;
+		nrw = fwrite_m13(&ext_footer, sizeof(PRTY_PCRC_EXT_FOOTER_m13), (size_t) 1, fp);
+		if (nrw != 1)
+			goto PRTY_WRITE_PCRC_FAIL;
+		len += (si8) ext_footer.ext_bytes;
+	} else {
+		// read universal header
+		if (vid_data == TRUE_m13)
+			header_offset = len - UH_BYTES_m13;  // between end of video data & start of pcrc crcs
+		else
+			header_offset = 0;
 		if (fseek_m13(fp, header_offset, SEEK_SET))
 			goto PRTY_WRITE_PCRC_FAIL;
+
 		nrw = fread_m13(&uh, sizeof(ui1), UH_BYTES_m13, fp);
 		if (nrw != UH_BYTES_m13)
 			goto PRTY_WRITE_PCRC_FAIL;
+		pcrc.session_UID = uh.session_UID;
+		pcrc.segment_UID = uh.segment_UID;
 	}
 
-	// seek to data start
-	if (fseek_m13(fp, data_start, SEEK_SET))
+	// rewind
+	if (fseek_m13(fp, 0, SEEK_SET))
 		goto PRTY_WRITE_PCRC_FAIL;
 
 	// allocate
 	if (block_bytes == 0)
 		block_bytes = PRTY_BLOCK_BYTES_DEFAULT_m13;
 	bytes = (ui1 *) malloc((size_t) block_bytes);
-	n_blocks = pcrc.n_blocks = (ui4) ceil((sf8) data_len / (sf8) block_bytes);
+	n_blocks = pcrc.n_blocks = (ui4) ceil((sf8) len / (sf8) block_bytes);
 	crcs = (ui4 *) malloc((size_t) n_blocks * sizeof(ui4));
 
 	// calculate crcs
-	len = data_len;
+	crc_offset = len;  // crcs start where covered bytes end
 	max_block_bytes = 0;
 	for (i = 0; i < n_blocks; ++i) {
 		if (len < block_bytes)
@@ -43460,8 +44607,8 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes)
 		len -= block_bytes;
 	}
 
-	// write crcs (at the pcrc offset: for video data files this follows the universal header)
-	if (fseek_m13(fp, pcrc_offset, SEEK_SET))
+	// write crcs
+	if (fseek_m13(fp, crc_offset, SEEK_SET))  // explicit reposition: ANSI C requires a seek between read & write on update streams (unless at EOF, which is not guaranteed on rewrites)
 		goto PRTY_WRITE_PCRC_FAIL;
 	nrw = fwrite_m13(crcs, sizeof(ui4), (size_t) n_blocks, fp);
 	if (nrw != n_blocks)
@@ -43469,22 +44616,29 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes)
 
 	// write pcrc structure
 	pcrc.tag = PRTY_PCRC_TAG_m13;
-	pcrc.session_UID = uh.session_UID;
-	pcrc.segment_UID = uh.segment_UID;
 	pcrc.n_blocks = n_blocks;
 	pcrc.block_bytes = max_block_bytes;
 	nrw = fwrite_m13(&pcrc, sizeof(PRTY_CRC_DATA_m13), (size_t) 1, fp);
 	if (nrw != 1)
 		goto PRTY_WRITE_PCRC_FAIL;
 
-	// remove any residue (e.g. pcrc data rebuilt with different block bytes)
-	if (ftruncate_m13(fp, pcrc_offset + (si8) (n_blocks * sizeof(ui4)) + (si8) sizeof(PRTY_CRC_DATA_m13)))
-		goto PRTY_WRITE_PCRC_FAIL;
+	// write video universal header
+	if (vid_data == TRUE_m13) {
+		nrw = fwrite_m13(&uh, sizeof(ui1), UH_BYTES_m13, fp);
+		if (nrw != UH_BYTES_m13)
+			goto PRTY_WRITE_PCRC_FAIL;
+	}
+
+	// remove stale bytes (rewrites can shrink the trailer, e.g. regenerated extension with fewer members)
+	len = ftell_m13(fp);
+	if (len < old_flen)
+		if (ftruncate_m13(fp, (off_t) len))
+			goto PRTY_WRITE_PCRC_FAIL;
 
 	r_val = TRUE_m13;
-	
+
 PRTY_WRITE_PCRC_FAIL:
-	
+
 	// clean up
 	if (fp)
 		fclose_m13(fp);
@@ -43492,6 +44646,8 @@ PRTY_WRITE_PCRC_FAIL:
 		free(bytes);
 	if (crcs)
 		free(crcs);
+	if (ext)
+		free(ext);
 
 	return_m13(r_val);
 }
@@ -44333,6 +45489,53 @@ ui1	*SHA_hash_m13(const ui1 *data, si8 len, ui1 *hash)
 }
 
 
+ui1	*SHA_hmac_m13(const ui1 *key, si4 key_bytes, const ui1 *data, si8 data_bytes, ui1 *mac)
+{
+	ui1		k_pad[64], k_hash[SHA_HASH_BYTES_m13], inner[SHA_HASH_BYTES_m13];
+	si4		i;
+	SHA_CTX_m13	ctx;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// HMAC-SHA-256 (RFC 2104): mac is SHA_HASH_BYTES_m13 (32) bytes
+	// if mac is NULL, it is allocated (caller takes ownership)
+
+	if (globals_m13->tables->SHA_h0_table == NULL)  // all tables initialized together
+		SHA_init_tables_m13();
+
+	if (mac == NULL)
+		mac = (ui1 *) malloc_m13((size_t) SHA_HASH_BYTES_m13);
+
+	if (key_bytes > 64) {  // longer than SHA-256 block size: use hash of key
+		SHA_hash_m13(key, (si8) key_bytes, k_hash);
+		key = k_hash;
+		key_bytes = SHA_HASH_BYTES_m13;
+	}
+
+	// inner hash: SHA((key ^ ipad) || data)
+	memset(k_pad, 0x36, (size_t) 64);
+	for (i = 0; i < key_bytes; ++i)
+		k_pad[i] ^= key[i];
+	SHA_init_m13(&ctx);
+	SHA_update_m13(&ctx, k_pad, (si8) 64);
+	SHA_update_m13(&ctx, data, data_bytes);
+	SHA_finalize_m13(&ctx, inner);
+
+	// outer hash: SHA((key ^ opad) || inner)
+	memset(k_pad, 0x5c, (size_t) 64);
+	for (i = 0; i < key_bytes; ++i)
+		k_pad[i] ^= key[i];
+	SHA_init_m13(&ctx);
+	SHA_update_m13(&ctx, k_pad, (si8) 64);
+	SHA_update_m13(&ctx, inner, (si8) SHA_HASH_BYTES_m13);
+	SHA_finalize_m13(&ctx, mac);
+
+	return_m13(mac);
+}
+
+
 void	SHA_init_m13(SHA_CTX_m13 *ctx)
 {
 	const ui4	*SHA_h0;
@@ -44359,7 +45562,7 @@ tern	SHA_init_tables_m13(void)
 	
 	tables = globals_m13->tables;
 	if (tables->SHA_h0_table)
-		return_m13(TRUE_m13);
+		return(TRUE_m13);  // NOT return_m13: no matching G_push_function_m13() in this function (popped the CALLER's frame under FT_DEBUG)
 
 	pthread_mutex_lock_m13(&tables->mutex);
 	if (tables->SHA_h0_table) {  // may have been done by another thread while waiting
@@ -44401,10 +45604,341 @@ tern	SHA_init_tables_m13(void)
 }
 
 
+ui1	*SHA_pbkdf2_m13(const ui1 *pw, si4 pw_bytes, const ui1 *salt, si4 salt_bytes, ui4 iterations, ui1 *dk)
+{
+	ui1	u[SHA_HASH_BYTES_m13], salt_block[68];
+	si4	i;
+	ui4	c;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// PBKDF2-HMAC-SHA-256 (RFC 8018), single output block: dk is SHA_HASH_BYTES_m13 (32) bytes
+	// if dk is NULL, it is allocated (caller takes ownership)
+	// key stretching: multiplies the cost of each password guess by the iteration count
+	// (the derived key has no more entropy than the password: iterations buy attacker-work, not randomness)
+
+	if (salt_bytes > 64) {
+		G_set_error_m13(E_CRYP_m13, "salt too long (max 64 bytes)");
+		return_m13(NULL);
+	}
+	if (iterations == 0) {
+		G_set_error_m13(E_CRYP_m13, "iterations must be positive");
+		return_m13(NULL);
+	}
+	if (dk == NULL)
+		dk = (ui1 *) malloc_m13((size_t) SHA_HASH_BYTES_m13);
+
+	// U1 = HMAC(pw, salt || INT_32_BE(1))
+	memcpy(salt_block, salt, (size_t) salt_bytes);
+	salt_block[salt_bytes] = salt_block[salt_bytes + 1] = salt_block[salt_bytes + 2] = 0;
+	salt_block[salt_bytes + 3] = 1;
+	SHA_hmac_m13(pw, pw_bytes, salt_block, (si8) salt_bytes + 4, u);
+	memcpy(dk, u, (size_t) SHA_HASH_BYTES_m13);
+
+	// Un = HMAC(pw, Un-1); dk = U1 ^ U2 ^ ... ^ Uc
+	for (c = 1; c < iterations; ++c) {
+		SHA_hmac_m13(pw, pw_bytes, u, (si8) SHA_HASH_BYTES_m13, u);
+		for (i = 0; i < SHA_HASH_BYTES_m13; ++i)
+			dk[i] ^= u[i];
+	}
+
+	return_m13(dk);
+}
+
+
+// hardware compression function (x86 SHA extensions / ARMv8 SHA-2)
+// same state & block conventions as the portable implementation => identical digests;
+// self-contained K constants (the hardware path must not depend on the global tables)
+#ifdef HW_CRYPTO_m13
+
+static const ui4	SHA_hw_k_m13[64] = {
+	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+	0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+	0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+	0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+	0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+	0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+	0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+};
+
+static tern	SHA_hw_ready_m13(void)  // detection results live in the global tables
+{
+	if (globals_m13 == NULL)
+		return(FALSE_m13);
+	if (globals_m13->tables == NULL)
+		return(FALSE_m13);
+	return(globals_m13->tables->HW_params.SHA256_accel);
+}
+
+#if defined __x86_64__ || defined __i386__
+HW_SHA_FN_ATTR_m13
+static void	SHA_transform_hw_m13(SHA_CTX_m13 *ctx, const ui1 *data)
+{
+	__m128i		state0, state1, msg, tmp, msg0, msg1, msg2, msg3, abef_save, cdgh_save;
+	const __m128i	shuf_mask = _mm_set_epi64x((si8) 0x0c0d0e0f08090a0bLL, (si8) 0x0405060700010203LL);
+
+	// load & interleave state (the SHA instructions work in ABEF / CDGH register order)
+	tmp = _mm_loadu_si128((const __m128i *) &ctx->state[0]);	// DCBA
+	state1 = _mm_loadu_si128((const __m128i *) &ctx->state[4]);	// HGFE
+	tmp = _mm_shuffle_epi32(tmp, 0xB1);				// CDAB
+	state1 = _mm_shuffle_epi32(state1, 0x1B);			// EFGH
+	state0 = _mm_alignr_epi8(tmp, state1, 8);			// ABEF
+	state1 = _mm_blend_epi16(state1, tmp, 0xF0);			// CDGH
+
+	abef_save = state0;
+	cdgh_save = state1;
+
+	// rounds 0-3
+	msg0 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *) (data + 0)), shuf_mask);
+	msg = _mm_add_epi32(msg0, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[0]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+
+	// rounds 4-7
+	msg1 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *) (data + 16)), shuf_mask);
+	msg = _mm_add_epi32(msg1, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[4]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg0 = _mm_sha256msg1_epu32(msg0, msg1);
+
+	// rounds 8-11
+	msg2 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *) (data + 32)), shuf_mask);
+	msg = _mm_add_epi32(msg2, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[8]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg1 = _mm_sha256msg1_epu32(msg1, msg2);
+
+	// rounds 12-15
+	msg3 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *) (data + 48)), shuf_mask);
+	msg = _mm_add_epi32(msg3, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[12]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg3, msg2, 4);
+	msg0 = _mm_add_epi32(msg0, tmp);
+	msg0 = _mm_sha256msg2_epu32(msg0, msg3);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg2 = _mm_sha256msg1_epu32(msg2, msg3);
+
+	// rounds 16-19
+	msg = _mm_add_epi32(msg0, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[16]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg0, msg3, 4);
+	msg1 = _mm_add_epi32(msg1, tmp);
+	msg1 = _mm_sha256msg2_epu32(msg1, msg0);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg3 = _mm_sha256msg1_epu32(msg3, msg0);
+
+	// rounds 20-23
+	msg = _mm_add_epi32(msg1, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[20]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg1, msg0, 4);
+	msg2 = _mm_add_epi32(msg2, tmp);
+	msg2 = _mm_sha256msg2_epu32(msg2, msg1);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg0 = _mm_sha256msg1_epu32(msg0, msg1);
+
+	// rounds 24-27
+	msg = _mm_add_epi32(msg2, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[24]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg2, msg1, 4);
+	msg3 = _mm_add_epi32(msg3, tmp);
+	msg3 = _mm_sha256msg2_epu32(msg3, msg2);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg1 = _mm_sha256msg1_epu32(msg1, msg2);
+
+	// rounds 28-31
+	msg = _mm_add_epi32(msg3, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[28]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg3, msg2, 4);
+	msg0 = _mm_add_epi32(msg0, tmp);
+	msg0 = _mm_sha256msg2_epu32(msg0, msg3);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg2 = _mm_sha256msg1_epu32(msg2, msg3);
+
+	// rounds 32-35
+	msg = _mm_add_epi32(msg0, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[32]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg0, msg3, 4);
+	msg1 = _mm_add_epi32(msg1, tmp);
+	msg1 = _mm_sha256msg2_epu32(msg1, msg0);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg3 = _mm_sha256msg1_epu32(msg3, msg0);
+
+	// rounds 36-39
+	msg = _mm_add_epi32(msg1, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[36]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg1, msg0, 4);
+	msg2 = _mm_add_epi32(msg2, tmp);
+	msg2 = _mm_sha256msg2_epu32(msg2, msg1);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg0 = _mm_sha256msg1_epu32(msg0, msg1);
+
+	// rounds 40-43
+	msg = _mm_add_epi32(msg2, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[40]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg2, msg1, 4);
+	msg3 = _mm_add_epi32(msg3, tmp);
+	msg3 = _mm_sha256msg2_epu32(msg3, msg2);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg1 = _mm_sha256msg1_epu32(msg1, msg2);
+
+	// rounds 44-47
+	msg = _mm_add_epi32(msg3, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[44]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg3, msg2, 4);
+	msg0 = _mm_add_epi32(msg0, tmp);
+	msg0 = _mm_sha256msg2_epu32(msg0, msg3);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg2 = _mm_sha256msg1_epu32(msg2, msg3);
+
+	// rounds 48-51
+	msg = _mm_add_epi32(msg0, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[48]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg0, msg3, 4);
+	msg1 = _mm_add_epi32(msg1, tmp);
+	msg1 = _mm_sha256msg2_epu32(msg1, msg0);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+	msg3 = _mm_sha256msg1_epu32(msg3, msg0);
+
+	// rounds 52-55
+	msg = _mm_add_epi32(msg1, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[52]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg1, msg0, 4);
+	msg2 = _mm_add_epi32(msg2, tmp);
+	msg2 = _mm_sha256msg2_epu32(msg2, msg1);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+
+	// rounds 56-59
+	msg = _mm_add_epi32(msg2, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[56]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	tmp = _mm_alignr_epi8(msg2, msg1, 4);
+	msg3 = _mm_add_epi32(msg3, tmp);
+	msg3 = _mm_sha256msg2_epu32(msg3, msg2);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+
+	// rounds 60-63
+	msg = _mm_add_epi32(msg3, _mm_loadu_si128((const __m128i *) &SHA_hw_k_m13[60]));
+	state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
+	msg = _mm_shuffle_epi32(msg, 0x0E);
+	state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
+
+	// add saved state & de-interleave back to a..h order
+	state0 = _mm_add_epi32(state0, abef_save);	// ABEF
+	state1 = _mm_add_epi32(state1, cdgh_save);	// CDGH
+	tmp = _mm_shuffle_epi32(state0, 0x1B);		// FEBA
+	state1 = _mm_shuffle_epi32(state1, 0xB1);	// DCHG
+	state0 = _mm_blend_epi16(tmp, state1, 0xF0);	// DCBA
+	state1 = _mm_alignr_epi8(state1, tmp, 8);	// HGFE
+	_mm_storeu_si128((__m128i *) &ctx->state[0], state0);
+	_mm_storeu_si128((__m128i *) &ctx->state[4], state1);
+
+	return;
+}
+#endif  // __x86_64__ || __i386__
+
+#ifdef __aarch64__
+HW_SHA_FN_ATTR_m13
+static void	SHA_transform_hw_m13(SHA_CTX_m13 *ctx, const ui1 *data)
+{
+	si4		i;
+	uint32x4_t	state0, state1, abcd_save, efgh_save, msg0, msg1, msg2, msg3, tmp0, tmp1, tmp2;
+
+	state0 = vld1q_u32(&ctx->state[0]);	// ABCD
+	state1 = vld1q_u32(&ctx->state[4]);	// EFGH
+	abcd_save = state0;
+	efgh_save = state1;
+
+	// message schedule loads (big-endian words)
+	msg0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 0)));
+	msg1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 16)));
+	msg2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 32)));
+	msg3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(data + 48)));
+
+	tmp0 = vaddq_u32(msg0, vld1q_u32(&SHA_hw_k_m13[0]));
+	for (i = 0; i < 12; i += 4) {  // rounds 0-47: schedule keeps extending
+		msg0 = vsha256su1q_u32(vsha256su0q_u32(msg0, msg1), msg2, msg3);
+		tmp1 = vaddq_u32(msg1, vld1q_u32(&SHA_hw_k_m13[(i + 1) << 2]));
+		tmp2 = state0;
+		state0 = vsha256hq_u32(state0, state1, tmp0);
+		state1 = vsha256h2q_u32(state1, tmp2, tmp0);
+
+		msg1 = vsha256su1q_u32(vsha256su0q_u32(msg1, msg2), msg3, msg0);
+		tmp0 = vaddq_u32(msg2, vld1q_u32(&SHA_hw_k_m13[(i + 2) << 2]));
+		tmp2 = state0;
+		state0 = vsha256hq_u32(state0, state1, tmp1);
+		state1 = vsha256h2q_u32(state1, tmp2, tmp1);
+
+		msg2 = vsha256su1q_u32(vsha256su0q_u32(msg2, msg3), msg0, msg1);
+		tmp1 = vaddq_u32(msg3, vld1q_u32(&SHA_hw_k_m13[(i + 3) << 2]));
+		tmp2 = state0;
+		state0 = vsha256hq_u32(state0, state1, tmp0);
+		state1 = vsha256h2q_u32(state1, tmp2, tmp0);
+
+		msg3 = vsha256su1q_u32(vsha256su0q_u32(msg3, msg0), msg1, msg2);
+		tmp0 = vaddq_u32(msg0, vld1q_u32(&SHA_hw_k_m13[(i + 4) << 2]));
+		tmp2 = state0;
+		state0 = vsha256hq_u32(state0, state1, tmp1);
+		state1 = vsha256h2q_u32(state1, tmp2, tmp1);
+	}
+
+	// rounds 48-63: no further schedule extension
+	tmp1 = vaddq_u32(msg1, vld1q_u32(&SHA_hw_k_m13[52]));
+	tmp2 = state0;
+	state0 = vsha256hq_u32(state0, state1, tmp0);
+	state1 = vsha256h2q_u32(state1, tmp2, tmp0);
+
+	tmp0 = vaddq_u32(msg2, vld1q_u32(&SHA_hw_k_m13[56]));
+	tmp2 = state0;
+	state0 = vsha256hq_u32(state0, state1, tmp1);
+	state1 = vsha256h2q_u32(state1, tmp2, tmp1);
+
+	tmp1 = vaddq_u32(msg3, vld1q_u32(&SHA_hw_k_m13[60]));
+	tmp2 = state0;
+	state0 = vsha256hq_u32(state0, state1, tmp0);
+	state1 = vsha256h2q_u32(state1, tmp2, tmp0);
+
+	tmp2 = state0;
+	state0 = vsha256hq_u32(state0, state1, tmp1);
+	state1 = vsha256h2q_u32(state1, tmp2, tmp1);
+
+	vst1q_u32(&ctx->state[0], vaddq_u32(state0, abcd_save));
+	vst1q_u32(&ctx->state[4], vaddq_u32(state1, efgh_save));
+
+	return;
+}
+#endif  // __aarch64__
+
+#endif  // HW_CRYPTO_m13
+
+
 void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data)
 {
 	const ui4	*sha_k;
 	ui4		a, b, c, d, e, f, g, h, i, j, t1, t2, m[64];
+
+#ifdef HW_CRYPTO_m13
+	if (SHA_hw_ready_m13() == TRUE_m13) {
+		SHA_transform_hw_m13(ctx, data);
+		return;
+	}
+#endif
 
 
 	for (i = 0, j = 0; i < 16; ++i, j += 4)
@@ -44451,7 +45985,7 @@ void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data)
 void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 {
 	si8	i;
-	
+
 
 	for (i = 0; i < len; ++i) {
 		ctx->data[ctx->datalen] = data[i];
@@ -44462,7 +45996,304 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 			ctx->datalen = 0;
 		}
 	}
-	
+
+	return;
+}
+
+
+
+//*************************************//
+// MARK: CANONICAL FILE DIGESTS  (DGST)
+//*************************************//
+
+// canonical order & coverage documented at the DGST section of medlib_m13.h
+
+tern	DGST_begin_m13(FILE_m13 *fp)
+{
+	ui1		*buffer;
+	si8		flen, data_start, data_end, pcrc_offset, remaining, nr;
+	DGST_STREAM_m13	*dg;
+	FILE_m13	*rd_fp;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// attaches a streaming canonical digest to a MED file open for writing
+	// existing data-region content is absorbed now by read (catch-up), so begin() can follow the
+	// universal header write, a re-open, or an append-in-progress; subsequent fwrite_m13() calls
+	// absorb data-region bytes as they land (see DGST_update_m13()); collect with DGST_finalize_m13()
+
+	if (fp == NULL || FILE_is_std_m13(fp) != FALSE_m13) {
+		G_set_error_m13(E_GEN_m13, "digest streams require a FILE_m13");
+		return_m13(FALSE_m13);
+	}
+	if (fp->dgst != NULL)  // restart
+		DGST_free_m13(fp);
+
+	SHA_init_tables_m13();  // self-guarding (SHA_init_m13() alone does not initialize the tables)
+	dg = (DGST_STREAM_m13 *) calloc_m13((size_t) 1, sizeof(DGST_STREAM_m13));
+	if (dg == NULL)
+		return_m13(FALSE_m13);
+	SHA_init_m13(&dg->ctx);
+	dg->video = (G_is_video_data_m13(fp->path) == TRUE_m13) ? TRUE_m13 : FALSE_m13;  // video data files keep native container extensions (.mp4 etc.)
+	dg->dirty = FALSE_m13;
+
+	// the update hook needs write offsets: force length & position tracking
+	fp->flags |= (FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13);
+	if (fp->len == -1)
+		fp->len = flen_m13(fp);
+	if (fp->pos == -1)
+		fp->pos = ftell_m13(fp);
+
+	// catch up existing data-region content (excluding any pcrc region)
+	// a fresh read handle is used: fp is typically open write-only & its position must not move
+	data_start = (dg->video == TRUE_m13) ? 0 : (si8) UH_BYTES_m13;
+	if (fp->fp != NULL)
+		fflush(fp->fp);  // catch-up reads from disk
+	flen = flen_m13(fp);
+	pcrc_offset = PRTY_pcrc_offset_m13(NULL, fp->path, NULL);  // == end of covered data (flen if no pcrcs); NULL fp: ours may be open write-only
+	if (pcrc_offset <= 0 || pcrc_offset > flen)
+		pcrc_offset = flen;
+	data_end = pcrc_offset;
+	if (data_end > data_start) {
+		rd_fp = fopen_m13(fp->path, "r");
+		if (rd_fp == NULL) {
+			free_m13(dg);
+			return_m13(FALSE_m13);
+		}
+		buffer = (ui1 *) malloc_m13((size_t) DGST_CHUNK_BYTES_m13);
+		if (buffer == NULL) {
+			fclose_m13(rd_fp);
+			free_m13(dg);
+			return_m13(FALSE_m13);
+		}
+		fseek_m13(rd_fp, data_start, SEEK_SET);
+		for (remaining = data_end - data_start; remaining > 0; remaining -= nr) {
+			nr = (remaining < DGST_CHUNK_BYTES_m13) ? remaining : DGST_CHUNK_BYTES_m13;
+			if (fread_m13(buffer, sizeof(ui1), (size_t) nr, rd_fp) != nr) {
+				free_m13(buffer);
+				fclose_m13(rd_fp);
+				free_m13(dg);
+				G_set_error_m13(E_FREAD_m13, "digest catch-up read failed in \"%s\"", fp->path);
+				return_m13(FALSE_m13);
+			}
+			SHA_update_m13(&dg->ctx, buffer, nr);
+		}
+		free_m13(buffer);
+		fclose_m13(rd_fp);
+		dg->high_water = data_end - data_start;
+	}
+
+	fp->dgst = dg;
+	fp->flags |= FILE_FLAGS_DIGEST_m13;
+
+	return_m13(TRUE_m13);
+}
+
+
+tern	DGST_file_m13(const si1 *path, ui1 *digest)
+{
+	ui1		*buffer;
+	si8		flen, nr, pcrc_offset, uh_offset, data_start, data_len, remaining;
+	FILE_m13	*fp;
+	SHA_CTX_m13	ctx;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// canonical digest of an existing file by streamed read (constant memory at any file size)
+	// digest must have room for DGST_BYTES_m13 (32) bytes
+
+	if (digest == NULL) {
+		G_set_error_m13(E_GEN_m13, "digest buffer is null");
+		return_m13(FALSE_m13);
+	}
+	if (G_exists_m13(path) != FILE_EXISTS_m13) {
+		G_set_error_m13(E_GEN_m13, "digest target file \"%s\" does not exist", path);
+		return_m13(FALSE_m13);
+	}
+
+	fp = fopen_m13(path, "r");
+	if (fp == NULL)
+		return_m13(FALSE_m13);
+	flen = flen_m13(fp);
+
+	// region boundaries
+	uh_offset = 0;
+	data_start = (si8) UH_BYTES_m13;
+	data_len = 0;
+	pcrc_offset = PRTY_pcrc_offset_m13(fp, path, NULL);  // == end of covered data (flen if no pcrcs)
+	if (pcrc_offset <= 0 || pcrc_offset > flen)
+		pcrc_offset = flen;
+	if (flen < (si8) UH_BYTES_m13) {  // degenerate: no universal header region => whole file, file order
+		uh_offset = -1;
+		data_start = 0;
+		data_len = flen;
+	} else if (G_is_video_data_m13(path) == TRUE_m13) {  // UH at file END (video stays playable; native container extensions)
+		uh_offset = pcrc_offset - (si8) UH_BYTES_m13;
+		data_start = 0;
+		data_len = uh_offset;
+	} else {
+		data_len = pcrc_offset - (si8) UH_BYTES_m13;
+	}
+
+	// stream the digest
+	SHA_init_tables_m13();  // self-guarding (SHA_init_m13() alone does not initialize the tables)
+	buffer = (ui1 *) malloc_m13((size_t) DGST_CHUNK_BYTES_m13);
+	SHA_init_m13(&ctx);
+	fseek_m13(fp, data_start, SEEK_SET);
+	for (remaining = data_len; remaining > 0; remaining -= nr) {
+		nr = (remaining < DGST_CHUNK_BYTES_m13) ? remaining : DGST_CHUNK_BYTES_m13;
+		if (fread_m13(buffer, sizeof(ui1), (size_t) nr, fp) != nr) {
+			free_m13(buffer);
+			fclose_m13(fp);
+			G_set_error_m13(E_FREAD_m13, "digest could not read target file \"%s\"", path);
+			return_m13(FALSE_m13);
+		}
+		SHA_update_m13(&ctx, buffer, nr);
+	}
+	if (uh_offset >= 0) {  // universal header absorbed last
+		fseek_m13(fp, uh_offset, SEEK_SET);
+		if (fread_m13(buffer, sizeof(ui1), (size_t) UH_BYTES_m13, fp) != (si8) UH_BYTES_m13) {
+			free_m13(buffer);
+			fclose_m13(fp);
+			G_set_error_m13(E_FREAD_m13, "digest could not read target file \"%s\"", path);
+			return_m13(FALSE_m13);
+		}
+		SHA_update_m13(&ctx, buffer, (si8) UH_BYTES_m13);
+	}
+	SHA_finalize_m13(&ctx, digest);
+	free_m13(buffer);
+	fclose_m13(fp);
+
+	return_m13(TRUE_m13);
+}
+
+
+tern	DGST_finalize_m13(FILE_m13 *fp, ui1 *digest)
+{
+	ui1		uh_bytes[UH_BYTES_m13];
+	tern		r_val;
+	si8		flen, pcrc_offset, expected;
+	DGST_STREAM_m13	*dg;
+	FILE_m13	*rd_fp;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// absorbs the settled universal header (from disk) & emits the canonical digest (DGST_BYTES_m13 bytes)
+	// returns UNKNOWN_m13 if the stream is unusable (dirty, coverage mismatch, or degenerate file):
+	// the caller can fall back to DGST_file_m13() - a full re-read - or skip & warn (policy is the caller's:
+	// re-reads are trivial for small files & brutal for multi-terabyte sessions)
+	// stream state is freed & the digest flag cleared in ALL cases
+
+	if (fp == NULL || fp->dgst == NULL) {
+		G_set_error_m13(E_GEN_m13, "no digest stream attached");
+		return_m13(FALSE_m13);
+	}
+	dg = fp->dgst;
+
+	if (fp->fp != NULL)
+		fflush(fp->fp);  // header (& length) will be read back from disk
+	flen = flen_m13(fp);
+	pcrc_offset = PRTY_pcrc_offset_m13(NULL, fp->path, NULL);  // NULL fp: ours may be open write-only
+	if (pcrc_offset <= 0 || pcrc_offset > flen)
+		pcrc_offset = flen;
+
+	r_val = UNKNOWN_m13;
+	if (dg->dirty != TRUE_m13 && flen >= (si8) UH_BYTES_m13) {
+		// video: UH is at the end of the covered span & was absorbed in stream order; standard: UH absorbed here
+		expected = (dg->video == TRUE_m13) ? pcrc_offset : pcrc_offset - (si8) UH_BYTES_m13;
+		if (dg->high_water == expected) {
+			if (dg->video == TRUE_m13) {
+				SHA_finalize_m13(&dg->ctx, digest);
+				r_val = TRUE_m13;
+			} else {  // fresh read handle: fp may be open write-only & its position must not move
+				rd_fp = fopen_m13(fp->path, "r");
+				if (rd_fp != NULL) {
+					if (fread_m13(uh_bytes, sizeof(ui1), (size_t) UH_BYTES_m13, rd_fp) == (si8) UH_BYTES_m13) {
+						SHA_update_m13(&dg->ctx, uh_bytes, (si8) UH_BYTES_m13);
+						SHA_finalize_m13(&dg->ctx, digest);
+						r_val = TRUE_m13;
+					}
+					fclose_m13(rd_fp);
+				}
+				if (r_val != TRUE_m13)
+					r_val = FALSE_m13;  // read failure is an error, not a fallback condition
+			}
+		}
+	}
+
+	DGST_free_m13(fp);
+
+	return_m13(r_val);
+}
+
+
+void	DGST_free_m13(FILE_m13 *fp)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (fp == NULL)
+		return_void_m13;
+	if (fp->dgst != NULL) {
+		free_m13(fp->dgst);
+		fp->dgst = NULL;
+	}
+	fp->flags &= ~FILE_FLAGS_DIGEST_m13;
+
+	return_void_m13;
+}
+
+
+void	DGST_update_m13(FILE_m13 *fp, const void *ptr, si8 n_bytes, si8 offset)
+{
+	si8		doff, skip, data_start;
+	DGST_STREAM_m13	*dg;
+
+	// fwrite_m13() hook: called after a successful write to a FILE_FLAGS_DIGEST_m13 file
+	// (no function tracking: this is the recording hot path)
+	// three-way rule:
+	//	append at high water => absorb & advance (the recording case - free digest)
+	//	rewrite from data-region start => restart the stream (FPS full-file write pattern - metadata files, rekeys)
+	//	anything else => dirty (stream unusable; finalize falls back)
+	// universal header writes are ignored (header absorbed settled, at finalize); a fused UH+data write
+	// (FPS_write() contiguous optimization) contributes only its data-region part
+	// pcrc-region writes arrive with FILE_FLAGS_PARITY_m13 set (PRTY_update_pcrc_m13()) => excluded, like parity coverage
+
+	dg = fp->dgst;
+	if (dg == NULL || dg->dirty == TRUE_m13 || n_bytes <= 0)
+		return;
+	if (fp->flags & FILE_FLAGS_PARITY_m13)  // pcrc maintenance write: excluded from coverage
+		return;
+
+	data_start = (dg->video == TRUE_m13) ? 0 : (si8) UH_BYTES_m13;
+	if (offset < data_start) {  // header-region write: ignore, or trim to the data-region part if fused
+		skip = data_start - offset;
+		if (n_bytes <= skip)
+			return;
+		ptr = (const ui1 *) ptr + skip;
+		n_bytes -= skip;
+		offset = data_start;
+	}
+
+	doff = offset - data_start;
+	if (doff == dg->high_water) {  // append at high water
+		SHA_update_m13(&dg->ctx, (const ui1 *) ptr, n_bytes);
+		dg->high_water += n_bytes;
+	} else if (doff == 0) {  // full-body rewrite from data start: restart the stream
+		SHA_init_m13(&dg->ctx);
+		SHA_update_m13(&dg->ctx, (const ui1 *) ptr, n_bytes);
+		dg->high_water = n_bytes;
+	} else {  // rewrite below high water, or gapped write beyond it
+		dg->dirty = TRUE_m13;
+	}
+
 	return;
 }
 
@@ -46267,6 +48098,8 @@ TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_f
 	if (STR_is_empty_m13(password) == FALSE_m13) {
 		trans_info->expanded_key = (ui1 *) malloc_m13((size_t) AES_EXPANDED_KEY_BYTES_m13);
 		AES_key_expansion_m13(trans_info->expanded_key, password);
+		trans_info->inv_expanded_key = (ui1 *) malloc_m13((size_t) AES_EXPANDED_KEY_BYTES_m13);
+		AES_inv_key_schedule_m13(trans_info->inv_expanded_key, trans_info->expanded_key, AES_NR_m13);
 		trans_info->expanded_key_allocated = TRUE_m13;
 	}
 	
@@ -46744,15 +48577,15 @@ tern	TR_free_transmission_info_m13(TR_INFO_m13 **trans_info_ptr)
 	if (trans_info->buffer)
 		free_m13(trans_info->buffer);
 	
-	if (trans_info->expanded_key_allocated == TRUE_m13)  // don't free password itself - passed by caller
+	if (trans_info->expanded_key_allocated == TRUE_m13) {  // don't free password itself - passed by caller
 		free_m13(trans_info->expanded_key);
-		
+		if (trans_info->inv_expanded_key)  // allocated & freed with expanded_key (both borrowed when flag is false - e.g. dhnlib sk_matrix)
+			free_m13(trans_info->inv_expanded_key);
+	}
+
 	if (freeable_m13(trans_info) == TRUE_m13)
 		free_m13(trans_info);
-	
-	if (freeable_m13(trans_info) == TRUE_m13)
-		free_m13(trans_info);
-	
+
 	*trans_info_ptr = NULL;
 	
 	return_m13(TRUE_m13);
@@ -46945,21 +48778,23 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 	
 	// get key
 	if (pkt_header->flags & TR_FLAGS_INCLUDE_KEY_m13) {
-		if (trans_info->expanded_key == NULL) {
+		if (trans_info->expanded_key == NULL || trans_info->expanded_key_allocated == FALSE_m13) {  // never overwrite a borrowed key (e.g. dhnlib sk_matrix - shared global table)
 			trans_info->expanded_key = malloc_m13(ENCRYPTION_KEY_BYTES_m13);
+			trans_info->inv_expanded_key = (ui1 *) malloc_m13((size_t) ENCRYPTION_KEY_BYTES_m13);
 			trans_info->expanded_key_allocated = TRUE_m13;
 		}
 		pkt_header->transmission_bytes -= ENCRYPTION_KEY_BYTES_m13;
 		data_bytes_received -= ENCRYPTION_KEY_BYTES_m13;
 		memcpy(trans_info->expanded_key, (trans_info->data + pkt_header->transmission_bytes), (size_t) ENCRYPTION_KEY_BYTES_m13);
 		AES_partial_decrypt_m13(ENCRYPTION_KEY_BYTES_m13, trans_info->expanded_key, NULL);
+		AES_inv_key_schedule_m13(trans_info->inv_expanded_key, trans_info->expanded_key, AES_NR_m13);  // key content changed: rebuild decryption schedule
 	}
 
 	// decrypt
 	if (pkt_header->flags & TR_FLAGS_ENCRYPT_m13) {
 		if (trans_info->expanded_key == NULL) {
 			G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
-			password_passed = G_condition_password_m13(trans_info->password, pw_bytes, TRUE_m13);  // use expanded password
+			password_passed = G_condition_password_m13(trans_info->password, pw_bytes);
 			G_pop_behavior_m13();
 			if (password_passed == FALSE_m13) {
 				G_warning_message_m13("%s(): no password or expanded key => cannot decrypt transmission\n", __FUNCTION__);
@@ -46968,8 +48803,10 @@ si8	TR_recv_transmission_m13(TR_INFO_m13 *trans_info, TR_HDR_m13 **caller_header
 			trans_info->expanded_key = (ui1 *) malloc_m13((size_t) ENCRYPTION_KEY_BYTES_m13);
 			trans_info->expanded_key_allocated = TRUE_m13;
 			AES_key_expansion_m13(trans_info->expanded_key, pw_bytes);
+			trans_info->inv_expanded_key = (ui1 *) malloc_m13((size_t) ENCRYPTION_KEY_BYTES_m13);
+			AES_inv_key_schedule_m13(trans_info->inv_expanded_key, trans_info->expanded_key, AES_NR_m13);
 		}
-		AES_decrypt_m13(trans_info->data, data_bytes_received, NULL, trans_info->expanded_key, 1);
+		AES_decrypt_m13(trans_info->data, data_bytes_received, NULL, trans_info->inv_expanded_key);
 	}
 	
 	trans_info->mode = TR_MODE_RECV_m13;
@@ -47088,7 +48925,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	if (header->flags & TR_FLAGS_ENCRYPT_m13) {
 		if (trans_info->expanded_key == NULL) {
 			G_push_behavior_m13(SUPPRESS_OUTPUT_m13);
-			password_passed = G_condition_password_m13(trans_info->password, pw_bytes, TRUE_m13);  // expand password
+			password_passed = G_condition_password_m13(trans_info->password, pw_bytes);
 			G_pop_behavior_m13();
 			if (password_passed == FALSE_m13) {
 				G_warning_message_m13("%s(): no password or expanded key => cannot encrypt transmission\n", __FUNCTION__);
@@ -47118,7 +48955,7 @@ si8	TR_send_transmission_m13(TR_INFO_m13 *trans_info)  // expanded_key can be NU
 	
 	// encrypt
 	if (header->flags & TR_FLAGS_ENCRYPT_m13)
-		AES_encrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key, 1);
+		AES_encrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key);
 	
 	// acknowledge
 	acknowledge = FALSE_m13;
@@ -47225,7 +49062,7 @@ TR_SEND_FAIL_m13:
 	// note: faster to copy & substitute buffer than decrypt after transmitting, but may cause memory issue for large transmissions & this mode is rarely necessary)
 	if (header->flags & TR_FLAGS_ENCRYPT_m13) {
 		if (no_destruct_flag == TRUE_m13)
-			AES_decrypt_m13(data, actual_data_bytes, NULL, trans_info->expanded_key, 1);
+			AES_decrypt_m13(data, actual_data_bytes, NULL, trans_info->inv_expanded_key);  // built wherever expanded_key is set
 		// reset encryption flags
 		header->flags &= ~(TR_FLAGS_ENCRYPT_m13 | TR_FLAGS_INCLUDE_KEY_m13);
 	}
@@ -49245,7 +51082,6 @@ si4	fclose_m13(void *fp)
 					return_m13(FALSE_m13);
 				}
 			}  // else closed - fall through to return(0)
-		/* fall through */
 		case UNKNOWN_m13:  // fp == NULL
 			return_m13(0);
 	}
@@ -49283,6 +51119,8 @@ si4	fclose_m13(void *fp)
 	}
 	
 	// free or mark as closed
+	if (m13_fp->dgst != NULL)  // uncollected digest stream (collect with DGST_finalize_m13() BEFORE closing)
+		DGST_free_m13(m13_fp);
 	if (m13_fp->flags & FILE_FLAGS_ALLOCED_m13) {
 		free_m13(m13_fp);
 		if (m13_fp_ptr)  // set calling function pointer to NULL
@@ -51352,6 +53190,8 @@ size_t	fwrite_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...)  // 
 		if (m13_fp->flags & FILE_FLAGS_LOCK_m13)  // unlock before setting error
 			flock_m13(m13_fp, FLOCK_WRITE_UNLOCK_m13);
 		if (nw == n_elements) {
+			if (m13_fp->flags & FILE_FLAGS_DIGEST_m13)  // streaming canonical digest (before len/pos updates: hook needs the pre-write offset)
+				DGST_update_m13(m13_fp, ptr, (si8) (el_size * n_elements), (m13_fp->flags & FILE_FLAGS_APPEND_m13) ? m13_fp->len : m13_fp->pos);
 			if (m13_fp->flags & (FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13)) {
 				if (m13_fp->flags & FILE_FLAGS_APPEND_m13) {  // append mode always appends regardless of prior file pointer position
 					m13_fp->len += (el_size * n_elements);
@@ -52583,7 +54423,7 @@ void	*memset_m13(void *ptr, si4 val, si8 n_members, ...)  // vargargs(n_members 
 		el_val = (const void *) &val;
 		el_size = (size_t) 1;
 	}
-	buf_len = (size_t) n_members * el_size;
+	buf_len = n_members * el_size;
 	
 	// regular memset()
 	if (el_size == 1) {
@@ -52760,7 +54600,7 @@ tern	mlock_m13(void *addr, si8 len)  // (len < 0): len = -len, lock regardless o
 		return_m13(FALSE_m13);
 	}
 	#endif
-
+	
 	#ifdef WINDOWS_m13
 	if (VirtualLock(addr, u_len) == 0) {
 		// double memory working size & try again
@@ -55200,12 +57040,16 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 											    // note if both passed, behavior is first argument
 	tern		command_needs_shell, pipe_failure, buffer_initially_null, e_buffer_initially_null, pop_behavior;
 	tern		free_buffer, free_e_buffer, assign_buffer, assign_e_buffer, realloc_buffer, realloc_e_buffer;
+	tern		exec_failed;
 	si1		**e_buffer_ptr, *buffer, *e_buffer, *c, *command_p;
+	si1		**args, *tmp_command, *rp, *wp, *dest, discard_buf[1024];
 	ui4		behavior;
-	si4		r_val, status, err, BUFFER_SIZE_INC, stdout_pipe[2], stderr_pipe[2], retry_count;
-	si8		bytes_in_buffer, bytes_in_e_buffer, bytes_avail, e_buf_len, tot_buf_len;
+	si4		status, err, BUFFER_SIZE_INC, stdout_pipe[2], stderr_pipe[2], status_pipe[2], retry_count;
+	si4		exec_errno, arg_cnt, i;
+	si8		bytes_in_buffer, bytes_in_e_buffer, e_buf_len, tot_buf_len, command_len, space, n_read;
 	pid_t		child_pid;
 	va_list		v_args;
+	struct pollfd	pfds[2];
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -55234,27 +57078,32 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 	}
 	
 	// see if shell required
+	// whitelist logic: any character outside the known-safe set gets the shell
+	// (a false positive only costs a shell launch; a missed metacharacter silently changes the command's meaning)
 	command_p = (si1 *) command;
 	command_needs_shell = FALSE_m13;
 	c = --command_p;  // (command_p re-incremented below)
 	while (*++c) {
+		if ((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9'))
+			continue;
 		switch (*c) {
-			case '>':
-			case '<':
-			case '&':
-			case '|':
-			case '*':
-			case '?':
-			case '^':
-			case '$':
-			case '[':
-			case '{':
-			case 39:  // single quote / apostrophe
-			case 96:  // grave accent
-				command_needs_shell = TRUE_m13;
-				goto SYSTEM_PIPE_NEEDS_SHELL_m13;  // break out of while loop
+			case ' ':
+			case '"':  // grouping handled by the arg parser
+			case '-':
+			case '_':
+			case '.':
+			case '/':
+			case ':':
+			case '=':
+			case ',':
+			case '+':
+			case '@':
+			case '%':
+				continue;
 		}
-	} SYSTEM_PIPE_NEEDS_SHELL_m13:
+		command_needs_shell = TRUE_m13;  // metacharacter, escape, or anything unanticipated => shell
+		break;
+	}
 	
 	// skip any leading spaces in command (& re-increment from above)
 	while (*++command_p == 32);
@@ -55347,7 +57196,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 				e_buffer_initially_null = FALSE_m13;
 				realloc_e_buffer = TRUE_m13;
 				if (e_buf_len == 0)
-					e_buf_len = malloc_size_m13(buffer);
+					e_buf_len = malloc_size_m13(e_buffer);
 			} else {  // pointer cannot be modified
 				if (e_buf_len == 0) {  // no length passed, do with local buffers but do not return anything
 					free_e_buffer = TRUE_m13;
@@ -55364,172 +57213,193 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 		e_buffer = (si1 *) malloc_m13((size_t) e_buf_len);
 	}
 	
+	// build argv (in the PARENT: after fork() in a threaded process the child may only use async-signal-safe
+	// functions until exec - an allocation there can deadlock on a heap lock held by another thread at fork time)
+	if (command_needs_shell == TRUE_m13) {  // use shell to interpret metacharacters (less efficient, but correct)
+		args = (si1 **) malloc_m13((size_t) 4 * sizeof(si1 *));
+#ifdef MACOS_m13
+		args[0] = "/bin/sh";
+#endif
+#ifdef LINUX_m13
+		args[0] = "/usr/bin/sh";
+#endif
+		args[1] = "-c";
+		args[2] = command_p;
+		args[3] = (si1 *) NULL;
+		tmp_command = NULL;
+	} else {  // parse args (whitelisted characters only: no escapes; double quotes group)
+
+		// copy command so not modified
+		command_len = (si8) strlen(command_p) + 1;
+		tmp_command = (si1 *) malloc_m13((size_t) command_len);
+		memcpy(tmp_command, command_p, (size_t) command_len);
+		args = (si1 **) malloc_m13((size_t) ((command_len / 2) + 2) * sizeof(si1 *));  // worst case ("a b c ..." pattern) + terminal NULL
+
+		arg_cnt = 0;
+		rp = wp = tmp_command;  // read & write positions (wp never passes rp)
+		while (*rp) {
+			while (*rp == 32)  // skip space runs (leading, repeated, & trailing)
+				++rp;
+			if (*rp == 0)
+				break;
+			args[arg_cnt++] = wp;  // token start
+			while (*rp && *rp != 32) {
+				if (*rp == 34) {  // double quote: group contents into token, quotes removed
+					++rp;
+					while (*rp && *rp != 34)
+						*wp++ = *rp++;
+					if (*rp == 34)  // skip closing quote (tolerate unterminated)
+						++rp;
+				} else {
+					*wp++ = *rp++;
+				}
+			}
+			if (*rp == 32)  // step off delimiter before terminating (wp may equal rp)
+				++rp;
+			*wp++ = 0;  // terminate token
+		}
+		args[arg_cnt] = (si1 *) NULL;  // terminal NULL argument
+
+		if (arg_cnt == 0) {  // whitespace-only command
+			free_m13(args);
+			free_m13(tmp_command);
+			G_set_error_m13(E_GEN_m13, "no command");
+			if (pop_behavior == TRUE_m13)
+				G_pop_behavior_m13();
+			return_m13(-1);
+		}
+	}
+
 SYSTEM_PIPE_RETRY_m13:
-	
+
 	pipe_failure = FALSE_m13;
+	exec_failed = FALSE_m13;
 	err = 0;
 
 	// spawn child
 	*buffer = *e_buffer = 0;
-	stdout_pipe[READ_END_m13] = stdout_pipe[WRITE_END_m13] = stderr_pipe[READ_END_m13] = stderr_pipe[WRITE_END_m13] = 0;
-	if (pipe(stdout_pipe) || pipe(stderr_pipe)) {
+	stdout_pipe[READ_END_m13] = stdout_pipe[WRITE_END_m13] = stderr_pipe[READ_END_m13] = stderr_pipe[WRITE_END_m13] = -1;
+	status_pipe[READ_END_m13] = status_pipe[WRITE_END_m13] = -1;
+	if (pipe(stdout_pipe) || pipe(stderr_pipe) || pipe(status_pipe)) {
 		pipe_failure = TRUE_m13;
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
-		
+	fcntl(status_pipe[WRITE_END_m13], F_SETFD, FD_CLOEXEC);  // successful exec closes the (empty) status pipe
+
 	child_pid = fork();
 	if (child_pid == -1) {
 		pipe_failure = TRUE_m13;
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
-	
-	if (child_pid == 0) {  // child process
-		
-		si1		*tmp_command, **args, *c2, *c3;
-		si4		arg_cnt, alloced_args, ALLOCED_ARGS_INC;
-		si8		command_len;
-		
-		
-		// allocate argument pointers
-		if (command_needs_shell == TRUE_m13)
-			ALLOCED_ARGS_INC = 3;
-		else
-			ALLOCED_ARGS_INC = 10;
-		alloced_args = ALLOCED_ARGS_INC;
-		args = (si1 **) malloc((size_t) (alloced_args + 1) * sizeof(si1 *));
-		
-		// use shell to expand regex (less efficient, but simplest)
-		if (command_needs_shell == TRUE_m13) {
-#ifdef MACOS_m13
-			args[0] = "/bin/sh";
-#endif
-#ifdef LINUX_m13
-			args[0] = "/usr/bin/sh";
-#endif
-			args[1] = "-c";
-			args[2] = command_p;
-			args[3] = (char *) NULL;
-			tmp_command = NULL;
-		} else {  // parse args
-			
-			// copy command so not modified
-			command_len = strlen(command_p) + 1;
-			tmp_command = (si1 *) malloc((size_t) command_len);
-			memcpy(tmp_command, command_p, (size_t) command_len);
-			c = tmp_command;
-			
-			arg_cnt = 0;
-			args[arg_cnt++] = c;
-			while (*c) {
-				if (arg_cnt == alloced_args) {
-					alloced_args += ALLOCED_ARGS_INC;
-					args = (si1 **) realloc(args, (size_t) (alloced_args + 1) * sizeof(si1 *));
-				}
-				if (*c == 34) {  // double quote, include all characters
-					args[arg_cnt++] = ++c;  // skip initial quote
-					while (*c != 34 && *c)
-						++c;
-					*c++ = 0;  // zero terminal quote
-					continue;
-				}
-				if (*c == 32) {  // space delimiter
-					if (*(c - 1) == 92) {  // escaped space, move rest of command back one character (shell would remove escape characters)
-						c2 = c - 1;
-						c3 = c;
-						while ((*c2++ = *c3++));
-						continue;
-					}
-					if (*(c + 1)) {
-						*c = 0;
-						args[arg_cnt++] = ++c;
-						continue;
-					}
-				}
-				++c;
-			}
-			args[arg_cnt] = (si1 *) NULL;  // terminal NULL argument
-		}
-		
+
+	if (child_pid == 0) {  // child process: only async-signal-safe calls before exec (argv was parsed in the parent)
+		close(status_pipe[READ_END_m13]);
 		dup2(stdout_pipe[WRITE_END_m13], STDOUT_FILENO);  // change child stdout to write end of stdout pipe
-		close(stdout_pipe[READ_END_m13]);  // close read end of stdout
-		dup2(stderr_pipe[WRITE_END_m13], STDERR_FILENO);  // change child stderr fd to write end of stderr pipe
-		close(stderr_pipe[READ_END_m13]);  // close read end of stderr
-		
+		dup2(stderr_pipe[WRITE_END_m13], STDERR_FILENO);  // change child stderr to write end of stderr pipe
+		close(stdout_pipe[READ_END_m13]);
+		close(stdout_pipe[WRITE_END_m13]);  // stdout now on STDOUT_FILENO
+		close(stderr_pipe[READ_END_m13]);
+		close(stderr_pipe[WRITE_END_m13]);  // stderr now on STDERR_FILENO
+
 		// convert child to command
-		// if execvp() is successful, it does not return
+		// if execvp() is successful, it does not return & FD_CLOEXEC closes the status pipe empty
 		// "p" version uses environment path if no "/" in args[0] (passing full path is more efficient)
-		// child-allocated memory will be freed by kernel on exit
-		
-		if (execvp(args[0], args) == -1) {
-			close(stdout_pipe[WRITE_END_m13]);  // close write end of stdout
-			close(stderr_pipe[WRITE_END_m13]);  // close write end of stderr
-			free(args);
-			if (tmp_command)
-				free(tmp_command);
-			exit(PIPE_FAILURE_SEND_m13);
-		}
+		execvp(args[0], args);
+
+		exec_errno = errno;  // exec failed - the command never ran
+		write(status_pipe[WRITE_END_m13], &exec_errno, sizeof(si4));
+		_exit(127);  // _exit() not exit(): no stdio flush or atexit processing (those belong to the parent image)
 	}  // rest is parent
 	
 	// read child output
-	
+
 	// close write ends of pipes
 	close(stdout_pipe[WRITE_END_m13]);
 	close(stderr_pipe[WRITE_END_m13]);
-	
-	// read stdout
-	bytes_in_buffer = 0;
-	bytes_avail = buf_len;
-	while (bytes_avail > 1) {
-		r_val = read(stdout_pipe[READ_END_m13], buffer + bytes_in_buffer, bytes_avail - 1);  // leave room for terminal zero
-		if (r_val <= 0)
+	close(status_pipe[WRITE_END_m13]);
+	stdout_pipe[WRITE_END_m13] = stderr_pipe[WRITE_END_m13] = status_pipe[WRITE_END_m13] = -1;
+
+	// drain both pipes to EOF, interleaved: the child must never block on a full pipe
+	// (sequential drains deadlock when the un-drained pipe fills; excess beyond a fixed buffer is read & discarded)
+	bytes_in_buffer = bytes_in_e_buffer = 0;
+	pfds[0].fd = stdout_pipe[READ_END_m13];
+	pfds[1].fd = stderr_pipe[READ_END_m13];
+	pfds[0].events = pfds[1].events = POLLIN;
+	while (pfds[0].fd >= 0 || pfds[1].fd >= 0) {
+		if (poll(pfds, 2, -1) == -1) {
+			if (errno == EINTR)
+				continue;
 			break;
-		bytes_in_buffer += r_val;
-		bytes_avail -= r_val;
-		if (realloc_buffer == TRUE_m13) {
-			if (bytes_avail < 2) {
-				buf_len += BUFFER_SIZE_INC;
-				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);
-				bytes_avail += BUFFER_SIZE_INC;
+		}
+		for (i = 0; i < 2; ++i) {
+			if (pfds[i].fd < 0 || pfds[i].revents == 0)
+				continue;
+			if (i == 0) {
+				dest = buffer + bytes_in_buffer;
+				space = buf_len - bytes_in_buffer - 1;  // leave room for terminal zero
+			} else {
+				dest = e_buffer + bytes_in_e_buffer;
+				space = e_buf_len - bytes_in_e_buffer - 1;
+			}
+			if (space <= 0) {  // fixed buffer full: keep draining so the child can finish
+				dest = discard_buf;
+				space = (si8) sizeof(discard_buf);
+			}
+			n_read = (si8) read(pfds[i].fd, dest, (size_t) space);
+			if (n_read <= 0) {  // EOF (or read error - nothing more can arrive)
+				close(pfds[i].fd);
+				pfds[i].fd = -1;  // poll() ignores negative fds
+				continue;
+			}
+			if (dest == discard_buf)
+				continue;
+			if (i == 0) {
+				bytes_in_buffer += n_read;
+				if (realloc_buffer == TRUE_m13 && (buf_len - bytes_in_buffer) < 2) {
+					buf_len += BUFFER_SIZE_INC;
+					buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);
+				}
+			} else {
+				bytes_in_e_buffer += n_read;
+				if (realloc_e_buffer == TRUE_m13 && (e_buf_len - bytes_in_e_buffer) < 2) {
+					e_buf_len += BUFFER_SIZE_INC;
+					e_buffer = (si1 *) realloc_m13(e_buffer, (size_t) e_buf_len);
+				}
 			}
 		}
 	}
+	stdout_pipe[READ_END_m13] = stderr_pipe[READ_END_m13] = -1;  // closed by the drain loop
 	buffer[bytes_in_buffer] = 0;  // set terminal zero
-	
-	// read stderr
-	bytes_in_e_buffer = 0;
-	bytes_avail = e_buf_len;
-	while (bytes_avail > 1) {
-		r_val = read(stderr_pipe[READ_END_m13], e_buffer + bytes_in_e_buffer, bytes_avail - 1);  // leave room for terminal zero
-		if (r_val <= 0)
-			break;
-		bytes_in_e_buffer += r_val;
-		bytes_avail -= r_val;
-		if (realloc_e_buffer == TRUE_m13) {
-			if (bytes_avail < 2) {
-				e_buf_len += BUFFER_SIZE_INC;
-				e_buffer = (si1 *) realloc_m13(e_buffer, (size_t) e_buf_len);
-				bytes_avail += BUFFER_SIZE_INC;
-			}
-		}
-	}
 	e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
-	
-	// wait for child
-	waitpid(child_pid, &status, 1);  // "1": wait specifically & only for this child
-	err = WEXITSTATUS(status);  // save any error code
-	
-	// errors
-	if (bytes_in_e_buffer)
-		goto SYSTEM_PIPE_FAIL_m13;
-	if (err == PIPE_FAILURE_m13) {
-		pipe_failure = TRUE_m13;
-		goto SYSTEM_PIPE_FAIL_m13;
+
+	// exec status (a byte arrives only if exec itself failed; on success FD_CLOEXEC closed the pipe empty)
+	exec_errno = 0;
+	if (read(status_pipe[READ_END_m13], &exec_errno, sizeof(si4)) == (ssize_t) sizeof(si4))
+		exec_failed = TRUE_m13;
+	close(status_pipe[READ_END_m13]);
+	status_pipe[READ_END_m13] = -1;
+
+	// reap child
+	status = 0;
+	while (waitpid(child_pid, &status, 0) == -1) {  // 0: block until this child exits (pid argument alone selects the child)
+		if (errno != EINTR)
+			break;
 	}
 
-	// close read ends of pipes
-	close(stdout_pipe[READ_END_m13]);
-	close(stderr_pipe[READ_END_m13]);
-	
+	// failure policy: the exit status is the failure signal - stderr text alone is not (benign warnings are common),
+	// & a non-zero status with no error text is ignored (many benign non-zero codes, e.g. grep with no matches)
+	if (exec_failed == TRUE_m13) {
+		err = exec_errno;  // errno from the child's failed exec (e.g. ENOENT) - the command never ran
+	} else if (WIFEXITED(status)) {
+		err = (si4) WEXITSTATUS(status);
+		if (err && bytes_in_e_buffer == 0)
+			err = 0;
+	} else if (WIFSIGNALED(status)) {
+		err = 128 + (si4) WTERMSIG(status);  // shell convention for signal deaths
+	}
+	if (err)
+		goto SYSTEM_PIPE_FAIL_m13;
+
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (bytes_in_buffer || bytes_in_e_buffer) {
@@ -55543,14 +57413,19 @@ SYSTEM_PIPE_RETRY_m13:
 	
 	// fuse buffers
 	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
-		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer + 1;  // + terminal zero
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m13) {
 				buf_len = tot_buf_len;
 				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);
+			} else {  // fixed buffer: clamp
+				bytes_in_e_buffer = buf_len - bytes_in_buffer - 1;
 			}
 		}
-		strncat(buffer, e_buffer, buf_len);
+		if (bytes_in_e_buffer > 0) {
+			memcpy(buffer + bytes_in_buffer, e_buffer, (size_t) bytes_in_e_buffer);
+			buffer[bytes_in_buffer + bytes_in_e_buffer] = 0;
+		}
 	}
 
 	if (free_buffer == TRUE_m13)
@@ -55558,30 +57433,47 @@ SYSTEM_PIPE_RETRY_m13:
 	if (free_e_buffer == TRUE_m13)
 		free_m13(e_buffer);
 	if (assign_buffer == TRUE_m13) {
-		if (*buffer) {
+		if (buffer_initially_null == TRUE_m13) {
+			if (*buffer)
+				*buffer_ptr = buffer;
+			else
+				free_m13(buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*buffer_ptr = buffer;
-		} else if (buffer_initially_null == TRUE_m13)
-			free_m13(buffer);
+		}
 	}
 	if (assign_e_buffer == TRUE_m13) {
-		if (*e_buffer)
+		if (e_buffer_initially_null == TRUE_m13) {
+			if (*e_buffer)
+				*e_buffer_ptr = e_buffer;
+			else
+				free_m13(e_buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*e_buffer_ptr = e_buffer;
-		else if (e_buffer_initially_null == TRUE_m13)
-			free_m13(e_buffer);
+		}
 	}
+
+	if (args)
+		free_m13(args);
+	if (tmp_command)
+		free_m13(tmp_command);
 
 	if (pop_behavior == TRUE_m13)
 		G_pop_behavior_m13();
 
 	return_m13(0);
-	
+
 SYSTEM_PIPE_FAIL_m13:
 
-	// close read ends of pipes, if open
-	if (stdout_pipe[READ_END_m13])
-		close(stdout_pipe[READ_END_m13]);
-	if (stderr_pipe[READ_END_m13])
-		close(stderr_pipe[READ_END_m13]);
+	// close any open pipe ends (-1 == closed or never opened)
+	for (i = 0; i < 2; ++i) {
+		if (stdout_pipe[i] >= 0)
+			close(stdout_pipe[i]);
+		if (stderr_pipe[i] >= 0)
+			close(stderr_pipe[i]);
+		if (status_pipe[i] >= 0)
+			close(status_pipe[i]);
+	}
 
 	if (retry_count) {
 		nap_m13("1 ms");  // wait 1 ms
@@ -55590,65 +57482,75 @@ SYSTEM_PIPE_FAIL_m13:
 		goto SYSTEM_PIPE_RETRY_m13;
 	}
 
-	// try with file redirection
+	// try with file redirection (resource failures only - pipe()/fork(); exec failures report directly, the command never ran)
 	if (pipe_failure == TRUE_m13) {
-		
-		si1		*tmp_command, *tmp_file, *e_tmp_file;
+
+		si1		*rd_command, *tmp_file, *e_tmp_file;
 		si8		len;
 		FILE_m13	*fp;
-		
+
 
 		G_warning_message_m13("%s(): pipe mechanism failed => using file redirection\n", __FUNCTION__);
 
 		len = strlen(command_p) + (2 * PATH_BYTES_m13) + 16;
-		tmp_command = (si1 *) malloc_m13(len);
+		rd_command = (si1 *) malloc_m13(len);
 		tmp_file = tempnam_m13(NULL);
 		e_tmp_file = tempnam_m13(NULL);
-		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command_p, tmp_file, e_tmp_file);
-		err = system_m13(tmp_command);
-		free(tmp_command);
-		
+		sprintf_m13(rd_command, "%s 1> %s 2> %s", command_p, tmp_file, e_tmp_file);
+		err = system_m13(rd_command);
+		free_m13(rd_command);
+
+		bytes_in_buffer = 0;
 		fp = fopen_m13(tmp_file, "r");
-		bytes_in_buffer = flen_m13(fp);
-		if (realloc_buffer == TRUE_m13) {
+		if (fp != NULL) {  // file absent if the command (or system_m13) failed before redirection
+			bytes_in_buffer = flen_m13(fp);
+			if (bytes_in_buffer < 0)  // flen_m13 error
+				bytes_in_buffer = 0;
 			if (bytes_in_buffer >= buf_len) {
-				buf_len = bytes_in_buffer + 1;
-				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);  // allow for terminal zero
+				if (realloc_buffer == TRUE_m13) {
+					buf_len = bytes_in_buffer + 1;
+					buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);  // allow for terminal zero
+				} else {  // fixed buffer: clamp
+					bytes_in_buffer = buf_len - 1;
+				}
 			}
-		} else {
-			bytes_in_buffer = buf_len - 1;
+			fread_m13(buffer, sizeof(si1), (size_t) bytes_in_buffer, fp);
+			fclose_m13(fp);
+			rm_m13(tmp_file);  // delete temp file
 		}
-		fread_m13(buffer, sizeof(si1), (size_t) bytes_in_buffer, fp);
-		fclose_m13(fp);
 		buffer[bytes_in_buffer] = 0;  // terminal zero
-		rm_m13(tmp_file);  // delete temp file
 		free_m13(tmp_file);
 
+		bytes_in_e_buffer = 0;
 		fp = fopen_m13(e_tmp_file, "r");
-		bytes_in_e_buffer = flen_m13(fp);
-		if (realloc_e_buffer == TRUE_m13) {
+		if (fp != NULL) {
+			bytes_in_e_buffer = flen_m13(fp);
+			if (bytes_in_e_buffer < 0)  // flen_m13 error
+				bytes_in_e_buffer = 0;
 			if (bytes_in_e_buffer >= e_buf_len) {
-				e_buf_len = bytes_in_e_buffer + 1;
-				e_buffer = (si1 *) realloc_m13(buffer, (size_t) e_buf_len);  // allow for terminal zero
+				if (realloc_e_buffer == TRUE_m13) {
+					e_buf_len = bytes_in_e_buffer + 1;
+					e_buffer = (si1 *) realloc_m13(e_buffer, (size_t) e_buf_len);  // allow for terminal zero
+				} else {  // fixed buffer: clamp
+					bytes_in_e_buffer = e_buf_len - 1;
+				}
 			}
-		} else {
-			bytes_in_e_buffer = e_buf_len - 1;
+			fread_m13(e_buffer, sizeof(si1), (size_t) bytes_in_e_buffer, fp);
+			fclose_m13(fp);
+			rm_m13(e_tmp_file);  // delete temp file
 		}
-		fread_m13(e_buffer, sizeof(si1), (size_t) bytes_in_e_buffer, fp);
-		fclose_m13(fp);
 		e_buffer[bytes_in_e_buffer] = 0;  // terminal zero
-		rm_m13(e_tmp_file);  // delete temp file
 		free_m13(e_tmp_file);
 
 		if (err && bytes_in_e_buffer == 0) // there are many benign error codes => if no error text, ignore
 			err = 0;
 	}
-	
+
 	// errors (may not be if redirection worked)
 	if (err)
 		if (!(behavior & SUPPRESS_ERROR_OUTPUT_m13))
 			flags |= SP_TEE_TO_TERMINAL_m13;
-	
+
 	// tee
 	if (flags & SP_TEE_TO_TERMINAL_m13) {
 		if (bytes_in_buffer || bytes_in_e_buffer) {
@@ -55659,17 +57561,32 @@ SYSTEM_PIPE_FAIL_m13:
 				G_message_m13("[%serr%s]: %s", TC_RED_m13, TC_RESET_m13, e_buffer);
 		}
 	}
-	
+
+	// set error while stderr text is still at hand (buffers are freed / transferred below)
+	if (err) {
+		if (exec_failed == TRUE_m13)
+			G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tcould not be executed: \"%s\"  %s[errno: %d]%s", command_p, strerror(err), TC_YELLOW_m13, err, TC_RESET_m13);
+		else if (bytes_in_e_buffer)
+			G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tfailed with status %d:\n\t%s", command_p, err, e_buffer);
+		else
+			G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tfailed with status %d", command_p, err);
+	}
+
 	// fuse buffers
 	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
-		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer + 1;  // + terminal zero
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m13) {
 				buf_len = tot_buf_len;
 				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);
+			} else {  // fixed buffer: clamp
+				bytes_in_e_buffer = buf_len - bytes_in_buffer - 1;
 			}
 		}
-		strncat(buffer, e_buffer, buf_len);
+		if (bytes_in_e_buffer > 0) {
+			memcpy(buffer + bytes_in_buffer, e_buffer, (size_t) bytes_in_e_buffer);
+			buffer[bytes_in_buffer + bytes_in_e_buffer] = 0;
+		}
 	}
 
 	if (free_buffer == TRUE_m13)
@@ -55677,24 +57594,34 @@ SYSTEM_PIPE_FAIL_m13:
 	if (free_e_buffer == TRUE_m13)
 		free_m13(e_buffer);
 	if (assign_buffer == TRUE_m13) {
-		if (*buffer)
+		if (buffer_initially_null == TRUE_m13) {
+			if (*buffer)
+				*buffer_ptr = buffer;
+			else
+				free_m13(buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*buffer_ptr = buffer;
-		else if (buffer_initially_null == TRUE_m13)
-			free_m13(buffer);
+		}
 	}
 	if (assign_e_buffer == TRUE_m13) {
-		if (*e_buffer)
+		if (e_buffer_initially_null == TRUE_m13) {
+			if (*e_buffer)
+				*e_buffer_ptr = e_buffer;
+			else
+				free_m13(e_buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*e_buffer_ptr = e_buffer;
-		else if (e_buffer_initially_null == TRUE_m13)
-			free_m13(e_buffer);
+		}
 	}
 
-	if (err)
-		G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tfailed with message: \"%s\"  %s[errno: %d]%s", command_p, strerror(err), TC_YELLOW_m13, err, TC_RESET_m13);
+	if (args)
+		free_m13(args);
+	if (tmp_command)
+		free_m13(tmp_command);
 
 	if (pop_behavior == TRUE_m13)
 		G_pop_behavior_m13();
-	
+
 	return_m13(err);
 }
 #endif  // MACOS_m13 || LINUX_m13
@@ -55836,7 +57763,7 @@ si4	system_pipe_m13(si1 **buffer_ptr, si8 buf_len, const si1 *command, ui4 flags
 				e_buffer_initially_null = FALSE_m13;
 				realloc_e_buffer = TRUE_m13;
 				if (e_buf_len == 0)
-					e_buf_len = malloc_size_m13(buffer);
+					e_buf_len = malloc_size_m13(e_buffer);
 			} else {  // pointer cannot be modified
 				if (e_buf_len == 0) {  // no length passed, do with local buffers but do not return anything
 					free_e_buffer = TRUE_m13;
@@ -55892,7 +57819,7 @@ SYSTEM_PIPE_RETRY_m13:
 	len += strlen(cmd_exe_path);
 	len += strlen(command_p);
 	tmp_command = (si1 *) malloc((size_t) len);
-	sprintf(tmp_command, "%s /c %s", cmd_exe_path, command);
+	sprintf(tmp_command, "%s /c %s", cmd_exe_path, command_p);  // command_p: len was computed from it (leading spaces skipped)
 
 	startup_info.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;  // make nShowWindow member valid
 	startup_info.wShowWindow = SW_HIDE;
@@ -55909,6 +57836,7 @@ SYSTEM_PIPE_RETRY_m13:
 		goto SYSTEM_PIPE_FAIL_m13;
 	}
 	free(tmp_command);
+	tmp_command = NULL;  // freed again on the fail path otherwise
 
 	// close unused pipe ends
 	CloseHandle(write_h);
@@ -55937,7 +57865,7 @@ SYSTEM_PIPE_RETRY_m13:
 	bytes_in_e_buffer = 0;
 	bytes_avail = e_buf_len;
 	while (bytes_avail > 1) {
-		success = ReadFile(read_h, buffer + bytes_in_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
+		success = ReadFile(e_read_h, e_buffer + bytes_in_e_buffer, bytes_avail - 1, &n_bytes_read, NULL);  // leave room for terminal zero
 		if (success == FALSE || n_bytes_read == 0)
 			break;
 		bytes_in_e_buffer += n_bytes_read;
@@ -55953,7 +57881,8 @@ SYSTEM_PIPE_RETRY_m13:
 	e_buffer[bytes_in_e_buffer] = 0;  // set terminal zero
 	STR_strip_character_m13(e_buffer, (si1) 13);  // remove carriage returns
 
-	// check process
+	// check process (must wait first: GetExitCodeProcess() on a running process returns STILL_ACTIVE (259) as the "exit code")
+	WaitForSingleObject(process_info.hProcess, INFINITE);
 	if (GetExitCodeProcess(process_info.hProcess, &exit_code))  // call to GetExitCodeProcess() succeeded, not the process itself
 		err = (si4) exit_code;
 	else
@@ -55988,14 +57917,19 @@ SYSTEM_PIPE_RETRY_m13:
 
 	// fuse buffers
 	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
-		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer + 1;  // + terminal zero
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m13) {
 				buf_len = tot_buf_len;
 				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);
+			} else {  // fixed buffer: clamp
+				bytes_in_e_buffer = buf_len - bytes_in_buffer - 1;
 			}
 		}
-		strncat(buffer, e_buffer, buf_len);
+		if (bytes_in_e_buffer > 0) {
+			memcpy(buffer + bytes_in_buffer, e_buffer, (size_t) bytes_in_e_buffer);
+			buffer[bytes_in_buffer + bytes_in_e_buffer] = 0;
+		}
 	}
 
 	if (free_buffer == TRUE_m13)
@@ -56003,16 +57937,24 @@ SYSTEM_PIPE_RETRY_m13:
 	if (free_e_buffer == TRUE_m13)
 		free_m13(e_buffer);
 	if (assign_buffer == TRUE_m13) {
-		if (*buffer)
+		if (buffer_initially_null == TRUE_m13) {
+			if (*buffer)
+				*buffer_ptr = buffer;
+			else
+				free_m13(buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*buffer_ptr = buffer;
-		else if (buffer_initially_null == TRUE_m13)
-			free_m13(buffer);
+		}
 	}
 	if (assign_e_buffer == TRUE_m13) {
-		if (*e_buffer)
+		if (e_buffer_initially_null == TRUE_m13) {
+			if (*e_buffer)
+				*e_buffer_ptr = e_buffer;
+			else
+				free_m13(e_buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*e_buffer_ptr = e_buffer;
-		else if (e_buffer_initially_null == TRUE_m13)
-			free_m13(e_buffer);
+		}
 	}
 
 	if (pop_behavior == TRUE_m13)
@@ -56021,7 +57963,7 @@ SYSTEM_PIPE_RETRY_m13:
 	return_m13(0);
 
 SYSTEM_PIPE_FAIL_m13:
-	
+
 	if (tmp_command)
 		free(tmp_command);
 	if (read_h)
@@ -56044,50 +57986,69 @@ SYSTEM_PIPE_FAIL_m13:
 	if (pipe_failure == TRUE_m13) {
 		si1		*tmp_file, *e_tmp_file;
 		FILE_m13	*fp;
-		
+
 		G_warning_message_m13("%s(): pipe mechanism failed => using file redirection\n", __FUNCTION__);
 
 		len = strlen(command_p) + (2 * PATH_BYTES_m13) + 16;
 		tmp_command = (si1 *) malloc((size_t) len);
 		tmp_file = tempnam_m13(NULL);
-		if (flags & SP_SEPARATE_STREAMS_m13)
+		if (flags & SP_SEPARATE_STREAMS_m13) {
 			e_tmp_file = tempnam_m13(NULL);
-		else
-			e_tmp_file = tmp_file;
-		sprintf_m13(tmp_command, "%s 1> %s 2> %s", command, tmp_file, e_tmp_file);
+			sprintf_m13(tmp_command, "%s 1> %s 2> %s", command_p, tmp_file, e_tmp_file);
+		} else {  // fused: same stream, ONE file ("2> same_file" would truncate over stdout; separate reads would double it)
+			e_tmp_file = NULL;
+			sprintf_m13(tmp_command, "%s 1> %s 2>&1", command_p, tmp_file);
+		}
 		err = system_m13(tmp_command);
 		free(tmp_command);
+		tmp_command = NULL;
+
+		bytes_in_buffer = 0;
 		fp = fopen_m13(tmp_file, "r");
-		bytes_in_buffer = flen_m13(fp);
-		if (realloc_buffer == TRUE_m13) {
+		if (fp != NULL) {  // file absent if the command (or system_m13) failed before redirection
+			bytes_in_buffer = flen_m13(fp);
+			if (bytes_in_buffer < 0)  // flen_m13 error
+				bytes_in_buffer = 0;
 			if (bytes_in_buffer >= buf_len) {
-				buf_len = bytes_in_buffer + 1;
-				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);  // allow for terminal zero
+				if (realloc_buffer == TRUE_m13) {
+					buf_len = bytes_in_buffer + 1;
+					buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);  // allow for terminal zero
+				} else {  // fixed buffer: clamp
+					bytes_in_buffer = buf_len - 1;
+				}
 			}
-		} else {
-			bytes_in_buffer = buf_len - 1;
+			fread_m13(buffer, sizeof(si1), (size_t) bytes_in_buffer, fp);
+			fclose_m13(fp);
+			rm_m13(tmp_file);  // delete temp file
 		}
-		fread_m13(buffer, sizeof(si1), (size_t) bytes_in_buffer, fp);
-		fclose_m13(fp);
 		buffer[bytes_in_buffer] = 0;  // terminal zero
-		rm_m13(tmp_file);  // delete temp file
 		free_m13(tmp_file);
-		
-		fp = fopen_m13(e_tmp_file, "r");
-		bytes_in_e_buffer = flen_m13(fp);
-		if (realloc_e_buffer == TRUE_m13) {
-			if (bytes_in_e_buffer >= e_buf_len) {
-				e_buf_len = bytes_in_e_buffer +  1;
-				e_buffer = (si1 *) realloc_m13(buffer, (size_t) e_buf_len);  // allow for terminal zero
+
+		bytes_in_e_buffer = 0;
+		if (e_tmp_file != NULL) {  // separate streams only (fused mode: stderr already in buffer)
+			fp = fopen_m13(e_tmp_file, "r");
+			if (fp != NULL) {
+				bytes_in_e_buffer = flen_m13(fp);
+				if (bytes_in_e_buffer < 0)  // flen_m13 error
+					bytes_in_e_buffer = 0;
+				if (bytes_in_e_buffer >= e_buf_len) {
+					if (realloc_e_buffer == TRUE_m13) {
+						e_buf_len = bytes_in_e_buffer + 1;
+						e_buffer = (si1 *) realloc_m13(e_buffer, (size_t) e_buf_len);  // allow for terminal zero
+					} else {  // fixed buffer: clamp
+						bytes_in_e_buffer = e_buf_len - 1;
+					}
+				}
+				fread_m13(e_buffer, sizeof(si1), (size_t) bytes_in_e_buffer, fp);
+				fclose_m13(fp);
+				rm_m13(e_tmp_file);  // delete temp file
 			}
-		} else {
-			bytes_in_e_buffer = e_buf_len - 1;
+			free_m13(e_tmp_file);
 		}
-		fread_m13(e_buffer, sizeof(si1), (size_t) e_buf_len, fp);
-		fclose_m13(fp);
 		e_buffer[bytes_in_e_buffer] = 0;  // terminal zero
-		rm_m13(e_tmp_file);  // delete temp file
-		free_m13(e_tmp_file);
+
+		if (err && bytes_in_e_buffer == 0 && (flags & SP_SEPARATE_STREAMS_m13))  // benign codes rule (fused mode can't distinguish streams here)
+			err = 0;
 	}
 	
 	// errors (may not be if redirection worked)
@@ -56106,16 +58067,29 @@ SYSTEM_PIPE_FAIL_m13:
 		}
 	}
 	
+	// set error while stderr text is still at hand (buffers are freed / transferred below)
+	if (err) {
+		if (bytes_in_e_buffer)
+			G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tfailed with status %d:\n\t%s", command_p, err, e_buffer);
+		else
+			G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tfailed with status %d", command_p, err);
+	}
+
 	// fuse buffers
 	if ((flags & SP_SEPARATE_STREAMS_m13) == 0 && bytes_in_e_buffer) {
-		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer;
+		tot_buf_len = bytes_in_buffer + bytes_in_e_buffer + 1;  // + terminal zero
 		if (tot_buf_len > buf_len) {
 			if (realloc_buffer == TRUE_m13) {
 				buf_len = tot_buf_len;
 				buffer = (si1 *) realloc_m13(buffer, (size_t) buf_len);
+			} else {  // fixed buffer: clamp
+				bytes_in_e_buffer = buf_len - bytes_in_buffer - 1;
 			}
 		}
-		strncat(buffer, e_buffer, buf_len);
+		if (bytes_in_e_buffer > 0) {
+			memcpy(buffer + bytes_in_buffer, e_buffer, (size_t) bytes_in_e_buffer);
+			buffer[bytes_in_buffer + bytes_in_e_buffer] = 0;
+		}
 	}
 
 	if (free_buffer == TRUE_m13)
@@ -56123,24 +58097,29 @@ SYSTEM_PIPE_FAIL_m13:
 	if (free_e_buffer == TRUE_m13)
 		free_m13(e_buffer);
 	if (assign_buffer == TRUE_m13) {
-		if (*buffer)
+		if (buffer_initially_null == TRUE_m13) {
+			if (*buffer)
+				*buffer_ptr = buffer;
+			else
+				free_m13(buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*buffer_ptr = buffer;
-		else if (buffer_initially_null == TRUE_m13)
-			free_m13(buffer);
+		}
 	}
 	if (assign_e_buffer == TRUE_m13) {
-		if (*e_buffer)
+		if (e_buffer_initially_null == TRUE_m13) {
+			if (*e_buffer)
+				*e_buffer_ptr = e_buffer;
+			else
+				free_m13(e_buffer);
+		} else {  // always reassign: realloc may have moved the caller's buffer
 			*e_buffer_ptr = e_buffer;
-		else if (e_buffer_initially_null == TRUE_m13)
-			free_m13(e_buffer);
+		}
 	}
 
-	if (err)
-		G_set_error_m13(E_GEN_m13, "the command: \"%s\"\n\tfailed with message: \"%s\"  %s[errno: %d]%s", command_p, strerror(err), TC_YELLOW_m13, err, TC_RESET_m13);
-	
 	if (pop_behavior == TRUE_m13)
 		G_pop_behavior_m13();
-	
+
 	return_m13(err);
 }
 

@@ -130,6 +130,7 @@
 	#include <processthreadsapi.h>
 	#include <synchapi.h>
 	#include <sysinfoapi.h>
+	#include <intrin.h> // __cpuid()/__cpuidex() (hardware crypto detection)
 	#pragma comment(lib, "Ws2_32.lib") // link with Ws2_32.lib
 	#pragma comment(lib, "Iphlpapi.lib") // link with Iphlpapi.lib
 	#define _USE_MATH_DEFINES // Needed for standard math constants. Must be defined before math.h included.
@@ -165,6 +166,7 @@
 #ifdef LINUX_m13
 	#include <sys/statfs.h>
 	#include <sys/sysinfo.h>
+	#include <sys/auxv.h> // getauxval() (hardware crypto detection on ARM)
 	#include <pty.h>
 	#include <utmp.h>
 #endif // LINUX_m13
@@ -189,6 +191,27 @@
 	#include "mex.h"
 	#include "matrix.h"
 #endif // MATLAB_m13
+
+// hardware crypto intrinsics (compile-time capability; runtime selection reads HW_params AES_accel / SHA256_accel)
+// per-function target attributes: the hardware paths compile without global -maes/-msha/-march flags,
+// & are only executed when HW_get_crypto_accel_m13() confirmed the instructions exist on this machine
+#if (defined MACOS_m13 || defined LINUX_m13) && (defined __x86_64__ || defined __i386__) && !defined __INTEL_COMPILER
+	#include <immintrin.h>
+	#define HW_CRYPTO_m13
+	#define HW_AES_FN_ATTR_m13	__attribute__((target("aes,sse2")))
+	#define HW_SHA_FN_ATTR_m13	__attribute__((target("sha,sse4.1,ssse3,sse2")))
+#endif
+#if (defined MACOS_m13 || defined LINUX_m13) && defined __aarch64__
+	#include <arm_neon.h>
+	#define HW_CRYPTO_m13
+	#ifdef MACOS_m13  // Apple silicon compiler targets enable the AES & SHA-2 features by default
+		#define HW_AES_FN_ATTR_m13
+		#define HW_SHA_FN_ATTR_m13
+	#else  // UNVERIFIED (no ARM Linux test machine): generic aarch64 needs the crypto feature enabled per function
+		#define HW_AES_FN_ATTR_m13	__attribute__((target("+crypto")))
+		#define HW_SHA_FN_ATTR_m13	__attribute__((target("+crypto")))
+	#endif
+#endif
 #ifdef DATABASE_m13
 	#include <libpq-fe.h> // postgres header
 #endif // DATABASE_m13
@@ -456,21 +479,43 @@ typedef struct {
 #define ENCRYPTION_BLOCK_BYTES_m13		16 // AES-128
 #define ENCRYPTION_KEY_BYTES_m13		176 // AES-128 = ((AES_NR + 1) * AES_NK * AES_NB)
 #define ENCRYPTION_KEY_BLOCKS_m13		(ENCRYPTION_KEY_BYTES_m13 >> 4)
+#define ENCRYPTION_KEY_BYTES_256_m13		240 // AES-256 = ((AES_NR_256 + 1) * AES_NB * 4)
 #define PASSWORD_BYTES_m13			ENCRYPTION_BLOCK_BYTES_m13
 #define MAX_PASSWORD_CHARACTERS_m13		PASSWORD_BYTES_m13
+#define MIN_NEW_PASSWORD_CHARACTERS_m13		8 // enforced only when SETTING a password; reads accept any length (legacy files may be shorter)
+#define RECOMMENDED_PASSWORD_CHARACTERS_m13	12 // warn (do not reject) below this when setting a password; no character-class rules are imposed
 #define MAX_ASCII_PASSWORD_STRING_BYTES_m13	(MAX_PASSWORD_CHARACTERS_m13 + 1) // 1 byte per character in ascii plus terminal zero
 #define MAX_UTF8_PASSWORD_BYTES_m13		(MAX_PASSWORD_CHARACTERS_m13 * 4) // up to 4 bytes per character in UTF-8
 #define MAX_PASSWORD_STRING_BYTES_m13		(MAX_UTF8_PASSWORD_BYTES_m13 + 1) // 1 byte for null-termination
 #define PASSWORD_VALIDATION_FIELD_BYTES_m13	PASSWORD_BYTES_m13
 #define PASSWORD_HINT_BYTES_m13			256
 
+// Crypto Schemas (universal header crypto_schema field; taken from UH protected region: zeros in older files == legacy)
+#define CRYPTO_SCHEMA_LEGACY_m13	((ui1) 0) // MED 1.1 original: unsalted truncated SHA-256 validation fields, password bytes used directly as AES-128 key (READ-ONLY: no new files)
+#define CRYPTO_SCHEMA_1_m13		((ui1) 1) // salted (session UID) PBKDF2-HMAC-SHA-256 master secret; HMAC-derived validation fields & AES-256 keys
+#define CRYPTO_SCHEMA_DEFAULT_m13	CRYPTO_SCHEMA_1_m13
+#define CRYPTO_KDF_EXPONENT_DEFAULT_m13	((ui1) 17) // KDF iterations == 2^n (~100-200 ms per password; performed once per session open)
+#define CRYPTO_MASTER_BYTES_m13		16 // PBKDF2-derived master secret bytes (validation fields, keys, & level chaining all derive from this)
+#define CRYPTO_VALIDATE_STRING_m13	"MED validate" // HMAC context: master -> validation field
+#define CRYPTO_ENCRYPT_STRING_m13	"MED encrypt" // HMAC context: master -> AES-256 key
+#define CRYPTO_CHAIN_STRING_m13		"MED chain" // HMAC context: master -> level chaining material (L2 field XOR, L3 recovery)
+
 // Password Data Structure
 typedef struct {
-	ui1	level_1_encryption_key[ENCRYPTION_KEY_BYTES_m13];
-	ui1	level_2_encryption_key[ENCRYPTION_KEY_BYTES_m13];
+	ui1	level_1_encryption_key[ENCRYPTION_KEY_BYTES_m13]; // AES-128 expanded key (legacy crypto schema)
+	ui1	level_2_encryption_key[ENCRYPTION_KEY_BYTES_m13]; // AES-128 expanded key (legacy crypto schema)
+	ui1	level_1_encryption_key_256[ENCRYPTION_KEY_BYTES_256_m13]; // AES-256 expanded key (crypto schema 1 & above)
+	ui1	level_2_encryption_key_256[ENCRYPTION_KEY_BYTES_256_m13]; // AES-256 expanded key (crypto schema 1 & above)
+	ui1	level_1_decryption_key[ENCRYPTION_KEY_BYTES_m13]; // AES-128 equivalent-inverse-cipher schedule (see AES_inv_key_schedule_m13())
+	ui1	level_2_decryption_key[ENCRYPTION_KEY_BYTES_m13]; // AES-128 equivalent-inverse-cipher schedule
+	ui1	level_1_decryption_key_256[ENCRYPTION_KEY_BYTES_256_m13]; // AES-256 equivalent-inverse-cipher schedule
+	ui1	level_2_decryption_key_256[ENCRYPTION_KEY_BYTES_256_m13]; // AES-256 equivalent-inverse-cipher schedule
 	si1	level_1_password_hint[PASSWORD_HINT_BYTES_m13];
 	si1	level_2_password_hint[PASSWORD_HINT_BYTES_m13];
 	ui1	access_level;
+	ui1	crypto_schema; // schema of the universal header the passwords were processed against
+	tern	level_1_legacy_key_valid; // legacy AES-128 keys require the raw password bytes: not derivable when schema 1 access came through the other level
+	tern	level_2_legacy_key_valid;
 	tern	processed;
 	tern 	hints_exist;  // if (*level_1_password_hint || *level_2_password_hint)
 } PASSWORD_DATA_m13;
@@ -555,8 +600,8 @@ typedef struct {
 // Pipes
 #define READ_END_m13		0
 #define WRITE_END_m13		1
-#define PIPE_FAILURE_m13	((si4) 255)
-#define PIPE_FAILURE_SEND_m13	((si4) -1) // sent from child, received as (si4) ((ui1) PIPE_FAILURE_m13) [== 255]
+// PIPE_FAILURE_m13 (255) & PIPE_FAILURE_SEND_m13 (-1) retired: 255 collides with legitimate exit codes (e.g. ssh),
+// which re-ran commands through the fallback; exec failure is now signaled via a CLOEXEC status pipe carrying the child's errno
 
 // Target Value Constants (ui4)
 #define NO_IDX_m13			-1 // assigned to signed values (si4 or si8)
@@ -712,7 +757,7 @@ typedef struct {
 #define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // number of processes
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
-#define GLOBALS_BEHAVIOR_STACKS_LIST_SIZE_INCREMENT_m13		32 // number of threads
+#define GLOBALS_BEHAVIOR_STACK_DEPTH_WARNING_m13		64 // depth at first growth warning (usually indicates a push/pop leak; growth continues regardless)
 #define GLOBALS_FUNCTION_STACK_SIZE_INCREMENT_m13		16 // number of functions
 #define GLOBALS_FUNCTION_STACKS_LIST_SIZE_INCREMENT_m13		32 // number of threads
 #define GLOBALS_FLOCK_LIST_SIZE_INCREMENT_m13			512 // number of open files
@@ -877,13 +922,15 @@ typedef struct {
 #define UH_LIVE_OFFSET_m13					916 // tern, MED 1.1 & above
 #define UH_ORDERED_OFFSET_m13					917 // tern, MED 1.1 & above
 #define UH_EXPANDED_PASSWORDS_OFFSET_m13			918 // tern, MED 1.1 & above
-#define UH_ENCRYPTION_ROUNDS_OFFSET_m13				919 // ui1, MED 1.1 & above
+#define UH_RESERVED_919_OFFSET_m13				919 // ui1, reserved (was "encryption rounds": multi-round encryption removed - never used, no benefit over single-pass AES-256)
 #define UH_ENCRYPTION_1_OFFSET_m13				920 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_2_OFFSET_m13				921 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_3_OFFSET_m13				922 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_4_OFFSET_m13				923 // si1, MED 1.1 & above
-#define UH_PROTECTED_REGION_OFFSET_m13				924
-#define UH_PROTECTED_REGION_BYTES_m13				52
+#define UH_CRYPTO_SCHEMA_OFFSET_m13				924 // ui1, taken from protected region (zeros in files written before this field == CRYPTO_SCHEMA_LEGACY_m13)
+#define UH_KDF_EXPONENT_OFFSET_m13				925 // ui1, taken from protected region (KDF iterations == 2^n; unused under legacy schema)
+#define UH_PROTECTED_REGION_OFFSET_m13				926
+#define UH_PROTECTED_REGION_BYTES_m13				50
 #define UH_DISCRETIONARY_REGION_OFFSET_m13			976
 #define UH_DISCRETIONARY_REGION_BYTES_m13			48
 
@@ -891,8 +938,7 @@ typedef struct {
 #define UH_DATA_ENCRYPTION_DEFAULT_m13				NO_ENCRYPTION_m13 // si1, MED 1.1 & above
 #define UH_METADATA_SECTION_2_ENCRYPTION_DEFAULT_m13		LEVEL_1_ENCRYPTION_m13 // si1, MED 1.1 & above
 #define UH_METADATA_SECTION_3_ENCRYPTION_DEFAULT_m13		LEVEL_2_ENCRYPTION_m13 // si1, MED 1.1 & above
-#define UH_EXPANDED_PASSWORDS_DEFAULT_m13			TRUE_m13
-#define UH_ENCRYPTION_ROUNDS_DEFAULT_m13			((ui1) 1)
+#define UH_EXPANDED_PASSWORDS_DEFAULT_m13			FALSE_m13 // DEPRECATED: expansion eliminated (added no entropy; generator was an interoperability burden); field retained in layout, always false
 
 // Metadata: File Format Constants
 #define METADATA_BYTES_m13			15360 // 15 KiB
@@ -1265,6 +1311,7 @@ typedef struct {
 #define FILE_FLAGS_LEN_m13		((ui2) 1 << 9) // update len with each operation
 #define FILE_FLAGS_POS_m13		((ui2) 1 << 10) // update pos with each operation
 #define FILE_FLAGS_TIME_m13		((ui2) 1 << 11) // update access time with each operation (global sets flag here, but flag supersedes global in execution)
+#define FILE_FLAGS_DIGEST_m13		((ui2) 1 << 12) // streaming canonical digest attached (DGST module; fwrite_m13() absorbs written bytes)
 #define FILE_FLAGS_DEFAULT_m13		( FILE_FLAGS_SET_m13 | FILE_FLAGS_LEN_m13 | FILE_FLAGS_POS_m13 )
 #define FILE_FLAGS_MODE_MASK_m13	( FILE_FLAGS_READ_m13 | FILE_FLAGS_WRITE_m13 | FILE_FLAGS_APPEND_m13 )
 
@@ -1355,6 +1402,7 @@ typedef struct {
 	si8	len; // current file length (-1 indicates not set)
 	si8	pos; // file pointer position (relative to start)  (-1 indicates not set)
 	si8	acc; // uutc of last file access (open, read, or write functions, if FILE_FLAGS_TIME_m13 bit set)
+	struct DGST_STREAM_m13	*dgst; // streaming canonical digest state (DGST module; NULL unless FILE_FLAGS_DIGEST_m13 set)
 } FILE_m13;
 
 // Prototypes
@@ -1485,6 +1533,7 @@ typedef struct {
 	_Atomic ui4		status;
 	pid_t_m13		_id; // thread id [ set by PROC_job_init_m13() ]
 	pid_t_m13		_pid; // parent thread id [ set by PROC_launch_job_m13() ]
+	ui4			parent_behavior; // spawner's behavior code at launch (snapshot) [ set by PROC_job_launch_m13(); pushed as thread's base behavior by PROC_job_init_m13() ]
 	tern			threaded; // TRUE_m13 to run as a thread, FALSE_m13 to run in current thread
 	tern			detached; // if TRUE_m13, thread exits when finished, not joinable
 	tern			skip; // if TRUE_m13, don't run this job (e.g. because data missing)
@@ -1677,6 +1726,8 @@ tern			PAR_wait_all_m13(PAR_INFO_m13 **par_infos, si4 n_infos, const si1 *interv
 // Miscellaneous
 #define PRTY_BLOCK_BYTES_DEFAULT_m13	4096 // used in PRTY_CRC_DATA_m13 (must be multiple of 4)
 #define PRTY_PCRC_TAG_m13		((ui8) 0x0123456789ABCDEF) // used in PRTY_CRC_DATA_m13
+#define PRTY_PCRC_EXT_TAG_m13		((ui8) 0xFEDCBA9876543210) // used in PRTY_PCRC_EXT_FOOTER_m13 (distinct from PRTY_PCRC_TAG_m13)
+#define PRTY_PCRC_EXT_VER_m13		((ui1) 1)
 
 
 // Structures
@@ -1711,10 +1762,31 @@ typedef struct {
 	ui4		block_bytes; // data bytes per block (except probably the last), multiple of 4 bytes (defaults to PRTY_BLOCK_BYTES_DEFAULT_m13)
 } PRTY_CRC_DATA_m13;  // used to add CRCs to files that don't have many (e.g. index files), or any (e.g. video data files)
 
+// pcrc extension: parity files have no universal headers (their bodies are the xor of their member files), so this structure carries their identity
+// (names alone cannot: all sessions use the same reserved parity names & channel names are commonly reused across unrelated sessions)
+// written between the parity data & the pcrc crcs, & covered by them, so it is transparent to pre-extension readers (which locate everything relative to the file end)
+// legacy pcrc data (m12 & early m13) has no extension: the UID fields of PRTY_CRC_DATA_m13 were never set in those files & are unreliable
+typedef struct {
+	ui8	session_UID; // session UID of member files (present in all extended parity files)
+	ui8	channel_UID; // channel UID if common to all member files (e.g. video data parity), otherwise UID_NO_ENTRY_m13
+	ui8	segment_UID; // segment UID if common to all member files (e.g. video data parity), otherwise UID_NO_ENTRY_m13
+	ui4	n_members; // number of member file UIDs following this structure
+	ui1	version; // PRTY_PCRC_EXT_VER_m13
+	ui1	protected_region[19]; // zeros
+	ui8	member_file_UIDs[]; // file UIDs of the members the parity was built from, ascending order (flexible array member)
+} PRTY_PCRC_EXT_m13; // 48 bytes + (8 * n_members) in file
+
+typedef struct {
+	ui4	ext_bytes; // total extension bytes: PRTY_PCRC_EXT_m13 + member file UIDs + this footer (multiple of 8)
+	ui1	protected_region[4]; // zeros
+	ui8	tag; // PRTY_PCRC_EXT_TAG_m13 (marker to confirm identity of extension; located backward from start of pcrc crcs)
+} PRTY_PCRC_EXT_FOOTER_m13; // 16 bytes
+
 // Parity File Structure:
 // 1) parity data
-// 2) crc of parity data in blocks // used to confirm that parity data is not itself damaged, & if so, to localize the damage, so that it can hopefully still be used & then rebuilt
-// 3) PRTY_CRC_DATA_m13 structure
+// 2) pcrc extension (PRTY_PCRC_EXT_m13 + member file UIDs + PRTY_PCRC_EXT_FOOTER_m13) // identity of parity data (parity files have no universal headers); absent in legacy files
+// 3) crc of parity data (& extension) in blocks // used to confirm that parity data is not itself damaged, & if so, to localize the damage, so that it can hopefully still be used & then rebuilt
+// 4) PRTY_CRC_DATA_m13 structure
 
 // Prototypes
 tern	PRTY_build_m13(PRTY_m13 *parity_ps);
@@ -1723,11 +1795,12 @@ si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files);
 ui4	PRTY_flag_for_path_m13(const si1 *path);
 tern	PRTY_is_parity_m13(const si1 *path, tern MED_file);
 si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path);
+PRTY_PCRC_EXT_m13	*PRTY_pcrc_ext_m13(FILE_m13 *fp, const si1 *file_path, si8 *ext_offset);
 si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *pcrc);
 tern	PRTY_recover_segment_header_fields_m13(const si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
 tern	PRTY_restore_m13(const si1 *MED_path);
-tern	PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path);
+PRTY_PCRC_EXT_m13	*PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path);
 tern	PRTY_show_pcrc_m13(const si1 *file_path);
 tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path
 tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path)
@@ -2001,6 +2074,8 @@ typedef struct {
 	si4				performance_cores; // heterogeneous CPUs (e.g. Apple silicon): high performance ("P") cores; == physical_cores in uniform CPUs
 	si4				efficiency_cores; // heterogeneous CPUs: low power ("E") cores; == 0 in uniform CPUs
 	tern				hyperthreading;
+	tern				AES_accel; // hardware AES instructions present (x86 AES-NI / ARMv8 AES); UNKNOWN_m13 until detected
+	tern				SHA256_accel; // hardware SHA-256 instructions present (x86 SHA extensions / ARMv8 SHA-2); UNKNOWN_m13 until detected
 	sf8				minimum_speed;
 	sf8				maximum_speed;
 	sf8				current_speed;
@@ -2019,6 +2094,7 @@ typedef struct {
 // Prototypes
 ui4	HW_get_block_size_m13(const si1 *volume_path);
 tern	HW_get_core_info_m13(void);
+tern	HW_get_crypto_accel_m13(void); // AES_accel & SHA256_accel (encryption/hash routines read these to select hardware vs table paths)
 tern	HW_get_endianness_m13(void);
 tern	HW_get_info_m13(void); // fill whole HW_PARAMS_m13 structure
 tern	HW_get_machine_code_m13(void);
@@ -2315,12 +2391,10 @@ typedef struct { // single thread access
 	si4			top_idx; // top of behavior stack
 } BEHAVIOR_STACK_m13;
 
-typedef struct { // multiple thread access
-	pthread_mutex_t_m13		mutex;
-	_Atomic(BEHAVIOR_STACK_m13 **)	stack_ptrs; // secondary indirection to BEHAVIOR_STACK_m13 *
-	_Atomic si4			size; // total allocated behavior_stacks
-	_Atomic si4			top_idx; // last non-empty behavior_stack in list
-} BEHAVIOR_STACK_LIST_m13;
+// Note: behavior stacks are thread-local (storage belongs to the thread; reclaimed at thread exit by a TSD destructor).
+// No global registry exists: nothing reads another thread's behavior stack, & thread-owned storage makes behaviors
+// available in every thread at every lifecycle moment (including globals initialization, freeing, & re-initialization).
+// (Function stacks retain their global registry - error snapshots read ancestor threads' stacks.)
 
 
 // Exec Function Defines
@@ -2461,7 +2535,6 @@ typedef struct {
 // Tables
 	GLOBAL_TABLES_m13		*tables;
 // Behavior Stacks (thread local)
-	BEHAVIOR_STACK_LIST_m13		*behavior_stack_list;
 // Function Stacks (thread local)
 	FUNCTION_STACK_LIST_m13		*function_stack_list;
 // Process Globals (thread local)
@@ -2530,12 +2603,14 @@ typedef struct {
 	ui4		video_data_file_number; // MED 1.1 and above
 	tern		live; // file currently being acquired
 	tern		ordered; // MED 1.1 and above
-	tern		expanded_passwords; // MED 1.1 and above
-	ui1		encryption_rounds; // MED 1.1 and above
+	tern		expanded_passwords; // MED 1.1 and above (DEPRECATED: always false; field retained in layout)
+	ui1		reserved_919; // reserved (was "encryption_rounds": multi-round encryption removed; zero)
 	si1		encryption_1; // MED 1.1 and above
 	si1		encryption_2; // MED 1.1 and above
 	si1		encryption_3; // MED 1.1 and above
 	si1		encryption_4; // MED 1.1 and above
+	ui1		crypto_schema; // password validation & key derivation schema (taken from protected region: zeros in older files == CRYPTO_SCHEMA_LEGACY_m13, which is read-only)
+	ui1		kdf_exponent; // KDF iterations == 2^n (crypto schema 1 & above; unused under legacy schema)
 	ui1		protected_region[UH_PROTECTED_REGION_BYTES_m13];
 	ui1		discretionary_region[UH_DISCRETIONARY_REGION_BYTES_m13];
 } UH_m13;
@@ -3259,12 +3334,13 @@ tern			G_check_char_type_m13(void);
 tern			G_check_file_list_m13(si1 **file_list, si4 n_files);
 tern			G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...); // varargs (is_cloud == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
 tern 			G_check_password_m13(const si1 *password);
+tern 			G_check_new_password_m13(const si1 *password); // creation-time policy (min length + weak-password warning); NOT used when reading
 si4			G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess);
 void			G_clear_error_m13(void);
 tern			G_clear_terminal_m13(void);
 si4			G_compare_acq_nums_m13(const void *a, const void *b);
 si4 			G_compare_record_index_times(const void *a, const void *b);
-tern			G_condition_password_m13(const si1 *password, si1 *password_bytes, tern expand_password);
+tern			G_condition_password_m13(const si1 *password, si1 *password_bytes);
 tern			G_condition_slice_m13(void *level_header, SLICE_m13 *slice);
 tern			G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
 tern			G_correct_universal_header_m13(FPS_m13 *fps);
@@ -3272,6 +3348,7 @@ ui4			G_current_behavior_m13(void); // returns behavior code
 BEHAVIOR_m13		*G_current_behavior_entry_m13(void); // returns pointer to BEHAVIOR_m13 struct (useful for debugging)
 si8			G_current_uutc_m13(void);
 si4			G_days_in_month_m13(si4 month, si4 year);
+tern			G_AES_crypt_m13(UH_m13 *uh, PASSWORD_DATA_m13 *pwd, si1 level, ui1 *data, si8 len, tern encrypt);
 tern 			G_decrypt_metadata_m13(FPS_m13 *fps);
 tern 			G_decrypt_records_m13(FPS_m13 *fps, ...); // varargs (fps == NULL): REC_HDR_m13 *rh, si8 n_records (used to decrypt Sgmt_records arrays)
 tern 			G_decrypt_time_series_m13(FPS_m13 *fps);
@@ -3288,7 +3365,6 @@ void			G_error_clear_m13(void);
 si4			G_error_code_m13(void);
 void 			G_error_message_m13(const si1 *fmt, ...);
 si1 			G_exists_m13(const si1 *path);
-tern			G_expand_password_m13(const si1 *password, si1 *password_bytes);
 si8			G_file_length_m13(FILE_m13 *fp, const si1 *path);
 si1			**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
 FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, const si1 *path, FILE_TIMES_m13 *ft, tern set_time);
@@ -3723,6 +3799,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_SRRED_BOTTOM_SCALE_m13		((sf8) 0.005) // minimum search scale (scale search starts here)
 #define CMP_SRRED_TOP_SCALE_m13			((sf8) 0.995) // maximum search scale (usually exits well before here)
 #define CMP_SRRED_SCALE_STEP_m13		((sf8) 0.0001) // scale search increment
+#define CMP_SRRED_SCRAP_BUFFERS_m13		2
 #define CMP_SELF_MANAGED_MEMORY_m13		-1 // pass to CMP_allocate_CPS_m13() to prevent automatic re-allocation
 #define CMP_RED_TO_PRED_m13			TRUE_m13 // for CMP_swap_RED_PRED_m13()
 #define CMP_PRED_TO_RED_m13			FALSE_m13 // for CMP_swap_RED_PRED_m13()
@@ -3880,10 +3957,10 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_BF_PRED1_ENCODING_m13		((ui4) 1 << 9)  // bit 9
 #define CMP_BF_MBE_ENCODING_m13			((ui4) 1 << 10)  // bit 10
 #define CMP_BF_VDS_ENCODING_m13			((ui4) 1 << 11)  // bit 11
-#define CMP_BF_RED2_ENCODING_m13		((ui4) 1 << 12)  // bit 12 (fast lossless)
-#define CMP_BF_PRED2_ENCODING_m13		((ui4) 1 << 13)  // bit 13 (fast lossless; better compression, but slower than RED)
+#define CMP_BF_RED2_ENCODING_m13		((ui4) 1 << 12)  // bit 12 (fastest lossless)
+#define CMP_BF_PRED2_ENCODING_m13		((ui4) 1 << 13)  // bit 13 (fast lossless; better compression than RED)
 #define CMP_BF_SRRED_ENCODING_m13		((ui4) 1 << 14)  // bit 14 (slower lossless; better compression than PRED)
-#define CMP_BF_SSE_ENCODING_m13			((ui4) 1 << 15)  // bit 15 (fastest lossless; compression ratio highly data-dependent)
+#define CMP_BF_SSE_ENCODING_m13			((ui4) 1 << 15)  // bit 15 (fastest compression; compression ratio highly data-dependent)
 
 #define CMP_BF_ALGORITHMS_MASK_m13		( CMP_BF_RED1_ENCODING_m13 | CMP_BF_PRED1_ENCODING_m13 | CMP_BF_MBE_ENCODING_m13 \
 						| CMP_BF_VDS_ENCODING_m13 | CMP_BF_RED2_ENCODING_m13 | CMP_BF_PRED2_ENCODING_m13 \
@@ -3966,8 +4043,8 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 
 // masks
 #define CPS_DF_ALGORITHM_MASK_m13			( CPS_DF_RED1_ALGORITHM_m13 | CPS_DF_PRED1_ALGORITHM_m13 | CPS_DF_RED2_ALGORITHM_m13 | \
-							CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_SRRED_ALGORITHM_m13 | CPS_DF_SSE_ALGORITHM_m13 | \
-							CPS_DF_VDS_ALGORITHM_m13 | CPS_DF_MBE_ALGORITHM_m13 )
+							CPS_DF_PRED2_ALGORITHM_m13 | CPS_DF_VDS_ALGORITHM_m13 | CPS_DF_MBE_ALGORITHM_m13 | \
+							CPS_DF_SRRED_ALGORITHM_m13 | CPS_DF_SSE_ALGORITHM_m13 )
 
 // directive defaults
 #define CPS_DIRECTIVES_COMPRESSION_MODE_DEFAULT_m13			FALSE_m13 // TRUE_m13 == compression, FALSE_m13 == decompression
@@ -4626,6 +4703,10 @@ tern		UTF8_valid_str_m13(const si1 *s);
 #define AES_NK_m13		4 // The number of 32 bit words in the key (128 bits)
 #define AES_NB_m13		4 // The number of columns comprising a state in AES
 #define AES_NS_m13		( AES_NK_m13 * AES_NB_m13 )  // the number of bytes in the state matrix
+#define AES_NR_256_m13		14 // The number of rounds in AES-256 Cipher
+#define AES_NK_256_m13		8 // The number of 32 bit words in an AES-256 key (256 bits)
+#define AES_KEY_BYTES_256_m13	( AES_NK_256_m13 * 4 ) // 32 (binary key, e.g. KDF-derived: null bytes are valid & not conditioned away)
+#define AES_EXPANDED_KEY_BYTES_256_m13	( (AES_NR_256_m13 + 1) * AES_NB_m13 * 4 ) // 240
 #define AES_XTIME_m13(x)	( (x << 1) ^ (((x >> 7) & 1) * 0x1b) ) // AES_XTIME is a macro that finds the product of 0x02 and the argument to AES_XTIME modulo 0x1b
 #define AES_MULTIPLY_m13(x, y)	( ((y & 1) * x) ^ ((y >> 1 & 1) * AES_XTIME_m13(x)) ^ ((y >> 2 & 1) * AES_XTIME_m13(AES_XTIME_m13(x))) ^ \
 				((y >> 3 & 1) * AES_XTIME_m13(AES_XTIME_m13(AES_XTIME_m13(x)))) ^ ((y >> 4 & 1) * \
@@ -4688,14 +4769,22 @@ tern		UTF8_valid_str_m13(const si1 *s);
 // Function Prototypes
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key);
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
-void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds);
-void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key, ui1 rounds);
+void	AES_cipher_nr_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key, si4 nr);
+void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *inv_expanded_key); // inv_expanded_key from AES_inv_key_expansion_m13() (NOT the encryption schedule)
+void	AES_decrypt_256_m13(ui1 *data, si8 len, const ui1 *key, ui1 *inv_expanded_key); // inv_expanded_key from AES_inv_key_expansion_256_m13() (NOT the encryption schedule)
+void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key);
+void	AES_encrypt_256_m13(ui1 *data, si8 len, const ui1 *key, ui1 *expanded_key);
 tern	AES_init_tables_m13(void);
 void	AES_inv_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
+void	AES_inv_cipher_nr_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key, si4 nr);
+ui1	*AES_inv_key_expansion_m13(ui1 *inv_expanded_key, const si1 *key);
+ui1	*AES_inv_key_expansion_256_m13(ui1 *inv_expanded_key, const ui1 *key);
+ui1	*AES_inv_key_schedule_m13(ui1 *inv_expanded_key, const ui1 *expanded_key, si4 nr); // encryption schedule -> equivalent-inverse-cipher schedule (in place OK)
 void	AES_inv_mix_columns_m13(ui1 state[][4]);
 void	AES_inv_shift_rows_m13(ui1 state[][4]);
 void	AES_inv_sub_bytes_m13(ui1 state[][4]);
 ui1	*AES_key_expansion_m13(ui1 *round_key, const si1 *key);
+ui1	*AES_key_expansion_256_m13(ui1 *round_key, const ui1 *key);
 void	AES_mix_columns_m13(ui1 state[][4]);
 void	AES_partial_decrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key); // (round_key == NULL) => keyless decryption
 void	AES_partial_encrypt_m13(si4 n_bytes, ui1 *data, ui1 *round_key); // (round_key == NULL) => keyless encryption
@@ -4761,10 +4850,47 @@ typedef struct {
 // Function Prototypes
 void	SHA_finalize_m13(SHA_CTX_m13 *ctx, ui1 *hash);
 ui1	*SHA_hash_m13(const ui1 *data, si8 len, ui1 *hash);
+ui1	*SHA_hmac_m13(const ui1 *key, si4 key_bytes, const ui1 *data, si8 data_bytes, ui1 *mac);
 void	SHA_init_m13(SHA_CTX_m13 *ctx);
 tern	SHA_init_tables_m13(void);
+ui1	*SHA_pbkdf2_m13(const ui1 *pw, si4 pw_bytes, const ui1 *salt, si4 salt_bytes, ui4 iterations, ui1 *dk);
 void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data);
 void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
+
+
+
+//**********************************************************************************//
+//*************************  DGST: Canonical File Digests  ************************//
+//**********************************************************************************//
+
+// The canonical MED digest of a file is SHA-256 over: data region first, universal header last,
+// pcrc regions excluded (derived data, rewritten by parity maintenance - excluded like parity coverage).
+// Data-then-UH order lets a writer absorb body bytes as they are written (fwrite_m13() fusion via
+// FILE_FLAGS_DIGEST_m13) & the settled universal header once at close - no re-read of arbitrarily
+// large files. Video data files keep their UH at the file END (canonical == physical order).
+// Files smaller than one universal header are digested whole, in file order (degenerate case).
+// External verification of a standard file without pcrcs:
+//	cat <(tail -c +1025 file) <(head -c 1024 file) | shasum -a 256
+// Consumed by the CSig record type (REC_build_CSig_body_m13(), medrec_m13)
+
+// Constants
+#define DGST_BYTES_m13		SHA_HASH_BYTES_m13 // 32
+#define DGST_CHUNK_BYTES_m13	((si8) 1 << 22) // 4 MiB streaming-read chunk (constant memory at any file size)
+
+// Typedefs & Structures
+typedef struct DGST_STREAM_m13 {
+	SHA_CTX_m13	ctx; // canonical-order streaming context (data-region bytes)
+	si8		high_water; // data-region bytes absorbed so far
+	tern		dirty; // stream invalidated (rewrite below high water, or gapped write) => finalize returns UNKNOWN_m13
+	tern		video; // UH at file end: physical == canonical order (UH bytes absorbed in stream, none at finalize)
+} DGST_STREAM_m13;
+
+// Function Prototypes
+tern	DGST_begin_m13(FILE_m13 *fp); // attach stream to a MED file open for writing (existing data-region bytes caught up by read; forces LEN & POS flags)
+tern	DGST_file_m13(const si1 *path, ui1 *digest); // canonical digest by streamed read (DGST_BYTES_m13 out)
+tern	DGST_finalize_m13(FILE_m13 *fp, ui1 *digest); // absorb settled UH, emit digest, detach; UNKNOWN_m13 == stream unusable (fall back to DGST_file_m13()), FALSE_m13 == error
+void	DGST_free_m13(FILE_m13 *fp); // detach & free stream state without producing a digest (also called by fclose_m13())
+void	DGST_update_m13(FILE_m13 *fp, const void *ptr, si8 n_bytes, si8 offset); // fwrite_m13() hook (internal use)
 
 
 
@@ -5198,6 +5324,7 @@ typedef struct {
 	ui1	*data; // buffer + TR_HDR_BYTES_m13
 	si1	*password; // for encryption (NOT freed by TR_free_transmission_info_m13)
 	ui1	*expanded_key; // for encryption
+	ui1	*inv_expanded_key; // for decryption (equivalent-inverse-cipher schedule, rebuilt whenever expanded_key changes; allocated & freed with expanded_key per expanded_key_allocated)
 	tern	expanded_key_allocated; // determines whether to free expanded key
 	ui1	mode; // TR_MODE_SEND_m13, TR_MODE_RECV_m13, TR_MODE_NONE_m13 (needed to properly close TCP sockets)
 	si4	sock_fd;
@@ -5794,6 +5921,7 @@ si4		pthread_equal_m13(pthread_t_m13 thread_1, pthread_t_m13 thread_2);
 void		pthread_exit_m13(void *ptr);
 si1		*pthread_getname_m13(pthread_t_m13 thread, si1 *thread_name, size_t name_len);
 si1		*pthread_getname_id_m13(pid_t_m13 _id, si1 *thread_name, size_t name_len);  // get thread name by thread id
+si4		pthread_create_m13(pthread_t_m13 *thread, pthread_attr_t_m13 *attributes, pthread_fn_m13 start_routine, void *arg); // new thread inherits spawner's current behavior (snapshot) as its base stack entry
 si4		pthread_join_m13(pthread_t_m13 thread, void **value_ptr);
 si4		pthread_kill_m13(pthread_t_m13 thread, si4 signal);
 si4		pthread_mutex_destroy_m13(pthread_mutex_t_m13 *mutex_p);
