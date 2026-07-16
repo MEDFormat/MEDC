@@ -229,54 +229,6 @@ tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_nu
 //*********************   check_record_structure_alignments()   ***********************//
 //*************************************************************************************//
 
-tern	REC_check_structure_alignments_m13(ui1 *bytes)
-{
-	tern	return_value, free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	return_value = TRUE_m13;
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_LARGEST_RECORD_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	// check all structures - add new functions here
-	if ((REC_check_Sgmt_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_Stat_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_Note_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_EDFA_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_Seiz_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_SyLg_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_NlxP_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_Curs_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_Epoc_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_ESti_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_CSig_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_CSti_type_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	if (return_value == FALSE_m13)
-		G_set_error_m13(E_REC_m13, "one or more record structures are NOT aligned");
-
-	return_m13(return_value);
-}
 
 
 //*************************************************************************************//
@@ -381,77 +333,6 @@ tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_Sgmt_type_alignment_m13(ui1 *bytes)
-{
-	si1			*version_string;
-	REC_Sgmt_v10_m13	*Sgmt_v10;
-	REC_Sgmt_v11_m13	*Sgmt_v11;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_Sgmt_v10_BYTES_m13);  // REC_Sgmt_v10_BYTES_m13 larger than REC_Sgmt_v11_BYTES_m13
-		free_flag = TRUE_m13;
-	}
-	
-	// Version 1.0
-	Sgmt_v10 = (REC_Sgmt_v10_m13 *) bytes;
-	version_string = "version 1.0";
-	if (sizeof(REC_Sgmt_v10_m13) != REC_Sgmt_v10_BYTES_m13)
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->end_time != (si8 *) (bytes + REC_Sgmt_v10_END_TIME_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->start_idx != (si8 *) (bytes + REC_Sgmt_v10_START_IDX_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->end_idx != (si8 *) (bytes + REC_Sgmt_v10_END_IDX_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->seg_UID != (ui8 *) (bytes + REC_Sgmt_v10_SEG_UID_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->seg_num != (si4 *) (bytes + REC_Sgmt_v10_SEG_NUM_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->acq_chan_num != (si4 *) (bytes + REC_Sgmt_v10_ACQ_CHAN_NUM_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v10->rate != (sf8 *) (bytes + REC_Sgmt_v10_RATE_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-
-	// Version 1.1
-	Sgmt_v11 = (REC_Sgmt_v11_m13 *) bytes;
-	version_string = "version 1.1";
-	if (sizeof(REC_Sgmt_v11_m13) != REC_Sgmt_v11_BYTES_m13)
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->end_time != (si8 *) (bytes + REC_Sgmt_v11_END_TIME_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->start_idx != (si8 *) (bytes + REC_Sgmt_v11_START_IDX_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->end_idx != (si8 *) (bytes + REC_Sgmt_v11_END_IDX_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->seg_num != (si4 *) (bytes + REC_Sgmt_v11_SEG_NUM_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-	if (&Sgmt_v11->rate != (sf4 *) (bytes + REC_Sgmt_v11_RATE_OFFSET_m13))
-		goto REC_Sgmt_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_Sgmt_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "Sgmt %s structure is NOT aligned", version_string);
-
-	return_m13(FALSE_m13);
-
-}
 
 
 //*************************************************************************************//
@@ -512,58 +393,6 @@ tern    REC_show_Stat_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_Stat_type_alignment_m13(ui1 *bytes)
-{
-	REC_Stat_v10_m13	*Stat;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_Stat_v10_m13) != REC_Stat_v10_BYTES_m13)
-		goto REC_Stat_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_Stat_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	Stat = (REC_Stat_v10_m13 *) bytes;
-	if (&Stat->minimum != (si4 *) (bytes + REC_Stat_v10_MINIMUM_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->maximum != (si4 *) (bytes + REC_Stat_v10_MAXIMUM_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->mean != (si4 *) (bytes + REC_Stat_v10_MEAN_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->median != (si4 *) (bytes + REC_Stat_v10_MEDIAN_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->mode != (si4 *) (bytes + REC_Stat_v10_MODE_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->variance != (sf4 *) (bytes + REC_Stat_v10_VARIANCE_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->skewness != (sf4 *) (bytes + REC_Stat_v10_SKEWNESS_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-	if (&Stat->kurtosis != (sf4 *) (bytes + REC_Stat_v10_KURTOSIS_OFFSET_m13))
-		goto REC_Stat_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_Stat_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "Stat structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-}
 
 
 //*************************************************************************************//
@@ -613,51 +442,6 @@ tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern        REC_check_Note_type_alignment_m13(ui1 *bytes)
-{
-	REC_Note_v11_m13	*note;
-	const si1		*vers_str;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// Version 1.0
-	// no structure for REC_Note_v10_m13
-	
-	// Version 1.1
-	vers_str = "REC_Note_v11_m13";
-
-	// check overall size
-	if (sizeof(REC_Note_v11_m13) != REC_Note_v11_BYTES_m13)
-		goto REC_NOTE_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc((size_t) REC_Note_v11_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	note = (REC_Note_v11_m13 *) bytes;
-	if (&note->end_time != (si8 *) (bytes + REC_Note_v11_END_TIME_OFFSET_m13))
-		goto REC_NOTE_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_NOTE_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "Note %s structure is NOT aligned\n", vers_str);
-
-	return_m13(FALSE_m13);
-}
 
 
 //*************************************************************************************//
@@ -692,44 +476,6 @@ tern	REC_show_EDFA_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes)
-{
-	REC_EDFA_v10_m13	*edfa;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_EDFA_v10_m13) != REC_EDFA_v10_BYTES_m13)
-		goto REC_EDFA_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_EDFA_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	edfa = (REC_EDFA_v10_m13 *) bytes;
-	if (&edfa->duration != (si8 *) (bytes + REC_EDFA_v10_DURATION_OFFSET_m13))
-		goto REC_EDFA_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_EDFA_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "EDFA structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-}
 
 
 
@@ -822,71 +568,6 @@ tern	REC_show_Seiz_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes)
-{
-	REC_Seiz_v10_m13		*Seiz;
-	REC_Seiz_v10_CHANNEL_m13	*chan;
-	tern				free_flag = FALSE_m13;
-	ui1				*chan_bytes;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall sizes
-	if (sizeof(REC_Seiz_v10_m13) != REC_Seiz_v10_BYTES_m13)
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (sizeof(REC_Seiz_v10_CHANNEL_m13) != REC_Seiz_v10_CHANNEL_BYTES_m13)
-		goto REC_Seiz_NOT_ALIGNED_m13;
-
-	// check fields - base structure
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_Seiz_v10_BYTES_m13 + REC_Seiz_v10_CHANNEL_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	Seiz = (REC_Seiz_v10_m13 *) bytes;
-	if (&Seiz->latest_offset_time != (si8 *) (bytes + REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (&Seiz->number_of_channels != (si4 *) (bytes + REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (&Seiz->onset_code != (si4 *) (bytes + REC_Seiz_v10_ONSET_CODE_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (Seiz->marker_name_1 != (si1 *) (bytes + REC_Seiz_v10_MARKER_NAME_1_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (Seiz->marker_name_2 != (si1 *) (bytes + REC_Seiz_v10_MARKER_NAME_2_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (Seiz->annotation != (si1 *) (bytes + REC_Seiz_v10_ANNOTATION_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	// check fields - channel structures
-	chan_bytes = bytes + REC_Seiz_v10_CHANNELS_OFFSET_m13;
-	chan = (REC_Seiz_v10_CHANNEL_m13 *) chan_bytes;
-	if (chan->name != (si1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_NAME_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (&chan->onset_time != (si8 *) (chan_bytes + REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (&chan->offset_time != (si8 *) (chan_bytes + REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (&chan->segment_number != (si4 *) (chan_bytes + REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-	if (chan->pad != (ui1 *) (chan_bytes + REC_Seiz_v10_CHANNEL_PAD_OFFSET_m13))
-		goto REC_Seiz_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_Seiz_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "Seiz structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-}
 
 
 //*************************************************************************************//
@@ -918,15 +599,6 @@ tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes)
-{
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// no structures to check
-	return_m13(TRUE_m13);
-}
 
 
 
@@ -977,56 +649,6 @@ tern	REC_show_NlxP_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_NlxP_type_alignment_m13(ui1 *bytes)
-{
-	REC_NlxP_v10_m13	*nlxp;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_NlxP_v10_m13) != REC_NlxP_v10_BYTES_m13)
-		goto REC_NlxP_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_NlxP_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	nlxp = (REC_NlxP_v10_m13 *) bytes;
-	if (&nlxp->raw_port_value != (ui4 *) (bytes + REC_NlxP_v10_RAW_PORT_VALUE_OFFSET_m13))
-		goto REC_NlxP_NOT_ALIGNED_m13;
-	if (&nlxp->value != (ui4 *) (bytes + REC_NlxP_v10_VALUE_OFFSET_m13))
-		goto REC_NlxP_NOT_ALIGNED_m13;
-	if (&nlxp->subport != (ui1 *) (bytes + REC_NlxP_v10_SUBPORT_OFFSET_m13))
-		goto REC_NlxP_NOT_ALIGNED_m13;
-	if (&nlxp->number_of_subports != (ui1 *) (bytes + REC_NlxP_v10_NUMBER_OF_SUBPORTS_OFFSET_m13))
-		goto REC_NlxP_NOT_ALIGNED_m13;
-	if (&nlxp->trigger_mode != (ui1 *) (bytes + REC_NlxP_v10_TRIGGER_MODE_OFFSET_m13))
-		goto REC_NlxP_NOT_ALIGNED_m13;
-	if (nlxp->pad != (ui1 *) (bytes + REC_NlxP_v10_PAD_OFFSET_m13))
-		goto REC_NlxP_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_NlxP_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "NlxP structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-
-}
 
 
 //*************************************************************************************//
@@ -1058,51 +680,6 @@ tern    REC_show_Curs_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_Curs_type_alignment_m13(ui1 *bytes)
-{
-	REC_Curs_v10_m13	*curs;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_Curs_v10_m13) != REC_Curs_v10_BYTES_m13)
-		goto REC_Curs_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1*) malloc(REC_Curs_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	curs = (REC_Curs_v10_m13 *) bytes;
-	if (&curs->id_number != (si8 *) (bytes + REC_Curs_v10_ID_NUMBER_OFFSET_m13))
-		goto REC_Curs_NOT_ALIGNED_m13;
-	if (&curs->latency != (si8 *) (bytes + REC_Curs_v10_LATENCY_OFFSET_m13))
-		goto REC_Curs_NOT_ALIGNED_m13;
-	if (&curs->value != (sf8 *) (bytes + REC_Curs_v10_VALUE_OFFSET_m13))
-		goto REC_Curs_NOT_ALIGNED_m13;
-	if (curs->name != (si1 *) (bytes + REC_Curs_v10_NAME_OFFSET_m13))
-		goto REC_Curs_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_Curs_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "Curs structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-}
 
 
 //*************************************************************************************//
@@ -1168,70 +745,6 @@ tern    REC_show_Epoc_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_Epoc_type_alignment_m13(ui1 *bytes)
-{
-	si1			*version_string;
-	REC_Epoc_v10_m13	*epoc1;
-	REC_Epoc_v20_m13	*epoc2;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// Version 1.0
-	version_string = "version 1.0";
-	
-	// check overall size
-	if (sizeof(REC_Epoc_v10_m13) != REC_Epoc_v10_BYTES_m13)
-		goto REC_Epoc_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_Epoc_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	epoc1 = (REC_Epoc_v10_m13 *) bytes;
-	if (&epoc1->id_number != (si8 *) (bytes + REC_Epoc_v10_ID_NUMBER_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-	if (&epoc1->end_time != (si8 *) (bytes + REC_Epoc_v10_END_TIME_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-	if (epoc1->epoch_type != (si1 *) (bytes + REC_Epoc_v10_EPOCH_TYPE_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-	if (epoc1->text != (si1 *) (bytes + REC_Epoc_v10_TEXT_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-
-	// Version 2.0
-	version_string = "version 2.0";
-	
-	// check overall size
-	if (sizeof(REC_Epoc_v20_m13) != REC_Epoc_v20_BYTES_m13)
-		goto REC_Epoc_NOT_ALIGNED_m13;
-
-	epoc2 = (REC_Epoc_v20_m13 *) bytes;
-	if (&epoc2->end_time != (si8 *) (bytes + REC_Epoc_v20_END_TIME_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-	if (&epoc2->stage_code != (ui1 *) (bytes + REC_Epoc_v20_STAGE_CODE_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-	if (epoc2->scorer_id != (si1 *) (bytes + REC_Epoc_v20_SCORER_ID_OFFSET_m13))
-		goto REC_Epoc_NOT_ALIGNED_m13;
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_Epoc_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "Epoc %s structure is NOT aligned", version_string);
-
-	return_m13(FALSE_m13);
-}
 
 
 //*************************************************************************************//
@@ -1301,60 +814,6 @@ tern	REC_show_ESti_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_ESti_type_alignment_m13(ui1 *bytes)
-{
-	REC_ESti_v10_m13	*esti;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_ESti_v10_m13) != REC_ESti_v10_BYTES_m13)
-		goto REC_ESti_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_ESti_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	esti = (REC_ESti_v10_m13 *) bytes;
-	if (&esti->amplitude != (sf8 *) (bytes + REC_ESti_v10_AMPLITUDE_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (&esti->frequency != (sf8 *) (bytes + REC_ESti_v10_FREQUENCY_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (&esti->pulse_width != (si8 *) (bytes + REC_ESti_v10_PULSE_WIDTH_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (&esti->amp_unit_code != (si4 *) (bytes + REC_ESti_v10_AMP_UNIT_CODE_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (&esti->mode_code != (si4 *) (bytes + REC_ESti_v10_MODE_CODE_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (esti->waveform != (si1 *) (bytes + REC_ESti_v10_WAVEFORM_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (esti->anode != (si1 *) (bytes + REC_ESti_v10_ANODE_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-	if (esti->cathode != (si1 *) (bytes + REC_ESti_v10_CATHODE_OFFSET_m13))
-		goto REC_ESti_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_ESti_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "ESti structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-
-}
 
 
 //*************************************************************************************//
@@ -1385,9 +844,15 @@ tern	REC_show_CSig_type_m13(REC_HDR_m13 *record_header)
 			printf_m13("Digest Algorithm: unrecognized (%u)\n", csig->digest_algorithm);
 
 		digest = (ui1 *) csig + REC_CSig_v10_VARIABLE_REGION_OFFSET_m13;
-		if (csig->digest_bytes && csig->digest_bytes <= SHA_HASH_BYTES_m13) {
-			STR_hex_m13(hex_str, digest, (si8) csig->digest_bytes, "-", FALSE_m13);
-			printf_m13("Digest (%hu bytes): %s\n", csig->digest_bytes, hex_str);
+		if (csig->digest_algorithm == REC_CSig_DIGEST_SHA256_m13 && csig->digest_bytes == (ui2) REC_CSig_DIGEST_SHA256_BYTES_m13) {
+			STR_hex_m13(hex_str, digest + REC_CSig_DIGEST_SHA256_BODY_OFFSET_m13, (si8) DGST_BYTES_m13, "-", FALSE_m13);
+			printf_m13("Body Digest: %s\n", hex_str);
+			STR_hex_m13(hex_str, digest + REC_CSig_DIGEST_SHA256_FULL_OFFSET_m13, (si8) DGST_BYTES_m13, "-", FALSE_m13);
+			printf_m13("Full Digest: %s\n", hex_str);
+			printf_m13("Resume State: %s\n", (DGST_resume_valid_m13(digest + REC_CSig_DIGEST_SHA256_RESUME_OFFSET_m13,
+				digest + REC_CSig_DIGEST_SHA256_BODY_OFFSET_m13) == TRUE_m13) ? "present (consistent with body digest)" : "INCONSISTENT with body digest");
+		} else if (csig->digest_bytes) {
+			printf_m13("Digest: %hu bytes (unrecognized layout for algorithm %u)\n", csig->digest_bytes, csig->digest_algorithm);
 		} else {
 			printf_m13("Digest: no entry\n");
 		}
@@ -1438,75 +903,24 @@ tern	REC_show_CSig_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern	REC_check_CSig_type_alignment_m13(ui1 *bytes)
+
+
+si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const DGST_RESULT_m13 *dgst, ui1 *body)
 {
+	ui1			*digest_field;
 	REC_CSig_v10_m13	*csig;
-	tern			free_flag = FALSE_m13;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_CSig_v10_m13) != REC_CSig_v10_BYTES_m13)
-		goto REC_CSig_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_CSig_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	csig = (REC_CSig_v10_m13 *) bytes;
-	if (&csig->target_file_UID != (ui8 *) (bytes + REC_CSig_v10_TARGET_FILE_UID_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (&csig->digest_algorithm != (ui4 *) (bytes + REC_CSig_v10_DIGEST_ALGORITHM_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (&csig->signature_algorithm != (ui4 *) (bytes + REC_CSig_v10_SIGNATURE_ALGORITHM_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (&csig->digest_bytes != (ui2 *) (bytes + REC_CSig_v10_DIGEST_BYTES_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (&csig->signature_bytes != (ui2 *) (bytes + REC_CSig_v10_SIGNATURE_BYTES_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (&csig->public_key_bytes != (ui2 *) (bytes + REC_CSig_v10_PUBLIC_KEY_BYTES_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (&csig->occasion != (ui1 *) (bytes + REC_CSig_v10_OCCASION_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-	if (csig->pad != (ui1 *) (bytes + REC_CSig_v10_PAD_OFFSET_m13))
-		goto REC_CSig_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_CSig_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "CSig structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-}
-
-
-si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const ui1 *digest, ui1 *body)
-{
-	ui1			local_digest[DGST_BYTES_m13];
-	REC_CSig_v10_m13	*csig;
+	DGST_RESULT_m13		local_dgst;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
 	// fills a v1.0 CSig record body (digest only)
-	// digest == NULL: the canonical MED digest is computed here by streamed read (DGST_file_m13())
-	// digest passed: caller already has it (e.g. streamed during writing - DGST_finalize_m13());
+	// dgst == NULL: the canonical digests are computed here by streamed read (DGST_file_m13())
+	// dgst passed: caller already has it (e.g. streamed during writing - DGST_finalize_m13());
 	//	target_file_path is not touched in that case (may even be gone: transfer/archive occasions)
-	// canonical digest order & coverage: see the DGST module (medlib_m13.h); external one-liner there too
-	// body must have room for at least REC_CSig_v10_BYTES_m13 + DGST_BYTES_m13 (56) bytes
+	// digest element layout (REC_CSig_DIGEST_SHA256_m13): body || full || resume (see DGST module, medlib_m13.h)
+	// body buffer must have room for at least REC_CSig_v10_BYTES_m13 + REC_CSig_DIGEST_SHA256_BYTES_m13 (196) bytes
 	// signature fields are set to none (reserved for a future Ed25519 fill-in behind REC_CSig_SIG_ED25519_m13)
 	// returns the body byte count before record padding, or FALSE_m13 on error
 
@@ -1514,10 +928,10 @@ si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui
 		G_set_error_m13(E_REC_m13, "CSig body buffer is null");
 		return_m13(FALSE_m13);
 	}
-	if (digest == NULL) {
-		if (DGST_file_m13(target_file_path, local_digest) != TRUE_m13)
+	if (dgst == NULL) {
+		if (DGST_file_m13(target_file_path, &local_dgst) != TRUE_m13)
 			return_m13(FALSE_m13);  // error set by DGST_file_m13()
-		digest = local_digest;
+		dgst = &local_dgst;
 	}
 
 	// fill record body
@@ -1526,13 +940,116 @@ si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui
 	csig->target_file_UID = target_file_UID;
 	csig->digest_algorithm = REC_CSig_DIGEST_SHA256_m13;
 	csig->signature_algorithm = REC_CSig_SIG_NONE_m13;
-	csig->digest_bytes = (ui2) DGST_BYTES_m13;
+	csig->digest_bytes = (ui2) REC_CSig_DIGEST_SHA256_BYTES_m13;
 	csig->signature_bytes = 0;
 	csig->public_key_bytes = 0;
 	csig->occasion = occasion;
-	memcpy(body + REC_CSig_v10_VARIABLE_REGION_OFFSET_m13, digest, (size_t) DGST_BYTES_m13);
+	digest_field = body + REC_CSig_v10_VARIABLE_REGION_OFFSET_m13;
+	memcpy(digest_field + REC_CSig_DIGEST_SHA256_BODY_OFFSET_m13, dgst->body, (size_t) DGST_BYTES_m13);
+	memcpy(digest_field + REC_CSig_DIGEST_SHA256_FULL_OFFSET_m13, dgst->full, (size_t) DGST_BYTES_m13);
+	memcpy(digest_field + REC_CSig_DIGEST_SHA256_RESUME_OFFSET_m13, dgst->resume, (size_t) DGST_RESUME_BYTES_m13);
 
-	return_m13((si8) REC_CSig_v10_BYTES_m13 + DGST_BYTES_m13);
+	return_m13((si8) REC_CSig_v10_BYTES_m13 + REC_CSig_DIGEST_SHA256_BYTES_m13);
+}
+
+
+tern	REC_write_CSig_m13(const si1 *level_path, si8 record_time, const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const DGST_RESULT_m13 *dgst)
+{
+	ui1		rec[REC_HDR_BYTES_m13 + REC_CSig_v10_BYTES_m13 + REC_CSig_DIGEST_SHA256_BYTES_m13 + REC_BODY_ALIGNMENT_BYTES_m13];
+	si1		level_name[SEG_NAME_BYTES_m13], rd_path[PATH_BYTES_m13], ri_path[PATH_BYTES_m13];
+	si8		body_bytes, rd_offset;
+	REC_HDR_m13	*rh;
+	REC_IDX_m13	ri;
+	FPS_m13		*fps;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// appends one CSig record to the passed level's records data file & one entry to its index
+	// CONVENTION: pass the target's CHANNEL directory (.ticd / .vicd) - a file's attestations
+	// live in its channel's records file, so channel-subset sessions (a MED design axiom: a
+	// copied channel subset is a valid session WITHOUT modification) carry their attestations
+	// with them; with records & parity files outside attestation coverage, every attestable
+	// file (data, video data, indices, metadata) lives under a channel
+	// records & parity files are NOT valid CSig targets (records: self-reference & legitimately
+	// mutable - annotation; parity: derived & rebuildable - attesting it is circular)
+	// record_time is oUTC (caller's time base: pass session-offset time, not raw wall clock)
+	// CSig records are never encrypted (encryption_level 0): verification must not require passwords
+	// dgst semantics as in REC_build_CSig_body_m13() (NULL => streamed re-read of target_file_path)
+	// NOTE: uses the caller's processed password context - for encrypted sessions, open the session
+	// (or any of its files) with the password first, as repair/rekey/conversion/acquisition all do;
+	// appending itself decrypts nothing, but the FPS machinery requires processed password data
+
+	// build the record
+	memset(rec, 0, sizeof(rec));
+	rh = (REC_HDR_m13 *) rec;
+	body_bytes = REC_build_CSig_body_m13(target_file_path, target_file_UID, occasion, dgst, rec + REC_HDR_BYTES_m13);
+	if (body_bytes == FALSE_m13)
+		return_m13(FALSE_m13);
+	rh->total_record_bytes = (ui4) (G_pad_m13(rec + REC_HDR_BYTES_m13, body_bytes, REC_BODY_ALIGNMENT_BYTES_m13) + REC_HDR_BYTES_m13);
+	rh->start_time = record_time;
+	rh->type_code = REC_CSig_TYPE_CODE_m13;
+	rh->version_major = 1;
+	rh->version_minor = 0;
+	rh->encryption_level = NO_ENCRYPTION_m13;
+
+	// level records paths
+	G_path_parts_m13(level_path, NULL, level_name, NULL);
+	snprintf_m13(rd_path, PATH_BYTES_m13, "%s/%s.%s", level_path, level_name, REC_DATA_TYPE_STR_m13);
+	snprintf_m13(ri_path, PATH_BYTES_m13, "%s/%s.%s", level_path, level_name, REC_INDS_TYPE_STR_m13);
+
+	// append record to records data
+	fps = FPS_read_m13(NULL, FPS_UH_ONLY_m13, 0, 0, rd_path, FPS_RP_OPEN_STR_m13, NULL, NULL, LH_NO_FLAGS_m13);
+	if (fps == NULL) {
+		G_set_error_m13(E_REC_m13, "CSig could not open records data \"%s\"", rd_path);
+		return_m13(FALSE_m13);
+	}
+	rd_offset = fps->params.fp->len;  // index entry points at the appended record
+	if (FPS_realloc_m13(fps, (si8) rh->total_record_bytes) == FALSE_m13) {
+		FPS_free_m13(&fps);
+		return_m13(FALSE_m13);
+	}
+	memcpy(fps->data_ptrs, rec, (size_t) rh->total_record_bytes);
+	if (FPS_write_m13(fps, FPS_APPEND_m13, (si8) rh->total_record_bytes, 1) == FALSE_m13) {
+		FPS_free_m13(&fps);
+		return_m13(FALSE_m13);
+	}
+	if (FPS_write_m13(fps, 0, FPS_UH_ONLY_m13, 0) == FALSE_m13) {  // settle the universal header
+		FPS_free_m13(&fps);
+		return_m13(FALSE_m13);
+	}
+	FPS_free_m13(&fps);
+
+	// append entry to records indices
+	memset(&ri, 0, sizeof(REC_IDX_m13));
+	ri.file_offset = rd_offset;
+	ri.start_time = record_time;
+	ri.type_code = REC_CSig_TYPE_CODE_m13;
+	ri.version_major = 1;
+	ri.version_minor = 0;
+	ri.encryption_level = NO_ENCRYPTION_m13;
+	fps = FPS_read_m13(NULL, FPS_UH_ONLY_m13, 0, 0, ri_path, FPS_RP_OPEN_STR_m13, NULL, NULL, LH_NO_FLAGS_m13);
+	if (fps == NULL) {
+		G_set_error_m13(E_REC_m13, "CSig could not open records indices \"%s\"", ri_path);
+		return_m13(FALSE_m13);
+	}
+	if (FPS_realloc_m13(fps, (si8) INDEX_BYTES_m13) == FALSE_m13) {
+		FPS_free_m13(&fps);
+		return_m13(FALSE_m13);
+	}
+	memcpy(fps->data_ptrs, &ri, (size_t) INDEX_BYTES_m13);
+	if (FPS_write_m13(fps, FPS_APPEND_m13, (si8) INDEX_BYTES_m13, 1) == FALSE_m13) {
+		FPS_free_m13(&fps);
+		return_m13(FALSE_m13);
+	}
+	if (FPS_write_m13(fps, 0, FPS_UH_ONLY_m13, 0) == FALSE_m13) {
+		FPS_free_m13(&fps);
+		return_m13(FALSE_m13);
+	}
+	FPS_free_m13(&fps);
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -1565,52 +1082,6 @@ tern    REC_show_CSti_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern     REC_check_CSti_type_alignment_m13(ui1 *bytes)
-{
-	tern			free_flag = FALSE_m13;
-	REC_CSti_v10_m13	*csti;
-
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_CSti_v10_m13) != REC_CSti_v10_BYTES_m13)
-		goto REC_CSti_NOT_ALIGNED_m13;
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_CSti_v10_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	csti = (REC_CSti_v10_m13 *) bytes;
-	if (&csti->stimulus_duration != (si8 *) (bytes + REC_CSti_v10_STIMULUS_DURATION_OFFSET_m13))
-		goto REC_CSti_NOT_ALIGNED_m13;
-	if (csti->task_type != (si1 *) (bytes + REC_CSti_v10_TASK_TYPE_OFFSET_m13))
-		goto REC_CSti_NOT_ALIGNED_m13;
-	if (csti->stimulus_type != (si1 *) (bytes + REC_CSti_v10_STIMULUS_TYPE_OFFSET_m13))
-		goto REC_CSti_NOT_ALIGNED_m13;
-	if (csti->patient_response != (si1 *) (bytes + REC_CSti_v10_PATIENT_RESPONSE_OFFSET_m13))
-		goto REC_CSti_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return_m13(TRUE_m13);
-
-	// not aligned
-REC_CSti_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "CSti structure is NOT aligned");
-
-	return_m13(FALSE_m13);
-
-}
 
 
 //*************************************************************************************//
@@ -1672,105 +1143,6 @@ void    REC_show_HFOc_type_m13(REC_HDR_m13 *record_header)
 }
 
 
-tern	REC_check_HFOc_type_alignment_m13(ui1 *bytes)
-{
-	tern			free_flag = FALSE_m13;
-	ui1			version;
-	REC_HFOc_v11_m13	*hfoc_1;
-	REC_HFOc_v12_m13	*hfoc_2;
-	REC_HFOc_v13_m13	*hfoc_3;
-
-#ifdef FT_DEBUG_m13
-	G_message_m13("%s()\n", __FUNCTION__);
-#endif
-	
-	// check overall size
-	if (sizeof(REC_HFOc_v11_m13) != REC_HFOc_v11_BYTES_m13) {
-		version = 1;
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	}
-	if (sizeof(REC_HFOc_v12_m13) != REC_HFOc_v12_BYTES_m13) {
-		version = 2;
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	}
-	if (sizeof(REC_HFOc_v13_m13) != REC_HFOc_v13_BYTES_m13) {
-		version = 3;
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	}
-
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_HFOc_v13_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-
-	// version 1.1
-	version = 1;
-	hfoc_1 = (REC_HFOc_v11_m13 *) bytes;
-	if (&hfoc_1->end_time != (si8 *) (bytes + REC_HFOc_v11_END_TIME_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_1->start_frequency != (sf4 *) (bytes + REC_HFOc_v11_START_FREQUENCY_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_1->end_frequency != (sf4 *) (bytes + REC_HFOc_v11_END_FREQUENCY_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-
-	// version 1.2
-	version = 2;
-	hfoc_2 = (REC_HFOc_v12_m13 *) bytes;
-	if (&hfoc_2->end_time != (si8 *) (bytes + REC_HFOc_v12_END_TIME_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_2->start_frequency != (sf4 *) (bytes + REC_HFOc_v12_START_FREQUENCY_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_2->end_frequency != (sf4 *) (bytes + REC_HFOc_v12_END_FREQUENCY_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_2->start_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v12_START_TIMES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_2->end_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v12_END_TIMES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_2->combinations != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v12_COMBINATIONS_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-
-	// version 1.3
-	version = 3;
-	hfoc_3 = (REC_HFOc_v13_m13 *) bytes;
-	if (&hfoc_3->end_time != (si8 *) (bytes + REC_HFOc_v13_END_TIME_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->start_frequency != (sf4 *) (bytes + REC_HFOc_v13_START_FREQUENCY_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->end_frequency != (sf4 *) (bytes + REC_HFOc_v13_END_FREQUENCY_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->start_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_START_TIMES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->end_times != (si8 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_END_TIMES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->combinations != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_COMBINATIONS_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->amplitudes != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_AMPLITUDES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->frequency_dominances != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_FREQUENCY_DOMINANCES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->products != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_PRODUCTS_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-	if (&hfoc_3->cycles != (sf4 (*)[REC_HFOc_NUMBER_OF_BANDS_m13]) (bytes + REC_HFOc_v13_CYCLES_OFFSET_m13))
-		goto REC_HFOc_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	return(TRUE_m13);
-
-	// not aligned
-REC_HFOc_NOT_ALIGNED_m13:
-
-	if (free_flag == TRUE_m13)
-		free((void *) bytes);
-
-	G_set_error_m13(E_REC_m13, "REC_HFOc_v1%hhu_m13 structure is NOT aligned", version);
-
-	return(FALSE_m13);
-
-}
 
 
 //*************************************************************************************//

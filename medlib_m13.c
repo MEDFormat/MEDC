@@ -6564,6 +6564,8 @@ tern	G_init_globals_m13(tern init_all_tables, const si1 *app_path, ... )  // var
 	misc->update_header_names = GLOBALS_UPDATE_HEADER_NAMES_DEFAULT_m13;
 	misc->update_MED_version = GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13;
 	misc->update_parity = GLOBALS_UPDATE_PARITY_DEFAULT_m13;
+	misc->write_CSigs = GLOBALS_WRITE_CSIGS_DEFAULT_m13;
+	misc->CSig_reread_max_bytes = GLOBALS_CSIG_REREAD_MAX_GB_DEFAULT_m13 << 30;
 	misc->increase_priority = GLOBALS_INCREASE_PRIORITY_DEFAULT_m13;
 		
 	misc->suspend_stacks = FALSE_m13;
@@ -6717,6 +6719,7 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 			vmd2->frame_rate = VID_METADATA_FRAME_RATE_NO_ENTRY_m13;
 			vmd2->horizontal_pixels = VID_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m13;
 			vmd2->vertical_pixels = VID_METADATA_VERTICAL_PIXELS_NO_ENTRY_m13;
+			vmd2->display_transform = VID_METADATA_DISPLAY_TRANSFORM_NO_ENTRY_m13;
 			if (init_for_update == TRUE_m13) {
 				vmd2->number_of_frames = 0;
 				vmd2->number_of_clips = 0;
@@ -6984,13 +6987,17 @@ tern	G_is_video_data_m13(const si1 *path)
 	const si1	*video_exts[19] = { "mp4", "m4p", "m4v", "mov", "avi", "wmv", "mkv", "flv", "webm", "mpg", "mpeg", "m2v", "m2ts", "3gp", "3g2", "avchd", "ogv", "ogg", "f4v" };
 	const si4	n_video_exts = 19;
 	si4		i, len;
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
-	
-	// returns TRUE_m13 if path is a known video format by string criteria (existence & contects of file are not checked)
+
+	// returns TRUE_m13 if path is a MED video data file by string criteria (existence & contents of file are not checked)
 	// returns FALSE_m13 if not
+	// video data files keep NATIVE container extensions (players recognize & play them; UH at file
+	// END, content at offset 0) plus the MED video naming convention (-sNNNN-nNNNN)
+	// NOTE: ".vdat" is NOT video data - as an extension it names video data PARITY files
+	// (see VID_DATA_TYPE_STR_m13 note; parity files also fail the naming convention here)
 	
 	if (STR_is_empty_m13(path) == TRUE_m13)
 		return_m13(FALSE_m13);
@@ -7462,9 +7469,8 @@ ui4	G_MED_type_code_from_string_m13(const si1 *string)
 		case REC_INDS_TYPE_CODE_m13:
 		case VID_CHAN_TYPE_CODE_m13:
 		case VID_METADATA_TYPE_CODE_m13:
-		case VID_DATA_TYPE_CODE_m13:
+		case VID_DATA_TYPE_CODE_m13:  // as an extension, ".vdat" == video data PARITY (actual video data keeps native extensions; see header note)
 		case VID_INDS_TYPE_CODE_m13:
-		case VID_PARITY_TYPE_CODE_m13:
 		case TS_CHAN_TYPE_CODE_m13:
 		case TS_METADATA_TYPE_CODE_m13:
 		case TS_DATA_TYPE_CODE_m13:
@@ -7509,8 +7515,6 @@ const si1	*G_MED_type_string_from_code_m13(ui4 code)
 			return_m13(VID_DATA_TYPE_STR_m13);
 		case VID_INDS_TYPE_CODE_m13:
 			return_m13(VID_INDS_TYPE_STR_m13);
-		case VID_PARITY_TYPE_CODE_m13:
-			return_m13(VID_PARITY_TYPE_STR_m13);
 		case TS_CHAN_TYPE_CODE_m13:
 			return_m13(TS_CHAN_TYPE_STR_m13);
 		case TS_METADATA_TYPE_CODE_m13:
@@ -7751,6 +7755,9 @@ tern	G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_
 		}
 		if (memcmp(vmd2_1->video_format, vmd2_2->video_format, VID_METADATA_VIDEO_FORMAT_BYTES_m13)) {
 			memset(vmd2_1->video_format, 0, VID_METADATA_VIDEO_FORMAT_BYTES_m13); equal = FALSE_m13;
+		}
+		if (vmd2_1->display_transform != vmd2_2->display_transform) {
+			vmd2_m->display_transform = VID_METADATA_DISPLAY_TRANSFORM_NO_ENTRY_m13; equal = FALSE_m13;
 		}
 		if (memcmp(vmd2_1->protected_region, vmd2_2->protected_region, VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13)) {
 			memset(vmd2_m->protected_region, 0, VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13); equal = FALSE_m13;
@@ -10936,11 +10943,14 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	si1		str_val[PATH_BYTES_m13], message[(PATH_BYTES_m13 << 1) + RC_STRING_BYTES_m13], *buffer;
 	si4             option_number;
 	si8		file_len, nr;
+	si1		*buffer_base;
 	FILE_m13	*fp;
 	
 	// override medlib global defaults with user settings in ".medlibrc"
 	// not all globals, only globals users should have ability to choose
 	// library defaults used on failure
+	// fields are read SEQUENTIALLY (update_buffer_ptr == TRUE_m13): read order below MUST match the
+	// field order G_write_medlibrc_m13() emits - users must not reorder fields (documented in the file header)
 	// assumes caller has globals_m13->mutex
 	
 	// setup
@@ -10948,7 +10958,7 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	*app_path = *dflt_path = 0;
 	path = NULL;
 	failed = TRUE_m13;
-	buffer = NULL;
+	buffer = buffer_base = NULL;
 	fp = NULL;
 	
 	// get file
@@ -11006,7 +11016,7 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 
 	// read in rc file
 	file_len = flen_m13(fp);
-	buffer = malloc((size_t) (file_len + 1));  // include room for terminal zero
+	buffer = buffer_base = malloc((size_t) (file_len + 1));  // include room for terminal zero (buffer advances with each sequential read: free buffer_base)
 	if (buffer == NULL) {
 		G_set_error_m13(E_ALLOC_m13, NULL);
 		goto READ_MEDLIBRC_FAIL;
@@ -11016,11 +11026,11 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 		sprintf_m13(message, "Could not read the file \"%s\".\nWriting default RC file to that location.", path);
 		goto READ_MEDLIBRC_FAIL;
 	}
-	buffer[file_len] = 0;
+	buffer_base[file_len] = 0;
 
 	// read fields
 	field_name = "MED Library Version";
-	if ((option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) str_val, RC_STRING_TYPE_m13)))  {
+	if ((option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) str_val, RC_STRING_TYPE_m13)))  {
 		if (strcmp_m13(str_val, "1.1.3")) {  // only supported version at this time
 			sprintf_m13(message, "Unsupported library version.\nWriting default RC file to \"%s\".", path);
 			goto READ_MEDLIBRC_FAIL;
@@ -11028,37 +11038,37 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	}
 	
 	field_name = "Update File System Names";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.update_file_system_names = tern_val;
 	
 	field_name = "Update Header Names";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.update_header_names = tern_val;
 
 	field_name = "Update MED Version";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.update_MED_version = tern_val;
 
 	field_name = "Update Parity";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.update_parity = tern_val;
 
-	field_name = "Write Sorted Records";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	field_name = "Sort Records";  // NOTE: was "Write Sorted Records", which G_write_medlibrc_m13() never emitted - generated files always used "Sort Records" (reader/writer mismatch fixed 2026-07-16)
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.write_sorted_records = tern_val;
 
 	field_name = "Write Corrected Headers";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.write_corrected_headers = tern_val;
 
 	field_name = "Chattiness";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) str_val, RC_STRING_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) str_val, RC_STRING_TYPE_m13);
 	if (option_number != RC_ERR_m13) {
 		globals_m13->default_behavior.code &= ~SUPPRESS_OUTPUT_m13;  // BLATHERING option
 		// DEMURE, TACITURN, APHASIC
@@ -11071,14 +11081,62 @@ void	G_read_medlibrc_m13(const si1 *application_path)
 	}
 
 	field_name = "Increase Priority";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.increase_priority = tern_val;
 
 	field_name = "Memory Mapping";
-	option_number = RC_read_field_2_m13(field_name, &buffer, FALSE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
 	if (option_number != RC_ERR_m13)
 		globals_m13->miscellaneous.memory_mapping = tern_val;
+
+	field_name = "Threading";
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	if (option_number != RC_ERR_m13)
+		globals_m13->miscellaneous.threading = tern_val;
+
+	field_name = "Access Times";
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	if (option_number != RC_ERR_m13)
+		globals_m13->miscellaneous.access_times = tern_val;
+
+	field_name = "CRC Mode";
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) str_val, RC_STRING_TYPE_m13);
+	if (option_number != RC_ERR_m13) {
+		if (strcmp(str_val, "NONE") == 0)
+			globals_m13->miscellaneous.CRC_mode = NO_FLAGS_m13;  // neither calculate nor validate
+		else if (strcmp(str_val, "CALCULATE") == 0)
+			globals_m13->miscellaneous.CRC_mode = CRC_CALCULATE_m13;
+		else if (strcmp(str_val, "VALIDATE") == 0)
+			globals_m13->miscellaneous.CRC_mode = CRC_VALIDATE_m13;
+		else if (strcmp(str_val, "BOTH") == 0)
+			globals_m13->miscellaneous.CRC_mode = (CRC_CALCULATE_m13 | CRC_VALIDATE_m13);
+	}
+
+	field_name = "File Locking";
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) str_val, RC_STRING_TYPE_m13);
+	if (option_number != RC_ERR_m13) {
+		if (strcmp(str_val, "NONE") == 0)
+			globals_m13->miscellaneous.file_lock_mode = FLOCK_MODE_NONE_m13;
+		else if (strcmp(str_val, "MED") == 0)
+			globals_m13->miscellaneous.file_lock_mode = FLOCK_MODE_MED_m13;
+		else if (strcmp(str_val, "ALL") == 0)
+			globals_m13->miscellaneous.file_lock_mode = FLOCK_MODE_ALL_m13;
+	}
+
+	field_name = "CSig Writing";
+	option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &tern_val, RC_TERNARY_TYPE_m13);
+	if (option_number != RC_ERR_m13)
+		globals_m13->miscellaneous.write_CSigs = tern_val;
+
+	field_name = "CSig Re-read Maximum";
+	{
+		si8	si8_val;
+
+		option_number = RC_read_field_2_m13(field_name, &buffer, TRUE_m13, (void *) &si8_val, RC_INTEGER_TYPE_m13);
+		if (option_number != RC_ERR_m13 && si8_val >= 0)
+			globals_m13->miscellaneous.CSig_reread_max_bytes = si8_val << 30;  // field is in GB
+	}
 
 	failed = FALSE_m13;
 	
@@ -11086,8 +11144,8 @@ READ_MEDLIBRC_FAIL:
 	
 	G_pop_behavior_m13();
 
-	if (buffer)
-		free(buffer);
+	if (buffer_base)
+		free(buffer_base);
 	if (fp)
 		fclose_m13(fp);
 	
@@ -14471,6 +14529,38 @@ tern	G_show_metadata_m13(FPS_m13 *fps, METADATA_m13 *md, ui4 type_code)
 				printf_m13("Video Format: %s\n", vmd2->video_format);
 			else
 				printf_m13("Video Format: no entry\n");
+			switch (vmd2->display_transform) {
+				case VID_METADATA_DISPLAY_TRANSFORM_NO_ENTRY_m13:
+					printf_m13("Display Transform: no entry (display as stored)\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_IDENTITY_m13:
+					printf_m13("Display Transform: identity\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_m13:
+					printf_m13("Display Transform: mirrored horizontal\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_ROT_180_m13:
+					printf_m13("Display Transform: rotated 180\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_MIRROR_V_m13:
+					printf_m13("Display Transform: mirrored vertical\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_ROT_270_m13:
+					printf_m13("Display Transform: mirrored horizontal, rotated 270 CW\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_ROT_90_m13:
+					printf_m13("Display Transform: rotated 90 CW\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_ROT_90_m13:
+					printf_m13("Display Transform: mirrored horizontal, rotated 90 CW\n");
+					break;
+				case VID_METADATA_DISPLAY_TRANSFORM_ROT_270_m13:
+					printf_m13("Display Transform: rotated 270 CW\n");
+					break;
+				default:
+					printf_m13("Display Transform: unrecognized (%hhu)\n", vmd2->display_transform);
+					break;
+			}
 		} else {
 			printf_m13("(unrecognized metadata section 2 type)\n");
 		}
@@ -17784,7 +17874,13 @@ void	G_write_medlibrc_m13(const si1 *path)
 		return;
 
 	// default rc file
-	buffer = "\nRC Format:\n----------\n\nAny line not beginning with \"%%\" is ignored.\n\nEntry \"TYPE\"s are one of the following: string, float, integer, ternary.\n\nThe string \"NO ENTRY\" can be entered as a DEFAULT or VALUE where appropriate.\n\n\"DEFAULT\" values are used when there is no text in the value label or the word \"DEFAULT\" is specified as the value.\n\n\"PROMPT\" will ask the user for input and present the OPTIONS and DEFAULT.\n\nVALUEs can be \"DEFAULT\", \"NO ENTRY\", any of the defined OPTION strings, or free text if the field permits.\n\n\"PROMPT\" and \"NO ENTRY\" can serve as values or defaults, but are not considered OPTIONs.\n\nIf the \"OPTIONS\" label is \"OPTIONS ONLY\", only the listed options are permitted as values (\"PROMPT\", & \"DEFAULT\" are permitted also).\nOtherwise the \"OPTIONS\" are just options, and custom values are permitted.\n\n\nMED Library RC Fields:\n----------------------\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Write Corrected Headers\n%% NOTES: If headers are incomplete, write out completed headers when encountered\n%% NOTES: This may happen when acquisition or conversion terminates abnormally\n%% NOTES: This is also the expected state when files are read during acquisition; files are not updated under those circumstances\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: If application requests, increase process priority\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Memory Mapping\n%% NOTES: Use memory mapped reads. Memory requirements may be impractical in many situations.\n%% NOTES: Full files are allocated when opened. Data is read & decrypted only on first access.\n%% NOTES: Reads are performed by device block, not bytes. Only unread blocks are read on read requests.\n%% NOTES: Sequential reads are not required; unread blocks are filled in on read request.\n%% NOTES: Significantly faster in situations that access the same data multiple times (e.g. in a viewer or certain analytic procedures).\n%% NOTES: \"NOT SET\" leaves this decision to the underlying code, which is often the best choice.\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO, NOT SET\n%% DEFAULT: NOT SET\n%% VALUE: DEFAULT\n\n";
+	buffer = "\nMED Library RC Fields  (general library behavior; application RC files supersede where present)\n------------------------------------------------------------------------------------------------\nAny line not beginning with \"%%\" is ignored. Edit the VALUE lines; \"DEFAULT\" uses the library default.\nDo NOT reorder or remove fields: they are read sequentially, in this order, at every initialization.\n\n%% FIELD: MED Library Version\n%% NOTES: The MED library version this file supports\n%% TYPE: string\n%% OPTIONS ONLY: 1.1.3\n%% DEFAULT: 1.1.3\n%% VALUE: DEFAULT\n\n%% FIELD: Update File System Names\n%% NOTES: If session or channel name changed in file system, propogate name change to dependent MED files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Header Names\n%% NOTES: If session or channel name changed, update session universal headers to reflect this\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update MED Version\n%% NOTES: If MED format version is not current, update files to current version\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Update Parity\n%% NOTES: If parity data exists, update it with other updates\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Sort Records\n%% NOTES: If records are not in chronological order, write them out in sorted order after sorting\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Write Corrected Headers\n%% NOTES: If headers are incomplete, write out completed headers when encountered\n%% NOTES: This may happen when acquisition or conversion terminates abnormally\n%% NOTES: This is also the expected state when files are read during acquisition; files are not updated under those circumstances\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Chattiness\n%% NOTES: Library's feedback level\n%% TYPE: string\n%% OPTIONS ONLY: BLATHERING, DEMURE, TACITURN, APHASIC\n%% DEFAULT: DEMURE\n%% VALUE: DEFAULT\n\n%% FIELD: Increase Priority\n%% NOTES: If application requests, increase process priority\n%% NOTES: May require sudo password entry\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n%% FIELD: Memory Mapping\n%% NOTES: Use memory mapped reads. Memory requirements may be impractical in many situations.\n%% NOTES: Full files are allocated when opened. Data is read & decrypted only on first access.\n%% NOTES: Reads are performed by device block, not bytes. Only unread blocks are read on read requests.\n%% NOTES: Sequential reads are not required; unread blocks are filled in on read request.\n%% NOTES: Significantly faster in situations that access the same data multiple times (e.g. in a viewer or certain analytic procedures).\n%% NOTES: \"NOT SET\" leaves this decision to the underlying code, which is often the best choice.\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO, NOT SET\n%% DEFAULT: NOT SET\n%% VALUE: DEFAULT\n\n"
+	"%% FIELD: Threading\n%% NOTES: Use multiple threads where the library supports it (per-channel reads, parity, repair)\n%% NOTES: \"NO\" is useful when the calling application manages its own parallelism\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n"
+	"%% FIELD: Access Times\n%% NOTES: Record the time of each structure & file access (small overhead on every operation)\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: NO\n%% VALUE: DEFAULT\n\n"
+	"%% FIELD: CRC Mode\n%% NOTES: CALCULATE computes CRCs on output; VALIDATE checks CRCs on input; BOTH does both; NONE does neither\n%% NOTES: VALIDATE adds read overhead; NONE is not recommended outside benchmarking\n%% TYPE: string\n%% OPTIONS ONLY: NONE, CALCULATE, VALIDATE, BOTH\n%% DEFAULT: CALCULATE\n%% VALUE: DEFAULT\n\n"
+	"%% FIELD: File Locking\n%% NOTES: MED locks MED files during access; ALL locks all files opened through the library; NONE locks nothing\n%% TYPE: string\n%% OPTIONS ONLY: NONE, MED, ALL\n%% DEFAULT: NONE\n%% VALUE: DEFAULT\n\n"
+	"%% FIELD: CSig Writing\n%% NOTES: Write cryptographic attestation (CSig) records at custody events\n%% NOTES: (file close, format conversion, transfer, archive, repair, re-encryption)\n%% NOTES: CSig records carry SHA-256 digests that provide tamper evidence for write-once files\n%% TYPE: ternary\n%% OPTIONS ONLY: YES, NO\n%% DEFAULT: YES\n%% VALUE: DEFAULT\n\n"
+	"%% FIELD: CSig Re-read Maximum\n%% NOTES: When a streamed digest is unusable (e.g. a file was legitimately rewritten mid-stream),\n%% NOTES: files at or below this size (in GB) are re-read to compute the digest; larger files skip attestation with a warning\n%% TYPE: integer\n%% OPTIONS: \n%% DEFAULT: 16\n%% VALUE: DEFAULT\n\n";
 
 	
 	len = strlen_m13(buffer);
@@ -18785,682 +18881,6 @@ void	AES_sub_bytes_m13(ui1 state[][4])
 		*ui1_p = sbox_table[*ui1_p];
 	
 	return;
-}
-
-
-
-//*******************************************//
-// MARK: ALIGNMENT CHECKING FUNCTIONS  (ALCK)
-//*******************************************//
-
-
-tern	ALCK_all_m13(void)
-{
-	tern  return_value;
-	ui1		*bytes;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	return_value = TRUE_m13;
-	bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m13);  // METADATA is largest file structure
-	
-	// check all structures
-	if ((ALCK_universal_header_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((ALCK_metadata_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((ALCK_time_series_indices_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((ALCK_video_indices_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((ALCK_record_indices_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((ALCK_record_header_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((REC_check_structure_alignments_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-	if ((CMP_check_block_header_alignment_m13(bytes)) == FALSE_m13)
-		return_value = FALSE_m13;
-
-	free(bytes);
-		
-	return_m13(return_value);
-}
-
-
-tern	ALCK_metadata_m13(ui1 *bytes)
-{
-	tern	return_value, free_flag = FALSE_m13;
-	METADATA_m13	*md;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	return_value = TRUE_m13;
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	
-	// check overall size
-	if (sizeof(METADATA_m13) != METADATA_BYTES_m13)
-		return_value = FALSE_m13;
-
-	// check substructure offsets
-	md = (METADATA_m13 *) bytes;
-	if (&md->section_1 != (METADATA_SECTION_1_m13 *) bytes)
-		return_value = FALSE_m13;
-	if (&md->time_series_section_2 != (TS_METADATA_SECTION_2_m13 *) (bytes + METADATA_SECTION_1_BYTES_m13))
-		return_value = FALSE_m13;
-	if (&md->video_section_2 != (VID_METADATA_SECTION_2_m13 *) (bytes + METADATA_SECTION_1_BYTES_m13))
-		return_value = FALSE_m13;
-	if (&md->section_3 != (METADATA_SECTION_3_m13 *) (bytes + METADATA_SECTION_1_BYTES_m13 + METADATA_SECTION_2_BYTES_m13))
-		return_value = FALSE_m13;
-
-	// check substructure contents
-	if (ALCK_metadata_section_1_m13(bytes) == FALSE_m13)
-		return_value = FALSE_m13;
-	if (ALCK_time_series_metadata_section_2_m13(bytes) == FALSE_m13)
-		return_value = FALSE_m13;
-	if (ALCK_video_metadata_section_2_m13(bytes) == FALSE_m13)
-		return_value = FALSE_m13;
-	if (ALCK_metadata_section_3_m13(bytes) == FALSE_m13)
-			return_value = FALSE_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(return_value);
-}
-
-
-tern	ALCK_metadata_section_1_m13(ui1 *bytes)
-{
-	METADATA_SECTION_1_m13		*md1;
-	tern				free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	// check overall size
-	if (sizeof(METADATA_SECTION_1_m13) != METADATA_SECTION_1_BYTES_m13)
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	md1 = (METADATA_SECTION_1_m13 *) (bytes + UH_BYTES_m13);
-	if (md1->level_1_password_hint != (si1 *) (bytes + METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (md1->level_2_password_hint != (si1 *) (bytes + METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (md1->anonymized_subject_ID != (si1 *) (bytes + METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (md1->protected_region != (ui1 *) (bytes + METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	if (md1->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m13))
-		goto METADATA_SECTION_1_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-METADATA_SECTION_1_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_metadata_section_3_m13(ui1 *bytes)
-{
-	METADATA_SECTION_3_m13		*md3;
-	tern				free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	// check overall size
-	if (sizeof(METADATA_SECTION_3_m13) != METADATA_SECTION_3_BYTES_m13)
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	md3 = (METADATA_SECTION_3_m13 *) (bytes + METADATA_SECTION_3_OFFSET_m13);
-	if (&md3->recording_time_offset != (si8 *) (bytes + METADATA_RECORDING_TIME_OFFSET_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (&md3->daylight_time_start_code != (DAYLIGHT_TIME_CHANGE_CODE_m13 *) (bytes + METADATA_DAYLIGHT_TIME_START_CODE_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (&md3->daylight_time_end_code != (DAYLIGHT_TIME_CHANGE_CODE_m13 *) (bytes + METADATA_DAYLIGHT_TIME_END_CODE_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->standard_timezone_acronym != (si1 *) (bytes + METADATA_STANDARD_TIMEZONE_ACRONYM_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->standard_timezone_string != (si1 *) (bytes + METADATA_STANDARD_TIMEZONE_STRING_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->daylight_timezone_acronym != (si1 *) (bytes + METADATA_DAYLIGHT_TIMEZONE_ACRONYM_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->daylight_timezone_string != (si1 *) (bytes + METADATA_DAYLIGHT_TIMEZONE_STRING_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->subject_name_1 != (si1 *) (bytes + METADATA_SUBJECT_NAME_1_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->subject_name_2 != (si1 *) (bytes + METADATA_SUBJECT_NAME_2_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->subject_name_3 != (si1 *) (bytes + METADATA_SUBJECT_NAME_3_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->subject_ID != (si1 *) (bytes + METADATA_SUBJECT_ID_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->recording_country != (si1 *) (bytes + METADATA_RECORDING_COUNTRY_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->recording_territory != (si1 *) (bytes + METADATA_RECORDING_TERRITORY_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->recording_locality != (si1 *) (bytes + METADATA_RECORDING_LOCALITY_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->recording_institution != (si1 *) (bytes + METADATA_RECORDING_INSTITUTION_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->geotag_format != (si1 *) (bytes + METADATA_GEOTAG_FORMAT_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->geotag_data != (si1 *) (bytes + METADATA_GEOTAG_DATA_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (&md3->standard_UTC_offset != (si4 *) (bytes + METADATA_STANDARD_UTC_OFFSET_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->protected_region != (ui1 *) (bytes + METADATA_SECTION_3_PROTECTED_REGION_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	if (md3->discretionary_region != (ui1 *) (bytes + METADATA_SECTION_3_DISCRETIONARY_REGION_OFFSET_m13))
-		goto METADATA_SECTION_3_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-METADATA_SECTION_3_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_record_header_m13(ui1 *bytes)
-{
-	REC_HDR_m13	*rh;
-	tern  		free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_HDR_m13) != REC_HDR_BYTES_m13)
-		goto REC_HDR_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_HDR_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	rh = (REC_HDR_m13 *) bytes;
-	if (&rh->record_CRC != (ui4 *) (bytes + REC_HDR_CRC_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->total_record_bytes != (ui4 *) (bytes + REC_HDR_TOTAL_RECORD_BYTES_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->start_time != (si8 *) (bytes + REC_HDR_START_TIME_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (rh->type_string != (si1 *) (bytes + REC_HDR_TYPE_STR_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->type_code != (ui4 *) (bytes + REC_HDR_TYPE_CODE_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->version_major != (ui1 *) (bytes + REC_HDR_VERSION_MAJOR_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->version_minor != (ui1 *) (bytes + REC_HDR_VERSION_MINOR_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	if (&rh->encryption_level != (si1 *) (bytes + REC_HDR_ENCRYPTION_LEVEL_OFFSET_m13))
-		goto REC_HDR_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-REC_HDR_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_record_indices_m13(ui1 *bytes)
-{
-	REC_IDX_m13	*ri;
-	tern		free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(REC_IDX_m13) != REC_IDX_BYTES_m13)
-		goto REC_INDS_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(REC_IDX_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	ri = (REC_IDX_m13 *) bytes;
-	if (&ri->file_offset != (si8 *) (bytes + REC_IDX_FILE_OFFSET_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	if (&ri->start_time != (si8 *) (bytes + REC_IDX_START_TIME_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	if (ri->type_string != (si1 *) (bytes + REC_IDX_TYPE_STR_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	if (&ri->type_code != (ui4 *) (bytes + REC_IDX_TYPE_CODE_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	if (&ri->version_major != (ui1 *) (bytes + REC_IDX_VERSION_MAJOR_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	if (&ri->version_minor != (ui1 *) (bytes + REC_IDX_VERSION_MINOR_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	if (&ri->encryption_level != (si1 *) (bytes + REC_IDX_ENCRYPTION_LEVEL_OFFSET_m13))
-		goto REC_INDS_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-REC_INDS_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_time_series_indices_m13(ui1 *bytes)
-{
-	TS_IDX_m13	*tsi;
-	tern		free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(TS_IDX_m13) != TS_IDX_BYTES_m13)
-		goto TS_INDS_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(TS_IDX_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	tsi = (TS_IDX_m13 *) bytes;
-	if (&tsi->file_offset != (si8 *) (bytes + TS_IDX_FILE_OFFSET_OFFSET_m13))
-		goto TS_INDS_NOT_ALIGNED_m13;
-	if (&tsi->start_time != (si8 *) (bytes + TS_IDX_START_TIME_OFFSET_m13))
-		goto TS_INDS_NOT_ALIGNED_m13;
-	if (&tsi->start_samp_num != (si8 *) (bytes + TS_IDX_START_SAMPLE_NUMBER_OFFSET_m13))
-		goto TS_INDS_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-TS_INDS_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_time_series_metadata_section_2_m13(ui1 *bytes)
-{
-	TS_METADATA_SECTION_2_m13	*md2;
-	tern				free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(TS_METADATA_SECTION_2_m13) != METADATA_SECTION_2_BYTES_m13)
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	md2 = (TS_METADATA_SECTION_2_m13 *) (bytes + METADATA_SECTION_2_OFFSET_m13);
-	// channel type independent fields
-	if (md2->session_description != (si1 *) (bytes + METADATA_SESSION_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->channel_description != (si1 *) (bytes + METADATA_CHANNEL_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->segment_description != (si1 *) (bytes + METADATA_SEGMENT_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->equipment_description != (si1 *) (bytes + METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	// channel type specific fields
-	if (md2->reference_description != (si1 *) (bytes + TS_METADATA_REFERENCE_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->sampling_frequency != (sf8 *) (bytes + TS_METADATA_SAMPLING_FREQUENCY_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->low_frequency_filter_setting != (sf8 *) (bytes + TS_METADATA_LOW_FREQUENCY_FILTER_SETTING_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->high_frequency_filter_setting != (sf8 *) (bytes + TS_METADATA_HIGH_FREQUENCY_FILTER_SETTING_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->notch_filter_frequency_setting != (sf8 *) (bytes + TS_METADATA_NOTCH_FILTER_FREQUENCY_SETTING_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->AC_line_frequency != (sf8 *) (bytes + TS_METADATA_AC_LINE_FREQUENCY_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->amplitude_units_conversion_factor != (sf8 *) (bytes + TS_METADATA_AMPLITUDE_UNITS_CONVERSION_FACTOR_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->amplitude_units_description != (si1 *) (bytes + TS_METADATA_AMPLITUDE_UNITS_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->time_base_units_conversion_factor != (sf8 *) (bytes + TS_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->time_base_units_description != (si1 *) (bytes + TS_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->session_start_sample_number != (si8 *) (bytes + TS_METADATA_SESSION_START_SAMPLE_NUMBER_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->number_of_samples != (si8 *) (bytes + TS_METADATA_NUMBER_OF_SAMPLES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->number_of_blocks != (si8 *) (bytes + TS_METADATA_NUMBER_OF_BLOCKS_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_block_bytes != (si8 *) (bytes + TS_METADATA_MAXIMUM_BLOCK_BYTES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_block_samples != (ui4 *) (bytes + TS_METADATA_MAXIMUM_BLOCK_SAMPLES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_block_keysample_bytes != (ui4 *) (bytes + TS_METADATA_MAXIMUM_BLOCK_KEYSAMPLE_BYTES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_block_duration != (sf8 *) (bytes + TS_METADATA_MAXIMUM_BLOCK_DURATION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->number_of_discontinuities != (si8 *) (bytes + TS_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_contiguous_blocks != (si8 *) (bytes + TS_METADATA_MAXIMUM_CONTIGUOUS_BLOCKS_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_contiguous_block_bytes != (si8 *) (bytes + TS_METADATA_MAXIMUM_CONTIGUOUS_BLOCK_BYTES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&md2->maximum_contiguous_samples != (si8 *) (bytes + TS_METADATA_MAXIMUM_CONTIGUOUS_SAMPLES_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->protected_region != (ui1 *) (bytes + TS_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (md2->discretionary_region != (ui1 *) (bytes + TS_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13))
-		goto TS_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-TS_METADATA_SECTION_2_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_universal_header_m13(ui1 *bytes)
-{
-	UH_m13		*uh;
-	tern		free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(UH_m13) != UH_BYTES_m13)
-		goto UH_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(UH_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	uh = (UH_m13 *) bytes;
-	if (&uh->header_CRC != (ui4 *) (bytes + UH_HEADER_CRC_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->body_CRC != (ui4 *) (bytes + UH_BODY_CRC_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->segment_end_time != (si8 *) (bytes + UH_FILE_END_TIME_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->n_entries != (si8 *) (bytes + UH_NUMBER_OF_ENTRIES_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->maximum_entry_size != (ui4 *) (bytes + UH_MAXIMUM_ENTRY_SIZE_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->segment_number != (si4 *) (bytes + UH_SEGMENT_NUMBER_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->type_string != (si1 *) (bytes + UH_TYPE_STR_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->type_code != (ui4 *) (bytes + UH_TYPE_CODE_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->MED_version_major != (ui1 *) (bytes + UH_MED_VERSION_MAJOR_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->MED_version_minor != (ui1 *) (bytes + UH_MED_VERSION_MINOR_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->byte_order_code != (ui1 *) (bytes + UH_BYTE_ORDER_CODE_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->session_start_time != (si8 *) (bytes + UH_SESSION_START_TIME_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->segment_start_time != (si8 *) (bytes + UH_FILE_START_TIME_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->session_name != (si1 *) (bytes + UH_SESSION_NAME_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->channel_name != (si1 *)  (bytes + UH_CHANNEL_NAME_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->channel_UID != (ui8 *) (bytes + UH_CHANNEL_UID_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->supplementary_protected_region != (ui1 *) (bytes + UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->segment_UID != (ui8 *) (bytes + UH_SEGMENT_UID_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->file_UID != (ui8 *) (bytes + UH_FILE_UID_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->provenance_UID != (ui8 *) (bytes + UH_PROVENANCE_UID_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->level_1_password_validation_field != (ui1 *) (bytes + UH_LEVEL_1_PASSWORD_VALIDATION_FIELD_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->level_2_password_validation_field != (ui1 *) (bytes + UH_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->level_3_password_validation_field != (ui1 *) (bytes + UH_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->video_data_file_number != (ui4 *) (bytes + UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->live != (tern *) (bytes + UH_LIVE_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->ordered != (tern *) (bytes + UH_ORDERED_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->expanded_passwords != (tern *) (bytes + UH_EXPANDED_PASSWORDS_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->reserved_919 != (ui1 *) (bytes + UH_RESERVED_919_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->encryption_1 != (si1 *) (bytes + UH_ENCRYPTION_1_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->encryption_2 != (si1 *) (bytes + UH_ENCRYPTION_2_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->encryption_3 != (si1 *) (bytes + UH_ENCRYPTION_3_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->encryption_4 != (si1 *) (bytes + UH_ENCRYPTION_4_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->crypto_schema != (ui1 *) (bytes + UH_CRYPTO_SCHEMA_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (&uh->kdf_exponent != (ui1 *) (bytes + UH_KDF_EXPONENT_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->protected_region != (ui1 *) (bytes + UH_PROTECTED_REGION_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	if (uh->discretionary_region != (ui1 *) (bytes + UH_DISCRETIONARY_REGION_OFFSET_m13))
-		goto UH_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-UH_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_video_indices_m13(ui1 *bytes)
-{
-	VID_IDX_m13	*vi;
-	tern		free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(VID_IDX_m13) != VID_IDX_BYTES_m13)
-		goto VID_INDS_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(VID_IDX_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	vi = (VID_IDX_m13 *) bytes;
-	if (&vi->file_offset != (si8 *) (bytes + VID_IDX_FILE_OFFSET_OFFSET_m13))
-		goto VID_INDS_NOT_ALIGNED_m13;
-	if (&vi->start_time != (si8 *) (bytes + VID_IDX_START_TIME_OFFSET_m13))
-		goto VID_INDS_NOT_ALIGNED_m13;
-	if (&vi->start_frame_num != (ui4 *) (bytes + VID_IDX_START_FRAME_OFFSET_m13))
-		goto VID_INDS_NOT_ALIGNED_m13;
-	if (&vi->vid_file_num != (ui4 *) (bytes + VID_IDX_VIDEO_FILE_NUMBER_OFFSET_m13))
-		goto VID_INDS_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-VID_INDS_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
-
-
-tern	ALCK_video_metadata_section_2_m13(ui1 *bytes)
-{
-	VID_METADATA_SECTION_2_m13	*vmd2;
-	tern				free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(VID_METADATA_SECTION_2_m13) != METADATA_SECTION_2_BYTES_m13)
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(METADATA_FILE_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	vmd2 = (VID_METADATA_SECTION_2_m13 *) (bytes + METADATA_SECTION_2_OFFSET_m13);
-	// channel type independent fields
-	if (vmd2->session_description != (si1 *) (bytes + METADATA_SESSION_DESCRIPTION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (vmd2->channel_description != (si1 *) (bytes + METADATA_CHANNEL_DESCRIPTION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (vmd2->equipment_description != (si1 *) (bytes + METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->acquisition_channel_number != (si4 *) (bytes + METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	// channel type specific fields
-	if (&vmd2->time_base_units_conversion_factor != (sf8 *) (bytes + VID_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (vmd2->time_base_units_description != (si1 *) (bytes + VID_METADATA_TIME_BASE_UNITS_DESCRIPTION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->session_start_frame_number != (si8 *) (bytes + VID_METADATA_SESSION_START_FRAME_NUMBER_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->number_of_frames != (si8 *) (bytes + VID_METADATA_NUMBER_OF_FRAMES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->frame_rate != (sf8 *) (bytes + VID_METADATA_FRAME_RATE_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->number_of_clips != (si8 *) (bytes + VID_METADATA_NUMBER_OF_CLIPS_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->maximum_clip_bytes != (si8 *) (bytes + VID_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->maximum_clip_frames != (ui4 *) (bytes + VID_METADATA_MAXIMUM_CLIP_FRAMES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->number_of_video_files != (si4 *) (bytes + VID_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->maximum_clip_duration != (sf8 *) (bytes + VID_METADATA_MAXIMUM_CLIP_DURATION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->number_of_discontinuities != (si8 *) (bytes + VID_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->maximum_contiguous_clips != (si8 *) (bytes + VID_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->maximum_contiguous_clip_bytes != (si8 *) (bytes + VID_METADATA_MAXIMUM_CONTIGUOUS_CLIP_BYTES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->maximum_contiguous_frames != (si8 *) (bytes + VID_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->horizontal_pixels != (ui4 *) (bytes + VID_METADATA_HORIZONTAL_PIXELS_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (&vmd2->vertical_pixels != (ui4 *) (bytes + VID_METADATA_VERTICAL_PIXELS_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (vmd2->video_format != (si1 *) (bytes + VID_METADATA_VIDEO_FORMAT_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (vmd2->protected_region != (ui1 *) (bytes + VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	if (vmd2->discretionary_region != (ui1 *) (bytes + VID_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13))
-		goto VID_METADATA_SECTION_2_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-VID_METADATA_SECTION_2_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
 }
 
 
@@ -20751,69 +20171,6 @@ tern	CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats, si4 *input_buffer, si
 }
 
 
-tern	CMP_check_block_header_alignment_m13(ui1 *bytes)
-{
-	CMP_FIXED_BH_m13	*cbh;
-	tern			free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-	
-	// check overall size
-	if (sizeof(CMP_FIXED_BH_m13) != CMP_BLOCK_FIXED_HDR_BYTES_m13)
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(CMP_BLOCK_FIXED_HDR_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	cbh = (CMP_FIXED_BH_m13 *)bytes;
-	if (&cbh->block_start_UID != (ui8 *) (bytes + CMP_BLOCK_START_UID_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->block_CRC != (ui4 *) (bytes + CMP_BLOCK_CRC_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->block_flags != (ui4 *) (bytes + CMP_BLOCK_BLOCK_FLAGS_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->start_time != (si8 *) (bytes + CMP_BLOCK_START_TIME_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->acquisition_channel_number != (si4 *) (bytes + CMP_BLOCK_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->total_block_bytes != (ui4 *) (bytes + CMP_BLOCK_TOTAL_BLOCK_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->number_of_samples != (ui4 *) (bytes + CMP_BLOCK_NUMBER_OF_SAMPLES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->number_of_records != (ui2 *) (bytes + CMP_BLOCK_NUMBER_OF_RECORDS_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->record_region_bytes != (ui2 *) (bytes + CMP_BLOCK_RECORD_REGION_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->parameter_flags != (ui4 *) (bytes + CMP_BLOCK_PARAMETER_FLAGS_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->parameter_region_bytes != (ui2 *) (bytes + CMP_BLOCK_PARAMETER_REGION_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->protected_region_bytes != (ui2 *) (bytes + CMP_BLOCK_PROTECTED_REGION_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->discretionary_region_bytes != (ui2 *) (bytes + CMP_BLOCK_DISCRETIONARY_REGION_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->model_region_bytes != (ui2 *) (bytes + CMP_BLOCK_MODEL_REGION_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	if (&cbh->total_header_bytes != (ui4 *) (bytes + CMP_BLOCK_TOTAL_HEADER_BYTES_OFFSET_m13))
-		goto CMP_BLOCK_HDR_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-CMP_BLOCK_HDR_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
 
 
 tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps)
@@ -20969,47 +20326,6 @@ tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps)
 }
 
 
-tern	CMP_check_record_header_alignment_m13(ui1 *bytes)
-{
-	CMP_REC_HDR_m13		*crh;
-	tern			free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(CMP_REC_HDR_m13) != CMP_REC_HDR_BYTES_m13)
-		goto CMP_REC_HEADER_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc(CMP_REC_HDR_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	crh = (CMP_REC_HDR_m13 *)bytes;
-	if (&crh->type_code != (ui4 *) (bytes + CMP_REC_HDR_TYPE_CODE_OFFSET_m13))
-		goto CMP_REC_HEADER_NOT_ALIGNED_m13;
-	if (&crh->version_major != (ui1 *) (bytes + CMP_REC_HDR_VERSION_MAJOR_OFFSET_m13))
-		goto CMP_REC_HEADER_NOT_ALIGNED_m13;
-	if (&crh->version_minor != (ui1 *) (bytes + CMP_REC_HDR_VERSION_MINOR_OFFSET_m13))
-		goto CMP_REC_HEADER_NOT_ALIGNED_m13;
-	if (&crh->total_bytes != (ui2 *) (bytes + CMP_REC_HDR_TOTAL_BYTES_OFFSET_m13))
-		goto CMP_REC_HEADER_NOT_ALIGNED_m13;
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-CMP_REC_HEADER_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
 
 
 #ifndef WINDOWS_m13  // inline causes linking problem in Windows
@@ -42221,8 +41537,7 @@ ui4	PRTY_flag_for_path_m13(const si1 *path)
 		case VID_METADATA_TYPE_CODE_m13:
 			flag = PRTY_VID_SEG_META_m13;
 			break;
-		case VID_DATA_TYPE_CODE_m13:
-		case VID_PARITY_TYPE_CODE_m13:  // video data parity file ("parity_<chan>_sNNNN.vpar")
+		case VID_DATA_TYPE_CODE_m13:  // video data files & their parity files ("parity_<chan>_sNNNN.vdat") share the type
 			flag = PRTY_VID_SEG_DAT_DATA_m13;
 			break;
 		case VID_INDS_TYPE_CODE_m13:
@@ -42826,14 +42141,14 @@ tern	PRTY_restore_m13(const si1 *MED_path)
 				}
 				break;
 			case VID_DATA_TYPE_CODE_m13:
-				// video data parity is channel & segment specific: "parity_<chan>_sNNNN.vpar" in the parity channel segment directory
+				// video data parity is channel & segment specific: "parity_<chan>_sNNNN.vdat" in the parity channel segment directory
 				// (members are this channel segment's video data files [_nNNNN tags]: roughly equal size => used as a group)
 				video_data = TRUE_m13;
 				len = strlen(base_name);  // base_name == "<chan>_sNNNN_nNNNN"
 				memcpy(num_str, base_name + (len - 10), FILE_NUMBERING_DIGITS_m13);  // segment number digits
 				num_str[FILE_NUMBERING_DIGITS_m13] = 0;
 				base_name[len - 12] = 0;  // truncate to channel name
-				sprintf_m13(parity_path, "%s/parity.%s/parity_s%s.%s/parity_%s_s%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, num_str, VID_SEG_TYPE_STR_m13, base_name, num_str, VID_PARITY_TYPE_STR_m13);
+				sprintf_m13(parity_path, "%s/parity.%s/parity_s%s.%s/parity_%s_s%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, num_str, VID_SEG_TYPE_STR_m13, base_name, num_str, VID_DATA_TYPE_STR_m13);
 				break;
 			case TS_METADATA_TYPE_CODE_m13:
 			case TS_DATA_TYPE_CODE_m13:
@@ -43072,7 +42387,7 @@ PRTY_PCRC_EXT_m13	*PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *ME
 			G_path_parts_m13(par_dir, tmp_path, NULL, seg_type_str);
 			G_path_parts_m13(tmp_path, NULL, NULL, chan_type_str);
 			if (vid_members == TRUE_m13) {
-				// spec naming "parity_<chan>_s####.vpar" identifies the channel; legacy naming ("parity_s####.<native ext>") cannot identify members
+				// spec naming "parity_<chan>_s####.vdat" identifies the channel; legacy naming ("parity_s####.<native ext>") cannot identify members
 				strcpy(vid_chan, par_name + 7);  // skip "parity_"
 				len = strlen(vid_chan);
 				if (len > 6 && vid_chan[len - 6] == '_' && vid_chan[len - 5] == 's')
@@ -44264,7 +43579,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 			// video segment data
 			// continuous video is typically split into a series of similar-sized files (tagged _nNNNN), kept in the video segment directory
 			// these are used as a group to create the video data parity for the segment, so parity is channel & segment specific:
-			// one "parity_<chan>_sNNNN.vpar" file per video channel, in the parity channel segment directory
+			// one "parity_<chan>_sNNNN.vdat" file per video channel, in the parity channel segment directory
 			if (flags & PRTY_VID_SEG_DAT_DATA_m13) {
 				for (j = 0; j < n_chans; ++j) {
 					vid_paths = G_file_list_m13(NULL, &n_vids, base_paths[j], "*_s????_n????", NULL, GFL_FULL_PATH_m13);
@@ -44283,7 +43598,7 @@ tern	PRTY_write_m13(const si1 *session_path, ui4 flags, si4 segment_number)
 							strcpy_m13(files[k].path, vid_paths[k]);
 						free_m13(vid_paths);
 						sprintf_m13(tmp_str, "parity_s%s", num_str);
-						sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/parity_%s_s%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, tmp_str, VID_SEG_TYPE_STR_m13, chan_names[j], num_str, VID_PARITY_TYPE_STR_m13);
+						sprintf_m13(parity_ps.path, "%s/parity.%s/%s.%s/parity_%s_s%s.%s", sess_path, VID_CHAN_TYPE_STR_m13, tmp_str, VID_SEG_TYPE_STR_m13, chan_names[j], num_str, VID_DATA_TYPE_STR_m13);
 						G_message_m13("Building segment %d video data parity for channel \"%s\" ...\n", i, chan_names[j]);
 						parity_ps.n_files = n_vids;
 						PRTY_build_m13(&parity_ps);
@@ -46006,7 +45321,71 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len)
 // MARK: CANONICAL FILE DIGESTS  (DGST)
 //*************************************//
 
-// canonical order & coverage documented at the DGST section of medlib_m13.h
+// canonical order, coverage, & the body/full/resume result documented at the DGST section of medlib_m13.h
+
+static void	DGST_serialize_state_m13(const SHA_CTX_m13 *ctx, ui1 *resume)
+{
+	// explicit little-endian layout (see DGST_RESUME_*_OFFSET_m13) - not a raw struct copy
+	// bytes past datalen in the partial block are zeroed => identical content yields identical records
+
+	memcpy(resume + DGST_RESUME_STATE_OFFSET_m13, ctx->state, 32);
+	memcpy(resume + DGST_RESUME_BITLEN_OFFSET_m13, &ctx->bitlen, 8);
+	memcpy(resume + DGST_RESUME_DATALEN_OFFSET_m13, &ctx->datalen, 4);
+	memset(resume + DGST_RESUME_DATA_OFFSET_m13, 0, 64);
+	memcpy(resume + DGST_RESUME_DATA_OFFSET_m13, ctx->data, (size_t) ctx->datalen);
+
+	return;
+}
+
+
+static void	DGST_deserialize_state_m13(SHA_CTX_m13 *ctx, const ui1 *resume)
+{
+	memset(ctx, 0, sizeof(SHA_CTX_m13));
+	memcpy(ctx->state, resume + DGST_RESUME_STATE_OFFSET_m13, 32);
+	memcpy(&ctx->bitlen, resume + DGST_RESUME_BITLEN_OFFSET_m13, 8);
+	memcpy(&ctx->datalen, resume + DGST_RESUME_DATALEN_OFFSET_m13, 4);
+	memcpy(ctx->data, resume + DGST_RESUME_DATA_OFFSET_m13, 64);
+
+	return;
+}
+
+
+static void	DGST_absorb_m13(DGST_STREAM_m13 *dg, const ui1 *ptr, si8 n_bytes)
+{
+	si8	excess, from_ptr;
+
+	// standard files: absorb directly (UH never passes through the stream)
+	// video files: the UH arrives as the LAST stream bytes & SHA cannot rewind => hold back the
+	// trailing UH_BYTES_m13 so the pre-UH (resume) state is capturable at finalize
+
+	if (dg->video != TRUE_m13) {
+		SHA_update_m13(&dg->ctx, ptr, n_bytes);
+		return;
+	}
+
+	if ((si8) dg->hold_bytes + n_bytes <= (si8) UH_BYTES_m13) {  // still filling the holdback
+		memcpy(dg->hold + dg->hold_bytes, ptr, (size_t) n_bytes);
+		dg->hold_bytes += (si4) n_bytes;
+		return;
+	}
+
+	excess = (si8) dg->hold_bytes + n_bytes - (si8) UH_BYTES_m13;  // bytes that leave the holdback
+	if (excess >= (si8) dg->hold_bytes) {  // all held bytes absorb, possibly some new ones too
+		SHA_update_m13(&dg->ctx, dg->hold, (si8) dg->hold_bytes);
+		from_ptr = excess - (si8) dg->hold_bytes;
+		if (from_ptr)
+			SHA_update_m13(&dg->ctx, ptr, from_ptr);
+		memcpy(dg->hold, ptr + from_ptr, (size_t) (n_bytes - from_ptr));  // == UH_BYTES_m13
+	} else {  // absorb the oldest held bytes, shift, append
+		SHA_update_m13(&dg->ctx, dg->hold, excess);
+		memmove(dg->hold, dg->hold + excess, (size_t) ((si8) dg->hold_bytes - excess));
+		memcpy(dg->hold + ((si8) dg->hold_bytes - excess), ptr, (size_t) n_bytes);
+	}
+	dg->hold_bytes = (si4) UH_BYTES_m13;
+
+	return;
+}
+
 
 tern	DGST_begin_m13(FILE_m13 *fp)
 {
@@ -46036,7 +45415,7 @@ tern	DGST_begin_m13(FILE_m13 *fp)
 	if (dg == NULL)
 		return_m13(FALSE_m13);
 	SHA_init_m13(&dg->ctx);
-	dg->video = (G_is_video_data_m13(fp->path) == TRUE_m13) ? TRUE_m13 : FALSE_m13;  // video data files keep native container extensions (.mp4 etc.)
+	dg->video = (G_is_video_data_m13(fp->path) == TRUE_m13) ? TRUE_m13 : FALSE_m13;  // native container extensions + MED naming convention
 	dg->dirty = FALSE_m13;
 
 	// the update hook needs write offsets: force length & position tracking
@@ -46078,7 +45457,7 @@ tern	DGST_begin_m13(FILE_m13 *fp)
 				G_set_error_m13(E_FREAD_m13, "digest catch-up read failed in \"%s\"", fp->path);
 				return_m13(FALSE_m13);
 			}
-			SHA_update_m13(&dg->ctx, buffer, nr);
+			DGST_absorb_m13(dg, buffer, nr);  // video: fills the trailing holdback too
 		}
 		free_m13(buffer);
 		fclose_m13(rd_fp);
@@ -46092,22 +45471,23 @@ tern	DGST_begin_m13(FILE_m13 *fp)
 }
 
 
-tern	DGST_file_m13(const si1 *path, ui1 *digest)
+tern	DGST_file_m13(const si1 *path, DGST_RESULT_m13 *result)
 {
 	ui1		*buffer;
 	si8		flen, nr, pcrc_offset, uh_offset, data_start, data_len, remaining;
 	FILE_m13	*fp;
-	SHA_CTX_m13	ctx;
+	SHA_CTX_m13	ctx, body_ctx;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// canonical digest of an existing file by streamed read (constant memory at any file size)
-	// digest must have room for DGST_BYTES_m13 (32) bytes
+	// canonical digests of an existing file by streamed read (constant memory at any file size)
+	// fills the DGST_RESULT_m13 triplet (body, full, resume - see header note)
+	// degenerate files (< one universal header): whole file in file order; body == full
 
-	if (digest == NULL) {
-		G_set_error_m13(E_GEN_m13, "digest buffer is null");
+	if (result == NULL) {
+		G_set_error_m13(E_GEN_m13, "digest result buffer is null");
 		return_m13(FALSE_m13);
 	}
 	if (G_exists_m13(path) != FILE_EXISTS_m13) {
@@ -46131,7 +45511,7 @@ tern	DGST_file_m13(const si1 *path, ui1 *digest)
 		uh_offset = -1;
 		data_start = 0;
 		data_len = flen;
-	} else if (G_is_video_data_m13(path) == TRUE_m13) {  // UH at file END (video stays playable; native container extensions)
+	} else if (G_is_video_data_m13(path) == TRUE_m13) {  // UH at file END (video stays playable: native container extensions)
 		uh_offset = pcrc_offset - (si8) UH_BYTES_m13;
 		data_start = 0;
 		data_len = uh_offset;
@@ -46139,7 +45519,7 @@ tern	DGST_file_m13(const si1 *path, ui1 *digest)
 		data_len = pcrc_offset - (si8) UH_BYTES_m13;
 	}
 
-	// stream the digest
+	// stream the body
 	SHA_init_tables_m13();  // self-guarding (SHA_init_m13() alone does not initialize the tables)
 	buffer = (ui1 *) malloc_m13((size_t) DGST_CHUNK_BYTES_m13);
 	SHA_init_m13(&ctx);
@@ -46154,7 +45534,14 @@ tern	DGST_file_m13(const si1 *path, ui1 *digest)
 		}
 		SHA_update_m13(&ctx, buffer, nr);
 	}
-	if (uh_offset >= 0) {  // universal header absorbed last
+
+	// pre-UH state => resume & body
+	DGST_serialize_state_m13(&ctx, result->resume);
+	body_ctx = ctx;
+	SHA_finalize_m13(&body_ctx, result->body);
+
+	// universal header absorbed last => full
+	if (uh_offset >= 0) {
 		fseek_m13(fp, uh_offset, SEEK_SET);
 		if (fread_m13(buffer, sizeof(ui1), (size_t) UH_BYTES_m13, fp) != (si8) UH_BYTES_m13) {
 			free_m13(buffer);
@@ -46163,8 +45550,10 @@ tern	DGST_file_m13(const si1 *path, ui1 *digest)
 			return_m13(FALSE_m13);
 		}
 		SHA_update_m13(&ctx, buffer, (si8) UH_BYTES_m13);
+		SHA_finalize_m13(&ctx, result->full);
+	} else {  // degenerate: no UH region
+		memcpy(result->full, result->body, DGST_BYTES_m13);
 	}
-	SHA_finalize_m13(&ctx, digest);
 	free_m13(buffer);
 	fclose_m13(fp);
 
@@ -46172,26 +45561,28 @@ tern	DGST_file_m13(const si1 *path, ui1 *digest)
 }
 
 
-tern	DGST_finalize_m13(FILE_m13 *fp, ui1 *digest)
+tern	DGST_finalize_m13(FILE_m13 *fp, DGST_RESULT_m13 *result)
 {
 	ui1		uh_bytes[UH_BYTES_m13];
 	tern		r_val;
 	si8		flen, pcrc_offset, expected;
 	DGST_STREAM_m13	*dg;
 	FILE_m13	*rd_fp;
+	SHA_CTX_m13	body_ctx;
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// absorbs the settled universal header (from disk) & emits the canonical digest (DGST_BYTES_m13 bytes)
+	// emits the DGST_RESULT_m13 triplet: the pre-UH state serializes to resume & (a copy) finalizes
+	// to body; the settled universal header (from disk, or the video holdback) then absorbs => full
 	// returns UNKNOWN_m13 if the stream is unusable (dirty, coverage mismatch, or degenerate file):
 	// the caller can fall back to DGST_file_m13() - a full re-read - or skip & warn (policy is the caller's:
 	// re-reads are trivial for small files & brutal for multi-terabyte sessions)
 	// stream state is freed & the digest flag cleared in ALL cases
 
-	if (fp == NULL || fp->dgst == NULL) {
-		G_set_error_m13(E_GEN_m13, "no digest stream attached");
+	if (fp == NULL || fp->dgst == NULL || result == NULL) {
+		G_set_error_m13(E_GEN_m13, "no digest stream attached (or no result buffer)");
 		return_m13(FALSE_m13);
 	}
 	dg = fp->dgst;
@@ -46205,18 +45596,26 @@ tern	DGST_finalize_m13(FILE_m13 *fp, ui1 *digest)
 
 	r_val = UNKNOWN_m13;
 	if (dg->dirty != TRUE_m13 && flen >= (si8) UH_BYTES_m13) {
-		// video: UH is at the end of the covered span & was absorbed in stream order; standard: UH absorbed here
-		expected = (dg->video == TRUE_m13) ? pcrc_offset : pcrc_offset - (si8) UH_BYTES_m13;
-		if (dg->high_water == expected) {
-			if (dg->video == TRUE_m13) {
-				SHA_finalize_m13(&dg->ctx, digest);
-				r_val = TRUE_m13;
+		expected = pcrc_offset - (si8) UH_BYTES_m13;  // both layouts: received video bytes exclude the held-back UH from the ctx
+		if (dg->high_water == ((dg->video == TRUE_m13) ? pcrc_offset : expected)) {
+			if (dg->video == TRUE_m13) {  // the held-back trailing UH_BYTES_m13 are the UH
+				if (dg->hold_bytes == (si4) UH_BYTES_m13) {
+					DGST_serialize_state_m13(&dg->ctx, result->resume);
+					body_ctx = dg->ctx;
+					SHA_finalize_m13(&body_ctx, result->body);
+					SHA_update_m13(&dg->ctx, dg->hold, (si8) UH_BYTES_m13);
+					SHA_finalize_m13(&dg->ctx, result->full);
+					r_val = TRUE_m13;
+				}
 			} else {  // fresh read handle: fp may be open write-only & its position must not move
 				rd_fp = fopen_m13(fp->path, "r");
 				if (rd_fp != NULL) {
 					if (fread_m13(uh_bytes, sizeof(ui1), (size_t) UH_BYTES_m13, rd_fp) == (si8) UH_BYTES_m13) {
+						DGST_serialize_state_m13(&dg->ctx, result->resume);
+						body_ctx = dg->ctx;
+						SHA_finalize_m13(&body_ctx, result->body);
 						SHA_update_m13(&dg->ctx, uh_bytes, (si8) UH_BYTES_m13);
-						SHA_finalize_m13(&dg->ctx, digest);
+						SHA_finalize_m13(&dg->ctx, result->full);
 						r_val = TRUE_m13;
 					}
 					fclose_m13(rd_fp);
@@ -46230,6 +45629,55 @@ tern	DGST_finalize_m13(FILE_m13 *fp, ui1 *digest)
 	DGST_free_m13(fp);
 
 	return_m13(r_val);
+}
+
+
+tern	DGST_full_from_resume_m13(const ui1 *resume, const ui1 *uh_bytes, ui1 *full_digest)
+{
+	SHA_CTX_m13	ctx;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// re-derives the full (canonical) digest from a stored resume state & a (possibly changed)
+	// universal header - no body re-read at any file size (constant time)
+	// callers should establish the resume state belongs to the claimed body first: DGST_resume_valid_m13()
+
+	if (resume == NULL || uh_bytes == NULL || full_digest == NULL) {
+		G_set_error_m13(E_GEN_m13, "NULL argument");
+		return_m13(FALSE_m13);
+	}
+	SHA_init_tables_m13();
+	DGST_deserialize_state_m13(&ctx, resume);
+	SHA_update_m13(&ctx, uh_bytes, (si8) UH_BYTES_m13);
+	SHA_finalize_m13(&ctx, full_digest);
+
+	return_m13(TRUE_m13);
+}
+
+
+tern	DGST_resume_valid_m13(const ui1 *resume, const ui1 *body_digest)
+{
+	ui1		check[DGST_BYTES_m13];
+	SHA_CTX_m13	ctx;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// self-consistency: finalizing the resume state alone (absorbing nothing) must reproduce body
+	// => a record cannot carry a mismatched body/resume pair undetected
+
+	if (resume == NULL || body_digest == NULL) {
+		G_set_error_m13(E_GEN_m13, "NULL argument");
+		return_m13(FALSE_m13);
+	}
+	SHA_init_tables_m13();
+	DGST_deserialize_state_m13(&ctx, resume);
+	SHA_finalize_m13(&ctx, check);
+
+	return_m13((memcmp(check, body_digest, DGST_BYTES_m13) == 0) ? TRUE_m13 : FALSE_m13);
 }
 
 
@@ -46284,17 +45732,247 @@ void	DGST_update_m13(FILE_m13 *fp, const void *ptr, si8 n_bytes, si8 offset)
 
 	doff = offset - data_start;
 	if (doff == dg->high_water) {  // append at high water
-		SHA_update_m13(&dg->ctx, (const ui1 *) ptr, n_bytes);
+		DGST_absorb_m13(dg, (const ui1 *) ptr, n_bytes);
 		dg->high_water += n_bytes;
 	} else if (doff == 0) {  // full-body rewrite from data start: restart the stream
 		SHA_init_m13(&dg->ctx);
-		SHA_update_m13(&dg->ctx, (const ui1 *) ptr, n_bytes);
+		dg->hold_bytes = 0;
+		DGST_absorb_m13(dg, (const ui1 *) ptr, n_bytes);
 		dg->high_water = n_bytes;
 	} else {  // rewrite below high water, or gapped write beyond it
 		dg->dirty = TRUE_m13;
 	}
 
 	return;
+}
+
+
+
+//*********************************************//
+// MARK: VIDEO CONTAINER KEYFRAME WALK  (VID)
+//*********************************************//
+
+// purpose, backends, & the write-time-only design documented at the VID section of medlib_m13.h
+
+// AVI (RIFF) internals
+#define VID_AVI_FOURCC_m13(a, b, c, d)	( (ui4) (a) | ((ui4) (b) << 8) | ((ui4) (c) << 16) | ((ui4) (d) << 24) )
+#define VID_AVI_IDX1_KEYFRAME_m13	((ui4) 0x00000010) // AVIIF_KEYFRAME
+
+static ui4	VID_avi_u32_m13(const ui1 *p)
+{
+	return((ui4) p[0] | ((ui4) p[1] << 8) | ((ui4) p[2] << 16) | ((ui4) p[3] << 24));
+}
+
+static VID_WALK_m13	*VID_walk_avi_m13(FILE_m13 *fp, si8 flen)
+{
+	ui1		hdr[64], *idx, *e;
+	ui4		ck_id, ck_sz, list_type, n_streams, stream_type, movi_check;
+	ui4		flags, ck_offset, vid_ck_lo;
+	si1		vid_stream_digits[4];
+	si8		pos, movi_offset, idx1_offset, idx1_bytes, i, n_entries, n_vid_chunks, n_kf;
+	tern		offsets_absolute;
+	VID_WALK_m13	*walk;
+
+	// AVI: top-level RIFF chunks walked to find hdrl (avih + per-stream strl/strh/strf), movi, & idx1;
+	// idx1 entries (16 bytes: ckid, flags, offset, size) enumerate every chunk - video chunks ("NNdc"/"NNdb",
+	// NN == ascii stream number) are counted for frame numbers & AVIIF_KEYFRAME-flagged ones become keyframes
+	// idx1 offsets are movi-relative (from the 'movi' fourcc) in most files, absolute in some: disambiguated
+	// by checking which convention lands the first entry on a valid chunk id
+
+	walk = (VID_WALK_m13 *) calloc_m13((size_t) 1, sizeof(VID_WALK_m13));
+	if (walk == NULL)
+		return(NULL);
+	walk->container = VID_WALK_CONTAINER_AVI_m13;
+	walk->video_stream = 0xFFFFFFFF;
+	walk->frame_rate = RATE_NO_ENTRY_m13;
+
+	// walk top-level chunks (RIFF header is 12 bytes: "RIFF" size "AVI ")
+	movi_offset = idx1_offset = -1;
+	idx1_bytes = 0;
+	n_streams = 0;
+	pos = 12;
+	while (pos + 8 <= flen) {
+		fseek_m13(fp, pos, SEEK_SET);
+		if (fread_m13(hdr, sizeof(ui1), 12, fp) < 8)
+			break;
+		ck_id = VID_avi_u32_m13(hdr);
+		ck_sz = VID_avi_u32_m13(hdr + 4);
+		if (ck_id == VID_AVI_FOURCC_m13('L','I','S','T')) {
+			list_type = VID_avi_u32_m13(hdr + 8);
+			if (list_type == VID_AVI_FOURCC_m13('m','o','v','i')) {
+				movi_offset = pos + 8;  // offset of the 'movi' fourcc itself (idx1 offsets are relative to this)
+			} else if (list_type == VID_AVI_FOURCC_m13('h','d','r','l') || list_type == VID_AVI_FOURCC_m13('s','t','r','l')) {
+				pos += 12;  // descend into header lists
+				continue;
+			}
+		} else if (ck_id == VID_AVI_FOURCC_m13('a','v','i','h')) {
+			if (fread_m13(hdr + 12, sizeof(ui1), 52, fp) == 52) {  // 40 avih bytes past the 12 already read
+				if (VID_avi_u32_m13(hdr + 8))  // dwMicroSecPerFrame
+					walk->frame_rate = (sf8) 1e6 / (sf8) VID_avi_u32_m13(hdr + 8);
+				walk->n_frames = (si8) VID_avi_u32_m13(hdr + 8 + 16);  // dwTotalFrames
+				walk->horizontal_pixels = VID_avi_u32_m13(hdr + 8 + 32);  // dwWidth
+				walk->vertical_pixels = VID_avi_u32_m13(hdr + 8 + 36);  // dwHeight
+			}
+		} else if (ck_id == VID_AVI_FOURCC_m13('s','t','r','h')) {
+			++n_streams;
+			if (fread_m13(hdr + 12, sizeof(ui1), 8, fp) == 8) {
+				stream_type = VID_avi_u32_m13(hdr + 8);  // fccType
+				if (stream_type == VID_AVI_FOURCC_m13('v','i','d','s') && walk->video_stream == 0xFFFFFFFF) {
+					walk->video_stream = (ui4) (n_streams - 1);
+					memcpy(walk->codec, hdr + 12, 4);  // fccHandler
+					walk->codec[4] = 0;
+				} else if (stream_type == VID_AVI_FOURCC_m13('a','u','d','s')) {
+					walk->has_audio = TRUE_m13;
+				}
+			}
+		} else if (ck_id == VID_AVI_FOURCC_m13('i','d','x','1')) {
+			idx1_offset = pos + 8;
+			idx1_bytes = (si8) ck_sz;
+		}
+		pos += 8 + (si8) ck_sz + ((si8) ck_sz & 1);  // chunks are word-aligned
+	}
+
+	if (walk->video_stream == 0xFFFFFFFF || idx1_offset < 0 || movi_offset < 0 || idx1_bytes < 16) {
+		G_set_error_m13(E_GEN_m13, "AVI missing video stream, movi list, or idx1 index");
+		free_m13(walk);
+		return(NULL);
+	}
+
+	// video chunk ids for this stream: "NNdc" (compressed) & "NNdb" (uncompressed)
+	sprintf_m13(vid_stream_digits, "%02u", walk->video_stream);
+	vid_ck_lo = VID_AVI_FOURCC_m13(vid_stream_digits[0], vid_stream_digits[1], 0, 0);
+
+	// read the whole index (bounded: 16 bytes per chunk in the file)
+	idx = (ui1 *) malloc_m13((size_t) idx1_bytes);
+	if (idx == NULL) {
+		free_m13(walk);
+		return(NULL);
+	}
+	fseek_m13(fp, idx1_offset, SEEK_SET);
+	if (fread_m13(idx, sizeof(ui1), (size_t) idx1_bytes, fp) != idx1_bytes) {
+		G_set_error_m13(E_FREAD_m13, "could not read AVI idx1 index");
+		free_m13(idx);
+		free_m13(walk);
+		return(NULL);
+	}
+	n_entries = idx1_bytes >> 4;
+
+	// offset convention: check whether the first entry's offset lands on its chunk id when treated as movi-relative
+	offsets_absolute = FALSE_m13;
+	if (n_entries) {
+		fseek_m13(fp, movi_offset + (si8) VID_avi_u32_m13(idx + 8), SEEK_SET);
+		if (fread_m13(hdr, sizeof(ui1), 4, fp) == 4) {
+			movi_check = VID_avi_u32_m13(hdr);
+			if (movi_check != VID_avi_u32_m13(idx))  // does not match its own ckid => offsets are absolute
+				offsets_absolute = TRUE_m13;
+		}
+	}
+
+	// count & collect: frame numbers count ALL video chunks; keyframes are the AVIIF_KEYFRAME subset
+	walk->keyframes = (VID_KEYFRAME_m13 *) malloc_m13((size_t) n_entries * sizeof(VID_KEYFRAME_m13));  // upper bound; realloc'd down below
+	if (walk->keyframes == NULL) {
+		free_m13(idx);
+		free_m13(walk);
+		return(NULL);
+	}
+	n_vid_chunks = n_kf = 0;
+	for (i = 0, e = idx; i < n_entries; ++i, e += 16) {
+		ck_id = VID_avi_u32_m13(e);
+		if ((ck_id & 0xFFFF) != vid_ck_lo)  // not this video stream
+			continue;
+		ck_id >>= 16;  // chunk type portion
+		if (ck_id != VID_AVI_FOURCC_m13('d','c',0,0) && ck_id != VID_AVI_FOURCC_m13('d','b',0,0))
+			continue;
+		flags = VID_avi_u32_m13(e + 4);
+		ck_offset = VID_avi_u32_m13(e + 8);
+		if (flags & VID_AVI_IDX1_KEYFRAME_m13) {
+			walk->keyframes[n_kf].frame_num = n_vid_chunks;
+			walk->keyframes[n_kf].file_offset = (offsets_absolute == TRUE_m13) ? (si8) ck_offset + 8 : movi_offset + (si8) ck_offset + 8;  // + 8: chunk header -> coded data
+			walk->keyframes[n_kf].time_offset = (walk->frame_rate > 0.0) ? (sf8) n_vid_chunks / walk->frame_rate : 0.0;
+			++n_kf;
+		}
+		++n_vid_chunks;
+	}
+	free_m13(idx);
+
+	walk->n_keyframes = n_kf;
+	if (walk->n_frames == 0)
+		walk->n_frames = n_vid_chunks;  // avih total absent: use the chunk count
+
+	return(walk);
+}
+
+VID_WALK_m13	*VID_walk_m13(const si1 *path)
+{
+	ui1		hdr[12];
+	si8		flen;
+	FILE_m13	*fp;
+	VID_WALK_m13	*walk;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// walks a finished video container's tables & returns its keyframe enumeration (see header note)
+
+	fp = fopen_m13(path, "r");
+	if (fp == NULL)
+		return_m13(NULL);
+	flen = flen_m13(fp);
+	if (flen < 24 || fread_m13(hdr, sizeof(ui1), 12, fp) != 12) {
+		G_set_error_m13(E_GEN_m13, "\"%s\" is too short to be a video container", path);
+		fclose_m13(fp);
+		return_m13(NULL);
+	}
+
+	walk = NULL;
+	if (VID_avi_u32_m13(hdr) == VID_AVI_FOURCC_m13('R','I','F','F') && VID_avi_u32_m13(hdr + 8) == VID_AVI_FOURCC_m13('A','V','I',' ')) {
+		walk = VID_walk_avi_m13(fp, flen);
+	} else {
+		G_set_error_m13(E_GEN_m13, "\"%s\": unrecognized video container (AVI supported; ISO-BMFF reserved)", path);
+	}
+	fclose_m13(fp);
+
+	return_m13(walk);
+}
+
+void	VID_walk_free_m13(VID_WALK_m13 **walk)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	if (walk == NULL || *walk == NULL)
+		return_void_m13;
+	if ((*walk)->keyframes)
+		free_m13((*walk)->keyframes);
+	free_m13(*walk);
+	*walk = NULL;
+
+	return_void_m13;
+}
+
+tern	VID_keyframe_to_index_m13(const VID_KEYFRAME_m13 *kf, si8 file_start_time_uutc, si8 file_start_frame_num, ui4 vid_file_num, VID_IDX_m13 *vi)
+{
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// keyframe facts -> one video index entry
+	// file_start_time_uutc: oUTC of the video file's first frame; file_start_frame_num: the file's first
+	// frame's SEGMENT-relative number (frame numbering continues across video files within a segment)
+	// discontinuity marking (negative file_offset) is the caller's: the walk cannot know recording gaps
+
+	if (kf == NULL || vi == NULL) {
+		G_set_error_m13(E_GEN_m13, "NULL argument");
+		return_m13(FALSE_m13);
+	}
+	vi->file_offset = kf->file_offset;
+	vi->start_time = file_start_time_uutc + (si8) ((kf->time_offset * (sf8) 1e6) + 0.5);
+	vi->start_frame_num = (ui4) (file_start_frame_num + kf->frame_num);
+	vi->vid_file_num = vid_file_num;
+
+	return_m13(TRUE_m13);
 }
 
 
@@ -48225,60 +47903,6 @@ tern	TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, const si1 *message_text)
 }
 
 
-tern	TR_check_transmission_header_alignment_m13(ui1 *bytes)
-{
-	TR_HDR_m13	*th;
-	tern		free_flag = FALSE_m13;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// check overall size
-	if (sizeof(TR_HDR_m13) != TR_HDR_BYTES_m13)
-		goto TR_HDR_NOT_ALIGNED_m13;
-	
-	// check fields
-	if (bytes == NULL) {
-		bytes = (ui1 *) malloc_m13(TR_HDR_BYTES_m13);
-		free_flag = TRUE_m13;
-	}
-	th = (TR_HDR_m13 *) bytes;
-	if (&th->crc != (ui4 *) (bytes + TR_CRC_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->packet_bytes != (ui2 *) (bytes + TR_PACKET_BYTES_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->flags != (ui2 *) (bytes + TR_FLAGS_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (th->ID_string != (si1 *) (bytes + TR_ID_STRING_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->ID_code != (ui4 *) (bytes + TR_ID_CODE_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->type != (ui1 *) (bytes + TR_TYPE_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->subtype != (ui1 *) (bytes + TR_SUBTYPE_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->version != (ui1 *) (bytes + TR_VERSION_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->transmission_bytes != (si8 *) (bytes + TR_TRANSMISSION_BYTES_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-	if (&th->offset != (si8 *) (bytes + TR_OFFSET_OFFSET_m13))
-		goto TR_HDR_NOT_ALIGNED_m13;
-
-	// aligned
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(TRUE_m13);
-	
-	// not aligned
-TR_HDR_NOT_ALIGNED_m13:
-	
-	if (free_flag == TRUE_m13)
-		free(bytes);
-	
-	return_m13(FALSE_m13);
-}
 
 
 tern	TR_close_transmission_m13(TR_INFO_m13 *trans_info)

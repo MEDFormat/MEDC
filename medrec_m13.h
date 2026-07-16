@@ -104,14 +104,13 @@
 
 // Constants
 // LARGEST_RECORD_BYTES_m13 needs to be kept up to date, and can fail with arbitrary size records
-// If it exceeds METADATA_FILE_BYTES_m13 then check_all_alignments() should be updated.
+// (structure layouts are verified at compile time: see the layout assertions at the end of this header)
 #define REC_LARGEST_RECORD_BYTES_m13		METADATA_FILE_BYTES_m13  // 16 kB
 #define REC_BODY_ALIGNMENT_BYTES_m13		8  // record body size must be multiple of this
 #define REC_NO_RECORD_NUMBER_m13		-1
 
 // Prototypes
 tern	REC_show_record_m13(FPS_m13 *fps, REC_HDR_m13 *record_header, si8 record_number);  // pass NO_RECORD_NUMBER_m13 (for record_number) to suppress record number display
-tern	REC_check_structure_alignments_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
@@ -196,7 +195,6 @@ tern	REC_check_structure_alignments_m13(ui1 *bytes);
 
 // Prototypes
 tern	REC_show_Sgmt_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
@@ -232,7 +230,6 @@ tern	REC_check_Sgmt_type_alignment_m13(ui1 *bytes);
 
 // Prototypes
 tern	REC_show_Stat_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_Stat_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -257,7 +254,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_EDFA_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_EDFA_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -291,7 +287,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_Note_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_Note_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -354,7 +349,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_Seiz_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -376,7 +370,6 @@ tern	REC_check_Seiz_type_alignment_m13(ui1 *bytes);
 
 // Prototype
 tern	REC_show_SyLg_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_SyLg_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -417,7 +410,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_NlxP_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_NlxP_type_alignment_m13(ui1 *bytes);
 
 
 //*************************************************************************************//
@@ -447,7 +439,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_Curs_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_Curs_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -501,7 +492,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_Epoc_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_Epoc_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -554,7 +544,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_ESti_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_ESti_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -569,7 +558,13 @@ tern	REC_check_ESti_type_alignment_m13(ui1 *bytes);
 
 // Digest algorithm codes
 #define REC_CSig_DIGEST_NONE_m13	((ui4) 0)
-#define REC_CSig_DIGEST_SHA256_m13	((ui4) 1) // 32-byte SHA-256, canonical MED order: data region then universal header, pcrc regions excluded (see DGST module, medlib_m13.h)
+#define REC_CSig_DIGEST_SHA256_m13	((ui4) 1) // SHA-256 triplet (see DGST module, medlib_m13.h): body digest (data region alone;
+						  // survives legitimate UH transformations), full digest (data then UH - canonical),
+						  // & pre-UH resume state (re-derive full after a UH change without re-reading the body)
+#define REC_CSig_DIGEST_SHA256_BODY_OFFSET_m13		0	// ui1[32] (into the digest element of the variable region)
+#define REC_CSig_DIGEST_SHA256_FULL_OFFSET_m13		32	// ui1[32]
+#define REC_CSig_DIGEST_SHA256_RESUME_OFFSET_m13	64	// ui1[DGST_RESUME_BYTES_m13 == 108] (layout: DGST_RESUME_*_OFFSET_m13)
+#define REC_CSig_DIGEST_SHA256_BYTES_m13		( 64 + DGST_RESUME_BYTES_m13 )	// 172 == digest_bytes for this algorithm
 
 // Signature algorithm codes
 #define REC_CSig_SIG_NONE_m13		((ui4) 0) // digest only (tamper-evidence, no attribution)
@@ -613,8 +608,8 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_CSig_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_CSig_type_alignment_m13(ui1 *bytes);
-si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const ui1 *digest, ui1 *body); // fills a v1.0 CSig record body (digest-only); digest == NULL => compute canonical digest by streamed read (DGST_file_m13()); returns body bytes (pre-pad) or FALSE_m13
+si8	REC_build_CSig_body_m13(const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const DGST_RESULT_m13 *dgst, ui1 *body); // fills a v1.0 CSig record body (digest-only); dgst == NULL => compute by streamed read (DGST_file_m13()); returns body bytes (pre-pad) or FALSE_m13
+tern	REC_write_CSig_m13(const si1 *level_path, si8 record_time, const si1 *target_file_path, ui8 target_file_UID, ui1 occasion, const DGST_RESULT_m13 *dgst); // appends a CSig record + index entry to the passed level's records files - CONVENTION: the target's CHANNEL directory (channel subsets carry their attestations); see REC_build_CSig_body_m13() for dgst semantics; record_time is oUTC
 
 
 
@@ -650,7 +645,6 @@ typedef struct {
 
 // Prototypes
 tern	REC_show_CSti_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_CSti_type_alignment_m13(ui1 *bytes);
 
 
 
@@ -735,9 +729,151 @@ typedef struct {
 
 // Prototypes
 void	REC_show_HFOc_type_m13(REC_HDR_m13 *record_header);
-tern	REC_check_HFOc_type_alignment_m13(ui1 *bytes);
 
 
+
+
+//*************************************************************************************//
+//****************   Record structure layouts (compile-time verified)   **************//
+//*************************************************************************************//
+// these assertions replace the former runtime alignment check functions (removed 2026-07-16):
+// a construction error - or a compiler with different packing - fails the BUILD at the exact
+// field, at zero runtime cost; one assertion per check the runtime functions performed
+
+// Sgmt
+LAYOUT_SIZE_m13(REC_Sgmt_v10_m13, REC_Sgmt_v10_BYTES_m13);
+LAYOUT_SIZE_m13(REC_Sgmt_v11_m13, REC_Sgmt_v11_BYTES_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, end_time, REC_Sgmt_v10_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, start_idx, REC_Sgmt_v10_START_IDX_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, end_idx, REC_Sgmt_v10_END_IDX_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, seg_UID, REC_Sgmt_v10_SEG_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, seg_num, REC_Sgmt_v10_SEG_NUM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, acq_chan_num, REC_Sgmt_v10_ACQ_CHAN_NUM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v10_m13, rate, REC_Sgmt_v10_RATE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v11_m13, end_time, REC_Sgmt_v11_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v11_m13, start_idx, REC_Sgmt_v11_START_IDX_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v11_m13, end_idx, REC_Sgmt_v11_END_IDX_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v11_m13, seg_num, REC_Sgmt_v11_SEG_NUM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Sgmt_v11_m13, rate, REC_Sgmt_v11_RATE_OFFSET_m13);
+
+// Stat
+LAYOUT_SIZE_m13(REC_Stat_v10_m13, REC_Stat_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, minimum, REC_Stat_v10_MINIMUM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, maximum, REC_Stat_v10_MAXIMUM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, mean, REC_Stat_v10_MEAN_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, median, REC_Stat_v10_MEDIAN_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, mode, REC_Stat_v10_MODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, variance, REC_Stat_v10_VARIANCE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, skewness, REC_Stat_v10_SKEWNESS_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Stat_v10_m13, kurtosis, REC_Stat_v10_KURTOSIS_OFFSET_m13);
+
+// Note
+LAYOUT_SIZE_m13(REC_Note_v11_m13, REC_Note_v11_BYTES_m13);
+LAYOUT_FIELD_m13(REC_Note_v11_m13, end_time, REC_Note_v11_END_TIME_OFFSET_m13);
+
+// EDFA
+LAYOUT_SIZE_m13(REC_EDFA_v10_m13, REC_EDFA_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_EDFA_v10_m13, duration, REC_EDFA_v10_DURATION_OFFSET_m13);
+
+// Seiz
+LAYOUT_SIZE_m13(REC_Seiz_v10_m13, REC_Seiz_v10_BYTES_m13);
+LAYOUT_SIZE_m13(REC_Seiz_v10_CHANNEL_m13, REC_Seiz_v10_CHANNEL_BYTES_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_m13, latest_offset_time, REC_Seiz_v10_LATEST_OFFSET_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_m13, number_of_channels, REC_Seiz_v10_NUMBER_OF_CHANNELS_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_m13, onset_code, REC_Seiz_v10_ONSET_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_m13, marker_name_1, REC_Seiz_v10_MARKER_NAME_1_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_m13, marker_name_2, REC_Seiz_v10_MARKER_NAME_2_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_m13, annotation, REC_Seiz_v10_ANNOTATION_OFFSET_m13);
+
+// SyLg
+
+// NlxP
+LAYOUT_SIZE_m13(REC_NlxP_v10_m13, REC_NlxP_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_NlxP_v10_m13, raw_port_value, REC_NlxP_v10_RAW_PORT_VALUE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_NlxP_v10_m13, value, REC_NlxP_v10_VALUE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_NlxP_v10_m13, subport, REC_NlxP_v10_SUBPORT_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_NlxP_v10_m13, number_of_subports, REC_NlxP_v10_NUMBER_OF_SUBPORTS_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_NlxP_v10_m13, trigger_mode, REC_NlxP_v10_TRIGGER_MODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_NlxP_v10_m13, pad, REC_NlxP_v10_PAD_OFFSET_m13);
+
+// Curs
+LAYOUT_SIZE_m13(REC_Curs_v10_m13, REC_Curs_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_Curs_v10_m13, id_number, REC_Curs_v10_ID_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Curs_v10_m13, latency, REC_Curs_v10_LATENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Curs_v10_m13, value, REC_Curs_v10_VALUE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Curs_v10_m13, name, REC_Curs_v10_NAME_OFFSET_m13);
+
+// Epoc
+LAYOUT_SIZE_m13(REC_Epoc_v10_m13, REC_Epoc_v10_BYTES_m13);
+LAYOUT_SIZE_m13(REC_Epoc_v20_m13, REC_Epoc_v20_BYTES_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v10_m13, id_number, REC_Epoc_v10_ID_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v10_m13, end_time, REC_Epoc_v10_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v10_m13, epoch_type, REC_Epoc_v10_EPOCH_TYPE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v10_m13, text, REC_Epoc_v10_TEXT_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v20_m13, end_time, REC_Epoc_v20_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v20_m13, stage_code, REC_Epoc_v20_STAGE_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Epoc_v20_m13, scorer_id, REC_Epoc_v20_SCORER_ID_OFFSET_m13);
+
+// ESti
+LAYOUT_SIZE_m13(REC_ESti_v10_m13, REC_ESti_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, amplitude, REC_ESti_v10_AMPLITUDE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, frequency, REC_ESti_v10_FREQUENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, pulse_width, REC_ESti_v10_PULSE_WIDTH_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, amp_unit_code, REC_ESti_v10_AMP_UNIT_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, mode_code, REC_ESti_v10_MODE_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, waveform, REC_ESti_v10_WAVEFORM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, anode, REC_ESti_v10_ANODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_ESti_v10_m13, cathode, REC_ESti_v10_CATHODE_OFFSET_m13);
+
+// CSig
+LAYOUT_SIZE_m13(REC_CSig_v10_m13, REC_CSig_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, target_file_UID, REC_CSig_v10_TARGET_FILE_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, digest_algorithm, REC_CSig_v10_DIGEST_ALGORITHM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, signature_algorithm, REC_CSig_v10_SIGNATURE_ALGORITHM_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, digest_bytes, REC_CSig_v10_DIGEST_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, signature_bytes, REC_CSig_v10_SIGNATURE_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, public_key_bytes, REC_CSig_v10_PUBLIC_KEY_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, occasion, REC_CSig_v10_OCCASION_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSig_v10_m13, pad, REC_CSig_v10_PAD_OFFSET_m13);
+
+// CSti
+LAYOUT_SIZE_m13(REC_CSti_v10_m13, REC_CSti_v10_BYTES_m13);
+LAYOUT_FIELD_m13(REC_CSti_v10_m13, stimulus_duration, REC_CSti_v10_STIMULUS_DURATION_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSti_v10_m13, task_type, REC_CSti_v10_TASK_TYPE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSti_v10_m13, stimulus_type, REC_CSti_v10_STIMULUS_TYPE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_CSti_v10_m13, patient_response, REC_CSti_v10_PATIENT_RESPONSE_OFFSET_m13);
+
+// HFOc
+LAYOUT_SIZE_m13(REC_HFOc_v11_m13, REC_HFOc_v11_BYTES_m13);
+LAYOUT_SIZE_m13(REC_HFOc_v12_m13, REC_HFOc_v12_BYTES_m13);
+LAYOUT_SIZE_m13(REC_HFOc_v13_m13, REC_HFOc_v13_BYTES_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v11_m13, end_time, REC_HFOc_v11_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v11_m13, start_frequency, REC_HFOc_v11_START_FREQUENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v11_m13, end_frequency, REC_HFOc_v11_END_FREQUENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v12_m13, end_time, REC_HFOc_v12_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v12_m13, start_frequency, REC_HFOc_v12_START_FREQUENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v12_m13, end_frequency, REC_HFOc_v12_END_FREQUENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, end_time, REC_HFOc_v13_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, start_frequency, REC_HFOc_v13_START_FREQUENCY_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, end_frequency, REC_HFOc_v13_END_FREQUENCY_OFFSET_m13);
+// Seiz channel substructure (offsets are substructure-relative)
+LAYOUT_FIELD_m13(REC_Seiz_v10_CHANNEL_m13, name, REC_Seiz_v10_CHANNEL_NAME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_CHANNEL_m13, onset_time, REC_Seiz_v10_CHANNEL_ONSET_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_CHANNEL_m13, offset_time, REC_Seiz_v10_CHANNEL_OFFSET_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_CHANNEL_m13, segment_number, REC_Seiz_v10_CHANNEL_SEGMENT_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_Seiz_v10_CHANNEL_m13, pad, REC_Seiz_v10_CHANNEL_PAD_OFFSET_m13);
+
+// HFOc v1.2 / v1.3 band arrays
+LAYOUT_FIELD_m13(REC_HFOc_v12_m13, start_times, REC_HFOc_v12_START_TIMES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v12_m13, end_times, REC_HFOc_v12_END_TIMES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v12_m13, combinations, REC_HFOc_v12_COMBINATIONS_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, start_times, REC_HFOc_v13_START_TIMES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, end_times, REC_HFOc_v13_END_TIMES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, combinations, REC_HFOc_v13_COMBINATIONS_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, amplitudes, REC_HFOc_v13_AMPLITUDES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, frequency_dominances, REC_HFOc_v13_FREQUENCY_DOMINANCES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, products, REC_HFOc_v13_PRODUCTS_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HFOc_v13_m13, cycles, REC_HFOc_v13_CYCLES_OFFSET_m13);
 
 #endif // MEDREC_IN_m13
 

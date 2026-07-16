@@ -579,6 +579,20 @@ typedef struct {
 #define UNMAPPED_CHAN_m13			((si4) -1)
 #define NO_FLAGS_m13				0
 
+// Compile-time structure layout verification
+// (replaces the MEF1-era runtime alignment check functions: layout is fixed at compile time, so a
+// construction error - or a compiler with different packing - now fails the BUILD at the exact field,
+// costs zero bytes & zero cycles at runtime)
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+	#define LAYOUT_ASSERT_m13(cond, msg)	_Static_assert(cond, msg)
+#else  // C89-portable: a negative array size is a compile error (unique typedef name per line)
+	#define LAYOUT_CAT2_m13(a, b)		a##b
+	#define LAYOUT_CAT_m13(a, b)		LAYOUT_CAT2_m13(a, b)
+	#define LAYOUT_ASSERT_m13(cond, msg)	typedef char LAYOUT_CAT_m13(LAYOUT_ASSERT_failed_line_, __LINE__)[(cond) ? 1 : -1]
+#endif
+#define LAYOUT_FIELD_m13(type, field, off)	LAYOUT_ASSERT_m13(offsetof(type, field) == (size_t) (off), #type "." #field " is misaligned (see adjacent offset defines)")
+#define LAYOUT_SIZE_m13(type, bytes)		LAYOUT_ASSERT_m13(sizeof(type) == (size_t) (bytes), #type " size differs from its defined byte count")
+
 #if defined MACOS_m13 || defined LINUX_m13
 	#define NULL_DEVICE_m13					"/dev/null"
 	#define DIR_BREAK_m13					'/'
@@ -754,6 +768,8 @@ typedef struct {
 #define GLOBALS_UPDATE_MED_VERSION_DEFAULT_m13			FALSE_m13 // MED 1.0 -> 1.1 in-place upgrade on open; leave off except when testing the upgrade path
 									  // (all m1x libraries read all MED 1.x data - upgrade is never required for reading)
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
+#define GLOBALS_WRITE_CSIGS_DEFAULT_m13				TRUE_m13
+#define GLOBALS_CSIG_REREAD_MAX_GB_DEFAULT_m13			((si8) 16) // dirty-stream fallback: re-read files <= this many GB, skip + warn above (RC field in GB; stored as bytes)
 #define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // number of processes
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
@@ -821,15 +837,18 @@ typedef struct {
 #define VID_METADATA_TYPE_STR_m13		"vmet" // ascii[4]
 #define VID_METADATA_TYPE_CODE_m13		((ui4) 0x74656D76) // ui4 (little endian)
 // #define VID_METADATA_TYPE_CODE_m13		((ui4) 0x766D6574) // ui4 (big endian)
-#define VID_DATA_TYPE_STR_m13			"vdat" // ascii[4]				// NOT a file type extension
-#define VID_DATA_TYPE_CODE_m13			((ui4) 0x74616476) // ui4 (little endian)	// NOT a file type extension
-// #define VID_DATA_TYPE_CODE_m13		((ui4) 0x76646174) // ui4 (big endian)		// NOT a file type extension
+#define VID_DATA_TYPE_STR_m13			"vdat" // ascii[4]; the video data TYPE tag (level & universal headers) - actual video data files keep native
+						// container extensions (.mp4 etc.) so players recognize & play them (UH at file END, content at offset 0);
+						// AS AN EXTENSION "vdat" names video data PARITY files (MED 1.1 spec, 2026-07-15; replaced "vpar"):
+						// parity files carry their member type's extension (cf. time-series parity: .tdat/.tidx/...), &
+						// video members have no single native extension to carry - PRTY_is_parity_m13() disambiguates by name
+#define VID_DATA_TYPE_CODE_m13			((ui4) 0x74616476) // ui4 (little endian)
+// #define VID_DATA_TYPE_CODE_m13		((ui4) 0x76646174) // ui4 (big endian)
 #define VID_INDS_TYPE_STR_m13			"vidx" // ascii[4]
 #define VID_INDS_TYPE_CODE_m13			((ui4) 0x78646976) // ui4 (little endian)
 // #define VID_INDS_TYPE_CODE_m13		((ui4) 0x76696478) // ui4 (big endian)
-#define VID_PARITY_TYPE_STR_m13			"vpar" // ascii[4]; video data parity (per channel, per segment; in parity channel segment directories)
-#define VID_PARITY_TYPE_CODE_m13		((ui4) 0x72617076) // ui4 (little endian)
-// #define VID_PARITY_TYPE_CODE_m13		((ui4) 0x76706172) // ui4 (big endian)
+// (the former VID_PARITY type ["vpar"] was removed 2026-07-16: video data parity files are named with the
+// member type's extension ["vdat"], like all other parity files; no vpar file was ever written in the wild)
 #define SSR_TYPE_STR_m13			"recd" // ascii[4]
 #define SSR_TYPE_CODE_m13			((ui4) 0x64636572) // ui4 (little endian)
 // #define SSR_TYPE_CODE_m13			((ui4) 0x72656364) // ui4 (big endian)
@@ -1056,8 +1075,20 @@ typedef struct {
 #define VID_METADATA_VERTICAL_PIXELS_NO_ENTRY_m13			0
 #define VID_METADATA_VIDEO_FORMAT_OFFSET_m13				8424  // utf8[63]
 #define VID_METADATA_VIDEO_FORMAT_BYTES_m13				256
-#define VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13		8680
-#define VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13		1808
+#define VID_METADATA_DISPLAY_TRANSFORM_OFFSET_m13			8680  // ui1 (allocated from protected region 2026-07-16: zero in older files == no entry)
+#define VID_METADATA_DISPLAY_TRANSFORM_NO_ENTRY_m13			((ui1) 0)  // display as stored
+// display transform values 1-8 are numerically identical to EXIF/TIFF Orientation (the complete, closed set of
+// axis-aligned rectangle transforms); camera SEMANTICS (mounting, viewpoint) belong in equipment_description
+#define VID_METADATA_DISPLAY_TRANSFORM_IDENTITY_m13			((ui1) 1)  // top / left
+#define VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_m13			((ui1) 2)  // top / right (mirrored horizontal)
+#define VID_METADATA_DISPLAY_TRANSFORM_ROT_180_m13			((ui1) 3)  // bottom / right (rotated 180)
+#define VID_METADATA_DISPLAY_TRANSFORM_MIRROR_V_m13			((ui1) 4)  // bottom / left (mirrored vertical)
+#define VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_ROT_270_m13		((ui1) 5)  // left / top (mirrored horizontal, rotated 270 CW)
+#define VID_METADATA_DISPLAY_TRANSFORM_ROT_90_m13			((ui1) 6)  // right / top (rotated 90 CW)
+#define VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_ROT_90_m13		((ui1) 7)  // right / bottom (mirrored horizontal, rotated 90 CW)
+#define VID_METADATA_DISPLAY_TRANSFORM_ROT_270_m13			((ui1) 8)  // left / bottom (rotated 270 CW)
+#define VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13		8681
+#define VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13		1807
 #define VID_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13		10488
 #define VID_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m13		1800
 
@@ -2523,6 +2554,8 @@ typedef struct {
 	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
 	tern				update_MED_version; // if file MED version is not current, update affected files
 	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
+	tern				write_CSigs; // write CSig (attestation) records at custody events (close, conversion, transfer, archive, repair, rekey; see DGST module & REC_write_CSig_m13())
+	si8				CSig_reread_max_bytes; // dirty/unusable digest stream fallback policy: files at or below this size are re-read (DGST_file_m13()), larger files skip with a warning
 	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
 	TEST_BYTE_m13			test_byte;
 	_Atomic tern			suspend_stacks;
@@ -2615,6 +2648,46 @@ typedef struct {
 	ui1		discretionary_region[UH_DISCRETIONARY_REGION_BYTES_m13];
 } UH_m13;
 
+// universal header layout (compile-time; see LAYOUT_*_m13 note)
+LAYOUT_SIZE_m13(UH_m13, UH_BYTES_m13);
+LAYOUT_FIELD_m13(UH_m13, header_CRC, UH_HEADER_CRC_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, body_CRC, UH_BODY_CRC_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, file_end_time, UH_FILE_END_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, n_entries, UH_NUMBER_OF_ENTRIES_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, maximum_entry_size, UH_MAXIMUM_ENTRY_SIZE_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, segment_number, UH_SEGMENT_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, type_string, UH_TYPE_STR_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, type_code, UH_TYPE_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, MED_version_major, UH_MED_VERSION_MAJOR_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, MED_version_minor, UH_MED_VERSION_MINOR_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, byte_order_code, UH_BYTE_ORDER_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, session_start_time, UH_SESSION_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, file_start_time, UH_FILE_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, session_name, UH_SESSION_NAME_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, channel_name, UH_CHANNEL_NAME_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, supplementary_protected_region, UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, session_UID, UH_SESSION_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, channel_UID, UH_CHANNEL_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, segment_UID, UH_SEGMENT_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, file_UID, UH_FILE_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, provenance_UID, UH_PROVENANCE_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, level_1_password_validation_field, UH_LEVEL_1_PASSWORD_VALIDATION_FIELD_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, level_2_password_validation_field, UH_LEVEL_2_PASSWORD_VALIDATION_FIELD_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, level_3_password_validation_field, UH_LEVEL_3_PASSWORD_VALIDATION_FIELD_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, video_data_file_number, UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, live, UH_LIVE_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, ordered, UH_ORDERED_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, expanded_passwords, UH_EXPANDED_PASSWORDS_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, reserved_919, UH_RESERVED_919_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, encryption_1, UH_ENCRYPTION_1_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, encryption_2, UH_ENCRYPTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, encryption_3, UH_ENCRYPTION_3_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, encryption_4, UH_ENCRYPTION_4_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, crypto_schema, UH_CRYPTO_SCHEMA_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, kdf_exponent, UH_KDF_EXPONENT_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, protected_region, UH_PROTECTED_REGION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, discretionary_region, UH_DISCRETIONARY_REGION_OFFSET_m13);
+
 // Metadata Structures
 typedef struct {
 	si1	level_1_password_hint[PASSWORD_HINT_BYTES_m13];
@@ -2682,6 +2755,7 @@ typedef struct {
 	ui4	horizontal_pixels;
 	ui4	vertical_pixels;
 	si1	video_format[VID_METADATA_VIDEO_FORMAT_BYTES_m13];   // utf8[31]
+	ui1	display_transform; // VID_METADATA_DISPLAY_TRANSFORM_* (EXIF Orientation semantics; 0 == no entry, display as stored)
 	ui1	protected_region[VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13];
 	ui1	discretionary_region[VID_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m13];
 } VID_METADATA_SECTION_2_m13;
@@ -2716,6 +2790,53 @@ typedef struct {
 	ui1	discretionary_region[METADATA_SECTION_3_DISCRETIONARY_REGION_BYTES_m13];
 } METADATA_SECTION_3_m13;
 
+// metadata section layouts (compile-time; see LAYOUT_*_m13 note)
+// (the offset defines are FILE-level: subtract the section's own file offset for the in-struct position)
+LAYOUT_SIZE_m13(METADATA_SECTION_1_m13, METADATA_SECTION_1_BYTES_m13);
+LAYOUT_SIZE_m13(TS_METADATA_SECTION_2_m13, METADATA_SECTION_2_BYTES_m13);
+LAYOUT_SIZE_m13(VID_METADATA_SECTION_2_m13, METADATA_SECTION_2_BYTES_m13);
+LAYOUT_SIZE_m13(METADATA_SECTION_2_m13, METADATA_SECTION_2_BYTES_m13);
+LAYOUT_SIZE_m13(METADATA_SECTION_3_m13, METADATA_SECTION_3_BYTES_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_1_m13, level_1_password_hint, METADATA_LEVEL_1_PASSWORD_HINT_OFFSET_m13 - METADATA_SECTION_1_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_1_m13, level_2_password_hint, METADATA_LEVEL_2_PASSWORD_HINT_OFFSET_m13 - METADATA_SECTION_1_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_1_m13, anonymized_subject_ID, METADATA_ANONYMIZED_SUBJECT_ID_OFFSET_m13 - METADATA_SECTION_1_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_1_m13, protected_region, METADATA_SECTION_1_PROTECTED_REGION_OFFSET_m13 - METADATA_SECTION_1_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_1_m13, discretionary_region, METADATA_SECTION_1_DISCRETIONARY_REGION_OFFSET_m13 - METADATA_SECTION_1_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, session_description, METADATA_SESSION_DESCRIPTION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, channel_description, METADATA_CHANNEL_DESCRIPTION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, segment_description, METADATA_SEGMENT_DESCRIPTION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, equipment_description, METADATA_EQUIPMENT_DESCRIPTION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, acquisition_channel_number, METADATA_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, reference_description, TS_METADATA_REFERENCE_DESCRIPTION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, sampling_frequency, TS_METADATA_SAMPLING_FREQUENCY_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, session_start_sample_number, TS_METADATA_SESSION_START_SAMPLE_NUMBER_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, number_of_samples, TS_METADATA_NUMBER_OF_SAMPLES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, maximum_block_samples, TS_METADATA_MAXIMUM_BLOCK_SAMPLES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, protected_region, TS_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_METADATA_SECTION_2_m13, discretionary_region, TS_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, time_base_units_conversion_factor, VID_METADATA_TIME_BASE_UNITS_CONVERSION_FACTOR_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, session_start_frame_number, VID_METADATA_SESSION_START_FRAME_NUMBER_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, number_of_frames, VID_METADATA_NUMBER_OF_FRAMES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, frame_rate, VID_METADATA_FRAME_RATE_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, number_of_clips, VID_METADATA_NUMBER_OF_CLIPS_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, maximum_clip_bytes, VID_METADATA_MAXIMUM_CLIP_BYTES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, maximum_clip_frames, VID_METADATA_MAXIMUM_CLIP_FRAMES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, number_of_video_files, VID_METADATA_NUMBER_OF_VIDEO_FILES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, maximum_clip_duration, VID_METADATA_MAXIMUM_CLIP_DURATION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, number_of_discontinuities, VID_METADATA_NUMBER_OF_DISCONTINUITIES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, maximum_contiguous_clips, VID_METADATA_MAXIMUM_CONTIGUOUS_CLIPS_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, maximum_contiguous_frames, VID_METADATA_MAXIMUM_CONTIGUOUS_FRAMES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, horizontal_pixels, VID_METADATA_HORIZONTAL_PIXELS_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, vertical_pixels, VID_METADATA_VERTICAL_PIXELS_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, video_format, VID_METADATA_VIDEO_FORMAT_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, display_transform, VID_METADATA_DISPLAY_TRANSFORM_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, protected_region, VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, discretionary_region, VID_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_3_m13, recording_time_offset, METADATA_RECORDING_TIME_OFFSET_OFFSET_m13 - METADATA_SECTION_3_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_3_m13, subject_name_1, METADATA_SUBJECT_NAME_1_OFFSET_m13 - METADATA_SECTION_3_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_3_m13, protected_region, METADATA_SECTION_3_PROTECTED_REGION_OFFSET_m13 - METADATA_SECTION_3_OFFSET_m13);
+LAYOUT_FIELD_m13(METADATA_SECTION_3_m13, discretionary_region, METADATA_SECTION_3_DISCRETIONARY_REGION_OFFSET_m13 - METADATA_SECTION_3_OFFSET_m13);
+
 #ifdef __cplusplus // c++ does not accept anonymous structures
 typedef struct {
 	METADATA_SECTION_1_m13		section_1;
@@ -2749,6 +2870,17 @@ typedef struct REC_HDR_m13 { // struct name for medrec_m13.h interdependency
 		};
 	};
 } REC_HDR_m13;
+
+// record header layout (compile-time; see LAYOUT_*_m13 note)
+LAYOUT_SIZE_m13(REC_HDR_m13, REC_HDR_BYTES_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, record_CRC, REC_HDR_CRC_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, total_record_bytes, REC_HDR_TOTAL_RECORD_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, start_time, REC_HDR_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, type_string, REC_HDR_TYPE_STR_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, type_code, REC_HDR_TYPE_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, version_major, REC_HDR_VERSION_MAJOR_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, version_minor, REC_HDR_VERSION_MINOR_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_HDR_m13, encryption_level, REC_HDR_ENCRYPTION_LEVEL_OFFSET_m13);
 
 typedef struct {
 	si8		file_offset; // never negative: the record indices are not used to indicate discontinuities
@@ -2794,6 +2926,27 @@ typedef struct {
 		GEN_IDX_m13	generic_index;
 	};
 } INDEX_m13;
+
+// index family layout (compile-time; see LAYOUT_*_m13 note)
+LAYOUT_SIZE_m13(REC_IDX_m13, INDEX_BYTES_m13);
+LAYOUT_SIZE_m13(TS_IDX_m13, INDEX_BYTES_m13);
+LAYOUT_SIZE_m13(VID_IDX_m13, INDEX_BYTES_m13);
+LAYOUT_SIZE_m13(GEN_IDX_m13, INDEX_BYTES_m13);
+LAYOUT_SIZE_m13(INDEX_m13, INDEX_BYTES_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, file_offset, REC_IDX_FILE_OFFSET_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, start_time, REC_IDX_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, type_string, REC_IDX_TYPE_STR_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, type_code, REC_IDX_TYPE_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, version_major, REC_IDX_VERSION_MAJOR_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, version_minor, REC_IDX_VERSION_MINOR_OFFSET_m13);
+LAYOUT_FIELD_m13(REC_IDX_m13, encryption_level, REC_IDX_ENCRYPTION_LEVEL_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_IDX_m13, file_offset, TS_IDX_FILE_OFFSET_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_IDX_m13, start_time, TS_IDX_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(TS_IDX_m13, start_samp_num, TS_IDX_START_SAMPLE_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_IDX_m13, file_offset, VID_IDX_FILE_OFFSET_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_IDX_m13, start_time, VID_IDX_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_IDX_m13, start_frame_num, VID_IDX_START_FRAME_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_IDX_m13, vid_file_num, VID_IDX_VIDEO_FILE_NUMBER_OFFSET_m13);
 
 
 
@@ -3668,17 +3821,6 @@ si8		WN_filetime_to_uutc_m13(ui1 *win_filetime); // for conversion of windows fi
 //**********************************************************************************//
 
 // Prototypes
-tern	ALCK_all_m13(void);
-tern	ALCK_metadata_m13(ui1 *bytes);
-tern	ALCK_metadata_section_1_m13(ui1 *bytes);
-tern	ALCK_metadata_section_3_m13(ui1 *bytes);
-tern	ALCK_record_header_m13(ui1 *bytes);
-tern	ALCK_record_indices_m13(ui1 *bytes);
-tern	ALCK_time_series_indices_m13(ui1 *bytes);
-tern	ALCK_time_series_metadata_section_2_m13(ui1 *bytes);
-tern	ALCK_universal_header_m13(ui1 *bytes);
-tern	ALCK_video_indices_m13(ui1 *bytes);
-tern	ALCK_video_metadata_section_2_m13(ui1 *bytes);
 
 
 
@@ -4349,6 +4491,30 @@ typedef struct {
 
 // CMP_FIXED_BH_m13 declared above
 
+// CMP header layouts (compile-time; see LAYOUT_*_m13 note; CMP_FIXED_BH_m13 is declared before the
+// LAYOUT macros, so its assertions live here with the other CMP structures)
+LAYOUT_SIZE_m13(CMP_FIXED_BH_m13, CMP_BLOCK_FIXED_HDR_BYTES_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, block_start_UID, CMP_BLOCK_START_UID_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, block_CRC, CMP_BLOCK_CRC_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, block_flags, CMP_BLOCK_BLOCK_FLAGS_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, start_time, CMP_BLOCK_START_TIME_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, acquisition_channel_number, CMP_BLOCK_ACQUISITION_CHANNEL_NUMBER_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, total_block_bytes, CMP_BLOCK_TOTAL_BLOCK_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, number_of_samples, CMP_BLOCK_NUMBER_OF_SAMPLES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, number_of_records, CMP_BLOCK_NUMBER_OF_RECORDS_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, record_region_bytes, CMP_BLOCK_RECORD_REGION_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, parameter_flags, CMP_BLOCK_PARAMETER_FLAGS_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, parameter_region_bytes, CMP_BLOCK_PARAMETER_REGION_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, protected_region_bytes, CMP_BLOCK_PROTECTED_REGION_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, discretionary_region_bytes, CMP_BLOCK_DISCRETIONARY_REGION_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, model_region_bytes, CMP_BLOCK_MODEL_REGION_BYTES_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_FIXED_BH_m13, total_header_bytes, CMP_BLOCK_TOTAL_HEADER_BYTES_OFFSET_m13);
+LAYOUT_SIZE_m13(CMP_REC_HDR_m13, CMP_REC_HDR_BYTES_m13);
+LAYOUT_FIELD_m13(CMP_REC_HDR_m13, type_code, CMP_REC_HDR_TYPE_CODE_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_REC_HDR_m13, version_major, CMP_REC_HDR_VERSION_MAJOR_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_REC_HDR_m13, version_minor, CMP_REC_HDR_VERSION_MINOR_OFFSET_m13);
+LAYOUT_FIELD_m13(CMP_REC_HDR_m13, total_bytes, CMP_REC_HDR_TOTAL_BYTES_OFFSET_m13);
+
 typedef struct {
 	ui4 count;
 	union {
@@ -4498,9 +4664,7 @@ tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_l
 tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
 sf8	CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps);
 tern	CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats_ptr, si4 *data, si8 len, CMP_NODE_m13 *nodes);
-tern	CMP_check_block_header_alignment_m13(ui1 *bytes);
 tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps);
-tern	CMP_check_record_header_alignment_m13(ui1 *bytes);
 si4	CMP_compare_sf8_m13(const void *a, const void * b);
 si4	CMP_compare_si4_m13(const void *a, const void * b);
 si4	CMP_compare_si8_m13(const void *a, const void * b);
@@ -4863,34 +5027,105 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 //*************************  DGST: Canonical File Digests  ************************//
 //**********************************************************************************//
 
-// The canonical MED digest of a file is SHA-256 over: data region first, universal header last,
-// pcrc regions excluded (derived data, rewritten by parity maintenance - excluded like parity coverage).
-// Data-then-UH order lets a writer absorb body bytes as they are written (fwrite_m13() fusion via
-// FILE_FLAGS_DIGEST_m13) & the settled universal header once at close - no re-read of arbitrarily
-// large files. Video data files keep their UH at the file END (canonical == physical order).
-// Files smaller than one universal header are digested whole, in file order (degenerate case).
+// The canonical MED digest covers: data region first, universal header last, pcrc regions excluded
+// (derived data, rewritten by parity maintenance - excluded like parity coverage). Data-then-UH order
+// lets a writer absorb body bytes as they are written (fwrite_m13() fusion via FILE_FLAGS_DIGEST_m13)
+// & the settled universal header once at close - no re-read of arbitrarily large files.
+// Video data files keep their UH at the file END (canonical == physical order).
+//
+// A digest operation yields DGST_RESULT_m13:
+//	body   - SHA-256 of the data region alone: survives legitimate UH transformations
+//	         (rename, de-identification, updater) & identifies the data across them
+//	full   - SHA-256 of data region then UH: the canonical digest (UH tamper evidence - times, UIDs)
+//	resume - the pre-UH SHA state (serialized): a changed UH can be absorbed onto it to re-derive
+//	         full WITHOUT re-reading the body (constant time at any file size);
+//	         self-consistency: finalizing the resume state alone MUST reproduce body (DGST_resume_valid_m13())
+// Files smaller than one universal header are digested whole, in file order (degenerate: body == full).
 // External verification of a standard file without pcrcs:
-//	cat <(tail -c +1025 file) <(head -c 1024 file) | shasum -a 256
+//	body:	tail -c +1025 file | shasum -a 256
+//	full:	cat <(tail -c +1025 file) <(head -c 1024 file) | shasum -a 256
 // Consumed by the CSig record type (REC_build_CSig_body_m13(), medrec_m13)
 
 // Constants
 #define DGST_BYTES_m13		SHA_HASH_BYTES_m13 // 32
 #define DGST_CHUNK_BYTES_m13	((si8) 1 << 22) // 4 MiB streaming-read chunk (constant memory at any file size)
 
+// resume state serialization (little endian, explicit layout - NOT a raw SHA_CTX_m13 copy):
+#define DGST_RESUME_STATE_OFFSET_m13	0	// ui4[8] (SHA chaining state)
+#define DGST_RESUME_BITLEN_OFFSET_m13	32	// ui8 (bits absorbed)
+#define DGST_RESUME_DATALEN_OFFSET_m13	40	// ui4 (valid bytes in partial block)
+#define DGST_RESUME_DATA_OFFSET_m13	44	// ui1[64] (buffered partial block; bytes past datalen zeroed for determinism)
+#define DGST_RESUME_BYTES_m13		108
+
 // Typedefs & Structures
+typedef struct {
+	ui1	body[DGST_BYTES_m13]; // data region alone
+	ui1	full[DGST_BYTES_m13]; // data region then UH (canonical)
+	ui1	resume[DGST_RESUME_BYTES_m13]; // pre-UH SHA state
+} DGST_RESULT_m13;
+
 typedef struct DGST_STREAM_m13 {
 	SHA_CTX_m13	ctx; // canonical-order streaming context (data-region bytes)
-	si8		high_water; // data-region bytes absorbed so far
+	ui1		hold[UH_BYTES_m13]; // video only: trailing holdback so the pre-UH state is capturable (UH arrives in stream order)
+	si8		high_water; // data-region bytes received so far (video: absorbed + held)
+	si4		hold_bytes; // video only: valid bytes in hold
 	tern		dirty; // stream invalidated (rewrite below high water, or gapped write) => finalize returns UNKNOWN_m13
-	tern		video; // UH at file end: physical == canonical order (UH bytes absorbed in stream, none at finalize)
+	tern		video; // UH at file end: physical == canonical order
 } DGST_STREAM_m13;
 
 // Function Prototypes
 tern	DGST_begin_m13(FILE_m13 *fp); // attach stream to a MED file open for writing (existing data-region bytes caught up by read; forces LEN & POS flags)
-tern	DGST_file_m13(const si1 *path, ui1 *digest); // canonical digest by streamed read (DGST_BYTES_m13 out)
-tern	DGST_finalize_m13(FILE_m13 *fp, ui1 *digest); // absorb settled UH, emit digest, detach; UNKNOWN_m13 == stream unusable (fall back to DGST_file_m13()), FALSE_m13 == error
+tern	DGST_file_m13(const si1 *path, DGST_RESULT_m13 *result); // canonical digests by streamed read
+tern	DGST_finalize_m13(FILE_m13 *fp, DGST_RESULT_m13 *result); // absorb settled UH, emit digests, detach; UNKNOWN_m13 == stream unusable (fall back to DGST_file_m13()), FALSE_m13 == error
 void	DGST_free_m13(FILE_m13 *fp); // detach & free stream state without producing a digest (also called by fclose_m13())
+tern	DGST_full_from_resume_m13(const ui1 *resume, const ui1 *uh_bytes, ui1 *full_digest); // absorb a (new) UH onto a stored resume state => full digest, no body re-read
+tern	DGST_resume_valid_m13(const ui1 *resume, const ui1 *body_digest); // finalizing the resume state alone must reproduce body
 void	DGST_update_m13(FILE_m13 *fp, const void *ptr, si8 n_bytes, si8 offset); // fwrite_m13() hook (internal use)
+
+
+
+//**********************************************************************************//
+//**********************  VID: Video Container Keyframe Walk  *********************//
+//**********************************************************************************//
+
+// Enumerates the keyframes (sync samples) of a video container from the container's own tables,
+// yielding what MED video indices need: byte offset, frame number, & time offset of every frame a
+// decoder can start from. Consulted ONCE, when indices are WRITTEN (conversion) - at read time the
+// MED index replaces the container's seek machinery entirely (see the video index specification).
+// Live acquisition does not parse containers: the encoder knows each keyframe as it is emitted &
+// calls VID_keyframe_to_index_m13() directly - the same converter path, minus the walk.
+// Backends: AVI (idx1 index; e.g. Natus/XLTek exports). ISO-BMFF (mp4/mov: stss/stsc/stco/stsz)
+// reserved for a future need - clinical EEG video is overwhelmingly AVI-contained.
+
+// Constants
+#define VID_WALK_CONTAINER_UNKNOWN_m13	((ui4) 0)
+#define VID_WALK_CONTAINER_AVI_m13	((ui4) 1)
+#define VID_WALK_CONTAINER_BMFF_m13	((ui4) 2) // reserved (not yet implemented)
+
+// Typedefs & Structures
+typedef struct {
+	si8	file_offset; // byte offset of the keyframe's coded data within the video file
+	si8	frame_num; // zero-based frame number within the FILE (segment-relative numbering is the caller's: add the file's start frame)
+	sf8	time_offset; // seconds from file start (frame_num / frame_rate under fixed rate)
+} VID_KEYFRAME_m13;
+
+typedef struct {
+	ui4			container; // VID_WALK_CONTAINER_*
+	ui4			video_stream; // video stream index within the container
+	si1			codec[8]; // fourcc as string (e.g. "XVID")
+	ui4			horizontal_pixels;
+	ui4			vertical_pixels;
+	sf8			frame_rate; // frames per second (from container header)
+	si8			n_frames; // total video frames in the file
+	tern			has_audio; // audio stream(s) present (they travel in the container; MED indexes video only)
+	si8			n_keyframes;
+	VID_KEYFRAME_m13	*keyframes; // ordered by frame number; freed by VID_walk_free_m13()
+} VID_WALK_m13;
+
+// Prototypes
+tern		VID_keyframe_to_index_m13(const VID_KEYFRAME_m13 *kf, si8 file_start_time_uutc, si8 file_start_frame_num, ui4 vid_file_num, VID_IDX_m13 *vi); // keyframe facts -> a video index entry (converters loop the walk; live acquisition calls per emitted keyframe)
+VID_WALK_m13	*VID_walk_m13(const si1 *path); // walk a finished container's tables; NULL on error
+void		VID_walk_free_m13(VID_WALK_m13 **walk);
 
 
 
@@ -5315,6 +5550,20 @@ typedef struct {
 	si8	offset; // offset (in bytes) of packet data into full data (*** does not include header ***)
 } TR_HDR_m13;
 
+// transmission header layout (compile-time; see LAYOUT_*_m13 note)
+LAYOUT_SIZE_m13(TR_HDR_m13, TR_HDR_BYTES_m13);
+LAYOUT_FIELD_m13(TR_HDR_m13, crc, 0);
+LAYOUT_FIELD_m13(TR_HDR_m13, packet_bytes, 4);
+LAYOUT_FIELD_m13(TR_HDR_m13, flags, 6);
+LAYOUT_FIELD_m13(TR_HDR_m13, ID_string, 8);
+LAYOUT_FIELD_m13(TR_HDR_m13, ID_code, 8);
+LAYOUT_FIELD_m13(TR_HDR_m13, type, 13);
+LAYOUT_FIELD_m13(TR_HDR_m13, subtype, 14);
+LAYOUT_FIELD_m13(TR_HDR_m13, version, 15);
+LAYOUT_FIELD_m13(TR_HDR_m13, combined_check, 12);
+LAYOUT_FIELD_m13(TR_HDR_m13, transmission_bytes, 16);
+LAYOUT_FIELD_m13(TR_HDR_m13, offset, 24);
+
 typedef struct {
 	union {
 		ui1		*buffer; // used internally, first portion is the transmission header
@@ -5347,7 +5596,6 @@ typedef struct {
 TR_INFO_m13	*TR_alloc_trans_info_m13(si8 buffer_bytes, ui4 ID_code, ui1 header_flags, sf4 timeout, const si1 *password);
 tern		TR_bind_m13(TR_INFO_m13 *trans_info, si1 *iface_addr, ui2 iface_port);
 tern		TR_build_message_m13(TR_MESSAGE_HDR_m13 *msg, const si1 *message_text);
-tern		TR_check_transmission_header_alignment_m13(ui1 *bytes);
 tern		TR_close_transmission_m13(TR_INFO_m13 *trans_info);
 tern		TR_connect_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port);
 tern		TR_connect_to_server_m13(TR_INFO_m13 *trans_info, const si1 *dest_addr, ui2 dest_port);
