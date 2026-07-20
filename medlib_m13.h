@@ -234,13 +234,61 @@ typedef uint16_t	ui2;
 typedef int16_t		si2;
 typedef uint32_t	ui4;
 typedef int32_t		si4;
+#ifdef FMT_DEBUG_m13  // LP64 platforms only: si8/ui8 as long so the codebase's %ld/%lu convention is exact & -Wformat reports only real bugs
+typedef unsigned long	ui8;
+typedef long		si8;
+#else
 typedef uint64_t	ui8;
 typedef int64_t		si8;
+#endif
+
+// FMT_DEBUG_m13: printf-family format checking (see targets_m13.h)
+// the m13 printf wrappers are varargs functions, so without this attribute the compiler cannot check
+// format/argument agreement (e.g. a type CODE passed to %s compiles silently & crashes at runtime)
+#ifdef FMT_DEBUG_m13
+#define FMT_ATTR_m13(fmt_idx, va_idx)	__attribute__((format(printf, fmt_idx, va_idx)))
+#else
+#define FMT_ATTR_m13(fmt_idx, va_idx)
+#endif
 typedef float		sf4;
 typedef double		sf8;
 typedef long double	sf16;
 
 // Ternary Defines
+// --- inter-thread publish / observe -----------------------------------------------------------------
+//
+// For lock-free producer/consumer handoff (ring buffers &c), where one thread writes data & then
+// publishes an index or pointer that vouches for it.
+//
+// "volatile" is NOT sufficient for this & never was: it is a directive to the COMPILER (do not keep a
+// local copy in a register) & emits no CPU barrier.  It also says nothing about the ordering of the
+// surrounding non-volatile data accesses.  On a strongly ordered machine (x86-64, which never reorders
+// store-with-store or load-with-load) the handoff happens to work anyway.  On a WEAKLY ORDERED machine
+// - arm64, i.e. Apple Silicon & ARM Linux - the producer's data writes may become visible AFTER the
+// pointer that vouches for them, so the consumer can observe a published pointer & then read a slot
+// that has not been written yet.  The symptom is a few corrupted samples, rarely, with no crash.
+//
+// Release/acquire state the guarantee the code already assumes:
+//   RELEASE_STORE: everything written before this is visible before this store becomes visible
+//   ACQUIRE_LOAD:  nothing read after this may be hoisted above this load
+// Pair them - release on publish, acquire on observe - & the consumer that sees the new pointer is
+// guaranteed to see the data written before it.
+//
+// Cost: on x86-64 both compile to the plain mov you would have written anyway; on arm64 to stlr/ldar.
+
+#if defined(MACOS_m13) || defined(LINUX_m13)
+	#define RELEASE_STORE_m13(dst, val)	__atomic_store_n(&(dst), (val), __ATOMIC_RELEASE)
+	#define ACQUIRE_LOAD_m13(src)		__atomic_load_n(&(src), __ATOMIC_ACQUIRE)
+#else  // WINDOWS_m13
+	// MSVC's default /volatile:ms gives volatile reads acquire & volatile writes release semantics on
+	// x86/x64, so the volatile qualifier on the variable itself is sufficient there.
+	// NOTE: this is NOT true for Windows-on-ARM, where /volatile:iso is the default & volatile carries
+	// no ordering at all.  Revisit these two macros if an ARM Windows target is ever added.
+	#define RELEASE_STORE_m13(dst, val)	((dst) = (val))
+	#define ACQUIRE_LOAD_m13(src)		(src)
+#endif
+
+
 #define TRUE_m13	((tern) 1)
 #define UNKNOWN_m13	((tern) 0)
 #define FALSE_m13	((tern) -1)
@@ -494,11 +542,56 @@ typedef struct {
 #define CRYPTO_SCHEMA_LEGACY_m13	((ui1) 0) // MED 1.1 original: unsalted truncated SHA-256 validation fields, password bytes used directly as AES-128 key (READ-ONLY: no new files)
 #define CRYPTO_SCHEMA_1_m13		((ui1) 1) // salted (session UID) PBKDF2-HMAC-SHA-256 master secret; HMAC-derived validation fields & AES-256 keys
 #define CRYPTO_SCHEMA_DEFAULT_m13	CRYPTO_SCHEMA_1_m13
-#define CRYPTO_KDF_EXPONENT_DEFAULT_m13	((ui1) 17) // KDF iterations == 2^n (~100-200 ms per password; performed once per session open)
+#define CRYPTO_KDF_EXPONENT_DEFAULT_m13	((ui1) 20) // KDF iterations == 2^n; 2^20 ~= 1.05M meets current external guidance (OWASP ~600k for PBKDF2-SHA256);
+						// ~300-400 ms per password per session open with hardware SHA, longer in software fallback. Recorded per file, so
+						// the default can climb with hardware forever. NOTE: iterations compensate for HUMAN password entropy - sessions
+						// created with machine-generated high-entropy passwords may legitimately set a LOW exponent at creation (the
+						// entropy lives in the password, not the stretching): set uh->kdf_exponent before G_generate_password_data_m13()
+// KDF exponent policy (see G_suggest_kdf_exponent_m13()).
+// The security invariant is a CONSTANT TOTAL ATTACK COST: an attacker pays 2^(password entropy) guesses,
+// each costing 2^(kdf exponent) PBKDF2 iterations, so entropy + exponent is what matters, not either alone.
+// A creator willing to use a stronger password may therefore spend fewer iterations for the SAME attack
+// cost, & is rewarded with faster session opens.  Weak passwords simply get the ceiling - there is no
+// punitive tier (password length policy, not iteration count, owns the bottom end: G_check_new_password_m13()).
+// Exponent is frozen into the universal header at creation (WORM), so the WORK is fixed forever; only the
+// wall-clock varies with the opening machine's SHA throughput (hardware SHA vs software fallback differ ~5-20x).
+#define CRYPTO_KDF_TARGET_BITS_m13	((si4) 20) // entropy + exponent target: suggested exponent = target - discounted estimate,
+						// capped at CRYPTO_KDF_EXPONENT_DEFAULT_m13 (a weak password gets today's normal cost, never a punitive one)
+#define CRYPTO_KDF_EXPONENT_MIN_m13	((ui1) 17) // hard floor for HUMAN-entered passwords - NOT overridable (enforced in G_generate_password_data_m13())
+#define CRYPTO_KDF_EXPONENT_MIN_GEN_m13	((ui1) 10) // hard floor for LIBRARY-GENERATED passwords (entropy is known: ~105 bits of CSPRNG typable bytes)
+#define CRYPTO_KDF_EXPONENT_MAX_m13	((ui1) 40) // sanity ceiling (2^40 iterations is already absurd; guards a fat-fingered override)
+#define CRYPTO_KDF_ESTIMATE_HAIRCUT_m13	((si4) 30) // bits subtracted from the estimate before any reward: strength estimators OVER-credit anything
+							// outside their tables, so nothing is earned until the password is comfortably strong
+#define CRYPTO_KDF_REWARD_DIVISOR_m13	((si4) 8) // bits of (discounted) entropy required to buy ONE exponent step down.
+							// A divisor of 1 would be the pure constant-attack-cost rule, but that collapses the
+							// ceiling-to-floor transition into (ceiling - floor) bits - a cliff, where a mediocre
+							// password lands on the same floor as a random one. Spreading the reward over a wide
+							// band keeps the incentive visible while conceding only a little per step, which is
+							// the right trade when the input is an ESTIMATE that fails by over-crediting.
+#define CRYPTO_KDF_CALIBRATION_ITERATIONS_m13	(1 << 14) // PBKDF2 is linear in iterations: time a short burst & extrapolate (see G_kdf_open_time_estimate_m13())
+#define CRYPTO_KDF_SLOW_MACHINE_FACTOR_m13	((sf8) 8.0) // software-SHA machines run this much slower than hardware-SHA: the "up to" figure shown to users
+
+#define CRYPTO_KDF_SALT_EXTENSION_BYTES_m13	8 // universal header kdf_salt_extension field: KDF salt = session UID (8) then extension (8)
+#define CRYPTO_KDF_SALT_BYTES_m13	(UID_BYTES_m13 + CRYPTO_KDF_SALT_EXTENSION_BYTES_m13) // 16 bytes == 128 bits (NIST SP 800-132 requires >= 128-bit random salt)
 #define CRYPTO_MASTER_BYTES_m13		16 // PBKDF2-derived master secret bytes (validation fields, keys, & level chaining all derive from this)
 #define CRYPTO_VALIDATE_STRING_m13	"MED validate" // HMAC context: master -> validation field
 #define CRYPTO_ENCRYPT_STRING_m13	"MED encrypt" // HMAC context: master -> AES-256 key
 #define CRYPTO_CHAIN_STRING_m13		"MED chain" // HMAC context: master -> level chaining material (L2 field XOR, L3 recovery)
+#define CRYPTO_ESCROW_STRING_m13	"MED escrow" // HMAC context: chain material (of the level above) -> password-string escrow key
+							// (from chain material, NOT the master: chain material is XOR-extractable from below,
+							// which is what lets a level re-key itself & below without any higher level's participation)
+#define CRYPTO_ANCHOR_STRING_m13	"MED anchor" // HMAC context: X25519 shared secret -> anchor sealed-box key
+
+// Recovery Anchor (universal header anchor_type field: the explicit top of the password hierarchy)
+// The anchor is what sits above the highest user level: it can recover the top-level password string (& thereby all
+// masters through the chains). Type 2 is the default posture: sealing requires only the PUBLIC key, so no top-level
+// secret ever exists on the writing system, & sealing is pure local computation (fully air-gap compatible).
+#define ANCHOR_TYPE_NONE_m13		((ui1) 0) // no anchor: top-level password string is unrecoverable
+#define ANCHOR_TYPE_PASSWORD_m13	((ui1) 1) // anchor is a password (traditional customer-held level 3): validated & chained like any level
+#define ANCHOR_TYPE_X25519_m13		((ui1) 2) // anchor is an X25519 public key: escrow field is a sealed box openable only by the private-key holder
+#define ESCROW_FIELD_BYTES_m13		PASSWORD_BYTES_m13 // password strings are single AES blocks by design (16-byte password limit)
+#define ANCHOR_ESCROW_FIELD_BYTES_m13	48 // type 1: AES-256(escrow key, top-level pw bytes) then 32 zero bytes
+							// type 2: ephemeral X25519 public key (32) then AES-256(sealed key, top-level pw bytes) (16)
 
 // Password Data Structure
 typedef struct {
@@ -770,6 +863,8 @@ typedef struct {
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_WRITE_CSIGS_DEFAULT_m13				TRUE_m13
 #define GLOBALS_CSIG_REREAD_MAX_GB_DEFAULT_m13			((si8) 16) // dirty-stream fallback: re-read files <= this many GB, skip + warn above (RC field in GB; stored as bytes)
+#define GLOBALS_SESSION_KEY_CACHE_DEFAULT_m13			FALSE_m13 // HIGH-SECURITY default: no derived-key caching (see "Session Key Cache" RC field NOTES; mechanism designed, not yet implemented)
+#define GLOBALS_SESSION_KEY_CACHE_TIMEOUT_DEFAULT_m13		((si4) 3600) // cached session key lifetime, seconds
 #define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // number of processes
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
@@ -927,8 +1022,9 @@ typedef struct {
 #define UH_FILE_START_TIME_OFFSET_m13				48 // si8
 #define UH_SESSION_NAME_OFFSET_m13				56 // utf8[63]
 #define UH_CHANNEL_NAME_OFFSET_m13				312 // utf8[63]
-#define UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13		568 // Anonymized Subject ID in MED 1.0
-#define UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13		256
+#define UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13		568 // Anonymized Subject ID in MED 1.0 (moved to metadata section 1 in MED 1.1)
+#define UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13		208 // (256 in MED 1.0: the final 48 bytes are now the anchor escrow field)
+#define UH_ANCHOR_ESCROW_FIELD_OFFSET_m13			776 // final 48 bytes of the MED 1.0 supplementary protected region (see ANCHOR_ESCROW_FIELD_BYTES_m13)
 #define UH_SESSION_UID_OFFSET_m13				824 // ui8
 #define UH_CHANNEL_UID_OFFSET_m13				832 // ui8
 #define UH_SEGMENT_UID_OFFSET_m13				840 // ui8
@@ -940,7 +1036,7 @@ typedef struct {
 #define UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13 			912 // ui4, MED 1.1 & above
 #define UH_LIVE_OFFSET_m13					916 // tern, MED 1.1 & above
 #define UH_ORDERED_OFFSET_m13					917 // tern, MED 1.1 & above
-#define UH_EXPANDED_PASSWORDS_OFFSET_m13			918 // tern, MED 1.1 & above
+#define UH_RESERVED_918_OFFSET_m13				918 // reserved (was "expanded_passwords": password expansion removed 2026-07-18 - never used in any released file; zero)
 #define UH_RESERVED_919_OFFSET_m13				919 // ui1, reserved (was "encryption rounds": multi-round encryption removed - never used, no benefit over single-pass AES-256)
 #define UH_ENCRYPTION_1_OFFSET_m13				920 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_2_OFFSET_m13				921 // si1, MED 1.1 & above
@@ -948,16 +1044,21 @@ typedef struct {
 #define UH_ENCRYPTION_4_OFFSET_m13				923 // si1, MED 1.1 & above
 #define UH_CRYPTO_SCHEMA_OFFSET_m13				924 // ui1, taken from protected region (zeros in files written before this field == CRYPTO_SCHEMA_LEGACY_m13)
 #define UH_KDF_EXPONENT_OFFSET_m13				925 // ui1, taken from protected region (KDF iterations == 2^n; unused under legacy schema)
-#define UH_PROTECTED_REGION_OFFSET_m13				926
-#define UH_PROTECTED_REGION_BYTES_m13				50
-#define UH_DISCRETIONARY_REGION_OFFSET_m13			976
-#define UH_DISCRETIONARY_REGION_BYTES_m13			48
+#define UH_ANCHOR_TYPE_OFFSET_m13				926 // ui1, taken from protected region (see ANCHOR_TYPE_*_m13; zeros in older files == no anchor)
+#define UH_ANCHOR_KEY_ID_OFFSET_m13				927 // ui1, taken from protected region (identifies the anchor public key under type 2; zero otherwise)
+#define UH_LEVEL_1_ESCROW_FIELD_OFFSET_m13			928 // 16 bytes, taken from protected region (AES-256(escrow key from L2 chain material, L1 password bytes))
+#define UH_RESERVED_LEVEL_4_ESCROW_FIELD_OFFSET_m13		944 // 16 bytes, EXPLICITLY RESERVED for a future level 4 escrow field: zero until then
+#define UH_RESERVED_LEVEL_4_VALIDATION_FIELD_OFFSET_m13		960 // 16 bytes, EXPLICITLY RESERVED for a future level 4 validation field: zero until then
+#define UH_KDF_SALT_EXTENSION_OFFSET_m13			976 // 8 bytes (first bytes of the former discretionary region): KDF salt = session UID (8) then this (8) == 128 bits (NIST SP 800-132)
+#define UH_PROTECTED_REGION_OFFSET_m13				984
+#define UH_PROTECTED_REGION_BYTES_m13				40 // the remainder of the former discretionary region, reclaimed as protected 2026-07-18: the universal
+									// header is entirely machine space - user extension space is metadata discretionary regions & records
+// (universal header discretionary region removed 2026-07-18: 48 bytes @ 976 reclaimed into the protected region - see above)
 
 // defaults
 #define UH_DATA_ENCRYPTION_DEFAULT_m13				NO_ENCRYPTION_m13 // si1, MED 1.1 & above
 #define UH_METADATA_SECTION_2_ENCRYPTION_DEFAULT_m13		LEVEL_1_ENCRYPTION_m13 // si1, MED 1.1 & above
 #define UH_METADATA_SECTION_3_ENCRYPTION_DEFAULT_m13		LEVEL_2_ENCRYPTION_m13 // si1, MED 1.1 & above
-#define UH_EXPANDED_PASSWORDS_DEFAULT_m13			FALSE_m13 // DEPRECATED: expansion eliminated (added no entropy; generator was an interoperability burden); field retained in layout, always false
 
 // Metadata: File Format Constants
 #define METADATA_BYTES_m13			15360 // 15 KiB
@@ -1073,9 +1174,9 @@ typedef struct {
 #define VID_METADATA_HORIZONTAL_PIXELS_NO_ENTRY_m13			0
 #define VID_METADATA_VERTICAL_PIXELS_OFFSET_m13				8420  // ui4
 #define VID_METADATA_VERTICAL_PIXELS_NO_ENTRY_m13			0
-#define VID_METADATA_VIDEO_FORMAT_OFFSET_m13				8424  // utf8[63]
-#define VID_METADATA_VIDEO_FORMAT_BYTES_m13				256
-#define VID_METADATA_DISPLAY_TRANSFORM_OFFSET_m13			8680  // ui1 (allocated from protected region 2026-07-16: zero in older files == no entry)
+#define VID_METADATA_VIDEO_FORMAT_OFFSET_m13				8424  // utf8[31] (human-readable container/codec tag; machine truth in codec_config)
+#define VID_METADATA_VIDEO_FORMAT_BYTES_m13				128
+#define VID_METADATA_DISPLAY_TRANSFORM_OFFSET_m13			8552  // ui1
 #define VID_METADATA_DISPLAY_TRANSFORM_NO_ENTRY_m13			((ui1) 0)  // display as stored
 // display transform values 1-8 are numerically identical to EXIF/TIFF Orientation (the complete, closed set of
 // axis-aligned rectangle transforms); camera SEMANTICS (mounting, viewpoint) belong in equipment_description
@@ -1087,8 +1188,15 @@ typedef struct {
 #define VID_METADATA_DISPLAY_TRANSFORM_ROT_90_m13			((ui1) 6)  // right / top (rotated 90 CW)
 #define VID_METADATA_DISPLAY_TRANSFORM_MIRROR_H_ROT_90_m13		((ui1) 7)  // right / bottom (mirrored horizontal, rotated 90 CW)
 #define VID_METADATA_DISPLAY_TRANSFORM_ROT_270_m13			((ui1) 8)  // left / bottom (rotated 270 CW)
-#define VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13		8681
-#define VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13		1807
+#define VID_METADATA_VIDEO_FLAGS_OFFSET_m13				8553  // ui1
+#define VID_METADATA_VIDEO_FLAGS_NO_ENTRY_m13				((ui1) 0)
+#define VID_METADATA_VIDEO_FLAGS_EMBEDDED_AUDIO_MASK_m13		((ui1) 1)  // container carries audio stream(s): unindexed, travel with video bytes
+#define VID_METADATA_CODEC_CONFIG_BYTES_OFFSET_m13			8554  // ui2
+#define VID_METADATA_CODEC_CONFIG_BYTES_NO_ENTRY_m13			((ui2) 0)
+#define VID_METADATA_CODEC_CONFIG_OFFSET_m13				8556  // ui1[512]
+#define VID_METADATA_CODEC_CONFIG_MAX_BYTES_m13				512  // if a codec's private data exceeds this, encoder MUST use in-band parameter sets & leave this empty
+#define VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13		9068
+#define VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13		1420
 #define VID_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13		10488
 #define VID_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m13		1800
 
@@ -1190,6 +1298,7 @@ typedef struct {
 #define MED_10_METADATA_SECTION_3_ENCRYPTION_LEVEL_OFFSET_m13		1537 // si1
 #define MED_10_METADATA_TS_DATA_ENCRYPTION_LEVEL_OFFSET_m13		1538 // si1
 #define MED_10_UH_ANONYMIZED_SUBJECT_ID_OFFSET_m13			568 // utf8[63]
+#define MED_10_UH_ANONYMIZED_SUBJECT_ID_FIELD_BYTES_m13			256 // the full MED 1.0 region: now supplementary protected (208) + anchor escrow field (48) - the updater must zero ALL of it
 #define MED_10_CMP_BF_LEVEL_1_ENCRYPTION_BIT_m13			((ui4) 1 << 4)
 #define MED_10_CMP_BF_LEVEL_2_ENCRYPTION_BIT_m13			((ui4) 1 << 4)
 
@@ -1518,8 +1627,10 @@ typedef void 	(*sig_handler_t_m13)(si4); // signal handler function pointer
 	typedef void *			pthread_attr_t_m13;
 	typedef ui4 			pthread_rval_m13;
 	typedef pthread_rval_m13 	(*pthread_fn_m13)(void *);
-	typedef	HANDLE			pthread_mutex_t_m13;
-	typedef	SECURITY_ATTRIBUTES	pthread_mutexattr_t_m13;
+	typedef	SRWLOCK			pthread_mutex_t_m13; // user-mode lock, no syscall on uncontended paths (a kernel Mutex object costs a syscall per op)
+						// zero-initialized == SRWLOCK_INIT == valid unlocked lock (statically initialized & calloc'd mutexes work without init, as with PTHREAD_MUTEX_INITIALIZER)
+						// not recursive (matches POSIX default mutexes); no abandoned-lock rescue (POSIX has none either); must be released by the acquiring thread
+	typedef	SECURITY_ATTRIBUTES	pthread_mutexattr_t_m13; // accepted for interface parity; ignored (SRWLOCKs take no attributes)
 
 // semaphores
 	typedef	HANDLE			sem_t_m13;
@@ -1561,7 +1672,7 @@ typedef struct {
 	const si1		*affinity_str; // if not empty, a cpu set will be created; if cpu_set_p != NULL, the cpu set will be written at that address, if NULL it will remain so (not used in MacOS)
 	cpu_set_t_m13		*cpu_set_p; // if not NULL & affinity_str is empty, it will be used (not used in MacOS)
 	si4			priority; // if not set, system default priority will be used
-	_Atomic ui4		status;
+	_Atomic ui4		status; // contract enforced by PROC_job_init_m13(): RUNNING set before function runs, finish status guaranteed after return (function may also set these itself)
 	pid_t_m13		_id; // thread id [ set by PROC_job_init_m13() ]
 	pid_t_m13		_pid; // parent thread id [ set by PROC_launch_job_m13() ]
 	ui4			parent_behavior; // spawner's behavior code at launch (snapshot) [ set by PROC_job_launch_m13(); pushed as thread's base behavior by PROC_job_init_m13() ]
@@ -1569,6 +1680,13 @@ typedef struct {
 	tern			detached; // if TRUE_m13, thread exits when finished, not joinable
 	tern			skip; // if TRUE_m13, don't run this job (e.g. because data missing)
 } PROC_JOB_m13;
+
+// thread trampoline for pthread_create_m13(): carries the spawner's behavior (snapshot at spawn) into the new thread
+typedef struct {
+	pthread_fn_m13	fn;
+	void		*arg;
+	ui4		behavior;
+} G_THREAD_TRAMPOLINE_m13;
 
 // Prototypes
 // Note: medlib versions of standard pthread functions are prototyped with other standard function versions
@@ -1756,9 +1874,10 @@ tern			PAR_wait_all_m13(PAR_INFO_m13 **par_infos, si4 n_infos, const si1 *interv
 
 // Miscellaneous
 #define PRTY_BLOCK_BYTES_DEFAULT_m13	4096 // used in PRTY_CRC_DATA_m13 (must be multiple of 4)
-#define PRTY_PCRC_TAG_m13		((ui8) 0x0123456789ABCDEF) // used in PRTY_CRC_DATA_m13
-#define PRTY_PCRC_EXT_TAG_m13		((ui8) 0xFEDCBA9876543210) // used in PRTY_PCRC_EXT_FOOTER_m13 (distinct from PRTY_PCRC_TAG_m13)
-#define PRTY_PCRC_EXT_VER_m13		((ui1) 1)
+#define PRTY_PCRC_TAG_m13		((ui8) 0x0123456789ABCDEF) // used in PRTY_CRC_DATA_m13 (note this is same as CMP_BLOCK_START_UID_m13 - mistake but benign in practice)
+#define PRTY_PCRC_EXT_TAG_m13		((ui8) 0xFEDCBA9876543210) // used in PRTY_PCRC_EXT_m13 (distinct from PRTY_PCRC_TAG_m13)
+#define PRTY_PCRC_EXT_VER_MAJOR_m13	((ui1) 1)
+#define PRTY_PCRC_EXT_VER_MINOR_m13	((ui1) 0)
 
 
 // Structures
@@ -1793,29 +1912,46 @@ typedef struct {
 	ui4		block_bytes; // data bytes per block (except probably the last), multiple of 4 bytes (defaults to PRTY_BLOCK_BYTES_DEFAULT_m13)
 } PRTY_CRC_DATA_m13;  // used to add CRCs to files that don't have many (e.g. index files), or any (e.g. video data files)
 
-// pcrc extension: parity files have no universal headers (their bodies are the xor of their member files), so this structure carries their identity
+// pcrc extension: parity files have no universal headers (their bodies are the xor of their member files), so the extension carries their identity
 // (names alone cannot: all sessions use the same reserved parity names & channel names are commonly reused across unrelated sessions)
+//
+// extension layout, in file order:  [ member file UIDs (8 * n_members, ascending) ] [ PRTY_PCRC_EXT_m13 ]
+//
 // written between the parity data & the pcrc crcs, & covered by them, so it is transparent to pre-extension readers (which locate everything relative to the file end)
+// everything is located backward from the tag at the end of the structure, so the extension is end-anchored like the pcrc data itself
+//
+// session_UID & segment_UID are NOT duplicated here: they are carried by PRTY_CRC_DATA_m13 (below).  Those fields are unreliable in
+// legacy files only, & legacy files have no extension - so the presence of a valid extension is what certifies them.  channel_UID has
+// no PRTY_CRC_DATA_m13 field (video parity is paired within a segment, so it needs an associated channel as well), so it lives here.
+//
 // legacy pcrc data (m12 & early m13) has no extension: the UID fields of PRTY_CRC_DATA_m13 were never set in those files & are unreliable
+//
+// versioning: tag & version fields are end-anchored & never move; fields preceding them may change with version_major
 typedef struct {
-	ui8	session_UID; // session UID of member files (present in all extended parity files)
+	ui1	protected_region[2]; // zeros
+	ui1	version_major; // PRTY_PCRC_EXT_VER_MAJOR_m13
+	ui1	version_minor; // PRTY_PCRC_EXT_VER_MINOR_m13
+	ui4	n_members; // number of member file UIDs preceding this structure (8 * n_members bytes)
 	ui8	channel_UID; // channel UID if common to all member files (e.g. video data parity), otherwise UID_NO_ENTRY_m13
-	ui8	segment_UID; // segment UID if common to all member files (e.g. video data parity), otherwise UID_NO_ENTRY_m13
-	ui4	n_members; // number of member file UIDs following this structure
-	ui1	version; // PRTY_PCRC_EXT_VER_m13
-	ui1	protected_region[19]; // zeros
-	ui8	member_file_UIDs[]; // file UIDs of the members the parity was built from, ascending order (flexible array member)
-} PRTY_PCRC_EXT_m13; // 48 bytes + (8 * n_members) in file
-
-typedef struct {
-	ui4	ext_bytes; // total extension bytes: PRTY_PCRC_EXT_m13 + member file UIDs + this footer (multiple of 8)
-	ui1	protected_region[4]; // zeros
 	ui8	tag; // PRTY_PCRC_EXT_TAG_m13 (marker to confirm identity of extension; located backward from start of pcrc crcs)
-} PRTY_PCRC_EXT_FOOTER_m13; // 16 bytes
+} PRTY_PCRC_EXT_m13; // 24 bytes
+
+// in-memory aggregate of a parity file's full identity: NOT an on-disk layout.  session_UID & segment_UID are read from
+// PRTY_CRC_DATA_m13; channel_UID, version, & the member manifest from the extension.  returned by PRTY_pcrc_ext_m13() &
+// PRTY_set_pcrc_uids_m13() so callers have one object; the fields are written to / read from disk separately (see above).
+typedef struct {
+	ui8	session_UID; // from PRTY_CRC_DATA_m13
+	ui8	channel_UID; // from PRTY_PCRC_EXT_m13
+	ui8	segment_UID; // from PRTY_CRC_DATA_m13
+	ui1	version_major; // from PRTY_PCRC_EXT_m13
+	ui1	version_minor;
+	ui4	n_members;
+	ui8	member_file_UIDs[]; // ascending order (flexible array member)
+} PRTY_PCRC_IDENT_m13;
 
 // Parity File Structure:
 // 1) parity data
-// 2) pcrc extension (PRTY_PCRC_EXT_m13 + member file UIDs + PRTY_PCRC_EXT_FOOTER_m13) // identity of parity data (parity files have no universal headers); absent in legacy files
+// 2) pcrc extension (member file UIDs + PRTY_PCRC_EXT_m13) // identity of parity data (parity files have no universal headers); absent in legacy files
 // 3) crc of parity data (& extension) in blocks // used to confirm that parity data is not itself damaged, & if so, to localize the damage, so that it can hopefully still be used & then rebuilt
 // 4) PRTY_CRC_DATA_m13 structure
 
@@ -1826,12 +1962,12 @@ si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files);
 ui4	PRTY_flag_for_path_m13(const si1 *path);
 tern	PRTY_is_parity_m13(const si1 *path, tern MED_file);
 si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path);
-PRTY_PCRC_EXT_m13	*PRTY_pcrc_ext_m13(FILE_m13 *fp, const si1 *file_path, si8 *ext_offset);
+PRTY_PCRC_IDENT_m13	*PRTY_pcrc_ext_m13(FILE_m13 *fp, const si1 *file_path, si8 *ext_offset);
 si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *pcrc);
 tern	PRTY_recover_segment_header_fields_m13(const si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
 tern	PRTY_restore_m13(const si1 *MED_path);
-PRTY_PCRC_EXT_m13	*PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path);
+PRTY_PCRC_IDENT_m13	*PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path);
 tern	PRTY_show_pcrc_m13(const si1 *file_path);
 tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path
 tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path)
@@ -1857,6 +1993,28 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes);
 #define RC_UNKNOWN_TYPE_m13 	5
 
 #define RC_STRING_BYTES_m13	256
+
+// RC field-table target types (see the RC field table & writer in medlib_m13.c)
+#define RC_TGT_TERN_m13		1  // target is a tern in the globals
+#define RC_TGT_SI4_m13		2  // target is an si4
+#define RC_TGT_SI8_m13		3  // target is an si8; "shift" scales the file value (e.g. GB -> bytes)
+#define RC_TGT_VERSION_m13	4  // validated, not stored
+#define RC_TGT_CHATTINESS_m13	5  // maps to default_behavior.code suppression bits
+#define RC_TGT_CRC_MODE_m13	6  // maps to a CRC mode bit pair
+#define RC_TGT_FILE_LOCK_m13	7  // maps to a file lock mode
+
+typedef struct {
+	const si1	*name;
+	const si1	*notes;		// newline separated; each line is emitted as its own "%% NOTES:" line
+	const si1	*type_str;	// as it appears in the file
+	const si1	*options_key;	// "OPTIONS ONLY" (closed set) or "OPTIONS" (free value)
+	const si1	*options;
+	const si1	*dflt;
+	si4		rc_type;	// type passed to the RC parser
+	si4		target_type;	// RC_TGT_*
+	void		*target;	// NULL for the mapped & validated kinds
+	si4		shift;		// RC_TGT_SI8_m13: file value << shift == stored value
+} RC_FIELD_m13;
 
 
 // Prototypes
@@ -2034,6 +2192,13 @@ typedef struct {
 	const si1	msg[E_TBL_MSG_LEN_m13];
 } E_STRING_m13;
 
+#define E_CHAIN_THREADS_m13	16 // thread-ancestry snapshot depth (matches FT_SNAP_STACKS_m13)
+
+typedef struct {
+	pid_t_m13	_id;
+	si1		name[THREAD_NAME_BYTES_m13];
+} E_CHAIN_ENTRY_m13;
+
 typedef struct {
 	_Atomic si4		code;
 	si4			signal;
@@ -2042,6 +2207,8 @@ typedef struct {
 	si1			message[E_MAX_MSG_LEN_m13];
 	si1			thread_name[THREAD_NAME_BYTES_m13];
 	_Atomic pid_t_m13	thread_id;
+	si4			n_chain_threads; // thread-ancestry snapshot (causal thread first), captured at error set:
+	E_CHAIN_ENTRY_m13	thread_chain[E_CHAIN_THREADS_m13]; // the error carries everything needed to describe its origin, so thread-list entries need not outlive their threads (symmetric with the function stack snapshot)
 	pthread_mutex_t_m13	mutex; // prevent access while being modified (does not duplicate role of isem)
 	isem_t_m13		isem; // inverse semaphore
 } ERROR_m13;
@@ -2449,7 +2616,7 @@ typedef struct { // single thread access
 	FUNCTION_ENTRY_m13	*functions;
 	si4			size; // total allocated functions
 	si4			top_idx; // top of function stack
-	// Note: error display state lives in the error snapshot (see FT_SNAPSHOT_m13 in medlib_m13.c) -
+	// Note: error display state lives in the error snapshot (see FT_SNAPSHOT_m13 below) -
 	// live stacks are never frozen by errors (error may be handled & cleared, execution continues)
 } FUNCTION_STACK_m13;
 
@@ -2459,6 +2626,28 @@ typedef struct { // multiple thread access
 	_Atomic si4			size; // total allocated function_stacks
 	_Atomic si4			top_idx; // last non-empty function_stack in list
 } FUNCTION_STACK_LIST_m13;
+
+#ifdef FT_DEBUG_m13
+// error function stack snapshot: G_set_error_exec_m13() copies the function stacks of the causal thread & its
+// ancestors here for later display (G_show_function_stack_m13() / exit_exec_m13()); subsequent pops record the
+// error's propagation (return lines) into the snapshot; live stacks are never modified, so function tracking
+// continues normally when an error is handled & cleared (e.g. PAR job errors captured into their handles)
+#define FT_SNAP_STACKS_m13	16 // maximum thread chain depth
+#define FT_SNAP_FRAMES_m13	256 // maximum frames per stack
+
+typedef struct {
+	pid_t_m13		_id; // thread id at snapshot
+	si4			n_frames;
+	si4			unwind_idx; // error propagation recording position (top frame first); -1 == fully unwound
+	FUNCTION_ENTRY_m13	frames[FT_SNAP_FRAMES_m13];
+} FT_SNAP_STACK_m13;
+
+typedef struct {
+	_Atomic tern		active;
+	si4			n_stacks;
+	FT_SNAP_STACK_m13	stacks[FT_SNAP_STACKS_m13]; // causal thread first, ancestors follow
+} FT_SNAPSHOT_m13;
+#endif  // FT_DEBUG_m13
 
 typedef struct { // multiple thread access
 	pthread_mutex_t_m13		mutex;
@@ -2484,6 +2673,14 @@ typedef struct { // multiple thread access
 	_Atomic si4			size; // total allocated locks
 	_Atomic si4			top_idx; // last non-empty lock in list
 } FLOCK_LIST_m13;
+
+#define FLOCK_HELD_SLOTS_m13	16
+
+typedef struct { // single thread access (thread-local read-lock bookkeeping)
+	FLOCK_ENTRY_m13	*entry; // NULL == empty slot
+	ui8		file_id; // validates entry (slot is stale if entry was reused for another file)
+	si4		count; // read locks held on entry by this thread
+} FLOCK_HELD_READS_m13;
 
 typedef struct { // multiple thread access
 	_Atomic(void *)		address;
@@ -2556,6 +2753,8 @@ typedef struct {
 	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
 	tern				write_CSigs; // write CSig (attestation) records at custody events (close, conversion, transfer, archive, repair, rekey; see DGST module & REC_write_CSig_m13())
 	si8				CSig_reread_max_bytes; // dirty/unusable digest stream fallback policy: files at or below this size are re-read (DGST_file_m13()), larger files skip with a warning
+	tern				session_key_cache; // cache derived session keys in the OS key store (repeated short-process session opens skip the KDF; mechanism designed, not yet implemented)
+	si4				session_key_cache_timeout; // cached session key lifetime, seconds
 	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
 	TEST_BYTE_m13			test_byte;
 	_Atomic tern			suspend_stacks;
@@ -2625,6 +2824,7 @@ typedef struct {
 	si1		session_name[NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	si1		channel_name[NAME_BYTES_m13]; // utf8[63], base name only, no extension
 	ui1		supplementary_protected_region[UH_SUPPLEMENTARY_PROTECTED_REGION_BYTES_m13];
+	ui1		anchor_escrow_field[ANCHOR_ESCROW_FIELD_BYTES_m13]; // top-level password string escrow (see anchor_type; final 48 bytes of the MED 1.0 supplementary protected region)
 	ui8		session_UID; // session UID of originating data set
 	ui8		channel_UID; // channel UID of originating data set
 	ui8		segment_UID; // segment UID of originating data set
@@ -2636,7 +2836,7 @@ typedef struct {
 	ui4		video_data_file_number; // MED 1.1 and above
 	tern		live; // file currently being acquired
 	tern		ordered; // MED 1.1 and above
-	tern		expanded_passwords; // MED 1.1 and above (DEPRECATED: always false; field retained in layout)
+	ui1		reserved_918; // reserved (was "expanded_passwords": password expansion removed; zero)
 	ui1		reserved_919; // reserved (was "encryption_rounds": multi-round encryption removed; zero)
 	si1		encryption_1; // MED 1.1 and above
 	si1		encryption_2; // MED 1.1 and above
@@ -2644,8 +2844,13 @@ typedef struct {
 	si1		encryption_4; // MED 1.1 and above
 	ui1		crypto_schema; // password validation & key derivation schema (taken from protected region: zeros in older files == CRYPTO_SCHEMA_LEGACY_m13, which is read-only)
 	ui1		kdf_exponent; // KDF iterations == 2^n (crypto schema 1 & above; unused under legacy schema)
-	ui1		protected_region[UH_PROTECTED_REGION_BYTES_m13];
-	ui1		discretionary_region[UH_DISCRETIONARY_REGION_BYTES_m13];
+	ui1		anchor_type; // recovery anchor form (see ANCHOR_TYPE_*_m13; taken from protected region: zeros in older files == no anchor)
+	ui1		anchor_key_ID; // which anchor public key sealed this session (anchor type 2; taken from protected region)
+	ui1		level_1_escrow_field[ESCROW_FIELD_BYTES_m13]; // AES-256(escrow key from level 2 chain material, level 1 password bytes); taken from protected region
+	ui1		reserved_level_4_escrow_field[ESCROW_FIELD_BYTES_m13]; // EXPLICITLY RESERVED for a future level 4: zero until then
+	ui1		reserved_level_4_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13]; // EXPLICITLY RESERVED for a future level 4: zero until then
+	ui1		kdf_salt_extension[CRYPTO_KDF_SALT_EXTENSION_BYTES_m13]; // KDF salt = session UID then this (128 bits total); random per session, written at password generation
+	ui1		protected_region[UH_PROTECTED_REGION_BYTES_m13]; // remainder of the former discretionary region (reclaimed 2026-07-18): the universal header is entirely machine space
 } UH_m13;
 
 // universal header layout (compile-time; see LAYOUT_*_m13 note)
@@ -2666,6 +2871,7 @@ LAYOUT_FIELD_m13(UH_m13, file_start_time, UH_FILE_START_TIME_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, session_name, UH_SESSION_NAME_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, channel_name, UH_CHANNEL_NAME_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, supplementary_protected_region, UH_SUPPLEMENTARY_PROTECTED_REGION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, anchor_escrow_field, UH_ANCHOR_ESCROW_FIELD_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, session_UID, UH_SESSION_UID_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, channel_UID, UH_CHANNEL_UID_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, segment_UID, UH_SEGMENT_UID_OFFSET_m13);
@@ -2677,7 +2883,7 @@ LAYOUT_FIELD_m13(UH_m13, level_3_password_validation_field, UH_LEVEL_3_PASSWORD_
 LAYOUT_FIELD_m13(UH_m13, video_data_file_number, UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, live, UH_LIVE_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, ordered, UH_ORDERED_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, expanded_passwords, UH_EXPANDED_PASSWORDS_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, reserved_918, UH_RESERVED_918_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, reserved_919, UH_RESERVED_919_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, encryption_1, UH_ENCRYPTION_1_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, encryption_2, UH_ENCRYPTION_2_OFFSET_m13);
@@ -2685,8 +2891,13 @@ LAYOUT_FIELD_m13(UH_m13, encryption_3, UH_ENCRYPTION_3_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, encryption_4, UH_ENCRYPTION_4_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, crypto_schema, UH_CRYPTO_SCHEMA_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, kdf_exponent, UH_KDF_EXPONENT_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, anchor_type, UH_ANCHOR_TYPE_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, anchor_key_ID, UH_ANCHOR_KEY_ID_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, level_1_escrow_field, UH_LEVEL_1_ESCROW_FIELD_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, reserved_level_4_escrow_field, UH_RESERVED_LEVEL_4_ESCROW_FIELD_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, reserved_level_4_validation_field, UH_RESERVED_LEVEL_4_VALIDATION_FIELD_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, kdf_salt_extension, UH_KDF_SALT_EXTENSION_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, protected_region, UH_PROTECTED_REGION_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, discretionary_region, UH_DISCRETIONARY_REGION_OFFSET_m13);
 
 // Metadata Structures
 typedef struct {
@@ -2754,8 +2965,11 @@ typedef struct {
 	si8	maximum_contiguous_frames;
 	ui4	horizontal_pixels;
 	ui4	vertical_pixels;
-	si1	video_format[VID_METADATA_VIDEO_FORMAT_BYTES_m13];   // utf8[31]
+	si1	video_format[VID_METADATA_VIDEO_FORMAT_BYTES_m13];   // utf8[31] (human-readable container/codec tag; machine truth in codec_config)
 	ui1	display_transform; // VID_METADATA_DISPLAY_TRANSFORM_* (EXIF Orientation semantics; 0 == no entry, display as stored)
+	ui1	video_flags;  // VID_METADATA_VIDEO_FLAGS_*
+	ui2	codec_config_bytes;  // used bytes of codec_config (0 == no entry)
+	ui1	codec_config[VID_METADATA_CODEC_CONFIG_MAX_BYTES_m13];  // container codec private data ("extradata"), verbatim; constant within a segment
 	ui1	protected_region[VID_METADATA_SECTION_2_PROTECTED_REGION_BYTES_m13];
 	ui1	discretionary_region[VID_METADATA_SECTION_2_DISCRETIONARY_REGION_BYTES_m13];
 } VID_METADATA_SECTION_2_m13;
@@ -2830,6 +3044,9 @@ LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, horizontal_pixels, VID_METADATA_HOR
 LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, vertical_pixels, VID_METADATA_VERTICAL_PIXELS_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
 LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, video_format, VID_METADATA_VIDEO_FORMAT_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
 LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, display_transform, VID_METADATA_DISPLAY_TRANSFORM_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, video_flags, VID_METADATA_VIDEO_FLAGS_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, codec_config_bytes, VID_METADATA_CODEC_CONFIG_BYTES_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
+LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, codec_config, VID_METADATA_CODEC_CONFIG_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
 LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, protected_region, VID_METADATA_SECTION_2_PROTECTED_REGION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
 LAYOUT_FIELD_m13(VID_METADATA_SECTION_2_m13, discretionary_region, VID_METADATA_SECTION_2_DISCRETIONARY_REGION_OFFSET_m13 - METADATA_SECTION_2_OFFSET_m13);
 LAYOUT_FIELD_m13(METADATA_SECTION_3_m13, recording_time_offset, METADATA_RECORDING_TIME_OFFSET_OFFSET_m13 - METADATA_SECTION_3_OFFSET_m13);
@@ -3488,12 +3705,16 @@ tern			G_check_file_list_m13(si1 **file_list, si4 n_files);
 tern			G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...); // varargs (is_cloud == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
 tern 			G_check_password_m13(const si1 *password);
 tern 			G_check_new_password_m13(const si1 *password); // creation-time policy (min length + weak-password warning); NOT used when reading
+si4			G_estimate_password_bits_m13(const si1 *password); // conservative entropy estimate in bits (dictionary/keyboard-walk/date/repeat aware); creation-time only
+ui1			G_clamp_kdf_exponent_m13(si4 exponent, tern lib_generated_password); // enforces the non-overridable floors & ceiling; the single point of policy
+ui1			G_suggest_kdf_exponent_m13(const si1 *password, tern lib_generated_password); // constant-attack-cost suggestion: clamp(target - haircut(estimate))
+sf8			G_kdf_open_time_estimate_m13(ui1 exponent, sf8 *slow_machine_secs); // seconds per password per session open ON THIS MACHINE (calibrated, not tabulated)
 si4			G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess);
 void			G_clear_error_m13(void);
 tern			G_clear_terminal_m13(void);
 si4			G_compare_acq_nums_m13(const void *a, const void *b);
 si4 			G_compare_record_index_times(const void *a, const void *b);
-tern			G_condition_password_m13(const si1 *password, si1 *password_bytes);
+tern			G_condition_password_m13(const si1 *password, si1 *password_bytes, ui1 crypto_schema); // schema >= 1: raw UTF-8 bytes, REJECT if > 16 bytes; legacy: terminal-byte reduction (read-only compatibility)
 tern			G_condition_slice_m13(void *level_header, SLICE_m13 *slice);
 tern			G_condition_timezone_info_m13(TIMEZONE_INFO_m13 *tz_info);
 tern			G_correct_universal_header_m13(FPS_m13 *fps);
@@ -3516,7 +3737,7 @@ tern 			G_encrypt_video_m13(FPS_m13 *fps);
 tern			G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
 void			G_error_clear_m13(void);
 si4			G_error_code_m13(void);
-void 			G_error_message_m13(const si1 *fmt, ...);
+void 			G_error_message_m13(const si1 *fmt, ...) FMT_ATTR_m13(1, 2);
 si1 			G_exists_m13(const si1 *path);
 si8			G_file_length_m13(FILE_m13 *fp, const si1 *path);
 si1			**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
@@ -3557,7 +3778,8 @@ tern			G_is_video_data_m13(const si1 *path);
 ui4			G_level_m13(const si1 *full_file_name, ui4 *input_type_code);
 tern			G_location_info_m13(LOCATION_INFO_m13 *loc_info, const si1 *ip_str, const si1 *ipinfo_token, tern set_timezone_globals, tern prompt);
 tern			G_MED_file_m13(ui4 type_code);
-ui4			G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1* MED_name);
+ui4			G_MED_path_components_m13(const si1 *path, si1 *MED_dir, si1* MED_name); // passed path must exist (accepts a file within a MED directory)
+ui4			G_MED_path_parse_m13(const si1 *path, si1 *MED_dir, si1 *MED_name); // as G_MED_path_components_m13(), but path need not exist (use when allocating a new MED tree)
 ui4			G_MED_type_code_from_string_m13(const si1 *string);
 const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
@@ -3592,18 +3814,22 @@ CHAN_m13		*G_read_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, ...); // varargs
 pthread_rval_m13	G_read_channel_thread_m13(void *ptr);
 si4			G_read_cs_file_m13(const si1 *cs_file_name, si4 n_available_channels, si4 **map, si4 **reverse_map, si1 ***names, sf8 **decimation_frequencies, ui4 **block_samples, si1 ***descriptions);
 LH_m13			*G_read_data_m13(void *level_header, SLICE_m13 *slice, ...); // varargs(lh == NULL): const si1 *file_list, si4 list_len, ui8 lh_flags, const si1 *password, const si1 *index_channel_name
-void			G_read_medlibrc_m13(const si1 *application_path);
+tern			G_read_medlibrc_m13(const si1 *path, tern sequential); // path NULL == the user file (~/.medlibrc; written with defaults if unusable); non-NULL == an application's own RC, applied on top & never written by the library. sequential TRUE == fast forward walk (fields in emitted order); FALSE == search from start (a partial file, any order)
 si8			G_read_records_m13(void *level_header, SLICE_m13 *slice, ...); // varargs(level->type_code == LH_SSR_m13): si4 seg_num
 SEG_m13			*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...); // varargs(seg == NULL): const si1 *seg_path, void *parent, ui8 lh_flags, const si1 *password
 pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
-SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, const si1 *password
+SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, const si1 *password, const si1 *index_channel_name
 si8			G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice);
 UH_m13			*G_read_universal_header_m13(const si1 *path, UH_m13 *uh);
 tern			G_recover_passwords_m13(const si1 *L3_password, UH_m13* universal_header);
+si1			*G_recover_password_string_m13(si1 *password_string, ui1 target_level, const si1 *higher_level_pw, UH_m13 *universal_header); // escrow recovery: returns the TYPED password string of target_level; read-only, validated before return
+si1			*G_unseal_password_string_m13(si1 *password_string, const ui1 *anchor_private_key, UH_m13 *universal_header); // anchor (type 2) recovery of the top-level password string; anchor-holder side, requires only the universal header
+tern			G_random_bytes_m13(ui1 *buffer, si4 n_bytes); // SYSTEM ENTROPY (CSPRNG): for cryptographic material only (rand64_m13() is a seeded PRNG - fine for UIDs, fatal for keys)
 void			G_remove_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_remove_recording_time_offset_m13(si8 *time, si8 recording_time_offset);
 tern			G_reset_metadata_for_update_m13(FPS_m13 *fps);
 si4			G_search_mode_m13(SLICE_m13 *slice);
+void			G_secure_erase_m13(void *buffer, size_t n_bytes); // volatile zeroing of key material (plain memset before return/free is legally elided by optimizers)
 si4			G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui4 search_mode);
 si4			G_segment_for_index_m13(void *level_header, si8 target_index);
 si4			G_segment_for_path_m13(const si1 *path);
@@ -3616,6 +3842,7 @@ tern			G_session_directory_m13(FPS_m13 *fps);
 si1			*G_session_path_for_path_m13(const si1 *path, si1 *sess_path);
 si8			G_session_samples_m13(void *level_header, sf8 rate);
 void			G_set_error_exec_m13(const si1 *function, si4 line, si4 code, const si1 *message, ...); // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
+tern			G_set_anchor_public_key_m13(const ui1 *public_key, ui1 key_ID); // configure the type 2 recovery anchor for subsequent session creation (NULL clears; process-wide, set once at startup)
 tern			G_set_session_globals_m13(void *level_header, const si1 *MED_path, const si1 *password);
 void			G_set_signal_traps_m13(tern set);
 tern			G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_start_time, tern prompt);
@@ -3645,6 +3872,10 @@ void			G_signal_trap_m13(si4 sig_num);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
 tern			G_swap_names_m13(void *level_header);
+// returns TRUE_m13 if an operator responded (including an empty entry accepting the default),
+// UNKNOWN_m13 if input was exhausted & the default was applied with nobody present, FALSE_m13 on
+// error or a required entry with no input.  Prompts guarding irreversible actions must test for
+// UNKNOWN_m13 & take the conservative branch rather than trusting the default.
 tern			G_terminal_entry_m13(const si1 *prompt, si1 type, void *buffer, void *default_input, tern required, tern validate);
 tern			G_terminal_password_bytes_m13(const si1 *password, si1 *password_bytes);
 tern			G_ternary_entry_m13(const si1 *entry);
@@ -3665,7 +3896,7 @@ tern			G_valid_tern_m13(tern *val);
 tern			G_validate_record_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_time_series_data_CRCs_m13(FPS_m13 *fps);
 tern			G_validate_video_data_CRCs_m13(FPS_m13 *fps);
-void			G_warning_message_m13(const si1 *fmt, ...);
+void			G_warning_message_m13(const si1 *fmt, ...) FMT_ATTR_m13(1, 2);
 void			G_write_medlibrc_m13(const si1 *path);
 
 
@@ -3802,7 +4033,7 @@ si8		WN_date_to_uutc_m13(sf8 date);
 si4 		WN_ls_1d_to_buf_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 **buffer);
 si4		WN_ls_1d_to_tmp_m13(const si1 **dir_strs, si4 n_dirs, tern full_path, si1 *temp_file);
 tern		WN_init_terminal_m13(void);
-void		WN_nap_m13(struct timespec *nap);
+void		WN_nap_m13(ui8 ns);  // total nanoseconds (no timespec: UCRT tv_nsec is 4 bytes)
 void		*WN_query_information_file_m13(void *fp, si4 info_class, void *fi);
 tern		WN_reset_terminal_m13(void);
 tern		WN_socket_startup_m13(void);
@@ -3949,7 +4180,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 
 // CMP: Block Fixed Header Offset Constants
 #define CMP_BLOCK_FIXED_HDR_BYTES_m13				56 // fixed region only
-#define CMP_BLOCK_START_UID_m13					((ui8) 0x0123456789ABCDEF) // ui8 (decimal 81,985,529,216,486,895)
+#define CMP_BLOCK_START_UID_m13					((ui8) 0x0123456789ABCDEF) // ui8 (decimal 81,985,529,216,486,895); (note this is same as PRTY_PCRC_IDENT_m13 - benign mistake)
 #define CMP_BLOCK_START_UID_OFFSET_m13				0
 #define CMP_BLOCK_CRC_OFFSET_m13				8 // ui4
 #define CMP_BLOCK_CRC_NO_ENTRY_m13				CRC_NO_ENTRY_m13
@@ -4934,6 +5165,8 @@ tern		UTF8_valid_str_m13(const si1 *s);
 void	AES_add_round_key_m13(si4 round, ui1 state[][4], ui1 *round_key);
 void	AES_cipher_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key);
 void	AES_cipher_nr_m13(ui1 *in, ui1 *out, ui1 state[][4], ui1 *round_key, si4 nr);
+void	AES_ctr_blocks_m13(ui1 *data, si8 len, si4 phase, const ui1 *init_ctr_block, ui1 *round_key_256);  // low-level CTR engine: explicit initial counter block, NIST SP 800-38A semantics
+void	AES_ctr_crypt_256_m13(ui1 *data, si8 offset, si8 len, ui8 nonce, const ui1 *key, ui1 *expanded_key);  // CTR mode (encrypt == decrypt); offset = BYTE offset within covered region (sets counter phase => random access); forward (encryption) schedule only, from AES_key_expansion_256_m13()
 void	AES_decrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *inv_expanded_key); // inv_expanded_key from AES_inv_key_expansion_m13() (NOT the encryption schedule)
 void	AES_decrypt_256_m13(ui1 *data, si8 len, const ui1 *key, ui1 *inv_expanded_key); // inv_expanded_key from AES_inv_key_expansion_256_m13() (NOT the encryption schedule)
 void	AES_encrypt_m13(ui1 *data, si8 len, const si1 *password, ui1 *expanded_key);
@@ -5023,6 +5256,36 @@ void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 
 
 
+//***********************************************************************//
+//************ X25519 Elliptic Curve Diffie-Hellman (XEC) ***************//
+//***********************************************************************//
+
+// X25519 scalar multiplication on Curve25519 per RFC 7748, used ONLY for the recovery-anchor sealed box
+// (anchor type 2): a session writer seals the top-level password string to the anchor holder's public key.
+// Sealing requires no secret & no network: an ephemeral keypair is generated, the shared secret is derived
+// via Diffie-Hellman, keyed through HMAC (CRYPTO_ANCHOR_STRING_m13), & the password block is AES-256
+// enciphered. Only the anchor private key - which never exists on the writing system - can reverse it.
+//
+// The implementation is the portable reference formulation (64-bit limb arithmetic, constant-time
+// conditional swaps, no compiler extensions - Windows compatible). Performance is irrelevant here:
+// sealing happens once per session creation, unsealing once per recovery event.
+//
+// Private keys are 32 random bytes from the SYSTEM ENTROPY SOURCE (G_random_bytes_m13(), NOT rand64_m13():
+// a predictable ephemeral key would let anyone reconstruct the shared secret & open the box).
+
+// Constants
+#define XEC_KEY_BYTES_m13		32 // public key, private key, & shared secret are all 32 bytes
+#define XEC_SEALED_BOX_BYTES_m13	(XEC_KEY_BYTES_m13 + ENCRYPTION_BLOCK_BYTES_m13) // ephemeral public key (32) + AES-256 block (16) == ANCHOR_ESCROW_FIELD_BYTES_m13
+
+// Function Prototypes
+tern	XEC_keypair_m13(ui1 *public_key, ui1 *private_key); // fresh keypair from system entropy (private key clamped per RFC 7748)
+void	XEC_scalarmult_m13(ui1 *out, const ui1 *scalar, const ui1 *point); // X25519(scalar, point); out == 32 bytes
+void	XEC_scalarmult_base_m13(ui1 *public_key, const ui1 *private_key); // public key from private key (base point 9)
+tern	XEC_seal_m13(ui1 *sealed_box, const ui1 *plaintext_block, const ui1 *recipient_public_key); // 16-byte block -> 48-byte box; ephemeral private key generated & discarded internally
+tern	XEC_unseal_m13(ui1 *plaintext_block, const ui1 *sealed_box, const ui1 *recipient_private_key); // 48-byte box -> 16-byte block (fails on low-order/all-zero shared secret)
+
+
+
 //**********************************************************************************//
 //*************************  DGST: Canonical File Digests  ************************//
 //**********************************************************************************//
@@ -5094,19 +5357,31 @@ void	DGST_update_m13(FILE_m13 *fp, const void *ptr, si8 n_bytes, si8 offset); //
 // MED index replaces the container's seek machinery entirely (see the video index specification).
 // Live acquisition does not parse containers: the encoder knows each keyframe as it is emitted &
 // calls VID_keyframe_to_index_m13() directly - the same converter path, minus the walk.
-// Backends: AVI (idx1 index; e.g. Natus/XLTek exports). ISO-BMFF (mp4/mov: stss/stsc/stco/stsz)
-// reserved for a future need - clinical EEG video is overwhelmingly AVI-contained.
+// Backends: AVI (idx1 index; e.g. Natus/XLTek exports) & ISO-BMFF (mp4/mov family: stts/stss/stsc/
+// stco/co64/stsz sample tables; moov at head or tail; also extracts out-of-band decoder configuration
+// [avcC/hvcC] into codec_config for the video metadata - decode survivability).  Not yet handled in
+// BMFF: edit lists (elst - times are media-timeline) & fragmented mp4 (moof; acquisition-preferred
+// containers are walked at conversion only, & DHN acquisition writes indices live instead).
 
 // Constants
 #define VID_WALK_CONTAINER_UNKNOWN_m13	((ui4) 0)
 #define VID_WALK_CONTAINER_AVI_m13	((ui4) 1)
-#define VID_WALK_CONTAINER_BMFF_m13	((ui4) 2) // reserved (not yet implemented)
+#define VID_WALK_CONTAINER_BMFF_m13	((ui4) 2)
+
+// AVI (RIFF) internals
+#define VID_AVI_FOURCC_m13(a, b, c, d)	( (ui4) (a) | ((ui4) (b) << 8) | ((ui4) (c) << 16) | ((ui4) (d) << 24) )
+#define VID_AVI_IDX1_KEYFRAME_m13	((ui4) 0x00000010) // AVIIF_KEYFRAME
+
+// a run of MORE than this many consecutive dropped frames is a discontinuity (a single dropped frame is absorbed
+// by the constant frame rate, like a single missing time series sample - matches DHN_Acq's >1 sample threshold)
+#define VID_DISCONTINUITY_FRAME_THRESHOLD_m13	((si8) 1)
 
 // Typedefs & Structures
 typedef struct {
 	si8	file_offset; // byte offset of the keyframe's coded data within the video file
-	si8	frame_num; // zero-based frame number within the FILE (segment-relative numbering is the caller's: add the file's start frame)
-	sf8	time_offset; // seconds from file start (frame_num / frame_rate under fixed rate)
+	si8	frame_num; // zero-based PRESENT-frame number within the FILE (dropped-frame placeholders excluded, like time series sample numbers; segment-relative numbering is the caller's: add the file's start frame)
+	sf8	time_offset; // seconds from file start (computed from the container frame ordinal, so placeholders correctly advance the clock)
+	tern	discontinuity; // a dropped-frame run > VID_DISCONTINUITY_FRAME_THRESHOLD_m13 preceded this keyframe within the file (the FILE's first keyframe is never flagged - a file-start entry, not a discontinuity; cross-file gaps are the caller's to detect)
 } VID_KEYFRAME_m13;
 
 typedef struct {
@@ -5116,8 +5391,11 @@ typedef struct {
 	ui4			horizontal_pixels;
 	ui4			vertical_pixels;
 	sf8			frame_rate; // frames per second (from container header)
-	si8			n_frames; // total video frames in the file
+	si8			n_frames; // PRESENT (readable) video frames in the file - excludes dropped-frame placeholders (container totals like AVI dwTotalFrames include them & are container-internal)
+	si8			n_dropped_frames; // dropped-frame placeholder chunks (zero-size): counted for timing, not numbered as frames
 	tern			has_audio; // audio stream(s) present (they travel in the container; MED indexes video only)
+	ui4			codec_config_bytes; // out-of-band decoder configuration (BMFF avcC/hvcC payload, VERBATIM) - zero when config is in-band (AVI) or exceeds the maximum (in-band parameter sets then mandatory)
+	ui1			codec_config[VID_METADATA_CODEC_CONFIG_MAX_BYTES_m13]; // -> video metadata section 2 codec_config (decode survivability: tail-indexed container config is lost on damage; MED-stored config + index + parity = reconstructible from MED alone)
 	si8			n_keyframes;
 	VID_KEYFRAME_m13	*keyframes; // ordered by frame number; freed by VID_walk_free_m13()
 } VID_WALK_m13;
@@ -6104,7 +6382,7 @@ PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si
 #endif // WINDOWS_m13
 
 
-si4		asprintf_m13(si1 **target, const si1 *fmt, ...);
+si4		asprintf_m13(si1 **target, const si1 *fmt, ...) FMT_ATTR_m13(2, 3);
 size_t		calloc_size_m13(void *address, size_t el_size); // memory allocation size in number of elements
 tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
 si4		errno_m13(void);  // returns platform independent value of errno
@@ -6117,7 +6395,7 @@ si8		flen_m13(void *fp); // returns length of file
 si4		flock_m13(void *fp, si4 operation, ...); // varargs(FLOCK_TIMEOUT_m13 bit set): const si1 *nap_str (string to pass to nap_m13())
 							 // varargs(fp == FILE *): const si1 *file_path, const si1 *nap_str (must pass something for nap_str, but can be NULL)
 FILE_m13	*fopen_m13(const si1 *path, const si1 *mode, ...); // varargs(mode empty): const si1 *mode, FILE_m13 *m13_fp, si4 flags, ui2 (as si4) permissions
-si4		fprintf_m13(void *fp, const si1 *fmt, ...);
+si4		fprintf_m13(void *fp, const si1 *fmt, ...) FMT_ATTR_m13(2, 3);
 si4		fputc_m13(si4 c, void *fp);
 size_t		fread_m13(void *ptr, si8 el_size, size_t n_elements, void *fp, ...); // (el_size negative): non_blocking read
 tern		freeable_m13(void *address); // returns whether address is freeable without segfaulting
@@ -6178,7 +6456,7 @@ si4		pthread_mutex_lock_m13(pthread_mutex_t_m13 *mutex_p);
 si4		pthread_mutex_trylock_m13(pthread_mutex_t_m13 *mutex_p);
 si4		pthread_mutex_unlock_m13(pthread_mutex_t_m13 *mutex_p);
 pthread_t_m13	pthread_self_m13(void);
-si4		printf_m13(const si1 *fmt, ...);
+si4		printf_m13(const si1 *fmt, ...) FMT_ATTR_m13(1, 2);
 si4		putc_m13(si4 c, void *fp);
 si4		putch_m13(si4 c);
 si4		putchar_m13(si4 c);
@@ -6196,8 +6474,8 @@ sem_t_m13	*sem_open_m13(const si1 *name, si4 o_flags, ...);  // (MacOS only) var
 si4		sem_post_m13(sem_t_m13 *sem);
 si4		sem_trywait_m13(sem_t_m13 *sem);
 si4		sem_wait_m13(sem_t_m13 *sem);
-si4		sprintf_m13(si1 *target, const si1 *fmt, ...);
-si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...);
+si4		sprintf_m13(si1 *target, const si1 *fmt, ...) FMT_ATTR_m13(2, 3);
+si4		snprintf_m13(si1 *target, si4 target_field_bytes, const si1 *fmt, ...) FMT_ATTR_m13(3, 4);
 void		srand_med_m13(ui4 seed); // seed medlib random number generator
 void		srand_med_wz_m13(ui4 seed, volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of srand_med_m13()
 void		srandom_m13(ui4 seed); // seed system random number generator
