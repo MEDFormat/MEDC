@@ -41,11 +41,11 @@
 // MED derives from the Multiscale Electrophysiology Format (MEF), versions 1-3.
 // Many people contributed to the MEF effort, but special mention is owed to
 // Greg Worrell, Casey Stengel, Andy Gardner, Mark Bower, Vince Vasoli, Ben Brinkmann,
-// Dan Crepeau, Jan Cimbálnik, Jon Lange, and Jon Halford for their contributions
+// Dan Crepeau, Jan Cimbálnik, Jon Lange, Jon Halford, & Claude (Anthropic) for their contributions
 // in design, coding, testing, implementation, and adoption.
 
-// The encryption / decryption algorithm is the 128-bit AES standard ( http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf ).
-// AES routines (128 bit only) are included in the library, with attribution, for convenience.
+// The encryption / decryption algorithm is the 256-bit AES standard ( http://www.csrc.nist.gov/publications/fips/fips197/fips-197.pdf ).
+// AES routines (128 & 256 bit versions only) are included in the library, with attribution, for convenience.
 
 // The hash algorithm is the SHA-256 standard ( http://csrc.nist.gov/publications/fips/fips180-4/fips-180-4.pdf ).
 // Basic SHA-256 routines are included in the library, with attribution, for convenience.
@@ -228,7 +228,7 @@
 #include <stdint.h>
 
 typedef uint8_t		ui1;
-typedef char		si1; _Static_assert((si1) -1 < 0, "\"si1\" must be signed: compile with -fsigned-char"); // medlib chars must be signed: enforce at build (compile flag already set in mklibs_m13.sh)
+typedef char		si1; _Static_assert((si1) -1 < 0, "\"si1\" must be signed: compile with -fsigned-char"); // medlib chars must be signed; compile flag already set in mklibs_m13.sh
 typedef int8_t		tern; // ternary type
 typedef uint16_t	ui2;
 typedef int16_t		si2;
@@ -1036,8 +1036,7 @@ typedef struct {
 #define UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13 			912 // ui4, MED 1.1 & above
 #define UH_LIVE_OFFSET_m13					916 // tern, MED 1.1 & above
 #define UH_ORDERED_OFFSET_m13					917 // tern, MED 1.1 & above
-#define UH_RESERVED_918_OFFSET_m13				918 // reserved (was "expanded_passwords": password expansion removed 2026-07-18 - never used in any released file; zero)
-#define UH_RESERVED_919_OFFSET_m13				919 // ui1, reserved (was "encryption rounds": multi-round encryption removed - never used, no benefit over single-pass AES-256)
+#define UH_RESERVED_OFFSET_m13					918 // reserved
 #define UH_ENCRYPTION_1_OFFSET_m13				920 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_2_OFFSET_m13				921 // si1, MED 1.1 & above
 #define UH_ENCRYPTION_3_OFFSET_m13				922 // si1, MED 1.1 & above
@@ -1050,8 +1049,11 @@ typedef struct {
 #define UH_RESERVED_LEVEL_4_ESCROW_FIELD_OFFSET_m13		944 // 16 bytes, EXPLICITLY RESERVED for a future level 4 escrow field: zero until then
 #define UH_RESERVED_LEVEL_4_VALIDATION_FIELD_OFFSET_m13		960 // 16 bytes, EXPLICITLY RESERVED for a future level 4 validation field: zero until then
 #define UH_KDF_SALT_EXTENSION_OFFSET_m13			976 // 8 bytes (first bytes of the former discretionary region): KDF salt = session UID (8) then this (8) == 128 bits (NIST SP 800-132)
-#define UH_PROTECTED_REGION_OFFSET_m13				984
-#define UH_PROTECTED_REGION_BYTES_m13				40 // the remainder of the former discretionary region, reclaimed as protected 2026-07-18: the universal
+#define UH_LIB_MOD_TIME_OFFSET_m13				984 // si8 uutc, taken from protected region 2026-07-21: file system modification time DICTATED by the library at its
+									// last write (G_file_times_m13() set after close) - a match with the file system proves the library was the last
+									// writer, so the "ordered" flag can be trusted without scanning (zeros in older files == unstamped => scan)
+#define UH_PROTECTED_REGION_OFFSET_m13				992
+#define UH_PROTECTED_REGION_BYTES_m13				32 // the remainder of the former discretionary region, reclaimed as protected 2026-07-18 (lib_mod_time taken 2026-07-21): the universal
 									// header is entirely machine space - user extension space is metadata discretionary regions & records
 // (universal header discretionary region removed 2026-07-18: 48 bytes @ 976 reclaimed into the protected region - see above)
 
@@ -2268,7 +2270,7 @@ typedef struct {
 typedef struct {
 	ui1				endianness;
 	si4				physical_cores;
-	si4				logical_cores;
+	si4				logical_cores; // written once at G_init_medlib_m13() (main thread, before any worker threads exist) => plain reads are safe
 	si4				performance_cores; // heterogeneous CPUs (e.g. Apple silicon): high performance ("P") cores; == physical_cores in uniform CPUs
 	si4				efficiency_cores; // heterogeneous CPUs: low power ("E") cores; == 0 in uniform CPUs
 	tern				hyperthreading;
@@ -2286,7 +2288,7 @@ typedef struct {
 	si1				cpu_manufacturer[64];
 	si1				cpu_model[64];
 	si1				machine_serial[56]; // maximum serial number length is 50 characters
-	ui4				machine_code; // code based on serial number
+	ui4				machine_code; // code based on serial number (written once at G_init_medlib_m13(), before any worker threads exist)
 } HW_PARAMS_m13;
 
 // Prototypes
@@ -2760,6 +2762,8 @@ typedef struct {
 	_Atomic tern			suspend_stacks;
 } GLOBAL_MISC_m13;
 
+typedef struct CMP_BUFFER_DEPOT_m13 CMP_BUFFER_DEPOT_m13;  // forward decl (full def in the CMP section); GLOBALS holds only a pointer
+
 typedef struct {
 	pthread_mutex_t_m13		mutex;
 // Application Info
@@ -2777,6 +2781,8 @@ typedef struct {
 	THREAD_LIST_m13			*thread_list;
 // Allocation Tracking (global)
 	AT_LIST_m13			*AT_list;
+// CMP Buffer Depot (global checkout/return pool of locked, page-aligned scratch bundles)
+	CMP_BUFFER_DEPOT_m13		*CMP_buffer_depot;
 // Record Filters (global default)
 	si4 				*record_filters; // signed, "NULL terminated" array version of MED record type codes to include or exclude when reading records.
 						  // The terminal entry is NO_TYPE_CODE_m13 (== zero). NULL or no filter codes includes all records (== no filters).
@@ -2836,8 +2842,7 @@ typedef struct {
 	ui4		video_data_file_number; // MED 1.1 and above
 	tern		live; // file currently being acquired
 	tern		ordered; // MED 1.1 and above
-	ui1		reserved_918; // reserved (was "expanded_passwords": password expansion removed; zero)
-	ui1		reserved_919; // reserved (was "encryption_rounds": multi-round encryption removed; zero)
+	ui1		reserved[2];
 	si1		encryption_1; // MED 1.1 and above
 	si1		encryption_2; // MED 1.1 and above
 	si1		encryption_3; // MED 1.1 and above
@@ -2850,6 +2855,7 @@ typedef struct {
 	ui1		reserved_level_4_escrow_field[ESCROW_FIELD_BYTES_m13]; // EXPLICITLY RESERVED for a future level 4: zero until then
 	ui1		reserved_level_4_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13]; // EXPLICITLY RESERVED for a future level 4: zero until then
 	ui1		kdf_salt_extension[CRYPTO_KDF_SALT_EXTENSION_BYTES_m13]; // KDF salt = session UID then this (128 bits total); random per session, written at password generation
+	si8		lib_mod_time; // uutc: file system modification time dictated by the library at its last write (see UH_LIB_MOD_TIME_OFFSET_m13; zeros in older files == unstamped)
 	ui1		protected_region[UH_PROTECTED_REGION_BYTES_m13]; // remainder of the former discretionary region (reclaimed 2026-07-18): the universal header is entirely machine space
 } UH_m13;
 
@@ -2883,8 +2889,7 @@ LAYOUT_FIELD_m13(UH_m13, level_3_password_validation_field, UH_LEVEL_3_PASSWORD_
 LAYOUT_FIELD_m13(UH_m13, video_data_file_number, UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, live, UH_LIVE_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, ordered, UH_ORDERED_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, reserved_918, UH_RESERVED_918_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, reserved_919, UH_RESERVED_919_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, reserved, UH_RESERVED_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, encryption_1, UH_ENCRYPTION_1_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, encryption_2, UH_ENCRYPTION_2_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, encryption_3, UH_ENCRYPTION_3_OFFSET_m13);
@@ -3264,6 +3269,7 @@ typedef struct {
 	si1			mode_str[6]; // open mode string (Windows systems: 'b' added by fopen_m13(), but not included in this string)
 	tern			header_read; // universal header has been read in
 	tern			full_file_read; // full file has been read in
+	tern			recs_ordered; // record files only, runtime: order established for this open (scan, handshake, or sort - see G_read_records_m13()); NOT_SET until established
 	si8			raw_data_bytes; // bytes in raw data array
 	ui1			*raw_data; // universal header followed by data (in standard read - just region requested, in full file & mem map - matches media)
 	struct CPS_m13		*cps; // CMP processing struct, for time series data FPSs
@@ -3870,6 +3876,7 @@ tern			G_show_timezone_info_m13(const TIMEZONE_INFO_m13 *timezone_entry, tern sh
 tern			G_show_universal_header_m13(FPS_m13 *fps, UH_m13 *uh);
 void			G_signal_trap_m13(si4 sig_num);
 tern			G_sort_channels_by_acq_num_m13(SESS_m13 *sess);
+tern			G_rec_inds_ordered_m13(REC_IDX_m13 *inds, si8 n_recs); // backward abort-early order scan (TIME_NO_ENTRY counts as unordered)
 tern			G_sort_records_m13(FPS_m13 *rec_inds_fps, FPS_m13 *rec_data_fps);
 tern			G_swap_names_m13(void *level_header);
 // returns TRUE_m13 if an operator responded (including an empty entry accepting the default),
@@ -4165,7 +4172,14 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_MAK_OUTPUT_BUFFERS_m13		4
 #define CMP_MAK_OUT_Y_BUF			0
 #define CMP_MAK_OUT_X_BUF			1
-#define CMP_VDS_INPUT_BUFFERS_m13		(CMP_MAK_INPUT_BUFFERS_m13 + 1)
+#define CMP_VDS_INPUT_BUFFERS_m13		(CMP_MAK_INPUT_BUFFERS_m13 + 6)  // +1 template[8], +2 dirty-interval scratch[9,10], +3 defer scratch[11,12,13]
+#define CMP_VDS_DIRTY_LO_BUF_m13		9  // VDS refine: dirty-interval lo bounds (local re-interpolation)
+#define CMP_VDS_DIRTY_HI_BUF_m13		10 // VDS refine: dirty-interval hi bounds
+#define CMP_VDS_CAND_BUF_m13			11 // VDS defer refine: candidate list (also reused as raw interval list for merge)
+#define CMP_VDS_DEFER_BUF_m13			12 // VDS defer refine: deferred-candidate sample positions (carried forward)
+#define CMP_VDS_ACCEPT_BUF_m13			13 // VDS defer refine: accepted candidate anchor-indices (blast-exclusion scan)
+#define CMP_VDS_DEFER_DENSITY_SHIFT_m13		6  // use defer refine when post-spurious anchors <= (block_samps >> 6) (~1.5%); denser => local (defer's extra rounds not worth ~3% fewer anchors)
+#define CMP_VDS_BLAST_COUPLING_m13		3  // Akima coupling radius: inserting near anchor i perturbs the fit for anchors within +-3
 #define CMP_VDS_OUTPUT_BUFFERS_m13		CMP_MAK_OUTPUT_BUFFERS_m13
 #define CMP_VDS_LOWPASS_ORDER_m13		6
 #define CMP_VDS_MINIMUM_SAMPLES_m13		10
@@ -4501,9 +4515,16 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_PRED_POS_m13 			1
 #define CMP_PRED_NEG_m13			2
 
+// decoders that walk packed data in whole 8-byte words (e.g. MBE) can read one word past the last data byte;
+// buffers that hold compressed block data are padded by this amount so the final word read stays in bounds
+#define CMP_DECODE_SLACK_BYTES_m13		8
+
 // Macros
 #define CMP_MAX_KEYSAMPLE_BYTES_m13(block_samps)		( block_samps * 5 ) // full si4 plus 1 keysample flag byte per sample
-#define CMP_MAX_COMPRESSED_BYTES_m13(block_samps, n_blocks)	( ((block_samps * 4) + CMP_BLOCK_FIXED_HDR_BYTES_m13 + 7) * n_blocks )
+// worst-case lossless output is a full-range MBE block: fixed header + MBE model header + 4 bytes/sample (+ 8-byte pad).
+// the MBE model header term (previously omitted) is what makes MBE a provably-fitting fallback for RED2/PRED2 (see the
+// range-encode overflow guard in those encoders) - without it a full-range MBE block overshoots the buffer by a few bytes.
+#define CMP_MAX_COMPRESSED_BYTES_m13(block_samps, n_blocks)	( ((block_samps * 4) + CMP_BLOCK_FIXED_HDR_BYTES_m13 + CMP_MBE_MODEL_FIXED_HDR_BYTES_m13 + 7) * n_blocks )
 #define CMP_PRED_CAT_m13(x)					( (x) ? (((x) & 0x80) ? CMP_PRED_NEG_m13 : CMP_PRED_POS_m13) : CMP_PRED_NIL_m13 )
 #define CMP_IS_DETRENDED_m13(bh_ptr)				( (bh_ptr->parameter_flags & CMP_PF_INTERCEPT_m13) && (bh_ptr->parameter_flags & CMP_PF_GRADIENT_m13) )
 #define CMP_VARIABLE_REGION_BYTES_v1_m13(bh_ptr)		( (ui4) (bh_ptr)->record_region_bytes + (ui4) (bh_ptr)->parameter_region_bytes + \
@@ -4762,7 +4783,27 @@ typedef struct {
  // used internally
 	ui8		total_allocated_bytes;
 	tern	locked;
+	tern	page_aligned;  // TRUE => allocated via aligned_alloc_m13() (lock_memory path) => free with aligned_free_m13()
+	tern	allocated;  // TRUE => the struct itself was heap-allocated by CMP_allocate_buffers_m13() (so free it);
+			    // stays unset (== 0, not TRUE) for a caller-owned stack/member struct. Records freeable
+			    // status at creation - like LH_m13/FILE_m13 'allocated' - so the free path need not guess.
 } CMP_BUFFERS_m13;
+
+// Generic checkout/return depot of CMP_BUFFERS bundles (locked & page-aligned). A thread checks out a bundle
+// of a given shape, uses it, returns it; no other thread can use it while checked out. Lets stateless
+// per-block scratch (VDS, quantfilt, filtfilt, ...) be pooled to the concurrency level instead of held
+// per-consumer. See CMP_checkout_buffers_m13() / CMP_return_buffers_m13().
+typedef struct {
+	tern			in_use;
+	CMP_BUFFERS_m13		*buffers;
+} CMP_BUFFER_DEPOT_ENTRY_m13;
+
+struct CMP_BUFFER_DEPOT_m13 {  // tag matches the forward decl before GLOBALS_m13
+	CMP_BUFFER_DEPOT_ENTRY_m13	*entries;
+	si8				count;		// entries created
+	si8				allocated;	// capacity of the entries array
+	pthread_mutex_t_m13		mutex;
+};
 
 typedef struct {
 	si8	cache_offset;
@@ -4890,6 +4931,9 @@ typedef struct CPS_m13 {
 
 // Function Prototypes
 CMP_BUFFERS_m13	*CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffers, si8 n_elements, si8 element_size, tern zero_data, tern lock_memory);
+CMP_BUFFERS_m13	*CMP_checkout_buffers_m13(si8 n_buffers, si8 n_elements, si8 element_size);  // depot: get a locked/aligned bundle of this exact shape
+tern		CMP_return_buffers_m13(CMP_BUFFERS_m13 *buffers);  // depot: release a checked-out bundle
+void		CMP_free_buffer_depot_m13(void);  // depot: free all pooled bundles (teardown)
 CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECS_m13 *direcs, CPS_PARAMS_m13 *parameters);
 tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, tern extrema, sf8 *minima, sf8 *maxima);
 tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
@@ -5428,6 +5472,7 @@ void		VID_walk_free_m13(VID_WALK_m13 **walk);
 #define FILT_ORDER_DEFAULT_m13				5
 #define FILT_PAD_SAMPLES_PER_POLE_m13			3 // minimum == 3
 #define FILT_MAX_ORDER_m13				10
+#define FILT_FILTFILT_TOLERANCE_DEFAULT_m13		((sf8) 0.5 / (sf8) 2147483648.0) // streaming filtfilt: relative anticausal truncation < 0.5 LSB at full-scale si4 (the natural boundary - all data returns to si4); pass a looser tolerance to trade guarantee for latency
 #define FILT_BAD_FILTER_m13				-1
 #define FILT_BAD_DATA_m13				-2
 #define FILT_EPS_SF8_m13				((sf8) 2.22045e-16)
@@ -5439,6 +5484,7 @@ void		VID_walk_free_m13(VID_WALK_m13 **walk);
 #define FILT_VDS_TEMPLATE_MIN_PS_m13			0 // index of CPS filtps
 #define FILT_VDS_TEMPLATE_LFP_PS_m13			1 // index of CPS filtps
 #define	FILT_VDS_MIN_SAMPS_PER_CYCLE_m13		((sf8) 4.5) // rolloff starts at ~5 samples per cycle
+#define	FILT_VDS_MEDIAN_DECIM_WINDOW_m13		((si8) 25) // VDS template running-median: when the median span allows, decimate to ~this many points then linearly interpolate the (low-freq) trend back — compression-neutral, faster (speedup grows with span)
 
 // Quantfilt Tail Options
 #define FILT_TRUNCATE_m13			1
@@ -5481,17 +5527,24 @@ typedef struct FILT_NODE_STRUCT {
 } FILT_NODE_m13;
 
 typedef struct {
-	si1		tail_option_code;
-	si8		len, span, in_idx, out_idx, oldest_idx;
-	sf8		*x, *qx, quantile, low_val_q, high_val_q;
-	FILT_NODE_m13	*nodes, head, tail, *oldest_node, *curr_node;
-	FILT_NODE_m13	*new_node, *prev_new_node;  // insertion state carried between head/mid calls
+	// pure sliding-window machinery - NO caller buffers: the quantfilt functions are general & know
+	// nothing about where samples come from or where outputs go (channel structures, matrix rows,
+	// files, ...); the caller owns all data buffers
+	// single-thread use by caller contract (no locking); NOT memcpy-relocatable (the list points into
+	// the by-value sentinels below - reference a QUANTFILT_DATA_m13 by pointer, never move it by copy)
+	si8		span, oldest_idx;
+	sf8		quantile, low_val_q, high_val_q; // steady-state interpolation weights
+	FILT_NODE_m13	*nodes; // span + 1 entries (the + 1 is the empty spare that receives each incoming sample)
+	FILT_NODE_m13	head, tail; // list sentinels (-DBL_MAX / DBL_MAX)
+	FILT_NODE_m13	*low_q_node; // node at the low quantile position (maintained incrementally)
+	FILT_NODE_m13	*oldest_node; // next node to evict (rotates through the circular node buffer)
+	FILT_NODE_m13	*new_node, *prev_new_node; // empty spare & last insertion (insertion search seed)
 	sf8		prev_new_val;
+	tern		allocated; // structure allocated by FILT_quantfilt_head_m13() => freed by FILT_quantfilt_free_m13()
 } QUANTFILT_DATA_m13;
 
 
 // Prototypes
-QUANTFILT_DATA_m13	*FILT_alloc_quantfilt_data_m13(si8 len, si8 span);
 tern	FILT_balance_m13(sf8 **a, si4 poles);
 si4	FILT_butter_m13(FILTPS_m13 *filtps);
 void	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *quotient);
@@ -5502,7 +5555,6 @@ tern	FILT_excise_transients_m13(CPS_m13 *cps, si8 data_len, si8 *n_extrema);
 si4	FILT_filtfilt_m13(FILTPS_m13 *filtps);
 tern	FILT_free_CPS_m13(CPS_m13 *cps, tern free_orig_data, tern free_filt_data, tern free_buffer);
 tern	FILT_free_m13(FILTPS_m13 **filtps_ptr, tern free_orig_data, tern free_filt_data, tern free_buffer);
-tern	FILT_free_quantfilt_data_m13(QUANTFILT_DATA_m13 **qd_ptr);
 FILTPS_m13 *FILT_init_m13(si4 order, si4 type, sf8 samp_freq, si8 data_len, tern alloc_orig_data, tern alloc_filt_data, tern alloc_buffer, ui4 behavior_on_fail, sf8 cutoff_1, ...);
 tern	FILT_generate_initial_conditions_m13(FILTPS_m13 *filtps);
 tern	FILT_hqr_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
@@ -5513,9 +5565,47 @@ sf8	*FILT_moving_average_m13(sf8 *x, sf8 *ax, si8 len, si8 span, si1 tail_option
 sf8	*FILT_noise_floor_m13(sf8 *data, sf8 *filt_data, si8 data_len, sf8 rel_thresh, sf8 abs_thresh, CMP_BUFFERS_m13 *nff_buffers);
 sf8	*FILT_quantfilt_m13(sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si4 tail_option_code, ...); // varargs(tail_option_code negative): FILT_NODE_m13 *nodes (span + 1 entries, uninitialized OK; not freed)
 									// Note: tail_option_code must be si4 (not si1): va_start() on a parameter that undergoes default argument promotion is undefined behavior
-QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, ...); // varargs: sf8 *x, sf8 *qx, si8 len, sf8 quantile, si8 span, si4 tail_option_code
-tern	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd);
-tern	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd);
+// Real-time sliding quantile (split form of FILT_quantfilt_m13(), edge semantics == FILT_TRUNCATE_m13):
+// head builds the first window (start of recording, or after any discontinuity) from exactly "span"
+// caller-accumulated samples & emits the (span + 1) / 2 left-edge outputs (centered, expanding windows);
+// mid is then called once per sample - one in, one out, the output lagging span / 2 samples (the centered
+// quantile's group delay); tail flushes the span / 2 right-edge outputs (shrinking windows, final value ==
+// the last raw sample) at end of recording or before a discontinuity, & leaves qd reusable via head
+// head + (mid * (len - span)) + tail produces BIT-IDENTICAL output to the full function with TRUNCATE
+QUANTFILT_DATA_m13	*FILT_quantfilt_head_m13(QUANTFILT_DATA_m13 *qd, const sf8 *x, sf8 *qx, si8 span, sf8 quantile); // consumes x[0..span); writes (span + 1) / 2 outputs to qx; qd allocated if NULL; returns qd primed for mid (NULL on failure)
+sf8	FILT_quantfilt_mid_m13(QUANTFILT_DATA_m13 *qd, sf8 new_val); // one sample in, one (centered, span / 2 delayed) quantile out
+si8	FILT_quantfilt_tail_m13(QUANTFILT_DATA_m13 *qd, sf8 *qx); // writes the span / 2 right-edge outputs to qx; returns the count; qd then reusable via head
+void	FILT_quantfilt_free_m13(QUANTFILT_DATA_m13 **qd_ptr); // frees nodes & (if library-allocated) the structure; NULLs the caller's pointer
+
+// Real-time zero-phase filtering (split form of FILT_filtfilt_m13()). Zero-phase IIR is ANTICAUSAL -
+// every output formally depends on the entire future - so exact streaming is impossible; instead the
+// anticausal (backward-pass) response is truncated at L samples, where L is measured from the filter's
+// own impulse response at head time so the truncated tail is below "tolerance" (relative attenuation).
+// Outputs therefore lag L samples & match the offline function to within tolerance (sub-integer-LSB at
+// the default) - & the final outputs (from tail) match the offline function EXACTLY (same edge handling).
+// The sharper / lower-frequency the filter, the larger L: that is the causal price of zero phase, not an
+// implementation artifact. Latency & cost are set at head time:
+//   chunk == 1: strict one-in/one-out after priming (per-sample backward sweep, O(poles * L) / sample)
+//   chunk == 0 (default => L): burst emission every L samples (amortized ~2x a plain forward filter)
+// The FILTPS (coefficients, initial conditions - build with FILT_init_m13()) is REFERENCED, not owned.
+// Single-thread use by caller contract; not memcpy-relocatable while active (heap ring).
+typedef struct {
+	FILTPS_m13	*filtps; // caller-built & caller-owned (FILT_init_m13()); only num/den/zi/n_poles read
+	si8		L; // anticausal truncation length (measured from the impulse response at head time)
+	si8		chunk; // emission chunk (see above)
+	sf8		tolerance; // relative attenuation used to size L
+	sf8		zc[FILT_MAX_ORDER_m13 * 2]; // forward filter state (direct form II transposed)
+	sf8		*fwd_ring; // L + chunk forward-filtered samples (circular)
+	si8		ring_len, w_idx, fill; // ring geometry: write index & current fill
+	sf8		raw_tail[(FILT_MAX_ORDER_m13 * 2 * FILT_PAD_SAMPLES_PER_POLE_m13) + 1]; // last pad_len + 1 RAW samples (circular; for tail's reflection pad)
+	si8		raw_idx, raw_fill;
+	tern		allocated; // structure allocated by FILT_filtfilt_head_m13() => freed by FILT_filtfilt_free_m13()
+} FILTFILT_DATA_m13;
+
+FILTFILT_DATA_m13	*FILT_filtfilt_head_m13(FILTFILT_DATA_m13 *fd, FILTPS_m13 *filtps, const sf8 *x, sf8 *qx, si8 n, sf8 tolerance, si8 chunk, si8 *n_out); // consumes x[0..n) (n >= pad_len + 1 == (n_poles * 3) + 1); builds the offline left edge (reflection pad + zi), sizes L, emits any ready outputs to qx (*n_out); fd allocated if NULL; NULL on failure
+si8	FILT_filtfilt_mid_m13(FILTFILT_DATA_m13 *fd, sf8 new_val, sf8 *qx); // one sample in; writes 0 or "chunk" outputs (L samples delayed) to qx; returns the count
+si8	FILT_filtfilt_tail_m13(FILTFILT_DATA_m13 *fd, sf8 *qx); // flushes all pending outputs with the offline right-edge handling (EXACT match); returns the count; fd then reusable via head
+void	FILT_filtfilt_free_m13(FILTFILT_DATA_m13 **fd_ptr); // frees the ring & (if library-allocated) the structure; NULLs the caller's pointer
 si4	FILT_sf8_sort_m13(const void *n1, const void *n2);
 tern	FILT_show_processing_struct_m13(FILTPS_m13 *filt_ps);
 tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
@@ -6384,7 +6474,8 @@ PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si
 
 si4		asprintf_m13(si1 **target, const si1 *fmt, ...) FMT_ATTR_m13(2, 3);
 size_t		calloc_size_m13(void *address, size_t el_size); // memory allocation size in number of elements
-tern		cp_m13(const si1 *path, const si1 *new_path);  // copy
+#define cp_m13(...)	cp_exec_m13(__VA_ARGS__, NULL)  // call with "cp_m13(path, new_path)" or "cp_m13(path, new_path, \"-R\")" prototype (macro NULL-terminates the option list)
+tern		cp_exec_m13(const si1 *path, const si1 *new_path, ...);  // copy (Unix cp parallel; use cp_m13() macro; varargs: optional const si1 *option ("-R" == recursive), NULL)
 si4		errno_m13(void);  // returns platform independent value of errno
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_exec_m13(const si1 *function, const si4 line, si4 status);  // called with exit_m13(si4 status) prototype (preproceesor adds function & line)
