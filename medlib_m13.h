@@ -1,4 +1,4 @@
-	
+
 #ifndef MEDLIB_IN_m13
 #define MEDLIB_IN_m13
 
@@ -131,8 +131,10 @@
 	#include <synchapi.h>
 	#include <sysinfoapi.h>
 	#include <intrin.h> // __cpuid()/__cpuidex() (hardware crypto detection)
+	#include <wincred.h> // Credential Manager (session key cache backend)
 	#pragma comment(lib, "Ws2_32.lib") // link with Ws2_32.lib
 	#pragma comment(lib, "Iphlpapi.lib") // link with Iphlpapi.lib
+	#pragma comment(lib, "Advapi32.lib") // link with Advapi32.lib (CredWriteA/CredReadA/CredDeleteA - session key cache)
 	#define _USE_MATH_DEFINES // Needed for standard math constants. Must be defined before math.h included.
 #endif // WINDOWS_m13
 #if defined MACOS_m13 || defined LINUX_m13
@@ -162,6 +164,9 @@
 	#include <sys/sysctl.h>
 	#include <util.h>
 	#include <mach/thread_act.h>
+	#ifdef MED_SKC_KEYCHAIN_m13
+		#include <Security/Security.h>  // session key cache OS backend (link: -framework Security -framework CoreFoundation)
+	#endif
 #endif // MACOS_m13
 #ifdef LINUX_m13
 	#include <sys/statfs.h>
@@ -169,6 +174,8 @@
 	#include <sys/auxv.h> // getauxval() (hardware crypto detection on ARM)
 	#include <pty.h>
 	#include <utmp.h>
+	#include <sys/syscall.h>   // add_key()/keyctl() syscalls (session key cache)
+	#include <linux/keyctl.h>  // KEYCTL_* ops (session key cache)
 #endif // LINUX_m13
 #if defined LINUX_m13 || defined WINDOWS_m13
 	#include <malloc.h>
@@ -531,7 +538,19 @@ typedef struct {
 #define PASSWORD_BYTES_m13			ENCRYPTION_BLOCK_BYTES_m13
 #define MAX_PASSWORD_CHARACTERS_m13		PASSWORD_BYTES_m13
 #define MIN_NEW_PASSWORD_CHARACTERS_m13		8 // enforced only when SETTING a password; reads accept any length (legacy files may be shorter)
-#define RECOMMENDED_PASSWORD_CHARACTERS_m13	12 // warn (do not reject) below this when setting a password; no character-class rules are imposed
+#define MIN_NEW_L3_PASSWORD_CHARACTERS_m13	12 // higher floor for a HUMAN-entered level-3 (recovery/anchor) password: it can unlock everything, so it must not be trivially short (machine-generated & re-keyed legacy L3 are exempt)
+#define RECOMMENDED_PASSWORD_CHARACTERS_m13	12 // warn (do not reject) below this when setting a password
+// creation-time character-class policy: OPT-IN, default NONE. Length is the dominant entropy factor & the KDF handles
+// the rest, so composition rules are off by default (they mostly annoy users); provided because institutions require
+// them. Bitmask of REQUIRED classes, enforced only by G_check_new_password_m13(); 0 == no rule. Reads never check this.
+#define PW_CLASS_LOWER_m13	((ui1) 1 << 0) // a-z
+#define PW_CLASS_UPPER_m13	((ui1) 1 << 1) // A-Z
+#define PW_CLASS_DIGIT_m13	((ui1) 1 << 2) // 0-9
+#define PW_CLASS_SYMBOL_m13	((ui1) 1 << 3) // any other byte (punctuation, & non-ASCII UTF-8)
+#define PW_CLASS_ALL_m13	(PW_CLASS_LOWER_m13 | PW_CLASS_UPPER_m13 | PW_CLASS_DIGIT_m13 | PW_CLASS_SYMBOL_m13)
+#define GLOBALS_NEW_PASSWORD_REQUIRED_CLASSES_DEFAULT_m13	((ui1) 0) // no composition rule (recommended)
+#define GLOBALS_NEW_PASSWORD_MIN_CLASSES_DEFAULT_m13	((ui1) 0) // no minimum-category rule (recommended default: off)
+#define GLOBALS_NEW_PASSWORD_MIN_CLASSES_STANDARD_m13	((ui1) 3) // the generally-accepted opt-in: >= 3 of the 4 categories (Active Directory complexity default)
 #define MAX_ASCII_PASSWORD_STRING_BYTES_m13	(MAX_PASSWORD_CHARACTERS_m13 + 1) // 1 byte per character in ascii plus terminal zero
 #define MAX_UTF8_PASSWORD_BYTES_m13		(MAX_PASSWORD_CHARACTERS_m13 * 4) // up to 4 bytes per character in UTF-8
 #define MAX_PASSWORD_STRING_BYTES_m13		(MAX_UTF8_PASSWORD_BYTES_m13 + 1) // 1 byte for null-termination
@@ -560,6 +579,7 @@ typedef struct {
 #define CRYPTO_KDF_EXPONENT_MIN_m13	((ui1) 17) // hard floor for HUMAN-entered passwords - NOT overridable (enforced in G_generate_password_data_m13())
 #define CRYPTO_KDF_EXPONENT_MIN_GEN_m13	((ui1) 10) // hard floor for LIBRARY-GENERATED passwords (entropy is known: ~105 bits of CSPRNG typable bytes)
 #define CRYPTO_KDF_EXPONENT_MAX_m13	((ui1) 40) // sanity ceiling (2^40 iterations is already absurd; guards a fat-fingered override)
+#define UH_KDF_EXPONENT_LEVELS_m13	4  // kdf_exponent[] slots: [0]=L1 [1]=L2 [2]=L3 [3]=reserved L4 (defined here: used by PASSWORD_INFO_m13 & UH_m13 below)
 #define CRYPTO_KDF_ESTIMATE_HAIRCUT_m13	((si4) 30) // bits subtracted from the estimate before any reward: strength estimators OVER-credit anything
 							// outside their tables, so nothing is earned until the password is comfortably strong
 #define CRYPTO_KDF_REWARD_DIVISOR_m13	((si4) 8) // bits of (discounted) entropy required to buy ONE exponent step down.
@@ -593,6 +613,13 @@ typedef struct {
 #define ANCHOR_ESCROW_FIELD_BYTES_m13	48 // type 1: AES-256(escrow key, top-level pw bytes) then 32 zero bytes
 							// type 2: ephemeral X25519 public key (32) then AES-256(sealed key, top-level pw bytes) (16)
 
+// Session Key Cache (schema-1 master-secret cache in the OS key store; see the session_key_cache RC field & G_process_password_data_m13)
+#define SESSION_KEY_CACHE_ID_BYTES_m13		16					// SHA-256(KDF salt || kdf_exponent)[0:16] - identifies the session's crypto material
+#define SESSION_KEY_CACHE_FP_BYTES_m13		8					// password fingerprint: HMAC(master, PBKDF2(pw, salt, 2^FP_EXPONENT))[0:8] - lets a password-supplied open validate a cache hit cheaply (~2^10 hashes) without the full KDF; HMAC'd under the master so it is opaque (& rate-limited to 2^10/guess) without the blob
+#define SESSION_KEY_CACHE_FP_EXPONENT_m13	10					// fingerprint inner-PBKDF2 iterations == 2^10 (~50-100 us: invisible at the hit site, restores a guessing floor if the OS key store ever leaks)
+#define SESSION_KEY_CACHE_BLOB_BYTES_m13	(CRYPTO_MASTER_BYTES_m13 + 8 + SESSION_KEY_CACHE_FP_BYTES_m13)	// stored payload: 16-byte master secret || 8-byte si8 expiry (unix seconds) || 8-byte password fingerprint
+#define SESSION_KEY_CACHE_SERVICE_m13		"MED session key cache"			// OS key-store service label
+
 // Password Data Structure
 typedef struct {
 	ui1	level_1_encryption_key[ENCRYPTION_KEY_BYTES_m13]; // AES-128 expanded key (legacy crypto schema)
@@ -612,6 +639,26 @@ typedef struct {
 	tern	processed;
 	tern 	hints_exist;  // if (*level_1_password_hint || *level_2_password_hint)
 } PASSWORD_DATA_m13;
+
+// Filled by G_password_info_m13() from ONE metadata file's unencrypted header + section 1 (no open, no side effects).
+// A GUI/CLI calls it with password == NULL to learn whether/what to prompt (no KDF), then again with the entered
+// password to validate (KDF) - access_level reports the result. Records are not consulted.
+typedef struct {
+	tern	encrypted;	// password protection present (== a Level-1 password is set); FALSE => no password needed to open
+	tern	level_2_exists;	// a Level-2 (full-access) password is also set
+	tern	hints_exist;
+	ui1	crypto_schema;	// CRYPTO_SCHEMA_LEGACY_m13 (0, read-only) or CRYPTO_SCHEMA_1_m13 (current)
+	ui1	kdf_exponent[UH_KDF_EXPONENT_LEVELS_m13];	// per-level KDF iterations == 2^n, [0]=L1 [1]=L2 [2]=L3 [3]=reserved (0 under legacy schema)
+	// encryption-level MAP (si1 codes: NO_ENCRYPTION_m13 / LEVEL_1/2_ENCRYPTION_m13; ENCRYPTION_LEVEL_NO_ENTRY_m13 == unknown):
+	// from this header's UH bytes for MED 1.1+, from metadata section 1 for MED 1.0. Records are NOT here (read a records header).
+	si1	metadata_section_2_encryption;
+	si1	metadata_section_3_encryption;
+	si1	time_series_data_encryption;
+	si1	video_data_encryption;
+	si1	level_1_password_hint[PASSWORD_HINT_BYTES_m13];
+	si1	level_2_password_hint[PASSWORD_HINT_BYTES_m13];
+	ui1	access_level;	// meaningful ONLY when a password was supplied: LEVEL_1_ACCESS_m13 / LEVEL_2_ACCESS_m13, or 0 (none / incorrect)
+} PASSWORD_INFO_m13;
 
 
 
@@ -863,9 +910,11 @@ typedef struct {
 #define GLOBALS_UPDATE_PARITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_WRITE_CSIGS_DEFAULT_m13				TRUE_m13
 #define GLOBALS_CSIG_REREAD_MAX_GB_DEFAULT_m13			((si8) 16) // dirty-stream fallback: re-read files <= this many GB, skip + warn above (RC field in GB; stored as bytes)
-#define GLOBALS_SESSION_KEY_CACHE_DEFAULT_m13			FALSE_m13 // HIGH-SECURITY default: no derived-key caching (see "Session Key Cache" RC field NOTES; mechanism designed, not yet implemented)
+#define GLOBALS_SESSION_KEY_CACHE_DEFAULT_m13			FALSE_m13 // HIGH-SECURITY default: no derived-key caching (opt-in via "Session Key Cache" RC field)
 #define GLOBALS_SESSION_KEY_CACHE_TIMEOUT_DEFAULT_m13		((si4) 3600) // cached session key lifetime, seconds
+#define GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13		((si4) 7200) // hard cap, clamped in G_session_key_cache_put_m13() (no path can store longer): re-paying one KDF every 2 hours is cheap; a longer-lived cached key is asking for trouble
 #define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
+#define GLOBALS_BACKGROUND_PROCESSING_DEFAULT_m13		FALSE_m13 // SPEED default: distributed jobs run at their requested (typically high) priority; YES runs them below normal so the OS & foreground apps always win contention
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // number of processes
 #define GLOBALS_BEHAVIOR_STACK_SIZE_INCREMENT_m13		16 // number of behaviors
 #define GLOBALS_BEHAVIOR_STACK_DEPTH_WARNING_m13		64 // depth at first growth warning (usually indicates a push/pop leak; growth continues regardless)
@@ -883,7 +932,7 @@ typedef struct {
 
 // Global Time Defaults
 #define GLOBALS_OBSERVE_DST_DEFAULT_m13				FALSE_m13
-#define GLOBALS_RTO_KNOWN_DEFAULT_m13				UNKNOWN_m13
+// (RTO_known retired: recording_time_offset validity is now implied by time_constants.set - see TIME_CONSTANTS_m13)
 #define GLOBALS_SESSION_START_TIME_DEFAULT_m13			TIME_NO_ENTRY_m13
 #define GLOBALS_SESSION_END_TIME_DEFAULT_m13			TIME_NO_ENTRY_m13
 #define GLOBALS_RECORDING_TIME_OFFSET_DEFAULT_m13		0
@@ -1036,24 +1085,29 @@ typedef struct {
 #define UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13 			912 // ui4, MED 1.1 & above
 #define UH_LIVE_OFFSET_m13					916 // tern, MED 1.1 & above
 #define UH_ORDERED_OFFSET_m13					917 // tern, MED 1.1 & above
-#define UH_RESERVED_OFFSET_m13					918 // reserved
-#define UH_ENCRYPTION_1_OFFSET_m13				920 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_2_OFFSET_m13				921 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_3_OFFSET_m13				922 // si1, MED 1.1 & above
-#define UH_ENCRYPTION_4_OFFSET_m13				923 // si1, MED 1.1 & above
+// Encryption bytes (offsets 918-923): each names EXACTLY what it encrypts, one consistent meaning in every file's
+// universal header. A given file populates the fields relevant to it; the metadata UH is the authoritative map for
+// metadata sections & data (records self-report - see below). Encryption levels are si1: NO_ENCRYPTION_m13 (0),
+// LEVEL_1/2_ENCRYPTION_m13, negative == currently-decrypted, ENCRYPTION_VARIABLE_m13 (-128) for the section cases.
+#define UH_METADATA_SECTION_2_ENCRYPTION_OFFSET_m13		918 // si1
+#define UH_METADATA_SECTION_3_ENCRYPTION_OFFSET_m13		919 // si1
+#define UH_TIME_SERIES_DATA_ENCRYPTION_OFFSET_m13		920 // si1
+#define UH_VIDEO_DATA_ENCRYPTION_OFFSET_m13			921 // si1
+#define UH_MAXIMUM_RECORD_ENCRYPTION_LEVEL_OFFSET_m13		922 // si1: records (index & data) files ONLY - highest encryption level among the file's records (max() on append, recompute on rewrite); 0 => no encrypted records
+#define UH_ENCRYPTION_RESERVED_OFFSET_m13			923 // si1, reserved for a future encryptable region
 #define UH_CRYPTO_SCHEMA_OFFSET_m13				924 // ui1, taken from protected region (zeros in files written before this field == CRYPTO_SCHEMA_LEGACY_m13)
-#define UH_KDF_EXPONENT_OFFSET_m13				925 // ui1, taken from protected region (KDF iterations == 2^n; unused under legacy schema)
-#define UH_ANCHOR_TYPE_OFFSET_m13				926 // ui1, taken from protected region (see ANCHOR_TYPE_*_m13; zeros in older files == no anchor)
-#define UH_ANCHOR_KEY_ID_OFFSET_m13				927 // ui1, taken from protected region (identifies the anchor public key under type 2; zero otherwise)
-#define UH_LEVEL_1_ESCROW_FIELD_OFFSET_m13			928 // 16 bytes, taken from protected region (AES-256(escrow key from L2 chain material, L1 password bytes))
-#define UH_RESERVED_LEVEL_4_ESCROW_FIELD_OFFSET_m13		944 // 16 bytes, EXPLICITLY RESERVED for a future level 4 escrow field: zero until then
-#define UH_RESERVED_LEVEL_4_VALIDATION_FIELD_OFFSET_m13		960 // 16 bytes, EXPLICITLY RESERVED for a future level 4 validation field: zero until then
-#define UH_KDF_SALT_EXTENSION_OFFSET_m13			976 // 8 bytes (first bytes of the former discretionary region): KDF salt = session UID (8) then this (8) == 128 bits (NIST SP 800-132)
-#define UH_LIB_MOD_TIME_OFFSET_m13				984 // si8 uutc, taken from protected region 2026-07-21: file system modification time DICTATED by the library at its
+#define UH_KDF_EXPONENT_OFFSET_m13				925 // ui1[UH_KDF_EXPONENT_LEVELS_m13] (925-928): per-level KDF exponents (2^n; unused under legacy schema). UH_KDF_EXPONENT_LEVELS_m13 defined up in the KDF-policy block
+#define UH_ANCHOR_TYPE_OFFSET_m13				929 // ui1, taken from protected region (see ANCHOR_TYPE_*_m13; zeros in older files == no anchor)
+#define UH_ANCHOR_KEY_ID_OFFSET_m13				930 // ui1, taken from protected region (identifies the anchor public key under type 2; zero otherwise)
+#define UH_LEVEL_1_ESCROW_FIELD_OFFSET_m13			931 // 16 bytes, taken from protected region (AES-256(escrow key from L2 chain material, L1 password bytes))
+#define UH_RESERVED_LEVEL_4_ESCROW_FIELD_OFFSET_m13		947 // 16 bytes, EXPLICITLY RESERVED for a future level 4 escrow field: zero until then
+#define UH_RESERVED_LEVEL_4_VALIDATION_FIELD_OFFSET_m13		963 // 16 bytes, EXPLICITLY RESERVED for a future level 4 validation field: zero until then
+#define UH_KDF_SALT_EXTENSION_OFFSET_m13			979 // 8 bytes (first bytes of the former discretionary region): KDF salt = session UID (8) then this (8) == 128 bits (NIST SP 800-132)
+#define UH_LIB_MOD_TIME_OFFSET_m13				1016 // si8 uutc, taken from protected region 2026-07-21: file system modification time DICTATED by the library at its
 									// last write (G_file_times_m13() set after close) - a match with the file system proves the library was the last
 									// writer, so the "ordered" flag can be trusted without scanning (zeros in older files == unstamped => scan)
-#define UH_PROTECTED_REGION_OFFSET_m13				992
-#define UH_PROTECTED_REGION_BYTES_m13				32 // the remainder of the former discretionary region, reclaimed as protected 2026-07-18 (lib_mod_time taken 2026-07-21): the universal
+#define UH_PROTECTED_REGION_OFFSET_m13				987
+#define UH_PROTECTED_REGION_BYTES_m13				29 // the remainder of the former discretionary region, reclaimed as protected 2026-07-18 (lib_mod_time taken 2026-07-21): the universal
 									// header is entirely machine space - user extension space is metadata discretionary regions & records
 // (universal header discretionary region removed 2026-07-18: 48 bytes @ 976 reclaimed into the protected region - see above)
 
@@ -1345,7 +1399,7 @@ typedef struct {
 #define LH_CHAN_OPEN_m13			((ui8) 1 << 32) // channel has been opened
 #define LH_CHAN_ACTIVE_m13			((ui8) 1 << 33) // include channel in current read set
 #define LH_IDX_CHAN_INACTIVE_m13		((ui8) 1 << 34)
-#define LH_MAP_ALL_SEGS_m13			((ui8) 1 << 35) // allocate slots for every segment, regardless of whether required for current read
+// bit 35 free (was LH_MAP_ALL_SEGS: retired - all segments are always mapped now, so the flag is unconditional & unnecessary)
 // (active channels only)
 #define LH_READ_SLICE_CHAN_RECS_m13		((ui8) 1 << 40) // read full record indices file (close file); open record data, read universal header, leave open
 #define LH_READ_FULL_CHAN_RECS_m13		((ui8) 1 << 41) // read full record indices & data files, close all files
@@ -2428,9 +2482,7 @@ typedef struct {
 	si1			uh_name[NAME_BYTES_m13]; // name from universal_header (if differs from file system, otherwise empty)
 	si8			start_time;
 	si8			end_time;
-	si4			n_segments; // number of segments in the session, regardless of whether they are mapped
-	si4			n_mapped_segments; // may be less than n_session_segments
-	si4			first_mapped_segment_number;
+	si4			n_segments; // number of segments in the session; ALL are always mapped (per-channel segs arrays are full-length & stable) - the map-subset window (n_mapped/first_mapped) was removed
 	Sgmt_RECS_LIST_m13	*Sgmt_recs_list; // list with one entry for each unique sampling frequency and channel type
 	si1			index_channel_name[NAME_BYTES_m13]; // contains user specified value if needed, open_session_m13() matches to session channel
 	struct CHAN_m13		*index_channel;
@@ -2450,8 +2502,16 @@ typedef struct {
 } ACTIVE_CHANNELS_m13; // PROC_GLOBS_m13 element
 
 typedef struct {
-	tern	set;
-	tern	RTO_known; // recording time offset
+	// 3-state lifecycle of the shared, process-global time constants (set once from metadata section 3, then read by every thread):
+	//   UNKNOWN_m13 (0)  = not yet attempted           -> a reader should trigger the (one-time) population
+	//   FALSE_m13  (-1)  = attempted, but CANNOT be set (section 3 not accessible, e.g. opened with only an L1 password)
+	//                      -> MED still functions; times are shown obfuscated/relative (see STR_time_m13()); do NOT retry
+	//   TRUE_m13   (1)   = set & valid (populated from section 3, or built directly for a new file)
+	// This single field replaces the old, drift-prone (set, RTO_known) pair: whenever the constants are set, the recording
+	// time offset is set with them, so a real recording_time_offset is available iff set == TRUE_m13.  (The one historical
+	// exception - a machine-location fallback that set the timezone but not a file RTO - was CURRENT_TIME display only.)
+	_Atomic tern	set;		// atomic so lock-free readers see UNKNOWN or a final value, never a torn write
+	_Atomic tern	populating;	// election claim only: readers CAS FALSE->TRUE to become the single populating thread; losers wait for set != UNKNOWN (see G_decrypt_metadata_m13())
 	tern 	observe_DST;
 	si8	recording_time_offset;
 	si4	standard_UTC_offset;
@@ -2464,12 +2524,14 @@ typedef struct {
 } TIME_CONSTANTS_m13; // PROC_GLOBS_m13 element
 
 typedef struct {
-	ui4		mmap_block_bytes; // read size for memory mapped files (process data may be on different volumes)
+	_Atomic ui4	mmap_block_bytes; // read size for memory mapped files (process data may be on different volumes)
 					  // if files are on different volumes, set file-specific mmap_block_bytes in FILE_m13 structure
-	volatile ui4	med_rand_w; // volatile because, while thread-local, accessed by address by multiple functions => compiler should not optimize with local copy
-	volatile ui4	med_rand_z; // volatile because, while thread-local, accessed by address by multiple functions => compiler should not optimize with local copy
+					  // atomic: lazily cached by FPS_mmap_alloc_m13()/HW_get_block_size_m13() on concurrent segment-read
+					  // threads (check-then-set); same value per volume, but the store/load must not race
+	// med_rand_w / med_rand_z (seedable PRNG state) moved to true thread-local storage in medlib_m13.c: a shared
+	// proc_globs copy raced across threads (proc_globs is shared per session). Each thread now has its own reproducible stream.
 	_Atomic tern	threading; // TRUE_m13 == thread processing where appropriate (atomic b/c other threads may access)
-	tern 		memory_mapping; // set by global memory mapping value, but can be made process-specific by setting this value
+	tern 		memory_mapping; // set ONCE at G_proc_globs_init_m13() from the global value, then read-only (never mutated while worker threads run) => no atomic needed
 	_Atomic tern	proc_error; // thread-local mechanism for void functions (no return value) to indicate that an error occurred (global error may be set by other threads; atomic b/c other threads may access)
 } PROC_GLOB_MISC_m13; // PROC_GLOBS_m13 element
 
@@ -2517,6 +2579,13 @@ typedef struct PROC_GLOBS_m13 { // multiple thread access
 	};
  // Password
 	PASSWORD_DATA_m13	password_data;
+	// establish-once election for password_data: guards the concurrent lazy-init in FPS_read_m13() when
+	// G_read_channel_m13()/G_read_segment_m13() are entered directly from multiple threads (no single-threaded
+	// G_read_session_m13() phase to establish it first).  These MUST live outside PASSWORD_DATA_m13 - G_process_
+	// password_data_m13() memsets that whole struct, which would clobber flags kept inside it.  Same pattern as
+	// time_constants.set/populating (atomic => re-init-safe on pg reuse, no mutex lifecycle).
+	_Atomic tern		password_established;	// 3-state: UNKNOWN = not yet established; FALSE = established, no decrypt access (this read fails, as before); TRUE = established w/ access. Losers wait for != UNKNOWN, then replicate the winner's pass/fail => never see a half-built pwd
+	_Atomic tern		password_electing;	// election claim: CAS FALSE->TRUE picks the single populating thread
  // Current Session
 	CURRENT_SESSION_m13	current_session;
  // Active Channels
@@ -2537,6 +2606,13 @@ typedef struct PROC_GLOBS_m13 {
 	};
  // Password
 	PASSWORD_DATA_m13	password_data;
+	// establish-once election for password_data: guards the concurrent lazy-init in FPS_read_m13() when
+	// G_read_channel_m13()/G_read_segment_m13() are entered directly from multiple threads (no single-threaded
+	// G_read_session_m13() phase to establish it first).  These MUST live outside PASSWORD_DATA_m13 - G_process_
+	// password_data_m13() memsets that whole struct, which would clobber flags kept inside it.  Same pattern as
+	// time_constants.set/populating (atomic => re-init-safe on pg reuse, no mutex lifecycle).
+	_Atomic tern		password_established;	// 3-state: UNKNOWN = not yet established; FALSE = established, no decrypt access (this read fails, as before); TRUE = established w/ access. Losers wait for != UNKNOWN, then replicate the winner's pass/fail => never see a half-built pwd
+	_Atomic tern		password_electing;	// election claim: CAS FALSE->TRUE picks the single populating thread
  // Current Session
 	CURRENT_SESSION_m13	current_session;
  // Active Channels
@@ -2570,6 +2646,7 @@ typedef struct {
 	const ui4				*SHA_k_table;
 	const sf8				*CMP_normal_CDF_table;
 	const CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*CMP_VDS_threshold_map;
+	const sf8				*CMP_log_table;  // COMPUTED entropy-estimator LUT (log2(n)); heap, freed like CRC_tables
 	NET_PARAMS_m13				NET_params; // parameters for default internet interface
 	HW_PARAMS_m13				HW_params;
 	const E_STRING_m13			*E_strings_table;
@@ -2752,12 +2829,16 @@ typedef struct {
 	tern				update_file_system_names; // if session or channel file system name differ from higher level names, rename lower level files & directories
 	tern				update_header_names; // if session or channel file system name differs from universal header, update affected universal headers (requires update_file_system_names to be TRUE_m13)
 	tern				update_MED_version; // if file MED version is not current, update affected files
+	si1				update_L3_password[MAX_PASSWORD_STRING_BYTES_m13]; // level-3 password for the schema 0->1 re-key that a MED-version update performs on an ENCRYPTED session (MED 1.1 == schema 1); the app (via dhnlib for DHN files) sets this before opening with update_MED_version; recovers L1/L2 & re-keys all files; cleared after the update. Empty => unencrypted-only update (bail on an encrypted session)
 	tern				update_parity; // update parity on write, if exists (e.g. updating header names or MED version; best turned off & manually batched on data conversion or acquisition)
 	tern				write_CSigs; // write CSig (attestation) records at custody events (close, conversion, transfer, archive, repair, rekey; see DGST module & REC_write_CSig_m13())
 	si8				CSig_reread_max_bytes; // dirty/unusable digest stream fallback policy: files at or below this size are re-read (DGST_file_m13()), larger files skip with a warning
-	tern				session_key_cache; // cache derived session keys in the OS key store (repeated short-process session opens skip the KDF; mechanism designed, not yet implemented)
-	si4				session_key_cache_timeout; // cached session key lifetime, seconds
+	tern				session_key_cache; // cache derived session keys in the OS key store: repeated short-process session opens skip the KDF; a supplied password validates a hit via the stored fingerprint (see SESSION_KEY_CACHE_FP_BYTES_m13); no-password opens honor the timeout
+	si4				session_key_cache_timeout; // cached session key lifetime, seconds (hard-capped at GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13 == 2 h)
 	tern				increase_priority; // increase process priority if PROC_increase_priority_m13() is called
+	tern				background_processing; // run distributed jobs (PROC_jobs_distribute_m13()/PAR_distribute_m13()) at low priority (default NO == full speed; overrides per-job priorities when YES)
+	ui1				new_password_required_classes; // OPT-IN creation-time composition rule (bitmask of PW_CLASS_*_m13); 0 == none (default). Length policy is unconditional; this is extra. Reads never consult it.
+	ui1				new_password_min_classes; // OPT-IN: require at least N of the 4 categories present (0 == off). The generally-deployed standard (Active Directory: 3 of 4). Independent of, & AND-ed with, new_password_required_classes.
 	TEST_BYTE_m13			test_byte;
 	_Atomic tern			suspend_stacks;
 } GLOBAL_MISC_m13;
@@ -2840,23 +2921,24 @@ typedef struct {
 	ui1		level_2_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui1		level_3_password_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13];
 	ui4		video_data_file_number; // MED 1.1 and above
-	tern		live; // file currently being acquired
+	tern		live; // file currently being generated, MED 1.1 and above
 	tern		ordered; // MED 1.1 and above
-	ui1		reserved[2];
-	si1		encryption_1; // MED 1.1 and above
-	si1		encryption_2; // MED 1.1 and above
-	si1		encryption_3; // MED 1.1 and above
-	si1		encryption_4; // MED 1.1 and above
+	si1		metadata_section_2_encryption;		// metadata section 2 (see the encryption-byte block in the offset defines)
+	si1		metadata_section_3_encryption;		// metadata section 3
+	si1		time_series_data_encryption;		// time series data
+	si1		video_data_encryption;			// video data
+	si1		maximum_record_encryption_level;	// RECORDS (index & data) files ONLY: highest level among the file's records (0 => none, known); ENCRYPTION_LEVEL_NO_ENTRY_m13 (-128) == unknown in every non-records UH (records self-report - read a records file's header for this)
+	si1		encryption_reserved;			// reserved for a future encryptable region
 	ui1		crypto_schema; // password validation & key derivation schema (taken from protected region: zeros in older files == CRYPTO_SCHEMA_LEGACY_m13, which is read-only)
-	ui1		kdf_exponent; // KDF iterations == 2^n (crypto schema 1 & above; unused under legacy schema)
+	ui1		kdf_exponent[UH_KDF_EXPONENT_LEVELS_m13]; // KDF iterations == 2^n, PER LEVEL: [0]=L1 [1]=L2 [2]=L3 [3]=reserved L4 (schema 1+; unused under legacy). Independent per level so a machine level (e.g. the DHN L3) can use a low exponent without a weak human L1/L2 dragging it up.
 	ui1		anchor_type; // recovery anchor form (see ANCHOR_TYPE_*_m13; taken from protected region: zeros in older files == no anchor)
 	ui1		anchor_key_ID; // which anchor public key sealed this session (anchor type 2; taken from protected region)
 	ui1		level_1_escrow_field[ESCROW_FIELD_BYTES_m13]; // AES-256(escrow key from level 2 chain material, level 1 password bytes); taken from protected region
 	ui1		reserved_level_4_escrow_field[ESCROW_FIELD_BYTES_m13]; // EXPLICITLY RESERVED for a future level 4: zero until then
 	ui1		reserved_level_4_validation_field[PASSWORD_VALIDATION_FIELD_BYTES_m13]; // EXPLICITLY RESERVED for a future level 4: zero until then
 	ui1		kdf_salt_extension[CRYPTO_KDF_SALT_EXTENSION_BYTES_m13]; // KDF salt = session UID then this (128 bits total); random per session, written at password generation
-	si8		lib_mod_time; // uutc: file system modification time dictated by the library at its last write (see UH_LIB_MOD_TIME_OFFSET_m13; zeros in older files == unstamped)
 	ui1		protected_region[UH_PROTECTED_REGION_BYTES_m13]; // remainder of the former discretionary region (reclaimed 2026-07-18): the universal header is entirely machine space
+	si8		lib_mod_time; // uutc: fs modification time the library stamps at its last write. LAST UH field (8-byte aligned at offset 1016) so kdf_exponent[] can grow without misaligning it. zeros in older files == unstamped
 } UH_m13;
 
 // universal header layout (compile-time; see LAYOUT_*_m13 note)
@@ -2889,11 +2971,12 @@ LAYOUT_FIELD_m13(UH_m13, level_3_password_validation_field, UH_LEVEL_3_PASSWORD_
 LAYOUT_FIELD_m13(UH_m13, video_data_file_number, UH_VIDEO_DATA_FILE_NUMBER_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, live, UH_LIVE_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, ordered, UH_ORDERED_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, reserved, UH_RESERVED_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, encryption_1, UH_ENCRYPTION_1_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, encryption_2, UH_ENCRYPTION_2_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, encryption_3, UH_ENCRYPTION_3_OFFSET_m13);
-LAYOUT_FIELD_m13(UH_m13, encryption_4, UH_ENCRYPTION_4_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, metadata_section_2_encryption, UH_METADATA_SECTION_2_ENCRYPTION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, metadata_section_3_encryption, UH_METADATA_SECTION_3_ENCRYPTION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, time_series_data_encryption, UH_TIME_SERIES_DATA_ENCRYPTION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, video_data_encryption, UH_VIDEO_DATA_ENCRYPTION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, maximum_record_encryption_level, UH_MAXIMUM_RECORD_ENCRYPTION_LEVEL_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, encryption_reserved, UH_ENCRYPTION_RESERVED_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, crypto_schema, UH_CRYPTO_SCHEMA_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, kdf_exponent, UH_KDF_EXPONENT_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, anchor_type, UH_ANCHOR_TYPE_OFFSET_m13);
@@ -3710,12 +3793,15 @@ tern			G_check_char_type_m13(void);
 tern			G_check_file_list_m13(si1 **file_list, si4 n_files);
 tern			G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...); // varargs (is_cloud == TRUE_m13): const si1 *cloud_directory, const si1 *cloud_service_name, const si1 *cloud_utilities_directory
 tern 			G_check_password_m13(const si1 *password);
-tern 			G_check_new_password_m13(const si1 *password); // creation-time policy (min length + weak-password warning); NOT used when reading
+tern 			G_check_new_password_m13(const si1 *password, ui1 level, tern lib_generated); // creation-time policy (level-aware min length [L3 human = 12] + weak warning + OPT-IN class rule); lib_generated => exempt; NOT used when reading or for re-keyed legacy passwords
+tern			G_password_char_ok_m13(si4 c); // shared "acceptable password byte" predicate (rejects C0 control codes & DEL; allows UTF-8): used by entry AND creation so CLI/GUI agree
+si1			*G_password_requirements_m13(si1 *string); // ready-to-display sentence of the CURRENT new-password policy (length + opt-in composition rule) for a GUI/terminal to show during creation; NULL => allocate (caller frees)
+ui1			G_password_classes_m13(const si1 *password); // bitmask of PW_CLASS_*_m13 present in the password (GUI can mirror the composition rule)
 si4			G_estimate_password_bits_m13(const si1 *password); // conservative entropy estimate in bits (dictionary/keyboard-walk/date/repeat aware); creation-time only
 ui1			G_clamp_kdf_exponent_m13(si4 exponent, tern lib_generated_password); // enforces the non-overridable floors & ceiling; the single point of policy
 ui1			G_suggest_kdf_exponent_m13(const si1 *password, tern lib_generated_password); // constant-attack-cost suggestion: clamp(target - haircut(estimate))
 sf8			G_kdf_open_time_estimate_m13(ui1 exponent, sf8 *slow_machine_secs); // seconds per password per session open ON THIS MACHINE (calibrated, not tabulated)
-si4			G_check_segment_map_m13(SLICE_m13 *slice, SESS_m13 *sess);
+si4			G_first_open_segment_m13(void *level_header);  // index of first open (non-NULL) segment on the reference channel; (si4) FALSE_m13 if none
 void			G_clear_error_m13(void);
 tern			G_clear_terminal_m13(void);
 si4			G_compare_acq_nums_m13(const void *a, const void *b);
@@ -3740,7 +3826,8 @@ tern			G_encrypt_metadata_m13(FPS_m13 *fps);
 tern			G_encrypt_records_m13(FPS_m13 *fps);
 tern 			G_encrypt_time_series_m13(FPS_m13 *fps);
 tern 			G_encrypt_video_m13(FPS_m13 *fps);
-tern			G_enter_ascii_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password);
+tern			G_enter_password_m13(si1 *password, const si1 *prompt, tern confirm_no_entry, sf8 timeout_secs, tern create_password); // interactive TTY entry; accepts UTF-8 (up to PASSWORD_BYTES bytes, whole characters); create_password confirms
+#define G_enter_ascii_password_m13	G_enter_password_m13  // compat alias: entry is no longer ASCII-only (accepts UTF-8)
 void			G_error_clear_m13(void);
 si4			G_error_code_m13(void);
 void 			G_error_message_m13(const si1 *fmt, ...) FMT_ATTR_m13(1, 2);
@@ -3765,8 +3852,9 @@ tern			G_free_ssr_m13(void *ptr);
 tern			G_full_path_m13(const si1 *path, si1 *full_path);
 FUNCTION_STACK_m13	*G_function_stack_m13(pid_t_m13 _id);
 si1			**G_generate_numbered_names_m13(si1 **names, const si1 *prefix, si4 n_names);
-tern			G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint);
+tern			G_generate_password_data_m13(FPS_m13 *fps, const si1 *L1_pw, const si1 *L2_pw, const si1 *L3_pw, const si1 *L1_pw_hint, const si1 *L2_pw_hint, ui1 lib_generated_mask, tern check_policy); // lib_generated_mask: per-level bit (bit0=L1, bit1=L2, bit2=L3) set when that level's pw came from G_generate_password_m13 (=> lower per-level KDF floor). check_policy: run G_check_new_password (FALSE for a re-key of legacy passwords, which are accepted as-is)
 si8			G_generate_recording_time_offset_m13(si8 recording_start_time_uutc);
+tern			G_generate_password_m13(si1 *password, si4 n_chars, ui1 *suggested_kdf_exponent); // machine password: keyboard-ASCII, CSPRNG; n_chars<=0 => PASSWORD_BYTES; returns a LOW suggested KDF exponent (entropy is in the password)
 si1			*G_generate_segment_name_m13(si1 *segment_name, FPS_m13 *fps);
 ui8			G_generate_UID_m13(ui8 *uid);
 si8			G_header_offset_m13(FILE_m13 *fp, const si1 *path);
@@ -3812,6 +3900,8 @@ PROC_GLOBS_m13		*G_proc_globs_find_m13(void *level_header); // as G_proc_globs_m
 tern			G_proc_globs_init_m13(PROC_GLOBS_m13 *pg);
 PROC_GLOBS_m13		*G_proc_globs_new_m13(void *level_header);
 tern			G_process_password_data_m13(FPS_m13 *fps, const si1 *unspecified_pw);
+tern			G_password_info_m13(const si1 *path, const si1 *password, PASSWORD_INFO_m13 *info); // read one header (+ §1 hints); password NULL = info only (no KDF); else validate & set info->access_level. No open, no side effects, no record scan.
+tern			G_set_encryption_map_m13(UH_m13 *uh, si1 metadata_section_2, si1 metadata_section_3, si1 time_series_data, si1 video_data, si1 maximum_record_encryption_level); // stamp the session-wide encryption levels into a UH at creation (call on every UH); pass ENCRYPTION_LEVEL_NO_ENTRY_m13 for maximum_record_encryption_level unless the creator knows it (0 = no passwords / all readable, or a fixed policy)
 tern			G_propagate_flags_m13(void *level_header, ui8 new_flags);
 void			G_push_behavior_exec_m13(const si1 *function, const si4 line, ui4 code);
 void			G_push_function_exec_m13(const si1 *function, const si4 line);
@@ -3827,7 +3917,7 @@ pthread_rval_m13	G_read_segment_thread_m13(void *ptr);
 SESS_m13		*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...); // varargs(sess == NULL): void *file_list, si4 list_len, ui8 lh_flags, const si1 *password, const si1 *index_channel_name
 si8			G_read_time_series_data_m13(SEG_m13 *seg, SLICE_m13 *slice);
 UH_m13			*G_read_universal_header_m13(const si1 *path, UH_m13 *uh);
-tern			G_recover_passwords_m13(const si1 *L3_password, UH_m13* universal_header);
+tern			G_recover_passwords_m13(const si1 *L3_password, UH_m13* universal_header, si1 *L1_out, si1 *L2_out); // L1_out/L2_out (legacy schema only): if non-NULL, RETURN the recovered password STRINGS (>= MAX_PASSWORD_STRING_BYTES each; empty if that level absent) & stay SILENT (re-key/programmatic use); both NULL => print recovered values (recovery tool)
 si1			*G_recover_password_string_m13(si1 *password_string, ui1 target_level, const si1 *higher_level_pw, UH_m13 *universal_header); // escrow recovery: returns the TYPED password string of target_level; read-only, validated before return
 si1			*G_unseal_password_string_m13(si1 *password_string, const ui1 *anchor_private_key, UH_m13 *universal_header); // anchor (type 2) recovery of the top-level password string; anchor-holder side, requires only the universal header
 tern			G_random_bytes_m13(ui1 *buffer, si4 n_bytes); // SYSTEM ENTROPY (CSPRNG): for cryptographic material only (rand64_m13() is a seeded PRNG - fine for UIDs, fatal for keys)
@@ -3840,7 +3930,6 @@ si4			G_search_Sgmt_records_m13(Sgmt_REC_m13 *Sgmt_records, SLICE_m13 *slice, ui
 si4			G_segment_for_index_m13(void *level_header, si8 target_index);
 si4			G_segment_for_path_m13(const si1 *path);
 si4			G_segment_for_time_m13(void *level_header, si8 target_time);
-si4			G_segment_index_m13(void *level_header, si4 segment_number);
 si4			G_segment_range_m13(void *level_header, SLICE_m13 *slice);
 ui4			*G_segment_video_start_frames_m13(FPS_m13 *vid_inds_fps, ui4 *n_video_files);
 tern			G_sendgrid_email_m13(const si1 *sendgrid_key, const si1 *to_email, const si1 *cc_email, const si1 *to_name, const si1 *subject, const si1 *content, const si1 *from_email, const si1 *from_name, const si1 *reply_to_email, const si1 *reply_to_name);
@@ -3892,7 +3981,8 @@ si8			G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...);
 void			G_update_access_time_m13(void *level_header);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name);
-tern			G_update_MED_type_m13(const si1 *path); // used by G_update_MED_version_m13()
+typedef struct REKEY_CTX_m13 REKEY_CTX_m13; // opaque schema 0->1 re-key context (defined in medlib_m13.c)
+tern			G_update_MED_type_m13(const si1 *path, REKEY_CTX_m13 *rk); // used by G_update_MED_version_m13(); rk = re-key context (NULL = no re-key)
 tern			G_update_MED_version_m13(FPS_m13 *fps);
 tern			G_update_session_name_m13(FPS_m13 *fps);
 tern			G_update_session_name_header_m13(const si1 *fs_path, const si1 *fs_name, const si1 *uh_name); // used by G_update_session_name_m13()
@@ -4186,6 +4276,22 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_SRRED_BOTTOM_SCALE_m13		((sf8) 0.005) // minimum search scale (scale search starts here)
 #define CMP_SRRED_TOP_SCALE_m13			((sf8) 0.995) // maximum search scale (usually exits well before here)
 #define CMP_SRRED_SCALE_STEP_m13		((sf8) 0.0001) // scale search increment
+#define CMP_SRRED_MINIMUM_SAMPLES_m13		((ui4) 10) // minimum block samples to measure SRRED parameters (fewer => block falls through to MBE). Currently equals CMP_VDS_MINIMUM_SAMPLES_m13, but defined separately so SRRED & VDS can diverge.
+#define CMP_SRRED_RANK_SCALE_m13		((sf8) 0.2) // fixed scale at which SRRED ranks derivative levels (the derivative level that is best AT the scale SRRED will use, not at unscaled scale 1.0)
+// SRRED scale-search parameters. These are DEFAULTS for the per-CPS settable fields params.SRRED_scale_window /
+// _scale_refresh / _scale_bailout_mult (initialized to these in CMP_init_CPS_parameters). Override the fields directly,
+// or apply a preset "set" below. Larger window / smaller refresh / smaller bailout => more thorough scan (better ratio,
+// slower); the thorough end is estimator-bound, so it is exactly what the log table (CMP_log_table) accelerates.
+#define CMP_SRRED_SCALE_WINDOW_DEFAULT_m13		((si4) 100) // windowed-tracker half-width in scale steps (0 => full anchor scan every block). Edge-expands if the min lands on a boundary; empirically within +/-0.1% of the full-scan optimum.
+#define CMP_SRRED_SCALE_REFRESH_DEFAULT_m13		((si8) 128) // blocks between forced full-range anchor scans (catches drift/jumps the local window misses)
+#define CMP_SRRED_SCALE_BAILOUT_MULT_DEFAULT_m13	((sf8) 2.5) // anchor-scan early-exit: keep scanning until scale exceeds this x the best-so-far, then bail (0.0 => no bailout, true full scan). 2.5: ~22-25x faster than full scan for <=0.02% size cost, with margin above the loss cliff near 1.5-2.0
+// preset sets (assign all three fields together):
+#define CMP_SRRED_SCALE_WINDOW_MAX_COMPRESSION_m13		((si4) 0)   // window 0 + bailout 0.0 => an exhaustive full scale scan every block. Estimator-bound, so the log table makes it affordable; spends compute for a bit more ratio.
+#define CMP_SRRED_SCALE_REFRESH_MAX_COMPRESSION_m13		((si8) 1)
+#define CMP_SRRED_SCALE_BAILOUT_MULT_MAX_COMPRESSION_m13	((sf8) 0.0)
+#define CMP_SRRED_SCALE_WINDOW_MAX_SPEED_m13			((si4) 30)  // narrow tracking window + infrequent re-anchoring => fastest; keeps margin above the ~20-step fidelity cliff on volatile data
+#define CMP_SRRED_SCALE_REFRESH_MAX_SPEED_m13			((si8) 512)
+#define CMP_SRRED_SCALE_BAILOUT_MULT_MAX_SPEED_m13		((sf8) 2.5)
 #define CMP_SRRED_SCRAP_BUFFERS_m13		2
 #define CMP_SELF_MANAGED_MEMORY_m13		-1 // pass to CMP_allocate_CPS_m13() to prevent automatic re-allocation
 #define CMP_RED_TO_PRED_m13			TRUE_m13 // for CMP_swap_RED_PRED_m13()
@@ -4476,17 +4582,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CPS_PARAMS_DISCONTINUITY_DEFAULT_m13			UNKNOWN_m13
 #define CPS_PARAMS_DERIVATIVE_LEVEL_DEFAULT_m13			((ui1) 1)
 #define CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13			4
-// parameters defaults (SRRED)
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13		((ui4) 3000)  // rapidly diminishing benefit below this
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_DEFAULT_m13		((ui4) 15000)  // usually asymptotes around here
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13			((ui4) 0xFFFFFFFF) // use full block samples, unless < CMP_VDS_MINIMUM_SAMPLES_m13
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_MAX_COMPRESSION_m13	CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13
-#define CMP_PARAMS_SRRED_TEST_SAMPLES_MAX_SPEED_m13		CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13
-#define CMP_PARAMS_SRRED_NO_UPDATES_m13				((sf8) -1.0) // measure once & never update (fast, but does not allow for dift)
-#define CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13			((sf8) 0.0) // measure for every block (slow, but best compression)
-#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_DEFAULT_m13		((sf8) 10.0) // update every 10 seconds (in sample time)
-#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_MAX_COMPRESSION_m13	CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13
-#define CMP_PARAMS_SRRED_UPDATE_INTERVAL_MAX_SPEED_m13		CMP_PARAMS_SRRED_NO_UPDATES_m13
+// (SRRED scale-search defaults & preset sets live with the SRRED scale macros above: CMP_SRRED_SCALE_*_{DEFAULT,MAX_COMPRESSION,MAX_SPEED}_m13)
 // parameters defaults (lossy)
 #define CPS_PARAMS_GOAL_RATIO_DEFAULT_m13			((sf8) 0.05)
 #define CPS_PARAMS_GOAL_TOLERANCE_DEFAULT_m13			((sf8) 0.005)
@@ -4510,6 +4606,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_RED_MAXIMUM_RANGE_m13 		((ui8) 0x1000000000000) // 2^48
 #define CMP_RED_RANGE_MASK_m13			((ui8) 0xFFFFFFFFFFFF) // 2^48 - 1
 #define CMP_RED_MAX_STATS_BINS_m13 		256
+#define CMP_RED_CODER_OVERHEAD_m13		((sf8) 1.0015) // CMP_RED_estimate_bytes_m13 multiplies its entropy (coded-data) term by this to recover the range coder's real output above the entropy bound (count-quantization to 65535 + per-stream flush); the exact 3-byte/symbol model term is NOT scaled. Measured RED-body actual/estimate at the encoder's own decision point over 8 sets x all SRRED per-block scales (2890 streams): pooled-median 1.0013, per-set 1.0008-1.0020 (fy 1.013 - small streams where the fixed flush dominates); 1.0015 is central & a hair pessimistic (safely favors exact MBE in ties). Flows to every consumer consistently: RED x1, SRRED x2, PRED x3. Being ~multiplicative it leaves within-algorithm argmins (scale, derivative level) put & sharpens only the vs-MBE(exact) diversion.
 #define CMP_PRED_CATS_m13 			3
 #define CMP_PRED_NIL_m13 			0
 #define CMP_PRED_POS_m13 			1
@@ -4550,6 +4647,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 
 // Normal cumulative distribution function values from -3 to +3 standard deviations in 0.1 sigma steps
 #define CMP_NORMAL_CDF_TABLE_ENTRIES_m13 61
+#define CMP_LOG_TABLE_ENTRIES_m13	(1 << 16)  // CMP_log_table[n] = log2(n) for n in [0, 65536); entropy-estimator LUT (counts >= this fall back to a live log2())
 #define CMP_NORMAL_CDF_TABLE_m13 {	0.00134989803163010, 0.00186581330038404, 0.00255513033042794, 0.00346697380304067, \
 					0.00466118802371875, 0.00620966532577614, 0.00819753592459614, 0.01072411002167580, \
 					0.01390344751349860, 0.01786442056281660, 0.02275013194817920, 0.02871655981600180, \
@@ -4863,12 +4961,12 @@ typedef struct {
 	
 	// lossless compression parameters
 	sf4	SRRED_scale;
-	ui4	SRRED_test_samples; // smaller sizes increase speed, (CMP_PARAMS_SRRED_TEST_SAMPLES_BLOCK_m13 uses full block (most acccurate), unless < CMP_PARAMS_SRRED_TEST_SAMPLES_MINIMUM_m13)
-	sf8	SRRED_update_interval; // time, in seconds, between updates
-				       // CMP_PARAMS_SRRED_CONTINUOUS_UPDATES_m13 (0.0) == update with every block
-				       // CMP_PARAMS_SRRED_NO_UPDATES_m13 (-1.0) == measure only at startup & do not update
-	si8	SRRED_update_time; // uutc of next update; used with SRRED_update_interval
+	si4	SRRED_scale_window; // scale-search windowed-tracker half-width in scale steps (0 => full anchor scan every block). Larger => broader/more-thorough per-block search. Default CMP_SRRED_SCALE_WINDOW_DEFAULT_m13; user-settable (see preset sets CMP_SRRED_SCALE_*_{DEFAULT,MAX_COMPRESSION,MAX_SPEED}_m13).
+	si8	SRRED_scale_refresh; // blocks between forced full-range anchor scans. Smaller => more frequent full scans. Default CMP_SRRED_SCALE_REFRESH_DEFAULT_m13.
+	sf8	SRRED_scale_bailout_mult; // anchor-scan adaptive-bailout multiple (0.0 => no bailout, true full scan). Default CMP_SRRED_SCALE_BAILOUT_MULT_DEFAULT_m13.
 	si8	SRRED_overflow_samples; // number of samples in the overflow buffer
+	sf8	SRRED_scale_center; // scale-search windowed tracker: previous block's optimal scale (< 0.0 => no anchor yet, do a full anchor scan); tracks the optimum block-to-block so most blocks scan only a small window (see CMP_SRRED_find_parameters_m13)
+	si8	SRRED_scale_refresh_ctr; // blocks since the last full anchor scan; forces a periodic re-anchor (params.SRRED_scale_refresh) to catch drift the window missed
 	si8	n_stats_entries; // number of bins in the counts array (also used in find derivative level)
 
 	// lossy compression parameters
@@ -4886,11 +4984,9 @@ typedef struct {
 	// compression arrays
 	si1			*keysample_buffer; // passed in both compression & decompression
 	si4			*derivative_buffer; // used if needed in compression & decompression, size of maximum block differences
-	union {
-		si4		*next_derivative_buffer; // used in find_derivative_level option & SRRED
-		si4		*overflows_buffer; // used in SRRED
-		si4		*residuals_buffer; // used in SRRED
-	};
+	si4			*next_derivative_buffer; // used in find_derivative_level option & SRRED
+	si4			*overflows_buffer; // used in SRRED: separated overflows for the count-domain scale search (compression)
+	si4			*residuals_buffer; // used in SRRED: residual stream (both modes - decode reads it). Distinct from the two above: SRRED needs derivatives, residuals & overflows live simultaneously, so these cannot share storage
 	si4			*detrended_buffer; // used if needed in compression, size of decompressed block
 	si4			*scaled_amplitude_buffer; // used if needed in compression, size of decompressed block
 	si4			*scaled_frequency_buffer; // used if needed in compression, size of decompressed block
@@ -4939,6 +5035,9 @@ tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_l
 tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
 sf8	CMP_calculate_mean_residual_ratio_m13(si4 *original_data, si4 *lossy_data, ui4 n_samps);
 tern	CMP_calculate_statistics_m13(REC_Stat_v10_m13 *stats_ptr, si4 *data, si8 len, CMP_NODE_m13 *nodes);
+sf8	CMP_RED_estimate_bytes_m13(ui4 *cnts, si8 n_bins);  // estimated RED size of a histogram (entropy/8 + 3 bytes/nonzero symbol)
+sf8	CMP_PRED_estimate_bytes_m13(ui4 **cat_cnts);  // estimated PRED size (sum of per-category RED estimates)
+si8	CMP_MBE_estimate_bytes_m13(CPS_m13 *cps, tern *use_raw, si4 *bits_per_sample);  // EXACT total MBE block size (8-byte padded; n_samps/derivative-level/header all from cps); outputs use_raw & bits_per_sample
 tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps);
 si4	CMP_compare_sf8_m13(const void *a, const void * b);
 si4	CMP_compare_si4_m13(const void *a, const void * b);
@@ -5026,7 +5125,7 @@ sf8	CMP_splope_m13(sf8 *xa, sf8 *ya, sf8 *d2y, sf8 x, si8 lo_pt, si8 hi_pt);
 tern	CMP_SRRED_decode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_encode_m13(CPS_m13 *cps);
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps);
-sf8	CMP_SRRED_score_m13(CPS_m13 *cps, sf8 scale);
+sf8	CMP_SRRED_estimate_bytes_m13(CPS_m13 *cps, sf8 scale);
 tern    CMP_SSE_decode_m13(CPS_m13 *cps);
 tern    CMP_SSE_encode_m13(CPS_m13 *cps);
 tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED);
@@ -5295,6 +5394,11 @@ ui1	*SHA_hmac_m13(const ui1 *key, si4 key_bytes, const ui1 *data, si8 data_bytes
 void	SHA_init_m13(SHA_CTX_m13 *ctx);
 tern	SHA_init_tables_m13(void);
 ui1	*SHA_pbkdf2_m13(const ui1 *pw, si4 pw_bytes, const ui1 *salt, si4 salt_bytes, ui4 iterations, ui1 *dk);
+ui1	*SHA_pbkdf2_resume_m13(const ui1 *pw, si4 pw_bytes, const ui1 *salt, si4 salt_bytes, ui4 from_iter, ui4 to_iter, ui1 *u, ui1 *dk); // resumable PBKDF2: advance (u,dk) state from_iter->to_iter; dk snapshot at any to_iter == PBKDF2(that count). from_iter 0 initializes.
+void	G_session_key_cache_id_m13(UH_m13 *uh, ui1 *cache_id);					// cache_id = SHA-256(KDF salt || kdf_exponent)[0:SESSION_KEY_CACHE_ID_BYTES_m13]
+tern	G_session_key_cache_get_m13(const ui1 *cache_id, ui1 *master, ui1 *fp_out);		// TRUE = hit (master filled, unexpired; fp_out (may be NULL) gets the stored password fingerprint); FALSE = miss/expired/unavailable
+tern	G_session_key_cache_put_m13(const ui1 *cache_id, const ui1 *master, const ui1 *fp, si4 timeout_sec);	// store/refresh (resets expiry); fp = password fingerprint (NULL => zeros); timeout clamped to GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13
+tern	G_session_key_cache_evict_m13(const ui1 *cache_id);
 void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data);
 void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 
@@ -5477,7 +5581,9 @@ void		VID_walk_free_m13(VID_WALK_m13 **walk);
 #define FILT_BAD_DATA_m13				-2
 #define FILT_EPS_SF8_m13				((sf8) 2.22045e-16)
 #define FILT_RADIX_m13					((sf8) 2.0)
-#define FILT_LINE_NOISE_HARMONICS_DEFAULT_m13		4
+#define FILT_LINE_NOISE_HARMONICS_DEFAULT_m13		10 // template-smoothing cutoff = this * line_freq. Set ABOVE the real 5th-harmonic max (300 Hz @60) on purpose: the soft order-4 filtfilt knee would attenuate the 5th if the cutoff sat on it, and the per-cycle median already rejects everything not phase-locked to the mains, so a generous cutoff can't distort signal (nothing above the 5th to remove anyway)
+#define FILT_LINE_NOISE_MIN_SAMPS_PER_CYCLE_m13		40 // FILT_line_noise: below this many samples per line cycle, upsample by ceil(this / samps_per_cycle) for template resolution (& to lift the fs/5 smoothing cap above the harmonics). The phase-locked reshape tolerates non-integer upsampled samps/cycle, so U is sized purely for resolution, NOT to make samps/cycle integer (which would force a needlessly large factor)
+#define FILT_LINE_NOISE_UPSAMPLE_CUTOFF_FRACTION_m13	((sf8) 0.95) // FILT_line_noise upsampler: anti-image lowpass cutoff as a fraction of the ORIGINAL Nyquist. As high as practical (kills the zero-stuff images while preserving the most harmonics); a lower cutoff would needlessly attenuate near-Nyquist harmonics
 #define FILT_ANTIALIAS_FREQ_DIVISOR_DEFAULT_m13		((sf8) 3.5);
 #define FILT_UNIT_THRESHOLD_DEFAULT_m13			CPS_PARAMS_VDS_UNIT_THRESHOLD_DEFAULT_m13
 #define FILT_NFF_BUFFERS_m13				4
@@ -5739,6 +5845,7 @@ typedef struct {
 	CMP_BUFFERS_m13	**mak_in_bufs;
 	CMP_BUFFERS_m13	**mak_out_bufs;
 	CMP_BUFFERS_m13	**spline_bufs;
+	FILTPS_m13	**filt_ps;  // cached per-channel filters; reused across calls while design params (order/type/freq/cutoffs) are unchanged, rebuilt when they change
 } DATA_MATRIX_m13;
 
 typedef struct {
