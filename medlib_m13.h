@@ -2521,6 +2521,12 @@ typedef struct {
 	si1	daylight_timezone_string[TIMEZONE_STRING_BYTES_m13];
 	DAYLIGHT_TIME_CHANGE_CODE_m13	daylight_start_code; // si1[8] / si8
 	DAYLIGHT_TIME_CHANGE_CODE_m13	daylight_end_code; // si1[8] / si8
+	// resolved recording location: G_set_time_constants_m13() matches a full timezone-table row, so the
+	// country & territory are known once the timezone is. Retained here so G_init_metadata_m13() can seed
+	// metadata section 3 with them (previously they were zeroed & the knowledge was discarded). An app's
+	// own value (e.g. from an rc file) still overrides - the rc file is never modified by the library.
+	si1	country[METADATA_RECORDING_LOCATION_BYTES_m13];
+	si1	territory[METADATA_RECORDING_LOCATION_BYTES_m13];
 } TIME_CONSTANTS_m13; // PROC_GLOBS_m13 element
 
 typedef struct {
@@ -3832,7 +3838,7 @@ void			G_error_clear_m13(void);
 si4			G_error_code_m13(void);
 void 			G_error_message_m13(const si1 *fmt, ...) FMT_ATTR_m13(1, 2);
 si1 			G_exists_m13(const si1 *path);
-si8			G_file_length_m13(FILE_m13 *fp, const si1 *path);
+si8			G_file_length_m13(void *fp, const si1 *path);  // fp: FILE_m13 * or FILE * (as the rest of the f*_m13 family)
 si1			**G_file_list_m13(si1 **file_list, si4 *n_files, const si1 *enclosing_directory, const si1 *name, const si1 *extension, ui4 flags);
 FILE_TIMES_m13		*G_file_times_m13(FILE_m13 *fp, const si1 *path, FILE_TIMES_m13 *ft, tern set_time);
 tern			G_fill_empty_password_bytes_m13(si1 *password_bytes);
@@ -4669,6 +4675,26 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_SUM_SQ_NORMAL_CDF_m13	((sf8) 24.864467406647070)
 #define CMP_KS_CORRECTION_m13		((sf8) 0.0001526091333688973)
 
+// VDS user threshold (0-10) -> "m", the substitution threshold as a MULTIPLE OF THE BLOCK BASELINE.
+//   thresh = max(m(u) * baseline, CMP_VDS_THRESHOLD_FLOOR_m13),  baseline = median |y - running median|
+// Multiplicative (not additive) so the decision is invariant to gain AND to sampling rate: measured lossiness
+// held at 0.96 +/- 11% over a 16x range of sf (30 kHz / 7.5 kHz / 1.875 kHz) on the same physiology.
+// Anchors are measured, not chosen (EEG 255 Hz + units 30 kHz, both vs their own lossless PRED):
+//   m <= 1  : output EXCEEDS lossless (97.7% / 104.4%) & needs 93% anchors -> useless, falls through to PRED
+//   m = 4   : 39.8% / 48.7% of lossless -> the knee, and 1.7% of spike amplitude on unit waveforms  => u = 5
+//   m = 8   : 30.5% / 46.0% -> saturation; 8 -> 16 buys <4% size for double the error  => u = 10
+// so m doubles every 5 threshold units, anchored at m(5) = 4.
+#define CMP_VDS_THRESHOLD_BASE_m13		((sf8) 2.0)  // m(0); u == 0 never reaches here (redirects to PRED)
+#define CMP_VDS_THRESHOLD_DOUBLING_m13		((sf8) 5.0)  // threshold units per doubling of m
+#define CMP_VDS_THRESHOLD_FLOOR_m13		((sf8) 1.0)  // 1 LSB: the data cannot express a smaller difference, so a
+					// threshold below this resolves nothing & merely forces every +/-1 dither sample to be stored
+					// verbatim. Also covers baseline == 0 exactly (flat block), where m * baseline would be 0.
+					// In COUNTS, not physical units - resolvability is a property of the quantization, and counts
+					// are what keeps the decision gain-invariant.
+
+// OBSOLETE (2026-08-01): the interpolated user->algorithm threshold table, and its LFP / no-filt split, are no
+// longer used - CMP_VDS_get_theshold_m13() now computes m(u) in closed form (above). Retained only so the
+// globals table entry & CMP_init_tables_m13() need not change in the same pass; safe to delete outright.
 #define CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13	101
 #define CMP_VDS_THRESHOLD_MAP_TABLE_m13 { \
 	{ 0.0, 0.653145437887747, 0.087080239615529 }, \
@@ -5587,10 +5613,33 @@ void		VID_walk_free_m13(VID_WALK_m13 **walk);
 #define FILT_ANTIALIAS_FREQ_DIVISOR_DEFAULT_m13		((sf8) 3.5);
 #define FILT_UNIT_THRESHOLD_DEFAULT_m13			CPS_PARAMS_VDS_UNIT_THRESHOLD_DEFAULT_m13
 #define FILT_NFF_BUFFERS_m13				4
-#define FILT_VDS_TEMPLATE_MIN_PS_m13			0 // index of CPS filtps
-#define FILT_VDS_TEMPLATE_LFP_PS_m13			1 // index of CPS filtps
-#define	FILT_VDS_MIN_SAMPS_PER_CYCLE_m13		((sf8) 4.5) // rolloff starts at ~5 samples per cycle
-#define	FILT_VDS_MEDIAN_DECIM_WINDOW_m13		((si8) 25) // VDS template running-median: when the median span allows, decimate to ~this many points then linearly interpolate the (low-freq) trend back — compression-neutral, faster (speedup grows with span)
+// FILT_VDS_TEMPLATE_MIN_PS_m13 / FILT_VDS_TEMPLATE_LFP_PS_m13 (CPS filtps indices) are GONE: the VDS template
+// no longer filters. See CMP_VDS_generate_template_m13() for what replaced them & why.
+// FILT_VDS_MIN_SAMPS_PER_CYCLE_m13 is GONE (2026-08-01). It was the minimal-antialias cutoff, then briefly a
+// cap on VDS_LFP_high_fc. Both roles are gone: there is no antialias filter, and the span floor below is a
+// strictly tighter constraint than any samples-per-cycle cap, so the cap never changed an outcome - it only
+// decided whether a (misleading) warning printed. One number governs now.
+#define	FILT_VDS_MEDIAN_SPAN_MIN_m13			((si8) 12) // minimum running-median window, in SAMPLES (scale-independent).
+					// A median only rejects a transient if its window is substantially longer than the transient; at 5
+					// samples a 2-3 sample excursion fills half the window & DRAGS the median onto it, which then hides
+					// that excursion from the threshold test. Measured (255 Hz EEG, u=5, span floor swept):
+					//   floor  5 -> 77.7% of lossless, max err 455   <- median dragged by transients
+					//   floor  8 -> 51.9%,             max err 341
+					//   floor 12 -> 48.5%,             max err 335   <- knee, both axes
+					//   floor 20 -> 45.5%,             max err 345
+					//   floor 32 -> 43.1%,             max err 352
+					// Note this is a ROBUSTNESS floor & is deliberately NOT the same number as the sf/5 cutoff cap above:
+					// one bounds the highest meaningful frequency, the other the shortest usable window.
+#define	FILT_VDS_LFP_FC_DEFAULT_m13			((sf8) 500.0) // VDS: median-window cutoff used when NO LFP cutoff is
+					// specified (VDS_LFP_high_fc == 0) - "500 Hz is enough frequency resolution", as the original
+					// code assumed. It is a DEFAULT ONLY, not a floor: a caller-supplied cutoff is respected as
+					// given, however low, and is constrained only by the sf/FILT_VDS_MIN_SAMPS_PER_CYCLE_m13 cap
+					// below, which is a representability limit rather than a policy.
+// FILT_VDS_MEDIAN_DECIM_WINDOW_m13 is GONE (2026-08-01). It gated a decimate-and-interpolate approximation of the
+// running median. Measured: FILT_quantfilt_m13() costs 8.7 ns/sample at span 5, 18.3 at span 50, 41.1 at span 300
+// - a 20x span increase (5 -> 100) costs only 2.6x - so with the 500 Hz floor above bounding span, the exact median
+// is always affordable. The approximation saved ~2% of encode time at span 50 while shifting the BASELINE (and so
+// the threshold) by up to 11%, which stopped being acceptable once the median became the template itself.
 
 // Quantfilt Tail Options
 #define FILT_TRUNCATE_m13			1
@@ -5657,7 +5706,6 @@ void	FILT_complex_div_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX
 void	FILT_complex_exp_m13(FILT_COMPLEX_m13 *exponent, FILT_COMPLEX_m13 *ans);
 void	FILT_complex_mult_m13(FILT_COMPLEX_m13 *a, FILT_COMPLEX_m13 *b, FILT_COMPLEX_m13 *product);
 tern	FILT_elmhes_m13(sf8 **a, si4 poles);
-tern	FILT_excise_transients_m13(CPS_m13 *cps, si8 data_len, si8 *n_extrema);
 si4	FILT_filtfilt_m13(FILTPS_m13 *filtps);
 tern	FILT_free_CPS_m13(CPS_m13 *cps, tern free_orig_data, tern free_filt_data, tern free_buffer);
 tern	FILT_free_m13(FILTPS_m13 **filtps_ptr, tern free_orig_data, tern free_filt_data, tern free_buffer);
@@ -6665,7 +6713,8 @@ ui4		rand32_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less conven
 ui8		rand64_m13(void); // 64-bit random number using system random number generator
 ui8		rand64_med_m13(void); // 64-bit random number using medlib generator (replicable sequences across platforms)
 ui8		rand64_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of rand64_med_m13()
-tern		rm_m13(const si1 *path);  // remove (removes directory trees recursively via internal rm_recursive_m13() on MacOS & Linux)
+#define rm_m13(...)	rm_exec_m13(__VA_ARGS__, NULL)  // call with "rm_m13(path)" or "rm_m13(path, \"-R\")" (macro NULL-terminates the option list)
+tern		rm_exec_m13(const si1 *path, ...);  // remove (Unix rm/rmdir parallel; use rm_m13() macro; varargs: optional const si1 *option ("-R" == recursive), NULL; a non-empty directory is only removed with "-R")
 si4		scanf_m13(const si1 *fmt, ...);
 si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
 sem_t_m13	*sem_open_m13(const si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val

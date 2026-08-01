@@ -1992,7 +1992,7 @@ tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  //
 {
 	const si1	*cloud_directory, *cloud_service_name, *cloud_utilities_directory;
 	si1		command[PATH_BYTES_m13 + 64], cloud_prefix[PATH_BYTES_m13];
-	si1		full_path[PATH_BYTES_m13];
+	si1		full_path[PATH_BYTES_m13], test_file[PATH_BYTES_m13];
 	si4		r_val;
 	va_list		v_args;
 	
@@ -2008,7 +2008,8 @@ tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  //
 	md_m13(full_path);
 
 	// check write ability on file system
-	sprintf_m13(command, "echo x > \"%s/test_file-remove_me\"", full_path);  // create non-empty file in case file system is cloud
+	sprintf_m13(test_file, "%s/test_file-remove_me", full_path);
+	sprintf_m13(command, "echo x > \"%s\"", test_file);  // create non-empty file in case file system is cloud
 	r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 	if (r_val) {
 		G_set_error_m13(E_FWRITE_m13, "cannot create files on \"%s\"", full_path);
@@ -2029,20 +2030,20 @@ tern	G_check_file_system_m13(const si1 *file_system_path, si4 is_cloud, ...)  //
 			sprintf_m13(cloud_prefix, "%s/gsutil ", cloud_utilities_directory);
 		
 		// copy file system test file to cloud
-		sprintf(command, "%scp %s/test_file-remove_me %s/test_file-remove_me", cloud_prefix, file_system_path, cloud_directory);
+		sprintf_m13(command, "%scp %s %s/test_file-remove_me", cloud_prefix, test_file, cloud_directory);
 		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (r_val) {
 			G_set_error_m13(E_FWRITE_m13, "cannot create files on \"%s\"", cloud_directory);
 			return_m13(FALSE_m13);
 		} else {
 			// clean up
-			sprintf(command, "%srm %s/test_file-remove_me", cloud_prefix, cloud_directory);
+			sprintf_m13(command, "%srm %s/test_file-remove_me", cloud_prefix, cloud_directory);
 			r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		}
 	}
 	
-	// clean up
-	rm_m13(full_path);
+	// clean up (the test file only - full_path is the caller's directory)
+	rm_m13(test_file);
 
 	return_m13(TRUE_m13);
 }
@@ -4300,11 +4301,12 @@ si1	G_exists_m13(const si1 *path)
 }
 
 
-si8	G_file_length_m13(FILE_m13 *fp, const si1 *path)
+si8	G_file_length_m13(void *fp, const si1 *path)
 {
 	si4			fd;
 	tern			is_std;
 	si8			len;
+	FILE_m13		*m13_fp;
 	struct_stat_m13		sb;
 
 #ifdef FT_DEBUG_m13
@@ -4313,11 +4315,13 @@ si8	G_file_length_m13(FILE_m13 *fp, const si1 *path)
 
 	// pass either FILE pointer, or path to file
 		
+	m13_fp = NULL;
 	if (fp) {
 		is_std = FILE_is_std_m13(fp);  // fp not NULL
 		if (is_std == FALSE_m13) {
-			if (fp->flags & FILE_FLAGS_LEN_m13)
-				return_m13(fp->len);
+			m13_fp = (FILE_m13 *) fp;
+			if (m13_fp->flags & FILE_FLAGS_LEN_m13)
+				return_m13(m13_fp->len);
 		}
 		fd = fileno_m13(fp);
 	} else if (STR_is_empty_m13(path) == TRUE_m13) {
@@ -4334,7 +4338,7 @@ si8	G_file_length_m13(FILE_m13 *fp, const si1 *path)
 	len = (si8) sb.st_size;
 	
 	if (is_std == FALSE_m13)
-		fp->len = len;
+		m13_fp->len = len;
 	
 	return_m13(len);
 }
@@ -5901,8 +5905,8 @@ tern	G_free_ssr_m13(void *ptr)
 
 	pg = G_proc_globs_m13(ssr);
 	n_segs = pg->current_session.n_segments;
-	// the fps arrays may be NULL: a half-created ssr (G_open_seg_sess_recs_m13() found no SSR directory & returned
-	// NULL but left sess->ssr set to free safely here), or mapped_segs == 0 => calloc_m13(0) returned NULL
+	// the fps arrays may be NULL: G_open_seg_sess_recs_m13() frees its local ssr through here when there is no
+	// SSR directory (before the arrays are allocated), or mapped_segs == 0 => calloc_m13(0) returned NULL
 	if (ssr->rec_inds_fps != NULL && ssr->rec_data_fps != NULL) {
 		for (i = 0; i < n_segs; ++i) {
 			gen_fps = ssr->rec_inds_fps[i];
@@ -7367,8 +7371,10 @@ tern	G_init_metadata_m13(FPS_m13 *fps, tern init_for_update)
 	memset(md3->subject_name_2, 0, METADATA_SUBJECT_NAME_BYTES_m13);
 	memset(md3->subject_name_3, 0, METADATA_SUBJECT_NAME_BYTES_m13);
 	memset(md3->subject_ID, 0, METADATA_SUBJECT_ID_BYTES_m13);
-	memset(md3->recording_country, 0, METADATA_RECORDING_LOCATION_BYTES_m13);
-	memset(md3->recording_territory, 0, METADATA_RECORDING_LOCATION_BYTES_m13);
+	// seed from the resolved timezone row (empty if time constants were never set); callers with better
+	// information (e.g. an rc file entry) overwrite these afterward
+	strncpy_m13(md3->recording_country, pg->time_constants.country, METADATA_RECORDING_LOCATION_BYTES_m13 - 1);
+	strncpy_m13(md3->recording_territory, pg->time_constants.territory, METADATA_RECORDING_LOCATION_BYTES_m13 - 1);
 	memset(md3->recording_locality, 0, METADATA_RECORDING_LOCATION_BYTES_m13);
 	memset(md3->recording_institution, 0, METADATA_RECORDING_LOCATION_BYTES_m13);
 	memset(md3->geotag_format, 0, METADATA_GEOTAG_FORMAT_BYTES_m13);
@@ -8907,7 +8913,16 @@ CHAN_m13	*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_p
 		}
 		chan->metadata_fps->uh->type_code = (chan->type_code == TS_CHAN_TYPE_CODE_m13) ? TS_METADATA_TYPE_CODE_m13 : VID_METADATA_TYPE_CODE_m13;  /* m13: stamp type_code BEFORE init (init now switches on it; fix-uh block below is too late) */
 		G_init_metadata_m13(chan->metadata_fps, FALSE_m13);
-		// merge segments
+		// base = the FIRST open segment's metadata, COPIED (merging into the blank init instead degrades
+		// every mismatched field to no-entry - "no entry supersedes" - so sf etc. never survived the merges)
+		if (seg != NULL && seg->metadata_fps != NULL) {
+			memcpy((void *) chan->metadata_fps->metadata, (void *) seg->metadata_fps->metadata, (size_t) METADATA_BYTES_m13);
+			G_merge_universal_headers_m13(chan->metadata_fps, seg->metadata_fps, NULL);
+			if (seg->rec_inds_fps && seg->rec_data_fps)
+				G_merge_universal_headers_m13(chan->metadata_fps, seg->rec_data_fps, NULL);
+			seg->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m13;  // clear segment flag
+		}
+		// merge remaining segments
 		for (++i, ++j; i < n_segs; ++i, ++j) {
 			seg = chan->segs[j];
 			if (seg == NULL)
@@ -9130,17 +9145,21 @@ SSR_m13	*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	G_push_function_m13();
 #endif
 	
+	// sess->ssr is published ONLY once the SSR exists & is open (bottom of this function), so a non-NULL
+	// sess->ssr always means "this session HAS segmented session records" - the same contract as every other
+	// child pointer in the library. Build in a LOCAL until then: publishing at allocation time left a
+	// half-built SSR (NULL rec_inds_fps / rec_data_fps arrays) attached to sessions that have no .ssrd
+	// directory at all, so the natural "if (sess->ssr)" test passed & callers faulted dereferencing the arrays.
 	ssr = sess->ssr;
-	if (ssr == NULL) {
-		ssr = sess->ssr = (SSR_m13 *) calloc_m13((size_t) 1, -sizeof(SSR_m13));  // flag as level header
-		if (ssr == NULL)
-			return_m13(ssr);
-	} else if (ssr->flags & LH_SSR_OPEN_m13) {
-		return_m13(ssr);
-	}
+	if (ssr != NULL)
+		return_m13(ssr);  // already open
+
+	ssr = (SSR_m13 *) calloc_m13((size_t) 1, -sizeof(SSR_m13));  // flag as level header
+	if (ssr == NULL)
+		return_m13(NULL);
 	ssr->path = ssr->local_path;
 	ssr->name = ssr->fs_name;
-	ssr->type_code = SSR_TYPE_CODE_m13;  // set identity fields before any early return: G_free_ssr_m13() requires a valid type code
+	ssr->type_code = SSR_TYPE_CODE_m13;  // valid type code required by G_free_ssr_m13()
 	ssr->flags = sess->flags;
 	ssr->parent = (LH_m13 *) sess;  // set parent before getting proc_globs
 
@@ -9149,12 +9168,26 @@ SSR_m13	*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	strcpy(ssr->name, sess->name);
 	sprintf_m13(ssr->path, "%s/%s.%s", sess->path, ssr->name, SSR_TYPE_STR_m13);
 	if (G_exists_m13(ssr->path) == FALSE_m13) {
-		if (G_swap_names_m13((LH_m13 *) sess) == FALSE_m13)
-			return_m13(NULL);  // no SSR directory (type code set above, so the unopened SSR frees safely at session close)
-		sprintf_m13(ssr->path, "%s/%s.%s", sess->path, ssr->name, SSR_TYPE_STR_m13);
-		if (G_exists_m13(ssr->path) == FALSE_m13)
+		// The SSR directory is named after the SESSION, so it is the SESSION's names that must be swapped
+		// here. A user can rename a session directory on the file system without renaming its contents, in
+		// which case the .ssrd inside still carries the universal header name (same situation as a renamed
+		// channel directory whose segment directories keep the old name).
+		// NOTE: ssr->name MUST be re-copied after the swap. It was copied from sess->name BEFORE the swap,
+		// so rebuilding the path from it re-tested the identical path & the retry could never succeed.
+		if (G_swap_names_m13((LH_m13 *) sess) != TRUE_m13) {  // FALSE == no alternate name, UNKNOWN == error
+			G_free_ssr_m13(&ssr);  // no SSR directory => this session has none
 			return_m13(NULL);
+		}
+		strcpy(ssr->name, sess->name);  // pick up the session's alternate name
+		sprintf_m13(ssr->path, "%s/%s.%s", sess->path, ssr->name, SSR_TYPE_STR_m13);
+		if (G_exists_m13(ssr->path) == FALSE_m13) {
+			G_free_ssr_m13(&ssr);
+			return_m13(NULL);
+		}
 	}
+	// ssr->name (== ssr->fs_name) now holds the name the SSR directory ACTUALLY has on disk, which is what
+	// the per-segment records files inside it are named after - so G_open_records_m13()'s own swap-and-retry
+	// on the SSR (which lazily fills ssr->uh_name from a universal header) starts from the right name.
 
 	mapped_segs = pg->current_session.n_segments;
 	first_seg_num = 1;  // all segments mapped => the first mapped segment is always segment 1
@@ -9164,8 +9197,9 @@ SSR_m13	*G_open_seg_sess_recs_m13(SESS_m13 *sess)
 	for (i = first_seg_num, j = 0; j < mapped_segs; ++i, ++j)
 		G_open_records_m13((LH_m13 *) ssr, i);
 	
-	// mark as open
+	// mark as open & publish to the session (see the note at the top of this function)
 	ssr->flags |= LH_SSR_OPEN_m13;
+	sess->ssr = ssr;
 	
 	return_m13(ssr);
 }
@@ -9768,6 +9802,12 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			sess->ts_metadata_fps = FPS_init_m13(NULL, tmp_str, NULL, METADATA_BYTES_m13, (LH_m13 *) sess);
 			sess->ts_metadata_fps->uh->type_code = TS_METADATA_TYPE_CODE_m13;  /* m13: stamp before init */
 			G_init_metadata_m13(sess->ts_metadata_fps, FALSE_m13);
+			// base = first channel's ephemeral metadata, COPIED (merging into blank degrades mismatches to no-entry)
+			if (chan->metadata_fps != NULL) {
+				memcpy((void *) sess->ts_metadata_fps->metadata, (void *) chan->metadata_fps->metadata, (size_t) METADATA_BYTES_m13);
+				G_merge_universal_headers_m13(sess->ts_metadata_fps, chan->metadata_fps, NULL);
+				chan->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m13;  // clear flag
+			}
 			for (i = 1; i < sess->n_ts_chans; ++i) {
 				chan = sess->ts_chans[i];
 				if (chan->flags & LH_UPDATE_EPHEMERAL_DATA_m13) {
@@ -9806,6 +9846,12 @@ SESS_m13	*G_open_session_m13(SESS_m13 *sess, SLICE_m13 *slice, void *file_list, 
 			sess->vid_metadata_fps = FPS_init_m13(NULL, tmp_str, NULL, METADATA_BYTES_m13, (LH_m13 *) sess);
 			sess->vid_metadata_fps->uh->type_code = VID_METADATA_TYPE_CODE_m13;  /* m13: stamp before init */
 			G_init_metadata_m13(sess->vid_metadata_fps, FALSE_m13);
+			// base = first channel's ephemeral metadata, COPIED (merging into blank degrades mismatches to no-entry)
+			if (chan->metadata_fps != NULL) {
+				memcpy((void *) sess->vid_metadata_fps->metadata, (void *) chan->metadata_fps->metadata, (size_t) METADATA_BYTES_m13);
+				G_merge_universal_headers_m13(sess->vid_metadata_fps, chan->metadata_fps, NULL);
+				chan->flags &= ~LH_UPDATE_EPHEMERAL_DATA_m13;  // clear flag
+			}
 			for (i = 1; i < sess->n_vid_chans; ++i) {
 				chan = sess->vid_chans[i];
 				if (chan->flags & LH_UPDATE_EPHEMERAL_DATA_m13) {
@@ -12300,9 +12346,9 @@ static RC_FIELD_m13	*RC_field_table_m13(si4 *n_fields)
 		table[i].target = (void *) &globals_m13->miscellaneous.update_header_names;  table[i].shift = 0;  ++i;
 
 		table[i].name = "Update MED Version";
-		table[i].notes = "If MED format version is not current, update files to current version";
+		table[i].notes = "If MED format version is not current, update files IN PLACE to the current version on open\nThis REWRITES data - leave NO unless an update is deliberately intended (update/repair tooling is the usual route)";
 		table[i].type_str = "ternary";  table[i].options_key = "OPTIONS ONLY";
-		table[i].options = "YES, NO";  table[i].dflt = "YES";
+		table[i].options = "YES, NO";  table[i].dflt = "NO";
 		table[i].rc_type = RC_TERNARY_TYPE_m13;  table[i].target_type = RC_TGT_TERN_m13;
 		table[i].target = (void *) &globals_m13->miscellaneous.update_MED_version;  table[i].shift = 0;  ++i;
 
@@ -12855,6 +12901,7 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 {
 	tern				free_seg, open_seg, inactive_ref;
 	si1				*seg_path, *password;
+	si1				tmp_str[PATH_BYTES_m13];
 	si4				search_mode;
 	ui8				flags;
 	si8				seg_abs_start_idx, seg_abs_end_idx;
@@ -12965,10 +13012,22 @@ SEG_m13	*G_read_segment_m13(SEG_m13 *seg, SLICE_m13 *slice, ...)  // varargs(seg
 					if (chan->flags & LH_IDX_CHAN_INACTIVE_m13)
 						inactive_ref = TRUE_m13;
 				}
-				if (inactive_ref == TRUE_m13)  // don't read data
+				if (inactive_ref == TRUE_m13) {  // don't read data
 					seg->flags &= ~LH_IDX_CHAN_INACTIVE_m13;  // reset segment level flag in case propogated during call
-				else  // read data
-					G_read_time_series_data_m13(seg, slice);
+				} else {  // read data
+					// LATE OPEN: data fps opens lazily - a segment first opened WITHOUT data flags (e.g. a
+					// metadata pass) gets its data file here, when data is first actually requested
+					if (seg->ts_data_fps == NULL) {
+						sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_DATA_TYPE_STR_m13);
+						seg->ts_data_fps = FPS_read_m13(NULL, 0, FPS_AUTOBYTES_m13, 0, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
+						if (seg->ts_data_fps == NULL && G_swap_names_m13((LH_m13 *) seg) == TRUE_m13) {
+							sprintf_m13(tmp_str, "%s/%s.%s", seg->path, seg->name, TS_DATA_TYPE_STR_m13);
+							seg->ts_data_fps = FPS_read_m13(NULL, 0, FPS_AUTOBYTES_m13, 0, tmp_str, "r", NULL, (LH_m13 *) seg, 0);
+						}
+					}
+					if (seg->ts_data_fps != NULL)
+						G_read_time_series_data_m13(seg, slice);
+				}
 				break;
 			case VID_SEG_TYPE_CODE_m13:
 				// nothing for now - video segment data are native video files
@@ -13208,8 +13267,8 @@ SESS_m13	*G_read_session_m13(SESS_m13 *sess, SLICE_m13 *slice, ...)  // varargs(
 		ssr = sess->ssr;
 		if (ssr == NULL)
 			ssr = G_open_seg_sess_recs_m13(sess);
-		// check the fps ARRAYS, not just ssr: G_open_seg_sess_recs_m13() can return a non-NULL ssr with NULL
-		// arrays (no SSR directory => half-created ssr left set; or mapped_segs == 0 => calloc_m13(0) returns NULL).
+		// ssr is non-NULL only when the SSR is open (G_open_seg_sess_recs_m13() publishes sess->ssr on success
+		// only), but still check the arrays: mapped_segs == 0 => calloc_m13(0) returns NULL.
 		// (matches the non-segmented session-records guard above.)
 		if (ssr && ssr->rec_inds_fps && ssr->rec_data_fps)
 			for (i = slice->start_seg_num, j = seg_idx; i <= slice->end_seg_num; ++i, ++j)
@@ -15256,6 +15315,11 @@ tern	G_set_time_constants_m13(TIMEZONE_INFO_m13 *timezone_info, si8 session_star
 	
 SET_GTC_TIMEZONE_MATCH_m13:
 	*timezone_info = tz_table[potential_timezone_entries[0]];
+	// retain the resolved location: the matched table row identifies country & territory (this is the payoff
+	// of listing near-identical territory entries at the prompt - the selection tells us the true territory).
+	// G_init_metadata_m13() seeds metadata section 3 from these; an app's explicit value still wins.
+	strncpy_m13(pg->time_constants.country, timezone_info->country, METADATA_RECORDING_LOCATION_BYTES_m13 - 1);
+	strncpy_m13(pg->time_constants.territory, timezone_info->territory, METADATA_RECORDING_LOCATION_BYTES_m13 - 1);
 	pg->time_constants.standard_UTC_offset = timezone_info->standard_UTC_offset;
 	strncpy_m13(pg->time_constants.standard_timezone_acronym, timezone_info->standard_timezone_acronym, TIMEZONE_ACRONYM_BYTES_m13 - 1);
 	strncpy_m13(pg->time_constants.standard_timezone_string, timezone_info->standard_timezone, TIMEZONE_STRING_BYTES_m13 - 1);
@@ -18536,7 +18600,7 @@ si8	G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...)  /
 			return_m13(TIME_NO_ENTRY_m13);
 	}
 
-	if (chan->type_code == TS_CHAN_TYPE_CODE_m13) {
+	if (seg->type_code == TS_SEG_TYPE_CODE_m13) {  // seg's own type: chan is NULL when entered at segment level
 		tsi = seg->ts_inds_fps->ts_inds;
 		if (tsi == NULL) {
 			G_set_error_m13(E_GEN_m13, "time series indices are null");
@@ -18575,7 +18639,7 @@ si8	G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...)  /
 		}
 	}
 	
-	else {  // chan->type_code == VID_CHAN_TYPE_CODE_m13
+	else {  // seg->type_code == VID_SEG_TYPE_CODE_m13
 		vi = seg->vid_inds_fps->vid_inds;
 		if (vi == NULL) {
 			G_set_error_m13(E_GEN_m13, "video indices are null");
@@ -31313,17 +31377,20 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 		return_m13(TRUE_m13);
 	}
 
-	// scale data (if requested)
-	if (cps->direcs.flags & CPS_DF_VDS_SCALE_BY_BASELINE_m13) {
-		if (baseline > (sf8) 1.0) {
-			cps->direcs.flags |= CPS_DF_SET_AMPLITUDE_SCALE_m13;
-			cps->params.amplitude_scale = (sf4) baseline;
-			CMP_set_variable_region_m13(cps);
-		} else {
-			cps->direcs.flags &= ~CPS_DF_SET_AMPLITUDE_SCALE_m13;
-			cps->params.amplitude_scale = (sf4) 1.0;
-		}
-	}
+	// SCALE BY BASELINE: REMOVED 2026-08-01. It quantized the stored values in units of the baseline noise, on the
+	// premise that finer resolution is meaningless because physiology rides on noise of that scale. The premise is
+	// sound but the mechanism is not, for three reasons:
+	//   - it DUPLICATES the threshold, which already implements "ignore what is small relative to the noise". Two
+	//     mechanisms enacting one principle in series, whose losses compound and neither of which is accountable.
+	//   - it destroys the property the fidelity bound rests on. Substituted samples are stored EXACTLY - error 0
+	//     precisely at the samples judged significant - and scaling put up to baseline/2 of error back onto them.
+	//   - the premise concerns DETECTABILITY, not representation: "physiology rides on noise of amplitude B"
+	//     argues for not distinguishing features below B, not for adding B/2 of error to a spike at 100B.
+	// It also did not deliver: in the reference set (read_MED/compression_comparison.medd) the _SB channels are
+	// LARGER than their unscaled counterparts (632 vs 624 KB, 924 vs 864 KB) against an rc note claiming ~30%
+	// better compression. CPS_DF_VDS_SCALE_BY_BASELINE_m13 is now INERT - apps may still set it, harmlessly - and
+	// the "VDS Scale by Baseline" rc field should be retired at the next pass over the app rc files.
+	// If more compression is wanted, raise the threshold: that is one accountable knob with a stated bound.
 	if (cps->direcs.flags & CPS_DF_SET_AMPLITUDE_SCALE_m13) {
 		sf4_p = (sf4 *) cps->block_parameters;
 		offset = (si8) cps->params.block_parameter_map[CMP_PF_AMPLITUDE_SCALE_IDX_m13];
@@ -31412,165 +31479,174 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 }
 
 
-// Fetch cps->params.filtps[idx], (re)building it only if absent or its parameters no longer match. Grows the filtps
-// array to hold idx if needed. Factored out of CMP_VDS_generate_template_m13() (the min & LFP filters used identical
-// get-or-init logic). Returns the ready filter processing struct (NULL only if FILT_init_m13() fails).
-static FILTPS_m13	*CMP_VDS_get_filtps_m13(CPS_m13 *cps, si4 idx, si4 order, si4 type, sf8 samp_freq, si8 block_samps, sf8 cutoff)
-{
-	tern		realloc_flag;
-	FILTPS_m13	*ps;
-
-	realloc_flag = FALSE_m13;
-	if (cps->params.n_filtps < (idx + 1) || cps->params.filtps == NULL) {
-		realloc_flag = TRUE_m13;
-		cps->params.n_filtps = idx + 1;
-		FILTPS_m13 **tmp_filtps = (FILTPS_m13 **) realloc(cps->params.filtps, sizeof(void *) * cps->params.n_filtps);
-		if (tmp_filtps == NULL) {
-			G_set_error_m13(E_ALLOC_m13, NULL);
-			return (NULL);
-		}
-		cps->params.filtps = tmp_filtps;
-		ps = (FILTPS_m13 *) (cps->params.filtps[idx] = NULL);
-	} else {
-		ps = (FILTPS_m13 *) cps->params.filtps[idx];
-		if (ps == NULL)
-			realloc_flag = TRUE_m13;
-		else if (ps->order != order)
-			realloc_flag = TRUE_m13;
-		else if (ps->type != type)
-			realloc_flag = TRUE_m13;
-		else if (ps->sampling_frequency != samp_freq)
-			realloc_flag = TRUE_m13;
-		else if (ps->cutoffs[0] != cutoff)
-			realloc_flag = TRUE_m13;
-	}
-	if (realloc_flag == TRUE_m13) {
-		if (ps)
-			FILT_free_m13(&ps, FALSE_m13, FALSE_m13, FALSE_m13);
-		cps->params.filtps[idx] = (void *) FILT_init_m13(order, type, samp_freq, block_samps, FALSE_m13, FALSE_m13, FALSE_m13, (RETURN_ON_FAIL_m13 | SUPPRESS_WARNING_OUTPUT_m13), cutoff);
-	}
-	return ((FILTPS_m13 *) cps->params.filtps[idx]);
-}
-
-
 tern	CMP_VDS_generate_template_m13(CPS_m13 *cps, si8 data_len)
 {
-	tern			LFP_filter;
-	si8			i, j, block_samps, *extrema, n_extrema, min_cutoff;
-	sf8			*y, *smooth, *transients, *template, samp_freq, LFP_high_fc;
-	sf8			*sf8_p1, *sf8_p2, *sf8_p3;
-	FILTPS_m13		*min_filtps, *lfp_filtps;
-	CMP_FIXED_BH_m13	*bh;
+	static _Atomic tern	fc_noted = FALSE_m13;
+	si8			i, j, k, e, span;
+	sf8			*y, *qy, *dev, *mark, *template, samp_freq, LFP_high_fc, fc;
+	sf8			baseline, thresh, m, d, sv, sg;
 
-	
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	// Function assumes VDS buffers are allocated
-	// Buffer Map:
-	// 	VDS_in_bufs[CMP_MAK_IN_Y_BUF] == VDS_in_bufs[0]: y
-	// 	VDS_in_bufs[CMP_MAK_IN_X_BUF] == VDS_in_bufs[1]: x (not used, but don't touch)
-	// 	VDS_in_bufs[2]:	excise_transients() smooth_data & LFP filt_data
-	// 	VDS_in_bufs[3]:	excise_transients() transients
-	// 	VDS_in_bufs[4]:	excise_transients() extrema
-	//	VDS_in_bufs[7]:	filter() buffer
-	//	VDS_in_bufs[8]:	template buffer
-	
+	// TEMPLATE = the running median, with the REAL DATA substituted wherever the signal departs that median by
+	// more than the threshold. That is the whole construction. What it replaces (2026-08-01), and why:
+	//
+	// The template used to be built as: split y into a "smooth" trace & excised "transients" -> lowpass the
+	// smooth part at VDS_LFP_high_fc -> add the transients back -> run a minimal antialias filter over the SUM ->
+	// restore one pinned extremum per transient window. Two failures followed from that shape:
+	//   1. the transients were separated precisely so they would BYPASS the LFP filter, and were then handed to
+	//      the antialias filter anyway, which attenuated them. Traced on a 255 Hz artifact block: template equalled
+	//      the data EXACTLY before that filter (smooth + transients == y, verified elementwise) and was 6,742
+	//      counts off after it, on a signal whose full range is +/-8,710.
+	//   2. the extrema pinning meant to protect against (1) restored only ONE sample per transient window, so of
+	//      29 samples left >1000 counts off, 27 lost to a larger or opposite-polarity extremum in the same window.
+	// The filter also RANG at step edges, overshooting past the data's own range, and manufactured power that was
+	// not in the signal (measured: +25% in the 30-57 Hz band) while gutting the band above its cutoff to 20%.
+	//
+	// Measured against the current design on the same fixtures, decoded against their own lossless PRED:
+	//   EEG 255 Hz : 10,488 KB / max err 10,115  ->  8,184 KB / max err 335   (-22% size, 30x better worst case)
+	//   units 30 kHz: 410,072 B / max dev 35.2   ->  379,176 B / max dev 22.5
+	// and ~15% less CPU, since two filtfilt passes, the window scan & the extrema machinery all disappear.
+	// The reconstruction adds NO spurious high-frequency power (<= 1.0 x original in every band).
+	//
+	// Buffer Map (in):
+	// 	VDS_in_bufs[0]: y (input, not modified)
+	// 	VDS_in_bufs[1]: in_x (not used here, but don't touch)
+	// 	VDS_in_bufs[2]: scratch (decimated median input)
+	// 	VDS_in_bufs[3]: substitution marks
+	// 	VDS_in_bufs[4]: scratch (decimated median output)
+	// 	VDS_in_bufs[5]: qy - the running median
+	// 	VDS_in_bufs[6]: dev - |y - qy|
+	// 	VDS_in_bufs[7]: quantval scratch
+	// 	VDS_in_bufs[8]: template (out)
+
 	samp_freq = cps->params.VDS_sampling_frequency;
 	LFP_high_fc = cps->params.VDS_LFP_high_fc;
-	bh = cps->block_header;
-	block_samps = (si8) bh->number_of_samples;
 	y = (sf8 *) cps->params.VDS_input_buffers->buffer[0];
-
-	LFP_filter = FALSE_m13;
-	if (LFP_high_fc != (sf8) 0.0)
-		LFP_filter = TRUE_m13;
-	
-	// get filter processing structs (cached in cps->params.filtps, rebuilt only when parameters change)
-	min_cutoff = samp_freq / (sf8) FILT_VDS_MIN_SAMPS_PER_CYCLE_m13;  // minimal antialiasing filter
-	min_filtps = CMP_VDS_get_filtps_m13(cps, FILT_VDS_TEMPLATE_MIN_PS_m13, CMP_VDS_LOWPASS_ORDER_m13, FILT_LOWPASS_TYPE_m13, samp_freq, block_samps, (sf8) min_cutoff);
-	if (LFP_filter == TRUE_m13) {
-		lfp_filtps = CMP_VDS_get_filtps_m13(cps, FILT_VDS_TEMPLATE_LFP_PS_m13, CMP_VDS_LOWPASS_ORDER_m13, FILT_LOWPASS_TYPE_m13, samp_freq, block_samps, LFP_high_fc);
-		// Zero-copy setup for the in-place LFP filtfilt below: point buffer[2] at the filter's OFFSET (orig_data)
-		// slot so excise_transients() deposits the smooth trace exactly where filtfilt reads its input -- no copy.
-		// buffer[2] is restored to the base (smooth) before filtering; filtfilt then writes base <- offset in place.
-		smooth = (sf8 *) cps->params.VDS_input_buffers->buffer[2];
-		lfp_filtps->filt_data = smooth;
-		lfp_filtps->orig_data = FILT_OFFSET_ORIG_DATA_m13(lfp_filtps);
-		cps->params.VDS_input_buffers->buffer[2] = (void *) lfp_filtps->orig_data;
-	}
-	
-	// excise transients
-	FILT_excise_transients_m13(cps, data_len, &n_extrema);
-	extrema = (si8 *) cps->params.VDS_input_buffers->buffer[4];
-	transients = (sf8 *) cps->params.VDS_input_buffers->buffer[3];
-
-	// set up template minimal filter
 	template = (sf8 *) cps->params.VDS_input_buffers->buffer[8];
-	min_filtps->filt_data = template;
-	min_filtps->orig_data = FILT_OFFSET_ORIG_DATA_m13(min_filtps);
-	
-	if (LFP_filter == TRUE_m13) {
-		// lowpass filter smooth data
-		cps->params.VDS_input_buffers->buffer[2] = smooth;  // reset buffer 2 pointer (smooth data)
-		lfp_filtps->data_length = data_len;
-		lfp_filtps->buffer = (sf8 *) cps->params.VDS_input_buffers->buffer[7];
-		FILT_filtfilt_m13(lfp_filtps);
-	
-		// add transients and smooth data into template
-		sf8_p1 = smooth;
-		sf8_p2 = transients;
-		sf8_p3 = min_filtps->orig_data;  // offset template
-		for (i = data_len; i--;)
-			*sf8_p3++ = *sf8_p1++ + *sf8_p2++;
-	} else {
-		// copy input data into offset template
-		memcpy(min_filtps->orig_data, y, (size_t) (data_len << 3));  // offset template
-	}
-	
-	// minimal filter template
-	min_filtps->data_length = data_len;
-	min_filtps->buffer = (sf8 *) cps->params.VDS_input_buffers->buffer[7];
-	FILT_filtfilt_m13(min_filtps);
+	qy = (sf8 *) cps->params.VDS_input_buffers->buffer[5];
+	dev = (sf8 *) cps->params.VDS_input_buffers->buffer[6];
+	mark = (sf8 *) cps->params.VDS_input_buffers->buffer[3];
 
-	// fix extrema in template
-	for (i = 0; i < n_extrema; ++i) {
-		j = extrema[i];
-		template[j] = y[j];
+	// (1) median window. The cutoff is physiology (LFP band); the FLOOR is representability, in samples, which is
+	// what keeps behaviour scale-independent. A cutoff above sf / FILT_VDS_MIN_SAMPS_PER_CYCLE_m13 is meaningless
+	// - it is at or beyond the point where an oscillation has too few samples per cycle to be represented - and
+	// on a low-rate recording it can sit above Nyquist outright (the 600 Hz rc default on 255 Hz data), so cap it.
+	// span is simply one cycle at the requested cutoff, floored at FILT_VDS_MEDIAN_SPAN_MIN_m13. That floor is
+	// the ONLY constraint - the caller's cutoff is otherwise respected exactly as given, however high or low.
+	// The floor exists because a median only rejects a transient when its window is substantially longer than
+	// that transient: at 5 samples a 2-3 sample excursion fills half the window and DRAGS the median onto it,
+	// which then hides the excursion from the threshold test below. Measured (255 Hz EEG at u=5, floor swept):
+	// 5 -> 77.7% of lossless & max err 455;  8 -> 51.9% / 341;  12 -> 48.5% / 335;  20 -> 45.5% / 345;
+	// 32 -> 43.1% / 352.  12 is the knee on both axes.
+	// With no cutoff given (VDS_LFP_high_fc == 0), FILT_VDS_LFP_FC_DEFAULT_m13 is assumed.
+	fc = (LFP_high_fc > (sf8) 0.0) ? LFP_high_fc : FILT_VDS_LFP_FC_DEFAULT_m13;
+	span = (si8) round(samp_freq / fc);
+	if (span < FILT_VDS_MEDIAN_SPAN_MIN_m13) {
+		span = FILT_VDS_MEDIAN_SPAN_MIN_m13;
+		// say so ONCE per process (atomic exchange: exactly one thread sees FALSE even under concurrence).
+		// Deliberately generic & value-free - this fires per block per channel, so anything specific floods.
+		if (atomic_exchange(&fc_noted, TRUE_m13) == FALSE_m13)
+			G_warning_message_m13("%s(): effective cutoff reduced due to filter span requirements\n", __FUNCTION__);
 	}
-	
+
+	if (data_len < span) {  // block shorter than the median window: nothing to estimate a baseline from
+		memcpy(template, y, (size_t) (data_len << 3));  // store it verbatim; the anchor fit still compresses it
+		return_m13(TRUE_m13);
+	}
+
+	// (2) running median - EXACT at every span, no approximation. FILT_quantfilt_m13() is a sorted sliding
+	// window and scales sub-linearly (8.7 ns/sample at span 5, 18.3 at span 50, 41.1 at span 300: a 20x span
+	// increase costs 2.6x), so at the spans ordinary cutoffs produce this is nearly free - 0.55 ms for a
+	// 30,000-sample block at span 50. A decimate-and-interpolate path used to live here; removed
+	// 2026-08-01 because it bought ~2% of encode time at span 50 while perturbing the baseline, and therefore
+	// the threshold, by up to 11%. That was tolerable when the median only fed transient detection; it is not
+	// now that the median IS the template. Simpler, exact, and the cost is in the noise.
+	FILT_quantfilt_m13(y, qy, data_len, (sf8) 0.5, span, FILT_TRUNCATE_m13);
+
+	// (3) deviation from the median, and the baseline: the MEDIAN of that deviation, i.e. a robust estimate of
+	// the amplitude of everything faster than the median window. Robust because it ignores the transients, which
+	// is exactly what we are about to measure against it.
+	for (i = 0; i < data_len; ++i) {
+		d = y[i] - qy[i];
+		dev[i] = (d >= (sf8) 0.0) ? d : -d;
+	}
+	baseline = CMP_quantval_m13(dev, data_len, (sf8) 0.5, TRUE_m13, (sf8 *) cps->params.VDS_input_buffers->buffer[7]);
+
+	// (4) threshold: a multiple of the baseline (gain- & rate-invariant), floored at the quantization step.
+	m = CMP_VDS_get_theshold_m13(cps);
+	thresh = m * baseline;
+	if (thresh < CMP_VDS_THRESHOLD_FLOOR_m13)
+		thresh = CMP_VDS_THRESHOLD_FLOOR_m13;
+
+	// (5) mark what exceeds the threshold, then EXTEND each run outward until the data crosses the median trace.
+	// Without the extension a run stops the instant it falls back through the threshold, leaving the template a
+	// step there; extending to the crossing lands where y == qy, so the handoff is continuous. Measured on units:
+	// mean handoff step 6.77 -> 0.93 counts (~1 LSB), and it is CHEAPER despite marking ~20% more samples
+	// (254,799 anchors vs 257,183) because the fit needs fewer anchors than the discontinuities cost.
+	// Extending can only ever add verbatim samples, so the |template - y| <= thresh bound still holds.
+	for (i = 0; i < data_len; ++i)
+		mark[i] = (dev[i] > thresh) ? (sf8) 1.0 : (sf8) 0.0;
+	for (i = 0; i < data_len; ++i) {
+		if (mark[i] != (sf8) 1.0)
+			continue;
+		for (e = i; e + 1 < data_len && mark[e + 1] == (sf8) 1.0; ++e);  // end of this run
+		sv = y[i] - qy[i];
+		sg = (sv >= (sf8) 0.0) ? (sf8) 1.0 : (sf8) -1.0;
+		for (j = i - 1; j >= 0 && mark[j] == (sf8) 0.0; --j) {
+			sv = y[j] - qy[j];
+			if (((sv >= (sf8) 0.0) ? (sf8) 1.0 : (sf8) -1.0) != sg)
+				break;  // crossed the median trace
+			mark[j] = (sf8) 2.0;
+		}
+		sv = y[e] - qy[e];
+		sg = (sv >= (sf8) 0.0) ? (sf8) 1.0 : (sf8) -1.0;
+		for (k = e + 1; k < data_len && mark[k] == (sf8) 0.0; ++k) {
+			sv = y[k] - qy[k];
+			if (((sv >= (sf8) 0.0) ? (sf8) 1.0 : (sf8) -1.0) != sg)
+				break;
+			mark[k] = (sf8) 2.0;
+		}
+		i = e;
+	}
+
+	// (6) the template. |template[i] - y[i]| is 0 where substituted & <= thresh everywhere else, by construction -
+	// the fidelity bound is a property of this line, not of any detection step succeeding.
+	for (i = 0; i < data_len; ++i)
+		template[i] = (mark[i] != (sf8) 0.0) ? y[i] : qy[i];
+
 	// Exit Buffer Map:
-	// 	VDS_in_bufs[CMP_MAK_IN_Y_BUF] == VDS_in_bufs[0]: y (not touched)
-	// 	VDS_in_bufs[CMP_MAK_IN_X_BUF] == VDS_in_bufs[1]: x (not touched)
+	// 	VDS_in_bufs[0]: y (not touched)
+	// 	VDS_in_bufs[1]: in_x (not touched)
 	// 	VDS_in_bufs[2 - 7]: available
-	//	VDS_in_bufs[8]:	template
-	
+	//	VDS_in_bufs[8]: template
+
 	return_m13(TRUE_m13);
 }
 
 
 sf8	CMP_VDS_get_theshold_m13(CPS_m13 *cps)
 {
-	static _Atomic tern			thresh_change_noted = FALSE_m13;
-	tern					no_filt;
-	si4					i, low_i, high_i;
-	sf8					prop, user_thresh, alg_thresh;
-	const CMP_VDS_THRESHOLD_MAP_ENTRY_m13	*thresh_map;
-	
+	static _Atomic tern	thresh_change_noted = FALSE_m13;
+	sf8			user_thresh;
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
 
-	if (globals_m13->tables->CMP_VDS_threshold_map == NULL)
-		CMP_init_tables_m13();
-	thresh_map = globals_m13->tables->CMP_VDS_threshold_map;
-	
+	// Maps the user threshold (0-10) to "m", the substitution threshold expressed as a multiple of the block
+	// baseline. See CMP_VDS_THRESHOLD_BASE_m13 in the header for the measurements the anchors come from.
+	//
+	//   m(u) = 2 * 2^(u/5)      m(5) = 4 (balance), m(10) = 8 (saturation)
+	//
+	// Replaces the old 101-entry interpolated table, which also carried a separate column for the no-LFP-filter
+	// case. There is no filter any more, so there is nothing left for that split to distinguish. The old table's
+	// mapping additionally bottomed out at 3x baseline no matter how low the user set the dial (the excision
+	// threshold was ((alg + 6) / 2) * baseline), which made the low, near-lossless end of the scale unreachable.
+
 	user_thresh = cps->params.VDS_threshold;
-	if (cps->params.VDS_LFP_high_fc == 0.0)
-		no_filt = TRUE_m13;
-	else
-		no_filt = FALSE_m13;
 
 	if (user_thresh > (sf8) 10.0) {
 		// only give this message once (atomic exchange: exactly one thread sees FALSE even under concurrence)
@@ -31578,47 +31654,16 @@ sf8	CMP_VDS_get_theshold_m13(CPS_m13 *cps)
 			if (user_thresh == (sf8) 11.0)
 				G_message_m13("%s(): This threshold goes to 11 :)\n", __FUNCTION__);
 			else
-				G_warning_message_m13("%s(): the VDS threshold range is 0 to 10 => setting to 10\n", __FUNCTION__);
+				G_warning_message_m13("%s(): the VDS threshold range is 0 to 10 => clamping to 10\n", __FUNCTION__);
 		}
-		cps->params.VDS_threshold = 10.0;
-		if (no_filt == TRUE_m13)
-			return_m13(thresh_map[CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 - 1].algorithm_threshold_no_filt);
-		else
-			return_m13(thresh_map[CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13 - 1].algorithm_threshold_LFP);
+		user_thresh = (sf8) 10.0;  // clamp locally: a getter should not rewrite the caller's parameters
+	} else if (user_thresh < (sf8) 0.0) {
+		if (atomic_exchange(&thresh_change_noted, TRUE_m13) == FALSE_m13)
+			G_warning_message_m13("%s(): the VDS threshold range is 0 to 10 => clamping to 0\n", __FUNCTION__);
+		user_thresh = (sf8) 0.0;
 	}
 
-	if (user_thresh < (sf8) 0.0) {
-		G_warning_message_m13("%s: the VDS threshold range is 0 to 10 => setting to 0\n", __FUNCTION__);
-		if (no_filt == TRUE_m13)
-			return_m13(thresh_map[0].algorithm_threshold_no_filt);
-		else
-			return_m13(thresh_map[0].algorithm_threshold_LFP);
-	}
-
-	for (i = 1; i < CMP_VDS_THRESHOLD_MAP_TABLE_ENTRIES_m13; ++i)
-		if (user_thresh < thresh_map[i].user_threshold)
-			break;
-	
-	high_i = i;
-	low_i = i - 1;
-	if (user_thresh == thresh_map[low_i].user_threshold) {
-		if (no_filt == TRUE_m13)
-			return_m13(thresh_map[low_i].algorithm_threshold_no_filt);
-		else
-			return_m13(thresh_map[low_i].algorithm_threshold_LFP);
-	}
-	
-	// interpolate
-	prop = (user_thresh - thresh_map[low_i].user_threshold) / (thresh_map[high_i].user_threshold - thresh_map[low_i].user_threshold);
-	if (no_filt == TRUE_m13) {
-		alg_thresh = (1.0 - prop) * thresh_map[low_i].algorithm_threshold_no_filt;
-		alg_thresh += prop * thresh_map[high_i].algorithm_threshold_no_filt;
-	} else {
-		alg_thresh = (1.0 - prop) * thresh_map[low_i].algorithm_threshold_LFP;
-		alg_thresh += prop * thresh_map[high_i].algorithm_threshold_LFP;
-	}
-	
-	return_m13(alg_thresh);
+	return_m13(CMP_VDS_THRESHOLD_BASE_m13 * pow((sf8) 2.0, user_thresh / CMP_VDS_THRESHOLD_DOUBLING_m13));
 }
 
 
@@ -34875,186 +34920,6 @@ tern	FILT_elmhes_m13(sf8 **a, si4 poles)
 }
 
 
-tern	FILT_excise_transients_m13(CPS_m13 *cps, si8 len, si8 *n_extrema)
-{
-	si8	i, j, span, ext_x, *ex, wind_start, wind_end, n_ext, wind_len;
-	sf8	samp_freq, LFP_high_fc, *y, *qy, *sy, *ty, *jy, *try, ext_y;
-	sf8	baseline, VDS_alg_thresh, thresh, *sf8_p1, *sf8_p2, *sf8_p3;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// Function assumes VDS buffers are allocated
-	// VDS Buffer Map:
-	// 	VDS_in_bufs[0]:	in_y
-	// 	VDS_in_bufs[1]: in_x (not used here, but don't touch)
-	// 	VDS_in_bufs[2]:	excise_transients() smooth_data
-	// 	VDS_in_bufs[3]:	excise_transients() transients
-	// 	VDS_in_bufs[4]:	excise_transients() extrema
-	// 	VDS_in_bufs[5-8]: scrap buffers (at this point in VDS)
-
-	samp_freq = cps->params.VDS_sampling_frequency;
-	LFP_high_fc = cps->params.VDS_LFP_high_fc;
-	y = (sf8 *) cps->params.VDS_input_buffers->buffer[0];
-	
-	// median filter (to buffer 5)
-	if (LFP_high_fc > (sf8) 0.0)
-		span = (si8) round(samp_freq / LFP_high_fc);
-	else
-		span = (si8) round(samp_freq / (sf8) 500.0);  // assume 500 Hz is enough frequency resolution
-	if (span < 12)
-		span = 12;  // minimum of 3 cycles at 4 samples/cycle
-	if (len < span) {  // block shorter than the median span: skip median/excise (FILT_filtfilt guards the short-data case downstream)
-		memcpy(cps->params.VDS_input_buffers->buffer[2], cps->params.VDS_input_buffers->buffer[0], (size_t) (len << 3));  // copy original data to smooth_data
-		memset(cps->params.VDS_input_buffers->buffer[3], 0, (size_t) (len << 3));  // zero transients
-		memset(cps->params.VDS_input_buffers->buffer[4], 0, (size_t) (len << 3));  // zero extrema
-		*n_extrema = 0;
-		return_m13(TRUE_m13);
-	}
-	qy = (sf8 *) cps->params.VDS_input_buffers->buffer[5];
-	// running median. When the span is large enough, decimate to a ~FILT_VDS_MEDIAN_DECIM_WINDOW-point running
-	// median then linearly interpolate the trend back to full resolution: the median trend is low-frequency, so
-	// this is compression-neutral (verified) while cutting the median cost roughly K-fold (speedup grows with span).
-	{
-		si8	dK = span / FILT_VDS_MEDIAN_DECIM_WINDOW_m13, dlen, dspan, di, ii;
-		sf8	*dy, *dqy, frac, a, b;
-		if (dK < 2) {  // span too small to decimate safely: full running median
-			FILT_quantfilt_m13(y, qy, len, (sf8) 0.5, span, FILT_TRUNCATE_m13);
-		} else {
-			dy = (sf8 *) cps->params.VDS_input_buffers->buffer[6];   // scratch (buffer 6 = ty, computed after the median)
-			dqy = (sf8 *) cps->params.VDS_input_buffers->buffer[7];  // scratch (buffer 7 = jy, used after the median)
-			dlen = (len + dK - 1) / dK;
-			dspan = span / dK;
-			if (dspan < 3) dspan = 3;
-			for (di = 0; di < dlen; ++di)
-				dy[di] = y[di * dK];
-			FILT_quantfilt_m13(dy, dqy, dlen, (sf8) 0.5, dspan, FILT_TRUNCATE_m13);
-			for (ii = 0; ii < len; ++ii) {
-				di = ii / dK;
-				frac = (sf8) (ii - (di * dK)) / (sf8) dK;
-				a = dqy[di];
-				b = (di + 1 < dlen) ? dqy[di + 1] : dqy[dlen - 1];
-				qy[ii] = a + (frac * (b - a));
-			}
-		}
-	}
-
-	// generate smooth trace (to buffer 2)
-	sy = (sf8 *) cps->params.VDS_input_buffers->buffer[2];
-	sf8_p1 = y;
-	sf8_p2 = qy;
-	sf8_p3 = sy;
-	for (i = len; i--;)
-		*sf8_p3++ = *sf8_p1++ - *sf8_p2++;
-	
-	// generate threshold trace (to buffer 6)
-	ty = (sf8 *) cps->params.VDS_input_buffers->buffer[6];
-	sf8_p1 = sy;
-	sf8_p2 = ty;
-	for (i = len; i--; ++sf8_p1)
-		*sf8_p2++ = (*sf8_p1 >= 0.0) ? *sf8_p1 : -*sf8_p1;
-
-	// get baseline & threshold (buffer 7 used as scrap)
-	jy = (sf8 *) cps->params.VDS_input_buffers->buffer[7];
-	baseline = CMP_quantval_m13(ty, len, (sf8) 0.5, TRUE_m13, jy);
-	VDS_alg_thresh = CMP_VDS_get_theshold_m13(cps);
-	thresh = ((VDS_alg_thresh + (sf8) 6.0) / (sf8) 2.0) * baseline;
-	
-	// zero transients array (buffer 3)
-	try = (sf8 *) cps->params.VDS_input_buffers->buffer[3];
-	memset(try, 0, (size_t) (len << 3));
-
-	// set up extrema array (buffer 4)
-	n_ext = 0;
-	ex = (si8 *) cps->params.VDS_input_buffers->buffer[4];
-	
-	// excision loop
-	for (i = 0; i < len;) {
-		if (ty[i] > thresh) {
-			wind_start = wind_end = i;
-			if (sy[i] >= 0) {  // find transient window (upgoing)
-				for (; wind_start >= 0; --wind_start)
-					if (sy[wind_start] < 0)
-						break;
-				for (; wind_start >= 0; --wind_start)
-					if (sy[wind_start] > 0)
-						break;
-				for (; wind_end < len; ++wind_end)
-					if (sy[wind_end] < 0)
-						break;
-				for (; wind_end < len; ++wind_end)
-					if (sy[wind_end] > 0)
-						break;
-			} else {  // find transient window (downgoing)
-				for (; wind_start >= 0; --wind_start)  // '>= 0' (not 'wind_start') to match upgoing: include index 0
-					if (sy[wind_start] > 0)
-						break;
-				for (; wind_start >= 0; --wind_start)
-					if (sy[wind_start] < 0)
-						break;
-				for (; wind_end < len; ++wind_end)
-					if (sy[wind_end] > 0)
-						break;
-				for (; wind_end < len; ++wind_end)
-					if (sy[wind_end] < 0)
-						break;
-			}
-			// correct for window overshoot
-			++wind_start;
-			--wind_end;
-			
-			// copy smooth contents into transients array & get extrema
-			wind_len = (wind_end - wind_start) + 1;  // inclusive sample count in [wind_start, wind_end]
-			if (wind_len > 3) {  // need at least 4 samples to bother excising a transient & taking its extremum
-				ext_x = wind_start;
-				ext_y = sy[wind_start];
-				if (sy[i] >= 0) {  // upgoing
-					for (j = wind_start; j <= wind_end; ++j) {
-						try[j] = sy[j];
-						if (ext_y < sy[j]) {
-							ext_y = sy[j];
-							ext_x = j;
-						}
-					}
-				} else {  // downgoing
-					for (j = wind_start; j <= wind_end; ++j) {
-						try[j] = sy[j];
-						if (ext_y > sy[j]) {
-							ext_y = sy[j];
-							ext_x = j;
-						}
-					}
-				}
-				// add extreme values
-				ex[n_ext++] = ext_x;
-			}
-						
-			// resume from wind_end (NOT wind_end + 1): re-examining the boundary sample lets a back-to-back
-			// opposite-going transient sharing this edge start its own window
-			i = wind_end;
-
-		} else {  // ty[i] <= thresh
-			++i;
-		}
-	}
-	
-	// finish smooth trace: add quantfilt trace back, or replace with quantfilt trace in transient windows
-	sf8_p1 = try;
-	sf8_p2 = qy;
-	sf8_p3 = sy;
-	for (i = len; i--;) {
-		if (*sf8_p1++ == (sf8) 0.0)
-			*sf8_p3++ += *sf8_p2++;
-		else
-			*sf8_p3++ = *sf8_p2++;
-	}
-	*n_extrema = n_ext;
-
-	return_m13(TRUE_m13);
-}
-
-				
 si4	FILT_filtfilt_m13(FILTPS_m13 *filtps)
 {
 	tern  	free_z_flag, free_buf_flag;
@@ -59283,7 +59148,7 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 		G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, tgt_path);
 		return_m13(FALSE_m13);
 	}
-	if (rm_m13(path) == FALSE_m13) {  // copy succeeded - data is safe (duplicated), but the move is incomplete
+	if (rm_m13(path, "-R") == FALSE_m13) {  // copy succeeded - data is safe (duplicated), but the move is incomplete (source may be a directory tree)
 		G_set_error_m13(E_GEN_m13, "moved \"%s\" to \"%s\", but could not remove the source", path, tgt_path);
 		return_m13(FALSE_m13);
 	}
@@ -60237,41 +60102,65 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-static si4	rm_recursive_m13(const si1 *path);  // defined below rm_m13()
+static si4	rm_recursive_m13(const si1 *path);  // defined below rm_exec_m13()
 #endif
 
-tern	rm_m13(const si1 *path)
+tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option ("-R"), NULL (use rm_m13() macro - it NULL-terminates)
 {
-	si1	tmp_path[PATH_BYTES_m13], **file_list, dir[PATH_BYTES_m13], name[MAX_NAME_BYTES_m13], ext[8];
-	si4	i, fe, n_files;
+	tern		recursive;
+	const si1	*opt;
+	si1		tmp_path[PATH_BYTES_m13], **file_list, dir[PATH_BYTES_m13], name[MAX_NAME_BYTES_m13], ext[8];
+	si4		i, fe, n_files;
+	va_list		v_args;
 #ifdef WINDOWS_m13
 	si1	command[PATH_BYTES_m13 + 16];
 	si4	r_val;
 #endif
-	
+
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
 #endif
+
+	// Unix rm/rmdir parallel. Returns TRUE_m13 on success, FALSE_m13 on failure, UNKNOWN_m13 if "path" does not exist.
+	// rm_m13(path): remove a file, or an EMPTY directory (as rmdir); a NON-empty directory warns, sets error, & removes nothing
+	// rm_m13(path, "-R"): recursive - remove a directory tree, including the "path" directory itself (as rm -R)
+
+	// option
+	recursive = FALSE_m13;
+	va_start(v_args, path);
+	opt = va_arg(v_args, const si1 *);
+	va_end(v_args);
+	if (opt != NULL) {
+		if (strcmp(opt, "-R") == 0 || strcmp(opt, "-r") == 0) {
+			recursive = TRUE_m13;
+		} else {
+			G_set_error_m13(E_GEN_m13, "unknown option \"%s\"", opt);
+			return_m13(FALSE_m13);
+		}
+	}
 
 	// condition path
 	G_full_path_m13(path, tmp_path);
 	path = (const si1 *) tmp_path;
 
 	if (STR_contains_regex_m13(path) == TRUE_m13) {
+		tern	ret = TRUE_m13;
+
 		G_path_parts_m13(path, dir, name, ext);
 		file_list = G_file_list_m13(NULL, &n_files, dir, name, ext, GFL_FULL_PATH_m13);
-		
+
 		for (i = 0; i < n_files; ++i)
-			rm_m13(file_list[i]);  // recursion
-		
+			if (rm_exec_m13(file_list[i], opt, NULL) == FALSE_m13)  // recursion (option propagates to each match)
+				ret = FALSE_m13;
+
 		if (n_files)
 			free_m13(file_list);
-		
-		return_m13(TRUE_m13);
+
+		return_m13(ret);
 	}
-	
+
 	fe = G_exists_m13(path);
-	
+
 	if (fe == FILE_EXISTS_m13) {
 		if (remove(path)) {
 			G_set_error_m13(E_GEN_m13, "could not remove file \"%s\"", path);
@@ -60279,6 +60168,24 @@ tern	rm_m13(const si1 *path)
 		}
 		return_m13(TRUE_m13);
 	} else if (fe == DIR_EXISTS_m13) {
+		// empty directory: plain rmdir covers it, "-R" or not (fails with ENOTEMPTY if not empty)
+		#if defined MACOS_m13 || defined LINUX_m13
+		if (rmdir(path) == 0)
+			return_m13(TRUE_m13);
+		#endif
+		#ifdef WINDOWS_m13
+		if (_rmdir(path) == 0)
+			return_m13(TRUE_m13);
+		#endif
+		if (recursive == FALSE_m13) {
+			if (errno == ENOTEMPTY || errno == EEXIST) {  // EEXIST: ENOTEMPTY alias on some systems
+				G_warning_message_m13("Directory \"%s\" is not empty: call with \"-R\" to remove it\n", path);
+				G_set_error_m13(E_GEN_m13, "directory \"%s\" not empty (pass \"-R\" to remove directory trees)", path);
+			} else {
+				G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
+			}
+			return_m13(FALSE_m13);
+		}
 		#if defined MACOS_m13 || defined LINUX_m13
 		if (rm_recursive_m13(path) != 0) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
@@ -60295,7 +60202,7 @@ tern	rm_m13(const si1 *path)
 		#endif
 		return_m13(TRUE_m13);
 	}
-	
+
 	return_m13(UNKNOWN_m13);
 }
 
