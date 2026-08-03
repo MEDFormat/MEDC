@@ -22017,6 +22017,112 @@ CMP_BUFFERS_m13  *CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffe
 }
 
 
+
+
+si8	CMP_max_compressed_bytes_m13(CPS_m13 *cps, si8 block_samps, si8 n_blocks)
+{
+	ui1	n_derivs;
+	ui4	flags, bit, n_params;
+	si4	i;
+	si8	var_bytes, red_model, pred_model, mbe_total, coded_body, block_bytes;
+
+#ifdef FT_DEBUG_m13
+	G_push_function_m13();
+#endif
+
+	// Worst-case bytes one block of block_samps samples can occupy in the compressed buffer, for THIS cps's
+	// algorithm & directives. Replaces CMP_MAX_COMPRESSED_BYTES_m13(), which could see neither the variable
+	// region nor the algorithm nor the fall-through directive, and so under-bounded every one of them.
+
+	// VARIABLE REGION. CMP_set_variable_region_m13() computes this per block, but the buffer must be sized
+	// before any block exists, so derive it from params + directives: the library parameter bits it will set
+	// (detrend => intercept + gradient; amplitude/frequency scale; noise scores) plus the user's own bits,
+	// 4 bytes per bit, plus the record / protected / discretionary reservations.
+	flags = cps->params.user_parameter_flags;
+	if (cps->direcs.flags & CPS_DF_DETREND_DATA_m13)
+		flags |= (CMP_PF_INTERCEPT_m13 | CMP_PF_GRADIENT_m13);
+	if (cps->direcs.flags & (CPS_DF_SET_AMPLITUDE_SCALE_m13 | CPS_DF_FIND_AMPLITUDE_SCALE_m13))
+		flags |= CMP_PF_AMPLITUDE_SCALE_m13;
+	if (cps->direcs.flags & (CPS_DF_SET_FREQUENCY_SCALE_m13 | CPS_DF_FIND_FREQUENCY_SCALE_m13))
+		flags |= CMP_PF_FREQUENCY_SCALE_m13;
+	if (cps->direcs.flags & CPS_DF_INCLUDE_NOISE_SCORES_m13)
+		flags |= CMP_PF_NOISE_SCORES_m13;
+	for (bit = 1, n_params = i = 0; i < CMP_PF_PARAMETER_FLAG_BITS_m13; ++i, bit <<= 1)
+		if (flags & bit)
+			++n_params;
+	var_bytes = (si8) (n_params << 2) + (si8) cps->params.user_record_region_bytes +
+		    (si8) cps->params.protected_region_bytes + (si8) cps->params.user_discretionary_region_bytes;
+
+	// MODEL REGIONS. Statistics are at most CMP_RED_MAX_STATS_BINS_m13 entries of (ui2 count + ui1 symbol);
+	// PRED carries CMP_PRED_CATS_m13 of them. Each derivative level costs one raw si4 anchor - bounded by
+	// CMP_MAX_DERIVATIVE_LEVEL_m13 for the FIND search, but a SET caller may promise more, so charge the greater.
+	n_derivs = CMP_MAX_DERIVATIVE_LEVEL_m13;
+	if ((cps->direcs.flags & CPS_DF_SET_DERIVATIVE_LEVEL_m13) && cps->params.goal_derivative_level > n_derivs)
+		n_derivs = cps->params.goal_derivative_level;
+	red_model = (si8) CMP_RED_MODEL_FIXED_HDR_BYTES_m13 + (si8) (n_derivs << 2) + (CMP_RED_MAX_STATS_BINS_m13 * 3);
+	pred_model = (si8) CMP_PRED_MODEL_FIXED_HDR_BYTES_m13 + (si8) (n_derivs << 2) +
+		     (CMP_PRED_CATS_m13 * CMP_RED_MAX_STATS_BINS_m13 * 3);
+
+	// BODIES. MBE is exact at its ceiling of 32 bits/sample. The entropy-coded body is bounded by the keysample
+	// stream (CMP_MAX_KEYSAMPLE_BYTES_m13: the coder's model is the block's own histogram, so it cannot need more
+	// than a byte per keysample byte at the ideal) times CMP_RED_CODER_WORST_CASE_MULT_m13 for the coder's
+	// pathological overhead - see that macro.
+	mbe_total = (si8) CMP_MBE_MODEL_FIXED_HDR_BYTES_m13 + (block_samps << 2);
+	coded_body = (si8) (CMP_MAX_KEYSAMPLE_BYTES_m13(block_samps) * CMP_RED_CODER_WORST_CASE_MULT_m13);
+
+	switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
+		case CPS_DF_MBE_ALGORITHM_m13:
+			block_bytes = mbe_total;
+			break;
+		case CPS_DF_RED1_ALGORITHM_m13:
+		case CPS_DF_RED2_ALGORITHM_m13:
+		case CPS_DF_PRED1_ALGORITHM_m13:
+		case CPS_DF_PRED2_ALGORITHM_m13:
+			// With FALL_THROUGH set (the default) the encoder compares its ESTIMATED total against MBE's exact
+			// total, biased by CMP_MBE_BIAS_m13, so a stream that runs at all is smaller than the MBE block -
+			// the MBE total bounds both outcomes. With it clear there is no diversion at all: the caller asked
+			// for pure RED/PRED, which must be sized for the coder's worst case.
+			if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
+				block_bytes = mbe_total + CMP_ESTIMATE_CUSHION_BYTES_m13;
+			} else {
+				block_bytes = coded_body;
+				block_bytes += ((cps->direcs.flags & (CPS_DF_PRED1_ALGORITHM_m13 | CPS_DF_PRED2_ALGORITHM_m13)) ?
+						pred_model : red_model);
+				if (block_bytes < mbe_total)  // the buffer-overflow guard still emits MBE
+					block_bytes = mbe_total;
+			}
+			break;
+		case CPS_DF_SRRED_ALGORITHM_m13:
+			// TWO sub-blocks (scaled + residual) packed into one block, each an independent RED stream that may
+			// itself fall through to MBE. Until SRRED gains its own whole-block estimate-vs-MBE redirect, both
+			// can go MBE, which is how an SRRED block reaches ~2x a plain one (measured 31,832 B where plain MBE
+			// was 15,936).
+			block_bytes = (si8) CMP_SRRED_MODEL_FIXED_HDR_BYTES_m13;
+			if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13)
+				block_bytes += (mbe_total + CMP_ESTIMATE_CUSHION_BYTES_m13) << 1;  // each sub-encode decides separately
+			else
+				block_bytes += (coded_body + red_model) << 1;
+			break;
+		case CPS_DF_VDS_ALGORITHM_m13:
+			// amplitude (PRED) + time (RED) sub-blocks over at most block_samps anchors, or a whole-block
+			// redirect to PRED2 over the real sample stream - the two-sub-block form bounds both.
+			block_bytes = (si8) CMP_VDS_MODEL_FIXED_HDR_BYTES_m13;
+			if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13)
+				block_bytes += (mbe_total + CMP_ESTIMATE_CUSHION_BYTES_m13) << 1;  // each sub-encode decides separately
+			else
+				block_bytes += (coded_body << 1) + pred_model + red_model;
+			break;
+		default:  // unknown/unset algorithm: charge the largest of the above
+			block_bytes = (si8) CMP_VDS_MODEL_FIXED_HDR_BYTES_m13 + ((coded_body + pred_model) << 1);
+			break;
+	}
+
+	block_bytes += (si8) CMP_BLOCK_FIXED_HDR_BYTES_m13 + var_bytes + 7;  // + G_pad_m13() to 8
+
+	return_m13(block_bytes * n_blocks);
+}
+
+
 CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECS_m13 *directives, CPS_PARAMS_m13 *parameters)
 {
 	tern		need_compressed_data = FALSE_m13;
@@ -22037,6 +22143,14 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 #endif
 
 	// pass CMP_SELF_MANAGED_MEMORY_m13 for data_samples to prevent automatic re-allocation
+	//
+	// pass ZERO for compressed_data_bytes (compression mode) to let the library size the compressed buffer.
+	// This is the preferred form: sizing it correctly needs the variable region, the algorithm, the derivative
+	// directives & the fall-through directive - all of which arrive in this call, none of which a caller-side
+	// macro can see. The library sizes it as CMP_max_compressed_bytes_m13() x the block count implied by
+	// data_samples / block_samples. A non-zero value is taken as-is (caller knows what it is doing), and in
+	// DECOMPRESSION mode it is the size of the data to be read, so it is always taken as-is.
+	// (The old caller-side CMP_MAX_COMPRESSED_BYTES_m13() macro under-bounded every one of those terms.)
 
 	if (fps) {
 		if (fps->uh->type_code != TS_DATA_TYPE_CODE_m13) {
@@ -22152,7 +22266,24 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 	// allocated_block_samples applies to any array whose size depends only on number of block samples
 	cps->params.allocated_block_samples = block_samples;
 	
-	// compressed_data - caller specified array size
+	// compressed_data - caller specified array size, or library-sized when the caller passes zero (see the note
+	// at the top of this function). Mirrors the keysample_buffer convention just below.
+	if (need_compressed_data == TRUE_m13 && mode == CMP_COMPRESSION_MODE_m13 && block_samples) {
+		si8	n_blocks, lib_bytes;
+
+		if (data_samples == CMP_SELF_MANAGED_MEMORY_m13 || data_samples <= 0)
+			n_blocks = 1;
+		else
+			n_blocks = (data_samples + (si8) block_samples - 1) / (si8) block_samples;
+		lib_bytes = CMP_max_compressed_bytes_m13(cps, (si8) block_samples, n_blocks);
+		// Zero => the library sizes it (preferred). A caller-supplied value is honoured but FLOORED at the
+		// library's own bound: with the encoders' per-dump overflow guard gone, an under-sized buffer is silent
+		// heap corruption rather than a caught fallback, and every application still sizing with the superseded
+		// CMP_MAX_COMPRESSED_BYTES_m13 macro is under-sized (no variable region, no cushion, no SRRED/VDS
+		// second sub-block). Over-sizing is always the caller's prerogative; under-sizing no longer is.
+		if (compressed_data_bytes < lib_bytes)
+			compressed_data_bytes = lib_bytes;
+	}
 	if (need_compressed_data == TRUE_m13) {
 		if (fps) {
 			if (fps->params.raw_data_bytes < (compressed_data_bytes + UH_BYTES_m13)) {  // FPS_realloc_m13 assumes universal header bytes
@@ -22225,6 +22356,7 @@ CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 comp
 	}
 	cps->params.SRRED_scale_center = (sf8) -1.0;  // no anchor yet => first block does a full-range anchor scan
 	cps->params.SRRED_scale_refresh_ctr = 0;
+	cps->params.SRRED_sub_encode = FALSE_m13;
 
 	// scaled_amplitude_buffer - maximum bytes required for caller specified block size
 	if (need_scaled_amplitude_buffer == TRUE_m13)
@@ -22873,55 +23005,6 @@ si4 CMP_compare_si8_m13(const void *a, const void * b)
 }
 
 
-si4	CMP_count_bins_m13(CPS_m13 *cps, si4 *deriv_p, ui1 n_derivs)
-{
-	ui1	*ui1_p, overflow_bytes, ks_flag;
-	ui4	n_samps, n_deriv_samps, *count;
-	si4	low_d, high_d, n_bins, diff;
-	si8	i, j;
-	
-#ifdef FT_DEBUG_m13
-	G_push_function_m13();
-#endif
-
-	// generate count & build keysample array
-	if (cps->params.minimum_difference_value > 0) {  // positive derivatives
-		low_d = 1; high_d = 255;
-		ks_flag = CMP_POS_DERIV_KEYSAMPLE_FLAG_m13;  // == 0 (non-overflow range: 1 to 255)
-	} else {
-		low_d = -127; high_d = 127;
-		ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m13;  // == -128 (non-overflow range: -127 to +127)
-	}
-	
-	count = (ui4 *) cps->params.count;
-	memset(count, 0, CMP_RED_MAX_STATS_BINS_m13 * sizeof(ui4));
-	overflow_bytes = CMP_get_overflow_bytes_m13(cps, CMP_COMPRESSION_MODE_m13, CMP_RED_COMPRESSION_m13);
-	deriv_p += + n_derivs;
-	n_samps = cps->block_header->number_of_samples;
-	n_deriv_samps = n_samps - n_derivs;
-	
-	for (i = n_deriv_samps; i--;) {
-		diff = *deriv_p++;
-		if (diff < low_d || diff > high_d) {
-			ui1_p = (ui1 *) &diff;
-			++count[ks_flag];
-			j = overflow_bytes; do {
-				++count[*ui1_p++];
-			} while (--j);
-		} else {
-			++count[(ui1) diff];
-		}
-	}
-
-	n_bins = 0;
-	for (i = 0; i < 256; ++i)
-		if (count[i])
-			++n_bins;
-	
-	return_m13(n_bins);
-}
-
-
 tern	CMP_decode_m13(FPS_m13 *fps)
 {
 	ui4			offset;
@@ -23169,6 +23252,7 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 	ui1			deriv_level, set_deriv_level;
 	ui4			n_samps, n_diffs;
 	si4			*input_buffer, *curr_deriv_buffer, *next_deriv_buffer, samp_min, samp_max, diff_min, diff_max;
+	si4			prev_diff_min, prev_diff_max;
 	si4			diff, *si4_p1, *si4_p2, *si4_p3;
 	si8			i, si8_diff, pos_inf_si4, neg_inf_si4;
 	sf8			score, last_score;
@@ -23199,15 +23283,16 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 		set_deriv_level = 0xFF;
 	else if (cps->direcs.flags & CPS_DF_SET_DERIVATIVE_LEVEL_m13)
 		set_deriv_level = cps->params.goal_derivative_level;
-	if (set_deriv_level != 1) {
-		if (set_deriv_level == 0) {
-			CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
-			memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
-			cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
-			return_m13(0);
-		}
-		cps->params.scrap_buffers = CMP_allocate_buffers_m13(cps->params.scrap_buffers, 1, n_samps, sizeof(si4), FALSE_m13, FALSE_m13);
+	if (set_deriv_level == 0) {
+		CMP_find_extrema_m13(NULL, 0, NULL, NULL, cps);
+		memcpy(cps->params.derivative_buffer, cps->input_buffer, (size_t) (n_samps << 2));
+		cps->params.derivative_level = cps->params.minimum_difference_value = cps->params.maximum_difference_value = 0;
+		return_m13(0);
 	}
+	// (This used to allocate cps->params.scrap_buffers here. Nothing in the library ever read them - the
+	// derivative search uses params.next_derivative_buffer - so it was a per-call allocation for dead storage.
+	// The FIELD is deliberately kept, along with its free in CMP_free_CPS_m13(): applications use it as caller
+	// -owned scratch, so the library still cleans it up, it just no longer allocates it. Removed 2026-08-02.)
 	
 	// first derivative level (gets min & max sample values)
 	input_buffer = cps->input_buffer;
@@ -23250,7 +23335,13 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 
 	if (set_deriv_level == 1)
 		return_m13(1);
-	
+
+	// (No positive-derivative special case here. An earlier cut stopped the search at level 1 whenever the first
+	// derivatives happened to be all-positive, keyed to the same data sniff the encoders then used. Once the
+	// positive-derivative model became directive-only it would only have penalized ordinary blocks that are
+	// incidentally monotone - they no longer get the 1..255 range, so there is nothing to trade the level for.
+	// VDS, the only holder of that directive, never reaches the derivative search at all - see the switch below.)
+
 	// find derivatives
 	if (set_deriv_level == 0xFF) {  // find_derivative_level option
 		switch (cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) {
@@ -23312,10 +23403,29 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 				diff_max = diff;
 			*si4_p3-- = diff;
 		}
-		*si4_p3 = *si4_p1;  // derivative initial value
+		*si4_p3 = *si4_p1;  // derivative initial value for THIS level (lands at index deriv_level)
+		// Carry the LOWER levels' initial (anchor) values into the new buffer. Only this level's anchor is written
+		// above; indices 0..deriv_level-1 belong to the levels below it & would otherwise hold whatever the scrap
+		// buffer last contained. Reconstruction integrates once per level & needs every anchor, so a block encoded
+		// at level >= 2 out of this buffer decoded to GARBAGE - i.e. RED2/PRED2 were not lossless whenever the
+		// derivative search chose level >= 2 (measured on all 8 SRRED datasets & on real MED channels). The SET
+		// path differentiates IN PLACE (next == curr), where the anchors accumulate naturally - which is why
+		// SRRED, whose encode re-differentiates with SET at the found level, was immune.
+		if (next_deriv_buffer != curr_deriv_buffer)
+			memcpy(next_deriv_buffer, curr_deriv_buffer, (size_t) deriv_level * sizeof(si4));
 		++deriv_level;
 		if (set_deriv_level == 0xFF) {  // find_derivative_level option
 			cps->params.derivative_buffer = next_deriv_buffer;  // set derivative buffer for CMP_get_counts_m13()
+			// Publish THIS candidate's extrema before scoring it. The scorers derive the stream's overflow byte
+			// count from params.min/max_difference_value (CMP_overflow_bytes_for_extrema_m13()), so leaving the
+			// previous level's values in place - as this did when the extrema were only committed on a win below -
+			// scored every candidate past the first with the wrong stream width. Costs nothing: diff_min/diff_max
+			// were already computed by the differentiation pass above; these are just stores, no extra traversal.
+			// Saved & restored because a losing candidate must leave the winner's extrema in the CPS.
+			prev_diff_min = cps->params.minimum_difference_value;
+			prev_diff_max = cps->params.maximum_difference_value;
+			cps->params.minimum_difference_value = diff_min;
+			cps->params.maximum_difference_value = diff_max;
 			if ((cps->direcs.flags & CPS_DF_ALGORITHM_MASK_m13) == CPS_DF_SRRED_ALGORITHM_m13) {
 				CMP_get_counts_m13(cps, TRUE_m13);  // separated overflows
 				score = CMP_SRRED_estimate_bytes_m13(cps, CMP_SRRED_RANK_SCALE_m13);  // rank at the scale SRRED will use
@@ -23325,14 +23435,24 @@ ui1	CMP_differentiate_m13(CPS_m13 *cps)
 			}
 			if (score < last_score) {  // monotonic decrease to minimum score; monotonic increase after minimum score
 				last_score = score;
-				cps->params.minimum_difference_value = diff_min;
-				cps->params.maximum_difference_value = diff_max;
-				cps->params.derivative_level = deriv_level;
+				cps->params.derivative_level = deriv_level;  // extrema already published above
 				// swap buffers
 				si4_p1 = curr_deriv_buffer;
 				curr_deriv_buffer = next_deriv_buffer;
 				next_deriv_buffer = si4_p1;
+				// Cap the search (Matt, 2026-08-02): nothing above level 6 has ever been observed, each extra
+				// level costs a full raw si4 anchor in the model region, and an unbounded level makes the
+				// compressed-block size bound (CMP_max_compressed_bytes_m13()) depend on a ui1's worth of
+				// anchors instead of a small constant. Same CPS restore as the losing branch below - this
+				// candidate won, so its extrema stay.
+				if (deriv_level >= CMP_MAX_DERIVATIVE_LEVEL_m13) {
+					cps->params.derivative_buffer = curr_deriv_buffer;
+					cps->params.next_derivative_buffer = next_deriv_buffer;
+					break;
+				}
 			} else {
+				cps->params.minimum_difference_value = prev_diff_min;  // candidate lost: restore the winner's extrema
+				cps->params.maximum_difference_value = prev_diff_max;
 				--deriv_level;
 				cps->params.derivative_buffer = curr_deriv_buffer;
 				cps->params.next_derivative_buffer = next_deriv_buffer;
@@ -24602,13 +24722,16 @@ tern	CMP_generate_parameter_map_m13(CPS_m13 *cps)
 }
 
 
+static ui1	CMP_overflow_bytes_for_extrema_m13(si8 min_val, si8 max_val, tern pos_derivs);  // defined below, with CMP_get_overflow_bytes_m13()
+
+
 void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows)
 {
 	tern		swap_back;
 	ui1		*key_p, *ui1_p, ks_flag;
 	ui4		*count, *sorted_count, tmp_sorted_count, n_deriv_samps;
 	si4 		*si4_p, *overflow_samps, deriv_level, diff, low_d, high_d, n_stats_entries;
-	const si8	OVERFLOW_BYTES = 4;  // just use max & skip overhead of CMP_get_overflow_bytes_m13()
+	si8		overflow_bytes;
 	si8		i, j, k;
 
 #ifdef FT_DEBUG_m13
@@ -24618,7 +24741,7 @@ void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows)
 	// generate counts from the CPS derivative buffer into the CPS counts array
 	// the number of count entries stored in the CPS parameter n_stats_entries
 	// if overflows == TRUE_m13, the overflows will be separated from the the non-overflow counts returned in the
-	// overflow samples array (scrap_buffers->buffer[1]); the overflow count is stored in the CPS parameter n_overflow_samples
+	// overflow samples array (cps->params.overflows_buffer); the overflow count is stored in cps->params.SRRED_overflow_samples
 	// if overflows == FALSE_m13, the overflows will be incorporated into the counts (as in RED & PRED encoding functions)
 	
 	deriv_level = (si4) cps->params.derivative_level;
@@ -24648,13 +24771,23 @@ void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows)
 	}
 	
 	// overflows == FALSE_m13
+	// Overflows are folded into the histogram as RED will emit them: the keysample flag + the low N bytes, N
+	// being the count CMP_get_overflow_bytes_m13()'s FIND branch derives from the stream's extrema (2-4), NOT a
+	// flat 4. This histogram feeds only the size ESTIMATES (derivative-level ranking & the SRRED scale-1.0
+	// baseline - CMP_RED2_encode_m13() rebuilds its own), & charging a flat 4 against candidates that were
+	// charged their true 2 or 3 biased those comparisons. pos_derivs is FALSE here to match the -127..127 range
+	// this function models (CMP_RED2_encode_m13() additionally uses the 1..255 positive-derivative range).
+	// Requires the extrema to be current for THIS derivative level - see CMP_differentiate_m13(), which now
+	// publishes each candidate's extrema before scoring it.
+	overflow_bytes = (si8) CMP_overflow_bytes_for_extrema_m13((si8) cps->params.minimum_difference_value,
+		(si8) cps->params.maximum_difference_value, FALSE_m13);
 	ks_flag = CMP_UI1_KEYSAMPLE_FLAG_m13;
 	for (i = n_deriv_samps; i--;) {
 		diff = *si4_p++;
 		if (diff < low_d || diff > high_d) {
 			ui1_p = (ui1 *) &diff;
 			++count[*key_p++ = ks_flag];
-			j = OVERFLOW_BYTES; do {
+			j = overflow_bytes; do {
 				++count[*key_p++ = *ui1_p++];
 			} while (--j);
 		} else {
@@ -24692,11 +24825,40 @@ void	CMP_get_counts_m13(CPS_m13 *cps, tern overflows)
 }
 
 
+// Bytes RED emits per overflow value, from the stream's extrema. Pure: no CPS or header is touched, so the
+// estimators can call it on hypothetical extrema (SRRED needs it on the SCALED stream, i.e. extrema x scale)
+// without the header-stamping side effect CMP_get_overflow_bytes_m13() performs for the encoder.
+// pos_derivs: the caller's non-overflow range is 1..255 rather than -127..127, so no sign bit is needed.
+// Clamp: a stream with NO overflow can compute 1 here (its byte loop never runs, so the value is unused), but
+// 2 is the true floor once any value actually overflows - |val| >= 128 => >= 9 bits. Clamping makes that
+// explicit & keeps a 1 from ever reaching the header stamp, which only encodes 2 & 3 (anything else reads 4).
+static ui1	CMP_overflow_bytes_for_extrema_m13(si8 min_val, si8 max_val, tern pos_derivs)
+{
+	ui1	bits_per_samp;
+	si8	i, val, abs_min, abs_max;
+
+	abs_min = ABS_m13(min_val);  // cannot make 0x80000000 positive as si4, so these are si8
+	abs_max = ABS_m13(max_val);
+	val = (abs_min > abs_max) ? abs_min : abs_max;
+	for (bits_per_samp = 1, i = val; i; i >>= 1)
+		++bits_per_samp;
+	if (pos_derivs == TRUE_m13)
+		--bits_per_samp;  // don't need a sign bit
+	bits_per_samp = (bits_per_samp + 7) >> 3;
+	if (bits_per_samp < 2)
+		bits_per_samp = 2;
+	else if (bits_per_samp > CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13)  // 4
+		bits_per_samp = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;
+
+	return(bits_per_samp);
+}
+
+
 ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm)
 {
-	ui1				bits_per_samp;
+	tern				pos_derivs;
 	ui2				flags;
-	si8				i, val, abs_min, abs_max;
+	si8				min_val, max_val;
 	CMP_RED_MODEL_FIXED_HDR_m13	*RED_header;
 	CMP_PRED_MODEL_FIXED_HDR_m13	*PRED_header;
 
@@ -24707,21 +24869,19 @@ ui1	CMP_get_overflow_bytes_m13(CPS_m13 *cps, ui4 mode, ui4 algorithm)
 	if (mode == CMP_COMPRESSION_MODE_m13) {  // assumes extrema are known & derivative level is set
 		if (cps->direcs.flags & CPS_DF_FIND_OVERFLOW_BYTES_m13) {
 			if (cps->params.derivative_level) {
-				abs_min = ABS_m13((si8) cps->params.minimum_difference_value); // cannot make 0x80000000 positive as si4, must use si8 here
-				abs_max = ABS_m13((si8) cps->params.maximum_difference_value);
+				min_val = (si8) cps->params.minimum_difference_value;
+				max_val = (si8) cps->params.maximum_difference_value;
 			} else {  // level zero => use raw data
-				abs_min = ABS_m13((si8) cps->params.minimum_sample_value);
-				abs_max = ABS_m13((si8) cps->params.maximum_sample_value);
+				min_val = (si8) cps->params.minimum_sample_value;
+				max_val = (si8) cps->params.maximum_sample_value;
 			}
-			val = (abs_min > abs_max) ? abs_min : abs_max;
-			for (bits_per_samp = 1, i = val; i; i >>= 1)
-				++bits_per_samp;
+			pos_derivs = FALSE_m13;
 			if (algorithm == CMP_RED1_COMPRESSION_m13 || algorithm == CMP_RED2_COMPRESSION_m13) {
 				RED_header = (CMP_RED_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
 				if (RED_header->flags & CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13)
-					--bits_per_samp;  // don't need a sign bit
+					pos_derivs = TRUE_m13;
 			}
-			cps->params.overflow_bytes = (bits_per_samp + 7) >> 3;
+			cps->params.overflow_bytes = CMP_overflow_bytes_for_extrema_m13(min_val, max_val, pos_derivs);
 		} else if (cps->direcs.flags & CPS_DF_SET_OVERFLOW_BYTES_m13) {
 			if (cps->params.goal_overflow_bytes != 2 && cps->params.goal_overflow_bytes != 3) {
 				G_warning_message_m13("%s(): overflow bytes must be 2-4 => setting to 4\n", __FUNCTION__);
@@ -25019,6 +25179,7 @@ CPS_PARAMS_m13	*CMP_init_params_m13(CPS_PARAMS_m13 *params)
 	params->goal_derivative_level = CPS_PARAMS_DERIVATIVE_LEVEL_DEFAULT_m13;
 	params->derivative_level = 0;
 	params->goal_overflow_bytes = CPS_PARAMS_OVERFLOW_BYTES_DEFAULT_m13;
+	params->MBE_preprocessed = FALSE_m13;
 	params->overflow_bytes = 0;
 	params->n_block_parameters = 0;
 	params->minimum_sample_value = CPS_PARAMS_MINIMUM_SAMPLE_VALUE_DEFAULT_m13;
@@ -25794,12 +25955,20 @@ tern	CMP_MBE_encode_m13(CPS_m13 *cps)
 	bh->block_flags |= CMP_BF_MBE_ENCODING_m13;
 
 	MBE_header = (CMP_MBE_MODEL_FIXED_HDR_m13 *) cps->params.model_region;
-	if (MBE_header->flags & CMP_MBE_FLAGS_PREPROCESSED_MASK_m13) {
+	// The RED/PRED fallback pre-fills lmin / derivative_level / bits_per_sample here ON PURPOSE - those encoders
+	// already computed them for the RED-vs-MBE decision, so recomputing would be wasted work (Matt, 2026-08-02).
+	// What may NOT come from the block buffer is the SIGNAL that they were pre-filled: the buffer is realloc'd &
+	// never zeroed, so a flag bit read out of it is a pre-existing value (the previous block's compressed bytes)
+	// that this encoder never wrote. A stale bit took the "already preprocessed" branch with garbage parameters.
+	// The signal therefore lives in the CPS; the flags field is initialized here for the same reason.
+	if (cps->params.MBE_preprocessed == TRUE_m13) {
+		cps->params.MBE_preprocessed = FALSE_m13;  // consume the handoff
 		lmin = MBE_header->minimum_value;
 		n_derivs = MBE_header->derivative_level;
 		bits_per_samp = MBE_header->bits_per_sample;
-		MBE_header->flags &= ~CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;  // reset preprocessed flag
+		MBE_header->flags = 0;
 	} else {
+		MBE_header->flags = 0;
 		// calculate derivatives
 		if (cps->direcs.flags & CPS_DF_SRRED_ALGORITHM_m13)  // derivatives already in derivative buffer
 			n_derivs = cps->params.derivative_level;
@@ -26813,7 +26982,7 @@ tern	CMP_PRED1_encode_m13(CPS_m13 *cps)
 				MBE_header->derivative_level = n_derivs;
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
-			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
+			cps->params.MBE_preprocessed = TRUE_m13;  // handoff via CPS, not the never-zeroed block buffer
 			CMP_MBE_encode_m13(cps);
 		}
 	}
@@ -26886,6 +27055,7 @@ si8	CMP_MBE_estimate_bytes_m13(CPS_m13 *cps, tern *use_raw, si4 *bits_per_sample
 	// *use_raw & *bits_per_sample for the caller to fill the MBE header & pick the input buffer; does NOT mutate cps.
 	// Everything else is derived from the CPS (assumes extrema known & derivative level set - true at every call site):
 	// n_samps = block number_of_samples, derivative level = params.derivative_level, header_bytes = model_region - bh.
+	tern	sub_stream;
 	si4	raw_bps, bps, n_derivs;
 	si8	i, data_bits, bytes, header_bytes;
 	ui4	rem, n_samps;
@@ -26894,12 +27064,25 @@ si8	CMP_MBE_estimate_bytes_m13(CPS_m13 *cps, tern *use_raw, si4 *bits_per_sample
 	n_derivs = (si4) cps->params.derivative_level;
 	header_bytes = (si8) (cps->params.model_region - (ui1 *) cps->block_header);
 
+	// RAW MODE IS FORBIDDEN FOR SRRED SUB-STREAMS. The raw emit path keeps input_buffer, which holds the OUTER
+	// block's raw samples - an SRRED sub-encode's stream lives in derivative_buffer (scaled derivatives or
+	// residuals), so raw mode would encode the wrong data entirely: both sides then agree on bytes that are not
+	// the stream, and the block round-trips to garbage SILENTLY (found 2026-08-03 on spiked large-amplitude
+	// data: raw_bps beat the stale derivative extrema's bps, MBE encoded the raw samples as the scaled stream).
+	// params.SRRED_sub_encode is TRUE only across CMP_SRRED_encode_m13()'s sub-encoder calls, so every
+	// WHOLE-BLOCK use - the scale-search MBE seed, the degenerate-scale redirect, & all standalone encoders -
+	// keeps raw pricing: truly noisy data where d0's bit range beats d1's still gets its raw MBE block.
+	sub_stream = cps->params.SRRED_sub_encode;
+
 	for (raw_bps = 0, i = (si8) cps->params.maximum_sample_value - (si8) cps->params.minimum_sample_value; i; i >>= 1)
 		++raw_bps;
-	if (n_derivs) {
+	if (n_derivs || sub_stream == TRUE_m13) {
 		for (bps = 0, i = (si8) cps->params.maximum_difference_value - (si8) cps->params.minimum_difference_value; i; i >>= 1)
 			++bps;
-		*use_raw = (raw_bps > bps) ? FALSE_m13 : TRUE_m13;  // raw can beat derivatives in very noisy data
+		if (sub_stream == TRUE_m13)
+			*use_raw = FALSE_m13;
+		else
+			*use_raw = (raw_bps > bps) ? FALSE_m13 : TRUE_m13;  // raw can beat derivatives in very noisy data
 	} else {
 		*use_raw = TRUE_m13;
 	}
@@ -26921,7 +27104,7 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 {
 	tern				no_zero_counts, use_raw, force_mbe;
 	ui1				*low_bound_high_byte_p, *high_bound_high_byte_p, *ui1_p, prev_cat, n_derivs;
-	ui1				*key_p, *comp_p, *symbols, **symbol_map, overflow_bytes, *comp_limit, present_enc[256];
+	ui1				*key_p, *comp_p, *symbols, **symbol_map, overflow_bytes, present_enc[256];
 	ui2				*bin_counts, *stats_entries;
 	ui4				n_samps, n_keysamp_bytes, **count, n_deriv_samps, PRED_total_bytes, total_stats_entries, header_bytes;
 	ui4				cat_total_counts[CMP_PRED_CATS_m13], goal_total_counts[CMP_PRED_CATS_m13], bin, fall_through_bytes;
@@ -27017,13 +27200,17 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	// penalizes PRED on blocks too small/simple to amortize 3 models. If MBE is smaller, skip the range coder & emit
 	// MBE. Both outcomes are lossless; the estimate only risks a hair of size near the crossover. (MBE size mirrors the
 	// PRED2_MBE_FALLBACK_m13 computation below, in locals so no encode state is mutated; force_mbe forces MBE emit.)
-	{
+	// Gated on CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13 (default TRUE, so the default path is unchanged): with the
+	// directive clear the caller is asking for pure PRED (the way to force this encoder for testing), so the estimate
+	// is skipped entirely rather than silently diverting - which also makes the clear case faster.
+	if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
 		sf8	est_pred_total, mbe_total;
 
 		header_bytes = (ui4) (cps->params.model_region - (ui1 *) bh);
 		est_pred_total = (sf8) (header_bytes + CMP_PRED_MODEL_FIXED_HDR_BYTES_m13 + (n_derivs << 2))  // common + PRED model header + initial derivative values
 			+ CMP_PRED_estimate_bytes_m13(count);  // + sum of the 3 per-category RED estimates
 		mbe_total = (sf8) CMP_MBE_estimate_bytes_m13(cps, &use_raw, &bits_per_samp);
+		est_pred_total *= CMP_MBE_BIAS_m13;  // favour MBE near the crossover - see the macro
 		if (mbe_total < est_pred_total) {
 			force_mbe = TRUE_m13;
 			goto PRED2_MBE_FALLBACK_m13;
@@ -27164,12 +27351,14 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 	low_bound = 0;
 	range = CMP_RED_MAXIMUM_RANGE_m13;
 	prev_cat = CMP_PRED_NIL_m13;
-	// overflow guard: on incompressible/degenerate input the range-coded stream can exceed the 4n budget.
-	// Each dump writes at most 6 bytes; if comp_p would pass the buffer end we abort PRED & emit MBE
-	// instead (guaranteed to fit - see CMP_MAX_COMPRESSED_BYTES_m13). comp_limit is NULL when the caller
-	// self-manages the buffer (allocated_compressed_bytes == 0), which disables the guard.
+	// No bounds check in this loop. The compressed buffer is sized by CMP_max_compressed_bytes_m13(), which
+	// covers whatever this encoder can produce under the current directives: with FALL_THROUGH set, the MBE
+	// block plus CMP_ESTIMATE_CUSHION_BYTES_m13 - a ceiling FITTED to 3087 matched (estimate, actual) pairs from
+	// real & adversarial data at 1k-100k sample blocks, whose residual is a constant, not a fraction of block
+	// size; with FALL_THROUGH clear, the range coder's derived worst case, CMP_RED_CODER_WORST_CASE_MULT_m13 x
+	// the keysample stream. CMP_allocate_CPS_m13() FLOORS any caller-supplied size at that bound, so the room is
+	// there whether or not the caller asked for it - which is what makes dropping the per-dump test safe.
 	force_mbe = FALSE_m13;
-	comp_limit = cps->params.allocated_compressed_bytes ? ((ui1 *) bh + cps->params.allocated_compressed_bytes) : NULL;
 	
 	for (i = n_keysamp_bytes; i;) {
 		for (; range >= minimum_range[prev_cat][bin = symbol_map[prev_cat][*key_p]]; key_p++) {
@@ -27180,10 +27369,6 @@ tern	CMP_PRED2_encode_m13(CPS_m13 *cps)
 			if (!--i)
 				break;
 			prev_cat = CMP_PRED_CAT_m13(*key_p);
-		}
-		if (comp_limit != NULL && (comp_p + 6) > comp_limit) {  // would overrun => fall back to MBE
-			force_mbe = TRUE_m13;
-			goto PRED2_MBE_FALLBACK_m13;
 		}
 		// full dump (all 6 bytes)
 		if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p || !i) {
@@ -27231,7 +27416,7 @@ PRED2_MBE_FALLBACK_m13:
 			MBE_header->derivative_level = n_derivs;
 		}
 		MBE_header->bits_per_sample = bits_per_samp;
-		MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
+		cps->params.MBE_preprocessed = TRUE_m13;  // handoff via CPS, not the never-zeroed block buffer
 		CMP_MBE_encode_m13(cps);
 	}
 
@@ -27397,7 +27582,7 @@ CPS_m13		*CMP_realloc_CPS_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sampl
 			if (cps->params.allocated_compressed_bytes) {
 				mem_units_used = (ui1 *) cps->block_header - fps->ts_data;
 				mem_units_avail = cps->params.allocated_compressed_bytes - mem_units_used;
-				new_val = CMP_MAX_COMPRESSED_BYTES_m13(block_samples, 1);
+				new_val = CMP_max_compressed_bytes_m13(cps, (si8) block_samples, 1);  // CPS-aware: variable region, algorithm & fall-through directive
 				if (mem_units_avail < new_val) {
 					new_compressed_bytes = new_val + mem_units_used;
 					realloc_flag = TRUE_m13;
@@ -27456,14 +27641,30 @@ CPS_m13		*CMP_realloc_CPS_m13(FPS_m13 *fps, ui4 compression_mode, si8 data_sampl
 			if ((cps->params.detrended_buffer = (si4 *) calloc_m13((size_t) block_samples, sizeof(si4))) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m13;
 		}
+		// derivative & SRRED buffers: malloc, not calloc, matching CMP_allocate_CPS_m13(). They are fully written
+		// before they are read on every block (the derivative anchors at indices 0..level-1 included, since the
+		// 2026-08-02 anchor fix), so zeroing them buys nothing but a pass over the memory every realloc.
 		if (cps->params.derivative_buffer) {
 			free_m13((void * ) cps->params.derivative_buffer);
-			if ((cps->params.derivative_buffer = (si4 *) calloc_m13((size_t) block_samples, sizeof(si4))) == NULL)
+			if ((cps->params.derivative_buffer = (si4 *) malloc_m13((size_t) (block_samples << 2))) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m13;
 		}
 		if (cps->params.next_derivative_buffer) {
 			free_m13((void * ) cps->params.next_derivative_buffer);
-			if ((cps->params.next_derivative_buffer = (si4 *) calloc_m13((size_t) block_samples, sizeof(si4))) == NULL)
+			if ((cps->params.next_derivative_buffer = (si4 *) malloc_m13((size_t) (block_samples << 2))) == NULL)
+				goto CMP_REALLOC_CPS_FAIL_m13;
+		}
+		// SRRED residuals/overflows: these were NOT being reallocated at all, so a caller that encoded a larger
+		// block later (CMP_encode_m13() reallocs on a bigger n_samples) wrote block_samples si4 into a buffer
+		// sized for the previous, smaller block.
+		if (cps->params.residuals_buffer) {
+			free_m13((void * ) cps->params.residuals_buffer);
+			if ((cps->params.residuals_buffer = (si4 *) malloc_m13((size_t) (block_samples << 2))) == NULL)
+				goto CMP_REALLOC_CPS_FAIL_m13;
+		}
+		if (cps->params.overflows_buffer) {
+			free_m13((void * ) cps->params.overflows_buffer);
+			if ((cps->params.overflows_buffer = (si4 *) malloc_m13((size_t) (block_samples << 2))) == NULL)
 				goto CMP_REALLOC_CPS_FAIL_m13;
 		}
 
@@ -28025,7 +28226,9 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 
 	// set model parameters
 	RED_header->derivative_level = n_derivs;
-	if (n_derivs && cps->params.minimum_difference_value > 0) {
+	// Selected by DIRECTIVE (a caller promise), never inferred from the data - see CPS_DF_POSITIVE_DERIVATIVES_m13
+	// in medlib_m13.h for why the old "minimum_difference_value > 0" sniff was removed 2026-08-02.
+	if (n_derivs && (cps->direcs.flags & CPS_DF_POSITIVE_DERIVATIVES_m13)) {
 		pos_derivs = TRUE_m13;
 		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13;
 	} else {
@@ -28217,7 +28420,7 @@ tern	CMP_RED1_encode_m13(CPS_m13 *cps)
 				MBE_header->derivative_level = n_derivs;
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
-			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
+			cps->params.MBE_preprocessed = TRUE_m13;  // handoff via CPS, not the never-zeroed block buffer
 			CMP_MBE_encode_m13(cps);
 			return_m13(TRUE_m13);
 		}
@@ -28232,7 +28435,7 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 	tern				pos_derivs, no_zero_counts, use_raw, force_mbe;
 	ui1				*low_bound_high_byte_p, *high_bound_high_byte_p, *ui1_p, ks_flag;
 	ui1				*key_p, n_derivs, *comp_p, *symbols, *symbol_map, overflow_bytes;
-	ui1				present_enc[256], *comp_limit;
+	ui1				present_enc[256];
 	ui2				*bin_counts;
 	ui4				*count, n_keysamp_bytes, RED_total_bytes, header_bytes;
 	ui4				n_samps, n_deriv_samps, goal_total_counts, bin, fall_through_bytes;
@@ -28291,7 +28494,9 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 
 	// set model parameters
 	RED_header->derivative_level = n_derivs;
-	if (n_derivs && cps->params.minimum_difference_value > 0) {
+	// Selected by DIRECTIVE (a caller promise), never inferred from the data - see CPS_DF_POSITIVE_DERIVATIVES_m13
+	// in medlib_m13.h for why the old "minimum_difference_value > 0" sniff was removed 2026-08-02.
+	if (n_derivs && (cps->direcs.flags & CPS_DF_POSITIVE_DERIVATIVES_m13)) {
 		pos_derivs = TRUE_m13;
 		RED_header->flags |= CMP_RED_FLAGS_POSITIVE_DERIVATIVES_m13;
 	} else {
@@ -28337,13 +28542,17 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 	// MBE size. If MBE is smaller, skip the range coder entirely & emit MBE. Both outcomes are lossless; the estimate
 	// only risks a hair of size near the crossover. (MBE size mirrors the RED2_MBE_FALLBACK_m13 computation below, done
 	// in locals so no encode state is mutated; force_mbe then forces the fallback to emit MBE.)
-	{
+	// Gated on CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13 (default TRUE, so the default path is unchanged): with the
+	// directive clear the caller is asking for pure RED (the way to force this encoder for testing), so the estimate
+	// is skipped entirely rather than silently diverting - which also makes the clear case faster.
+	if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
 		sf8	est_red_total, mbe_total;
 
 		header_bytes = (ui4) (cps->params.model_region - (ui1 *) bh);
 		est_red_total = (sf8) (header_bytes + CMP_RED_MODEL_FIXED_HDR_BYTES_m13 + (n_derivs << 2))  // common + RED model header + initial derivative values
 			+ CMP_RED_estimate_bytes_m13(count, (si8) CMP_RED_MAX_STATS_BINS_m13);
 		mbe_total = (sf8) CMP_MBE_estimate_bytes_m13(cps, &use_raw, &bits_per_samp);
+		est_red_total *= CMP_MBE_BIAS_m13;  // favour MBE near the crossover - see the macro
 		if (mbe_total < est_red_total) {
 			force_mbe = TRUE_m13;
 			goto RED2_MBE_FALLBACK_m13;
@@ -28472,12 +28681,14 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 	high_bound_high_byte_p = ((ui1 *) &high_bound) + 5;
 	low_bound = 0;
 	range = CMP_RED_MAXIMUM_RANGE_m13;
-	// overflow guard: the range-coded stream can, on incompressible/degenerate input, exceed the 4n
-	// compressed budget. Each dump below writes at most 6 bytes; if comp_p would pass the buffer end we
-	// abort RED & emit MBE instead (guaranteed to fit - see CMP_MAX_COMPRESSED_BYTES_m13). comp_limit is
-	// NULL when the caller self-manages the buffer (allocated_compressed_bytes == 0), disabling the guard.
+	// No bounds check in this loop. The compressed buffer is sized by CMP_max_compressed_bytes_m13(), which
+	// covers whatever this encoder can produce under the current directives: with FALL_THROUGH set, the MBE
+	// block plus CMP_ESTIMATE_CUSHION_BYTES_m13 - a ceiling FITTED to 3087 matched (estimate, actual) pairs from
+	// real & adversarial data at 1k-100k sample blocks, whose residual is a constant, not a fraction of block
+	// size; with FALL_THROUGH clear, the range coder's derived worst case, CMP_RED_CODER_WORST_CASE_MULT_m13 x
+	// the keysample stream. CMP_allocate_CPS_m13() FLOORS any caller-supplied size at that bound, so the room is
+	// there whether or not the caller asked for it - which is what makes dropping the per-dump test safe.
 	force_mbe = FALSE_m13;
-	comp_limit = cps->params.allocated_compressed_bytes ? ((ui1 *) bh + cps->params.allocated_compressed_bytes) : NULL;
 
 	for (i = n_keysamp_bytes; i;) {
 		for (; range >= minimum_range[bin = symbol_map[*key_p]]; key_p++) {
@@ -28487,10 +28698,6 @@ tern	CMP_RED2_encode_m13(CPS_m13 *cps)
 			range = high_bound - low_bound;
 			if (!--i)
 				break;
-		}
-		if (comp_limit != NULL && (comp_p + 6) > comp_limit) {  // would overrun => fall back to MBE
-			force_mbe = TRUE_m13;
-			goto RED2_MBE_FALLBACK_m13;
 		}
 		// full dump
 		if (low_bound == high_bound || *low_bound_high_byte_p != *high_bound_high_byte_p || !i) {
@@ -28538,7 +28745,7 @@ RED2_MBE_FALLBACK_m13:
 			MBE_header->derivative_level = n_derivs;
 		}
 		MBE_header->bits_per_sample = bits_per_samp;
-		MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
+		cps->params.MBE_preprocessed = TRUE_m13;  // handoff via CPS, not the never-zeroed block buffer
 		CMP_MBE_encode_m13(cps);
 	}
 
@@ -29597,7 +29804,9 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	ui1				*SRRED_model_region;
 	ui4				SRRED_total_header_bytes, SRRED_model_region_bytes;
 	ui4				n_derivs, algorithm;
-	si4				*si4_p1, *si4_p2, *derivs_buffer, *resids_buffer, original_val, scaled_val, unscaled_val;
+	si4				*si4_p1, *si4_p2, *derivs_buffer, *resids_buffer, original_val, scaled_val, unscaled_val, resid_val;
+	si4				block_samp_min, block_samp_max, block_diff_min, block_diff_max;
+	si4				scaled_min, scaled_max, resid_min, resid_max;
 	si8				i, n_samps;
 	sf8				scale, inv_scale, tmp_sf8;
 	CMP_FIXED_BH_m13		*bh;
@@ -29664,7 +29873,22 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	scale = (sf8) SRRED_header->scale;
 	inv_scale = (sf8) 1.0 / scale;  // invert - faster to multiply
 	si4_p1 = derivs_buffer + n_derivs;  // skip initial values
-	si4_p2 = resids_buffer + n_derivs;  // skip initial values (all initial values are zero for residuals)
+	// The residual stream's initial (anchor) values are zero by definition, which is why the split loop starts
+	// past them - but they must be WRITTEN. residuals_buffer is malloc'd & never zeroed, and it becomes the
+	// derivative buffer for the residual sub-encode below, which stores n_derivs initial values straight out of
+	// it. Uninitialized, that wrote heap garbage into the block as the residual anchors (2026-08-02).
+	memset(resids_buffer, 0, (size_t) n_derivs * sizeof(si4));
+	si4_p2 = resids_buffer + n_derivs;  // skip initial values (zeroed just above)
+	// Track each sub-stream's true extrema while splitting (O(1)/value). The sub-encodes below size their
+	// overflow fields & any MBE fallback from params.min/max_difference_value, & MBE pricing also reads
+	// min/max_sample_value - all of which describe the OUTER block here. Stale values oversize overflow fields
+	// (a 4-byte field for a stream that needs 2), misprice the MBE fallback, & - the dangerous one - hand a
+	// residual-stream MBE a POSITIVE minimum when residuals are signed, truncating (value - min) < 0 silently.
+	// Each sub-encode gets its own stream's extrema (published just before it, block values restored after);
+	// find_parameters() has already run, so nothing here can move the scale/level argmins (the July 2026
+	// regression came from publishing scaled extrema before the scoring - this is scoped strictly after it).
+	scaled_min = resid_min = 0x7FFFFFFF;
+	scaled_max = resid_max = (si4) 0x80000000;
 	for (i = n_samps - n_derivs; i--;) {
 		original_val = *si4_p1;
 		tmp_sf8  = (sf8) original_val * inv_scale;
@@ -29674,14 +29898,29 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 			tmp_sf8 -= (sf8) 0.5;
 		scaled_val = (si4) tmp_sf8;
 		*si4_p1++ = scaled_val;  // replace original with scaled derivative
+		if (scaled_val < scaled_min)
+			scaled_min = scaled_val;
+		if (scaled_val > scaled_max)
+			scaled_max = scaled_val;
 		tmp_sf8  = (sf8) scaled_val * scale;
 		if (tmp_sf8 >= (sf8) 0.0)  // avoid round() overhead
 			tmp_sf8 += (sf8) 0.5;
 		else
 			tmp_sf8 -= (sf8) 0.5;
 		unscaled_val = (si4) tmp_sf8;
-		*si4_p2++ = original_val - unscaled_val;  // residual
+		resid_val = original_val - unscaled_val;  // residual
+		*si4_p2++ = resid_val;
+		if (resid_val < resid_min)
+			resid_min = resid_val;
+		if (resid_val > resid_max)
+			resid_max = resid_val;
 	}
+	// save the block's extrema (restored after the residual sub-encode)
+	block_samp_min = cps->params.minimum_sample_value;
+	block_samp_max = cps->params.maximum_sample_value;
+	block_diff_min = cps->params.minimum_difference_value;
+	block_diff_max = cps->params.maximum_difference_value;
+
 
 	// save header values
 	SRRED_model_region = cps->params.model_region;
@@ -29691,6 +29930,10 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	// set cps to RED encode scaled derivatives (RED/RED throughout: PRED combos complicate for little benefit ~0.8%)
 	cps->params.model_region = SRRED_model_region + SRRED_model_region_bytes;  // scaled model region follows SRRED model region
 	CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);  // ensure RED buffers
+	// publish the SCALED stream's extrema for its sub-encode (overflow-field sizing & MBE fallback min/bits)
+	cps->params.minimum_sample_value = cps->params.minimum_difference_value = scaled_min;
+	cps->params.maximum_sample_value = cps->params.maximum_difference_value = scaled_max;
+	cps->params.SRRED_sub_encode = TRUE_m13;  // gates MBE raw mode - see CMP_MBE_estimate_bytes_m13()
 	CMP_RED2_encode_m13(cps); // RED for scaled - may fall through to MBE
 
 	// set SRRED header values
@@ -29711,8 +29954,19 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 	cps->params.model_region = ((ui1 *) bh) + bh->total_block_bytes;  // bh->total_block_bytes == total through scaled block at this point;
 	CMP_swap_RED_PRED_m13(cps, CMP_PRED_TO_RED_m13);
 	cps->params.derivative_buffer = resids_buffer;  // swap derivative buffer for RED derivative buffer
+	// publish the RESIDUAL stream's extrema (residuals are SIGNED & small: the block's stale minimum can be
+	// POSITIVE on monotone data, which would truncate (value - minimum) < 0 in an MBE fallback - silently)
+	cps->params.minimum_sample_value = cps->params.minimum_difference_value = resid_min;
+	cps->params.maximum_sample_value = cps->params.maximum_difference_value = resid_max;
 	CMP_RED2_encode_m13(cps);  // start with RED for residuals - may fall through
+	cps->params.SRRED_sub_encode = FALSE_m13;
 	cps->params.derivative_buffer = derivs_buffer;  // restore derivative buffer
+	// restore the block's extrema (callers & later passes read them; the sub-stream values were scoped to the
+	// two sub-encodes above)
+	cps->params.minimum_sample_value = block_samp_min;
+	cps->params.maximum_sample_value = block_samp_max;
+	cps->params.minimum_difference_value = block_diff_min;
+	cps->params.maximum_difference_value = block_diff_max;
 	SRRED_header->residuals_block_model_bytes = bh->model_region_bytes;  // from CMP_RED2_encode_m13()
 	SRRED_header->flags &= ~CMP_SRRED_RESIDUALS_ALGORITHMS_MASK_m13;
 	algorithm = bh->block_flags & CMP_BF_ALGORITHMS_MASK_m13;
@@ -29746,7 +30000,7 @@ tern	CMP_SRRED_encode_m13(CPS_m13 *cps)
 tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 {
 	ui4				n_samps, n_derivs;
-	sf8				scale, min_scale, scale_step, score, min_score, exit_scale;
+	sf8				scale, min_scale, scale_step, score, min_score, exit_scale, scan_bottom, amax;
 	CMP_FIXED_BH_m13		*bh;
 	CMP_SRRED_MODEL_FIXED_HDR_m13	*SRRED_header;
 
@@ -29779,15 +30033,69 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 	
 	// find optimal scale
 	
-	// get minimum (unscaled) score = estimated bytes of the unscaled derivatives (scale 1.0 => residuals all zero).
-	// If no scale beats this, min_scale stays 1.0 & SRRED redirects to PRED.
+	// Get the minimum (unscaled) score = estimated TOTAL bytes of the plain RED2 block this baseline stands for
+	// (scale 1.0 => residuals all zero, so SRRED redirects to a plain RED2 encode of the derivatives - see the
+	// degenerate-scale redirect in CMP_SRRED_encode_m13()). If no scale beats this, min_scale stays 1.0.
+	//
+	// ⭐ The header terms are ESSENTIAL, not decoration: every scanned candidate comes from
+	// CMP_SRRED_estimate_bytes_m13(), which returns a TOTAL (CMP block header + variable region + SRRED model
+	// header + both RED sub-headers + both sets of anchors). Seeding the baseline with the header-FREE
+	// CMP_RED_estimate_bytes_m13() body estimate compared the two in different domains: scaling was charged ~120 B
+	// of overhead the baseline was charged none of, when the honest difference is only what SRRED actually costs
+	// over a plain RED block (its 16-byte model header + one extra RED sub-header & anchor set). Net effect was a
+	// systematic ~80-byte bias AGAINST scaling - ~2% of a 4096-sample block. Both sides are totals now, so the
+	// comparison means what it says, and a whole-block MBE total can be brought into it (it is in the same domain).
 	CMP_get_counts_m13(cps, FALSE_m13);  // counts with integrated overflows, no residuals
 	min_scale = (sf8) 1.0;
-	min_score = CMP_RED_estimate_bytes_m13(cps->params.sorted_count, (si8) cps->params.n_stats_entries);  // compacted nonzero counts
+	min_score = CMP_RED_estimate_bytes_m13(cps->params.sorted_count, (si8) cps->params.n_stats_entries)  // compacted nonzero counts
+		+ (sf8) ((si8) (cps->params.model_region - (ui1 *) cps->block_header)  // CMP block header + variable region
+			+ (si8) CMP_RED_MODEL_FIXED_HDR_BYTES_m13
+			+ ((si8) cps->params.derivative_level << 2));  // initial derivative values
+
+	// ⭐ Bring a whole-block MBE into the baseline. MBE was never in this comparison at ANY level: the scale search
+	// only ever weighed scaled-SRRED against unscaled RED, so on data where MBE beats both, SRRED could win the
+	// search & emit a block larger than simply MBE-encoding the derivatives. Everything MBE needs is already in the
+	// CPS - CMP_differentiate_m13() above published min/max_sample_value, min/max_difference_value for the winning
+	// level, and derivative_level - so this is ONE call & two bit-scans per block, before any scaling, not per scale.
+	// If MBE wins, no scanned scale beats it, min_scale stays 1.0, and the degenerate-scale redirect in
+	// CMP_SRRED_encode_m13() hands the block to CMP_RED2_encode_m13(), whose own estimate-vs-MBE decision emits MBE.
+	// No new redirect path & no new state. Note this only decides WHETHER TO SCALE - it is constant across the scan,
+	// so it cannot move the scale argmin among candidates. CMP_MBE_BIAS_m13 is deliberately NOT applied here: the
+	// real MBE decision is RED2's, which already applies it, & double-biasing would tilt the scan against scaling.
+	// Gated on CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13, exactly as the RED2/PRED2 early estimates are: with the
+	// directive clear the caller is forcing SRRED (the way to force this encoder for testing), so MBE stays out of
+	// the comparison rather than silently taking the block. NB this is the WHOLE-BLOCK question only - a block that
+	// does scale remains an SRRED block even when a sub-stream falls through to MBE; that choice is per sub-block,
+	// is recorded in the SRRED model header's scaled/residuals algorithm flags, & decode dispatches on it.
+	if (cps->direcs.flags & CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13) {
+		tern	use_raw;
+		si4	bits_per_samp;
+		sf8	mbe_total;
+
+		mbe_total = (sf8) CMP_MBE_estimate_bytes_m13(cps, &use_raw, &bits_per_samp);
+		if (mbe_total < min_score)
+			min_score = mbe_total;
+	}
 
 	// get counts with separated overflows
 	CMP_get_counts_m13(cps, TRUE_m13);
-		
+
+	// Per-block scan floor: below scale = 0.5 / max|derivative| every scaled derivative rounds to zero, so the
+	// scaled stream is identically zero & SRRED cannot beat the unscaled baseline by construction - scanning there
+	// is pure waste. (Measured across the 8 development datasets, real optima never come below ~1.2 / max|deriv|.)
+	// The extrema were published by CMP_differentiate_m13() above, so this is O(1). The floor SHRINKS as amplitude
+	// grows, so it never excludes the low-scale resonances of high-gain data (optimum ~ 1 / (k x gain)) - only the
+	// provably-degenerate region below them.
+	scan_bottom = CMP_SRRED_BOTTOM_SCALE_m13;
+	amax = (sf8) (cps->params.maximum_difference_value > -cps->params.minimum_difference_value ?
+		cps->params.maximum_difference_value : -cps->params.minimum_difference_value);
+	if (amax > (sf8) 0.0) {
+		if (((sf8) 0.5 / amax) > scan_bottom)
+			scan_bottom = (sf8) 0.5 / amax;
+		if (scan_bottom > CMP_SRRED_TOP_SCALE_m13)
+			scan_bottom = CMP_SRRED_TOP_SCALE_m13;
+	}
+
 	// Find the scale with the lowest score. The scan runs every block (measured: the optimal scale changes ~90% of
 	// blocks on some recordings, never on others - it cannot be assumed stable), so it must be cheap. Two mechanisms
 	// (both work in the count domain via CMP_SRRED_estimate_bytes_m13(), no re-encoding, so each step is cheap): a WINDOWED
@@ -29804,14 +30112,14 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 		// searched range beats the unscaled baseline the block simply redirects to RED (lossless) & recovers at the
 		// next anchor. Carried per-CPS (SRRED_scale_center) so multichannel & threads each track their own scale.
 		sf8	w = (sf8) cps->params.SRRED_scale_window * scale_step, lo, hi, half = scale_step * (sf8) 0.5;
-		lo = cps->params.SRRED_scale_center - w; if (lo < CMP_SRRED_BOTTOM_SCALE_m13) lo = CMP_SRRED_BOTTOM_SCALE_m13;
+		lo = cps->params.SRRED_scale_center - w; if (lo < scan_bottom) lo = scan_bottom;
 		hi = cps->params.SRRED_scale_center + w; if (hi > CMP_SRRED_TOP_SCALE_m13) hi = CMP_SRRED_TOP_SCALE_m13;
 		for (scale = lo; scale <= hi; scale += scale_step) {
 			score = CMP_SRRED_estimate_bytes_m13(cps, scale);
 			if (score < min_score) { min_score = score; min_scale = scale; }
 		}
-		while (min_scale <= lo + half && lo > CMP_SRRED_BOTTOM_SCALE_m13) {  // min at low edge => optimum may be lower; extend down
-			sf8 nlo = lo - w; if (nlo < CMP_SRRED_BOTTOM_SCALE_m13) nlo = CMP_SRRED_BOTTOM_SCALE_m13;
+		while (min_scale <= lo + half && lo > scan_bottom) {  // min at low edge => optimum may be lower; extend down
+			sf8 nlo = lo - w; if (nlo < scan_bottom) nlo = scan_bottom;
 			for (scale = nlo; scale < lo - half; scale += scale_step) {
 				score = CMP_SRRED_estimate_bytes_m13(cps, scale);
 				if (score < min_score) { min_score = score; min_scale = scale; }
@@ -29832,17 +30140,24 @@ tern	CMP_SRRED_find_parameters_m13(CPS_m13 *cps)
 		// adaptive-window bailout (each new minimum extends the search to params.SRRED_scale_bailout_mult x its scale;
 		// bail if no new min by then). Re-anchors the windowed tracker & catches any drift/jump/notch the window missed.
 		exit_scale = CMP_SRRED_TOP_SCALE_m13;
-		for (scale = CMP_SRRED_BOTTOM_SCALE_m13; scale <= CMP_SRRED_TOP_SCALE_m13; scale += scale_step) {
+		for (scale = scan_bottom; scale <= CMP_SRRED_TOP_SCALE_m13; scale += scale_step) {
 			score = CMP_SRRED_estimate_bytes_m13(cps, scale);
 			if (score < min_score) {
 				min_score = score;
 				min_scale = scale;  // SRRED scale is the number by which the derivative values are divided (>= 1)
 				if (cps->params.SRRED_scale_bailout_mult > (sf8) 0.0) {
+					// exit = max(mult x scale, scale + span): the multiplicative window alone is very
+					// narrow at small scales, & a shallow shelf of low-scale local minima can arm the
+					// bailout & exit before the scan ever reaches the true optimum (measured 0.8% loss
+					// on real data). The absolute span guarantees the scan always looks far enough past
+					// any minimum to find the next basin's shoulder; a new minimum there re-arms it.
 					exit_scale = cps->params.SRRED_scale_bailout_mult * scale;
+					if (exit_scale < scale + CMP_SRRED_SCALE_BAILOUT_SPAN_m13)
+						exit_scale = scale + CMP_SRRED_SCALE_BAILOUT_SPAN_m13;
 					if (exit_scale > CMP_SRRED_TOP_SCALE_m13) exit_scale = CMP_SRRED_TOP_SCALE_m13;
 				}
 			} else if (scale > exit_scale) {
-				break;  // no new minimum within (mult)x the last minimum's scale => bail
+				break;  // no new minimum within max(mult x, + span) of the last minimum => bail
 			}
 		}
 		cps->params.SRRED_scale_refresh_ctr = 0;
@@ -29868,8 +30183,8 @@ sf8	CMP_SRRED_estimate_bytes_m13(CPS_m13 *cps, sf8 scale)
 	const si4	LOW_D = -127, HIGH_D = 127;
 	si4		scaled_val, unscaled_val, residual_val, *si4_p;
 	si4		n_scaled_stats_entries, n_residual_stats_entries;
-	const si8	OVERFLOW_BYTES = 4;
-	si8		i, j, k, scaled_ovf_bytes, amax;
+	const si8	OVERFLOW_BYTES = 4;  // residual stream only - it cannot overflow (see below), so this is never used
+	si8		i, j, k, scaled_ovf_bytes;
 	sf8		tmp_sf8, inv_scale, score;
 	
 #ifdef FT_DEBUG_m13
@@ -29891,25 +30206,18 @@ sf8	CMP_SRRED_estimate_bytes_m13(CPS_m13 *cps, sf8 scale)
 	// bytes. This mirrors the overflow handling below, so the byte estimate matches what the encoder actually produces.
 	inv_scale = (sf8) 1.0 / scale;
 
-	// Overflow byte count for the SCALED stream at this scale, matching CMP_get_overflow_bytes_m13()'s FIND logic: RED
-	// emits the low N bytes per overflow, N set by the stream's max magnitude (clamped 2..4), not a fixed 4. Max |scaled
-	// value| = round(max|derivative| * scale) (scaling is monotone), from the block's derivative extrema set by the
-	// preceding differentiate. (The RESIDUAL stream is bounded by ~0.5/scale < 128 across the scan range, so it never
-	// overflows - its byte loop below never runs - & it keeps OVERFLOW_BYTES.)
-	amax = (si8) cps->params.maximum_difference_value; if (amax < 0) amax = -amax;
-	j = (si8) cps->params.minimum_difference_value; if (j < 0) j = -j;
-	if (j > amax) amax = j;
-	amax = (si8) ((sf8) amax * scale + (sf8) 0.5);  // max |scaled value|
-	scaled_ovf_bytes = OVERFLOW_BYTES;
-	if (amax > HIGH_D) {  // scaled stream overflows => derive its byte count
-		for (scaled_ovf_bytes = 1, j = amax; j; j >>= 1)
-			++scaled_ovf_bytes;
-		scaled_ovf_bytes = (scaled_ovf_bytes + 7) >> 3;
-		if (scaled_ovf_bytes < 2)
-			scaled_ovf_bytes = 2;
-		else if (scaled_ovf_bytes > OVERFLOW_BYTES)
-			scaled_ovf_bytes = OVERFLOW_BYTES;
-	}
+	// Overflow byte count for the SCALED stream at this scale: RED emits the low N bytes per overflow, N set by the
+	// stream's extrema, not a fixed 4. Scaling is monotone, so the scaled extrema are just the block's derivative
+	// extrema x scale - no scan & no second pass. Shares CMP_overflow_bytes_for_extrema_m13() with
+	// CMP_get_overflow_bytes_m13() & CMP_get_counts_m13() so the three cannot drift (this site previously open-coded
+	// the arithmetic & had already lost the positive-derivative case). pos_derivs is FALSE to match the -127..127
+	// range modeled below. Requires the extrema to be current for THIS derivative level - see CMP_differentiate_m13(),
+	// which now publishes each candidate's extrema before scoring it. (The RESIDUAL stream is bounded by
+	// ~0.5/scale < 128 across the scan range, so it never overflows - its byte loop below never runs - & keeps
+	// OVERFLOW_BYTES.)
+	scaled_ovf_bytes = (si8) CMP_overflow_bytes_for_extrema_m13(
+		(si8) ((sf8) cps->params.minimum_difference_value * scale - (sf8) 0.5),
+		(si8) ((sf8) cps->params.maximum_difference_value * scale + (sf8) 0.5), FALSE_m13);
 
 	for (bin = 0; bin < CMP_RED_MAX_STATS_BINS_m13; ++bin) {
 		bin_cnt = cnts[bin];
@@ -30007,17 +30315,23 @@ sf8	CMP_SRRED_estimate_bytes_m13(CPS_m13 *cps, sf8 scale)
 			sorted_residual_cnts[n_residual_stats_entries++] = residual_cnts[j];
 	}
 	
-	// estimate compressed bytes of the scaled + residual streams from the divided counts. The estimate is order-
+	// Estimate compressed bytes of the scaled + residual streams from the divided counts. The estimate is order-
 	// independent, so no sort is needed (the earlier heuristic required a descending sort; dropping the two O(n^2)
 	// bubble sorts also speeds up the per-scale scan considerably).
-	// The two per-stream estimates give only the entropy-coded data + RED stats models. Add the fixed SRRED block
-	// overhead they omit so the score predicts the ACTUAL total block bytes (keeps the estimator honest & documents
-	// every known term). Terms: CMP block header + variable region [model_region - bh] + SRRED model header + the two
-	// RED sub-block model headers + two sets of initial derivative values (n_derivs si4 each: scaled & residual streams).
-	// The header is scale-constant (so it doesn't move the scale argmin), but the n_derivs term correctly makes the
-	// derivative-level ranking account for the initial-value cost. (The range coder's overhead above the entropy bound -
-	// count-quantization + flush - is folded into CMP_RED_estimate_bytes_m13 itself via CMP_RED_CODER_OVERHEAD_m13, so it
-	// applies here x2 automatically & consistently with the RED/PRED estimators.)
+	//
+	// ⭐ EACH SUB-STREAM IS PRICED AS min(RED, MBE), not as RED alone (Matt, 2026-08-02). SRRED does not encode its
+	// sub-streams itself - it hands each to CMP_RED2_encode_m13(), which makes its OWN estimate-vs-MBE decision and
+	// will divert to MBE whenever MBE is smaller. Pricing both streams as RED therefore predicted a block the encoder
+	// would not produce, and it was wrong in exactly the regime where the diversion fires: on incompressible input the
+	// scale search would win on a RED-priced score, both sub-encodes would then divert, and the block came out as
+	// "SRRED header + 2 x MBE" - 31,832 bytes measured where a plain MBE block was 15,936, i.e. an SRRED block twice
+	// the size of not using SRRED at all. With the MBE alternative priced in, that block now scores ~2x MBE, loses to
+	// the unscaled baseline, and never takes the SRRED path.
+	//
+	// MBE is EXACT (fixed bits/sample from the stream's range), so no estimator overhead applies to it. Each stream's
+	// extrema were accumulated in the two loops above at O(1) per value - no extra pass. A sub-stream is always in the
+	// derivative domain, so the raw-vs-derivative choice CMP_MBE_estimate_bytes_m13() makes at block level does not
+	// arise here; the shared per-block header is added once, below, not per stream.
 	score = CMP_RED_estimate_bytes_m13(sorted_scaled_cnts, (si8) n_scaled_stats_entries)
 		+ CMP_RED_estimate_bytes_m13(sorted_residual_cnts, (si8) n_residual_stats_entries)
 		+ (sf8) ((si8) (cps->params.model_region - (ui1 *) cps->block_header)
@@ -30366,7 +30680,7 @@ tern    CMP_SSE_encode_m13(CPS_m13 *cps)
 				MBE_header->derivative_level = n_derivs;
 			}
 			MBE_header->bits_per_sample = bits_per_samp;
-			MBE_header->flags = CMP_MBE_FLAGS_PREPROCESSED_MASK_m13;
+			cps->params.MBE_preprocessed = TRUE_m13;  // handoff via CPS, not the never-zeroed block buffer
 			
 			return_m13(CMP_MBE_encode_m13(cps));
 		}
@@ -30398,9 +30712,14 @@ tern	CMP_swap_RED_PRED_m13(CPS_m13 *cps, tern RED_to_PRED)
 	// CMP_RED_PRED_SWAP_m13 == UNKNOWN_m13
 
 	// determine current state of buffers
+	// PRED_base_count is NULL for a CPS allocated for RED1/RED2 - those get flat (1D) count buffers by design
+	// (CMP_allocate_CPS_m13 ~22113) - so the dereference below must be guarded, as it already is for the
+	// RED->PRED direction further down. Such a CPS is simply already in RED state: it falls to the "count is
+	// allocated" branch. Reachable from CMP_get_counts_m13(), which calls this unconditionally, so a RED2 encode
+	// with the FIND_DERIVATIVE_LEVEL directive set used to SIGSEGV here.
 	if (cps->params.count == cps->params.PRED_base_count) {
 		RED_current = FALSE_m13;
-	} else if (cps->params.count == *((void **) cps->params.PRED_base_count)) {
+	} else if (cps->params.PRED_base_count != NULL && cps->params.count == *((void **) cps->params.PRED_base_count)) {
 		RED_current = TRUE_m13;
 	} else if (cps->params.count) {
 		RED_current = TRUE_m13;
@@ -30943,6 +31262,8 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	ui1				*VDS_model_region, *VDS_amplitude_model_region, *VDS_time_model_region;
 	ui4				VDS_n_samples, VDS_total_header_bytes;
 	ui4				VDS_total_block_bytes, algorithm;
+	ui1				saved_goal_deriv_level;
+	ui8				saved_deriv_flags;
 	si4				*si4_p, rounds, maximum_rounds;
 	sf4				*sf4_p;
 	si8				i, j, k, new_in_len, block_samps, poles, pad_samps, in_len, offset;
@@ -31373,7 +31694,14 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 			CMP_return_buffers_m13(cps->params.VDS_output_buffers);
 			cps->params.VDS_input_buffers = cps->params.VDS_output_buffers = NULL;
 		}
+		// swap the algorithm directive for the sub-encode: CMP_differentiate_m13() refuses to run under a VDS
+		// directive, & it is now reached because FIND_DERIVATIVE_LEVEL defaults on (see the amplitude encode below).
+		// Restored afterwards - the CPS is reused for the next block, which must still be VDS.
+		cps->direcs.flags &= ~CPS_DF_ALGORITHM_MASK_m13;
+		cps->direcs.flags |= CPS_DF_PRED2_ALGORITHM_m13;
 		CMP_PRED2_encode_m13(cps);
+		cps->direcs.flags &= ~CPS_DF_ALGORITHM_MASK_m13;
+		cps->direcs.flags |= CPS_DF_VDS_ALGORITHM_m13;
 		return_m13(TRUE_m13);
 	}
 
@@ -31419,7 +31747,29 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	bh->number_of_samples = VDS_n_samples;
 	VDS_amplitude_model_region = (ui1 *) bh + VDS_total_block_bytes;
 	cps->params.model_region = VDS_amplitude_model_region;
+	// A VDS block's amplitude & time sub-blocks are ordinary PRED/RED streams & must be encoded under the
+	// SUB-ENCODER's algorithm directive, not VDS's - CMP_differentiate_m13() errors out ("VDS is not designed to
+	// work with derivatives") the moment it takes the FIND path under a VDS directive. That was unreachable while
+	// FIND_DERIVATIVE_LEVEL defaulted off; it became reachable on 2026-08-02 when that default flipped to TRUE,
+	// which broke VDS outright. SRRED has always swapped its directive around sub-encodes for the same reason.
+	//
+	// Both sub-blocks are also PINNED AT DERIVATIVE LEVEL 1 (Matt, 2026-08-02). VDS anchors are a sparse,
+	// irregularly-spaced subset of the signal: consecutive anchors are not adjacent samples, so second- and
+	// higher-order differences carry no real correlation - in amplitude OR in time. Letting the search run here
+	// measured +0.36% on x.si4 (826,912 -> 829,880 B), the small-block regime where each extra level's raw si4
+	// anchor costs more than the level saves. Must be explicit now that FIND_DERIVATIVE_LEVEL defaults on.
+	// (The two PRED redirects above are NOT pinned - those encode the real sample stream, where the search belongs.)
+	saved_deriv_flags = cps->direcs.flags & (CPS_DF_FIND_DERIVATIVE_LEVEL_m13 | CPS_DF_SET_DERIVATIVE_LEVEL_m13);
+	saved_goal_deriv_level = cps->params.goal_derivative_level;
+	cps->direcs.flags &= ~CPS_DF_FIND_DERIVATIVE_LEVEL_m13;
+	cps->direcs.flags |= CPS_DF_SET_DERIVATIVE_LEVEL_m13;
+	cps->params.goal_derivative_level = 1;
+
+	cps->direcs.flags &= ~CPS_DF_ALGORITHM_MASK_m13;
+	cps->direcs.flags |= CPS_DF_PRED2_ALGORITHM_m13;
 	CMP_PRED2_encode_m13(cps); // start with PRED2 for amplitude - may fall through
+	cps->direcs.flags &= ~CPS_DF_ALGORITHM_MASK_m13;
+	cps->direcs.flags |= CPS_DF_VDS_ALGORITHM_m13;
 	VDS_header->amplitude_block_total_bytes = bh->total_block_bytes - VDS_total_block_bytes;
 	VDS_header->amplitude_block_model_bytes = bh->model_region_bytes;
 	VDS_total_block_bytes = bh->total_block_bytes;
@@ -31445,7 +31795,20 @@ tern	CMP_VDS_encode_m13(CPS_m13 *cps)
 	
 	VDS_time_model_region = (ui1 *) bh + VDS_total_block_bytes;
 	cps->params.model_region = VDS_time_model_region;
+	// Times are strictly increasing by construction, so promise RED the positive-derivative model: range 1..255
+	// instead of -127..127 doubles the overflow ceiling, and VDS time gaps are routinely large enough for that to
+	// decide whether a gap costs one symbol or a keysample flag + 2-4 raw bytes. This is the ONLY caller entitled
+	// to the directive (see CPS_DF_POSITIVE_DERIVATIVES_m13); cleared again below so it cannot leak to amplitudes.
+	cps->direcs.flags |= CPS_DF_POSITIVE_DERIVATIVES_m13;
+	cps->direcs.flags &= ~CPS_DF_ALGORITHM_MASK_m13;  // sub-encode under RED2, not VDS (see the amplitude encode above)
+	cps->direcs.flags |= CPS_DF_RED2_ALGORITHM_m13;
 	CMP_RED2_encode_m13(cps); // start with RED2 for times - may fall through
+	cps->direcs.flags &= ~(CPS_DF_POSITIVE_DERIVATIVES_m13 | CPS_DF_ALGORITHM_MASK_m13);
+	cps->direcs.flags |= CPS_DF_VDS_ALGORITHM_m13;
+	// restore the caller's derivative-level directives (pinned to 1 for both sub-blocks above)
+	cps->direcs.flags &= ~(CPS_DF_FIND_DERIVATIVE_LEVEL_m13 | CPS_DF_SET_DERIVATIVE_LEVEL_m13);
+	cps->direcs.flags |= saved_deriv_flags;
+	cps->params.goal_derivative_level = saved_goal_deriv_level;
 	VDS_header->time_block_model_bytes = bh->model_region_bytes;
 	VDS_header->flags &= ~CMP_VDS_TIME_ALGORITHMS_MASK_m13;
 	algorithm = bh->block_flags & CMP_BF_ALGORITHMS_MASK_m13;
@@ -47978,10 +48341,10 @@ void	PSTR_set_counts_m13(pstr *ps)  // set bytes & chars from string content (si
 si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_ptr, si1 *field_value_str, sf8 *float_val, si8 *int_val, tern *TERN_val)
 {
 	tern  option_selected, free_field_value_str, local_TERN_val, options_only;
-	si1 *c, tmp_str[256], *temp_si1_ptr, *field_title_ptr;
-	si1 *type_ptr, type_str[256];
-	si1 *options_ptr, options_str[256];
-	si1 *default_value_ptr, default_value_str[256];
+	si1 *c, tmp_str[RC_STRING_BYTES_m13], *temp_si1_ptr, *field_title_ptr;
+	si1 *type_ptr, type_str[RC_STRING_BYTES_m13];
+	si1 *options_ptr, options_str[RC_STRING_BYTES_m13];
+	si1 *default_value_ptr, default_value_str[RC_STRING_BYTES_m13];
 	si1 *field_value_ptr;
 	si4 type, option_number;
 	si8 item, default_item, local_int_val;
@@ -47994,11 +48357,16 @@ si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_pt
 	// If update_buffer_ptr == TRUE_m13, caller can use it to progress serially through the RC file instead of starting at beginning each time.
 	// Requires that caller knows that order of entries will stay the same. It is more efficient, but less flexible.
 	// IMPORTANT: Caller responsible for saving a copy of *buffer for freeing, if it will be modified.
-	
+	// SIZE CONTRACT (same as RC_read_field_2_m13()): field_value_str is written with no size argument, so the caller MUST
+	// supply an RC_STRING_BYTES_m13 byte block. Rather than add a size parameter to this function & every call site, the
+	// value is bounded here instead: all reads use RC_LINE_FMT_m13 / RC_OPTION_FMT_m13, whose width is RC_STRING_CHARS_m13,
+	// so at most RC_STRING_CHARS_m13 characters + a terminal NUL are ever written. Values longer than that are TRUNCATED -
+	// which is why the field is bounded rather than rejected: the rc value is user enterable, so no smaller preset fits.
+
 	// setup
 	free_field_value_str = FALSE_m13;
 	if (field_value_str == NULL) {  // need this string regardless of types
-		field_value_str = (si1 *) malloc((size_t) 256);
+		field_value_str = (si1 *) malloc((size_t) RC_STRING_BYTES_m13);
 		if (field_value_str == NULL) {
 			G_set_error_m13(E_ALLOC_m13, NULL);
 			return_m13(RC_ERR_m13);
@@ -48031,7 +48399,7 @@ si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_pt
 	}
 	while (*type_ptr == (si1) 32)  // space
 		++type_ptr;
-	item = sscanf(type_ptr, "%255[^\r\n]", type_str);
+	item = sscanf(type_ptr, RC_LINE_FMT_m13, type_str);
 	if (item) {
 		temp_si1_ptr = type_str + strlen(type_str);
 		while (--temp_si1_ptr >= type_str && *temp_si1_ptr == (si1) 32);  // space
@@ -48073,7 +48441,7 @@ si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_pt
 	}
 	while (*options_ptr == (si1) 32)  // space
 		++options_ptr;
-	item = sscanf(options_ptr, "%255[^\r\n]", options_str);
+	item = sscanf(options_ptr, RC_LINE_FMT_m13, options_str);
 	if (item) {
 		temp_si1_ptr = options_str + strlen(options_str);
 		while (--temp_si1_ptr >= options_str && *temp_si1_ptr == (si1) 32);  // space
@@ -48089,7 +48457,7 @@ si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_pt
 	while (*default_value_ptr == (si1) 32)  // space
 		++default_value_ptr;
 	
-	default_item = sscanf(default_value_ptr, "%255[^\r\n]", default_value_str);
+	default_item = sscanf(default_value_ptr, RC_LINE_FMT_m13, default_value_str);
 	if (default_item) {
 		temp_si1_ptr = default_value_str + strlen(default_value_str);
 		while (--temp_si1_ptr >= default_value_str && *temp_si1_ptr == (si1) 32);  // space
@@ -48104,7 +48472,7 @@ si4	RC_read_field_m13(const si1 *field_name, si1 **buffer, tern update_buffer_pt
 	}
 	while (*field_value_ptr == (si1) 32)  // space
 		++field_value_ptr;
-	item = sscanf(field_value_ptr, "%255[^\r\n]", field_value_str);
+	item = sscanf(field_value_ptr, RC_LINE_FMT_m13, field_value_str);
 	if (update_buffer_ptr == TRUE_m13)
 		*buffer = field_value_ptr + strlen(field_value_str);  // advance past this field's value in the rc buffer (serial reads)
 	if (item) {
@@ -48133,11 +48501,19 @@ READ_RC_HANDLE_DEFAULT_m13:
 			printf_m13("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter an option: ", field_name, options_str, default_value_str);
 		else
 			printf_m13("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter a value: ", field_name, options_str, default_value_str);
-		item = scanf("%255[^\r\n]", field_value_str); fgetc(stdin); putchar_m13('\n');
-		if (item) {
+		// scanf() stops after RC_STRING_CHARS_m13 characters, so an over-long entry leaves its tail (& the newline) sitting
+		// in stdin, where the NEXT field's scanf() would consume it as that field's value. Drain the rest of the line.
+		// (The old single fgetc() ate one character, which was the newline only when the entry fit.)
+		item = scanf(RC_LINE_FMT_m13, field_value_str);
+		{ si4 ch; while ((ch = fgetc(stdin)) != '\n' && ch != EOF); }
+		putchar_m13('\n');
+		if (item > 0) {
 			temp_si1_ptr = field_value_str + strlen(field_value_str);
 			while (--temp_si1_ptr >= field_value_str && *temp_si1_ptr == (si1) 32);  // space
 			*++temp_si1_ptr = 0;
+		} else {  // bare Enter (or EOF): matched nothing, so field_value_str still holds "PROMPT" - take the DEFAULT the
+			strcpy(field_value_str, "DEFAULT");  // prompt just displayed, rather than passing "PROMPT" through as the value
+			goto READ_RC_HANDLE_DEFAULT_m13;
 		}
 	}
 
@@ -48162,7 +48538,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 			if (*options_ptr == 0)
 				break;
 			++option_number;
-			item = sscanf(options_ptr, "%255[^,\r\n]", tmp_str);
+			item = sscanf(options_ptr, RC_OPTION_FMT_m13, tmp_str);
 			if (item) {
 				if (strcmp_m13(tmp_str, field_value_str) == 0) {
 					option_selected = option_number;
@@ -48323,7 +48699,7 @@ si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_
 	}
 	while (*type_ptr == (si1) 32)  // space
 		++type_ptr;
-	item = sscanf(type_ptr, "%255[^\r\n]", type_str);
+	item = sscanf(type_ptr, RC_LINE_FMT_m13, type_str);
 	if (item) {
 		temp_si1_ptr = type_str + strlen(type_str);
 		while (--temp_si1_ptr >= type_str && *temp_si1_ptr == (si1) 32);  // space
@@ -48389,7 +48765,7 @@ si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_
 	}
 	while (*options_ptr == (si1) 32)  // space
 		++options_ptr;
-	item = sscanf(options_ptr, "%255[^\r\n]", options_str);
+	item = sscanf(options_ptr, RC_LINE_FMT_m13, options_str);
 	if (item) {
 		temp_si1_ptr = options_str + strlen(options_str);
 		while (--temp_si1_ptr >= options_str && *temp_si1_ptr == (si1) 32);  // space
@@ -48405,7 +48781,7 @@ si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_
 	while (*default_value_ptr == (si1) 32)  // space
 		++default_value_ptr;
 	
-	default_item = sscanf(default_value_ptr, "%255[^\r\n]", default_value_str);
+	default_item = sscanf(default_value_ptr, RC_LINE_FMT_m13, default_value_str);
 	if (default_item) {
 		temp_si1_ptr = default_value_str + strlen(default_value_str);
 		while (--temp_si1_ptr >= default_value_str && *temp_si1_ptr == (si1) 32);  // space
@@ -48420,7 +48796,7 @@ si4	RC_read_field_2_m13(const si1 *field_name, si1 **buffer, tern update_buffer_
 	}
 	while (*field_value_ptr == (si1) 32)  // space
 		++field_value_ptr;
-	item = sscanf(field_value_ptr, "%255[^\r\n]", str_val);
+	item = sscanf(field_value_ptr, RC_LINE_FMT_m13, str_val);
 	if (update_buffer_ptr == TRUE_m13)
 		*buffer = field_value_ptr + strlen(str_val);  // advance past this field's value in the rc buffer (serial reads)
 	if (item) {
@@ -48449,11 +48825,19 @@ READ_RC_HANDLE_DEFAULT_m13:
 			printf_m13("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter an option: ", field_name, options_str, default_value_str);
 		else
 			printf_m13("RC FIELD: \033[31m%s\033[0m\nOPTIONS: \033[31m%s\033[0m\nDEFAULT: \033[31m%s\033[0m\nEnter a value: ", field_name, options_str, default_value_str);
-		item = scanf("%255[^\r\n]", str_val); fgetc(stdin); putchar_m13('\n');
-		if (item) {
+		// scanf() stops after RC_STRING_CHARS_m13 characters, so an over-long entry leaves its tail (& the newline) sitting
+		// in stdin, where the NEXT field's scanf() would consume it as that field's value. Drain the rest of the line.
+		// (The old single fgetc() ate one character, which was the newline only when the entry fit.)
+		item = scanf(RC_LINE_FMT_m13, str_val);
+		{ si4 ch; while ((ch = fgetc(stdin)) != '\n' && ch != EOF); }
+		putchar_m13('\n');
+		if (item > 0) {
 			temp_si1_ptr = str_val + strlen(str_val);
 			while (--temp_si1_ptr >= str_val && *temp_si1_ptr == (si1) 32);  // space
 			*++temp_si1_ptr = 0;
+		} else {  // bare Enter (or EOF): matched nothing, so str_val still holds "PROMPT" - take the DEFAULT the prompt
+			strcpy(str_val, "DEFAULT");  // just displayed, rather than passing "PROMPT" through as the value
+			goto READ_RC_HANDLE_DEFAULT_m13;
 		}
 	}
 
@@ -48478,7 +48862,7 @@ READ_RC_HANDLE_DEFAULT_m13:
 			if (*options_ptr == 0)
 				break;
 			++option_number;
-			item = sscanf(options_ptr, "%255[^,\r\n]", tmp_str);
+			item = sscanf(options_ptr, RC_OPTION_FMT_m13, tmp_str);
 			if (item) {
 				if (strcmp_m13(tmp_str, str_val) == 0) {
 					option_selected = option_number;
@@ -54888,7 +55272,7 @@ void	**calloc_2D_m13(size_t dim1, size_t dim2, si8 el_size)  // (el_size negativ
 	ptr = (void **) AT_calloc_m13(function, line, total_bytes, sizeof(ui1));
 #else
 	#ifdef MATLAB_PERSISTENT_m13
-	if (ptr = (void **) mxCalloc(total_bytes, sizeof(ui1)))
+	if ((ptr = (void **) mxCalloc(total_bytes, sizeof(ui1))))
 		mexMakeMemoryPersistent(ptr);
 	#else
 	ptr = (void **) calloc(total_bytes, sizeof(ui1));
@@ -55033,10 +55417,10 @@ static si4	cp_recursive_m13(const si1 *src, const si1 *dst)
 #endif
 
 
-tern	cp_exec_m13(const si1 *path, const si1 *new_path, ...)  // varargs: optional const si1 *option ("-R"), NULL (use cp_m13() macro - it NULL-terminates)
+tern	cp_m13(const si1 *arg1, const si1 *arg2, ...)  // "-R" (or "-r") comes FIRST, as in the shell: cp_m13("-R", src, tgt)
 {
 	tern		recursive;
-	const si1	*opt, *base;
+	const si1	*path, *new_path, *base;
 	si1		tmp_path[PATH_BYTES_m13], tmp_new_path[PATH_BYTES_m13];
 	si1		tgt_path[PATH_BYTES_m13], parent[PATH_BYTES_m13], *c;
 	si1		command[(PATH_BYTES_m13 * 4) + 32];  // escaped paths can double in length
@@ -55049,22 +55433,42 @@ tern	cp_exec_m13(const si1 *path, const si1 *new_path, ...)  // varargs: optiona
 
 	// Unix cp parallel. Returns TRUE_m13 on success, FALSE_m13 on failure, UNKNOWN_m13 if "path" does not exist.
 	// cp_m13(src, tgt): copy file (tgt an existing directory => copy into it, as cp)
-	// cp_m13(src, tgt, "-R"): recursive - src may be a directory (as cp -R; merges into an existing target directory)
+	// cp_m13("-R", src, tgt): recursive - src may be a directory (as cp -R; merges into an existing target directory)
 	// missing target path components are created, but never by clobbering an existing file (that errors, with
 	// nothing created); a file never overwrites a directory & a directory never overwrites a file (errors);
 	// a file copied onto an existing file overwrites it, as cp
 	// wildcards in either path (see STR_contains_regex_m13()) are handed to the shell via system_pipe_m13()
+	//
+	// The option leads, as it does in the shell, & that is also what lets this be a plain function: a vararg may only be
+	// read once it is known to have been passed, so a TRAILING option needs a NULL sentinel to mark its presence - which
+	// is why this used to be cp_exec_m13() behind a sentinel-appending cp_m13() macro. Leading, the always-present first
+	// parameter decides, & the sentinel & macro are unnecessary. Two named parameters keep it to at most one vararg.
+	// A LEADING '-' marks an option, as in the shell - so an unrecognized option is caught rather than silently taken
+	// as a path, & conversely a path that begins with '-' must be written "./-name" (also as in the shell). The option
+	// is matched before G_full_path_m13(), so "./-R" resolves normally.
 
 	// option
+	if (arg1 == NULL) {
+		G_set_error_m13(E_GEN_m13, "NULL path passed");
+		return_m13(FALSE_m13);
+	}
+
 	recursive = FALSE_m13;
-	va_start(v_args, new_path);
-	opt = va_arg(v_args, const si1 *);
-	va_end(v_args);
-	if (opt != NULL) {
-		if (strcmp(opt, "-R") == 0 || strcmp(opt, "-r") == 0) {
+	path = arg1;
+	new_path = arg2;
+	if (*arg1 == '-') {  // an option, not a path
+		if (strcmp(arg1, "-R") == 0 || strcmp(arg1, "-r") == 0) {
 			recursive = TRUE_m13;
 		} else {
-			G_set_error_m13(E_GEN_m13, "unknown option \"%s\"", opt);
+			G_set_error_m13(E_GEN_m13, "unknown option \"%s\"", arg1);
+			return_m13(FALSE_m13);
+		}
+		path = arg2;
+		va_start(v_args, arg2);
+		new_path = va_arg(v_args, const si1 *);
+		va_end(v_args);
+		if (new_path == NULL) {  // best effort: catches "cp_m13(\"-R\", src)" where the ABI happens to zero the slot
+			G_set_error_m13(E_GEN_m13, "no target path passed with option \"%s\"", arg1);
 			return_m13(FALSE_m13);
 		}
 	}
@@ -58377,7 +58781,7 @@ void	**malloc_2D_m13(size_t dim1, si8 dim2_bytes)  // (dim2_bytes negative): lev
 	G_pop_behavior_m13();
 #else
 	#ifdef MATLAB_PERSISTENT_m13
-	if (ptr = (void **) mxMalloc(total_bytes))
+	if ((ptr = (void **) mxMalloc(total_bytes)))
 		mexMakeMemoryPersistent(ptr);
 	#else
 	ptr = (void **) malloc(total_bytes);
@@ -59148,7 +59552,7 @@ tern	mv_m13(const si1 *path, const si1 *new_path)
 		G_set_error_m13(E_GEN_m13, "could not move \"%s\" to \"%s\"", path, tgt_path);
 		return_m13(FALSE_m13);
 	}
-	if (rm_m13(path, "-R") == FALSE_m13) {  // copy succeeded - data is safe (duplicated), but the move is incomplete (source may be a directory tree)
+	if (rm_m13("-R", path) == FALSE_m13) {  // copy succeeded - data is safe (duplicated), but the move is incomplete (source may be a directory tree)
 		G_set_error_m13(E_GEN_m13, "moved \"%s\" to \"%s\", but could not remove the source", path, tgt_path);
 		return_m13(FALSE_m13);
 	}
@@ -60102,20 +60506,15 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 
 
 #if defined MACOS_m13 || defined LINUX_m13
-static si4	rm_recursive_m13(const si1 *path);  // defined below rm_exec_m13()
+static si4	rm_recursive_m13(const si1 *path);  // defined below rm_m13()
 #endif
+static tern	rm_path_m13(const si1 *path, tern recursive);  // the work; rm_m13() is just the option parser
 
-tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option ("-R"), NULL (use rm_m13() macro - it NULL-terminates)
+tern	rm_m13(const si1 *arg1, ...)  // "-R" (or "-r") comes FIRST, as in the shell: rm_m13("-R", path)
 {
 	tern		recursive;
-	const si1	*opt;
-	si1		tmp_path[PATH_BYTES_m13], **file_list, dir[PATH_BYTES_m13], name[MAX_NAME_BYTES_m13], ext[8];
-	si4		i, fe, n_files;
+	const si1	*path;
 	va_list		v_args;
-#ifdef WINDOWS_m13
-	si1	command[PATH_BYTES_m13 + 16];
-	si4	r_val;
-#endif
 
 #ifdef FT_DEBUG_m13
 	G_push_function_m13();
@@ -60123,21 +60522,51 @@ tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option (
 
 	// Unix rm/rmdir parallel. Returns TRUE_m13 on success, FALSE_m13 on failure, UNKNOWN_m13 if "path" does not exist.
 	// rm_m13(path): remove a file, or an EMPTY directory (as rmdir); a NON-empty directory warns, sets error, & removes nothing
-	// rm_m13(path, "-R"): recursive - remove a directory tree, including the "path" directory itself (as rm -R)
+	// rm_m13("-R", path): recursive - remove a directory tree, including the "path" directory itself (as rm -R)
+	//
+	// The option leads, as it does in the shell, & that is also what lets this be a plain function: a vararg may only be
+	// read once it is known to have been passed, so a TRAILING option needs a NULL sentinel to mark its presence - which
+	// is why this used to be rm_exec_m13() behind a sentinel-appending rm_m13() macro. Leading, the always-present first
+	// parameter decides, & the sentinel & macro are unnecessary.
+	// A LEADING '-' marks an option, as in the shell - so an unrecognized option is caught rather than silently taken
+	// as a path, & conversely a path that begins with '-' must be written "./-name" (also as in the shell). The option
+	// is matched before G_full_path_m13(), so "./-R" resolves normally.
 
-	// option
+	if (arg1 == NULL) {
+		G_set_error_m13(E_GEN_m13, "NULL path passed");
+		return_m13(FALSE_m13);
+	}
+
 	recursive = FALSE_m13;
-	va_start(v_args, path);
-	opt = va_arg(v_args, const si1 *);
-	va_end(v_args);
-	if (opt != NULL) {
-		if (strcmp(opt, "-R") == 0 || strcmp(opt, "-r") == 0) {
+	path = arg1;
+	if (*arg1 == '-') {  // an option, not a path
+		if (strcmp(arg1, "-R") == 0 || strcmp(arg1, "-r") == 0) {
 			recursive = TRUE_m13;
 		} else {
-			G_set_error_m13(E_GEN_m13, "unknown option \"%s\"", opt);
+			G_set_error_m13(E_GEN_m13, "unknown option \"%s\"", arg1);
+			return_m13(FALSE_m13);
+		}
+		va_start(v_args, arg1);
+		path = va_arg(v_args, const si1 *);
+		va_end(v_args);
+		if (path == NULL) {  // best effort: catches "rm_m13(\"-R\")" where the ABI happens to zero the slot
+			G_set_error_m13(E_GEN_m13, "no path passed with option \"%s\"", arg1);
 			return_m13(FALSE_m13);
 		}
 	}
+
+	return_m13(rm_path_m13(path, recursive));
+}
+
+
+static tern	rm_path_m13(const si1 *path, tern recursive)
+{
+	si1		tmp_path[PATH_BYTES_m13], **file_list, dir[PATH_BYTES_m13], name[MAX_NAME_BYTES_m13], ext[8];
+	si4		i, fe, n_files;
+#ifdef WINDOWS_m13
+	si1	command[PATH_BYTES_m13 + 16];
+	si4	r_val;
+#endif
 
 	// condition path
 	G_full_path_m13(path, tmp_path);
@@ -60150,13 +60579,13 @@ tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option (
 		file_list = G_file_list_m13(NULL, &n_files, dir, name, ext, GFL_FULL_PATH_m13);
 
 		for (i = 0; i < n_files; ++i)
-			if (rm_exec_m13(file_list[i], opt, NULL) == FALSE_m13)  // recursion (option propagates to each match)
+			if (rm_path_m13(file_list[i], recursive) == FALSE_m13)  // recursion (option propagates to each match)
 				ret = FALSE_m13;
 
 		if (n_files)
 			free_m13(file_list);
 
-		return_m13(ret);
+		return(ret);
 	}
 
 	fe = G_exists_m13(path);
@@ -60164,18 +60593,18 @@ tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option (
 	if (fe == FILE_EXISTS_m13) {
 		if (remove(path)) {
 			G_set_error_m13(E_GEN_m13, "could not remove file \"%s\"", path);
-			return_m13(FALSE_m13);
+			return(FALSE_m13);
 		}
-		return_m13(TRUE_m13);
+		return(TRUE_m13);
 	} else if (fe == DIR_EXISTS_m13) {
 		// empty directory: plain rmdir covers it, "-R" or not (fails with ENOTEMPTY if not empty)
 		#if defined MACOS_m13 || defined LINUX_m13
 		if (rmdir(path) == 0)
-			return_m13(TRUE_m13);
+			return(TRUE_m13);
 		#endif
 		#ifdef WINDOWS_m13
 		if (_rmdir(path) == 0)
-			return_m13(TRUE_m13);
+			return(TRUE_m13);
 		#endif
 		if (recursive == FALSE_m13) {
 			if (errno == ENOTEMPTY || errno == EEXIST) {  // EEXIST: ENOTEMPTY alias on some systems
@@ -60184,12 +60613,12 @@ tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option (
 			} else {
 				G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
 			}
-			return_m13(FALSE_m13);
+			return(FALSE_m13);
 		}
 		#if defined MACOS_m13 || defined LINUX_m13
 		if (rm_recursive_m13(path) != 0) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
-			return_m13(FALSE_m13);
+			return(FALSE_m13);
 		}
 		#endif
 		#ifdef WINDOWS_m13
@@ -60197,13 +60626,13 @@ tern	rm_exec_m13(const si1 *path, ...)  // varargs: optional const si1 *option (
 		r_val = system_m13(NULL, command, TRUE_m13, RETURN_QUIETLY_m13);
 		if (r_val) {
 			G_set_error_m13(E_GEN_m13, "could not remove directory \"%s\"", path);
-			return_m13(FALSE_m13);
+			return(FALSE_m13);
 		}
 		#endif
-		return_m13(TRUE_m13);
+		return(TRUE_m13);
 	}
 
-	return_m13(UNKNOWN_m13);
+	return(UNKNOWN_m13);
 }
 
 

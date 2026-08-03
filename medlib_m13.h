@@ -2048,7 +2048,17 @@ tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes);
 #define RC_TERNARY_TYPE_m13 	4
 #define RC_UNKNOWN_TYPE_m13 	5
 
-#define RC_STRING_BYTES_m13	256
+#define RC_STRING_CHARS_m13	255  // maximum characters in an rc string value, EXCLUDING the terminal NUL
+#define RC_STRING_BYTES_m13	(RC_STRING_CHARS_m13 + 1)  // 256: the buffer size every rc string caller must supply
+
+// A scanf() field width has to sit inside the format string literal, so it cannot be written as arithmetic:
+// stringifying (RC_STRING_BYTES_m13 - 1) yields the literal text "256 - 1", not "255". That is why
+// RC_STRING_CHARS_m13 is the primitive & RC_STRING_BYTES_m13 derives from it. These two formats are the only
+// places the width is spelled, so it cannot drift from the buffer size.
+#define RC_STRINGIFY_HELPER_m13(x)	#x
+#define RC_STRINGIFY_m13(x)		RC_STRINGIFY_HELPER_m13(x)
+#define RC_LINE_FMT_m13			"%" RC_STRINGIFY_m13(RC_STRING_CHARS_m13) "[^\r\n]"   // read to end of line
+#define RC_OPTION_FMT_m13		"%" RC_STRINGIFY_m13(RC_STRING_CHARS_m13) "[^,\r\n]"  // read one comma-delimited option
 
 // RC field-table target types (see the RC field table & writer in medlib_m13.c)
 #define RC_TGT_TERN_m13		1  // target is a tern in the globals
@@ -4291,6 +4301,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_SRRED_SCALE_WINDOW_DEFAULT_m13		((si4) 100) // windowed-tracker half-width in scale steps (0 => full anchor scan every block). Edge-expands if the min lands on a boundary; empirically within +/-0.1% of the full-scan optimum.
 #define CMP_SRRED_SCALE_REFRESH_DEFAULT_m13		((si8) 128) // blocks between forced full-range anchor scans (catches drift/jumps the local window misses)
 #define CMP_SRRED_SCALE_BAILOUT_MULT_DEFAULT_m13	((sf8) 2.5) // anchor-scan early-exit: keep scanning until scale exceeds this x the best-so-far, then bail (0.0 => no bailout, true full scan). 2.5: ~22-25x faster than full scan for <=0.02% size cost, with margin above the loss cliff near 1.5-2.0
+#define CMP_SRRED_SCALE_BAILOUT_SPAN_m13		((sf8) 0.05) // minimum ABSOLUTE span past the best-so-far before bailing: exit = max(mult x scale, scale + span). A multiplicative window alone is very narrow at small scales (2.5 x 0.01 spans just 0.025), so a shallow shelf of local minima at low scale can arm the bailout & exit before the true optimum is ever reached (measured: 0.8% on real data). 0.05 = 2x the largest shelf-to-optimum-basin bridge observed across the 8 development datasets (0.027)
 // preset sets (assign all three fields together):
 #define CMP_SRRED_SCALE_WINDOW_MAX_COMPRESSION_m13		((si4) 0)   // window 0 + bailout 0.0 => an exhaustive full scale scan every block. Estimator-bound, so the log table makes it affordable; spends compute for a bit more ratio.
 #define CMP_SRRED_SCALE_REFRESH_MAX_COMPRESSION_m13		((si8) 1)
@@ -4422,7 +4433,10 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_MBE_MODEL_FLAGS_OFFSET_m13				6 // ui2
 #define CMP_MBE_MODEL_FIXED_HDR_BYTES_m13			8
 // MBE Model Flags
-#define CMP_MBE_FLAGS_PREPROCESSED_MASK_m13		((ui2) 1 << 0) // bit 0 - message to MBE_encode()) it will clear it
+// RETIRED 2026-08-02: this handoff moved to CPS_PARAMS_m13.MBE_preprocessed. It was read out of the block
+// buffer, which is realloc'd & never zeroed, so a stale bit could send MBE down the "already preprocessed"
+// path with garbage lmin/derivative_level/bits_per_sample. Macro kept only for CMP_show_block_m13().
+#define CMP_MBE_FLAGS_PREPROCESSED_MASK_m13		((ui2) 1 << 0) // bit 0 - no longer written
 
 // CMP: VDS (Vectorized Data Stream) Model Offset Constants
 #define CMP_VDS_MODEL_NUMBER_OF_VDS_SAMPLES_OFFSET_m13		0 // ui4
@@ -4522,6 +4536,16 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CPS_DF_NO_ZERO_COUNTS_m13			((ui8) 1 << 17)
 #define CPS_DF_SET_OVERFLOW_BYTES_m13			((ui8) 1 << 18) // user sets value in parameters
 #define CPS_DF_FIND_OVERFLOW_BYTES_m13			((ui8) 1 << 19) // determine overflow bytes on a block by block basis
+// CPS_DF_POSITIVE_DERIVATIVES_m13: caller PROMISES the stream's derivatives are strictly positive, selecting RED's
+// positive-derivative model (range 1..255 with no sign bit, keysample flag 0x00). The win is the OVERFLOW CEILING,
+// not entropy: it doubles from 127 to 255, and an in-range value costs ONE symbol where an overflow costs the flag
+// plus 2-4 raw bytes. That matters for VDS times, whose gaps are often large & which are monotonic BY CONSTRUCTION.
+// 2026-08-02: the encoders used to INFER this from "minimum_difference_value > 0" instead. That was wrong twice
+// over - it made a rarely-taken (so undertested) path fire on ordinary sample data, where a single zero difference
+// anywhere in a block silently turned it off again; and the size estimators model -127..127 unconditionally, so
+// they scored every 128..255 value as an overflow & badly mis-priced exactly the blocks that took the path.
+// It is now selected only by this directive. WARNING: it is a promise, not a hint - the overflow width drops a
+// sign bit, so setting it on a stream that can go negative or flat is a correctness hazard, not just a size loss.
 #define CPS_DF_POSITIVE_DERIVATIVES_m13 		((ui8) 1 << 20)
 #define CPS_DF_SET_DERIVATIVE_LEVEL_m13			((ui8) 1 << 21)	 // user sets level in parameters
 #define CPS_DF_FIND_DERIVATIVE_LEVEL_m13		((ui8) 1 << 22)
@@ -4564,7 +4588,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CPS_DIRECTIVES_SET_OVERFLOW_BYTES_DEFAULT_m13			FALSE_m13 // user sets value in parameters
 #define CPS_DIRECTIVES_FIND_OVERFLOW_BYTES_DEFAULT_m13			TRUE_m13 // determine overflow bytes on a block by block basis
 #define CPS_DIRECTIVES_SET_DERIVATIVE_LEVEL_DEFAULT_m13			FALSE_m13 // user sets level in parameters
-#define CPS_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m13		FALSE_m13
+#define CPS_DIRECTIVES_FIND_DERIVATIVE_LEVEL_DEFAULT_m13		TRUE_m13 // was FALSE while the search was in development; on by default 2026-08-02 (with neither set, CMP_differentiate_m13() just uses level 1)
 #define CPS_DIRECTIVES_CONVERT_TO_NATIVE_UNITS_DEFAULT_m13		TRUE_m13
 // directive defaults (lossy)
 #define CPS_DIRECTIVES_DETREND_DATA_DEFAULT_m13				FALSE_m13
@@ -4613,6 +4637,57 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 #define CMP_RED_RANGE_MASK_m13			((ui8) 0xFFFFFFFFFFFF) // 2^48 - 1
 #define CMP_RED_MAX_STATS_BINS_m13 		256
 #define CMP_RED_CODER_OVERHEAD_m13		((sf8) 1.0015) // CMP_RED_estimate_bytes_m13 multiplies its entropy (coded-data) term by this to recover the range coder's real output above the entropy bound (count-quantization to 65535 + per-stream flush); the exact 3-byte/symbol model term is NOT scaled. Measured RED-body actual/estimate at the encoder's own decision point over 8 sets x all SRRED per-block scales (2890 streams): pooled-median 1.0013, per-set 1.0008-1.0020 (fy 1.013 - small streams where the fixed flush dominates); 1.0015 is central & a hair pessimistic (safely favors exact MBE in ties). Flows to every consumer consistently: RED x1, SRRED x2, PRED x3. Being ~multiplicative it leaves within-algorithm argmins (scale, derivative level) put & sharpens only the vs-MBE(exact) diversion.
+// Multiplier CMP_max_compressed_bytes_m13() applies to the keysample stream (CMP_MAX_KEYSAMPLE_BYTES_m13, the hard
+// input bound) to bound the range coder's output when there is NO MBE diversion to fall back on, i.e. when
+// CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13 is clear. Derived, not guessed, from the coder's own structure:
+//   - the coder's model IS the block's own histogram, so the IDEAL output is <= 1 byte per keysample byte;
+//   - a FULL dump emits 6 bytes but discharges only (6 - log256(range)), wasting up to 2 bytes, and a dump needs
+//     4 bytes of accumulated cost, so the worst case is 1.5x the ideal. (It requires the interval to straddle a
+//     2^40 boundary at essentially every dump - ~2^-24 each in practice, which is why the MEASURED overhead is
+//     ~0.15% - but nothing prevents it.)
+//   - the two >>16 floors can cost a further bit per symbol, a further 1.125x. 1.5 x 1.125 = 1.6875, so 1.7 is
+//     the airtight figure & is what is used: this branch is the rare one (a caller forcing pure RED/PRED for
+//     testing), so buying the PROOF outright is worth the memory, and it is what lets the range-encode loop run
+//     with no per-dump bounds check.
+// For scale: 1.7 x 5 = 8.5 bytes/sample, against a worst MEASURED 4.83 on adversarial input
+// (dev/claude_tests/cmp_bound_test.c) - 76% headroom over anything observable.
+#define CMP_RED_CODER_WORST_CASE_MULT_m13	((sf8) 1.7)
+
+// Cushion added to the MBE-sized branch of CMP_max_compressed_bytes_m13(), covering the amount by which a RED/PRED
+// stream that WINS the biased comparison can still exceed the MBE block the buffer was sized for. Fitted, not
+// guessed: the matched (estimate, actual) pair was captured at the encoder's own decision point over 3087 blocks -
+// real neural data AND adversarial data engineered to sit on the RED-vs-MBE crossover - at block sizes from 1k to
+// 100k samples. The tightest envelope holding every point is
+//         actual <= estimate + 168 bytes
+// with a multiplicative term of EXACTLY ZERO across a 150x range of block sizes. That is structural, not luck: the
+// range coder's flush, the model-header rounding & the 8-byte pad are FIXED-size effects, so the residual does not
+// scale with the block. A proportional cushion would be pure waste - block_samps/4 would be 75 KB per block at the
+// 300k-sample blocks that occur in real recordings, against a real requirement of a few hundred bytes.
+// 1024 is ~6x the worst residual ever observed. Figure: ~/Desktop/SRRED/estimator_ceiling.png.
+// NB this is an EMPIRICAL ceiling. The range coder's pathological worst case (see
+// CMP_RED_CODER_WORST_CASE_MULT_m13) sits far above it & is NOT bounded by this fit - which is why the
+// FALL_THROUGH-clear branch is sized from the derivation instead.
+#define CMP_ESTIMATE_CUSHION_BYTES_m13		((si8) 1024)
+
+// Ceiling on the derivative level CMP_differentiate_m13()'s FIND search will climb to. Level 6 is the highest ever
+// observed on real or development data; each level costs a full raw si4 anchor in the model region, and leaving it
+// uncapped (the field is a ui1) would make the compressed-block bound carry 255 x 4 anchor bytes instead of 32.
+// A caller using SET_DERIVATIVE_LEVEL is not clamped - it is a caller promise - but the sizing function charges
+// the greater of this cap and the caller's goal level.
+#define CMP_MAX_DERIVATIVE_LEVEL_m13		((ui1) 8)
+
+// CMP_RED2/PRED2_encode_m13() multiply their estimated total by this before comparing against the EXACT MBE total,
+// so RED/PRED must beat MBE by more than this margin to run at all.
+// ⚠️ This is a SPEED knob, not a safety one. It used to be load-bearing for buffer safety; it no longer is - the
+// compressed buffer now carries CMP_ESTIMATE_CUSHION_BYTES_m13, which bounds the estimator's error on its own, so
+// RED/PRED could safely run whenever the UNBIASED estimate wins. What the margin still buys:
+//   1) SPEED. MBE encodes & decodes far more cheaply than the range coder, so a near-tie should go to MBE anyway.
+//   2) COST IS NOISE. Measured over x/y/sx/fx x RED2/PRED2/SRRED: 1.005 costs +0.0013%, 1.01 costs +0.006%,
+//      1.02 costs +0.024%, 1.05 costs +0.35%.
+//   3) It keeps the MEASURED regime the OPERATING regime. The cushion was fitted from blocks encoded with this
+//      margin in force, so blocks with est in [mbe/1.01, mbe] never ran RED & are not in that sample. Lowering
+//      this to 1.0 starts encoding exactly that band - re-measure the cushion first if you do.
+#define CMP_MBE_BIAS_m13			((sf8) 1.01)
 #define CMP_PRED_CATS_m13 			3
 #define CMP_PRED_NIL_m13 			0
 #define CMP_PRED_POS_m13 			1
@@ -4624,9 +4699,13 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 
 // Macros
 #define CMP_MAX_KEYSAMPLE_BYTES_m13(block_samps)		( block_samps * 5 ) // full si4 plus 1 keysample flag byte per sample
-// worst-case lossless output is a full-range MBE block: fixed header + MBE model header + 4 bytes/sample (+ 8-byte pad).
-// the MBE model header term (previously omitted) is what makes MBE a provably-fitting fallback for RED2/PRED2 (see the
-// range-encode overflow guard in those encoders) - without it a full-range MBE block overshoots the buffer by a few bytes.
+// ⚠️ SUPERSEDED 2026-08-02 by CMP_max_compressed_bytes_m13(). DO NOT USE IN NEW CODE, and prefer passing zero for
+// compressed_data_bytes so CMP_allocate_CPS_m13() sizes the buffer itself. This macro bounds ONLY a full-range MBE
+// block (fixed header + MBE model header + 4 bytes/sample + 8-byte pad) with no variable region, so it silently
+// under-bounds: any caller using block records / detrend / amplitude or frequency scale (all of which add variable
+// region bytes), RED or PRED with CPS_DF_FALL_THROUGH_TO_BEST_ENCODING_m13 CLEAR (pure RED measured at 4.8
+// bytes/sample), and SRRED or VDS, which pack TWO sub-blocks into one block (measured at ~2x this). Kept only so
+// existing application code still compiles while it migrates.
 #define CMP_MAX_COMPRESSED_BYTES_m13(block_samps, n_blocks)	( ((block_samps * 4) + CMP_BLOCK_FIXED_HDR_BYTES_m13 + CMP_MBE_MODEL_FIXED_HDR_BYTES_m13 + 7) * n_blocks )
 #define CMP_PRED_CAT_m13(x)					( (x) ? (((x) & 0x80) ? CMP_PRED_NEG_m13 : CMP_PRED_POS_m13) : CMP_PRED_NIL_m13 )
 #define CMP_IS_DETRENDED_m13(bh_ptr)				( (bh_ptr->parameter_flags & CMP_PF_INTERCEPT_m13) && (bh_ptr->parameter_flags & CMP_PF_GRADIENT_m13) )
@@ -4965,6 +5044,10 @@ typedef struct {
 	ui1	goal_derivative_level; // used with set_derivative_level directive
 	ui1	derivative_level; // goal/actual pairs because not always possible
 	ui1	goal_overflow_bytes; // used with set_overflow_bytes directive
+	tern	MBE_preprocessed; // RED/PRED -> MBE fallback handoff: the caller has already computed lmin,
+			// derivative_level & bits_per_sample for CMP_MBE_encode_m13(), which consumes & clears this.
+			// Lives in the CPS, NOT in the block buffer: the block buffer is never zeroed, so a header
+			// bit there is a PRE-EXISTING value the encoder must not trust (2026-08-02).
 	ui1	overflow_bytes; // goal/actual pairs because not always possible
 	
 	// block parameters
@@ -4993,6 +5076,7 @@ typedef struct {
 	si8	SRRED_overflow_samples; // number of samples in the overflow buffer
 	sf8	SRRED_scale_center; // scale-search windowed tracker: previous block's optimal scale (< 0.0 => no anchor yet, do a full anchor scan); tracks the optimum block-to-block so most blocks scan only a small window (see CMP_SRRED_find_parameters_m13)
 	si8	SRRED_scale_refresh_ctr; // blocks since the last full anchor scan; forces a periodic re-anchor (params.SRRED_scale_refresh) to catch drift the window missed
+	tern	SRRED_sub_encode; // TRUE only while CMP_SRRED_encode_m13() runs a sub-stream through a sub-encoder. Gates MBE raw mode in CMP_MBE_estimate_bytes_m13(): raw keeps input_buffer, which holds the OUTER block's samples, never the sub-stream => raw would silently encode the wrong data. Whole-block MBE (incl. the scale-search seed & every standalone encoder) keeps raw pricing.
 	si8	n_stats_entries; // number of bins in the counts array (also used in find derivative level)
 
 	// lossy compression parameters
@@ -5016,7 +5100,8 @@ typedef struct {
 	si4			*detrended_buffer; // used if needed in compression, size of decompressed block
 	si4			*scaled_amplitude_buffer; // used if needed in compression, size of decompressed block
 	si4			*scaled_frequency_buffer; // used if needed in compression, size of decompressed block
-	CMP_BUFFERS_m13		*scrap_buffers; // multipurpose
+	CMP_BUFFERS_m13		*scrap_buffers; // multipurpose, CALLER-OWNED scratch (e.g. DHN_Acq). The library no longer
+					// allocates this - it never read it - but CMP_free_CPS_m13() still frees it if set.
 	CMP_BUFFERS_m13		*VDS_input_buffers;
 	CMP_BUFFERS_m13		*VDS_output_buffers;
 	struct FILTPS_m13	**filtps;
@@ -5056,6 +5141,7 @@ CMP_BUFFERS_m13	*CMP_allocate_buffers_m13(CMP_BUFFERS_m13 *buffers, si8 n_buffer
 CMP_BUFFERS_m13	*CMP_checkout_buffers_m13(si8 n_buffers, si8 n_elements, si8 element_size);  // depot: get a locked/aligned bundle of this exact shape
 tern		CMP_return_buffers_m13(CMP_BUFFERS_m13 *buffers);  // depot: release a checked-out bundle
 void		CMP_free_buffer_depot_m13(void);  // depot: free all pooled bundles (teardown)
+si8	CMP_max_compressed_bytes_m13(CPS_m13 *cps, si8 block_samps, si8 n_blocks);
 CPS_m13	*CMP_allocate_CPS_m13(FPS_m13 *fps, ui4 mode, si8 data_samples, si8 compressed_data_bytes, si8 keysample_bytes, ui4 block_samples, CPS_DIRECS_m13 *direcs, CPS_PARAMS_m13 *parameters);
 tern	CMP_binterpolate_sf8_m13(sf8 *in_data, si8 in_len, sf8 *out_data, si8 out_len, ui4 center_mode, tern extrema, sf8 *minima, sf8 *maxima);
 tern	CMP_byte_to_hex_m13(ui1 byte, si1 *hex);
@@ -5068,7 +5154,6 @@ tern	CMP_check_CPS_allocation_m13(FPS_m13 *fps);
 si4	CMP_compare_sf8_m13(const void *a, const void * b);
 si4	CMP_compare_si4_m13(const void *a, const void * b);
 si4	CMP_compare_si8_m13(const void *a, const void * b);
-si4	CMP_count_bins_m13(CPS_m13 *cps, si4 *deriv_buffer, ui1 n_derivs);
 tern	CMP_decode_m13(FPS_m13 *fps);
 tern	CMP_decrypt_m13(FPS_m13 *fps); // single block decrypt (see also decrypt_time_series_data_m13)
 tern	CMP_detrend_m13(si4 *input_buffer, si4 *output_buffer, si8 len, CPS_m13 *cps);
@@ -6629,8 +6714,7 @@ PGresult	*DB_execute_command_m13(PGconn *conn, const si1 *command, si4 *rows, si
 
 si4		asprintf_m13(si1 **target, const si1 *fmt, ...) FMT_ATTR_m13(2, 3);
 size_t		calloc_size_m13(void *address, size_t el_size); // memory allocation size in number of elements
-#define cp_m13(...)	cp_exec_m13(__VA_ARGS__, NULL)  // call with "cp_m13(path, new_path)" or "cp_m13(path, new_path, \"-R\")" prototype (macro NULL-terminates the option list)
-tern		cp_exec_m13(const si1 *path, const si1 *new_path, ...);  // copy (Unix cp parallel; use cp_m13() macro; varargs: optional const si1 *option ("-R" == recursive), NULL)
+tern		cp_m13(const si1 *arg1, const si1 *arg2, ...);  // copy (Unix cp parallel): "cp_m13(src, tgt)" or, recursively, "cp_m13(\"-R\", src, tgt)" - the option LEADS, as in the shell (a trailing option would need a NULL sentinel & therefore a wrapper macro, since a vararg may only be read once known to have been passed)
 si4		errno_m13(void);  // returns platform independent value of errno
 void		errno_reset_m13(void); // zero errno before calling functions that may set it
 void		exit_exec_m13(const si1 *function, const si4 line, si4 status);  // called with exit_m13(si4 status) prototype (preproceesor adds function & line)
@@ -6713,8 +6797,7 @@ ui4		rand32_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less conven
 ui8		rand64_m13(void); // 64-bit random number using system random number generator
 ui8		rand64_med_m13(void); // 64-bit random number using medlib generator (replicable sequences across platforms)
 ui8		rand64_med_wz_m13(volatile ui4 *w, volatile ui4 *z); // faster, less convenient, version of rand64_med_m13()
-#define rm_m13(...)	rm_exec_m13(__VA_ARGS__, NULL)  // call with "rm_m13(path)" or "rm_m13(path, \"-R\")" (macro NULL-terminates the option list)
-tern		rm_exec_m13(const si1 *path, ...);  // remove (Unix rm/rmdir parallel; use rm_m13() macro; varargs: optional const si1 *option ("-R" == recursive), NULL; a non-empty directory is only removed with "-R")
+tern		rm_m13(const si1 *arg1, ...);  // remove (Unix rm/rmdir parallel): "rm_m13(path)" or, recursively, "rm_m13(\"-R\", path)" - the option LEADS, as in the shell (see cp_m13()); a non-empty directory is only removed with "-R"
 si4		scanf_m13(const si1 *fmt, ...);
 si4		sem_init_m13(sem_t_m13 *sem, si4 shared, ui4 init_val);
 sem_t_m13	*sem_open_m13(const si1 *name, si4 o_flags, ...);  // (MacOS only) varargs(o_flags & O_CREAT): mode_t mode (as ui4), ui4 init_val
