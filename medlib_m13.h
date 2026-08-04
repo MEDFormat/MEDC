@@ -103,6 +103,27 @@
 
 #include "targets_m13.h"
 
+// session key cache (SKC) OS backend selection - the ONLY place the platform is tested for this feature.
+// The selected value gates both the Security.framework include below & the implementation blocks in
+// medlib_m13.c, so those two can never drift apart. Defining it HERE (rather than at the end of each
+// implementation block, as it was) also makes the flag independent of where that code sits in the .c.
+// NEVER give a backend the value 0: an undefined macro evaluates to 0 in an #if comparison, so a typo
+// in one of these names would silently read as a match.
+#define SKC_BACKEND_NONE_m13		1	// no OS key store: get/put always miss & callers do the full KDF
+#define SKC_BACKEND_KEYCHAIN_m13	2	// macOS Keychain (opt-in: -DMED_SKC_KEYCHAIN_m13, link -framework Security -framework CoreFoundation)
+#define SKC_BACKEND_CREDMAN_m13		3	// Windows Credential Manager (DPAPI-backed, per-user)
+#define SKC_BACKEND_KEYRING_m13		4	// Linux kernel session keyring
+
+#if defined MACOS_m13 && defined MED_SKC_KEYCHAIN_m13
+	#define SKC_BACKEND_m13		SKC_BACKEND_KEYCHAIN_m13
+#elif defined WINDOWS_m13
+	#define SKC_BACKEND_m13		SKC_BACKEND_CREDMAN_m13
+#elif defined LINUX_m13
+	#define SKC_BACKEND_m13		SKC_BACKEND_KEYRING_m13
+#else
+	#define SKC_BACKEND_m13		SKC_BACKEND_NONE_m13
+#endif
+
 #ifdef WINDOWS_m13
 // the following is necessary to include <winsock2.h> (or can define WIN32_LEAN_AND_MEAN, but excludes a lot of stuff)
 // winsock2.h has to be included before windows.h, but requires WIN32 to be defined, which is usually defined by windows.h
@@ -164,7 +185,7 @@
 	#include <sys/sysctl.h>
 	#include <util.h>
 	#include <mach/thread_act.h>
-	#ifdef MED_SKC_KEYCHAIN_m13
+	#if SKC_BACKEND_m13 == SKC_BACKEND_KEYCHAIN_m13
 		#include <Security/Security.h>  // session key cache OS backend (link: -framework Security -framework CoreFoundation)
 	#endif
 #endif // MACOS_m13
@@ -912,7 +933,7 @@ typedef struct {
 #define GLOBALS_CSIG_REREAD_MAX_GB_DEFAULT_m13			((si8) 16) // dirty-stream fallback: re-read files <= this many GB, skip + warn above (RC field in GB; stored as bytes)
 #define GLOBALS_SESSION_KEY_CACHE_DEFAULT_m13			FALSE_m13 // HIGH-SECURITY default: no derived-key caching (opt-in via "Session Key Cache" RC field)
 #define GLOBALS_SESSION_KEY_CACHE_TIMEOUT_DEFAULT_m13		((si4) 3600) // cached session key lifetime, seconds
-#define GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13		((si4) 7200) // hard cap, clamped in G_session_key_cache_put_m13() (no path can store longer): re-paying one KDF every 2 hours is cheap; a longer-lived cached key is asking for trouble
+#define GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13		((si4) 7200) // hard cap, clamped in SKC_put_m13() (no path can store longer): re-paying one KDF every 2 hours is cheap; a longer-lived cached key is asking for trouble
 #define GLOBALS_INCREASE_PRIORITY_DEFAULT_m13			TRUE_m13
 #define GLOBALS_BACKGROUND_PROCESSING_DEFAULT_m13		FALSE_m13 // SPEED default: distributed jobs run at their requested (typically high) priority; YES runs them below normal so the OS & foreground apps always win contention
 #define GLOBALS_PROC_GLOBS_LIST_SIZE_INCREMENT_m13		1 // number of processes
@@ -1929,11 +1950,19 @@ tern			PAR_wait_all_m13(PAR_INFO_m13 **par_infos, si4 n_infos, const si1 *interv
 #define PRTY_FILE_DAMAGED_IDX_m13	PRTY_FILE_CHECK_IDX_m13  // damaged file in first slot
 
 // Miscellaneous
-#define PRTY_BLOCK_BYTES_DEFAULT_m13	4096 // used in PRTY_CRC_DATA_m13 (must be multiple of 4)
-#define PRTY_PCRC_TAG_m13		((ui8) 0x0123456789ABCDEF) // used in PRTY_CRC_DATA_m13 (note this is same as CMP_BLOCK_START_UID_m13 - mistake but benign in practice)
-#define PRTY_PCRC_EXT_TAG_m13		((ui8) 0xFEDCBA9876543210) // used in PRTY_PCRC_EXT_m13 (distinct from PRTY_PCRC_TAG_m13)
-#define PRTY_PCRC_EXT_VER_MAJOR_m13	((ui1) 1)
-#define PRTY_PCRC_EXT_VER_MINOR_m13	((ui1) 0)
+#define PCRC_BLOCK_BYTES_DEFAULT_m13	4096 // used in PCRC_DATA_m13 (must be multiple of 4)
+#define PCRC_TAG_m13		((ui8) 0x0123456789ABCDEF) // used in PCRC_DATA_m13 (note this is same as CMP_BLOCK_START_UID_m13 - mistake but benign in practice)
+// manifest tag: high 56 bits identify the structure, low 8 bits are its STRUCTURE GENERATION - the tag is the only
+// thing a reader locates independently, so putting the generation here lets it decide whether it can parse the
+// structure at all before trusting any field inside it (version_major/minor cannot validate their own position).
+// base mismatch => no manifest (legacy pcrc data); base match + unknown generation => FAIL CLOSED, never guess.
+// bump the generation when the binary LAYOUT moves; bump version_major when a field's MEANING changes in place.
+#define PRTY_MANIFEST_TAG_BASE_m13	((ui8) 0xFEDCBA9876543200) // high 56 bits (distinct from PCRC_TAG_m13)
+#define PRTY_MANIFEST_TAG_GEN_MASK_m13	((ui8) 0xFF)
+#define PRTY_MANIFEST_TAG_GEN_m13	((ui8) 1) // current structure generation: PRTY_MEMBER_m13 records
+#define PRTY_MANIFEST_TAG_m13		(PRTY_MANIFEST_TAG_BASE_m13 | PRTY_MANIFEST_TAG_GEN_m13)
+#define PRTY_MANIFEST_VER_MAJOR_m13	((ui1) 1)
+#define PRTY_MANIFEST_VER_MINOR_m13	((ui1) 0)
 
 
 // Structures
@@ -1958,6 +1987,13 @@ typedef struct {
 	si4		n_files;
 	si4		n_bad_blocks;
 	PRTY_BLOCK_m13	*bad_blocks;
+	// verify mode (PRTY_verify_m13): compare the computed parity against the parity file ALREADY on disk
+	// instead of writing it, to catch a parity that has drifted out of sync with its members - which
+	// rebuilding from scratch can never detect.  NOTE: PRTY_m13 is stack-allocated & not zeroed by its
+	// users, so any field added here must be set explicitly by every caller.
+	tern		verify;
+	si8		mismatch_bytes;		// verify mode: differing bytes (0 == parity is correct)
+	si8		first_mismatch_offset;	// verify mode: offset of the first differing byte, -1 if none
 } PRTY_m13;
 
 typedef struct {
@@ -1965,72 +2001,103 @@ typedef struct {
 	ui8		session_UID; // present in all parity files (same names - in case misplaced)
 	ui8		segment_UID; // UID_NO_ENTRY_m13 (zero) in parity data that is session level (same names - in case misplaced)
 	ui4		n_blocks; // number of data blocks (& crcs) preceding this structure
-	ui4		block_bytes; // data bytes per block (except probably the last), multiple of 4 bytes (defaults to PRTY_BLOCK_BYTES_DEFAULT_m13)
-} PRTY_CRC_DATA_m13;  // used to add CRCs to files that don't have many (e.g. index files), or any (e.g. video data files)
+	ui4		block_bytes; // data bytes per block (except probably the last), multiple of 4 bytes (defaults to PCRC_BLOCK_BYTES_DEFAULT_m13)
+} PCRC_DATA_m13;  // used to add CRCs to files that don't have many (e.g. index files), or any (e.g. video data files)
 
-// pcrc extension: parity files have no universal headers (their bodies are the xor of their member files), so the extension carries their identity
-// (names alone cannot: all sessions use the same reserved parity names & channel names are commonly reused across unrelated sessions)
+// PARITY MANIFEST: parity files have no universal headers (their bodies are the xor of their member files), so the manifest carries their identity
+// (names alone cannot: all sessions use the same reserved parity names & channel names are commonly reused across unrelated sessions).
+// It is parity-specific & is NOT part of the pcrc facility - pcrc is the general appended-block-CRC mechanism for localizing damage, which
+// parity files, video files & (optionally) index files all use.  The manifest merely LIVES inside the pcrc-covered region; that is placement, not kinship.
 //
-// extension layout, in file order:  [ member file UIDs (8 * n_members, ascending) ] [ PRTY_PCRC_EXT_m13 ]
+// manifest layout, in file order:  [ PRTY_MEMBER_m13 * n_members, ascending by file_UID ] [ PRTY_MANIFEST_m13 ]
 //
-// written between the parity data & the pcrc crcs, & covered by them, so it is transparent to pre-extension readers (which locate everything relative to the file end)
-// everything is located backward from the tag at the end of the structure, so the extension is end-anchored like the pcrc data itself
+// written between the parity data & the pcrc crcs, & covered by them, so it is transparent to pre-manifest readers (which locate everything relative to the file end)
+// everything is located backward from the tag at the end of the structure, so the manifest is end-anchored like the pcrc data itself
 //
-// session_UID & segment_UID are NOT duplicated here: they are carried by PRTY_CRC_DATA_m13 (below).  Those fields are unreliable in
-// legacy files only, & legacy files have no extension - so the presence of a valid extension is what certifies them.  channel_UID has
-// no PRTY_CRC_DATA_m13 field (video parity is paired within a segment, so it needs an associated channel as well), so it lives here.
+// session_UID & segment_UID are NOT duplicated here: they are carried by PCRC_DATA_m13 (below).  Those fields are unreliable in
+// legacy files only, & legacy files have no manifest - so the presence of a valid manifest is what certifies them.  channel_UID has
+// no PCRC_DATA_m13 field (video parity is paired within a segment, so it needs an associated channel as well), so it lives here.
 //
-// legacy pcrc data (m12 & early m13) has no extension: the UID fields of PRTY_CRC_DATA_m13 were never set in those files & are unreliable
+// legacy pcrc data (m12 & early m13) has no manifest: the UID fields of PCRC_DATA_m13 were never set in those files & are unreliable
 //
-// versioning: tag & version fields are end-anchored & never move; fields preceding them may change with version_major
+// versioning: tag & version fields are end-anchored & never move; fields preceding them may change with the tag's structure generation
 typedef struct {
 	ui1	protected_region[2]; // zeros
-	ui1	version_major; // PRTY_PCRC_EXT_VER_MAJOR_m13
-	ui1	version_minor; // PRTY_PCRC_EXT_VER_MINOR_m13
-	ui4	n_members; // number of member file UIDs preceding this structure (8 * n_members bytes)
+	ui1	version_major; // PRTY_MANIFEST_VER_MAJOR_m13
+	ui1	version_minor; // PRTY_MANIFEST_VER_MINOR_m13
+	ui4	n_members; // number of PRTY_MEMBER_m13 records preceding this structure
 	ui8	channel_UID; // channel UID if common to all member files (e.g. video data parity), otherwise UID_NO_ENTRY_m13
-	ui8	tag; // PRTY_PCRC_EXT_TAG_m13 (marker to confirm identity of extension; located backward from start of pcrc crcs)
-} PRTY_PCRC_EXT_m13; // 24 bytes
+	ui8	tag; // PRTY_MANIFEST_TAG_m13 (identity + structure generation; located backward from start of pcrc crcs)
+} PRTY_MANIFEST_m13; // 24 bytes
+
+// One member file's identity & content stamp AS OF THE PARITY BUILD.  A parity file cannot be trusted for repair unless its members
+// still hold the bytes it was built from, & that CANNOT be detected from the parity arithmetic at repair time: with a member missing
+// or damaged there is one equation & one unknown, so the missing member absorbs any inconsistency - a stale parity & a damaged member
+// are indistinguishable.  The check therefore has to be metadata recorded BEFORE the damage, which is what these fields are.
+//
+// lib_mod_time & the CRCs are read straight from each member's universal header, so verifying costs one UH read (1 KiB) per member,
+// not a pass over the data.  That catches every library-mediated divergence (a record appended with update_parity off, a re-key, a
+// version update).  It does NOT catch bytes rotting underneath an unchanged UH - PRTY_validate_m13() & the pcrc block crcs cover that.
+typedef struct {
+	ui8	file_UID; // member file UID (records sorted ascending on this)
+	si8	lib_mod_time; // member's UH lib_mod_time when the parity was built (0 == member unstamped)
+	ui4	header_CRC; // member's UH header_CRC when the parity was built
+	ui4	body_CRC; // member's UH body_CRC when the parity was built (CRC_NO_ENTRY_m13 == not recorded)
+} PRTY_MEMBER_m13; // 24 bytes
 
 // in-memory aggregate of a parity file's full identity: NOT an on-disk layout.  session_UID & segment_UID are read from
-// PRTY_CRC_DATA_m13; channel_UID, version, & the member manifest from the extension.  returned by PRTY_pcrc_ext_m13() &
-// PRTY_set_pcrc_uids_m13() so callers have one object; the fields are written to / read from disk separately (see above).
+// PCRC_DATA_m13; channel_UID, version, & the member manifest from the extension.  returned by PRTY_manifest_m13() &
+// PRTY_set_manifest_m13() so callers have one object; the fields are written to / read from disk separately (see above).
 typedef struct {
-	ui8	session_UID; // from PRTY_CRC_DATA_m13
-	ui8	channel_UID; // from PRTY_PCRC_EXT_m13
-	ui8	segment_UID; // from PRTY_CRC_DATA_m13
-	ui1	version_major; // from PRTY_PCRC_EXT_m13
+	ui8	session_UID; // from PCRC_DATA_m13
+	ui8	channel_UID; // from PRTY_MANIFEST_m13
+	ui8	segment_UID; // from PCRC_DATA_m13
+	ui1	version_major; // from PRTY_MANIFEST_m13
 	ui1	version_minor;
 	ui4	n_members;
-	ui8	member_file_UIDs[]; // ascending order (flexible array member)
-} PRTY_PCRC_IDENT_m13;
+	PRTY_MEMBER_m13	members[]; // ascending by file_UID (flexible array member)
+} PRTY_IDENT_m13;
 
 // Parity File Structure:
 // 1) parity data
-// 2) pcrc extension (member file UIDs + PRTY_PCRC_EXT_m13) // identity of parity data (parity files have no universal headers); absent in legacy files
+// 2) pcrc extension (member file UIDs + PRTY_MANIFEST_m13) // identity of parity data (parity files have no universal headers); absent in legacy files
 // 3) crc of parity data (& extension) in blocks // used to confirm that parity data is not itself damaged, & if so, to localize the damage, so that it can hopefully still be used & then rebuilt
-// 4) PRTY_CRC_DATA_m13 structure
+// 4) PCRC_DATA_m13 structure
 
-// Prototypes
+// PCRC Prototypes
+// pcrc is the GENERAL appended-block-CRC facility: a file's data is covered by per-block CRCs written past
+// its end, so damage can be LOCALIZED rather than merely detected.  Parity files use it (they have no
+// universal header of their own), video data files use it, and index files may.  It is not a parity concept:
+// the former name for PCRC_validate_m13() was PRTY_validate_pcrc_m13, and applied to a video file it read
+// wrong, which is why this namespace was split out.
+si8	PCRC_block_bytes_m13(FILE_m13 *fp, const si1 *file_path);
+tern	PCRC_find_damage_m13(const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks); // WHICH blocks fail; any argument may be NULL
+si8	PCRC_offset_m13(FILE_m13 *fp, const si1 *file_path, PCRC_DATA_m13 *pcrc);
+tern	PCRC_show_m13(const si1 *file_path);
+tern	PCRC_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path)
+tern	PCRC_validate_m13(const si1 *file_path); // verdict only; stops at the first bad block
+tern	PCRC_write_m13(const si1 *file_path, ui4 block_bytes);
+
+// PRTY Prototypes
+// parity proper: the xor of a group of member files, & the manifest recording which members it was built
+// from.  The manifest merely LIVES inside the pcrc-covered region - placement, not kinship.
 tern	PRTY_build_m13(PRTY_m13 *parity_ps);
 si4	PRTY_file_compare_m13(const void *a, const void *b);
 si1	**PRTY_file_list_m13(const si1 *MED_path, si4 *n_files);
+tern	PRTY_find_damage_m13(const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks); // WHERE a MED file is damaged; any argument may be NULL
 ui4	PRTY_flag_for_path_m13(const si1 *path);
 tern	PRTY_is_parity_m13(const si1 *path, tern MED_file);
-si8	PRTY_pcrc_block_bytes_m13(FILE_m13 *fp, const si1 *file_path);
-PRTY_PCRC_IDENT_m13	*PRTY_pcrc_ext_m13(FILE_m13 *fp, const si1 *file_path, si8 *ext_offset);
-si8	PRTY_pcrc_offset_m13(FILE_m13 *fp, const si1 *file_path, PRTY_CRC_DATA_m13 *pcrc);
+PRTY_IDENT_m13	*PRTY_manifest_m13(FILE_m13 *fp, const si1 *file_path, si8 *ext_offset);
 tern	PRTY_recover_segment_header_fields_m13(const si1 *MED_file, ui8 *segment_uid, si4 *segment_number);
 tern	PRTY_repair_file_m13(PRTY_m13 *parity_ps);
 tern	PRTY_restore_m13(const si1 *MED_path);
-PRTY_PCRC_IDENT_m13	*PRTY_set_pcrc_uids_m13(PRTY_CRC_DATA_m13 *pcrc, const si1 *MED_path);
-tern	PRTY_show_pcrc_m13(const si1 *file_path);
+PRTY_IDENT_m13	*PRTY_set_manifest_m13(PCRC_DATA_m13 *pcrc, const si1 *MED_path);
+tern	PRTY_truncate_m13(void *fp, si8 new_len, ...);  // vararg(fp == FILE *): const si1 *path  [called by ftruncate_m13() before the file shortens]
 tern	PRTY_update_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path
-tern	PRTY_update_pcrc_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path)
-tern	PRTY_validate_m13(const si1 *file_path, ...); // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
-tern	PRTY_validate_pcrc_m13(const si1 *file_path, ...); // varargs(file_path == NULL): const si1 *file_path, PRTY_BLOCK_m13 **bad_blocks, si4 *n_bad_blocks, ui4 *n_blocks
-tern	PRTY_write_m13(const si1 *sess_path, ui4 flags, si4 segment_number);
-tern	PRTY_write_pcrc_m13(const si1 *file_path, ui4 block_bytes);
+tern	PRTY_update_manifest_m13(void *ptr, si8 n_bytes, si8 offset, void *fp, ...);  // vararg(fp == FILE *): const si1 *path  [called by fwrite_m13() when a write carries a member's universal header]
+tern	PRTY_validate_m13(const si1 *file_path); // verdict: is this MED file's own content intact?
+tern	PRTY_verify_m13(const si1 *sess_path, ui4 flags, si4 segment_number);  // parity ON DISK == xor of its members?
+tern	PRTY_write_m13(const si1 *sess_path, ui4 flags, si4 segment_number);  // (re)build parity from scratch
 
 
 
@@ -2282,11 +2349,9 @@ typedef struct {
 #define G_set_error_m13(code, message, ...)	G_set_error_exec_m13(__FUNCTION__, __LINE__, code, message, ##__VA_ARGS__) // vararg(code == E_SIG_m13): si4 sig_num (followed by optional formatting string values)
 
 // Debugging printf()
-#ifdef MATLAB_m13
-	#define eprintf_m13(fmt, ...)		mexPrintf("%s(%d) " fmt "\n", __FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-	#define eprintf_m13(fmt, ...)		do { fprintf_m13(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
-#endif
+// one definition for both builds: fprintf_m13() routes stderr through the mex output gate under MATLAB,
+// & the TC_* colour macros are empty there, so this expands to the same text either way
+#define eprintf_m13(fmt, ...)		do { fprintf_m13(stderr, "%s%s%s(%d)%s " fmt "\n", TC_RED_m13, __FUNCTION__, TC_BLUE_m13, __LINE__, TC_RESET_m13, ##__VA_ARGS__); fflush(stderr); } while(0)
 
 
 
@@ -3002,6 +3067,7 @@ LAYOUT_FIELD_m13(UH_m13, reserved_level_4_escrow_field, UH_RESERVED_LEVEL_4_ESCR
 LAYOUT_FIELD_m13(UH_m13, reserved_level_4_validation_field, UH_RESERVED_LEVEL_4_VALIDATION_FIELD_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, kdf_salt_extension, UH_KDF_SALT_EXTENSION_OFFSET_m13);
 LAYOUT_FIELD_m13(UH_m13, protected_region, UH_PROTECTED_REGION_OFFSET_m13);
+LAYOUT_FIELD_m13(UH_m13, lib_mod_time, UH_LIB_MOD_TIME_OFFSET_m13);
 
 // Metadata Structures
 typedef struct {
@@ -3777,6 +3843,15 @@ typedef struct {
 	si4		acq_num;
 } ACQ_NUM_SORT_m13;
 
+// schema 0 -> 1 re-key context, held by G_update_MED_version_m13() & passed to G_update_MED_type_m13().
+// uh = the established schema-1 password data to stamp; legacy_pwd/schema1_pwd = the two key contexts swapped into
+// the process-global pg->password_data around decrypt (legacy) / re-encrypt (schema-1). NULL context => no re-key.
+typedef struct {
+	UH_m13			*uh;
+	PASSWORD_DATA_m13	legacy_pwd;
+	PASSWORD_DATA_m13	schema1_pwd;
+} REKEY_CTX_m13;
+
 
 
 //**********************************************************************************//
@@ -3832,6 +3907,9 @@ si8			G_current_uutc_m13(void);
 si4			G_days_in_month_m13(si4 month, si4 year);
 tern			G_AES_crypt_m13(UH_m13 *uh, PASSWORD_DATA_m13 *pwd, si1 level, ui1 *data, si8 len, tern encrypt);
 tern 			G_decrypt_metadata_m13(FPS_m13 *fps);
+tern			G_encryption_decrypted_state_m13(si1 level);  // TRUE only for the decrypted transients (-LEVEL_1/-LEVEL_2); ENCRYPTION_NO_ENTRY_m13 (-128) is a legitimate sentinel & is NOT one
+tern			G_validate_encryption_map_m13(UH_m13 *uh, ui4 type_code);  // a NEGATIVE encryption level for THIS file's own region is an in-memory transient: on disk it means the file was written mid-decryption & cannot be trusted (irrelevant regions are ignored - real sessions carry stale values there)
+tern			G_validate_metadata_m13(FPS_m13 *fps);  // crude, format-constrained sanity of metadata section 2, before its numbers reach an allocator or a divisor
 tern 			G_decrypt_records_m13(FPS_m13 *fps, ...); // varargs (fps == NULL): REC_HDR_m13 *rh, si8 n_records (used to decrypt Sgmt_records arrays)
 tern 			G_decrypt_time_series_m13(FPS_m13 *fps);
 tern 			G_decrypt_video_m13(FPS_m13 *fps);
@@ -3895,6 +3973,9 @@ const si1		*G_MED_type_string_from_code_m13(ui4 code);
 tern			G_merge_metadata_m13(FPS_m13 *md_fps_1, FPS_m13 *md_fps_2, FPS_m13 *merged_md_fps);
 tern			G_merge_universal_headers_m13(FPS_m13 *fps_1, FPS_m13 *fps_2, FPS_m13 *merged_fps);
 void 			G_message_m13(const si1 *fmt, ...);
+#ifdef MATLAB_m13
+tern			G_mex_interp_thread_m13(void);  // TRUE iff current thread is MATLAB's interpreter thread (the only thread mex API calls are legal on)
+#endif
 CHAN_m13		*G_open_channel_m13(CHAN_m13 *chan, SLICE_m13 *slice, const si1 *chan_path, void *parent, ui8 flags, const si1 *password);
 pthread_rval_m13	G_open_channel_thread_m13(void *ptr);
 tern			G_open_records_m13(void *level_header, ...);  // varagrgs(level == ssr): si4 seg_num
@@ -3997,7 +4078,6 @@ si8			G_time_for_index_m13(void *level_header, si8 target_index, ui4 mode, ...);
 void			G_update_access_time_m13(void *level_header);
 tern			G_update_channel_name_m13(CHAN_m13 *chan);
 tern			G_update_channel_name_header_m13(const si1 *path, const si1 *fs_name);
-typedef struct REKEY_CTX_m13 REKEY_CTX_m13; // opaque schema 0->1 re-key context (defined in medlib_m13.c)
 tern			G_update_MED_type_m13(const si1 *path, REKEY_CTX_m13 *rk); // used by G_update_MED_version_m13(); rk = re-key context (NULL = no re-key)
 tern			G_update_MED_version_m13(FPS_m13 *fps);
 tern			G_update_session_name_m13(FPS_m13 *fps);
@@ -4317,7 +4397,7 @@ void		*STR_wchar2char_m13(void *target, const wchar_t *source);
 
 // CMP: Block Fixed Header Offset Constants
 #define CMP_BLOCK_FIXED_HDR_BYTES_m13				56 // fixed region only
-#define CMP_BLOCK_START_UID_m13					((ui8) 0x0123456789ABCDEF) // ui8 (decimal 81,985,529,216,486,895); (note this is same as PRTY_PCRC_IDENT_m13 - benign mistake)
+#define CMP_BLOCK_START_UID_m13					((ui8) 0x0123456789ABCDEF) // ui8 (decimal 81,985,529,216,486,895); (note this is same as PCRC_TAG_m13 - benign mistake)
 #define CMP_BLOCK_START_UID_OFFSET_m13				0
 #define CMP_BLOCK_CRC_OFFSET_m13				8 // ui4
 #define CMP_BLOCK_CRC_NO_ENTRY_m13				CRC_NO_ENTRY_m13
@@ -5506,10 +5586,10 @@ void	SHA_init_m13(SHA_CTX_m13 *ctx);
 tern	SHA_init_tables_m13(void);
 ui1	*SHA_pbkdf2_m13(const ui1 *pw, si4 pw_bytes, const ui1 *salt, si4 salt_bytes, ui4 iterations, ui1 *dk);
 ui1	*SHA_pbkdf2_resume_m13(const ui1 *pw, si4 pw_bytes, const ui1 *salt, si4 salt_bytes, ui4 from_iter, ui4 to_iter, ui1 *u, ui1 *dk); // resumable PBKDF2: advance (u,dk) state from_iter->to_iter; dk snapshot at any to_iter == PBKDF2(that count). from_iter 0 initializes.
-void	G_session_key_cache_id_m13(UH_m13 *uh, ui1 *cache_id);					// cache_id = SHA-256(KDF salt || kdf_exponent)[0:SESSION_KEY_CACHE_ID_BYTES_m13]
-tern	G_session_key_cache_get_m13(const ui1 *cache_id, ui1 *master, ui1 *fp_out);		// TRUE = hit (master filled, unexpired; fp_out (may be NULL) gets the stored password fingerprint); FALSE = miss/expired/unavailable
-tern	G_session_key_cache_put_m13(const ui1 *cache_id, const ui1 *master, const ui1 *fp, si4 timeout_sec);	// store/refresh (resets expiry); fp = password fingerprint (NULL => zeros); timeout clamped to GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13
-tern	G_session_key_cache_evict_m13(const ui1 *cache_id);
+void	SKC_id_m13(UH_m13 *uh, ui1 *cache_id);					// cache_id = SHA-256(KDF salt || kdf_exponent)[0:SESSION_KEY_CACHE_ID_BYTES_m13]
+tern	SKC_get_m13(const ui1 *cache_id, ui1 *master, ui1 *fp_out);		// TRUE = hit (master filled, unexpired; fp_out (may be NULL) gets the stored password fingerprint); FALSE = miss/expired/unavailable
+tern	SKC_put_m13(const ui1 *cache_id, const ui1 *master, const ui1 *fp, si4 timeout_sec);	// store/refresh (resets expiry); fp = password fingerprint (NULL => zeros); timeout clamped to GLOBALS_SESSION_KEY_CACHE_TIMEOUT_MAX_m13
+tern	SKC_evict_m13(const ui1 *cache_id);
 void	SHA_transform_m13(SHA_CTX_m13 *ctx, const ui1 *data);
 void	SHA_update_m13(SHA_CTX_m13 *ctx, const ui1 *data, si8 len);
 
@@ -5948,6 +6028,63 @@ tern	FILT_unsymmeig_m13(sf8 **a, si4 poles, FILT_COMPLEX_m13 *eigs);
 // Non-flag defines
 #define DM_MAXIMUM_INPUT_FREQUENCY_m13		((sf8) -3.0) // value chosen to distinguish from FREQUENCY_NO_ENTRY_m13 (-1.0) & RATE_VARIABLE_m13 (-2.0)
 #define DM_MAXIMUM_INPUT_COUNT_m13		((si8) -3) // value chosen to parallel DM_MAXIMUM_INPUT_FREQUENCY_m13 & not conflict with NUMBER_OF_SAMPLES_NO_ENTRY_m13 (-1)
+
+// ---------------- DM matrix-fill code generation macros ----------------
+
+// Fast path: copy a channel's decompressed si4 samples straight into the caller's matrix, converting to
+// TYPE via CONV (a round function for integers, a cast for floats). One pattern per element type; channel-
+// vs sample-major layout is handled inside. Expands inside G_DM_channel_thread_m13 & CAPTURES ITS LOCALS:
+//   dm, chan, slice, seg_idx, pt_base, chan_offset, samp_offset, chan_idx, i, j, k
+// Defined here rather than in the .c only to keep #defines out of the .c - it is not a general-use macro.
+#define DM_PASSTHRU_m13(TYPE, CONV) \
+		do { \
+			if (dm->flags & DM_FMT_CHANNEL_MAJOR_m13) {  /* contiguous per channel */ \
+				TYPE *_d = (TYPE *) pt_base + chan_offset; \
+				for (i = 0, j = seg_idx; i < slice->n_segs; ++i, ++j) { \
+					si4 *_s = chan->segs[j]->ts_data_fps->params.cps->decompressed_data; \
+					for (k = SLICE_IDX_COUNT_S_m13(chan->segs[j]->slice); k--;) *_d++ = CONV((sf8) *_s++); \
+				} \
+			} else {  /* DM_FMT_SAMPLE_MAJOR_m13: stride by channel_count */ \
+				TYPE *_d = ((TYPE *) pt_base + chan_idx) - samp_offset; \
+				for (i = 0, j = seg_idx; i < slice->n_segs; ++i, ++j) { \
+					si4 *_s = chan->segs[j]->ts_data_fps->params.cps->decompressed_data; \
+					for (k = SLICE_IDX_COUNT_S_m13(chan->segs[j]->slice); k--;) *(_d += samp_offset) = CONV((sf8) *_s++); \
+				} \
+			} \
+		} while (0)
+
+// Store out_buf (+ optional trace min/max) into the caller's matrix in the requested element type & layout.
+// One pattern per type; channel- vs sample-major and trace-ranges are handled inside. CONV converts sf8 ->
+// TYPE (a round function for integers, a cast for floats). sf8 channel-major was written straight into
+// dm->data during interpolation, so it is the one case that needs no copy. Expands inside the DM matrix
+// build & CAPTURES ITS LOCALS:
+//   dm, data_base, min_base, max_base, chan_offset, samp_offset, chan_idx, out_buf, out_mins, out_maxs,
+//   trace_ranges, i
+// Defined here rather than in the .c only to keep #defines out of the .c - it is not a general-use macro.
+#define DM_STORE_m13(TYPE, CONV) \
+	do { \
+		sf8 *_o = out_buf; \
+		if (dm->flags & DM_FMT_CHANNEL_MAJOR_m13) {  /* contiguous per channel */ \
+			TYPE *_d = (TYPE *) data_base + chan_offset; \
+			if (trace_ranges == TRUE_m13) { \
+				sf8 *_omn = out_mins, *_omx = out_maxs; \
+				TYPE *_dmn = (TYPE *) min_base + chan_offset, *_dmx = (TYPE *) max_base + chan_offset; \
+				for (i = dm->valid_sample_count; i--;) { *_d++ = CONV(*_o++); *_dmn++ = CONV(*_omn++); *_dmx++ = CONV(*_omx++); } \
+			} else { \
+				for (i = dm->valid_sample_count; i--;) *_d++ = CONV(*_o++); \
+			} \
+		} else {  /* DM_FMT_SAMPLE_MAJOR_m13: stride by channel_count */ \
+			TYPE *_d = ((TYPE *) data_base + chan_idx) - samp_offset; \
+			if (trace_ranges == TRUE_m13) { \
+				sf8 *_omn = out_mins, *_omx = out_maxs; \
+				TYPE *_dmn = ((TYPE *) min_base + chan_idx) - samp_offset, *_dmx = ((TYPE *) max_base + chan_idx) - samp_offset; \
+				for (i = dm->valid_sample_count; i--;) { *(_d += samp_offset) = CONV(*_o++); *(_dmn += samp_offset) = CONV(*_omn++); *(_dmx += samp_offset) = CONV(*_omx++); } \
+			} else { \
+				for (i = dm->valid_sample_count; i--;) *(_d += samp_offset) = CONV(*_o++); \
+			} \
+		} \
+	} while (0)
+
 
 
 // Note: if arrays are allocted as 2D arrays, array[0] is beginning of one dimensional array containing (channel_count * sample_count) values of specfified type
@@ -6868,10 +7005,248 @@ void	**recalloc_2D_m13(void **ptr, size_t curr_dim1, size_t new_dim1, size_t cur
 
 
 //**********************************************************************************//
+//********************************* Password Tables ********************************//
+//**********************************************************************************//
+
+// GENERATED by dev/gen_pw_tables.py -- edit the generator, not this block.
+
+// breach-corpus passwords, most common first
+#define PW_PASSWORDS_ENTRIES_m13	106
+#define PW_PASSWORDS_m13 { \
+	"123456","password","123456789","12345678","12345","qwerty","1234567","111111","1234567890","123123","abc123","1234", \
+	"password1","iloveyou","000000","qwerty123","zaq12wsx","dragon","sunshine","princess","letmein","654321","monkey", \
+	"27653","1qaz2wsx","123321","qwertyuiop","superman","asdfghjkl","trustno1","shadow","master","hello","freedom", \
+	"whatever","qazwsx","michael","football","baseball","welcome","jesus","ninja","mustang","password123","admin", \
+	"login","root","guest","test","user","secret","pass","access","flower","hottie","loveme","zaq1zaq1","hello123", \
+	"charlie","donald","batman","soccer","harley","ranger","buster","thomas","robert","jordan","hunter","michelle", \
+	"daniel","starwars","klaster","112233","george","computer","jessica","pepper","1111","zxcvbn","555555","11111111", \
+	"131313","777777","pass1234","maggie","159753","aaaaaa","ginger","joshua","cheese","amanda","summer","love","ashley", \
+	"nicole","chelsea","biteme","matthew","yankees","987654321","dallas","austin","thunder","taylor","matrix" }
+
+// common English words, roughly frequency ordered
+#define PW_WORDS_ENTRIES_m13	2539
+#define PW_WORDS_m13 { \
+	"the","and","that","have","for","not","with","you","this","but","his","from","they","say","her","she","will","one", \
+	"all","would","there","their","what","out","about","who","get","which","when","make","can","like","time","just", \
+	"him","know","take","people","into","year","your","good","some","could","them","see","other","than","then","now", \
+	"look","only","come","its","over","think","also","back","after","use","two","how","our","work","first","well","way", \
+	"even","new","want","because","any","these","give","day","most","man","find","here","thing","tell","very","still", \
+	"should","through","much","where","before","too","same","right","down","life","around","another","old","great","big", \
+	"high","different","small","large","next","early","young","important","few","public","bad","able","need","feel", \
+	"three","state","never","become","between","really","something","family","own","leave","put","while","mean","keep", \
+	"student","seem","however","talk","turn","start","might","show","hear","play","run","move","live","believe","hold", \
+	"bring","happen","write","provide","sit","stand","lose","pay","meet","include","continue","set","learn","change", \
+	"lead","understand","watch","follow","stop","create","speak","read","allow","add","spend","grow","open","walk","win", \
+	"offer","remember","love","consider","appear","buy","wait","serve","die","send","expect","build","stay","fall","cut", \
+	"reach","kill","remain","suggest","raise","pass","sell","require","report","decide","pull","house","home","water", \
+	"world","school","room","mother","area","money","story","fact","month","lot","study","book","eye","job","word", \
+	"business","issue","side","kind","head","far","black","long","little","happy","friend","baby","summer","winter", \
+	"spring","autumn","january","february","march","april","may","june","july","august","september","october","november", \
+	"december","monday","tuesday","wednesday","thursday","friday","saturday","sunday","music","movie","phone","computer", \
+	"internet","email","password","login","account","online","game","player","team","sport","soccer","football", \
+	"baseball","basketball","tennis","hockey","golf","swim","bike","car","truck","train","plane","boat","apartment", \
+	"garden","kitchen","bedroom","office","college","university","teacher","doctor","nurse","hospital","patient", \
+	"medicine","health","brain","heart","blood","bone","muscle","nerve","seizure","neurology","cardiology","surgery", \
+	"clinic","research","science","data","analysis","result","method","system","network","server","database","file", \
+	"folder","document","project","company","market","customer","service","product","price","dollar","bank","credit", \
+	"card","cash","payment","order","shipping","delivery","red","blue","green","yellow","orange","purple","white", \
+	"brown","gray","pink","silver","gold","north","south","east","west","city","town","country","america","canada", \
+	"mexico","england","france","germany","spain","italy","china","japan","india","brazil","russia","australia","africa", \
+	"europe","asia","dog","cat","bird","fish","horse","cow","pig","sheep","chicken","duck","rabbit","mouse","bear", \
+	"lion","tiger","elephant","apple","banana","grape","lemon","peach","cherry","berry","melon","tomato","potato", \
+	"carrot","onion","bread","cheese","milk","coffee","juice","beer","wine","pizza","burger","salad","soup","rice", \
+	"pasta","correct","battery","staple","wrong","true","false","yes","maybe","always","often","above","below","under", \
+	"inside","outside","near","away","front","top","bottom","left","middle","center","begin","end","finish","return", \
+	"arrive","enter","exit","close","lock","unlock","push","carry","drop","lift","throw","catch","kick","hit","break", \
+	"fix","destroy","repair","clean","dirty","wash","dry","cook","eat","drink","sleep","wake","dream","rest","teach", \
+	"draw","paint","sing","dance","listen","shout","whisper","laugh","cry","smile","frown","angry","sad","glad","afraid", \
+	"brave","strong","weak","fast","slow","quick","easy","hard","simple","difficult","heavy","light","dark","bright", \
+	"loud","quiet","warm","cold","hot","cool","wet","fresh","ancient","modern","late","soon","later","during","until", \
+	"since","sometimes","rarely","usually","seldom","daily","weekly","monthly","yearly","today","tomorrow","yesterday", \
+	"morning","afternoon","evening","night","noon","midnight","hour","minute","second","week","decade","century", \
+	"season","weather","rain","snow","wind","storm","cloud","sun","moon","star","sky","earth","ground","land","sea", \
+	"ocean","river","lake","mountain","hill","valley","forest","tree","flower","grass","leaf","root","branch","seed", \
+	"fruit","vegetable","meat","egg","salt","sugar","spice","oil","butter","flour","dough","cake","pie","cookie","candy", \
+	"chocolate","table","chair","desk","bed","sofa","lamp","door","window","wall","floor","ceiling","roof","stair", \
+	"gate","fence","yard","garage","street","road","path","bridge","tunnel","building","tower","castle","church", \
+	"temple","museum","library","store","shop","hotel","restaurant","cafe","theater","cinema","park","beach","island", \
+	"desert","jungle","farm","field","barn","paper","pen","pencil","page","chapter","poem","song","note","sound","voice", \
+	"noise","silence","number","letter","sentence","line","list","chart","graph","picture","photo","image","video", \
+	"film","color","shape","circle","square","triangle","round","flat","sharp","smooth","rough","thick","thin","wide", \
+	"narrow","deep","shallow","short","tall","low","tiny","huge","giant","parent","father","son","daughter","brother", \
+	"sister","uncle","aunt","cousin","nephew","niece","grandfather","grandmother","husband","wife","child","neighbor", \
+	"stranger","person","group","crowd","king","queen","prince","princess","knight","soldier","captain","general", \
+	"president","leader","boss","worker","farmer","driver","pilot","sailor","police","fire","chef","waiter","clerk", \
+	"lawyer","judge","scientist","engineer","artist","writer","face","ear","nose","mouth","tooth","tongue","lip","chin", \
+	"neck","shoulder","arm","elbow","hand","finger","thumb","chest","stomach","leg","knee","foot","toe","skin","hair", \
+	"nail","lung","liver","kidney","lucky","funny","silly","crazy","smart","clever","wise","foolish","nice","rude", \
+	"polite","honest","question","answer","problem","solution","reason","cause","effect","difference","example","power", \
+	"energy","force","speed","heat","wave","space","matter","atom","cell","gene","metal","wood","stone","glass", \
+	"plastic","cloth","leather","rubber","steel","iron","copper","across","along","beside","third","fourth","fifth", \
+	"last","previous","final","single","double","triple","half","quarter","zero","four","five","six","seven","eight", \
+	"nine","ten","eleven","twelve","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety","hundred", \
+	"thousand","million","billion","violet","golden","dragon","eagle","wolf","shark","falcon","phoenix","cobra","viper", \
+	"hawk","raven","fox","panther","secure","safety","private","secret","hidden","locked","key","code","cipher","crypt", \
+	"guard","sample","record","signal","channel","filter","value","point","range","limit","level","scale","unit", \
+	"hippocampus","amygdala","cortex","cortical","thalamus","cerebellum","cerebral","temporal","frontal","parietal", \
+	"occipital","lobe","gyrus","sulcus","neuron","neuronal","synapse","axon","dendrite","myelin","glia","astrocyte", \
+	"epilepsy","epileptic","ictal","interictal","postictal","aura","convulsion","spike","complex","spindle","rhythm", \
+	"alpha","beta","gamma","delta","theta","oscillation","frequency","amplitude","voltage","microvolt","electrode", \
+	"contact","montage","bipolar","referential","reference","impedance","artifact","notch","sampling","recording", \
+	"acquisition","monitor","telemetry","ambulatory","implant","depth","grid","strip","stereo","eeg","ecog","seeg","emg", \
+	"ecg","ekg","eog","mri","ctscan","pet","spect","fmri","imaging","scan","slice","volume","subject","session", \
+	"segment","annotation","event","marker","onset","offset","duration","latency","diagnosis","prognosis","treatment", \
+	"therapy","medication","dose","focus","lateralization","localization","resection","ablation","stimulation", \
+	"neurostimulator","pacemaker","clinical","protocol","consent","deidentified","anonymous","encrypted","archive", \
+	"backup","rem","nrem","stage","staging","hypnogram","arousal","apnea","snore","respiration","oxygen","saturation", \
+	"rate","pulse","pressure","temperature","vital","sign","alarm","threshold","baseline","neurologist","epileptologist", \
+	"technologist","technician","physician","resident","fellow","ward","admission","discharge","summary","ability", \
+	"absence","accept","accident","accurate","achieve","acid","act","active","actual","addition","address","admire", \
+	"admit","adult","advance","advice","affect","afford","again","against","age","agency","agent","agree","ahead","aid", \
+	"aim","air","aircraft","album","alcohol","alive","almost","alone","already","although","amazing","among","amount", \
+	"analyze","anger","animal","announce","annual","anxiety","anybody","anyone","anything","anyway","anywhere","apart", \
+	"apologize","appeal","apply","appoint","approach","approve","architect","argue","arise","army","arrange","arrest", \
+	"art","article","ashamed","aside","ask","asleep","aspect","assist","assume","attach","attack","attempt","attend", \
+	"attention","attitude","attract","audience","author","available","average","avoid","awake","award","aware","awful", \
+	"background","backward","bacteria","badly","bag","balance","ball","band","bar","barrier","base","basic","basis", \
+	"basket","bath","battle","bean","beard","beat","beautiful","beauty","behalf","behave","behind","belief","bell", \
+	"belong","belt","bench","bend","beneath","benefit","best","bet","better","beyond","bicycle","bill","bind","birth", \
+	"birthday","bit","bite","bitter","blade","blame","blank","blanket","bleed","bless","blind","block","blow","board", \
+	"body","boil","bomb","boot","border","boring","born","borrow","both","bother","bottle","bounce","bound","bowl","box", \
+	"boy","brand","breakfast","breast","breath","breathe","breed","brick","brief","broad","broken","brush","bubble", \
+	"bucket","budget","bullet","bunch","burden","burn","burst","bury","bus","bush","busy","button","cabin","cable", \
+	"calculate","calendar","call","calm","camera","camp","campaign","canal","cancel","cancer","candidate","candle", \
+	"capable","capital","capture","carbon","care","career","careful","cart","case","cast","casual","category","cattle", \
+	"caution","cave","cease","celebrate","cement","ceremony","certain","chain","challenge","chamber","champion","chance", \
+	"character","charge","charity","charm","chase","cheap","cheat","check","cheek","cheer","chemical","chief", \
+	"childhood","chill","choice","choose","chop","circuit","circumstance","citizen","civil","claim","class","classic", \
+	"clear","click","client","climate","climb","clock","club","coach","coal","coast","coat","coin","collapse","collar", \
+	"collect","colony","column","combine","comfort","command","comment","commit","common","communicate","community", \
+	"compare","compete","complain","complete","concept","concern","conclude","concrete","condition","conduct","confirm", \
+	"conflict","confuse","connect","consist","constant","construct","consult","consume","contain","content","contest", \
+	"context","contract","contrast","contribute","control","convince","copy","core","corn","corner","cost","cotton", \
+	"couch","cough","council","count","county","couple","courage","course","court","cover","crack","craft","crash", \
+	"cream","creature","crew","crime","crisis","critic","crop","cross","crown","crucial","cruel","crush","crystal", \
+	"culture","cup","cure","curious","current","curtain","curve","custom","cycle","damage","danger","dare","date","dawn", \
+	"dead","deal","dear","death","debate","debt","deck","declare","decline","decorate","decrease","deer","defeat", \
+	"defend","define","degree","delay","deliver","demand","democracy","demonstrate","deny","depart","depend","deposit", \
+	"derive","describe","deserve","design","desire","despite","detail","detect","determine","develop","device","devote", \
+	"diamond","diary","dictionary","diet","differ","dig","dinner","direct","dirt","disagree","disappear","disaster", \
+	"discipline","discover","discuss","disease","dish","dismiss","display","distance","distinct","distribute","district", \
+	"disturb","divide","divorce","domestic","dominate","donate","dot","doubt","dozen","draft","drag","drama","dress", \
+	"drive","drug","drum","due","dull","dump","dust","duty","each","eager","earn","ease","economy","edge","edit", \
+	"educate","effort","either","elderly","elect","electric","elegant","element","elevator","else","emerge","emergency", \
+	"emotion","emphasis","employ","empty","enable","encourage","enemy","engage","engine","enhance","enjoy","enormous", \
+	"enough","entire","entry","envelope","environment","equal","equip","era","error","escape","especially","essay", \
+	"essential","establish","estate","estimate","ever","every","evidence","evil","exact","examine","exceed","excellent", \
+	"except","exchange","excite","exclude","excuse","execute","exercise","exhibit","exist","expand","expense", \
+	"experience","experiment","expert","explain","explore","export","expose","express","extend","extent","external", \
+	"extra","extreme","fabric","factor","factory","fade","fail","faint","fair","faith","fame","familiar","famous","fan", \
+	"fancy","fantasy","fashion","fat","fate","fault","favor","fear","feather","feature","federal","fee","feed","female", \
+	"festival","fetch","fever","fiber","fiction","fight","figure","fill","finance","fine","firm","fit","flag","flame", \
+	"flash","flavor","flee","flesh","flight","float","flood","flow","fluid","fly","fold","food","fool","foreign", \
+	"forget","forgive","fork","form","formal","former","fortune","forward","found","frame","free","freeze","frequent", \
+	"frighten","fuel","full","fun","function","fund","funeral","fur","furniture","further","future","gain","gallery", \
+	"gang","gap","garbage","gas","gather","gear","gender","generate","gentle","genuine","gesture","ghost","gift","girl", \
+	"global","glove","glue","goal","goat","god","goods","govern","grab","grade","grain","grand","grant","grave","greet", \
+	"grey","grief","grin","grip","grocery","guess","guest","guide","guilty","gun","guy","habit","hall","handle","hang", \
+	"harbor","harm","hat","hate","heal","heaven","heel","height","hell","hello","help","hence","hero","hesitate","hide", \
+	"hint","hip","hire","history","hobby","hole","holiday","hollow","holy","honey","honor","hook","hope","horizon", \
+	"horn","horror","host","household","housing","human","humble","humor","hunger","hunt","hurry","hurt","ice","idea", \
+	"ideal","identify","idle","ignore","ill","illegal","imagine","immediate","impact","imply","import","impose", \
+	"impress","improve","impulse","income","increase","indeed","independent","index","indicate","individual","indoor", \
+	"industry","infant","infect","inflation","influence","inform","initial","injure","inner","innocent","input", \
+	"inquiry","insect","insight","insist","inspire","install","instance","instead","institute","instruct","instrument", \
+	"insurance","intend","intense","interest","interior","internal","international","interpret","interview","introduce", \
+	"invent","invest","investigate","invite","involve","item","jacket","jail","jam","jar","jaw","jazz","jealous","jeans", \
+	"jet","jewel","join","joint","joke","journal","journey","joy","jump","junior","jury","justice","justify","keen", \
+	"kid","kiss","knife","knock","knowledge","lab","label","labor","lack","ladder","lady","language","lap","launch", \
+	"law","lawn","lay","layer","lazy","league","lean","leap","least","lecture","legal","legend","lend","length","lens", \
+	"less","lesson","let","liberal","license","lie","limb","link","liquid","literature","load","loan","local","locate", \
+	"log","logic","lonely","loop","loose","lord","loss","loyal","luck","lunch","luxury","machine","mad","magazine", \
+	"magic","mail","main","maintain","major","male","mall","manage","manner","manual","many","map","margin","mark", \
+	"marriage","mask","mass","master","match","material","math","mature","maximum","mayor","meal","measure","media", \
+	"medical","medium","melt","member","memory","mental","mention","menu","mercy","mere","merit","message","mild","mile", \
+	"military","mind","mine","minimum","minister","minor","mirror","miss","mission","mistake","mix","mobile","mode", \
+	"model","moderate","modest","modify","moment","monkey","mood","moral","more","mortgage","motion","motor","mud", \
+	"multiple","murder","must","mutual","mystery","naked","name","nation","native","natural","nature","navy","neat", \
+	"necessary","negative","neglect","negotiate","neither","nest","net","neutral","news","nobody","nod","none","nor", \
+	"normal","nothing","notice","notion","novel","nowhere","nuclear","nut","object","observe","obtain","obvious", \
+	"occasion","occupy","occur","odd","off","offend","officer","official","okay","olive","omit","once","onto","operate", \
+	"opinion","opponent","opportunity","oppose","option","ordinary","organ","organize","origin","otherwise","ought", \
+	"outcome","outdoor","outer","output","oven","overall","overcome","owe","owner","pace","pack","package","pain","pair", \
+	"palace","pale","palm","pan","panel","panic","parade","part","participate","particular","partner","party","passage", \
+	"passenger","passion","past","pattern","pause","peace","peak","penalty","pepper","per","percent","perfect","perform", \
+	"perhaps","period","permanent","permit","personal","persuade","phase","phrase","physical","piano","pick","piece", \
+	"pile","pill","pin","pipe","pitch","pity","place","plain","plan","plant","plate","platform","pleasant","please", \
+	"pleasure","plenty","plot","plug","plus","pocket","poet","poison","pole","policy","polish","political","poll","pool", \
+	"poor","pop","popular","population","port","portion","portrait","pose","position","positive","possess","possible", \
+	"post","pot","potential","pound","pour","poverty","powder","practical","practice","praise","pray","precise", \
+	"predict","prefer","pregnant","premium","prepare","present","preserve","press","pretend","pretty","prevent","pride", \
+	"priest","primary","prime","principle","print","prior","prison","prize","probably","proceed","process","produce", \
+	"profession","profile","profit","program","progress","promise","promote","prompt","proof","proper","property", \
+	"proportion","propose","protect","proud","prove","publish","pump","punch","punish","purchase","pure","purpose", \
+	"pursue","puzzle","qualify","quality","quantity","quit","quite","quote","race","radio","rail","rank","rapid","rare", \
+	"rather","ratio","raw","react","ready","real","realize","recall","receive","recent","recipe","recognize","recommend", \
+	"recover","reduce","refer","reflect","reform","refuse","regard","region","regret","regular","reject","relate", \
+	"relax","release","relevant","relief","religion","rely","remark","remind","remote","remove","rent","repeat", \
+	"replace","reply","represent","request","rescue","reserve","resist","resolve","resource","respect","respond", \
+	"restore","retain","retire","reveal","revenue","reverse","review","revolution","reward","rich","rid","ride","ridge", \
+	"rifle","ring","riot","rise","risk","roast","rob","rock","role","roll","rope","rose","route","routine","row","royal", \
+	"rub","ruin","rule","rural","rush","sacred","safe","sail","salary","sale","sand","satisfy","sauce","save","scare", \
+	"scatter","scene","schedule","scheme","score","scratch","scream","screen","script","seal","search","seat","section", \
+	"sector","seek","seize","select","self","senior","sense","separate","series","serious","settle","several","severe", \
+	"sew","shade","shadow","shake","shall","shame","share","shave","shed","sheet","shelf","shell","shelter","shield", \
+	"shift","shine","ship","shirt","shock","shoe","shoot","shore","shot","shower","shrink","shut","sick","sight","silk", \
+	"similar","sin","sink","sir","site","situation","size","skill","skirt","slave","slide","slight","slip","smell", \
+	"smoke","snake","soap","social","society","sock","soft","soil","solid","solve","sorry","sort","soul","source", \
+	"spare","special","species","specific","speech","spell","sphere","spin","spirit","split","spoil","spot","spread", \
+	"spy","squeeze","stable","staff","stake","standard","stare","station","steady","steal","steam","steep","step", \
+	"stick","stiff","stir","stock","straight","strange","strategy","stream","strength","stress","stretch","strike", \
+	"string","stroke","structure","struggle","studio","stuff","stupid","style","submit","substance","succeed","success", \
+	"such","sudden","suffer","suit","super","supply","support","suppose","sure","surface","surprise","surround","survey", \
+	"survive","suspect","sustain","swallow","swear","sweat","sweep","sweet","swing","switch","sword","symbol","sympathy", \
+	"tail","tale","talent","tank","tape","target","task","taste","tax","tea","tear","technical","technique","technology", \
+	"teeth","telephone","temporary","tempt","tend","tension","tent","term","terrible","territory","terror","test","text", \
+	"thank","theme","theory","thirst","thorough","those","though","thought","thread","threat","throat","thunder","thus", \
+	"ticket","tide","tie","tight","tip","tire","title","together","toilet","tone","tonight","tool","topic","total", \
+	"touch","tough","tour","toward","toy","trace","track","trade","tradition","traffic","transfer","transform", \
+	"translate","transport","trap","travel","treat","trend","trial","tribe","trick","trip","troop","trouble","trust", \
+	"truth","try","tube","tune","twice","twin","twist","type","typical","ugly","ultimate","umbrella","unable","undergo", \
+	"unfair","uniform","union","unique","unite","universe","unknown","unless","unlike","unusual","upon","upper","upset", \
+	"urban","urge","urgent","useful","usual","utility","vacation","valid","van","variety","various","vast","vehicle", \
+	"venture","version","vertical","vessel","veteran","via","victim","victory","view","village","violate","violence", \
+	"virtue","virus","visible","vision","visit","visual","vote","voyage","wage","wander","war","warn","waste","wealth", \
+	"weapon","wear","web","wedding","weigh","welcome","welfare","wheat","wheel","whether","whole","whom","whose","why", \
+	"widow","width","wild","wing","wipe","wire","wish","witness","woman","wonder","wool","worry","worse","worship", \
+	"worth","wound","wrap","yet","yield","youth","zone" }
+
+// common given names & surnames
+#define PW_NAMES_ENTRIES_m13	169
+#define PW_NAMES_m13 { \
+	"james","robert","john","michael","david","william","richard","joseph","thomas","charles","christopher","daniel", \
+	"matthew","anthony","mark","donald","steven","paul","andrew","joshua","kenneth","kevin","brian","george","timothy", \
+	"ronald","jason","edward","jeffrey","ryan","jacob","gary","nicholas","eric","jonathan","stephen","larry","justin", \
+	"scott","brandon","benjamin","samuel","gregory","frank","alexander","raymond","patrick","jack","dennis","jerry", \
+	"tyler","aaron","jose","adam","nathan","henry","zachary","douglas","peter","kyle","noah","ethan","jeremy","walter", \
+	"christian","keith","roger","terry","mary","patricia","jennifer","linda","elizabeth","barbara","susan","jessica", \
+	"sarah","karen","nancy","lisa","margaret","betty","sandra","ashley","dorothy","kimberly","emily","donna","michelle", \
+	"carol","amanda","melissa","deborah","stephanie","rebecca","laura","sharon","cynthia","kathleen","amy","shirley", \
+	"angela","helen","anna","brenda","pamela","nicole","samantha","katherine","christine","debra","rachel","carolyn", \
+	"janet","catherine","maria","heather","diane","ruth","julie","olivia","smith","johnson","williams","brown","jones", \
+	"garcia","miller","davis","rodriguez","martinez","hernandez","lopez","gonzalez","wilson","anderson","taylor","moore", \
+	"jackson","martin","lee","perez","thompson","white","harris","sanchez","clark","ramirez","lewis","robinson","walker", \
+	"young","allen","king","wright","torres","nguyen","hill","flores","green","adams","nelson","baker","hall","rivera", \
+	"campbell","mitchell","carter","roberts" }
+
+
+
+//**********************************************************************************//
 //*********************************** MED Records **********************************//
 //**********************************************************************************//
 
 #include "medrec_m13.h"
+
 
 #endif // MEDLIB_IN_m13
 
